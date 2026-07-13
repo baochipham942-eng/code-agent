@@ -1,7 +1,11 @@
 import React from 'react';
 import { Brain, Code2, Eye, Gauge, RefreshCw, Search, Wrench } from 'lucide-react';
 import { Button, Input, Toggle } from '../../../primitives';
-import type { ModelProvider } from '@shared/contract';
+import type {
+  ModelEntrySettings,
+  ModelProvider,
+  ModelThinkingCapabilityCatalog,
+} from '@shared/contract';
 import { CONTEXT_WINDOWS, MODEL_MAX_OUTPUT_TOKENS, normalizeModelId } from '@shared/constants';
 import {
   featuresFromModelMetadata,
@@ -10,6 +14,7 @@ import {
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
 import { ProviderDetailCard } from './ProviderDetailSections';
+import { ModelThinkingControl } from './ModelThinkingControl';
 
 const CAPABILITY_ICONS: Record<string, React.ReactNode> = { tool: <Wrench className="h-3 w-3" />, vision: <Eye className="h-3 w-3" />, reasoning: <Brain className="h-3 w-3" />, code: <Code2 className="h-3 w-3" />, fast: <Gauge className="h-3 w-3" /> };
 
@@ -31,6 +36,9 @@ interface ModelRowProps {
   settingDefaultModelId: string | null;
   onSetDefaultModel: (modelId: string) => void;
   onToggleModelEnabled: (model: RuntimeProviderModel, enabled: boolean) => void;
+  thinkingCapabilities?: ModelThinkingCapabilityCatalog;
+  modelSettings?: Record<string, ModelEntrySettings>;
+  onThinkingChange: (model: RuntimeProviderModel, thinking: NonNullable<ModelEntrySettings['thinking']>) => void;
 }
 
 function ModelRow({
@@ -40,6 +48,9 @@ function ModelRow({
   settingDefaultModelId,
   onSetDefaultModel,
   onToggleModelEnabled,
+  thinkingCapabilities,
+  modelSettings,
+  onThinkingChange,
 }: ModelRowProps) {
   const { t } = useI18n();
   const modelText = t.settings.model.models;
@@ -79,6 +90,13 @@ function ModelRow({
               </span>
             ))}
           </div>
+        )}
+        {thinkingCapabilities && (
+          <ModelThinkingControl
+            capability={thinkingCapabilities.models[model.id] ?? thinkingCapabilities.fallback}
+            preference={modelSettings?.[model.id]?.thinking}
+            onChange={(thinking) => onThinkingChange(model, thinking)}
+          />
         )}
       </div>
 
@@ -137,6 +155,9 @@ export interface ProviderModelsSectionProps {
   settingDefaultModelId: string | null;
   onSetDefaultModel: (modelId: string) => void;
   onToggleModelEnabled: (model: RuntimeProviderModel, enabled: boolean) => void;
+  thinkingCapabilities?: ModelThinkingCapabilityCatalog;
+  modelSettings?: Record<string, ModelEntrySettings>;
+  onThinkingChange: (model: RuntimeProviderModel, thinking: NonNullable<ModelEntrySettings['thinking']>) => void;
 }
 
 export function ProviderModelsSection({
@@ -154,6 +175,9 @@ export function ProviderModelsSection({
   settingDefaultModelId,
   onSetDefaultModel,
   onToggleModelEnabled,
+  thinkingCapabilities,
+  modelSettings,
+  onThinkingChange,
 }: ProviderModelsSectionProps) {
   const { t } = useI18n();
   const modelText = t.settings.model.models;
@@ -214,6 +238,9 @@ export function ProviderModelsSection({
                 settingDefaultModelId={settingDefaultModelId}
                 onSetDefaultModel={onSetDefaultModel}
                 onToggleModelEnabled={onToggleModelEnabled}
+                thinkingCapabilities={thinkingCapabilities}
+                modelSettings={modelSettings}
+                onThinkingChange={onThinkingChange}
               />
             ))}
           </div>

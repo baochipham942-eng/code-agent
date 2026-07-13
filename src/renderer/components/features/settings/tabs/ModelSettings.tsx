@@ -1,11 +1,8 @@
-// ============================================================================
 // ModelSettings - Model Configuration Tab
 //
 // Master-Detail 布局：左侧 Provider 列表（已可用 / 待添加 Key 分组）+ 右侧详情面板。
 // 详情面板三段式：① 连接 → ② 模型 → ③ 高级（折叠）。
 // 所有保存 / 测试 / 发现 / 新增 handler 与重构前完全一致，仅 UI 结构重组。
-// ============================================================================
-
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -71,6 +68,7 @@ import {
 import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
 import { ProviderModelsSection } from './ProviderModelsSection';
 import { AddProviderCard } from './AddProviderCard';
+import { useModelThinkingSettings } from './useModelThinkingSettings';
 export type { ModelConfig };
 
 export interface ModelSettingsProps {
@@ -99,6 +97,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfigMap>({});
+  const { thinkingCapabilities, patchCurrentModelSettings } = useModelThinkingSettings(
+    config.provider,
+    setProviderConfigs,
+  );
   const [taskStrategy, setTaskStrategy] = useState<TaskModelStrategySettings | null>(null);
   // 本地 Provider「打开即自动发现」的去重闸：每个 Provider 一个会话只自动发现一次
   const autoDiscoveredRef = useRef<Set<string>>(new Set());
@@ -237,37 +239,6 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           ...current,
           ...patch,
           enabled: patch.enabled ?? current.enabled ?? true,
-        },
-      };
-    });
-  }, [config.provider]);
-
-  const patchCurrentModelSettings = useCallback((
-    model: RuntimeProviderModel,
-    patch: Partial<ModelEntrySettings>,
-  ) => {
-    setProviderConfigs((prev) => {
-      const providerConfig = prev[config.provider] ?? { enabled: true };
-      const existing = providerConfig.models?.[model.id] ?? {};
-      return {
-        ...prev,
-        [config.provider]: {
-          ...providerConfig,
-          enabled: providerConfig.enabled ?? true,
-          models: {
-            ...providerConfig.models,
-            [model.id]: {
-              label: model.label,
-              enabled: model.enabled,
-              capabilities: model.capabilities,
-              maxTokens: model.maxTokens,
-              supportsTool: model.supportsTool,
-              supportsVision: model.supportsVision,
-              supportsStreaming: model.supportsStreaming,
-              ...existing,
-              ...patch,
-            },
-          },
         },
       };
     });
@@ -974,6 +945,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                 settingDefaultModelId={settingDefaultModelId}
                 onSetDefaultModel={handleSetDefaultModel}
                 onToggleModelEnabled={handleToggleModelEnabled}
+                thinkingCapabilities={thinkingCapabilities}
+                modelSettings={currentProviderConfig?.models}
+                onThinkingChange={(model, thinking) => patchCurrentModelSettings(model, { thinking })}
               />
 
               {/* ── ③ 高级（折叠） ── */}

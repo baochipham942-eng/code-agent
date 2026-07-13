@@ -47,6 +47,12 @@ export type ModelThinkingCapability =
   | { kind: 'none' }
   | { kind: 'unknown' };
 
+/** Renderer-facing snapshot resolved by the host registry and provider fallback matrix. */
+export interface ModelThinkingCapabilityCatalog {
+  fallback: ModelThinkingCapability;
+  models: Record<string, ModelThinkingCapability>;
+}
+
 /** 用户对单个模型保存的 thinking 偏好；具体可用字段由 ModelThinkingCapability.kind 决定。 */
 export interface ModelThinkingPreference {
   enabled?: boolean;

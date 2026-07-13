@@ -148,6 +148,16 @@ export const zhSettingsModels = {
         searchPlaceholder: '搜索模型…',
         selectionHint: '勾上「进选择页」的模型会出现在对话的模型选择里；「设为默认」决定 Neo 默认用哪个。',
         noMatch: '没有匹配模型',
+        thinking: {
+          budgetLabel: '思考预算',
+          budgetAriaLabel: '思考预算 Token 数',
+          tokensUnit: 'Token',
+          effortLabel: '推理深度',
+          effortAriaLabel: '推理深度',
+          effortLevels: { low: '低', medium: '中', high: '高' },
+          toggleLabel: '思考',
+          toggleAriaLabel: '为此模型开启思考',
+        },
       },
       advanced: {
         title: '高级',

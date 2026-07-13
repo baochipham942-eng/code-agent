@@ -234,6 +234,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.PROVIDER]: [
     'discover_models',
     'getHealthStatus',
+    'get_thinking_capabilities',
     'run_diagnostics',
     'run_doctor',
     'test_connection',

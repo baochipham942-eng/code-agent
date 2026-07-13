@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PROVIDER_REGISTRY } from '../../../src/host/model/providerRegistry';
 import { resolveModelThinkingCapability } from '../../../src/host/model/providerRuntimeCapabilities';
 import type { ModelEntrySettings } from '../../../src/shared/contract/settings';
+import { getModelThinkingCapabilityCatalog } from '../../../src/host/ipc/provider.ipc';
 
 function model(provider: string, modelId: string) {
   const result = PROVIDER_REGISTRY[provider]?.models.find((entry) => entry.id === modelId);
@@ -61,5 +62,18 @@ describe('per-model thinking capabilities', () => {
       openai: { thinking: { enabled: true, effort: 'high' } },
       glm: { thinking: { enabled: false } },
     });
+  });
+
+  it('exposes resolved model metadata and provider fallback to the settings UI', () => {
+    const claude = getModelThinkingCapabilityCatalog('claude');
+    expect(claude.models['claude-opus-4-7']).toEqual({
+      kind: 'budget',
+      minBudgetTokens: 1024,
+      defaultBudgetTokens: 16384,
+    });
+
+    const custom = getModelThinkingCapabilityCatalog('custom-team-provider');
+    expect(custom.models).toEqual({});
+    expect(custom.fallback).toEqual({ kind: 'unknown' });
   });
 });

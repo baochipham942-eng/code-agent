@@ -245,6 +245,27 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
 
+  it('forces explicit confirmation for GuardFabric ask in teammate topology', async () => {
+    defineWrite();
+    getGuardFabric().removeSource('rules');
+    const requestPermission = vi.fn(async (request) => request.forceConfirm !== true);
+    const executor = makeExecutor(requestPermission);
+
+    const result = await executor.execute(
+      'Write',
+      { file_path: '/tmp/workbench/a.txt', content: 'hello' },
+      { sessionId: 's1', executionTopology: 'teammate' } as any,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Permission denied by user');
+    expect(requestPermission).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'Write',
+      forceConfirm: true,
+    }));
+    expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
   it('skips GuardFabric evaluation and keeps the existing chain in main topology', async () => {
     defineBash();
     const evaluate = vi.spyOn(getGuardFabric(), 'evaluate').mockImplementation(() => {

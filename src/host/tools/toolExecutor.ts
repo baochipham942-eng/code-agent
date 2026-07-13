@@ -710,7 +710,7 @@ export class ToolExecutor {
       // devModeAutoApprove / autoApprove[level]、renderer PermissionCard 的
       // always/session 权限记忆）全部对 forceConfirm 让路——只读探索档下
       // 写入/执行必须逐次真人确认，且不写入/不消费权限记忆。
-      if (readOnlyForcesConfirmation) {
+      if (readOnlyForcesConfirmation || guardFabricForcesApproval) {
         permissionRequest.forceConfirm = true;
       }
 

@@ -426,7 +426,7 @@ export class ToolExecutionEngine {
     const artifactRepairBlock = enforceArtifactRepairGuard(this.ctx, toolCall);
     if (artifactRepairBlock) {
       const guard = this.ctx.artifact.repairGuard;
-      // Block 路径也喂 repairTurnsWithoutProgress 计数器：可用但被闸拦的工具此前不计数，
+      // Block 路径喂统一 noProgressTurns 计数器：可用但被闸拦的工具此前不计数，
       // 当目标不可达时会无限死锁（2026-06-25 dogfood）。连续 N 次无进展即硬停。
       const repairForceStopped = registerArtifactRepairBlockedToolTurn(this.ctx, guard, toolCall.name);
       const toolResult: ToolResult = {
@@ -472,9 +472,9 @@ export class ToolExecutionEngine {
     const repeatedArtifactRepairPatchBlock = enforceArtifactRepairRepeatedPatchGuard(this.ctx, toolCall);
     if (repeatedArtifactRepairPatchBlock) {
       const guard = this.ctx.artifact.repairGuard;
-      if (guard) {
-        this.ctx.artifact.recordBlockedTool(toolCall.name);
-      }
+      // BC2: 同指纹补丁重放也是无进展动作——此前只记工具名不计数（无界循环，仅靠外层
+      // iteration 上限兜底），现喂统一 noProgressTurns 计数器，连续到顶即硬停。
+      const repairForceStopped = registerArtifactRepairBlockedToolTurn(this.ctx, guard, toolCall.name);
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
         success: false,
@@ -492,7 +492,8 @@ export class ToolExecutionEngine {
         },
       };
       this.contextAssembly.injectSystemMessage(repeatedArtifactRepairPatchBlock);
-      if (guard?.targetFile) {
+      // 硬停时不再注入恢复提示/重推理——forceFinalResponse 已让本轮收尾。
+      if (!repairForceStopped && guard?.targetFile) {
         this.contextAssembly.pushPersistentSystemContext(
           buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
         );

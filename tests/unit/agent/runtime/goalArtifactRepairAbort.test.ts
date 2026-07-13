@@ -11,11 +11,13 @@ import {
 } from '../../../../src/shared/constants/repair';
 import { GOAL_MODE } from '../../../../src/shared/constants/agent';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
+import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
 
 const BACKSTOP = ARTIFACT_REPAIR_MAX_ATTEMPTS * GOAL_MODE.ARTIFACT_REPAIR_GOAL_ABORT_MULTIPLIER;
 
 function makeCtx(): RuntimeContext {
-  return { workingDirectory: '/tmp' } as unknown as RuntimeContext;
+  // failureMap 已收进 ArtifactState 切片，loose ctx 必须带真实 artifact 实例
+  return { workingDirectory: '/tmp', artifact: ArtifactState.forTest() } as unknown as RuntimeContext;
 }
 
 function makeState(overrides: Partial<ArtifactValidationFailureState> = {}): ArtifactValidationFailureState {

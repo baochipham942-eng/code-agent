@@ -10,6 +10,7 @@ import { createHookManager } from '../../../src/host/hooks';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 const activityMocks = vi.hoisted(() => ({
   getCurrentActivityContext: vi.fn(),
@@ -428,6 +429,8 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     consecutiveErrors: 0,
 
+    // failureMap 收进 ArtifactState 切片后（ADR-039），goal 路径读 ctx.artifact.validationFailures
+    artifact: ArtifactState.forTest(),
 
     stats: RunStatsState.forTest({ pendingRuntimeDiagnostics: [], totalInputTokens: 0, totalOutputTokens: 0, runStartTime: 0, totalTokensUsed: 0, totalToolCallCount: 0 } as never),
 

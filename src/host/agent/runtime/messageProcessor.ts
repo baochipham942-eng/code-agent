@@ -687,11 +687,8 @@ export class MessageProcessor {
 
     logger.debug(` Tool calls received: ${toolCalls.length} calls`);
 
-    // Route A: the model picked available tools this turn, so it is no longer
-    // stuck on the unavailable-tool loop — clear the no-progress counter.
-    if (this.ctx.artifact.repairGuard) {
-      this.ctx.artifact.resetRepairTurnsWithoutProgress();
-    }
+    // BC1（原审计 HIGH-1 根治）：这里不再每回合清零无进展计数——"选了可用工具"不等于
+    // 推进目标文件。noProgressTurns 只在目标真被成功改动时清零（markTargetPatched）。
 
     this.ctx.stats.addToolCalls(toolCalls.length);
     this.runFinalizer.emitTaskProgress('tool_pending', `准备执行 ${toolCalls.length} 个工具`, {

@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { RepairInstructionStyle } from './scaffoldProfile';
 import { isSameArtifactRepairPath } from './artifactRepairGuard';
+import type { ArtifactRepairPhase, ArtifactValidationFailureState } from './artifactState';
 import type { ArtifactRepairIssueCode, createArtifactRepairSpec } from './artifactRepairSpec';
 import type { validateGameArtifact } from './gameArtifactValidator';
 import type { BrowserVisualSmokeSummary } from './browser/types';
@@ -676,20 +677,16 @@ export function enforceArtifactRepairGuard(ctx: RuntimeContext, toolCall: ToolCa
 
   if (toolCall.name === 'bash' || toolCall.name === 'Bash') {
     const command = toolCall.arguments?.command;
-    if (!guard.patched) {
-      return [
-        `Artifact repair mode is active for ${guard.targetFile}.`,
-        'Bash verification is only available after you patch the target artifact.',
-        'Use Edit or Append on the target file first.',
-      ].join(' ');
-    }
+    // BC3: 验证类命令 pre/post-patch 一律放行。allowlist 本就把 Bash 列为 pre-patch
+    // 可见（2026-06-11 注释：block pre-patch Bash 会诱发强代码模型死循环），旧实现却
+    // 无条件拦 !patched——可见但必拦，纯喂无进展计数器空转。source-read 类仍拦。
     if (typeof command === 'string' && isArtifactRepairAllowedBash(command)) {
       return null;
     }
     return [
       `Artifact repair mode is active for ${guard.targetFile}.`,
       'Bash is limited to validator, test, typecheck, lint, build, or compile-style verification commands.',
-      'Bash verification is only available after you patch the target artifact.',
+      'Patch the target artifact with Edit, Append, or Write, then verify.',
     ].join(' ');
   }
 
@@ -730,33 +727,11 @@ export function buildArtifactRepairRecoveryPrompt(
   ].join('\n');
 }
 
-export type ArtifactRepairPhase = 'baseline_repair' | 'targeted_repair' | 'read_then_patch' | 'playability_repair' | 'fresh_rewrite';
-
-export type ArtifactValidationFailureState = {
-  attempts: number;
-  phase: ArtifactRepairPhase;
-  /** 历史最少失败项数（patience 基准，越小越好） */
-  bestFailureCount?: number;
-  /** 连续未刷新最佳成绩的轮数（patience 计数器） */
-  roundsSinceBest?: number;
-  /** 各失败码连续存活轮数（补丁抗性动态信号） */
-  failureCodeStreaks?: Record<string, number>;
-  /** 干净上下文重写是否已用掉（每目标一次机会） */
-  rewriteAttempted?: boolean;
-  /** goal 模式降级放行待办：由策略裁决置位，conversationRuntime 闸3 消费 */
-  degradedReleasePending?: string;
-};
-
-type RuntimeContextWithArtifactFailures = RuntimeContext & {
-  artifactValidationFailures?: Map<string, ArtifactValidationFailureState>;
-};
+// 类型随 failureMap 收进 ArtifactState 切片；此处 re-export 兼容既有 importer。
+export type { ArtifactRepairPhase, ArtifactValidationFailureState } from './artifactState';
 
 export function getArtifactValidationFailureMap(ctx: RuntimeContext): Map<string, ArtifactValidationFailureState> {
-  const runtimeCtx = ctx as RuntimeContextWithArtifactFailures;
-  if (!runtimeCtx.artifactValidationFailures) {
-    runtimeCtx.artifactValidationFailures = new Map();
-  }
-  return runtimeCtx.artifactValidationFailures;
+  return ctx.artifact.validationFailures;
 }
 
 export type ArtifactRepairStrategyDecision =

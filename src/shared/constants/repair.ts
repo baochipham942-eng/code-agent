@@ -12,8 +12,8 @@ export const REPAIR_PROMPT_LIMITS = {
 // Route A: the single hard stop for artifact repair. The repair loop is bounded
 // by two independent gates that both use this limit:
 //   - attempts: failed validation passes (catches the failing-patch loop)
-//   - repairTurnsWithoutProgress: repair turns with no successful target mutation
-//     (catches unavailable-tool spam and read loops)
+//   - noProgressTurns: actions with no successful target mutation — unavailable-tool
+//     turns and repair-guard blocked calls share this unified counter
 // When either reaches this value the repair turn is force-stopped.
 export const ARTIFACT_REPAIR_MAX_ATTEMPTS = 4;
 

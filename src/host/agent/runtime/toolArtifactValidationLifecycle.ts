@@ -176,18 +176,16 @@ export async function handleModifiedArtifactValidation({
         await fileReadTracker.recordReadWithStats(absolutePath);
       }
       const repairSpecBlock = formatArtifactRepairSpecForPrompt(repairSpec);
-      const previousGuard = ctx.artifact.repairGuard?.targetFile === absolutePath
-        ? ctx.artifact.repairGuard
-        : undefined;
+      const currentIssueCodes = repairSpec.issues
+        .map((issue) => issue.code)
+        .filter((code): code is ArtifactRepairIssueCode => typeof code === 'string' && code.length > 0);
       // 策略裁决（patience + 修复/重写双信号）：先在既有状态上刷新 patience/streak，
       // 再决定本轮走补丁、切干净重写、还是（goal）降级放行。
       const failureState = { ...(previousFailure ?? {}), attempts } as ArtifactValidationFailureState;
       const strategy = decideArtifactRepairStrategy({
         state: failureState,
         failureCount: validation.failures.length,
-        issueCodes: repairSpec.issues
-          .map((issue) => issue.code)
-          .filter((code): code is ArtifactRepairIssueCode => typeof code === 'string' && code.length > 0),
+        issueCodes: currentIssueCodes,
         goalPending: Boolean(ctx.goalMode?.isPending()),
       });
       let phase: ArtifactRepairPhase = attempts >= 3
@@ -205,33 +203,20 @@ export async function handleModifiedArtifactValidation({
       }
       failureState.phase = phase;
       failureMap.set(absolutePath, failureState);
-      ctx.artifact.setRepairGuard({
+      ctx.artifact.rebuildRepairGuardOnValidationFailure({
         targetFile: absolutePath,
         attempts,
         phase,
-        patched: false,
-        repairTurnsWithoutProgress: previousGuard?.repairTurnsWithoutProgress,
-        blockedToolTurnsWithoutProgress: previousGuard?.blockedToolTurnsWithoutProgress,
-        lastBlockedTool: previousGuard?.lastBlockedTool,
-        lastFailedPatchFingerprint: getArtifactRepairPatchFingerprint(toolCall) ?? previousGuard?.lastFailedPatchFingerprint,
-        activeIssueCodes: [
-          ...new Set([
-            ...(
-              Array.isArray(rollbackRepairSpec?.issues)
-                ? rollbackRepairSpec.issues
-                    .map((issue) => issue.code)
-                    .filter((code): code is ArtifactRepairIssueCode => typeof code === 'string' && code.length > 0)
-                : []
-            ),
-            ...(
-              Array.isArray(repairSpec.issues)
-                ? repairSpec.issues
-                    .map((issue) => issue.code)
-                    .filter((code): code is ArtifactRepairIssueCode => typeof code === 'string' && code.length > 0)
-                : []
-            ),
-            ...(previousGuard?.activeIssueCodes || []),
-          ]),
+        lastFailedPatchFingerprint: getArtifactRepairPatchFingerprint(toolCall) ?? undefined,
+        freshIssueCodes: [
+          ...(
+            Array.isArray(rollbackRepairSpec?.issues)
+              ? rollbackRepairSpec.issues
+                  .map((issue) => issue.code)
+                  .filter((code): code is ArtifactRepairIssueCode => typeof code === 'string' && code.length > 0)
+              : []
+          ),
+          ...currentIssueCodes,
         ],
       });
       // Route A hard stop: bound the failing-patch loop. After

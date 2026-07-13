@@ -1,6 +1,6 @@
 import { isAbsolute, resolve, join } from 'path';
 import type { RuntimeContext } from './runtimeContext';
-import type { ArtifactRepairGuard } from './artifactState';
+import type { ArtifactRepairGuard, ArtifactRepairGuardPhase } from './artifactState';
 import { inferArtifactRepairIssueCodesFromText } from './artifactRepairSpec';
 import { getUserConfigDir } from '../../config/configPaths';
 
@@ -21,7 +21,8 @@ export function isDesignDraftWorkingDir(workingDirectory: string | null | undefi
 // strong code models (e.g. deepseek) often want to inspect/build/test before
 // editing, and blocking Bash pre-patch made them loop on the unavailable tool
 // until the milestone retry was aborted (verified 2026-06-11 deepseek run).
-// Bash here is the same workspace-scoped tool already allowed post-patch.
+// Enforcement matches (BC3): verification-style Bash (validator/test/typecheck/
+// lint/build/compile) passes pre- and post-patch; source-read Bash stays blocked.
 const ARTIFACT_REPAIR_PRE_PATCH_ALLOWLIST = new Set([
   'Read',
   'read_file',
@@ -126,7 +127,7 @@ function isRuntimeArtifactRepairContext(text: string): boolean {
   return RUNTIME_ARTIFACT_REPAIR_CONTEXT_PATTERN.test(text);
 }
 
-function inferArtifactRepairPhase(text: string): string {
+function inferArtifactRepairPhase(text: string): ArtifactRepairGuardPhase {
   if (/<artifact-playability-failed\b/i.test(text)) {
     return 'playability_repair';
   }

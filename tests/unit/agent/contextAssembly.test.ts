@@ -2413,8 +2413,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       pipelineAutocompactNeeded: true,
-      _autoCompactPaused: true,
-      _consecutiveCompacts: 2,
       MAX_CONSECUTIVE_COMPACTS: 2,
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(true),
@@ -2429,6 +2427,8 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     };
 
     const assembly = new ContextAssembly(ctx as never);
+    assembly.compressionRecoveryForTest._autoCompactPaused = true;
+    assembly.compressionRecoveryForTest._consecutiveCompacts = 2;
     await assembly.checkAndAutoCompress();
 
     expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
@@ -2464,8 +2464,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       pipelineAutocompactNeeded: false,
-      _autoCompactPaused: false,
-      _consecutiveCompacts: 1,
       MAX_CONSECUTIVE_COMPACTS: 2,
       autoCompressor: {
         // 绝对阈值 50k：raw（巨大）命中，pruned（~2k）不命中
@@ -2481,6 +2479,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     };
 
     const assembly = new ContextAssembly(ctx as never);
+    assembly.compressionRecoveryForTest._consecutiveCompacts = 1;
     await assembly.checkAndAutoCompress();
 
     // 无损预算化即可化解 → 不付费摘要，且不破坏原始 transcript
@@ -2488,7 +2487,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     expect(ctx.messages.some((m: Message) => m.compaction)).toBe(false);
     expect(ctx.messages[2].content).toBe(hugeToolOutput);
     // 可无损化解不算卡死 → 计数器清零
-    expect(ctx._consecutiveCompacts).toBe(0);
+    expect(assembly.compressionRecoveryForTest._consecutiveCompacts).toBe(0);
   });
 
   it('pauses after consecutive compactions that stay over threshold (Item2 卡死护栏)', async () => {
@@ -2513,9 +2512,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       pipelineAutocompactNeeded: false,
-      _autoCompactPaused: false,
-      // 预置已连续 1 次：本轮再压一次仍 over → 达上限 2 → 暂停
-      _consecutiveCompacts: 1,
       MAX_CONSECUTIVE_COMPACTS: 2,
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(true), // 始终 over → stillOver 恒真
@@ -2530,13 +2526,15 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     };
 
     const assembly = new ContextAssembly(ctx as never);
+    // 预置已连续 1 次：本轮再压一次仍 over → 达上限 2 → 暂停
+    assembly.compressionRecoveryForTest._consecutiveCompacts = 1;
     await assembly.checkAndAutoCompress();
 
     // 本轮压缩成功
     expect(ctx.autoCompressor.recordCompaction).toHaveBeenCalled();
     // 连续计数达上限 → 暂停自动压缩
-    expect(ctx._consecutiveCompacts).toBe(2);
-    expect(ctx._autoCompactPaused).toBe(true);
+    expect(assembly.compressionRecoveryForTest._consecutiveCompacts).toBe(2);
+    expect(assembly.compressionRecoveryForTest._autoCompactPaused).toBe(true);
     // 注入了窗口太小的收窄提示（直接 push 到 messages 或经 hook buffer）
     const injectedInMessages = ctx.messages.some(
       (m: Message) => typeof m.content === 'string' && m.content.includes('context-window-too-small'),

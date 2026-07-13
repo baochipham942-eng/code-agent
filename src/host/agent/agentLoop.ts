@@ -299,11 +299,7 @@ export class AgentLoop {
       // Context recovery
       _networkRetryCount: 0,
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
-      _consecutiveCompacts: 0,
       MAX_CONSECUTIVE_COMPACTS: 2,
-      _autoCompactPaused: false,
-      _summaryFailureStreak: 0,
-      _summaryCooldownUntil: 0,
 
       // Context health
       pipelineAutocompactNeeded: false,

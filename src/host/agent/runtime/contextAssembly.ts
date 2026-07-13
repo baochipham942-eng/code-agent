@@ -25,6 +25,7 @@ import type {
   ContextTranscriptEntry,
   CurrentAttachment,
   InferenceRecoveryState,
+  CompressionRecoveryState,
 } from './contextAssembly/shared';
 import { inference as inferenceImpl } from './contextAssembly/inference';
 import {
@@ -101,6 +102,16 @@ export class ContextAssembly {
     _networkRetried: false,
   };
 
+  private readonly compressionRecovery: CompressionRecoveryState = {
+    _consecutiveCompacts: 0,
+    _autoCompactPaused: false,
+    _summaryFailureStreak: 0,
+    _summaryCooldownUntil: 0,
+  };
+
+  /** @internal 测试专用入口，生产代码禁止调用 */
+  get compressionRecoveryForTest() { return this.compressionRecovery; }
+
   constructor(protected ctx: RuntimeContext) {}
 
   setModules(taskProgress: TaskProgressPort): void {
@@ -133,6 +144,7 @@ export class ContextAssembly {
     return {
       runtime: this.ctx,
       inferenceRecovery: this.inferenceRecovery,
+      compressionRecovery: this.compressionRecovery,
       taskProgress: this.taskProgress,
       recordTokenUsage: this.recordTokenUsage.bind(this),
       inference: this.inference.bind(this),

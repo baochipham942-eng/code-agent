@@ -102,3 +102,20 @@
 - 本 ADR 只定方向与批次契约；每批施工独立立项，工单引用本 ADR + 矩阵。
 - 矩阵会漂移：每批开工前重跑一次该批字段的 grep 核验（矩阵基线 `ac5957ed9`，落后即补扫）。
 - 新增 RuntimeContext 字段的准入规则自本 ADR 起生效：新字段必须声明归属切片（config/turn/control/contextHealth/stats/artifact），进不了任何切片的要在 PR 里说明为什么。
+
+## 施工登记（2026-07-13 全批收官）
+
+| 批次 | 内容 | PR |
+|---|---|---|
+| 批0+批1 | 删 14 个 dead 字段 + 51 个 init-only 字段加 readonly | #360 |
+| 批2a | stagnation/防呆族 10 字段下沉 MessageProcessor | #361 |
+| 批2b | inference 恢复族 5 字段下沉 ContextAssembly | #362 |
+| 批2c | compression 恢复族 4 字段下沉 ContextAssembly | #363 |
+| 批2d | 会话流程族 9 字段按 owner 下沉 | #364 |
+| 批3a | TurnState 域切片 | #365 |
+| 批3b | ControlState 域切片 | #366 |
+| 批3c | ContextHealth 域切片 | #367 |
+| 批3d | RunStats+Tracing 域切片 | #368 |
+| 批3e | ArtifactState 域切片（拆袋收官） | #370 |
+
+字段数 141（矩阵基线 `ac5957ed9`）→ **61**（五切片字段 + readonly 配置/服务句柄 + 骨架 core：messages/modelConfig/hookManager 等留袋项见"明确留袋"节）。RuntimeContext 头注释已随批3e 改为组合根真实契约（五切片索引）。新增字段的切片归属准入规则持续生效。

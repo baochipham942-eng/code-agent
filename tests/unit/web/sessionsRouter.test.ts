@@ -392,6 +392,72 @@ describe('createSessionsRouter', () => {
     });
   });
 
+  // 工单行为不变清单 #4/#10：内存降级的列表和 messages endpoint 保持现有返回形状与富字段。
+  it('returns the current in-memory session list and rich message response shapes', async () => {
+    inMemorySessions.set('session-shape', {
+      id: 'session-shape',
+      title: 'Shape baseline',
+      createdAt: 10,
+      updatedAt: 20,
+      messageCount: 1,
+    });
+    sessionMessages.set('session-shape', [{
+      id: 'message-shape',
+      role: 'assistant',
+      content: 'shape answer',
+      timestamp: 30,
+      thinking: 'shape thinking',
+      contentParts: [{ type: 'text', text: 'shape answer' }],
+      artifacts: [{
+        id: 'artifact-shape',
+        type: 'chart',
+        content: '{"title":"Shape"}',
+        title: 'Shape',
+        version: 1,
+      }],
+      attachments: [{
+        id: 'attachment-shape',
+        type: 'file',
+        category: 'text',
+        name: 'shape.txt',
+        size: 5,
+        mimeType: 'text/plain',
+        data: 'shape',
+      }],
+      metadata: {
+        turnQuality: {
+          capabilities: { agentId: 'explore', agentName: 'Explorer' },
+        },
+      },
+    }]);
+
+    await startSessionsApi({
+      tryGetSessionManager: async () => null,
+      getSupabaseForSession: async () => null,
+    });
+
+    const list = await fetchJson('/api/sessions');
+    const messages = await fetchJson('/api/sessions/session-shape/messages');
+
+    expect(list.body).toEqual({
+      success: true,
+      data: [{
+        id: 'session-shape',
+        title: 'Shape baseline',
+        createdAt: 10,
+        updatedAt: 20,
+        messageCount: 1,
+      }],
+    });
+    expect(messages.body).toEqual({
+      success: true,
+      data: [{
+        ...sessionMessages.get('session-shape')![0],
+        toolCalls: [],
+      }],
+    });
+  });
+
   it('loads Supabase sessions with messages and applies user plus deleted filters', async () => {
     const sessionQuery = createSupabaseQuery(
       { data: [], error: null },

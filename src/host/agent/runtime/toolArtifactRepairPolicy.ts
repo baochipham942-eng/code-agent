@@ -677,20 +677,16 @@ export function enforceArtifactRepairGuard(ctx: RuntimeContext, toolCall: ToolCa
 
   if (toolCall.name === 'bash' || toolCall.name === 'Bash') {
     const command = toolCall.arguments?.command;
-    if (!guard.patched) {
-      return [
-        `Artifact repair mode is active for ${guard.targetFile}.`,
-        'Bash verification is only available after you patch the target artifact.',
-        'Use Edit or Append on the target file first.',
-      ].join(' ');
-    }
+    // BC3: 验证类命令 pre/post-patch 一律放行。allowlist 本就把 Bash 列为 pre-patch
+    // 可见（2026-06-11 注释：block pre-patch Bash 会诱发强代码模型死循环），旧实现却
+    // 无条件拦 !patched——可见但必拦，纯喂无进展计数器空转。source-read 类仍拦。
     if (typeof command === 'string' && isArtifactRepairAllowedBash(command)) {
       return null;
     }
     return [
       `Artifact repair mode is active for ${guard.targetFile}.`,
       'Bash is limited to validator, test, typecheck, lint, build, or compile-style verification commands.',
-      'Bash verification is only available after you patch the target artifact.',
+      'Patch the target artifact with Edit, Append, or Write, then verify.',
     ].join(' ');
   }
 

@@ -1644,18 +1644,18 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(allowedRead.success).toBe(true);
     expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
 
+    // BC3: 验证类 Bash 在 pre-patch 阶段即放行（enforcement 对齐 allowlist 可见性）
     ctx.turn.clearReinference();
     vi.mocked(toolExecutor.execute).mockClear();
-    const [blockedBash] = await engine.executeToolsWithHooks([
+    const [allowedPrePatchBash] = await engine.executeToolsWithHooks([
       {
         id: 'repair-bash-read',
         name: 'Bash',
         arguments: { command: 'npm run test -- game-artifact-validator' },
       },
     ]);
-    expect(blockedBash.success).toBe(false);
-    expect(blockedBash.error).toContain('Bash verification is only available after you patch the target artifact');
-    expect(toolExecutor.execute).not.toHaveBeenCalled();
+    expect(allowedPrePatchBash.success).toBe(true);
+    expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
 
     ctx.turn.clearReinference();
     ctx.artifact.repairGuard!.patched = true;
@@ -1725,7 +1725,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       },
     ]);
     expect(blockedValidatorSourceBash.success).toBe(false);
-    expect(blockedValidatorSourceBash.error).toContain('Bash verification is only available after you patch the target artifact');
+    expect(blockedValidatorSourceBash.error).toContain('Bash is limited to validator, test, typecheck, lint, build, or compile-style verification commands');
     expect(toolExecutor.execute).not.toHaveBeenCalled();
 
     ctx.turn.clearReinference();

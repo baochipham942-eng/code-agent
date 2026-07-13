@@ -1,6 +1,6 @@
 import { isAbsolute, resolve, join } from 'path';
 import type { RuntimeContext } from './runtimeContext';
-import type { ArtifactRepairGuard } from './artifactState';
+import type { ArtifactRepairGuard, ArtifactRepairGuardPhase } from './artifactState';
 import { inferArtifactRepairIssueCodesFromText } from './artifactRepairSpec';
 import { getUserConfigDir } from '../../config/configPaths';
 
@@ -126,7 +126,7 @@ function isRuntimeArtifactRepairContext(text: string): boolean {
   return RUNTIME_ARTIFACT_REPAIR_CONTEXT_PATTERN.test(text);
 }
 
-function inferArtifactRepairPhase(text: string): string {
+function inferArtifactRepairPhase(text: string): ArtifactRepairGuardPhase {
   if (/<artifact-playability-failed\b/i.test(text)) {
     return 'playability_repair';
   }

@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { RepairInstructionStyle } from './scaffoldProfile';
 import { isSameArtifactRepairPath } from './artifactRepairGuard';
+import type { ArtifactRepairPhase, ArtifactValidationFailureState } from './artifactState';
 import type { ArtifactRepairIssueCode, createArtifactRepairSpec } from './artifactRepairSpec';
 import type { validateGameArtifact } from './gameArtifactValidator';
 import type { BrowserVisualSmokeSummary } from './browser/types';
@@ -730,33 +731,11 @@ export function buildArtifactRepairRecoveryPrompt(
   ].join('\n');
 }
 
-export type ArtifactRepairPhase = 'baseline_repair' | 'targeted_repair' | 'read_then_patch' | 'playability_repair' | 'fresh_rewrite';
-
-export type ArtifactValidationFailureState = {
-  attempts: number;
-  phase: ArtifactRepairPhase;
-  /** 历史最少失败项数（patience 基准，越小越好） */
-  bestFailureCount?: number;
-  /** 连续未刷新最佳成绩的轮数（patience 计数器） */
-  roundsSinceBest?: number;
-  /** 各失败码连续存活轮数（补丁抗性动态信号） */
-  failureCodeStreaks?: Record<string, number>;
-  /** 干净上下文重写是否已用掉（每目标一次机会） */
-  rewriteAttempted?: boolean;
-  /** goal 模式降级放行待办：由策略裁决置位，conversationRuntime 闸3 消费 */
-  degradedReleasePending?: string;
-};
-
-type RuntimeContextWithArtifactFailures = RuntimeContext & {
-  artifactValidationFailures?: Map<string, ArtifactValidationFailureState>;
-};
+// 类型随 failureMap 收进 ArtifactState 切片；此处 re-export 兼容既有 importer。
+export type { ArtifactRepairPhase, ArtifactValidationFailureState } from './artifactState';
 
 export function getArtifactValidationFailureMap(ctx: RuntimeContext): Map<string, ArtifactValidationFailureState> {
-  const runtimeCtx = ctx as RuntimeContextWithArtifactFailures;
-  if (!runtimeCtx.artifactValidationFailures) {
-    runtimeCtx.artifactValidationFailures = new Map();
-  }
-  return runtimeCtx.artifactValidationFailures;
+  return ctx.artifact.validationFailures;
 }
 
 export type ArtifactRepairStrategyDecision =

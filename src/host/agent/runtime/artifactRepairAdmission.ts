@@ -43,7 +43,8 @@ export function activateArtifactRepairAdmissionStop(
  * Block 路径循环断路器：可用但被 repair 闸拦下的工具（区别于 messageProcessorUnavailableTools
  * 的"工具不可用"路径）此前**不喂** repairTurnsWithoutProgress 计数器，导致逃生门永不触发——
  * 当 guard 锁了一个不可达 phantom 目标时，每个工具被 block 但计数器不动，无限死锁
- * (2026-06-25 dogfood：CSDN URL 被错种成目标)。此函数让 block 路径也累加同一计数器，
+ * (2026-06-25 dogfood：CSDN URL 被错种成目标)。此函数让 block 路径累加独立的
+ * blockedToolTurnsWithoutProgress 计数器（非 repairTurnsWithoutProgress——那个每回合被清零），
  * 连续 ARTIFACT_REPAIR_MAX_ATTEMPTS 次无进展即复用既有 attempts-exhausted 硬停。
  * 返回是否已触发硬停。
  */

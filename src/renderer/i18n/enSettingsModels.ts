@@ -416,6 +416,20 @@ export const enSettingsModels = {
         emptyLibrary: 'This library has no available Skills',
       },
       discover: {
+        registryTitle: 'Official marketplace',
+        registryDescription: 'Skills curated and signed by Agent Neo. Content fingerprints are verified at install time; updates need your confirmation.',
+        registryEmpty: 'Official marketplace is unavailable (offline or signature verification failed)',
+        registryPublisherPrefix: 'Publisher: ',
+        registryReviewedPrefix: 'Reviewed: ',
+        registryInstall: 'Install',
+        registryInstalled: 'Installed',
+        registryUpdate: 'Update',
+        registryHasUpdate: 'Update available',
+        registryRiskLabels: {
+          low: 'Low risk',
+          medium: 'Medium risk',
+          high: 'High risk',
+        },
         almaMappingLabels: {
           covered: 'Covered',
           default_visible: 'Visible by default',

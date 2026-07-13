@@ -13,6 +13,7 @@ import type {
   SkillRoleBundle,
 } from '@shared/contract/skillRepository';
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
+import type { SkillRegistryListItem } from '@shared/contract/skillRegistry';
 import {
   findRecommendedRepository,
   getBuiltinSkillCatalogPayload,
@@ -90,6 +91,10 @@ export const SkillsSettings: React.FC = () => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // 官方市场货架状态
+  const [registryItems, setRegistryItems] = useState<SkillRegistryListItem[]>([]);
+  const [registryError, setRegistryError] = useState<string | null>(null);
+
   // SkillsMP 搜索状态
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SkillsMPSearchResult[]>([]);
@@ -119,6 +124,12 @@ export const SkillsSettings: React.FC = () => {
       // 推荐列表里排除已安装的仓库
       const installedIds = new Set((libs || []).map((l) => l.repoId));
       setRecommendedRepos((repos || []).filter((r) => !installedIds.has(r.id)));
+      // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
+      const registry = await invokeSkillIPC<{ items: SkillRegistryListItem[]; error?: string }>(
+        SKILL_CHANNELS.REGISTRY_LIST
+      );
+      setRegistryItems(registry?.items || []);
+      setRegistryError(registry?.error || null);
     } catch (err) {
       logger.error('Failed to load skill data', err);
       setMessage({ type: 'error', text: skillsText.loadFailed });
@@ -186,6 +197,32 @@ export const SkillsSettings: React.FC = () => {
       logger.error('Failed to change project skill override', err);
       setDiscoveredSkills(previous);
       setMessage({ type: 'error', text: skillsText.actionFailed });
+    }
+  };
+
+  // 从官方市场安装/升级
+  const handleInstallRegistryEntry = async (item: SkillRegistryListItem) => {
+    setActionLoading(`registry-${item.entry.name}`);
+    setMessage(null);
+    try {
+      const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
+        SKILL_CHANNELS.REGISTRY_INSTALL,
+        item.entry.name
+      );
+      if (result?.success) {
+        setMessage({
+          type: 'success',
+          text: `${item.entry.displayName || item.entry.name}${skillsText.installSuccessSuffix}`,
+        });
+        await loadData();
+      } else {
+        setMessage({ type: 'error', text: result?.error || skillsText.installFailed });
+      }
+    } catch (err) {
+      logger.error('Failed to install from registry', err);
+      setMessage({ type: 'error', text: skillsText.installFailed });
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -512,6 +549,9 @@ export const SkillsSettings: React.FC = () => {
         />
       ) : (
         <SkillsDiscoverTab
+          registryItems={registryItems}
+          registryError={registryError}
+          onInstallRegistryEntry={handleInstallRegistryEntry}
           catalog={catalog}
           recommendedRepos={recommendedRepos}
           installedRepoIds={new Set(libraries.map((lib) => lib.repoId))}

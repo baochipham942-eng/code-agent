@@ -139,6 +139,10 @@ export const CLOUD_ENDPOINTS = {
   get config() {
     return `${getCloudApiUrl()}/api/v1/config`;
   },
+  /** 官方 Skill Registry（签名控制面） */
+  get skillRegistry() {
+    return `${getCloudApiUrl()}/api/v1/skill-registry`;
+  },
   /** WebSocket 端点 */
   get websocket() {
     const url = getCloudApiUrl();

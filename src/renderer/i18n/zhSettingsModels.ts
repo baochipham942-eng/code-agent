@@ -416,6 +416,20 @@ export const zhSettingsModels = {
         emptyLibrary: '该库中没有可用的 Skill',
       },
       discover: {
+        registryTitle: '官方市场',
+        registryDescription: '官方收录并签名分发的 Skill，安装时校验内容指纹，升级需你确认',
+        registryEmpty: '官方市场暂时不可用（离线或签名校验未通过）',
+        registryPublisherPrefix: '发布方: ',
+        registryReviewedPrefix: '收录审核: ',
+        registryInstall: '安装',
+        registryInstalled: '已安装',
+        registryUpdate: '升级',
+        registryHasUpdate: '有新版',
+        registryRiskLabels: {
+          low: '低风险',
+          medium: '中风险',
+          high: '高风险',
+        },
         almaMappingLabels: {
           covered: '已覆盖',
           default_visible: '默认可见',

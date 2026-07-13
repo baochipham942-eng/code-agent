@@ -49,10 +49,12 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
+import crypto from 'crypto';
 import {
   disablePlugin,
   enablePlugin,
   getEnabledSkillDirs,
+  installFromRegistryEntry,
   installPlugin,
   listInstalledPlugins,
   uninstallPlugin,
@@ -372,5 +374,95 @@ describe('marketplace install service trust defaults', () => {
     const uninstallResult = await uninstallPlugin('openai-codex-auth@trusted-test');
     expect(uninstallResult.removedPluginRoot).toBe(record?.pluginRoot);
     expect(fsSync.existsSync(record!.pluginRoot!)).toBe(false);
+  });
+});
+
+describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
+  let tempRoot: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'code-agent-registry-'));
+    mocks.userConfigDir = path.join(tempRoot, 'user-config');
+    mocks.projectConfigDir = path.join(tempRoot, 'project-config');
+    mocks.reloadSkills.mockResolvedValue(undefined);
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await fs.rm(tempRoot, { recursive: true, force: true });
+  });
+
+  async function makeRegistryZip(content: string): Promise<Buffer> {
+    const zip = new JSZip();
+    zip.file('remote-repo/plugins/remote-demo/SKILL.md', content);
+    return zip.generateAsync({ type: 'nodebuffer' });
+  }
+
+  function sha256(buffer: Buffer): string {
+    return crypto.createHash('sha256').update(buffer).digest('hex');
+  }
+
+  function registryEntry(pinnedCommit: string, contentHash: string) {
+    return {
+      name: 'remote-demo',
+      repository: 'owner/remote-repo',
+      path: 'plugins/remote-demo',
+      pinnedCommit,
+      contentHash,
+      skills: ['.'],
+      publisher: 'Agent Neo',
+      reviewedAt: '2026-07-13',
+    };
+  }
+
+  function mockCodeload(zip: Buffer): void {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(zip, {
+      status: 200,
+      headers: { 'content-length': String(zip.byteLength) },
+    })));
+  }
+
+  it('installs by the registry pin without resolving branch heads', async () => {
+    const commit = 'e'.repeat(40);
+    const zip = await makeRegistryZip('---\nname: remote-demo\n---\nregistry\n');
+    mockCodeload(zip);
+
+    await installFromRegistryEntry(registryEntry(commit, sha256(zip)), { enableAfterInstall: true });
+
+    const record = (await listInstalledPlugins())['remote-demo@official-registry']!;
+    expect(record).toMatchObject({
+      plugin: 'remote-demo',
+      marketplace: 'official-registry',
+      isEnabled: true,
+      pinnedCommit: commit,
+      contentHash: sha256(zip),
+    });
+    const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(calls).toEqual([`https://codeload.github.com/owner/remote-repo/zip/${commit}`]);
+  });
+
+  it('fails closed when the archive hash does not match the registry entry', async () => {
+    const commit = 'e'.repeat(40);
+    mockCodeload(await makeRegistryZip('tampered'));
+
+    await expect(
+      installFromRegistryEntry(registryEntry(commit, 'f'.repeat(64))),
+    ).rejects.toThrow('Registry content hash mismatch');
+    expect((await listInstalledPlugins())['remote-demo@official-registry']).toBeUndefined();
+  });
+
+  it('upgrades to a new registry pin without tripping the TOFU drift assertion', async () => {
+    const firstZip = await makeRegistryZip('v1');
+    mockCodeload(firstZip);
+    await installFromRegistryEntry(registryEntry('a'.repeat(40), sha256(firstZip)));
+
+    const secondZip = await makeRegistryZip('v2');
+    mockCodeload(secondZip);
+    await installFromRegistryEntry(registryEntry('b'.repeat(40), sha256(secondZip)), { force: true });
+
+    const record = (await listInstalledPlugins())['remote-demo@official-registry']!;
+    expect(record.pinnedCommit).toBe('b'.repeat(40));
+    expect(record.contentHash).toBe(sha256(secondZip));
   });
 });

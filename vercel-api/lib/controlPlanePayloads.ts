@@ -291,6 +291,12 @@ export interface CapabilityRegistryPayload {
   source?: Record<string, unknown>;
 }
 
+export interface SkillRegistryPayload {
+  schemaVersion: 1;
+  updatedAt?: string;
+  entries: unknown[];
+}
+
 export interface AgentEngineModelCatalogPayload {
   version: string;
   updatedAt: string;
@@ -453,6 +459,13 @@ export function readCapabilityRegistryPayload(env: NodeJS.ProcessEnv = process.e
   ], env);
 }
 
+export function readSkillRegistryPayload(env: NodeJS.ProcessEnv = process.env): SkillRegistryPayload {
+  return readJsonPayloadFromEnv<SkillRegistryPayload>([
+    'CONTROL_PLANE_SKILL_REGISTRY_JSON',
+    'CODE_AGENT_CONTROL_PLANE_SKILL_REGISTRY_JSON',
+  ], env);
+}
+
 export function readAgentEngineModelCatalogPayload(env: NodeJS.ProcessEnv = process.env): AgentEngineModelCatalogPayload {
   return readJsonPayloadFromEnv<AgentEngineModelCatalogPayload>([
     'CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON',
@@ -481,12 +494,15 @@ export function readPayloadForKind(
   kind: ControlPlaneArtifactKind,
   req?: ControlPlaneRequestLike,
   env: NodeJS.ProcessEnv = process.env,
-): CloudConfigPayload | CapabilityRegistryPayload | AgentEngineModelCatalogPayload | PromptRegistryPayload | RendererBundleRolloutPolicyPayload {
+): CloudConfigPayload | CapabilityRegistryPayload | AgentEngineModelCatalogPayload | PromptRegistryPayload | RendererBundleRolloutPolicyPayload | SkillRegistryPayload {
   if (kind === 'cloud_config') {
     return req ? readCloudConfigPayloadForRequest(req, env) : readCloudConfigPayload(env);
   }
   if (kind === 'capability_registry') {
     return readCapabilityRegistryPayload(env);
+  }
+  if (kind === 'skill_registry') {
+    return readSkillRegistryPayload(env);
   }
   if (kind === 'agent_engine_model_catalog') {
     return readAgentEngineModelCatalogPayload(env);

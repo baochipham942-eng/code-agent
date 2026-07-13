@@ -36,6 +36,7 @@ export * from './agentEngine';
 export * from './skill';
 export * from './agentSkill';
 export * from './skillRepository';
+export * from './skillRegistry';
 export * from './mcpCatalog';
 
 // Infrastructure types

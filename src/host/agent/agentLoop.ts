@@ -123,6 +123,7 @@ import { RunFinalizer } from './runtime/runFinalizer';
 import { LearningPipeline } from './runtime/learningPipeline';
 import { loadPersistedRuntimeState } from './runtime/runtimeStatePersistence';
 import { TurnTraceRecorder } from './runtime/turnTrace';
+import { TurnState } from './runtime/turnState';
 import { createTelemetryAdapter } from '../telemetry/telemetryAdapter';
 import { composeTelemetryAdapters } from './metricsCollector';
 import { withRunTraceContext } from '../telemetry/runTraceContext';
@@ -214,11 +215,12 @@ export class AgentLoop {
         ? composeTelemetryAdapters(config.telemetryAdapter, createTelemetryAdapter())
         : createTelemetryAdapter(),
 
+      // Turn 级状态切片（ADR-038 批3a）
+      turn: new TurnState(),
+
       // Mutable state
-      lastStreamedContent: '',
       isCancelled: false,
       isInterrupted: false,
-      needsReinference: false,
       abortController: null,
       runAbortController: null,
 
@@ -251,25 +253,11 @@ export class AgentLoop {
       turnTrace: new TurnTraceRecorder(resolvedSessionId),
       turnQualityState: {},
       goalEvidenceState: { bounces: 0 },
-      currentIterationSpanId: '',
       lastModelTraceSpanId: undefined,
-      currentTurnId: '',
-      messageDeltaSeq: 0,
       pendingRuntimeDiagnostics: [],
       droppedPromptBlocks: [],
       forceFinalResponseReason: undefined,
       forceFinalResponsePrompt: undefined,
-      activeSkillInvocation: undefined,
-      activeSkillContextBlock: undefined,
-
-      // Turn tracking
-      turnStartTime: 0,
-      toolsUsedInTurn: [],
-      isSimpleTaskMode: false,
-
-      // Research mode
-      _researchModeActive: false,
-      _researchIterationCount: 0,
 
       // Budget
       totalInputTokens: 0,
@@ -277,9 +265,6 @@ export class AgentLoop {
       consecutiveErrors: 0,
 
       // Thinking
-      effortLevel: 'high',
-      thinkingEnabled: true,
-      thinkingStepCount: 0,
       scaffoldProfile,
 
       // Persistent system context

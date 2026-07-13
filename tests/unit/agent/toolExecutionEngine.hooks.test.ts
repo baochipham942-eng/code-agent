@@ -4,6 +4,7 @@ import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 import { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
 import { AntiPatternDetector } from '../../../src/host/agent/antiPattern/detector';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { fileReadTracker } from '../../../src/host/tools/fileReadTracker';
 import { mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -280,10 +281,14 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
       flush: vi.fn(),
       getEvents: vi.fn().mockReturnValue([]),
     } as never,
-    lastStreamedContent: '',
+    turn: TurnState.forTest({
+      currentIterationSpanId: 'iteration-1',
+      currentTurnId: 'turn-1',
+      turnStartTime: Date.now(),
+      effortLevel: 'medium' as never,
+    }),
     isCancelled: false,
     isInterrupted: false,
-    needsReinference: false,
     abortController: null,
     runAbortController: null,
     savedMessages: null,
@@ -299,20 +304,11 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     traceId: 'trace-1',
     turnQualityState: {},
     goalEvidenceState: { bounces: 0 },
-    currentIterationSpanId: 'iteration-1',
-    currentTurnId: 'turn-1',
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,
-    turnStartTime: Date.now(),
-    toolsUsedInTurn: [],
-    isSimpleTaskMode: false,
-    _researchModeActive: false,
-    _researchIterationCount: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     consecutiveErrors: 0,
-    effortLevel: 'medium' as never,
-    thinkingStepCount: 0,
     runStartTime: Date.now(),
     totalTokensUsed: 0,
     totalToolCallCount: 0,
@@ -1635,7 +1631,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       expect.stringContaining('<artifact-repair-tool-blocked>'),
     );
 
-    ctx.needsReinference = false;
+    ctx.turn.clearReinference();
     vi.mocked(toolExecutor.execute).mockClear();
     const [allowedRead] = await engine.executeToolsWithHooks([
       makeToolCall('repair-read-target', targetFile),
@@ -1643,7 +1639,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(allowedRead.success).toBe(true);
     expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
 
-    ctx.needsReinference = false;
+    ctx.turn.clearReinference();
     vi.mocked(toolExecutor.execute).mockClear();
     const [blockedBash] = await engine.executeToolsWithHooks([
       {
@@ -1656,7 +1652,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(blockedBash.error).toContain('Bash verification is only available after you patch the target artifact');
     expect(toolExecutor.execute).not.toHaveBeenCalled();
 
-    ctx.needsReinference = false;
+    ctx.turn.clearReinference();
     ctx.artifactRepairGuard!.patched = true;
     vi.mocked(toolExecutor.execute).mockClear();
     const [allowedBash] = await engine.executeToolsWithHooks([
@@ -1725,7 +1721,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(blockedValidatorSourceBash.error).toContain('Bash verification is only available after you patch the target artifact');
     expect(toolExecutor.execute).not.toHaveBeenCalled();
 
-    ctx.needsReinference = false;
+    ctx.turn.clearReinference();
     ctx.artifactRepairGuard!.patched = true;
     vi.mocked(toolExecutor.execute).mockClear();
     const [allowedPipedValidator] = await engine.executeToolsWithHooks([
@@ -1801,7 +1797,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(blockedIncompleteWrite.error).toContain('interactive test contract');
     expect(toolExecutor.execute).not.toHaveBeenCalled();
 
-    ctx.needsReinference = false;
+    ctx.turn.clearReinference();
     const [allowedWrite] = await engine.executeToolsWithHooks([
       {
         id: 'repair-write-target',
@@ -1818,7 +1814,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       attempts: 3,
       phase: 'read_then_patch',
     };
-    ctx.needsReinference = false;
+    ctx.turn.clearReinference();
     vi.mocked(toolExecutor.execute).mockClear();
     const [blockedWrite] = await engine.executeToolsWithHooks([
       makeCompleteHtmlWriteToolCall('repair-write-other', otherFile),
@@ -1832,7 +1828,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       attempts: 3,
       phase: 'read_then_patch',
     };
-    ctx.needsReinference = false;
+    ctx.turn.clearReinference();
     const [blockedTask] = await engine.executeToolsWithHooks([
       {
         id: 'repair-task-validator',
@@ -2228,17 +2224,17 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       makeToolCall('repair-read-validator-1', validatorFile),
     ]);
     expect(firstBlocked.success).toBe(false);
-    expect(ctx.needsReinference).toBe(true);
+    expect(ctx.turn.needsReinference).toBe(true);
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-recovery>'),
     );
 
-    ctx.needsReinference = false;
+    ctx.turn.clearReinference();
     const [secondBlocked] = await engine.executeToolsWithHooks([
       makeToolCall('repair-read-validator-2', validatorFile),
     ]);
     expect(secondBlocked.success).toBe(false);
-    expect(ctx.needsReinference).toBe(true);
+    expect(ctx.turn.needsReinference).toBe(true);
     // Route A: a non-target read stays blocked every time, with the same recovery
     // guidance — there is no blocked-tool counter that escalates the message.
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenLastCalledWith(
@@ -2377,7 +2373,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(ctx.artifactRepairGuard).toBeUndefined();
     expect(ctx.forceFinalResponseReason).toContain('artifact repair target already passes validation');
     expect(ctx.forceFinalResponsePrompt).toContain('force-final-response');
-    expect(ctx.needsReinference).toBe(false);
+    expect(ctx.turn.needsReinference).toBe(false);
     expect(contextAssembly.pushPersistentSystemContext).not.toHaveBeenCalled();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-validation-passed kind="interactive_artifact">'),
@@ -2441,7 +2437,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     expect(result.success).toBe(false);
-    expect(ctx.needsReinference).toBe(true);
+    expect(ctx.turn.needsReinference).toBe(true);
     // Route A: the edit-anchor failure is still detected and surfaced, it just no
     // longer escalates guard counters or flips into a "targeted edit" mode.
     expect(result.metadata?.artifactRepairGuard?.editAnchorFailure).toBe(true);
@@ -2889,7 +2885,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('repeats the same target-file patch');
     expect(result.metadata?.artifactRepairGuard?.repeatedFailedPatch).toBe(true);
-    expect(ctx.needsReinference).toBe(true);
+    expect(ctx.turn.needsReinference).toBe(true);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 

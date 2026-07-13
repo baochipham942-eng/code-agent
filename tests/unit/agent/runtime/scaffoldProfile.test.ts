@@ -14,6 +14,7 @@ import { getModelScaffoldTier } from '../../../../src/shared/constants/models';
 import { SCAFFOLD_PROFILE } from '../../../../src/shared/constants/agent';
 import { shouldThink } from '../../../../src/host/agent/runtime/contextAssembly/modeInjection';
 import type { ContextAssemblyCtx } from '../../../../src/host/agent/runtime/contextAssembly/inference';
+import { TurnState } from '../../../../src/host/agent/runtime/turnState';
 
 afterEach(() => {
   setScaffoldProfileOverride(undefined);
@@ -136,8 +137,7 @@ describe('shouldThink 接线契约', () => {
   function mockCtx(profile?: { thinkingInjection: boolean }): ContextAssemblyCtx {
     return {
       runtime: {
-        effortLevel: 'xhigh', // 现状下 xhigh 恒注入 → 最能暴露 profile 是否真拦
-        thinkingStepCount: 0,
+        turn: TurnState.forTest({ effortLevel: 'xhigh' }), // 现状下 xhigh 恒注入 → 最能暴露 profile 是否真拦
         scaffoldProfile: profile
           ? { tier: 'strong', thinkingInjection: profile.thinkingInjection, auditNudgeIntervalMultiplier: 2 }
           : undefined,
@@ -158,6 +158,6 @@ describe('shouldThink 接线契约', () => {
   it('profile 拦截时计数器仍自增（flag 翻转不改变 thinkingStepCount 语义）', () => {
     const ctx = mockCtx({ thinkingInjection: false });
     shouldThink(ctx, false);
-    expect((ctx as unknown as { runtime: { thinkingStepCount: number } }).runtime.thinkingStepCount).toBe(1);
+    expect((ctx as unknown as { runtime: { turn: TurnState } }).runtime.turn.thinkingStepCount).toBe(1);
   });
 });

@@ -7,7 +7,7 @@ const logger = createLogger('ContextAssembly');
 
 type RuntimeForDeferredToolPreload = Pick<
   RuntimeContext,
-  'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'skillToolBoundary'
+  'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'goalMode' | 'turn'
 >;
 
 // 意图正则守则（issue #322）：\b 对 . / - 等非单词字符也成立，"notes.md" 能穿过
@@ -93,8 +93,8 @@ export function getDeferredToolsToPreloadForTurn(
   // 否则 deferred-loading 模式下这些 skill 专属工具（如 propose_role）对模型不可见，
   // 模型会退而用 core 工具（如 Edit）绕过 skill 设计的流程（验收实证：edit-role 没出确认卡）。
   // 边界内 core 工具本就常驻，无需预加载；模式前缀（Bash(git:*)）取括号前的工具名。
-  if (runtime.skillToolBoundary) {
-    for (const allowed of runtime.skillToolBoundary.allowedTools) {
+  if (runtime.turn.skillToolBoundary) {
+    for (const allowed of runtime.turn.skillToolBoundary.allowedTools) {
       const baseName = allowed.split('(')[0]?.trim();
       if (!baseName) continue;
       const canonical = resolveToolAlias(baseName);

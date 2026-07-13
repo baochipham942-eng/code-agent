@@ -6,6 +6,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import {
@@ -392,7 +393,17 @@ function buildMessage(id: string, role: Message['role'], content: string): Messa
   };
 }
 
+const TURN_OVERRIDE_KEYS = ['currentTurnId','messageDeltaSeq','currentIterationSpanId','turnStartTime','toolsUsedInTurn','lastStreamedContent','needsReinference','isSimpleTaskMode','effortLevel','thinkingEnabled','thinkingStepCount','_researchModeActive','_researchIterationCount','activeSkillInvocation','activeSkillContextBlock','skillToolBoundary'] as const;
+
 function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
+  const rest: Record<string, unknown> = { ...overrides };
+  const turnSeed: Record<string, unknown> = {};
+  for (const key of TURN_OVERRIDE_KEYS) {
+    if (key in rest) {
+      turnSeed[key.replace(/^_research/, 'research')] = rest[key];
+      delete rest[key];
+    }
+  }
   const messages = [
     buildMessage(`user-${Date.now()}-${Math.random()}`, 'user', 'fix repo code bug'),
   ];
@@ -448,7 +459,6 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
     telemetryAdapter: undefined,
     isCancelled: false,
     isInterrupted: false,
-    needsReinference: false,
     abortController: null,
     runAbortController: null,
     savedMessages: null,
@@ -465,27 +475,26 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
     turnTrace: { setTurn: vi.fn(), record: vi.fn(), flush: vi.fn(), getEvents: vi.fn().mockReturnValue([]) } as any,
     turnQualityState: {},
     goalEvidenceState: { bounces: 0 },
-    currentIterationSpanId: 'span-budget',
-    currentTurnId: 'turn-budget',
     pendingRuntimeDiagnostics: [],
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,
-    turnStartTime: Date.now(),
-    toolsUsedInTurn: [],
-    isSimpleTaskMode: true,
-    _researchModeActive: false,
-    _researchIterationCount: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     consecutiveErrors: 0,
-    effortLevel: 'medium',
-    thinkingStepCount: 0,
     runStartTime: Date.now(),
     totalTokensUsed: 0,
     totalToolCallCount: 0,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
     persistentSystemContext: [],
-    ...overrides,
+    turn: TurnState.forTest({
+      currentIterationSpanId: 'span-budget',
+      currentTurnId: 'turn-budget',
+      turnStartTime: Date.now(),
+      isSimpleTaskMode: true,
+      effortLevel: 'medium',
+      ...turnSeed,
+    } as never),
+    ...rest,
   };
 }
 
@@ -683,7 +692,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
       telemetryAdapter: undefined,
       isCancelled: false,
       isInterrupted: false,
-      needsReinference: false,
       abortController: null,
       runAbortController: null,
       savedMessages: null,
@@ -700,21 +708,13 @@ describe('ContextAssembly.buildModelMessages()', () => {
       turnTrace: { setTurn: vi.fn(), record: vi.fn(), flush: vi.fn(), getEvents: vi.fn().mockReturnValue([]) } as any,
       turnQualityState: {},
       goalEvidenceState: { bounces: 0 },
-      currentIterationSpanId: 'span-1',
-      currentTurnId: 'turn-1',
+      turn: TurnState.forTest({ currentIterationSpanId: 'span-1', currentTurnId: 'turn-1', turnStartTime: Date.now(), isSimpleTaskMode: true, effortLevel: 'medium' } as never),
       pendingRuntimeDiagnostics: [],
       forceFinalResponseReason: undefined,
       forceFinalResponsePrompt: undefined,
-      turnStartTime: Date.now(),
-      toolsUsedInTurn: [],
-      isSimpleTaskMode: true,
-      _researchModeActive: false,
-      _researchIterationCount: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
       consecutiveErrors: 0,
-      effortLevel: 'medium',
-      thinkingStepCount: 0,
       runStartTime: Date.now(),
       totalTokensUsed: 0,
       totalToolCallCount: 0,
@@ -1749,7 +1749,6 @@ describe('ContextAssembly.buildModelMessages()', () => {
       telemetryAdapter: undefined,
       isCancelled: false,
       isInterrupted: false,
-      needsReinference: false,
       abortController: null,
       runAbortController: null,
       savedMessages: null,
@@ -1766,21 +1765,13 @@ describe('ContextAssembly.buildModelMessages()', () => {
       turnTrace: { setTurn: vi.fn(), record: vi.fn(), flush: vi.fn(), getEvents: vi.fn().mockReturnValue([]) } as any,
       turnQualityState: {},
       goalEvidenceState: { bounces: 0 },
-      currentIterationSpanId: 'span-cache',
-      currentTurnId: 'turn-cache',
+      turn: TurnState.forTest({ currentIterationSpanId: 'span-cache', currentTurnId: 'turn-cache', turnStartTime: Date.now(), effortLevel: 'medium' } as never),
       pendingRuntimeDiagnostics: [],
       forceFinalResponseReason: undefined,
       forceFinalResponsePrompt: undefined,
-      turnStartTime: Date.now(),
-      toolsUsedInTurn: [],
-      isSimpleTaskMode: false,
-      _researchModeActive: false,
-      _researchIterationCount: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
       consecutiveErrors: 0,
-      effortLevel: 'medium',
-      thinkingStepCount: 0,
       runStartTime: Date.now(),
       totalTokensUsed: 0,
       totalToolCallCount: 0,
@@ -1912,7 +1903,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
       persistentSystemContext: [],
-      isSimpleTaskMode: false,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       autoCompressor: {
@@ -2030,7 +2021,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
       persistentSystemContext: [],
-      isSimpleTaskMode: false,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       checkpointRootDir,
@@ -2121,7 +2112,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
         workingDirectory: process.cwd(),
         isDefaultWorkingDirectory: true,
         persistentSystemContext: [],
-        isSimpleTaskMode: false,
+        turn: TurnState.forTest({ isSimpleTaskMode: false }),
         compressionPipeline: new CompressionPipeline(),
         compressionState: new CompressionState(),
         checkpointRootDir,
@@ -2198,7 +2189,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
         workingDirectory: process.cwd(),
         isDefaultWorkingDirectory: true,
         persistentSystemContext: [],
-        isSimpleTaskMode: false,
+        turn: TurnState.forTest({ isSimpleTaskMode: false }),
         compressionPipeline: new CompressionPipeline(),
         compressionState: new CompressionState(),
         checkpointRootDir,
@@ -2256,7 +2247,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
       persistentSystemContext: [],
-      isSimpleTaskMode: false,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       autoCompressor: {
@@ -2347,7 +2338,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
       persistentSystemContext: [],
-      isSimpleTaskMode: false,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       autoCompressor: {
@@ -2397,7 +2388,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
       persistentSystemContext: [],
-      isSimpleTaskMode: false,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       pipelineAutocompactNeeded: true,
@@ -2448,7 +2439,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
       persistentSystemContext: [],
-      isSimpleTaskMode: false,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       pipelineAutocompactNeeded: false,
@@ -2496,7 +2487,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       workingDirectory: process.cwd(),
       isDefaultWorkingDirectory: true,
       persistentSystemContext: [],
-      isSimpleTaskMode: false,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
       compressionPipeline: new CompressionPipeline(),
       compressionState: new CompressionState(),
       pipelineAutocompactNeeded: false,

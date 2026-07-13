@@ -171,7 +171,7 @@ export class ConversationRuntime {
             data: {
               ...entry,
               sessionId: this.ctx.sessionId,
-              ...(this.ctx.currentTurnId ? { turnId: this.ctx.currentTurnId } : {}),
+              ...(this.ctx.turn.currentTurnId ? { turnId: this.ctx.turn.currentTurnId } : {}),
             },
           });
         },
@@ -358,7 +358,7 @@ export class ConversationRuntime {
           // 用了写工具或 Bash 视为有进展（清零）；纯 read-only/无工具视为无进展（累加）。
           // 连续 NO_PROGRESS_THRESHOLD 轮无进展 → evaluateFallback 触发闸3 中止。
           if (iterations > 1) {
-            const madeProgress = this.ctx.toolsUsedInTurn.some(
+            const madeProgress = this.ctx.turn.toolsUsedInTurn.some(
               (t) => WRITE_TOOLS.includes(t) || t === 'Bash' || t === 'bash',
             );
             this.ctx.goalMode.recordTurnProgress(madeProgress);
@@ -439,11 +439,11 @@ export class ConversationRuntime {
         // Setup iteration (turn ID, spans, events, goal checkpoints)
         this.streamHandler.setupIteration(iterations, userMessage, langfuse);
         if (iterations === 1) {
-          userTurnId = this.ctx.currentTurnId;
+          userTurnId = this.ctx.turn.currentTurnId;
         }
 
         // Telemetry: record turn start (only first iteration has the real user prompt)
-        this.ctx.telemetryAdapter?.onTurnStart(this.ctx.currentTurnId, iterations, iterations === 1 ? userMessage : '', iterations > 1 ? userTurnId : undefined);
+        this.ctx.telemetryAdapter?.onTurnStart(this.ctx.turn.currentTurnId, iterations, iterations === 1 ? userMessage : '', iterations > 1 ? userTurnId : undefined);
 
         // Debug snapshot: 记录 turn 起始时的 messages 快照，post-inference 直接从 response.usage 取 token
         const turnStartMessageSnapshot = this.ctx.messages.slice();
@@ -464,8 +464,8 @@ export class ConversationRuntime {
         logger.debug('[AgentLoop] Inference response type:', response.type);
 
         // h2A 实时转向
-        if (this.ctx.needsReinference) {
-          this.ctx.needsReinference = false;
+        if (this.ctx.turn.needsReinference) {
+          this.ctx.turn.clearReinference();
           logger.info('[AgentLoop] Steer detected after inference — re-inferring with new user message');
           this.ctx.onEvent({
             type: 'interrupt_acknowledged',
@@ -499,7 +499,7 @@ export class ConversationRuntime {
         // 在 post-inference 写入，token 字段反映本轮实际消耗（直接取 response.usage）
         writeTurnSnapshot({
           sessionId: this.ctx.sessionId,
-          turnId: this.ctx.currentTurnId,
+          turnId: this.ctx.turn.currentTurnId,
           turnIndex: iterations,
           systemPrompt: this.ctx.systemPrompt,
           messages: turnStartMessageSnapshot,
@@ -691,7 +691,7 @@ export class ConversationRuntime {
     const langfuse = getLangfuseService();
     const runTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
     this.ctx.traceId = runTraceContext?.traceId ?? `trace-${this.ctx.sessionId}-${Date.now()}`;
-    this.ctx.currentTurnId = '';
+    this.ctx.turn.beginRun();
     langfuse.startTrace(this.ctx.traceId, {
       sessionId: this.ctx.sessionId,
       userId: this.ctx.userId,
@@ -705,8 +705,7 @@ export class ConversationRuntime {
 
     await this.initializeUserHooks();
 
-    this.ctx.activeSkillInvocation = undefined;
-    this.ctx.activeSkillContextBlock = undefined;
+    this.ctx.turn.clearActiveSkill();
 
     // Task Complexity Analysis
     const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
@@ -732,7 +731,7 @@ export class ConversationRuntime {
         ?? await resolveStickyStrictSkillInvocation(this.ctx, userMessage);
       if (skillInvocation) {
         const skillContext = await buildSkillInvocationContext(skillInvocation, this.ctx.workingDirectory);
-        this.ctx.activeSkillInvocation = {
+        this.ctx.turn.activateSkill({
           skillName: skillInvocation.skill.name,
           source: skillInvocation.skill.source,
           basePath: skillInvocation.skill.basePath,
@@ -740,8 +739,7 @@ export class ConversationRuntime {
           matchedText: skillInvocation.matchedText,
           aliases: skillInvocation.aliases,
           confidence: skillInvocation.confidence,
-        };
-        this.ctx.activeSkillContextBlock = skillContext.block;
+        }, skillContext.block);
 
         if (skillContext.contextModifier.preApprovedTools) {
           for (const tool of skillContext.contextModifier.preApprovedTools) {
@@ -750,10 +748,7 @@ export class ConversationRuntime {
         }
         // GAP-001: skill allowed-tools 限权边界
         if (skillContext.contextModifier.toolBoundary) {
-          this.ctx.skillToolBoundary = skillContext.contextModifier.toolBoundary;
-        }
-        if (skillContext.contextModifier.modelOverride) {
-          this.ctx.skillModelOverride = skillContext.contextModifier.modelOverride;
+          this.ctx.turn.setSkillToolBoundary(skillContext.contextModifier.toolBoundary);
         }
 
         isSimpleTask = false;
@@ -778,7 +773,7 @@ export class ConversationRuntime {
       });
     }
 
-    this.ctx.isSimpleTaskMode = isSimpleTask;
+    this.ctx.turn.setSimpleTaskMode(isSimpleTask);
 
 
     this.ctx.externalDataCallCount = 0;
@@ -923,8 +918,8 @@ export class ConversationRuntime {
     if (genNum >= 3) {
       try {
         const dynamicResult = buildDynamicPromptV2(userMessage, {
-          toolsUsedInTurn: this.ctx.toolsUsedInTurn,
-          iterationCount: this.ctx.toolsUsedInTurn.length,
+          toolsUsedInTurn: this.ctx.turn.toolsUsedInTurn,
+          iterationCount: this.ctx.turn.toolsUsedInTurn.length,
           hasError: false,
           maxReminderTokens: 1200,
           includeFewShot: genNum >= 4,
@@ -1041,14 +1036,14 @@ export class ConversationRuntime {
     this.ctx.isCancelled = true;
 
     // Preserve partial streaming content before aborting
-    if (this.ctx.lastStreamedContent) {
+    if (this.ctx.turn.lastStreamedContent) {
       const suffix = reason === 'session-switch'
         ? '\n\n[未完成 — 切换会话中断]'
         : '\n\n[cancelled]';
       const partialMessage: Message = {
         id: generateMessageId(),
         role: 'assistant',
-        content: this.ctx.lastStreamedContent + suffix,
+        content: this.ctx.turn.lastStreamedContent + suffix,
         timestamp: Date.now(),
       };
       this.ctx.messages.push(partialMessage);
@@ -1059,7 +1054,7 @@ export class ConversationRuntime {
       } catch (err) {
         logger.warn('[ConversationRuntime] persist partial on cancel failed:', err);
       }
-      this.ctx.lastStreamedContent = '';
+      this.ctx.turn.resetStreamedContent();
     }
     this.ctx.abortController?.abort();
     this.ctx.runAbortController?.abort();
@@ -1094,7 +1089,7 @@ export class ConversationRuntime {
   ): void {
     this.ctx.abortController?.abort();
     this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata);
-    this.ctx.needsReinference = true;
+    this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
   }
 
@@ -1115,19 +1110,19 @@ export class ConversationRuntime {
   }
 
   setEffortLevel(level: import('../../../shared/contract/agent').EffortLevel): void {
-    this.ctx.effortLevel = level;
-    this.ctx.thinkingStepCount = 0;
+    this.ctx.turn.setEffortLevel(level);
+    this.ctx.turn.resetThinkingSteps();
     logger.debug(`[AgentLoop] Effort level set to: ${level}`);
   }
 
   setThinkingEnabled(enabled: boolean): void {
-    this.ctx.thinkingEnabled = enabled;
-    this.ctx.thinkingStepCount = 0;
+    this.ctx.turn.setThinkingEnabled(enabled);
+    this.ctx.turn.resetThinkingSteps();
     logger.debug(`[AgentLoop] Thinking ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   getEffortLevel(): import('../../../shared/contract/agent').EffortLevel {
-    return this.ctx.effortLevel;
+    return this.ctx.turn.effortLevel;
   }
 
   setInteractionMode(mode: import('../../../shared/contract/agent').InteractionMode): void {

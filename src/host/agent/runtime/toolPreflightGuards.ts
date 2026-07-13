@@ -170,7 +170,7 @@ function isBashToolCallName(name: string): boolean {
 }
 
 function activeSkillTargets(ctx: RuntimeContext): string[] {
-  const invocation = ctx.activeSkillInvocation;
+  const invocation = ctx.turn.activeSkillInvocation;
   if (!invocation) return [];
   return Array.from(new Set([
     invocation.skillName,
@@ -193,7 +193,7 @@ export function semanticProgressReasonForToolCall(
 ): string | null {
   if (!result.success) return null;
 
-  const skillName = ctx.activeSkillInvocation?.skillName;
+  const skillName = ctx.turn.activeSkillInvocation?.skillName;
   if (result.metadata?.isSkillActivation === true || toolCall.name === 'skill' || toolCall.name === 'Skill') {
     return `skill activation${skillName ? `: ${skillName}` : ''}`;
   }

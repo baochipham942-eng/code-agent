@@ -49,8 +49,8 @@ export function recordMessageProcessorModelCallTelemetry(
     if (apiOutputTokens === 0) effectiveOutputTokens = estimatedOutputTokens;
   }
 
-  ctx.telemetryAdapter.onModelCall(ctx.currentTurnId, {
-    id: `mc-${ctx.currentTurnId}-${iterations}`,
+  ctx.telemetryAdapter.onModelCall(ctx.turn.currentTurnId, {
+    id: `mc-${ctx.turn.currentTurnId}-${iterations}`,
     timestamp: Date.now(),
     provider: response.actualProvider ?? response.fallback?.to.provider ?? ctx.modelConfig.provider,
     model: response.actualModel ?? response.fallback?.to.model ?? ctx.modelConfig.model,

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { StreamHandler } from '../../../src/host/agent/runtime/streamHandler';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -46,11 +47,7 @@ describe('StreamHandler', () => {
       pendingRuntimeDiagnostics: ['diagnostic detail'],
       historyVisibility: 'meta',
       traceId: 'trace-1',
-      currentTurnId: undefined,
-      messageDeltaSeq: 99,
-      turnStartTime: 0,
-      toolsUsedInTurn: ['old-tool'],
-      _researchModeActive: false,
+      turn: TurnState.forTest({ messageDeltaSeq: 99, toolsUsedInTurn: ['old-tool'] }),
       goalTracker: { getGoalCheckpoint: vi.fn().mockReturnValue(null) },
     };
     const runFinalizer = {

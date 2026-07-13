@@ -155,12 +155,12 @@ export function buildDynamicPromptCacheKey(
     ctx.runtime.agentId || '',
     ctx.runtime.workingDirectory || '',
     String(ctx.runtime.isDefaultWorkingDirectory),
-    String(ctx.runtime.isSimpleTaskMode),
+    String(ctx.runtime.turn.isSimpleTaskMode),
     String(ctx.runtime.enableToolDeferredLoading),
     ctx.runtime.modelConfig.model || '',
     getLastUserMessage(ctx)?.id || '',
-    ctx.runtime.activeSkillInvocation?.skillName || '',
-    ctx.runtime.activeSkillContextBlock ? 'active-skill' : '',
+    ctx.runtime.turn.activeSkillInvocation?.skillName || '',
+    ctx.runtime.turn.activeSkillContextBlock ? 'active-skill' : '',
     artifactRepairMode ? 'artifact-repair' : 'normal',
     String(getTrustedRemotePromptFragmentsRevision()),
     // SYSTEM.md / APPEND_SYSTEM.md / FULL_SYSTEM.md 变化时让缓存失效(路径 + 长度两维)
@@ -311,29 +311,29 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     }
   }
 
-  if (ctx.runtime.activeSkillContextBlock) {
+  if (ctx.runtime.turn.activeSkillContextBlock) {
     const result = appendPromptBlockWithinBudgetWithStatus(
       systemPrompt,
-      ctx.runtime.activeSkillContextBlock,
-      `active skill ${ctx.runtime.activeSkillInvocation?.skillName || ''}`.trim(),
+      ctx.runtime.turn.activeSkillContextBlock,
+      `active skill ${ctx.runtime.turn.activeSkillInvocation?.skillName || ''}`.trim(),
       appendedBlocks,
       ctx,
       { kind: 'required', trimCandidates: ['repo map', 'skills', 'recent conversations', 'deferred tools', 'generative UI', 'question form'] },
     );
     systemPrompt = result.prompt;
     if (result.appended) {
-      appendedBlocks.set('active skill', ctx.runtime.activeSkillContextBlock);
+      appendedBlocks.set('active skill', ctx.runtime.turn.activeSkillContextBlock);
       logger.debug('[ContextAssembly] Active skill invocation prompt injected', {
-        skillName: ctx.runtime.activeSkillInvocation?.skillName,
-        matchKind: ctx.runtime.activeSkillInvocation?.matchKind,
+        skillName: ctx.runtime.turn.activeSkillInvocation?.skillName,
+        matchKind: ctx.runtime.turn.activeSkillInvocation?.matchKind,
       });
     }
   }
 
   const genNum = 8;
-  if (genNum >= 3 && !ctx.runtime.isSimpleTaskMode) {
+  if (genNum >= 3 && !ctx.runtime.turn.isSimpleTaskMode) {
     // Only enhance with RAG for non-simple tasks
-    systemPrompt = await buildEnhancedSystemPrompt(systemPrompt, userQuery, ctx.runtime.isSimpleTaskMode);
+    systemPrompt = await buildEnhancedSystemPrompt(systemPrompt, userQuery, ctx.runtime.turn.isSimpleTaskMode);
   }
 
   systemPrompt = injectWorkingDirectoryContext(systemPrompt, ctx.runtime.workingDirectory, ctx.runtime.isDefaultWorkingDirectory);
@@ -435,7 +435,7 @@ ${deferredToolsSummary}
   const skipSkillsForLongPromptIntolerantProvider = provider === 'xiaomi';
   if (
     !artifactRepairMode
-    && !ctx.runtime.isSimpleTaskMode
+    && !ctx.runtime.turn.isSimpleTaskMode
     && userQuery
     && !skipSkillsForLongPromptIntolerantProvider
   ) {
@@ -617,7 +617,7 @@ ${deferredToolsSummary}
   // 注入 Repo Map（代码结构索引，借鉴 Aider）
   if (
     ctx.runtime.workingDirectory &&
-    !ctx.runtime.isSimpleTaskMode &&
+    !ctx.runtime.turn.isSimpleTaskMode &&
     REPO_MAP_INTENT_PATTERN.test(userQuery) &&
     !shouldInjectArtifactBrief &&
     !artifactRepairMode

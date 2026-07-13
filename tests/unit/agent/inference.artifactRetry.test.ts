@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
 import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 
 const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
@@ -103,8 +104,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     forceFinalResponsePrompt: undefined,
     forceFinalResponseReason: undefined,
     traceId: 'trace-1',
-    currentIterationSpanId: 'span-1',
-    currentTurnId: 'turn-1',
+    turn: TurnState.forTest({ currentIterationSpanId: 'span-1', currentTurnId: 'turn-1', effortLevel: 'medium' }),
     sessionId: 'session-1',
     workingDirectory: '/tmp',
     modelConfig: {
@@ -117,11 +117,8 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     modelRouter,
     onEvent,
     abortController: null,
-    lastStreamedContent: '',
-    needsReinference: false,
     isInterrupted: false,
     isCancelled: false,
-    effortLevel: 'medium',
     messages: [],
     ...overrides,
   } as any;

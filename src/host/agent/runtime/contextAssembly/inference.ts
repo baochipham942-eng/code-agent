@@ -212,7 +212,7 @@ export function resolveMainChatModelDecision(
   if (!opts?.suppressDecisionEvent) {
     const decisionEventData: ModelDecisionEventData = {
       ...emittedDecision,
-      turnId: ctx.runtime.currentTurnId,
+      turnId: ctx.runtime.turn.currentTurnId,
       timestamp: Date.now(),
     };
     ctx.inferenceRecovery.currentModelDecision = decisionEventData;
@@ -342,7 +342,7 @@ async function runMaxModeInference(
           runEngineInference(ctx, msgs, tls, requestConfig, streamCallback, signal, engineOptions),
         // 取消/转向/中断时丢弃整个 step（含已完成的部分赢家），走外层既有取消语义
         isAborted: () =>
-          Boolean(ctx.runtime.isCancelled || ctx.runtime.isInterrupted || ctx.runtime.needsReinference),
+          Boolean(ctx.runtime.isCancelled || ctx.runtime.isInterrupted || ctx.runtime.turn.needsReinference),
       },
       { messages, tools, candidates },
     );
@@ -411,10 +411,10 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   // opt-in 严格工具集：strict-toolset skill（edit-role/create-role）激活时，把可见工具集
   // 硬收缩到其 allowedTools，防止模型抓 core 的 Edit/Write 绕过 skill 流程。非 strict 不受影响。
   const beforeStrict = tools.length;
-  tools = filterToolDefinitionsByStrictSkillBoundary(tools, ctx.runtime.skillToolBoundary);
+  tools = filterToolDefinitionsByStrictSkillBoundary(tools, ctx.runtime.turn.skillToolBoundary);
   if (tools.length !== beforeStrict) {
     logger.info(
-      `[AgentLoop] Strict skill toolset: tool list narrowed ${beforeStrict} -> ${tools.length} (skill=${ctx.runtime.skillToolBoundary?.skillName})`,
+      `[AgentLoop] Strict skill toolset: tool list narrowed ${beforeStrict} -> ${tools.length} (skill=${ctx.runtime.turn.skillToolBoundary?.skillName})`,
     );
   }
   tools = filterToolsByRunPolicy(tools, ctx.runtime);
@@ -469,7 +469,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     multimodal: typeof m.content !== 'string',
   }));
 
-  langfuse.startGenerationInSpan(ctx.runtime.currentIterationSpanId, llmCallId, `LLM: ${ctx.runtime.modelConfig.model}`, {
+  langfuse.startGenerationInSpan(ctx.runtime.turn.currentIterationSpanId, llmCallId, `LLM: ${ctx.runtime.modelConfig.model}`, {
     model: ctx.runtime.modelConfig.model,
     modelParameters: {
       provider: ctx.runtime.modelConfig.provider,
@@ -705,8 +705,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
 
     effectiveConfig = applyEffortControls(
       effectiveConfig,
-      ctx.runtime.effortLevel,
-      { thinkingEnabled: ctx.runtime.thinkingEnabled },
+      ctx.runtime.turn.effortLevel,
+      { thinkingEnabled: ctx.runtime.turn.thinkingEnabled },
     );
 
     logger.debug('[AgentLoop] Calling modelRouter.inference()...');
@@ -734,17 +734,17 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     ctx.runtime.abortController = new AbortController();
 
     // Reset partial content accumulator for this inference call
-    ctx.runtime.lastStreamedContent = '';
+    ctx.runtime.turn.resetStreamedContent();
     const contentStreamFilter = createHandoffTailStreamFilter((text) =>
       emitAssistantMessageDelta(ctx, 'content', text)
     );
 
     const streamCallback: StreamCallback = (chunk) => {
       if (typeof chunk === 'string') {
-        ctx.runtime.lastStreamedContent += chunk;
+        ctx.runtime.turn.appendStreamedContent(chunk);
         contentStreamFilter.push(chunk);
       } else if (chunk.type === 'text') {
-        ctx.runtime.lastStreamedContent += chunk.content;
+        ctx.runtime.turn.appendStreamedContent(chunk.content ?? '');
         contentStreamFilter.push(chunk.content);
       } else if (chunk.type === 'reasoning') {
         // 推理模型的思考过程 (glm-4.7 等)
@@ -756,7 +756,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
             index: chunk.toolCall?.index,
             id: chunk.toolCall?.id,
             name: chunk.toolCall?.name,
-            turnId: ctx.runtime.currentTurnId,
+            turnId: ctx.runtime.turn.currentTurnId,
           },
         });
       } else if (chunk.type === 'tool_call_delta') {
@@ -766,7 +766,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
             index: chunk.toolCall?.index,
             name: chunk.toolCall?.name,
             argumentsDelta: chunk.toolCall?.argumentsDelta,
-            turnId: ctx.runtime.currentTurnId,
+            turnId: ctx.runtime.turn.currentTurnId,
           },
         });
       } else if (chunk.type === 'usage') {
@@ -778,7 +778,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
             outputTokens: chunk.outputTokens || 0,
             cacheReadTokens: chunk.cacheReadTokens,
             cacheCreationTokens: chunk.cacheCreationTokens,
-            turnId: ctx.runtime.currentTurnId,
+            turnId: ctx.runtime.turn.currentTurnId,
           },
         });
       } else if (chunk.type === 'token_estimate') {
@@ -788,7 +788,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           data: {
             inputTokens: chunk.inputTokens || 0,
             outputTokens: chunk.outputTokens || 0,
-            turnId: ctx.runtime.currentTurnId,
+            turnId: ctx.runtime.turn.currentTurnId,
           },
         });
       }
@@ -812,7 +812,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         onSnapshot: createSnapshotHandler({
           sessionId: ctx.runtime.sessionId,
           runId: ctx.runtime.runId!,
-          turnId: ctx.runtime.currentTurnId,
+          turnId: ctx.runtime.turn.currentTurnId,
           workingDir: ctx.runtime.workingDirectory,
         }),
         artifactRepairActive: Boolean(ctx.runtime.artifactRepairGuard),
@@ -912,7 +912,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     ctx.runtime.abortController = null;
 
     // steer/interrupt 导致的 abort 不是错误，返回空文本让主循环处理
-    if (ctx.runtime.needsReinference || ctx.runtime.isInterrupted || ctx.runtime.isCancelled) {
+    if (ctx.runtime.turn.needsReinference || ctx.runtime.isInterrupted || ctx.runtime.isCancelled) {
       logger.info('[AgentLoop] Inference aborted due to steer/interrupt/cancel');
       // 中断时本轮请求已派发，input tokens 是真实沉没成本——记一次避免异常路径漏记
       // （与 Max Mode 中止记沉没成本对称；output 在中断前无法准确估算，保守只记 input）

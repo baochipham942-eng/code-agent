@@ -47,6 +47,7 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
 }));
 
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 
 function createProcessor(
   ctx: Partial<RuntimeContext>,
@@ -71,15 +72,10 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     messages: [{ id: 'user-1', role: 'user', content: '帮我修这个 bug', timestamp: Date.now() }],
     isCancelled: false,
     modelConfig: { provider: 'zhipu', model: 'glm-5', maxTokens: 16384 },
-    effortLevel: 'medium',
-    currentTurnId: 'turn-1',
-    currentIterationSpanId: 'iteration-1',
     currentSystemPromptHash: 'hash-1',
-    _researchModeActive: false,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
     planningService: undefined,
-    toolsUsedInTurn: [],
-    isSimpleTaskMode: false,
+    turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', researchModeActive: false, toolsUsedInTurn: [], isSimpleTaskMode: false } as never),
     turnQualityState: {},
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,

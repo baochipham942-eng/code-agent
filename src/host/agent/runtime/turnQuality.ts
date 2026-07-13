@@ -259,7 +259,7 @@ export function buildTurnQualitySummary(
       : []),
     ...(ctx.pendingRuntimeDiagnostics || []),
   ]);
-  const toolsUsed = uniqueStrings(ctx.toolsUsedInTurn || []);
+  const toolsUsed = uniqueStrings(ctx.turn.toolsUsedInTurn || []);
   const decision = ctx.turnModelDecision;
   const score = buildScoreBreakdown({
     memory,
@@ -282,7 +282,7 @@ export function buildTurnQualitySummary(
       requestedProvider: (decision?.requestedProvider || ctx.modelConfig.provider) as ModelProvider,
       requestedModel: decision?.requestedModel || ctx.modelConfig.model,
       adaptive: ctx.modelConfig.adaptive,
-      effortLevel: ctx.effortLevel,
+      effortLevel: ctx.turn.effortLevel,
       profile: decision?.strategyProfile,
       ruleId: decision?.strategyRuleId,
       reason: decision?.strategyReason,
@@ -294,7 +294,7 @@ export function buildTurnQualitySummary(
       agentId: ctx.agentId,
       agentName: ctx.agentName,
       requestedAgentId: ctx.requestedAgentId,
-      activeSkillName: ctx.activeSkillInvocation?.skillName,
+      activeSkillName: ctx.turn.activeSkillInvocation?.skillName,
       toolsUsed,
     },
     score,

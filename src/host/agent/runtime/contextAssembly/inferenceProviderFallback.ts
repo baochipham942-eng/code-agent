@@ -348,7 +348,7 @@ export function emitModelFallbackNoticeFromResponse(
       ...(fallback.toolPolicy ? { toolPolicy: fallback.toolPolicy } : {}),
       ...(fromIdentity ? { fromIdentity } : {}),
       ...(!exhausted && toIdentity ? { toIdentity } : {}),
-      turnId: ctx.runtime.currentTurnId,
+      turnId: ctx.runtime.turn.currentTurnId,
     },
   });
 }

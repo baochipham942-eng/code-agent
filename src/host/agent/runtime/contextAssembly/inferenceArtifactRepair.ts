@@ -94,9 +94,9 @@ export function emitAssistantMessageDelta(
       path,
       op: 'append',
       text,
-      turnId: ctx.runtime.currentTurnId,
-      messageId: ctx.runtime.currentTurnId,
-      deltaSeq: ++ctx.runtime.messageDeltaSeq,
+      turnId: ctx.runtime.turn.currentTurnId,
+      messageId: ctx.runtime.turn.currentTurnId,
+      deltaSeq: ctx.runtime.turn.nextMessageDeltaSeq(),
       ...(ctx.runtime.historyVisibility === 'meta' ? { isMeta: true } : {}),
     },
   });
@@ -128,7 +128,7 @@ export function emitToolSchemaSnapshot(ctx: ContextAssemblyCtx, tools: ToolDefin
   ctx.runtime.onEvent({
     type: 'tool_schema_snapshot',
     data: {
-      turnId: ctx.runtime.currentTurnId,
+      turnId: ctx.runtime.turn.currentTurnId,
       toolCount: tools.length,
       tools: tools.map((tool) => ({
         name: tool.name,

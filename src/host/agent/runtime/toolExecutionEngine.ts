@@ -226,7 +226,7 @@ export class ToolExecutionEngine {
         const batch = parallelGroup.slice(batchStart, batchStart + MAX_PARALLEL_TOOLS);
 
         for (const { index, toolCall } of batch) {
-          this.ctx.toolsUsedInTurn.push(toolCall.name);
+          this.ctx.turn.recordToolUse(toolCall.name);
           this.runFinalizer.emitTaskProgress('tool_running', `并行执行 ${batch.length} 个工具`, {
             tool: toolCall.name,
             toolIndex: index,
@@ -248,9 +248,9 @@ export class ToolExecutionEngine {
       }
     } else if (parallelGroup.length === 1) {
       const { index, toolCall } = parallelGroup[0];
-      this.ctx.toolsUsedInTurn.push(toolCall.name);
+      this.ctx.turn.recordToolUse(toolCall.name);
       // Research mode: show friendly message for web_fetch
-      const singleToolLabel = this.ctx._researchModeActive && toolCall.name === 'web_fetch'
+      const singleToolLabel = this.ctx.turn.researchModeActive && toolCall.name === 'web_fetch'
         ? '正在抓取详情...'
         : `执行 ${toolCall.name}`;
       this.runFinalizer.emitTaskProgress('tool_running', singleToolLabel, {
@@ -263,15 +263,15 @@ export class ToolExecutionEngine {
 
     // Execute sequential tools one by one
     for (const { index, toolCall } of sequentialGroup) {
-      if (this.ctx.isCancelled || this.ctx.needsReinference) {
+      if (this.ctx.isCancelled || this.ctx.turn.needsReinference) {
         logger.debug('[AgentLoop] Cancelled/steered, breaking out of sequential tool execution');
         break;
       }
 
-      this.ctx.toolsUsedInTurn.push(toolCall.name);
+      this.ctx.turn.recordToolUse(toolCall.name);
       const progress = Math.round((index / toolCalls.length) * 100);
       // Research mode: show friendly message for web_fetch
-      const toolStepLabel = this.ctx._researchModeActive && toolCall.name === 'web_fetch'
+      const toolStepLabel = this.ctx.turn.researchModeActive && toolCall.name === 'web_fetch'
         ? '正在抓取详情...'
         : `执行 ${toolCall.name}`;
       this.runFinalizer.emitTaskProgress('tool_running', toolStepLabel, {
@@ -309,10 +309,10 @@ export class ToolExecutionEngine {
       const observedArgs = sanitizeToolArgumentsForObservation(toolCall);
       this.ctx.onEvent({
         type: 'tool_call_start',
-        data: { ...toolCall, arguments: observedArgs, _index: index, turnId: this.ctx.currentTurnId },
+        data: { ...toolCall, arguments: observedArgs, _index: index, turnId: this.ctx.turn.currentTurnId },
       });
       this.ctx.telemetryAdapter?.onToolCallStart(
-        this.ctx.currentTurnId,
+        this.ctx.turn.currentTurnId,
         toolCall.id,
         toolCall.name,
         observedArgs,
@@ -323,7 +323,7 @@ export class ToolExecutionEngine {
     const emitBlockedToolResult = (toolResult: ToolResult): ToolResult => {
       emitToolCallStart();
       this.ctx.telemetryAdapter?.onToolCallEnd(
-        this.ctx.currentTurnId,
+        this.ctx.turn.currentTurnId,
         toolCall.id,
         false,
         toolResult.error,
@@ -381,7 +381,7 @@ export class ToolExecutionEngine {
           );
 
           emitToolCallStart();
-          this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, blockedResult.error, blockedResult.duration || 0, undefined);
+          this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, blockedResult.error, blockedResult.duration || 0, undefined);
           this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, blockedResult) });
           return blockedResult;
         }
@@ -460,11 +460,11 @@ export class ToolExecutionEngine {
           this.contextAssembly.pushPersistentSystemContext(
             buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
           );
-          this.ctx.needsReinference = true;
+          this.ctx.turn.requestReinference();
         }
       }
       emitToolCallStart();
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
       return toolResult;
     }
@@ -496,10 +496,10 @@ export class ToolExecutionEngine {
         this.contextAssembly.pushPersistentSystemContext(
           buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
         );
-        this.ctx.needsReinference = true;
+        this.ctx.turn.requestReinference();
       }
       emitToolCallStart();
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
       return toolResult;
     }
@@ -548,7 +548,7 @@ export class ToolExecutionEngine {
       );
 
       emitToolCallStart();
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
@@ -616,7 +616,7 @@ export class ToolExecutionEngine {
       this.contextAssembly.injectSystemMessage(injectMessage);
 
       emitToolCallStart();
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
 
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {
@@ -693,7 +693,7 @@ export class ToolExecutionEngine {
     // Langfuse: Start tool span
     const langfuse = getLangfuseService();
     const toolSpanId = `tool-${toolCall.id}`;
-    langfuse.startNestedSpan(this.ctx.currentIterationSpanId, toolSpanId, {
+    langfuse.startNestedSpan(this.ctx.turn.currentIterationSpanId, toolSpanId, {
       name: `Tool: ${toolCall.name}`,
       input: sanitizeToolArgumentsForObservation(toolCall),
       metadata: { toolId: toolCall.id, toolName: toolCall.name },
@@ -741,7 +741,7 @@ export class ToolExecutionEngine {
           agentId: this.ctx.agentId,
           preApprovedTools: this.ctx.preApprovedTools,
           // GAP-001: skill allowed-tools 限权边界透传
-          skillToolBoundary: this.ctx.skillToolBoundary,
+          skillToolBoundary: this.ctx.turn.skillToolBoundary,
           currentAttachments,
           // 传递当前工具调用 ID（用于 subagent 追踪）
           currentToolCallId: toolCall.id,
@@ -899,7 +899,7 @@ export class ToolExecutionEngine {
           error: hardLimitResult.error,
           duration: hardLimitResult.duration,
         }, 'ERROR', hardLimitResult.error);
-        this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, hardLimitResult.error, hardLimitResult.duration || 0, undefined);
+        this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, hardLimitResult.error, hardLimitResult.duration || 0, undefined);
         this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, hardLimitResult) });
         return hardLimitResult;
       } else if (readWriteWarning) {
@@ -1036,7 +1036,7 @@ export class ToolExecutionEngine {
         toolCall,
       );
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
-      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, preservedToolResult.success, preservedToolResult.error, preservedToolResult.duration || 0, observedToolResult.output?.substring(0, 500), observedToolResult.metadata);
+      this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, preservedToolResult.success, preservedToolResult.error, preservedToolResult.duration || 0, observedToolResult.output?.substring(0, 500), observedToolResult.metadata);
       this.ctx.onEvent({ type: 'tool_call_end', data: observedToolResult });
       // Tool execution logging (non-blocking)
       if (this.ctx.onToolExecutionLog && this.ctx.sessionId) {

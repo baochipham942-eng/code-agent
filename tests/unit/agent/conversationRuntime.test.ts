@@ -410,10 +410,8 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     enableHooks: false,
     userHooksInitialized: false,
-    stopHookRetryCount: 0,
     maxStopHookRetries: 3,
 
-    toolCallRetryCount: 0,
     maxToolCallRetries: 3,
     externalDataCallCount: 0,
     preApprovedTools: new Set(),
@@ -459,7 +457,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     _contextOverflowRetried: false,
     _artifactNonStreamingRetried: false,
     _networkRetried: false,
-    _consecutiveTruncations: 0,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
 
     persistentSystemContext: [],

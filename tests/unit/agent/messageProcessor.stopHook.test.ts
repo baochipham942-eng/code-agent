@@ -73,7 +73,6 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     currentIterationSpanId: 'iteration-1',
     currentSystemPromptHash: 'hash-1',
     _researchModeActive: false,
-    _consecutiveTruncations: 0,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
     planningService: undefined,
     toolsUsedInTurn: [],
@@ -81,8 +80,6 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,
     totalToolCallCount: 0,
-    antiScrapingHitsInRun: 0,
-    userStopHookBlockCount: 0,
     nudgeManager: {
       runNudgeChecks: vi.fn(() => false),
       runOutputValidation: vi.fn(() => false),
@@ -149,7 +146,7 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
 
     expect(action).toBe('continue');
     expect(triggerStop).toHaveBeenCalledWith('任务已完成，所有测试通过。', 'runtime-session-1', false);
-    expect(ctx.userStopHookBlockCount).toBe(1);
+    expect(processor.guardStateForTest.userStopHookBlockCount).toBe(1);
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       '<stop-hook>\ntests are still failing, keep fixing\n</stop-hook>',
     );
@@ -163,13 +160,11 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
       totalDuration: 1,
     }));
     // 已经 block 过 USER_MAX_RETRIES 次 → 本次 block 触发安全阀放行
-    const ctx = buildCtx({
-      hookManager: { triggerStop },
-      userStopHookBlockCount: STOP_HOOK.USER_MAX_RETRIES,
-    });
+    const ctx = buildCtx({ hookManager: { triggerStop } });
     const contextAssembly = buildContextAssembly(ctx);
     const runFinalizer = buildRunFinalizer();
     const processor = createProcessor(ctx, contextAssembly, runFinalizer);
+    processor.guardStateForTest.userStopHookBlockCount = STOP_HOOK.USER_MAX_RETRIES;
 
     const action = await processor.handleTextResponse(
       completeTextResponse,
@@ -182,7 +177,7 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
     // 安全阀生效：不再 continue，走完整完成路径
     expect(action).toBe('break');
     expect(triggerStop).toHaveBeenCalledWith('任务已完成，所有测试通过。', 'runtime-session-1', true);
-    expect(ctx.userStopHookBlockCount).toBe(STOP_HOOK.USER_MAX_RETRIES + 1);
+    expect(processor.guardStateForTest.userStopHookBlockCount).toBe(STOP_HOOK.USER_MAX_RETRIES + 1);
     // 安全阀触发时通知用户
     expect(ctx.onEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -218,7 +213,7 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
     );
 
     expect(action).toBe('break');
-    expect(ctx.userStopHookBlockCount).toBe(0);
+    expect(processor.guardStateForTest.userStopHookBlockCount).toBe(0);
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       '<stop-hook>\nall checks passed\n</stop-hook>',
     );

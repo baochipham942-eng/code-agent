@@ -232,17 +232,13 @@ export class AgentLoop {
       // Hooks
       enableHooks: config.enableHooks ?? true,
       userHooksInitialized: false,
-      stopHookRetryCount: 0,
       maxStopHookRetries: 3,
-      userStopHookBlockCount: 0,
       enableDeliveryCritic: config.enableDeliveryCritic ?? process.env.CODE_AGENT_DELIVERY_CRITIC === '1',
       // Max Mode（best-of-N）显式开关，默认关——eval 对照前提 + 出问题的回滚通道
       maxMode: config.maxMode ?? process.env.CODE_AGENT_MAX_MODE === '1',
       maxModeCandidates: config.maxModeCandidates ?? MAX_MODE.DEFAULT_CANDIDATES,
-      deliveryCriticBlockCount: 0,
 
       // Tool execution
-      toolCallRetryCount: 0,
       maxToolCallRetries: 2,
       externalDataCallCount: 0,
       preApprovedTools: new Set(),
@@ -286,15 +282,6 @@ export class AgentLoop {
       totalOutputTokens: 0,
       consecutiveErrors: 0,
 
-      // Stagnation detection
-      recentToolFingerprints: [],
-      stagnationWarningEmitted: false,
-      recentToolNames: [],
-      searchSpamWarningEmitted: false,
-
-      // Ground-truth gate
-      antiScrapingHitsInRun: 0,
-
       // Thinking
       effortLevel: 'high',
       thinkingEnabled: true,
@@ -315,7 +302,6 @@ export class AgentLoop {
       _artifactRepairCompactWriteRetried: false,
       _networkRetried: false,
       _networkRetryCount: 0,
-      _consecutiveTruncations: 0,
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
       _consecutiveCompacts: 0,
       MAX_CONSECUTIVE_COMPACTS: 2,

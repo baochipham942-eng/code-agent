@@ -5,108 +5,36 @@
 // Command Safety (safe whitelist + dangerous pattern detection)
 export {
   isKnownSafeCommand,
-  classifyCommand,
   validateCommand,
-  defaultShellKind,
   getShellSafetyMode,
-  type ShellKind,
-  type ShellSafetyMode,
   type ValidationResult,
-  type RiskLevel,
 } from './commandSafety';
 
 // Sensitive Detector
 export {
-  SensitiveDetector,
-  getSensitiveDetector,
-  resetSensitiveDetector,
   maskSensitiveData,
-  type SensitiveType,
-  type SensitiveMatch,
-  type DetectionResult,
 } from './sensitiveDetector';
 
 // Audit Logger
 export {
-  AuditLogger,
   getAuditLogger,
-  resetAuditLogger,
-  type AuditEventType,
-  type AuditEntry,
-  type AuditQueryOptions,
-  type AuditQueryResult,
 } from './auditLogger';
 
 // Log Masker
 export {
-  LogMasker,
   getLogMasker,
-  resetLogMasker,
-  maskText,
-  maskCommand,
-  type MaskingOptions,
-  type MaskingResult,
 } from './logMasker';
-
-// Sensitive Data Guard
-export {
-  guardSensitiveText,
-  guardSensitiveTextAsync,
-  guardSensitiveValue,
-  guardSensitiveJsonText,
-  neutralizePromptInjectionText,
-  sanitizeUrlTokens,
-  type SensitiveDataSurface,
-  type SensitiveDataMode,
-  type SensitiveDataGuardOptions,
-} from './sensitiveDataGuard';
-
-export {
-  detectPiiEntities,
-  getConfiguredPiiEntityDetector,
-  getPiiEntityDetectorConfig,
-  redactPiiEntities,
-  setPiiEntityDetectorForTesting,
-  shouldUsePiiEntityDetection,
-  type PiiEntity,
-  type PiiEntityDetectionRequest,
-  type PiiEntityDetector,
-} from './piiEntityDetector';
-
-// Input Sanitizer
-export {
-  InputSanitizer,
-  getInputSanitizer,
-  resetInputSanitizer,
-  type SanitizationResult,
-  type SanitizationWarning,
-  type SanitizationConfig,
-  type SanitizationMode,
-} from './inputSanitizer';
 
 // (commandSafety exports are at the top of this file)
 
 // Exec Policy (persistent approval rules)
 export {
-  ExecPolicyStore,
   getExecPolicyStore,
-  resetExecPolicyStore,
-  type PrefixRule,
-  type PolicyDecision,
 } from './execPolicy';
-
-// Decision History (in-memory circular buffer)
-export {
-  getDecisionHistory,
-  resetDecisionHistory,
-  type DecisionHistoryEntry,
-  type DecisionOutcome,
-} from './decisionHistory';
 
 // Policy Enforcer (code-agent-policy.toml hard rules — deny cannot be overridden)
 export {
   PolicyEnforcer,
   getPolicyEnforcer,
-  resetPolicyEnforcer,
   type PolicyCheckResult,
 } from './policyEnforcer';

@@ -106,7 +106,7 @@ describe('testRunner report fields', () => {
     expect(summary.results[0].followUpPrompts).toEqual(['blocked follow up']);
   });
 
-  it('rejects parallel maxParallel greater than 1 before any cases execute', async () => {
+  it('rejects parallel maxParallel greater than 1 without an agentFactory', async () => {
     const { runner, agent, events } = await createRunner([
       'name: serial-only',
       'cases:',
@@ -123,12 +123,42 @@ describe('testRunner report fields', () => {
     });
 
     await expect(runner.runAll()).rejects.toThrow(
-      /serial-only: runner shares a single agent instance and working directory/i,
+      /parallel.*requires.*agentFactory/i,
     );
     expect(agent.sendMessage).not.toHaveBeenCalled();
     expect(agent.reset).not.toHaveBeenCalled();
     expect(events.some((event) => event.type === 'case_start')).toBe(false);
     expect(events.some((event) => event.type === 'case_end')).toBe(false);
+  });
+
+  it('allows parallel maxParallel greater than 1 with an agentFactory', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-report-fields-factory-'));
+    const casesDir = path.join(root, 'cases');
+    await mkdir(casesDir, { recursive: true });
+    await writeFile(path.join(casesDir, 'suite.yaml'), [
+      'name: parallel-factory',
+      'cases:',
+      '  - id: runs-in-pool',
+      '    type: task',
+      '    prompt: execute normally',
+      '    expect:',
+      '      response_contains: [response]',
+      '',
+    ].join('\n'));
+    const agent = makeAgent();
+    const runner = new TestRunner({
+      testCaseDir: casesDir,
+      resultsDir: path.join(root, 'results'),
+      workingDirectory: root,
+      defaultTimeout: 1000,
+      stopOnFailure: false,
+      verbose: false,
+      parallel: true,
+      maxParallel: 2,
+      enableEvalCritic: false,
+    }, agent, () => makeAgent());
+
+    await expect(runner.runAll()).resolves.toMatchObject({ total: 1, passed: 1 });
   });
 
   it('allows parallel true when maxParallel is 1', async () => {

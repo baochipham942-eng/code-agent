@@ -8,7 +8,7 @@ export async function runInferenceWithTelemetry(
 ): Promise<ModelResponse> {
   const startedAt = Date.now();
   let modelSpanId: string | undefined;
-  ctx.runtime.lastModelTraceSpanId = undefined;
+  ctx.runtime.stats.setLastModelTraceSpan(undefined);
   try {
     const turnSpan = getTelemetryService().findActiveSpanByAttribute('agent.id', ctx.runtime.turn.currentTurnId);
     const modelSpan = getTelemetryService().startModelSpan(
@@ -17,7 +17,7 @@ export async function runInferenceWithTelemetry(
       turnSpan?.spanId,
     );
     modelSpanId = modelSpan.spanId;
-    ctx.runtime.lastModelTraceSpanId = modelSpanId;
+    ctx.runtime.stats.setLastModelTraceSpan(modelSpanId);
     getTelemetryService().updateSpan(modelSpanId, {
       'model.request_protocol': 'agent-loop',
       'model.retry_count': ctx.runtime.contextHealth.networkRetryCount ?? 0,

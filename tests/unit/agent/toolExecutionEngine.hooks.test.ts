@@ -12,6 +12,7 @@ import path from 'path';
 import type { Message } from '../../../src/shared/contract';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 const serviceMocks = vi.hoisted(() => {
   const langfuse = {
@@ -297,16 +298,11 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     enableToolDeferredLoading: false,
     maxStructuredOutputRetries: 0,
     stepByStepMode: false,
-    traceId: 'trace-1',
     turnQualityState: {},
     goalEvidenceState: { bounces: 0 },
     control: ControlState.forTest({  } as never),
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
     consecutiveErrors: 0,
-    runStartTime: Date.now(),
-    totalTokensUsed: 0,
-    totalToolCallCount: 0,
+    stats: RunStatsState.forTest({ traceId: 'trace-1', totalInputTokens: 0, totalOutputTokens: 0, runStartTime: Date.now(), totalTokensUsed: 0, totalToolCallCount: 0 } as never),
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
     contextHealth: ContextHealthState.forTest({ persistentSystemContext: [] } as never),
     ...overrides,

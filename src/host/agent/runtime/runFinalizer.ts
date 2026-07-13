@@ -170,7 +170,7 @@ function pushRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
     });
     return;
   }
-  ctx.pendingRuntimeDiagnostics.push(trimmed);
+  ctx.stats.queueDiagnostic(trimmed);
 }
 
 function hasCheckboxChecklist(content: string | undefined): boolean {
@@ -278,7 +278,7 @@ export class RunFinalizer {
             status: 'aborted',
             reason,
             turns: iterations,
-            tokensUsed: this.ctx.totalInputTokens + this.ctx.totalOutputTokens,
+            tokensUsed: this.ctx.stats.totalInputTokens + this.ctx.stats.totalOutputTokens,
           },
         });
       }
@@ -295,15 +295,15 @@ export class RunFinalizer {
         this.ctx.sessionId,
       ).catch(silence(logger, 'triggerStopFailure:runtime_error', 'error'));
 
-      langfuse.endTrace(this.ctx.traceId, errorMessage, 'ERROR');
+      langfuse.endTrace(this.ctx.stats.traceId, errorMessage, 'ERROR');
     } else if (terminalStatus === 'cancelled') {
       logger.info('[AgentLoop] Loop exited due to cancellation');
       logCollector.agent('INFO', `Agent run cancelled after ${iterations} iterations`);
-      langfuse.endTrace(this.ctx.traceId, `Cancelled after ${iterations} iterations`, 'WARNING');
+      langfuse.endTrace(this.ctx.stats.traceId, `Cancelled after ${iterations} iterations`, 'WARNING');
     } else if (terminalStatus === 'interrupted') {
       logger.info('[AgentLoop] Loop exited due to interrupt');
       logCollector.agent('INFO', `Agent run interrupted after ${iterations} iterations`);
-      langfuse.endTrace(this.ctx.traceId, `Interrupted after ${iterations} iterations`, 'WARNING');
+      langfuse.endTrace(this.ctx.stats.traceId, `Interrupted after ${iterations} iterations`, 'WARNING');
     } else if (this.ctx.circuitBreaker.isTripped()) {
       logger.info('[AgentLoop] Loop exited due to circuit breaker');
       logCollector.agent('WARN', `Circuit breaker stopped agent after ${iterations} iterations`);
@@ -324,7 +324,7 @@ export class RunFinalizer {
         this.ctx.sessionId,
       ).catch(silence(logger, 'triggerStopFailure:circuit_breaker', 'error'));
 
-      langfuse.endTrace(this.ctx.traceId, `Circuit breaker tripped after ${iterations} iterations`, 'ERROR');
+      langfuse.endTrace(this.ctx.stats.traceId, `Circuit breaker tripped after ${iterations} iterations`, 'ERROR');
       this.ctx.circuitBreaker.reset();
     } else if (iterations >= this.ctx.maxIterations) {
       logger.debug('[AgentLoop] Max iterations reached!');
@@ -341,7 +341,7 @@ export class RunFinalizer {
         this.ctx.sessionId,
       ).catch(silence(logger, 'triggerStopFailure:max_iterations', 'error'));
 
-      langfuse.endTrace(this.ctx.traceId, `Max iterations (${this.ctx.maxIterations}) reached`, 'WARNING');
+      langfuse.endTrace(this.ctx.stats.traceId, `Max iterations (${this.ctx.maxIterations}) reached`, 'WARNING');
     } else {
       if (!hasVisibleAssistantTextAfterLastUser(this.ctx.messages)) {
         const fallbackMessage: Message = {
@@ -353,7 +353,7 @@ export class RunFinalizer {
         await this.messageWriter.addAndPersistMessage(fallbackMessage);
         this.ctx.onEvent({ type: 'message', data: fallbackMessage });
       }
-      langfuse.endTrace(this.ctx.traceId, `Completed in ${iterations} iterations`);
+      langfuse.endTrace(this.ctx.stats.traceId, `Completed in ${iterations} iterations`);
     }
 
     try {
@@ -623,11 +623,11 @@ export class RunFinalizer {
       this.ctx.onEvent({
         type: 'task_stats',
         data: {
-          elapsed_ms: Date.now() - this.ctx.runStartTime,
+          elapsed_ms: Date.now() - this.ctx.stats.runStartTime,
           iterations,
-          tokensUsed: this.ctx.totalTokensUsed,
+          tokensUsed: this.ctx.stats.totalTokensUsed,
           contextUsage: health.usagePercent / 100,
-          toolCallCount: this.ctx.totalToolCallCount,
+          toolCallCount: this.ctx.stats.totalToolCallCount,
           contextWindow,
         },
       });

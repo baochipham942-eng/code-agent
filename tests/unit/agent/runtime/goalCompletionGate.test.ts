@@ -14,6 +14,7 @@ import { handleGoalCompletionGate } from '../../../../src/host/agent/runtime/goa
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
 import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
 import { ControlState } from '../../../../src/host/agent/runtime/controlState';
+import { RunStatsState } from '../../../../src/host/agent/runtime/runStatsState';
 
 function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
   const goalMode = {
@@ -41,8 +42,7 @@ function makeCtx(goalModeOverrides: Record<string, unknown> = {}) {
     control: ControlState.forTest(),
     hookManager: undefined,
     modelConfig: { provider: 'zhipu', model: 'glm-5' },
-    totalInputTokens: 1200,
-    totalOutputTokens: 300,
+    stats: RunStatsState.forTest({ totalInputTokens: 1200, totalOutputTokens: 300 } as never),
     // 闸0（证据自证）打回预算标记为已耗尽 → 直通闸1/闸2，本文件只测后两闸语义
     goalEvidenceState: { bounces: 99 },
     onEvent: vi.fn(),

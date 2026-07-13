@@ -57,6 +57,7 @@ import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcess
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 function createProcessor(
   ctx: Partial<RuntimeContext>,
@@ -89,7 +90,7 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', researchModeActive: false, toolsUsedInTurn: [], isSimpleTaskMode: false } as never),
     turnQualityState: {},
     control: ControlState.forTest({ runAbortController: { signal: { aborted: false } } } as never),
-    totalToolCallCount: 5,
+    stats: RunStatsState.forTest({ totalToolCallCount: 5 } as never),
     enableDeliveryCritic: true,
     nudgeManager: {
       runNudgeChecks: vi.fn(() => false),

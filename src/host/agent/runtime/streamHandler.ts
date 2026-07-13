@@ -55,9 +55,7 @@ export class StreamHandler {
     // Accumulate token usage for task stats
     const inputTokens = response.usage?.inputTokens || 0;
     const outputTokens = response.usage?.outputTokens || 0;
-    this.ctx.totalInputTokens += inputTokens;
-    this.ctx.totalOutputTokens += outputTokens;
-    this.ctx.totalTokensUsed += inputTokens + outputTokens;
+    this.ctx.stats.addTokenUsage(inputTokens, outputTokens);
   }
 
   /**
@@ -92,7 +90,7 @@ export class StreamHandler {
    * Flush runtime diagnostics into the assistant thinking stream once a turn exists.
    */
   private flushRuntimeDiagnostics(): void {
-    const diagnostics = this.ctx.pendingRuntimeDiagnostics.splice(0);
+    const diagnostics = this.ctx.stats.drainDiagnostics();
     for (const diagnostic of diagnostics) {
       this.ctx.onEvent({
         type: 'stream_reasoning',
@@ -116,9 +114,9 @@ export class StreamHandler {
     const activeRunTrace = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
     const iterationSpanId = activeRunTrace
       ? createChildRunTraceContext(activeRunTrace, { agentId: this.ctx.agentId }).spanId
-      : `iteration-${this.ctx.traceId}-${iterations}`;
+      : `iteration-${this.ctx.stats.traceId}-${iterations}`;
     this.ctx.turn.beginTurn(generateMessageId(), iterationSpanId);
-    langfuse.startSpan(this.ctx.traceId, this.ctx.turn.currentIterationSpanId, {
+    langfuse.startSpan(this.ctx.stats.traceId, this.ctx.turn.currentIterationSpanId, {
       name: `Iteration ${iterations}`,
       metadata: { iteration: iterations, turnId: this.ctx.turn.currentTurnId },
     });

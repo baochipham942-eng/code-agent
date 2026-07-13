@@ -126,6 +126,7 @@ import { TurnTraceRecorder } from './runtime/turnTrace';
 import { TurnState } from './runtime/turnState';
 import { ControlState } from './runtime/controlState';
 import { ContextHealthState } from './runtime/contextHealthState';
+import { RunStatsState } from './runtime/runStatsState';
 import { createTelemetryAdapter } from '../telemetry/telemetryAdapter';
 import { composeTelemetryAdapters } from './metricsCollector';
 import { withRunTraceContext } from '../telemetry/runTraceContext';
@@ -220,6 +221,8 @@ export class AgentLoop {
       turn: new TurnState(),
       // 控制流状态切片（ADR-038 批3b）
       control: new ControlState(),
+      // RunStats+Tracing 切片（ADR-038 批3d）
+      stats: new RunStatsState(),
 
       // Plan mode
       autoApprovePlan: config.autoApprovePlan ?? false,
@@ -243,25 +246,17 @@ export class AgentLoop {
       stepByStepMode: config.stepByStepMode ?? false,
 
       // Tracing
-      traceId: '',
       turnTrace: new TurnTraceRecorder(resolvedSessionId),
       turnQualityState: {},
       goalEvidenceState: { bounces: 0 },
-      lastModelTraceSpanId: undefined,
-      pendingRuntimeDiagnostics: [],
 
       // Budget
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
       consecutiveErrors: 0,
 
       // Thinking
       scaffoldProfile,
 
       // Task stats
-      runStartTime: 0,
-      totalTokensUsed: 0,
-      totalToolCallCount: 0,
 
       // Context recovery
       MAX_CONSECUTIVE_TRUNCATIONS: 3,

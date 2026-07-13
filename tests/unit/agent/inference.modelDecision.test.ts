@@ -16,6 +16,7 @@ import type { ModelConfig } from '../../../src/shared/contract';
 import type { ModelMessage } from '../../../src/host/agent/loopTypes';
 import { DEFAULT_MODELS } from '../../../src/shared/constants';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -147,6 +148,7 @@ function makeCtx(): ContextAssemblyCtx {
     runtime: {
       onEvent,
       turn: TurnState.forTest({ currentTurnId: 'turn-42' }),
+      stats: RunStatsState.forTest(),
       sessionId: 'session-1',
       modelConfig: makeConfig(),
     },

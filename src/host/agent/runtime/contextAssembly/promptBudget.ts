@@ -39,7 +39,7 @@ export function appendPromptBlockWithinBudget(
   const nextTokens = estimateTokens(nextPrompt);
   if (nextTokens > promptBudget(ctx)) {
     logger.warn(`[ContextAssembly] Skipping ${label}: system prompt budget would be ${nextTokens}/${promptBudget(ctx)} tokens`);
-    ctx?.runtime.pendingRuntimeDiagnostics.push(
+    ctx?.runtime.stats.queueDiagnostic(
       `上下文预算跳过 ${label}：预计 ${nextTokens}/${promptBudget(ctx)} tokens`,
     );
     // GAP-023: 丢弃可见化（context health 面板），不只是 debug log
@@ -61,7 +61,7 @@ export function appendRequiredPromptBlock(
     logger.warn(
       `[ContextAssembly] Preserving required ${label}: system prompt budget is ${nextTokens}/${promptBudget(ctx)} tokens`,
     );
-    ctx?.runtime.pendingRuntimeDiagnostics.push(
+    ctx?.runtime.stats.queueDiagnostic(
       `上下文预算保留必需 ${label}：预计 ${nextTokens}/${promptBudget(ctx)} tokens`,
     );
   }
@@ -104,7 +104,7 @@ export function trimPreambleBeforeRequiredArtifactBlock(
 
   const trimmedPrompt = `${prefix}${trimNotice}${suffix}`;
   if (estimateTokens(trimmedPrompt) + extraTokens <= promptBudget(ctx)) {
-    ctx?.runtime.pendingRuntimeDiagnostics.push('上下文预算压缩 base prompt：保留必需 game artifact contract');
+    ctx?.runtime.stats.queueDiagnostic('上下文预算压缩 base prompt：保留必需 game artifact contract');
     return trimmedPrompt;
   }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import {
   buildTurnQualitySummary,
   recordTurnMemoryBlock,
@@ -18,7 +19,7 @@ function runtime(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
     },
     turn: TurnState.forTest({ effortLevel: 'high' }),
     contextHealth: ContextHealthState.forTest({ droppedPromptBlocks: [] } as never),
-    pendingRuntimeDiagnostics: [],
+    stats: RunStatsState.forTest({ pendingRuntimeDiagnostics: [] } as never),
     turnQualityState: {},
     ...overrides,
   } as unknown as RuntimeContext;
@@ -74,7 +75,7 @@ describe('turnQuality', () => {
 
   it('surfaces task strategy decision in scorecard metadata', () => {
     const ctx = runtime({
-      turnModelDecision: {
+      stats: RunStatsState.forTest({ turnModelDecision: {
         requestedProvider: 'openai',
         requestedModel: 'gpt-4.1',
         resolvedProvider: 'deepseek',
@@ -91,7 +92,7 @@ describe('turnQuality', () => {
           score: 85,
           signals: ['complex_keyword'],
         },
-      },
+      } } as never),
       agentId: 'coder',
       agentName: 'Coder',
       turn: TurnState.forTest({ effortLevel: 'high', toolsUsedInTurn: ['Read', 'Edit'] }),

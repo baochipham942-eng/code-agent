@@ -10,7 +10,7 @@
 //      （理由+逐字证据 → 末行 WINNER: <i>），上游是裸整数回复。
 //   3. 赢家 replay：返回赢家的 ModelResponse，由正常主链路下游执行其工具调用。
 // 成本约束：落选候选 + judge 的 usage 聚合为 overhead，由调用方计入成本统计
-// （budgetService），但不进上下文长度估算（ctx.totalInputTokens 只累计赢家）。
+// （budgetService），但不进上下文长度估算（ctx.stats.totalInputTokens 只累计赢家）。
 // 降级：全候选失败 → streamingEngine 单次正常调用，用户无感。
 // ============================================================================
 

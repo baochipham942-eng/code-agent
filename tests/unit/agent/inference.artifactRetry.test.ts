@@ -4,6 +4,7 @@ import { inference } from '../../../src/host/agent/runtime/contextAssembly/infer
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
+import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
 const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
@@ -103,7 +104,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
   const runtime = {
     enableToolDeferredLoading: false,
     toolScope: undefined,
-    traceId: 'trace-1',
+    stats: RunStatsState.forTest({ traceId: 'trace-1' } as never),
     turn: TurnState.forTest({ currentIterationSpanId: 'span-1', currentTurnId: 'turn-1', effortLevel: 'medium' }),
     sessionId: 'session-1',
     workingDirectory: '/tmp',

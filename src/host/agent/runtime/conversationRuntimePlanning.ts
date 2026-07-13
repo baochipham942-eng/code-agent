@@ -5,7 +5,7 @@ import type { RuntimeContext } from './runtimeContext';
 export function queueRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
   const trimmed = message.trim();
   if (!trimmed) return;
-  ctx.pendingRuntimeDiagnostics.push(trimmed);
+  ctx.stats.queueDiagnostic(trimmed);
 }
 
 export function hasActiveSessionTodos(sessionId?: string): boolean {

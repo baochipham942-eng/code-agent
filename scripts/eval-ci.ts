@@ -377,7 +377,7 @@ function createEvalSandbox(repoDir: string): { dir: string; cleanup: () => void 
   // 真仓根 → 沙箱的路径重映射（pathUtils.confineEvalPath 消费）：
   // eval 全自动批准 permission 时，agent 的 deny-writes-outside-cwd 防线失效，
   // mimo 可能用真仓绝对路径写文件绕过沙箱。设此 env 让真仓绝对路径落回沙箱。
-  process.env.CODE_AGENT_EVAL_REAL_ROOT = path.resolve(repoDir);
+  process.env.CODE_AGENT_EVAL_REAL_ROOT ??= path.resolve(repoDir);
   console.log(chalk.cyan(`  Eval sandbox: ${dir}（git archive HEAD 快照，跑完自动清理）`));
   return {
     dir,
@@ -511,7 +511,34 @@ async function runEvals(
       repoDir: workingDir,
     });
 
-    const runner = new TestRunner(config, agent);
+    const useParallelWorkers = (opts.concurrency ?? 1) > 1;
+    const runner = new TestRunner(
+      config,
+      agent,
+      useParallelWorkers
+        ? ({ workingDirectory }) => createAgent({
+            real: opts.real,
+            model: opts.model,
+            provider: opts.provider,
+            workingDir: workingDirectory,
+            repoDir: workingDir,
+          })
+        : undefined,
+      useParallelWorkers
+        ? () => {
+            const workerSandbox = createEvalSandbox(workingDir);
+            if (!workerSandbox) {
+              throw new Error(
+                'parallel eval requires an isolated git sandbox; remove CODE_AGENT_EVAL_NO_SANDBOX',
+              );
+            }
+            return {
+              workingDirectory: workerSandbox.dir,
+              cleanup: workerSandbox.cleanup,
+            };
+          }
+        : undefined,
+    );
 
     runner.addEventListener((event) => {
       switch (event.type) {

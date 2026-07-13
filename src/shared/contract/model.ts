@@ -25,6 +25,35 @@ export type ModelProvider = BuiltInModelProvider | (string & {});
 
 export type ModelProviderProtocol = 'openai' | 'claude';
 
+export type ModelReasoningEffort = 'low' | 'medium' | 'high';
+
+/** 模型原生 thinking 控制形态；调用方必须按 kind 渲染和写入对应参数。 */
+export type ModelThinkingCapability =
+  | {
+      kind: 'budget';
+      minBudgetTokens: number;
+      maxBudgetTokens?: number;
+      defaultBudgetTokens?: number;
+    }
+  | {
+      kind: 'effort';
+      levels: ModelReasoningEffort[];
+      defaultEffort?: ModelReasoningEffort;
+    }
+  | {
+      kind: 'toggle';
+      defaultEnabled?: boolean;
+    }
+  | { kind: 'none' }
+  | { kind: 'unknown' };
+
+/** 用户对单个模型保存的 thinking 偏好；具体可用字段由 ModelThinkingCapability.kind 决定。 */
+export interface ModelThinkingPreference {
+  enabled?: boolean;
+  budgetTokens?: number;
+  effort?: ModelReasoningEffort;
+}
+
 /**
  * Provider 输入别名。
  * `anthropic` 会被规范化为内部 canonical provider `claude`。
@@ -82,7 +111,7 @@ export interface ModelConfig {
    * mapped to 4096/16384/32768 tokens by the provider when thinkingBudget
    * is not set explicitly.
    */
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  reasoningEffort?: ModelReasoningEffort;
   /** true 表示允许 adaptiveRouter 按任务复杂度切 free/default model。默认 false，严格用指定 provider/model */
   adaptive?: boolean;
 }
@@ -108,6 +137,8 @@ export interface ModelInfo {
   supportsTool: boolean;
   supportsVision: boolean;
   supportsStreaming: boolean;
+  /** 模型原生 thinking 控制能力；未标注时由 provider runtime 能力矩阵回落。 */
+  thinking?: ModelThinkingCapability;
   /** 成本类型: free=免费, monthly=包月, yearly=包年, payg=按量, quota=额度 */
   costType?: ModelCostType;
   /** 是否使用 coding 端点 (智谱 GLM-4.7) */

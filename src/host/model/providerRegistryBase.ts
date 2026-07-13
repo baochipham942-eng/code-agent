@@ -78,6 +78,11 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        thinking: {
+          kind: 'budget',
+          minBudgetTokens: 1024,
+          defaultBudgetTokens: 16384,
+        },
         costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
@@ -176,6 +181,7 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        thinking: { kind: 'none' },
         costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
@@ -191,6 +197,7 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        thinking: { kind: 'none' },
         costType: 'payg',
       },
     ],
@@ -391,6 +398,7 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        thinking: { kind: 'toggle', defaultEnabled: true },
         useCodingEndpoint: true,
         costType: 'yearly',
       },
@@ -442,6 +450,7 @@ export const BASE_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        thinking: { kind: 'none' },
         costType: 'free',
       },
       {

@@ -55,6 +55,9 @@ export function applyProviderRegistryPatches(registry: Record<string, ProviderCo
   openAIModelPatches.forEach(({ id, name, capabilities, maxTokens }) => {
     registerModel('openai', {
       ...textModel(id, name, capabilities, maxTokens),
+      ...(id === 'gpt-5.5'
+        ? { thinking: { kind: 'effort' as const, levels: ['low', 'medium', 'high'] } }
+        : {}),
       supportsVision: (capabilities as readonly string[]).includes('vision'),
       visionCapabilities: (capabilities as readonly string[]).includes('vision')
         ? { supportsBase64: true, supportsUrl: true, supportedFormats: ['png', 'jpeg', 'gif', 'webp'] }

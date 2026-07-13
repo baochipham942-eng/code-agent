@@ -3,7 +3,12 @@
 // ============================================================================
 
 import type { ExternalAgentEngineKind } from './agentEngine';
-import type { ModelConfig, ModelProvider, ModelProviderProtocol } from './model';
+import type {
+  ModelConfig,
+  ModelProvider,
+  ModelProviderProtocol,
+  ModelThinkingPreference,
+} from './model';
 import type { ModelCapability } from './model';
 import type { PermissionLevel } from './tool';
 import type { ContextCompressionConfig } from './contextHealth';
@@ -21,6 +26,8 @@ export interface ModelEntrySettings {
   supportsTool?: boolean;
   supportsVision?: boolean;
   supportsStreaming?: boolean;
+  /** 单模型 thinking 偏好；能力形态由对应 ModelInfo.thinking 决定。 */
+  thinking?: ModelThinkingPreference;
   discoveredAt?: number;
 }
 

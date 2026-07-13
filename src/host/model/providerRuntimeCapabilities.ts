@@ -1,4 +1,8 @@
-import type { ModelConfig } from '../../shared/contract/model';
+import type {
+  ModelConfig,
+  ModelProvider,
+  ModelThinkingCapability,
+} from '../../shared/contract/model';
 import type { InferenceOptions, ModelMessage } from './types';
 
 export const PROVIDER_RUNTIME_CAPABILITY_STATUSES = [
@@ -157,7 +161,13 @@ export const PROVIDER_RUNTIME_CAPABILITY_MATRIX: readonly ProviderRuntimeCapabil
     protocolFamily: 'openai_chat_completions',
     providerScope: ['openai'],
     adapterBoundary: '@ai-sdk/openai-compatible -> /chat/completions',
-    capabilities: nativeCapabilities('native-openai-chat-completions.json', 'native-openai-chat-pending'),
+    capabilities: nativeCapabilities('native-openai-chat-completions.json', 'native-openai-chat-pending', {
+      reasoning_effort: cell(
+        'experimental',
+        'OpenAI reasoning models accept the normalized low/medium/high reasoning_effort control; live verification is pending.',
+        evidence('native-openai-chat-completions.json', 'native-openai-chat-pending'),
+      ),
+    }),
   },
   {
     runtime: 'native',
@@ -269,6 +279,27 @@ export function getProviderRuntimeCapabilityEntry(
   );
   if (!entry) throw new Error(`Missing provider/runtime matrix entry for ${runtime}/${protocolFamily}`);
   return entry;
+}
+
+/**
+ * Resolve a model's effective thinking control. Explicit model metadata wins;
+ * otherwise the provider matrix supplies an effort/none/unknown default.
+ */
+export function resolveModelThinkingCapability(
+  provider: ModelProvider,
+  modelThinking?: ModelThinkingCapability,
+): ModelThinkingCapability {
+  if (modelThinking) return modelThinking;
+
+  const protocolFamily = resolveNativeProtocolFamily({ provider, model: '' });
+  const entry = getProviderRuntimeCapabilityEntry('native', protocolFamily);
+  const status = entry.capabilityOverrides?.[provider]?.reasoning_effort?.status
+    ?? entry.capabilities.reasoning_effort.status;
+
+  if (status === 'supported' || status === 'experimental') {
+    return { kind: 'effort', levels: ['low', 'medium', 'high'] };
+  }
+  return status === 'unsupported' ? { kind: 'none' } : { kind: 'unknown' };
 }
 
 export function assertProviderRuntimeCapability(

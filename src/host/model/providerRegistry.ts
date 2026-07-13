@@ -6,6 +6,7 @@ import type { ProviderConfig } from '../../shared/contract';
 import { ADDITIONAL_PROVIDER_REGISTRY } from './providerRegistryAdditional';
 import { BASE_PROVIDER_REGISTRY } from './providerRegistryBase';
 import { applyProviderRegistryPatches } from './providerRegistryPatches';
+import { resolveModelThinkingCapability } from './providerRuntimeCapabilities';
 
 export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
   ...BASE_PROVIDER_REGISTRY,
@@ -13,6 +14,12 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 };
 
 applyProviderRegistryPatches(PROVIDER_REGISTRY);
+
+for (const provider of Object.values(PROVIDER_REGISTRY)) {
+  for (const model of provider.models) {
+    model.thinking = resolveModelThinkingCapability(provider.id, model.thinking);
+  }
+}
 
 /**
  * E4: 获取所有可用模型（provider + model 列表）

@@ -208,9 +208,8 @@ export async function handleGoalCompletionGate(
           degradedReason: releaseReason,
         },
       });
-      if (!ctx.forceFinalResponseReason) {
-        ctx.forceFinalResponseReason = 'goal-verify-unverifiable';
-        ctx.forceFinalResponsePrompt = [
+      if (!ctx.control.forceFinalResponseReason) {
+        ctx.control.forceFinalResponse('goal-verify-unverifiable', [
           '<goal-verify-unverifiable>',
           `确定性验证本次未能核实：${releaseReason}。本次 goal 按降级放行收尾（工作已完成，但验证因本地执行环境不可用而未经核实）。`,
           '工具已禁用，请用纯文本向用户诚实收尾：',
@@ -218,7 +217,7 @@ export async function handleGoalCompletionGate(
           `2. 未能核实的验证条件：\`${verifyCommand}\`——说明是本地验证环境不可用导致未核实，不要说成验证不通过`,
           '3. 用户如需完成核实，下一步可以怎么做（如确认工作目录/命令可执行环境后重试）',
           '</goal-verify-unverifiable>',
-        ].join('\n');
+        ].join('\n'));
       }
       return 'continue';
     }
@@ -264,9 +263,8 @@ export async function handleGoalCompletionGate(
           degradedReason: releaseReason,
         },
       });
-      if (!ctx.forceFinalResponseReason) {
-        ctx.forceFinalResponseReason = 'goal-verify-exhausted';
-        ctx.forceFinalResponsePrompt = [
+      if (!ctx.control.forceFinalResponseReason) {
+        ctx.control.forceFinalResponse('goal-verify-exhausted', [
           '<goal-verify-exhausted>',
           `验证命令 \`${verifyCommand}\` 在 ${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS} 次修复机会后仍未通过，本次 goal 按到限放行收尾（完成但验证未全过）。`,
           '工具已禁用，请用纯文本向用户诚实收尾：',
@@ -276,7 +274,7 @@ export async function handleGoalCompletionGate(
           '--- 最后一次验证输出（截断）---',
           gate?.output || '(无输出)',
           '</goal-verify-exhausted>',
-        ].join('\n');
+        ].join('\n'));
       }
       return 'continue';
     }
@@ -308,7 +306,7 @@ export async function handleGoalCompletionGate(
     const review = await runReviewGate(reviewCondition, ctx.goalMode.getGoal(), {
       workingDirectory: ctx.workingDirectory,
       sessionId: ctx.sessionId,
-      abortSignal: ctx.runAbortController?.signal,
+      abortSignal: ctx.control.runAbortController?.signal,
       hookManager: ctx.hookManager,
       // 可用性降级链：powerful tier 没配 key 时，闸2 降级用主 run 的模型
       parentModelConfig: ctx.modelConfig,
@@ -362,9 +360,8 @@ export async function handleGoalCompletionGate(
           degradedReason: releaseReason,
         },
       });
-      if (!ctx.forceFinalResponseReason) {
-        ctx.forceFinalResponseReason = 'goal-review-unverifiable';
-        ctx.forceFinalResponsePrompt = [
+      if (!ctx.control.forceFinalResponseReason) {
+        ctx.control.forceFinalResponse('goal-review-unverifiable', [
           '<goal-review-unverifiable>',
           `软评审条件本次未能核实：${releaseReason}。本次 goal 按降级放行收尾（工作已完成，但软条件因评审服务不可用而未经核实）。`,
           '工具已禁用，请用纯文本向用户诚实收尾：',
@@ -372,7 +369,7 @@ export async function handleGoalCompletionGate(
           `2. 未能核实的软条件：${reviewCondition}——说明是评审基础设施不可用导致未核实，不要说成质量不达标`,
           '3. 用户如需完成核实，下一步可以怎么做（如修复评审模型的 API key 后重新验收）',
           '</goal-review-unverifiable>',
-        ].join('\n');
+        ].join('\n'));
       }
       return 'continue';
     }
@@ -387,9 +384,8 @@ export async function handleGoalCompletionGate(
         type: 'goal_complete',
         data: { status: 'aborted', reason, turns: iterations, tokensUsed: goalTokensUsedWithSwarm(ctx) },
       });
-      if (!ctx.forceFinalResponseReason) {
-        ctx.forceFinalResponseReason = 'goal-impossible';
-        ctx.forceFinalResponsePrompt = [
+      if (!ctx.control.forceFinalResponseReason) {
+        ctx.control.forceFinalResponse('goal-impossible', [
           '<force-final-response reason="goal-impossible">',
           `软评审判定该目标在本会话内不可达成：${reviewCondition}`,
           '--- 评审意见（截断）---',
@@ -399,7 +395,7 @@ export async function handleGoalCompletionGate(
           '2. 已完成的工作',
           '3. 可行的替代方案或需要用户提供的前置条件',
           '</force-final-response>',
-        ].join('\n');
+        ].join('\n'));
       }
       return 'continue';
     }
@@ -442,9 +438,8 @@ export async function handleGoalCompletionGate(
           degradedReason: releaseReason,
         },
       });
-      if (!ctx.forceFinalResponseReason) {
-        ctx.forceFinalResponseReason = 'goal-verify-exhausted';
-        ctx.forceFinalResponsePrompt = [
+      if (!ctx.control.forceFinalResponseReason) {
+        ctx.control.forceFinalResponse('goal-verify-exhausted', [
           '<goal-verify-exhausted>',
           `软评审条件在 ${GOAL_MODE.GATE_REPAIR_MAX_ATTEMPTS} 次修复机会后仍未通过，本次 goal 按到限放行收尾（完成但验证未全过）。`,
           '工具已禁用，请用纯文本向用户诚实收尾：',
@@ -454,7 +449,7 @@ export async function handleGoalCompletionGate(
           '--- 最后一次评审意见（截断）---',
           review.reason,
           '</goal-verify-exhausted>',
-        ].join('\n');
+        ].join('\n'));
       }
       return 'continue';
     }

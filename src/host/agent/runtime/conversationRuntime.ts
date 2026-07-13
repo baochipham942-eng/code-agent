@@ -151,7 +151,7 @@ export class ConversationRuntime {
   }
 
   private async waitWhilePaused(): Promise<void> {
-    while (this.flowState.isPaused && !this.ctx.isCancelled && !this.ctx.isInterrupted) {
+    while (this.flowState.isPaused && !this.ctx.control.isCancelled && !this.ctx.control.isInterrupted) {
       await new Promise<void>((resolve) => {
         this.pauseResolvers.push(resolve);
       });
@@ -203,7 +203,7 @@ export class ConversationRuntime {
     this.flowState.isPlanModeActive = active;
 
     if (active) {
-      this.ctx.savedMessages = [...this.ctx.messages];
+      this.ctx.control.savePlanSnapshot(this.ctx.messages);
       this.contextAssembly.injectSystemMessage(
         `<plan-mode>\n` +
         `You are now in PLAN MODE. Do NOT execute any tools.\n` +
@@ -214,10 +214,11 @@ export class ConversationRuntime {
       );
       logger.info('[AgentLoop] Plan mode activated');
     } else {
-      if (this.ctx.savedMessages) {
+      const savedMessages = this.ctx.control.savedMessages;
+      if (savedMessages) {
         this.ctx.messages.length = 0;
-        this.ctx.messages.push(...this.ctx.savedMessages);
-        this.ctx.savedMessages = null;
+        this.ctx.messages.push(...savedMessages);
+        this.ctx.control.clearSavedMessages();
       }
       logger.info('[AgentLoop] Plan mode deactivated');
     }
@@ -286,7 +287,7 @@ export class ConversationRuntime {
 
       await this.run(stepPrompt);
 
-      if (this.ctx.isCancelled || this.ctx.isInterrupted) {
+      if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted) {
         logger.info(`[AgentLoop] Step-by-step interrupted at step ${i + 1}`);
         return false;
       }
@@ -301,7 +302,7 @@ export class ConversationRuntime {
     if (!initResult) return; // Early exit (step-by-step mode or hook blocked)
     const { langfuse, isSimpleTask, genNum } = initResult;
 
-    this.ctx.runAbortController = new AbortController();
+    this.ctx.control.setRunAbortController(new AbortController());
 
     let iterations = 0;
     let userTurnId: string | undefined;
@@ -311,16 +312,16 @@ export class ConversationRuntime {
     const doomLoopGuard = new DoomLoopGuard();
 
     try {
-      while (!this.ctx.isCancelled && !this.ctx.isInterrupted && !this.ctx.circuitBreaker.isTripped() && iterations < this.ctx.maxIterations) {
+      while (!this.ctx.control.isCancelled && !this.ctx.control.isInterrupted && !this.ctx.circuitBreaker.isTripped() && iterations < this.ctx.maxIterations) {
         await this.waitWhilePaused();
-        if (this.ctx.isCancelled || this.ctx.isInterrupted) break;
+        if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted) break;
 
         iterations++;
         this.ctx.turnTrace.setTurn(iterations);
         logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
 
         // Check for interrupt at the start of each iteration
-        if (this.ctx.isInterrupted && this.flowState.interruptMessage) {
+        if (this.ctx.control.isInterrupted && this.flowState.interruptMessage) {
           logger.info('[AgentLoop] Interrupt detected, breaking loop');
           this.ctx.onEvent({
             type: 'interrupt_acknowledged',
@@ -396,9 +397,8 @@ export class ConversationRuntime {
                 degradedReason: repairReleaseReason,
               },
             });
-            if (!this.ctx.forceFinalResponseReason) {
-              this.ctx.forceFinalResponseReason = 'artifact-repair-degraded-release';
-              this.ctx.forceFinalResponsePrompt = [
+            if (!this.ctx.control.forceFinalResponseReason) {
+              this.ctx.control.forceFinalResponse('artifact-repair-degraded-release', [
                 '<artifact-repair-degraded-release>',
                 `修复循环已按最佳版本降级收尾：${repairReleaseReason}`,
                 '工具已禁用，请用纯文本向用户诚实收尾：',
@@ -406,7 +406,7 @@ export class ConversationRuntime {
                 '2. 仍未通过的验收项及原因（不要淡化或掩饰）',
                 '3. 用户如需继续完善，下一步可以怎么做',
                 '</artifact-repair-degraded-release>',
-              ].join('\n');
+              ].join('\n'));
             }
             // 不 break：让本轮推理以 forced-final（禁工具）产出诚实收尾文本，
             // markMetDegraded 后 isPending()=false，本块不会重入；终态映射走
@@ -562,7 +562,7 @@ export class ConversationRuntime {
         if (
           response.type === 'text'
           && !response.content?.trim()
-          && !this.ctx.forceFinalResponseReason
+          && !this.ctx.control.forceFinalResponseReason
         ) {
           const emptyCheck = doomLoopGuard.recordEmptyOutput();
           if (emptyCheck.action === 'continue' && emptyCheck.nudge) {
@@ -624,9 +624,9 @@ export class ConversationRuntime {
 
       await this.waitWhilePaused();
 
-      if (this.ctx.isCancelled) {
+      if (this.ctx.control.isCancelled) {
         terminal = { status: 'cancelled' };
-      } else if (this.ctx.isInterrupted) {
+      } else if (this.ctx.control.isInterrupted) {
         terminal = { status: 'interrupted' };
       } else if (this.ctx.goalMode?.getStatus() === 'met') {
         // 闸1 验证通过 → markMet → loop 退出，收尾标 goal_met。
@@ -658,14 +658,13 @@ export class ConversationRuntime {
       // forced-final 是 per-run 语义：正常路径由 handleTextResponse 在产出最终
       // 文本后清理，但空输出/异常/cancel 等退出路径会绕过它——若不在此兜底清理，
       // flag 泄漏到下一次用户输入会让 inference 持续禁用全部工具（codex audit R2）。
-      this.ctx.forceFinalResponseReason = undefined;
-      this.ctx.forceFinalResponsePrompt = undefined;
+      this.ctx.control.clearForceFinalResponse();
       // G20: 先同步 flush turn trace —— 必须排在 await finalizeRun 之前。
       // finalizeRun 会发出 agent_complete 事件，CLI/host 收到后可能立即 process.exit，
       // 进程在那个 await 让出点被杀，排在其后的同步代码就永远执行不到。
       this.ctx.turnTrace.flush();
       await this.runFinalizer.finalizeRun(iterations, userMessage, langfuse, genNum, terminal);
-      this.ctx.runAbortController = null;
+      this.ctx.control.setRunAbortController(null);
     }
 
     if (runError) throw runError;
@@ -743,7 +742,7 @@ export class ConversationRuntime {
 
         if (skillContext.contextModifier.preApprovedTools) {
           for (const tool of skillContext.contextModifier.preApprovedTools) {
-            this.ctx.preApprovedTools.add(tool);
+            this.ctx.control.preApproveTool(tool);
           }
         }
         // GAP-001: skill allowed-tools 限权边界
@@ -776,7 +775,7 @@ export class ConversationRuntime {
     this.ctx.turn.setSimpleTaskMode(isSimpleTask);
 
 
-    this.ctx.externalDataCallCount = 0;
+    this.ctx.control.resetExternalDataCalls();
     this.ctx.runStartTime = Date.now();
     this.ctx.totalTokensUsed = 0;
     this.ctx.totalToolCallCount = 0;
@@ -1033,7 +1032,7 @@ export class ConversationRuntime {
   // ========================================================================
 
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
-    this.ctx.isCancelled = true;
+    this.ctx.control.markCancelled();
 
     // Preserve partial streaming content before aborting
     if (this.ctx.turn.lastStreamedContent) {
@@ -1056,8 +1055,8 @@ export class ConversationRuntime {
       }
       this.ctx.turn.resetStreamedContent();
     }
-    this.ctx.abortController?.abort();
-    this.ctx.runAbortController?.abort();
+    this.ctx.control.abortInference();
+    this.ctx.control.abortRun();
     this.releasePauseWaiters();
   }
 
@@ -1073,10 +1072,10 @@ export class ConversationRuntime {
   }
 
   interrupt(newMessage: string): void {
-    this.ctx.isInterrupted = true;
+    this.ctx.control.markInterrupted();
     this.flowState.interruptMessage = newMessage;
-    this.ctx.abortController?.abort();
-    this.ctx.runAbortController?.abort();
+    this.ctx.control.abortInference();
+    this.ctx.control.abortRun();
     this.releasePauseWaiters();
     logger.info('[AgentLoop] Interrupt requested with new message');
   }
@@ -1087,14 +1086,14 @@ export class ConversationRuntime {
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
   ): void {
-    this.ctx.abortController?.abort();
+    this.ctx.control.abortInference();
     this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata);
     this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
   }
 
   wasInterrupted(): boolean {
-    return this.ctx.isInterrupted;
+    return this.ctx.control.isInterrupted;
   }
 
   getInterruptMessage(): string | null {
@@ -1102,7 +1101,7 @@ export class ConversationRuntime {
   }
 
   isRunning(): boolean {
-    return !this.ctx.isCancelled && !this.ctx.isInterrupted;
+    return !this.ctx.control.isCancelled && !this.ctx.control.isInterrupted;
   }
 
   getPlanningService(): PlanningService | undefined {

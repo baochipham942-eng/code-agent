@@ -56,6 +56,7 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
 
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { ControlState } from '../../../src/host/agent/runtime/controlState';
 
 function createProcessor(
   ctx: Partial<RuntimeContext>,
@@ -179,12 +180,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
       totalToolCallCount: 0,
       modelConfig: { maxTokens: 4096 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -213,7 +212,7 @@ describe('MessageProcessor persistence', () => {
     };
     const toolEngine = {
       executeToolsWithHooks: vi.fn(async () => {
-        ctx.isCancelled = true;
+        ctx.control.markCancelled();
         return [{ toolCallId: 'tool-1', success: true, output: 'late result' }];
       }),
     };
@@ -245,7 +244,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
+      control: ControlState.forTest({ isCancelled: false } as never),
       modelConfig: { model: 'mimo-v2.5-pro', maxTokens: 4096 },
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
       hookManager: undefined,
@@ -311,7 +310,7 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
+      control: ControlState.forTest({ isCancelled: false } as never),
       modelConfig: { model: 'mimo-v2.5-pro', maxTokens: 4096 },
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
       hookManager: undefined,
@@ -371,14 +370,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -442,14 +437,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: 'artifact repair target already passes validation after blocked Read read',
-      forceFinalResponsePrompt: '<force-final-response>done</force-final-response>',
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } }, forceFinalResponseReason: 'artifact repair target already passes validation after blocked Read read', forceFinalResponsePrompt: '<force-final-response>done</force-final-response>' } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -497,8 +488,8 @@ describe('MessageProcessor persistence', () => {
     );
 
     expect(action).toBe('break');
-    expect(ctx.forceFinalResponseReason).toBeUndefined();
-    expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'final-message-1',
@@ -520,14 +511,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -557,12 +544,11 @@ describe('MessageProcessor persistence', () => {
     };
     const toolEngine = {
       executeToolsWithHooks: vi.fn(async () => {
-        ctx.forceFinalResponseReason = '连续只读操作达到硬阈值，最后一次工具为 Read';
-        ctx.forceFinalResponsePrompt = [
+        ctx.control.forceFinalResponse('连续只读操作达到硬阈值，最后一次工具为 Read', [
           '<force-final-response reason="read-loop-hard-limit">',
           'Produce the final answer now.',
           '</force-final-response>',
-        ].join('\n');
+        ].join('\n'));
         return [{
           toolCallId: 'tool-1',
           success: false,
@@ -586,8 +572,8 @@ describe('MessageProcessor persistence', () => {
     );
 
     expect(action).toBe('continue');
-    expect(ctx.forceFinalResponseReason).toBe('连续只读操作达到硬阈值，最后一次工具为 Read');
-    expect(ctx.forceFinalResponsePrompt).toContain('reason="read-loop-hard-limit"');
+    expect(ctx.control.forceFinalResponseReason).toBe('连续只读操作达到硬阈值，最后一次工具为 Read');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('reason="read-loop-hard-limit"');
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
     expect(ctx.messages).toEqual([
       expect.objectContaining({
@@ -622,15 +608,14 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [{ id: 'user-1', role: 'user', content: '分析一下 Alma 的流式输出', timestamp: Date.now() }],
-      isCancelled: false,
+      control: ControlState.forTest({ isCancelled: false } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
       hookManager: undefined,
       planningService: undefined,
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', researchModeActive: false, toolsUsedInTurn: ['Glob', 'Bash', 'Bash'], isSimpleTaskMode: false } as never),
-      forceFinalResponseReason: '连续只读操作达到硬阈值，最后一次工具为 Bash',
-      forceFinalResponsePrompt: '<force-final-response reason="read-loop-hard-limit">Produce final answer.</force-final-response>',
+      control: ControlState.forTest({ forceFinalResponseReason: '连续只读操作达到硬阈值，最后一次工具为 Bash', forceFinalResponsePrompt: '<force-final-response reason="read-loop-hard-limit">Produce final answer.</force-final-response>' } as never),
       totalToolCallCount: 3,
       nudgeManager: {
         runNudgeChecks: vi.fn(() => true),
@@ -672,8 +657,8 @@ describe('MessageProcessor persistence', () => {
     expect(action).toBe('break');
     expect(ctx.nudgeManager.runNudgeChecks).not.toHaveBeenCalled();
     expect(ctx.nudgeManager.runOutputValidation).not.toHaveBeenCalled();
-    expect(ctx.forceFinalResponseReason).toBeUndefined();
-    expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'final-message-1',
@@ -709,14 +694,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -809,14 +790,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -893,14 +870,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -963,14 +936,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -1084,14 +1053,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -1158,8 +1123,8 @@ describe('MessageProcessor persistence', () => {
       runLightPlayabilitySmoke: true,
     }));
     expect(ctx.artifactRepairGuard).toBeUndefined();
-    expect(ctx.forceFinalResponseReason).toBeUndefined();
-    expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('artifact repair guard revalidated the target before accepting another repair-mode tool call.'),
     );
@@ -1183,14 +1148,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -1259,14 +1220,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-1',
       messages: [],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } } } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -1328,8 +1285,8 @@ describe('MessageProcessor persistence', () => {
     // hard stop only fires once it reaches ARTIFACT_REPAIR_MAX_ATTEMPTS (4).
     expect(action).toBe('continue');
     expect(ctx.artifactRepairGuard.repairTurnsWithoutProgress).toBe(2);
-    expect(ctx.forceFinalResponseReason).toBeUndefined();
-    expect(ctx.forceFinalResponsePrompt).toBeUndefined();
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
     expect(ctx.messages).toHaveLength(2);
     expect(ctx.messages[1]).toMatchObject({
@@ -1354,14 +1311,10 @@ describe('MessageProcessor persistence', () => {
     const ctx = {
       sessionId: 'runtime-session-stop',
       messages: [] as never[],
-      isCancelled: false,
-      isInterrupted: false,
-      runAbortController: { signal: { aborted: false } },
       totalToolCallCount: 0,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       currentSystemPromptHash: 'hash-1',
-      forceFinalResponseReason: undefined as string | undefined,
-      forceFinalResponsePrompt: undefined as string | undefined,
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false, runAbortController: { signal: { aborted: false } }, forceFinalResponseReason: undefined as string | undefined, forceFinalResponsePrompt: undefined as string | undefined } as never),
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', needsReinference: false, toolsUsedInTurn: [] } as never),
       onEvent: vi.fn(),
       telemetryAdapter: { onTurnEnd: vi.fn() },
@@ -1422,7 +1375,7 @@ describe('MessageProcessor persistence', () => {
     // turn is force-stopped instead of re-inferred.
     expect(action).toBe('break');
     expect(ctx.artifactRepairGuard.repairTurnsWithoutProgress).toBe(4);
-    expect(ctx.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(ctx.onEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'error',

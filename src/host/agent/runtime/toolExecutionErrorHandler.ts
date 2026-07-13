@@ -39,7 +39,7 @@ export async function handleToolExecutionError({
   langfuse,
   toolSpanId,
 }: HandleToolExecutionErrorArgs): Promise<ToolResult> {
-  const isRunCancelled = ctx.isCancelled || Boolean(ctx.runAbortController?.signal.aborted);
+  const isRunCancelled = ctx.control.isCancelled || Boolean(ctx.control.runAbortController?.signal.aborted);
   if (isRunCancelled) {
     const suppressedResult: ToolResult = {
       toolCallId: toolCall.id,

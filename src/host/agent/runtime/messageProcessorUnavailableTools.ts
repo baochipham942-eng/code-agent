@@ -228,11 +228,11 @@ export async function handleUnavailableToolCalls(
   // admission_stop 触发分支:不能 'continue' 让模型再试一轮,否则模型继续请求 unavailable tool
   // 永远绕过 forceFinalResponse handler(在正常 tool 路径之后),turn 永远不结束。
   // 这里 inline 走完 forceFinal 流程: push final assistant message + emit error + turn_end + 'break'。
-  if (ctx.forceFinalResponseReason) {
+  if (ctx.control.forceFinalResponseReason) {
     const finalMessage: Message = {
       id: contextAssembly.generateId(),
       role: 'assistant',
-      content: buildForcedFinalAssistantContent(ctx.forceFinalResponseReason),
+      content: buildForcedFinalAssistantContent(ctx.control.forceFinalResponseReason),
       timestamp: Date.now(),
       effortLevel: ctx.turn.effortLevel,
       metadata: attachTurnQualityMetadata(ctx, undefined, response),
@@ -240,10 +240,9 @@ export async function handleUnavailableToolCalls(
     await contextAssembly.addAndPersistMessage(finalMessage);
     ctx.onEvent({ type: 'message', data: finalMessage });
 
-    emitArtifactRepairStopError(ctx.forceFinalResponseReason);
+    emitArtifactRepairStopError(ctx.control.forceFinalResponseReason);
 
-    ctx.forceFinalResponseReason = undefined;
-    ctx.forceFinalResponsePrompt = undefined;
+    ctx.control.clearForceFinalResponse();
     ctx.telemetryAdapter?.onTurnEnd(ctx.turn.currentTurnId, '', undefined, ctx.currentSystemPromptHash);
     ctx.onEvent({ type: 'turn_end', data: { turnId: ctx.turn.currentTurnId } });
     return 'break';

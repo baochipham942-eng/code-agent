@@ -218,7 +218,7 @@ export class MessageProcessor {
     shouldRunHooks: boolean,
     langfuse: LangfuseSpanFacade,
   ): Promise<'break' | 'continue'> {
-    if (this.ctx.isCancelled) {
+    if (this.ctx.control.isCancelled) {
       logger.info('[AgentLoop] Skipping final text persistence after cancellation', {
         sessionId: this.ctx.sessionId,
         contentLength: response.content?.length ?? 0,
@@ -226,7 +226,7 @@ export class MessageProcessor {
       return 'break';
     }
 
-    const isForcedFinalTextPass = Boolean(this.ctx.forceFinalResponseReason);
+    const isForcedFinalTextPass = Boolean(this.ctx.control.forceFinalResponseReason);
 
     // Research mode: indicate report generation phase
     if (this.ctx.turn.researchModeActive) {
@@ -296,7 +296,7 @@ export class MessageProcessor {
             {
               workingDirectory: this.ctx.workingDirectory,
               sessionId: this.ctx.sessionId,
-              abortSignal: this.ctx.runAbortController?.signal,
+              abortSignal: this.ctx.control.runAbortController?.signal,
               hookManager: this.ctx.hookManager,
               // 可用性降级链：powerful tier 没配 key 时，critic 降级用主 run 的模型
               parentModelConfig: this.ctx.modelConfig,
@@ -536,7 +536,7 @@ export class MessageProcessor {
       assistantMessage.artifacts = artifacts;
     }
 
-    if (this.ctx.isCancelled) {
+    if (this.ctx.control.isCancelled) {
       logger.info('[AgentLoop] Skipping final text persistence after late cancellation', {
         sessionId: this.ctx.sessionId,
         contentLength: assistantMessage.content.length,
@@ -564,8 +564,7 @@ export class MessageProcessor {
 
     this.ctx.onEvent({ type: 'message', data: assistantMessage });
     if (isForcedFinalTextPass) {
-      this.ctx.forceFinalResponseReason = undefined;
-      this.ctx.forceFinalResponsePrompt = undefined;
+      this.ctx.control.clearForceFinalResponse();
     }
 
     // === 自动解析任务列表（替代 TodoWrite 工具） ===
@@ -835,7 +834,7 @@ export class MessageProcessor {
     const toolResults = await this.toolEngine.executeToolsWithHooks(toolCalls);
     logger.debug(` executeToolsWithHooks completed, ${toolResults.length} results`);
 
-    if (this.ctx.isCancelled || this.ctx.isInterrupted || this.ctx.runAbortController?.signal.aborted) {
+    if (this.ctx.control.isCancelled || this.ctx.control.isInterrupted || this.ctx.control.runAbortController?.signal.aborted) {
       logger.info('[AgentLoop] Run stop detected after tool execution; suppressing tool results');
       return 'break';
     }
@@ -939,10 +938,10 @@ export class MessageProcessor {
       }
     }
 
-    if (this.ctx.forceFinalResponseReason) {
+    if (this.ctx.control.forceFinalResponseReason) {
       if (shouldDeferForcedFinalToInference(this.ctx)) {
         logger.warn('[AgentLoop] Read-loop hard limit reached; deferring final answer to no-tool inference', {
-          reason: this.ctx.forceFinalResponseReason,
+          reason: this.ctx.control.forceFinalResponseReason,
         });
         this.contextAssembly.flushHookMessageBuffer();
         langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
@@ -963,7 +962,7 @@ export class MessageProcessor {
       const finalMessage: Message = {
         id: this.contextAssembly.generateId(),
         role: 'assistant',
-        content: buildForcedFinalAssistantContent(this.ctx.forceFinalResponseReason),
+        content: buildForcedFinalAssistantContent(this.ctx.control.forceFinalResponseReason),
         timestamp: Date.now(),
         effortLevel: this.ctx.turn.effortLevel,
         metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
@@ -973,10 +972,9 @@ export class MessageProcessor {
 
       // admission_stop:在 final assistant message push 后 emit error,
       // useSessionLifecycleEffects 会把 errorContent 合并到 lastMessage(此时 = finalMessage assistant)上显示。
-      this.maybeEmitArtifactRepairStopError(this.ctx.forceFinalResponseReason);
+      this.maybeEmitArtifactRepairStopError(this.ctx.control.forceFinalResponseReason);
 
-      this.ctx.forceFinalResponseReason = undefined;
-      this.ctx.forceFinalResponsePrompt = undefined;
+      this.ctx.control.clearForceFinalResponse();
       this.contextAssembly.flushHookMessageBuffer();
       langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
         type: 'tool_calls',

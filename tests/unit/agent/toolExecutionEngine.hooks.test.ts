@@ -10,6 +10,7 @@ import { mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import type { Message } from '../../../src/shared/contract';
+import { ControlState } from '../../../src/host/agent/runtime/controlState';
 
 const serviceMocks = vi.hoisted(() => {
   const langfuse = {
@@ -287,25 +288,18 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
       turnStartTime: Date.now(),
       effortLevel: 'medium' as never,
     }),
-    isCancelled: false,
-    isInterrupted: false,
-    abortController: null,
-    runAbortController: null,
-    savedMessages: null,
     autoApprovePlan: false,
     enableHooks: true,
     maxStopHookRetries: 0,
     maxToolCallRetries: 0,
-    externalDataCallCount: 0,
-    preApprovedTools: new Set(),
+    control: ControlState.forTest({ isCancelled: false, isInterrupted: false, abortController: null, runAbortController: null, savedMessages: null, externalDataCallCount: 0, preApprovedTools: new Set() } as never),
     enableToolDeferredLoading: false,
     maxStructuredOutputRetries: 0,
     stepByStepMode: false,
     traceId: 'trace-1',
     turnQualityState: {},
     goalEvidenceState: { bounces: 0 },
-    forceFinalResponseReason: undefined,
-    forceFinalResponsePrompt: undefined,
+    control: ControlState.forTest({  } as never),
     totalInputTokens: 0,
     totalOutputTokens: 0,
     consecutiveErrors: 0,
@@ -583,8 +577,8 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     );
     expect(vi.mocked(ctx.onEvent).mock.calls.some(([event]) => event.type === 'tool_call_end')).toBe(true);
     expect(serviceMocks.langfuse.endSpan).not.toHaveBeenCalled();
-    expect(ctx.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
-    expect(ctx.forceFinalResponsePrompt).toContain('force-final-response');
+    expect(ctx.control.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('force-final-response');
   });
 
   it('blocks the fifteenth read and skips the sixteenth sequential read in the same batch', async () => {
@@ -641,7 +635,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
         forceFinalResponseReason: expect.stringContaining('连续只读操作达到硬阈值'),
       }),
     });
-    expect(ctx.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
+    expect(ctx.control.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
 
     const toolEvents = vi.mocked(ctx.onEvent).mock.calls
       .map(([event]) => event)
@@ -790,7 +784,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       }),
     });
     // 强制收尾标记已激活，HARD_LIMIT 错误把"基于已有证据作答"回灌给模型 → 不再空白会话
-    expect(ctx.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
+    expect(ctx.control.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
     expect(results[14].error).toContain('基于已经获取到的文件或搜索证据');
   });
 
@@ -1322,7 +1316,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     };
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
-      runAbortController: controller,
+      control: ControlState.forTest({ runAbortController: controller } as never),
     });
     const contextAssembly = {
       injectSystemMessage: vi.fn(),
@@ -2371,8 +2365,8 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(blocked.success).toBe(false);
     expect(ctx.artifactRepairGuard).toBeUndefined();
-    expect(ctx.forceFinalResponseReason).toContain('artifact repair target already passes validation');
-    expect(ctx.forceFinalResponsePrompt).toContain('force-final-response');
+    expect(ctx.control.forceFinalResponseReason).toContain('artifact repair target already passes validation');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('force-final-response');
     expect(ctx.turn.needsReinference).toBe(false);
     expect(contextAssembly.pushPersistentSystemContext).not.toHaveBeenCalled();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
@@ -2603,7 +2597,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(targetRead.success).toBe(true);
     expect(ctx.artifactRepairGuard).toBeUndefined();
-    expect(ctx.forceFinalResponseReason).toContain('artifact repair target already passes validation');
+    expect(ctx.control.forceFinalResponseReason).toContain('artifact repair target already passes validation');
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-validation-passed kind="interactive_artifact">'),
     );
@@ -2721,7 +2715,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       targetFile,
       phase: 'playability_repair',
     });
-    expect(ctx.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-playability-repair-active>'),
     );
@@ -3860,7 +3854,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     };
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
-      runAbortController: controller,
+      control: ControlState.forTest({ runAbortController: controller } as never),
     });
     const contextAssembly = {
       injectSystemMessage: vi.fn(),
@@ -3880,7 +3874,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     await executionStartedPromise;
-    ctx.isCancelled = true;
+    ctx.control.markCancelled();
     controller.abort('run_cancelled');
     releaseExecution();
 

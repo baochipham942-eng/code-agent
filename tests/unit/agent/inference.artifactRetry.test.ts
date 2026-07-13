@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
 import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { ControlState } from '../../../src/host/agent/runtime/controlState';
 
 const { mockGetApiKey, mockGetSettings } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
@@ -101,8 +102,6 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
   const runtime = {
     enableToolDeferredLoading: false,
     toolScope: undefined,
-    forceFinalResponsePrompt: undefined,
-    forceFinalResponseReason: undefined,
     traceId: 'trace-1',
     turn: TurnState.forTest({ currentIterationSpanId: 'span-1', currentTurnId: 'turn-1', effortLevel: 'medium' }),
     sessionId: 'session-1',
@@ -116,9 +115,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     },
     modelRouter,
     onEvent,
-    abortController: null,
-    isInterrupted: false,
-    isCancelled: false,
+    control: ControlState.forTest(),
     messages: [],
     ...overrides,
   } as any;
@@ -164,7 +161,7 @@ describe('contextAssembly inference artifact retry', () => {
 
   it('forceFinalResponsePrompt 以 transient 尾巴形式追加（不打前缀缓存、legacy claude 不丢失）', async () => {
     const ctx = buildCtx();
-    ctx.runtime.forceFinalResponsePrompt = '<force-final-response>wrap up now</force-final-response>';
+    ctx.runtime.control.forceFinalResponse('forced', '<force-final-response>wrap up now</force-final-response>');
     ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
       type: 'text',
       content: 'final',

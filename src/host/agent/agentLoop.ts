@@ -124,6 +124,7 @@ import { LearningPipeline } from './runtime/learningPipeline';
 import { loadPersistedRuntimeState } from './runtime/runtimeStatePersistence';
 import { TurnTraceRecorder } from './runtime/turnTrace';
 import { TurnState } from './runtime/turnState';
+import { ControlState } from './runtime/controlState';
 import { createTelemetryAdapter } from '../telemetry/telemetryAdapter';
 import { composeTelemetryAdapters } from './metricsCollector';
 import { withRunTraceContext } from '../telemetry/runTraceContext';
@@ -217,15 +218,10 @@ export class AgentLoop {
 
       // Turn 级状态切片（ADR-038 批3a）
       turn: new TurnState(),
-
-      // Mutable state
-      isCancelled: false,
-      isInterrupted: false,
-      abortController: null,
-      runAbortController: null,
+      // 控制流状态切片（ADR-038 批3b）
+      control: new ControlState(),
 
       // Plan mode
-      savedMessages: null,
       autoApprovePlan: config.autoApprovePlan ?? false,
 
       // Hooks
@@ -238,8 +234,6 @@ export class AgentLoop {
 
       // Tool execution
       maxToolCallRetries: 2,
-      externalDataCallCount: 0,
-      preApprovedTools: new Set(),
       enableToolDeferredLoading: config.enableToolDeferredLoading ?? true,
 
       // Structured output
@@ -256,8 +250,6 @@ export class AgentLoop {
       lastModelTraceSpanId: undefined,
       pendingRuntimeDiagnostics: [],
       droppedPromptBlocks: [],
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
 
       // Budget
       totalInputTokens: 0,

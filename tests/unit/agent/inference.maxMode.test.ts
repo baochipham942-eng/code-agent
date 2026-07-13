@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
 import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
+import { ControlState } from '../../../src/host/agent/runtime/controlState';
 
 const { mockGetApiKey, mockRecordUsage, mockCheckBudget } = vi.hoisted(() => ({
   mockGetApiKey: vi.fn(() => 'mock-key'),
@@ -105,8 +106,6 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
   const runtime = {
     enableToolDeferredLoading: false,
     toolScope: undefined,
-    forceFinalResponsePrompt: undefined,
-    forceFinalResponseReason: undefined,
     traceId: 'trace-1',
     turn: TurnState.forTest({ currentIterationSpanId: 'span-1', currentTurnId: 'turn-1', effortLevel: 'medium' }),
     sessionId: 'session-1',
@@ -120,9 +119,7 @@ function buildCtx(overrides: Partial<ContextAssemblyCtx['runtime']> = {}): Conte
     },
     modelRouter,
     onEvent: vi.fn(),
-    abortController: null,
-    isInterrupted: false,
-    isCancelled: false,
+    control: ControlState.forTest(),
     messages: [],
     maxMode: false,
     maxModeCandidates: 3,
@@ -184,7 +181,7 @@ describe('inference Max Mode wiring', () => {
   it('普通路径中断（取消）→ 记一次 input 沉没成本，不再静默漏记', async () => {
     const ctx = buildCtx({ maxMode: false } as any);
     ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(async () => {
-      ctx.runtime.isCancelled = true; // 流式中途用户取消
+      ctx.runtime.control.markCancelled(); // 流式中途用户取消
       throw new Error('aborted');
     });
 
@@ -315,7 +312,7 @@ describe('inference Max Mode wiring', () => {
   it('候选期间用户取消 → 不返回部分赢家，返回空文本（与正常路径取消语义一致）', async () => {
     const ctx = buildCtx({ maxMode: true, maxModeCandidates: 2 } as any);
     ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(async () => {
-      ctx.runtime.isCancelled = true; // 候选返回前用户取消
+      ctx.runtime.control.markCancelled(); // 候选返回前用户取消
       return { type: 'tool_use', toolCalls: [{ id: 'x', name: 'Edit', arguments: {} }], finishReason: 'tool_calls', usage: { inputTokens: 10, outputTokens: 1 } };
     });
 

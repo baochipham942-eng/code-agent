@@ -5,9 +5,10 @@ import {
   ARTIFACT_REPAIR_STOP_PREFIXES,
 } from '../../../src/host/agent/runtime/artifactRepairAdmission';
 import { ARTIFACT_REPAIR_MAX_ATTEMPTS } from '../../../src/shared/constants/repair';
+import { ControlState } from '../../../src/host/agent/runtime/controlState';
 
 function makeCtx(): any {
-  return { forceFinalResponseReason: undefined, forceFinalResponsePrompt: undefined };
+  return { control: ControlState.forTest() };
 }
 
 describe('activateArtifactRepairAdmissionStop — Route A 硬停闸', () => {
@@ -15,12 +16,12 @@ describe('activateArtifactRepairAdmissionStop — Route A 硬停闸', () => {
     const ctx = makeCtx();
     activateArtifactRepairAdmissionStop(ctx, '/tmp/game.html', 'Grep, Bash');
 
-    expect(ctx.forceFinalResponseReason).toBe(
+    expect(ctx.control.forceFinalResponseReason).toBe(
       `${ARTIFACT_REPAIR_STOP_PREFIXES['unavailable-tool']} Grep, Bash`,
     );
-    expect(ctx.forceFinalResponsePrompt).toContain('<force-final-response');
-    expect(ctx.forceFinalResponsePrompt).toContain('/tmp/game.html');
-    expect(ctx.forceFinalResponsePrompt).toContain('repeatedly requested unavailable tool');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('<force-final-response');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('/tmp/game.html');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('repeatedly requested unavailable tool');
   });
 
   it('attempts-exhausted 停闸：用独立前缀和措辞', () => {
@@ -28,11 +29,11 @@ describe('activateArtifactRepairAdmissionStop — Route A 硬停闸', () => {
     const detail = `${ARTIFACT_REPAIR_MAX_ATTEMPTS}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} attempts`;
     activateArtifactRepairAdmissionStop(ctx, '/tmp/game.html', detail, 'attempts-exhausted');
 
-    expect(ctx.forceFinalResponseReason).toBe(
+    expect(ctx.control.forceFinalResponseReason).toBe(
       `${ARTIFACT_REPAIR_STOP_PREFIXES['attempts-exhausted']} ${detail}`,
     );
-    expect(ctx.forceFinalResponseReason.startsWith(ARTIFACT_REPAIR_STOP_PREFIXES['unavailable-tool'])).toBe(false);
-    expect(ctx.forceFinalResponsePrompt).toContain('reached its attempt limit');
+    expect(ctx.control.forceFinalResponseReason.startsWith(ARTIFACT_REPAIR_STOP_PREFIXES['unavailable-tool'])).toBe(false);
+    expect(ctx.control.forceFinalResponsePrompt).toContain('reached its attempt limit');
   });
 
   it('两种停闸前缀互不重叠，UI 处理器可区分', () => {
@@ -50,8 +51,7 @@ describe('activateArtifactRepairAdmissionStop — Route A 硬停闸', () => {
 describe('registerArtifactRepairBlockedToolTurn — block 路径循环断路器', () => {
   function makeGuardCtx(blockedToolTurnsWithoutProgress?: number): any {
     return {
-      forceFinalResponseReason: undefined,
-      forceFinalResponsePrompt: undefined,
+      control: ControlState.forTest(),
       artifactRepairGuard: {
         targetFile: '/tmp/code-agent/games/game.html',
         attempts: 0,
@@ -66,7 +66,7 @@ describe('registerArtifactRepairBlockedToolTurn — block 路径循环断路器'
     const stopped = registerArtifactRepairBlockedToolTurn(ctx, ctx.artifactRepairGuard, 'Read');
     expect(stopped).toBe(false);
     expect(ctx.artifactRepairGuard.blockedToolTurnsWithoutProgress).toBe(1);
-    expect(ctx.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 
   it('连续 block 到 ARTIFACT_REPAIR_MAX_ATTEMPTS 触发 attempts-exhausted 硬停（修复 block 路径不喂计数器的死锁缺口）', () => {
@@ -74,10 +74,10 @@ describe('registerArtifactRepairBlockedToolTurn — block 路径循环断路器'
     const stopped = registerArtifactRepairBlockedToolTurn(ctx, ctx.artifactRepairGuard, 'List');
     expect(stopped).toBe(true);
     expect(ctx.artifactRepairGuard.blockedToolTurnsWithoutProgress).toBe(ARTIFACT_REPAIR_MAX_ATTEMPTS);
-    expect(ctx.forceFinalResponseReason).toBe(
+    expect(ctx.control.forceFinalResponseReason).toBe(
       `${ARTIFACT_REPAIR_STOP_PREFIXES['attempts-exhausted']} ${ARTIFACT_REPAIR_MAX_ATTEMPTS}/${ARTIFACT_REPAIR_MAX_ATTEMPTS} blocked tool calls`,
     );
-    expect(ctx.forceFinalResponsePrompt).toContain('reached its attempt limit');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('reached its attempt limit');
   });
 
   it('独立于 repairTurnsWithoutProgress：即便每回合被 messageProcessor 清零，仍能累积到硬停（审计 HIGH-1 回归）', () => {
@@ -92,13 +92,13 @@ describe('registerArtifactRepairBlockedToolTurn — block 路径循环断路器'
     }
     expect(stopped).toBe(true);
     expect(ctx.artifactRepairGuard.blockedToolTurnsWithoutProgress).toBe(ARTIFACT_REPAIR_MAX_ATTEMPTS);
-    expect(ctx.forceFinalResponseReason?.startsWith(ARTIFACT_REPAIR_STOP_PREFIXES['attempts-exhausted'])).toBe(true);
+    expect(ctx.control.forceFinalResponseReason?.startsWith(ARTIFACT_REPAIR_STOP_PREFIXES['attempts-exhausted'])).toBe(true);
   });
 
   it('无 guard 时安全 no-op', () => {
     const ctx = makeCtx();
     const stopped = registerArtifactRepairBlockedToolTurn(ctx, undefined, 'Read');
     expect(stopped).toBe(false);
-    expect(ctx.forceFinalResponseReason).toBeUndefined();
+    expect(ctx.control.forceFinalResponseReason).toBeUndefined();
   });
 });

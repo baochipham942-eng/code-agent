@@ -402,7 +402,7 @@ async function completePendingGoalAfterArtifactValidation({
     const review = await runReviewGate(reviewCondition, goalMode.getGoal(), {
       workingDirectory: ctx.workingDirectory,
       sessionId: ctx.sessionId,
-      abortSignal: ctx.runAbortController?.signal,
+      abortSignal: ctx.control.runAbortController?.signal,
       hookManager: ctx.hookManager,
     });
     ctx.onEvent({

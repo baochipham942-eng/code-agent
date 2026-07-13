@@ -314,7 +314,7 @@ async function runMaxModeInference(
 ): Promise<ModelResponse> {
   const { onSnapshot: _onSnapshot, ...restOptions } = engineOptions;
   const silentOptions: InferenceOptions = { ...restOptions, suppressModelDecisionEvent: true };
-  const signal = ctx.runtime.abortController?.signal;
+  const signal = ctx.runtime.control.abortController?.signal;
   const candidates = ctx.runtime.maxModeCandidates;
   ctx.taskProgress.emitTaskProgress('thinking', `Max Mode：${candidates} 个候选并行起草中...`);
 
@@ -342,7 +342,7 @@ async function runMaxModeInference(
           runEngineInference(ctx, msgs, tls, requestConfig, streamCallback, signal, engineOptions),
         // 取消/转向/中断时丢弃整个 step（含已完成的部分赢家），走外层既有取消语义
         isAborted: () =>
-          Boolean(ctx.runtime.isCancelled || ctx.runtime.isInterrupted || ctx.runtime.turn.needsReinference),
+          Boolean(ctx.runtime.control.isCancelled || ctx.runtime.control.isInterrupted || ctx.runtime.turn.needsReinference),
       },
       { messages, tools, candidates },
     );
@@ -439,12 +439,12 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   let pendingCapabilityFallback: ModelFallbackInfo | null = null;
 
   let modelMessages: ModelMessage[] = await ctx.buildModelMessages();
-  if (ctx.runtime.forceFinalResponsePrompt) {
+  if (ctx.runtime.control.forceFinalResponsePrompt) {
     modelMessages = [
       ...modelMessages,
       {
         role: 'system',
-        content: ctx.runtime.forceFinalResponsePrompt,
+        content: ctx.runtime.control.forceFinalResponsePrompt,
         // transient：走各 provider 边界的末尾 user + <system-reminder> 转换——
         // 非 transient 的尾部 system 在 legacy claude 路径会被静默丢弃、
         // 在 aiSdk 路径会被提升进 system 参数打掉前缀缓存（审计 A2）
@@ -649,10 +649,10 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     }
 
     effectiveTools = tools;
-    if (ctx.runtime.forceFinalResponseReason) {
+    if (ctx.runtime.control.forceFinalResponseReason) {
       effectiveTools = [];
       logger.warn('[AgentLoop] Force-final-response active; tool list disabled', {
-        reason: ctx.runtime.forceFinalResponseReason,
+        reason: ctx.runtime.control.forceFinalResponseReason,
       });
     }
     if (effectiveConfig !== ctx.runtime.modelConfig) {
@@ -731,7 +731,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     }
 
     // 创建 AbortController，支持中断/转向时立即终止 API 流
-    ctx.runtime.abortController = new AbortController();
+    const inferenceAbortController = new AbortController();
+    ctx.runtime.control.setInferenceAbortController(inferenceAbortController);
 
     // Reset partial content accumulator for this inference call
     ctx.runtime.turn.resetStreamedContent();
@@ -837,7 +838,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           effectiveTools,
           requestConfig,
           streamCallback,
-          ctx.runtime.abortController.signal,
+          inferenceAbortController.signal,
           engineOptions,
         );
       }
@@ -875,7 +876,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       emitModelFallbackNoticeFromResponse(ctx, response.fallback);
     }
 
-    ctx.runtime.abortController = null;
+    ctx.runtime.control.setInferenceAbortController(null);
     logger.debug('[AgentLoop] Model response received:', response.type);
 
     // Record token usage：优先 provider 回传的真实 usage（含 cache 读/写，cache-aware 记账，WP2-1）；
@@ -909,10 +910,10 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
 
     return response;
   } catch (error) {
-    ctx.runtime.abortController = null;
+    ctx.runtime.control.setInferenceAbortController(null);
 
     // steer/interrupt 导致的 abort 不是错误，返回空文本让主循环处理
-    if (ctx.runtime.turn.needsReinference || ctx.runtime.isInterrupted || ctx.runtime.isCancelled) {
+    if (ctx.runtime.turn.needsReinference || ctx.runtime.control.isInterrupted || ctx.runtime.control.isCancelled) {
       logger.info('[AgentLoop] Inference aborted due to steer/interrupt/cancel');
       // 中断时本轮请求已派发，input tokens 是真实沉没成本——记一次避免异常路径漏记
       // （与 Max Mode 中止记沉没成本对称；output 在中断前无法准确估算，保守只记 input）
@@ -1046,7 +1047,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           ),
         };
         const compactAbortController = new AbortController();
-        ctx.runtime.abortController = compactAbortController;
+        ctx.runtime.control.setInferenceAbortController(compactAbortController);
         const retryResult = await runEngineInference(
           ctx,
           compactMessages,
@@ -1065,7 +1066,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
             inactivityTimeoutMs: 45_000,
           },
         );
-        ctx.runtime.abortController = null;
+        ctx.runtime.control.setInferenceAbortController(null);
         ctx.inferenceRecovery._artifactRepairCompactWriteRetried = false;
         if (pendingCapabilityFallback && !retryResult.fallback) {
           retryResult.actualProvider = pendingCapabilityFallback.to.provider;
@@ -1093,7 +1094,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         };
         return retryResult;
       } catch (retryErr) {
-        ctx.runtime.abortController = null;
+        ctx.runtime.control.setInferenceAbortController(null);
         ctx.inferenceRecovery._artifactRepairCompactWriteRetried = false;
         logger.error('[AgentLoop] Compact artifact repair write retry also failed:', retryErr);
       }

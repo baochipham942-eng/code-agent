@@ -31,6 +31,7 @@ import type {
 } from '../../../shared/contract/conversationEnvelope';
 import type { TurnTraceRecorder } from './turnTrace';
 import type { TurnState } from './turnState';
+import type { ControlState } from './controlState';
 import type { SessionMemoryMode } from '../../../shared/contract/session';
 import type { RunTraceContext } from '../../telemetry/runTraceContext';
 import type { GoalEvidenceGateState } from './goalEvidenceGate';
@@ -89,14 +90,10 @@ export interface RuntimeContext {
   // --- Turn 级状态切片（ADR-038 批3a，写操作走 TurnState 方法）---
   readonly turn: TurnState;
 
-  // --- Mutable run state ---
-  isCancelled: boolean;
-  isInterrupted: boolean;
-  abortController: AbortController | null;
-  runAbortController: AbortController | null;
+  // --- 控制流状态切片（ADR-038 批3b，写操作走 ControlState 方法）---
+  readonly control: ControlState;
 
   // --- Plan mode ---
-  savedMessages: Message[] | null;
   readonly autoApprovePlan: boolean;
 
   // --- Hooks ---
@@ -107,8 +104,6 @@ export interface RuntimeContext {
 
   // --- Tool execution ---
   readonly maxToolCallRetries: number;
-  externalDataCallCount: number;
-  preApprovedTools: Set<string>;
   readonly enableToolDeferredLoading: boolean;
 
   // --- Max Mode（best-of-N，roadmap 3.3）---
@@ -135,8 +130,6 @@ export interface RuntimeContext {
   pendingRuntimeDiagnostics: string[];
   /** GAP-023: 当前生效 system prompt 构建时被预算丢弃/裁剪的块（可见化到 context health） */
   droppedPromptBlocks?: string[];
-  forceFinalResponseReason?: string;
-  forceFinalResponsePrompt?: string;
   /** Last interactive artifact path that passed runtime/browser validation in this run. */
   artifactValidationPassedTargetFile?: string;
   /**

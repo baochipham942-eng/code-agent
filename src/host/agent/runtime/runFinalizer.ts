@@ -253,9 +253,9 @@ export class RunFinalizer {
     terminal: RunTerminalInfo = {},
   ): Promise<void> {
     const terminalStatus = terminal.status
-      ?? (this.ctx.isCancelled
+      ?? (this.ctx.control.isCancelled
         ? 'cancelled'
-        : this.ctx.isInterrupted
+        : this.ctx.control.isInterrupted
           ? 'interrupted'
           : 'completed');
 
@@ -707,9 +707,9 @@ export class RunFinalizer {
     if (skillResult.contextModifier) {
       if (skillResult.contextModifier.preApprovedTools) {
         for (const tool of skillResult.contextModifier.preApprovedTools) {
-          this.ctx.preApprovedTools.add(tool);
+          this.ctx.control.preApproveTool(tool);
         }
-        logger.debug(`[AgentLoop] Pre-approved tools: ${[...this.ctx.preApprovedTools].join(', ')}`);
+        logger.debug(`[AgentLoop] Pre-approved tools: ${[...this.ctx.control.preApprovedTools].join(', ')}`);
       }
 
       // GAP-001: skill allowed-tools 限权边界（边界外的工具调用强制用户审批）

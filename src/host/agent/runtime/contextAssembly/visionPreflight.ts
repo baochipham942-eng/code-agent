@@ -115,7 +115,7 @@ export async function preflightImagesForMainModel(
     [],
     preflightConfig,
     undefined,
-    ctx.runtime.runAbortController?.signal,
+    ctx.runtime.control.runAbortController?.signal,
     { reasoningEffort: 'low' },
   );
   const summary = (response.content || response.thinking || '').trim();

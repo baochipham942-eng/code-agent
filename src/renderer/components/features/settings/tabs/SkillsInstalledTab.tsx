@@ -45,6 +45,19 @@ export interface InstalledSkillSummary {
 
 export type SkillsInstalledLabels = typeof zh.settings.skills.installed;
 
+/**
+ * IPC 返回的 skill 附带三态启停信息（仅传输层，不进 shared ParsedSkill 契约）：
+ * - globalEnabled：用户全局黑名单状态
+ * - projectOverride：当前项目覆盖（true/false=强制启停，null=跟随全局）
+ * - enabled：生效态（项目覆盖优先，否则全局）
+ */
+export type InstalledSkill = ParsedSkill & {
+  globalEnabled?: boolean;
+  projectOverride?: boolean | null;
+};
+
+export type ProjectOverrideValue = 'follow' | 'on' | 'off';
+
 const DEFAULT_SKILLS_INSTALLED_LABELS = zh.settings.skills.installed;
 
 /** 按组排序：内置 → 项目 → 用户 → 库 */
@@ -248,14 +261,28 @@ export function filterSkillGroups(
 // 行组件
 // ============================================================================
 
+/** projectOverride (true/false/null) → select 的三态值 */
+export function overrideToSelectValue(projectOverride: boolean | null | undefined): ProjectOverrideValue {
+  if (projectOverride === true) return 'on';
+  if (projectOverride === false) return 'off';
+  return 'follow';
+}
+
 interface SkillRowProps {
-  skill: ParsedSkill;
+  skill: InstalledSkill;
   labels: SkillsInstalledLabels;
   onToggle: (skillName: string, enabled: boolean) => void;
+  onProjectOverrideChange: (skillName: string, value: ProjectOverrideValue) => void;
   toggleDisabled?: boolean;
 }
 
-const SkillRow: React.FC<SkillRowProps> = ({ skill, labels, onToggle, toggleDisabled }) => {
+const SkillRow: React.FC<SkillRowProps> = ({
+  skill,
+  labels,
+  onToggle,
+  onProjectOverrideChange,
+  toggleDisabled,
+}) => {
   const hasMissingDeps = skill.dependencyStatus && !skill.dependencyStatus.satisfied;
   const missingDepsTitle = hasMissingDeps
     ? [
@@ -264,15 +291,24 @@ const SkillRow: React.FC<SkillRowProps> = ({ skill, labels, onToggle, toggleDisa
         ...(skill.dependencyStatus?.missingReferences || []),
       ].join(', ')
     : undefined;
-  const enabled = skill.enabled !== false;
+  // 生效态（项目覆盖优先）驱动文字灰显；全局态驱动主开关；两者分开呈现以区分。
+  const effectiveEnabled = skill.enabled !== false;
+  const globalEnabled = skill.globalEnabled ?? effectiveEnabled;
+  const hasProjectOverride = skill.projectOverride === true || skill.projectOverride === false;
+  const overrideValue = overrideToSelectValue(skill.projectOverride);
 
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800/50">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className={`truncate text-sm font-medium ${enabled ? 'text-zinc-200' : 'text-zinc-500'}`}>
+          <span className={`truncate text-sm font-medium ${effectiveEnabled ? 'text-zinc-200' : 'text-zinc-500'}`}>
             {skill.name}
           </span>
+          {hasProjectOverride && (
+            <span className="inline-flex shrink-0 items-center rounded-sm bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">
+              {labels.projectOverrideBadge}
+            </span>
+          )}
           {hasMissingDeps && (
             <span
               className="inline-flex shrink-0 items-center gap-1 text-[11px] text-amber-400"
@@ -283,12 +319,23 @@ const SkillRow: React.FC<SkillRowProps> = ({ skill, labels, onToggle, toggleDisa
             </span>
           )}
         </div>
-        <p className={`mt-0.5 truncate text-xs ${enabled ? 'text-zinc-500' : 'text-zinc-600'}`} title={skill.description}>
+        <p className={`mt-0.5 truncate text-xs ${effectiveEnabled ? 'text-zinc-500' : 'text-zinc-600'}`} title={skill.description}>
           {skill.description}
         </p>
       </div>
+      <select
+        value={overrideValue}
+        onChange={(event) => onProjectOverrideChange(skill.name, event.target.value as ProjectOverrideValue)}
+        disabled={toggleDisabled}
+        aria-label={`${labels.projectOverrideAriaPrefix}${skill.name}`}
+        className="shrink-0 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300 disabled:opacity-50"
+      >
+        <option value="follow">{labels.projectOverrideFollow}</option>
+        <option value="on">{labels.projectOverrideOn}</option>
+        <option value="off">{labels.projectOverrideOff}</option>
+      </select>
       <Toggle
-        checked={enabled}
+        checked={globalEnabled}
         onChange={(next) => onToggle(skill.name, next)}
         disabled={toggleDisabled}
         aria-label={`${labels.enableSkillAriaPrefix}${skill.name}`}
@@ -302,10 +349,11 @@ const SkillRow: React.FC<SkillRowProps> = ({ skill, labels, onToggle, toggleDisa
 // ============================================================================
 
 export interface SkillsInstalledTabProps {
-  skills: ParsedSkill[];
+  skills: InstalledSkill[];
   libraries: LocalSkillLibrary[];
   actionLoading: string | null;
   onToggleSkill: (skillName: string, enabled: boolean) => void;
+  onProjectOverrideChange: (skillName: string, value: ProjectOverrideValue) => void;
   onUpdateLibrary: (repoId: string) => void;
   onRemoveLibrary: (repoId: string) => void;
 }
@@ -315,6 +363,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
   libraries,
   actionLoading,
   onToggleSkill,
+  onProjectOverrideChange,
   onUpdateLibrary,
   onRemoveLibrary,
 }) => {
@@ -437,6 +486,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                               skill={skill}
                               labels={installedText}
                               onToggle={onToggleSkill}
+                              onProjectOverrideChange={onProjectOverrideChange}
                               toggleDisabled={Boolean(actionLoading)}
                             />
                           ))}
@@ -452,6 +502,7 @@ export const SkillsInstalledTab: React.FC<SkillsInstalledTabProps> = ({
                         skill={skill}
                         labels={installedText}
                         onToggle={onToggleSkill}
+                        onProjectOverrideChange={onProjectOverrideChange}
                         toggleDisabled={Boolean(actionLoading)}
                       />
                     ))}

@@ -47,7 +47,12 @@ const svc = vi.hoisted(() => {
     confirmSkillDraft: vi.fn(async () => ({ success: true })),
     rejectSkillDraft: vi.fn(async () => ({ success: true })),
   };
-  return { repo, discovery, session, cloud, config, recorder, drafts };
+  const projectPref = {
+    getOverride: vi.fn<(name: string) => boolean | undefined>(() => undefined),
+    setOverride: vi.fn(),
+    clearOverride: vi.fn(),
+  };
+  return { repo, discovery, session, cloud, config, recorder, drafts, projectPref };
 });
 
 vi.mock('../../../src/host/services/skills/skillRepositoryService', () => ({
@@ -55,6 +60,9 @@ vi.mock('../../../src/host/services/skills/skillRepositoryService', () => ({
 }));
 vi.mock('../../../src/host/services/skills/skillDiscoveryService', () => ({
   getSkillDiscoveryService: () => svc.discovery,
+}));
+vi.mock('../../../src/host/services/skills/projectSkillPreferenceService', () => ({
+  getProjectSkillPreferenceStore: () => svc.projectPref,
 }));
 vi.mock('../../../src/host/services/skills/sessionSkillService', () => ({
   getSessionSkillService: () => svc.session,
@@ -121,6 +129,7 @@ beforeEach(() => {
   svc.drafts.listSkillDrafts.mockResolvedValue([{ id: 'd1' }]);
   svc.drafts.confirmSkillDraft.mockResolvedValue({ success: true });
   svc.drafts.rejectSkillDraft.mockResolvedValue({ success: true });
+  svc.projectPref.getOverride.mockReturnValue(undefined);
   call = register();
 });
 
@@ -171,13 +180,45 @@ describe('仓库管理', () => {
 });
 
 describe('skill 启停', () => {
-  it('SKILL_LIST 附带全局启用状态', async () => {
+  it('SKILL_LIST 附带全局态 + 无项目覆盖时 enabled 跟随全局', async () => {
     svc.repo.isSkillEnabled.mockImplementation((n: string) => n === 'pdf');
-    const result = (await call(SKILL_CHANNELS.SKILL_LIST)) as Array<{ name: string; enabled: boolean }>;
+    const result = (await call(SKILL_CHANNELS.SKILL_LIST)) as Array<{
+      name: string;
+      enabled: boolean;
+      globalEnabled: boolean;
+      projectOverride: boolean | null;
+    }>;
     expect(result).toEqual([
-      { name: 'pdf', enabled: true },
-      { name: 'excel', enabled: false },
+      { name: 'pdf', enabled: true, globalEnabled: true, projectOverride: null },
+      { name: 'excel', enabled: false, globalEnabled: false, projectOverride: null },
     ]);
+  });
+
+  it('SKILL_LIST 项目覆盖优先于全局态（覆盖=false 时 enabled 为 false 即使全局启用）', async () => {
+    svc.repo.isSkillEnabled.mockReturnValue(true); // 全局全开
+    svc.projectPref.getOverride.mockImplementation((n: string) => (n === 'pdf' ? false : undefined));
+    const result = (await call(SKILL_CHANNELS.SKILL_LIST)) as Array<{
+      name: string;
+      enabled: boolean;
+      globalEnabled: boolean;
+      projectOverride: boolean | null;
+    }>;
+    expect(result).toEqual([
+      { name: 'pdf', enabled: false, globalEnabled: true, projectOverride: false },
+      { name: 'excel', enabled: true, globalEnabled: true, projectOverride: null },
+    ]);
+  });
+
+  it('SKILL_PROJECT_SET 写项目覆盖并刷新 ToolSearch 注册表', async () => {
+    await call(SKILL_CHANNELS.SKILL_PROJECT_SET, 'pdf', false);
+    expect(svc.projectPref.setOverride).toHaveBeenCalledWith('pdf', false);
+    expect(svc.discovery.registerSkillsToToolSearch).toHaveBeenCalled();
+  });
+
+  it('SKILL_PROJECT_CLEAR 清项目覆盖并刷新注册表', async () => {
+    await call(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, 'pdf');
+    expect(svc.projectPref.clearOverride).toHaveBeenCalledWith('pdf');
+    expect(svc.discovery.registerSkillsToToolSearch).toHaveBeenCalled();
   });
 
   it('SKILL_ENABLE 启用并刷新 ToolSearch 注册表', async () => {

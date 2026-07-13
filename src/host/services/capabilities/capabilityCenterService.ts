@@ -769,7 +769,7 @@ class CapabilityCenterService {
         dependencies: deps,
         audit: {
           installedFiles: sourcePath ? [sourcePath] : undefined,
-          notes: ['所有来源的 skill 都支持全局启停（disabledSkills 黑名单）'],
+          notes: ['所有来源的 skill 都支持全局启停（disabledSkills 黑名单），并可在设置页按项目覆盖（项目级 > 全局）'],
         },
         actions: buildAction(true),
       } satisfies CapabilityCenterItem;

@@ -8,6 +8,7 @@ import { SKILL_CHANNELS } from '../../shared/ipc/channels';
 import { getSkillRepositoryService } from '../services/skills/skillRepositoryService';
 import { getSessionSkillService } from '../services/skills/sessionSkillService';
 import { getSkillDiscoveryService } from '../services/skills/skillDiscoveryService';
+import { getProjectSkillPreferenceStore } from '../services/skills/projectSkillPreferenceService';
 import { RECOMMENDED_REPOSITORIES } from '../services/skills/skillRepositories';
 import { getCloudConfigService } from '../services/cloud';
 import type { SkillRepository } from '../../shared/contract/skillRepository';
@@ -112,17 +113,44 @@ async function handleRepoAddCustom(url: string, name?: string) {
 // ----------------------------------------------------------------------------
 
 /**
- * 获取所有可用 skills（附带全局启用状态）
+ * 获取所有可用 skills，附带三态启停信息：
+ * - globalEnabled：用户全局黑名单状态
+ * - projectOverride：当前项目覆盖（true/false=强制启停，null=跟随全局）
+ * - enabled：生效态（项目覆盖优先，否则全局），供既有消费方沿用
  */
 async function handleSkillList() {
   await ensureSkillDiscoveryForIpc();
   const repoService = getSkillRepositoryService();
   await repoService.initialize();
   const discoveryService = getSkillDiscoveryService();
-  return discoveryService.getAllSkills().map((skill) => ({
-    ...skill,
-    enabled: repoService.isSkillEnabled(skill.name),
-  }));
+  const prefStore = getProjectSkillPreferenceStore(getSkillIpcWorkingDirectory());
+  return discoveryService.getAllSkills().map((skill) => {
+    const globalEnabled = repoService.isSkillEnabled(skill.name);
+    const override = prefStore.getOverride(skill.name);
+    const projectOverride = override === undefined ? null : override;
+    return {
+      ...skill,
+      globalEnabled,
+      projectOverride,
+      enabled: projectOverride ?? globalEnabled,
+    };
+  });
+}
+
+/**
+ * 设置当前项目内的 skill 启停覆盖（项目级 > 全局）
+ */
+async function handleSkillProjectSet(skillName: string, enabled: boolean) {
+  getProjectSkillPreferenceStore(getSkillIpcWorkingDirectory()).setOverride(skillName, enabled);
+  await refreshToolSearchRegistration();
+}
+
+/**
+ * 清除当前项目内的 skill 覆盖，回落全局语义
+ */
+async function handleSkillProjectClear(skillName: string) {
+  getProjectSkillPreferenceStore(getSkillIpcWorkingDirectory()).clearOverride(skillName);
+  await refreshToolSearchRegistration();
 }
 
 /**
@@ -470,6 +498,24 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
       await handleSkillDisable(skillName);
     } catch (error) {
       logger.error('Failed to disable skill', { skillName, error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_SET, async (_, skillName: string, enabled: boolean) => {
+    try {
+      await handleSkillProjectSet(skillName, enabled);
+    } catch (error) {
+      logger.error('Failed to set project skill override', { skillName, enabled, error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.SKILL_PROJECT_CLEAR, async (_, skillName: string) => {
+    try {
+      await handleSkillProjectClear(skillName);
+    } catch (error) {
+      logger.error('Failed to clear project skill override', { skillName, error });
       throw error;
     }
   });

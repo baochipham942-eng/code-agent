@@ -2,6 +2,7 @@
 // MessageProcessor Stop Hook Tests — GAP-006: 完成闸 + 重试安全阀
 // ============================================================================
 
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAssembly';
@@ -73,6 +74,7 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: 'runtime-session-1',
     messages: [{ id: 'user-1', role: 'user', content: '帮我修这个 bug', timestamp: Date.now() }],
+    artifact: ArtifactState.forTest(),
     control: ControlState.forTest({ isCancelled: false } as never),
     modelConfig: { provider: 'zhipu', model: 'glm-5', maxTokens: 16384 },
     contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),

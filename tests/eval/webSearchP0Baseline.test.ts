@@ -1,3 +1,4 @@
+import { ArtifactState } from '../../src/host/agent/runtime/artifactState';
 import { describe, expect, it, beforeEach } from 'vitest';
 import evalSet from './fixtures/websearch-eval-set.json';
 import beforeBaseline from './fixtures/websearch-p0-before-baseline.json';
@@ -55,6 +56,7 @@ function makeRuntimeHarness() {
 
   const ctx = {
     sessionId: 'session-websearch-p0-baseline',
+    artifact: ArtifactState.forTest(),
     control: ControlState.forTest(),
     needsReinference: false,
     onEvent: (event: AgentEvent) => events.push(event),

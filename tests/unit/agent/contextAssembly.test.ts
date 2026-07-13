@@ -1,3 +1,4 @@
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 // ============================================================================
 // ContextAssembly Tests
 // Verifies runtime model input honors context interventions.
@@ -500,6 +501,7 @@ function buildRuntimeContext(overrides: Record<string, unknown> = {}) {
       effortLevel: 'medium',
       ...turnSeed,
     } as never),
+    artifact: ArtifactState.forTest(),
     ...rest,
   };
 }
@@ -719,6 +721,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       consecutiveErrors: 0,
       stats: RunStatsState.forTest({ traceId: 'trace-1', pendingRuntimeDiagnostics: [], totalInputTokens: 0, totalOutputTokens: 0, runStartTime: Date.now(), totalTokensUsed: 0, totalToolCallCount: 0 } as never),
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      artifact: ArtifactState.forTest(),
     };
 
     getContextInterventionState().applyIntervention(sessionId, agentId, 'pinned-message', 'pin', true);
@@ -1247,7 +1250,8 @@ describe('ContextAssembly.buildModelMessages()', () => {
           ],
         } as Message,
       ],
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
@@ -1260,6 +1264,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
         ],
         patched: false,
       },
+      }),
       persistentSystemContext: [
         [
           '<artifact-validation-failed kind="interactive_artifact">',
@@ -1345,11 +1350,13 @@ describe('ContextAssembly.buildModelMessages()', () => {
           ],
         } as Message,
       ],
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
       },
+      }),
       persistentSystemContext: [
         '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
       ],
@@ -1380,12 +1387,14 @@ describe('ContextAssembly.buildModelMessages()', () => {
           ],
         } as Message,
       ],
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         patched: false,
       },
+      }),
       persistentSystemContext: [
         '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
       ],
@@ -1431,12 +1440,14 @@ describe('ContextAssembly.buildModelMessages()', () => {
           ],
         } as Message,
       ],
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         patched: false,
       },
+      }),
       persistentSystemContext: [
         '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
       ],
@@ -1516,12 +1527,14 @@ describe('ContextAssembly.buildModelMessages()', () => {
           ],
         } as Message,
       ],
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         patched: false,
       },
+      }),
       persistentSystemContext: [
         '<artifact-validation-failed kind="interactive_artifact">\nArtifact validation failed for /tmp/game.html.\n</artifact-validation-failed>',
       ],
@@ -1585,13 +1598,15 @@ describe('ContextAssembly.buildModelMessages()', () => {
           ],
         } as Message,
       ],
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile: '/tmp/game.html',
         attempts: 1,
         phase: 'baseline_repair',
         activeIssueCodes: ['coverage_without_runtime_evidence'],
         patched: false,
       },
+      }),
       persistentSystemContext: [
         '<artifact-validation-failed kind="interactive_artifact">\ncoverage_without_runtime_evidence\n</artifact-validation-failed>',
       ],
@@ -1769,6 +1784,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       consecutiveErrors: 0,
       stats: RunStatsState.forTest({ traceId: 'trace-cache', pendingRuntimeDiagnostics: [], totalInputTokens: 0, totalOutputTokens: 0, runStartTime: Date.now(), totalTokensUsed: 0, totalToolCallCount: 0 } as never),
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
+      artifact: ArtifactState.forTest(),
     };
 
     const assembly = new ContextAssembly(ctx as never);

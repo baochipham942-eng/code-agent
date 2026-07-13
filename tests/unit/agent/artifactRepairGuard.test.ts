@@ -4,6 +4,7 @@ import {
   getArtifactRepairToolPolicy,
   seedArtifactRepairGuardFromContext,
 } from '../../../src/host/agent/runtime/artifactRepairGuard';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 function makeRuntimeContext(content: string): any {
   return {
@@ -17,6 +18,7 @@ function makeRuntimeContext(content: string): any {
       },
     ],
     contextHealth: ContextHealthState.forTest({ persistentSystemContext: [] } as never),
+    artifact: ArtifactState.forTest(),
   };
 }
 
@@ -28,7 +30,7 @@ describe('artifactRepairGuard', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
   });
 
   it('does not seed repair for fresh Chinese game generation that mentions failure state', () => {
@@ -38,7 +40,7 @@ describe('artifactRepairGuard', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
   });
 
   it('does not re-seed a guard for a target that already passed validation this run', () => {
@@ -47,11 +49,11 @@ describe('artifactRepairGuard', () => {
     );
     // 同一 run 内该目标已通过验收（lifecycle 设置的通行标记）——
     // 不允许下一轮凭历史文本重新种 guard 进入幻影修复模式。
-    ctx.artifactValidationPassedTargetFile = '/tmp/x.html';
+    ctx.artifact.setValidationPassed('/tmp/x.html');
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
   });
 
   it('does not include a Chinese prefix when extracting a target path', () => {
@@ -61,7 +63,7 @@ describe('artifactRepairGuard', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toMatchObject({
+    expect(ctx.artifact.repairGuard).toMatchObject({
       targetFile: '/tmp/x.html',
       phase: 'initial_repair',
     });
@@ -74,7 +76,7 @@ describe('artifactRepairGuard', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toMatchObject({
+    expect(ctx.artifact.repairGuard).toMatchObject({
       targetFile: '/tmp/code-agent/games/game.html',
       phase: 'initial_repair',
     });
@@ -93,7 +95,7 @@ describe('artifactRepairGuard', () => {
     // No clear path prefix → guard is not seeded from this free text (the proper
     // triggers are an absolute/`./` path, a `target file:` label, or the
     // validation-failure path in toolExecutionEngine).
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
   });
 
   it('seeds repair mode when an actual artifact validation failure names a target file', () => {
@@ -103,7 +105,7 @@ describe('artifactRepairGuard', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toMatchObject({
+    expect(ctx.artifact.repairGuard).toMatchObject({
       targetFile: '/tmp/code-agent/games/game.html',
       phase: 'initial_repair',
     });
@@ -120,7 +122,7 @@ describe('artifactRepairGuard', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
   });
 
   it('does not seed repair on a protocol-relative URL target (//host/x.html)', () => {
@@ -130,7 +132,7 @@ describe('artifactRepairGuard', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
   });
 
   it('still detects targeted issue codes but never narrows the repair tool set (Route A)', () => {
@@ -142,7 +144,7 @@ describe('artifactRepairGuard', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    expect(ctx.artifactRepairGuard).toMatchObject({
+    expect(ctx.artifact.repairGuard).toMatchObject({
       targetFile: '/tmp/code-agent/games/game.html',
       activeIssueCodes: expect.arrayContaining(['malformed_test_contract', 'canvas_not_responsive']),
     });
@@ -150,7 +152,7 @@ describe('artifactRepairGuard', () => {
     // Route A: issue-code detection is kept, but the tool set never collapses to a
     // targeted/mutation-only subset. Bash is now allowed pre-patch too (relaxed
     // 2026-06-11: strong code models loop on the unavailable tool otherwise).
-    const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
+    const policy = getArtifactRepairToolPolicy(ctx.artifact.repairGuard);
     expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(policy?.writeAllowed).toBe(true);
   });
@@ -160,7 +162,7 @@ describe('artifactRepairGuard', () => {
 
     seedArtifactRepairGuardFromContext(ctx);
 
-    const policy = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
+    const policy = getArtifactRepairToolPolicy(ctx.artifact.repairGuard);
     expect(policy?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(policy?.writeAllowed).toBe(true);
   });
@@ -169,11 +171,11 @@ describe('artifactRepairGuard', () => {
     const ctx = makeRuntimeContext('Artifact validation failed for /tmp/code-agent/games/game.html. Please fix runSmokeTest.');
 
     seedArtifactRepairGuardFromContext(ctx);
-    const prePatch = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
+    const prePatch = getArtifactRepairToolPolicy(ctx.artifact.repairGuard);
     expect(prePatch?.bashAllowed).toBe(true);
 
-    ctx.artifactRepairGuard.patched = true;
-    const postPatch = getArtifactRepairToolPolicy(ctx.artifactRepairGuard);
+    ctx.artifact.repairGuard.patched = true;
+    const postPatch = getArtifactRepairToolPolicy(ctx.artifact.repairGuard);
     expect(postPatch?.allowedToolNames).toEqual(['Read', 'Edit', 'Write', 'Append', 'Bash']);
     expect(postPatch?.bashAllowed).toBe(true);
   });

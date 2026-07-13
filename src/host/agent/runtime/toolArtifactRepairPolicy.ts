@@ -175,7 +175,7 @@ function isBalancedJavaScriptBlock(value: string): boolean {
 }
 
 function detectArtifactRepairIssueScopeMismatch(
-  guard: NonNullable<RuntimeContext['artifactRepairGuard']>,
+  guard: NonNullable<RuntimeContext['artifact']['repairGuard']>,
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
 ): string | null {
   const issueCodes = guard.activeIssueCodes || [];
@@ -187,7 +187,7 @@ function detectArtifactRepairIssueScopeMismatch(
 }
 
 function detectArtifactRepairContractStructureRisk(
-  guard: NonNullable<RuntimeContext['artifactRepairGuard']>,
+  guard: NonNullable<RuntimeContext['artifact']['repairGuard']>,
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
 ): string | null {
   if (toolCall.name !== 'Edit' && toolCall.name !== 'edit_file') return null;
@@ -359,7 +359,7 @@ export function isArtifactRepairEditAnchorFailure(
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
   result: Pick<ToolResult, 'success' | 'error'>,
 ): boolean {
-  const guard = ctx.artifactRepairGuard;
+  const guard = ctx.artifact.repairGuard;
   if (!guard || result.success !== false) return false;
   if (toolCall.name !== 'Edit' && toolCall.name !== 'edit_file') return false;
 
@@ -471,7 +471,7 @@ function isPlatformerStructuralGameplayRepair(issueCodes: readonly string[] = []
 }
 
 export function enforceArtifactRepairRepeatedPatchGuard(ctx: RuntimeContext, toolCall: ToolCall): string | null {
-  const guard = ctx.artifactRepairGuard;
+  const guard = ctx.artifact.repairGuard;
   if (!guard?.lastFailedPatchFingerprint) return null;
   if (toolCall.name !== 'Edit' && toolCall.name !== 'edit_file') return null;
 
@@ -521,7 +521,7 @@ export function captureArtifactRepairRollbackSnapshot(
   ctx: RuntimeContext,
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
 ): ArtifactRepairRollbackSnapshot | null {
-  const guard = ctx.artifactRepairGuard;
+  const guard = ctx.artifact.repairGuard;
   if (!guard || !isFileMutationTool(toolCall.name)) return null;
 
   const modifiedPath = getModifiedFilePath(toolCall);
@@ -616,7 +616,7 @@ function isArtifactRepairBashSourceRead(command: string): boolean {
 }
 
 export function enforceArtifactRepairGuard(ctx: RuntimeContext, toolCall: ToolCall): string | null {
-  const guard = ctx.artifactRepairGuard;
+  const guard = ctx.artifact.repairGuard;
   if (!guard) return null;
 
   const readPath = extractReadFilePath(toolCall);

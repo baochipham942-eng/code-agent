@@ -56,7 +56,7 @@ export async function handleUnavailableToolCalls(
   // artifact 修复（无 targetFile），就自动解锁这些工具：下一轮即可携带完整 schema 正常
   // 调用，而不是用误导性的 "not available in the current repair step" 把模型劝退。
   // 这是"多 agent 跑不通"的根因（deferred 多 agent 工具被通用拦截误伤）。
-  const isRealArtifactRepair = !!ctx.artifactRepairGuard?.targetFile;
+  const isRealArtifactRepair = !!ctx.artifact.repairGuard?.targetFile;
   if (!isRealArtifactRepair) {
     const toolSearchService = getToolSearchService();
     const autoLoaded: string[] = [];
@@ -131,11 +131,10 @@ export async function handleUnavailableToolCalls(
 
   const requestedNames = unavailableToolCalls.map((toolCall) => toolCall.name).join(', ');
   const allowedNames = [...visibleToolNames].join(', ') || 'none';
-  const guard = ctx.artifactRepairGuard;
+  const guard = ctx.artifact.repairGuard;
   const repairTurnsWithoutProgress = (guard?.repairTurnsWithoutProgress ?? 0) + 1;
   if (guard) {
-    guard.repairTurnsWithoutProgress = repairTurnsWithoutProgress;
-    guard.lastBlockedTool = requestedNames;
+    ctx.artifact.recordUnavailableToolTurn(repairTurnsWithoutProgress, requestedNames);
   }
   const repairPolicy = getArtifactRepairToolPolicy(guard);
   // Route A 死循环逃生门：连续 ARTIFACT_REPAIR_MAX_ATTEMPTS 个修复回合没有任何

@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import path from 'path';
 import { evaluateWorkspaceHygiene } from '../../../../src/host/agent/runtime/workspaceHygiene';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
+import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
 
 const workingDirectory = '/work';
 
 function declared(
   finalArtifacts: string[],
   scratchDir?: string,
-): NonNullable<RuntimeContext['declaredDeliverables']> {
+): import('../../../../src/host/agent/runtime/artifactState').DeclaredDeliverables {
   return {
     finalArtifacts,
     scratchDir,

@@ -96,7 +96,7 @@ export function runGoalEvidenceGate(
   completionCall: ToolCall,
 ): GoalEvidenceGateResult {
   const claimed = parseClaimedEvidence(completionCall);
-  const declaredArtifacts = ctx.declaredDeliverables?.finalArtifacts ?? [];
+  const declaredArtifacts = ctx.artifact.declaredDeliverables?.finalArtifacts ?? [];
   const evidenceRefs: EvidenceRef[] = [];
   const problems: string[] = [];
 
@@ -158,9 +158,9 @@ export function runGoalEvidenceGate(
     // 工作区卫生（final artifact contract 附带查验）：声明外的散落写入只记录
     // 不打回——首版警告级，避免误伤合法的辅助文件；污染趋势看 trace 决定是否升级。
     let hygieneNote = '';
-    if (ctx.declaredDeliverables) {
+    if (ctx.artifact.declaredDeliverables) {
       const hygiene = evaluateWorkspaceHygiene({
-        declared: ctx.declaredDeliverables,
+        declared: ctx.artifact.declaredDeliverables,
         writtenFiles: collectWrittenFiles(ctx),
         workingDirectory: ctx.workingDirectory || process.cwd(),
       });

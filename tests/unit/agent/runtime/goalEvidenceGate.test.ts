@@ -6,6 +6,7 @@ import { runGoalEvidenceGate } from '../../../../src/host/agent/runtime/goalEvid
 import { GOAL_MODE } from '../../../../src/shared/constants/agent';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
 import type { ToolCall } from '../../../../src/shared/contract';
+import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
 
 function makeCtx(overrides: Record<string, unknown> = {}): RuntimeContext {
   return {
@@ -13,6 +14,7 @@ function makeCtx(overrides: Record<string, unknown> = {}): RuntimeContext {
     messages: [],
     goalMode: { getVerifyCommand: () => undefined },
     goalEvidenceState: { bounces: 0 },
+    artifact: ArtifactState.forTest(),
     ...overrides,
   } as unknown as RuntimeContext;
 }
@@ -91,7 +93,9 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
 
   it('事先声明的产物（declaredDeliverables）缺失 → 即使自报证据齐也打回', () => {
     const ctx = makeCtx({
-      declaredDeliverables: { finalArtifacts: ['promised.html'], declaredAtMs: 1 },
+      artifact: ArtifactState.forTest({
+        declaredDeliverables: { finalArtifacts: ['promised.html'], declaredAtMs: 1 },
+      }),
       messages: [
         {
           id: 'm1', role: 'assistant', content: '', timestamp: 1,
@@ -113,7 +117,9 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
     await writeFile(filePath, '<html></html>', 'utf-8');
     const ctx = makeCtx({
       workingDirectory: dir,
-      declaredDeliverables: { finalArtifacts: ['app.html'], declaredAtMs: 1 },
+      artifact: ArtifactState.forTest({
+        declaredDeliverables: { finalArtifacts: ['app.html'], declaredAtMs: 1 },
+      }),
       messages: [
         {
           id: 'm1', role: 'assistant', content: '', timestamp: 1,

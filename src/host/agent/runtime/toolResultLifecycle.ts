@@ -135,9 +135,9 @@ export function handleToolResultBookkeeping({
   toolResult,
 }: HandleToolResultBookkeepingArgs): void {
   if (isArtifactRepairEditAnchorFailure(ctx, toolCall, toolResult)) {
-    const guard = ctx.artifactRepairGuard;
+    const guard = ctx.artifact.repairGuard;
     if (guard) {
-      guard.lastBlockedTool = toolCall.name;
+      ctx.artifact.recordBlockedTool(toolCall.name);
     }
     toolResult.metadata = {
       ...toolResult.metadata,

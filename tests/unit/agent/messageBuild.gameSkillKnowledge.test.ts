@@ -1,3 +1,4 @@
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import type { Message } from '../../../src/shared/contract';
@@ -177,6 +178,7 @@ function makeCtx(userMessage: string): ContextAssemblyCtx {
       workingDirectory: '/tmp/code-agent',
       isDefaultWorkingDirectory: false,
       turn: TurnState.forTest({ isSimpleTaskMode: false }),
+      artifact: ArtifactState.forTest(),
       enableToolDeferredLoading: false,
       memoryMode: 'off',
       modelConfig: {

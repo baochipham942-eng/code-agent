@@ -13,6 +13,7 @@ import type { Message } from '../../../src/shared/contract';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 const serviceMocks = vi.hoisted(() => {
   const langfuse = {
@@ -305,6 +306,7 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     stats: RunStatsState.forTest({ traceId: 'trace-1', totalInputTokens: 0, totalOutputTokens: 0, runStartTime: Date.now(), totalTokensUsed: 0, totalToolCallCount: 0 } as never),
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
     contextHealth: ContextHealthState.forTest({ persistentSystemContext: [] } as never),
+    artifact: ArtifactState.forTest(),
     ...overrides,
   };
 }
@@ -861,12 +863,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'initial_repair',
         patched: false,
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -932,12 +936,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'initial_repair',
         patched: false,
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -1018,13 +1024,15 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 3,
         phase: 'read_then_patch',
         patched: false,
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -1110,12 +1118,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 4,
         phase: 'read_then_patch',
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
+      }),
     });
     const contextAssembly = {
       injectSystemMessage: vi.fn(),
@@ -1189,12 +1199,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 2,
         phase: 'read_then_patch',
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -1583,11 +1595,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -1644,7 +1658,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(toolExecutor.execute).not.toHaveBeenCalled();
 
     ctx.turn.clearReinference();
-    ctx.artifactRepairGuard!.patched = true;
+    ctx.artifact.repairGuard!.patched = true;
     vi.mocked(toolExecutor.execute).mockClear();
     const [allowedBash] = await engine.executeToolsWithHooks([
       {
@@ -1672,11 +1686,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 0,
         phase: 'initial_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -1713,7 +1729,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(toolExecutor.execute).not.toHaveBeenCalled();
 
     ctx.turn.clearReinference();
-    ctx.artifactRepairGuard!.patched = true;
+    ctx.artifact.repairGuard!.patched = true;
     vi.mocked(toolExecutor.execute).mockClear();
     const [allowedPipedValidator] = await engine.executeToolsWithHooks([
       {
@@ -1748,11 +1764,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 3,
         phase: 'read_then_patch',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -1797,14 +1815,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       } as ToolCall,
     ]);
     expect(allowedWrite.success).toBe(true);
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
     expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
 
-    ctx.artifactRepairGuard = {
+    ctx.artifact.setRepairGuard({
       targetFile,
       attempts: 3,
       phase: 'read_then_patch',
-    };
+    });
     ctx.turn.clearReinference();
     vi.mocked(toolExecutor.execute).mockClear();
     const [blockedWrite] = await engine.executeToolsWithHooks([
@@ -1814,11 +1832,11 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(blockedWrite.error).toContain('File mutation is limited to the target artifact file during repair');
     expect(toolExecutor.execute).not.toHaveBeenCalled();
 
-    ctx.artifactRepairGuard = {
+    ctx.artifact.setRepairGuard({
       targetFile,
       attempts: 3,
       phase: 'read_then_patch',
-    };
+    });
     ctx.turn.clearReinference();
     const [blockedTask] = await engine.executeToolsWithHooks([
       {
@@ -1850,11 +1868,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 0,
         phase: 'initial_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -1896,7 +1916,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(blocked.success).toBe(false);
     expect(blocked.error).toContain('only changes comments or banner text');
     expect(blocked.error).toContain('rewrite the full artifact with Write');
-    expect(ctx.artifactRepairGuard?.patched).not.toBe(true);
+    expect(ctx.artifact.repairGuard?.patched).not.toBe(true);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
@@ -1915,11 +1935,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 0,
         phase: 'read_then_patch',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -1992,11 +2014,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2037,7 +2061,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(blocked.success).toBe(false);
     expect(blocked.error).toContain('placeholder or probe markers');
-    expect(ctx.artifactRepairGuard?.patched).not.toBe(true);
+    expect(ctx.artifact.repairGuard?.patched).not.toBe(true);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
@@ -2056,11 +2080,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2119,11 +2145,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2161,7 +2189,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(blocked.success).toBe(false);
     expect(blocked.error).toContain('placeholder text');
-    expect(ctx.artifactRepairGuard?.patched).not.toBe(true);
+    expect(ctx.artifact.repairGuard?.patched).not.toBe(true);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
 
@@ -2182,11 +2210,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 0,
         phase: 'initial_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2327,11 +2357,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2361,7 +2393,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     expect(blocked.success).toBe(false);
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
     expect(ctx.control.forceFinalResponseReason).toContain('artifact repair target already passes validation');
     expect(ctx.control.forceFinalResponsePrompt).toContain('force-final-response');
     expect(ctx.turn.needsReinference).toBe(false);
@@ -2387,11 +2419,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2559,11 +2593,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 0,
         phase: 'initial_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2593,7 +2629,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     expect(targetRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard).toBeUndefined();
+    expect(ctx.artifact.repairGuard).toBeUndefined();
     expect(ctx.control.forceFinalResponseReason).toContain('artifact repair target already passes validation');
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-validation-passed kind="interactive_artifact">'),
@@ -2674,11 +2710,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 0,
         phase: 'playability_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2708,7 +2746,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     expect(targetRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard).toMatchObject({
+    expect(ctx.artifact.repairGuard).toMatchObject({
       targetFile,
       phase: 'playability_repair',
     });
@@ -2770,7 +2808,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       makeToolCall('initial-repair-read-target', targetFile),
     ]);
     expect(allowedRead.success).toBe(true);
-    expect(ctx.artifactRepairGuard).toMatchObject({
+    expect(ctx.artifact.repairGuard).toMatchObject({
       targetFile,
       attempts: 0,
       phase: 'initial_repair',
@@ -2824,12 +2862,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
         lastFailedPatchFingerprint: 'placeholder',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2859,7 +2899,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       arguments: repeatedEdit.arguments,
     } as ToolCall;
     const crypto = await import('crypto');
-    ctx.artifactRepairGuard!.lastFailedPatchFingerprint = crypto
+    ctx.artifact.repairGuard!.lastFailedPatchFingerprint = crypto
       .createHash('sha256')
       .update(JSON.stringify({
         name: fingerprintSource.name,
@@ -2926,12 +2966,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
         activeIssueCodes: ['malformed_test_contract'],
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -2969,7 +3011,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     ]);
 
     expect(result.success).toBe(false);
-    expect(ctx.artifactRepairGuard?.activeIssueCodes).toContain('malformed_test_contract');
+    expect(ctx.artifact.repairGuard?.activeIssueCodes).toContain('malformed_test_contract');
   });
 
   it('blocks artifact repair patches that miss the active validation issue scope', async () => {
@@ -2998,12 +3040,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -3086,12 +3130,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
       const ctx = makeRuntimeContext({
         toolExecutor: toolExecutor as never,
         workingDirectory: dir,
-        artifactRepairGuard: {
+        artifact: ArtifactState.forTest({
+          repairGuard: {
           targetFile,
           attempts: 1,
           phase: 'targeted_repair',
           activeIssueCodes: ['gameplay_mechanics_without_runtime_evidence'],
         },
+        }),
         antiPatternDetector: {
           trackToolFailure: vi.fn(),
           clearToolFailure: vi.fn(),
@@ -3161,12 +3207,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -3240,12 +3288,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 2,
         phase: 'targeted_repair',
         activeIssueCodes: ['malformed_test_contract'],
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -3312,12 +3362,14 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
         activeIssueCodes: ['coverage_without_runtime_evidence'],
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -3397,11 +3449,13 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     const ctx = makeRuntimeContext({
       toolExecutor: toolExecutor as never,
       workingDirectory: dir,
-      artifactRepairGuard: {
+      artifact: ArtifactState.forTest({
+        repairGuard: {
         targetFile,
         attempts: 1,
         phase: 'baseline_repair',
       },
+      }),
       antiPatternDetector: {
         trackToolFailure: vi.fn(),
         clearToolFailure: vi.fn(),
@@ -3443,7 +3497,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('Artifact validation failed');
     expect(result.error).toContain('lost_interactive_contract');
-    expect(ctx.artifactRepairGuard).toMatchObject({
+    expect(ctx.artifact.repairGuard).toMatchObject({
       targetFile,
       attempts: 1,
       phase: 'baseline_repair',
@@ -3693,7 +3747,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('平台玩法修复必须把布局、碰撞、奖励、能力和 gate 路线一起修到可达'),
     );
-    expect(ctx.artifactRepairGuard?.activeIssueCodes).toContain('missing_gameplay_mechanics');
+    expect(ctx.artifact.repairGuard?.activeIssueCodes).toContain('missing_gameplay_mechanics');
   });
 
   it('defers game artifact validation for non-final append chunks', async () => {

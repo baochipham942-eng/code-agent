@@ -26,7 +26,7 @@ export function buildCompactArtifactRepairWriteRetryMessages(
   messages: ModelMessage[],
   errorMessage: string,
 ): ModelMessage[] {
-  const guard = ctx.runtime.artifactRepairGuard;
+  const guard = ctx.runtime.artifact.repairGuard;
   const targetFile = guard?.targetFile || 'target artifact';
   const activeIssueCodes = guard?.activeIssueCodes?.length
     ? guard.activeIssueCodes.join(', ')

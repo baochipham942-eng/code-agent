@@ -7,6 +7,7 @@ import type { ContextAssembly } from '../../../src/host/agent/runtime/contextAss
 import type { RunFinalizer } from '../../../src/host/agent/runtime/runFinalizer';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import { handleModifiedArtifactValidation } from '../../../src/host/agent/runtime/toolArtifactValidationLifecycle';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 // 端到端接线测试（不 mock 校验器）：Write 落盘 → light 契约 → 真实浏览器可玩性冒烟
 // → 崩溃产物翻 failure 进 repair / 健康产物放行。复刻 dogfood 实锤的
@@ -68,8 +69,10 @@ async function writeTempHtml(content: string, fileName: string): Promise<string>
 function makeCtx(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
   return {
     workingDirectory: '/tmp',
-    artifactRepairGuard: undefined,
-    artifactValidationPassedTargetFile: undefined,
+    artifact: ArtifactState.forTest({
+      repairGuard: undefined,
+      validationPassedTargetFile: undefined,
+    }),
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,
     onEvent: vi.fn(),
@@ -110,7 +113,7 @@ describe('lifecycle light contract + playability smoke wiring', () => {
 
     expect(toolResult.success).toBe(false);
     expect(String(toolResult.error)).toContain('runtime page errors');
-    expect(ctx.artifactRepairGuard).toMatchObject({ targetFile: filePath, attempts: 1 });
+    expect(ctx.artifact.repairGuard).toMatchObject({ targetFile: filePath, attempts: 1 });
     expect((runFinalizer as unknown as { emitTaskProgress: ReturnType<typeof vi.fn> }).emitTaskProgress)
       .toHaveBeenCalledWith('tool_running', expect.stringContaining('第 1/4 次修复'));
   });
@@ -170,7 +173,7 @@ describe('lifecycle light contract + playability smoke wiring', () => {
     });
 
     expect(toolResult.success).toBe(true);
-    expect(ctx.artifactRepairGuard).toBeUndefined();
-    expect(ctx.artifactValidationPassedTargetFile).toBe(filePath);
+    expect(ctx.artifact.repairGuard).toBeUndefined();
+    expect(ctx.artifact.validationPassedTargetFile).toBe(filePath);
   });
 });

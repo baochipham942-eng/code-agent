@@ -75,12 +75,11 @@ export async function trackFileMutationSideEffects({
       }
 
       if (
-        ctx.artifactRepairGuard?.targetFile &&
-        isSameArtifactRepairPath(ctx, filePath, ctx.artifactRepairGuard.targetFile)
+        ctx.artifact.repairGuard?.targetFile &&
+        isSameArtifactRepairPath(ctx, filePath, ctx.artifact.repairGuard.targetFile)
       ) {
         if (toolResult.success !== false) {
-          ctx.artifactRepairGuard.patched = true;
-          ctx.artifactRepairGuard.blockedToolTurnsWithoutProgress = 0;
+          ctx.artifact.markTargetPatched();
         }
       }
     }

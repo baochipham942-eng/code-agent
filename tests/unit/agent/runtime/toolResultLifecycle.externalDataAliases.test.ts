@@ -1,3 +1,4 @@
+import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { handleToolResultBookkeeping } from '../../../../src/host/agent/runtime/toolResultLifecycle';
 import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
@@ -15,6 +16,7 @@ function makeHarness() {
 
   const ctx = {
     sessionId: 'session-external-data-aliases',
+    artifact: ArtifactState.forTest(),
     control: ControlState.forTest(),
     needsReinference: false,
     onEvent: (event: AgentEvent) => events.push(event),

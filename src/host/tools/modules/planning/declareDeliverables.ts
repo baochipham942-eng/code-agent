@@ -2,7 +2,7 @@
 // declare_deliverables — 最终产物路径声明工具
 //
 // 真正的处理在 messageProcessor 拦截：那里能拿到 RuntimeContext，
-// 可以写入 ctx.declaredDeliverables，并把确认消息注回下一轮推理。
+// 可以写入 ctx.artifact.declaredDeliverables，并把确认消息注回下一轮推理。
 // 本 executor 只是兜底——当拦截未生效时返回无害确认，不产生副作用。
 // ============================================================================
 

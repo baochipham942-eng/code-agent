@@ -1,5 +1,5 @@
 import path from 'path';
-import type { RuntimeContext } from './runtimeContext';
+import type { DeclaredDeliverables } from './artifactState';
 
 function resolveWorkspacePath(workingDirectory: string, targetPath: string): string {
   return path.resolve(workingDirectory, targetPath);
@@ -20,7 +20,7 @@ function hasHiddenSegment(workingDirectory: string, writtenFile: string): boolea
 }
 
 export function evaluateWorkspaceHygiene(opts: {
-  declared: NonNullable<RuntimeContext['declaredDeliverables']>;
+  declared: DeclaredDeliverables;
   writtenFiles: string[];
   workingDirectory: string;
 }): { clean: boolean; strayFiles: string[]; checks: string[] } {

@@ -3,6 +3,7 @@ import {
   buildArtifactRepairFocusBlock,
   formatArtifactRepairToolResultContent,
 } from '../../../src/host/agent/runtime/contextAssembly/artifactRepairProjection';
+import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
 const TARGET_FILE = '/Users/test/.code-agent/work/big-game.html';
 
@@ -10,7 +11,9 @@ function makeCtx(targetFile: string | null): any {
   return {
     runtime: {
       workingDirectory: '/Users/test/.code-agent/work',
-      artifactRepairGuard: targetFile ? { targetFile, attempts: 0, phase: 'initial_repair' } : undefined,
+      artifact: ArtifactState.forTest({
+        repairGuard: targetFile ? { targetFile, attempts: 0, phase: 'initial_repair' } : undefined,
+      }),
     },
   };
 }
@@ -53,11 +56,13 @@ describe('artifact repair focus block', () => {
     const ctx: any = {
       runtime: {
         workingDirectory: '/Users/test/.code-agent/work',
-        artifactRepairGuard: {
+        artifact: ArtifactState.forTest({
+          repairGuard: {
           targetFile: TARGET_FILE,
           attempts: 1,
           phase: 'initial_repair',
         },
+        }),
         messages: [{
           role: 'tool',
           content: '',

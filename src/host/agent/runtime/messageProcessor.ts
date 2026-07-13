@@ -151,7 +151,7 @@ export class MessageProcessor {
   // the user sees why the turn ended. Handles both stop kinds (unavailable-tool
   // spam and attempt-limit exhaustion).
   private maybeEmitArtifactRepairStopError(stopReason: string): void {
-    const targetFile = this.ctx.artifactRepairGuard?.targetFile ?? '目标文件';
+    const targetFile = this.ctx.artifact.repairGuard?.targetFile ?? '目标文件';
     const unavailablePrefix = ARTIFACT_REPAIR_STOP_PREFIXES['unavailable-tool'];
     const attemptsPrefix = ARTIFACT_REPAIR_STOP_PREFIXES['attempts-exhausted'];
     if (stopReason.startsWith(unavailablePrefix)) {
@@ -442,7 +442,7 @@ export class MessageProcessor {
     this.guardState._consecutiveTruncations = 0;
 
     // P1-P5 Nudge checks (delegated to NudgeManager)
-    const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifactRepairGuard);
+    const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifact.repairGuard);
     if (!isForcedFinalTextPass) {
       const nudgeTriggered = this.ctx.nudgeManager.runNudgeChecks({
         toolsUsedInTurn: this.ctx.turn.toolsUsedInTurn,
@@ -656,7 +656,7 @@ export class MessageProcessor {
     const goalGateResult = await handleGoalCompletionGate(this.ctx, this.contextAssembly, toolCalls, iterations);
     if (goalGateResult) return goalGateResult;
 
-    const activeRepairGuard = this.ctx.artifactRepairGuard;
+    const activeRepairGuard = this.ctx.artifact.repairGuard;
     if (activeRepairGuard && await maybeClearCompletedArtifactRepairGuardBeforeAdmission(
       this.ctx,
       this.contextAssembly,
@@ -689,8 +689,8 @@ export class MessageProcessor {
 
     // Route A: the model picked available tools this turn, so it is no longer
     // stuck on the unavailable-tool loop — clear the no-progress counter.
-    if (this.ctx.artifactRepairGuard) {
-      this.ctx.artifactRepairGuard.repairTurnsWithoutProgress = 0;
+    if (this.ctx.artifact.repairGuard) {
+      this.ctx.artifact.resetRepairTurnsWithoutProgress();
     }
 
     this.ctx.stats.addToolCalls(toolCalls.length);
@@ -880,7 +880,7 @@ export class MessageProcessor {
     });
 
     const sanitizedResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
-    const artifactRepairResults = this.ctx.artifactRepairGuard
+    const artifactRepairResults = this.ctx.artifact.repairGuard
       ? sanitizedResults.map((result: ToolResult) => {
           if (!isArtifactRepairTargetFileRead(result)) {
             return result;
@@ -1099,7 +1099,7 @@ export class MessageProcessor {
     await this.contextAssembly.maybeInjectThinking(toolCalls, toolResults);
 
     // P2 Checkpoint
-    const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifactRepairGuard);
+    const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifact.repairGuard);
     this.ctx.nudgeManager.checkProgressState(
       this.ctx.turn.toolsUsedInTurn,
       (msg: string) => this.contextAssembly.injectSystemMessage(msg),

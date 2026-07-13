@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'fs';
 import type { Message, ToolCall, ToolResult } from '../../../../shared/contract';
 import type { ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
+import type { ModelDecisionEventData } from '../../../../shared/contract/modelDecision';
 import type {
   AgentLoopConfig,
   ModelMessage,
@@ -100,8 +101,18 @@ export type CurrentAttachment = {
   mimeType?: string;
 };
 
+/** 2b: inference 一次性重试恢复状态（原 RuntimeContext 字段，ADR-038 批2b 下沉） */
+export interface InferenceRecoveryState {
+  _contextOverflowRetried: boolean;
+  _artifactNonStreamingRetried: boolean;
+  _artifactRepairCompactWriteRetried: boolean;
+  _networkRetried: boolean;
+  currentModelDecision?: ModelDecisionEventData;
+}
+
 export interface ContextAssemblyCtx {
   runtime: RuntimeContext;
+  inferenceRecovery: InferenceRecoveryState;
   taskProgress: TaskProgressPort;
   recordTokenUsage(
     inputTokens: number,

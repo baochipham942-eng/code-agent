@@ -24,6 +24,7 @@ import type {
   ContextAssemblyCtx,
   ContextTranscriptEntry,
   CurrentAttachment,
+  InferenceRecoveryState,
 } from './contextAssembly/shared';
 import { inference as inferenceImpl } from './contextAssembly/inference';
 import {
@@ -93,6 +94,13 @@ export {
 export class ContextAssembly {
   taskProgress!: TaskProgressPort;
 
+  private readonly inferenceRecovery: InferenceRecoveryState = {
+    _contextOverflowRetried: false,
+    _artifactNonStreamingRetried: false,
+    _artifactRepairCompactWriteRetried: false,
+    _networkRetried: false,
+  };
+
   constructor(protected ctx: RuntimeContext) {}
 
   setModules(taskProgress: TaskProgressPort): void {
@@ -124,6 +132,7 @@ export class ContextAssembly {
   private makeCtx(): ContextAssemblyCtx {
     return {
       runtime: this.ctx,
+      inferenceRecovery: this.inferenceRecovery,
       taskProgress: this.taskProgress,
       recordTokenUsage: this.recordTokenUsage.bind(this),
       inference: this.inference.bind(this),

@@ -215,7 +215,7 @@ export function resolveMainChatModelDecision(
       turnId: ctx.runtime.currentTurnId,
       timestamp: Date.now(),
     };
-    ctx.runtime.currentModelDecision = decisionEventData;
+    ctx.inferenceRecovery.currentModelDecision = decisionEventData;
     ctx.runtime.onEvent({
       type: 'model_decision',
       data: decisionEventData,
@@ -852,7 +852,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       response.fallback = pendingCapabilityFallback;
     }
     const toolStrategy = buildToolStrategyDiagnostics(effectiveTools, response.usage);
-    const modelDecision = buildModelDecisionWithToolStrategy(ctx.runtime.currentModelDecision, effectiveTools, response.usage, response);
+    const modelDecision = buildModelDecisionWithToolStrategy(ctx.inferenceRecovery.currentModelDecision, effectiveTools, response.usage, response);
     response.runtimeDiagnostics = {
       ...response.runtimeDiagnostics,
       visibleToolNames: effectiveTools.map((tool) => tool.name),
@@ -955,8 +955,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       try {
         await ctx.checkAndAutoCompress();
 
-        if (!ctx.runtime._contextOverflowRetried) {
-          ctx.runtime._contextOverflowRetried = true;
+        if (!ctx.inferenceRecovery._contextOverflowRetried) {
+          ctx.inferenceRecovery._contextOverflowRetried = true;
           const originalMaxTokens = ctx.runtime.modelConfig.maxTokens;
           ctx.runtime.modelConfig.maxTokens = Math.floor((originalMaxTokens || error.maxTokens) * 0.7);
           logger.info(`[AgentLoop] Auto-recovery: maxTokens reduced from ${originalMaxTokens} to ${ctx.runtime.modelConfig.maxTokens}`);
@@ -964,7 +964,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           try {
             return await ctx.inference();
           } finally {
-            ctx.runtime._contextOverflowRetried = false;
+            ctx.inferenceRecovery._contextOverflowRetried = false;
             ctx.runtime.modelConfig.maxTokens = originalMaxTokens;
           }
         }
@@ -995,8 +995,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     const errMsg = error instanceof Error ? error.message : String(error);
     const errCode = (error as NodeJS.ErrnoException).code;
     const isIncompleteToolStream = /stream ended before \[DONE\] with tool calls|refusing to execute incomplete tool arguments|invalid streamed tool arguments/i.test(errMsg);
-    if (isIncompleteToolStream && artifactRequest && !ctx.runtime._artifactNonStreamingRetried) {
-      ctx.runtime._artifactNonStreamingRetried = true;
+    if (isIncompleteToolStream && artifactRequest && !ctx.inferenceRecovery._artifactNonStreamingRetried) {
+      ctx.inferenceRecovery._artifactNonStreamingRetried = true;
       logger.warn('[AgentLoop] Artifact tool stream ended incomplete; retrying once with non-streaming inference');
       logCollector.agent('WARN', 'Artifact tool stream incomplete; retrying non-streaming');
       ctx.runtime.onEvent({
@@ -1016,10 +1016,10 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           undefined,
           { forceNonStreaming: true, disableProviderTransientRetry: true },
         );
-        ctx.runtime._artifactNonStreamingRetried = false;
+        ctx.inferenceRecovery._artifactNonStreamingRetried = false;
         return retryResult;
       } catch (retryErr) {
-        ctx.runtime._artifactNonStreamingRetried = false;
+        ctx.inferenceRecovery._artifactNonStreamingRetried = false;
         logger.error('[AgentLoop] Artifact non-streaming retry also failed:', retryErr);
       }
     }
@@ -1030,9 +1030,9 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       Boolean(ctx.runtime.artifactRepairGuard)
       && artifactRepairWritePriority
       && isSlowProviderTimeout
-      && !ctx.runtime._artifactRepairCompactWriteRetried;
+      && !ctx.inferenceRecovery._artifactRepairCompactWriteRetried;
     if (shouldCompactRetryArtifactRepairWrite) {
-      ctx.runtime._artifactRepairCompactWriteRetried = true;
+      ctx.inferenceRecovery._artifactRepairCompactWriteRetried = true;
       logger.warn('[AgentLoop] Artifact repair write-priority timed out; retrying once with compact mutation-only context');
       logCollector.agent('WARN', 'Artifact repair write-priority timed out; retrying compact mutation-only context');
       ctx.taskProgress.emitTaskProgress('generating', 'artifact 修复写入超时，正在用更小上下文重试...');
@@ -1066,14 +1066,14 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
           },
         );
         ctx.runtime.abortController = null;
-        ctx.runtime._artifactRepairCompactWriteRetried = false;
+        ctx.inferenceRecovery._artifactRepairCompactWriteRetried = false;
         if (pendingCapabilityFallback && !retryResult.fallback) {
           retryResult.actualProvider = pendingCapabilityFallback.to.provider;
           retryResult.actualModel = pendingCapabilityFallback.to.model;
           retryResult.fallback = pendingCapabilityFallback;
         }
         const retryToolStrategy = buildToolStrategyDiagnostics(effectiveTools, retryResult.usage);
-        const retryModelDecision = buildModelDecisionWithToolStrategy(ctx.runtime.currentModelDecision, effectiveTools, retryResult.usage, retryResult);
+        const retryModelDecision = buildModelDecisionWithToolStrategy(ctx.inferenceRecovery.currentModelDecision, effectiveTools, retryResult.usage, retryResult);
         retryResult.runtimeDiagnostics = {
           ...retryResult.runtimeDiagnostics,
           visibleToolNames: effectiveTools.map((tool) => tool.name),
@@ -1094,7 +1094,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         return retryResult;
       } catch (retryErr) {
         ctx.runtime.abortController = null;
-        ctx.runtime._artifactRepairCompactWriteRetried = false;
+        ctx.inferenceRecovery._artifactRepairCompactWriteRetried = false;
         logger.error('[AgentLoop] Compact artifact repair write retry also failed:', retryErr);
       }
     }
@@ -1105,25 +1105,25 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       errCode,
       Boolean(ctx.runtime.artifactRepairGuard),
     );
-    const networkRetryCount = ctx.runtime._networkRetryCount ?? (ctx.runtime._networkRetried ? 1 : 0);
+    const networkRetryCount = ctx.runtime._networkRetryCount ?? (ctx.inferenceRecovery._networkRetried ? 1 : 0);
     const shouldRetryNetworkError =
       isNetworkError
       && networkRetryCount < maxNetworkRetries
       && ctx.runtime.inferenceOptions?.disableRuntimeNetworkRetry !== true
       && !(ctx.runtime.artifactRepairGuard && isSlowProviderTimeout);
     if (shouldRetryNetworkError) {
-      ctx.runtime._networkRetried = true;
+      ctx.inferenceRecovery._networkRetried = true;
       ctx.runtime._networkRetryCount = networkRetryCount + 1;
       logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference (${ctx.runtime._networkRetryCount}/${maxNetworkRetries})...`);
       await new Promise(r => setTimeout(r, 2000));
       try {
         const retryResult = await ctx.inference();
-        ctx.runtime._networkRetried = false;
+        ctx.inferenceRecovery._networkRetried = false;
         ctx.runtime._networkRetryCount = 0;
         return retryResult;
       } catch (retryErr) {
         if ((ctx.runtime._networkRetryCount ?? 0) >= maxNetworkRetries) {
-          ctx.runtime._networkRetried = false;
+          ctx.inferenceRecovery._networkRetried = false;
           ctx.runtime._networkRetryCount = 0;
         }
         logger.error('[AgentLoop] Network retry also failed:', retryErr);

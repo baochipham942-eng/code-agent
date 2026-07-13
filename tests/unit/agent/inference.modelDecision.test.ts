@@ -149,6 +149,12 @@ function makeCtx(): ContextAssemblyCtx {
       sessionId: 'session-1',
       modelConfig: makeConfig(),
     },
+    inferenceRecovery: {
+      _contextOverflowRetried: false,
+      _artifactNonStreamingRetried: false,
+      _artifactRepairCompactWriteRetried: false,
+      _networkRetried: false,
+    },
   } as unknown as ContextAssemblyCtx;
 }
 

@@ -10,7 +10,7 @@ import type {
 import type { StructuredOutputConfig } from '../structuredOutput';
 import type { EffortLevel } from '../../../shared/contract/agent';
 import type { ModelConfig } from '../../../shared/contract/model';
-import type { ModelDecision, ModelDecisionEventData } from '../../../shared/contract/modelDecision';
+import type { ModelDecision } from '../../../shared/contract/modelDecision';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import type { ModelRouter } from '../../model/modelRouter';
 import type { CircuitBreaker } from '../toolExecution/circuitBreaker';
@@ -85,7 +85,6 @@ export interface RuntimeContext {
   readonly compressionPipeline: CompressionPipeline;
   readonly telemetryAdapter?: TelemetryAdapter;
   readonly inferenceOptions?: InferenceOptions;
-  currentModelDecision?: ModelDecisionEventData;
   readonly historyVisibility?: 'visible' | 'meta';
   readonly deniedToolNames?: string[];
 
@@ -221,10 +220,6 @@ export interface RuntimeContext {
   totalToolCallCount: number;
 
   // --- Context recovery ---
-  _contextOverflowRetried: boolean;
-  _artifactNonStreamingRetried: boolean;
-  _artifactRepairCompactWriteRetried: boolean;
-  _networkRetried: boolean;
   _networkRetryCount?: number;
   readonly MAX_CONSECUTIVE_TRUNCATIONS: number;
   /** Item2 卡死护栏：连续付费摘要后仍未降到阈值下的次数。降下去清零。 */

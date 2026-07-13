@@ -297,10 +297,6 @@ export class AgentLoop {
       totalToolCallCount: 0,
 
       // Context recovery
-      _contextOverflowRetried: false,
-      _artifactNonStreamingRetried: false,
-      _artifactRepairCompactWriteRetried: false,
-      _networkRetried: false,
       _networkRetryCount: 0,
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
       _consecutiveCompacts: 0,

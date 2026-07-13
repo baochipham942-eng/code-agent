@@ -18,6 +18,8 @@ import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { useMessageActionStore } from '../../../../stores/messageActionStore';
+import { useI18n } from '../../../../hooks/useI18n';
 import { SETTINGS_TAB_IDS, type SettingsTab } from '../../../../utils/settingsTabs';
 import {
   recordStreamingPerformanceCounter,
@@ -89,12 +91,91 @@ const languageConfig: Record<string, { color: string; name: string }> = {
 // Unique ID counter for mermaid diagrams
 let mermaidIdCounter = 0;
 
-// Mermaid diagram renderer
+const MERMAID_MIN_SCALE = 0.1;
+const MERMAID_MAX_SCALE = 4;
+const MERMAID_VIEWPORT_MAX_HEIGHT = 560;
+const MERMAID_VIEWPORT_PADDING = 16;
+const MERMAID_DRAG_CLICK_THRESHOLD = 4;
+const MERMAID_SELECTED_FILTER = 'drop-shadow(0 0 4px rgb(236 72 153)) drop-shadow(0 0 1px rgb(236 72 153))';
+// flowchart/state/class 的节点组、连线标签；sequence 的 actor / 消息 / note；子图框
+const MERMAID_SELECTABLE = 'g.node, .edgeLabel, g.actor-man, text.actor, text.messageText, text.noteText, text.loopText, g.cluster';
+
+// 从点击目标解析可选取的图元及其 label 文本
+export function findMermaidSelectable(target: Element): { el: SVGElement; label: string } | null {
+  const hit = target.closest(MERMAID_SELECTABLE);
+  if (hit?.textContent?.trim()) {
+    return { el: hit as SVGElement, label: hit.textContent.trim() };
+  }
+  // sequence actor 的 rect 与 text 是同组兄弟：点到 rect 时取组内 text
+  const rect = target.closest('rect');
+  const sibling = rect?.parentElement?.querySelector('text');
+  if (rect && sibling?.textContent?.trim()) {
+    return { el: rect.parentElement as unknown as SVGElement, label: sibling.textContent.trim() };
+  }
+  return null;
+}
+
+interface MermaidView {
+  scale: number;
+  x: number;
+  y: number;
+}
+
+// Mermaid diagram renderer — wheel 缩放 / drag 平移 / 点选节点一句话改图
 export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: string }) {
+  const { t } = useI18n();
+  const tm = t.mermaid;
+  // agent 跑动中禁发：run 未结束时 /api/agent/run 会 409（already has active run）
+  const isProcessing = useAppStore((state) => state.isProcessing);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [scale, setScale] = useState(1);
+  const [svgMarkup, setSvgMarkup] = useState<string | null>(null);
+  const [view, setView] = useState<MermaidView>({ scale: 1, x: MERMAID_VIEWPORT_PADDING, y: MERMAID_VIEWPORT_PADDING });
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const [copied, setCopiedState] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [instruction, setInstruction] = useState('');
+  const [sending, setSending] = useState(false);
+  const selectedElRef = useRef<SVGElement | null>(null);
+  const svgSizeRef = useRef<{ width: number; height: number } | null>(null);
+  // downTarget：setPointerCapture 会把后续事件 retarget 到 viewport，点选目标必须在 pointerdown 时记下
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean; downTarget: Element | null } | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  const clearSelection = useCallback(() => {
+    if (selectedElRef.current) {
+      selectedElRef.current.style.filter = '';
+      selectedElRef.current = null;
+    }
+    setSelectedLabel(null);
+    setInstruction('');
+  }, []);
+
+  // 以 viewport 内某点为锚缩放（wheel 缩放围绕光标、按钮缩放围绕中心）
+  const zoomAt = useCallback((px: number, py: number, nextScale: number) => {
+    setView((v) => {
+      const scale = Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, nextScale));
+      const ratio = scale / v.scale;
+      return { scale, x: px - (px - v.x) * ratio, y: py - (py - v.y) * ratio };
+    });
+  }, []);
+
+  // 计算适配窗口的初始视图（大图不再被 maxWidth:100% 压扁，直接按窗口宽度 fit）
+  const fitToViewport = useCallback(() => {
+    const viewport = viewportRef.current;
+    const size = svgSizeRef.current;
+    if (!viewport || !size || size.width <= 0) return;
+    const availableWidth = viewport.clientWidth - MERMAID_VIEWPORT_PADDING * 2;
+    const scale = availableWidth > 0 ? Math.min(1, availableWidth / size.width) : 1;
+    const height = Math.min(size.height * scale + MERMAID_VIEWPORT_PADDING * 2, MERMAID_VIEWPORT_MAX_HEIGHT);
+    setViewportHeight(height);
+    setView({
+      scale,
+      x: Math.max(MERMAID_VIEWPORT_PADDING, (viewport.clientWidth - size.width * scale) / 2),
+      y: MERMAID_VIEWPORT_PADDING,
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,16 +184,11 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
     loadMermaid()
       .then((mermaid) => mermaid.render(id, code))
       .then(({ svg }) => {
-        if (!cancelled && containerRef.current) {
-          containerRef.current.innerHTML = svg;
-          // Make SVG responsive
-          const svgEl = containerRef.current.querySelector('svg');
-          if (svgEl) {
-            svgEl.style.maxWidth = '100%';
-            svgEl.style.height = 'auto';
-          }
-          setError(null);
-        }
+        if (cancelled) return;
+        // 成功必须无条件清 error：流式中部分代码失败会切到 CodeBlock 兜底（container 卸载），
+        // 若把 setError(null) 绑在 container 存在性上，恢复路径会死锁在兜底分支
+        setSvgMarkup(svg);
+        setError(null);
       }).catch((err: unknown) => {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to render diagram');
@@ -121,6 +197,111 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
 
     return () => { cancelled = true; };
   }, [code]);
+
+  // svg 写入 DOM + 量尺寸 + fit（error 清空后 container 才挂载，所以与渲染解耦）
+  useEffect(() => {
+    if (!svgMarkup || !containerRef.current) return;
+    selectedElRef.current = null;
+    setSelectedLabel(null);
+    containerRef.current.innerHTML = svgMarkup;
+    const svgEl = containerRef.current.querySelector('svg');
+    if (svgEl) {
+      // 用自然尺寸渲染，缩放交给 transform；解掉 maxWidth:100% 压扁大图的问题
+      const viewBox = svgEl.viewBox?.baseVal;
+      const bounds = svgEl.getBoundingClientRect();
+      const width = viewBox?.width || bounds.width;
+      const height = viewBox?.height || bounds.height;
+      svgSizeRef.current = { width, height };
+      svgEl.style.maxWidth = 'none';
+      svgEl.style.width = `${width}px`;
+      svgEl.style.height = `${height}px`;
+      svgEl.querySelectorAll<SVGElement>(MERMAID_SELECTABLE).forEach((el) => {
+        el.style.cursor = 'pointer';
+      });
+    }
+    fitToViewport();
+  }, [svgMarkup, fitToViewport]);
+
+  // wheel 缩放需要 preventDefault，React 合成事件是 passive 的，必须原生监听
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return; // 普通滚轮留给聊天列表滚动
+      e.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      // clamp：鼠标滚轮一格 deltaY≈±120，不 clamp 单格就放大 3 倍；触控板 pinch 的小 delta 不受影响
+      const factor = Math.exp(-Math.max(-100, Math.min(100, e.deltaY)) * 0.0025);
+      setView((v) => {
+        const scale = Math.min(MERMAID_MAX_SCALE, Math.max(MERMAID_MIN_SCALE, v.scale * factor));
+        const ratio = scale / v.scale;
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+        return { scale, x: px - (px - v.x) * ratio, y: py - (py - v.y) * ratio };
+      });
+    };
+    viewport.addEventListener('wheel', onWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', onWheel);
+  }, [error]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: view.x,
+      originY: view.y,
+      moved: false,
+      downTarget: e.target instanceof Element ? e.target : null,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [view.x, view.y]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (drag?.pointerId !== e.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (!drag.moved && Math.abs(dx) < MERMAID_DRAG_CLICK_THRESHOLD && Math.abs(dy) < MERMAID_DRAG_CLICK_THRESHOLD) return;
+    drag.moved = true;
+    setView((v) => ({ ...v, x: drag.originX + dx, y: drag.originY + dy }));
+  }, []);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (!drag || drag.moved) return;
+    // 位移在阈值内视作点击：尝试选取节点
+    const found = drag.downTarget ? findMermaidSelectable(drag.downTarget) : null;
+    if (selectedElRef.current) selectedElRef.current.style.filter = '';
+    if (found) {
+      selectedElRef.current = found.el;
+      found.el.style.filter = MERMAID_SELECTED_FILTER;
+      setSelectedLabel(found.label);
+      setTimeout(() => editInputRef.current?.focus(), 0);
+    } else {
+      selectedElRef.current = null;
+      setSelectedLabel(null);
+    }
+  }, []);
+
+  const handleSendEdit = useCallback(async () => {
+    const trimmed = instruction.trim();
+    if (!selectedLabel || !trimmed || sending || useAppStore.getState().isProcessing) return;
+    const codeBlock = '```mermaid\n' + code + '\n```\n';
+    const prompt = tm.editPrompt
+      .replace('{label}', selectedLabel)
+      .replace('{instruction}', trimmed)
+      .replace('{codeBlock}', codeBlock);
+    setSending(true);
+    try {
+      await useMessageActionStore.getState().sendPrompt(prompt);
+      clearSelection();
+    } finally {
+      setSending(false);
+    }
+  }, [instruction, selectedLabel, sending, code, tm.editPrompt, clearSelection]);
 
   const handleCopyCode = useCallback(async () => {
     await navigator.clipboard.writeText(code);
@@ -142,23 +323,29 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setScale(s => Math.max(0.5, s - 0.25))}
+            onClick={() => {
+              const viewport = viewportRef.current;
+              zoomAt((viewport?.clientWidth ?? 0) / 2, (viewport?.clientHeight ?? 0) / 2, view.scale / 1.25);
+            }}
             className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="缩小"
+            title={tm.zoomOut}
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => setScale(1)}
+            onClick={fitToViewport}
             className="px-1.5 py-0.5 rounded hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200 transition-colors text-xs"
-            title="重置"
+            title={tm.zoomReset}
           >
-            {Math.round(scale * 100)}%
+            {Math.round(view.scale * 100)}%
           </button>
           <button
-            onClick={() => setScale(s => Math.min(3, s + 0.25))}
+            onClick={() => {
+              const viewport = viewportRef.current;
+              zoomAt((viewport?.clientWidth ?? 0) / 2, (viewport?.clientHeight ?? 0) / 2, view.scale * 1.25);
+            }}
             className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="放大"
+            title={tm.zoomIn}
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -170,25 +357,75 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
             {copied ? (
               <>
                 <Check className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-green-400">Copied!</span>
+                <span className="text-green-400">{tm.copied}</span>
               </>
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5" />
-                <span>Code</span>
+                <span>{tm.copyCode}</span>
               </>
             )}
           </button>
         </div>
       </div>
-      {/* Diagram */}
-      <div className="overflow-x-auto overflow-y-visible p-4 scrollbar-hidden">
+      {/* Diagram viewport（wheel 缩放 / drag 平移 / 点选节点） */}
+      <div
+        ref={viewportRef}
+        className="relative overflow-hidden select-none"
+        style={{ height: viewportHeight ?? undefined, touchAction: 'none', cursor: 'grab' }}
+        title={tm.zoomHint}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={() => { dragRef.current = null; }}
+      >
         <div
           ref={containerRef}
-          style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
-          className="transition-transform duration-150"
+          style={{
+            transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+            transformOrigin: 'top left',
+            width: 'max-content',
+          }}
         />
       </div>
+      {/* 标注即编辑：点选节点后底部滑出编辑栏 */}
+      {selectedLabel && (
+        <div className="border-t border-zinc-700 bg-zinc-800/80 px-3 py-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-zinc-300 truncate">
+              <span className="text-pink-300">✏ {tm.selectedLabel}</span>
+              <span className="font-medium">「{selectedLabel}」</span>
+            </span>
+            <button
+              onClick={clearSelection}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors px-1.5"
+            >
+              ✕ {tm.cancel}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              ref={editInputRef}
+              type="text"
+              value={instruction}
+              onChange={(e) => setInstruction(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) void handleSendEdit();
+                if (e.key === 'Escape') clearSelection();
+              }}
+              placeholder={tm.editPlaceholder}
+              className="flex-1 min-w-0 rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-pink-400/60"
+            />
+            <button
+              onClick={() => void handleSendEdit()}
+              disabled={!instruction.trim() || sending || isProcessing}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-pink-500/20 text-pink-300 hover:bg-pink-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {tm.send}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

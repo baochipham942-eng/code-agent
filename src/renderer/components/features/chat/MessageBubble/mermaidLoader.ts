@@ -15,6 +15,8 @@ export async function loadMermaid(): Promise<MermaidApi> {
   if (!initialized) {
     instance.initialize({
       startOnLoad: false,
+      // 流式中部分代码必然阶段性 parse 失败，禁止 mermaid 往 document.body 插错误炸弹 SVG
+      suppressErrorRendering: true,
       theme: 'dark',
       themeVariables: {
         // ds-allow:start Mermaid 主题，第三方库只吃字面色、不读 app CSS 变量

@@ -8,11 +8,110 @@ import {
   type CachedMessage,
   type CachedToolCall,
   dbAvailable,
-  inMemorySessions,
-  seedSessionMessagesFromPersisted,
-  SESSION_CACHE_MAX,
-  sessionMessages,
+  type InMemorySession,
+  toCachedSessionMessages,
 } from './sessionCache';
+
+const SESSION_CACHE_MAX = 50;
+const sessionMessages = new Map<string, CachedMessage[]>();
+const inMemorySessions = new Map<string, InMemorySession>();
+
+function enforceSessionCacheLimit(): void {
+  if (sessionMessages.size <= SESSION_CACHE_MAX) return;
+  const oldestKey = sessionMessages.keys().next().value;
+  if (oldestKey) sessionMessages.delete(oldestKey);
+}
+
+export function getSessionMessagesProjection(sessionId: string): CachedMessage[] | undefined {
+  return sessionMessages.get(sessionId);
+}
+
+export function replaceSessionMessagesProjection(
+  sessionId: string,
+  messages: CachedMessage[],
+): void {
+  sessionMessages.set(sessionId, messages);
+  enforceSessionCacheLimit();
+}
+
+export function seedSessionMessagesFromPersisted(
+  sessionId: string,
+  messages: Message[],
+): CachedMessage[] {
+  const cached = toCachedSessionMessages(messages);
+  if (cached.length > 0) {
+    replaceSessionMessagesProjection(sessionId, cached);
+  }
+  return cached;
+}
+
+export function getSessionMessageCount(sessionId: string): number {
+  return sessionMessages.get(sessionId)?.length ?? 0;
+}
+
+export function listSessionProjections(includeArchived: boolean): InMemorySession[] {
+  return [...inMemorySessions.values()]
+    .filter((session) => includeArchived || !session.isArchived)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function getSessionProjection(sessionId: string): InMemorySession | undefined {
+  return inMemorySessions.get(sessionId);
+}
+
+export function upsertSessionProjection(session: InMemorySession): void {
+  inMemorySessions.set(session.id, session);
+}
+
+export function setSessionArchivedProjection(
+  sessionId: string,
+  isArchived: boolean,
+): InMemorySession | undefined {
+  const session = inMemorySessions.get(sessionId);
+  if (!session) return undefined;
+  session.isArchived = isArchived;
+  session.archivedAt = isArchived ? Date.now() : undefined;
+  return session;
+}
+
+export function deleteSessionProjection(sessionId: string): void {
+  inMemorySessions.delete(sessionId);
+  sessionMessages.delete(sessionId);
+}
+
+export function clearAllSessionProjections(): void {
+  inMemorySessions.clear();
+  sessionMessages.clear();
+}
+
+// 测试只通过门面搭建和观察投影现场；底层 Map 仍只归 WebSessionStore 所有。
+export const sessionMessagesProjection = {
+  get: getSessionMessagesProjection,
+  set(sessionId: string, messages: CachedMessage[]) {
+    replaceSessionMessagesProjection(sessionId, messages);
+    return sessionMessagesProjection;
+  },
+  has: (sessionId: string) => sessionMessages.has(sessionId),
+  delete: (sessionId: string) => sessionMessages.delete(sessionId),
+  clear: () => sessionMessages.clear(),
+  get size() {
+    return sessionMessages.size;
+  },
+};
+
+export const inMemorySessionsProjection = {
+  get: getSessionProjection,
+  set(sessionId: string, session: InMemorySession) {
+    inMemorySessions.set(sessionId, session);
+    return inMemorySessionsProjection;
+  },
+  has: (sessionId: string) => inMemorySessions.has(sessionId),
+  delete: (sessionId: string) => inMemorySessions.delete(sessionId),
+  clear: () => inMemorySessions.clear(),
+  get size() {
+    return inMemorySessions.size;
+  },
+};
 
 interface WebSessionStoreDeps {
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
@@ -116,7 +215,7 @@ function fallbackToCollectorSessionProjection(
 ): void {
   // !dbAvailable 时内存仍是主存储；DB 读回失败时也用批 2 前的 collector
   // 投影兜底，避免缓存停在半旧状态并丢掉本轮消息。
-  const cached = [...(sessionMessages.get(sessionId) || []), userMessage];
+  const cached = [...(getSessionMessagesProjection(sessionId) || []), userMessage];
   if (!turn.runCancelled && turn.hasAssistantOutput()) {
     cached.push({
       id: assistantMsgId,
@@ -130,12 +229,31 @@ function fallbackToCollectorSessionProjection(
       metadata: turn.assistantMetadata,
     });
   }
-  sessionMessages.set(sessionId, cached);
+  replaceSessionMessagesProjection(sessionId, cached);
+}
 
-  if (sessionMessages.size > SESSION_CACHE_MAX) {
-    const oldestKey = sessionMessages.keys().next().value;
-    if (oldestKey) sessionMessages.delete(oldestKey);
+function updateSessionMetadataProjection(
+  sessionId: string,
+  title: string,
+  historyLength: number,
+): void {
+  // 这是 web 会话元数据投影：!dbAvailable 时承担主存储；dbAvailable 时仍无条件
+  // 更新，但只作为数据库不可读时的降级备份视图。
+  const existing = inMemorySessions.get(sessionId);
+  if (existing) {
+    existing.updatedAt = Date.now();
+    existing.messageCount = getSessionMessageCount(sessionId);
+    if (historyLength === 0) existing.title = title;
+    return;
   }
+
+  upsertSessionProjection({
+    id: sessionId,
+    title,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messageCount: getSessionMessageCount(sessionId),
+  });
 }
 
 export function createWebSessionStore(deps: WebSessionStoreDeps) {
@@ -171,7 +289,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
 
   return {
     async loadSessionHistoryForRun(sessionId: string): Promise<CachedMessage[]> {
-      const cached = sessionMessages.get(sessionId);
+      const cached = getSessionMessagesProjection(sessionId);
       if (cached?.length) {
         return cached;
       }
@@ -245,23 +363,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         );
       }
 
-      // ── 更新内存会话元数据 ──
-      {
-        const existing = inMemorySessions.get(sessionId);
-        if (existing) {
-          existing.updatedAt = Date.now();
-          existing.messageCount = (sessionMessages.get(sessionId) || []).length;
-          if (historyLength === 0) existing.title = title;
-        } else {
-          inMemorySessions.set(sessionId, {
-            id: sessionId,
-            title,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            messageCount: (sessionMessages.get(sessionId) || []).length,
-          });
-        }
-      }
+      updateSessionMetadataProjection(sessionId, title, historyLength);
 
       // ── 持久化到数据库（优先走 SM 保持缓存一致）──
       if (dbAvailable) {

@@ -2,7 +2,10 @@ import express from 'express';
 import http from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionsRouter } from '../../../src/web/routes/sessions';
-import { inMemorySessions, sessionMessages } from '../../../src/web/helpers/sessionCache';
+import {
+  inMemorySessionsProjection as inMemorySessions,
+  sessionMessagesProjection as sessionMessages,
+} from '../../../src/web/helpers/webSessionStore';
 
 interface SessionApiBody {
   success: boolean;

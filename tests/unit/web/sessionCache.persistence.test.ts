@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import {
   getPersistenceHealth,
-  seedSessionMessagesFromPersisted,
-  sessionMessages,
   setDbAvailable,
   toCachedSessionMessages,
 } from '../../../src/web/helpers/sessionCache';
+import {
+  seedSessionMessagesFromPersisted,
+  sessionMessagesProjection as sessionMessages,
+} from '../../../src/web/helpers/webSessionStore';
 
 afterEach(() => {
   setDbAvailable(false, new Error('test reset'));

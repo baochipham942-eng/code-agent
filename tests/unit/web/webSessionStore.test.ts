@@ -2,11 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
 import type { DatabaseService } from '../../../src/host/services/core/databaseService';
 import {
-  inMemorySessions,
-  sessionMessages,
   setDbAvailable,
 } from '../../../src/web/helpers/sessionCache';
-import { createWebSessionStore } from '../../../src/web/helpers/webSessionStore';
+import {
+  createWebSessionStore,
+  deleteSessionProjection,
+  getSessionMessageCount,
+  getSessionMessagesProjection,
+  getSessionProjection,
+  listSessionProjections,
+  replaceSessionMessagesProjection,
+  inMemorySessionsProjection as inMemorySessions,
+  sessionMessagesProjection as sessionMessages,
+  setSessionArchivedProjection,
+  upsertSessionProjection,
+} from '../../../src/web/helpers/webSessionStore';
 
 function createDatabaseStub() {
   return {
@@ -37,6 +47,53 @@ describe('WebSessionStore', () => {
     sessionMessages.clear();
     inMemorySessions.clear();
     setDbAvailable(false, new Error('test reset'));
+  });
+
+  it.each([
+    { dbIsAvailable: false, label: 'memory-primary' },
+    { dbIsAvailable: true, label: 'database-backed projection' },
+  ])('owns session and message projection access in $label mode', ({ dbIsAvailable }) => {
+    setDbAvailable(dbIsAvailable);
+    upsertSessionProjection({
+      id: 'projection-active',
+      title: 'Active',
+      createdAt: 1,
+      updatedAt: 20,
+      messageCount: 0,
+    });
+    upsertSessionProjection({
+      id: 'projection-archived',
+      title: 'Archived',
+      createdAt: 2,
+      updatedAt: 30,
+      messageCount: 0,
+      isArchived: true,
+    });
+    replaceSessionMessagesProjection('projection-active', [{
+      id: 'projection-message',
+      role: 'user',
+      content: 'projection content',
+      timestamp: 3,
+    }]);
+
+    expect(listSessionProjections(false).map((session) => session.id)).toEqual(['projection-active']);
+    expect(listSessionProjections(true).map((session) => session.id)).toEqual([
+      'projection-archived',
+      'projection-active',
+    ]);
+    expect(getSessionProjection('projection-active')?.title).toBe('Active');
+    expect(getSessionMessagesProjection('projection-active')?.[0]?.id).toBe('projection-message');
+    expect(getSessionMessageCount('projection-active')).toBe(1);
+    expect(setSessionArchivedProjection('projection-active', true)).toMatchObject({
+      id: 'projection-active',
+      isArchived: true,
+      archivedAt: expect.any(Number),
+    });
+
+    deleteSessionProjection('projection-active');
+
+    expect(getSessionProjection('projection-active')).toBeUndefined();
+    expect(getSessionMessagesProjection('projection-active')).toBeUndefined();
   });
 
   it('loadSessionHistoryForRun hydrates a cold cache from SessionManager', async () => {

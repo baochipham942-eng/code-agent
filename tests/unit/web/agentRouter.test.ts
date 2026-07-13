@@ -7,11 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { createAgentRouter } from '../../../src/web/routes/agent';
 import {
-  inMemorySessions,
-  seedSessionMessagesFromPersisted,
-  sessionMessages,
   setDbAvailable,
 } from '../../../src/web/helpers/sessionCache';
+import {
+  inMemorySessionsProjection as inMemorySessions,
+  seedSessionMessagesFromPersisted,
+  sessionMessagesProjection as sessionMessages,
+} from '../../../src/web/helpers/webSessionStore';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 
 const mockRun = vi.fn();

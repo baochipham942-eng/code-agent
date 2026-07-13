@@ -61,6 +61,9 @@ function createProcessor(
   runFinalizer: Partial<RunFinalizer> = {},
   toolEngine: Partial<ToolExecutionEngine> = {},
 ): MessageProcessor {
+  if (!ctx.turnQualityState) {
+    ctx.turnQualityState = {};
+  }
   return new MessageProcessor(
     ctx as RuntimeContext,
     contextAssembly as ContextAssembly,
@@ -87,6 +90,7 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     runAbortController: { signal: { aborted: false } },
     toolsUsedInTurn: [],
     isSimpleTaskMode: false,
+    turnQualityState: {},
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,
     totalToolCallCount: 5,

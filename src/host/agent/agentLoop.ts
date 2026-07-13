@@ -218,20 +218,16 @@ export class AgentLoop {
       lastStreamedContent: '',
       isCancelled: false,
       isInterrupted: false,
-      isPaused: false,
-      interruptMessage: null,
       needsReinference: false,
       abortController: null,
       runAbortController: null,
 
       // Plan mode
-      isPlanModeActive: false,
       savedMessages: null,
       autoApprovePlan: config.autoApprovePlan ?? false,
 
       // Hooks
       enableHooks: config.enableHooks ?? true,
-      userHooksInitialized: false,
       maxStopHookRetries: 3,
       enableDeliveryCritic: config.enableDeliveryCritic ?? process.env.CODE_AGENT_DELIVERY_CRITIC === '1',
       // Max Mode（best-of-N）显式开关，默认关——eval 对照前提 + 出问题的回滚通道
@@ -245,8 +241,6 @@ export class AgentLoop {
       enableToolDeferredLoading: config.enableToolDeferredLoading ?? true,
 
       // Structured output
-      structuredOutput: config.structuredOutput,
-      structuredOutputRetryCount: 0,
       maxStructuredOutputRetries: 2,
 
       // Step-by-step
@@ -255,7 +249,8 @@ export class AgentLoop {
       // Tracing
       traceId: '',
       turnTrace: new TurnTraceRecorder(resolvedSessionId),
-      turnQualityMemory: undefined,
+      turnQualityState: {},
+      goalEvidenceState: { bounces: 0 },
       currentIterationSpanId: '',
       lastModelTraceSpanId: undefined,
       currentTurnId: '',
@@ -277,7 +272,6 @@ export class AgentLoop {
       _researchIterationCount: 0,
 
       // Budget
-      budgetWarningEmitted: false,
       totalInputTokens: 0,
       totalOutputTokens: 0,
       consecutiveErrors: 0,
@@ -306,7 +300,7 @@ export class AgentLoop {
     };
 
     // Create modules
-    this.conversationRuntime = new ConversationRuntime(this.ctx);
+    this.conversationRuntime = new ConversationRuntime(this.ctx, config.structuredOutput);
     this.toolEngine = new ToolExecutionEngine(this.ctx);
     this.contextAssembly = new ContextAssembly(this.ctx);
     this.runFinalizer = new RunFinalizer(this.ctx);

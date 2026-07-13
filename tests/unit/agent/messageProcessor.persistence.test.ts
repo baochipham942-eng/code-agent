@@ -62,6 +62,10 @@ function createProcessor(
   runFinalizer: Partial<RunFinalizer> = {},
   toolEngine: Partial<ToolExecutionEngine> = {},
 ): MessageProcessor {
+  // 就地补默认域状态，保留调用方 ctx 引用身份（测试会直接断言原对象字段）
+  if (!ctx.turnQualityState) {
+    ctx.turnQualityState = {};
+  }
   return new MessageProcessor(
     ctx as RuntimeContext,
     contextAssembly as ContextAssembly,

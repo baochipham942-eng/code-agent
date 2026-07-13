@@ -227,6 +227,8 @@ function hasVisibleAssistantTextAfterLastUser(messages: Message[]): boolean {
 export class RunFinalizer {
   messageWriter!: MessageWriterPort;
   learningPipeline!: LearningPipeline;
+  /** 2d: budget warning 是否已发出（原 RuntimeContext 字段，ADR-038 批2d 下沉） */
+  private budgetWarningEmitted = false;
 
   constructor(protected ctx: RuntimeContext) {}
 
@@ -658,11 +660,11 @@ export class RunFinalizer {
         return true;
 
       case BudgetAlertLevel.WARNING:
-        if (!this.ctx.budgetWarningEmitted) {
+        if (!this.budgetWarningEmitted) {
           logger.warn(`[AgentLoop] Budget warning: ${status.message}`);
           logCollector.agent('WARN', `Budget warning: ${(status.usagePercentage * 100).toFixed(0)}% used`);
           this.ctx.onEvent({ type: 'budget_warning', data: eventData });
-          this.ctx.budgetWarningEmitted = true;
+          this.budgetWarningEmitted = true;
         }
         return false;
 

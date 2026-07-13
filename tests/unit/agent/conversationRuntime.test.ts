@@ -398,18 +398,14 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     isCancelled: false,
     isInterrupted: false,
-    isPaused: false,
-    interruptMessage: null,
     needsReinference: false,
     abortController: null,
     runAbortController: null,
 
-    isPlanModeActive: false,
     savedMessages: null,
     autoApprovePlan: false,
 
     enableHooks: false,
-    userHooksInitialized: false,
     maxStopHookRetries: 3,
 
     maxToolCallRetries: 3,
@@ -417,7 +413,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     preApprovedTools: new Set(),
     enableToolDeferredLoading: false,
 
-    structuredOutputRetryCount: 0,
     maxStructuredOutputRetries: 3,
 
     stepByStepMode: false,
@@ -429,6 +424,8 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
       flush: () => {},
       getEvents: () => [],
     } as any,
+    turnQualityState: {},
+    goalEvidenceState: { bounces: 0 },
     currentIterationSpanId: '',
     currentTurnId: '',
     pendingRuntimeDiagnostics: [],
@@ -442,7 +439,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     _researchModeActive: false,
     _researchIterationCount: 0,
 
-    budgetWarningEmitted: false,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     consecutiveErrors: 0,
@@ -549,7 +545,7 @@ describe('ConversationRuntime', () => {
       runtime.setPlanMode(true);
 
       expect(runtime.isPlanMode()).toBe(true);
-      expect(ctx.isPlanModeActive).toBe(true);
+      expect(runtime.flowStateForTest.isPlanModeActive).toBe(true);
       expect(ctx.savedMessages).toHaveLength(1);
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
         expect.stringContaining('PLAN MODE')
@@ -578,40 +574,40 @@ describe('ConversationRuntime', () => {
 
   describe('structured output', () => {
     it('should set and get structured output config', () => {
-      const config = { schema: { type: 'object' }, format: 'json' } as any;
+      const config = { enabled: true, schema: { type: 'object' } };
       runtime.setStructuredOutput(config);
 
       expect(runtime.getStructuredOutput()).toBe(config);
-      expect(ctx.structuredOutputRetryCount).toBe(0);
+      expect(runtime.flowStateForTest.structuredOutputRetryCount).toBe(0);
     });
 
     it('should clear structured output config', () => {
-      runtime.setStructuredOutput({ schema: {}, format: 'json' } as any);
+      runtime.setStructuredOutput({ enabled: true, schema: {} });
       runtime.setStructuredOutput(undefined);
       expect(runtime.getStructuredOutput()).toBeUndefined();
     });
 
     it('shouldRetryStructuredOutput returns false on success', () => {
-      runtime.setStructuredOutput({ schema: {}, format: 'json' } as any);
+      runtime.setStructuredOutput({ enabled: true, schema: {} });
       expect(runtime.shouldRetryStructuredOutput({ success: true } as any)).toBe(false);
     });
 
     it('shouldRetryStructuredOutput returns true when retries remain', () => {
-      runtime.setStructuredOutput({ schema: {}, format: 'json' } as any);
-      ctx.structuredOutputRetryCount = 0;
+      runtime.setStructuredOutput({ enabled: true, schema: {} });
+      runtime.flowStateForTest.structuredOutputRetryCount = 0;
       expect(runtime.shouldRetryStructuredOutput({ success: false } as any)).toBe(true);
     });
 
     it('shouldRetryStructuredOutput returns false when max retries reached', () => {
-      runtime.setStructuredOutput({ schema: {}, format: 'json' } as any);
-      ctx.structuredOutputRetryCount = 3;
+      runtime.setStructuredOutput({ enabled: true, schema: {} });
+      runtime.flowStateForTest.structuredOutputRetryCount = 3;
       ctx.maxStructuredOutputRetries = 3;
       expect(runtime.shouldRetryStructuredOutput({ success: false } as any)).toBe(false);
     });
 
     it('injectStructuredOutputCorrection should increment retry count', () => {
-      ctx.structuredOutput = { schema: { type: 'object' }, format: 'json' } as any;
-      ctx.structuredOutputRetryCount = 0;
+      runtime.setStructuredOutput({ enabled: true, schema: { type: 'object' } });
+      runtime.flowStateForTest.structuredOutputRetryCount = 0;
 
       runtime.injectStructuredOutputCorrection({
         success: false,
@@ -619,7 +615,7 @@ describe('ConversationRuntime', () => {
         validationErrors: ['Invalid JSON'],
       } as any);
 
-      expect(ctx.structuredOutputRetryCount).toBe(1);
+      expect(runtime.flowStateForTest.structuredOutputRetryCount).toBe(1);
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalled();
     });
   });
@@ -674,7 +670,7 @@ describe('ConversationRuntime', () => {
       runtime.interrupt('新的指令');
 
       expect(ctx.isInterrupted).toBe(true);
-      expect(ctx.interruptMessage).toBe('新的指令');
+      expect(runtime.flowStateForTest.interruptMessage).toBe('新的指令');
       expect(controller.signal.aborted).toBe(true);
     });
 
@@ -811,7 +807,7 @@ describe('ConversationRuntime', () => {
 
   describe('initializeUserHooks', () => {
     it('should skip if already initialized', async () => {
-      ctx.userHooksInitialized = true;
+      runtime.flowStateForTest.userHooksInitialized = true;
       await runtime.initializeUserHooks();
       // No hookManager created — no assertion needed, just ensure no throw
     });
@@ -821,7 +817,7 @@ describe('ConversationRuntime', () => {
       ctx.hookManager = undefined;
       ctx.workingDirectory = '/tmp/comate-zulu-demo';
       await runtime.initializeUserHooks();
-      expect(ctx.userHooksInitialized).toBe(true);
+      expect(runtime.flowStateForTest.userHooksInitialized).toBe(true);
       expect(createHookManager).toHaveBeenCalledWith(
         expect.objectContaining({ workingDirectory: '/tmp/comate-zulu-demo' })
       );
@@ -834,7 +830,7 @@ describe('ConversationRuntime', () => {
       ctx.hookManager = mockHookManager as any;
       await runtime.initializeUserHooks();
       expect(mockHookManager.initialize).toHaveBeenCalled();
-      expect(ctx.userHooksInitialized).toBe(true);
+      expect(runtime.flowStateForTest.userHooksInitialized).toBe(true);
     });
   });
 

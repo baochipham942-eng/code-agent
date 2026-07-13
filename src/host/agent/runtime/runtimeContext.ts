@@ -7,7 +7,6 @@ import type {
   AgentEvent,
   ToolResult,
 } from '../../../shared/contract';
-import type { StructuredOutputConfig } from '../structuredOutput';
 import type { EffortLevel } from '../../../shared/contract/agent';
 import type { ModelConfig } from '../../../shared/contract/model';
 import type { ModelDecision } from '../../../shared/contract/modelDecision';
@@ -35,8 +34,9 @@ import type { SkillInvocationMatchKind } from '../../services/skills/skillInvoca
 import type { SkillToolBoundary } from '../../../shared/contract/agentSkill';
 import type { TurnTraceRecorder } from './turnTrace';
 import type { SessionMemoryMode } from '../../../shared/contract/session';
-import type { TurnQualityMemorySummary } from '../../../shared/contract/turnQuality';
 import type { RunTraceContext } from '../../telemetry/runTraceContext';
+import type { GoalEvidenceGateState } from './goalEvidenceGate';
+import type { TurnQualityRunState } from './turnQuality';
 
 /**
  * Mutable shared state. Single object, all modules share the same reference.
@@ -92,20 +92,16 @@ export interface RuntimeContext {
   lastStreamedContent: string;
   isCancelled: boolean;
   isInterrupted: boolean;
-  isPaused: boolean;
-  interruptMessage: string | null;
   needsReinference: boolean;
   abortController: AbortController | null;
   runAbortController: AbortController | null;
 
   // --- Plan mode ---
-  isPlanModeActive: boolean;
   savedMessages: Message[] | null;
   readonly autoApprovePlan: boolean;
 
   // --- Hooks ---
   readonly enableHooks: boolean;
-  userHooksInitialized: boolean;
   readonly maxStopHookRetries: number;
   /** GAP-013: Generator-Critic 交付前自动验证开关 */
   readonly enableDeliveryCritic: boolean;
@@ -126,8 +122,6 @@ export interface RuntimeContext {
   readonly maxModeCandidates: number;
 
   // --- Structured output ---
-  structuredOutput?: StructuredOutputConfig;
-  structuredOutputRetryCount: number;
   readonly maxStructuredOutputRetries: number;
 
   // --- Step-by-step ---
@@ -142,7 +136,8 @@ export interface RuntimeContext {
   currentSystemPromptHash?: string;
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
   readonly turnTrace: TurnTraceRecorder;
-  turnQualityMemory?: TurnQualityMemorySummary;
+  /** 2d: turn quality run 级记忆（owner=turnQuality） */
+  readonly turnQualityState: TurnQualityRunState;
   turnModelDecision?: ModelDecision;
   pendingRuntimeDiagnostics: string[];
   /** GAP-023: 当前生效 system prompt 构建时被预算丢弃/裁剪的块（可见化到 context health） */
@@ -162,8 +157,8 @@ export interface RuntimeContext {
     scratchDir?: string;
     declaredAtMs: number;
   };
-  /** goal 证据闸（闸0）：本次 goal 内因证据不足被打回的次数（防无限打回） */
-  goalEvidenceGateBounces?: number;
+  /** 2d: goal 证据闸打回计数（owner=goalEvidenceGate） */
+  readonly goalEvidenceState: GoalEvidenceGateState;
   activeSkillInvocation?: {
     skillName: string;
     source: string;
@@ -202,7 +197,6 @@ export interface RuntimeContext {
   _researchIterationCount: number;
 
   // --- Budget ---
-  budgetWarningEmitted: boolean;
   totalInputTokens: number;
   totalOutputTokens: number;
   readonly consecutiveErrors: number;

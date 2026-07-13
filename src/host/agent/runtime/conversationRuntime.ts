@@ -106,7 +106,25 @@ export class ConversationRuntime {
   private streamHandler!: StreamHandler;
   private pauseResolvers: Array<() => void> = [];
 
-  constructor(protected ctx: RuntimeContext) {}
+  /** 2d: 会话流程自持状态（原 RuntimeContext 字段，ADR-038 批2d 下沉） */
+  private readonly flowState = {
+    isPaused: false,
+    interruptMessage: null as string | null,
+    isPlanModeActive: false,
+    userHooksInitialized: false,
+    structuredOutput: undefined as StructuredOutputConfig | undefined,
+    structuredOutputRetryCount: 0,
+  };
+
+  /** @internal 测试专用入口，生产代码禁止调用 */
+  get flowStateForTest() { return this.flowState; }
+
+  constructor(
+    protected ctx: RuntimeContext,
+    structuredOutput?: StructuredOutputConfig,
+  ) {
+    this.flowState.structuredOutput = structuredOutput;
+  }
 
   setModules(
     toolEngine: ToolExecutionEngine,
@@ -133,7 +151,7 @@ export class ConversationRuntime {
   }
 
   private async waitWhilePaused(): Promise<void> {
-    while (this.ctx.isPaused && !this.ctx.isCancelled && !this.ctx.isInterrupted) {
+    while (this.flowState.isPaused && !this.ctx.isCancelled && !this.ctx.isInterrupted) {
       await new Promise<void>((resolve) => {
         this.pauseResolvers.push(resolve);
       });
@@ -141,7 +159,7 @@ export class ConversationRuntime {
   }
 
   async initializeUserHooks(): Promise<void> {
-    if (this.ctx.userHooksInitialized) return;
+    if (this.flowState.userHooksInitialized) return;
 
     if (!this.ctx.hookManager && this.ctx.enableHooks) {
       const hookWorkingDirectory = this.ctx.workingDirectory?.trim() || process.cwd();
@@ -162,7 +180,7 @@ export class ConversationRuntime {
 
     if (this.ctx.hookManager) {
       await this.ctx.hookManager.initialize();
-      this.ctx.userHooksInitialized = true;
+      this.flowState.userHooksInitialized = true;
 
       // Bridge planning hooks to user hook system (fire-and-forget)
       if (this.ctx.planningService) {
@@ -182,7 +200,7 @@ export class ConversationRuntime {
   }
 
   setPlanMode(active: boolean): void {
-    this.ctx.isPlanModeActive = active;
+    this.flowState.isPlanModeActive = active;
 
     if (active) {
       this.ctx.savedMessages = [...this.ctx.messages];
@@ -206,33 +224,33 @@ export class ConversationRuntime {
   }
 
   isPlanMode(): boolean {
-    return this.ctx.isPlanModeActive;
+    return this.flowState.isPlanModeActive;
   }
 
   setStructuredOutput(config: StructuredOutputConfig | undefined): void {
-    this.ctx.structuredOutput = config;
-    this.ctx.structuredOutputRetryCount = 0;
+    this.flowState.structuredOutput = config;
+    this.flowState.structuredOutputRetryCount = 0;
   }
 
   getStructuredOutput(): StructuredOutputConfig | undefined {
-    return this.ctx.structuredOutput;
+    return this.flowState.structuredOutput;
   }
 
   shouldRetryStructuredOutput(result: StructuredOutputResult): boolean {
     if (result.success) return false;
-    return this.ctx.structuredOutputRetryCount < this.ctx.maxStructuredOutputRetries;
+    return this.flowState.structuredOutputRetryCount < this.ctx.maxStructuredOutputRetries;
   }
   injectStructuredOutputCorrection(result: StructuredOutputResult): void {
-    if (!this.ctx.structuredOutput) return;
+    if (!this.flowState.structuredOutput) return;
 
-    this.ctx.structuredOutputRetryCount++;
+    this.flowState.structuredOutputRetryCount++;
     const correctionPrompt = generateFormatCorrectionPrompt(
       result.rawContent || '',
-      this.ctx.structuredOutput.schema,
+      this.flowState.structuredOutput.schema,
       result.validationErrors || [result.error || 'Unknown error']
     );
     this.contextAssembly.injectSystemMessage(correctionPrompt);
-    logger.debug(`[AgentLoop] Structured output correction injected (retry ${this.ctx.structuredOutputRetryCount}/${this.ctx.maxStructuredOutputRetries})`);
+    logger.debug(`[AgentLoop] Structured output correction injected (retry ${this.flowState.structuredOutputRetryCount}/${this.ctx.maxStructuredOutputRetries})`);
   }
 
   shouldAutoEnableStepByStep(): boolean {
@@ -302,7 +320,7 @@ export class ConversationRuntime {
         logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
 
         // Check for interrupt at the start of each iteration
-        if (this.ctx.isInterrupted && this.ctx.interruptMessage) {
+        if (this.ctx.isInterrupted && this.flowState.interruptMessage) {
           logger.info('[AgentLoop] Interrupt detected, breaking loop');
           this.ctx.onEvent({
             type: 'interrupt_acknowledged',
@@ -1049,19 +1067,19 @@ export class ConversationRuntime {
   }
 
   pause(): void {
-    this.ctx.isPaused = true;
+    this.flowState.isPaused = true;
     logger.info('[ConversationRuntime] Paused');
   }
 
   resume(): void {
-    this.ctx.isPaused = false;
+    this.flowState.isPaused = false;
     this.releasePauseWaiters();
     logger.info('[ConversationRuntime] Resumed');
   }
 
   interrupt(newMessage: string): void {
     this.ctx.isInterrupted = true;
-    this.ctx.interruptMessage = newMessage;
+    this.flowState.interruptMessage = newMessage;
     this.ctx.abortController?.abort();
     this.ctx.runAbortController?.abort();
     this.releasePauseWaiters();
@@ -1085,7 +1103,7 @@ export class ConversationRuntime {
   }
 
   getInterruptMessage(): string | null {
-    return this.ctx.interruptMessage;
+    return this.flowState.interruptMessage;
   }
 
   isRunning(): boolean {

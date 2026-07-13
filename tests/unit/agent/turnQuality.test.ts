@@ -18,6 +18,7 @@ function runtime(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
     toolsUsedInTurn: [],
     droppedPromptBlocks: [],
     pendingRuntimeDiagnostics: [],
+    turnQualityState: {},
     ...overrides,
   } as unknown as RuntimeContext;
 }

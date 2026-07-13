@@ -58,6 +58,7 @@ import { applyProviderVariant } from '../../../prompts/providerVariants';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { countTraceEntries, recordMemoryInjectionTrace } from '../../../memory/memoryInjectionTrace';
 import { recordTurnMemoryBlock } from '../turnQuality';
+import { classifyIntent } from '../../../routing/intentClassifier';
 import { createHash } from 'crypto';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
 import { logger, MAX_SYSTEM_PROMPT_TOKENS } from './shared';
@@ -93,8 +94,8 @@ export {
 const DYNAMIC_PROMPT_CACHE_TTL_MS = 2 * 60 * 1000;
 const COMPRESSION_CACHE_TTL_MS = 30 * 1000;
 
-const MEMORY_INTENT_PATTERN = /记忆|记得|回忆|之前|上次|上一次|历史|先前|previous|remember|recall|memory|before|earlier/i;
-const RECENT_CONVERSATIONS_INTENT_PATTERN = /继续|接着|上次|上一轮|之前|历史|recent|previous|continue|resume|earlier/i;
+export const MEMORY_INTENT_PATTERN = /记忆|记得|回忆|之前|上次|上一次|历史|先前|previous|remember|recall|memory|before|earlier/i;
+export const RECENT_CONVERSATIONS_INTENT_PATTERN = /继续|接着|上次|上一轮|之前|历史|recent|previous|continue|resume|earlier/i;
 const REPO_MAP_INTENT_PATTERN = /代码|仓库|文件|实现|测试|修复|报错|构建|重构|性能|源码|模块|函数|类|bug|repo|code|file|test|fix|implement|refactor|build|performance|source|module/i;
 const REQUIRED_GAME_PROMPT_TRIM_CANDIDATES = ['repo map', 'skills', 'recent conversations', 'deferred tools'];
 /**
@@ -468,6 +469,39 @@ ${deferredToolsSummary}
     );
   }
 
+  const memoryContextEnabled =
+    !artifactRepairMode
+    && !shouldInjectArtifactBrief
+    && ctx.runtime.memoryMode !== 'off';
+  const memoryRegexMatched = memoryContextEnabled && MEMORY_INTENT_PATTERN.test(userQuery);
+  const recentConversationsRegexMatched =
+    memoryContextEnabled && RECENT_CONVERSATIONS_INTENT_PATTERN.test(userQuery);
+  let referencesPastContext = false;
+
+  // 两个旧正则仍是零成本快路径；任一门未命中时只调用一次分类器，共享语义判定。
+  if (memoryContextEnabled && (!memoryRegexMatched || !recentConversationsRegexMatched)) {
+    try {
+      const classification = await classifyIntent(userQuery, ctx.runtime.modelRouter);
+      referencesPastContext = classification.references_past_context;
+    } catch (error) {
+      // 分类器异常时严格退回旧正则语义，避免失败导致意外记忆注入。
+      logger.warn('[ContextAssembly] past-context intent classification failed closed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const memoryIntentDecisionSource = memoryRegexMatched
+    ? 'regex-fast-path'
+    : referencesPastContext
+      ? 'intent-classifier'
+      : null;
+  const recentConversationsDecisionSource = recentConversationsRegexMatched
+    ? 'regex-fast-path'
+    : referencesPastContext
+      ? 'intent-classifier'
+      : null;
+
   // GAP-005: 注入 failure journal（跨会话失败模式，避免重复踩坑）。
   // journal 由 learningPipeline 在 session 结束时自动沉淀；为空时不注入。
   if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.memoryMode !== 'off') {
@@ -502,7 +536,7 @@ ${deferredToolsSummary}
 
   // 注入轻量记忆索引（File-as-Memory）
   // 先做意图判断，避免每轮无条件读 INDEX.md。
-  if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.memoryMode !== 'off' && typeof userQuery === 'string' && MEMORY_INTENT_PATTERN.test(userQuery)) {
+  if (memoryContextEnabled && memoryIntentDecisionSource) {
     const memoryIndex = await loadMemoryIndex();
     if (memoryIndex) {
       const memoryIndexBlock = `<memory_index>\n${memoryIndex}\n</memory_index>`;
@@ -519,6 +553,7 @@ ${deferredToolsSummary}
         chars: memoryIndex.length,
         injected: systemPrompt !== beforeMemoryIndex,
         source: 'light-memory-index',
+        decisionSource: memoryIntentDecisionSource,
         count: countTraceEntries(memoryIndex),
         sessionId: ctx.runtime.sessionId,
       });
@@ -538,6 +573,7 @@ ${deferredToolsSummary}
         chars: 0,
         injected: false,
         source: 'light-memory-index',
+        decisionSource: memoryIntentDecisionSource,
         count: 0,
         sessionId: ctx.runtime.sessionId,
       });
@@ -550,7 +586,7 @@ ${deferredToolsSummary}
         count: 0,
       });
     }
-  } else if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.memoryMode !== 'off') {
+  } else if (memoryContextEnabled) {
     // 日常对话：只放短提示，让模型知道可以用 MemoryRead 工具按需查，不读取索引文件。
     const memoryHintBlock = '<memory_hint>Memory files available via MemoryRead tool (see ~/.code-agent/memory/).</memory_hint>';
     const beforeMemoryHint = systemPrompt;
@@ -611,7 +647,7 @@ ${deferredToolsSummary}
   }
 
   // 注入近期对话摘要（跨会话连续性，借鉴 ChatGPT Layer 4）
-  if (!artifactRepairMode && !shouldInjectArtifactBrief && ctx.runtime.memoryMode !== 'off' && RECENT_CONVERSATIONS_INTENT_PATTERN.test(userQuery)) {
+  if (memoryContextEnabled && recentConversationsDecisionSource) {
     const recentConversationsBlock = await buildRecentConversationsBlock();
     const beforeRecentConversations = systemPrompt;
     systemPrompt = appendPromptBlockWithinBudget(
@@ -626,6 +662,7 @@ ${deferredToolsSummary}
       chars: recentConversationsBlock?.length ?? 0,
       injected: Boolean(recentConversationsBlock) && systemPrompt !== beforeRecentConversations,
       source: 'recent-conversations',
+      decisionSource: recentConversationsDecisionSource,
       count: countTraceEntries(recentConversationsBlock),
       sessionId: ctx.runtime.sessionId,
     });

@@ -158,7 +158,7 @@ export function handleToolResultBookkeeping({
         buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
       );
     }
-    ctx.needsReinference = true;
+    ctx.turn.requestReinference();
   }
 
   const canonicalName = canonicalToolName(toolCall.name);

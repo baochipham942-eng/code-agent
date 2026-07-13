@@ -159,12 +159,12 @@ function isMarkedBashForTaskAdvance(
 function pushRuntimeDiagnostic(ctx: RuntimeContext, message: string): void {
   const trimmed = message.trim();
   if (!trimmed) return;
-  if (ctx.currentTurnId) {
+  if (ctx.turn.currentTurnId) {
     ctx.onEvent({
       type: 'stream_reasoning',
       data: {
         content: `\n[runtime] ${trimmed}\n`,
-        turnId: ctx.currentTurnId,
+        turnId: ctx.turn.currentTurnId,
         ...(ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
       },
     });
@@ -595,7 +595,7 @@ export class RunFinalizer {
     this.ctx.onEvent({
       type: 'task_progress',
       data: {
-        turnId: this.ctx.currentTurnId,
+        turnId: this.ctx.turn.currentTurnId,
         phase,
         step,
         ...extra,
@@ -604,13 +604,13 @@ export class RunFinalizer {
   }
 
   emitTaskComplete(): void {
-    const duration = Date.now() - this.ctx.turnStartTime;
+    const duration = Date.now() - this.ctx.turn.turnStartTime;
     this.ctx.onEvent({
       type: 'task_complete',
       data: {
-        turnId: this.ctx.currentTurnId,
+        turnId: this.ctx.turn.currentTurnId,
         duration,
-        toolsUsed: [...new Set(this.ctx.toolsUsedInTurn)],
+        toolsUsed: [...new Set(this.ctx.turn.toolsUsedInTurn)],
       },
     });
   }
@@ -714,14 +714,10 @@ export class RunFinalizer {
 
       // GAP-001: skill allowed-tools 限权边界（边界外的工具调用强制用户审批）
       if (skillResult.contextModifier.toolBoundary) {
-        this.ctx.skillToolBoundary = skillResult.contextModifier.toolBoundary;
+        this.ctx.turn.setSkillToolBoundary(skillResult.contextModifier.toolBoundary);
         logger.debug(`[AgentLoop] Skill tool boundary set by "${skillResult.contextModifier.toolBoundary.skillName}": ${skillResult.contextModifier.toolBoundary.allowedTools.join(', ')}`);
       }
 
-      if (skillResult.contextModifier.modelOverride) {
-        this.ctx.skillModelOverride = skillResult.contextModifier.modelOverride;
-        logger.debug(`[AgentLoop] Model override set to: ${this.ctx.skillModelOverride}`);
-      }
     }
   }
 

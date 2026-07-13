@@ -186,7 +186,7 @@ export class MessageProcessor {
       content,
       timestamp: Date.now(),
       thinking: response.thinking,
-      effortLevel: this.ctx.effortLevel,
+      effortLevel: this.ctx.turn.effortLevel,
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
       modelDecision: response.runtimeDiagnostics?.modelDecision,
@@ -229,7 +229,7 @@ export class MessageProcessor {
     const isForcedFinalTextPass = Boolean(this.ctx.forceFinalResponseReason);
 
     // Research mode: indicate report generation phase
-    if (this.ctx._researchModeActive) {
+    if (this.ctx.turn.researchModeActive) {
       this.runFinalizer.emitTaskProgress('generating', '正在生成报告...');
     } else {
       this.runFinalizer.emitTaskProgress('generating', '生成回复中...');
@@ -445,8 +445,8 @@ export class MessageProcessor {
     const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifactRepairGuard);
     if (!isForcedFinalTextPass) {
       const nudgeTriggered = this.ctx.nudgeManager.runNudgeChecks({
-        toolsUsedInTurn: this.ctx.toolsUsedInTurn,
-        isSimpleTaskMode: this.ctx.isSimpleTaskMode,
+        toolsUsedInTurn: this.ctx.turn.toolsUsedInTurn,
+        isSimpleTaskMode: this.ctx.turn.isSimpleTaskMode,
         sessionId: this.ctx.sessionId,
         iterations,
         workingDirectory: this.ctx.workingDirectory,
@@ -571,17 +571,17 @@ export class MessageProcessor {
     // === 自动解析任务列表（替代 TodoWrite 工具） ===
     this.runFinalizer.tryParseTodosFromResponse(response);
 
-    langfuse.endSpan(this.ctx.currentIterationSpanId, { type: 'text_response' });
+    langfuse.endSpan(this.ctx.turn.currentIterationSpanId, { type: 'text_response' });
 
     this.runFinalizer.emitTaskProgress('completed', '回复完成');
     this.runFinalizer.emitTaskComplete();
 
     // Telemetry: record turn end (text response)
-    this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, response.content || '', response.thinking, this.ctx.currentSystemPromptHash);
+    this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, response.content || '', response.thinking, this.ctx.currentSystemPromptHash);
 
     this.ctx.onEvent({
       type: 'turn_end',
-      data: { turnId: this.ctx.currentTurnId },
+      data: { turnId: this.ctx.turn.currentTurnId },
     });
 
     this.contextAssembly.updateContextHealth();
@@ -591,7 +591,7 @@ export class MessageProcessor {
       this.ctx.hookManager.triggerPostExecution?.(
         this.ctx.sessionId,
         iterations,
-        this.ctx.toolsUsedInTurn,
+        this.ctx.turn.toolsUsedInTurn,
         Array.from(this.ctx.nudgeManager.getModifiedFiles()),
       ).catch((err: unknown) => {
         logger.error('[AgentLoop] PostExecution hook error:', err);
@@ -632,16 +632,16 @@ export class MessageProcessor {
           role: 'assistant',
           content: `本轮请求了后台运行禁用的交互工具（${deniedNames}），已停止继续调用工具。`,
           timestamp: Date.now(),
-          effortLevel: this.ctx.effortLevel,
+          effortLevel: this.ctx.turn.effortLevel,
           metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
           ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
         };
         await this.contextAssembly.addAndPersistMessage(finalMessage);
         this.ctx.onEvent({ type: 'message', data: finalMessage });
-        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
         this.ctx.onEvent({
           type: 'turn_end',
-          data: { turnId: this.ctx.currentTurnId },
+          data: { turnId: this.ctx.turn.currentTurnId },
         });
         return 'break';
       }
@@ -742,7 +742,7 @@ export class MessageProcessor {
             timestamp: Date.now(),
             toolCalls: sanitizeToolCallsForHistory(toolCalls),
             thinking: response.thinking,
-            effortLevel: this.ctx.effortLevel,
+            effortLevel: this.ctx.turn.effortLevel,
             inputTokens: response.usage?.inputTokens,
             outputTokens: response.usage?.outputTokens,
             metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
@@ -807,7 +807,7 @@ export class MessageProcessor {
       timestamp: Date.now(),
       toolCalls: sanitizeToolCallsForHistory(toolCalls),
       thinking: response.thinking,
-      effortLevel: this.ctx.effortLevel,
+      effortLevel: this.ctx.turn.effortLevel,
       inputTokens: response.usage?.inputTokens,
       outputTokens: response.usage?.outputTokens,
       modelDecision: response.runtimeDiagnostics?.modelDecision,
@@ -841,8 +841,8 @@ export class MessageProcessor {
     }
 
     // h2A 实时转向
-    if (this.ctx.needsReinference) {
-      this.ctx.needsReinference = false;
+    if (this.ctx.turn.needsReinference) {
+      this.ctx.turn.clearReinference();
       logger.info('[AgentLoop] Steer detected during tool execution — saving results and re-inferring');
       if (toolResults.length > 0) {
         const partialResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
@@ -945,17 +945,17 @@ export class MessageProcessor {
           reason: this.ctx.forceFinalResponseReason,
         });
         this.contextAssembly.flushHookMessageBuffer();
-        langfuse.endSpan(this.ctx.currentIterationSpanId, {
+        langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
           type: 'tool_calls',
           toolCount: toolCalls.length,
           successCount: toolResults.filter((r: ToolResult) => r.success).length,
           forcedFinalResponseDeferred: true,
         });
         // Close this tool turn before the deferred no-tool inference starts a fresh turn.
-        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+        this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
         this.ctx.onEvent({
           type: 'turn_end',
-          data: { turnId: this.ctx.currentTurnId },
+          data: { turnId: this.ctx.turn.currentTurnId },
         });
         return 'continue';
       }
@@ -965,7 +965,7 @@ export class MessageProcessor {
         role: 'assistant',
         content: buildForcedFinalAssistantContent(this.ctx.forceFinalResponseReason),
         timestamp: Date.now(),
-        effortLevel: this.ctx.effortLevel,
+        effortLevel: this.ctx.turn.effortLevel,
         metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
       };
       await this.contextAssembly.addAndPersistMessage(finalMessage);
@@ -978,16 +978,16 @@ export class MessageProcessor {
       this.ctx.forceFinalResponseReason = undefined;
       this.ctx.forceFinalResponsePrompt = undefined;
       this.contextAssembly.flushHookMessageBuffer();
-      langfuse.endSpan(this.ctx.currentIterationSpanId, {
+      langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
         type: 'tool_calls',
         toolCount: toolCalls.length,
         successCount: toolResults.filter((r: ToolResult) => r.success).length,
         forcedFinalResponse: true,
       });
-      this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+      this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
       this.ctx.onEvent({
         type: 'turn_end',
-        data: { turnId: this.ctx.currentTurnId },
+        data: { turnId: this.ctx.turn.currentTurnId },
       });
       return 'break';
     }
@@ -1078,18 +1078,18 @@ export class MessageProcessor {
     // Flush hook message buffer at end of iteration
     this.contextAssembly.flushHookMessageBuffer();
 
-    langfuse.endSpan(this.ctx.currentIterationSpanId, {
+    langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
       type: 'tool_calls',
       toolCount: toolCalls.length,
       successCount: toolResults.filter((r: ToolResult) => r.success).length,
     });
 
     // Telemetry: record turn end (tool execution)
-    this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
+    this.ctx.telemetryAdapter?.onTurnEnd(this.ctx.turn.currentTurnId, '', response.thinking, this.ctx.currentSystemPromptHash);
 
     this.ctx.onEvent({
       type: 'turn_end',
-      data: { turnId: this.ctx.currentTurnId },
+      data: { turnId: this.ctx.turn.currentTurnId },
     });
 
     this.contextAssembly.updateContextHealth();
@@ -1103,7 +1103,7 @@ export class MessageProcessor {
     // P2 Checkpoint
     const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifactRepairGuard);
     this.ctx.nudgeManager.checkProgressState(
-      this.ctx.toolsUsedInTurn,
+      this.ctx.turn.toolsUsedInTurn,
       (msg: string) => this.contextAssembly.injectSystemMessage(msg),
       { mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh },
     );

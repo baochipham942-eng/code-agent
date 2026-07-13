@@ -10,7 +10,7 @@ export async function runInferenceWithTelemetry(
   let modelSpanId: string | undefined;
   ctx.runtime.lastModelTraceSpanId = undefined;
   try {
-    const turnSpan = getTelemetryService().findActiveSpanByAttribute('agent.id', ctx.runtime.currentTurnId);
+    const turnSpan = getTelemetryService().findActiveSpanByAttribute('agent.id', ctx.runtime.turn.currentTurnId);
     const modelSpan = getTelemetryService().startModelSpan(
       ctx.runtime.modelConfig.model,
       ctx.runtime.modelConfig.provider,

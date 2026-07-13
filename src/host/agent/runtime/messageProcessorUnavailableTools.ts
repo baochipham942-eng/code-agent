@@ -84,7 +84,7 @@ export async function handleUnavailableToolCalls(
         timestamp: Date.now(),
         toolCalls: sanitizeToolCallsForHistory(toolCalls),
         thinking: response.thinking,
-        effortLevel: ctx.effortLevel,
+        effortLevel: ctx.turn.effortLevel,
         inputTokens: response.usage?.inputTokens,
         outputTokens: response.usage?.outputTokens,
         metadata: attachTurnQualityMetadata(ctx, undefined, response),
@@ -171,7 +171,7 @@ export async function handleUnavailableToolCalls(
     timestamp: Date.now(),
     toolCalls: sanitizeToolCallsForHistory(toolCalls),
     thinking: response.thinking,
-    effortLevel: ctx.effortLevel,
+    effortLevel: ctx.turn.effortLevel,
     inputTokens: response.usage?.inputTokens,
     outputTokens: response.usage?.outputTokens,
     metadata: attachTurnQualityMetadata(ctx, undefined, response),
@@ -234,7 +234,7 @@ export async function handleUnavailableToolCalls(
       role: 'assistant',
       content: buildForcedFinalAssistantContent(ctx.forceFinalResponseReason),
       timestamp: Date.now(),
-      effortLevel: ctx.effortLevel,
+      effortLevel: ctx.turn.effortLevel,
       metadata: attachTurnQualityMetadata(ctx, undefined, response),
     };
     await contextAssembly.addAndPersistMessage(finalMessage);
@@ -244,8 +244,8 @@ export async function handleUnavailableToolCalls(
 
     ctx.forceFinalResponseReason = undefined;
     ctx.forceFinalResponsePrompt = undefined;
-    ctx.telemetryAdapter?.onTurnEnd(ctx.currentTurnId, '', undefined, ctx.currentSystemPromptHash);
-    ctx.onEvent({ type: 'turn_end', data: { turnId: ctx.currentTurnId } });
+    ctx.telemetryAdapter?.onTurnEnd(ctx.turn.currentTurnId, '', undefined, ctx.currentSystemPromptHash);
+    ctx.onEvent({ type: 'turn_end', data: { turnId: ctx.turn.currentTurnId } });
     return 'break';
   }
   return 'continue';

@@ -125,7 +125,7 @@ export async function handleToolExecutionError({
   }, 'ERROR', toolResult.error);
 
   logger.debug(` Emitting tool_call_end for ${toolCall.name} (error)`);
-  ctx.telemetryAdapter?.onToolCallEnd(ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
+  ctx.telemetryAdapter?.onToolCallEnd(ctx.turn.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
   ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, toolResult) });
   // Tool execution logging (non-blocking)
   if (ctx.onToolExecutionLog && ctx.sessionId) {

@@ -24,6 +24,7 @@ import {
 } from '../../../src/host/agent/runtime/contextAssembly/deferredToolPreload';
 import { getToolSearchService, resetToolSearchService } from '../../../src/host/services/toolSearch';
 import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -47,6 +48,7 @@ function runtime(
     enableToolDeferredLoading: true,
     executionIntent: undefined,
     messages: [],
+    turn: TurnState.forTest(),
     ...overrides,
   };
 }
@@ -251,11 +253,13 @@ describe('deferred tool preload', () => {
       enableToolDeferredLoading: true,
       executionIntent: undefined,
       messages: [{ id: 'm1', role: 'user', content: '/edit-role 研究员', timestamp: 1 }],
-      skillToolBoundary: {
-        skillName: 'edit-role',
-        // read_file/glob/grep/ask_user_question 都会归一到 core，应被过滤
-        allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
-      },
+      turn: TurnState.forTest({
+        skillToolBoundary: {
+          skillName: 'edit-role',
+          // read_file/glob/grep/ask_user_question 都会归一到 core，应被过滤
+          allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
+        },
+      }),
     } as never);
     expect(preload).toEqual(['propose_role']);
   });
@@ -326,7 +330,7 @@ describe('deferred tool preload', () => {
       enableToolDeferredLoading: true,
       executionIntent: undefined,
       messages: [{ id: 'm1', role: 'user', content: '/edit-role 研究员', timestamp: 1 }],
-      skillToolBoundary: { skillName: 'edit-role', allowedTools: ['propose_role', 'read_file'] },
+      turn: TurnState.forTest({ skillToolBoundary: { skillName: 'edit-role', allowedTools: ['propose_role', 'read_file'] } }),
     } as never);
     expect(loaded).toEqual(['propose_role']);
     expect(getToolSearchService().isToolLoaded('propose_role')).toBe(true);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import {
   buildTurnQualitySummary,
   recordTurnMemoryBlock,
@@ -14,8 +15,7 @@ function runtime(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
       provider: 'openai',
       model: 'gpt-4.1',
     },
-    effortLevel: 'high',
-    toolsUsedInTurn: [],
+    turn: TurnState.forTest({ effortLevel: 'high' }),
     droppedPromptBlocks: [],
     pendingRuntimeDiagnostics: [],
     turnQualityState: {},
@@ -93,7 +93,7 @@ describe('turnQuality', () => {
       },
       agentId: 'coder',
       agentName: 'Coder',
-      toolsUsedInTurn: ['Read', 'Edit'],
+      turn: TurnState.forTest({ effortLevel: 'high', toolsUsedInTurn: ['Read', 'Edit'] }),
     });
 
     const summary = buildTurnQualitySummary(ctx, {

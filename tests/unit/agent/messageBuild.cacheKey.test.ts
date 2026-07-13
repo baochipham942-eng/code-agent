@@ -8,6 +8,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { buildDynamicPromptCacheKey } from '../../../src/host/agent/runtime/contextAssembly/messageBuild';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
 import type { ProjectSystemPromptResult } from '../../../src/host/prompts/projectSystemPrompt';
@@ -20,14 +21,12 @@ function makeCtx(): ContextAssemblyCtx {
       agentId: 'agent-fixed',
       workingDirectory: '/tmp/work',
       isDefaultWorkingDirectory: false,
-      isSimpleTaskMode: false,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
       enableToolDeferredLoading: true,
       modelConfig: { model: 'kimi-k2.5' },
       messages: [
         { id: 'msg-last', role: 'user', content: 'fixed user query' },
       ],
-      activeSkillInvocation: undefined,
-      activeSkillContextBlock: undefined,
     },
   } as unknown as ContextAssemblyCtx;
 }

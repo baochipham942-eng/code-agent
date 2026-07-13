@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import type { Message } from '../../../src/shared/contract';
 import { CompressionState } from '../../../src/host/context/compressionState';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from '../../../src/host/agent/runtime/contextAssembly/shared';
@@ -174,7 +175,7 @@ function makeCtx(userMessage: string): ContextAssemblyCtx {
       agentId: undefined,
       workingDirectory: '/tmp/code-agent',
       isDefaultWorkingDirectory: false,
-      isSimpleTaskMode: false,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
       enableToolDeferredLoading: false,
       memoryMode: 'off',
       modelConfig: {
@@ -187,8 +188,6 @@ function makeCtx(userMessage: string): ContextAssemblyCtx {
       messages,
       droppedPromptBlocks: [],
       pendingRuntimeDiagnostics: [],
-      activeSkillInvocation: undefined,
-      activeSkillContextBlock: undefined,
       compressionState: new CompressionState(),
       compressionPipeline: {
         evaluate: vi.fn(async (entries: ContextTranscriptEntry[], state: CompressionState) => ({

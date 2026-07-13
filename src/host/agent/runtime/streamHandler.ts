@@ -98,7 +98,7 @@ export class StreamHandler {
         type: 'stream_reasoning',
         data: {
           content: `\n[runtime] ${diagnostic}\n`,
-          turnId: this.ctx.currentTurnId,
+          turnId: this.ctx.turn.currentTurnId,
           ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
         },
       });
@@ -113,34 +113,31 @@ export class StreamHandler {
     userMessage: string,
     langfuse: ReturnType<typeof getLangfuseService>,
   ): void {
-    this.ctx.currentTurnId = generateMessageId();
-    this.ctx.messageDeltaSeq = 0;
-
     const activeRunTrace = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
-    this.ctx.currentIterationSpanId = activeRunTrace
+    const iterationSpanId = activeRunTrace
       ? createChildRunTraceContext(activeRunTrace, { agentId: this.ctx.agentId }).spanId
       : `iteration-${this.ctx.traceId}-${iterations}`;
-    langfuse.startSpan(this.ctx.traceId, this.ctx.currentIterationSpanId, {
+    this.ctx.turn.beginTurn(generateMessageId(), iterationSpanId);
+    langfuse.startSpan(this.ctx.traceId, this.ctx.turn.currentIterationSpanId, {
       name: `Iteration ${iterations}`,
-      metadata: { iteration: iterations, turnId: this.ctx.currentTurnId },
+      metadata: { iteration: iterations, turnId: this.ctx.turn.currentTurnId },
     });
 
     this.ctx.onEvent({
       type: 'turn_start',
       data: {
-        turnId: this.ctx.currentTurnId,
+        turnId: this.ctx.turn.currentTurnId,
         iteration: iterations,
         ...(this.ctx.historyVisibility === 'meta' ? { isMeta: true } : {}),
       },
     });
     this.flushRuntimeDiagnostics();
 
-    this.ctx.turnStartTime = Date.now();
-    this.ctx.toolsUsedInTurn = [];
+    this.ctx.turn.markTurnStart();
 
-    if (this.ctx._researchModeActive) {
-      this.ctx._researchIterationCount++;
-      this.runFinalizer.emitTaskProgress('thinking', `正在搜索 (第${this.ctx._researchIterationCount}轮)`);
+    if (this.ctx.turn.researchModeActive) {
+      const researchRound = this.ctx.turn.incrementResearchIteration();
+      this.runFinalizer.emitTaskProgress('thinking', `正在搜索 (第${researchRound}轮)`);
     } else {
       this.runFinalizer.emitTaskProgress('thinking', '分析请求中...');
     }

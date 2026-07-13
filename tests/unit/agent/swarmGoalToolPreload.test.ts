@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { getDeferredToolsToPreloadForTurn } from '../../../src/host/agent/runtime/contextAssembly/deferredToolPreload';
 import { buildGoalContract, GoalModeController } from '../../../src/host/agent/goalModeController';
 import type { Message } from '../../../src/shared/contract';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 
 function runtime(opts: { goalMode?: GoalModeController; userText?: string }) {
   const messages: Message[] = [
@@ -18,6 +19,7 @@ function runtime(opts: { goalMode?: GoalModeController; userText?: string }) {
     executionIntent: undefined,
     messages,
     goalMode: opts.goalMode,
+    turn: TurnState.forTest(),
   };
 }
 

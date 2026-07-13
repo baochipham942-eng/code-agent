@@ -39,8 +39,7 @@ export function injectResearchModePrompt(ctx: ContextAssemblyCtx, _userMessage: 
   ctx.pushPersistentSystemContext(prompt);
 
   // Engineering logic
-  ctx.runtime._researchModeActive = true;
-  ctx.runtime._researchIterationCount = 0;
+  ctx.runtime.turn.enterResearchMode();
 
   // Pre-load web_fetch for research mode to avoid wasting an iteration on tool_search
   try {
@@ -90,7 +89,7 @@ export async function buildPlanContextMessage(ctx: ContextAssemblyCtx): Promise<
 }
 
 export function shouldThink(ctx: ContextAssemblyCtx, hasErrors: boolean): boolean {
-  ctx.runtime.thinkingStepCount++;
+  ctx.runtime.turn.incrementThinkingStep();
 
   // B7：strong 档模型自带 reasoning，per-turn <thinking> 注入是重复税，整体关闭。
   // 计数器仍照常自增（上面），保证 flag 关闭时行为与现状逐字一致。
@@ -98,17 +97,17 @@ export function shouldThink(ctx: ContextAssemblyCtx, hasErrors: boolean): boolea
     return false;
   }
 
-  switch (normalizeAgentEffortLevel(ctx.runtime.effortLevel)) {
+  switch (normalizeAgentEffortLevel(ctx.runtime.turn.effortLevel)) {
     case 'ultra_code':
     case 'max':
     case 'xhigh':
       return true;
     case 'high':
-      return ctx.runtime.thinkingStepCount % 2 === 0 || hasErrors; // 每隔一次 + 错误时
+      return ctx.runtime.turn.thinkingStepCount % 2 === 0 || hasErrors; // 每隔一次 + 错误时
     case 'medium':
-      return hasErrors || ctx.runtime.thinkingStepCount === 1; // 仅在错误恢复或首次
+      return hasErrors || ctx.runtime.turn.thinkingStepCount === 1; // 仅在错误恢复或首次
     case 'low':
-      return ctx.runtime.thinkingStepCount === 1; // 仅初始规划
+      return ctx.runtime.turn.thinkingStepCount === 1; // 仅初始规划
     default:
       return false;
   }
@@ -179,12 +178,12 @@ export async function maybeInjectThinking(
     ctx.runtime.onEvent({
       type: 'agent_thinking',
       data: {
-        message: `[Thinking Step ${ctx.runtime.thinkingStepCount}] Effort: ${ctx.runtime.effortLevel}`,
+        message: `[Thinking Step ${ctx.runtime.turn.thinkingStepCount}] Effort: ${ctx.runtime.turn.effortLevel}`,
         progress: undefined,
       },
     });
 
-    logger.debug(`[AgentLoop] Thinking step ${ctx.runtime.thinkingStepCount} injected (effort: ${ctx.runtime.effortLevel})`);
+    logger.debug(`[AgentLoop] Thinking step ${ctx.runtime.turn.thinkingStepCount} injected (effort: ${ctx.runtime.turn.effortLevel})`);
   } catch (error) {
     logger.warn('[AgentLoop] Failed to inject thinking step:', error);
   }

@@ -7,7 +7,6 @@ import type {
   AgentEvent,
   ToolResult,
 } from '../../../shared/contract';
-import type { EffortLevel } from '../../../shared/contract/agent';
 import type { ModelConfig } from '../../../shared/contract/model';
 import type { ModelDecision } from '../../../shared/contract/modelDecision';
 import type { ToolExecutor } from '../../tools/toolExecutor';
@@ -30,9 +29,8 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '../../../shared/contract/conversationEnvelope';
-import type { SkillInvocationMatchKind } from '../../services/skills/skillInvocationResolver';
-import type { SkillToolBoundary } from '../../../shared/contract/agentSkill';
 import type { TurnTraceRecorder } from './turnTrace';
+import type { TurnState } from './turnState';
 import type { SessionMemoryMode } from '../../../shared/contract/session';
 import type { RunTraceContext } from '../../telemetry/runTraceContext';
 import type { GoalEvidenceGateState } from './goalEvidenceGate';
@@ -88,11 +86,12 @@ export interface RuntimeContext {
   readonly historyVisibility?: 'visible' | 'meta';
   readonly deniedToolNames?: string[];
 
+  // --- Turn 级状态切片（ADR-038 批3a，写操作走 TurnState 方法）---
+  readonly turn: TurnState;
+
   // --- Mutable run state ---
-  lastStreamedContent: string;
   isCancelled: boolean;
   isInterrupted: boolean;
-  needsReinference: boolean;
   abortController: AbortController | null;
   runAbortController: AbortController | null;
 
@@ -110,9 +109,6 @@ export interface RuntimeContext {
   readonly maxToolCallRetries: number;
   externalDataCallCount: number;
   preApprovedTools: Set<string>;
-  /** GAP-001: 当前激活 skill 的 allowed-tools 限权边界（边界外的工具调用强制用户审批） */
-  skillToolBoundary?: SkillToolBoundary;
-  skillModelOverride?: string;
   readonly enableToolDeferredLoading: boolean;
 
   // --- Max Mode（best-of-N，roadmap 3.3）---
@@ -129,10 +125,7 @@ export interface RuntimeContext {
 
   // --- Tracing ---
   traceId: string;
-  currentIterationSpanId: string;
   lastModelTraceSpanId?: string;
-  currentTurnId: string;
-  messageDeltaSeq: number;
   currentSystemPromptHash?: string;
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
   readonly turnTrace: TurnTraceRecorder;
@@ -159,16 +152,6 @@ export interface RuntimeContext {
   };
   /** 2d: goal 证据闸打回计数（owner=goalEvidenceGate） */
   readonly goalEvidenceState: GoalEvidenceGateState;
-  activeSkillInvocation?: {
-    skillName: string;
-    source: string;
-    basePath: string;
-    matchKind: SkillInvocationMatchKind;
-    matchedText: string;
-    aliases: string[];
-    confidence: number;
-  };
-  activeSkillContextBlock?: string;
   artifactRepairGuard?: {
     targetFile: string;
     attempts: number;
@@ -187,24 +170,12 @@ export interface RuntimeContext {
     activeIssueCodes?: string[];
   };
 
-  // --- Turn tracking ---
-  turnStartTime: number;
-  toolsUsedInTurn: string[];
-  isSimpleTaskMode: boolean;
-
-  // --- Research mode ---
-  _researchModeActive: boolean;
-  _researchIterationCount: number;
-
   // --- Budget ---
   totalInputTokens: number;
   totalOutputTokens: number;
   readonly consecutiveErrors: number;
 
   // --- Thinking ---
-  effortLevel: EffortLevel;
-  thinkingEnabled: boolean;
-  thinkingStepCount: number;
   /** B7：模型能力档 → 脚手架注入厚度（单一真源，消费方只读字段不自查 tier；缺省视同 standard） */
   readonly scaffoldProfile?: ScaffoldProfile;
 

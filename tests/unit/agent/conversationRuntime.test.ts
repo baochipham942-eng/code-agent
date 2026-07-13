@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createHookManager } from '../../../src/host/hooks';
+import { TurnState } from '../../../src/host/agent/runtime/turnState';
 
 const activityMocks = vi.hoisted(() => ({
   getCurrentActivityContext: vi.fn(),
@@ -398,7 +399,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     isCancelled: false,
     isInterrupted: false,
-    needsReinference: false,
     abortController: null,
     runAbortController: null,
 
@@ -426,25 +426,17 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     } as any,
     turnQualityState: {},
     goalEvidenceState: { bounces: 0 },
-    currentIterationSpanId: '',
-    currentTurnId: '',
+    turn: TurnState.forTest({ isSimpleTaskMode: true, effortLevel: 'normal' as never }),
     pendingRuntimeDiagnostics: [],
     forceFinalResponseReason: undefined,
     forceFinalResponsePrompt: undefined,
 
-    turnStartTime: 0,
-    toolsUsedInTurn: [],
-    isSimpleTaskMode: true,
 
-    _researchModeActive: false,
-    _researchIterationCount: 0,
 
     totalInputTokens: 0,
     totalOutputTokens: 0,
     consecutiveErrors: 0,
 
-    effortLevel: 'normal' as any,
-    thinkingStepCount: 0,
 
     runStartTime: 0,
     totalTokensUsed: 0,
@@ -648,7 +640,7 @@ describe('ConversationRuntime', () => {
 
     it('persists partial streamed assistant content as cancelled marker', async () => {
       const persistMessage = vi.fn();
-      ctx.lastStreamedContent = 'partial response';
+      ctx.turn.appendStreamedContent('partial response');
       ctx.persistMessage = persistMessage;
 
       await runtime.cancel();
@@ -658,7 +650,7 @@ describe('ConversationRuntime', () => {
         content: 'partial response\n\n[cancelled]',
       });
       expect(persistMessage).toHaveBeenCalledWith(ctx.messages.at(-1));
-      expect(ctx.lastStreamedContent).toBe('');
+      expect(ctx.turn.lastStreamedContent).toBe('');
     });
   });
 
@@ -695,7 +687,7 @@ describe('ConversationRuntime', () => {
       runtime.steer('new direction');
 
       expect(controller.signal.aborted).toBe(true);
-      expect(ctx.needsReinference).toBe(true);
+      expect(ctx.turn.needsReinference).toBe(true);
     });
 
     it('passes the renderer optimistic message id to the steer injector', () => {
@@ -738,13 +730,13 @@ describe('ConversationRuntime', () => {
     it('should set and get effort level', () => {
       runtime.setEffortLevel('high' as any);
       expect(runtime.getEffortLevel()).toBe('high');
-      expect(ctx.thinkingStepCount).toBe(0);
+      expect(ctx.turn.thinkingStepCount).toBe(0);
     });
 
     it('should reset thinking step count when changing effort level', () => {
-      ctx.thinkingStepCount = 5;
+      for (let i = 0; i < 5; i++) ctx.turn.incrementThinkingStep();
       runtime.setEffortLevel('low' as any);
-      expect(ctx.thinkingStepCount).toBe(0);
+      expect(ctx.turn.thinkingStepCount).toBe(0);
     });
   });
 
@@ -848,13 +840,13 @@ describe('ConversationRuntime', () => {
         triggerSessionStart,
       } as any;
 
-      ctx.currentTurnId = 'stale-turn-id';
+      ctx.turn.beginTurn('stale-turn-id', '');
       ctx.messages = [
         { id: 'user-1', role: 'user', content: 'first', timestamp: 100 },
       ] as any;
       await runtime.initializeRun('test message');
 
-      expect(ctx.currentTurnId).toBe('');
+      expect(ctx.turn.currentTurnId).toBe('');
       expect(triggerSessionStart).toHaveBeenCalledTimes(1);
 
       triggerSessionStart.mockClear();
@@ -959,13 +951,12 @@ describe('ConversationRuntime', () => {
       const result = await runtime.initializeRun('/lobster 升级');
 
       expect(result?.isSimpleTask).toBe(false);
-      expect(ctx.activeSkillInvocation).toMatchObject({
+      expect(ctx.turn.activeSkillInvocation).toMatchObject({
         skillName: 'lobster',
         matchKind: 'slash',
         matchedText: '/lobster',
       });
-      expect(ctx.activeSkillContextBlock).toContain('required-skill-invocation');
-      expect(ctx.skillModelOverride).toBe('special-model');
+      expect(ctx.turn.activeSkillContextBlock).toContain('required-skill-invocation');
       expect(markSemanticProgress).toHaveBeenCalledWith('skill invocation resolved: lobster');
     });
 
@@ -1028,13 +1019,13 @@ describe('ConversationRuntime', () => {
       expect(result?.isSimpleTask).toBe(false);
       expect(resolveSkillInvocation).toHaveBeenNthCalledWith(1, '描述改成专盯 AI 赛道竞品的高级研究员，加 WebFetch。', '/tmp/test');
       expect(resolveSkillInvocation).toHaveBeenNthCalledWith(2, '/edit-role 研究员', '/tmp/test');
-      expect(ctx.activeSkillInvocation).toMatchObject({
+      expect(ctx.turn.activeSkillInvocation).toMatchObject({
         skillName: 'edit-role',
         matchKind: 'slash',
         matchedText: '/edit-role',
       });
-      expect(ctx.activeSkillContextBlock).toContain('required-skill-invocation');
-      expect(ctx.skillToolBoundary).toEqual({
+      expect(ctx.turn.activeSkillContextBlock).toContain('required-skill-invocation');
+      expect(ctx.turn.skillToolBoundary).toEqual({
         skillName: 'edit-role',
         allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
         strict: true,
@@ -1110,7 +1101,7 @@ describe('ConversationRuntime', () => {
       // 第一轮：steer 触发 re-inference，让循环进入第二轮（最后一轮）
       modules.contextAssembly.inference
         .mockImplementationOnce(async () => {
-          ctx.needsReinference = true;
+          ctx.turn.requestReinference();
           return { type: 'text', content: 'partial' };
         })
         .mockImplementationOnce(async () => {
@@ -1147,7 +1138,7 @@ describe('ConversationRuntime', () => {
       }));
       modules.contextAssembly.inference
         .mockImplementationOnce(async () => {
-          ctx.needsReinference = true;
+          ctx.turn.requestReinference();
           return { type: 'text', content: 'partial' };
         })
         // 最后一轮 forced-final 推理返回空文本：flag 不能泄漏到下一次用户输入

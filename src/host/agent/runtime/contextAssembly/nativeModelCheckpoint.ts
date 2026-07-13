@@ -25,12 +25,12 @@ export async function checkpointNativeModel(
     sourceMessageId,
     provider: config.provider,
     model: config.model,
-    logicalOperationId: ctx.runtime.currentTurnId,
+    logicalOperationId: ctx.runtime.turn.currentTurnId,
     phase,
     status,
     ...(status === 'succeeded' ? {
       resultRef: `model-result:${createHash('sha256')
-        .update(`${runId}:${ctx.runtime.currentTurnId}:${config.provider}:${config.model}`)
+        .update(`${runId}:${ctx.runtime.turn.currentTurnId}:${config.provider}:${config.model}`)
         .digest('hex')}`,
     } : {}),
   });

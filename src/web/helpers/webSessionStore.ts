@@ -139,6 +139,36 @@ function fallbackToCollectorSessionProjection(
 }
 
 export function createWebSessionStore(deps: WebSessionStoreDeps) {
+  // 兜底判定只认「终轮」assistant 是否落库：早轮已落库不能抑制兜底（终轮落库失败时
+  // 内容+metadata 会静默丢失）。兜底写的是本 run 合并全文，早轮已在库时触发会有部分
+  // 内容重复——丢终轮结论比重复早轮片段更不可接受，取舍偏向保内容。
+  async function hasPersistedFinalLoopAssistantMessage(
+    sessionId: string,
+    finalMessageId: string | undefined,
+    sessionManager: AgentSessionManagerLike | null,
+    db: DatabaseService,
+  ): Promise<boolean> {
+    if (!finalMessageId) {
+      return false;
+    }
+
+    try {
+      const persisted = sessionManager?.getMessages
+        ? await sessionManager.getMessages(sessionId)
+        : db.getMessages(sessionId);
+
+      return Array.isArray(persisted) && persisted.some((message) => (
+        message.role === 'assistant' && message.id === finalMessageId
+      ));
+    } catch (error) {
+      deps.logger.warn(
+        `[AgentRouter] Failed to verify loop-persisted assistant messages for ${sessionId}:`,
+        error,
+      );
+      return false;
+    }
+  }
+
   return {
     async loadSessionHistoryForRun(sessionId: string): Promise<CachedMessage[]> {
       const cached = sessionMessages.get(sessionId);
@@ -237,73 +267,39 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
       if (dbAvailable) {
         let sm: AgentSessionManagerLike | null = null;
         try {
-          // 确保 session 在 DB 中存在（SM 和直写都需要）
-          const dbForSession = await deps.getDatabase();
-          if (!dbForSession.getSession(sessionId)) {
-            dbForSession.createSessionWithId(sessionId, {
-              title,
-              modelConfig,
-            });
-          }
-
+          const db = await ensureDbSession(deps.getDatabase, sessionId, title, modelConfig);
           sm = await deps.tryGetSessionManager();
           const loopPersistedAssistant = await hasPersistedFinalLoopAssistantMessage(
             sessionId,
             turn.lastLoopAssistantMessageId,
             sm,
-            dbForSession,
-            deps.logger,
+            db,
           );
-          if (sm?.addMessageToSession) {
-            // 通过 SM 写入，同时更新 DB 和 sessionCache
-            if (!userMessagePrePersistedDb) {
-              await sm.addMessageToSession(sessionId, {
-                id: userMessage.id,
-                role: 'user',
-                content: userMessage.content,
-                timestamp: userMessage.timestamp,
-                attachments: userMessage.attachments,
-              } as Message);
-            }
-            if (!turn.runCancelled && turn.hasAssistantOutput() && !loopPersistedAssistant) {
-              await sm.addMessageToSession(sessionId, {
-                id: assistantMsgId,
-                role: 'assistant',
-                content: turn.assistantText,
-                timestamp: Date.now(),
-                toolCalls: turn.assistantToolCalls.length > 0 ? turn.assistantToolCalls : undefined,
-                thinking: turn.assistantThinking || undefined,
-                artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-                metadata: turn.assistantMetadata,
-              } as Message);
-            }
-          } else {
-            // SM 不可用时降级为直写 DB（session 已在上面 ensure 创建）
-            const db = await deps.getDatabase();
-            if (!userMessagePrePersistedDb) {
-              db.addMessage(sessionId, {
-                id: userMessage.id,
-                role: 'user',
-                content: userMessage.content,
-                timestamp: userMessage.timestamp,
-                attachments: userMessage.attachments,
-              } as Message);
-            }
-            if (!turn.runCancelled && turn.hasAssistantOutput() && !loopPersistedAssistant) {
-              db.addMessage(sessionId, {
-                id: assistantMsgId,
-                role: 'assistant',
-                content: turn.assistantText,
-                timestamp: Date.now(),
-                toolCalls: turn.assistantToolCalls.length > 0 ? turn.assistantToolCalls : undefined,
-                thinking: turn.assistantThinking || undefined,
-                artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
-                metadata: turn.assistantMetadata,
-              } as Message);
-            }
+
+          if (!userMessagePrePersistedDb) {
+            await persistMessageToDb(sm, db, sessionId, {
+              id: userMessage.id,
+              role: 'user',
+              content: userMessage.content,
+              timestamp: userMessage.timestamp,
+              attachments: userMessage.attachments,
+            } as Message);
           }
+
+          if (!turn.runCancelled && turn.hasAssistantOutput() && !loopPersistedAssistant) {
+            await persistMessageToDb(sm, db, sessionId, {
+              id: assistantMsgId,
+              role: 'assistant',
+              content: turn.assistantText,
+              timestamp: Date.now(),
+              toolCalls: turn.assistantToolCalls.length > 0 ? turn.assistantToolCalls : undefined,
+              thinking: turn.assistantThinking || undefined,
+              artifacts: assistantArtifacts.length > 0 ? assistantArtifacts : undefined,
+              metadata: turn.assistantMetadata,
+            } as Message);
+          }
+
           // 更新会话标题/时间戳
-          const db = await deps.getDatabase();
           if (historyLength === 0) {
             db.updateSession(sessionId, { title, updatedAt: Date.now() });
           } else {
@@ -340,32 +336,4 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
       return { assistantMsgId };
     },
   };
-}
-
-// 兜底判定只认「终轮」assistant 是否落库：早轮已落库不能抑制兜底（终轮落库失败时
-// 内容+metadata 会静默丢失）。兜底写的是本 run 合并全文，早轮已在库时触发会有部分
-// 内容重复——丢终轮结论比重复早轮片段更不可接受，取舍偏向保内容。
-async function hasPersistedFinalLoopAssistantMessage(
-  sessionId: string,
-  finalMessageId: string | undefined,
-  sessionManager: AgentSessionManagerLike | null,
-  db: DatabaseService,
-  logger: WebRouteLogger,
-): Promise<boolean> {
-  if (!finalMessageId) {
-    return false;
-  }
-
-  try {
-    const persisted = sessionManager?.getMessages
-      ? await sessionManager.getMessages(sessionId)
-      : db.getMessages(sessionId);
-
-    return Array.isArray(persisted) && persisted.some((message) => (
-      message.role === 'assistant' && message.id === finalMessageId
-    ));
-  } catch (error) {
-    logger.warn(`[AgentRouter] Failed to verify loop-persisted assistant messages for ${sessionId}:`, error);
-    return false;
-  }
 }

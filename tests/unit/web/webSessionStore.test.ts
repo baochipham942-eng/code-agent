@@ -91,6 +91,59 @@ describe('WebSessionStore', () => {
     expect(db.updateMessage).toHaveBeenCalledWith('duplicate-user', message);
   });
 
+  it('commitTurn persists through the shared DB fallback when SessionManager is unavailable', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'session-no-sm', title: 'Existing' });
+    db.addMessage.mockImplementationOnce(() => {
+      throw new Error('SQLITE_CONSTRAINT: UNIQUE constraint failed: messages.id');
+    });
+    const tryGetSessionManager = vi.fn(async () => null);
+    const getDatabase = vi.fn(async () => db as unknown as DatabaseService);
+    const store = createWebSessionStore({ tryGetSessionManager, logger, getDatabase });
+
+    const result = await store.commitTurn({
+      sessionId: 'session-no-sm',
+      title: '无 SessionManager',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      historyLength: 1,
+      userMessagePrePersistedDb: false,
+      userMessage: {
+        id: 'duplicate-user',
+        role: 'user',
+        content: '仍需落库',
+        timestamp: 20,
+      },
+      turn: {
+        assistantText: '兜底回答',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [{ type: 'text', text: '兜底回答' }],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+    });
+
+    expect(getDatabase).toHaveBeenCalledTimes(1);
+    expect(db.addMessage).toHaveBeenCalledTimes(2);
+    expect(db.updateMessage).toHaveBeenCalledWith(
+      'duplicate-user',
+      expect.objectContaining({ id: 'duplicate-user', role: 'user', content: '仍需落库' }),
+    );
+    expect(db.addMessage).toHaveBeenLastCalledWith(
+      'session-no-sm',
+      expect.objectContaining({ id: result.assistantMsgId, role: 'assistant', content: '兜底回答' }),
+    );
+    expect(db.updateSession).toHaveBeenCalledWith('session-no-sm', { updatedAt: expect.any(Number) });
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'Failed to persist messages to DB:',
+      expect.any(String),
+    );
+  });
+
   it('commitTurn keeps the SSE-backed rich cache, metadata and memory-session projection', async () => {
     const tryGetSessionManager = vi.fn();
     const getDatabase = vi.fn();
@@ -229,7 +282,7 @@ describe('WebSessionStore', () => {
     expect(tryGetSessionManager).toHaveBeenCalledTimes(1);
     expect(getMessages).toHaveBeenCalledTimes(2);
     expect(addMessageToSession).not.toHaveBeenCalled();
-    expect(getDatabase).toHaveBeenCalledTimes(2);
+    expect(getDatabase).toHaveBeenCalledTimes(1);
     expect(db.updateSession).toHaveBeenCalledWith('session-db', { updatedAt: expect.any(Number) });
     expect(sessionMessages.get('session-db')).toEqual([
       {
@@ -319,6 +372,141 @@ describe('WebSessionStore', () => {
         thinking: 'collector 思考',
       }),
     ]);
+  });
+
+  it.each([
+    'ensure session',
+    'user write',
+    'assistant write',
+    'session update',
+  ] as const)('commitTurn warns and falls back without throwing when %s fails', async (failureStage) => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'session-persist-failure', title: 'Existing' });
+    const persistenceError = new Error(`${failureStage} failed`);
+    const readbackError = new Error('read-back unavailable after persistence failure');
+    const addMessageToSession = vi.fn(async () => undefined);
+    const getMessages = vi.fn(async () => {
+      throw readbackError;
+    });
+
+    if (failureStage === 'ensure session') {
+      db.getSession.mockImplementationOnce(() => {
+        throw persistenceError;
+      });
+    } else if (failureStage === 'user write' || failureStage === 'assistant write') {
+      addMessageToSession.mockRejectedValueOnce(persistenceError);
+    } else {
+      db.updateSession.mockImplementationOnce(() => {
+        throw persistenceError;
+      });
+    }
+
+    const tryGetSessionManager = vi.fn(async () => ({ addMessageToSession, getMessages }));
+    const getDatabase = vi.fn(async () => db as unknown as DatabaseService);
+    const store = createWebSessionStore({ tryGetSessionManager, logger, getDatabase });
+    sessionMessages.set('session-persist-failure', [{
+      id: 'existing-user',
+      role: 'user',
+      content: '上一轮',
+      timestamp: 1,
+    }]);
+
+    const result = await store.commitTurn({
+      sessionId: 'session-persist-failure',
+      title: '持久化失败',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      historyLength: 1,
+      userMessagePrePersistedDb: failureStage !== 'user write',
+      userMessage: {
+        id: 'failure-user',
+        role: 'user',
+        content: '本轮问题',
+        timestamp: 40,
+      },
+      turn: {
+        assistantText: 'collector 回答',
+        assistantThinking: 'collector 思考',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: undefined,
+        contentParts: [{ type: 'text', text: 'collector 回答' }],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+    });
+
+    expect(result).toEqual({ assistantMsgId: expect.stringMatching(/^msg-\d+-a$/) });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Failed to persist messages to DB:',
+      persistenceError.message,
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[AgentRouter] Failed to refresh session cache from persisted messages for session-persist-failure:',
+      readbackError,
+    );
+    expect(sessionMessages.get('session-persist-failure')).toEqual([
+      expect.objectContaining({ id: 'existing-user', role: 'user', content: '上一轮' }),
+      expect.objectContaining({ id: 'failure-user', role: 'user', content: '本轮问题' }),
+      expect.objectContaining({ role: 'assistant', content: 'collector 回答', thinking: 'collector 思考' }),
+    ]);
+  });
+
+  it('commitTurn treats a dedup read failure as not persisted and keeps the route alive', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.getSession.mockReturnValue({ id: 'session-dedup-failure', title: 'Existing' });
+    const dedupError = new Error('dedup read unavailable');
+    const readbackError = new Error('projection read unavailable');
+    const addMessageToSession = vi.fn(async () => undefined);
+    const getMessages = vi.fn()
+      .mockRejectedValueOnce(dedupError)
+      .mockRejectedValueOnce(readbackError);
+    const tryGetSessionManager = vi.fn(async () => ({ addMessageToSession, getMessages }));
+    const getDatabase = vi.fn(async () => db as unknown as DatabaseService);
+    const store = createWebSessionStore({ tryGetSessionManager, logger, getDatabase });
+
+    const result = await store.commitTurn({
+      sessionId: 'session-dedup-failure',
+      title: '去重读取失败',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      historyLength: 1,
+      userMessagePrePersistedDb: true,
+      userMessage: {
+        id: 'dedup-user',
+        role: 'user',
+        content: '本轮问题',
+        timestamp: 40,
+      },
+      turn: {
+        assistantText: '仍需兜底写入',
+        assistantThinking: '',
+        assistantMetadata: undefined,
+        assistantToolCalls: [],
+        lastLoopAssistantMessageId: 'loop-final',
+        contentParts: [{ type: 'text', text: '仍需兜底写入' }],
+        runCancelled: false,
+        hasAssistantOutput: () => true,
+        hasInterleaving: () => false,
+      },
+    });
+
+    expect(result).toEqual({ assistantMsgId: expect.stringMatching(/^msg-\d+-a$/) });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[AgentRouter] Failed to verify loop-persisted assistant messages for session-dedup-failure:',
+      dedupError,
+    );
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      'session-dedup-failure',
+      expect.objectContaining({ id: result.assistantMsgId, role: 'assistant', content: '仍需兜底写入' }),
+    );
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'Failed to persist messages to DB:',
+      expect.any(String),
+    );
   });
 
   it('commitTurn keeps the user message in the DB-mode cache for a tool-only turn', async () => {

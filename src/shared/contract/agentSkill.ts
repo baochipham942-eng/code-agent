@@ -20,7 +20,6 @@ export interface SkillFrontmatter {
   'user-invocable'?: boolean;
   /** opt-in 严格工具集：激活时模型只看得见 allowed-tools 的工具（隐藏 core Edit/Write 等） */
   'strict-toolset'?: boolean;
-  model?: string;
   context?: 'fork' | 'inline';
   agent?: string;
   'argument-hint'?: string;
@@ -71,7 +70,6 @@ export interface ParsedSkill {
    * 用于必须强约束工具选择的 meta skill（edit-role/create-role）。默认 false。
    */
   strictToolset?: boolean;
-  model?: string;
   executionContext: 'fork' | 'inline';
   agent?: string;
   argumentHint?: string;
@@ -127,7 +125,6 @@ export interface SkillToolResult {
  */
 export interface SkillContextModifier {
   preApprovedTools?: string[];
-  modelOverride?: string;
   /**
    * GAP-001: Skill allowed-tools 限权边界。
    * 设置后，边界外的工具调用强制用户审批（不能被 classifier/安全白名单/预授权自动放行）。
@@ -159,7 +156,6 @@ export interface SkillToolBoundary {
  */
 export interface SkillExecutionContext {
   preApprovedTools: string[];
-  modelOverride?: string;
 }
 
 /**

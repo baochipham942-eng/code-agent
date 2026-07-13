@@ -339,9 +339,6 @@ export async function buildSkillInvocationContext(
       contextModifier.preApprovedTools = skill.allowedTools;
     }
   }
-  if (skill.model) {
-    contextModifier.modelOverride = skill.model;
-  }
 
   // Executor 桥：注册了 service 层 executor 的 skill，先由代码执行（含全部硬门），
   // 报告回注上下文。运行结果永远是降级安全的（registry 承诺不抛异常）。

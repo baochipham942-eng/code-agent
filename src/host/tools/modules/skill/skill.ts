@@ -91,9 +91,6 @@ function handleInlineExecution(
       contextModifier.preApprovedTools = skill.allowedTools;
     }
   }
-  if (skill.model) {
-    contextModifier.modelOverride = skill.model;
-  }
 
   return {
     success: true,

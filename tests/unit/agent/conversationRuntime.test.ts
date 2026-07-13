@@ -934,7 +934,7 @@ describe('ConversationRuntime', () => {
       });
       vi.mocked(buildSkillInvocationContext).mockResolvedValueOnce({
         block: '<required-skill-invocation name="lobster">...</required-skill-invocation>',
-        contextModifier: { modelOverride: 'special-model' },
+        contextModifier: {},
       });
 
       const result = await runtime.initializeRun('/lobster 升级');

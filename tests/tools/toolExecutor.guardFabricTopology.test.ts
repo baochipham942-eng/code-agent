@@ -129,6 +129,25 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     });
   }
 
+  function defineAgentSpawn(): void {
+    resolverState.getDefinition.mockImplementation((name: string) => {
+      if (name !== 'AgentSpawn' && name !== 'spawn_agent') return undefined;
+      return {
+        name: 'AgentSpawn',
+        description: 'Spawn teammate agent',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            prompt: { type: 'string' },
+          },
+          required: ['prompt'],
+        },
+        requiresPermission: true,
+        permissionLevel: 'execute',
+      };
+    });
+  }
+
   it('denies PascalCase Bash in async_agent topology before requestPermission', async () => {
     defineBash();
     const requestPermission = vi.fn(async () => true);
@@ -157,6 +176,41 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
         expect.objectContaining({
           layer: 'guard_fabric',
           rule: 'topology: bash/async_agent',
+          result: 'deny',
+        }),
+      ],
+    });
+  });
+
+  it('denies AgentSpawn in teammate topology before requestPermission', async () => {
+    defineAgentSpawn();
+    getGuardFabric().removeSource('rules');
+    const requestPermission = vi.fn(async () => true);
+    const executor = makeExecutor(requestPermission);
+
+    const result = await executor.execute(
+      'AgentSpawn',
+      { prompt: 'start another teammate' },
+      { sessionId: 's1', executionTopology: 'teammate' } as any,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('topology rule');
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(resolverState.execute).not.toHaveBeenCalled();
+
+    const [entry] = getDecisionHistory().getRecent(1);
+    expect(entry).toMatchObject({
+      toolName: 'AgentSpawn',
+      outcome: 'policy-deny',
+      reason: expect.stringContaining('teammate'),
+    });
+    expect(entry.decisionTrace).toMatchObject({
+      finalOutcome: 'deny',
+      steps: [
+        expect.objectContaining({
+          layer: 'guard_fabric',
+          rule: 'topology: spawn_agent/teammate',
           result: 'deny',
         }),
       ],

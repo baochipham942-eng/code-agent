@@ -15,6 +15,8 @@ export function normalizeToolName(toolName: string): string {
 }
 
 const CANONICAL_TOOL_ALIASES: Record<string, string> = {
+  agentspawn: 'spawn_agent',
+  spawn_agent: 'spawn_agent',
   websearch: 'web_search',
   web_search: 'web_search',
   webfetch: 'web_fetch',

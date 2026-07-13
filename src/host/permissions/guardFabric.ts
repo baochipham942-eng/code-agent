@@ -11,6 +11,7 @@ import { HookGuardSource } from './hookSource';
 import { UserConfigSource } from './userConfigSource';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
+import { canonicalToolName } from '../tools/toolNames';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -93,7 +94,7 @@ export class GuardFabric {
         reason: topologyOverride.reason,
         allResults: results,
         traceStep: topologyOverride.verdict !== 'allow'
-          ? createTraceStep('guard_fabric', `topology: ${request.tool}/${request.topology}`, topologyOverride.verdict, topologyOverride.reason, startTime)
+          ? createTraceStep('guard_fabric', `topology: ${topologyOverride.tool}/${request.topology}`, topologyOverride.verdict, topologyOverride.reason, startTime)
           : undefined,
       };
     }
@@ -144,15 +145,19 @@ export class GuardFabric {
   private getTopologyOverride(
     tool: string,
     topology: ExecutionTopology,
-  ): { verdict: GuardVerdict; reason: string } | null {
-    const normalizedTool = tool.trim().toLowerCase();
+  ): { verdict: GuardVerdict; reason: string; tool: string } | null {
+    const normalizedTool = canonicalToolName(tool).toLowerCase();
     const toolRules = TOPOLOGY_RULES[normalizedTool];
     if (!toolRules) return null;
 
     const verdict = toolRules[topology];
     if (!verdict) return null;
 
-    return { verdict, reason: `topology rule: ${normalizedTool} not allowed in ${topology} context` };
+    return {
+      verdict,
+      reason: `topology rule: ${normalizedTool} not allowed in ${topology} context`,
+      tool: normalizedTool,
+    };
   }
 
   /**

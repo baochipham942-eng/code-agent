@@ -14,6 +14,11 @@ describe('toolNames', () => {
     expect(canonicalToolName('web_fetch')).toBe('web_fetch');
   });
 
+  it('canonicalizes AgentSpawn aliases to spawn_agent', () => {
+    expect(canonicalToolName('AgentSpawn')).toBe('spawn_agent');
+    expect(canonicalToolName('spawn_agent')).toBe('spawn_agent');
+  });
+
   it('preserves unrelated tool names instead of case-folding the whole protocol', () => {
     expect(canonicalToolName('Read')).toBe('Read');
     expect(canonicalToolName('MCPUnified')).toBe('MCPUnified');

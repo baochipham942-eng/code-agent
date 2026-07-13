@@ -46,6 +46,9 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   'mimo-v2.5': { input: 0, output: 0 },
   'mimo-v2-pro': { input: 0, output: 0 },
   'mimo-v2-omni': { input: 0, output: 0 },
+  // LongCat（开放平台免费额度，quota 内不计费）
+  'LongCat-2.0': { input: 0, output: 0 },
+  'LongCat-2.0-Preview': { input: 0, output: 0 },
   // Fallback
   'default': { input: 1, output: 3 },
 };

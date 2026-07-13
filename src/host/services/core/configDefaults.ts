@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       grok: { enabled: false },
       openrouter: { enabled: false },
       volcengine: { enabled: false },
-      longcat: { enabled: false },
+      longcat: { enabled: true },   // 默认主力 provider（DEFAULT_PROVIDER，开放平台免费额度）
       xiaomi: { enabled: true },     // 小米 MiMo Token Plan Max 包月套餐
       custom: { enabled: false, baseUrl: undefined, displayName: 'Custom Provider' },
     },
@@ -35,7 +35,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     // 按用途路由模型 — 引用 DEFAULT_MODELS 常量
     routing: {
       code: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.code },
-      vision: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.vision },
+      // vision 必须配对 xiaomi（DEFAULT_MODELS.vision=mimo-v2-omni；LongCat 无视觉模型）
+      vision: { provider: 'xiaomi', model: DEFAULT_MODELS.vision },
       fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
       gui: { provider: 'zhipu', model: DEFAULT_MODELS.visionFast },
     },
@@ -47,7 +48,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
         main: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat, reasoningEffort: 'medium', maxTokens: 16384 },
         // 深度档用 DeepSeek 的推理模型——provider 必须配对 deepseek，避免出现 xiaomi/deepseek-v4-pro 这种错配。
         deep: { provider: 'deepseek', model: DEFAULT_MODELS.reasoning, reasoningEffort: 'high', maxTokens: 32768 },
-        vision: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.vision, reasoningEffort: 'medium', maxTokens: 4096 },
+        // vision 必须配对 xiaomi（LongCat 无视觉模型）
+        vision: { provider: 'xiaomi', model: DEFAULT_MODELS.vision, reasoningEffort: 'medium', maxTokens: 4096 },
       },
       fallback: {
         enabled: true,

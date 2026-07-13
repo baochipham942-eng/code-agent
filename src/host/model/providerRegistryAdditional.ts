@@ -235,6 +235,16 @@ export const ADDITIONAL_PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     baseUrl: MODEL_API_ENDPOINTS.longcat,
     models: [
       {
+        id: 'LongCat-2.0',
+        name: 'LongCat 2.0',
+        capabilities: ['general', 'code', 'reasoning', 'longContext'],
+        maxTokens: 32768,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'quota',
+      },
+      {
         id: 'LongCat-2.0-Preview',
         name: 'LongCat 2.0 Preview',
         capabilities: ['general', 'code', 'reasoning', 'longContext'],

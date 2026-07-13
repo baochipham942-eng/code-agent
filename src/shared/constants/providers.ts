@@ -258,7 +258,7 @@ export const PROVIDER_REGISTRY: Record<BuiltInModelProvider, CanonicalProviderIn
   },
   longcat: {
     aliases: ['longcat'],
-    defaultModel: 'LongCat-2.0-Preview',
+    defaultModel: 'LongCat-2.0',
     endpoint: MODEL_API_ENDPOINTS.longcat,
     displayName: 'LongCat',
   },
@@ -402,6 +402,12 @@ export const SEARCH_SOURCE_CATALOG: SearchSourceCatalogEntry[] = [
  * Key = 起始 provider, Value = 降级顺序（不含自身）
  */
 export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; model: string }>> = {
+  longcat: [
+    { provider: 'zhipu', model: 'glm-4.7-flash' },
+    { provider: 'openai', model: 'gpt-5.4-mini' },
+    { provider: 'moonshot', model: DEFAULT_MODELS.compact },
+    { provider: 'deepseek', model: 'deepseek-v4-flash' },
+  ],
   xiaomi: [
     { provider: 'zhipu', model: 'glm-4.7-flash' },
     { provider: 'openai', model: 'gpt-5.4-mini' },

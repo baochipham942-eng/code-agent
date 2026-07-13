@@ -12,13 +12,13 @@ export const SSE_FIRST_BYTE_TIMEOUT = 60_000;
 export const SSE_INACTIVITY_TIMEOUT =
   (typeof process !== 'undefined' && Number(process.env?.SSE_INACTIVITY_TIMEOUT_MS)) || 120_000;
 
-/** 默认 Provider — 小米 MiMo Token Plan 包月（fresh user 默认） */
-export const DEFAULT_PROVIDER = 'xiaomi' as const;
+/** 默认 Provider — LongCat API 开放平台（2026-07-13 起替代小米 MiMo：Token Plan key 失效 401） */
+export const DEFAULT_PROVIDER = 'longcat' as const;
 
 /** 默认模型（主力对话）— 必须与 DEFAULT_PROVIDER 匹配，否则 UI ModelSwitcher 显示
  *  会与 webServer 实际生效模型脱钩（曾经的 bug：DEFAULT_PROVIDER='xiaomi' 但
  *  DEFAULT_MODEL='claude-opus-4-7'，UI 显示 "Claude Opus 4.7" 但实际跑 Xiaomi/mimo）。 */
-export const DEFAULT_MODEL = 'mimo-v2.5-pro' as const;
+export const DEFAULT_MODEL = 'LongCat-2.0' as const;
 
 /** 模型 maxTokens 分层默认值（对标 Claude Code / Aider 行业标准） */
 export const MODEL_MAX_TOKENS = {
@@ -153,6 +153,9 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'mimo-v2.5': 131_072,
   'mimo-v2-pro': 131_072,
   'mimo-v2-omni': 131_072,
+  // LongCat（开放平台 registry maxTokens 上限 32768）
+  'LongCat-2.0': 32_768,
+  'LongCat-2.0-Preview': 32_768,
 };
 
 /** 根据模型名查找推荐的 maxOutputTokens（先做规范化） */
@@ -231,6 +234,9 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'mimo-v2.5': 1_048_576,
   'mimo-v2-pro': 1_048_576,
   'mimo-v2-omni': 262_144,    // 256k，多模态版上下文较短
+  // LongCat（longcat.chat 开放平台）
+  'LongCat-2.0': 131_072,
+  'LongCat-2.0-Preview': 131_072,
 };
 
 /** 默认上下文窗口（未知模型 fallback） */

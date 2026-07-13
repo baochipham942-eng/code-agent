@@ -227,7 +227,6 @@ export class AgentLoop {
       // Plan mode
       isPlanModeActive: false,
       savedMessages: null,
-      currentAgentMode: 'normal',
       autoApprovePlan: config.autoApprovePlan ?? false,
 
       // Hooks
@@ -280,7 +279,6 @@ export class AgentLoop {
       // Research mode
       _researchModeActive: false,
       _researchIterationCount: 0,
-      researchModeInjected: false,
 
       // Budget
       budgetWarningEmitted: false,
@@ -303,21 +301,16 @@ export class AgentLoop {
       thinkingStepCount: 0,
       scaffoldProfile,
 
-      // Interaction mode
-      interactionMode: 'code',
-
       // Persistent system context
       persistentSystemContext: persistedRuntimeState?.persistentSystemContext ?? [],
 
       // Task stats
       runStartTime: 0,
-      totalIterations: 0,
       totalTokensUsed: 0,
       totalToolCallCount: 0,
 
       // Context recovery
       _contextOverflowRetried: false,
-      _truncationRetried: false,
       _artifactNonStreamingRetried: false,
       _artifactRepairCompactWriteRetried: false,
       _networkRetried: false,
@@ -330,15 +323,7 @@ export class AgentLoop {
       _summaryFailureStreak: 0,
       _summaryCooldownUntil: 0,
 
-      // Content verification
-      contentVerificationRetries: new Map(),
-
       // Context health
-      contextHealthy: true,
-      autoCompressThreshold: 0,
-      contextBudgetRatio: 0,
-      genNum: 8,
-      initialSystemPromptLength: 0,
       pipelineAutocompactNeeded: false,
     };
 

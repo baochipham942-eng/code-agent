@@ -8,7 +8,7 @@ import type {
   ToolResult,
 } from '../../../shared/contract';
 import type { StructuredOutputConfig } from '../structuredOutput';
-import type { EffortLevel, InteractionMode } from '../../../shared/contract/agent';
+import type { EffortLevel } from '../../../shared/contract/agent';
 import type { ModelConfig } from '../../../shared/contract/model';
 import type { ModelDecision, ModelDecisionEventData } from '../../../shared/contract/modelDecision';
 import type { ToolExecutor } from '../../tools/toolExecutor';
@@ -44,51 +44,50 @@ import type { RunTraceContext } from '../../telemetry/runTraceContext';
  */
 export interface RuntimeContext {
   // --- Configuration ---
-  systemPrompt: string;
+  readonly systemPrompt: string;
   modelConfig: ModelConfig;
-  toolExecutor: ToolExecutor;
+  readonly toolExecutor: ToolExecutor;
   messages: Message[];
-  onEvent: (event: AgentEvent) => void;
-  modelRouter: ModelRouter;
-  maxIterations: number;
-  workingDirectory: string;
-  isDefaultWorkingDirectory: boolean;
-  runId?: string;
-  runTraceContext?: RunTraceContext;
-  sessionId: string;
-  agentId?: string;
-  agentName?: string;
+  readonly onEvent: (event: AgentEvent) => void;
+  readonly modelRouter: ModelRouter;
+  readonly maxIterations: number;
+  readonly workingDirectory: string;
+  readonly isDefaultWorkingDirectory: boolean;
+  readonly runId?: string;
+  readonly runTraceContext?: RunTraceContext;
+  readonly sessionId: string;
+  readonly agentId?: string;
+  readonly agentName?: string;
   /** 用户显式 /agent 请求的 agent id；与 agentId 不一致 = 显式选择已降级 */
-  requestedAgentId?: string;
-  userId?: string;
-  memoryMode?: SessionMemoryMode;
-  suppressedMemoryEntryIds?: string[];
-  persistMessage?: (message: Message) => Promise<void>;
-  onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;
-  toolScope?: WorkbenchToolScope;
-  executionIntent?: ConversationExecutionIntent;
-  neoTag?: import('../../../shared/contract/tag').NeoTagRunContext;
+  readonly requestedAgentId?: string;
+  readonly userId?: string;
+  readonly memoryMode?: SessionMemoryMode;
+  readonly suppressedMemoryEntryIds?: string[];
+  readonly persistMessage?: (message: Message) => Promise<void>;
+  readonly onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;
+  readonly toolScope?: WorkbenchToolScope;
+  readonly executionIntent?: ConversationExecutionIntent;
+  readonly neoTag?: import('../../../shared/contract/tag').NeoTagRunContext;
 
   // --- Services / modules ---
-  circuitBreaker: CircuitBreaker;
-  antiPatternDetector: AntiPatternDetector;
-  goalTracker: GoalTracker;
+  readonly circuitBreaker: CircuitBreaker;
+  readonly antiPatternDetector: AntiPatternDetector;
+  readonly goalTracker: GoalTracker;
   /** /goal 自治循环控制器；仅 goal 模式下存在（opt-in），普通 run 为 undefined */
-  goalMode?: GoalModeController;
-  nudgeManager: NudgeManager;
+  readonly goalMode?: GoalModeController;
+  readonly nudgeManager: NudgeManager;
   hookManager?: HookManager;
-  planningService?: PlanningService;
-  contentVerifier?: unknown;
-  hookMessageBuffer: HookMessageBuffer;
-  messageHistoryCompressor: MessageHistoryCompressor;
-  autoCompressor: AutoContextCompressor;
+  readonly planningService?: PlanningService;
+  readonly hookMessageBuffer: HookMessageBuffer;
+  readonly messageHistoryCompressor: MessageHistoryCompressor;
+  readonly autoCompressor: AutoContextCompressor;
   compressionState: CompressionState;
-  compressionPipeline: CompressionPipeline;
-  telemetryAdapter?: TelemetryAdapter;
-  inferenceOptions?: InferenceOptions;
+  readonly compressionPipeline: CompressionPipeline;
+  readonly telemetryAdapter?: TelemetryAdapter;
+  readonly inferenceOptions?: InferenceOptions;
   currentModelDecision?: ModelDecisionEventData;
-  historyVisibility?: 'visible' | 'meta';
-  deniedToolNames?: string[];
+  readonly historyVisibility?: 'visible' | 'meta';
+  readonly deniedToolNames?: string[];
 
   // --- Mutable run state ---
   lastStreamedContent: string;
@@ -103,46 +102,44 @@ export interface RuntimeContext {
   // --- Plan mode ---
   isPlanModeActive: boolean;
   savedMessages: Message[] | null;
-  currentAgentMode: string;
-  autoApprovePlan: boolean;
+  readonly autoApprovePlan: boolean;
 
   // --- Hooks ---
-  enableHooks: boolean;
+  readonly enableHooks: boolean;
   userHooksInitialized: boolean;
   stopHookRetryCount: number;
-  maxStopHookRetries: number;
+  readonly maxStopHookRetries: number;
   /** GAP-006: 用户 Stop hook block 触发的重试计数（独立于 planning stop hook 计数） */
   userStopHookBlockCount: number;
   /** GAP-013: Generator-Critic 交付前自动验证开关 */
-  enableDeliveryCritic: boolean;
+  readonly enableDeliveryCritic: boolean;
   /** GAP-013: 本 run 已被交付前 critic 拦下打回的次数；达 DELIVERY_CRITIC.MAX_BLOCKS 后强制放行
    * （防无限循环）。原 deliveryCriticRan(boolean) 升级而来。 */
   deliveryCriticBlockCount: number;
-  userHooks?: unknown;
 
   // --- Tool execution ---
   toolCallRetryCount: number;
-  maxToolCallRetries: number;
+  readonly maxToolCallRetries: number;
   externalDataCallCount: number;
   preApprovedTools: Set<string>;
   /** GAP-001: 当前激活 skill 的 allowed-tools 限权边界（边界外的工具调用强制用户审批） */
   skillToolBoundary?: SkillToolBoundary;
   skillModelOverride?: string;
-  enableToolDeferredLoading: boolean;
+  readonly enableToolDeferredLoading: boolean;
 
   // --- Max Mode（best-of-N，roadmap 3.3）---
   /** 显式开关（默认关）：开 = 每步 N 并发 propose-only 候选 → judge 选索引 → 赢家 replay */
-  maxMode: boolean;
+  readonly maxMode: boolean;
   /** 并发候选数（默认 MAX_MODE.DEFAULT_CANDIDATES） */
-  maxModeCandidates: number;
+  readonly maxModeCandidates: number;
 
   // --- Structured output ---
   structuredOutput?: StructuredOutputConfig;
   structuredOutputRetryCount: number;
-  maxStructuredOutputRetries: number;
+  readonly maxStructuredOutputRetries: number;
 
   // --- Step-by-step ---
-  stepByStepMode: boolean;
+  readonly stepByStepMode: boolean;
 
   // --- Tracing ---
   traceId: string;
@@ -151,10 +148,8 @@ export interface RuntimeContext {
   currentTurnId: string;
   messageDeltaSeq: number;
   currentSystemPromptHash?: string;
-  /** WP2-2b：完整请求前缀 shape hash（system+消息结构），仅 telemetry 诊断 */
-  currentRequestShapeHash?: string;
   /** G20: per-run 结构化 turn trace（决策 / dispatch / compaction） */
-  turnTrace: TurnTraceRecorder;
+  readonly turnTrace: TurnTraceRecorder;
   turnQualityMemory?: TurnQualityMemorySummary;
   turnModelDecision?: ModelDecision;
   pendingRuntimeDiagnostics: string[];
@@ -213,13 +208,12 @@ export interface RuntimeContext {
   // --- Research mode ---
   _researchModeActive: boolean;
   _researchIterationCount: number;
-  researchModeInjected: boolean;
 
   // --- Budget ---
   budgetWarningEmitted: boolean;
   totalInputTokens: number;
   totalOutputTokens: number;
-  consecutiveErrors: number;
+  readonly consecutiveErrors: number;
 
   // --- Stagnation detection ---
   // 最近 N 次工具调用的 fingerprint (name + args_hash + result_hash)。
@@ -243,29 +237,24 @@ export interface RuntimeContext {
   thinkingEnabled: boolean;
   thinkingStepCount: number;
   /** B7：模型能力档 → 脚手架注入厚度（单一真源，消费方只读字段不自查 tier；缺省视同 standard） */
-  scaffoldProfile?: ScaffoldProfile;
-
-  // --- Interaction mode ---
-  interactionMode: InteractionMode;
+  readonly scaffoldProfile?: ScaffoldProfile;
 
   // --- Task stats ---
   runStartTime: number;
-  totalIterations: number;
   totalTokensUsed: number;
   totalToolCallCount: number;
 
   // --- Context recovery ---
   _contextOverflowRetried: boolean;
-  _truncationRetried: boolean;
   _artifactNonStreamingRetried: boolean;
   _artifactRepairCompactWriteRetried: boolean;
   _networkRetried: boolean;
   _networkRetryCount?: number;
   _consecutiveTruncations: number;
-  MAX_CONSECUTIVE_TRUNCATIONS: number;
+  readonly MAX_CONSECUTIVE_TRUNCATIONS: number;
   /** Item2 卡死护栏：连续付费摘要后仍未降到阈值下的次数。降下去清零。 */
   _consecutiveCompacts: number;
-  MAX_CONSECUTIVE_COMPACTS: number;
+  readonly MAX_CONSECUTIVE_COMPACTS: number;
   /** ≥MAX_CONSECUTIVE_COMPACTS 后置位：窗口太小，暂停自动压缩、停止烧 token 摘要。 */
   _autoCompactPaused: boolean;
   /** WP2-3：连续摘要失败次数（校验不过/调用异常），成功清零。 */
@@ -273,25 +262,17 @@ export interface RuntimeContext {
   /** WP2-3：摘要失败冷却截止时间戳；冷却期内跳过付费 AI 摘要。 */
   _summaryCooldownUntil: number;
 
-  // --- Content verification ---
-  contentVerificationRetries: Map<string, number>;
-
   // --- Persistent system context ---
   // 任务指导类信息（复杂度提示、并行建议、任务模式 reminder 等）
   // 存在此处而非 ctx.messages，确保每轮推理都作为 system prompt 的一部分可见
   persistentSystemContext: string[];
 
   // --- Context health ---
-  contextHealthy: boolean;
-  autoCompressThreshold: number;
-  contextBudgetRatio: number;
-  genNum: number;
-  initialSystemPromptLength: number;
   /** G12/P2-full: 本 turn CompressionPipeline 是否报了 autocompact-needed。
    *  由 messageBuild 写入，checkAndAutoCompress 经 ContextPressureController 消费后清零。 */
   pipelineAutocompactNeeded: boolean;
   /** Roadmap 3.4: last message watermark that already received a checkpoint rebuild boundary. */
   checkpointRebuildLastWatermarkId?: string;
   /** Test/host override for checkpoint artifact storage. Defaults to app user data. */
-  checkpointRootDir?: string;
+  readonly checkpointRootDir?: string;
 }

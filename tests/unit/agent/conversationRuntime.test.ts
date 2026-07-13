@@ -406,7 +406,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     isPlanModeActive: false,
     savedMessages: null,
-    currentAgentMode: 'code',
     autoApprovePlan: false,
 
     enableHooks: false,
@@ -444,7 +443,6 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     _researchModeActive: false,
     _researchIterationCount: 0,
-    researchModeInjected: false,
 
     budgetWarningEmitted: false,
     totalInputTokens: 0,
@@ -453,28 +451,19 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     effortLevel: 'normal' as any,
     thinkingStepCount: 0,
-    interactionMode: 'code' as any,
 
     runStartTime: 0,
-    totalIterations: 0,
     totalTokensUsed: 0,
     totalToolCallCount: 0,
 
     _contextOverflowRetried: false,
-    _truncationRetried: false,
     _artifactNonStreamingRetried: false,
     _networkRetried: false,
     _consecutiveTruncations: 0,
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
 
-    contentVerificationRetries: new Map(),
     persistentSystemContext: [],
 
-    contextHealthy: true,
-    autoCompressThreshold: 0.85,
-    contextBudgetRatio: 0,
-    genNum: 8,
-    initialSystemPromptLength: 0,
 
     ...overrides,
   } as RuntimeContext;

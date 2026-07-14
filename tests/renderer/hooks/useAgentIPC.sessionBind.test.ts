@@ -49,4 +49,15 @@ describe('resolveEffectiveSessionIdForSend (B4 session-create race)', () => {
     })).resolves.toBe('session-fallback');
     expect(createFallbackSession).toHaveBeenCalledOnce();
   });
+
+  it('does not fall back to the stale session when an in-flight create fails', async () => {
+    const createFallbackSession = vi.fn(async () => ({ id: 'session-fallback' }));
+
+    await expect(resolveEffectiveSessionIdForSend({
+      getCurrentSessionId: () => 'session-old',
+      getPendingSessionCreate: () => Promise.resolve(null),
+      createFallbackSession,
+    })).resolves.toBe('session-fallback');
+    expect(createFallbackSession).toHaveBeenCalledOnce();
+  });
 });

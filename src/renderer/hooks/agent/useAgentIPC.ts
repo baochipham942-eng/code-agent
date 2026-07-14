@@ -390,10 +390,20 @@ export async function resolveEffectiveSessionIdForSend(input: {
 }): Promise<string> {
   const pendingCreate = input.getPendingSessionCreate();
   if (pendingCreate) {
-    await pendingCreate;
+    const created = await pendingCreate;
+    if (input.envelopeSessionId) {
+      return input.envelopeSessionId;
+    }
+    if (created) {
+      return created.id;
+    }
   }
 
-  let effectiveSessionId = input.envelopeSessionId ?? input.getCurrentSessionId();
+  // A failed in-flight create leaves currentSessionId pointing at the session
+  // visible before the user clicked New. Never silently send there: create a
+  // fallback target instead. With no pending create, the current session is valid.
+  let effectiveSessionId = input.envelopeSessionId
+    ?? (pendingCreate ? null : input.getCurrentSessionId());
   if (!effectiveSessionId) {
     const created = await input.createFallbackSession();
     if (created) {

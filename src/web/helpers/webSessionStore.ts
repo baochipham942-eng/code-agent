@@ -492,6 +492,9 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
               content: userMessage.content,
               timestamp: userMessage.timestamp,
               attachments: userMessage.attachments,
+              // assistant 侧一直在落 metadata，user 侧此前漏了——ADR-040 的 locator
+              // 要能回读（会话重开后仍指向用户点的那个位置），这里必须对称。
+              metadata: userMessage.metadata,
             } as Message, cliSessionManager && !sessionExists
               ? { title, modelConfig }
               : undefined);

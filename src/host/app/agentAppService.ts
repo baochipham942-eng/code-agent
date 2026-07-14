@@ -75,6 +75,7 @@ import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { RunRegistry } from '../runtime/runRegistry';
 import type { DurableRunReadService } from './durableRunReadService';
 import { listTasks } from '../services/planning/taskStore';
+import { upgradeLegacyAnchor } from '../tools/artifacts/artifactLocatorHost';
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
   return status === 'running'
@@ -233,6 +234,22 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   private getMessageMetadata(envelope: ConversationEnvelope): MessageMetadata | undefined {
     const workbench = this.toWorkbenchMetadata(envelope.context);
     return workbench ? { workbench } : undefined;
+  }
+
+  /**
+   * getMessageMetadata + ADR-040 locator（revision 要读源文件，只能异步）。
+   *
+   * 只给原生 loop 用：外部 CLI 引擎（codex/kimi/mimo/claude）跑的是自己的工具，
+   * 写前 guard 根本不在那条链上，给它们挂 locator 只会造成"有锚点却没人对账"的错觉。
+   */
+  private async getMessageMetadataWithLocator(envelope: ConversationEnvelope): Promise<MessageMetadata | undefined> {
+    const base = this.getMessageMetadata(envelope);
+    const anchor = envelope.context?.localityAnchor;
+    if (!anchor) return base;
+
+    const artifactLocator = await upgradeLegacyAnchor(anchor);
+    if (!artifactLocator) return base;
+    return { ...base, artifactLocator };
   }
 
   private async syncSessionWorkingDirectory(sessionId: string | null, workingDirectory?: string | null): Promise<void> {
@@ -452,7 +469,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.content,
       envelope.attachments,
       toAgentRunOptions(options),
-      this.getMessageMetadata(envelope),
+      await this.getMessageMetadataWithLocator(envelope),
       envelope.clientMessageId,
     );
   }
@@ -580,7 +597,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.content,
       envelope.attachments,
       toAgentRunOptions(options),
-      this.getMessageMetadata(envelope),
+      await this.getMessageMetadataWithLocator(envelope),
       envelope.clientMessageId,
     );
   }

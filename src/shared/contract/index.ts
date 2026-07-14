@@ -19,6 +19,7 @@ export * from './session';
 export * from './project';
 export * from './workspace';
 export * from './workspacePreview';
+export * from './artifactLocator';
 export * from './designBrief';
 export * from './designAcceptanceContract';
 export * from './designHandoff';

@@ -7,6 +7,7 @@ import type { WorkbenchMessageMetadata } from './conversationEnvelope';
 import type { ModelDecisionEventData } from './modelDecision';
 import type { TurnQualitySummary } from './turnQuality';
 import type { SessionAutomationMessageMetadata } from './sessionAutomation';
+import type { ArtifactLocatorV1 } from './artifactLocator';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -240,6 +241,11 @@ export interface MessageMetadata {
   agentTeam?: AgentTeamMessageMetadata;
   automation?: SessionAutomationMessageMetadata;
   turnQuality?: TurnQualitySummary;
+  /**
+   * ADR-040：用户在预览里点选的产物位置。由 host 补 revision 后生成并校验，
+   * 是写前 guard 的唯一坐标真源——prompt 里的可读位置只给人看，不作数。
+   */
+  artifactLocator?: ArtifactLocatorV1;
 }
 
 export interface Message {

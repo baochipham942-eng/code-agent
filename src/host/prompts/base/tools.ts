@@ -14,7 +14,7 @@ export const TOOLS_PROMPT = applyOverride(
 | Tool | Use |
 |------|-----|
 | Read / Write / Append / Edit | File ops (Append large generated artifacts; Edit requires prior Read) |
-| Bash | Shell commands (git/npm/test) |
+| Bash | Shell commands (scripts/data processing, git/npm/test) |
 | Glob / Grep | File discovery / content search |
 | WebSearch | Web info lookup |
 | AskUserQuestion | Ask user for clarification |

@@ -1327,6 +1327,42 @@ describe('ConversationRuntime', () => {
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalled();
     });
 
+    it('arms run abort controller before initializeRun and cancels during init', async () => {
+      // A1: cancel during initializeRun must abort a real controller and finish cancelled.
+      let releaseInit!: () => void;
+      const initGate = new Promise<null>((resolve) => {
+        releaseInit = () => resolve(null);
+      });
+      vi.mocked(resolveSkillInvocation).mockReturnValueOnce(initGate as never);
+
+      const runPromise = runtime.run('slow init cancel');
+
+      // Wait until initializeRun is blocked on skill resolve
+      const deadline = Date.now() + 1000;
+      while (!ctx.control.runAbortController && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      const controller = ctx.control.runAbortController;
+      expect(controller).not.toBeNull();
+      expect(controller!.signal.aborted).toBe(false);
+
+      await runtime.cancel('user');
+      expect(ctx.control.isCancelled).toBe(true);
+      expect(controller!.signal.aborted).toBe(true);
+
+      releaseInit();
+      await runPromise;
+
+      expect(modules.contextAssembly.inference).not.toHaveBeenCalled();
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'slow init cancel',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'cancelled' }),
+      );
+    });
+
     it('should stop when circuit breaker is tripped', async () => {
       (ctx.circuitBreaker.isTripped as any).mockReturnValue(true);
       await runtime.run('test');

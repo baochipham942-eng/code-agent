@@ -25,6 +25,8 @@ let currentTask: {
   prompt: string;
   startTime: number;
   agent: CLIAgent;
+  cancel: (reason?: 'user' | 'session-switch') => Promise<void>;
+  cancellationRequested: boolean;
 } | null = null;
 
 export const serveCommand = new Command('serve')
@@ -106,7 +108,7 @@ export function createServeRequestHandler(options: ServeRequestHandlerOptions): 
       } else if (url.pathname === '/api/health' && req.method === 'GET') {
         handleHealth(res);
       } else if (url.pathname === '/api/cancel' && req.method === 'POST') {
-        handleCancel(res);
+        await handleCancel(res);
       } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not Found' }));
@@ -174,17 +176,8 @@ async function handleRun(
     debug: globalOpts?.debug,
   });
 
-  // 设置当前任务
   const taskId = `task-${Date.now()}`;
-  currentTask = {
-    id: taskId,
-    prompt: request.prompt,
-    startTime: Date.now(),
-    agent,
-  };
-
-  // 发送任务开始事件
-  sendSSE(res, 'task_start', { taskId, prompt: request.prompt });
+  const startTime = Date.now();
 
   // 运行任务
   try {
@@ -199,6 +192,18 @@ async function handleRun(
         sendSSE(res, event.type, event.data);
       }
     );
+
+    currentTask = {
+      id: taskId,
+      prompt: request.prompt,
+      startTime,
+      agent,
+      cancel: (reason) => agentLoop.cancel(reason),
+      cancellationRequested: false,
+    };
+
+    // 发送任务开始事件
+    sendSSE(res, 'task_start', { taskId, prompt: request.prompt });
 
     // prompt 命令展开（/命令协议层，roadmap 2.2）：与 run/chat 入口对齐
     let effectivePrompt = request.prompt;
@@ -219,11 +224,12 @@ async function handleRun(
 
     await agentLoop.run(effectivePrompt);
 
-    // 发送完成事件
-    sendSSE(res, 'task_complete', {
-      taskId,
-      duration: Date.now() - currentTask.startTime,
-    });
+    const duration = Date.now() - startTime;
+    if (currentTask?.id === taskId && currentTask.cancellationRequested) {
+      sendSSE(res, 'task_cancelled', { taskId, duration });
+    } else {
+      sendSSE(res, 'task_complete', { taskId, duration });
+    }
   } catch (error) {
     sendSSE(res, 'error', {
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -268,18 +274,23 @@ function handleHealth(res: http.ServerResponse): void {
 /**
  * 处理 /api/cancel 请求
  */
-function handleCancel(res: http.ServerResponse): void {
-  if (!currentTask) {
+async function handleCancel(res: http.ServerResponse): Promise<void> {
+  const task = currentTask;
+  if (!task) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'No task running' }));
     return;
   }
 
-  // TODO: 实现取消逻辑
-  res.writeHead(200, { 'Content-Type': 'application/json' });
+  task.cancellationRequested = true;
+  await task.cancel('user');
+
+  // AgentLoop.cancel only acknowledges delivery. The run's SSE stream owns the
+  // eventual task_cancelled terminal event, so this route must stay at 202.
+  res.writeHead(202, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
-    message: 'Cancel requested',
-    taskId: currentTask.id,
+    message: 'cancel_requested',
+    taskId: task.id,
   }));
 }
 

@@ -28,6 +28,7 @@ export interface AgentMessageRequest {
 }
 
 export interface AgentCancelRequest {
+  runId?: string;
   sessionId?: string;
 }
 

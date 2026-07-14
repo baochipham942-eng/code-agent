@@ -297,12 +297,17 @@ export class ConversationRuntime {
   }
 
   async run(userMessage: string): Promise<void> {
+    // Create the run-level AbortController at acceptance time — before initializeRun.
+    // Cancel during slow init (skill resolve / intent / hooks) must still abort a real
+    // controller; creating it only after initializeRun made early cancels no-ops.
+    this.ctx.control.setRunAbortController(new AbortController());
 
     const initResult = await this.initializeRun(userMessage);
-    if (!initResult) return; // Early exit (step-by-step mode or hook blocked)
+    if (!initResult) {
+      this.ctx.control.setRunAbortController(null);
+      return; // Early exit (step-by-step mode or hook blocked)
+    }
     const { langfuse, isSimpleTask, genNum } = initResult;
-
-    this.ctx.control.setRunAbortController(new AbortController());
 
     let iterations = 0;
     let userTurnId: string | undefined;

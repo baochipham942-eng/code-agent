@@ -376,6 +376,87 @@ export function getRuntimeInputQueuedMessage(mode: RuntimeInputMode): string {
     : '已排队，本轮回复结束后作为下一条发送。';
 }
 
+/**
+ * Resolve the session a send should bind to.
+ * Awaits in-flight createSession so messages land on the new session the user just requested,
+ * not the pre-create currentSessionId (cancel-chain B4 race).
+ */
+export async function resolveEffectiveSessionIdForSend(input: {
+  envelopeSessionId?: string | null;
+  getCurrentSessionId: () => string | null;
+  getPendingSessionCreate: () => Promise<{ id: string } | null> | null;
+  createFallbackSession: () => Promise<{ id: string } | null>;
+  now?: () => number;
+}): Promise<string> {
+  const pendingCreate = input.getPendingSessionCreate();
+  if (pendingCreate) {
+    const created = await pendingCreate;
+    if (input.envelopeSessionId) {
+      return input.envelopeSessionId;
+    }
+    if (created) {
+      return created.id;
+    }
+  }
+
+  // A failed in-flight create leaves currentSessionId pointing at the session
+  // visible before the user clicked New. Never silently send there: create a
+  // fallback target instead. With no pending create, the current session is valid.
+  let effectiveSessionId = input.envelopeSessionId
+    ?? (pendingCreate ? null : input.getCurrentSessionId());
+  if (!effectiveSessionId) {
+    const created = await input.createFallbackSession();
+    if (created) {
+      effectiveSessionId = created.id;
+    } else {
+      const tempId = `web-session-${(input.now ?? Date.now)()}`;
+      effectiveSessionId = tempId;
+    }
+  }
+  return effectiveSessionId;
+}
+
+interface CancelSettlementResponse {
+  message?: string;
+  runId?: string;
+  sessionId?: string;
+}
+
+/**
+ * Keep re-delivering a 202 cancel request until either the route confirms the
+ * same run settled or the terminal SSE event has already converged renderer state.
+ */
+export async function requestCancelUntilSettled(input: {
+  sessionId: string;
+  requestCancel: (selector: { runId?: string; sessionId?: string }) => Promise<CancelSettlementResponse | undefined>;
+  isCancellationActive: () => boolean;
+  wait: () => Promise<void>;
+}): Promise<boolean> {
+  let selector: { runId?: string; sessionId?: string } = { sessionId: input.sessionId };
+
+  while (true) {
+    const result = await input.requestCancel(selector);
+    if (result?.message !== 'cancel_requested') {
+      return true;
+    }
+
+    // Retrying by session could cancel a follow-up run that starts after the
+    // original one settles. A3 responses include runId so retries stay fenced.
+    if (!result.runId) {
+      return false;
+    }
+    selector = {
+      runId: result.runId,
+      sessionId: result.sessionId ?? input.sessionId,
+    };
+
+    await input.wait();
+    if (!input.isCancellationActive()) {
+      return false;
+    }
+  }
+}
+
 export interface QueuedRuntimeInput {
   id: string;
   sessionId: string;
@@ -553,22 +634,27 @@ export function useAgentIPC({
         return;
       }
 
-      // 没有会话时自动创建一个（web 模式下数据库可能未初始化，使用临时会话）
-      let effectiveSessionId = envelope.sessionId ?? currentSessionId;
-      if (!effectiveSessionId) {
-        logger.warn('sendMessage - no current session, creating fallback');
-        const sessionStore = useSessionStore.getState();
-        const created = await sessionStore.createSession('新对话');
-        if (created) {
-          effectiveSessionId = created.id;
-        } else {
-          // 数据库不可用时，设置一个临时 sessionId 让消息流程继续
-          const tempId = `web-session-${Date.now()}`;
-          logger.warn('sendMessage - session creation failed, using temp sessionId', { tempId });
-          useSessionStore.setState({ currentSessionId: tempId });
-          effectiveSessionId = tempId;
-        }
+      // 建会话竞态：点「新会话」后 create 尚未完成时，composer 仍挂在旧 currentSessionId。
+      // await 进行中的 create 并把消息绑到新会话；运行会话 = composer 会话重新成立。
+      if (useSessionStore.getState().getPendingSessionCreate()) {
+        logger.info('sendMessage - awaiting in-flight session create before bind');
       }
+      let effectiveSessionId = await resolveEffectiveSessionIdForSend({
+        envelopeSessionId: envelope.sessionId,
+        getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
+        getPendingSessionCreate: () => useSessionStore.getState().getPendingSessionCreate(),
+        createFallbackSession: async () => {
+          logger.warn('sendMessage - no current session, creating fallback');
+          const created = await useSessionStore.getState().createSession('新对话');
+          if (!created) {
+            const tempId = `web-session-${Date.now()}`;
+            logger.warn('sendMessage - session creation failed, using temp sessionId', { tempId });
+            useSessionStore.setState({ currentSessionId: tempId });
+            return { id: tempId };
+          }
+          return created;
+        },
+      });
 
       const swarmState = useSwarmStore.getState();
       const sessionSnapshot = swarmState.activeSessionId === effectiveSessionId && swarmState.activeRunId
@@ -885,12 +971,24 @@ export function useAgentIPC({
         });
         markLatestUserMessageRunCancelled(Date.now());
       }
-      await ipcService.invoke('agent:cancel', targetSessionId ? { sessionId: targetSessionId } : undefined);
-      // 按会话清除处理状态
+      const confirmed = targetSessionId
+        ? await requestCancelUntilSettled({
+            sessionId: targetSessionId,
+            requestCancel: async (selector) => ipcService.invoke('agent:cancel', selector) as Promise<CancelSettlementResponse | undefined>,
+            isCancellationActive: () => (
+              useTaskStore.getState().sessionStates[targetSessionId]?.status === 'cancelling'
+            ),
+            wait: () => new Promise((resolve) => setTimeout(resolve, 250)),
+          })
+        : (await ipcService.invoke('agent:cancel', undefined), true);
+      // Honest settle: only mark cancelled when the route confirmed terminal.
+      // If SSE settled first, its event handler already owns the final state.
       if (targetSessionId) {
-        useTaskStore.getState().updateSessionState(targetSessionId, { status: 'cancelled' });
-        setSessionProcessing(targetSessionId, false);
-      } else {
+        if (confirmed) {
+          useTaskStore.getState().updateSessionState(targetSessionId, { status: 'cancelled' });
+          setSessionProcessing(targetSessionId, false);
+        }
+      } else if (confirmed) {
         setIsProcessing(false);
       }
     } catch (error) {

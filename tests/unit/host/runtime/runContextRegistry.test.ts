@@ -80,7 +80,7 @@ describe('RunContext', () => {
 });
 
 describe('RunHandle', () => {
-  it('remembers cancellation before attach and delivers it exactly once to the target', async () => {
+  it('remembers cancellation before attach and re-delivers on subsequent cancel requests', async () => {
     const handle = createRunHandle(createRunContext({
       runId: 'run-1',
       sessionId: 'session-1',
@@ -96,12 +96,41 @@ describe('RunHandle', () => {
     expect(cancel).not.toHaveBeenCalled();
 
     await handle.attach(target);
-    await handle.cancel('user');
-    await handle.attach(target);
-
-    expect(handle.isAttached).toBe(true);
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(cancel).toHaveBeenCalledWith('session-switch');
+
+    // A2: subsequent cancel must re-dispatch — first delivery may have been a no-op
+    // (e.g. controller not armed yet). Caching the first promise used to swallow stops forever.
+    await handle.cancel('user');
+    expect(cancel).toHaveBeenCalledTimes(2);
+    expect(cancel).toHaveBeenNthCalledWith(1, 'session-switch');
+    expect(cancel).toHaveBeenNthCalledWith(2, 'session-switch');
+
+    // re-attach of same target also re-delivers remembered cancellation (serialized chain)
+    await handle.attach(target);
+    expect(handle.isAttached).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(3);
+  });
+
+  it('re-delivers cancel after a first no-op delivery while attached', async () => {
+    const handle = createRunHandle(createRunContext({
+      runId: 'run-redispatch',
+      sessionId: 'session-redispatch',
+      workspace: '/tmp/native-run-workspace',
+    }));
+    let armed = false;
+    const cancel = vi.fn(async () => {
+      if (!armed) return; // first cancel is a no-op (controller not ready)
+      armed = true;
+    });
+    await handle.attach({ cancel });
+
+    await handle.cancel('user');
+    expect(cancel).toHaveBeenCalledTimes(1);
+
+    armed = true;
+    await handle.cancel('user');
+    expect(cancel).toHaveBeenCalledTimes(2);
   });
 
   it('fails closed for controls after cancellation has been requested', async () => {

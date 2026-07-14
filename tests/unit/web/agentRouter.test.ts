@@ -789,13 +789,13 @@ describe('createAgentRouter', () => {
       await waitForAssertion(() => expect(runRegistry.hasSession('session-s2-pre-attach')).toBe(true), 3000);
       const runId = runRegistry.getBySessionId('session-s2-pre-attach')!.context.runId;
 
-      const cancelled = await fetch(`${baseUrl}/api/cancel`, {
+      // A3: /api/cancel waits for settlement — start it without awaiting so agent
+      // creation can still complete and deliver the remembered cancel.
+      const cancelledPromise = fetch(`${baseUrl}/api/cancel`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ runId }),
       });
-      expect(cancelled.status).toBe(200);
-      expect(loop.cancel).not.toHaveBeenCalled();
 
       const conflict = await fetch(`${baseUrl}/api/run`, {
         method: 'POST',
@@ -803,6 +803,7 @@ describe('createAgentRouter', () => {
         body: JSON.stringify({ prompt: 'must reject', sessionId: 'session-s2-pre-attach' }),
       });
       expect(conflict.status).toBe(409);
+      expect(loop.cancel).not.toHaveBeenCalled();
 
       releaseAgent({
         getConfig: () => ({
@@ -815,6 +816,14 @@ describe('createAgentRouter', () => {
       await waitForAssertion(() => expect(loop.cancel).toHaveBeenCalledOnce(), 3000);
       expect(loop.run).not.toHaveBeenCalled();
       expect(runRegistry.hasSession('session-s2-pre-attach')).toBe(false);
+
+      const cancelled = await cancelledPromise;
+      expect(cancelled.status).toBe(200);
+      await expect(cancelled.json()).resolves.toMatchObject({
+        message: 'Cancelled',
+        runId,
+        sessionId: 'session-s2-pre-attach',
+      });
     });
   });
 

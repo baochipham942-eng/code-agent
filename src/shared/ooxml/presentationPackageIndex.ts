@@ -6,7 +6,7 @@
  * 的文件 resolver 与 renderer 的上传摘要可以消费同一份解析逻辑。
  */
 
-export interface PresentationPackageZipEntry {
+interface PresentationPackageZipEntry {
   name: string;
   dir: boolean;
   async(type: 'string'): Promise<string>;
@@ -63,7 +63,7 @@ export function extractPresentationSlideText(xml: string): string[] {
  * 读写两侧共用的文本指纹。revision 已负责强身份校验；这里用稳定 64-bit FNV-1a
  * 检测 locator 的局部文本是否仍与 resolver 结果一致，避免在 metadata 中保存正文。
  */
-export function presentationTextFingerprint(textRuns: readonly string[]): string {
+function presentationTextFingerprint(textRuns: readonly string[]): string {
   const normalized = textRuns.map((run) => run.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
   let hash = 0xcbf29ce484222325n;
   for (const byte of new TextEncoder().encode(normalized)) {

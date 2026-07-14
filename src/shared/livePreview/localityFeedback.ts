@@ -225,7 +225,9 @@ export function locatorFromLegacyAnchor(
     };
   }
 
-  if (!anchor.sheetName) return null;
+  // ppt-locator 与 docx 都由 host 侧 resolver 重新读取真实文件后升级；
+  // 兼容适配器这里只处理仍可直接表达诚实坐标的 sheet anchor。
+  if (anchor.kind !== 'sheet' || !anchor.sheetName) return null;
 
   return {
     version: 1,

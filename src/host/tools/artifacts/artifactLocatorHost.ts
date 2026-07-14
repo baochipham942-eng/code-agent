@@ -64,6 +64,40 @@ export async function upgradeLegacyAnchor(anchor: LocalityAnchor): Promise<Artif
     return null;
   }
 
+  if (anchor.kind === 'ppt-locator') {
+    let packageIndex;
+    let verifiedRevision: ArtifactRevision;
+    try {
+      packageIndex = await resolvePresentationPackageIndex(anchor.filePath);
+      verifiedRevision = await computeArtifactRevision(anchor.filePath);
+    } catch {
+      return null;
+    }
+    // 避免「算 revision 后、解析 package 前」文件被外部程序替换，混出一份跨版本 locator。
+    if (verifiedRevision.value !== revision.value) return null;
+
+    const target = packageIndex[anchor.displayIndex];
+    if (
+      !target
+      || target.relationshipId !== anchor.relationshipId
+      || target.slidePartName !== anchor.slidePartName
+      || target.textFingerprint !== anchor.textFingerprint
+    ) {
+      return null;
+    }
+
+    const locator: ArtifactLocatorV1 = {
+      version: 1,
+      artifact: { kind: 'presentation', filePath: anchor.filePath, revision: verifiedRevision },
+      target: { kind: 'ppt-slide', ...target },
+      display: {
+        label: anchor.displayName || path.basename(anchor.filePath),
+      },
+    };
+    const validation = validateArtifactLocatorV1(locator);
+    return validation.ok ? validation.locator : null;
+  }
+
   const locator = locatorFromLegacyAnchor(anchor, revision, resolvedPresentationTarget);
   if (!locator) return null;
 

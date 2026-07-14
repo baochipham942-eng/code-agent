@@ -170,6 +170,29 @@ describe('upgradeLegacyAnchor：host 补 revision 后才算数', () => {
       buildLocalityFeedbackMessage(anchor, '换个标题'),
     );
   });
+
+  it('上传 PPT 的 resolved anchor 由 host 重读 package 后升级，篡改 relationship 则拒绝', async () => {
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+    zip.file('ppt/slides/slide7.xml', '<p:sld><a:t>蓝色封面</a:t></p:sld>');
+    zip.file('ppt/presentation.xml', '<p:presentation><p:sldIdLst><p:sldId r:id="rId7"/></p:sldIdLst></p:presentation>');
+    zip.file('ppt/_rels/presentation.xml.rels', '<Relationships><Relationship Id="rId7" Target="slides/slide7.xml"/></Relationships>');
+    const filePath = join(workDir, 'resolved.pptx');
+    await writeFile(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
+    const target = (await resolvePresentationPackageIndex(filePath))[0];
+    const anchor = {
+      kind: 'ppt-locator' as const,
+      filePath,
+      ...target,
+      displayName: 'resolved.pptx',
+    };
+
+    const locator = await upgradeLegacyAnchor(anchor);
+    expect(locator).not.toBeNull();
+    expect(locator!.artifact.revision.value).toMatch(/^[0-9a-f]{64}$/);
+    expect(locator!.target).toEqual({ kind: 'ppt-slide', ...target });
+    expect(await upgradeLegacyAnchor({ ...anchor, relationshipId: 'rId-forged' })).toBeNull();
+  });
 });
 
 describe('findActiveLocator：locator 的有效期', () => {

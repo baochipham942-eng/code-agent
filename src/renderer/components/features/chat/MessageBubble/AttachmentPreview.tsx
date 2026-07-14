@@ -42,6 +42,7 @@ import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './util
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
+import { PresentationPagePicker } from '../../../PresentationPagePicker';
 import {
   getRenderableMediaSrc,
   MediaAssetActionBar,
@@ -399,30 +400,12 @@ const AttachmentItem: React.FC<{
   }
 
   if (category === 'presentation') {
-    const slideCount = presentationSummary?.slideCount;
-    const firstSlides = presentationSummary?.slides?.slice(0, 2) || [];
     return (
-      <div className="flex max-w-[260px] items-start gap-2 rounded-xl border border-zinc-700 bg-zinc-700/60 px-3 py-2">
-        <Presentation className="mt-0.5 h-5 w-5 shrink-0 text-violet-400" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm text-zinc-200" title={displayAttachment.name}>
-            {displayAttachment.name}
-          </div>
-          <div className="text-xs text-zinc-500">
-            {slideCount !== undefined ? `${slideCount} 页` : formatFileSize(displayAttachment.size)}
-          </div>
-          {stateBadge}
-          {firstSlides.length > 0 && (
-            <div className="mt-1 space-y-0.5 text-xs text-zinc-400">
-              {firstSlides.map((slide) => (
-                <div key={slide.index} className="truncate" title={slide.title || slide.textPreview}>
-                  第 {slide.index} 页 {slide.title || slide.textPreview || '无文字标题'}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      <PresentationPagePicker
+        title={displayAttachment.name}
+        filePath={localFilePath}
+        outlinePages={presentationSummary?.slides}
+      />
     );
   }
 

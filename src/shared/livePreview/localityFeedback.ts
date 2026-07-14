@@ -2,6 +2,7 @@ import {
   slideIndexFromPartName,
   type ArtifactLocatorV1,
   type ArtifactRevision,
+  type PresentationArtifactLocator,
 } from '../contract/artifactLocator';
 import type { PresentationPackageIndexEntry } from '../ooxml/presentationPackageIndex';
 
@@ -23,6 +24,20 @@ export interface PptLocalityAnchor {
   displayName?: string;
 }
 
+/**
+ * 上传 PPT 的真实 package locator 选择。renderer 只回传 host 已解析出的目标字段；
+ * revision 不作为信任输入，host 收到后会重读文件并重新生成 locator。
+ */
+export interface PptLocatorLocalityAnchor {
+  kind: 'ppt-locator';
+  filePath: string;
+  displayIndex: number;
+  relationshipId: string;
+  slidePartName: string;
+  textFingerprint: string;
+  displayName?: string;
+}
+
 /** 表格某单元格/区域锚点：overlay 点选单元格时已知 cell 引用 + 文件路径 */
 export interface SheetLocalityAnchor {
   kind: 'sheet';
@@ -35,7 +50,21 @@ export interface SheetLocalityAnchor {
   displayName?: string;
 }
 
-export type LocalityAnchor = PptLocalityAnchor | SheetLocalityAnchor;
+export type LocalityAnchor = PptLocalityAnchor | PptLocatorLocalityAnchor | SheetLocalityAnchor;
+
+export function localityAnchorFromPresentationLocator(
+  locator: PresentationArtifactLocator,
+): PptLocatorLocalityAnchor {
+  return {
+    kind: 'ppt-locator',
+    filePath: locator.artifact.filePath,
+    displayIndex: locator.target.displayIndex,
+    relationshipId: locator.target.relationshipId,
+    slidePartName: locator.target.slidePartName,
+    textFingerprint: locator.target.textFingerprint,
+    displayName: locator.display.label,
+  };
+}
 
 /**
  * PPT 定点反馈消息。
@@ -88,6 +117,11 @@ export function buildLocalityFeedbackMessage(anchor: LocalityAnchor, feedback: s
     case 'ppt':
       // legacy 锚点里显示页与 slide_index 是同一个数（连续 deck 的巧合）。
       return pptMessage(anchor, anchor.slideIndex + 1, anchor.slideIndex, text);
+    case 'ppt-locator': {
+      const slideIndex = slideIndexFromPartName(anchor.slidePartName);
+      if (slideIndex === null) throw new Error(`PPT locator 的 slidePartName 非法：${anchor.slidePartName}`);
+      return pptMessage(anchor, anchor.displayIndex + 1, slideIndex, text);
+    }
     case 'sheet':
       return sheetMessage(anchor, anchor.cell, anchor.sheetName, text);
   }

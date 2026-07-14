@@ -7,9 +7,16 @@
 import path from 'path';
 import { promises as fsp } from 'fs';
 import type { AgentApplicationService } from '../../shared/contract/appService';
+import type {
+  PresentationArtifactLocator,
+  PresentationPagePreviewResult,
+} from '../../shared/contract/artifactLocator';
 import { extractPresentationSlideText } from '../../shared/ooxml/presentationPackageIndex';
 import { app } from '../platform';
+import { getUserConfigDir } from '../config/configPaths';
+import { computeArtifactRevision } from '../tools/artifacts/artifactLocatorHost';
 import { loadPresentationPackageIndex } from '../tools/artifacts/presentationPackageIndex';
+import { convertToScreenshots, isLibreOfficeAvailable } from '../tools/media/ppt/visualReview';
 
 interface WorkspaceBundleFileInput {
   path: string;
@@ -254,4 +261,113 @@ export async function handleInspectPresentation(payload: { filePath: string; lim
     truncated: index.length > limit,
     slides,
   };
+}
+
+interface PresentationPreviewDependencies {
+  cacheRoot?: string;
+  libreOfficeAvailable?: () => boolean;
+  convert?: (pptxPath: string, outputDir: string) => Promise<string[]>;
+}
+
+interface PresentationScreenshotManifest {
+  revision: string;
+  screenshots: string[];
+}
+
+const presentationPreviewInflight = new Map<string, Promise<PresentationPagePreviewResult>>();
+
+async function readCachedScreenshots(
+  manifestPath: string,
+  revision: string,
+  expectedCount: number,
+): Promise<string[] | null> {
+  try {
+    const parsed = JSON.parse(await fsp.readFile(manifestPath, 'utf8')) as PresentationScreenshotManifest;
+    if (parsed.revision !== revision || parsed.screenshots.length !== expectedCount) return null;
+    await Promise.all(parsed.screenshots.map((screenshot) => fsp.access(screenshot)));
+    return parsed.screenshots;
+  } catch {
+    return null;
+  }
+}
+
+async function buildPresentationPagePreview(
+  payload: { filePath: string },
+  dependencies: PresentationPreviewDependencies,
+): Promise<PresentationPagePreviewResult> {
+  const filePath = payload.filePath;
+  if (!path.isAbsolute(filePath) || filePath.startsWith('//') || !/\.pptx$/i.test(filePath)) {
+    throw new Error('Presentation preview requires an absolute local .pptx path');
+  }
+
+  const revision = await computeArtifactRevision(filePath);
+  const { index, zip } = await loadPresentationPackageIndex(filePath);
+  const label = path.basename(filePath);
+  const pages = await Promise.all(index.map(async (target) => {
+    const text = extractPresentationSlideText(await zip.files[target.slidePartName].async('string'));
+    const locator: PresentationArtifactLocator = {
+      version: 1,
+      artifact: { kind: 'presentation', filePath, revision },
+      target: { kind: 'ppt-slide', ...target },
+      display: { label, excerpt: text[0] },
+    };
+    return { locator, title: text[0], text };
+  }));
+
+  const libreOfficeAvailable = dependencies.libreOfficeAvailable ?? isLibreOfficeAvailable;
+  if (!libreOfficeAvailable()) {
+    return { filePath, state: 'libreoffice-missing', pages };
+  }
+
+  const cacheRoot = dependencies.cacheRoot
+    ?? path.join(getUserConfigDir(), 'cache', 'presentation-page-previews');
+  const cacheDir = path.join(cacheRoot, revision.value);
+  const manifestPath = path.join(cacheDir, 'manifest.json');
+  const cached = await readCachedScreenshots(manifestPath, revision.value, pages.length);
+  if (cached) {
+    return {
+      filePath,
+      state: 'ready',
+      pages: pages.map((page, displayIndex) => ({ ...page, screenshotPath: cached[displayIndex] })),
+    };
+  }
+
+  try {
+    await fsp.rm(cacheDir, { recursive: true, force: true });
+    const outputDir = path.join(cacheDir, 'pages');
+    await fsp.mkdir(outputDir, { recursive: true });
+    const convert = dependencies.convert ?? convertToScreenshots;
+    const screenshots = await convert(filePath, outputDir);
+    if (screenshots.length !== pages.length) {
+      throw new Error(`Expected ${pages.length} screenshots, received ${screenshots.length}`);
+    }
+    await fsp.writeFile(manifestPath, JSON.stringify({ revision: revision.value, screenshots }), 'utf8');
+    return {
+      filePath,
+      state: 'ready',
+      pages: pages.map((page, displayIndex) => ({ ...page, screenshotPath: screenshots[displayIndex] })),
+    };
+  } catch (error) {
+    await fsp.rm(cacheDir, { recursive: true, force: true });
+    return {
+      filePath,
+      state: 'conversion-failed',
+      pages,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** C2c：同 revision 只转换一次；截图数组下标严格绑定 resolver 的 displayIndex。 */
+export function handlePreviewPresentation(
+  payload: { filePath: string },
+  dependencies: PresentationPreviewDependencies = {},
+): Promise<PresentationPagePreviewResult> {
+  const key = path.resolve(payload.filePath);
+  const existing = presentationPreviewInflight.get(key);
+  if (existing) return existing;
+  const pending = buildPresentationPagePreview(payload, dependencies)
+    .finally(() => presentationPreviewInflight.delete(key));
+  presentationPreviewInflight.set(key, pending);
+  return pending;
 }

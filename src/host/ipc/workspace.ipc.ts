@@ -32,9 +32,10 @@ import {
   handleExportBundle,
   handleInspectArchive,
   handleInspectPresentation,
+  handlePreviewPresentation,
   type WorkspaceExportBundlePayload,
 } from './workspaceArchive.ipc';
-export { handleExportBundle, handleInspectArchive, handleInspectPresentation };
+export { handleExportBundle, handleInspectArchive, handleInspectPresentation, handlePreviewPresentation };
 // buildConfigScopeSummary 历史上是 workspace.ipc 的公开导出，保持向后兼容（测试依赖）。
 export { buildConfigScopeSummary } from './workspaceConfigScope';
 import type { FileInfo, AppSettings } from '../../shared/contract';
@@ -854,6 +855,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'inspectPresentation':
           data = await handleInspectPresentation(payload as { filePath: string; limit?: number });
+          break;
+        case 'previewPresentation':
+          data = await handlePreviewPresentation(payload as { filePath: string });
           break;
         case 'getDesignMdSummary':
           data = await handleGetDesignMdSummary(payload as { cwd?: string | null });

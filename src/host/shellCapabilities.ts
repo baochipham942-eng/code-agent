@@ -353,6 +353,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'importDesignImage',
     'inspectArchive',
     'inspectPresentation',
+    'previewPresentation',
     'listBrands',
     'listCustomImageModels',
     'listCustomVideoModels',

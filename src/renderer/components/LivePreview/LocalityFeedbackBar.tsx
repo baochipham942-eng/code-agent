@@ -7,17 +7,26 @@ import React, { useCallback, useState } from 'react';
 import { Send } from 'lucide-react';
 import { useMessageActionStore } from '../../stores/messageActionStore';
 import {
+  buildLocatorFeedbackMessage,
   buildLocalityFeedbackMessage,
+  localityAnchorFromPresentationLocator,
   type LocalityAnchor,
 } from '../../../shared/livePreview/localityFeedback';
+import type { PresentationArtifactLocator } from '../../../shared/contract/artifactLocator';
 
-interface Props {
+type Props = {
   anchor: LocalityAnchor;
+  locator?: never;
   /** 选中位置的可读标签，如 "第 3 页" / "单元格 B7" */
   locationLabel: string;
-}
+} | {
+  anchor?: never;
+  locator: PresentationArtifactLocator;
+  /** 选中位置的可读标签，如 "第 3 页" / "单元格 B7" */
+  locationLabel: string;
+};
 
-export const LocalityFeedbackBar: React.FC<Props> = ({ anchor, locationLabel }) => {
+export const LocalityFeedbackBar: React.FC<Props> = ({ anchor, locator, locationLabel }) => {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const sendPrompt = useMessageActionStore((s) => s.sendPrompt);
@@ -29,12 +38,16 @@ export const LocalityFeedbackBar: React.FC<Props> = ({ anchor, locationLabel }) 
     try {
       // 文本给模型读，锚点给写前 guard 对账（ADR-040）。renderer 只报它诚实知道的
       // 坐标，revision 由 host 读源文件现算——这边送什么 revision 上去都不作数。
-      await sendPrompt(buildLocalityFeedbackMessage(anchor, feedback), { localityAnchor: anchor });
+      const localityAnchor = locator ? localityAnchorFromPresentationLocator(locator) : anchor;
+      const message = locator
+        ? buildLocatorFeedbackMessage(locator, feedback)
+        : buildLocalityFeedbackMessage(anchor, feedback);
+      await sendPrompt(message, { localityAnchor });
       setText('');
     } finally {
       setSending(false);
     }
-  }, [text, sending, sendPrompt, anchor]);
+  }, [text, sending, sendPrompt, anchor, locator]);
 
   return (
     <div className="flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/[0.06] px-3 py-2">

@@ -20,6 +20,7 @@ export * from './contract/authInventory';
 export * from './contract/session';
 export * from './contract/workspace';
 export * from './contract/workspacePreview';
+export * from './contract/artifactLocator';
 export * from './contract/designBrief';
 export * from './contract/designAcceptanceContract';
 export * from './contract/designHandoff';

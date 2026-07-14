@@ -4,13 +4,24 @@
 // Solves: desktop apps launched from Finder don't inherit shell PATH
 // ============================================================================
 
-import { execSync } from 'child_process';
+import { execFile, execSync } from 'child_process';
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'fs';
+import path from 'path';
+import { getUserConfigDir } from '../../config/configPaths';
 import { createLogger } from './logger';
 
 const logger = createLogger('ShellEnvironment');
 
 let shellEnv: Record<string, string> | null = null;
 let shellPath: string | null = null;
+
+const SHELL_ENV_CACHE_SCHEMA_VERSION = 1;
+const SHELL_ENV_CACHE_FILE = 'shell-environment.json';
 
 const SYSTEM_BASE_PATHS = new Set(['/usr/bin', '/bin', '/usr/sbin', '/sbin']);
 const FALLBACK_CLI_PATHS = [
@@ -31,6 +42,18 @@ export interface ShellPathDiagnostics {
 
 interface ShellPathResolution extends ShellPathDiagnostics {
   path: string;
+}
+
+interface ShellEnvironmentCache {
+  schemaVersion: number;
+  platform: NodeJS.Platform;
+  shell: string;
+  capturedAt: string;
+  environment: Record<string, string>;
+}
+
+export interface LoadShellEnvironmentOptions {
+  dataDir?: string;
 }
 
 function splitPath(value: string | undefined): string[] {
@@ -73,11 +96,106 @@ function resolveShellPath(basePath: string | undefined, source: ShellPathDiagnos
   };
 }
 
+function parseShellEnvironment(output: string): Record<string, string> {
+  const environment: Record<string, string> = {};
+  for (const line of output.split('\n')) {
+    const eqIndex = line.indexOf('=');
+    if (eqIndex > 0) {
+      environment[line.substring(0, eqIndex)] = line.substring(eqIndex + 1);
+    }
+  }
+  return environment;
+}
+
+function applyShellEnvironment(environment: Record<string, string>): number {
+  shellEnv = environment;
+  const uniquePaths = mergePathEntries(
+    splitPath(environment.PATH),
+    splitPath(process.env.PATH),
+  );
+  shellPath = uniquePaths.join(':');
+  return uniquePaths.length;
+}
+
+export function resolveShellEnvironmentCachePath(dataDir?: string): string {
+  const configuredDataDir = dataDir?.trim();
+  const root = configuredDataDir ? path.resolve(configuredDataDir) : getUserConfigDir();
+  return path.join(root, 'cache', SHELL_ENV_CACHE_FILE);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.values(value).every((entry) => typeof entry === 'string');
+}
+
+function readShellEnvironmentCache(cachePath: string, shell: string): ShellEnvironmentCache | null {
+  try {
+    const parsed = JSON.parse(readFileSync(cachePath, 'utf8')) as Partial<ShellEnvironmentCache>;
+    if (
+      parsed.schemaVersion !== SHELL_ENV_CACHE_SCHEMA_VERSION
+      || parsed.platform !== process.platform
+      || parsed.shell !== shell
+      || typeof parsed.capturedAt !== 'string'
+      || !isStringRecord(parsed.environment)
+    ) {
+      return null;
+    }
+    return parsed as ShellEnvironmentCache;
+  } catch {
+    return null;
+  }
+}
+
+function persistShellEnvironmentCache(
+  cachePath: string,
+  shell: string,
+  environment: Record<string, string>,
+): void {
+  const cache: ShellEnvironmentCache = {
+    schemaVersion: SHELL_ENV_CACHE_SCHEMA_VERSION,
+    platform: process.platform,
+    shell,
+    capturedAt: new Date().toISOString(),
+    environment,
+  };
+  const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    mkdirSync(path.dirname(cachePath), { recursive: true, mode: 0o700 });
+    writeFileSync(tempPath, JSON.stringify(cache), { encoding: 'utf8', mode: 0o600 });
+    renameSync(tempPath, cachePath);
+  } catch (error) {
+    logger.warn('Failed to persist shell environment cache', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function refreshShellEnvironmentInBackground(shell: string, cachePath: string): void {
+  execFile(shell, ['-i', '-l', '-c', 'env'], {
+    encoding: 'utf8',
+    timeout: 5000,
+    env: { ...process.env },
+  }, (error, output) => {
+    if (error) {
+      logger.warn('Failed to refresh cached shell environment, keeping cached values', {
+        shell,
+        error: error.message,
+      });
+      return;
+    }
+
+    const environment = parseShellEnvironment(output);
+    const pathEntries = applyShellEnvironment(environment);
+    persistShellEnvironmentCache(cachePath, shell, environment);
+    logger.info('Shell environment cache refreshed', { shell, pathEntries });
+  });
+}
+
 /**
  * Load the user's shell environment
  * Only runs on macOS/Linux in desktop mode (not CLI mode)
  */
-export function loadShellEnvironment(): void {
+export function loadShellEnvironment(options: LoadShellEnvironmentOptions = {}): void {
   // Skip in pure CLI mode — CLI inherits the shell environment naturally.
   // Web mode sets CODE_AGENT_CLI_MODE for native-module safety, but still runs
   // from the desktop app and needs login shell PATH capture.
@@ -93,6 +211,14 @@ export function loadShellEnvironment(): void {
   }
 
   const shell = process.env.SHELL || '/bin/zsh';
+  const cachePath = resolveShellEnvironmentCachePath(options.dataDir);
+  const cached = readShellEnvironmentCache(cachePath, shell);
+  if (cached) {
+    const pathEntries = applyShellEnvironment(cached.environment);
+    logger.info('Shell environment loaded from cache', { shell, pathEntries });
+    refreshShellEnvironmentInBackground(shell, cachePath);
+    return;
+  }
 
   try {
     const output = execSync(`${shell} -i -l -c 'env'`, {
@@ -102,25 +228,13 @@ export function loadShellEnvironment(): void {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    shellEnv = {};
-    for (const line of output.split('\n')) {
-      const eqIndex = line.indexOf('=');
-      if (eqIndex > 0) {
-        const key = line.substring(0, eqIndex);
-        const value = line.substring(eqIndex + 1);
-        shellEnv[key] = value;
-      }
-    }
-
-    // Merge and deduplicate PATH
-    const shellPathValue = shellEnv.PATH || '';
-    const processPath = process.env.PATH || '';
-    const uniquePaths = mergePathEntries(splitPath(shellPathValue), splitPath(processPath));
-    shellPath = uniquePaths.join(':');
+    const environment = parseShellEnvironment(output);
+    const pathEntries = applyShellEnvironment(environment);
+    persistShellEnvironmentCache(cachePath, shell, environment);
 
     logger.info('Shell environment captured', {
       shell,
-      pathEntries: uniquePaths.length,
+      pathEntries,
     });
   } catch (error) {
     logger.warn('Failed to capture shell environment, using process.env', {

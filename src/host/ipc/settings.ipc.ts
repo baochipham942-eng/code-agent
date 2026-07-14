@@ -14,6 +14,7 @@ import { resolveConnectionTestModel } from '../model/providerConnectionTest';
 import { isRuntimeProviderConfigured } from '../../shared/modelRuntime';
 import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/providerIconAssets';
 import { handleDiscoverModels, type DiscoveredProviderModel, type DiscoverModelsResult } from './provider.ipc';
+import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -743,7 +744,15 @@ export function registerSettingsHandlers(
   // Word (.docx) → structured HTML + paragraphs (for DocumentBlock interactive rendering)
   ipcMain.handle('extract-docx-html', async (_, filePath: string): Promise<{
     html: string;
-    paragraphs: Array<{ index: number; type: string; text: string; level?: number }>;
+    paragraphs: Array<{
+      index: number;
+      type: string;
+      text: string;
+      level?: number;
+      textFingerprint: string;
+      previousTextFingerprint?: string;
+      nextTextFingerprint?: string;
+    }>;
     text: string;
     wordCount: number;
   }> => {
@@ -759,29 +768,9 @@ export function registerSettingsHandlers(
       const textResult = await mammoth.extractRawText({ buffer });
       const rawText = textResult.value;
 
-      // Parse HTML to extract paragraph structure
-      const paragraphs: Array<{ index: number; type: string; text: string; level?: number }> = [];
-      // Simple HTML parsing for paragraphs and headings
-      const tagRegex = /<(h[1-6]|p|li)[^>]*>([\s\S]*?)<\/\1>/gi;
-      let match;
-      let idx = 0;
-      while ((match = tagRegex.exec(html)) !== null) {
-        const tag = match[1].toLowerCase();
-        // Strip HTML tags from content for plain text
-        const text = match[2].replace(/<[^>]+>/g, '').trim();
-        if (!text) continue;
-
-        let type = 'paragraph';
-        let level: number | undefined;
-        if (tag.startsWith('h')) {
-          type = 'heading';
-          level = parseInt(tag[1], 10);
-        } else if (tag === 'li') {
-          type = 'list-item';
-        }
-
-        paragraphs.push({ index: idx++, type, text, level });
-      }
+      // mammoth 只负责富文本 HTML / raw text；可执行坐标必须来自 document.xml 全量
+      // `<w:p>` 序列，否则空段落与表格段落会把后续 index 静默左移。
+      const paragraphs = await extractDocxParagraphsFromBuffer(buffer);
 
       const wordCount = rawText.split(/\s+/).filter(Boolean).length;
 

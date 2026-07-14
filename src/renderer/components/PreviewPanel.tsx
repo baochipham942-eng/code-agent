@@ -51,7 +51,15 @@ type DocumentParagraphType = 'heading' | 'paragraph' | 'list-item';
 
 interface DocxPreviewResult {
   html: string;
-  paragraphs: Array<{ index: number; type: string; text: string; level?: number }>;
+  paragraphs: Array<{
+    index: number;
+    type: string;
+    text: string;
+    level?: number;
+    textFingerprint?: string;
+    previousTextFingerprint?: string;
+    nextTextFingerprint?: string;
+  }>;
   text: string;
   wordCount: number;
 }
@@ -156,6 +164,9 @@ function buildDocxPreviewSpec(filePath: string, result: DocxPreviewResult): stri
       type: normalizeDocumentParagraphType(paragraph.type),
       text: paragraph.text.trim(),
       level: paragraph.level,
+      textFingerprint: paragraph.textFingerprint,
+      previousTextFingerprint: paragraph.previousTextFingerprint,
+      nextTextFingerprint: paragraph.nextTextFingerprint,
     }))
     .filter((paragraph) => paragraph.text.length > 0);
   const paragraphs = normalized.length > 0 ? normalized : paragraphsFromRawText(result.text);

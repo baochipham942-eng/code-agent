@@ -21,6 +21,11 @@ import {
 import { locatorFromLegacyAnchor, type LocalityAnchor } from '../../../shared/livePreview/localityFeedback';
 import type { PresentationPackageIndexEntry } from '../../../shared/ooxml/presentationPackageIndex';
 import { resolvePresentationPackageIndex } from './presentationPackageIndex';
+import {
+  docxParagraphTargetStillMatches,
+  resolveDocxParagraphTarget,
+  type DocxParagraphTargetSnapshot,
+} from './docxParagraphLocator';
 
 /** locator 授权的工具面（ADR-040 D4 首批）：Excel cell/range、Word paragraph、PPT 页内 replace。 */
 const LOCATOR_GUARDED_TOOLS = new Set(['docedit', 'ppt_edit']);
@@ -98,7 +103,22 @@ export async function upgradeLegacyAnchor(anchor: LocalityAnchor): Promise<Artif
     return validation.ok ? validation.locator : null;
   }
 
-  const locator = locatorFromLegacyAnchor(anchor, revision, resolvedPresentationTarget);
+  let locator: ArtifactLocatorV1 | null;
+  if (anchor.kind === 'docx') {
+    const resolved = await resolveDocxParagraphTarget(anchor.filePath, anchor.paragraphIndex).catch(() => null);
+    if (!resolved) return null;
+    locator = {
+      version: 1,
+      artifact: { kind: 'document', filePath: anchor.filePath, revision },
+      target: resolved.target,
+      display: {
+        label: anchor.displayName || anchor.filePath.split('/').pop() || '文档',
+        excerpt: resolved.paragraph.text,
+      },
+    };
+  } else {
+    locator = locatorFromLegacyAnchor(anchor, revision, resolvedPresentationTarget);
+  }
   if (!locator) return null;
 
   const validation = validateArtifactLocatorV1(locator);
@@ -225,8 +245,16 @@ function checkDocxTarget(
 
   for (const op of operations) {
     if (!op || typeof op !== 'object') continue;
-    const received = (op as Record<string, unknown>).index;
-    if (received === undefined) continue;
+    const typed = op as Record<string, unknown>;
+    const action = typed.action;
+    const received = action === 'insert_paragraph'
+      ? typed.after
+      : action === 'replace_paragraph' || action === 'delete_paragraph'
+        ? typed.index
+        : undefined;
+    if (received === undefined) {
+      return block(RETARGET_MESSAGE, { reason: 'paragraph_operation_unsupported' });
+    }
     if (received !== expectedIndex) {
       return block(RETARGET_MESSAGE, { reason: 'paragraph_mismatch', expected: expectedIndex, received });
     }
@@ -280,6 +308,12 @@ export async function getArtifactLocatorPreflightBlock(
         targetPath,
       );
     case 'docx-paragraph':
+      if (!await docxParagraphTargetStillMatches(
+        targetPath,
+        locator.target as DocxParagraphTargetSnapshot,
+      ).catch(() => false)) {
+        return block(STALE_MESSAGE, { reason: 'paragraph_fingerprint_drift' });
+      }
       return checkDocxTarget(locator as ArtifactLocatorV1 & { target: { kind: 'docx-paragraph' } }, toolCall.arguments);
   }
 }

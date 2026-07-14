@@ -7,8 +7,8 @@ const spec = JSON.stringify({
   title: '季度报告',
   wordCount: 12,
   paragraphs: [
-    { index: 0, type: 'heading', text: '一、总体情况', level: 1 },
-    { index: 1, type: 'paragraph', text: '本季度营收同比增长两成。' },
+    { index: 0, type: 'heading', text: '一、总体情况', level: 1, textFingerprint: 'heading-fp' },
+    { index: 1, type: 'paragraph', text: '本季度营收同比增长两成。', textFingerprint: 'body-fp' },
   ],
 });
 

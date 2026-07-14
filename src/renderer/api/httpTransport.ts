@@ -196,6 +196,9 @@ function normalizeDocxHtmlResult(value: unknown): ExtractDocxHtmlResult {
           type: getStringField(paragraph, 'type') ?? 'paragraph',
           text: getStringField(paragraph, 'text') ?? '',
           level: getNumberField(paragraph, 'level'),
+          textFingerprint: getStringField(paragraph, 'textFingerprint') ?? '',
+          previousTextFingerprint: getStringField(paragraph, 'previousTextFingerprint'),
+          nextTextFingerprint: getStringField(paragraph, 'nextTextFingerprint'),
         }))
     : [];
 

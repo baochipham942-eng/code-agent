@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-07-14
+
+### Added
+
+- **启动编译与 Shell 环境缓存**：webServer 引导层启用 V8 compile cache，ShellEnvironment 增加带 schema、platform、shell 校验的磁盘缓存与后台刷新，host spawn 到 health 从 2.03 秒缩短到约 0.7 秒，缓存失败时保持安全降级。（#376）
+
+### Changed
+
+- **数据库启动维护提速**：stale FTS 清理改为基于 `user_version` 的一次性维护门，FTS backfill 守卫由全量 `COUNT(*)` 改为 `LIMIT 1` 存在性检查，并为执行事件反连接补充 `(execution_id, phase)` 复合索引，使 DB init 从 5.9 秒降至 11 毫秒。（#374）
+
+### Fixed
+
+- **macOS 临时 Chrome profile 钥匙串弹窗**：仅为一次性系统 Chrome profile 启用 `--use-mock-keychain`，避免反复出现 Keychain Not Found 提示，同时保留持久化浏览器 profile 的真实钥匙串与既有加密 Cookie。（#375）
+
 ## [0.27.0] - 2026-07-14
 
 ### Added

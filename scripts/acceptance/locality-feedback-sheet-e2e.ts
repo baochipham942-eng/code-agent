@@ -48,6 +48,9 @@ function prepareIsolatedHome(): { fakeHome: string; dataDir: string } {
   process.env.CODE_AGENT_HOME = fakeHome;
   process.env.CODE_AGENT_DATA_DIR = dataDir;
   process.env.CODE_AGENT_E2E = '1';
+  // 不设它，secureStorage 会加载 keytar（secureStorage.ts:18），每跑一次弹一次 macOS 钥匙串。
+  // 这脚本本就是 CLI 模式，key 从 ~/.code-agent/.env 走 env fallback 即可。
+  process.env.CODE_AGENT_CLI_MODE = 'true';
   return { fakeHome, dataDir };
 }
 
@@ -110,9 +113,11 @@ async function main(): Promise<void> {
   const { buildLocalityFeedbackMessage } = await import('../../src/shared/livePreview/localityFeedback');
   const { sheetCellRef } = await import('../../src/shared/livePreview/sheetCoords');
   await initializeCLIServices();
-  const mc = resolveSessionDefaultModelConfig({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
-  console.log('  xiaomi(mimo) apiKey:', mc.apiKey ? 'present ✓' : 'MISSING ✗');
-  if (!mc.apiKey) throw new Error('xiaomi(mimo) apiKey 未配置');
+  // 走 APP 默认模型，不钉死 provider：此前硬编码 xiaomi/mimo-v2.5-pro，key 作废后
+  // 脚本恒 401、恒红，而红的原因跟被验的东西毫无关系。
+  const mc = resolveSessionDefaultModelConfig();
+  console.log(`  模型: ${mc.provider}/${mc.model} | apiKey:`, mc.apiKey ? 'present ✓' : 'MISSING ✗');
+  if (!mc.apiKey) throw new Error(`${mc.provider} apiKey 未配置`);
 
   // 1. 造 fixture（空行 + 双表）
   const dir = mkdtempSync(join(tmpdir(), 'lfb-sheet-e2e-'));
@@ -145,12 +150,12 @@ async function main(): Promise<void> {
   // 4. 真 mimo 跑一轮
   const agent = new StandaloneAgentAdapter({
     workingDirectory: dir,
-    modelConfig: { ...mc, provider: 'xiaomi', model: 'mimo-v2.5-pro', apiKey: mc.apiKey, temperature: 0.2, reasoningEffort: 'low', maxTokens: 2048 },
+    modelConfig: { ...mc, temperature: 0.2, reasoningEffort: 'low', maxTokens: 2048 },
     toolMode: 'all',
     maxIterations: 10,
   });
   const t0 = Date.now();
-  console.log('\n=== 真 mimo 跑一轮（toolMode=all，含 DocEdit）===');
+  console.log('\n=== 真模型跑一轮（toolMode=all，含 DocEdit）===');
   const result = await agent.sendMessage(prompt);
   await agent.finalizeSession();
   const dt = ((Date.now() - t0) / 1000).toFixed(1);

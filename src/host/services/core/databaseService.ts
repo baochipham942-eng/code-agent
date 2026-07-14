@@ -27,7 +27,8 @@ export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, Projec
 
 import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
-import { buildRecoverySnapshot, acknowledgeRecovery, type RecoverySnapshot } from './crashRecovery';
+import type { RecoverySnapshot } from './crashRecovery';
+import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
 import type { SwarmTraceRepo, SwarmRunEventRecord } from '../../../shared/contract/swarmTrace';
 import { buildSessionLedger, type LedgerSources } from './sessionLedgerProjection';
@@ -182,15 +183,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
     }
 
-    // 启动关键路径计时：DB init 曾在 1.28GB 生产库上静默吃掉 ~6s（health-ready 的大头），
-    // 每步耗时落一条 summary 日志，回归时能直接从用户日志定位慢在哪步。
-    const stepTimings: string[] = [];
-    let stepStart = performance.now();
-    const step = (name: string): void => {
-      const now = performance.now();
-      stepTimings.push(`${name}=${Math.round(now - stepStart)}ms`);
-      stepStart = now;
-    };
+    const { step, summary } = createInitStepTimer();
 
     try {
       this.db = new Database(this.dbPath);
@@ -223,35 +216,14 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.initializeDurableRunRepository(this.db);
       step('repos');
 
-      const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());
-      if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
-        logger.warn(`[DatabaseService] Marked crashed active sessions: ${crashedSessions.interrupted} interrupted, ${crashedSessions.orphaned} orphaned`);
-      }
-
-      // ADR-022 第二期 · 崩溃重放：从总账重建"崩溃前正在做的事"（未闭合工具执行），
-      // 不再只翻 interrupted 标记。重建后 append recovered 闭合，保证重启幂等。fail-safe。
-      try {
-        const snapshot = buildRecoverySnapshot(this.toolExecutionEventRepo, Date.now());
-        this.lastRecoverySnapshot = snapshot;
-        if (snapshot.totalInFlight > 0) {
-          logger.warn(`[DatabaseService] Crash recovery: ${snapshot.totalInFlight} in-flight tool execution(s) across ${snapshot.sessions.length} session(s) reconstructed from ledger`);
-          acknowledgeRecovery(this.toolExecutionEventRepo, snapshot, Date.now());
-        }
-      } catch (err) {
-        logger.warn('[DatabaseService] Crash recovery scan failed (ignored):', err);
-      }
-      step('crash-recovery');
-
-      // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
-      this.sessionRepo.backfillSessionMessagesFts();
-      step('fts-messages');
-      // 同理：transcript FTS（kind 分解索引，roadmap 2.1）
-      this.sessionRepo.backfillTranscriptFts();
-      step('fts-transcript');
-      // 同理：memories FTS（BM25 检索通道，roadmap 2.5）
-      this.memoryRepo.backfillMemoriesFts();
-      step('fts-memories');
-      logger.info(`[DatabaseService] init timings: ${stepTimings.join(' ')}`);
+      this.lastRecoverySnapshot = runStartupMaintenance({
+        sessionRepo: this.sessionRepo,
+        memoryRepo: this.memoryRepo,
+        toolExecutionEventRepo: this.toolExecutionEventRepo,
+        logger,
+        step,
+      });
+      logger.info(`[DatabaseService] init timings: ${summary()}`);
     } catch (err) {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);

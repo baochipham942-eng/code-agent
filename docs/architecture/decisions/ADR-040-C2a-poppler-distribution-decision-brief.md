@@ -18,6 +18,7 @@
 3. Poppler bundle 由 Homebrew 的 `pdftoppm` 传递依赖闭包生成；脚本会复制所有非系统 dylib、重写 install name、ad-hoc 重签，并真跑三页 PDF 自检（`scripts/fetch-poppler.sh:6-22`、`69-174`、`176-233`）。
 4. 2026-07-15 arm64 实跑产物是 1 个 `pdftoppm` + 24 个 dylib，共 25 个 Mach-O 文件；原始文件总计 11,298,096 bytes，gzip 归档 3,998,972 bytes。`pdftoppm` 真跑三页输出三页，全部文件均为 arm64，动态依赖中没有 `/opt/homebrew` 残留。
 5. 本分支已把 `fetch-poppler.sh` 接入正式 macOS 双架构 release matrix 和手动 x64 test workflow，并用结构测试保证生成步骤在 Tauri 打包之前执行（`.github/workflows/release.yml:92-111`、`.github/workflows/build-x64-test.yml:46-59`、`tests/scripts/releaseMacosGates.test.ts:254-286`）。
+6. 2026-07-15 在当前 `0.27.1` 源码上完成同源 arm64 A/B：同一份 unsigned `.app`，只删除 B 组的 `Contents/Resources/scripts/poppler`，使用相同 `hdiutil create -format UDZO` 生成 DMG。含 Poppler 为 117,292,645 bytes（111.86 MiB），不含为 113,467,584 bytes（108.21 MiB），压缩后净增 3,825,061 bytes（3.65 MiB，+3.37%）。两份 DMG 均可只读挂载；含侧复核有 24 个 dylib，不含侧复核目录不存在。该 A/B 没有正式签名、公证和 Finder 样式，只用于隔离 Poppler 的包体增量，不能代替正式 release bundle 验收。
 
 “独立进程”只支持主应用与 sidecar 分离的判断，不免除 sidecar 自身的分发义务。FSF FAQ 将简单 `fork/exec` 且不交换复杂数据的程序视为可分离情形，同时明确 GPL 二进制分发仍需提供精确对应源码；这里应由法务把 Agent Neo 的实际 IPC 形态对照该标准确认：
 
@@ -116,6 +117,6 @@ release-assets/
 5. **release gate**：是否批准“许可证文件存在 + source URL 200 + 两架构 manifest/hash 对齐”作为不可跳过的发版硬门。
 6. **Homebrew pin 漂移**：脚本固定 `26.02.0_1`（`scripts/fetch-poppler.sh:27-31`），但 2026-07-15 本机 Homebrew API 已显示当前 stable `26.07.0`。fresh runner 能否取得固定 Cellar 版本尚未核实；在 x64 真跑前不能把 CI 接线等同于 x64 通过。
 7. **x64 实跑**：本机有 Rosetta 但没有 Intel Homebrew，无法生成可信 x64 传递闭包；需 `macos-15-intel` 真 runner 证实。
-8. **DMG A/B**：arm64 新鲜构建第一次因缺 `dist/bundled-node` 被仓库资源门阻断，补齐前置后因监工要求让路 S5 全量 Vitest 而主动暂停；尚无实测 DMG 数字。
+8. **正式 DMG**：同源 unsigned UDZO A/B 已完成，Poppler 的实测压缩增量是 3.65 MiB；正式签名、公证、Finder 样式后的 release DMG 尚未运行，不应把本地 A/B 的总大小当成最终发布物大小。
 
 在 1–5 拍板前，不新增或修改 `NOTICE` / 关于页文案，不改变现有产品许可证声明。

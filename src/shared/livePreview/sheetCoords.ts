@@ -5,8 +5,8 @@
 // 重写一遍公式，两边都绕开了真正被用户点到的那段代码（2026-07-14 行错位 +
 // 工作表错位）。凡是需要 A1 的地方都从这里取，不要再抄第二份。
 
-/** 列索引 → A1 列字母（0→A, 25→Z, 26→AA） */
-export function columnLetter(columnIndex: number): string {
+/** 列索引 → A1 列字母（0→A, 25→Z, 26→AA）。模块私有：外部一律走 sheetCellRef，别再长出第二个换算入口。 */
+function columnLetter(columnIndex: number): string {
   let n = columnIndex;
   let s = '';
   do {

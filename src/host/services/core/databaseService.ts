@@ -182,17 +182,31 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
     }
 
+    // 启动关键路径计时：DB init 曾在 1.28GB 生产库上静默吃掉 ~6s（health-ready 的大头），
+    // 每步耗时落一条 summary 日志，回归时能直接从用户日志定位慢在哪步。
+    const stepTimings: string[] = [];
+    let stepStart = performance.now();
+    const step = (name: string): void => {
+      const now = performance.now();
+      stepTimings.push(`${name}=${Math.round(now - stepStart)}ms`);
+      stepStart = now;
+    };
+
     try {
       this.db = new Database(this.dbPath);
       this.db.pragma('journal_mode = WAL');
       this.db.pragma('foreign_keys = ON');
+      step('open+wal');
 
       applySchema(this.db, logger);
+      step('schema');
       applySessionsMigrations(this.db, logger);
       applyTelemetryTurnsMigrations(this.db, logger);
       applyEvaluationCleanupMigration(this.db, logger);
       this.applyDurableRunMigration(this.db);
+      step('migrations');
       applyIndexes(this.db);
+      step('indexes');
 
       // 初始化 Repositories
       this.sessionRepo = new SessionRepository(this.db);
@@ -207,6 +221,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
       this.swarmLedgerRepo = new SwarmLedgerRepository(this.db);
       this.initializeDurableRunRepository(this.db);
+      step('repos');
 
       const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());
       if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
@@ -225,13 +240,18 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       } catch (err) {
         logger.warn('[DatabaseService] Crash recovery scan failed (ignored):', err);
       }
+      step('crash-recovery');
 
       // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
       this.sessionRepo.backfillSessionMessagesFts();
+      step('fts-messages');
       // 同理：transcript FTS（kind 分解索引，roadmap 2.1）
       this.sessionRepo.backfillTranscriptFts();
+      step('fts-transcript');
       // 同理：memories FTS（BM25 检索通道，roadmap 2.5）
       this.memoryRepo.backfillMemoriesFts();
+      step('fts-memories');
+      logger.info(`[DatabaseService] init timings: ${stepTimings.join(' ')}`);
     } catch (err) {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);
@@ -1195,9 +1215,10 @@ export async function initDatabase(): Promise<DatabaseService> {
   // 懒加载 ProjectService 避免初始化期循环依赖。
   try {
     const { getProjectService } = await import('../project/projectService');
+    const backfillStart = performance.now();
     const migrated = getProjectService().backfillSessions(Date.now());
     if (migrated > 0) {
-      logger.info(`[DatabaseService] P0-2 backfill: ${migrated} 个存量 session 已归桶到项目`);
+      logger.info(`[DatabaseService] P0-2 backfill: ${migrated} 个存量 session 已归桶到项目 (${Math.round(performance.now() - backfillStart)}ms)`);
     }
   } catch (err) {
     logger.warn('[DatabaseService] P0-2 backfill 失败（不阻塞启动）:', err instanceof Error ? err.message : String(err));

@@ -114,6 +114,7 @@ export const ChatView: React.FC = () => {
     sessions,
     hasOlderMessages,
     isLoading: isSessionLoading,
+    isCreatingSession,
     isLoadingOlder,
     loadOlderMessages,
     setMessages,
@@ -813,7 +814,7 @@ export const ChatView: React.FC = () => {
           <ChatInput
             ref={chatInputRef}
             onSend={handleSendEnvelope}
-            disabled={effectiveIsProcessing}
+            disabled={effectiveIsProcessing || isCreatingSession}
             isProcessing={effectiveIsProcessing}
             isInterrupting={isInterrupting}
             onStop={cancel}

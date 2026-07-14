@@ -16,6 +16,7 @@ import { useSessionUIStore } from './sessionUIStore';
 import { useAppStore } from './appStore';
 import { useAppshotsStore } from './appshotsStore';
 import { useDesignCanvasStore } from '../components/design/designCanvasStore';
+import { executeCreateSession } from './sessionCreate';
 
 const logger = createLogger('SessionStore');
 
@@ -37,6 +38,8 @@ async function invokeAgentEngine<T>(action: string, payload?: unknown): Promise<
 
 // switchSession 竞态保护计数器
 let _switchCounter = 0;
+/** In-flight createSession promise — send path awaits to rebind to the new session. */
+let _pendingSessionCreate: Promise<Session | null> | null = null;
 
 function invalidatePendingSessionSwitches(): void {
   _switchCounter += 1;
@@ -182,6 +185,11 @@ interface SessionState {
   sessionTasks: SessionTask[];
   streamSnapshot: StreamRecoverySnapshot | null;
   isLoading: boolean;
+  /**
+   * True while createSession() is in flight (including reusable-draft switch).
+   * Composer freezes on this flag so send cannot bind to the pre-create currentSessionId.
+   */
+  isCreatingSession: boolean;
   error: string | null;
   unreadSessionIds: Set<string>;
   runningSessionIds: Set<string>;
@@ -196,6 +204,8 @@ interface SessionState {
 interface SessionActions {
   loadSessions: (options?: { silent?: boolean }) => Promise<void>;
   createSession: (title?: string, options?: CreateSessionOptions) => Promise<Session | null>;
+  /** In-flight createSession promise, if any — send path awaits this to rebind to the new session. */
+  getPendingSessionCreate: () => Promise<Session | null> | null;
   switchSession: (sessionId: string) => Promise<void>;
   refreshContextHealth: (sessionId?: string) => Promise<ContextHealthState | null>;
   deleteSession: (sessionId: string) => Promise<void>;
@@ -238,6 +248,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     sessionTasks: [],
     streamSnapshot: null,
     isLoading: false,
+    isCreatingSession: false,
     error: null,
     unreadSessionIds: new Set<string>(),
     runningSessionIds: new Set<string>(),
@@ -246,6 +257,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     hasOlderMessages: false,
     isLoadingOlder: false,
     sessionDesignBriefs: new Map<string, DesignBrief>(),
+
+    getPendingSessionCreate: () => _pendingSessionCreate,
 
     loadSessions: async (options) => {
       // silent：后台刷新（云端同步广播）不动 isLoading，避免侧栏白刷一帧。
@@ -281,143 +294,28 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     createSession: async (title?: string, options?: CreateSessionOptions) => {
+      // Track the in-flight create so sendMessage can await and rebind to the new
+      // session instead of racing against a stale currentSessionId (cancel-chain B4).
+      const work = executeCreateSession(
+        {
+          get,
+          set: set as never,
+          invalidatePendingSessionSwitches,
+          findReusableNewSessionDraft,
+        },
+        title,
+        options,
+      );
+
+      _pendingSessionCreate = work;
+      set({ isCreatingSession: true });
       try {
-        const inheritedWorkingDirectory =
-          options?.workingDirectory !== undefined
-            ? options.workingDirectory
-            : useAppStore.getState().workingDirectory;
-        const nextTitle = title?.trim() || '新对话';
-        if (nextTitle === '新对话') {
-          useAppshotsStore.getState().clear();
-          const reusableSession = findReusableNewSessionDraft({
-            sessions: get().sessions,
-            currentSessionId: get().currentSessionId,
-            messages: get().messages,
-            todos: get().todos,
-            workingDirectory: inheritedWorkingDirectory,
-          });
-          if (reusableSession) {
-            // 与新建路径一致：复用空草稿时也继承当前会话的 native 模型选择，
-            // 避免「点新会话模型被重置」。仅当当前会话有显式 override 时才应用，
-            // 不覆盖草稿自身已设的模型；switchModel 须在 switchSession 之前完成，
-            // 否则 ModelSwitcher 监听 sessionId 变化会先读到旧值。
-            const draftPrevSessionId = get().currentSessionId;
-            if (!options?.engine && draftPrevSessionId && draftPrevSessionId !== reusableSession.id) {
-              try {
-                const override = await invokeSession<{ provider: string; model: string; adaptive?: boolean } | null>(
-                  'getModelOverride',
-                  { sessionId: draftPrevSessionId },
-                );
-                if (override?.provider && override?.model) {
-                  await invokeSession('switchModel', {
-                    sessionId: reusableSession.id,
-                    provider: override.provider,
-                    model: override.model,
-                    adaptive: !!override.adaptive,
-                  });
-                }
-              } catch {
-                logger.warn('Failed to inherit model selection for reused draft session');
-              }
-            }
-            if (get().currentSessionId !== reusableSession.id) {
-              await get().switchSession(reusableSession.id);
-            }
-            useAppStore.getState().setWorkingDirectory(reusableSession.workingDirectory ?? null);
-            // 复用空白草稿时刷新时间戳，避免侧边栏显示旧草稿的"3 天前"。
-            set((state) => ({ isLoading: false, error: null, sessions: state.sessions.map((s) => (s.id === reusableSession.id ? normalizeSession({ ...s, updatedAt: Date.now() }) : s)) }));
-            return reusableSession;
-          }
+        return await work;
+      } finally {
+        if (_pendingSessionCreate === work) {
+          _pendingSessionCreate = null;
         }
-
-        // 记录上一个会话的 engine，外部引擎（Codex/Claude）选择在新会话创建后继承
-        const previousSessionId = get().currentSessionId;
-        const previousEngine = get().sessions.find((s) => s.id === previousSessionId)?.engine;
-        const shouldInheritNativeModel =
-          !options?.engine &&
-          (!previousEngine || previousEngine.kind === 'native') &&
-          !!previousSessionId;
-        // 预读上一会话的 native 模型覆盖（与 create 并行，降低延迟）
-        const previousModelOverridePromise = shouldInheritNativeModel
-          ? invokeSession<{ provider: string; model: string; adaptive?: boolean } | null>(
-              'getModelOverride',
-              { sessionId: previousSessionId },
-            ).catch(() => null)
-          : Promise.resolve(null);
-
-        set({ isLoading: true, error: null });
-        const session = await invokeSession<Session | null>('create', {
-          title: nextTitle,
-          workingDirectory: inheritedWorkingDirectory,
-          engine: options?.engine ?? null,
-        });
-        if (session) {
-          const newSessionWithMeta: SessionWithMeta = normalizeSession({
-            ...session,
-            messageCount: 0,
-            turnCount: 0,
-          });
-
-          // 继承上一会话的 native 模型选择，必须在激活（设置 currentSessionId）之前完成：
-          // 否则 ModelSwitcher 监听 sessionId 变化拉取 override 时会先拿到默认值再不刷新，
-          // 表现为「新会话模型被重置」。提前 switchModel 让其挂载即读到正确 override。
-          if (shouldInheritNativeModel && previousSessionId !== session.id) {
-            try {
-              const override = await previousModelOverridePromise;
-              if (override?.provider && override?.model) {
-                await invokeSession('switchModel', {
-                  sessionId: session.id,
-                  provider: override.provider,
-                  model: override.model,
-                  adaptive: !!override.adaptive,
-                });
-              }
-            } catch {
-              logger.warn('Failed to inherit model selection for new session');
-            }
-          }
-
-          invalidatePendingSessionSwitches();
-          useAppStore.getState().setWorkingDirectory(newSessionWithMeta.workingDirectory ?? null);
-          // 新会话继承 draft 期（无会话时）的 agent 选择，其余情况从 per-session map 读取
-          useAppStore.getState().syncActiveAgentForSession(session.id, { inheritCurrent: !previousSessionId });
-          set((state) => ({
-            sessions: [newSessionWithMeta, ...state.sessions],
-            currentSessionId: session.id,
-            messages: [],
-            todos: [],
-            sessionTasks: [],
-            streamSnapshot: null,
-            hasOlderMessages: false,
-            isLoadingOlder: false,
-            isLoading: false,
-          }));
-          useAppStore.getState().setContextHealth(null);
-
-          // 继承上一个会话的外部 engine 选择（后端禁止创建时直接指定外部引擎，
-          // 必须走创建后的 select 校验路径：需要工作目录 + 引擎可用，失败则保持 native）
-          if (!options?.engine && previousEngine && previousEngine.kind !== 'native') {
-            try {
-              await get().updateSessionEngine(session.id, {
-                kind: previousEngine.kind,
-                permissionProfile: previousEngine.permissionProfile,
-                model: previousEngine.model,
-                cwd: previousEngine.cwd ?? newSessionWithMeta.workingDirectory ?? undefined,
-              });
-            } catch {
-              logger.warn('Failed to inherit external engine for new session, falling back to native');
-            }
-          }
-          return session;
-        }
-        return null;
-      } catch (error) {
-        logger.error('Failed to create session', error);
-        set({
-          error: error instanceof Error ? error.message : 'Failed to create session',
-          isLoading: false
-        });
-        return null;
+        set({ isCreatingSession: false });
       }
     },
 

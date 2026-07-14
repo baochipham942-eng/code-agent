@@ -376,6 +376,36 @@ export function getRuntimeInputQueuedMessage(mode: RuntimeInputMode): string {
     : '已排队，本轮回复结束后作为下一条发送。';
 }
 
+/**
+ * Resolve the session a send should bind to.
+ * Awaits in-flight createSession so messages land on the new session the user just requested,
+ * not the pre-create currentSessionId (cancel-chain B4 race).
+ */
+export async function resolveEffectiveSessionIdForSend(input: {
+  envelopeSessionId?: string | null;
+  getCurrentSessionId: () => string | null;
+  getPendingSessionCreate: () => Promise<{ id: string } | null> | null;
+  createFallbackSession: () => Promise<{ id: string } | null>;
+  now?: () => number;
+}): Promise<string> {
+  const pendingCreate = input.getPendingSessionCreate();
+  if (pendingCreate) {
+    await pendingCreate;
+  }
+
+  let effectiveSessionId = input.envelopeSessionId ?? input.getCurrentSessionId();
+  if (!effectiveSessionId) {
+    const created = await input.createFallbackSession();
+    if (created) {
+      effectiveSessionId = created.id;
+    } else {
+      const tempId = `web-session-${(input.now ?? Date.now)()}`;
+      effectiveSessionId = tempId;
+    }
+  }
+  return effectiveSessionId;
+}
+
 export interface QueuedRuntimeInput {
   id: string;
   sessionId: string;
@@ -553,22 +583,27 @@ export function useAgentIPC({
         return;
       }
 
-      // 没有会话时自动创建一个（web 模式下数据库可能未初始化，使用临时会话）
-      let effectiveSessionId = envelope.sessionId ?? currentSessionId;
-      if (!effectiveSessionId) {
-        logger.warn('sendMessage - no current session, creating fallback');
-        const sessionStore = useSessionStore.getState();
-        const created = await sessionStore.createSession('新对话');
-        if (created) {
-          effectiveSessionId = created.id;
-        } else {
-          // 数据库不可用时，设置一个临时 sessionId 让消息流程继续
-          const tempId = `web-session-${Date.now()}`;
-          logger.warn('sendMessage - session creation failed, using temp sessionId', { tempId });
-          useSessionStore.setState({ currentSessionId: tempId });
-          effectiveSessionId = tempId;
-        }
+      // 建会话竞态：点「新会话」后 create 尚未完成时，composer 仍挂在旧 currentSessionId。
+      // await 进行中的 create 并把消息绑到新会话；运行会话 = composer 会话重新成立。
+      if (useSessionStore.getState().getPendingSessionCreate()) {
+        logger.info('sendMessage - awaiting in-flight session create before bind');
       }
+      let effectiveSessionId = await resolveEffectiveSessionIdForSend({
+        envelopeSessionId: envelope.sessionId,
+        getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
+        getPendingSessionCreate: () => useSessionStore.getState().getPendingSessionCreate(),
+        createFallbackSession: async () => {
+          logger.warn('sendMessage - no current session, creating fallback');
+          const created = await useSessionStore.getState().createSession('新对话');
+          if (!created) {
+            const tempId = `web-session-${Date.now()}`;
+            logger.warn('sendMessage - session creation failed, using temp sessionId', { tempId });
+            useSessionStore.setState({ currentSessionId: tempId });
+            return { id: tempId };
+          }
+          return created;
+        },
+      });
 
       const swarmState = useSwarmStore.getState();
       const sessionSnapshot = swarmState.activeSessionId === effectiveSessionId && swarmState.activeRunId
@@ -885,12 +920,19 @@ export function useAgentIPC({
         });
         markLatestUserMessageRunCancelled(Date.now());
       }
-      await ipcService.invoke('agent:cancel', targetSessionId ? { sessionId: targetSessionId } : undefined);
-      // 按会话清除处理状态
+      const cancelResult = await ipcService.invoke(
+        'agent:cancel',
+        targetSessionId ? { sessionId: targetSessionId } : undefined,
+      ) as { message?: string } | undefined;
+      // Honest settle: only mark cancelled when route confirmed terminal.
+      // cancel_requested (202 / timeout) keeps 'cancelling' so UI does not lie.
+      const confirmed = cancelResult?.message !== 'cancel_requested';
       if (targetSessionId) {
-        useTaskStore.getState().updateSessionState(targetSessionId, { status: 'cancelled' });
-        setSessionProcessing(targetSessionId, false);
-      } else {
+        if (confirmed) {
+          useTaskStore.getState().updateSessionState(targetSessionId, { status: 'cancelled' });
+          setSessionProcessing(targetSessionId, false);
+        }
+      } else if (confirmed) {
         setIsProcessing(false);
       }
     } catch (error) {

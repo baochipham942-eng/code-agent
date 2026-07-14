@@ -75,7 +75,7 @@ import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { RunRegistry } from '../runtime/runRegistry';
 import type { DurableRunReadService } from './durableRunReadService';
 import { listTasks } from '../services/planning/taskStore';
-import { upgradeLegacyAnchor } from '../artifact/artifactLocatorHost';
+import { upgradeLegacyAnchor } from '../tools/artifacts/artifactLocatorHost';
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
   return status === 'running'

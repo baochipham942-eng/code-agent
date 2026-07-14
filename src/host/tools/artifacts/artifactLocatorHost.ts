@@ -11,14 +11,14 @@
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import type { Message, ToolCall } from '../../shared/contract';
+import type { Message, ToolCall } from '../../../shared/contract';
 import {
   slideIndexFromPartName,
   validateArtifactLocatorV1,
   type ArtifactLocatorV1,
   type ArtifactRevision,
-} from '../../shared/contract/artifactLocator';
-import { locatorFromLegacyAnchor, type LocalityAnchor } from '../../shared/livePreview/localityFeedback';
+} from '../../../shared/contract/artifactLocator';
+import { locatorFromLegacyAnchor, type LocalityAnchor } from '../../../shared/livePreview/localityFeedback';
 
 /** locator 授权的工具面（ADR-040 D4 首批）：Excel cell/range、Word paragraph、PPT 页内 replace。 */
 const LOCATOR_GUARDED_TOOLS = new Set(['docedit', 'ppt_edit']);

@@ -26,7 +26,7 @@ import {
   getArtifactLocatorPreflightBlock,
   upgradeLegacyAnchor,
   LOCATOR_BLOCK_CODE,
-} from '../../../src/host/artifact/artifactLocatorHost';
+} from '../../../src/host/tools/artifacts/artifactLocatorHost';
 import type { Message } from '../../../src/shared/contract';
 import type { ArtifactLocatorV1 } from '../../../src/shared/contract/artifactLocator';
 
@@ -257,7 +257,7 @@ describe('写前 guard：PPT 页坐标（locator 由 C1/C3 生产，guard 先总
     await writeFile(filePath, 'not-a-real-pptx');
     const locator = { ...pptLocator('ppt/slides/slide7.xml', 1) };
     locator.artifact.filePath = filePath;
-    const { computeArtifactRevision } = await import('../../../src/host/artifact/artifactLocatorHost');
+    const { computeArtifactRevision } = await import('../../../src/host/tools/artifacts/artifactLocatorHost');
     locator.artifact.revision = await computeArtifactRevision(filePath);
 
     const block = await getArtifactLocatorPreflightBlock(
@@ -273,7 +273,7 @@ describe('写前 guard：PPT 页坐标（locator 由 C1/C3 生产，guard 先总
     await writeFile(filePath, 'not-a-real-pptx');
     const locator = { ...pptLocator('ppt/slides/slide7.xml', 1) };
     locator.artifact.filePath = filePath;
-    const { computeArtifactRevision } = await import('../../../src/host/artifact/artifactLocatorHost');
+    const { computeArtifactRevision } = await import('../../../src/host/tools/artifacts/artifactLocatorHost');
     locator.artifact.revision = await computeArtifactRevision(filePath);
 
     const block = await getArtifactLocatorPreflightBlock(

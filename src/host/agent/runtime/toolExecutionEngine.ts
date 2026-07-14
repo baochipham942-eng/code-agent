@@ -71,7 +71,7 @@ import {
   recordSearchCandidatesFromResult,
   semanticProgressReasonForToolCall,
 } from './toolPreflightGuards';
-import { getArtifactLocatorPreflightBlock } from '../../artifact/artifactLocatorHost';
+import { getArtifactLocatorPreflightBlock } from '../../tools/artifacts/artifactLocatorHost';
 
 const logger = createLogger('AgentLoop');
 

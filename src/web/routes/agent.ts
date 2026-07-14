@@ -39,7 +39,7 @@ import {
   AgentToolResultBodySchema,
 } from './agentBodySchemas';
 import { registerAgentLifecycleControlRoutes } from './agentLifecycleControls';
-import { upgradeLegacyAnchor } from '../../host/artifact/artifactLocatorHost';
+import { upgradeLegacyAnchor } from '../../host/tools/artifacts/artifactLocatorHost';
 import type {
   AgentSessionManagerLike,
   SupabaseAgentBinding,

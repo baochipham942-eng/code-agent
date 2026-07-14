@@ -46,7 +46,7 @@ jobs:
       - name: Build native helpers + fetch sidecars (x86_64)
         # SWIFT_BUILD_ARCH=x86_64：强制 swift sidecar 编 x86_64 且 audio 取 macOS 13.0 地板
         # （SCStream/capturesAudio 下限；macOS 26 已弃 Intel，13.0 是 Intel 可用区间）。
-        # fetch-rtk/uv 在 Intel host 上 uname -m=x86_64，自动拉 x86_64 资产。
+        # fetch-rtk/uv/poppler 在 Intel host 上 uname -m=x86_64，自动产出 x86_64 资产。
         env:
           SWIFT_BUILD_ARCH: x86_64
         run: |
@@ -55,6 +55,7 @@ jobs:
           bash scripts/build-vision-tagger.sh
           bash scripts/fetch-rtk.sh
           bash scripts/fetch-uv.sh
+          bash scripts/fetch-poppler.sh
 
       - name: Fetch prebuilt CUA driver (Agent Neo Computer Use.app)
         # 重签产物（universal）托管在发版 OSS assets/cua-driver/，sha256 锁定。

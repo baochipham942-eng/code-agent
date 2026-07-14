@@ -251,6 +251,39 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).not.toContain('\t');
   });
 
+  it('builds the bundled poppler resource on both macOS architectures before Tauri packaging', () => {
+    const resources = readTauriResources();
+    expect(resources.map['../scripts/poppler']).toBe('scripts/poppler');
+
+    const workflowCases = [
+      {
+        path: '.github/workflows/release.yml',
+        job: 'build-mac',
+        prepareStep: 'Build native helpers + fetch sidecars (Tauri bundle resources)',
+        buildStep: 'Build signed Tauri updater bundle',
+      },
+      {
+        path: '.github/workflows/build-x64-test.yml',
+        job: 'build-x64-test',
+        prepareStep: 'Build native helpers + fetch sidecars (x86_64)',
+        buildStep: 'Build signed + notarized x64 bundle',
+      },
+    ] as const;
+
+    for (const workflowCase of workflowCases) {
+      const workflow = readWorkflow(workflowCase.path);
+      const steps = workflow.jobs?.[workflowCase.job]?.steps ?? [];
+      const prepareIndex = steps.findIndex((step) => step.name === workflowCase.prepareStep);
+      const buildIndex = steps.findIndex((step) => step.name === workflowCase.buildStep);
+      const prepareRun = steps[prepareIndex]?.run ?? '';
+
+      expect(prepareIndex, `${workflowCase.path} must prepare macOS bundle resources`).toBeGreaterThanOrEqual(0);
+      expect(prepareRun, `${workflowCase.path} must generate scripts/poppler on a fresh checkout`)
+        .toContain('bash scripts/fetch-poppler.sh');
+      expect(buildIndex, `${workflowCase.path} must package only after poppler exists`).toBeGreaterThan(prepareIndex);
+    }
+  });
+
   it('keeps formal app releases fail-closed before app artifacts are published', () => {
     const workflow = readWorkflow('.github/workflows/release.yml');
     // 双架构（2026-06-10 起）：构建在 build-mac 矩阵，发布收口在 publish 任务。

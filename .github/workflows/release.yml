@@ -92,13 +92,13 @@ jobs:
 
       - name: Build native helpers + fetch sidecars (Tauri bundle resources)
         # tauri.conf.json bundles three Swift Mach-O helpers (system-audio-capture, vision-ocr,
-        # vision-tagger) AND fetched sidecar binaries (rtk, uv) AND the resigned CUA app. All are
+        # vision-tagger) AND fetched sidecar binaries (rtk, uv, poppler) AND the resigned CUA app. All are
         # build artifacts NOT committed to the repo. A fresh CI checkout must produce every one or
         # `tauri build` fails with "resource path doesn't exist" — this is exactly why v0.16.89
         # (2026-06-01) failed: rtk/uv were added to bundle resources after the last green run but
         # this step was never updated to fetch them.
         # SWIFT_BUILD_ARCH 按矩阵显式指定（x64 同时把 audio 地板降到 macOS 13.0，Intel 可用区间）；
-        # fetch-rtk/uv 按 runner 的 uname -m 自动拉对应架构资产。
+        # fetch-rtk/uv/poppler 按 runner 的 uname -m 自动产出对应架构资产。
         env:
           SWIFT_BUILD_ARCH: ${{ matrix.swift_arch }}
         run: |
@@ -107,6 +107,7 @@ jobs:
           bash scripts/build-vision-tagger.sh
           bash scripts/fetch-rtk.sh
           bash scripts/fetch-uv.sh
+          bash scripts/fetch-poppler.sh
           # CUA 重签产物（universal）：从发版 OSS 拉预构建 + sha256 锁定。
           # 源 app 上游无公开 release，CI 不依赖本机源（避免复刻 v0.16.89 rtk/uv 之坑）
           CUA_FETCH_PREBUILT=1 bash scripts/fetch-cua-driver.sh

@@ -54,7 +54,7 @@ import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
 import type { AppSettings, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
 import type { PromptRewindResult } from '@shared/contract/appService';
-import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
+import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -189,7 +189,16 @@ export const ChatView: React.FC = () => {
   messagesRef.current = messages;
   useEffect(() => {
     messageActionRegister(
-      (content: string) => sendMessage(buildEnvelope(content)),
+      (content: string, context?: Pick<ConversationEnvelopeContext, 'localityAnchor'>) => {
+        const envelope = buildEnvelope(content);
+        // ADR-040：定点反馈的结构化锚点并进 composer context，host 侧补 revision 后
+        // 落 user message metadata，供写前 guard 对账。不带锚点时 envelope 一字不变。
+        return sendMessage(
+          context?.localityAnchor
+            ? { ...envelope, context: { ...envelope.context, localityAnchor: context.localityAnchor } }
+            : envelope,
+        );
+      },
       () => messagesRef.current,
     );
     return () => messageActionUnregister();

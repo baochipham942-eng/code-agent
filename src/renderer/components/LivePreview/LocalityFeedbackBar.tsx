@@ -27,7 +27,9 @@ export const LocalityFeedbackBar: React.FC<Props> = ({ anchor, locationLabel }) 
     if (!feedback || sending) return;
     setSending(true);
     try {
-      await sendPrompt(buildLocalityFeedbackMessage(anchor, feedback));
+      // 文本给模型读，锚点给写前 guard 对账（ADR-040）。renderer 只报它诚实知道的
+      // 坐标，revision 由 host 读源文件现算——这边送什么 revision 上去都不作数。
+      await sendPrompt(buildLocalityFeedbackMessage(anchor, feedback), { localityAnchor: anchor });
       setText('');
     } finally {
       setSending(false);

@@ -71,6 +71,7 @@ import {
   recordSearchCandidatesFromResult,
   semanticProgressReasonForToolCall,
 } from './toolPreflightGuards';
+import { getArtifactLocatorPreflightBlock } from '../../artifact/artifactLocatorHost';
 
 const logger = createLogger('AgentLoop');
 
@@ -685,6 +686,21 @@ export class ToolExecutionEngine {
         error: searchToReadBlock.error,
         duration: Date.now() - startTime,
         metadata: searchToReadBlock.metadata,
+      };
+      return emitBlockedToolResult(blockedResult);
+    }
+
+    // ADR-040：用户点了预览定点反馈时，写工具的目标必须等于 resolver 结果。
+    // 文件被外部改过（revision 漂移）或模型换了坐标，一律不执行——写完再发现改错，
+    // 对看不懂文档结构的协作者等于没救。
+    const locatorBlock = await getArtifactLocatorPreflightBlock(this.ctx, toolCall);
+    if (locatorBlock) {
+      const blockedResult: ToolResult = {
+        toolCallId: toolCall.id,
+        success: false,
+        error: locatorBlock.error,
+        duration: Date.now() - startTime,
+        metadata: locatorBlock.metadata,
       };
       return emitBlockedToolResult(blockedResult);
     }

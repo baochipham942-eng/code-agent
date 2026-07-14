@@ -8,12 +8,19 @@
 
 import { create } from 'zustand';
 import type { Message } from '@shared/contract';
+import type { ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { useSessionStore } from './sessionStore';
 import { toast } from '../hooks/useToast';
 
-type SendFn = (content: string) => void | Promise<void>;
+/**
+ * ADR-040：定点反馈要把结构化锚点和文本一起送出，所以发送口带 context。
+ * 锚点走 envelope.context（host 补 revision 后落 message metadata），文本仍走 content——
+ * 两者内容一致但用途不同：文本给模型读，锚点给写前 guard 对账。
+ */
+type SendContext = Pick<ConversationEnvelopeContext, 'localityAnchor'>;
+type SendFn = (content: string, context?: SendContext) => void | Promise<void>;
 
 interface MessageActionState {
   /** Registered send function (set by ChatView) */
@@ -26,7 +33,7 @@ interface MessageActionState {
   /** Unregister on unmount */
   unregister: () => void;
   /** Send a plain prompt through the registered chat sender. */
-  sendPrompt: (content: string) => Promise<void>;
+  sendPrompt: (content: string, context?: SendContext) => Promise<void>;
 
   /** Edit a user message: 截断被编辑消息及其后历史，再用新内容重发（真替换，非追加） */
   editMessage: (messageId: string, newContent: string) => void | Promise<void>;
@@ -45,10 +52,10 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
   register: (send, getMessages) => set({ _send: send, _getMessages: getMessages }),
   unregister: () => set({ _send: null, _getMessages: null }),
 
-  sendPrompt: async (content: string) => {
+  sendPrompt: async (content: string, context?: SendContext) => {
     const { _send } = get();
     if (!_send) return;
-    await _send(content);
+    await _send(content, context);
   },
 
   editMessage: async (messageId: string, newContent: string) => {

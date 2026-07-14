@@ -39,6 +39,7 @@ import {
   AgentToolResultBodySchema,
 } from './agentBodySchemas';
 import { registerAgentLifecycleControlRoutes } from './agentLifecycleControls';
+import { upgradeLegacyAnchor } from '../../host/artifact/artifactLocatorHost';
 import type {
   AgentSessionManagerLike,
   SupabaseAgentBinding,
@@ -567,22 +568,29 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
       const msgId = clientMessageId || `msg-${Date.now()}`;
+      // ADR-040：renderer 只报它诚实知道的坐标，revision 在这里读源文件现算。
+      // 升不上去（PPT / 缺 sheetName / 文件读不到）就没有 locator，退回 legacy 行为。
+      const artifactLocator = body.context?.localityAnchor
+        ? await upgradeLegacyAnchor(body.context.localityAnchor)
+        : null;
       const userMsg: CachedMessage & { role: 'user' } = {
         id: msgId,
         role: 'user' as const,
         content: visiblePrompt,
         timestamp: Date.now(),
         attachments: persistedAttachments,
+        ...(artifactLocator ? { metadata: { artifactLocator } } : {}),
       };
 
       // 加载历史消息 + 当前用户消息
       const cachedHistory = await sessionStore.loadSessionHistoryForRun(sessionId);
-      const history = cachedHistory.map(({ id, role, content, timestamp, attachments }) => ({
+      const history = cachedHistory.map(({ id, role, content, timestamp, attachments, metadata }) => ({
         id,
         role: role as 'user' | 'assistant',
         content: stripInlineAttachmentBlocks(content),
         timestamp,
         attachments: sanitizeAttachmentsForPersistence(attachments),
+        metadata,
       }));
       const messages = [...history, userMsg] as import('../../shared/contract').Message[];
 

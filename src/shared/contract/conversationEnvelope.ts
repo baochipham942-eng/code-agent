@@ -1,6 +1,7 @@
 import type { MessageAttachment } from './message';
 import type { AppServiceRunOptions } from './appService';
 import type { SelectedElementInfo } from '../livePreview/protocol';
+import type { LocalityAnchor } from '../livePreview/localityFeedback';
 import type { ManagedBrowserProfileMode } from './desktop';
 import type { DesignBrief } from './designBrief';
 import type { DesignAcceptanceContract } from './designAcceptanceContract';
@@ -118,6 +119,13 @@ export interface ConversationEnvelopeContext {
   // 用于下游 visual_edit 等工具的 grounding。main 侧消费链路分步接入；
   // 本字段非空仅表示 composer 侧已把当前 selection 随 envelope 带出。
   livePreviewSelection?: SelectedElementInfo | null;
+  /**
+   * ADR-040：用户在 PPT/表格预览里点选的产物位置。这里只带 renderer 能诚实知道的东西
+   * （文件路径 + 领域原生坐标），**不带 revision**——revision 必须由 host 读源文件现算，
+   * renderer 送上来的任何 revision 都不算数。host 侧升级为 ArtifactLocatorV1 后写入
+   * user message metadata，作为写前 guard 的坐标真源。
+   */
+  localityAnchor?: LocalityAnchor;
 }
 
 export interface ConversationEnvelope {

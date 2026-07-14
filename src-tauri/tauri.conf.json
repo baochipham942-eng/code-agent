@@ -44,6 +44,7 @@
     ],
     "resources": {
       "../dist/web/webServer.cjs": "dist/web/webServer.cjs",
+      "../dist/web/webServer.bundle.cjs": "dist/web/webServer.bundle.cjs",
       "../dist/web/control-plane-public-keys.json": "dist/web/control-plane-public-keys.json",
       "../dist/native": "dist/native",
       "../dist/bundled-node": "dist/bundled-node",

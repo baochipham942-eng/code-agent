@@ -377,9 +377,8 @@ async function initializeServices(): Promise<void> {
   // 设置环境
   process.env.CODE_AGENT_CLI_MODE = 'true';
   process.env.CODE_AGENT_WEB_MODE = 'true';
-  loadShellEnvironment();
-
   const initialDataDir = resolveCodeAgentDataDir();
+  loadShellEnvironment({ dataDir: initialDataDir });
 
   // 加载 .env 文件（确保 API Key、HTTPS_PROXY 等环境变量可用）
   // 优先级：显式数据目录 .env → ~/.code-agent/.env（用户态，打包态主路径）→ 脚本所在目录 → 上级目录（开发态）

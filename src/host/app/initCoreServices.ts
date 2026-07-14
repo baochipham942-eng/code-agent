@@ -24,7 +24,7 @@ const logger = createLogger('Bootstrap:Core');
  */
 export async function initializeCoreServices(): Promise<ConfigService> {
   // Capture shell environment before anything else (for PATH resolution)
-  loadShellEnvironment();
+  loadShellEnvironment({ dataDir: app.getPath('userData') });
 
   const startTime = Date.now();
 

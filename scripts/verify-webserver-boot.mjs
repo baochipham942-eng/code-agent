@@ -25,21 +25,22 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Libraries that MUST end up bundled into dist/web/webServer.cjs (they are NOT
+// Libraries that MUST end up bundled into dist/web/webServer.bundle.cjs (they are NOT
 // shipped as Tauri app resources — see src-tauri/tauri.conf.json `resources`).
 // If any is accidentally left in NATIVE_EXTERNALS (esbuild.config.ts), the
 // packaged app crashes at boot.
 const MUST_BE_BUNDLED = ['pdfkit', 'pptxgenjs', 'mammoth', 'exceljs', 'qrcode'];
 
 const BUNDLE = 'dist/web/webServer.cjs';
+const PAYLOAD = 'dist/web/webServer.bundle.cjs';
 
-if (!existsSync(BUNDLE)) {
-  console.error(`✗ ${BUNDLE} not found — run \`npm run build:web\` first.`);
+if (!existsSync(BUNDLE) || !existsSync(PAYLOAD)) {
+  console.error(`✗ ${BUNDLE} or ${PAYLOAD} not found — run \`npm run build:web\` first.`);
   process.exit(1);
 }
 
 // ── Layer 1: static — no external require of a must-bundle lib ───────────────
-const src = readFileSync(BUNDLE, 'utf8');
+const src = readFileSync(PAYLOAD, 'utf8');
 // esbuild emits an unbundled (external) require as `require("name")` with double
 // quotes. Single-quoted occurrences come from embedded source-string templates
 // (e.g. PPT scaffold code-gen) and are NOT real external requires, so match only

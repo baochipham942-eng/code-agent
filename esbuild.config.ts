@@ -15,7 +15,7 @@
 
 import * as esbuild from 'esbuild';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { mkdirSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
@@ -160,6 +160,11 @@ function writeControlPlanePublicKeysFile(): void {
   console.log(`  ✓ Control plane public keys → dist/web/control-plane-public-keys.json (${Object.keys(keys).length} key(s))`);
 }
 
+function writeWebServerArtifacts(): void {
+  copyFileSync('src/web/webServerBootstrap.cjs', 'dist/web/webServer.cjs');
+  writeControlPlanePublicKeysFile();
+}
+
 function runGameSkillContentCodegen(): void {
   execFileSync(process.execPath, ['scripts/generate-game-skill-content.mjs'], {
     cwd: process.cwd(),
@@ -211,13 +216,13 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
     web: {
       name: 'Web Server',
       entry: 'src/web/webServer.ts',
-      outfile: 'dist/web/webServer.cjs',
+      outfile: 'dist/web/webServer.bundle.cjs',
       format: 'cjs',
       external: NATIVE_EXTERNALS,
       alias: BUILD_ALIAS,
       minify: !isDev,
       sourcemap: isDev,
-      postBuild: writeControlPlanePublicKeysFile,
+      postBuild: writeWebServerArtifacts,
     },
     mcp: {
       name: 'MCP Server',

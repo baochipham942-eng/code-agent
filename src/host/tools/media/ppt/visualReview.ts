@@ -13,6 +13,7 @@ import { createLogger } from '../../../services/infra/logger';
 import type { ReviewResult, FixSuggestion, VlmCallback, ReviewDimensionType } from './types';
 import { REVIEW_DIMENSION_WEIGHTS } from './types';
 import { LIBREOFFICE_SEARCH_PATHS, LIBREOFFICE_PATH_ENV, CONVERT_TIMEOUTS, PDF_RENDER } from './constants';
+import { resolveHelperBinary } from '../../../runtime/runtimeAssetResolver';
 
 const logger = createLogger('VisualReview');
 
@@ -133,8 +134,26 @@ export function collectPageImages(outputDir: string, baseName: string): string[]
 }
 
 /**
+ * 解析 pdftoppm — 优先随包的 sidecar（scripts/poppler/bin/pdftoppm，见 fetch-poppler.sh），
+ * 回落到系统 PATH。
+ *
+ * 随包优先是为了消灭「用户机上没装 poppler → 整份 deck 只出 1 张 qlmanage 缩略图 →
+ * 第 2 页起根本选不了」这条降级（ADR-040 D3）。开发机上通常两者都有，此时用随包的
+ * 那份，保证开发看到的行为与用户一致。
+ */
+export function resolvePdftoppm(): string | null {
+  const bundled = resolveHelperBinary(path.join('poppler', 'bin', 'pdftoppm'));
+  if (bundled && fs.existsSync(bundled)) return bundled;
+  try {
+    return execSync('which pdftoppm', { encoding: 'utf8' }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * PDF → 每页 PNG
- * macOS 优先使用 automator/qlmanage，降级到 ImageMagick
+ * 优先 poppler(pdftoppm)，降级 ImageMagick，最后 qlmanage 单页
  */
 async function pdfToImages(
   pdfPath: string,
@@ -143,9 +162,10 @@ async function pdfToImages(
 ): Promise<string[]> {
   // 尝试 poppler (pdftoppm) — 最可靠，输出 JPEG 减小体积
   try {
-    execSync('which pdftoppm', { encoding: 'utf8' });
+    const pdftoppm = resolvePdftoppm();
+    if (!pdftoppm) throw new Error('pdftoppm not found');
     execSync(
-      `pdftoppm -jpeg -jpegopt quality=${PDF_RENDER.QUALITY} -r ${PDF_RENDER.DPI} "${pdfPath}" "${path.join(outputDir, baseName)}"`,
+      `"${pdftoppm}" -jpeg -jpegopt quality=${PDF_RENDER.QUALITY} -r ${PDF_RENDER.DPI} "${pdfPath}" "${path.join(outputDir, baseName)}"`,
       { timeout: CONVERT_TIMEOUTS.PDFTOPPM, encoding: 'utf8' }
     );
     // pdftoppm 输出 baseName-01.jpg, baseName-02.jpg, ...（补零，1-based）

@@ -15,13 +15,24 @@ export type ExampleType =
   | 'plan_mode'
   | 'code_review'
   | 'git_commit'
-  | 'file_edit';
+  | 'file_edit'
+  | 'ppt_creation';
+
+/**
+ * 示例所属领域
+ *
+ * Neo 是产物为主轴的 cowork 产品，默认用户是非程序员协作者。「帮我做份营销方案 PPT」
+ * 的范本不该是「先探索代码库、分五个 Phase 编码」。domain 让两类示例互不串台，
+ * 选择逻辑见 selectRelevantExamples。
+ */
+export type ExampleDomain = 'code' | 'artifact';
 
 /**
  * Few-shot 示例定义
  */
 export interface FewShotExample {
   type: ExampleType;
+  domain: ExampleDomain;
   title: string;
   userPrompt: string;
   assistantResponse: string;
@@ -46,6 +57,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
   // ----------------------------------------------------------------------------
   {
     type: 'parallel_dispatch',
+    domain: 'code',
     title: '多维度安全审计',
     userPrompt: '对项目进行全面的安全审计',
     assistantResponse: `我将从多个维度并行审计，使用 AgentSpawn 并行派发 4 个 reviewer 子代理：
@@ -63,6 +75,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
   },
   {
     type: 'parallel_dispatch',
+    domain: 'code',
     title: '代码质量多维度分析',
     userPrompt: '分析这个模块的代码质量',
     assistantResponse: `我将用 AgentSpawn 并行派发 3 个子代理分析代码质量：
@@ -83,6 +96,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
   // ----------------------------------------------------------------------------
   {
     type: 'subagent_delegation',
+    domain: 'code',
     title: '代码探索委派',
     userPrompt: '帮我找到所有处理用户认证的代码',
     assistantResponse: `这需要广泛搜索代码库，我委派一个 explore 子代理来处理。
@@ -95,6 +109,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
   },
   {
     type: 'subagent_delegation',
+    domain: 'code',
     title: '架构分析委派',
     userPrompt: '分析这个项目的整体架构',
     assistantResponse: `架构分析需要全局视角，我委派一个 plan 子代理进行深度探索。
@@ -111,6 +126,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
   // ----------------------------------------------------------------------------
   {
     type: 'error_recovery',
+    domain: 'code',
     title: '工具失败后的恢复',
     userPrompt: '（接上文，Edit 失败）',
     assistantResponse: `Edit 失败了，文件内容与预期不符。恢复步骤：
@@ -129,6 +145,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
   // ----------------------------------------------------------------------------
   {
     type: 'plan_mode',
+    domain: 'code',
     title: 'Plan Mode 执行流程',
     userPrompt: '帮我实现一个新的用户管理功能',
     assistantResponse: `这是一个复杂任务，我将分阶段执行：
@@ -149,6 +166,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
   // ----------------------------------------------------------------------------
   {
     type: 'git_commit',
+    domain: 'code',
     title: '规范的 Git 提交',
     userPrompt: '提交刚才的修改',
     assistantResponse: `先用 bash 运行 git status 查看变更文件列表。
@@ -167,6 +185,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
   // ----------------------------------------------------------------------------
   {
     type: 'file_edit',
+    domain: 'code',
     title: '精确编辑代码文件',
     userPrompt: '在 AuthService 中添加 logout 方法',
     assistantResponse: `先用 Read 读取 authService.ts 确认当前内容和插入位置。
@@ -178,6 +197,38 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 只修改需要变更的部分，不重写整个文件。`,
     tokens: estimateTokens(`先用 Read 读取文件确认当前内容。然后用 Edit 精确插入方法。只修改需要变更的部分，不重写整个文件。`),
     tags: ['edit', 'file'],
+  },
+
+  // ----------------------------------------------------------------------------
+  // 产物示例（domain: 'artifact'）
+  //
+  // 非程序员协作者的行为范本，开场是：先落一版产物、把假设摆明、让人改，
+  // 而不是先探索代码库、也不是先分五个 Phase。
+  //
+  // 目前只有 PPT 一条。做表 / 写报告 / 做设计三条已写好但被撤下——它们依赖的
+  // isExcelTask / isDocumentTask / isImageTask 检测靠裸英文词做子串匹配，与代码
+  // 标识符全面碰撞，接上去会把编程 prompt 从「无示例」变成「错示例」。原文与证据见
+  // specs/2026-07-14-artifact-intent-detection-signal-strength.md。
+  //
+  // ⚠️ tags / typeKeywords 只用具体产物名词（ppt / 演示稿），绝不用意图动词
+  // （设计 / 规划 / 方案 / design / plan）。getTaskDescriptionFromFeatures 给编程任务
+  // 生成的描述串里含 'plan design' 等词，产物示例一旦用这些词当标签，就会反过来劫持
+  // 编程任务的示例选择。
+  // ----------------------------------------------------------------------------
+  {
+    type: 'ppt_creation',
+    domain: 'artifact',
+    title: '做演示稿',
+    userPrompt: '帮我做一份 Q3 营销方案的 PPT',
+    assistantResponse: `我先把骨架搭出来给你看，不确定的地方我按常见做法假设，你直接改。
+
+**我的假设**（不对就说）：内部季度汇报、10 页左右、主线走 Q3 目标 → 现状差距 → 打法 → 预算排期 → 衡量指标。
+
+[调用 Skill 工具，command="frontend-slides"，args="Q3 营销方案，10 页，企业汇报风格"，先产出 outline.md 和逐页 prompts]
+
+outline 出来我先贴给你确认主线，再合成 PPTX。**手上有 Q3 目标数字或上季度数据就发我**——没有的话我会在页面上标「示例数据」，不编造。`,
+    tokens: estimateTokens(`我先把骨架搭出来给你看，不确定的地方按常见做法假设，你直接改。我的假设：内部季度汇报、10 页、主线 Q3 目标→现状差距→打法→预算排期→指标。[Skill command=frontend-slides] 先产出 outline.md 再合成 PPTX。有数据发我，没有我标示例数据，不编造。`),
+    tags: ['ppt', '演示稿', 'slides'],
   },
 ];
 
@@ -236,6 +287,8 @@ export function selectRelevantExamples(
       code_review: ['审查', '审计', 'review', 'audit'],
       git_commit: ['提交', 'commit', 'git'],
       file_edit: ['修改', '编辑', 'edit', 'change'],
+      // 产物类：只用具体产物名词，理由见上方产物示例区的注释
+      ppt_creation: ['ppt', '演示稿', '幻灯片'],
     };
 
     const keywords = typeKeywords[example.type] || [];
@@ -248,10 +301,18 @@ export function selectRelevantExamples(
     return { example, score };
   });
 
+  const hits = scored.filter((s) => s.score > 0);
+
+  // 产物任务不拿编程示例当范本：命中任一产物示例时，编程示例整体退出候选。
+  // 只靠分数排序不够——maxExamples 默认 2，plan_mode 这类通用编程示例（tag 'plan' 恒中）
+  // 会稳稳占住第二个坑位，「帮我做份 PPT」照样被喂一份「分五个 Phase 编码」的范本。
+  // ponytail: 上限是 detectTaskFeatures 的子串匹配误判——'实现 image 上传功能' 会被判成
+  // 产物任务而拿到设计示例。要根治得给 detectTaskFeatures 加词边界，那是另一个工单的面。
+  const artifactHits = hits.filter((s) => s.example.domain === 'artifact');
+  const pool = artifactHits.length > 0 ? artifactHits : hits;
+
   // 按分数排序并选择
-  const sorted = scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score);
+  const sorted = pool.sort((a, b) => b.score - a.score);
 
   const selected: FewShotExample[] = [];
   let totalTokens = 0;

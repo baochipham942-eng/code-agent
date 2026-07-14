@@ -119,7 +119,7 @@ describe('createServeRequestHandler', () => {
     expect(mocks.createAgentLoop).not.toHaveBeenCalled();
   });
 
-  it('streams run events, exposes running status, rejects concurrent runs, and reports cancel requests', async () => {
+  it('streams run events, exposes running status, rejects concurrent runs, and dispatches cancel requests', async () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
     let finishRun!: () => void;
     const runGate = new Promise<void>((resolve) => {
@@ -131,11 +131,15 @@ describe('createServeRequestHandler', () => {
     mocks.createCLIAgent.mockResolvedValue({
       getConfig: () => ({ model: 'agent-config' }),
     });
+    const cancel = vi.fn(async () => {
+      finishRun();
+    });
     mocks.createAgentLoop.mockImplementation((_config: unknown, emit: (event: { type: string; data: unknown }) => void) => ({
       run: vi.fn(async (prompt: string) => {
         emit({ type: 'message', data: { prompt, text: 'started' } });
         await run(prompt);
       }),
+      cancel,
     }));
     await startServeApi({
       project: '/global-project',
@@ -178,22 +182,23 @@ describe('createServeRequestHandler', () => {
       taskId: 'task-1000',
     });
 
-    const cancel = await fetch(`${baseUrl}/api/cancel`, { method: 'POST' });
-    expect(cancel.status).toBe(200);
-    expect(await readJson(cancel)).toEqual({
-      message: 'Cancel requested',
+    const cancelResponse = await fetch(`${baseUrl}/api/cancel`, { method: 'POST' });
+    expect(cancelResponse.status).toBe(202);
+    expect(await readJson(cancelResponse)).toEqual({
+      message: 'cancel_requested',
       taskId: 'task-1000',
     });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledWith('user');
 
     nowSpy.mockReturnValue(1500);
-    finishRun();
     const streamText = await runResponse.text();
     expect(streamText).toContain('event: task_start');
     expect(streamText).toContain('data: {"taskId":"task-1000","prompt":"build endpoint tests"}');
     expect(streamText).toContain('event: message');
     expect(streamText).toContain('data: {"prompt":"build endpoint tests","text":"started"}');
-    expect(streamText).toContain('event: task_complete');
-    expect(streamText).toContain('data: {"taskId":"task-1000","duration":500}');
+    expect(streamText).toContain('event: task_cancelled');
+    expect(streamText).toContain('data: {"taskId":"task-1000","duration":250}');
     expect(run).toHaveBeenCalledWith('build endpoint tests');
 
     const idle = await fetch(`${baseUrl}/api/status`);

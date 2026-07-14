@@ -3,7 +3,7 @@
 // Skill Registry 收录流水线：钉 SHA + 算 hash + 结构扫描 → 输出 registry 条目 JSON
 //
 // 用法:
-//   node scripts/skill-registry-pin.mjs \
+//   node scripts/security/skill-registry-pin.mjs \
 //     --repo owner/repo [--ref main] [--path skills] \
 //     --skills dir-a,dir-b [--commands cmds/x.md] \
 //     --name my-plugin [--display-name 显示名] [--description 描述] \
@@ -47,7 +47,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  return 'Usage: node scripts/skill-registry-pin.mjs --repo owner/repo --skills dir-a,dir-b --name my-plugin [--ref main] [--path sub] [--out entry.json]';
+  return 'Usage: node scripts/security/skill-registry-pin.mjs --repo owner/repo --skills dir-a,dir-b --name my-plugin [--ref main] [--path sub] [--out entry.json]';
 }
 
 function parseRepo(input) {

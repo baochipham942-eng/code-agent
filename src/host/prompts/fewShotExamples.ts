@@ -16,7 +16,10 @@ export type ExampleType =
   | 'code_review'
   | 'git_commit'
   | 'file_edit'
-  | 'ppt_creation';
+  | 'ppt_creation'
+  | 'spreadsheet_creation'
+  | 'document_draft'
+  | 'design_creation';
 
 /**
  * 示例所属领域
@@ -51,7 +54,7 @@ function estimateTokens(text: string): number {
 // 示例定义
 // ----------------------------------------------------------------------------
 
-export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
+const EXAMPLE_DEFINITIONS: Omit<FewShotExample, 'tokens'>[] = [
   // ----------------------------------------------------------------------------
   // 并行派发示例
   // ----------------------------------------------------------------------------
@@ -70,7 +73,6 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 [调用 AgentSpawn，parallel=true，agents 中放入 4 个 reviewer，每个聚焦一个维度]
 
 所有审计完成后，我将汇总发现并按严重程度排序。`,
-    tokens: estimateTokens(`我将从多个维度并行审计，使用 AgentSpawn 并行派发 4 个 reviewer 子代理：1. 认证授权审计 2. 输入验证审计 3. 数据安全审计 4. 依赖安全审计 [调用 AgentSpawn parallel=true] 所有审计完成后，我将汇总发现并按严重程度排序。`),
     tags: ['audit', 'security', 'parallel'],
   },
   {
@@ -87,7 +89,6 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 [调用 AgentSpawn，parallel=true，agents 中放入 3 个 reviewer，各自聚焦一个维度]
 
 汇总后给出整体评分和优先改进建议。`,
-    tokens: estimateTokens(`我将用 AgentSpawn 并行派发 3 个子代理分析代码质量：1. 可维护性 2. 性能 3. 测试覆盖 [调用 AgentSpawn parallel=true] 汇总后给出整体评分和优先改进建议。`),
     tags: ['quality', 'parallel'],
   },
 
@@ -104,7 +105,6 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 [调用 Task 工具，subagent_type="explore"，指示其搜索 auth/login/authenticate 相关文件、认证中间件、JWT/session 处理逻辑，返回完整文件路径和关键代码位置]
 
 等待探索结果后，我会整理为清晰的代码地图。`,
-    tokens: estimateTokens(`这需要广泛搜索代码库，我委派一个 explore 子代理来处理。[调用 Task 工具] 等待探索结果后，我会整理为清晰的代码地图。`),
     tags: ['explore', 'delegation'],
   },
   {
@@ -117,7 +117,6 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 [调用 Task 工具，subagent_type="plan"，指示其识别分层结构、分析模块职责、追踪数据流和控制流、梳理依赖关系]
 
 子代理完成后，我将基于其发现生成架构概览。`,
-    tokens: estimateTokens(`架构分析需要全局视角，我委派一个 plan 子代理进行深度探索。[调用 Task 工具] 子代理完成后，我将基于其发现生成架构概览。`),
     tags: ['architecture', 'plan', 'delegation'],
   },
 
@@ -136,7 +135,6 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 3. **重新编辑** — 基于最新内容构建正确的 edits 数组再次 Edit
 
 如果第二次仍失败，我将改用 Write 重写整个文件。`,
-    tokens: estimateTokens(`Edit 失败了，文件内容与预期不符。恢复步骤：1. 重新读取文件 2. 定位差异 3. 重新编辑。如果第二次仍失败，我将改用 Write 重写整个文件。`),
     tags: ['error', 'recovery', 'edit'],
   },
 
@@ -157,7 +155,6 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 **Phase 5: 验证** — 运行类型检查和测试，确认功能完整
 
 先开始 Phase 1 的探索。`,
-    tokens: estimateTokens(`这是一个复杂任务，我将分阶段执行：Phase 1: 探索 Phase 2: 设计 Phase 3: 确认 Phase 4: 实施 Phase 5: 验证 先开始 Phase 1 的探索。`),
     tags: ['plan', 'complex'],
   },
 
@@ -176,7 +173,6 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 2. git commit 提交，消息格式遵循 conventional commits
 
 我不会自动 push，除非你明确要求。`,
-    tokens: estimateTokens(`先用 bash 运行 git status 查看变更文件列表。确认变更文件后，用 bash 执行 git add 和 git commit。我不会自动 push，除非你明确要求。`),
     tags: ['git', 'commit'],
   },
 
@@ -195,7 +191,6 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 - edits[0].new_text: 在该位置前插入 logout 方法
 
 只修改需要变更的部分，不重写整个文件。`,
-    tokens: estimateTokens(`先用 Read 读取文件确认当前内容。然后用 Edit 精确插入方法。只修改需要变更的部分，不重写整个文件。`),
     tags: ['edit', 'file'],
   },
 
@@ -205,12 +200,7 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
   // 非程序员协作者的行为范本，开场是：先落一版产物、把假设摆明、让人改，
   // 而不是先探索代码库、也不是先分五个 Phase。
   //
-  // 目前只有 PPT 一条。做表 / 写报告 / 做设计三条已写好但被撤下——它们依赖的
-  // isExcelTask / isDocumentTask / isImageTask 检测靠裸英文词做子串匹配，与代码
-  // 标识符全面碰撞，接上去会把编程 prompt 从「无示例」变成「错示例」。原文与证据见
-  // specs/2026-07-14-artifact-intent-detection-signal-strength.md。
-  //
-  // ⚠️ tags / typeKeywords 只用具体产物名词（ppt / 演示稿），绝不用意图动词
+  // ⚠️ tags / typeKeywords 只用具体产物名词（ppt / 表格 / 海报），绝不用意图动词
   // （设计 / 规划 / 方案 / design / plan）。getTaskDescriptionFromFeatures 给编程任务
   // 生成的描述串里含 'plan design' 等词，产物示例一旦用这些词当标签，就会反过来劫持
   // 编程任务的示例选择。
@@ -227,10 +217,64 @@ export const FEW_SHOT_EXAMPLES: FewShotExample[] = [
 [调用 Skill 工具，command="frontend-slides"，args="Q3 营销方案，10 页，企业汇报风格"，先产出 outline.md 和逐页 prompts]
 
 outline 出来我先贴给你确认主线，再合成 PPTX。**手上有 Q3 目标数字或上季度数据就发我**——没有的话我会在页面上标「示例数据」，不编造。`,
-    tokens: estimateTokens(`我先把骨架搭出来给你看，不确定的地方按常见做法假设，你直接改。我的假设：内部季度汇报、10 页、主线 Q3 目标→现状差距→打法→预算排期→指标。[Skill command=frontend-slides] 先产出 outline.md 再合成 PPTX。有数据发我，没有我标示例数据，不编造。`),
     tags: ['ppt', '演示稿', 'slides'],
   },
+  {
+    type: 'spreadsheet_creation',
+    domain: 'artifact',
+    title: '做表格',
+    userPrompt: '帮我把这些销售数据做成 Excel 表，按区域汇总',
+    assistantResponse: `先看数据再动手，我不猜列名。
+
+1. 用 ExcelAutomate(read) 打开，确认 sheet 名、列名、行数
+2. 按区域汇总用 Excel 原生公式（SUMIF）而不是 Python 循环——这样你以后改数字它自己重算
+3. 用 excel_generate 输出汇总表
+
+出表后我会直接告诉你几个关键数字（各区域占比、环比变化），不只甩给你一个文件路径。遇到空值或口径不一致我先问你怎么算，不自己拍板。`,
+    tags: ['excel', '表格'],
+  },
+  {
+    type: 'document_draft',
+    domain: 'artifact',
+    title: '写报告',
+    userPrompt: '帮我写一份 Q3 营销季度报告',
+    assistantResponse: `我先给你一版完整初稿，你在上面改比从空白开始快。
+
+**结构**：Q3 结果 → 与目标的差距 → 原因拆解 → Q4 打法 → 需要的资源。
+
+我按这个直接写完，**不留 [待填写] 占位符**。你给了数据的地方我用真数据；没给的我标「示例数据，待替换」，绝不编造数字冒充真实业绩。
+
+[用 docx_generate 输出 Word 文件，你可以直接在 Word 里改]
+
+写完我会点出哪几处最需要你补真实数据。`,
+    tags: ['报告', '文案'],
+  },
+  {
+    type: 'design_creation',
+    domain: 'artifact',
+    title: '做设计稿',
+    userPrompt: '帮我设计一张海报',
+    assistantResponse: `海报这东西说不如看，我先出 2 个方向给你挑，比问你一堆问题快。
+
+**起手假设**（直接改）：A3 竖版、简洁现代、主视觉 + 一句主标题。
+
+[调用 image_generate 生成 2 张不同方向的草图：一张主视觉突出，一张排版留白为主]
+
+你挑一个方向、或者告诉我哪不对（颜色/氛围/主体），我基于它细化。标题、日期、地点这些文字发我——图片模型画中文字容易糊，这类信息我不让它直接画进去。`,
+    tags: ['海报', '配图'],
+  },
 ];
+
+/**
+ * tokens 从 assistantResponse 直接算，不手写。
+ *
+ * 旧写法是把响应正文压缩成一句摘要再 estimateTokens——低报 2.0x（实测 1.6x~3.0x），
+ * 等于 fewShotTokenBudget 这道门形同虚设，而且同一段文案要维护两遍。
+ */
+export const FEW_SHOT_EXAMPLES: FewShotExample[] = EXAMPLE_DEFINITIONS.map((e) => ({
+  ...e,
+  tokens: estimateTokens(e.assistantResponse),
+}));
 
 /**
  * 根据类型获取示例
@@ -289,6 +333,9 @@ export function selectRelevantExamples(
       file_edit: ['修改', '编辑', 'edit', 'change'],
       // 产物类：只用具体产物名词，理由见上方产物示例区的注释
       ppt_creation: ['ppt', '演示稿', '幻灯片'],
+      spreadsheet_creation: ['excel', '表格', 'spreadsheet', 'xlsx'],
+      document_draft: ['报告', '文案', '撰写', 'docx'],
+      design_creation: ['海报', '配图', '插图'],
     };
 
     const keywords = typeKeywords[example.type] || [];

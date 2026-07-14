@@ -11,7 +11,7 @@
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import type { Message, ToolCall } from '../../../shared/contract';
+import type { ArtifactLocatorTelemetryEventData, Message, ToolCall } from '../../../shared/contract';
 import {
   slideIndexFromPartName,
   validateArtifactLocatorV1,
@@ -36,6 +36,32 @@ export interface LocatorPreflightBlock {
   code: typeof LOCATOR_BLOCK_CODE;
   error: string;
   metadata: Record<string, unknown>;
+}
+
+const STALE_LOCATOR_REASONS = new Set([
+  'revision_unreadable',
+  'revision_drift',
+  'presentation_package_unreadable',
+  'presentation_target_missing',
+  'relationship_drift',
+  'slide_part_drift',
+  'text_fingerprint_drift',
+  'paragraph_fingerprint_drift',
+]);
+
+function recordLocatorTelemetry(
+  locator: ArtifactLocatorV1,
+  result: LocatorPreflightBlock | null,
+  recordTelemetry?: (event: ArtifactLocatorTelemetryEventData) => void,
+): LocatorPreflightBlock | null {
+  const blockReason = result?.metadata.reason;
+  const reason = typeof blockReason === 'string' ? blockReason : 'target_verified';
+  recordTelemetry?.({
+    state: result ? (STALE_LOCATOR_REASONS.has(reason) ? 'stale' : 'blocked') : 'resolved',
+    kind: locator.artifact.kind,
+    reason,
+  });
+  return result;
 }
 
 /** 流式算文件 sha256。大产物（几十 MB 的 pptx）不整个读进内存。 */
@@ -271,6 +297,7 @@ function checkDocxTarget(
 export async function getArtifactLocatorPreflightBlock(
   ctx: { messages: readonly Message[]; workingDirectory: string },
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+  recordTelemetry?: (event: ArtifactLocatorTelemetryEventData) => void,
 ): Promise<LocatorPreflightBlock | null> {
   if (!LOCATOR_GUARDED_TOOLS.has(toolCall.name.toLowerCase())) return null;
 
@@ -279,11 +306,11 @@ export async function getArtifactLocatorPreflightBlock(
 
   const rawPath = toolCall.arguments?.file_path;
   if (typeof rawPath !== 'string' || !rawPath.trim()) {
-    return block(RETARGET_MESSAGE, { reason: 'missing_file_path' });
+    return recordLocatorTelemetry(locator, block(RETARGET_MESSAGE, { reason: 'missing_file_path' }), recordTelemetry);
   }
   const targetPath = path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(ctx.workingDirectory, rawPath);
   if (targetPath !== path.resolve(locator.artifact.filePath)) {
-    return block(RETARGET_MESSAGE, { reason: 'file_mismatch' });
+    return recordLocatorTelemetry(locator, block(RETARGET_MESSAGE, { reason: 'file_mismatch' }), recordTelemetry);
   }
 
   // revision fail-closed：点击后、写入前重新计算。外部程序在用户点选后改了文件，
@@ -292,28 +319,34 @@ export async function getArtifactLocatorPreflightBlock(
   try {
     current = await computeArtifactRevision(targetPath);
   } catch {
-    return block(STALE_MESSAGE, { reason: 'revision_unreadable' });
+    return recordLocatorTelemetry(locator, block(STALE_MESSAGE, { reason: 'revision_unreadable' }), recordTelemetry);
   }
   if (current.value !== locator.artifact.revision.value) {
-    return block(STALE_MESSAGE, { reason: 'revision_drift' });
+    return recordLocatorTelemetry(locator, block(STALE_MESSAGE, { reason: 'revision_drift' }), recordTelemetry);
   }
 
+  let result: LocatorPreflightBlock | null;
   switch (locator.target.kind) {
     case 'sheet-range':
-      return checkSheetTarget(locator as ArtifactLocatorV1 & { target: { kind: 'sheet-range' } }, toolCall.arguments);
+      result = checkSheetTarget(locator as ArtifactLocatorV1 & { target: { kind: 'sheet-range' } }, toolCall.arguments);
+      break;
     case 'ppt-slide':
-      return checkPptTarget(
+      result = await checkPptTarget(
         locator as ArtifactLocatorV1 & { target: { kind: 'ppt-slide' } },
         toolCall.arguments,
         targetPath,
       );
+      break;
     case 'docx-paragraph':
       if (!await docxParagraphTargetStillMatches(
         targetPath,
         locator.target as DocxParagraphTargetSnapshot,
       ).catch(() => false)) {
-        return block(STALE_MESSAGE, { reason: 'paragraph_fingerprint_drift' });
+        result = block(STALE_MESSAGE, { reason: 'paragraph_fingerprint_drift' });
+        break;
       }
-      return checkDocxTarget(locator as ArtifactLocatorV1 & { target: { kind: 'docx-paragraph' } }, toolCall.arguments);
+      result = checkDocxTarget(locator as ArtifactLocatorV1 & { target: { kind: 'docx-paragraph' } }, toolCall.arguments);
+      break;
   }
+  return recordLocatorTelemetry(locator, result, recordTelemetry);
 }

@@ -14,6 +14,8 @@ import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
+import { computeArtifactRevision } from '../../../src/host/tools/artifacts/artifactLocatorHost';
+import type { ArtifactLocatorV1 } from '../../../src/shared/contract/artifactLocator';
 
 const serviceMocks = vi.hoisted(() => {
   const langfuse = {
@@ -3879,6 +3881,71 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('Append 没有设置 final=true'),
     );
+  });
+
+  it('emits privacy-safe locator telemetry for resolved, blocked, and stale preflight outcomes', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'code-agent-locator-telemetry-'));
+    const targetFile = path.join(dir, 'budget.xlsx');
+    await writeFile(targetFile, 'revision-one', 'utf-8');
+    const locator: ArtifactLocatorV1 = {
+      version: 1,
+      artifact: {
+        kind: 'spreadsheet',
+        filePath: targetFile,
+        revision: await computeArtifactRevision(targetFile),
+      },
+      target: { kind: 'sheet-range', sheetName: 'Summary', a1: 'B4' },
+      display: { label: '预算表', excerpt: '机密正文 sentinel' },
+    };
+    const toolExecutor = {
+      execute: vi.fn(async (): Promise<ToolResult> => ({ toolCallId: '', success: true, output: 'ok' })),
+    };
+    const ctx = makeRuntimeContext({
+      messages: [{
+        id: 'locator-user',
+        role: 'user',
+        content: '修改选中的单元格',
+        timestamp: Date.now(),
+        metadata: { artifactLocator: locator },
+      }],
+      toolExecutor: toolExecutor as never,
+      workingDirectory: dir,
+    });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules(
+      {
+        injectSystemMessage: vi.fn(),
+        pushPersistentSystemContext: vi.fn(),
+        getCurrentAttachments: vi.fn().mockReturnValue([]),
+      } as never,
+      { emitTaskProgress: vi.fn() } as never,
+      { setPlanMode: vi.fn(), isPlanMode: () => false, generateAutoContinuationPrompt: () => 'continue' } as never,
+    );
+    const call = (id: string, cell: string): ToolCall => ({
+      id,
+      name: 'DocEdit',
+      arguments: {
+        file_path: targetFile,
+        operations: [{ action: 'set_cell', sheet: 'Summary', cell, value: 999 }],
+      },
+    });
+
+    expect((await engine.executeSingleTool(call('resolved', 'B4'), 0, 1)).success).toBe(true);
+    expect((await engine.executeSingleTool(call('blocked', 'A1'), 0, 1)).success).toBe(false);
+    await writeFile(targetFile, 'revision-two', 'utf-8');
+    expect((await engine.executeSingleTool(call('stale', 'B4'), 0, 1)).success).toBe(false);
+
+    const locatorEvents = vi.mocked(ctx.onEvent).mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'artifact_locator');
+    expect(locatorEvents.map((event) => event.data)).toEqual([
+      { state: 'resolved', kind: 'spreadsheet', reason: 'target_verified' },
+      { state: 'blocked', kind: 'spreadsheet', reason: 'cell_mismatch' },
+      { state: 'stale', kind: 'spreadsheet', reason: 'revision_drift' },
+    ]);
+    expect(toolExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(locatorEvents)).not.toContain(targetFile);
+    expect(JSON.stringify(locatorEvents)).not.toContain('机密正文 sentinel');
   });
 
   it('suppresses late tool results after run-level cancel', async () => {

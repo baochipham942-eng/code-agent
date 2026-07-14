@@ -250,6 +250,8 @@ export function summarizeEvent(event: AgentEvent): string {
       return `${Number(data?.toolCount ?? 0)} tool schemas available`;
     case 'model_decision':
       return `Model decision: ${String(data?.requestedProvider ?? '?')}/${String(data?.requestedModel ?? '?')} -> ${String(data?.resolvedProvider ?? '?')}/${String(data?.resolvedModel ?? '?')} (${String(data?.reason ?? 'unknown')})`;
+    case 'artifact_locator':
+      return `Artifact locator ${String(data?.state ?? 'unknown')}: ${String(data?.kind ?? 'unknown')}/${String(data?.reason ?? 'unknown')}`;
     case 'tool_call_start':
       return `Tool: ${data?.name ?? 'unknown'} started`;
     case 'tool_call_end':
@@ -302,6 +304,14 @@ export function extractEventData(event: AgentEvent): string | undefined {
       }
     }
     return JSON.stringify(extracted);
+  }
+
+  if (event.type === 'artifact_locator') {
+    return JSON.stringify({
+      state: data.state,
+      kind: data.kind,
+      reason: data.reason,
+    });
   }
 
   if (event.type === 'tool_call_end') {

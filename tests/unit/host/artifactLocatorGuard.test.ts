@@ -33,7 +33,7 @@ import {
   LOCATOR_BLOCK_CODE,
 } from '../../../src/host/tools/artifacts/artifactLocatorHost';
 import { resolvePresentationPackageIndex } from '../../../src/host/tools/artifacts/presentationPackageIndex';
-import type { Message } from '../../../src/shared/contract';
+import type { ArtifactLocatorTelemetryEventData, Message } from '../../../src/shared/contract';
 import type { ArtifactLocatorV1 } from '../../../src/shared/contract/artifactLocator';
 
 type RawHandler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
@@ -322,6 +322,41 @@ describe('写前 guard：模型改了坐标就不落盘', () => {
     expect(block!.code).toBe(LOCATOR_BLOCK_CODE);
     expect(block!.metadata.skipped).toBe(true);
     expect(JSON.stringify(block!.metadata)).not.toContain('三月');
+  });
+
+  it('遥测精确区分 resolved / blocked / stale，且只带 kind 与 reason', async () => {
+    const filePath = await writeWorkbook('telemetry.xlsx', { Sheet1: monthlySheet(300) });
+    const anchor = await clickInPreview(filePath, 0, '三月');
+    const locator = await upgradeLegacyAnchor(anchor);
+    expect(locator).not.toBeNull();
+    locator!.display.excerpt = '机密正文 sentinel';
+    const events: ArtifactLocatorTelemetryEventData[] = [];
+
+    await getArtifactLocatorPreflightBlock(
+      ctxOf(userTurn(locator)),
+      docEditCall(filePath, [{ action: 'set_cell', sheet: anchor.sheetName, cell: anchor.cell, value: 999 }]),
+      (event) => events.push(event),
+    );
+    await getArtifactLocatorPreflightBlock(
+      ctxOf(userTurn(locator)),
+      docEditCall(filePath, [{ action: 'set_cell', sheet: anchor.sheetName, cell: 'A1', value: 999 }]),
+      (event) => events.push(event),
+    );
+    await writeWorkbook('telemetry.xlsx', { Sheet1: [['新增行'], ...monthlySheet(300)] });
+    await getArtifactLocatorPreflightBlock(
+      ctxOf(userTurn(locator)),
+      docEditCall(filePath, [{ action: 'set_cell', sheet: anchor.sheetName, cell: anchor.cell, value: 999 }]),
+      (event) => events.push(event),
+    );
+
+    expect(events).toEqual([
+      { state: 'resolved', kind: 'spreadsheet', reason: 'target_verified' },
+      { state: 'blocked', kind: 'spreadsheet', reason: 'cell_mismatch' },
+      { state: 'stale', kind: 'spreadsheet', reason: 'revision_drift' },
+    ]);
+    expect(JSON.stringify(events)).not.toContain(filePath);
+    expect(JSON.stringify(events)).not.toContain('机密正文 sentinel');
+    expect(events.every((event) => Object.keys(event).sort().join(',') === 'kind,reason,state')).toBe(true);
   });
 });
 

@@ -8,7 +8,7 @@
 // 各自领域原生语义（Excel 的 A1、PPT 的 slide part、Word 的 <w:p> 序数），不造一个
 // 跨产物的通用 index——那只会再加一层换算，也就再加一个错位点。
 
-export type ArtifactKind = 'spreadsheet' | 'presentation' | 'document';
+type ArtifactKind = 'spreadsheet' | 'presentation' | 'document';
 
 export interface ArtifactRevision {
   algorithm: 'sha256';
@@ -16,7 +16,7 @@ export interface ArtifactRevision {
 }
 
 /** Excel：sheetName 是必填生产项。缺了它写侧会静默落到第一张表（excelEdit.ts getWorksheet）。 */
-export interface SheetRangeTarget {
+interface SheetRangeTarget {
   kind: 'sheet-range';
   sheetName: string;
   /** B7 或 A1:C2 */
@@ -24,7 +24,7 @@ export interface SheetRangeTarget {
 }
 
 /** PPT：slidePartName 是执行身份，displayIndex 只是人类标签，两者不可互推。 */
-export interface PptSlideTarget {
+interface PptSlideTarget {
   kind: 'ppt-slide';
   /** 0-based，只用于 UI 与对账，绝不直接作为写入坐标 */
   displayIndex: number;
@@ -35,7 +35,7 @@ export interface PptSlideTarget {
 }
 
 /** Word：document.xml 全部 <w:p> 的 0-based 序数（与写侧同谓词），指纹作安全闸。 */
-export interface DocxParagraphTarget {
+interface DocxParagraphTarget {
   kind: 'docx-paragraph';
   partName: 'word/document.xml';
   paragraphIndex: number;
@@ -44,7 +44,7 @@ export interface DocxParagraphTarget {
   nextTextFingerprint?: string;
 }
 
-export type ArtifactLocatorTarget = SheetRangeTarget | PptSlideTarget | DocxParagraphTarget;
+type ArtifactLocatorTarget = SheetRangeTarget | PptSlideTarget | DocxParagraphTarget;
 
 export interface ArtifactLocatorV1 {
   version: 1;

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-07-14
+
+### Added
+
+- **官方 Skill 市场与可信安装链**：设置页可以浏览官方货架、识别新版并手动升级；安装固定到 commit SHA，并校验内容哈希，项目还能覆盖全局 Skill 启用状态。
+- **按模型配置推理深度**：模型能力声明统一表达 budget、effort、thinking toggle 等差异，设置页只展示当前模型真正支持的控制项。
+- **会话与内容工作流增强**：记忆召回增加分类器路径，Mermaid 支持标注即编辑及缩放平移，长 Markdown 历史渲染减少无效布局开销。
+
+### Changed
+
+- **运行时状态边界收敛**：ADR-038/039 将 turn、control、context health、trace、artifact 和 repair 状态下沉到明确 owner，统一无进展逃生与降级收尾语义。
+- **权限拓扑进入执行链**：主任务、队友、异步 Agent、cron 与 background spawn 使用统一拓扑裁决；GuardFabric 的 ask/forceConfirm 语义接入真实工具执行。
+- **评测吞吐与隔离**：评测 case 支持隔离 worker 并行执行，同时拒绝被静默忽略的并发配置。
+
+### Fixed
+
+- **取消链路真实收敛**：run 受理时即武装 AbortController，重复停止会串行重投递；`/api/cancel` 只在 registry 或 durable 进入终态后报告成功，renderer 对 `202 cancel_requested` 按原 runId 继续收敛。
+- **新会话发送竞态**：发送会等待建会话结果并绑定新会话；创建失败时不会把消息静默送回旧会话。
+- **CLI 与恢复一致性**：CLI serve 的取消入口会真实终止 AgentLoop，启动时残留的 cron running 记录会标记为 interrupted。
+- **模型能力回退**：修复 vision/reasoning fallback 在 Zhipu 与 MiMo 组合下的能力错配。
+
 ## [0.26.4] - 2026-07-12
 
 ### Added

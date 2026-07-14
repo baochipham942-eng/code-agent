@@ -634,6 +634,50 @@ export function registerSettingsHandlers(
     };
   });
 
+  // ── Excel 行号：两个 extract handler 的唯一共用谓词 ──────────────────────
+  //
+  // extract-excel-json（预览）和 extract-excel-text（喂模型）必须从**同一个**
+  // 谓词推行号，否则就是 ADR-040 那个故事重演：预览算出的 A1 和模型推出的 A1
+  // 是两套坐标系，谁也不知道对方错了。`6ac3d8530` 修了预览这侧，text 这侧却在
+  // 26 行之外继续用 blankrows:false——同一个文件、同一个左移、漏了一半。
+
+  const isBlankRow = (row: unknown[] | undefined): boolean =>
+    !row || row.length === 0 || row.every((cell) => cell === null || cell === undefined || cell === '');
+
+  /**
+   * xlsx sheet → 保留真实行号对齐的行数组：`结果[i]` 就是 xlsx 第 `i+1` 行。
+   *
+   * blankrows 必须为 true——中间空行是行号对齐的一部分，丢掉会让后面每行都左移。
+   * 但 `!ref` 常被文件虚标（几行数据声明到几百行），所以尾部空行要裁掉：只裁尾巴。
+   */
+  const sheetRowsWithRealNumbers = (
+    XLSX: typeof import('xlsx'),
+    sheet: import('xlsx').WorkSheet,
+  ): unknown[][] => {
+    const json: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: true });
+    let end = json.length;
+    while (end > 0 && isBlankRow(json[end - 1])) end--;
+    return json.slice(0, end);
+  };
+
+  const SHEET_ROWNUM_LEGEND = '第 1 列是 xlsx 真实行号，可直接用于 A1 引用（行号 4 + B 列 = B4）；行号跳号处是空行';
+
+  /**
+   * 行数组 → 带真实行号的 CSV。
+   *
+   * 行号塞进每行的第 0 列、再让 XLSX 自己序列化，而不是对 sheet_to_csv 的输出
+   * 按行加前缀——后者看着更省事，实则会重新引入本工单要修的那个错位：单元格里
+   * 含换行符时 sheet_to_csv 对 4 行 xlsx 吐 5 行文本，按行下标推出来的行号从那
+   * 一行起全错（实测：「四月」会被标成 R5）。把行号绑进数据就不受文本换行影响，
+   * 转义也全部归 XLSX，不用手搓 CSV quoting。
+   */
+  const rowsToNumberedCsv = (XLSX: typeof import('xlsx'), trimmed: unknown[][]): string => {
+    const numbered = trimmed
+      .map((row, index) => [index + 1, ...(row || [])])
+      .filter((row) => !isBlankRow(row.slice(1)));
+    return XLSX.utils.sheet_to_csv(XLSX.utils.aoa_to_sheet(numbered));
+  };
+
   // Excel 文件解析
   ipcMain.handle('extract-excel-text', async (_, filePath: string): Promise<{ text: string; sheetCount: number; rowCount: number }> => {
     try {
@@ -647,14 +691,11 @@ export function registerSettingsHandlers(
       let totalRows = 0;
 
       for (const sheetName of workbook.SheetNames) {
-        const sheet = workbook.Sheets[sheetName];
-        // 转换为 CSV 格式（AI 更容易理解）
-        const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
-        const rows = csv.split('\n').filter((r: string) => r.trim()).length;
-        totalRows += rows;
+        const trimmed = sheetRowsWithRealNumbers(XLSX, workbook.Sheets[sheetName]);
+        const csv = rowsToNumberedCsv(XLSX, trimmed);
+        totalRows += Math.max(trimmed.length - 1, 0);
 
-        // 添加 sheet 标题
-        sheets.push(`=== Sheet: ${sheetName} (${rows} 行) ===\n${csv}`);
+        sheets.push(`=== Sheet: ${sheetName} (${SHEET_ROWNUM_LEGEND}) ===\n${csv}`);
       }
 
       return {
@@ -672,9 +713,6 @@ export function registerSettingsHandlers(
   });
 
   // Excel → JSON (for SpreadsheetBlock interactive rendering)
-  const isBlankRow = (row: unknown[] | undefined): boolean =>
-    !row || row.length === 0 || row.every((cell) => cell === null || cell === undefined || cell === '');
-
   ipcMain.handle('extract-excel-json', async (_, filePath: string): Promise<{
     sheets: Array<{ name: string; headers: string[]; rows: unknown[][]; rowCount: number }>;
     sheetCount: number;
@@ -687,16 +725,10 @@ export function registerSettingsHandlers(
       const workbook = XLSX.read(buffer, { type: 'buffer' });
 
       const sheets = workbook.SheetNames.map((sheetName: string) => {
-        const sheet = workbook.Sheets[sheetName];
-        // blankrows 必须为 true：预览里的数组下标就是 UI 算 A1 引用（B7）的依据，
-        // 而定点反馈会把这个 A1 交给 DocEdit 直接改源文件。丢掉空行会让后续所有行
-        // 的行号左移，用户点第 4 行改的却是第 3 行——静默改错单元格。
-        const json: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: true });
-        // 但 !ref 常被文件虚标（只有几行数据却声明到几百行），尾部空行纯噪音。
-        // 只裁尾巴、保留中间空行：中间空行是行号对齐的一部分，裁了就又错位了。
-        let end = json.length;
-        while (end > 0 && isBlankRow(json[end - 1])) end--;
-        const trimmed = json.slice(0, end);
+        // 行号谓词与 extract-excel-text 共用（见 sheetRowsWithRealNumbers）：预览里的
+        // 数组下标是 UI 算 A1（B7）的依据，而定点反馈把这个 A1 交给 DocEdit 直接改
+        // 源文件；模型侧看到的行号必须是同一套，否则两侧各错各的谁也照不出来。
+        const trimmed = sheetRowsWithRealNumbers(XLSX, workbook.Sheets[sheetName]);
         const headers = (trimmed[0] || []) as string[];
         const rows = trimmed.slice(1, 501); // Cap at 500 rows for UI performance
         return { name: sheetName, headers, rows, rowCount: Math.max(trimmed.length - 1, 0) };

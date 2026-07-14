@@ -29,6 +29,9 @@ import { readXlsxSchema as schema } from './readXlsx.schema';
 type XlsxFormat = 'table' | 'json' | 'csv';
 type CellValue = string | number | boolean | null;
 
+/** 输出里那一列真实 xlsx 行号的列名。模型靠它把「三月」翻译成 A1 的行号，不用数行。 */
+const ROW_NUMBER_LABEL = '行号';
+
 export async function executeReadXlsx(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -102,8 +105,14 @@ export async function executeReadXlsx(
       };
     }
 
-    // 提取数据
-    const rows: CellValue[][] = [];
+    // 提取数据。
+    //
+    // rowNumber 必须一路留到输出：eachRow 早就把正确的 xlsx 行号给了我们，此前却在
+    // push 的那一步丢掉，于是 table/csv/json 三种格式**一个都不带行号**。而 DocEdit
+    // 的 Excel 操作只认 A1、没有按文本查找的动作——模型想改「三月」那行，只能靠数
+    // 行推 A1。includeEmpty:false 又跳过空行，数出来的必然比真实行号小。
+    // 带上行号，模型就不用数了；跳号本身也直接告诉它那里有空行。
+    const rows: Array<{ rowNumber: number; cells: CellValue[] }> = [];
     let headers: string[] = [];
 
     worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
@@ -127,7 +136,7 @@ export async function executeReadXlsx(
       if (rowNumber === 1) {
         headers = cleanRow.map((c, idx) => String(c || `列${idx + 1}`));
       } else {
-        rows.push(cleanRow);
+        rows.push({ rowNumber, cells: cleanRow });
       }
     });
 
@@ -139,32 +148,36 @@ export async function executeReadXlsx(
     const actualTotalRows = worksheet.actualRowCount - 1; // -1 for header
 
     if (format === 'json') {
-      const jsonData = rows.map(row => {
-        const obj: Record<string, unknown> = {};
+      const jsonData = rows.map(({ rowNumber, cells }) => {
+        // __row__ 而不是「行号」：表里真有一列叫「行号」时，下面的 obj[header] 会把
+        // 我们写的值覆盖掉，模型拿到的就成了表自身的编号——又一次静默错位。
+        const obj: Record<string, unknown> = { __row__: rowNumber };
         headers.forEach((header, idx) => {
-          obj[header] = row[idx] ?? '';
+          obj[header] = cells[idx] ?? '';
         });
         return obj;
       });
       result = JSON.stringify(jsonData, null, 2);
     } else if (format === 'csv') {
-      const csvLines = [headers.join(',')];
-      rows.forEach(row => {
-        const csvRow = row.map(cell => {
+      const csvLines = [[ROW_NUMBER_LABEL, ...headers].join(',')];
+      rows.forEach(({ rowNumber, cells }) => {
+        const csvRow = cells.map(cell => {
           const str = String(cell ?? '');
           if (str.includes(',') || str.includes('"') || str.includes('\n')) {
             return `"${str.replace(/"/g, '""')}"`;
           }
           return str;
         });
-        csvLines.push(csvRow.join(','));
+        csvLines.push([String(rowNumber), ...csvRow].join(','));
       });
       result = csvLines.join('\n');
     } else {
       // Markdown table
-      const headerRow = `| ${headers.join(' | ')} |`;
-      const separator = `| ${headers.map(() => '---').join(' | ')} |`;
-      const dataRows = rows.map(row => `| ${row.map(c => String(c ?? '')).join(' | ')} |`);
+      const labelled = [ROW_NUMBER_LABEL, ...headers];
+      const headerRow = `| ${labelled.join(' | ')} |`;
+      const separator = `| ${labelled.map(() => '---').join(' | ')} |`;
+      const dataRows = rows.map(({ rowNumber, cells }) =>
+        `| ${[String(rowNumber), ...cells.map(c => String(c ?? ''))].join(' | ')} |`);
       result = [headerRow, separator, ...dataRows].join('\n');
     }
 
@@ -172,20 +185,23 @@ export async function executeReadXlsx(
 
     ctx.logger.info('XLSX read', { path: absPath, sheet: worksheet.name, rows: totalRows });
 
-    // 数据质量分析 + 指纹记录
-    const qualitySummary = analyzeDataQuality(rows, headers);
+    // 数据质量分析 + 指纹记录。
+    // 行号只服务「模型定位到哪一行」，与画像/指纹无关，故这里退回纯值矩阵——
+    // 不动 analyzeDataQuality / buildColumnProfile 的签名，免得波及它们各自的消费方。
+    const cellRows = rows.map(({ cells }) => cells);
+    const qualitySummary = analyzeDataQuality(cellRows, headers);
 
-    if (rows.length > 0 && headers.length > 0) {
+    if (cellRows.length > 0 && headers.length > 0) {
       const sampleValues: Record<string, string> = {};
       headers.forEach((h, idx) => {
-        if (rows[0][idx] !== null && rows[0][idx] !== undefined && rows[0][idx] !== '') {
-          sampleValues[h] = String(rows[0][idx]);
+        if (cellRows[0][idx] !== null && cellRows[0][idx] !== undefined && cellRows[0][idx] !== '') {
+          sampleValues[h] = String(cellRows[0][idx]);
         }
       });
 
       const numericRanges: Record<string, { min: number; max: number }> = {};
       headers.forEach((h, idx) => {
-        const numericValues = rows
+        const numericValues = cellRows
           .map(row => row[idx])
           .filter((v): v is number => typeof v === 'number' && !isNaN(v));
         if (numericValues.length > 0) {
@@ -229,7 +245,7 @@ export async function executeReadXlsx(
       }
     }
 
-    output += buildColumnProfile(rows, headers, actualTotalRows);
+    output += buildColumnProfile(cellRows, headers, actualTotalRows);
 
     // 大数据集专项指导
     if (actualTotalRows > 10000) {

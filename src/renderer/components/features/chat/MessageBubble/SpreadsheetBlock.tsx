@@ -431,7 +431,9 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
       {filePath != null && selectedCell && (
         <div className="border-t border-zinc-700 px-3 py-2">
           <LocalityFeedbackBar
-            anchor={{ kind: 'sheet', filePath, cell: selectedCell }}
+            // sheetName 必传：DocEdit 的 getWorksheet 在缺省时会默默取第一张表，
+            // 多 sheet 工作簿里用户点的是第 2 张表、改的却是第 1 张。
+            anchor={{ kind: 'sheet', filePath, cell: selectedCell, sheetName: sheet?.name }}
             locationLabel={`单元格 ${selectedCell}`}
           />
         </div>

@@ -219,6 +219,17 @@ Admin review queue 不再是单独表，而是 `artifact_issues` 的派生视图
 - 显式调试或 replay 若需要看内部轮次，需要走专门路径，不应复用普通会话列表的 count。
 - 角色草稿被确认前不进入 `agents/`，因此不会被 `agentRegistry` 当成可调用角色。
 
+### 2026-07-14 启动期 DB 维护提速（PR #374/#376）
+
+DB init 曾在 1.28GB 生产库上每次启动静默吃 ~6s，三处根因全部修复，并留了分步计时日志（`[DatabaseService] init timings:`，回归时直接从用户日志定位慢步骤）：
+
+| 改动 | 语义 | 主要路径 |
+|------|------|----------|
+| stale-FTS 清理 DELETE 加一次性门 | `PRAGMA user_version < 1` 才跑（全表扫 messages.content 的历史补救），跑完置 1。桌面 `schema.ts` 与 CLI `cliDatabaseSchema.ts` 共享同一 DB、同一门。**⚠️ 未来 FTS trigger 过滤条件再变，必须把门的版本号 bump（1→2）并同步两侧**，否则存量库不会重清 | `schema.ts`、`cliDatabaseSchema.ts`、`schemaFtsCleanupGate.test.ts` |
+| `tool_execution_events` 复合索引 | `(execution_id, phase)` 替换单列 `execution_id` 索引（前缀覆盖）；缺它时 planner 对 `getOpenExecutions` 的 NOT EXISTS 反连接选 phase 索引，begin×complete 全交叉 | `schema.ts` |
+| FTS backfill 守卫改存在性检查 | FTS5 虚表的 `COUNT(*)` 是全索引扫描；守卫一律 `SELECT 1 ... LIMIT 1`（桌面 2 处 + CLI 3 处），新增守卫沿用此口径 | `SessionRepository`、`MemoryRepository`、`cliDatabaseSchema.ts` |
+| ShellEnvironment 磁盘缓存 | `<数据目录>/cache/shell-environment.json`（schema/platform/shell 三校验、0600、原子 rename）；命中即恢复 PATH + 后台刷新，未命中保持同步捕获 | `shellEnvironment.ts` |
+
 ## 云端存储 (Supabase)
 
 **表结构**:

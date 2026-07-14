@@ -395,7 +395,7 @@ const AttachmentItem: React.FC<{
   }
 
   if (category === 'document' && displayAttachment.docxJson) {
-    return <DocumentBlock spec={displayAttachment.docxJson} />;
+    return <DocumentBlock spec={displayAttachment.docxJson} filePath={localFilePath} />;
   }
 
   if (category === 'presentation') {

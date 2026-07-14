@@ -6,6 +6,7 @@
 import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Sheet, Download, Copy, Check, ChevronLeft, ChevronRight, BarChart3, Table2, Filter, ArrowUpDown } from 'lucide-react';
 import { LocalityFeedbackBar } from '../../../LivePreview/LocalityFeedbackBar';
+import { sheetCellRef } from '@shared/livePreview/sheetCoords';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
 
@@ -186,17 +187,6 @@ const SheetTabs = memo(function SheetTabs({
 });
 
 // ── Main Component ─────────────────────────────────────────────────────────
-
-// 列索引 → A1 列字母（0→A, 25→Z, 26→AA）
-function columnLetter(ci: number): string {
-  let n = ci;
-  let s = '';
-  do {
-    s = String.fromCharCode(65 + (n % 26)) + s;
-    n = Math.floor(n / 26) - 1;
-  } while (n >= 0);
-  return s;
-}
 
 export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, filePath }: { spec: string; filePath?: string }) {
   const [copied, setCopied] = useState(false);
@@ -393,7 +383,8 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
           </thead>
           <tbody>
             {visibleRows.map((row, ri) => {
-              const rowNum = page * MAX_VISIBLE_ROWS + ri + 1;
+              const dataRowIndex = page * MAX_VISIBLE_ROWS + ri;
+              const rowNum = dataRowIndex + 1;
               return (
                 <tr key={ri} className="hover:bg-zinc-800/50 transition-colors">
                   <td className="px-2 py-1 text-right text-zinc-600 border-r border-zinc-700/50 select-none tabular-nums">
@@ -403,8 +394,9 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
                     const isSelected = selectedColumns.includes(ci);
                     const value = row[ci];
                     const isNum = typeof value === 'number';
-                    // A1 引用：列字母 + xlsx 行号（rowNum 是 1-based 数据行，xlsx header 占第 1 行 → +1）
-                    const cellRef = `${columnLetter(ci)}${rowNum + 1}`;
+                    // A1 引用走共享口径：DocEdit 会照着这个引用直接改源文件，
+                    // 换算只能有一份，验收脚本和单测都从同一个函数取。
+                    const cellRef = sheetCellRef(dataRowIndex, ci);
                     const isCellSelected = filePath != null && selectedCell === cellRef;
 
                     return (
@@ -431,7 +423,9 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
       {filePath != null && selectedCell && (
         <div className="border-t border-zinc-700 px-3 py-2">
           <LocalityFeedbackBar
-            anchor={{ kind: 'sheet', filePath, cell: selectedCell }}
+            // sheetName 必传：DocEdit 的 getWorksheet 在缺省时会默默取第一张表，
+            // 多 sheet 工作簿里用户点的是第 2 张表、改的却是第 1 张。
+            anchor={{ kind: 'sheet', filePath, cell: selectedCell, sheetName: sheet?.name }}
             locationLabel={`单元格 ${selectedCell}`}
           />
         </div>

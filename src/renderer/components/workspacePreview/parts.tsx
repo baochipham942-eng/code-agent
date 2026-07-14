@@ -514,7 +514,7 @@ export function PreviewBody({ item }: { item: WorkspacePreviewItem }) {
     return <SpreadsheetBlock spec={item.content.json} filePath={item.file?.path} />;
   }
   if (item.kind === 'document' && item.content?.json) {
-    return <DocumentBlock spec={item.content.json} />;
+    return <DocumentBlock spec={item.content.json} filePath={item.file?.path} />;
   }
   if (item.kind === 'chart' && item.content?.json) {
     return <ChartBlock spec={item.content.json} />;

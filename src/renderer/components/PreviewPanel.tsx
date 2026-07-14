@@ -765,7 +765,7 @@ export const PreviewPanel: React.FC = () => {
                 </div>
               }
             >
-              <DocumentBlock spec={content} />
+              <DocumentBlock spec={content} filePath={previewFilePath ?? undefined} />
             </Suspense>
           </div>
         ) : isExcel ? (

@@ -672,6 +672,9 @@ export function registerSettingsHandlers(
   });
 
   // Excel → JSON (for SpreadsheetBlock interactive rendering)
+  const isBlankRow = (row: unknown[] | undefined): boolean =>
+    !row || row.length === 0 || row.every((cell) => cell === null || cell === undefined || cell === '');
+
   ipcMain.handle('extract-excel-json', async (_, filePath: string): Promise<{
     sheets: Array<{ name: string; headers: string[]; rows: unknown[][]; rowCount: number }>;
     sheetCount: number;
@@ -685,10 +688,18 @@ export function registerSettingsHandlers(
 
       const sheets = workbook.SheetNames.map((sheetName: string) => {
         const sheet = workbook.Sheets[sheetName];
-        const json: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
-        const headers = (json[0] || []) as string[];
-        const rows = json.slice(1, 501); // Cap at 500 rows for UI performance
-        return { name: sheetName, headers, rows, rowCount: json.length - 1 };
+        // blankrows 必须为 true：预览里的数组下标就是 UI 算 A1 引用（B7）的依据，
+        // 而定点反馈会把这个 A1 交给 DocEdit 直接改源文件。丢掉空行会让后续所有行
+        // 的行号左移，用户点第 4 行改的却是第 3 行——静默改错单元格。
+        const json: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: true });
+        // 但 !ref 常被文件虚标（只有几行数据却声明到几百行），尾部空行纯噪音。
+        // 只裁尾巴、保留中间空行：中间空行是行号对齐的一部分，裁了就又错位了。
+        let end = json.length;
+        while (end > 0 && isBlankRow(json[end - 1])) end--;
+        const trimmed = json.slice(0, end);
+        const headers = (trimmed[0] || []) as string[];
+        const rows = trimmed.slice(1, 501); // Cap at 500 rows for UI performance
+        return { name: sheetName, headers, rows, rowCount: Math.max(trimmed.length - 1, 0) };
       });
 
       return { sheets, sheetCount: workbook.SheetNames.length };

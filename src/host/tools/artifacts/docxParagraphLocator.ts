@@ -42,11 +42,11 @@ function decodeXmlText(value: string): string {
 }
 
 /** Word 的 run 拆分不应改变用户看到的段落文本或指纹。 */
-export function normalizeDocxParagraphText(value: string): string {
+function normalizeDocxParagraphText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-export function fingerprintDocxParagraphText(value: string): string {
+function fingerprintDocxParagraphText(value: string): string {
   return createHash('sha256').update(normalizeDocxParagraphText(value), 'utf8').digest('hex');
 }
 
@@ -76,7 +76,7 @@ function paragraphPresentation(paragraphXml: string): Pick<DocxParagraphCoordina
  * 返回可渲染段落，但 index 始终是 document.xml 全部 `<w:p>` 的原始 0-based 序号。
  * 空段落不返回 UI，后续段落的 index 仍保留间隙。
  */
-export function parseDocxDocumentParagraphs(documentXml: string): DocxParagraphCoordinate[] {
+function parseDocxDocumentParagraphs(documentXml: string): DocxParagraphCoordinate[] {
   const allParagraphs = documentXml.match(DOCX_PARAGRAPH_PATTERN) ?? [];
   const visible = allParagraphs.flatMap((paragraphXml, index) => {
     const text = paragraphText(paragraphXml);

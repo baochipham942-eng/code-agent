@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveEffectiveSessionIdForSend } from '../../../src/renderer/hooks/agent/useAgentIPC';
+import {
+  requestCancelUntilSettled,
+  resolveEffectiveSessionIdForSend,
+} from '../../../src/renderer/hooks/agent/useAgentIPC';
 
 describe('resolveEffectiveSessionIdForSend (B4 session-create race)', () => {
   it('awaits in-flight create and binds to the new session, not the pre-create currentSessionId', async () => {
@@ -59,5 +62,55 @@ describe('resolveEffectiveSessionIdForSend (B4 session-create race)', () => {
       createFallbackSession,
     })).resolves.toBe('session-fallback');
     expect(createFallbackSession).toHaveBeenCalledOnce();
+  });
+});
+
+describe('requestCancelUntilSettled (A3 renderer convergence)', () => {
+  it('retries cancel_requested against the same run until settlement is confirmed', async () => {
+    const requestCancel = vi.fn()
+      .mockResolvedValueOnce({
+        message: 'cancel_requested',
+        runId: 'run-1',
+        sessionId: 'session-1',
+      })
+      .mockResolvedValueOnce({
+        message: 'Cancelled',
+        runId: 'run-1',
+        sessionId: 'session-1',
+      });
+    const wait = vi.fn(async () => undefined);
+
+    await expect(requestCancelUntilSettled({
+      sessionId: 'session-1',
+      requestCancel,
+      isCancellationActive: () => true,
+      wait,
+    })).resolves.toBe(true);
+
+    expect(requestCancel).toHaveBeenNthCalledWith(1, { sessionId: 'session-1' });
+    expect(requestCancel).toHaveBeenNthCalledWith(2, {
+      runId: 'run-1',
+      sessionId: 'session-1',
+    });
+    expect(wait).toHaveBeenCalledOnce();
+  });
+
+  it('stops retrying when the terminal SSE event already settled renderer state', async () => {
+    let active = true;
+    const requestCancel = vi.fn(async () => ({
+      message: 'cancel_requested',
+      runId: 'run-2',
+      sessionId: 'session-2',
+    }));
+
+    await expect(requestCancelUntilSettled({
+      sessionId: 'session-2',
+      requestCancel,
+      isCancellationActive: () => active,
+      wait: async () => {
+        active = false;
+      },
+    })).resolves.toBe(false);
+    expect(requestCancel).toHaveBeenCalledOnce();
   });
 });

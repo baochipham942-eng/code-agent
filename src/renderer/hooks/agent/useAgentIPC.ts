@@ -416,6 +416,47 @@ export async function resolveEffectiveSessionIdForSend(input: {
   return effectiveSessionId;
 }
 
+interface CancelSettlementResponse {
+  message?: string;
+  runId?: string;
+  sessionId?: string;
+}
+
+/**
+ * Keep re-delivering a 202 cancel request until either the route confirms the
+ * same run settled or the terminal SSE event has already converged renderer state.
+ */
+export async function requestCancelUntilSettled(input: {
+  sessionId: string;
+  requestCancel: (selector: { runId?: string; sessionId?: string }) => Promise<CancelSettlementResponse | undefined>;
+  isCancellationActive: () => boolean;
+  wait: () => Promise<void>;
+}): Promise<boolean> {
+  let selector: { runId?: string; sessionId?: string } = { sessionId: input.sessionId };
+
+  while (true) {
+    const result = await input.requestCancel(selector);
+    if (result?.message !== 'cancel_requested') {
+      return true;
+    }
+
+    // Retrying by session could cancel a follow-up run that starts after the
+    // original one settles. A3 responses include runId so retries stay fenced.
+    if (!result.runId) {
+      return false;
+    }
+    selector = {
+      runId: result.runId,
+      sessionId: result.sessionId ?? input.sessionId,
+    };
+
+    await input.wait();
+    if (!input.isCancellationActive()) {
+      return false;
+    }
+  }
+}
+
 export interface QueuedRuntimeInput {
   id: string;
   sessionId: string;
@@ -930,13 +971,18 @@ export function useAgentIPC({
         });
         markLatestUserMessageRunCancelled(Date.now());
       }
-      const cancelResult = await ipcService.invoke(
-        'agent:cancel',
-        targetSessionId ? { sessionId: targetSessionId } : undefined,
-      ) as { message?: string } | undefined;
-      // Honest settle: only mark cancelled when route confirmed terminal.
-      // cancel_requested (202 / timeout) keeps 'cancelling' so UI does not lie.
-      const confirmed = cancelResult?.message !== 'cancel_requested';
+      const confirmed = targetSessionId
+        ? await requestCancelUntilSettled({
+            sessionId: targetSessionId,
+            requestCancel: async (selector) => ipcService.invoke('agent:cancel', selector) as Promise<CancelSettlementResponse | undefined>,
+            isCancellationActive: () => (
+              useTaskStore.getState().sessionStates[targetSessionId]?.status === 'cancelling'
+            ),
+            wait: () => new Promise((resolve) => setTimeout(resolve, 250)),
+          })
+        : (await ipcService.invoke('agent:cancel', undefined), true);
+      // Honest settle: only mark cancelled when the route confirmed terminal.
+      // If SSE settled first, its event handler already owns the final state.
       if (targetSessionId) {
         if (confirmed) {
           useTaskStore.getState().updateSessionState(targetSessionId, { status: 'cancelled' });

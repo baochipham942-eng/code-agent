@@ -52,6 +52,11 @@ export class ControlState {
 
   setRunAbortController(controller: AbortController | null): void {
     this._runAbortController = controller;
+    // Cancel may land before the controller exists (e.g. during initializeRun).
+    // Arm the new controller already aborted so late attach/listeners see the signal.
+    if (controller && this._isCancelled) {
+      controller.abort();
+    }
   }
 
   /** plan mode 进入：快照当前会话消息（拷贝） */

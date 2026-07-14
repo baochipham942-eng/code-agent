@@ -217,10 +217,17 @@ class AttachedRunHandle implements RunHandle {
     if (!this.target) {
       return Promise.resolve();
     }
-    if (!this.cancellationPromise) {
-      this.cancellationPromise = Promise.resolve(this.target.cancel(this.cancelReason));
-    }
-    return this.cancellationPromise;
+    // Re-dispatch on every cancel request. The previous single-flight cache swallowed
+    // later stops after the first delivery resolved — if that first cancel was a no-op
+    // (controller not armed yet), every subsequent stop stayed dead forever.
+    // Targets are expected to treat cancel as idempotent; deliveries are serialized.
+    const previous = this.cancellationPromise ?? Promise.resolve();
+    const next = previous.then(
+      () => Promise.resolve(this.target!.cancel(this.cancelReason)),
+      () => Promise.resolve(this.target!.cancel(this.cancelReason)),
+    );
+    this.cancellationPromise = next;
+    return next;
   }
 
   private requireAttachedTarget(action: string): RunControlTarget {

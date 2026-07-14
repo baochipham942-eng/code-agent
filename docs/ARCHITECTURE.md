@@ -94,7 +94,7 @@
 | 036 | 评测判分可信度收口 + 红线 case 执行闸 | accepted |
 | 037 | Durable Run Kernel（run 身份/所有权/恢复语义） | accepted |
 | 038 | RuntimeContext 拆袋（共享可变袋分批收敛为切片状态） | accepted |
-| 040 | Artifact Locator 契约（预览定点与编辑目标统一对账） | proposed |
+| 040 | Artifact Locator 契约（预览定点与编辑目标统一对账） | accepted |
 
 ---
 

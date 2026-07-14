@@ -1,6 +1,6 @@
 # ADR-040 — Artifact Locator 契约：预览定点与编辑目标统一对账
 
-- **状态**: Proposed（等待产品负责人拍板；本 ADR 不授权施工）
+- **状态**: Accepted（2026-07-14 产品负责人拍板 D1–D6；D3 否决原推荐、改为截图优先，详见「拍板项」）
 - **日期**: 2026-07-14
 - **产品边界**: Agent Neo 是以方案、PPT、表格、文档等产物为主轴的 cowork 人机协作产品；默认操作者不会读代码，也不应承担坐标换算和误改排查成本。
 - **基线**: `fix/attachment-spreadsheet-filepath` @ `516daef87`；保留 `3e6575b40`、`aa66f25dc`、`6ac3d8530`、`516daef87`，不改 `DocEdit` / `ppt_edit` 工具实现。
@@ -133,13 +133,23 @@ Excel 保留 A1，不做抽象翻译。resolver 输出 `DocEdit` 的 `sheet` 与
 
 写前 resolver 重新打开 PPTX，校验 revision、`relationshipId -> slidePartName` 映射和 slide 文本指纹；通过后从 `slidePartName` 中提取文件序号并输出当前工具需要的 `slide_index = 文件序号 - 1`。例如用户看到第 2 页，而该页 relationship 指向 `ppt/slides/slide7.xml`，prompt 与 guard 都固定 `slide_index=6`。`ppt_edit` 不改签名。
 
-#### 上传 PPT 的选页 UI
+#### 上传 PPT 的选页 UI（D3 已拍板：截图缩略图墙首批就上）
 
-首批采用可点文字大纲：按 resolver 给出的真实显示顺序渲染所有已加载页，点击卡片后展示 `LocalityFeedbackBar`。这能复用现有 outline 数据形态和反馈栏，属于 resolver 之后的接线；当前 outline 已渲染标题与文本，但没有选中态和反馈入口（`src/renderer/components/PreviewPanel.tsx:317-352`）。上传消息当前只显示前两页摘要（`src/renderer/components/features/chat/MessageBubble/AttachmentPreview.tsx:401-426`），应复用同一个 `PresentationPagePicker`，避免聊天附件与 Workspace 再长出两套页坐标。
+**首批即为截图选页，不分两批。** 非程序员靠版式和画面认页，文字大纲认不出「那页蓝色的」是哪一页；把截图推到第二批等于首批交付一个认不出页的选页器。
 
-视觉预览作为下一批增强：LibreOffice 可用时，对上传 PPTX 调现有 `convertToScreenshots`，截图数组按显示顺序绑定同一组 locator；不可用、转换失败或只有 qlmanage 单页降级时，继续使用文字大纲，不关闭选页能力。现有能力已经有 `isLibreOfficeAvailable` 闸和 PPTX→PDF→逐页图片管线（`src/host/tools/media/ppt/visualReview.ts:23-41`、`61-110`），但当前 upload preview 没有接这条管线（`src/renderer/components/PreviewPanel.tsx:447-468`）。
+形态是**缩略图墙**：一次转换出全部页，在一个界面里按 resolver 给出的真实显示顺序铺成网格，点某张即选中该页并展示 `LocalityFeedbackBar`。点击目标直接绑定该缩略图的 locator，**不做「点击坐标 → 页码」的二次换算**——那等于给这条链再加一层错位风险点，与本 ADR 的立意相反。
 
-产品取舍：非程序员通常靠版式和画面识别页面，截图是目标体验；LibreOffice 是可选本机依赖，不能成为“能否选页”的硬门。文字大纲负责可用性，截图负责识别效率。
+现有管线已满足「一次性」，转换层不需要改：`convertToScreenshots` 一次 LibreOffice 调用出 PDF，再一次 `pdftoppm`/`magick` 调用出全部页（`src/host/tools/media/ppt/visualReview.ts:70-111`），不是逐页惰性转换。当前 upload preview 只是没接这条管线（`src/renderer/components/PreviewPanel.tsx:447-468`）。上传消息当前只显示前两页摘要（`src/renderer/components/features/chat/MessageBubble/AttachmentPreview.tsx:401-426`），应与 Workspace 复用同一个 `PresentationPagePicker`，避免两个入口再长出两套页坐标。
+
+**降级链（D3 已拍板：自带 poppler + 大纲兜底）**。现状有两级坑：LibreOffice 缺席则整个转换抛错、一张图都没有；LibreOffice 在但 `pdftoppm`/`magick` 都不在则退到 `qlmanage`，**整份 deck 只出 1 张缩略图**（`src/host/tools/media/ppt/visualReview.ts:151-164`），第 2 页起选不了。决议：
+
+1. **poppler 作为 sidecar 随包分发**（`pdftoppm` 本体 91K + 依赖库共约数 MB，与现有 `scripts/rtk`(7.2M)、`scripts/uv`(45M) 同量级）。这消灭 qlmanage 单页降级，且**生成的 PPT 走同一条截图管线，两边同时受益**。
+2. **LibreOffice 真缺席时退回可点文字大纲**，选页能力不归零。LibreOffice 不作为「能否选页」的硬门。
+3. **不自带 LibreOffice、不自研 PPT 渲染器**：LibreOffice 实测 794MB，而当前 DMG 约 33MB，打进去是 24 倍膨胀；自研渲染器要还原字体/版式/图表/SmartArt，是以周计的独立项目且永不保真——现有依赖里 `pptxgenjs` 只能生成不能渲染、`jszip` 只能解包 OOXML，无现成件可用。此项另开评估，不进本 ADR。
+
+**实现期待验证的已知风险（本轮未实测）**：`pdfToImages` 用文件名字符串 `.sort()` 定序（`src/host/tools/media/ppt/visualReview.ts:130-133`、`144-147`）。`pdftoppm` 实测会补零（13 页 → `out-01..out-13`），字符串排序正确；但 ImageMagick 分支用 `%d` 无补零（同文件 `141`），≥11 页时字符串排序应会错成 `1→10→11→2`。**这正是本 ADR 要根治的同一个病的第四例**——显示顺序由文件名排序推导。接 picker 时必须实测该分支并改为数值定序。
+
+产品取舍：非程序员靠版式和画面认页，所以**截图是首批交付形态，不是增强**；文字大纲从「首批方案」降为「LibreOffice 缺席时的兜底」。自带 poppler 把「装了 LibreOffice 却只出一张图」这类机器捞回截图体验，代价是数 MB 包体。
 
 ## 两侧对账机制
 
@@ -184,21 +194,22 @@ env -u FORCE_COLOR -u NO_COLOR npx vitest run <path>
 | P1 Word | B1. `document.xml` paragraph parser：同谓词 index、聚合 `<w:t>`、`pStyle`、`numPr`、指纹 | 真开发 | M | complex DOCX extractor contract 全绿 |
 | P1 Word | B2. `DocumentBlock` 改用 XML locator；通过 resolver 后解除 index 禁令；保留无路径门禁 | 接线 | S | 点击目标段产生结构化 locator；真实 core 只改目标 paragraph |
 | P1 PPT | C1. presentation package index resolver：`sldIdLst + presentation.xml.rels + slide part` | 真开发 | M | reordered/gapped PPT fixture 全绿；旧连续 deck 解析结果不变 |
-| P1 PPT | C2. 上传附件与 Workspace 共用可点 outline picker + locality bar | 接线 | M | 两入口对同一页生成相同 locator；缺本地路径时保持只读 |
+| P1 PPT | C2a. poppler sidecar 随包分发（对齐现有 `fetch-rtk.sh`/`fetch-uv.sh` 形态），`pdfToImages` 改数值定序并实测 ImageMagick 分支 | 真开发 | S | 无 pdftoppm 的干净机也能出全部页；≥11 页 deck 顺序正确；qlmanage 单页降级不再触发 |
+| P1 PPT | C2b. 上传附件与 Workspace 共用 `PresentationPagePicker`：截图缩略图墙 + locality bar，LibreOffice 缺席时退回可点大纲 | 真开发 | M | 两入口对同一页生成相同 locator；缺本地路径时保持只读；LO 有/无两态均可选页 |
 | P1 收口 | C3. 生成 PPT producer 切到 resolver locator；保留 screenshot `selectedIndex` 体验与旧 prompt | 接线 | S | 现有生成 PPT 正向测试 + legacy prompt snapshot 全绿 |
-| P2 视觉体验 | D1. 上传 PPT 截图缓存 IPC，复用 `convertToScreenshots`，把 screenshot 按 displayIndex 绑定 locator | 真开发 | M | LibreOffice 有/无/转换失败三态；无 LO 时 outline 仍可选页 |
+| P1 PPT | C2c. 上传 PPT 截图缓存 IPC，复用 `convertToScreenshots`，screenshot 按 displayIndex 绑定 locator（**原 P2-D1，因 D3 拍板截图首批就上而前移**） | 真开发 | M | LibreOffice 有/无/转换失败三态；无 LO 时大纲仍可选页 |
 | P2 硬化 | D2. locator telemetry：resolved / stale / blocked reason；只记 kind 与 reason，不记文档正文 | 接线 | S | 单测验证不落 excerpt/file content；dogfood 可定位 stale 原因 |
 
-施工顺序是 A1→A2→A3，再并行 B1/B2 与 C1/C2/C3，最后 D1/D2。P0 只建契约并保护现有 Excel/生成 PPT；Word 的 index prompt 继续禁用，上传 PPT 继续只读，直到各自 P1 fixture 通过。任一 kind 可独立回滚到 legacy producer，不要求三种产物同批上线。
+施工顺序是 A1→A2→A3，再并行 B1/B2 与 C1/C2a/C2b/C2c/C3，最后 D2。C2a（poppler sidecar）可与 C1 并行，它不依赖 locator 契约、且对生成 PPT 的截图链路独立生效。P0 只建契约并保护现有 Excel/生成 PPT；Word 的 index prompt 继续禁用，上传 PPT 继续只读，直到各自 P1 fixture 通过。任一 kind 可独立回滚到 legacy producer，不要求三种产物同批上线。
 
-## 拍板项
+## 拍板项（2026-07-14 产品负责人已全部拍板）
 
-1. **D1 Word 锚**：批准“XML 序号 + 当前/邻居文本指纹 + revision”的复合锚；不选纯 index、纯文本或必填稳定 id。
-2. **D2 PPT 坐标**：批准 `displayIndex + relationshipId + slidePartName + revision`；现有 `slide_index` 只作为 resolver 输出，不再代表用户看到的页序。
-3. **D3 上传 PPT UI**：批准“可点文字大纲先上线，LibreOffice 截图后增强”；截图缺失不关闭选页。
-4. **D4 首批工具面**：locator 首批只放行 Excel cell/range、Word paragraph、PPT 页内 replace 三类；PPT delete/reorder/notes 不搭车。
-5. **D5 stale 行为**：文件 revision 或局部指纹不一致一律阻断并要求刷新，不做 best-effort 猜测。
-6. **D6 无 locator 路径的处置**：用户不点预览、直接说「把三月的销售额改成 500」时，模型只能靠数 CSV 行推 A1，而该 CSV 与 `read_xlsx` 两处至今都在压缩空行且不带行号（见「问题与证据基线」末节）。本 ADR 的 guard 覆盖不到这条链。请拍板：**（a）** 首批不管，locator 只保「点了预览」的路径，另立工单修上下文行号——推荐，理由是它与 locator 契约无耦合、可独立小步修；**（b）** 纳入本 ADR 首批，A 阶段一并给 CSV/`read_xlsx` 加行号并禁止模型自推坐标，代价是 P0 面扩大且要动模型上下文格式。
+1. **D1 Word 锚** — ✅ 通过推荐方案：「XML 序号 + 当前/邻居文本指纹 + revision」复合锚；不选纯 index、纯文本或必填稳定 id。
+2. **D2 PPT 坐标** — ✅ 通过推荐方案：`displayIndex + relationshipId + slidePartName + revision`；现有 `slide_index` 只作为 resolver 输出，不再代表用户看到的页序。
+3. **D3 上传 PPT UI** — ⚠️ **否决推荐方案，改为截图优先**。原推荐是「文字大纲先上线、截图后增强」，产品负责人判定非程序员靠画面认页，文字大纲不构成可交付的选页体验。定案：**截图缩略图墙首批就上**（一次转换出全部页、铺成网格、点图选页，不做点击坐标二次换算）；**poppler 随包分发**消灭 qlmanage 单页降级；**文字大纲降为 LibreOffice 缺席时的兜底**，选页能力不归零。连带效果：原 P2-D1 截图工单前移为 P1-C2c，新增 P1-C2a。
+4. **D4 首批工具面** — ✅ 通过推荐方案：locator 首批只放行 Excel cell/range、Word paragraph、PPT 页内 replace 三类；PPT delete/reorder/notes 不搭车。
+5. **D5 stale 行为** — ✅ 通过推荐方案：文件 revision 或局部指纹不一致一律阻断并要求刷新，不做 best-effort 猜测。取舍已明示：用户偶尔多点一次刷新，换「绝不静默改错文档」。
+6. **D6 无 locator 路径的处置** — ✅ 通过推荐方案 **（a）另立工单**。用户不点预览、直接说「把三月的销售额改成 500」时，模型只能靠数 CSV 行推 A1，而该 CSV 与 `read_xlsx` 两处至今都在压缩空行且不带行号（见「问题与证据基线」末节）。该链与 locator 契约无耦合，可独立小步修，不进本 ADR 首批。**注意：修它未必是把 `blankrows` 翻成 true——那只是让模型数得准，仍在赌它数对；给上下文加真实行号才是根治，但会动模型上下文格式，需单独评估。**
 
 ## 代价与后果
 
@@ -211,6 +222,7 @@ env -u FORCE_COLOR -u NO_COLOR npx vitest run <path>
 
 - 本 ADR 不修改 `DocEdit` / `ppt_edit` schema、executor 或文件写算法。
 - 不把 Excel A1 改成通用数字 index。
-- 不把 LibreOffice 设为上传 PPT 选页的必需依赖。
+- 不把 LibreOffice 设为上传 PPT 选页的必需依赖（D3：缺席时退回可点文字大纲）。
+- 不自带 LibreOffice（实测 794MB vs 当前 DMG 约 33MB），不自研 PPT 渲染器（以周计的独立项目且永不保真）。D3 只批准 poppler sidecar 这一档。
 - 不在 locator 首批顺手修 PPT 删除、重排、备注的 package mutation 语义；相关行为已在“问题与证据基线”记录，另立工具工单。
-- 不在产品负责人拍板前写实现代码。
+- 本轮拍板只授权按 P0→P1→P2 顺序施工本 ADR 范围内的工单，不授权顺手改 `DocEdit`/`ppt_edit` 工具本体。

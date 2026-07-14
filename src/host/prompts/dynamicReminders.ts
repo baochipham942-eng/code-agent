@@ -180,6 +180,18 @@ function getTaskDescriptionFromFeatures(features: TaskFeatures): string {
     parts.push(features.dimensions.join(' '));
   }
 
+  // 产物意图必须进入描述串，否则「做份营销方案 PPT」在这里被压成「规划任务」，
+  // 拿去匹配语料库时只剩编程示例可选。用词与产物示例的 tags/typeKeywords 对齐
+  // （见 fewShotExamples.ts），不要在这里写「设计/方案」这类意图动词。
+  //
+  // ⚠️ 只接 isPPTTask。isExcelTask / isDocumentTask / isImageTask 都靠裸英文词做
+  // 子串匹配，与代码标识符全面碰撞（实测：'document.getElementById' → isDocumentTask，
+  // '重构 excel 导出那段代码' → isExcelTask，'这个 image 加载失败了' → isImageTask），
+  // 接进来会把一整类编程 prompt 从「无示例」变成「错示例」。要放开它们，得先让
+  // detectTaskFeatures 区分强信号（中文产物名词）与弱信号（裸英文词）——见
+  // specs/2026-07-14-artifact-intent-detection-signal-strength.md。
+  if (features.isPPTTask) parts.push('ppt 演示稿 幻灯片');
+
   return parts.join(' ');
 }
 

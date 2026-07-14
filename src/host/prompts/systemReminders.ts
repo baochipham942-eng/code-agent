@@ -371,6 +371,40 @@ function extractFileExtensions(text: string): string[] {
   return Array.from(exts);
 }
 
+/**
+ * 关键词匹配：ASCII 关键词走词边界，中文走子串
+ *
+ * 中文没有词边界，只能子串匹配；但 ASCII 词裸子串匹配会咬到代码标识符——
+ * `sheet` ⊂ stylesheet、`slide` ⊂ slider、`draw` ⊂ drawer、`poster` ⊂ posterUrl。
+ * JS 的 \b 基于 \w=[A-Za-z0-9_]，中文字符不是 \w，所以「这是excel文件」里的 excel
+ * 两侧都成立边界，中英混排照常命中。
+ *
+ * ⚠️ 词边界救不了独立 token：`document.getElementById` 里的 document 两侧都是边界，
+ * 照样命中。那类只能靠不收裸词（见下方 WEAK/STRONG 分级）。
+ */
+function matchesKeyword(normalizedText: string, keyword: string): boolean {
+  if (!/^[\x20-\x7e]+$/.test(keyword)) return normalizedText.includes(keyword);
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`).test(normalizedText);
+}
+
+const hasAnyKeyword = (normalizedText: string, keywords: string[]): boolean =>
+  keywords.some((k) => matchesKeyword(normalizedText, k));
+
+/**
+ * 代码语境词——弱产物信号遇到它们要让位
+ *
+ * 刻意**不含** `函数`/`实现`/`逻辑`/`code`：
+ * - `函数`：Excel 也有函数，「Excel 里这个函数怎么写」是真表格诉求
+ * - `实现`：可以「实现方案」，不专属代码
+ * - `逻辑`：有「业务逻辑」
+ * 这几个词在 codeContextWords（isFuzzyCodeReview 用）里是合理的，但拿来否决产物意图太钝。
+ */
+const CODE_ARTIFACT_CONTEXT = [
+  '代码', '代码库', '重构', '报错', '编译', '调用栈',
+  'bug', '组件', '模块', '接口',
+];
+
 /** 按类型分组的文件扩展名 */
 const DATA_FILE_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.tsv', '.parquet'];
 const PPT_FILE_EXTENSIONS = ['.pptx', '.ppt'];
@@ -449,33 +483,50 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     '表格处理', '数据处理',
   ];
 
+  // --------------------------------------------------------------------------
+  // 产物关键词：强信号 / 弱信号分级
+  //
+  // 强 = 无歧义的产物名词，代码语境也不否决（「介绍代码库的 PPT」交付物仍是 PPT）
+  // 弱 = 与代码语境重叠的词，命中 CODE_ARTIFACT_CONTEXT 时让位
+  //
+  // 裸英文词（image / document / video / draw / report / article）一律不收：它们买不到
+  // 什么（中文用户说「配图」「文档」，英文用户说 "an image" / "write a document" 都是短语），
+  // 却会咬到 document.getElementById、image 上传、report 接口、draw 方法。词边界救不了
+  // 这类独立 token，只能不收。
+  // --------------------------------------------------------------------------
+
   // Excel 专属关键词（isDataTask 的子集，用于触发 Excel 场景化提醒）
-  const excelKeywords = [
-    'excel', 'xlsx', 'xls', '公式', '函数', 'vba', 'vlookup',
-    '透视表', '单元格', '数据清洗', '去重', '汇总',
-    'sheet', '工作表', 'openpyxl', 'xlwings',
+  // '函数' 不收：它同时是代码词，「这个函数写错了」会被判成表格任务；
+  // Excel 的函数诉求走 'excel' 弱信号（「excel 里这个函数怎么写」照样命中）。
+  const excelStrongKeywords = [
+    '透视表', '数据透视', '单元格', '工作表', 'vlookup', 'vba', 'openpyxl', 'xlwings',
+  ];
+  const excelWeakKeywords = [
+    'excel', 'xlsx', 'xls', 'sheet', '公式', '数据清洗', '去重', '汇总',
   ];
 
   // 文档生成任务关键词
-  const documentKeywords = [
-    '文章', '报告', '文档', '撰写', '写一篇',
-    'report', 'article', 'document',
-    '起草', '草拟', '编写文档',
+  const documentStrongKeywords = [
+    '文章', '撰写', '写一篇', '起草', '草拟', '编写文档',
+    'write a document', 'write a report',
   ];
+  const documentWeakKeywords = ['报告', '文档'];
 
-  // 图像生成任务关键词
-  const imageKeywords = [
+  // 图像生成任务关键词（全强：都是无歧义的产物名词/动作）
+  const imageStrongKeywords = [
     '生成图', '画图', '画一个', '画一张',
-    'image', 'draw', 'generate image',
-    '生图', '插图', '制图', '作图',
+    '生图', '插图', '制图', '作图', '配图', '海报',
     '流程图', '架构图', '示意图', '思维导图',
+    'generate image', 'an image', 'draw a',
   ];
 
-  // 视频生成任务关键词
-  const videoKeywords = [
-    '生成视频', '做个视频', '制作视频', '视频生成',
-    'video', 'generate video', '短视频',
-    '动画', '视频片段',
+  // 视频生成任务关键词（全强）
+  // 裸 '动画' 不收：区分「做个动画」（视频）和「给 drawer 加动画」（CSS）靠的是动词不是
+  // 强弱，所以只收带动词的短语形式。
+  const videoStrongKeywords = [
+    '生成视频', '做个视频', '制作视频', '视频生成', '短视频', '视频片段',
+    '做个动画', '生成动画', '制作动画', '动画视频', '一段动画',
+    'generate video', 'a video',
   ];
 
   // 截屏/查看当前屏幕关键词（刻意不含裸"截图"——"分析这张截图"是分析已有文件，
@@ -502,19 +553,27 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
   ];
   const hasTroubleContext = troubleContextWords.some(w => normalizedPrompt.includes(w));
 
+  // 弱产物信号的否决门。附件是最强证据（真有 .xlsx 附件就是表格任务），不受它影响。
+  const hasCodeArtifactContext = hasAnyKeyword(normalizedPrompt, CODE_ARTIFACT_CONTEXT);
+  const weakHit = (keywords: string[]) =>
+    !hasCodeArtifactContext && hasAnyKeyword(normalizedPrompt, keywords);
+
   return {
     isMultiDimension: matchedDimensions.length >= 2,
     isComplexTask: complexKeywords.some((k) => normalizedPrompt.includes(k)),
     isAuditTask: auditKeywords.some((k) => normalizedPrompt.includes(k)),
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),
     isPlanningTask: planningKeywords.some((k) => normalizedPrompt.includes(k)),
-    isPPTTask: hasPPTFile || pptKeywords.some((k) => normalizedPrompt.includes(k)),
+    isPPTTask: hasPPTFile || hasAnyKeyword(normalizedPrompt, pptKeywords),
     isDataTask: hasDataFile || dataKeywords.some((k) => normalizedPrompt.includes(k)),
-    isExcelTask: hasDataFile && allExtensions.some(ext => ['.xlsx', '.xls'].includes(ext)) ||
-                 excelKeywords.some((k) => normalizedPrompt.includes(k)),
-    isDocumentTask: hasDocFile || documentKeywords.some((k) => normalizedPrompt.includes(k)),
-    isImageTask: hasImageFile || imageKeywords.some((k) => normalizedPrompt.includes(k)),
-    isVideoTask: hasVideoFile || videoKeywords.some((k) => normalizedPrompt.includes(k)),
+    isExcelTask: (hasDataFile && allExtensions.some(ext => ['.xlsx', '.xls'].includes(ext))) ||
+                 hasAnyKeyword(normalizedPrompt, excelStrongKeywords) ||
+                 weakHit(excelWeakKeywords),
+    isDocumentTask: hasDocFile ||
+                    hasAnyKeyword(normalizedPrompt, documentStrongKeywords) ||
+                    weakHit(documentWeakKeywords),
+    isImageTask: hasImageFile || hasAnyKeyword(normalizedPrompt, imageStrongKeywords),
+    isVideoTask: hasVideoFile || hasAnyKeyword(normalizedPrompt, videoStrongKeywords),
     isFuzzyCodeReview: hasFuzzyIntent && hasCodeContext,
     isFuzzyTroubleshooting: hasFuzzyIntent && hasTroubleContext,
     isScreenCaptureTask: screenCaptureKeywords.some((k) => normalizedPrompt.includes(k)),

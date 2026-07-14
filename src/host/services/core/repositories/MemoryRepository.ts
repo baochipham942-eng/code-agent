@@ -308,9 +308,10 @@ export class MemoryRepository {
    */
   backfillMemoriesFts(): number {
     try {
-      const ftsRow = this.db.prepare('SELECT COUNT(*) as c FROM memories_fts').get() as { c: number } | undefined;
-      const memRow = this.db.prepare('SELECT COUNT(*) as c FROM memories').get() as { c: number } | undefined;
-      if (Number(ftsRow?.c ?? 0) > 0 || Number(memRow?.c ?? 0) === 0) {
+      // LIMIT 1 存在性检查，避免 FTS5 COUNT(*) 全扫（启动关键路径）
+      const ftsHasRows = this.db.prepare('SELECT 1 FROM memories_fts LIMIT 1').get() !== undefined;
+      const memHasRows = this.db.prepare('SELECT 1 FROM memories LIMIT 1').get() !== undefined;
+      if (ftsHasRows || !memHasRows) {
         return 0;
       }
       return runMemoriesFtsBackfill(this.db);

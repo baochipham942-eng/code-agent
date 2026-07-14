@@ -156,9 +156,9 @@ export function createCliTables(db: CliDb): void {
   // Memories FTS5 — BM25 检索通道（roadmap 2.5），DDL 与桌面侧共用
   applyMemoriesFtsSchema(db);
   try {
-    const mFtsCount = (db.prepare('SELECT COUNT(*) as c FROM memories_fts').get() as { c: number } | undefined)?.c ?? 0;
-    const mCount = (db.prepare('SELECT COUNT(*) as c FROM memories').get() as { c: number } | undefined)?.c ?? 0;
-    if (mFtsCount === 0 && mCount > 0) {
+    const mFtsHasRows = db.prepare('SELECT 1 FROM memories_fts LIMIT 1').get() !== undefined;
+    const mHasRows = db.prepare('SELECT 1 FROM memories LIMIT 1').get() !== undefined;
+    if (!mFtsHasRows && mHasRows) {
       runMemoriesFtsBackfill(db);
     }
   } catch {
@@ -251,22 +251,29 @@ export function createCliTables(db: CliDb): void {
         AND COALESCE(new.content, '') NOT LIKE '%[[LOOP_WAIT]]%';
     END
   `);
-  db.exec(`
-    DELETE FROM session_messages_fts
-    WHERE message_id IN (
-      SELECT id
-      FROM messages
-      WHERE COALESCE(is_meta, 0) != 0
-        OR COALESCE(content, '') LIKE '%【循环模式 · 第%轮】%'
-        OR COALESCE(content, '') LIKE '%[[LOOP_WAIT]]%'
-    )
-  `);
+  // 一次性历史补救（与桌面侧 schema.ts 同一 user_version 门，共享同一 DB 文件）：
+  // 子查询要全表扫 messages.content（双 LIKE），大库上 ~4s，不能每次启动都跑。
+  const cleanupVersion = db.pragma('user_version', { simple: true }) as number;
+  if (cleanupVersion < 1) {
+    db.exec(`
+      DELETE FROM session_messages_fts
+      WHERE message_id IN (
+        SELECT id
+        FROM messages
+        WHERE COALESCE(is_meta, 0) != 0
+          OR COALESCE(content, '') LIKE '%【循环模式 · 第%轮】%'
+          OR COALESCE(content, '') LIKE '%[[LOOP_WAIT]]%'
+      )
+    `);
+    db.pragma('user_version = 1');
+  }
 
-  // 首次升级后从已有 messages backfill（幂等：只在 FTS 空 + messages 非空时跑）
+  // 首次升级后从已有 messages backfill（幂等：只在 FTS 空 + messages 非空时跑；
+  // 存在性检查用 LIMIT 1，FTS5 的 COUNT(*) 是全索引扫描）
   try {
-    const ftsCount = (db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as { c: number } | undefined)?.c ?? 0;
-    const msgCount = (db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number } | undefined)?.c ?? 0;
-    if (ftsCount === 0 && msgCount > 0) {
+    const ftsHasRows = db.prepare('SELECT 1 FROM session_messages_fts LIMIT 1').get() !== undefined;
+    const msgHasRows = db.prepare('SELECT 1 FROM messages LIMIT 1').get() !== undefined;
+    if (!ftsHasRows && msgHasRows) {
       db.exec(`
         INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
         SELECT id, session_id, role, COALESCE(content, ''), timestamp FROM messages
@@ -281,9 +288,9 @@ export function createCliTables(db: CliDb): void {
   // Transcript FTS5 — 按 kind 分解的转录索引（roadmap 2.1），DDL 与 Electron 共用
   applyTranscriptFtsSchema(db);
   try {
-    const tFtsCount = (db.prepare('SELECT COUNT(*) as c FROM transcript_fts').get() as { c: number } | undefined)?.c ?? 0;
-    const tMsgCount = (db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number } | undefined)?.c ?? 0;
-    if (tFtsCount === 0 && tMsgCount > 0) {
+    const tFtsHasRows = db.prepare('SELECT 1 FROM transcript_fts LIMIT 1').get() !== undefined;
+    const tMsgHasRows = db.prepare('SELECT 1 FROM messages LIMIT 1').get() !== undefined;
+    if (!tFtsHasRows && tMsgHasRows) {
       // 原子 backfill：中途失败整体回滚，避免半截索引被幂等检查永久跳过
       runTranscriptFtsBackfill(db);
     }

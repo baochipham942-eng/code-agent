@@ -707,18 +707,16 @@ export class SessionRepository {
    */
   backfillSessionMessagesFts(): number {
     try {
-      const ftsRow = this.db.prepare('SELECT COUNT(*) as c FROM session_messages_fts').get() as
-        | { c: number }
-        | undefined;
-      const msgRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number } | undefined;
-      const ftsCount = Number(ftsRow?.c ?? 0);
-      const msgCount = Number(msgRow?.c ?? 0);
+      // 存在性检查用 LIMIT 1 而非 COUNT(*)：FTS5 虚表的 COUNT(*) 是全索引扫描，
+      // 大库上每次启动白扫几百 MB（启动关键路径）。
+      const ftsHasRows = this.db.prepare('SELECT 1 FROM session_messages_fts LIMIT 1').get() !== undefined;
+      const msgHasRows = this.db.prepare('SELECT 1 FROM messages LIMIT 1').get() !== undefined;
 
-      if (ftsCount > 0 || msgCount === 0) {
+      if (ftsHasRows || !msgHasRows) {
         return 0;
       }
 
-      logger.info(`[EpisodicFts] Backfilling FTS from ${msgCount} messages...`);
+      logger.info('[EpisodicFts] Backfilling FTS from messages...');
       const result = this.db
         .prepare(
           `
@@ -841,13 +839,14 @@ export class SessionRepository {
    */
   backfillTranscriptFts(): number {
     try {
-      const ftsRow = this.db.prepare('SELECT COUNT(*) as c FROM transcript_fts').get() as { c: number } | undefined;
-      const msgRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as { c: number } | undefined;
-      if (Number(ftsRow?.c ?? 0) > 0 || Number(msgRow?.c ?? 0) === 0) {
+      // 同 backfillSessionMessagesFts：LIMIT 1 存在性检查，避免 FTS5 COUNT(*) 全扫
+      const ftsHasRows = this.db.prepare('SELECT 1 FROM transcript_fts LIMIT 1').get() !== undefined;
+      const msgHasRows = this.db.prepare('SELECT 1 FROM messages LIMIT 1').get() !== undefined;
+      if (ftsHasRows || !msgHasRows) {
         return 0;
       }
 
-      logger.info(`[TranscriptFts] Backfilling from ${Number(msgRow?.c ?? 0)} messages...`);
+      logger.info('[TranscriptFts] Backfilling from messages...');
       const inserted = runTranscriptFtsBackfill(this.db);
       logger.info(`[TranscriptFts] Backfill complete: ${inserted} rows`);
       return inserted;

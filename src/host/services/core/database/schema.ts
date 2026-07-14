@@ -227,7 +227,13 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       recorded_at INTEGER NOT NULL
     )
   `);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_tool_execution_events_exec ON tool_execution_events (execution_id)`);
+  // (execution_id, phase) 复合索引前缀覆盖旧的单列 execution_id 索引，并让启动时
+  // getOpenExecutions 的 NOT EXISTS 反连接走 execution_id 探测——缺它时 planner 选
+  // phase 索引，begin×complete 全交叉，大账本上实测 1.8s（启动关键路径）。
+  db.exec(`DROP INDEX IF EXISTS idx_tool_execution_events_exec`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tool_execution_events_exec_phase ON tool_execution_events (execution_id, phase)`,
+  );
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_tool_execution_events_session ON tool_execution_events (session_id, recorded_at)`,
   );
@@ -736,16 +742,23 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
 
   // Clean stale rows inserted before the triggers learned about hidden/meta loop turns.
-  db.exec(`
-    DELETE FROM session_messages_fts
-    WHERE message_id IN (
-      SELECT id
-      FROM messages
-      WHERE COALESCE(is_meta, 0) != 0
-        OR COALESCE(content, '') LIKE '%【循环模式 · 第%轮】%'
-        OR COALESCE(content, '') LIKE '%[[LOOP_WAIT]]%'
-    )
-  `);
+  // 一次性历史补救，用 user_version 做门：这条 DELETE 的子查询要全表扫 messages 的
+  // content（双 LIKE），大库上实测 ~4s，曾是启动 health-ready 的最大单项。跑过一次
+  // 之后 triggers 已保证增量正确，无需每次启动重扫。
+  const cleanupVersion = db.pragma('user_version', { simple: true }) as number;
+  if (cleanupVersion < 1) {
+    db.exec(`
+      DELETE FROM session_messages_fts
+      WHERE message_id IN (
+        SELECT id
+        FROM messages
+        WHERE COALESCE(is_meta, 0) != 0
+          OR COALESCE(content, '') LIKE '%【循环模式 · 第%轮】%'
+          OR COALESCE(content, '') LIKE '%[[LOOP_WAIT]]%'
+      )
+    `);
+    db.pragma('user_version = 1');
+  }
 
   // Transcript FTS5 — 按 kind 分解的转录全文索引（roadmap 2.1，History 工具底层）
   // 表 + triggers 的 DDL 在 src/shared/transcriptFts.sql.ts（与 CLI / 单测共用）

@@ -27,7 +27,8 @@ export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, Projec
 
 import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
-import { buildRecoverySnapshot, acknowledgeRecovery, type RecoverySnapshot } from './crashRecovery';
+import type { RecoverySnapshot } from './crashRecovery';
+import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
 import type { SwarmTraceRepo, SwarmRunEventRecord } from '../../../shared/contract/swarmTrace';
 import { buildSessionLedger, type LedgerSources } from './sessionLedgerProjection';
@@ -182,17 +183,23 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
     }
 
+    const { step, summary } = createInitStepTimer();
+
     try {
       this.db = new Database(this.dbPath);
       this.db.pragma('journal_mode = WAL');
       this.db.pragma('foreign_keys = ON');
+      step('open+wal');
 
       applySchema(this.db, logger);
+      step('schema');
       applySessionsMigrations(this.db, logger);
       applyTelemetryTurnsMigrations(this.db, logger);
       applyEvaluationCleanupMigration(this.db, logger);
       this.applyDurableRunMigration(this.db);
+      step('migrations');
       applyIndexes(this.db);
+      step('indexes');
 
       // 初始化 Repositories
       this.sessionRepo = new SessionRepository(this.db);
@@ -207,31 +214,16 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
       this.swarmLedgerRepo = new SwarmLedgerRepository(this.db);
       this.initializeDurableRunRepository(this.db);
+      step('repos');
 
-      const crashedSessions = this.sessionRepo.markCrashedActiveSessions(Date.now());
-      if (crashedSessions.interrupted > 0 || crashedSessions.orphaned > 0) {
-        logger.warn(`[DatabaseService] Marked crashed active sessions: ${crashedSessions.interrupted} interrupted, ${crashedSessions.orphaned} orphaned`);
-      }
-
-      // ADR-022 第二期 · 崩溃重放：从总账重建"崩溃前正在做的事"（未闭合工具执行），
-      // 不再只翻 interrupted 标记。重建后 append recovered 闭合，保证重启幂等。fail-safe。
-      try {
-        const snapshot = buildRecoverySnapshot(this.toolExecutionEventRepo, Date.now());
-        this.lastRecoverySnapshot = snapshot;
-        if (snapshot.totalInFlight > 0) {
-          logger.warn(`[DatabaseService] Crash recovery: ${snapshot.totalInFlight} in-flight tool execution(s) across ${snapshot.sessions.length} session(s) reconstructed from ledger`);
-          acknowledgeRecovery(this.toolExecutionEventRepo, snapshot, Date.now());
-        }
-      } catch (err) {
-        logger.warn('[DatabaseService] Crash recovery scan failed (ignored):', err);
-      }
-
-      // 首次升级后：从已有 messages 表 backfill episodic FTS 索引（幂等）
-      this.sessionRepo.backfillSessionMessagesFts();
-      // 同理：transcript FTS（kind 分解索引，roadmap 2.1）
-      this.sessionRepo.backfillTranscriptFts();
-      // 同理：memories FTS（BM25 检索通道，roadmap 2.5）
-      this.memoryRepo.backfillMemoriesFts();
+      this.lastRecoverySnapshot = runStartupMaintenance({
+        sessionRepo: this.sessionRepo,
+        memoryRepo: this.memoryRepo,
+        toolExecutionEventRepo: this.toolExecutionEventRepo,
+        logger,
+        step,
+      });
+      logger.info(`[DatabaseService] init timings: ${summary()}`);
     } catch (err) {
       // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
       logger.error('Database initialization failed, resetting state:', err);
@@ -1195,9 +1187,10 @@ export async function initDatabase(): Promise<DatabaseService> {
   // 懒加载 ProjectService 避免初始化期循环依赖。
   try {
     const { getProjectService } = await import('../project/projectService');
+    const backfillStart = performance.now();
     const migrated = getProjectService().backfillSessions(Date.now());
     if (migrated > 0) {
-      logger.info(`[DatabaseService] P0-2 backfill: ${migrated} 个存量 session 已归桶到项目`);
+      logger.info(`[DatabaseService] P0-2 backfill: ${migrated} 个存量 session 已归桶到项目 (${Math.round(performance.now() - backfillStart)}ms)`);
     }
   } catch (err) {
     logger.warn('[DatabaseService] P0-2 backfill 失败（不阻塞启动）:', err instanceof Error ? err.message : String(err));

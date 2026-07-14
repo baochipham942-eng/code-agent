@@ -87,6 +87,7 @@
       "../scripts/vision-tagger": "scripts/vision-tagger",
       "../scripts/rtk": "scripts/rtk",
       "../scripts/uv": "scripts/uv",
+      "../scripts/poppler": "scripts/poppler",
       "../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app": "scripts/Agent Neo Computer Use.app",
       "../scripts/pii/setup-gliner-pii.mjs": "scripts/pii/setup-gliner-pii.mjs",
       "../scripts/pii/gliner_onnx_runner.py": "scripts/pii/gliner_onnx_runner.py"

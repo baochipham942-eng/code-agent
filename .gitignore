@@ -102,6 +102,7 @@ scripts/rtk
 scripts/uv
 scripts/rtk.exe
 scripts/uv.exe
+scripts/poppler/
 # 重签后的 cua-driver computer-use 底座（run scripts/fetch-cua-driver.sh 重新生成）
 scripts/Agent Neo Computer Use.app/
 

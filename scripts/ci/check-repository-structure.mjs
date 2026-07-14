@@ -12,7 +12,10 @@ const limits = {
   rootDirectories: 19,
   hostDomains: 45,
   testTopLevelDirectories: 24,
-  directScriptFiles: 133,
+  // 134: fetch-poppler.sh 与 fetch-rtk.sh / fetch-uv.sh 同类同层——它产出的
+  // scripts/poppler 是 tauri.conf.json 的 bundle resource，符合 scripts/README.md
+  // 「根层文件保留条件」的第一条（被 Tauri 配置作为稳定入口直接调用）。
+  directScriptFiles: 134,
   workflows: 13,
 };
 

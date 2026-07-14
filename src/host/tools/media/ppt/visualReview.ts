@@ -13,6 +13,7 @@ import { createLogger } from '../../../services/infra/logger';
 import type { ReviewResult, FixSuggestion, VlmCallback, ReviewDimensionType } from './types';
 import { REVIEW_DIMENSION_WEIGHTS } from './types';
 import { LIBREOFFICE_SEARCH_PATHS, LIBREOFFICE_PATH_ENV, CONVERT_TIMEOUTS, PDF_RENDER } from './constants';
+import { resolveHelperBinary } from '../../../runtime/runtimeAssetResolver';
 
 const logger = createLogger('VisualReview');
 
@@ -110,9 +111,49 @@ export async function convertToScreenshots(
   return pngPaths;
 }
 
+/** 从页图文件名尾部抽页码：`deck-7.jpg` → 7、`deck-07.jpg` → 7。抽不到的排到末尾。 */
+function pageNumberOf(file: string): number {
+  const match = file.match(/-(\d+)\.jpg$/);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * 收集 outputDir 下属于 baseName 的页图，按文件名尾部页码**数值**定序。
+ *
+ * 必须数值定序而非字符串定序：pdftoppm 补零（`deck-01`..`deck-13`）时字符串序恰好
+ * 正确，但 ImageMagick `%d` 不补零（`deck-0`..`deck-12`），字符串序会错成
+ * 0,1,10,11,12,2,3,...——13 页实测得到页序 1,2,11,12,13,3,4,...。这里的数组下标
+ * 直接作为 slideIndex 喂给 VLM（见 reviewPresentation），错序 = 审查结论和修正
+ * 建议整体挂到错误页码上，且全程无报错。
+ */
+export function collectPageImages(outputDir: string, baseName: string): string[] {
+  return fs.readdirSync(outputDir)
+    .filter(f => f.startsWith(baseName) && f.endsWith('.jpg'))
+    .sort((a, b) => pageNumberOf(a) - pageNumberOf(b) || a.localeCompare(b))
+    .map(f => path.join(outputDir, f));
+}
+
+/**
+ * 解析 pdftoppm — 优先随包的 sidecar（scripts/poppler/bin/pdftoppm，见 fetch-poppler.sh），
+ * 回落到系统 PATH。
+ *
+ * 随包优先是为了消灭「用户机上没装 poppler → 整份 deck 只出 1 张 qlmanage 缩略图 →
+ * 第 2 页起根本选不了」这条降级（ADR-040 D3）。开发机上通常两者都有，此时用随包的
+ * 那份，保证开发看到的行为与用户一致。
+ */
+export function resolvePdftoppm(): string | null {
+  const bundled = resolveHelperBinary(path.join('poppler', 'bin', 'pdftoppm'));
+  if (bundled && fs.existsSync(bundled)) return bundled;
+  try {
+    return execSync('which pdftoppm', { encoding: 'utf8' }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * PDF → 每页 PNG
- * macOS 优先使用 automator/qlmanage，降级到 ImageMagick
+ * 优先 poppler(pdftoppm)，降级 ImageMagick，最后 qlmanage 单页
  */
 async function pdfToImages(
   pdfPath: string,
@@ -121,16 +162,14 @@ async function pdfToImages(
 ): Promise<string[]> {
   // 尝试 poppler (pdftoppm) — 最可靠，输出 JPEG 减小体积
   try {
-    execSync('which pdftoppm', { encoding: 'utf8' });
+    const pdftoppm = resolvePdftoppm();
+    if (!pdftoppm) throw new Error('pdftoppm not found');
     execSync(
-      `pdftoppm -jpeg -jpegopt quality=${PDF_RENDER.QUALITY} -r ${PDF_RENDER.DPI} "${pdfPath}" "${path.join(outputDir, baseName)}"`,
+      `"${pdftoppm}" -jpeg -jpegopt quality=${PDF_RENDER.QUALITY} -r ${PDF_RENDER.DPI} "${pdfPath}" "${path.join(outputDir, baseName)}"`,
       { timeout: CONVERT_TIMEOUTS.PDFTOPPM, encoding: 'utf8' }
     );
-    // pdftoppm 输出 baseName-1.jpg, baseName-2.jpg, ...
-    const files = fs.readdirSync(outputDir)
-      .filter(f => f.startsWith(baseName) && f.endsWith('.jpg'))
-      .sort()
-      .map(f => path.join(outputDir, f));
+    // pdftoppm 输出 baseName-01.jpg, baseName-02.jpg, ...（补零，1-based）
+    const files = collectPageImages(outputDir, baseName);
     if (files.length > 0) return files;
   } catch { /* try next */ }
 
@@ -141,10 +180,8 @@ async function pdfToImages(
       `"${magick}" -density ${PDF_RENDER.DPI} -quality ${PDF_RENDER.QUALITY} "${pdfPath}" "${path.join(outputDir, `${baseName}-%d.jpg`)}"`,
       { timeout: CONVERT_TIMEOUTS.IMAGEMAGICK, encoding: 'utf8' }
     );
-    const files = fs.readdirSync(outputDir)
-      .filter(f => f.startsWith(baseName) && f.endsWith('.jpg'))
-      .sort()
-      .map(f => path.join(outputDir, f));
+    // ImageMagick %d 输出 baseName-0.jpg, baseName-1.jpg, ...（不补零，0-based）
+    const files = collectPageImages(outputDir, baseName);
     if (files.length > 0) return files;
   } catch { /* try next */ }
 

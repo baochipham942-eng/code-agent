@@ -18,6 +18,7 @@ vi.mock('../../../src/host/ipc/adminGuard', () => ({
 }));
 
 import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
+import { sheetCellRef } from '../../../src/shared/livePreview/sheetCoords';
 
 type RawHandler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 
@@ -62,10 +63,7 @@ async function writeWorkbook(name: string, sheets: Record<string, unknown[][]>, 
   return filePath;
 }
 
-/** 复刻 SpreadsheetBlock 算 A1 引用的方式：数据行下标 + 1（表头占第 1 行） */
-function cellRefForDataRow(rowIndex: number, column: string): string {
-  return `${column}${rowIndex + 1 + 1}`;
-}
+const SALES_COLUMN = 1; // 「销售额」列（0-based）→ A1 里的 B 列
 
 describe('extract-excel-json 行坐标与真实 xlsx 对齐', () => {
   it('中间空行必须保留，否则后续行的 A1 引用会左移', async () => {
@@ -80,7 +78,7 @@ describe('extract-excel-json 行坐标与真实 xlsx 对齐', () => {
     const marchIndex = rows.findIndex((r) => r?.[0] === '三月');
     expect(marchIndex).toBeGreaterThanOrEqual(0); // 正向断言：确实提取到了数据
     // 「三月」在 xlsx 里是第 4 行 → 销售额单元格必须是 B4
-    expect(cellRefForDataRow(marchIndex, 'B')).toBe('B4');
+    expect(sheetCellRef(marchIndex, SALES_COLUMN)).toBe('B4');
   });
 
   it('尾部虚高的 !ref 不会灌进一堆空行，且不破坏对齐', async () => {
@@ -93,7 +91,7 @@ describe('extract-excel-json 行坐标与真实 xlsx 对齐', () => {
     const { sheets } = await extract(filePath);
     expect(sheets[0].rows.length).toBe(3); // 一月 / 空 / 三月，不是 199
     const marchIndex = sheets[0].rows.findIndex((r) => r?.[0] === '三月');
-    expect(cellRefForDataRow(marchIndex, 'B')).toBe('B4');
+    expect(sheetCellRef(marchIndex, SALES_COLUMN)).toBe('B4');
   });
 
   it('多 sheet 时每张表都带真实表名（DocEdit 靠它定位，缺省会落到第一张表）', async () => {

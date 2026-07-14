@@ -3,7 +3,7 @@
 - **状态**: Proposed（等待产品负责人拍板；本 ADR 不授权施工）
 - **日期**: 2026-07-14
 - **产品边界**: Agent Neo 是以方案、PPT、表格、文档等产物为主轴的 cowork 人机协作产品；默认操作者不会读代码，也不应承担坐标换算和误改排查成本。
-- **基线**: `fix/attachment-spreadsheet-filepath` @ `aa66f25dc`；保留 `3e6575b40` 与 `aa66f25dc`，不改 `DocEdit` / `ppt_edit` 工具实现。
+- **基线**: `fix/attachment-spreadsheet-filepath` @ `516daef87`；保留 `3e6575b40`、`aa66f25dc`、`6ac3d8530`、`516daef87`，不改 `DocEdit` / `ppt_edit` 工具实现。
 - **相关**: `src/shared/livePreview/localityFeedback.ts`、`src/host/ipc/settings.ipc.ts`、`src/host/ipc/workspaceArchive.ipc.ts`、`src/host/tools/modules/document/docxEditCore.ts`、`src/host/tools/modules/network/pptEdit.ts`
 
 ## 问题与证据基线
@@ -12,10 +12,37 @@
 
 | 产物 | 预览侧已核实行为 | 编辑侧已核实行为 | 当前判断 |
 |---|---|---|---|
-| Excel | UI 用列号和数据行生成 A1 引用；当前 active sheet 已在组件状态中，但发送锚点时只传 `cell`，没有传现成的 `sheet.name`（`src/renderer/components/features/chat/MessageBubble/SpreadsheetBlock.tsx:190-218`、`395-435`、`464-465`） | `set_cell` 直接以 `op.cell` 取单元格；缺省 `sheet` 时取 workbook 第一张表（`src/host/tools/excel/excelEdit.ts:104-123`） | A1 坐标可直接沿用；新契约应把已知 sheetName 一并带上，避免多 sheet 时退回第一张表 |
+| Excel | **两个维度都在丢坐标**（均已由 `6ac3d8530` 点修复）：行维 `extract-excel-json` 曾用 `blankrows: false` 提取，空行被丢弃、数组下标左移，而 UI 的 A1 行号正是从这个下标算的；sheet 维组件手里有 `sheet.name` 却没随锚点发出（`src/host/ipc/settings.ipc.ts:689-703`，`src/renderer/components/features/chat/MessageBubble/SpreadsheetBlock.tsx:386-399`、`425-428`） | `set_cell` 直接以 `op.cell` 取单元格；缺省 `sheet` 时**静默**取 workbook 第一张表（`src/host/tools/excel/excelEdit.ts:104-123`） | A1 语义本身可沿用，但 Excel **不是干净基线，是第四个病人**——只是已拿到点修复。契约必须把 sheetName 视为必填生产项，并把行维对齐当作可回归的契约而非巧合 |
 | Word | `mammoth` HTML 经 `<h1-6\|p\|li>` 正则抽取，空文本直接跳过且 `idx` 不增长（`src/host/ipc/settings.ipc.ts:700-745`）；Workspace 预览还会再次过滤空文本（`src/renderer/components/PreviewPanel.tsx:150-169`） | `replace_paragraph` / `delete_paragraph` 按 `word/document.xml` 中全部 `<w:p>` 的序数执行（`src/host/tools/modules/document/docxEditCore.ts:123-164`）；`replace_text` 只在单个 `<w:t>` 内执行 `includes`（同文件 `92-116`） | 预览序号不能进入 index 操作；纯文本匹配可见失败但不可靠 |
 | 上传 PPTX | 上传摘要和 Workspace inspection 都按 `slideN.xml` 文件名排序；上传消息只展示前两页摘要，Workspace fallback 是不可点的文字大纲（`src/renderer/components/features/chat/ChatInput/attachmentSummaries.ts:97-135`，`src/host/ipc/workspaceArchive.ipc.ts:237-291`，`src/renderer/components/features/chat/MessageBubble/AttachmentPreview.tsx:401-426`，`src/renderer/components/PreviewPanel.tsx:317-352`） | 页内文本操作把 `slide_index` 直接换算成 `slide${slide_index + 1}.xml`（`src/host/tools/modules/network/pptEdit.ts:145-193`） | 显示页与物理 slide part 没有共同真源 |
 | 生成 PPTX | design artifact 保存 screenshots 数组，UI 用数组下标作为 `selectedIndex` 并原样发送为 `slideIndex`（`src/host/tools/modules/network/pptGenerate.ts:102-125`，`src/renderer/components/workspacePreview/parts.tsx:285-357`） | 同上，写入目标是 `slide${slide_index + 1}.xml`（`src/host/tools/modules/network/pptEdit.ts:145-193`） | 当前连续同序的生成链可继续使用；迁移不得改变既有 prompt 中的 `slide_index` |
+
+### Excel 行维错位（实测复现，本轮新增）
+
+初版 ADR 把 Excel 判为「坐标可直接沿用，只差 sheetName」——那次只查了 sheet 维，没跟到行维。行维当时同样是错的。最小复现（`sheet_to_csv` 与 `sheet_to_json` 的 `blankrows` 行为一致）：
+
+```
+xlsx 布局：第1行表头 / 第2行「一月」/ 第3行空 / 第4行「三月」
+blankrows:false → 提取结果 [['一月',100], ['三月',300]]
+                 「三月」落在下标 1 → UI 算出 B3 → DocEdit 把 99999 写进第 3 行那个空行
+                 「三月」的销售额纹丝不动，全程无任何报错
+```
+
+`6ac3d8530` 已改为 `blankrows: true` + 只裁尾部空行（中间空行是行号对齐的一部分，裁了就又错位）。这条的意义不在补丁本身，而在于它推翻了「Excel 是唯一坐标正确的产物」这个前提：**Excel 显得能用，只因为测试用例恰好没空行、没多 sheet。**
+
+### 为什么这些洞能活到今天：验收从不经过 UI 坐标
+
+真模型验收脚本 `scripts/acceptance/locality-feedback-sheet-e2e.ts` 文件注释自述「零 UI」，手工构造 `filePath` 和 `B2` 再喂给模型，**从不经过 UI 的 A1 计算**。它验的是「模型听不听话」，却被当成了「定点反馈对不对」的证据。于是读写两侧各错各的，脚本永远绿。
+
+同一形态还出现在测试内部：单测 `tests/unit/ipc/settings.excelJson.ipc.test.ts` 曾自己手抄一遍 UI 的 A1 公式——抄的人不会发现被抄的那份是错的。
+
+`516daef87` 已按「坐标归确定性测试、模型归付费脚本」重建这条验收线：A1 换算收敛到 `src/shared/livePreview/sheetCoords.ts` 单一口径；`tests/unit/shared/sheetLocalityRoundtrip.test.ts` 用真 xlsx 走真提取 handler → UI 换算 → 真 `executeExcelEdit` 全链路；`tests/renderer/components/spreadsheetBlock.localityAnchor.test.tsx` 用 jsdom 真点单元格断言发出的锚点坐标。三条 bug 逐个改回去均能照红。**这套「读侧 + 写侧同一条测试里对账」的形态，是 B/C 阶段 Word 与 PPT fixture 的参照。**
+
+### 定点反馈之外：模型自己推坐标的路径不在本契约覆盖面内
+
+本 ADR 只管「用户点了预览」这条链。但 Excel 附件的模型上下文是一份 CSV，且明确写着「以下是已解析的表格数据（CSV 格式），**无需调用工具读取**」（`src/host/agent/messageHandling/converter.ts:543-554`）；而 `DocEdit` 的 Excel 操作全部只认 A1、没有按文本查找的动作（`src/host/tools/modules/document/docEdit.schema.ts:15-23`）。两者相加意味着：用户不点预览、直接说「把三月的销售额改成 500」时，**模型只能靠数 CSV 行来推 A1**，而这份 CSV 至今仍用 `sheet_to_csv(sheet, { blankrows: false })`（`src/host/ipc/settings.ipc.ts:652`）——同一个左移错位，第二现场。退路也不通：`read_xlsx` 用 `eachRow({ includeEmpty: false })` 拿到正确的 `rowNumber` 后直接丢弃，输出的 table/csv/json 三种格式都不含行号（`src/host/tools/modules/network/readXlsx.ts:109-168`）。
+
+这条路径没有 locator、没有 guard，对非程序员却是最自然的用法。记录在此，见拍板项 D6。
 
 写侧额外边界也已核实：`ppt_edit` 执行代码接受 9 个 action（`src/host/tools/modules/network/pptEdit.ts:24-56`）；`insert_slide` 只返回提示（同文件 `219-223`）；`delete_slide` 用 `rId${slide_index + 2}` 猜 presentation 关系（同文件 `197-215`）；`update_notes` 用 `notesSlide${slide_index + 1}.xml` 猜备注 part（同文件 `419-440`）。因此 locator 首批只承诺把页内 `replace_title` / `replace_content` / `replace_slide` 定到正确 slide part；删除、重排、备注属于结构动作，不进入首批定点反馈授权面。本 ADR 记录边界，不修改工具。
 
@@ -70,9 +97,11 @@ type ArtifactLocatorV1 = {
 
 ### Excel：`sheetName + A1`
 
-Excel 保留 A1，不做抽象翻译。新生产者必须发送当前 `sheet.name`；当前组件已有 active sheet 与 `sheet` 对象，只缺锚点接线（`src/renderer/components/features/chat/MessageBubble/SpreadsheetBlock.tsx:201-230`、`430-435`）。resolver 输出 `DocEdit` 的 `sheet` 与 `cell/range`，仍走现有 `getWorksheet(..., sheetName)` 和 `ws.getCell(op.cell)`（`src/host/tools/excel/excelEdit.ts:104-123`）。
+Excel 保留 A1，不做抽象翻译。resolver 输出 `DocEdit` 的 `sheet` 与 `cell/range`，仍走现有 `getWorksheet(..., sheetName)` 和 `ws.getCell(op.cell)`（`src/host/tools/excel/excelEdit.ts:104-123`）。
 
-兼容规则：旧 `{kind:'sheet', cell}` 保持可用；单 sheet 文件补成第一张 sheet，多 sheet 文件必须从当前 UI 状态补 `sheetName` 后再发。现有 A1 prompt 的可读文本与 `DocEdit` 引导保持不变，已有正向测试继续作为回归门（`tests/unit/shared/localityFeedback.test.ts:29-50`）。
+**Excel 是点修复过的病人，不是契约的参考实现**。`6ac3d8530` 补上了 sheetName 接线、`516daef87` 把 A1 换算收敛到 `src/shared/livePreview/sheetCoords.ts` 单一口径，但两者都只是让 legacy 锚点不再算错坐标，没有 revision、没有指纹、没有写前 guard——外部程序在用户点选后改了文件，旧 A1 照样会被执行。迁移到 V1 时 Excel 与 Word/PPT 同等对待，不因「现在能用」就跳过 revision fail-closed。
+
+兼容规则：旧 `{kind:'sheet', cell, sheetName?}` 保持可用；单 sheet 文件补成第一张 sheet，多 sheet 文件必须从当前 UI 状态补 `sheetName` 后再发。现有 A1 prompt 的可读文本与 `DocEdit` 引导保持不变，已有正向测试继续作为回归门（`tests/unit/shared/localityFeedback.test.ts:29-50`，`tests/unit/shared/sheetLocalityRoundtrip.test.ts`，`tests/renderer/components/spreadsheetBlock.localityAnchor.test.tsx`）。
 
 ### Word：真实 XML 序号作为执行坐标，复合指纹作为安全闸
 
@@ -129,7 +158,7 @@ fixtures 使用测试代码生成最小 OOXML zip，保留 XML 明文和 sentine
 
 | Fixture / 测试 | 构造 | 必须有的正向断言 | 非目标保护断言 |
 |---|---|---|---|
-| `locator-multi-sheet.xlsx` | `Sheet1!B7=FIRST`、`Summary!B7=TARGET` | 预览选择 Summary/B7，resolver 输出 `sheet=Summary, cell=B7`，执行后 `Summary!B7` 变更 | `Sheet1!B7` 仍为 `FIRST` |
+| Excel 行维 + sheet 维 | **已存在**：双表、每表中间夹空行 | 已落地：预览选 Summary/B4，输出 `sheet=Summary, cell=B4`，执行后 `Summary!B4` 变更（`tests/unit/shared/sheetLocalityRoundtrip.test.ts`）；jsdom 真点单元格断言锚点坐标（`tests/renderer/components/spreadsheetBlock.localityAnchor.test.tsx`） | `Sheet1!B4` 不变、`Sheet1!B2` 邻居不变、空行 `B3` 未被误写。**迁移到 V1 时在此基础上补 revision/指纹漂移后工具 mock 调用次数为 0** |
 | `locator-word-complex.docx` | heading；跨两个 `<w:t>` 的正文；空 `<w:p>`；表格内段落；带 `<w:numPr>` 的列表；重复文本段 | extractor 输出真实 index 间隙、heading/list 类型；选择表格段或空段后的正文，resolver 输出与 writer 同一 index；执行后目标 sentinel 变更 | 相邻段、同文本重复段和表格外段保持原值；revision/fingerprint 改动后工具 mock 调用次数为 0 |
 | `locator-ppt-reordered-gapped.pptx` | `slide2.xml`、`slide7.xml`、`slide11.xml`；`sldIdLst` 顺序故意为 7→2→11；relationships 使用非连续 rId | preview 第 1/2/3 页标题按 7→2→11；选择显示第 2 页，resolver 输出 `slide_index=1` 并成功修改 `slide2.xml` | `slide7.xml`、`slide11.xml` 不变；relationship 或 revision 漂移后工具 mock 调用次数为 0 |
 | legacy locality regression | 现有 sheet anchor、生成 PPT 的连续 screenshot anchor | prompt 仍包含原 `file_path`、A1、`slide_index` 与用户反馈（现有正向断言见 `tests/unit/shared/localityFeedback.test.ts:4-58`） | Excel URL/无路径仍不显示编辑入口，且正文/表格保持渲染（`tests/renderer/components/attachmentPreview.spreadsheetFilePath.test.tsx:29-49`，`tests/renderer/components/documentBlock.filePathGating.test.tsx:18-35`） |
@@ -151,7 +180,7 @@ env -u FORCE_COLOR -u NO_COLOR npx vitest run <path>
 |---|---|---:|---:|---|
 | P0 契约地基 | A1. 新增 `ArtifactLocatorV1`、runtime validator、revision helper、deterministic prompt serializer | 真开发 | M | union 三 kind 正反例；非法 path/revision/target fail-closed |
 | P0 契约地基 | A2. 打通 `sendPrompt(content, metadata)`、message persistence 与 locator guard；工具本体零改动 | 真开发 | M | user message 回读仍有 locator；错 file/index 的 tool call 被 guard 阻断，正确调用通过 |
-| P0 零回归 | A3. legacy `LocalityAnchor` compatibility adapter；生成 PPT prompt 与 Excel A1 prompt 保持；Excel 补传现成 `sheet.name` | 接线 | S | 现有 locality / attachment path tests 全绿；multi-sheet fixture 正确 |
+| P0 零回归 | A3. legacy `LocalityAnchor` compatibility adapter；生成 PPT prompt 与 Excel A1 prompt 保持。~~Excel 补传 `sheet.name`~~ 已由 `6ac3d8530` 落地，行维对齐与 UI 坐标验收已由 `516daef87` 落地，A3 不再含这两项 | 接线 | XS（原估 S） | 现有 locality / attachment path / sheetLocalityRoundtrip / spreadsheetBlock.localityAnchor tests 全绿 |
 | P1 Word | B1. `document.xml` paragraph parser：同谓词 index、聚合 `<w:t>`、`pStyle`、`numPr`、指纹 | 真开发 | M | complex DOCX extractor contract 全绿 |
 | P1 Word | B2. `DocumentBlock` 改用 XML locator；通过 resolver 后解除 index 禁令；保留无路径门禁 | 接线 | S | 点击目标段产生结构化 locator；真实 core 只改目标 paragraph |
 | P1 PPT | C1. presentation package index resolver：`sldIdLst + presentation.xml.rels + slide part` | 真开发 | M | reordered/gapped PPT fixture 全绿；旧连续 deck 解析结果不变 |
@@ -169,6 +198,7 @@ env -u FORCE_COLOR -u NO_COLOR npx vitest run <path>
 3. **D3 上传 PPT UI**：批准“可点文字大纲先上线，LibreOffice 截图后增强”；截图缺失不关闭选页。
 4. **D4 首批工具面**：locator 首批只放行 Excel cell/range、Word paragraph、PPT 页内 replace 三类；PPT delete/reorder/notes 不搭车。
 5. **D5 stale 行为**：文件 revision 或局部指纹不一致一律阻断并要求刷新，不做 best-effort 猜测。
+6. **D6 无 locator 路径的处置**：用户不点预览、直接说「把三月的销售额改成 500」时，模型只能靠数 CSV 行推 A1，而该 CSV 与 `read_xlsx` 两处至今都在压缩空行且不带行号（见「问题与证据基线」末节）。本 ADR 的 guard 覆盖不到这条链。请拍板：**（a）** 首批不管，locator 只保「点了预览」的路径，另立工单修上下文行号——推荐，理由是它与 locator 契约无耦合、可独立小步修；**（b）** 纳入本 ADR 首批，A 阶段一并给 CSV/`read_xlsx` 加行号并禁止模型自推坐标，代价是 P0 面扩大且要动模型上下文格式。
 
 ## 代价与后果
 

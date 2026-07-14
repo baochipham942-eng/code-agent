@@ -288,6 +288,13 @@ export const CANCELLATION_TIMEOUTS = {
   GRACEFUL_SHUTDOWN_GRACE: 5_000,
   /** Phase 3 flush 持久化最大耗时（防 fs lock 卡死） */
   FLUSH_TIMEOUT: 2_000,
+  /**
+   * `/api/cancel` 等待 durable/registry 终态的上限。
+   * 超时后返回 cancel_requested，避免对调用方谎称 Cancelled。
+   */
+  ROUTE_SETTLE_WAIT: 15_000,
+  /** `/api/cancel` 终态轮询间隔 */
+  ROUTE_SETTLE_POLL: 50,
 } as const;
 
 /**

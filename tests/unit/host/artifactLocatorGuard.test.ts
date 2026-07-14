@@ -27,6 +27,7 @@ import {
   upgradeLegacyAnchor,
   LOCATOR_BLOCK_CODE,
 } from '../../../src/host/tools/artifacts/artifactLocatorHost';
+import { resolvePresentationPackageIndex } from '../../../src/host/tools/artifacts/presentationPackageIndex';
 import type { Message } from '../../../src/shared/contract';
 import type { ArtifactLocatorV1 } from '../../../src/shared/contract/artifactLocator';
 
@@ -270,8 +271,24 @@ describe('写前 guard：PPT 页坐标（locator 由 C1/C3 生产，guard 先总
 
   it('模型交了 resolver 算出的 slide_index=6 → 放行', async () => {
     const filePath = join(workDir, 'deck.pptx');
-    await writeFile(filePath, 'not-a-real-pptx');
-    const locator = { ...pptLocator('ppt/slides/slide7.xml', 1) };
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+    zip.file('ppt/slides/slide2.xml', '<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><a:t>第一页</a:t></p:sld>');
+    zip.file('ppt/slides/slide7.xml', '<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><a:t>第二页</a:t></p:sld>');
+    zip.file(
+      'ppt/presentation.xml',
+      '<p:presentation xmlns:p="urn:p" xmlns:r="urn:r"><p:sldIdLst>'
+        + '<p:sldId id="1" r:id="rId2"/><p:sldId id="2" r:id="rId9"/>'
+        + '</p:sldIdLst></p:presentation>',
+    );
+    zip.file(
+      'ppt/_rels/presentation.xml.rels',
+      '<Relationships><Relationship Id="rId2" Target="slides/slide2.xml"/>'
+        + '<Relationship Id="rId9" Target="slides/slide7.xml"/></Relationships>',
+    );
+    await writeFile(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
+    const target = (await resolvePresentationPackageIndex(filePath))[1];
+    const locator = { ...pptLocator(target.slidePartName, target.displayIndex), target: { kind: 'ppt-slide' as const, ...target } };
     locator.artifact.filePath = filePath;
     const { computeArtifactRevision } = await import('../../../src/host/tools/artifacts/artifactLocatorHost');
     locator.artifact.revision = await computeArtifactRevision(filePath);

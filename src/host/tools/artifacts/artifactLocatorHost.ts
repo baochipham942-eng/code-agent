@@ -19,6 +19,7 @@ import {
   type ArtifactRevision,
 } from '../../../shared/contract/artifactLocator';
 import { locatorFromLegacyAnchor, type LocalityAnchor } from '../../../shared/livePreview/localityFeedback';
+import { resolvePresentationPackageIndex } from './presentationPackageIndex';
 
 /** locator 授权的工具面（ADR-040 D4 首批）：Excel cell/range、Word paragraph、PPT 页内 replace。 */
 const LOCATOR_GUARDED_TOOLS = new Set(['docedit', 'ppt_edit']);
@@ -139,10 +140,11 @@ function checkSheetTarget(
   return null;
 }
 
-function checkPptTarget(
+async function checkPptTarget(
   locator: ArtifactLocatorV1 & { target: { kind: 'ppt-slide' } },
   args: Record<string, unknown> | undefined,
-): LocatorPreflightBlock | null {
+  targetPath: string,
+): Promise<LocatorPreflightBlock | null> {
   const expectedIndex = slideIndexFromPartName(locator.target.slidePartName);
   if (expectedIndex === null) {
     return block(RETARGET_MESSAGE, { reason: 'unresolvable_slide_part' });
@@ -151,6 +153,24 @@ function checkPptTarget(
   if (received === undefined) return null; // 不声称页码的 action（如 extract_style）不在射程内
   if (received !== expectedIndex) {
     return block(RETARGET_MESSAGE, { reason: 'slide_mismatch', expected: expectedIndex, received });
+  }
+
+  let packageIndex;
+  try {
+    packageIndex = await resolvePresentationPackageIndex(targetPath);
+  } catch {
+    return block(STALE_MESSAGE, { reason: 'presentation_package_unreadable' });
+  }
+  const currentTarget = packageIndex[locator.target.displayIndex];
+  if (!currentTarget) return block(STALE_MESSAGE, { reason: 'presentation_target_missing' });
+  if (currentTarget.relationshipId !== locator.target.relationshipId) {
+    return block(STALE_MESSAGE, { reason: 'relationship_drift' });
+  }
+  if (currentTarget.slidePartName !== locator.target.slidePartName) {
+    return block(STALE_MESSAGE, { reason: 'slide_part_drift' });
+  }
+  if (currentTarget.textFingerprint !== locator.target.textFingerprint) {
+    return block(STALE_MESSAGE, { reason: 'text_fingerprint_drift' });
   }
   return null;
 }
@@ -214,7 +234,11 @@ export async function getArtifactLocatorPreflightBlock(
     case 'sheet-range':
       return checkSheetTarget(locator as ArtifactLocatorV1 & { target: { kind: 'sheet-range' } }, toolCall.arguments);
     case 'ppt-slide':
-      return checkPptTarget(locator as ArtifactLocatorV1 & { target: { kind: 'ppt-slide' } }, toolCall.arguments);
+      return checkPptTarget(
+        locator as ArtifactLocatorV1 & { target: { kind: 'ppt-slide' } },
+        toolCall.arguments,
+        targetPath,
+      );
     case 'docx-paragraph':
       return checkDocxTarget(locator as ArtifactLocatorV1 & { target: { kind: 'docx-paragraph' } }, toolCall.arguments);
   }

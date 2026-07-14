@@ -7,7 +7,9 @@
 import path from 'path';
 import { promises as fsp } from 'fs';
 import type { AgentApplicationService } from '../../shared/contract/appService';
+import { extractPresentationSlideText } from '../../shared/ooxml/presentationPackageIndex';
 import { app } from '../platform';
+import { loadPresentationPackageIndex } from '../tools/artifacts/presentationPackageIndex';
 
 interface WorkspaceBundleFileInput {
   path: string;
@@ -223,59 +225,22 @@ export async function handleInspectArchive(payload: { filePath: string; limit?: 
   };
 }
 
-function decodeXmlText(value: string): string {
-  return value
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 10)))
-    .replace(/&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&gt;/g, '>')
-    .replace(/&lt;/g, '<')
-    .replace(/&amp;/g, '&');
-}
-
-function slideIndexFromName(name: string): number {
-  const match = name.match(/slide(\d+)\.xml$/i);
-  return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
-}
-
-function extractSlideText(xml: string): string[] {
-  const texts: string[] = [];
-  const textRegex = /<a:t[^>]*>([\s\S]*?)<\/a:t>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = textRegex.exec(xml)) !== null) {
-    const text = decodeXmlText(match[1].replace(/<[^>]+>/g, '')).trim();
-    if (text) texts.push(text);
-  }
-  return texts;
-}
-
 export async function handleInspectPresentation(payload: { filePath: string; limit?: number }): Promise<WorkspacePresentationInspection> {
-  const fs = await import('fs/promises');
-  const JSZip = require('jszip') as {
-    loadAsync(data: Buffer): Promise<{
-      files: Record<string, { name: string; dir: boolean; async(type: 'string'): Promise<string> }>;
-    }>;
-  };
   const filePath = payload.filePath;
   if (!/\.pptx$/i.test(filePath)) {
     throw new Error('Only .pptx presentations can be inspected inline');
   }
 
-  const data = await fs.readFile(filePath);
-  const zip = await JSZip.loadAsync(data);
   const limit = Math.max(1, Math.min(payload.limit ?? 80, 200));
-  const slideEntries = Object.values(zip.files)
-    .filter((entry) => !entry.dir && /^ppt\/slides\/slide\d+\.xml$/i.test(entry.name))
-    .sort((left, right) => slideIndexFromName(left.name) - slideIndexFromName(right.name));
+  const { index, zip } = await loadPresentationPackageIndex(filePath);
 
   const slides: WorkspacePresentationSlide[] = [];
-  for (const [offset, entry] of slideEntries.slice(0, limit).entries()) {
-    const xml = await entry.async('string');
-    const text = extractSlideText(xml);
+  for (const target of index.slice(0, limit)) {
+    const xml = await zip.files[target.slidePartName].async('string');
+    const text = extractPresentationSlideText(xml);
     slides.push({
-      index: offset + 1,
-      name: entry.name,
+      index: target.displayIndex + 1,
+      name: target.slidePartName,
       title: text[0],
       text,
     });
@@ -284,10 +249,9 @@ export async function handleInspectPresentation(payload: { filePath: string; lim
   return {
     filePath,
     format: 'pptx',
-    slideCount: slideEntries.length,
+    slideCount: index.length,
     shownCount: slides.length,
-    truncated: slideEntries.length > limit,
+    truncated: index.length > limit,
     slides,
   };
 }
-

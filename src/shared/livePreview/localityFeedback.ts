@@ -3,6 +3,7 @@ import {
   type ArtifactLocatorV1,
   type ArtifactRevision,
 } from '../contract/artifactLocator';
+import type { PresentationPackageIndexEntry } from '../ooxml/presentationPackageIndex';
 
 // 定点反馈 loop — 产物锚点 → 消息文本构造器（Phase 2/3：PPT / 表格）
 //
@@ -126,22 +127,32 @@ export function buildLocatorFeedbackMessage(locator: ArtifactLocatorV1, feedback
  * revision 必须由 host 侧现算后传入：legacy 锚点根本没有这个字段，而 V1 的
  * fail-closed 语义要求它必填。renderer 传上来的任何 revision 都不算数。
  *
- * 返回 null = 这个锚点在 P0 拿不到诚实的 V1，继续走 legacy 字符串路径（不上 guard，
- * 行为与今天完全一致）。两种情况：
+ * PPT 的 relationshipId / slidePartName / textFingerprint 必须来自 C1 presentation
+ * package resolver；legacy 锚点只保留 screenshot selectedIndex 的交互输入，不能自行
+ * 推导执行坐标。resolvedPresentationTarget 为空或与 selectedIndex 不一致时 fail-closed。
  *
- * 1. **PPT**：ppt-slide 的 relationshipId / textFingerprint 只有 presentation package
- *    resolver（工单 C1）能诚实产出。legacy 锚点里没有这两样，硬编一个 `rId${i+2}`
- *    就是把 pptEdit.ts:197-215 那个已知坏猜测抄进契约层——ADR-040 要根治的正是这类
- *    「显示顺序推导执行坐标」。生成 PPT 切 locator 是工单 C3。
- * 2. **无 sheetName 的表格锚点**：V1 把 sheetName 当必填生产项。现行生产者
+ * 返回 null = 这个锚点拿不到诚实的 V1，继续走 legacy 字符串路径（不上 guard，行为与
+ * 今天完全一致）。表格仅剩一种情况：**无 sheetName 的表格锚点**。V1 把 sheetName
+ * 当必填生产项。现行生产者
  *    （SpreadsheetBlock）已随锚点发出真实表名，走不到这条；真缺时宁可退回 legacy，
  *    也不猜一个表名去改用户的工作簿。
  */
 export function locatorFromLegacyAnchor(
   anchor: LocalityAnchor,
   revision: ArtifactRevision,
+  resolvedPresentationTarget: PresentationPackageIndexEntry | null,
 ): ArtifactLocatorV1 | null {
-  if (anchor.kind !== 'sheet' || !anchor.sheetName) return null;
+  if (anchor.kind === 'ppt') {
+    if (!resolvedPresentationTarget || resolvedPresentationTarget.displayIndex !== anchor.slideIndex) return null;
+    return {
+      version: 1,
+      artifact: { kind: 'presentation', filePath: anchor.filePath, revision },
+      target: { kind: 'ppt-slide', ...resolvedPresentationTarget },
+      display: { label: anchor.displayName || anchor.filePath.split('/').pop() || 'PPT' },
+    };
+  }
+
+  if (!anchor.sheetName) return null;
 
   return {
     version: 1,

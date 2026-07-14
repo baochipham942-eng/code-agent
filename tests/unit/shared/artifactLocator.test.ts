@@ -180,7 +180,7 @@ describe('buildLocatorFeedbackMessage：与 legacy prompt 逐字节一致', () =
       sheetName: 'Summary',
       displayName: 'book.xlsx',
     };
-    const locator = locatorFromLegacyAnchor(anchor, REVISION);
+    const locator = locatorFromLegacyAnchor(anchor, REVISION, null);
     expect(locator).not.toBeNull();
 
     expect(buildLocatorFeedbackMessage(locator!, '改成 999')).toBe(
@@ -234,11 +234,12 @@ describe('buildLocatorFeedbackMessage：与 legacy prompt 逐字节一致', () =
   });
 });
 
-describe('locatorFromLegacyAnchor：P0 拿不到诚实 V1 的一律退回 legacy', () => {
+describe('locatorFromLegacyAnchor：只消费 producer 能诚实提供的坐标', () => {
   it('表格锚点带 sheetName → 升级为 V1 且通过校验', () => {
     const locator = locatorFromLegacyAnchor(
       { kind: 'sheet', filePath: '/tmp/book.xlsx', cell: 'B4', sheetName: 'Summary' },
       REVISION,
+      null,
     );
     expect(locator).not.toBeNull();
     expect(validateArtifactLocatorV1(locator).ok).toBe(true);
@@ -247,16 +248,29 @@ describe('locatorFromLegacyAnchor：P0 拿不到诚实 V1 的一律退回 legacy
 
   it('表格锚点缺 sheetName → null（不猜表名）', () => {
     expect(
-      locatorFromLegacyAnchor({ kind: 'sheet', filePath: '/tmp/book.xlsx', cell: 'B4' }, REVISION),
+      locatorFromLegacyAnchor({ kind: 'sheet', filePath: '/tmp/book.xlsx', cell: 'B4' }, REVISION, null),
     ).toBeNull();
   });
 
-  it('PPT 锚点 → null（relationshipId/指纹要等 C1 的 resolver，不编造）', () => {
-    expect(
-      locatorFromLegacyAnchor(
-        { kind: 'ppt', filePath: '/tmp/deck.pptx', slideIndex: 2 },
-        REVISION,
-      ),
-    ).toBeNull();
+  it('PPT 锚点 + C1 resolver target → V1，不从 selectedIndex 编造 relationship', () => {
+    const locator = locatorFromLegacyAnchor(
+      { kind: 'ppt', filePath: '/tmp/deck.pptx', slideIndex: 2, displayName: 'deck.pptx' },
+      REVISION,
+      {
+        displayIndex: 2,
+        relationshipId: 'rId44',
+        slidePartName: 'ppt/slides/slide9.xml',
+        textFingerprint: 'fp-from-resolver',
+      },
+    );
+    expect(locator).not.toBeNull();
+    expect(validateArtifactLocatorV1(locator).ok).toBe(true);
+    expect(locator!.target).toEqual({
+      kind: 'ppt-slide',
+      displayIndex: 2,
+      relationshipId: 'rId44',
+      slidePartName: 'ppt/slides/slide9.xml',
+      textFingerprint: 'fp-from-resolver',
+    });
   });
 });

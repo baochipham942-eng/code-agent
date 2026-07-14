@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import JSZip from 'jszip';
 import XLSX from 'xlsx';
 
 // ADR-040 A2：写前 guard 的对账测试。
@@ -21,6 +22,10 @@ vi.mock('../../../src/host/ipc/adminGuard', () => ({
 
 import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
 import { sheetCellRef } from '../../../src/shared/livePreview/sheetCoords';
+import {
+  buildLocalityFeedbackMessage,
+  buildLocatorFeedbackMessage,
+} from '../../../src/shared/livePreview/localityFeedback';
 import {
   findActiveLocator,
   getArtifactLocatorPreflightBlock,
@@ -62,6 +67,35 @@ async function writeWorkbook(name: string, sheets: Record<string, unknown[][]>):
   }
   const filePath = join(workDir, name);
   await writeFile(filePath, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  return filePath;
+}
+
+async function writeGeneratedDeck(name: string, slideCount: number): Promise<string> {
+  const zip = new JSZip();
+  const slideIds = Array.from(
+    { length: slideCount },
+    (_, index) => `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`,
+  ).join('');
+  const relationships = Array.from(
+    { length: slideCount },
+    (_, index) => `<Relationship Id="rId${index + 2}" Type="slide" Target="slides/slide${index + 1}.xml"/>`,
+  ).join('');
+  zip.file(
+    'ppt/presentation.xml',
+    `<p:presentation xmlns:p="p" xmlns:r="r"><p:sldIdLst>${slideIds}</p:sldIdLst></p:presentation>`,
+  );
+  zip.file(
+    'ppt/_rels/presentation.xml.rels',
+    `<Relationships>${relationships}</Relationships>`,
+  );
+  for (let index = 0; index < slideCount; index += 1) {
+    zip.file(
+      `ppt/slides/slide${index + 1}.xml`,
+      `<p:sld xmlns:p="p" xmlns:a="a"><a:t>Generated slide ${index + 1}</a:t></p:sld>`,
+    );
+  }
+  const filePath = join(workDir, name);
+  await writeFile(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
   return filePath;
 }
 
@@ -111,6 +145,30 @@ describe('upgradeLegacyAnchor：host 补 revision 后才算数', () => {
     expect(
       await upgradeLegacyAnchor({ kind: 'sheet', filePath: join(workDir, 'nope.xlsx'), cell: 'B4', sheetName: 'S' }),
     ).toBeNull();
+  });
+
+  it('生成 PPT 的 selectedIndex 经 C1 resolver 升级为 locator，旧 prompt 逐字节不变', async () => {
+    const filePath = await writeGeneratedDeck('generated.pptx', 3);
+    const anchor = {
+      kind: 'ppt' as const,
+      filePath,
+      slideIndex: 2,
+      displayName: 'generated.pptx',
+    };
+
+    const locator = await upgradeLegacyAnchor(anchor);
+    expect(locator).not.toBeNull();
+    expect(locator!.artifact.revision.value).toMatch(/^[0-9a-f]{64}$/);
+    expect(locator!.target).toMatchObject({
+      kind: 'ppt-slide',
+      displayIndex: 2,
+      relationshipId: 'rId4',
+      slidePartName: 'ppt/slides/slide3.xml',
+      textFingerprint: expect.stringMatching(/^[0-9a-f]{16}$/),
+    });
+    expect(buildLocatorFeedbackMessage(locator!, '换个标题')).toBe(
+      buildLocalityFeedbackMessage(anchor, '换个标题'),
+    );
   });
 });
 

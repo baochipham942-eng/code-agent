@@ -19,6 +19,7 @@ import {
   type ArtifactRevision,
 } from '../../../shared/contract/artifactLocator';
 import { locatorFromLegacyAnchor, type LocalityAnchor } from '../../../shared/livePreview/localityFeedback';
+import type { PresentationPackageIndexEntry } from '../../../shared/ooxml/presentationPackageIndex';
 import { resolvePresentationPackageIndex } from './presentationPackageIndex';
 
 /** locator 授权的工具面（ADR-040 D4 首批）：Excel cell/range、Word paragraph、PPT 页内 replace。 */
@@ -46,19 +47,24 @@ export async function computeArtifactRevision(filePath: string): Promise<Artifac
 /**
  * legacy 锚点 → 校验过的 V1（host 侧补 revision）。
  *
- * 返回 null = 这个锚点在 P0 拿不到诚实的 V1（PPT / 缺 sheetName），或文件读不到、
- * 或补出来的 V1 过不了校验。一律退回 legacy 字符串路径——**没有 locator 就没有
- * guard**，行为与今天完全一致，不会因为契约上线反而挡住既有功能。
+ * PPT 保留 screenshot selectedIndex 的交互输入，但 locator target 必须来自 C1 resolver；
+ * 表格继续使用真实 sheetName + A1。文件读不到、selectedIndex 越界或 V1 校验失败时
+ * 一律退回 legacy 字符串路径——**没有 locator 就没有 guard**，不会编造坐标。
  */
 export async function upgradeLegacyAnchor(anchor: LocalityAnchor): Promise<ArtifactLocatorV1 | null> {
   let revision: ArtifactRevision;
+  let resolvedPresentationTarget: PresentationPackageIndexEntry | null = null;
   try {
+    if (anchor.kind === 'ppt') {
+      const packageIndex = await resolvePresentationPackageIndex(anchor.filePath);
+      resolvedPresentationTarget = packageIndex[anchor.slideIndex] ?? null;
+    }
     revision = await computeArtifactRevision(anchor.filePath);
   } catch {
     return null;
   }
 
-  const locator = locatorFromLegacyAnchor(anchor, revision);
+  const locator = locatorFromLegacyAnchor(anchor, revision, resolvedPresentationTarget);
   if (!locator) return null;
 
   const validation = validateArtifactLocatorV1(locator);

@@ -115,6 +115,13 @@ export function buildSystemChromeCdpArgs(args: {
   headless: boolean;
   viewport: { width: number; height: number };
   proxy?: ManagedBrowserProxyConfig | null;
+  /**
+   * 一次性临时 profile（mkdtemp）必须传 true：新 profile 首启会往系统钥匙串写
+   * "Chrome Safe Storage" 密钥，测试/校验 spawn 上下文里拿不到钥匙串时 macOS 会
+   * 反复弹 "Keychain Not Found" 系统框。持久 profile（managed browser）禁止开——
+   * mock 钥匙串会让已用真密钥加密的 cookie 解不开。
+   */
+  mockKeychain?: boolean;
 }): string[] {
   const chromeArgs = [
     `--remote-debugging-port=${args.cdpPort}`,
@@ -129,6 +136,9 @@ export function buildSystemChromeCdpArgs(args: {
     '--disable-setuid-sandbox',
     '--no-sandbox',
   ];
+  if (args.mockKeychain) {
+    chromeArgs.push('--use-mock-keychain');
+  }
   if (args.headless) {
     chromeArgs.push('--headless=new', '--hide-scrollbars', '--mute-audio');
   }

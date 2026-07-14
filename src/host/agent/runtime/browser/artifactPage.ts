@@ -80,6 +80,7 @@ export async function openArtifactPage(timeoutMs: number): Promise<OpenArtifactP
             profileDir,
             headless: true,
             viewport: { width: 900, height: 700 },
+            mockKeychain: true,
           }),
           'about:blank',
         ],

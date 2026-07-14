@@ -18,7 +18,7 @@ async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
 }
 
 /** Minimal session meta shape used by create (avoids circular import with sessionStore). */
-export interface SessionCreateMeta extends Session {
+interface SessionCreateMeta extends Session {
   messageCount: number;
   turnCount: number;
 }
@@ -49,7 +49,7 @@ function normalizeSession(session: Session & {
   };
 }
 
-export interface SessionCreateStoreSlice {
+interface SessionCreateStoreSlice {
   sessions: SessionCreateMeta[];
   currentSessionId: string | null;
   messages: Message[];

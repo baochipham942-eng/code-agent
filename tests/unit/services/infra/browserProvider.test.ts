@@ -81,6 +81,20 @@ describe('browser provider resolution', () => {
     expect(args).toContain('--user-data-dir=/tmp/profile');
     expect(args).toContain('--window-size=1280,720');
     expect(args).toContain('--headless=new');
+    // 默认（持久 profile）不得带 mock 钥匙串——会让已加密 cookie 解不开
+    expect(args).not.toContain('--use-mock-keychain');
+  });
+
+  it('adds --use-mock-keychain only when mockKeychain is set (ephemeral profiles)', () => {
+    const args = buildSystemChromeCdpArgs({
+      cdpPort: 9222,
+      profileDir: '/tmp/ephemeral',
+      headless: true,
+      viewport: { width: 900, height: 700 },
+      mockKeychain: true,
+    });
+
+    expect(args).toContain('--use-mock-keychain');
   });
 
   it('adds managed in-app proxy args for system Chrome without changing provider priority', () => {

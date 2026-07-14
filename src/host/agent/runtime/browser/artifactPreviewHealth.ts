@@ -133,6 +133,7 @@ export async function runSelfStartedArtifactPreviewHealth(
           profileDir: healthProfileDir,
           headless: true,
           viewport: { width: initialViewport.width, height: initialViewport.height },
+          mockKeychain: true,
         }),
         artifactFileUrl(filePath),
       ];

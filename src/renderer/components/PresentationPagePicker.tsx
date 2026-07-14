@@ -8,7 +8,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
 import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
 
-export interface PresentationOutlinePage {
+interface PresentationOutlinePage {
   index: number;
   title?: string;
   text?: string[];
@@ -166,5 +166,3 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
     </div>
   );
 };
-
-export default PresentationPagePicker;

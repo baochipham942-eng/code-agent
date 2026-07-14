@@ -24,7 +24,7 @@ interface SheetRangeTarget {
 }
 
 /** PPT：slidePartName 是执行身份，displayIndex 只是人类标签，两者不可互推。 */
-export interface PptSlideTarget {
+interface PptSlideTarget {
   kind: 'ppt-slide';
   /** 0-based，只用于 UI 与对账，绝不直接作为写入坐标 */
   displayIndex: number;
@@ -62,7 +62,7 @@ export type PresentationArtifactLocator = ArtifactLocatorV1 & {
   target: PptSlideTarget;
 };
 
-export type PresentationPreviewState = 'ready' | 'libreoffice-missing' | 'conversion-failed';
+type PresentationPreviewState = 'ready' | 'libreoffice-missing' | 'conversion-failed';
 
 export interface PresentationPagePreview {
   locator: PresentationArtifactLocator;

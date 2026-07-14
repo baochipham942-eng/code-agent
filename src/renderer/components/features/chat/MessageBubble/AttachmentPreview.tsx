@@ -220,6 +220,10 @@ const AttachmentItem: React.FC<{
   useEffect(() => setDisplayAttachment(attachment), [attachment]);
 
   const category = displayAttachment.category || (displayAttachment.type === 'image' ? 'image' : 'other');
+  // 定点反馈要的是能交给 DocEdit 的本地绝对路径。渠道附件的 path 可能是 http(s) URL
+  // （channelAgentBridge.pathFromAttachmentUrl 会把 URL 原样当 path），传给下游会让模型
+  // 去编辑一个不存在的文件 —— 只放行绝对路径。
+  const localFilePath = displayAttachment.path?.startsWith('/') ? displayAttachment.path : undefined;
   const presentationSummary = useMemo(
     () => parseJson<PresentationSummary>(displayAttachment.pptJson),
     [displayAttachment.pptJson],
@@ -387,7 +391,7 @@ const AttachmentItem: React.FC<{
   }
 
   if (category === 'excel' && displayAttachment.sheetsJson) {
-    return <SpreadsheetBlock spec={displayAttachment.sheetsJson} />;
+    return <SpreadsheetBlock spec={displayAttachment.sheetsJson} filePath={localFilePath} />;
   }
 
   if (category === 'document' && displayAttachment.docxJson) {

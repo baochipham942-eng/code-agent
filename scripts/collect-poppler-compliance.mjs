@@ -7,7 +7,7 @@ import console from 'node:console';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, URL } from 'node:url';
-import { sha256File } from './lib/poppler-sidecar-release.mjs';
+import { selectLicenseEvidenceFiles, sha256File } from './lib/poppler-sidecar-release.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -172,8 +172,10 @@ function main() {
         fs.mkdirSync(archiveRoot, { recursive: true });
         run('tar', ['-xf', archive, '-C', archiveRoot]);
       }
-      const licenseCandidates = run('find', [extractRoot, '-type', 'f', '(', '-iname', 'COPYING*', '-o', '-iname', 'LICENSE*', '-o', '-iname', 'COPYRIGHT*', '-o', '-iname', 'NOTICE*', '-o', '-path', '*/LICENSES/*', ')'])
-        .split('\n').filter(Boolean).sort();
+      const licenseCandidates = selectLicenseEvidenceFiles(
+        run('find', [extractRoot, '-type', 'f', '(', '-iname', 'COPYING*', '-o', '-iname', 'LICENSE*', '-o', '-iname', 'COPYRIGHT*', '-o', '-iname', 'NOTICE*', '-o', '-path', '*/LICENSES/*', ')'])
+          .split('\n').filter(Boolean),
+      );
       if (licenseCandidates.length === 0) throw new Error(`${component.component} source archive has no discoverable license text`);
       const licenseFiles = licenseCandidates.map((source, index) => {
         const targetName = `${String(index + 1).padStart(2, '0')}-${path.basename(source)}`;

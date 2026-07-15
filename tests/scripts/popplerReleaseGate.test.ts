@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   PopplerReleaseGateError,
   detectPopplerPlatform,
+  selectLicenseEvidenceFiles,
   sha256File,
   validatePopplerLock,
   validatePopplerManifest,
@@ -234,5 +235,51 @@ describe('Poppler release hard gate', () => {
     expect(detectPopplerPlatform({ platform: 'darwin', arch: 'arm64' })).toBe('darwin-arm64');
     expect(detectPopplerPlatform({ platform: 'darwin', arch: 'x64' })).toBe('darwin-x64');
     expect(() => detectPopplerPlatform({ platform: 'linux', arch: 'x64' })).toThrow(PopplerReleaseGateError);
+  });
+
+  // 复刻 zstd 1.5.7 源码树的真实布局：COPYING(GPL) 与 LICENSE(BSD) 有正文，
+  // build/LICENSE 是 0 字节占位。首次真实 promotion 候选跑就是栽在这个空文件上。
+  function makeLicenseTree(files: Record<string, string>) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'poppler-license-test-'));
+    tempRoots.push(root);
+    return Object.entries(files).map(([relativePath, content]) => {
+      const full = path.join(root, relativePath);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, content);
+      return full;
+    });
+  }
+
+  it('drops empty upstream license placeholders but keeps every real license text', () => {
+    const candidates = makeLicenseTree({
+      COPYING: 'GPL-2.0 full text',
+      LICENSE: 'BSD-3-Clause full text',
+      'build/LICENSE': '',
+    });
+
+    const selected = selectLicenseEvidenceFiles(candidates);
+
+    expect(selected.map((file) => path.basename(file))).toEqual(['COPYING', 'LICENSE']);
+    expect(selected.every((file) => fs.statSync(file).size > 0)).toBe(true);
+    // 空占位必须被丢掉：它进清单就会撞上 bytes 正整数断言，整条 promotion 挂死。
+    expect(selected).not.toContain(candidates[2]);
+  });
+
+  it('keeps code-unit ordering so manifest NN- prefixes stay stable', () => {
+    const candidates = makeLicenseTree({
+      'build/LICENSE': 'nested text',
+      LICENSE: 'root license',
+      COPYING: 'root copying',
+    });
+
+    expect(selectLicenseEvidenceFiles(candidates)).toEqual([...candidates].sort());
+  });
+
+  it('returns nothing when a component only ships empty license placeholders', () => {
+    // 调用方据此 fail-closed —— 「许可证正文一个都没找到」是必须拦下的合规缺口，
+    // 不能因为过滤掉空文件就把这个组件静默放行。
+    const candidates = makeLicenseTree({ LICENSE: '', 'build/COPYING': '' });
+
+    expect(selectLicenseEvidenceFiles(candidates)).toEqual([]);
   });
 });

@@ -129,10 +129,12 @@ function validateSourceEvidence(value, label) {
   if (path.isAbsolute(evidencePath) || evidencePath.includes('\\') || evidencePath.split('/').includes('..')) {
     fail(`${label}.path must be a safe relative path`, 'unsafe_artifact_path', { path: evidencePath });
   }
+  // 带上 evidencePath：合规失败时光有 components[16].licenseFiles[2] 这种下标，
+  // 定位不到是哪个上游文件，排查只能重跑整条双架构 promotion（约 40 分钟）。
   return {
     path: evidencePath,
-    sha256: assertSha256(evidence.sha256, `${label}.sha256`),
-    bytes: assertPositiveInteger(evidence.bytes, `${label}.bytes`),
+    sha256: assertSha256(evidence.sha256, `${label} (${evidencePath}).sha256`),
+    bytes: assertPositiveInteger(evidence.bytes, `${label} (${evidencePath}).bytes`),
   };
 }
 
@@ -488,6 +490,15 @@ export function sha256Bytes(value) {
 
 export function sha256File(filePath) {
   return sha256Bytes(fs.readFileSync(filePath));
+}
+
+// 上游会在源码树里放空的许可证占位文件（实测 zstd 1.5.7 的 build/LICENSE 是 0 字节）。
+// 空文件不含任何许可证正文：收进合规包既履行不了 GPL 的「随附许可证正文」义务，也会
+// 撞上清单校验对 bytes 的正整数断言。这里丢掉空候选；筛完一个不剩时由调用方 fail-closed，
+// 因为「该组件的许可证正文一个都没找到」本身就是必须拦下的合规缺口。
+// 排序用码元序（大写在小写前），与清单里的 NN- 前缀编号一致。
+export function selectLicenseEvidenceFiles(candidatePaths) {
+  return candidatePaths.filter((candidate) => fs.statSync(candidate).size > 0).sort();
 }
 
 export function walkRegularFiles(rootDir) {

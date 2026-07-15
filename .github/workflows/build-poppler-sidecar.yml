@@ -16,7 +16,9 @@ jobs:
   build:
     timeout-minutes: 180
     strategy:
-      fail-fast: true
+      # 两个架构互不依赖，且 promotion 要求双架构候选齐备才能改 lock。fail-fast 会让
+      # 一侧失败连带取消另一侧，一轮 40 分钟只换回半份诊断（2026-07-15 实测踩过）。
+      fail-fast: false
       matrix:
         include:
           - platform: darwin-arm64
@@ -68,6 +70,17 @@ jobs:
             --manifest "${RUNNER_TEMP}/poppler-candidate/poppler-sidecar-manifest-${{ matrix.platform }}.json" \
             --sidecar-dir scripts/poppler \
             --platform "${{ matrix.platform }}"
+
+      # 合规门失败时原本不留任何取证物，定位只能靠重跑整条双架构 promotion。
+      # 收集到的都是上游开源许可证文本与 formula，公开仓上传无泄露风险。
+      - name: Upload compliance forensics (failure only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poppler-compliance-forensics-${{ matrix.platform }}-${{ github.sha }}
+          path: ${{ runner.temp }}/poppler-complete-source/
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Upload review-only candidate
         uses: actions/upload-artifact@v4

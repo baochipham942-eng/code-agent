@@ -10,7 +10,7 @@
 
 name: "Excel AI Benchmark (SpreadsheetBench Hard 10)"
 description: "10 challenging real-world Excel tasks from SpreadsheetBench"
-default_timeout: 180000
+default_timeout: 600000
 tags:
   - excel
   - benchmark

@@ -296,7 +296,12 @@ if [[ "$(uname -s)" == "Darwin" && -n "${SIGNING_IDENTITY}" ]]; then
         force_resign=1
       fi
       sign_nested_binary "${nested}" "1" "${force_resign}"
-    done < <(find "${app_path}" -type f \( -name "system-audio-capture" -o -name "spawn-helper" -o -name "vision-tagger" -o -name "vision-ocr" -o -name "rtk" -o -name "uv" -o -path "*/dist/bundled-node/bin/node" \) -print0)
+    done < <(find "${app_path}" -type f \( -name "system-audio-capture" -o -name "spawn-helper" -o -name "vision-tagger" -o -name "vision-ocr" -o -name "rtk" -o -name "uv" -o -name "pdftoppm" -o -path "*/dist/bundled-node/bin/node" \) -print0)
+
+    # 两趟签名靠「扩展名 + basename 白名单」枚举，漏掉一个可执行文件不会有任何报错——
+    # 直到 Apple 公证审回 Invalid，而审回并不指名是哪个文件（2026-07-15 poppler 的
+    # pdftoppm 就这么漏过去，烧掉 12 分钟编译 + 一轮公证往返才定位到）。这里在公证前对平账。
+    node "${ROOT_DIR}/scripts/verify-bundle-signatures.mjs" "${app_path}"
 
     echo "[tauri-release-bundle] re-signing .app shell: ${app_path}"
     codesign --force --options runtime --timestamp \

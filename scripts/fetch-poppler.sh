@@ -87,14 +87,20 @@ if [[ ! -x "$CELLAR/bin/pdftoppm" ]]; then
   # 追上那个语义：整张依赖图都从这一个 commit 解析，两架构才可能一致且可复现。
   export HOMEBREW_NO_INSTALL_FROM_API=1
   CORE_TAP="$(brew --repository)/Library/Taps/homebrew/homebrew-core"
+  echo "⚠️  即将把 homebrew-core 钉到 ${FORMULA_COMMIT:0:9} 并丢弃该 tap 的本地改动。"
+  echo "   这会影响本机后续所有 brew 安装；还原用：brew update-reset"
   if [[ ! -d "$CORE_TAP/.git" ]]; then
     mkdir -p "$CORE_TAP"
     git -C "$CORE_TAP" init -q
     git -C "$CORE_TAP" remote add origin https://github.com/Homebrew/homebrew-core
   fi
-  # 单 commit 浅取：homebrew-core 全history 超过 1GB，promotion 只需要这一个快照。
+  # 单 commit 浅取：homebrew-core 全 history 超过 1GB，promotion 只要这一个快照。
   git -C "$CORE_TAP" fetch --depth=1 --quiet origin "$FORMULA_COMMIT"
-  git -C "$CORE_TAP" checkout --quiet --detach FETCH_HEAD
+  # reset --hard 而非 checkout：GitHub 的 runner 镜像自带 homebrew-core tap，且工作树里
+  # 躺着它自己改过的 formula（实测 Formula/r/rustup.rb），checkout 会因「本地改动会被覆盖」
+  # 直接 abort。这些改动与 poppler 无关，promotion 要的是与 lock 逐字节一致的快照。
+  git -C "$CORE_TAP" reset --hard --quiet FETCH_HEAD
+  git -C "$CORE_TAP" clean -qfd
 
   # 仍然逐字节校验 poppler.rb：证明取到的确实是 lock 描述的那份 formula，
   # 而不是被同名 commit 或劫持的 remote 糊弄过去。

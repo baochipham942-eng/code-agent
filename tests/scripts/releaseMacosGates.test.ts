@@ -315,6 +315,34 @@ describe('macOS release fail-closed gates', () => {
     expect(stepNames).toContain('Upload review-only candidate');
     expect(workflowText).not.toContain('softprops/action-gh-release');
     expect(workflowText).not.toContain('ossutil');
+    // promotion 产出的是按 sha256 钉死的不可变制品：浮动 runner 迁移会换掉工具链，
+    // 同一份源码就再也复现不出已发布的哈希。runner 必须逐个钉死到具体 macOS 版本。
+    for (const entry of build?.strategy?.matrix?.include ?? []) {
+      expect(entry.runner, 'poppler promotion runners must not float').not.toContain('latest');
+    }
+    expect(workflowText).toContain('macos-15');
+  });
+
+  it('publishes promoted Poppler artifacts only through the immutable OSS promotion workflow', () => {
+    const workflowText = readRepoFile('.github/workflows/promote-poppler-sidecar.yml');
+    const workflow = readWorkflow('.github/workflows/promote-poppler-sidecar.yml');
+
+    // 只能人工派发：发布是对外不可逆动作，不接 push/tag 之类的自动触发器。
+    expect(Object.keys(workflow.on ?? {})).toEqual(['workflow_dispatch']);
+    // 覆盖已 promote 的对象 = 让所有引用它的 lock 静默失真，必须先 stat 再传、且不带 -f。
+    expect(workflowText).toContain('ossutil stat');
+    expect(workflowText).not.toMatch(/ossutil cp\s+-f/);
+    // lock 只产出成 artifact 交人复核，工作流自身不许写回仓库。
+    expect(workflow.permissions?.contents).toBe('read');
+    expect(workflowText).toContain('promote-poppler-sidecar-lock.mjs');
+    // 发布后必须在双原生架构上真下载 + 过完整 formal gate，别等 tag 之后才发现托管是坏的。
+    const verifyRunners = (workflow.jobs?.verify?.strategy?.matrix?.include ?? []).map((entry) => entry.runner);
+    expect(verifyRunners).toEqual(['macos-15', 'macos-15-intel']);
+    expect(workflowText).toContain('fetch-poppler-sidecar.mjs');
+    // 只看真命令：注释里为解释「为什么不能降级」而提到这个 flag 是合法的。
+    const commands = workflowText.split('\n').filter((line) => !line.trim().startsWith('#')).join('\n');
+    expect(commands, 'promotion must verify against the formal gate, not the structure-only one')
+      .not.toContain('--allow-pending');
   });
 
   it('pins supported Node 24 actions and explicit macOS architecture runners', () => {

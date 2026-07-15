@@ -21,8 +21,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 钉死 macOS 15：promotion 产出的是随包分发、lock 里按 sha256 钉死的不可变制品，
+          # 浮动的 macos-latest 迁到 macOS 26 会静默换掉 Xcode/SDK/工具链，同一份源码再跑就
+          # 复现不出已 promote 的哈希。release.yml 已因同样理由钉死（#387），这里是漏网的一处。
           - platform: darwin-arm64
-            runner: macos-latest
+            runner: macos-15
             uname_arch: arm64
           - platform: darwin-x64
             runner: macos-15-intel

@@ -1,0 +1,191 @@
+name: Promote Poppler Sidecar to Immutable Hosting
+
+# 把已复核的双架构候选发布到项目控制的 OSS 前缀，并产出 ready lock 供人工提交。
+#
+# 与 build-poppler-sidecar.yml 的分工：那条只造候选、绝不发布（它的测试断言里明确
+# not.toContain('ossutil')）；发布权限集中在本文件，且不自动改仓库——lock 以 artifact
+# 形式产出，由人复核后再提交（ADR-040 C2a 的人工闸）。
+#
+# 不可变性由三层保证，缺一不可：
+#   1. 对象键带 popplerBrewVersion，换版本即换路径，不存在原地更新；
+#   2. 上传前逐个 stat，已存在就 fail-closed（想改内容必须先 bump 版本）；
+#   3. lock 把 sha256+bytes 钉死——真被谁覆盖了，下载侧照样对不上账而 fail。
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: '成功的 build-poppler-sidecar.yml run id（必须跑在 main 上）'
+        required: true
+
+concurrency:
+  group: poppler-sidecar-promote
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          # merge-base 要判定候选 commit 是否在 main 上，浅克隆没有那段历史。
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Download promotion candidates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${{ inputs.candidate_run_id }}" --dir "${RUNNER_TEMP}/candidates"
+          ls -R "${RUNNER_TEMP}/candidates"
+
+      - name: Assert candidates came from native runners on this commit
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: |
+          set -euo pipefail
+          for PLATFORM in darwin-arm64 darwin-x64; do
+            DIR="$(ls -d "${RUNNER_TEMP}"/candidates/poppler-promotion-candidate-"${PLATFORM}"-* 2>/dev/null || true)"
+            [[ -n "${DIR}" && -d "${DIR}" ]] \
+              || { echo "::error::candidate run is missing the ${PLATFORM} artifact"; exit 1; }
+            # 键名带连字符会被 bash 当成 ${var-default} 展开，静默给空值——落 GITHUB_ENV 前先换成下划线。
+            echo "${PLATFORM//-/_}_dir=${DIR}" >> "${GITHUB_ENV}"
+
+            # 制品要能从默认分支复现：候选必须由本次 run、在未经 Rosetta 翻译的原生 runner 上产出。
+            SOURCE_COMMIT="$(node -e '
+              const fs = require("node:fs");
+              const [manifestPath, runId] = process.argv.slice(1);
+              const { nativeBuild } = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+              if (String(nativeBuild.runId) !== runId) {
+                throw new Error("manifest runId " + nativeBuild.runId + " != dispatched run " + runId);
+              }
+              if (nativeBuild.rosettaTranslated !== false) throw new Error("candidate was built under Rosetta");
+              if (nativeBuild.workflow !== "build-poppler-sidecar.yml") {
+                throw new Error("unexpected producing workflow " + nativeBuild.workflow);
+              }
+              process.stdout.write(nativeBuild.sourceCommit);
+            ' "${DIR}/poppler-sidecar-manifest-${PLATFORM}.json" "${CANDIDATE_RUN_ID}")"
+
+            # lock 里的 sha256 一旦钉死，就得能从默认分支原样复现出来。
+            git merge-base --is-ancestor "${SOURCE_COMMIT}" origin/main \
+              || { echo "::error::${PLATFORM} candidate commit ${SOURCE_COMMIT} is not on main"; exit 1; }
+            echo "${PLATFORM}: commit ${SOURCE_COMMIT} verified on main"
+          done
+
+      - name: Install ossutil (Aliyun OSS CLI)
+        run: |
+          curl -sL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.1.2/ossutil-2.1.2-linux-amd64.zip"
+          unzip -o /tmp/ossutil.zip -d /tmp/ossutil
+          sudo mv /tmp/ossutil/ossutil-*/ossutil /usr/local/bin/ossutil
+          chmod +x /usr/local/bin/ossutil
+          ossutil version
+
+      - name: Publish candidates to the immutable OSS prefix
+        env:
+          ALIYUN_OSS_ACCESS_KEY_ID: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_ID }}
+          ALIYUN_OSS_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_OSS_ACCESS_KEY_SECRET }}
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          set -euo pipefail
+          cat > ~/.ossutilconfig <<EOF
+          [default]
+          accessKeyID=${ALIYUN_OSS_ACCESS_KEY_ID}
+          accessKeySecret=${ALIYUN_OSS_ACCESS_KEY_SECRET}
+          region=${ALIYUN_OSS_REGION}
+          endpoint=oss-${ALIYUN_OSS_REGION}.aliyuncs.com
+          EOF
+          chmod 600 ~/.ossutilconfig
+
+          VERSION="$(node -p "JSON.parse(require('node:fs').readFileSync('config/poppler-sidecar.lock.json','utf8')).popplerBrewVersion")"
+          PREFIX="poppler-sidecar/${VERSION}"
+          echo "artifact_prefix=${PREFIX}" >> "${GITHUB_ENV}"
+
+          CANDIDATES=("${darwin_arm64_dir}"/* "${darwin_x64_dir}"/*)
+          # 先全量 stat 再全量传：半份发布出去比整份不发更糟——lock 会引用一组根本不齐的对象。
+          for FILE in "${CANDIDATES[@]}"; do
+            KEY="${PREFIX}/$(basename "${FILE}")"
+            if ossutil stat "oss://${ALIYUN_OSS_BUCKET}/${KEY}" >/dev/null 2>&1; then
+              echo "::error::${KEY} already published — promoted artifacts are immutable; bump popplerBrewVersion instead"
+              exit 1
+            fi
+          done
+          for FILE in "${CANDIDATES[@]}"; do
+            # 不带 -f：真撞上已存在对象时宁可让它中止，也不覆盖已 promote 的制品。
+            # </dev/null 保证覆盖确认提示拿到 EOF 直接失败，而不是挂在那儿等到超时。
+            ossutil cp "${FILE}" "oss://${ALIYUN_OSS_BUCKET}/${PREFIX}/$(basename "${FILE}")" < /dev/null
+          done
+
+      - name: Build the ready lock
+        env:
+          ALIYUN_OSS_BUCKET: ${{ secrets.ALIYUN_OSS_BUCKET }}
+          ALIYUN_OSS_REGION: ${{ secrets.ALIYUN_OSS_REGION }}
+        run: |
+          set -euo pipefail
+          # 桶名/区域是 secret，日志里会被打码；lock 走 artifact 交付，人从文件里读真值。
+          node scripts/promote-poppler-sidecar-lock.mjs \
+            --darwin-arm64-dir "${darwin_arm64_dir}" \
+            --darwin-x64-dir "${darwin_x64_dir}" \
+            --artifact-base-url "https://${ALIYUN_OSS_BUCKET}.oss-${ALIYUN_OSS_REGION}.aliyuncs.com/${artifact_prefix}/" \
+            --out "${RUNNER_TEMP}/poppler-sidecar.lock.json"
+
+      - name: Upload the ready lock for human review
+        uses: actions/upload-artifact@v4
+        with:
+          name: poppler-ready-lock
+          path: ${{ runner.temp }}/poppler-sidecar.lock.json
+          retention-days: 30
+          if-no-files-found: error
+
+  verify:
+    # 真跑发版那一刻的动作：拿 ready lock 从公开 URL 下载并过完整 formal gate。
+    # 双架构都验——x64 侧若只等 release.yml 才暴露，就是在 tag 之后才发现托管是坏的。
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            runner: macos-15
+          - platform: darwin-x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Download the ready lock
+        uses: actions/download-artifact@v4
+        with:
+          name: poppler-ready-lock
+          path: ${{ runner.temp }}/lock
+
+      - name: Fetch the published sidecar and run the formal release gate
+        run: |
+          set -euo pipefail
+          LOCK="${RUNNER_TEMP}/lock/poppler-sidecar.lock.json"
+          node scripts/fetch-poppler-sidecar.mjs \
+            --lock "${LOCK}" \
+            --output "${RUNNER_TEMP}/poppler" \
+            --stage-dir "${RUNNER_TEMP}/staged"
+          # 不带 --allow-pending：ready lock 走的是 manifest 与 lock 的逐字节对账。
+          node scripts/verify-poppler-release-gate.mjs \
+            --lock "${LOCK}" \
+            --manifest "${RUNNER_TEMP}/staged/poppler-sidecar-manifest-${{ matrix.platform }}.json" \
+            --sidecar-dir "${RUNNER_TEMP}/poppler" \
+            --platform "${{ matrix.platform }}"

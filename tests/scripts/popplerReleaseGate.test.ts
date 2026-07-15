@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { load as loadYaml } from 'js-yaml';
 import {
   PopplerReleaseGateError,
+  assertCrossPlatformComponentParity,
   buildReadyPopplerLock,
   detectPopplerPlatform,
   selectLicenseEvidenceFiles,
@@ -318,6 +319,55 @@ describe('Poppler release hard gate', () => {
         `${entry.platform}: workflow runs on '${entry.runner}' but the manifest allowlist rejects it`,
       ).not.toThrow();
     }
+  });
+
+  // 复刻 2026-07-15 真实候选对账的形状：只钉 poppler.rb 而放任 brew 从 runner 当下快照
+  // 解析依赖时，两个 runner 镜像编出了不同版本的 jpeg-turbo/gpgme/libtiff。
+  function manifestWithComponents(components: Record<string, string>) {
+    return {
+      files: Object.entries(components).map(([component, componentVersion]) => ({
+        path: `lib/${component}.dylib`,
+        component,
+        componentVersion,
+        kind: 'mach-o',
+      })),
+    };
+  }
+
+  it('refuses candidates whose architectures disagree on any dependency version', () => {
+    expect(() => assertCrossPlatformComponentParity({
+      'darwin-arm64': manifestWithComponents({ poppler: '26.02.0_1', 'jpeg-turbo': '3.2.0', gpgme: '2.1.2' }),
+      'darwin-x64': manifestWithComponents({ poppler: '26.02.0_1', 'jpeg-turbo': '3.1.4.1', gpgme: '2.1.1' }),
+    })).toThrowError(expect.objectContaining({ code: 'cross_platform_version_drift' }));
+  });
+
+  it('reports every drifting component, not just the first one', () => {
+    try {
+      assertCrossPlatformComponentParity({
+        'darwin-arm64': manifestWithComponents({ 'jpeg-turbo': '3.2.0', gpgme: '2.1.2', libtiff: '4.7.2' }),
+        'darwin-x64': manifestWithComponents({ 'jpeg-turbo': '3.1.4.1', gpgme: '2.1.1', libtiff: '4.7.1_1' }),
+      });
+      throw new Error('expected a drift failure');
+    } catch (error) {
+      // 一次列全，否则每修一个就得再烧一轮双架构 CI 才看到下一个。
+      expect((error as PopplerReleaseGateError).details.mismatches).toHaveLength(3);
+      expect((error as Error).message).toContain('jpeg-turbo 3.2.0 vs 3.1.4.1');
+    }
+  });
+
+  it('catches a component present on one architecture but missing on the other', () => {
+    expect(() => assertCrossPlatformComponentParity({
+      'darwin-arm64': manifestWithComponents({ poppler: '26.02.0_1', 'jpeg-turbo': '3.2.0' }),
+      'darwin-x64': manifestWithComponents({ poppler: '26.02.0_1' }),
+    })).toThrowError(expect.objectContaining({ code: 'cross_platform_version_drift' }));
+  });
+
+  it('accepts architectures that agree on every component version', () => {
+    const components = { poppler: '26.02.0_1', 'jpeg-turbo': '3.1.3', gpgme: '2.1.1' };
+    expect(() => assertCrossPlatformComponentParity({
+      'darwin-arm64': manifestWithComponents(components),
+      'darwin-x64': manifestWithComponents(components),
+    })).not.toThrow();
   });
 
   it('promotes a pending lock to ready with project-controlled URLs for both architectures', () => {

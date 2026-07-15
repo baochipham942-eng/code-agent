@@ -495,6 +495,34 @@ export function sha256File(filePath) {
   return sha256Bytes(fs.readFileSync(filePath));
 }
 
+// 两个架构必须装同一套依赖版本。二进制会因架构而异，版本不该。
+// 只钉 poppler.rb 而放任 brew 从 runner 当下快照解析依赖时，两个 runner 镜像会编出不同版本
+// （2026-07-15 实测 jpeg-turbo 3.2.0 vs 3.1.4.1），意味着两个架构的用户拿到不同的库、
+// 不同的 CVE 面，且制品再也复现不出来。所有既有门都没管这一层，这条补上。
+export function assertCrossPlatformComponentParity(manifestsByPlatform) {
+  const versionsOf = (manifest) => {
+    const versions = new Map();
+    for (const file of manifest.files) versions.set(file.component, file.componentVersion);
+    return versions;
+  };
+  const [[platformA, manifestA], [platformB, manifestB]] = Object.entries(manifestsByPlatform);
+  const [versionsA, versionsB] = [versionsOf(manifestA), versionsOf(manifestB)];
+
+  const mismatches = [];
+  for (const component of new Set([...versionsA.keys(), ...versionsB.keys()])) {
+    const [a, b] = [versionsA.get(component), versionsB.get(component)];
+    if (a !== b) mismatches.push({ component, [platformA]: a ?? null, [platformB]: b ?? null });
+  }
+  if (mismatches.length > 0) {
+    fail(
+      `Poppler candidates disagree on ${mismatches.length} component version(s) across architectures: `
+      + mismatches.map((m) => `${m.component} ${m[platformA] ?? 'absent'} vs ${m[platformB] ?? 'absent'}`).join('; '),
+      'cross_platform_version_drift',
+      { mismatches },
+    );
+  }
+}
+
 // 把 pending lock 升成 ready lock：给双架构的 6 个制品填 url/sha256/bytes。
 // 手填这 6 组是 promotion 里最容易出错的一步（gate 在 ready 时会逐字节对账 manifest，
 // 错一位就整条发版 fail-closed），所以由候选目录的真实文件算出来，人只复核不誊抄。

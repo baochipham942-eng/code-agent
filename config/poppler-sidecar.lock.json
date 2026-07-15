@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "kind": "agent_neo_poppler_sidecar_lock",
-  "status": "pending-promotion",
+  "status": "ready",
   "publisher": "Agent Neo project",
   "mainProgramLicense": "MIT",
   "invocationBoundary": "separate-process-file-io",
-  "artifactBaseUrl": null,
+  "artifactBaseUrl": "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/poppler-sidecar/26.07.0/",
   "licenseRationale": "docs/architecture/decisions/ADR-040-C2a-poppler-license-rationale.md",
   "popplerBrewVersion": "26.07.0",
   "formula": {
@@ -15,7 +15,39 @@
     "sha256": "b5f22c5d20babeef49503aea6ea07faadf0cfe9c9b1a2fbae2d78d226462bc92"
   },
   "platforms": {
-    "darwin-arm64": null,
-    "darwin-x64": null
+    "darwin-arm64": {
+      "manifest": {
+        "url": "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/poppler-sidecar/26.07.0/poppler-sidecar-manifest-darwin-arm64.json",
+        "sha256": "00850fcfe951c231cb6ba38fe4804918093a50ba84c471ea7cea56664bf55563",
+        "bytes": 31689
+      },
+      "sidecarArchive": {
+        "url": "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/poppler-sidecar/26.07.0/poppler-sidecar-darwin-arm64-26.07.0.tar.gz",
+        "sha256": "9f9cf0f22c4fea5ea7533a7caad63de24fdae6ccca61e637d11ab78b23516e2f",
+        "bytes": 4044776
+      },
+      "sourceBundle": {
+        "url": "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/poppler-sidecar/26.07.0/poppler-complete-source-darwin-arm64-26.07.0.tar.gz",
+        "sha256": "3af6a19f5dd3aea536cd23ba31a1f558579c9b6ac20e87b3a347327b90ed8b23",
+        "bytes": 144408303
+      }
+    },
+    "darwin-x64": {
+      "manifest": {
+        "url": "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/poppler-sidecar/26.07.0/poppler-sidecar-manifest-darwin-x64.json",
+        "sha256": "4dab4bfc96fe7705f9fac108ba894f5a0bc713263d80d002afd78d4e870abe98",
+        "bytes": 31712
+      },
+      "sidecarArchive": {
+        "url": "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/poppler-sidecar/26.07.0/poppler-sidecar-darwin-x64-26.07.0.tar.gz",
+        "sha256": "da342c2046322c6f46ddf483694f5e5fb19f39926e87a138ae68129003c006d4",
+        "bytes": 4380259
+      },
+      "sourceBundle": {
+        "url": "https://agent-neo-releases.oss-cn-shanghai.aliyuncs.com/poppler-sidecar/26.07.0/poppler-complete-source-darwin-x64-26.07.0.tar.gz",
+        "sha256": "e686271581899ea03805f79dd130639fb42232ca87ff712adeabf50d8b71caf3",
+        "bytes": 144408212
+      }
+    }
   }
 }

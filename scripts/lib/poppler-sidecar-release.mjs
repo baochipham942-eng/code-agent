@@ -402,7 +402,21 @@ export function validatePopplerSourceManifest(manifest, { expectedVersion } = {}
       fail('Poppler promotion binary must be built from the pinned source formula', 'poppler_not_built_from_source');
     }
     assertString(component.declaredLicense, `${label}.declaredLicense`);
-    assertHttpsUrl(component.upstreamSourceUrl, `${label}.upstreamSourceUrl`);
+    const upstreamUrl = assertHttpsUrl(component.upstreamSourceUrl, `${label}.upstreamSourceUrl`);
+    // 随附源码必须真的对应装进包里的那个二进制——这正是 GPL §3「corresponding source」的义务，
+    // 也是整个合规包唯一的意义。上游归档名带的是纯上游版本，brew 的 _N 修订号只影响打包，故剥掉再比。
+    // 实测这条会被踩：brew 若在收集阶段读到与构建阶段不同的 formula 视图（例如某一步少了
+    // HOMEBREW_NO_INSTALL_FROM_API），就会抓回另一个版本的源码归档，而在此之前无门可挡——
+    // 2026-07-15 实测出现过「二进制 poppler 26.07.0 / 随附源码 26.06.0」。
+    const upstreamVersion = component.version.split('_')[0];
+    if (!upstreamUrl.includes(upstreamVersion)) {
+      fail(
+        `${label}: shipped source does not correspond to the shipped binary `
+        + `(${name} ${component.version} vs ${upstreamUrl})`,
+        'source_binary_version_mismatch',
+        { component: name, version: component.version, upstreamSourceUrl: upstreamUrl },
+      );
+    }
     validateSourceEvidence(component.sourceArchive, `${label}.sourceArchive`);
     validateSourceEvidence(component.formula, `${label}.formula`);
     validateSourceEvidence(component.installReceipt, `${label}.installReceipt`);

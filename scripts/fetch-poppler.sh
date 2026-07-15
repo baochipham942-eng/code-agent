@@ -86,7 +86,10 @@ if [[ ! -x "$CELLAR/bin/pdftoppm" ]]; then
   # x64 却是 3.1.4.1 / 2.1.1 / 4.7.1_1（2026-07-15 双架构候选对账发现）。
   # lock 的 formula.repository+commit 本来就描述「homebrew-core 的某个快照」，这里让实现
   # 追上那个语义：整张依赖图都从这一个 commit 解析，两架构才可能一致且可复现。
+  # 本脚本自己也要这个开关（本机直接跑时没有 workflow 的 job env）；promotion 走 CI 时
+  # build-poppler-sidecar.yml 已在 job 级设好，让合规收集那一步的 brew 看到同一份钉死 tap。
   export HOMEBREW_NO_INSTALL_FROM_API=1
+  export HOMEBREW_NO_AUTO_UPDATE=1
   CORE_TAP="$(brew --repository)/Library/Taps/homebrew/homebrew-core"
   echo "⚠️  即将把 homebrew-core 钉到 ${FORMULA_COMMIT:0:9} 并丢弃该 tap 的本地改动。"
   echo "   这会影响本机后续所有 brew 安装；还原用：brew update-reset"

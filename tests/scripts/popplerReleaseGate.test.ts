@@ -200,6 +200,60 @@ describe('Poppler release hard gate', () => {
       .toThrowError(expect.objectContaining({ code: 'missing_build_inputs' }));
   });
 
+  // 2026-07-15 真踩：构建按钉死快照装了 poppler 26.07.0，合规收集那一步的 brew 却读到另一份
+  // formula 视图，抓回 26.06.0 的源码归档。整包因此声称「这是对应源码」但根本不对应，
+  // 而在此之前没有任何一道门看这件事。
+  // extraComponents 是追加而非替换：source manifest 少了 poppler 本身会先撞上 missing_poppler_source，
+  // 那样测的就不是这里想测的东西了。
+  function sourceManifestWith(popplerOverrides = {}, extraComponents: Record<string, unknown>[] = []) {
+    const evidence = { path: 'components/x/evidence', sha256: digest, bytes: 1 };
+    const base = {
+      builtFromSource: true,
+      sourceArchive: evidence,
+      formula: evidence,
+      installReceipt: evidence,
+      formulaResourceCount: 0,
+      formulaPatchCount: 0,
+      buildInputs: [],
+      licenseFiles: [evidence],
+    };
+    return {
+      schemaVersion: 1,
+      kind: 'agent_neo_poppler_complete_source',
+      publisher: 'Agent Neo project',
+      popplerBrewVersion: '26.07.0',
+      components: [
+        {
+          ...base,
+          name: 'poppler',
+          version: '26.07.0',
+          declaredLicense: 'GPL-2.0-only',
+          upstreamSourceUrl: 'https://poppler.freedesktop.org/poppler-26.07.0.tar.xz',
+          ...popplerOverrides,
+        },
+        ...extraComponents.map((component) => ({ ...base, ...component })),
+      ],
+    };
+  }
+
+  it('refuses a bundle whose shipped source is a different version than the shipped binary', () => {
+    expect(() => validatePopplerSourceManifest(sourceManifestWith({
+      upstreamSourceUrl: 'https://poppler.freedesktop.org/poppler-26.06.0.tar.xz',
+    }))).toThrowError(expect.objectContaining({ code: 'source_binary_version_mismatch' }));
+  });
+
+  it('accepts a brew revision suffix, which only affects packaging and never the upstream tarball', () => {
+    // zstd 1.5.7_1 的上游归档就是 v1.5.7.tar.gz —— _N 是 brew 的重打包次数，不是上游版本。
+    // 17 个真实组件里有 3 个是这个形态，这条门若不认它就会把每次 promotion 都误杀。
+    expect(() => validatePopplerSourceManifest(sourceManifestWith({}, [{
+      name: 'zstd',
+      version: '1.5.7_1',
+      declaredLicense: 'BSD-3-Clause',
+      builtFromSource: false,
+      upstreamSourceUrl: 'https://github.com/facebook/zstd/archive/refs/tags/v1.5.7.tar.gz',
+    }]))).not.toThrow();
+  });
+
   it('requires exact source coverage for every Mach-O component and version', () => {
     const sidecar = makeSidecar();
     const sidecarManifest = manifest(sidecar);
@@ -230,8 +284,11 @@ describe('Poppler release hard gate', () => {
       }],
     };
     expect(verifyPopplerSourceCoverage(sidecarManifest, sourceManifest)).toEqual({ componentCount: 1 });
-    // 随附源码声明的版本与 sidecar 实际装的版本对不上 = 交付的源码不对应实物，GPL 义务没履行。
+    // 源码清单声明的版本与 sidecar 实际装的对不上 = 交付的源码不对应实物。
+    // 版本与 URL 一起改：只改版本会先撞上 source_binary_version_mismatch（源码清单自身不自洽），
+    // 测到的就不是这里想测的「两份清单互相对不上」了。
     sourceManifest.components[0].version = '26.06.0';
+    sourceManifest.components[0].upstreamSourceUrl = 'https://poppler.freedesktop.org/poppler-26.06.0.tar.xz';
     expect(() => verifyPopplerSourceCoverage(sidecarManifest, sourceManifest))
       .toThrowError(expect.objectContaining({ code: 'missing_component_source' }));
   });

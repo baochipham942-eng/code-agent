@@ -658,7 +658,18 @@ export type ExpectationType =
   // （可选，闸0 打回次数下限）。两者 deterministic 桶；fail-loud：缺参 / case 没配
   // goal_contract / 终态事件没发 / 证据闸从未求值，一律显式 fail。
   | 'goal_status'
-  | 'goal_evidence_gate';
+  | 'goal_evidence_gate'
+  // 方案 D 二期遗留：产物任务「先产还是先拖延」的开场判据（实现在 openingShapeEval）。
+  // cowork 用例的 file_exists/content_contains 只测「最后有没有文件」，测不到「怎么开场」
+  // ——而开场正是产物提示词改的东西（天花板效应：18/19 旧提示词下就已 pass）。
+  // params: artifact_tools（必填 regex 列表，锚点=首个产物动作）、stall_tools（必填 regex
+  // 列表，该用例下算「拖延」的调研/提问/翻目录工具）。断言 = 锚点之前的窗口零 stall 调用。
+  // 窗口语义与 sim_no_write_before_rule 同构。deterministic 桶。
+  // fail-loud：缺参 / 两表交集 / 全程无产物动作，一律显式 fail（尤其最后一条——
+  // 「压根没产出」会让窗口为空而真空通过，是最危险的假绿）。
+  // 刻意无默认工具表：同一个 WebSearch/Read 在「介绍我司项目的 PPT」是对的、在
+  // 「Q3 营销方案 PPT」是拖延，极性按用例定，全局默认必在一边造假红。
+  | 'no_stall_before_artifact';
 
 export interface Expectation {
   type: ExpectationType;

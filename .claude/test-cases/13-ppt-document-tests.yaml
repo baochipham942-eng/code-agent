@@ -41,6 +41,20 @@ cases:
         weight: 1
         critical: true
         params: {}
+      # 方案 D 二期遗留：打破天花板效应。上面三条只测「最后有没有文件」，
+      # 本条测「怎么开场」—— 产物提示词改的正是开场。
+      # 本用例主题通用（AI Agent 架构概述）、无附件，按产物 reminder 的口径
+      # 应先落骨架：不依赖时效数据就不该先 WebSearch，风格页数直接假设、不该先问。
+      # 只列这两个工具：它们对本 prompt 是无歧义的拖延。同文件另三条用例都带附件、
+      # 必须先 Read，故不挂本断言（也正因如此不设全局默认工具表）。
+      # 非 critical：这是读数不是硬门，别让开场把产物能力判死。
+      - type: no_stall_before_artifact
+        description: "开场应先落骨架，而不是先调研/先问需求"
+        weight: 0.5
+        critical: false
+        params:
+          artifact_tools: ["Skill", "ppt_generate", "Write"]
+          stall_tools: ["WebSearch", "AskUserQuestion"]
     cleanup:
       - rm -f test-simple.pptx
     timeout: 600000

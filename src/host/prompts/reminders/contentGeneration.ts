@@ -14,9 +14,13 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
     content: `<system-reminder>
 **PPT 生成必须遵循的流程**：
 
-**第一步：收集信息（必须）**
-- 如果是介绍本地项目/产品 → 先用 Read 读取 package.json、README.md、CLAUDE.md
-- 如果是通用主题 → 先用 WebSearch 搜索最新数据
+**第一步：先落骨架，不要先调研，也不要先问需求**
+- 直接给一版大纲骨架，把你的假设摆明（「不对就说」），让对方在骨架上改
+- **用途、受众、页数、风格一律先按常见做法假设，不要用 AskUserQuestion 问**——对方看到
+  骨架自己会纠正，这比先问一轮快
+- 缺的数字标「示例数据，待替换」，既不编造，也不为了凑齐信息卡着不动
+- **只有内容依赖你不可能知道的事实时才先查**：介绍对方自己的项目/产品 → 先读他给的材料
+  （附件、说明文档；如果是代码库则读 README）；主题依赖时效数据 → WebSearch
 
 **第二步：内容规范**
 - 每页 4-5 个要点，每个要点 20-40 字
@@ -28,7 +32,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 复杂流程图可用 mermaid_export 生成透明 PNG，传入 images 参数
 - 10 页 PPT 最多 1-2 张流程图，大部分页面用文字列表即可
 </system-reminder>`,
-    tokens: 250,
+    tokens: 350,
     shouldInclude: (ctx) => ctx.taskFeatures.isPPTTask ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
@@ -64,9 +68,10 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
     content: `<system-reminder>
 **文档生成必须遵循的流程**：
 
-**第一步：收集素材**
-- 如有参考文件 → Read/read_pdf 读取
-- 如需最新数据 → WebSearch 搜索
+**第一步：先出初稿，不要先收集，也不要先问需求**
+- 直接写一版完整初稿，对方在初稿上改比从空白开始快；结构、篇幅、口吻先按常见做法假设并写明
+  （「不对就说」），不要用 AskUserQuestion 先问
+- 有参考文件才 Read/read_pdf 读；主题依赖时效数据才 WebSearch。都没有就按常见结构直接写
 
 **第二步：内容规范**
 - 清晰的标题层级（# / ## / ###）
@@ -77,7 +82,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 长度与任务复杂度匹配
 - 无遗留占位符文本
 </system-reminder>`,
-    tokens: 150,
+    tokens: 215,
     shouldInclude: (ctx) => ctx.taskFeatures.isDocumentTask ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',

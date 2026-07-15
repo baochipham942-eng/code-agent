@@ -894,6 +894,47 @@ describe('macOS release fail-closed gates', () => {
     expect(targets).toContain('scripts/rtk.exe');
   });
 
+  // MACOS_ONLY_PREFIXES 是拒绝清单：往 base conf 加一个 mac-only sidecar 却忘了同步它，
+  // 该资源就静默漏进 Windows bundle，直到 Tauri 报 "resource path doesn't exist" 才发现——
+  // 而 build-windows-test.yml 是手动触发的，poppler（#380）就这样躺了两天没人知道，
+  // 直到 v0.27.2 真发版才炸。这条把判断反过来：sidecar 想进 Windows 必须显式登记，
+  // 新增的默认拦下，于是「忘了登记」的代价从一轮 Windows 构建变成本地秒级转红。
+  it('ships only explicitly declared sidecars to Windows', () => {
+    const result = spawnSync('node', ['scripts/tauri-platform-config.mjs', 'win32-x64'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(0);
+
+    const overlay = JSON.parse(result.stdout) as { bundle?: { resources?: TauriResources } };
+    const merged = applyResourceMergePatch(
+      readTauriResources().map,
+      (overlay.bundle?.resources ?? {}) as Record<string, string | null>,
+    );
+
+    // Windows 真正随包的 sidecar。每一项都必须有对应的 Windows 产出步骤
+    // （release.yml 的 "Fetch sidecars (windows-msvc)" / "Prepare bundled Node"）。
+    // 增删任何一项都要连带核对那一步，别只改这里让门变绿。
+    const WINDOWS_SIDECARS = [
+      '../scripts/pii/gliner_onnx_runner.py',
+      '../scripts/pii/setup-gliner-pii.mjs',
+      '../scripts/rtk.exe',
+      '../scripts/uv.exe',
+    ];
+
+    const shipped = Object.keys(merged)
+      .filter((source) => source.startsWith('../scripts/') || source.includes('.tauri-resources.noindex'))
+      .sort();
+
+    // 指名道姓：只报「5 个 ≠ 4 个」等于把定位工作又推回给下一个人。
+    const leaked = shipped.filter((source) => !WINDOWS_SIDECARS.includes(source));
+    expect(leaked, `mac-only sidecar leaked into the Windows bundle (Tauri will fail with "resource path doesn't exist"); `
+      + 'drop it in MACOS_ONLY_PREFIXES of scripts/tauri-platform-config.mjs, or declare it here if Windows really ships it')
+      .toEqual([]);
+    const missing = WINDOWS_SIDECARS.filter((source) => !shipped.includes(source));
+    expect(missing, 'declared Windows sidecar disappeared from the overlay').toEqual([]);
+  });
+
   it('replaces arm64 native resources in the macOS x64 Tauri resource overlay', () => {
     const result = spawnSync('node', ['scripts/tauri-arch-config.mjs', 'x64'], {
       cwd: repoRoot,

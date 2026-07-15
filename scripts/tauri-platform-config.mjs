@@ -45,6 +45,11 @@ const MACOS_ONLY_PREFIXES = [
   '../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app',
   // PII 安装链已 Node 化（setup-gliner-pii.mjs，2026-06-11），win32 照常带上
   '../node_modules/@img/sharp-libvips-darwin-arm64', // win32 libvips 静态打进 sharp 包
+  // poppler 只在 macOS 打包：PPTX→PDF 的 LibreOffice 前置只有 mac 有，非 mac 平台
+  // fetch-poppler.sh 直接跳过不生成该目录，运行时走既有降级链（windows-support.md §1.5）。
+  // #380 把它加进 base conf 时漏了这里，Windows 构建自那天起一直炸在
+  // "resource path ..\scripts\poppler doesn't exist"，直到 v0.27.2 真发版才暴露。
+  '../scripts/poppler',
 ];
 
 function shouldKeepResource(source) {

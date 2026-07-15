@@ -8,7 +8,11 @@ import path from 'node:path';
 import console from 'node:console';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { buildReadyPopplerLock, sha256File } from './lib/poppler-sidecar-release.mjs';
+import {
+  assertCrossPlatformComponentParity,
+  buildReadyPopplerLock,
+  sha256File,
+} from './lib/poppler-sidecar-release.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -61,6 +65,13 @@ function main() {
   const candidateFiles = Object.fromEntries(
     Object.entries(options.dirs).map(([platform, dir]) => [platform, describeCandidate(dir, platform, version)]),
   );
+  // 两架构装的依赖版本对不齐就别 promote：不可变路径一旦占住就没有回头路。
+  assertCrossPlatformComponentParity(Object.fromEntries(
+    Object.entries(options.dirs).map(([platform, dir]) => [
+      platform,
+      JSON.parse(fs.readFileSync(path.join(dir, `poppler-sidecar-manifest-${platform}.json`), 'utf8')),
+    ]),
+  ));
   const readyLock = buildReadyPopplerLock(pendingLock, { artifactBaseUrl: options.artifactBaseUrl, candidateFiles });
   fs.writeFileSync(options.out, `${JSON.stringify(readyLock, null, 2)}\n`);
   console.log(`Wrote ready Poppler lock for ${version} to ${options.out}`);

@@ -23,8 +23,9 @@
 
 set -euo pipefail
 
-# homebrew 的 Cellar 目录名带 revision 后缀（26.02.0_1 = 上游 26.02.0 的第 1 次 brew 修订）。
-# 钉全名保证产物可复现；pdftoppm -v 只打印上游版本，故下面比对时把 _N 去掉。
+# homebrew 的 Cellar 目录名可能带 revision 后缀（如 26.02.0_1 = 上游 26.02.0 的第 1 次 brew
+# 修订；26.07.0 这种没重打过包的则没有后缀）。钉全名保证产物可复现；pdftoppm -v 只打印上游
+# 版本，故下面比对时把 _N 去掉——没后缀时这个剥离是恒等的。
 LOCK_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/poppler-sidecar.lock.json"
 POPPLER_BREW_VERSION="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).popplerBrewVersion" "$LOCK_FILE")"
 POPPLER_VERSION="${POPPLER_BREW_VERSION%%_*}"
@@ -78,14 +79,37 @@ if [[ ! -x "$CELLAR/bin/pdftoppm" ]]; then
   FORMULA_COMMIT="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).formula.commit" "$LOCK_FILE")"
   FORMULA_PATH="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).formula.path" "$LOCK_FILE")"
   FORMULA_SHA="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).formula.sha256" "$LOCK_FILE")"
-  TAP_ROOT="$(brew --repository)/Library/Taps/agent-neo/homebrew-poppler-build"
-  brew tap-new agent-neo/poppler-build >/dev/null
-  mkdir -p "$TAP_ROOT/Formula"
-  curl --fail --location --proto '=https' --tlsv1.2 \
-    "https://raw.githubusercontent.com/Homebrew/homebrew-core/${FORMULA_COMMIT}/${FORMULA_PATH}" \
-    --output "$TAP_ROOT/Formula/poppler.rb"
-  echo "${FORMULA_SHA}  $TAP_ROOT/Formula/poppler.rb" | shasum -a 256 -c -
-  brew install --build-from-source agent-neo/poppler-build/poppler
+
+  # 钉住整个 homebrew-core 快照，而不是只取一份 poppler.rb：poppler 的 17 个依赖是 brew
+  # 按名字从 core 解析的，只钉 poppler.rb 的话依赖仍走 runner 当下的 brew。两个 runner 镜像
+  # 的 brew 快照并不同步——实测 arm64 编出 jpeg-turbo 3.2.0 / gpgme 2.1.2 / libtiff 4.7.2，
+  # x64 却是 3.1.4.1 / 2.1.1 / 4.7.1_1（2026-07-15 双架构候选对账发现）。
+  # lock 的 formula.repository+commit 本来就描述「homebrew-core 的某个快照」，这里让实现
+  # 追上那个语义：整张依赖图都从这一个 commit 解析，两架构才可能一致且可复现。
+  # 本脚本自己也要这个开关（本机直接跑时没有 workflow 的 job env）；promotion 走 CI 时
+  # build-poppler-sidecar.yml 已在 job 级设好，让合规收集那一步的 brew 看到同一份钉死 tap。
+  export HOMEBREW_NO_INSTALL_FROM_API=1
+  export HOMEBREW_NO_AUTO_UPDATE=1
+  CORE_TAP="$(brew --repository)/Library/Taps/homebrew/homebrew-core"
+  echo "⚠️  即将把 homebrew-core 钉到 ${FORMULA_COMMIT:0:9} 并丢弃该 tap 的本地改动。"
+  echo "   这会影响本机后续所有 brew 安装；还原用：brew update-reset"
+  if [[ ! -d "$CORE_TAP/.git" ]]; then
+    mkdir -p "$CORE_TAP"
+    git -C "$CORE_TAP" init -q
+    git -C "$CORE_TAP" remote add origin https://github.com/Homebrew/homebrew-core
+  fi
+  # 单 commit 浅取：homebrew-core 全 history 超过 1GB，promotion 只要这一个快照。
+  git -C "$CORE_TAP" fetch --depth=1 --quiet origin "$FORMULA_COMMIT"
+  # reset --hard 而非 checkout：GitHub 的 runner 镜像自带 homebrew-core tap，且工作树里
+  # 躺着它自己改过的 formula（实测 Formula/r/rustup.rb），checkout 会因「本地改动会被覆盖」
+  # 直接 abort。这些改动与 poppler 无关，promotion 要的是与 lock 逐字节一致的快照。
+  git -C "$CORE_TAP" reset --hard --quiet FETCH_HEAD
+  git -C "$CORE_TAP" clean -qfd
+
+  # 仍然逐字节校验 poppler.rb：证明取到的确实是 lock 描述的那份 formula，
+  # 而不是被同名 commit 或劫持的 remote 糊弄过去。
+  echo "${FORMULA_SHA}  ${CORE_TAP}/${FORMULA_PATH}" | shasum -a 256 -c -
+  brew install --build-from-source poppler
 fi
 
 rm -rf "$OUT_DIR"

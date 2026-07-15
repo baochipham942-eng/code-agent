@@ -31,6 +31,14 @@ jobs:
             runner: macos-15-intel
             uname_arch: x86_64
     runs-on: ${{ matrix.runner }}
+    env:
+      # 必须是 job 级：构建与合规收集是两个 step、两个 shell，都会调 brew。只在 fetch-poppler.sh
+      # 内部 export 的话，收集阶段的 brew 会退回 JSON API（或 runner 镜像烘焙的旧 tap），于是
+      # 抓回的源码归档与钉死快照装出来的二进制对不上——实测出现过「二进制 poppler 26.07.0 /
+      # 随附源码 26.06.0」「jpeg-turbo 3.2.0 / 源码 3.1.4.1」，即 GPL 的对应源码义务没履行。
+      HOMEBREW_NO_INSTALL_FROM_API: '1'
+      # 自动更新会把钉死的 core tap 拉回 origin/HEAD，钉版当场失效。
+      HOMEBREW_NO_AUTO_UPDATE: '1'
     steps:
       - name: Checkout code
         uses: actions/checkout@v5

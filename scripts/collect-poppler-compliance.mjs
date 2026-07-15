@@ -74,17 +74,17 @@ function main() {
 
   try {
     for (const component of components) {
-      const formulaRef = component.component === 'poppler'
-        ? 'agent-neo/poppler-build/poppler'
-        : component.component;
-      const info = JSON.parse(run('brew', ['info', '--json=v2', formulaRef])).formulae[0];
+      // poppler 曾经装自一个自建 tap，故在此特判过 formula 名。
+      // 现在整个 homebrew-core 被钉到 lock.formula.commit，poppler 与其余组件同源同路径，
+      // 特判随之失效——留着会让 brew info 去找一个根本不存在的 tap（实测整条合规收集挂死）。
+      const info = JSON.parse(run('brew', ['info', '--json=v2', component.component])).formulae[0];
       const installed = (info.installed ?? []).find((entry) => entry.version === component.componentVersion);
       if (!installed) throw new Error(`${component.component} ${component.componentVersion} is not the installed formula version`);
       const stable = info.urls?.stable;
       if (!stable?.url || !stable?.checksum) throw new Error(`${component.component} has no checksummed stable source URL`);
 
-      run('brew', ['fetch', '--build-from-source', formulaRef]);
-      const cacheLines = run('brew', ['--cache', '--build-from-source', formulaRef]).split('\n').filter(Boolean);
+      run('brew', ['fetch', '--build-from-source', component.component]);
+      const cacheLines = run('brew', ['--cache', '--build-from-source', component.component]).split('\n').filter(Boolean);
       const sourcePath = cacheLines.find((entry) => fs.existsSync(entry));
       if (!sourcePath) throw new Error(`Cannot locate fetched source archive for ${component.component}`);
       if (sha256File(sourcePath) !== stable.checksum.toLowerCase()) {
@@ -97,7 +97,7 @@ function main() {
       const licenseArchives = [sourcePath];
       const formulaTarget = path.join(componentRoot, 'formula', `${component.component}.rb`);
       fs.mkdirSync(path.dirname(formulaTarget), { recursive: true });
-      fs.writeFileSync(formulaTarget, `${run('brew', ['cat', formulaRef])}\n`);
+      fs.writeFileSync(formulaTarget, `${run('brew', ['cat', component.component])}\n`);
       const formulaEvidence = {
         file: formulaTarget,
         sha256: sha256File(formulaTarget),
@@ -113,7 +113,7 @@ function main() {
         end
         puts JSON.generate(values)
       `;
-      const resources = JSON.parse(run('brew', ['ruby', '-e', resourceProbe, formulaRef]));
+      const resources = JSON.parse(run('brew', ['ruby', '-e', resourceProbe, component.component]));
       const buildInputs = [];
       for (const resource of resources) {
         if (!resource.url || !resource.checksum || !resource.cache || !fs.existsSync(resource.cache)) {

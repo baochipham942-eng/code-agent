@@ -402,7 +402,21 @@ export function validatePopplerSourceManifest(manifest, { expectedVersion } = {}
       fail('Poppler promotion binary must be built from the pinned source formula', 'poppler_not_built_from_source');
     }
     assertString(component.declaredLicense, `${label}.declaredLicense`);
-    assertHttpsUrl(component.upstreamSourceUrl, `${label}.upstreamSourceUrl`);
+    const upstreamUrl = assertHttpsUrl(component.upstreamSourceUrl, `${label}.upstreamSourceUrl`);
+    // 随附源码必须真的对应装进包里的那个二进制——这正是 GPL §3「corresponding source」的义务，
+    // 也是整个合规包唯一的意义。上游归档名带的是纯上游版本，brew 的 _N 修订号只影响打包，故剥掉再比。
+    // 实测这条会被踩：brew 若在收集阶段读到与构建阶段不同的 formula 视图（例如某一步少了
+    // HOMEBREW_NO_INSTALL_FROM_API），就会抓回另一个版本的源码归档，而在此之前无门可挡——
+    // 2026-07-15 实测出现过「二进制 poppler 26.07.0 / 随附源码 26.06.0」。
+    const upstreamVersion = component.version.split('_')[0];
+    if (!upstreamUrl.includes(upstreamVersion)) {
+      fail(
+        `${label}: shipped source does not correspond to the shipped binary `
+        + `(${name} ${component.version} vs ${upstreamUrl})`,
+        'source_binary_version_mismatch',
+        { component: name, version: component.version, upstreamSourceUrl: upstreamUrl },
+      );
+    }
     validateSourceEvidence(component.sourceArchive, `${label}.sourceArchive`);
     validateSourceEvidence(component.formula, `${label}.formula`);
     validateSourceEvidence(component.installReceipt, `${label}.installReceipt`);
@@ -493,6 +507,34 @@ export function sha256Bytes(value) {
 
 export function sha256File(filePath) {
   return sha256Bytes(fs.readFileSync(filePath));
+}
+
+// 两个架构必须装同一套依赖版本。二进制会因架构而异，版本不该。
+// 只钉 poppler.rb 而放任 brew 从 runner 当下快照解析依赖时，两个 runner 镜像会编出不同版本
+// （2026-07-15 实测 jpeg-turbo 3.2.0 vs 3.1.4.1），意味着两个架构的用户拿到不同的库、
+// 不同的 CVE 面，且制品再也复现不出来。所有既有门都没管这一层，这条补上。
+export function assertCrossPlatformComponentParity(manifestsByPlatform) {
+  const versionsOf = (manifest) => {
+    const versions = new Map();
+    for (const file of manifest.files) versions.set(file.component, file.componentVersion);
+    return versions;
+  };
+  const [[platformA, manifestA], [platformB, manifestB]] = Object.entries(manifestsByPlatform);
+  const [versionsA, versionsB] = [versionsOf(manifestA), versionsOf(manifestB)];
+
+  const mismatches = [];
+  for (const component of new Set([...versionsA.keys(), ...versionsB.keys()])) {
+    const [a, b] = [versionsA.get(component), versionsB.get(component)];
+    if (a !== b) mismatches.push({ component, [platformA]: a ?? null, [platformB]: b ?? null });
+  }
+  if (mismatches.length > 0) {
+    fail(
+      `Poppler candidates disagree on ${mismatches.length} component version(s) across architectures: `
+      + mismatches.map((m) => `${m.component} ${m[platformA] ?? 'absent'} vs ${m[platformB] ?? 'absent'}`).join('; '),
+      'cross_platform_version_drift',
+      { mismatches },
+    );
+  }
 }
 
 // 把 pending lock 升成 ready lock：给双架构的 6 个制品填 url/sha256/bytes。

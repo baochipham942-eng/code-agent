@@ -75,6 +75,7 @@ code-agent/
 ├── docs/                 # 架构、部署、API、发布记录
 ├── tests/                # 单测、组件测试、E2E、smoke
 ├── scripts/              # 构建、发布、诊断、验收脚本
+├── config/               # 可入库的发布制品锁（不存放 secret / 用户配置）
 ├── packages/             # 可独立复用的子包，如本地 bridge、eval harness
 ├── artifact-knowledge/   # 产物知识包，给游戏、演示稿等产物生成和校验使用
 ├── benchmarks/           # 外部 benchmark 数据和 runner，如 SWE-bench、Excel benchmark

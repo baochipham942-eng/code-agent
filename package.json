@@ -144,6 +144,8 @@
     "release:resource-inventory": "node scripts/tauri-resource-inventory.mjs",
     "release:runtime-assets": "npx tsx scripts/build-runtime-assets.mjs",
     "release:runtime-assets:install": "npx tsx scripts/install-runtime-asset.ts",
+    "release:poppler:verify": "node scripts/verify-poppler-release-gate.mjs",
+    "release:poppler:fetch": "node scripts/fetch-poppler-sidecar.mjs",
     "release:renderer-bundle": "npx tsx scripts/build-renderer-bundle.mjs",
     "desktop-shell:packaged-smoke": "node scripts/desktop-shell-packaged-smoke.mjs",
     "release:post-publish": "node scripts/release-post-publish-verify.mjs",

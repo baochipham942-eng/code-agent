@@ -251,7 +251,7 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).not.toContain('\t');
   });
 
-  it('builds the bundled poppler resource on both macOS architectures before Tauri packaging', () => {
+  it('fetches the promoted immutable poppler resource on both macOS architectures before Tauri packaging', () => {
     const resources = readTauriResources();
     expect(resources.map['../scripts/poppler']).toBe('scripts/poppler');
 
@@ -259,13 +259,13 @@ describe('macOS release fail-closed gates', () => {
       {
         path: '.github/workflows/release.yml',
         job: 'build-mac',
-        prepareStep: 'Build native helpers + fetch sidecars (Tauri bundle resources)',
+        prepareStep: 'Build native helpers + fetch immutable sidecars (Tauri bundle resources)',
         buildStep: 'Build signed Tauri updater bundle',
       },
       {
         path: '.github/workflows/build-x64-test.yml',
         job: 'build-x64-test',
-        prepareStep: 'Build native helpers + fetch sidecars (x86_64)',
+        prepareStep: 'Build native helpers + fetch immutable sidecars (x86_64)',
         buildStep: 'Build signed + notarized x64 bundle',
       },
     ] as const;
@@ -278,10 +278,33 @@ describe('macOS release fail-closed gates', () => {
       const prepareRun = steps[prepareIndex]?.run ?? '';
 
       expect(prepareIndex, `${workflowCase.path} must prepare macOS bundle resources`).toBeGreaterThanOrEqual(0);
-      expect(prepareRun, `${workflowCase.path} must generate scripts/poppler on a fresh checkout`)
-        .toContain('bash scripts/fetch-poppler.sh');
+      expect(prepareRun, `${workflowCase.path} must fetch scripts/poppler from the ready lock`)
+        .toContain('node scripts/fetch-poppler-sidecar.mjs');
+      expect(prepareRun, `${workflowCase.path} must re-check the invocation boundary before fetching`)
+        .toContain('node scripts/verify-poppler-release-gate.mjs');
+      expect(prepareRun.indexOf('node scripts/verify-poppler-release-gate.mjs'))
+        .toBeLessThan(prepareRun.indexOf('node scripts/fetch-poppler-sidecar.mjs'));
+      expect(prepareRun, `${workflowCase.path} must not rebuild Poppler from floating Homebrew`)
+        .not.toContain('bash scripts/fetch-poppler.sh');
       expect(buildIndex, `${workflowCase.path} must package only after poppler exists`).toBeGreaterThan(prepareIndex);
     }
+  });
+
+  it('builds Poppler promotion candidates only on native arm64 and Intel runners', () => {
+    const workflowText = readRepoFile('.github/workflows/build-poppler-sidecar.yml');
+    const workflow = readWorkflow('.github/workflows/build-poppler-sidecar.yml');
+    const build = workflow.jobs?.build;
+    const stepNames = (build?.steps ?? []).map((step) => step.name);
+
+    expect(workflowText).toContain('macos-15-intel');
+    expect(workflowText).toContain('uname_arch: x86_64');
+    expect(workflowText).toContain('sysctl.proc_translated');
+    expect(workflowText).toContain('POPPLER_ALLOW_PINNED_INSTALL');
+    expect(workflowText).toContain('collect-poppler-compliance.mjs');
+    expect(workflowText).toContain('build-poppler-sidecar-artifacts.mjs');
+    expect(stepNames).toContain('Upload review-only candidate');
+    expect(workflowText).not.toContain('softprops/action-gh-release');
+    expect(workflowText).not.toContain('ossutil');
   });
 
   it('keeps formal app releases fail-closed before app artifacts are published', () => {
@@ -616,8 +639,16 @@ describe('macOS release fail-closed gates', () => {
     expect(releaseNeo).toContain('post_publish_cmd+=("${POST_PUBLISH_ARGS[@]}")');
     expect(releaseNeo).toContain('run_gate "post-publish production verification" "${post_publish_cmd[@]}"');
     expect(releaseNeo).toContain('npm run release:security-scan');
+    const verifyMacos = readRepoFile('scripts/verify-macos-release.sh');
+    expect(verifyMacos).toContain('compliance/THIRD_PARTY_NOTICES.txt');
+    expect(verifyMacos).toContain('compliance/licenses');
+    expect(verifyMacos).toContain('manifest/sidecar-manifest.json');
+    expect(verifyMacos).toContain('verify-poppler-release-gate.mjs');
+    expect(verifyMacos).toContain('lipo -archs');
     expect(releaseNeo).toContain('tests/scripts/verifyProductionEnv.test.ts');
     expect(releaseNeo).toContain('tests/scripts/releaseMacosGates.test.ts');
+    expect(releaseNeo).toContain('tests/scripts/popplerReleaseGate.test.ts');
+    expect(releaseNeo).toContain('npm run release:poppler:verify');
     expect(prebuildCleanup).toContain('stage-cua-driver-resource.sh');
     expect(prebuildCleanup).toContain('prepare-bundled-node.mjs');
     expect(releaseBundle).toContain('prepare-bundled-node.mjs');

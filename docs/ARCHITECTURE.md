@@ -136,6 +136,7 @@ code-agent/
 ├── supabase/              # 数据库迁移与云函数
 ├── tests/                 # unit、renderer、integration、e2e、smoke
 ├── scripts/               # 构建、发布、治理、验收和运维脚本
+├── config/                # 可入库的发布制品锁（不存放 secret / 用户配置）
 └── docs/                  # 架构、部署、API、计划、审计和发布记录
 ```
 

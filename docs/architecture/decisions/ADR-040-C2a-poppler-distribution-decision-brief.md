@@ -1,13 +1,13 @@
-# ADR-040 C2a：Poppler 随包分发决策稿
+# ADR-040 C2a：Poppler 随包分发决策记录
 
-- **状态**：等待产品负责人 / 法务拍板
+- **状态**：方案 A 已批准；发版等待双架构不可变制品 promotion
 - **证据日期**：2026-07-15
 - **适用基线**：`c2774c2730d5ba7385809ad24935530bd4080286`；CI 接线修复另见本分支提交 `b01140175aa64d9630f86e79ab661adaae7be881`
-- **边界**：本文是证据盘点和备选方案，不是最终 `NOTICE`，也不改变 Agent Neo 的发版许可证口径。
+- **发布身份**：公开材料统一使用 `Agent Neo project`，不得包含项目维护者或内部审核人员的姓名、个人邮箱、本机路径或主机名。
 
 ## 产品判断
 
-推荐短期选择方案 A：继续随包分发 Poppler sidecar，但把“许可证文本 + 精确对应源码 + 构建材料 + 可访问源码地址”设为发版硬门。Agent Neo 通过子进程执行 `pdftoppm`，没有链接其库；这给“主应用与 GPL sidecar 是独立程序”的判断提供了事实基础，但最终法律判断仍需法务确认。
+已选择方案 A：继续随包分发 Poppler sidecar，并把“许可证文本 + 精确对应源码 + 构建材料 + 可访问源码地址 + 原生双架构证据”设为发版硬门。Agent Neo 通过子进程执行 `pdftoppm`，没有链接其库；项目维护者按这一技术边界接受现阶段的剩余许可证解释风险，不把外部法务签字设为发版前置。
 
 没有拍板和合规包之前，不应发布包含 `scripts/poppler` 的 DMG。只放一份第三方名称清单或只链接上游首页不足以覆盖 GPL/LGPL/MPL 的源码可得义务。
 
@@ -17,10 +17,10 @@
 2. Host 先解析随包的 `poppler/bin/pdftoppm`，再通过 `execSync` 启动独立进程；参数是输入 PDF、输出路径和渲染选项，没有动态链接 Agent Neo 进程、共享内存或进程内 API（`src/host/tools/media/ppt/visualReview.ts:136-185`）。
 3. Poppler bundle 由 Homebrew 的 `pdftoppm` 传递依赖闭包生成；脚本会复制所有非系统 dylib、重写 install name、ad-hoc 重签，并真跑三页 PDF 自检（`scripts/fetch-poppler.sh:6-22`、`69-174`、`176-233`）。
 4. 2026-07-15 arm64 实跑产物是 1 个 `pdftoppm` + 24 个 dylib，共 25 个 Mach-O 文件；原始文件总计 11,298,096 bytes，gzip 归档 3,998,972 bytes。`pdftoppm` 真跑三页输出三页，全部文件均为 arm64，动态依赖中没有 `/opt/homebrew` 残留。
-5. 本分支已把 `fetch-poppler.sh` 接入正式 macOS 双架构 release matrix 和手动 x64 test workflow，并用结构测试保证生成步骤在 Tauri 打包之前执行（`.github/workflows/release.yml:92-111`、`.github/workflows/build-x64-test.yml:46-59`、`tests/scripts/releaseMacosGates.test.ts:254-286`）。
+5. 正式 macOS 双架构 release matrix 和手动 x64 test workflow 只运行 `fetch-poppler-sidecar.mjs` 下载 lock 中的不可变资产；`fetch-poppler.sh` 只允许在独立 promotion workflow 中从固定 Homebrew formula 源码构建候选制品。
 6. 2026-07-15 在当前 `0.27.1` 源码上完成同源 arm64 A/B：同一份 unsigned `.app`，只删除 B 组的 `Contents/Resources/scripts/poppler`，使用相同 `hdiutil create -format UDZO` 生成 DMG。含 Poppler 为 117,292,645 bytes（111.86 MiB），不含为 113,467,584 bytes（108.21 MiB），压缩后净增 3,825,061 bytes（3.65 MiB，+3.37%）。两份 DMG 均可只读挂载；含侧复核有 24 个 dylib，不含侧复核目录不存在。该 A/B 没有正式签名、公证和 Finder 样式，只用于隔离 Poppler 的包体增量，不能代替正式 release bundle 验收。
 
-“独立进程”只支持主应用与 sidecar 分离的判断，不免除 sidecar 自身的分发义务。FSF FAQ 将简单 `fork/exec` 且不交换复杂数据的程序视为可分离情形，同时明确 GPL 二进制分发仍需提供精确对应源码；这里应由法务把 Agent Neo 的实际 IPC 形态对照该标准确认：
+“独立进程”只支持主应用与 sidecar 分离的判断，不免除 sidecar 自身的分发义务。FSF FAQ 将简单 `fork/exec` 且不交换复杂数据的程序视为可分离情形，同时明确 GPL 二进制分发仍需提供精确对应源码。仓库结构测试锁住当前边界；出现进程内链接、共享内存、复杂双向 IPC、sidecar 源码修改、主程序许可证或商业分发模式变化时必须重新评估：
 
 - https://www.gnu.org/licenses/gpl-faq.en.html#GPLPlugins
 - https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary
@@ -78,13 +78,13 @@ release-assets/
 
 ## 可选方案
 
-### 方案 A：继续随包分发，补齐合规包（推荐）
+### 方案 A：继续随包分发，补齐合规包（已批准）
 
 产品收益：保持 ADR-040 D3 的截图优先体验，用户不安装 Homebrew 也能看到全部 PPT 页。
 
 必须同时完成：
 
-- 法务书面确认 Agent Neo 与 `pdftoppm` 的独立程序边界；
+- 维护者记录并接受 Agent Neo 与 `pdftoppm` 的独立程序边界及剩余解释风险；
 - 生成并随包展示 `THIRD_PARTY_NOTICES` 与完整许可证文本；
 - 上线精确对应 source bundle 和稳定 URL；
 - arm64 / x64 各自产出清单和自检，不拿一侧代替另一侧；
@@ -108,15 +108,11 @@ release-assets/
 
 不推荐。只要 Agent Neo 发布方仍向用户提供该二进制，分发义务没有消失；同时引入首次使用下载失败、离线不可用、版本与 source bundle 错配的新风险。
 
-## 当前阻塞与待拍板项
+## 当前 stop-ship 项
 
-1. **法务边界**：是否接受“主应用通过简单子进程调用 GPL `pdftoppm`，两者为独立程序”的发版口径。
-2. **方案选择**：A（推荐）、B 或另立工单实施 C。
-3. **源码托管**：确定 release asset / OSS 的真实公开路径、保留周期和责任人。
-4. **用户可见入口**：确定 About / 帮助页 / DMG 内文件中的第三方许可证入口；不能只在仓库里放开发者文档。
-5. **release gate**：是否批准“许可证文件存在 + source URL 200 + 两架构 manifest/hash 对齐”作为不可跳过的发版硬门。
-6. **Homebrew pin 漂移**：脚本固定 `26.02.0_1`（`scripts/fetch-poppler.sh:27-31`），但 2026-07-15 本机 Homebrew API 已显示当前 stable `26.07.0`。fresh runner 能否取得固定 Cellar 版本尚未核实；在 x64 真跑前不能把 CI 接线等同于 x64 通过。
-7. **x64 实跑**：本机有 Rosetta 但没有 Intel Homebrew，无法生成可信 x64 传递闭包；需 `macos-15-intel` 真 runner 证实。
-8. **正式 DMG**：同源 unsigned UDZO A/B 已完成，Poppler 的实测压缩增量是 3.65 MiB；正式签名、公证、Finder 样式后的 release DMG 尚未运行，不应把本地 A/B 的总大小当成最终发布物大小。
+1. **不可变托管**：arm64/x64 的 manifest、sidecar archive、complete-source bundle 尚未上传到稳定 HTTPS 地址并回填 lock。
+2. **x64 原生证据**：必须由 `macos-15-intel` promotion run 产出，manifest 记录 run id、源码 SHA、`x86_64` 和 `rosettaTranslated=false`。
+3. **完整合规包**：每个实际组件的精确源码归档、formula、install receipt、许可证全文和二进制来源映射必须由构建脚本生成并校验。
+4. **正式 DMG**：同源 unsigned UDZO A/B 已完成，Poppler 的实测压缩增量是 3.65 MiB；正式签名、公证和安装版验证仍需在 ready lock 后运行。
 
-在 1–5 拍板前，不新增或修改 `NOTICE` / 关于页文案，不改变现有产品许可证声明。
+以上任一项未完成，`release:poppler:verify` 和正式 tag workflow 都必须失败。不得用 `--skip-gates`、Rosetta、本机残留 Homebrew Cellar 或只上传 NOTICE 的方式放行。

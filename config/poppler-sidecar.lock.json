@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "agent_neo_poppler_sidecar_lock",
+  "status": "pending-promotion",
+  "publisher": "Agent Neo project",
+  "mainProgramLicense": "MIT",
+  "invocationBoundary": "separate-process-file-io",
+  "artifactBaseUrl": null,
+  "licenseRationale": "docs/architecture/decisions/ADR-040-C2a-poppler-license-rationale.md",
+  "popplerBrewVersion": "26.02.0_1",
+  "formula": {
+    "repository": "Homebrew/homebrew-core",
+    "commit": "4ee5c1b81622e890f413a5eee4a2c144a42c3ceb",
+    "path": "Formula/p/poppler.rb",
+    "sha256": "b5f8947da0a49431a59a5a2bbd85db4537b7cfafaaff3cd3e6809f1cebdd40eb"
+  },
+  "platforms": {
+    "darwin-arm64": null,
+    "darwin-x64": null
+  }
+}

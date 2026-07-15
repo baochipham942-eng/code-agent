@@ -244,7 +244,8 @@ run_source_gates() {
     log "gate: local production env shape (skipped; pass --check-local-env to require local release secrets)"
   fi
   run_gate "release shell syntax" bash -c 'for script in "$@"; do bash -n "$script"; done' bash scripts/release-neo.sh scripts/tauri-release-bundle.sh scripts/tauri-notarize.sh scripts/verify-macos-release.sh scripts/publish-release.sh
-  run_gate "release gate tests" npx vitest run tests/scripts/verifyProductionEnv.test.ts tests/scripts/releaseMacosGates.test.ts
+  run_gate "Poppler immutable sidecar lock" npm run release:poppler:verify
+  run_gate "release gate tests" npx vitest run tests/scripts/verifyProductionEnv.test.ts tests/scripts/releaseMacosGates.test.ts tests/scripts/popplerReleaseGate.test.ts
   run_gate "release security scan" npm run release:security-scan
 }
 

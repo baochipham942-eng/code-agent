@@ -90,7 +90,7 @@ jobs:
         if: matrix.arch == 'x64'
         run: cargo install tauri-cli@2.10.1 --locked
 
-      - name: Build native helpers + fetch sidecars (Tauri bundle resources)
+      - name: Build native helpers + fetch immutable sidecars (Tauri bundle resources)
         # tauri.conf.json bundles three Swift Mach-O helpers (system-audio-capture, vision-ocr,
         # vision-tagger) AND fetched sidecar binaries (rtk, uv, poppler) AND the resigned CUA app. All are
         # build artifacts NOT committed to the repo. A fresh CI checkout must produce every one or
@@ -98,16 +98,18 @@ jobs:
         # (2026-06-01) failed: rtk/uv were added to bundle resources after the last green run but
         # this step was never updated to fetch them.
         # SWIFT_BUILD_ARCH 按矩阵显式指定（x64 同时把 audio 地板降到 macOS 13.0，Intel 可用区间）；
-        # fetch-rtk/uv/poppler 按 runner 的 uname -m 自动产出对应架构资产。
+        # fetch-rtk/uv 按 runner 的 uname -m 取对应架构；Poppler 只下载 lock 中已经
+        # promotion 的不可变制品，正式发版不从 floating Homebrew 现场构建。
         env:
           SWIFT_BUILD_ARCH: ${{ matrix.swift_arch }}
         run: |
+          node scripts/verify-poppler-release-gate.mjs
           bash scripts/build-audio-capture.sh
           bash scripts/build-vision-ocr.sh
           bash scripts/build-vision-tagger.sh
           bash scripts/fetch-rtk.sh
           bash scripts/fetch-uv.sh
-          bash scripts/fetch-poppler.sh
+          node scripts/fetch-poppler-sidecar.mjs --stage-dir "${RUNNER_TEMP}/poppler-release-assets"
           # CUA 重签产物（universal）：从发版 OSS 拉预构建 + sha256 锁定。
           # 源 app 上游无公开 release，CI 不依赖本机源（避免复刻 v0.16.89 rtk/uv 之坑）
           CUA_FETCH_PREBUILT=1 bash scripts/fetch-cua-driver.sh
@@ -387,6 +389,9 @@ jobs:
             cp src-tauri/target/release/runtime-assets/*.sha256 "${STAGE}/" 2>/dev/null || true
             cp src-tauri/target/release/runtime-assets/*.tar.gz "${STAGE}/" 2>/dev/null || true
           fi
+          # Poppler 的 manifest、sidecar archive、complete-source bundle 必须与 DMG 同发。
+          test -d "${RUNNER_TEMP}/poppler-release-assets"
+          cp "${RUNNER_TEMP}/poppler-release-assets"/* "${STAGE}/"
           ls -la "${STAGE}"
 
       - name: Upload build artifacts
@@ -618,6 +623,9 @@ jobs:
             release-assets/*.tar.gz
             release-assets/runtime-assets-manifest-*.json
             release-assets/runtime-assets-manifest-*.sha256
+            release-assets/poppler-sidecar-manifest-*.json
+            release-assets/poppler-sidecar-*.tar.gz
+            release-assets/poppler-complete-source-*.tar.gz
           generate_release_notes: true
           draft: false
           # Tags with a pre-release suffix (e.g. v0.16.80-citest1) are marked prerelease and

@@ -600,7 +600,14 @@ export function walkRegularFiles(rootDir) {
   return files.sort((left, right) => left.localeCompare(right));
 }
 
-export function verifySidecarDirectory(manifest, sidecarDir) {
+// signedMachO：这份 sidecar 已随 .app 一起过代码签名。
+// 签名会改写 Mach-O 字节，而 manifest 的哈希来自 promotion——那条 workflow 只有
+// `contents: read`、手里没有签名证书，永远只能记录未签名的哈希。于是「过 Apple 公证」
+// （必须签名）与「逐字节等于 manifest」（必须未签名）互斥，不可能同时满足。
+// 此时 Mach-O 的字节完整性由两处接管，都不弱于哈希：下载那一刻已按 lock 的 sha256 验过
+// （fetch-poppler-sidecar.mjs），bundle 内那份则由 Developer ID 签名保证——调用方必须
+// 配套跑签名审计，否则这里就成了净放宽。非 Mach-O（许可证正文、NOTICE）照旧逐字节对账。
+export function verifySidecarDirectory(manifest, sidecarDir, { signedMachO = false } = {}) {
   validatePopplerManifest(manifest);
   const expected = new Map(manifest.files.map((entry) => [entry.path, entry]));
   const actualFiles = walkRegularFiles(sidecarDir)
@@ -625,9 +632,14 @@ export function verifySidecarDirectory(manifest, sidecarDir) {
     }
     const stat = fs.statSync(filePath);
     const actualMode = `0${(stat.mode & 0o777).toString(8).padStart(3, '0')}`;
-    if (stat.size !== expectedEntry.bytes
-      || sha256File(filePath) !== expectedEntry.sha256
-      || actualMode !== expectedEntry.mode) {
+    // 权限位签名不会动，两种模式下都必须对上（pdftoppm 丢了 0755 就不可执行了）。
+    if (actualMode !== expectedEntry.mode) {
+      fail(`Extracted Poppler sidecar mode mismatch for ${relativePath}`, 'sidecar_file_mismatch', {
+        relativePath,
+      });
+    }
+    if (signedMachO && expectedEntry.kind === 'mach-o') continue;
+    if (stat.size !== expectedEntry.bytes || sha256File(filePath) !== expectedEntry.sha256) {
       fail(`Extracted Poppler sidecar hash/size mismatch for ${relativePath}`, 'sidecar_file_mismatch', {
         relativePath,
       });

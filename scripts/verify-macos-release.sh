@@ -127,9 +127,14 @@ if [[ "$(lipo -archs "${POPPLER_BIN}")" != "${EXPECTED_POPPLER_ARCH}" ]]; then
   echo "[verify-macos-release] Poppler architecture mismatch: $(lipo -archs "${POPPLER_BIN}")" >&2
   exit 1
 fi
+# --sidecar-signed：这份是 .app 里已过代码签名的副本。签名改写了 Mach-O 字节，而 manifest
+# 的哈希来自没有签名证书的 promotion workflow，永远是未签名的——「过公证」与「逐字节等于
+# manifest」互斥。该模式把 Mach-O 的哈希对账换成 Developer ID 签名对账（非 Mach-O 仍逐字节），
+# 字节完整性由下载时 fetch-poppler-sidecar.mjs 按 lock 的 sha256 校验兜住。
 node "${ROOT_DIR}/scripts/verify-poppler-release-gate.mjs" \
   --manifest "${POPPLER_MANIFEST}" \
   --sidecar-dir "${POPPLER_ROOT}" \
+  --sidecar-signed \
   --platform "${EXPECTED_POPPLER_PLATFORM}"
 "${POPPLER_BIN}" -v >/dev/null 2>&1
 echo "[verify-macos-release] Poppler lock, manifest, sidecar files, notices, license texts and native architecture verified"

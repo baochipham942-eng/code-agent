@@ -188,6 +188,18 @@ describe('workspace.ipc create handlers', () => {
         '<a:t>Next steps</a:t>',
         '</p:sld>',
       ].join(''));
+      zip.file('ppt/presentation.xml', [
+        '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"',
+        ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
+        '<p:sldIdLst><p:sldId id="256" r:id="rId2"/><p:sldId id="257" r:id="rId4"/></p:sldIdLst>',
+        '</p:presentation>',
+      ].join(''));
+      zip.file('ppt/_rels/presentation.xml.rels', [
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+        '<Relationship Id="rId2" Type="slide" Target="slides/slide1.xml"/>',
+        '<Relationship Id="rId4" Type="slide" Target="slides/slide2.xml"/>',
+        '</Relationships>',
+      ].join(''));
       const pptxPath = join(workDir, 'deck.pptx');
       await writeFile(pptxPath, await zip.generateAsync({ type: 'nodebuffer' }));
 

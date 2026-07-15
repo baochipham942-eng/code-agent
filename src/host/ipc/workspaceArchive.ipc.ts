@@ -7,7 +7,16 @@
 import path from 'path';
 import { promises as fsp } from 'fs';
 import type { AgentApplicationService } from '../../shared/contract/appService';
+import type {
+  PresentationArtifactLocator,
+  PresentationPagePreviewResult,
+} from '../../shared/contract/artifactLocator';
+import { extractPresentationSlideText } from '../../shared/ooxml/presentationPackageIndex';
 import { app } from '../platform';
+import { getUserConfigDir } from '../config/configPaths';
+import { computeArtifactRevision } from '../tools/artifacts/artifactLocatorHost';
+import { loadPresentationPackageIndex } from '../tools/artifacts/presentationPackageIndex';
+import { convertToScreenshots, isLibreOfficeAvailable } from '../tools/media/ppt/visualReview';
 
 interface WorkspaceBundleFileInput {
   path: string;
@@ -223,59 +232,22 @@ export async function handleInspectArchive(payload: { filePath: string; limit?: 
   };
 }
 
-function decodeXmlText(value: string): string {
-  return value
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 10)))
-    .replace(/&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&gt;/g, '>')
-    .replace(/&lt;/g, '<')
-    .replace(/&amp;/g, '&');
-}
-
-function slideIndexFromName(name: string): number {
-  const match = name.match(/slide(\d+)\.xml$/i);
-  return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
-}
-
-function extractSlideText(xml: string): string[] {
-  const texts: string[] = [];
-  const textRegex = /<a:t[^>]*>([\s\S]*?)<\/a:t>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = textRegex.exec(xml)) !== null) {
-    const text = decodeXmlText(match[1].replace(/<[^>]+>/g, '')).trim();
-    if (text) texts.push(text);
-  }
-  return texts;
-}
-
 export async function handleInspectPresentation(payload: { filePath: string; limit?: number }): Promise<WorkspacePresentationInspection> {
-  const fs = await import('fs/promises');
-  const JSZip = require('jszip') as {
-    loadAsync(data: Buffer): Promise<{
-      files: Record<string, { name: string; dir: boolean; async(type: 'string'): Promise<string> }>;
-    }>;
-  };
   const filePath = payload.filePath;
   if (!/\.pptx$/i.test(filePath)) {
     throw new Error('Only .pptx presentations can be inspected inline');
   }
 
-  const data = await fs.readFile(filePath);
-  const zip = await JSZip.loadAsync(data);
   const limit = Math.max(1, Math.min(payload.limit ?? 80, 200));
-  const slideEntries = Object.values(zip.files)
-    .filter((entry) => !entry.dir && /^ppt\/slides\/slide\d+\.xml$/i.test(entry.name))
-    .sort((left, right) => slideIndexFromName(left.name) - slideIndexFromName(right.name));
+  const { index, zip } = await loadPresentationPackageIndex(filePath);
 
   const slides: WorkspacePresentationSlide[] = [];
-  for (const [offset, entry] of slideEntries.slice(0, limit).entries()) {
-    const xml = await entry.async('string');
-    const text = extractSlideText(xml);
+  for (const target of index.slice(0, limit)) {
+    const xml = await zip.files[target.slidePartName].async('string');
+    const text = extractPresentationSlideText(xml);
     slides.push({
-      index: offset + 1,
-      name: entry.name,
+      index: target.displayIndex + 1,
+      name: target.slidePartName,
       title: text[0],
       text,
     });
@@ -284,10 +256,118 @@ export async function handleInspectPresentation(payload: { filePath: string; lim
   return {
     filePath,
     format: 'pptx',
-    slideCount: slideEntries.length,
+    slideCount: index.length,
     shownCount: slides.length,
-    truncated: slideEntries.length > limit,
+    truncated: index.length > limit,
     slides,
   };
 }
 
+interface PresentationPreviewDependencies {
+  cacheRoot?: string;
+  libreOfficeAvailable?: () => boolean;
+  convert?: (pptxPath: string, outputDir: string) => Promise<string[]>;
+}
+
+interface PresentationScreenshotManifest {
+  revision: string;
+  screenshots: string[];
+}
+
+const presentationPreviewInflight = new Map<string, Promise<PresentationPagePreviewResult>>();
+
+async function readCachedScreenshots(
+  manifestPath: string,
+  revision: string,
+  expectedCount: number,
+): Promise<string[] | null> {
+  try {
+    const parsed = JSON.parse(await fsp.readFile(manifestPath, 'utf8')) as PresentationScreenshotManifest;
+    if (parsed.revision !== revision || parsed.screenshots.length !== expectedCount) return null;
+    await Promise.all(parsed.screenshots.map((screenshot) => fsp.access(screenshot)));
+    return parsed.screenshots;
+  } catch {
+    return null;
+  }
+}
+
+async function buildPresentationPagePreview(
+  payload: { filePath: string },
+  dependencies: PresentationPreviewDependencies,
+): Promise<PresentationPagePreviewResult> {
+  const filePath = payload.filePath;
+  if (!path.isAbsolute(filePath) || filePath.startsWith('//') || !/\.pptx$/i.test(filePath)) {
+    throw new Error('Presentation preview requires an absolute local .pptx path');
+  }
+
+  const revision = await computeArtifactRevision(filePath);
+  const { index, zip } = await loadPresentationPackageIndex(filePath);
+  const label = path.basename(filePath);
+  const pages = await Promise.all(index.map(async (target) => {
+    const text = extractPresentationSlideText(await zip.files[target.slidePartName].async('string'));
+    const locator: PresentationArtifactLocator = {
+      version: 1,
+      artifact: { kind: 'presentation', filePath, revision },
+      target: { kind: 'ppt-slide', ...target },
+      display: { label, excerpt: text[0] },
+    };
+    return { locator, title: text[0], text };
+  }));
+
+  const libreOfficeAvailable = dependencies.libreOfficeAvailable ?? isLibreOfficeAvailable;
+  if (!libreOfficeAvailable()) {
+    return { filePath, state: 'libreoffice-missing', pages };
+  }
+
+  const cacheRoot = dependencies.cacheRoot
+    ?? path.join(getUserConfigDir(), 'cache', 'presentation-page-previews');
+  const cacheDir = path.join(cacheRoot, revision.value);
+  const manifestPath = path.join(cacheDir, 'manifest.json');
+  const cached = await readCachedScreenshots(manifestPath, revision.value, pages.length);
+  if (cached) {
+    return {
+      filePath,
+      state: 'ready',
+      pages: pages.map((page, displayIndex) => ({ ...page, screenshotPath: cached[displayIndex] })),
+    };
+  }
+
+  try {
+    await fsp.rm(cacheDir, { recursive: true, force: true });
+    const outputDir = path.join(cacheDir, 'pages');
+    await fsp.mkdir(outputDir, { recursive: true });
+    const convert = dependencies.convert ?? convertToScreenshots;
+    const screenshots = await convert(filePath, outputDir);
+    if (screenshots.length !== pages.length) {
+      throw new Error(`Expected ${pages.length} screenshots, received ${screenshots.length}`);
+    }
+    await fsp.writeFile(manifestPath, JSON.stringify({ revision: revision.value, screenshots }), 'utf8');
+    return {
+      filePath,
+      state: 'ready',
+      pages: pages.map((page, displayIndex) => ({ ...page, screenshotPath: screenshots[displayIndex] })),
+    };
+  } catch (error) {
+    await fsp.rm(cacheDir, { recursive: true, force: true });
+    return {
+      filePath,
+      state: 'conversion-failed',
+      pages,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** C2c：同 revision 只转换一次；截图数组下标严格绑定 resolver 的 displayIndex。 */
+export function handlePreviewPresentation(
+  payload: { filePath: string },
+  dependencies: PresentationPreviewDependencies = {},
+): Promise<PresentationPagePreviewResult> {
+  const key = path.resolve(payload.filePath);
+  const existing = presentationPreviewInflight.get(key);
+  if (existing) return existing;
+  const pending = buildPresentationPagePreview(payload, dependencies)
+    .finally(() => presentationPreviewInflight.delete(key));
+  presentationPreviewInflight.set(key, pending);
+  return pending;
+}

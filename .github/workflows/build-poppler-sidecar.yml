@@ -1,0 +1,78 @@
+name: Build Poppler Sidecar Promotion Candidates
+
+# 只生成待审核候选制品，不发布 GitHub Release、不上传 OSS、不修改 lock。
+# lock 只有在两个原生 runner 的候选制品、source bundle 和公开 URL 都复核后才能改为 ready。
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: poppler-sidecar-promotion-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    timeout-minutes: 180
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: darwin-arm64
+            runner: macos-latest
+            uname_arch: arm64
+          - platform: darwin-x64
+            runner: macos-15-intel
+            uname_arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Assert native runner architecture
+        run: |
+          test "$(uname -m)" = "${{ matrix.uname_arch }}"
+          if sysctl -in sysctl.proc_translated 2>/dev/null | grep -q '^1$'; then
+            echo "Rosetta-translated runners are forbidden for Poppler promotion" >&2
+            exit 1
+          fi
+
+      - name: Build pinned Poppler sidecar from source
+        env:
+          POPPLER_ALLOW_PINNED_INSTALL: '1'
+          POPPLER_FORCE_PINNED_BUILD: '1'
+        run: bash scripts/fetch-poppler.sh
+
+      - name: Collect exact sources, formulae, receipts and license texts
+        run: |
+          node scripts/collect-poppler-compliance.mjs \
+            --sidecar scripts/poppler \
+            --output "${RUNNER_TEMP}/poppler-complete-source"
+
+      - name: Build and verify promotion candidate
+        run: |
+          node scripts/build-poppler-sidecar-artifacts.mjs \
+            --sidecar scripts/poppler \
+            --source "${RUNNER_TEMP}/poppler-complete-source" \
+            --output "${RUNNER_TEMP}/poppler-candidate" \
+            --platform "${{ matrix.platform }}" \
+            --runner-label "${{ matrix.runner }}"
+          node scripts/verify-poppler-release-gate.mjs \
+            --allow-pending \
+            --manifest "${RUNNER_TEMP}/poppler-candidate/poppler-sidecar-manifest-${{ matrix.platform }}.json" \
+            --sidecar-dir scripts/poppler \
+            --platform "${{ matrix.platform }}"
+
+      - name: Upload review-only candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: poppler-promotion-candidate-${{ matrix.platform }}-${{ github.sha }}
+          path: ${{ runner.temp }}/poppler-candidate/
+          retention-days: 30
+          if-no-files-found: error

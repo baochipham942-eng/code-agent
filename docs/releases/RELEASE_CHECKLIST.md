@@ -14,20 +14,23 @@ This checklist defines the current formal release contract. Architecture details
 
 1. Prepare the version files, `CHANGELOG.md`, and `docs/releases/v<version>.md` on a clean branch based on fresh `origin/main`.
 2. Run `npm run release:neo -- --version <version>` and resolve every source gate without bypassing signing, runtime asset, renderer, or security invariants.
-3. Confirm the macOS matrix publishes and verifies `runtime-assets-manifest-darwin-arm64` and `runtime-assets-manifest-darwin-x64`; arm64 must contain VAD + Playwright, x64 must contain Playwright and omit VAD.
-4. Confirm `stable/release.json` includes both architecture-specific runtime manifest and sha256 sidecars, then probe `/api/update?action=check` with default arm64 and `arch=x64`.
-5. Commit release preparation on `main`. Only with explicit release authorization, run the publish mode that pushes `main` and the annotated tag.
-6. The tag workflow builds macOS arm64, macOS x64, and the optional Windows x64 leg; verifies signing/notarization/updater/runtime resources; and creates the GitHub Release.
-7. For a stable tag, upload versioned OSS assets, then promote `stable/latest.json` and `stable/release.json`. Pre-release tags must not change stable.
-8. Publish renderer bundle and release record before switching the renderer manifest. Serialize publishers per channel and never cancel a publisher after it starts replacing the object set.
-9. Run the read-only post-publish verifier against update check/health, arm64+x64 redirects, distribution page, renderer control-plane, OSS manifest, release record, rollback state, and production logs.
-10. Run packaged desktop smoke with an isolated app/data/HOME. The default 120-second gate must reach `window-navigated`, `webHealth=ok`, boot-token match, and zero missing required resources. Remote plugins, skills, and MCP initialize in the background; `onnxruntime-vad` and `playwright-browser-runtime` remain optional warnings.
+3. Confirm `config/poppler-sidecar.lock.json` is `ready`: arm64 and x64 each lock an immutable manifest, sidecar archive, and complete-source bundle by HTTPS URL, bytes, and SHA-256. The x64 manifest must identify a native `macos-15-intel` run and reject Rosetta.
+4. Confirm the macOS matrix publishes and verifies `runtime-assets-manifest-darwin-arm64` and `runtime-assets-manifest-darwin-x64`; arm64 must contain VAD + Playwright, x64 must contain Playwright and omit VAD.
+5. Confirm `stable/release.json` includes both architecture-specific runtime manifest and sha256 sidecars, then probe `/api/update?action=check` with default arm64 and `arch=x64`.
+6. Commit release preparation on `main`. Only with explicit release authorization, run the publish mode that pushes `main` and the annotated tag.
+7. The tag workflow downloads and verifies the promoted Poppler assets, builds macOS arm64, macOS x64, and the optional Windows x64 leg; verifies signing/notarization/updater/runtime resources; and creates the GitHub Release with both Poppler source bundles.
+8. For a stable tag, upload versioned OSS assets, then promote `stable/latest.json` and `stable/release.json`. Pre-release tags must not change stable.
+9. Publish renderer bundle and release record before switching the renderer manifest. Serialize publishers per channel and never cancel a publisher after it starts replacing the object set.
+10. Run the read-only post-publish verifier against update check/health, arm64+x64 redirects, distribution page, renderer control-plane, OSS manifest, release record, rollback state, and production logs.
+11. Run packaged desktop smoke with an isolated app/data/HOME. The default 120-second gate must reach `window-navigated`, `webHealth=ok`, boot-token match, and zero missing required resources. Remote plugins, skills, and MCP initialize in the background; `onnxruntime-vad` and `playwright-browser-runtime` remain optional warnings.
 
 ## Completion evidence
 
 A release is complete only when commit, peeled tag, GitHub Release, OSS stable manifests, renderer rollout, install assets, and production probes all identify the target version. Record CI run ids, artifact hashes, packaged smoke JSON, post-publish JSON, and any warning that remains.
 
 Do not turn a source gate, skipped secret, local package, stale build, or compatibility response into a PASS. Do not infer rollback from a verifier-contract mismatch when the current signed distribution and stable manifests remain healthy.
+
+Poppler is stop-ship if either architecture is missing, any source URL is not downloadable over HTTPS, any hash/size/file manifest differs, notices or license texts are absent, the public metadata exposes a personal identity/local path, or the x64 evidence is not from native `macos-15-intel`.
 
 ## Rollback boundary
 

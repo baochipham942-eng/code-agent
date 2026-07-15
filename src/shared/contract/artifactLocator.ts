@@ -57,6 +57,29 @@ export interface ArtifactLocatorV1 {
   display: { label: string; excerpt?: string };
 }
 
+export type PresentationArtifactLocator = ArtifactLocatorV1 & {
+  artifact: ArtifactLocatorV1['artifact'] & { kind: 'presentation' };
+  target: PptSlideTarget;
+};
+
+type PresentationPreviewState = 'ready' | 'libreoffice-missing' | 'conversion-failed';
+
+export interface PresentationPagePreview {
+  locator: PresentationArtifactLocator;
+  title?: string;
+  text: string[];
+  /** 缓存中的逐页截图；降级态没有此字段，仍可点击文字大纲选页。 */
+  screenshotPath?: string;
+}
+
+/** C2b/C2c：上传附件与 Workspace 共用的 picker 数据模型。 */
+export interface PresentationPagePreviewResult {
+  filePath: string;
+  state: PresentationPreviewState;
+  pages: PresentationPagePreview[];
+  error?: string;
+}
+
 export type ArtifactLocatorValidation =
   | { ok: true; locator: ArtifactLocatorV1 }
   | { ok: false; reason: string };

@@ -3,6 +3,10 @@ import type {
   PresentationSlideSummary,
   PresentationSummary,
 } from '../../../../../shared/contract';
+import {
+  extractPresentationSlideText,
+  resolvePresentationPackageIndexFromZip,
+} from '../../../../../shared/ooxml/presentationPackageIndex';
 
 interface ZipEntry {
   name: string;
@@ -33,40 +37,6 @@ async function loadZip(file: File): Promise<ZipFile> {
   const { default: JSZip } = await import('jszip');
   const data = await file.arrayBuffer();
   return JSZip.loadAsync(data) as Promise<ZipFile>;
-}
-
-function decodeXmlEntities(value: string): string {
-  return value.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g, (match, entity: string) => {
-    if (entity === 'amp') return '&';
-    if (entity === 'lt') return '<';
-    if (entity === 'gt') return '>';
-    if (entity === 'quot') return '"';
-    if (entity === 'apos') return "'";
-    if (entity.startsWith('#x')) {
-      const codePoint = Number.parseInt(entity.slice(2), 16);
-      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match;
-    }
-    if (entity.startsWith('#')) {
-      const codePoint = Number.parseInt(entity.slice(1), 10);
-      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match;
-    }
-    return match;
-  });
-}
-
-function extractTextRuns(xml: string): string[] {
-  const runs: string[] = [];
-  const textRegex = /<a:t[^>]*>([\s\S]*?)<\/a:t>/g;
-  for (const match of xml.matchAll(textRegex)) {
-    const text = decodeXmlEntities(match[1]).replace(/\s+/g, ' ').trim();
-    if (text) runs.push(text);
-  }
-  return runs;
-}
-
-function getSlideIndex(path: string): number {
-  const match = path.match(/slide(\d+)\.xml$/);
-  return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
 }
 
 function isDangerousArchivePath(path: string): boolean {
@@ -107,17 +77,15 @@ export async function buildPresentationSummary(file: File): Promise<Presentation
 
   try {
     const zip = await loadZip(file);
-    const slideEntries = Object.values(zip.files)
-      .filter((entry) => /^ppt\/slides\/slide\d+\.xml$/i.test(entry.name))
-      .sort((a, b) => getSlideIndex(a.name) - getSlideIndex(b.name));
+    const packageIndex = await resolvePresentationPackageIndexFromZip(zip);
 
     const slides: PresentationSlideSummary[] = [];
-    for (const entry of slideEntries.slice(0, MAX_PRESENTATION_SLIDES)) {
-      const xml = await entry.async('string');
-      const runs = extractTextRuns(xml);
+    for (const target of packageIndex.slice(0, MAX_PRESENTATION_SLIDES)) {
+      const xml = await zip.files[target.slidePartName].async('string');
+      const runs = extractPresentationSlideText(xml);
       const textPreview = runs.join(' ').slice(0, 700);
       slides.push({
-        index: getSlideIndex(entry.name),
+        index: target.displayIndex + 1,
         title: runs[0],
         textPreview,
         textRuns: runs.length,
@@ -129,9 +97,9 @@ export async function buildPresentationSummary(file: File): Promise<Presentation
     return {
       title: slides.find((slide) => slide.title)?.title || baseNameWithoutExtension(file.name),
       format: 'pptx',
-      slideCount: slideEntries.length,
+      slideCount: packageIndex.length,
       slides,
-      truncated: slideEntries.length > MAX_PRESENTATION_SLIDES,
+      truncated: packageIndex.length > MAX_PRESENTATION_SLIDES,
     };
   } catch (error) {
     return {

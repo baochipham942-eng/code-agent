@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import JSZip from 'jszip';
 import XLSX from 'xlsx';
 
 // ADR-040 A2：写前 guard 的对账测试。
@@ -22,12 +23,17 @@ vi.mock('../../../src/host/ipc/adminGuard', () => ({
 import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
 import { sheetCellRef } from '../../../src/shared/livePreview/sheetCoords';
 import {
+  buildLocalityFeedbackMessage,
+  buildLocatorFeedbackMessage,
+} from '../../../src/shared/livePreview/localityFeedback';
+import {
   findActiveLocator,
   getArtifactLocatorPreflightBlock,
   upgradeLegacyAnchor,
   LOCATOR_BLOCK_CODE,
 } from '../../../src/host/tools/artifacts/artifactLocatorHost';
-import type { Message } from '../../../src/shared/contract';
+import { resolvePresentationPackageIndex } from '../../../src/host/tools/artifacts/presentationPackageIndex';
+import type { ArtifactLocatorTelemetryEventData, Message } from '../../../src/shared/contract';
 import type { ArtifactLocatorV1 } from '../../../src/shared/contract/artifactLocator';
 
 type RawHandler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
@@ -61,6 +67,35 @@ async function writeWorkbook(name: string, sheets: Record<string, unknown[][]>):
   }
   const filePath = join(workDir, name);
   await writeFile(filePath, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  return filePath;
+}
+
+async function writeGeneratedDeck(name: string, slideCount: number): Promise<string> {
+  const zip = new JSZip();
+  const slideIds = Array.from(
+    { length: slideCount },
+    (_, index) => `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`,
+  ).join('');
+  const relationships = Array.from(
+    { length: slideCount },
+    (_, index) => `<Relationship Id="rId${index + 2}" Type="slide" Target="slides/slide${index + 1}.xml"/>`,
+  ).join('');
+  zip.file(
+    'ppt/presentation.xml',
+    `<p:presentation xmlns:p="p" xmlns:r="r"><p:sldIdLst>${slideIds}</p:sldIdLst></p:presentation>`,
+  );
+  zip.file(
+    'ppt/_rels/presentation.xml.rels',
+    `<Relationships>${relationships}</Relationships>`,
+  );
+  for (let index = 0; index < slideCount; index += 1) {
+    zip.file(
+      `ppt/slides/slide${index + 1}.xml`,
+      `<p:sld xmlns:p="p" xmlns:a="a"><a:t>Generated slide ${index + 1}</a:t></p:sld>`,
+    );
+  }
+  const filePath = join(workDir, name);
+  await writeFile(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
   return filePath;
 }
 
@@ -110,6 +145,53 @@ describe('upgradeLegacyAnchor：host 补 revision 后才算数', () => {
     expect(
       await upgradeLegacyAnchor({ kind: 'sheet', filePath: join(workDir, 'nope.xlsx'), cell: 'B4', sheetName: 'S' }),
     ).toBeNull();
+  });
+
+  it('生成 PPT 的 selectedIndex 经 C1 resolver 升级为 locator，旧 prompt 逐字节不变', async () => {
+    const filePath = await writeGeneratedDeck('generated.pptx', 3);
+    const anchor = {
+      kind: 'ppt' as const,
+      filePath,
+      slideIndex: 2,
+      displayName: 'generated.pptx',
+    };
+
+    const locator = await upgradeLegacyAnchor(anchor);
+    expect(locator).not.toBeNull();
+    expect(locator!.artifact.revision.value).toMatch(/^[0-9a-f]{64}$/);
+    expect(locator!.target).toMatchObject({
+      kind: 'ppt-slide',
+      displayIndex: 2,
+      relationshipId: 'rId4',
+      slidePartName: 'ppt/slides/slide3.xml',
+      textFingerprint: expect.stringMatching(/^[0-9a-f]{16}$/),
+    });
+    expect(buildLocatorFeedbackMessage(locator!, '换个标题')).toBe(
+      buildLocalityFeedbackMessage(anchor, '换个标题'),
+    );
+  });
+
+  it('上传 PPT 的 resolved anchor 由 host 重读 package 后升级，篡改 relationship 则拒绝', async () => {
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+    zip.file('ppt/slides/slide7.xml', '<p:sld><a:t>蓝色封面</a:t></p:sld>');
+    zip.file('ppt/presentation.xml', '<p:presentation><p:sldIdLst><p:sldId r:id="rId7"/></p:sldIdLst></p:presentation>');
+    zip.file('ppt/_rels/presentation.xml.rels', '<Relationships><Relationship Id="rId7" Target="slides/slide7.xml"/></Relationships>');
+    const filePath = join(workDir, 'resolved.pptx');
+    await writeFile(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
+    const target = (await resolvePresentationPackageIndex(filePath))[0];
+    const anchor = {
+      kind: 'ppt-locator' as const,
+      filePath,
+      ...target,
+      displayName: 'resolved.pptx',
+    };
+
+    const locator = await upgradeLegacyAnchor(anchor);
+    expect(locator).not.toBeNull();
+    expect(locator!.artifact.revision.value).toMatch(/^[0-9a-f]{64}$/);
+    expect(locator!.target).toEqual({ kind: 'ppt-slide', ...target });
+    expect(await upgradeLegacyAnchor({ ...anchor, relationshipId: 'rId-forged' })).toBeNull();
   });
 });
 
@@ -241,6 +323,41 @@ describe('写前 guard：模型改了坐标就不落盘', () => {
     expect(block!.metadata.skipped).toBe(true);
     expect(JSON.stringify(block!.metadata)).not.toContain('三月');
   });
+
+  it('遥测精确区分 resolved / blocked / stale，且只带 kind 与 reason', async () => {
+    const filePath = await writeWorkbook('telemetry.xlsx', { Sheet1: monthlySheet(300) });
+    const anchor = await clickInPreview(filePath, 0, '三月');
+    const locator = await upgradeLegacyAnchor(anchor);
+    expect(locator).not.toBeNull();
+    locator!.display.excerpt = '机密正文 sentinel';
+    const events: ArtifactLocatorTelemetryEventData[] = [];
+
+    await getArtifactLocatorPreflightBlock(
+      ctxOf(userTurn(locator)),
+      docEditCall(filePath, [{ action: 'set_cell', sheet: anchor.sheetName, cell: anchor.cell, value: 999 }]),
+      (event) => events.push(event),
+    );
+    await getArtifactLocatorPreflightBlock(
+      ctxOf(userTurn(locator)),
+      docEditCall(filePath, [{ action: 'set_cell', sheet: anchor.sheetName, cell: 'A1', value: 999 }]),
+      (event) => events.push(event),
+    );
+    await writeWorkbook('telemetry.xlsx', { Sheet1: [['新增行'], ...monthlySheet(300)] });
+    await getArtifactLocatorPreflightBlock(
+      ctxOf(userTurn(locator)),
+      docEditCall(filePath, [{ action: 'set_cell', sheet: anchor.sheetName, cell: anchor.cell, value: 999 }]),
+      (event) => events.push(event),
+    );
+
+    expect(events).toEqual([
+      { state: 'resolved', kind: 'spreadsheet', reason: 'target_verified' },
+      { state: 'blocked', kind: 'spreadsheet', reason: 'cell_mismatch' },
+      { state: 'stale', kind: 'spreadsheet', reason: 'revision_drift' },
+    ]);
+    expect(JSON.stringify(events)).not.toContain(filePath);
+    expect(JSON.stringify(events)).not.toContain('机密正文 sentinel');
+    expect(events.every((event) => Object.keys(event).sort().join(',') === 'kind,reason,state')).toBe(true);
+  });
 });
 
 describe('写前 guard：PPT 页坐标（locator 由 C1/C3 生产，guard 先总起来）', () => {
@@ -270,8 +387,24 @@ describe('写前 guard：PPT 页坐标（locator 由 C1/C3 生产，guard 先总
 
   it('模型交了 resolver 算出的 slide_index=6 → 放行', async () => {
     const filePath = join(workDir, 'deck.pptx');
-    await writeFile(filePath, 'not-a-real-pptx');
-    const locator = { ...pptLocator('ppt/slides/slide7.xml', 1) };
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+    zip.file('ppt/slides/slide2.xml', '<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><a:t>第一页</a:t></p:sld>');
+    zip.file('ppt/slides/slide7.xml', '<p:sld xmlns:p="urn:p" xmlns:a="urn:a"><a:t>第二页</a:t></p:sld>');
+    zip.file(
+      'ppt/presentation.xml',
+      '<p:presentation xmlns:p="urn:p" xmlns:r="urn:r"><p:sldIdLst>'
+        + '<p:sldId id="1" r:id="rId2"/><p:sldId id="2" r:id="rId9"/>'
+        + '</p:sldIdLst></p:presentation>',
+    );
+    zip.file(
+      'ppt/_rels/presentation.xml.rels',
+      '<Relationships><Relationship Id="rId2" Target="slides/slide2.xml"/>'
+        + '<Relationship Id="rId9" Target="slides/slide7.xml"/></Relationships>',
+    );
+    await writeFile(filePath, await zip.generateAsync({ type: 'nodebuffer' }));
+    const target = (await resolvePresentationPackageIndex(filePath))[1];
+    const locator = { ...pptLocator(target.slidePartName, target.displayIndex), target: { kind: 'ppt-slide' as const, ...target } };
     locator.artifact.filePath = filePath;
     const { computeArtifactRevision } = await import('../../../src/host/tools/artifacts/artifactLocatorHost');
     locator.artifact.revision = await computeArtifactRevision(filePath);

@@ -336,6 +336,13 @@ export interface RoutingResolvedEventData {
   timestamp?: number;
 }
 
+/** ADR-040 D2：locator 写前对账的隐私安全遥测，只允许记录分类与原因。 */
+export interface ArtifactLocatorTelemetryEventData {
+  state: 'resolved' | 'stale' | 'blocked';
+  kind: 'spreadsheet' | 'presentation' | 'document';
+  reason: string;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
@@ -354,6 +361,7 @@ export type AgentEvent =
   | { type: 'task_update'; data: TaskUpdateEventData }
   | { type: 'notification'; data: { message: string; parentToolUseId?: string } }
   | { type: 'routing_resolved'; data: RoutingResolvedEventData }
+  | { type: 'artifact_locator'; data: ArtifactLocatorTelemetryEventData }
   | { type: 'agent_complete'; data: null }
   | { type: 'agent_cancelled'; data: null }
   // /goal 自治模式观测事件

@@ -16,6 +16,8 @@ import { resolveFileUrl } from '../utils/resolveFileUrl';
 import { revealNativePath } from '../services/tauriPluginFacade';
 import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
+import { PresentationPagePicker } from './PresentationPagePicker';
+import type { PresentationPagePreviewResult } from '@shared/contract';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -49,7 +51,15 @@ type DocumentParagraphType = 'heading' | 'paragraph' | 'list-item';
 
 interface DocxPreviewResult {
   html: string;
-  paragraphs: Array<{ index: number; type: string; text: string; level?: number }>;
+  paragraphs: Array<{
+    index: number;
+    type: string;
+    text: string;
+    level?: number;
+    textFingerprint?: string;
+    previousTextFingerprint?: string;
+    nextTextFingerprint?: string;
+  }>;
   text: string;
   wordCount: number;
 }
@@ -154,6 +164,9 @@ function buildDocxPreviewSpec(filePath: string, result: DocxPreviewResult): stri
       type: normalizeDocumentParagraphType(paragraph.type),
       text: paragraph.text.trim(),
       level: paragraph.level,
+      textFingerprint: paragraph.textFingerprint,
+      previousTextFingerprint: paragraph.previousTextFingerprint,
+      nextTextFingerprint: paragraph.nextTextFingerprint,
     }))
     .filter((paragraph) => paragraph.text.length > 0);
   const paragraphs = normalized.length > 0 ? normalized : paragraphsFromRawText(result.text);
@@ -260,6 +273,18 @@ function parsePresentationInspection(content: string): PresentationInspection | 
   }
 }
 
+function parsePresentationPagePreview(content: string): PresentationPagePreviewResult | null {
+  try {
+    const parsed = JSON.parse(content) as PresentationPagePreviewResult;
+    if (!parsed || !Array.isArray(parsed.pages) || !['ready', 'libreoffice-missing', 'conversion-failed'].includes(parsed.state)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtifact }) {
   const screenshots = artifact.screenshots;
   const [selected, setSelected] = useState(0);
@@ -301,6 +326,18 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
 }
 
 export function PresentationPreview({ content }: { content: string }) {
+  const pagePreview = parsePresentationPagePreview(content);
+  if (pagePreview) {
+    return (
+      <div className="h-full overflow-auto bg-zinc-950 p-4">
+        <PresentationPagePicker
+          title={basename(pagePreview.filePath)}
+          filePath={pagePreview.filePath}
+          preview={pagePreview}
+        />
+      </div>
+    );
+  }
   const artifact = parseDesignPptArtifactContent(content);
   if (artifact) {
     return <DesignPptScreenshots artifact={artifact} />;
@@ -445,27 +482,8 @@ export const PreviewPanel: React.FC = () => {
         });
         markPreviewTabLoaded(tabId, JSON.stringify(inspection, null, 2));
       } else if (isPresentationTab) {
-        // 优先读同目录 design artifact 的逐页截图走可视预览；缺失再 fallback 到 outline 文本巡检。
-        const artifactPath = filePath.replace(/\.pptx$/i, '.design-artifact.json');
-        let loadedFromArtifact = false;
-        if (artifactPath !== filePath) {
-          try {
-            const raw = await invokeWorkspace<string>('readFile', { filePath: artifactPath });
-            if (raw && parseDesignPptArtifactContent(raw)) {
-              markPreviewTabLoaded(tabId, raw);
-              loadedFromArtifact = true;
-            }
-          } catch {
-            // artifact 不存在或不可读：走下面的 outline fallback
-          }
-        }
-        if (!loadedFromArtifact) {
-          const inspection = await invokeWorkspace<PresentationInspection>('inspectPresentation', {
-            filePath,
-            limit: 80,
-          });
-          markPreviewTabLoaded(tabId, JSON.stringify(inspection, null, 2));
-        }
+        const preview = await invokeWorkspace<PresentationPagePreviewResult>('previewPresentation', { filePath });
+        markPreviewTabLoaded(tabId, JSON.stringify(preview, null, 2));
       } else if (isDocxTab) {
         const result = await commandApi()?.extractDocxHtml(filePath);
         if (!result) throw new Error('DOCX preview extractor is unavailable');

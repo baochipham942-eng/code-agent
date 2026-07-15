@@ -9,6 +9,7 @@
 | 发布 | `release.yml` | tag 触发的 macOS / Windows 构建、签名、公证和 GitHub Release 发布 |
 | Renderer | `renderer-bundle.yml` | renderer capability diff、hot-update smoke、bundle 发布 |
 | 平台构建 | `build-windows-test.yml`、`build-x64-test.yml` | Windows 和 Intel macOS 构建验证 |
+| Poppler promotion | `build-poppler-sidecar.yml` | 在原生 arm64 / Intel runner 生成待复核的 sidecar、完整源码包和 manifest；不发布、不修改 lock |
 | 运行时质量门 | `webserver-boot.yml`、`swarm-ci.yml`、`eval-harness-gate.yml` | webServer 启动、Swarm、评测框架回归 |
 | 能力与 provider | `capability-evidence.yml`、`provider-symmetry.yml` | 能力证据和 provider 对称性合同 |
 | 云与数据 | `vercel-control-plane.yml`、`supabase-migrate.yml`、`supabase-keepalive.yml` | 控制面部署、数据库迁移和保活 |

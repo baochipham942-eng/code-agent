@@ -32,6 +32,7 @@ import {
   handleExportBundle,
   handleInspectArchive,
   handleInspectPresentation,
+  handlePreviewPresentation,
   type WorkspaceExportBundlePayload,
 } from './workspaceArchive.ipc';
 export { handleExportBundle, handleInspectArchive, handleInspectPresentation };
@@ -854,6 +855,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'inspectPresentation':
           data = await handleInspectPresentation(payload as { filePath: string; limit?: number });
+          break;
+        case 'previewPresentation':
+          data = await handlePreviewPresentation(payload as { filePath: string });
           break;
         case 'getDesignMdSummary':
           data = await handleGetDesignMdSummary(payload as { cwd?: string | null });

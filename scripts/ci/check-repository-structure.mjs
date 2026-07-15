@@ -9,14 +9,17 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const limits = {
-  rootDirectories: 19,
+  // 20: config/ stores the reviewed, release-critical Poppler sidecar lock. It is
+  // public source configuration, not user/runtime state.
+  rootDirectories: 20,
   hostDomains: 45,
   testTopLevelDirectories: 24,
-  // 134: fetch-poppler.sh 与 fetch-rtk.sh / fetch-uv.sh 同类同层——它产出的
-  // scripts/poppler 是 tauri.conf.json 的 bundle resource，符合 scripts/README.md
-  // 「根层文件保留条件」的第一条（被 Tauri 配置作为稳定入口直接调用）。
-  directScriptFiles: 134,
-  workflows: 13,
+  // 138: the four Poppler promotion/fetch/gate scripts are stable package/workflow
+  // entrypoints. Their shared validation remains under scripts/lib/.
+  directScriptFiles: 138,
+  // 14: build-poppler-sidecar.yml is the review-only native arm64/x64 promotion
+  // boundary; it cannot publish or mutate the release lock.
+  workflows: 14,
 };
 
 const navigationFiles = [

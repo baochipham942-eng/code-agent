@@ -5,7 +5,8 @@
 # 上游: https://poppler.freedesktop.org/ (GPL-2.0)
 # 用途: PPT/PDF → 每页截图（src/host/tools/media/ppt/visualReview.ts）。
 #       没有它时整份 deck 只能退到 qlmanage 的单页缩略图，用户第 2 页起选不了。
-# 触发时机: 首次 clone 后、需要升级 POPPLER_VERSION 时
+# 触发时机: 仅限 Poppler promotion workflow 或本地候选制品构建。
+# 正式 release 必须运行 fetch-poppler-sidecar.mjs 下载已经 promotion 的不可变制品。
 #
 # 为什么这个脚本和 fetch-rtk.sh / fetch-uv.sh 形态不同：
 #   rtk 和 uv 的上游发布**自包含**二进制（实测只依赖 /usr/lib + 系统 framework），
@@ -24,12 +25,14 @@ set -euo pipefail
 
 # homebrew 的 Cellar 目录名带 revision 后缀（26.02.0_1 = 上游 26.02.0 的第 1 次 brew 修订）。
 # 钉全名保证产物可复现；pdftoppm -v 只打印上游版本，故下面比对时把 _N 去掉。
-POPPLER_BREW_VERSION="26.02.0_1"
+LOCK_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/poppler-sidecar.lock.json"
+POPPLER_BREW_VERSION="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).popplerBrewVersion" "$LOCK_FILE")"
 POPPLER_VERSION="${POPPLER_BREW_VERSION%%_*}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="$SCRIPT_DIR/poppler"
 OUT_BIN="$OUT_DIR/bin/pdftoppm"
+OUT_PROVENANCE="$OUT_DIR/compliance/binary-provenance.json"
 
 if [[ "$(uname)" != "Darwin" ]]; then
   # Windows/Linux 侧不打包 poppler：visualReview 的截图链路目前只在 macOS 上
@@ -41,7 +44,7 @@ fi
 # 增量检查
 if [[ -x "$OUT_BIN" ]]; then
   EXISTING="$("$OUT_BIN" -v 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
-  if [[ "$EXISTING" == "$POPPLER_VERSION" ]]; then
+  if [[ "$EXISTING" == "$POPPLER_VERSION" && -s "$OUT_PROVENANCE" && "${POPPLER_FORCE_PINNED_BUILD:-0}" != "1" ]]; then
     echo "✓ poppler $POPPLER_VERSION 已是目标版本(跳过)"
     exit 0
   fi
@@ -54,16 +57,35 @@ if ! command -v brew >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "→ 确保 homebrew poppler 已安装"
-brew list poppler >/dev/null 2>&1 || brew install poppler
+if [[ "${POPPLER_FORCE_PINNED_BUILD:-0}" == "1" ]]; then
+  [[ "${POPPLER_ALLOW_PINNED_INSTALL:-0}" == "1" ]] || {
+    echo "❌ POPPLER_FORCE_PINNED_BUILD requires POPPLER_ALLOW_PINNED_INSTALL=1" >&2
+    exit 1
+  }
+  if brew list --versions poppler >/dev/null 2>&1; then
+    brew uninstall --ignore-dependencies poppler
+  fi
+fi
 
 CELLAR="$(brew --cellar poppler)/$POPPLER_BREW_VERSION"
 if [[ ! -x "$CELLAR/bin/pdftoppm" ]]; then
-  # brew 的 poppler 版本随 tap 漂移；不静默用别的版本，避免产物与钉的版本对不上
-  ACTUAL="$(ls "$(brew --cellar poppler)" 2>/dev/null | head -1 || true)"
-  echo "❌ 期望 poppler ${POPPLER_BREW_VERSION}，但 brew 装的是 ${ACTUAL:-无}" >&2
-  echo "   要么 brew upgrade poppler，要么把本脚本的 POPPLER_BREW_VERSION 改成 ${ACTUAL} 后重跑自检" >&2
-  exit 1
+  if [[ "${POPPLER_ALLOW_PINNED_INSTALL:-0}" != "1" ]]; then
+    ACTUAL="$(ls "$(brew --cellar poppler)" 2>/dev/null | head -1 || true)"
+    echo "❌ 缺少固定 Poppler ${POPPLER_BREW_VERSION}（当前 ${ACTUAL:-无}）" >&2
+    echo "   正式 release 不允许从 floating Homebrew 安装；promotion workflow 才能设置 POPPLER_ALLOW_PINNED_INSTALL=1" >&2
+    exit 1
+  fi
+  FORMULA_COMMIT="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).formula.commit" "$LOCK_FILE")"
+  FORMULA_PATH="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).formula.path" "$LOCK_FILE")"
+  FORMULA_SHA="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).formula.sha256" "$LOCK_FILE")"
+  TAP_ROOT="$(brew --repository)/Library/Taps/agent-neo/homebrew-poppler-build"
+  brew tap-new agent-neo/poppler-build >/dev/null
+  mkdir -p "$TAP_ROOT/Formula"
+  curl --fail --location --proto '=https' --tlsv1.2 \
+    "https://raw.githubusercontent.com/Homebrew/homebrew-core/${FORMULA_COMMIT}/${FORMULA_PATH}" \
+    --output "$TAP_ROOT/Formula/poppler.rb"
+  echo "${FORMULA_SHA}  $TAP_ROOT/Formula/poppler.rb" | shasum -a 256 -c -
+  brew install --build-from-source agent-neo/poppler-build/poppler
 fi
 
 rm -rf "$OUT_DIR"
@@ -73,7 +95,7 @@ chmod +w "$OUT_DIR/bin/pdftoppm"
 
 echo "→ 捞传递 dylib 闭包"
 python3 - "$OUT_DIR" "$CELLAR/bin/pdftoppm" <<'PY'
-import subprocess, os, shutil, sys
+import json, subprocess, os, shutil, sys
 
 out_dir, origin = sys.argv[1], sys.argv[2]
 
@@ -136,6 +158,22 @@ if unresolved:
     print(f"❌ 有依赖没解析出来，bundle 会不自包含: {unresolved}", file=sys.stderr)
     sys.exit(1)
 print(f"  拷入 {len(copied)} 个 dylib")
+
+def provenance(source):
+    parts = os.path.realpath(source).split(os.sep)
+    try:
+        index = parts.index('Cellar')
+        return {'component': parts[index + 1], 'componentVersion': parts[index + 2]}
+    except (ValueError, IndexError):
+        raise RuntimeError(f'无法从 Homebrew Cellar 路径识别来源组件: {os.path.basename(source)}')
+
+files = {'bin/pdftoppm': provenance(origin)}
+for base, source in sorted(copied.items()):
+    files[f'lib/{base}'] = provenance(source)
+os.makedirs(os.path.join(out_dir, 'compliance'), exist_ok=True)
+with open(os.path.join(out_dir, 'compliance', 'binary-provenance.json'), 'w') as handle:
+    json.dump({'schemaVersion': 1, 'publisher': 'Agent Neo project', 'files': files}, handle, indent=2, sort_keys=True)
+    handle.write('\n')
 PY
 
 echo "→ 重定位 install name"

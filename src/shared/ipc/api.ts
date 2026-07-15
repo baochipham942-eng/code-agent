@@ -48,7 +48,15 @@ export interface ElectronAPI {
   // Word (.docx) HTML + 段落提取（供 DocumentBlock 交互式渲染）
   extractDocxHtml: (filePath: string) => Promise<{
     html: string;
-    paragraphs: Array<{ index: number; type: string; text: string; level?: number }>;
+    paragraphs: Array<{
+      index: number;
+      type: string;
+      text: string;
+      level?: number;
+      textFingerprint: string;
+      previousTextFingerprint?: string;
+      nextTextFingerprint?: string;
+    }>;
     text: string;
     wordCount: number;
   } | null>;

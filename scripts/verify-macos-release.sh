@@ -105,6 +105,35 @@ echo "[verify-macos-release] resources root: ${RESOURCES_ROOT}"
 node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${RESOURCES_ROOT}"
 node "${ROOT_DIR}/scripts/tauri-resource-inventory.mjs" --root "${RESOURCES_ROOT}"
 
+POPPLER_ROOT="${RESOURCES_ROOT}/scripts/poppler"
+POPPLER_BIN="${POPPLER_ROOT}/bin/pdftoppm"
+POPPLER_NOTICES="${POPPLER_ROOT}/compliance/THIRD_PARTY_NOTICES.txt"
+POPPLER_PROVENANCE="${POPPLER_ROOT}/compliance/binary-provenance.json"
+POPPLER_MANIFEST="${POPPLER_ROOT}/manifest/sidecar-manifest.json"
+if [[ ! -x "${POPPLER_BIN}" || ! -s "${POPPLER_NOTICES}" || ! -s "${POPPLER_PROVENANCE}" || ! -s "${POPPLER_MANIFEST}" ]]; then
+  echo "[verify-macos-release] Poppler sidecar/compliance files are incomplete under ${POPPLER_ROOT}" >&2
+  exit 1
+fi
+if ! find "${POPPLER_ROOT}/compliance/licenses" -type f -size +0c -print -quit | grep -q .; then
+  echo "[verify-macos-release] Poppler sidecar has no bundled license texts" >&2
+  exit 1
+fi
+EXPECTED_POPPLER_ARCH="$(uname -m)"
+EXPECTED_POPPLER_PLATFORM="darwin-arm64"
+if [[ "${EXPECTED_POPPLER_ARCH}" == "x86_64" ]]; then
+  EXPECTED_POPPLER_PLATFORM="darwin-x64"
+fi
+if [[ "$(lipo -archs "${POPPLER_BIN}")" != "${EXPECTED_POPPLER_ARCH}" ]]; then
+  echo "[verify-macos-release] Poppler architecture mismatch: $(lipo -archs "${POPPLER_BIN}")" >&2
+  exit 1
+fi
+node "${ROOT_DIR}/scripts/verify-poppler-release-gate.mjs" \
+  --manifest "${POPPLER_MANIFEST}" \
+  --sidecar-dir "${POPPLER_ROOT}" \
+  --platform "${EXPECTED_POPPLER_PLATFORM}"
+"${POPPLER_BIN}" -v >/dev/null 2>&1
+echo "[verify-macos-release] Poppler lock, manifest, sidecar files, notices, license texts and native architecture verified"
+
 BUNDLED_NODE_PATH="$(
   find_first_existing_file "bundled Node binary" \
     "${RESOURCES_ROOT}/dist/bundled-node/bin/node" \

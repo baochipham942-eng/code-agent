@@ -11,7 +11,7 @@
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import type { Message, ToolCall } from '../../../shared/contract';
+import type { ArtifactLocatorTelemetryEventData, Message, ToolCall } from '../../../shared/contract';
 import {
   slideIndexFromPartName,
   validateArtifactLocatorV1,
@@ -19,6 +19,13 @@ import {
   type ArtifactRevision,
 } from '../../../shared/contract/artifactLocator';
 import { locatorFromLegacyAnchor, type LocalityAnchor } from '../../../shared/livePreview/localityFeedback';
+import type { PresentationPackageIndexEntry } from '../../../shared/ooxml/presentationPackageIndex';
+import { resolvePresentationPackageIndex } from './presentationPackageIndex';
+import {
+  docxParagraphTargetStillMatches,
+  resolveDocxParagraphTarget,
+  type DocxParagraphTargetSnapshot,
+} from './docxParagraphLocator';
 
 /** locator 授权的工具面（ADR-040 D4 首批）：Excel cell/range、Word paragraph、PPT 页内 replace。 */
 const LOCATOR_GUARDED_TOOLS = new Set(['docedit', 'ppt_edit']);
@@ -29,6 +36,32 @@ export interface LocatorPreflightBlock {
   code: typeof LOCATOR_BLOCK_CODE;
   error: string;
   metadata: Record<string, unknown>;
+}
+
+const STALE_LOCATOR_REASONS = new Set([
+  'revision_unreadable',
+  'revision_drift',
+  'presentation_package_unreadable',
+  'presentation_target_missing',
+  'relationship_drift',
+  'slide_part_drift',
+  'text_fingerprint_drift',
+  'paragraph_fingerprint_drift',
+]);
+
+function recordLocatorTelemetry(
+  locator: ArtifactLocatorV1,
+  result: LocatorPreflightBlock | null,
+  recordTelemetry?: (event: ArtifactLocatorTelemetryEventData) => void,
+): LocatorPreflightBlock | null {
+  const blockReason = result?.metadata.reason;
+  const reason = typeof blockReason === 'string' ? blockReason : 'target_verified';
+  recordTelemetry?.({
+    state: result ? (STALE_LOCATOR_REASONS.has(reason) ? 'stale' : 'blocked') : 'resolved',
+    kind: locator.artifact.kind,
+    reason,
+  });
+  return result;
 }
 
 /** 流式算文件 sha256。大产物（几十 MB 的 pptx）不整个读进内存。 */
@@ -45,19 +78,73 @@ export async function computeArtifactRevision(filePath: string): Promise<Artifac
 /**
  * legacy 锚点 → 校验过的 V1（host 侧补 revision）。
  *
- * 返回 null = 这个锚点在 P0 拿不到诚实的 V1（PPT / 缺 sheetName），或文件读不到、
- * 或补出来的 V1 过不了校验。一律退回 legacy 字符串路径——**没有 locator 就没有
- * guard**，行为与今天完全一致，不会因为契约上线反而挡住既有功能。
+ * PPT 保留 screenshot selectedIndex 的交互输入，但 locator target 必须来自 C1 resolver；
+ * 表格继续使用真实 sheetName + A1。文件读不到、selectedIndex 越界或 V1 校验失败时
+ * 一律退回 legacy 字符串路径——**没有 locator 就没有 guard**，不会编造坐标。
  */
 export async function upgradeLegacyAnchor(anchor: LocalityAnchor): Promise<ArtifactLocatorV1 | null> {
   let revision: ArtifactRevision;
+  let resolvedPresentationTarget: PresentationPackageIndexEntry | null = null;
   try {
+    if (anchor.kind === 'ppt') {
+      const packageIndex = await resolvePresentationPackageIndex(anchor.filePath);
+      resolvedPresentationTarget = packageIndex[anchor.slideIndex] ?? null;
+    }
     revision = await computeArtifactRevision(anchor.filePath);
   } catch {
     return null;
   }
 
-  const locator = locatorFromLegacyAnchor(anchor, revision);
+  if (anchor.kind === 'ppt-locator') {
+    let packageIndex;
+    let verifiedRevision: ArtifactRevision;
+    try {
+      packageIndex = await resolvePresentationPackageIndex(anchor.filePath);
+      verifiedRevision = await computeArtifactRevision(anchor.filePath);
+    } catch {
+      return null;
+    }
+    // 避免「算 revision 后、解析 package 前」文件被外部程序替换，混出一份跨版本 locator。
+    if (verifiedRevision.value !== revision.value) return null;
+
+    const target = packageIndex[anchor.displayIndex];
+    if (
+      !target
+      || target.relationshipId !== anchor.relationshipId
+      || target.slidePartName !== anchor.slidePartName
+      || target.textFingerprint !== anchor.textFingerprint
+    ) {
+      return null;
+    }
+
+    const locator: ArtifactLocatorV1 = {
+      version: 1,
+      artifact: { kind: 'presentation', filePath: anchor.filePath, revision: verifiedRevision },
+      target: { kind: 'ppt-slide', ...target },
+      display: {
+        label: anchor.displayName || path.basename(anchor.filePath),
+      },
+    };
+    const validation = validateArtifactLocatorV1(locator);
+    return validation.ok ? validation.locator : null;
+  }
+
+  let locator: ArtifactLocatorV1 | null;
+  if (anchor.kind === 'docx') {
+    const resolved = await resolveDocxParagraphTarget(anchor.filePath, anchor.paragraphIndex).catch(() => null);
+    if (!resolved) return null;
+    locator = {
+      version: 1,
+      artifact: { kind: 'document', filePath: anchor.filePath, revision },
+      target: resolved.target,
+      display: {
+        label: anchor.displayName || anchor.filePath.split('/').pop() || '文档',
+        excerpt: resolved.paragraph.text,
+      },
+    };
+  } else {
+    locator = locatorFromLegacyAnchor(anchor, revision, resolvedPresentationTarget);
+  }
   if (!locator) return null;
 
   const validation = validateArtifactLocatorV1(locator);
@@ -139,10 +226,11 @@ function checkSheetTarget(
   return null;
 }
 
-function checkPptTarget(
+async function checkPptTarget(
   locator: ArtifactLocatorV1 & { target: { kind: 'ppt-slide' } },
   args: Record<string, unknown> | undefined,
-): LocatorPreflightBlock | null {
+  targetPath: string,
+): Promise<LocatorPreflightBlock | null> {
   const expectedIndex = slideIndexFromPartName(locator.target.slidePartName);
   if (expectedIndex === null) {
     return block(RETARGET_MESSAGE, { reason: 'unresolvable_slide_part' });
@@ -151,6 +239,24 @@ function checkPptTarget(
   if (received === undefined) return null; // 不声称页码的 action（如 extract_style）不在射程内
   if (received !== expectedIndex) {
     return block(RETARGET_MESSAGE, { reason: 'slide_mismatch', expected: expectedIndex, received });
+  }
+
+  let packageIndex;
+  try {
+    packageIndex = await resolvePresentationPackageIndex(targetPath);
+  } catch {
+    return block(STALE_MESSAGE, { reason: 'presentation_package_unreadable' });
+  }
+  const currentTarget = packageIndex[locator.target.displayIndex];
+  if (!currentTarget) return block(STALE_MESSAGE, { reason: 'presentation_target_missing' });
+  if (currentTarget.relationshipId !== locator.target.relationshipId) {
+    return block(STALE_MESSAGE, { reason: 'relationship_drift' });
+  }
+  if (currentTarget.slidePartName !== locator.target.slidePartName) {
+    return block(STALE_MESSAGE, { reason: 'slide_part_drift' });
+  }
+  if (currentTarget.textFingerprint !== locator.target.textFingerprint) {
+    return block(STALE_MESSAGE, { reason: 'text_fingerprint_drift' });
   }
   return null;
 }
@@ -165,8 +271,16 @@ function checkDocxTarget(
 
   for (const op of operations) {
     if (!op || typeof op !== 'object') continue;
-    const received = (op as Record<string, unknown>).index;
-    if (received === undefined) continue;
+    const typed = op as Record<string, unknown>;
+    const action = typed.action;
+    const received = action === 'insert_paragraph'
+      ? typed.after
+      : action === 'replace_paragraph' || action === 'delete_paragraph'
+        ? typed.index
+        : undefined;
+    if (received === undefined) {
+      return block(RETARGET_MESSAGE, { reason: 'paragraph_operation_unsupported' });
+    }
     if (received !== expectedIndex) {
       return block(RETARGET_MESSAGE, { reason: 'paragraph_mismatch', expected: expectedIndex, received });
     }
@@ -183,6 +297,7 @@ function checkDocxTarget(
 export async function getArtifactLocatorPreflightBlock(
   ctx: { messages: readonly Message[]; workingDirectory: string },
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+  recordTelemetry?: (event: ArtifactLocatorTelemetryEventData) => void,
 ): Promise<LocatorPreflightBlock | null> {
   if (!LOCATOR_GUARDED_TOOLS.has(toolCall.name.toLowerCase())) return null;
 
@@ -191,11 +306,11 @@ export async function getArtifactLocatorPreflightBlock(
 
   const rawPath = toolCall.arguments?.file_path;
   if (typeof rawPath !== 'string' || !rawPath.trim()) {
-    return block(RETARGET_MESSAGE, { reason: 'missing_file_path' });
+    return recordLocatorTelemetry(locator, block(RETARGET_MESSAGE, { reason: 'missing_file_path' }), recordTelemetry);
   }
   const targetPath = path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(ctx.workingDirectory, rawPath);
   if (targetPath !== path.resolve(locator.artifact.filePath)) {
-    return block(RETARGET_MESSAGE, { reason: 'file_mismatch' });
+    return recordLocatorTelemetry(locator, block(RETARGET_MESSAGE, { reason: 'file_mismatch' }), recordTelemetry);
   }
 
   // revision fail-closed：点击后、写入前重新计算。外部程序在用户点选后改了文件，
@@ -204,18 +319,34 @@ export async function getArtifactLocatorPreflightBlock(
   try {
     current = await computeArtifactRevision(targetPath);
   } catch {
-    return block(STALE_MESSAGE, { reason: 'revision_unreadable' });
+    return recordLocatorTelemetry(locator, block(STALE_MESSAGE, { reason: 'revision_unreadable' }), recordTelemetry);
   }
   if (current.value !== locator.artifact.revision.value) {
-    return block(STALE_MESSAGE, { reason: 'revision_drift' });
+    return recordLocatorTelemetry(locator, block(STALE_MESSAGE, { reason: 'revision_drift' }), recordTelemetry);
   }
 
+  let result: LocatorPreflightBlock | null;
   switch (locator.target.kind) {
     case 'sheet-range':
-      return checkSheetTarget(locator as ArtifactLocatorV1 & { target: { kind: 'sheet-range' } }, toolCall.arguments);
+      result = checkSheetTarget(locator as ArtifactLocatorV1 & { target: { kind: 'sheet-range' } }, toolCall.arguments);
+      break;
     case 'ppt-slide':
-      return checkPptTarget(locator as ArtifactLocatorV1 & { target: { kind: 'ppt-slide' } }, toolCall.arguments);
+      result = await checkPptTarget(
+        locator as ArtifactLocatorV1 & { target: { kind: 'ppt-slide' } },
+        toolCall.arguments,
+        targetPath,
+      );
+      break;
     case 'docx-paragraph':
-      return checkDocxTarget(locator as ArtifactLocatorV1 & { target: { kind: 'docx-paragraph' } }, toolCall.arguments);
+      if (!await docxParagraphTargetStillMatches(
+        targetPath,
+        locator.target as DocxParagraphTargetSnapshot,
+      ).catch(() => false)) {
+        result = block(STALE_MESSAGE, { reason: 'paragraph_fingerprint_drift' });
+        break;
+      }
+      result = checkDocxTarget(locator as ArtifactLocatorV1 & { target: { kind: 'docx-paragraph' } }, toolCall.arguments);
+      break;
   }
+  return recordLocatorTelemetry(locator, result, recordTelemetry);
 }

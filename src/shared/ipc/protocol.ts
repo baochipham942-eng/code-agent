@@ -62,6 +62,7 @@ export type WorkspaceAction =
   | 'exportBundle'
   | 'inspectArchive'
   | 'inspectPresentation'
+  | 'previewPresentation'
   | 'getDesignMdSummary';
 
 /**

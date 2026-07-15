@@ -1,9 +1,10 @@
 name: Build and Release
 
-# 双架构发版（2026-06-10 起）：arm64（macos-latest）+ x64（macos-15-intel）矩阵并行构建，
+# 双架构发版（2026-06-10 起）：arm64（macos-15）+ x64（macos-15-intel）矩阵并行构建，
 # publish 任务合并两架构 updater manifest（darwin-aarch64 + darwin-x86_64 单 manifest，
 # 见 docs/architecture/intel-x64-support.md §3 方案 A），统一发 GitHub Release + 提升 stable。
 # 防覆盖：所有产物（tar.gz/sig/dmg/manifest）按架构命名，stable 提升只在 publish 做一次。
+# runner 标签固定在 macOS 15，避免 macos-latest 迁移到 macOS 26 时静默改变 Xcode/SDK/工具链。
 
 on:
   push:
@@ -22,7 +23,7 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            runner: macos-latest
+            runner: macos-15
             swift_arch: arm64
           - arch: x64
             # macos-15-intel 是 GitHub 当前可用的 Intel runner（macos-13 已退役）
@@ -65,7 +66,7 @@ jobs:
 
       - name: Freeze Stability release evidence
         if: matrix.arch == 'arm64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: stability-release-evidence-${{ github.sha }}
           if-no-files-found: error
@@ -395,7 +396,7 @@ jobs:
           ls -la "${STAGE}"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-assets-${{ matrix.arch }}
           path: ${{ runner.temp }}/release-assets/
@@ -556,7 +557,7 @@ jobs:
           ls -la "${STAGE}"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-assets-win-x64
           path: ${{ runner.temp }}/release-assets/
@@ -568,13 +569,14 @@ jobs:
     # windows leg 失败不拖死 mac 发版：build-mac 成功即发布（merge 步骤对缺席的
     # windows manifest 降级为 mac-only，required keys 不含 windows-x86_64）。
     if: ${{ always() && needs.build-mac.result == 'success' }}
-    runs-on: macos-latest
+    # publish 下载并提升 arm64 侧 OSS 工具，固定 runner 防止 macos-latest 静默迁移。
+    runs-on: macos-15
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
 
       - name: Download build artifacts (both arches)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: release-assets-*
           path: release-assets

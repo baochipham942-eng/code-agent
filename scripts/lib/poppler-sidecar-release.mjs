@@ -129,10 +129,12 @@ function validateSourceEvidence(value, label) {
   if (path.isAbsolute(evidencePath) || evidencePath.includes('\\') || evidencePath.split('/').includes('..')) {
     fail(`${label}.path must be a safe relative path`, 'unsafe_artifact_path', { path: evidencePath });
   }
+  // 带上 evidencePath：合规失败时光有 components[16].licenseFiles[2] 这种下标，
+  // 定位不到是哪个上游文件，排查只能重跑整条双架构 promotion（约 40 分钟）。
   return {
     path: evidencePath,
-    sha256: assertSha256(evidence.sha256, `${label}.sha256`),
-    bytes: assertPositiveInteger(evidence.bytes, `${label}.bytes`),
+    sha256: assertSha256(evidence.sha256, `${label} (${evidencePath}).sha256`),
+    bytes: assertPositiveInteger(evidence.bytes, `${label} (${evidencePath}).bytes`),
   };
 }
 

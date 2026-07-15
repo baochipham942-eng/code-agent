@@ -5,12 +5,14 @@ import path from 'node:path';
 import console from 'node:console';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import {
   sha256File,
   validatePopplerLock,
   validatePopplerManifest,
   verifySidecarDirectory,
 } from './lib/poppler-sidecar-release.mjs';
+import { hasDeveloperIdSignature } from './lib/macho-signature-audit.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -30,6 +32,24 @@ function assertInvocationBoundary() {
   const popplerSection = source.slice(source.indexOf("resolveHelperBinary('pdftoppm'"));
   for (const pattern of forbidden) {
     if (pattern.test(popplerSection)) throw new Error(`pdftoppm boundary requires re-review: ${pattern}`);
+  }
+}
+
+// manifest 的 kind 字段可信：manifest 本身被 lock 的 sha256 钉死，改不动。
+function assertMachOSignatures(manifest, sidecarDir) {
+  const unsigned = manifest.files
+    .filter((entry) => entry.kind === 'mach-o')
+    .filter((entry) => {
+      const target = path.join(sidecarDir, entry.path);
+      const result = spawnSync('codesign', ['-dvv', target], { encoding: 'utf8' });
+      return !hasDeveloperIdSignature(`${result.stdout ?? ''}${result.stderr ?? ''}`);
+    })
+    .map((entry) => entry.path);
+  if (unsigned.length > 0) {
+    throw new Error(
+      `Signed-sidecar mode requires a Developer ID signature on every Mach-O; ${unsigned.length} lack one: `
+      + unsigned.join(', '),
+    );
   }
 }
 
@@ -67,7 +87,13 @@ function main() {
         throw new Error(`Poppler ${manifest.platform} manifest does not match the ready lock`);
       }
     }
-    if (sidecarDir) verifySidecarDirectory(manifest, path.resolve(sidecarDir));
+    if (sidecarDir) {
+      const signedMachO = process.argv.includes('--sidecar-signed');
+      verifySidecarDirectory(manifest, path.resolve(sidecarDir), { signedMachO });
+      // --sidecar-signed 把 Mach-O 的哈希对账换成签名对账，不是免掉。这里立刻把换上来的那道
+      // 检查真跑掉：漏跑就等于净放宽一道安全门。
+      if (signedMachO) assertMachOSignatures(manifest, path.resolve(sidecarDir));
+    }
   } else if (sidecarDir) {
     throw new Error('--sidecar-dir requires --manifest');
   }

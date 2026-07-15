@@ -158,6 +158,45 @@ describe('Poppler release hard gate', () => {
     expect(() => verifySidecarDirectory(value, sidecar)).toThrowError(expect.objectContaining({ code: 'sidecar_file_mismatch' }));
   });
 
+  // 代码签名会改写 Mach-O 字节，而 manifest 的哈希来自没有签名证书的 promotion workflow，
+  // 永远是未签名的：「过 Apple 公证」与「逐字节等于 manifest」互斥，不可能同时满足
+  // （2026-07-15 v0.27.2 真撞上，pdftoppm 签完就对不上账）。signedMachO 模式把 Mach-O 的
+  // 哈希对账换成签名对账，但绝不放宽非 Mach-O。
+  it('tolerates code-signed Mach-O byte drift only in signed mode', () => {
+    const sidecar = makeSidecar();
+    const value = manifest(sidecar);
+    value.files[0] = { ...value.files[0], kind: 'mach-o', arch: 'arm64' } as (typeof value.files)[number];
+    // 模拟签名：codesign 会把签名塞进二进制，字节与长度都变。
+    fs.writeFileSync(path.join(sidecar, 'bin/pdftoppm'), 'binary+codesignature');
+    fs.chmodSync(path.join(sidecar, 'bin/pdftoppm'), 0o755);
+
+    expect(() => verifySidecarDirectory(value, sidecar))
+      .toThrowError(expect.objectContaining({ code: 'sidecar_file_mismatch' }));
+    expect(verifySidecarDirectory(value, sidecar, { signedMachO: true })).toEqual({ fileCount: 3 });
+  });
+
+  it('never relaxes non-Mach-O payload in signed mode', () => {
+    const sidecar = makeSidecar();
+    const value = manifest(sidecar);
+    value.files[0] = { ...value.files[0], kind: 'mach-o', arch: 'arm64' } as (typeof value.files)[number];
+    // 许可证正文被改动，与签名无关——signed 模式照样必须拦。
+    fs.writeFileSync(path.join(sidecar, 'compliance/licenses/poppler/COPYING'), 'tampered license text');
+
+    expect(() => verifySidecarDirectory(value, sidecar, { signedMachO: true }))
+      .toThrowError(expect.objectContaining({ code: 'sidecar_file_mismatch' }));
+  });
+
+  it('still enforces file mode on signed Mach-O', () => {
+    const sidecar = makeSidecar();
+    const value = manifest(sidecar);
+    value.files[0] = { ...value.files[0], kind: 'mach-o', arch: 'arm64' } as (typeof value.files)[number];
+    // 签名不动权限位：pdftoppm 丢了 0755 就不可执行，signed 模式也必须拦。
+    fs.chmodSync(path.join(sidecar, 'bin/pdftoppm'), 0o644);
+
+    expect(() => verifySidecarDirectory(value, sidecar, { signedMachO: true }))
+      .toThrowError(expect.objectContaining({ code: 'sidecar_file_mismatch' }));
+  });
+
   it('allows only the lock-pinned embedded manifest outside the sidecar file list', () => {
     const sidecar = makeSidecar();
     const value = manifest(sidecar);

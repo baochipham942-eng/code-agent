@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.2] - 2026-07-15
+
+### Added
+
+- **ADR-040 artifact locator P0 契约地基**：`ArtifactLocatorV1` + 写前 guard（A1/A2/A3），预览坐标与编辑工具坐标从此对账；定位不到时 fail-closed 而非静默改错。（#379）
+- **ADR-040 P1 locator 补齐**：PPT presentation package index resolver、Word 段落 locator、上传 PPT 截图选页、生成 PPT producer 切 resolver、locator telemetry。（#385）
+- **Poppler sidecar 随包分发**：`pdftoppm` 随包，PPT/PDF 多页截图在干净用户机上开箱即用；`pdfToImages` 数值定序。（#380）
+- **Poppler 不可变发版硬门**：双架构制品锁、promotion workflow、源码/许可证/manifest/hash 全链校验，formal release fail-closed。（#385）
+- **Poppler 候选发布链**：`promote-poppler-sidecar.yml` 人工派发发布到项目控制的不可变 OSS 前缀 `poppler-sidecar/26.07.0/`，产出 ready lock 供人复核；发布权限与候选构建刻意分离（`build-poppler-sidecar.yml` 断言 `not.toContain('ossutil')`）。verify job 在双原生 runner 真下载 + 过完整 formal gate。（#390）
+
+### Changed
+
+- **Poppler 26.02.0_1 → 26.07.0，依赖闭包钉到单一 homebrew-core 快照**（`9fd96c356`）。此前 lock 只钉 `poppler.rb` 一个文件，17 个依赖仍由 runner 当下的 brew 解析，两架构因此编出不同版本（jpeg-turbo 3.2.0 vs 3.1.4.1、gpgme 2.1.2 vs 2.1.1、libtiff 4.7.2 vs 4.7.1_1）。钉回原 2026-02 快照不可行：那批 formula 用的 `no_autobump! because: :requires_manual_review` 已被 Homebrew 6.x 移除。（#392）
+- **ADR-040 C2a 许可证按 26.07.0 重核**：组件集合不变（17 个），但 Poppler 声明从 `GPL-2.0-only` 变为 `GPL-2.0-only OR GPL-3.0-only`，明确择 GPL-2.0-only。分发清单表改由真实候选生成（旧表列着从未随包的 WebP、自称 18 个组件）。新增两条重新评估触发器：lock 版本/commit 变动、组件 `declaredLicense` 与记录不符。（#392）
+- **表格上下文带真实行号**：模型自推坐标那条链不再靠数行。（#381）
+- **few-shot 选择器不再对产物任务失明**：PPT 任务不再匹配到全编程题语料库；产物意图检测按强/弱信号分级，放开表格/文档/设计三类。（#378、#382）
+- **产物任务默认开场改为先落骨架**：常驻层去编程化，完成条件不再写死「改了代码」；新增 `no_stall_before_artifact` 开场形状断言。（#384、#386）
+- **CI runner 钉版**：release.yml 与 build-poppler-sidecar.yml 的 macOS runner 全部钉死到具体版本，artifact actions 提到 Node 24。浮动 runner 迁移会静默换掉工具链，已 promote 的哈希将无法复现。（#387、#390）
+
+### Fixed
+
+- **随附源码必须对应实物（GPL §3）**：合规收集与构建分属两个 step/shell，`HOMEBREW_NO_INSTALL_FROM_API` 仅在 `fetch-poppler.sh` 内 export，收集侧 brew 因此退回 JSON API 抓到别的版本源码（实测「二进制 poppler 26.07.0 / 源码 26.06.0」）。改为 job 级 env + `HOMEBREW_NO_AUTO_UPDATE=1`，并新增源码↔二进制版本对账门（剥离 brew `_N` 重打包后缀）。（#392）
+- **跨架构组件版本对账门**：`assertCrossPlatformComponentParity` 在造 lock 前逐个比对两架构组件版本，不一致即拒绝 promote。（#392）
+- **合规收集丢弃空的上游许可证占位**：zstd 上游 `build/LICENSE` 是 0 字节，撞上清单 bytes 正整数断言；筛完一个不剩时仍 fail-closed。（#388）
+- **清单 runner 白名单与 promotion matrix 绑死**：两处分居两个文件、无同步保证，改单边会让候选一律判非原生且要等 6 分钟编译完才炸。（#391）
+- **定点反馈坐标对账**：Excel 两维错位根治 + 验收盲区重建。（#377）
+- **打包态首装更新链路**：web host 初始化 UpdateService，runtime-assets 签名长期有效。（#389）
+- **poppler 发版链纳入 swarm-ci path 过滤**：lock 是 release.yml 真读的数据，此前改它触发不到任何 CI（lock 翻 ready 的 PR 实测 `no checks reported`）。（#393）
+
 ## [0.27.1] - 2026-07-14
 
 ### Added

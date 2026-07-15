@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { load as loadYaml } from 'js-yaml';
 import {
   PopplerReleaseGateError,
   buildReadyPopplerLock,
@@ -91,7 +93,7 @@ function manifest(sidecarDir: string) {
     popplerBrewVersion: '26.02.0_1',
     nativeBuild: {
       runnerKind: 'github-actions',
-      runnerLabel: 'macos-latest',
+      runnerLabel: 'macos-15',
       machineArchitecture: 'arm64',
       rosettaTranslated: false,
       workflow: 'build-poppler-sidecar.yml',
@@ -292,6 +294,31 @@ describe('Poppler release hard gate', () => {
     });
     return { 'darwin-arm64': entry(), 'darwin-x64': entry(), ...overrides };
   }
+
+  it('keeps the promotion runner matrix and the manifest runner allowlist in lockstep', () => {
+    // 两处必须一致却分居两个文件：workflow 的 matrix 决定候选实际跑在哪个 runner，
+    // validatePopplerManifest 里钉死了它认哪个标签。只改一边，候选会一律判非原生——
+    // 而且要等 6 分钟真编译完才在最后一步炸（2026-07-15 真踩过）。这条把两边绑死。
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    const workflow = loadYaml(fs.readFileSync(path.join(repoRoot, '.github/workflows/build-poppler-sidecar.yml'), 'utf8'));
+    const matrix = workflow.jobs.build.strategy.matrix.include;
+    expect(matrix.map((entry) => entry.platform)).toEqual(['darwin-arm64', 'darwin-x64']);
+
+    for (const entry of matrix) {
+      const candidate = manifest(makeSidecar());
+      candidate.platform = entry.platform;
+      candidate.nativeBuild.runnerLabel = entry.runner;
+      candidate.nativeBuild.machineArchitecture = entry.uname_arch;
+      for (const file of candidate.files) {
+        if (file.kind === 'mach-o') file.arch = entry.uname_arch;
+      }
+
+      expect(
+        () => validatePopplerManifest(candidate, { expectedPlatform: entry.platform, expectedVersion: '26.02.0_1' }),
+        `${entry.platform}: workflow runs on '${entry.runner}' but the manifest allowlist rejects it`,
+      ).not.toThrow();
+    }
+  });
 
   it('promotes a pending lock to ready with project-controlled URLs for both architectures', () => {
     const ready = buildReadyPopplerLock(lock('pending-promotion'), {

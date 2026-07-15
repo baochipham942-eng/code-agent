@@ -27,30 +27,31 @@
 - https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary
 - https://www.gnu.org/licenses/gpl-faq.en.html#AnonFTPAndSendSources
 
-## arm64 实际分发清单
+## 双架构实际分发清单（Poppler `26.07.0`）
 
-下表来自 `scripts/fetch-poppler.sh` 在本机 Homebrew Cellar 的实际传递闭包。版本必须随每个架构的正式构建重新生成证据，不能假定 x64 与本表一致。
+下表**由 2026-07-15 的真实 promotion 候选生成**（run 29411394063，双架构 manifest + source bundle），不是本机 Cellar 的推测。跨架构版本对账门已证两架构 18/18 组件版本一致，故一表通用；`declaredLicense` 一列直接取自各组件精确源码归档对应的 formula 声明。
 
-| 组件 / 实际版本 | 随包文件 | 保守许可证口径 | 发版义务要点 |
+> 上一版本表列出 WebP 且自称「18 个实际组件」，而实物从来只有 17 个、不含 WebP——手写表与实物脱节。此表改由制品生成，任何版本/许可证变化都会在下一次 promotion 的复核里显形。
+
+| 组件 / 实际版本 | 随包文件 | 声明许可证 | 发版义务要点 |
 |---|---|---|---|
-| Poppler `26.02.0_1` | `pdftoppm`、`libpoppler.157.0.0.dylib` | GPL-2.0-only | 随包保留 GPLv2 全文、版权/免责信息；提供精确对应源码和控制编译/安装的脚本。GPLv2 §3 明确把这些脚本计入源码（https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html#section3）。 |
-| Fontconfig `2.17.1` | `libfontconfig.1.dylib` | HPND / Unicode / MIT 系列复合许可证 | 保留上游版权、许可与免责文本；精确文本从该版本源码包提取，不能只写 SPDX 简称。 |
-| FreeType `2.14.3` | `libfreetype.6.dylib` | FTL | 随包保留 FreeType License 全文和要求的 acknowledgement；如选择 GPL 替代路径需法务明确，不默认切换。 |
-| libpng `1.6.56` | `libpng16.16.dylib` | libpng-2.0 | 保留版权、许可与免责文本。 |
-| GPGME++ `2.0.0` | `libgpgmepp.7.0.0.dylib` | LGPL-2.1-or-later | 明示使用该库、附 LGPL 全文、提供对应源码，并保证用户替换兼容共享库及为调试修改而逆向的权利。 |
-| GPGME `2.0.1` | `libgpgme.45.dylib` | LGPL-2.1-or-later | 同上。 |
-| libassuan `3.0.2` | `libassuan.9.dylib` | 库文件按 LGPL-2.1-or-later；源码包另含 GPL/FSFULLR 文件 | 必须按实际库文件的版权头和源码包许可证核对，不能把 formula 聚合许可证直接当最终 NOTICE。 |
-| libgpg-error `1.58` | `libgpg-error.0.dylib` | LGPL-2.1-or-later | 同 LGPL 义务。 |
-| GNU gettext `1.0` | `libintl.8.dylib` | `libintl` 按 LGPL-2.1-or-later；源码包其他工具含 GPL | 只分发 `libintl`，仍需从精确版本源码核实文件级许可证并提供对应源码。 |
-| NSS `3.120_1` | `libnss3`、`libnssutil3`、`libsmime3`、`libssl3` | MPL-2.0 | 告知用户源码获取地址，保证 MPL 覆盖源码及时可得，不限制其源码权利；保留源码内 notice。MPL §3.2：https://www.mozilla.org/en-US/MPL/2.0/#distribution-of-executable-form |
-| NSPR `4.38.2` | `libnspr4`、`libplc4`、`libplds4` | MPL-2.0 | 同上。 |
-| libjpeg-turbo `3.1.4.1` | `libjpeg.8.3.2.dylib` | IJG / zlib / BSD-3-Clause 复合 | 保留精确版本的全部版权、许可与免责文本。 |
-| Little CMS `2.18` | `liblcms2.2.dylib` | MIT | 保留版权、许可与免责文本。 |
-| XZ Utils `5.8.3` | `liblzma.5.dylib` | `liblzma` 以 0BSD 为主；源码包含 GPL 文件 | 按库文件版权头核最终 NOTICE；不要把整个源码包的 GPL 工具误标为随包库许可证。 |
-| OpenJPEG `2.5.4` | `libopenjp2.2.5.4.dylib` | BSD-2-Clause | 保留版权、许可与免责文本。 |
+| poppler `26.07.0` | `pdftoppm`、`libpoppler.162.0.0.dylib` | GPL-2.0-only OR GPL-3.0-only | **上游给的是二选一，Agent Neo 择 GPL-2.0-only**（依据见许可证判断依据文档）。随包保留 GPLv2 全文、版权/免责信息；提供精确对应源码和控制编译/安装的脚本。GPLv2 §3 明确把这些脚本计入源码（https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html#section3）。 |
+| fontconfig `2.18.1` | `libfontconfig.1.dylib` | HPND-sell-variant AND Unicode-3.0 AND MIT-Modern-Variant AND MIT AND LicenseRef-Homebrew-public-domain | 保留上游版权、许可与免责文本；精确文本从该版本源码包提取，不能只写 SPDX 简称。 |
+| freetype `2.14.3` | `libfreetype.6.dylib` | FTL | 随包保留 FreeType License 全文和要求的 acknowledgement；如选择 GPL 替代路径需法务明确，不默认切换。 |
+| gettext `1.0` | `libintl.8.dylib` | GPL-3.0-or-later AND LGPL-2.1-or-later | 只分发 `libintl`（按 LGPL-2.1-or-later），源码包其他工具含 GPL。仍需从精确版本源码核实文件级许可证并提供对应源码。 |
+| gpgme `2.1.2` | `libgpgme.45.dylib` | LGPL-2.1-or-later | 明示使用该库、附 LGPL 全文、提供对应源码，并保证用户替换兼容共享库及为调试修改而逆向的权利。 |
+| gpgmepp `2.1.0` | `libgpgmepp.7.1.0.dylib` | LGPL-2.1-or-later | 同上。 |
+| jpeg-turbo `3.2.0` | `libjpeg.8.3.2.dylib` | IJG AND Zlib AND BSD-3-Clause | 保留精确版本的全部版权、许可与免责文本。 |
+| libassuan `3.0.2` | `libassuan.9.dylib` | LGPL-2.1-or-later AND GPL-3.0-or-later AND FSFULLR | 库文件按 LGPL-2.1-or-later；源码包另含 GPL/FSFULLR 文件。必须按实际库文件的版权头和源码包许可证核对，不能把 formula 聚合许可证直接当最终 NOTICE。已不是 poppler 的直接依赖，仍经 gpgme 传递引入。 |
+| libgpg-error `1.61` | `libgpg-error.0.dylib` | LGPL-2.1-or-later | 同 LGPL 义务。 |
+| libpng `1.6.58` | `libpng16.16.dylib` | libpng-2.0 | 保留版权、许可与免责文本。 |
 | libtiff `4.7.1_1` | `libtiff.6.dylib` | libtiff | 保留版权、许可与免责文本。 |
-| WebP `1.6.0` | `libwebp.7.2.0`、`libsharpyuv.0.1.2` | BSD-3-Clause | 保留版权、许可与免责文本。 |
-| Zstandard `1.5.7_1` | `libzstd.1.5.7.dylib` | 对该库选择 BSD 路径；源码包另有 GPL 选项和 BSD/MIT 文件 | NOTICE 明确采用的许可证路径并保留相关文本。 |
+| little-cms2 `2.19` | `liblcms2.2.dylib` | MIT | 保留版权、许可与免责文本。 |
+| nspr `4.39` | `libnspr4.dylib`、`libplc4.dylib`、`libplds4.dylib` | MPL-2.0 | 告知用户源码获取地址，保证 MPL 覆盖源码及时可得，不限制其源码权利；保留源码内 notice。MPL §3.2：https://www.mozilla.org/en-US/MPL/2.0/#distribution-of-executable-form |
+| nss `3.125` | `libnss3.dylib`、`libnssutil3.dylib`、`libsmime3.dylib`、`libssl3.dylib` | MPL-2.0 | 同上。 |
+| openjpeg `2.5.4` | `libopenjp2.2.5.4.dylib` | BSD-2-Clause | 保留版权、许可与免责文本。 |
+| xz `5.8.3` | `liblzma.5.dylib` | 0BSD AND GPL-2.0-or-later | `liblzma` 以 0BSD 为主；源码包含 GPL 文件。按库文件版权头核最终 NOTICE；不要把整个源码包的 GPL 工具误标为随包库许可证。 |
+| zstd `1.5.7_1` | `libzstd.1.5.7.dylib` | (BSD-3-Clause OR GPL-2.0-only) AND BSD-2-Clause AND MIT | 对该库选择 BSD 路径；NOTICE 明确采用的许可证路径并保留相关文本。 |
 
 LGPL v2.1 §6 要求显著告知、附许可证，并通过对应源码/可重链接材料或可替换共享库机制满足用户修改权；当前 bundle 使用独立 dylib，技术上保留了替换机制，但最终包的签名、公证和运行时加载是否构成实际限制需要法务与发布工程共同确认：https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html#section6
 
@@ -69,7 +70,7 @@ release-assets/
 
 每个 source bundle 至少包含：
 
-1. 18 个实际组件的精确上游源码归档，不使用会漂移到最新版的首页链接；Poppler `26.02.0` 的官方历史归档存在于 https://poppler.freedesktop.org/releases.html 。
+1. 17 个实际组件的精确上游源码归档，不使用会漂移到最新版的首页链接；Poppler `26.07.0` 的官方历史归档存在于 https://poppler.freedesktop.org/releases.html 。每份归档的版本必须与随包二进制的版本一致——源码清单硬门会逐个组件校验，对不上即 fail-closed（2026-07-15 真拦下过「二进制 26.07.0 / 源码 26.06.0」）。
 2. 每份源码归档的 SHA-256、上游 URL、组件版本、随包二进制映射和许可证文件路径。
 3. 构建 Poppler bottle 所用的 Homebrew formula / patch / build metadata，以及仓内 `scripts/fetch-poppler.sh` 和本次 install-name 重定位说明。GPLv2 §3 把控制编译和安装的脚本列入 complete source。
 4. 最终 arm64 / x64 sidecar 的文件清单、架构、SHA-256、`otool -L` 输出和自检结果。

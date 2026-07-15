@@ -1,10 +1,24 @@
 # ADR-040 — Artifact Locator 契约：预览定点与编辑目标统一对账
 
-- **状态**: Accepted（2026-07-14 产品负责人拍板 D1–D6；D3 否决原推荐、改为截图优先，详见「拍板项」）
+- **状态**: Accepted；P0 已在 `main`，P1 功能候选已完成但尚未合入 `main`；Poppler 正式分发仍为 stop-ship
 - **日期**: 2026-07-14
 - **产品边界**: Agent Neo 是以方案、PPT、表格、文档等产物为主轴的 cowork 人机协作产品；默认操作者不会读代码，也不应承担坐标换算和误改排查成本。
-- **基线**: `fix/attachment-spreadsheet-filepath` @ `516daef87`；保留 `3e6575b40`、`aa66f25dc`、`6ac3d8530`、`516daef87`，不改 `DocEdit` / `ppt_edit` 工具实现。
+- **设计基线**: `fix/attachment-spreadsheet-filepath` @ `516daef87`；保留 `3e6575b40`、`aa66f25dc`、`6ac3d8530`、`516daef87`，不改 `DocEdit` / `ppt_edit` 工具实现。
+- **P1 集成候选**: `codex/adr040-p1-integration` @ `9519532e866fe004a7d877d128fe2fa3bb011f41`（已推远端；未建 PR、未合 `main`）
 - **相关**: `src/shared/livePreview/localityFeedback.ts`、`src/host/ipc/settings.ipc.ts`、`src/host/ipc/workspaceArchive.ipc.ts`、`src/host/tools/modules/document/docxEditCore.ts`、`src/host/tools/modules/network/pptEdit.ts`
+
+## 实施状态（2026-07-15）
+
+| 范围 | 当前证据 | 结论 |
+|---|---|---|
+| C1 / C2b / C2c / C3 | presentation package resolver、上传与 Workspace 共用 picker、截图缓存、generated PPT producer 已进入集成分支 | P1 PPT 功能候选完成 |
+| B1 / B2 | `document.xml` 真实段落坐标、复合指纹 resolver 与 `DocumentBlock` 接线已进入集成分支 | P1 Word 功能候选完成 |
+| D2 | resolved / stale / blocked reason 遥测已进入集成分支，正文与文件内容不落 telemetry | P1 可观测性候选完成 |
+| C2a release closure | 不可变 arm64/x64 制品锁、完整 source/license/manifest/hash gate、原生 Intel/Rosetta 约束已落在 `9519532e8` | 代码门完成；外部 promotion 证据未完成 |
+
+功能集成 HEAD `40f9b296…` 已有 12 个相关测试文件 / 164 tests、全量 1482 files / 13366 tests / 0 failed，以及 typecheck、knip 和结构门证据。发版硬门提交 `9519532e8` 另有 36 个相关门禁测试、ESLint、typecheck、shell syntax 和结构门证据。
+
+当前不能宣称 release-ready：Poppler lock 仍为 `pending-promotion`；新 promotion workflow 尚未进入默认分支，GitHub 首次 `workflow_dispatch` 返回 workflow-not-found，双架构真实 runner、不可变 HTTPS 托管、ready lock、正式签名公证和安装版验证均未完成。formal gate 在该状态下失败是预期行为。
 
 ## 问题与证据基线
 

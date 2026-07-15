@@ -96,6 +96,8 @@
 | 038 | RuntimeContext 拆袋（共享可变袋分批收敛为切片状态） | accepted |
 | 040 | Artifact Locator 契约（预览定点与编辑目标统一对账） | accepted |
 
+> **ADR-040 执行状态（2026-07-15）**：P1 Word / PPT locator、共享 picker 与 telemetry 已在 `codex/adr040-p1-integration@9519532e8` 形成并推送候选，尚未经 `ship` 合入 `main`。Poppler 双架构不可变分发代码门已落地，但 lock 仍为 `pending-promotion`，真实 arm64 / `macos-15-intel` promotion、HTTPS 托管、正式签名公证与安装版验证未完成，当前仍 stop-ship。
+
 ---
 
 ## 快速参考

@@ -3,6 +3,7 @@
 - **状态**：方案 A 已批准；发版等待双架构不可变制品 promotion
 - **证据日期**：2026-07-15
 - **适用基线**：`c2774c2730d5ba7385809ad24935530bd4080286`；CI 接线修复另见本分支提交 `b01140175aa64d9630f86e79ab661adaae7be881`
+- **当前候选**：`codex/adr040-p1-integration` @ `9519532e866fe004a7d877d128fe2fa3bb011f41` 已推远端，尚未建 PR / 合入默认分支
 - **发布身份**：公开材料统一使用 `Agent Neo project`，不得包含项目维护者或内部审核人员的姓名、个人邮箱、本机路径或主机名。
 
 ## 产品判断
@@ -110,9 +111,10 @@ release-assets/
 
 ## 当前 stop-ship 项
 
-1. **不可变托管**：arm64/x64 的 manifest、sidecar archive、complete-source bundle 尚未上传到稳定 HTTPS 地址并回填 lock。
-2. **x64 原生证据**：必须由 `macos-15-intel` promotion run 产出，manifest 记录 run id、源码 SHA、`x86_64` 和 `rosettaTranslated=false`。
-3. **完整合规包**：每个实际组件的精确源码归档、formula、install receipt、许可证全文和二进制来源映射必须由构建脚本生成并校验。
-4. **正式 DMG**：同源 unsigned UDZO A/B 已完成，Poppler 的实测压缩增量是 3.65 MiB；正式签名、公证和安装版验证仍需在 ready lock 后运行。
+1. **workflow 注册**：`build-poppler-sidecar.yml` 是 feature branch 新增 workflow，尚未进入默认分支；GitHub 首次手动 dispatch 返回 workflow-not-found，因此当前没有可验收的真实 run id。
+2. **不可变托管**：arm64/x64 的 manifest、sidecar archive、complete-source bundle 尚未上传到稳定 HTTPS 地址并回填 lock。
+3. **x64 原生证据**：必须由 `macos-15-intel` promotion run 产出，manifest 记录 run id、源码 SHA、`x86_64` 和 `rosettaTranslated=false`。
+4. **完整合规包**：每个实际组件的精确源码归档、formula、install receipt、许可证全文和二进制来源映射必须由构建脚本生成并校验。
+5. **正式 DMG**：同源 unsigned UDZO A/B 已完成，Poppler 的实测压缩增量是 3.65 MiB；正式签名、公证和安装版验证仍需在 ready lock 后运行。
 
 以上任一项未完成，`release:poppler:verify` 和正式 tag workflow 都必须失败。不得用 `--skip-gates`、Rosetta、本机残留 Homebrew Cellar 或只上传 NOTICE 的方式放行。

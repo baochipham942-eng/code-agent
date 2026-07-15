@@ -13,12 +13,19 @@ type WorkflowStep = {
   if?: string;
   env?: Record<string, string>;
   run?: string;
+  uses?: string;
 };
 
 type WorkflowJob = {
   steps?: WorkflowStep[];
   needs?: string | string[];
   if?: string;
+  'runs-on'?: string;
+  strategy?: {
+    matrix?: {
+      include?: Array<Record<string, string>>;
+    };
+  };
 };
 
 type WorkflowFile = {
@@ -305,6 +312,105 @@ describe('macOS release fail-closed gates', () => {
     expect(stepNames).toContain('Upload review-only candidate');
     expect(workflowText).not.toContain('softprops/action-gh-release');
     expect(workflowText).not.toContain('ossutil');
+  });
+
+  it('pins supported Node 24 actions and explicit macOS architecture runners', () => {
+    const workflow = readWorkflow('.github/workflows/release.yml');
+    const macJob = workflow.jobs?.['build-mac'];
+    const matrix = macJob?.strategy?.matrix?.include ?? [];
+
+    expect(matrix).toEqual([
+      { arch: 'arm64', runner: 'macos-15', swift_arch: 'arm64' },
+      { arch: 'x64', runner: 'macos-15-intel', swift_arch: 'x86_64' },
+    ]);
+    expect(macJob?.['runs-on']).toBe('${{ matrix.runner }}');
+    expect(workflow.jobs?.publish?.['runs-on']).toBe('macos-15');
+
+    const actions = Object.values(workflow.jobs ?? {})
+      .flatMap((job) => job.steps ?? [])
+      .map((step) => step.uses)
+      .filter((action): action is string => Boolean(action));
+
+    expect(actions.filter((action) => action === 'actions/upload-artifact@v6')).toHaveLength(3);
+    expect(actions.filter((action) => action === 'actions/download-artifact@v7')).toHaveLength(1);
+    expect(actions).not.toContain('actions/upload-artifact@v4');
+    expect(actions).not.toContain('actions/download-artifact@v4');
+    expect(Object.values(workflow.jobs ?? {}).map((job) => job['runs-on'])).not.toContain('macos-latest');
+    expect(matrix.map((entry) => entry.runner)).not.toContain('macos-latest');
+  });
+
+  it('keeps both macOS architectures on the signed runtime-assets release path', () => {
+    const workflow = readWorkflow('.github/workflows/release.yml');
+    const macSteps = workflow.jobs?.['build-mac']?.steps ?? [];
+    const stepNames = macSteps.map((step) => step.name);
+    const requiredSteps = [
+      'Import Developer ID certificate',
+      'Build signed Tauri updater bundle',
+      'Repack updater archive (clean AppleDouble + post-notarize state)',
+      'Re-sign repacked tar.gz with Tauri updater key',
+      'Upload tar.gz + sig + dmg to Aliyun OSS (versioned, per-arch keys)',
+      'Build and upload runtime assets',
+      'Verify published runtime assets',
+      'Stage release assets for publish job',
+      'Upload build artifacts',
+    ];
+
+    for (const name of requiredSteps) {
+      const step = macSteps.find((candidate) => candidate.name === name);
+      expect(step, `${name} must stay in the shared arm64/x64 matrix path`).toBeDefined();
+      expect(step?.if, `${name} must not be restricted to one architecture`).toBeUndefined();
+    }
+
+    for (let index = 1; index < requiredSteps.length; index += 1) {
+      expect(stepNames.indexOf(requiredSteps[index])).toBeGreaterThan(
+        stepNames.indexOf(requiredSteps[index - 1]),
+      );
+    }
+
+    const runtimeBuild = macSteps.find((step) => step.name === 'Build and upload runtime assets')?.run ?? '';
+    const runtimeVerify = macSteps.find((step) => step.name === 'Verify published runtime assets')?.run ?? '';
+    const signedBuild = macSteps.find((step) => step.name === 'Build signed Tauri updater bundle');
+    const stageAssets = macSteps.find((step) => step.name === 'Stage release assets for publish job')?.run ?? '';
+    const uploadArtifacts = macSteps.find((step) => step.name === 'Upload build artifacts');
+
+    expect(signedBuild?.env?.REQUIRE_NOTARIZATION).toBe('1');
+    expect(signedBuild?.run).toContain('bash scripts/tauri-release-bundle.sh');
+    expect(signedBuild?.run).toContain('npm run release:notarize-macos');
+    expect(signedBuild?.run).toContain('npm run release:verify-macos');
+    expect(runtimeBuild).toContain('RUNTIME_PLATFORM="darwin-${{ matrix.arch }}"');
+    expect(runtimeBuild).toContain('runtime-assets-manifest-${RUNTIME_PLATFORM}.json');
+    expect(runtimeVerify).toContain('--expected-platform "darwin-${{ matrix.arch }}"');
+    expect(runtimeVerify).toContain('onnxruntime-vad,playwright-browser-runtime');
+    expect(runtimeVerify).toContain('EXPECTED_RUNTIME_ASSETS="playwright-browser-runtime"');
+    expect(stageAssets).toContain('latest-${{ matrix.arch }}.json');
+    expect(stageAssets).toContain('${ARCHIVE_NAME}.sig');
+    expect(stageAssets).toContain('runtime-assets/*.json');
+    expect(stageAssets).toContain('runtime-assets/*.sha256');
+    expect(stageAssets).toContain('runtime-assets/*.tar.gz');
+    expect(uploadArtifacts?.uses).toBe('actions/upload-artifact@v6');
+  });
+
+  it('keeps publish merging both mac architectures before release and stable promotion', () => {
+    const workflow = readWorkflow('.github/workflows/release.yml');
+    const publishSteps = workflow.jobs?.publish?.steps ?? [];
+    const stepNames = publishSteps.map((step) => step.name);
+    const downloadIndex = stepNames.indexOf('Download build artifacts (both arches)');
+    const mergeIndex = stepNames.indexOf('Merge per-arch updater manifests (single latest.json, all platforms)');
+    const releaseIndex = stepNames.indexOf('Create GitHub Release');
+    const stableIndex = stepNames.indexOf('Promote to stable channel (latest.json + release.json)');
+    const mergeRun = publishSteps[mergeIndex]?.run ?? '';
+    const stable = publishSteps[stableIndex];
+
+    expect(downloadIndex).toBeGreaterThanOrEqual(0);
+    expect(mergeIndex).toBeGreaterThan(downloadIndex);
+    expect(releaseIndex).toBeGreaterThan(mergeIndex);
+    expect(stableIndex).toBeGreaterThan(releaseIndex);
+    expect(mergeRun).toContain("['darwin-aarch64', 'darwin-x86_64']");
+    expect(stable?.if).toBe("${{ !contains(github.ref_name, '-') }}");
+    expect(stable?.run).toContain('--runtime-assets-manifest-url-x64');
+    expect(stable?.run).toContain('--runtime-assets-manifest-sha-url-x64');
+    expect(stable?.run).toContain('stable/latest.json');
+    expect(stable?.run).toContain('stable/release.json');
   });
 
   it('keeps formal app releases fail-closed before app artifacts are published', () => {

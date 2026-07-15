@@ -33,11 +33,25 @@ function existsAt(rel) {
   return fs.existsSync(path.join(root, rel));
 }
 
+function hasRequiredControlPlanePublicKeys(rel) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'));
+    const keys = parsed?.keys && typeof parsed.keys === 'object' ? parsed.keys : {};
+    return ['production-2026-05-17', 'production-2026-06-15']
+      .every((keyId) => typeof keys[keyId] === 'string' && keys[keyId].trim().length > 0);
+  } catch {
+    return false;
+  }
+}
+
 function verifyPre() {
   console.log('[verify-windows] pre-bundle 资源检查');
   check('dist/bundled-node/node.exe', existsAt('dist/bundled-node/node.exe'));
   check('dist/web/webServer.cjs', existsAt('dist/web/webServer.cjs'));
-  check('dist/web/control-plane-public-keys.json', existsAt('dist/web/control-plane-public-keys.json'));
+  check(
+    'dist/web/control-plane-public-keys.json (production compatibility set)',
+    hasRequiredControlPlanePublicKeys('dist/web/control-plane-public-keys.json'),
+  );
   check('dist/renderer/index.html', existsAt('dist/renderer/index.html'));
   check('dist/native/better-sqlite3 (system-node ABI rebuild)', existsAt('dist/native/better-sqlite3'));
   check('scripts/rtk.exe', existsAt('scripts/rtk.exe'));

@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.27.2",
+  "version": "0.27.3",
   "packageManager": "npm@11.12.1",
   "description": "Local AI cowork workspace with multi-agent orchestration",
   "type": "module",

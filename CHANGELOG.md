@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.3] - 2026-07-16
+
+### Fixed
+
+- **Windows leg 补发**：v0.27.2 发版时 `build-windows` 挂在 poppler 资源洞上，publish 按设计降级 mac-only 照发，导致 Release 只有 darwin-arm64 / darwin-x64 资产、零 Windows 资产。修复（#398：`../scripts/poppler` 进 `tauri-platform-config.mjs` 的 `MACOS_ONLY_PREFIXES`）晚于 tag，本版把 Windows 三平台矩阵补回。（#398）
+
 ## [0.27.2] - 2026-07-15
 
 ### Added

@@ -307,11 +307,28 @@ function hasControlPlaneSigningEnv() {
   return Boolean(privateKey && privateKey.trim() && keyId && keyId.trim());
 }
 
+const DEFAULT_RUNTIME_ASSETS_MANIFEST_TTL_SECONDS = 10 * 365 * 24 * 60 * 60;
+
+function getRuntimeAssetsManifestTtlSeconds() {
+  const raw = process.env.RUNTIME_ASSETS_MANIFEST_TTL_SECONDS;
+  if (!raw) return DEFAULT_RUNTIME_ASSETS_MANIFEST_TTL_SECONDS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error('RUNTIME_ASSETS_MANIFEST_TTL_SECONDS must be a positive number');
+  }
+  return parsed;
+}
+
 export function createRuntimeAssetsManifestEnvelope(manifest, { dryRun: isDryRun = false } = {}) {
   if (isDryRun && !hasControlPlaneSigningEnv()) {
     return manifest;
   }
-  return createControlPlaneEnvelopeFromEnv('runtime_assets_manifest', manifest);
+  // Runtime asset manifests are immutable, versioned release artifacts. The
+  // generic control-plane TTL defaults to one hour for live configuration and
+  // must not make a shipped installer stop working after release day.
+  return createControlPlaneEnvelopeFromEnv('runtime_assets_manifest', manifest, process.env, {
+    ttlSeconds: getRuntimeAssetsManifestTtlSeconds(),
+  });
 }
 
 const runtimeRoot = path.resolve(readArg('--root') || process.env.TAURI_RUNTIME_ROOT || defaultRuntimeRoot);

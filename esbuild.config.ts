@@ -56,6 +56,11 @@ const CONTROL_PLANE_PUBLIC_KEY_ENV_NAMES = new Set([
   'CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY',
   'CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE',
 ]);
+const BUNDLED_CONTROL_PLANE_PUBLIC_KEYS_FILE = path.join(
+  process.cwd(),
+  'config',
+  'control-plane-public-keys.json',
+);
 
 function cleanEnvValue(value: string): string {
   const trimmed = value.trim();
@@ -112,7 +117,13 @@ function readPublicKeysFile(filePath: string): Record<string, string> {
 
 function readControlPlanePublicKeysFromEnv(): Record<string, string> {
   const envFileValues = readPublicKeyEnvFiles();
-  const publicKeys: Record<string, string> = {};
+  // Production verification keys are public distribution material. Keep the
+  // compatibility set in source so a stale CI secret cannot silently remove a
+  // key from the packaged app; env/file inputs may add or deliberately replace
+  // entries for non-production channels.
+  const publicKeys: Record<string, string> = existsSync(BUNDLED_CONTROL_PLANE_PUBLIC_KEYS_FILE)
+    ? readPublicKeysFile(BUNDLED_CONTROL_PLANE_PUBLIC_KEYS_FILE)
+    : {};
 
   const filePath = getPublicKeyEnv('CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS_FILE', envFileValues);
   if (filePath) {

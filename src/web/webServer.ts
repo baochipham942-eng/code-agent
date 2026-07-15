@@ -415,8 +415,10 @@ async function initializeServices(): Promise<void> {
   // 1. 初始化 ConfigService（main 模块的单例，IPC handler 通过 getConfigService() 获取）
   const { initConfigService } = await import('../host/services/core/configService');
   const configService = initConfigService();
-  await configService.initialize();
-  logger.info('ConfigService initialized');
+  await configService.initialize().then(() => logger.info('ConfigService initialized'));
+
+  // Initialize before exposing runtime preparation; SSE does not require mainWindow.
+  (await import('../host/app/updateServiceBootstrap')).ensureUpdateServiceInitialized(configService, (event) => broadcastSSE('update:event', event));
 
   // 1b. 按用户设置 replay 原生连接器（默认全空）
   try {

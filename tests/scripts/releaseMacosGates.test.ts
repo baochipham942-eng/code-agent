@@ -170,6 +170,9 @@ describe('macOS release fail-closed gates', () => {
     expect(verifyScript).toContain('spctl --assess --type execute');
     expect(verifyScript).toContain('spctl --assess --type open');
     expect(verifyScript).toContain('control-plane public keys file has no keys');
+    expect(verifyScript).toContain('production-2026-05-17');
+    expect(verifyScript).toContain('production-2026-06-15');
+    expect(verifyScript).toContain('control-plane public keys file is missing required keys');
     expect(verifyScript).toContain('verify_dmg_install_layout "${dmg_path}"');
     expect(verifyScript).toContain('hdiutil attach "${dmg_path}" -readonly -nobrowse -noautoopen');
     expect(verifyScript).toContain('"${mountpoint}/${APP_NAME}.app"');
@@ -1020,5 +1023,28 @@ describe('macOS release fail-closed gates', () => {
     const { sources } = readTauriResources();
 
     expect(sources).toContain('../dist/bundled-node');
+  });
+
+  // v0.26.4 起的 fresh-profile 首装事故：打包链原本只从 env 读 control-plane 公钥，
+  // CI secret 一旦缺失就静默产出一份没有生产公钥的 bundled key 文件，新用户首次下载
+  // 运行时资产直接点不动。修法是把生产兼容 key 集钉进源码当基线，env 只在其上叠加。
+  // 这两条守「基线在源码里」和「打包链真的以它起手」——只测签名 TTL 抓不到这一层。
+  it('keeps the production control-plane key baseline in source and seeds the bundle from it', () => {
+    const baseline = JSON.parse(readRepoFile('config/control-plane-public-keys.json')) as {
+      keys?: Record<string, string>;
+    };
+
+    // 与 verify-macos-release.sh / verify-windows-release.mjs 的必检 key 集同一份口径。
+    for (const keyId of ['production-2026-05-17', 'production-2026-06-15']) {
+      expect(baseline.keys?.[keyId], `${keyId} must stay in the shipped baseline`)
+        .toContain('BEGIN PUBLIC KEY');
+    }
+
+    // 打包链必须以该文件为基线，而不是从空对象起手——后者正是 v0.26.4 的 bug。
+    const buildConfig = readRepoFile('esbuild.config.ts');
+    expect(buildConfig).toContain("'control-plane-public-keys.json'");
+    expect(buildConfig).toMatch(
+      /publicKeys[^=]*=\s*existsSync\(BUNDLED_CONTROL_PLANE_PUBLIC_KEYS_FILE\)\s*\n?\s*\?\s*readPublicKeysFile\(BUNDLED_CONTROL_PLANE_PUBLIC_KEYS_FILE\)\s*\n?\s*:\s*\{\}/,
+    );
   });
 });

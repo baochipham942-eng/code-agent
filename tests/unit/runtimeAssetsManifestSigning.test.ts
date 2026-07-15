@@ -167,6 +167,9 @@ describe('runtime assets manifest signing', () => {
     const keys = createKeyPair();
     const remote = buildSignedManifest(root, keys);
 
+    expect(Date.parse(remote.envelope.expiresAt) - Date.parse(remote.envelope.issuedAt!))
+      .toBe(10 * 365 * 24 * 60 * 60 * 1000);
+
     await withPublicKeys(keys, async () => {
       const service = makeUpdateService(remote);
       const info = await service.resolveRuntimeAssetsUpdateInfo({

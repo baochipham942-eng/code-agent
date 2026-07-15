@@ -223,7 +223,9 @@ GET https://agentneo.vercel.app/api/prompts?gen=all
 
 `/api/v1/control-plane?artifact=cloud_config|prompt_registry|capability_registry|agent_engine_models` 复用同一签名逻辑。`agent_engine_models` 是 `agent_engine_model_catalog` 的短别名，给客户端读取 Codex / Claude 外部 engine 模型目录用；`/api/v1/agent-engine-models` 作为同类 envelope 的专用入口保留。
 
-打包链会从 `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS` 或 `CODE_AGENT_CONTROL_PLANE_KEY_ID + CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY` 生成 `dist/web/control-plane-public-keys.json`，并通过 Tauri resources 带进客户端。运行时优先使用 env 公钥；env 缺失时读取该 bundled public key file。
+打包链以 `config/control-plane-public-keys.json` 里的生产兼容 key 集为基线，再合并 `CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS` 或 `CODE_AGENT_CONTROL_PLANE_KEY_ID + CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY`，生成 `dist/web/control-plane-public-keys.json` 并通过 Tauri resources 带进客户端。运行时优先使用 env 公钥；env 缺失时读取该 bundled public key file。轮换时先加入新 key、保留旧 key 覆盖兼容窗口，确认旧签名资产退出后再单独移除旧 key。
+
+版本化 runtime-assets manifest 是不可变发布资产，默认签名有效期为 10 年，可通过 `RUNTIME_ASSETS_MANIFEST_TTL_SECONDS` 显式调整。它不继承 live control-plane 的短 TTL；否则发布时生成的 manifest 会在一小时后过期，fresh-profile 首次使用将永久无法安装组件。
 
 ### Agent Engine 模型目录
 

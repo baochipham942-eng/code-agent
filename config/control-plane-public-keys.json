@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "keys": {
+    "production-2026-05-17": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWtR3IMKgdeV996c1d+WWor+7gcXgOZhXS9AO7LYSUwU=\n-----END PUBLIC KEY-----",
+    "production-2026-06-15": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAchNHJwJsWVK+uHChtEgurtrcwSDD+We9/opw9ZYIvIc=\n-----END PUBLIC KEY-----"
+  }
+}

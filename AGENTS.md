@@ -23,3 +23,18 @@ This workspace inherits the always-on collaboration rules from `/Users/linchen/A
 3. **push 后播报 HEAD sha**：任何 push（分支或 main）完成后，在交接/汇报里写明 `git rev-parse HEAD` 的 sha，接力方以 sha 对齐，不以分支名对齐（分支名会被移动）。
 4. **验收一律 origin/main 新鲜构建**：验收/dogfood 的对象必须是 `origin/main`（或目标分支）拉下来的新鲜构建，逐层确认构建产物指纹（bundle 文件名 / 版本号）与源码一致；禁止拿本地残留构建、renderer 热更新缓存、旧安装包做验证结论。
 
+## 落地变更统一走 `ship`（机器级命令，已在 PATH）
+
+推分支、开 PR、合并 main 一律用 `ship`，不要手工 `git push origin main` 或 `gh pr merge`：
+
+```bash
+ship pr --title "..."     # 在 feature 分支的干净工作树里：推分支 + 开 PR
+ship merge <pr#>          # 串行合并队列：等 GitHub CI 全绿 + 不落后 main 才 squash 合并
+ship cleanup --branch <B> --worktree <PATH>   # 合并后清理（未合进 main 会拒删）
+```
+
+- 合并策略：无冲突 + CI 全绿 + 不落后 main（落后会自动 update-branch 重验，最多 3 轮）。其他进行中的分支不阻塞你。
+- 一切失败 fail-closed：ship 报错就停下如实汇报，禁止绕过（禁手工 merge、禁 `--force` 类替代）。
+- 熔断开关 `~/.ship/disabled` 是用户的紧急刹车，存在时自动化全停，不要删除。
+- 用法详情：`ship --help`。
+

@@ -116,15 +116,15 @@ export const RUNTIME_ASSET_DEFINITIONS: RuntimeAssetDefinition[] = [
     delivery: 'bundled',
     resourceName: 'Agent Neo Computer Use.app',
     resourceKind: 'directory',
-    version: '0.5.1',
+    version: '0.8.1',
     platforms: DARWIN_PLATFORMS,
     pinnedHashes: {
       'darwin-arm64': {
-        hash: '1b0d0138b0cb8ef0dcdeed1677473ed5bc4e1c3e99bae0e85a5fa945ac50323e',
+        hash: 'dc6f901b03be002a5b4137ceafd9d02cb0eb0df9265e771c6530e7cfc0a6a4f2',
         hashKind: 'pinnedArchiveSha256',
       },
       'darwin-x64': {
-        hash: '1b0d0138b0cb8ef0dcdeed1677473ed5bc4e1c3e99bae0e85a5fa945ac50323e',
+        hash: 'dc6f901b03be002a5b4137ceafd9d02cb0eb0df9265e771c6530e7cfc0a6a4f2',
         hashKind: 'pinnedArchiveSha256',
       },
     },

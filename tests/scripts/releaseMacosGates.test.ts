@@ -847,6 +847,7 @@ describe('macOS release fail-closed gates', () => {
   it('stages the CUA helper from a noindex source while preserving its packaged app path', () => {
     const { sources, targets, map } = readTauriResources();
     const fetchCuaDriver = readRepoFile('scripts/fetch-cua-driver.sh');
+    const launchCuaMcp = readRepoFile('scripts/lib/agent-neo-computer-use-mcp.sh');
     const stageCuaDriver = readRepoFile('scripts/stage-cua-driver-resource.sh');
     const cleanBundleApps = readRepoFile('scripts/tauri-clean-bundle-apps.sh');
     const gitignore = readRepoFile('.gitignore');
@@ -858,11 +859,37 @@ describe('macOS release fail-closed gates', () => {
     expect(sources.some((resource) => resource.startsWith('../scripts/Agent Neo Computer Use.app'))).toBe(false);
 
     expect(fetchCuaDriver).toContain('.tauri-resources.noindex');
+    expect(fetchCuaDriver).toContain('CUA_DRIVER_VERSION="0.8.1"');
+    expect(fetchCuaDriver).toContain('cua-driver-rs-v${CUA_DRIVER_VERSION}');
+    expect(fetchCuaDriver).toContain('dc6f901b03be002a5b4137ceafd9d02cb0eb0df9265e771c6530e7cfc0a6a4f2');
+    expect(fetchCuaDriver).toContain('codesign_with_timestamp_retry');
+    expect(fetchCuaDriver).toContain('FETCHED_UPSTREAM=1');
+    expect(fetchCuaDriver).toContain('agent-neo-computer-use-mcp.sh');
+    expect(fetchCuaDriver).toContain('LSEnvironment');
+    expect(fetchCuaDriver).toContain('cmp -s "$MCP_LAUNCHER_SOURCE" "$DEST_MCP_LAUNCHER"');
+    expect(fetchCuaDriver.indexOf('curl -fL --retry 3')).toBeLessThan(
+      fetchCuaDriver.indexOf('if [[ "$FETCHED_UPSTREAM" != "1" && -d "$DEST_APP" ]]'),
+    );
     expect(stageCuaDriver).toContain('LEGACY_APP');
     expect(stageCuaDriver).toContain('rm -rf "${LEGACY_APP}"');
     expect(cleanBundleApps).toContain('Agent Neo Computer Use');
     expect(cleanBundleApps).toContain('*/_up_/scripts/${HELPER_APP_NAME}.app');
     expect(gitignore).toContain('.tauri-resources.noindex/');
+
+    expect(launchCuaMcp).toContain('/usr/bin/open -n -g "$APP_DIR" --args serve');
+    expect(launchCuaMcp).toContain('CUA_DRIVER_RS_MCP_FORCE_PROXY=1');
+    expect(launchCuaMcp).toContain('com.agentneo.computeruse');
+    expect(launchCuaMcp).toContain('--socket "$SOCKET_PATH"');
+    expect(launchCuaMcp).not.toContain('-a CuaDriver');
+
+    const releaseWorkflow = readRepoFile('.github/workflows/release.yml');
+    const x64Workflow = readRepoFile('.github/workflows/build-x64-test.yml');
+    for (const workflow of [releaseWorkflow, x64Workflow]) {
+      expect(workflow).toContain('CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh');
+      expect(workflow.indexOf('Import Developer ID certificate')).toBeLessThan(
+        workflow.indexOf('Fetch and re-sign CUA driver 0.8.1'),
+      );
+    }
   });
 
   it('removes the macOS-only CUA helper from the Windows Tauri resource overlay', () => {

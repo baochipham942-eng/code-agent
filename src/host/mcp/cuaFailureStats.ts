@@ -31,7 +31,7 @@ const CLASSIFIER: Array<[CuaFailureCategory, RegExp]> = [
   ['lock', /另一个会话.*正在使用计算机/],
   ['permission', /permission|tcc|not granted|denied|screen recording/i],
   ['no_ax_tree', /(accessibility tree|ax).*(empty|unavailable)|empty.*accessibility tree|does not expose accessibility/i],
-  ['element', /stale|element.*not found|not found.*(element|index)|invalid.*element_index/i],
+  ['element', /stale|element.*not found|not found.*(element|index|token)|invalid.*element_(?:index|token)/i],
   ['timeout', /timed? ?out/i],
 ];
 

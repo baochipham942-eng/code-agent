@@ -36,10 +36,11 @@ import type {
 } from './types';
 import { isStdioConfig, isInProcessConfig, CUA_DRIVER_SERVER_NAME } from './types';
 import { buildCuaAgentCursorCapabilityForToolCall } from './cuaAgentCursor';
-import { gateCuaToolCall } from './cuaSessionLock';
+import { CUA_READONLY_TOOLS, gateCuaToolCall } from './cuaSessionLock';
 import { gateCuaBudget } from './cuaTrajectoryBudget';
 import { recordCuaFailure } from './cuaFailureStats';
 import { recordCuaResult } from './cuaNarration';
+import { isCuaStateV2Enabled } from './cuaStateConfig';
 import { getTelemetryService } from '../telemetry/telemetryService';
 import {
   createChildRunTraceContext,
@@ -93,6 +94,8 @@ export interface MCPToolCallOptions {
   abortSignal?: AbortSignal;
   /** 会话 ID（GAP-009: 超阈值输出落盘到 session 临时目录） */
   sessionId?: string;
+  /** Internal capability: only the stateful CUA facade may invoke raw driver tools. */
+  cuaStatefulFacade?: boolean;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -113,6 +116,26 @@ function buildCancelledToolResult(toolCallId: string): ToolResult {
   };
 }
 
+export function shouldSuppressCuaAutoReplay(
+  serverName: string,
+  toolName: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return serverName === CUA_DRIVER_SERVER_NAME
+    && isCuaStateV2Enabled(env)
+    && !CUA_READONLY_TOOLS.has(toolName);
+}
+
+export function shouldBlockRawCuaInvocation(
+  serverName: string,
+  options: MCPToolCallOptions | number,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return serverName === CUA_DRIVER_SERVER_NAME
+    && isCuaStateV2Enabled(env)
+    && (typeof options === 'number' || options.cuaStatefulFacade !== true);
+}
+
 /**
  * MCPClient 发出的事件
  * - 'capabilities-changed': server 通过 listChanged 通知动态增删了工具/资源/提示
@@ -129,6 +152,8 @@ export class MCPClient extends EventEmitter {
   private serverConfigs: Map<string, MCPServerConfig> = new Map();
   private serverStates: Map<string, MCPServerState> = new Map();
   private inProcessServers: Map<string, InProcessMCPServerInterface> = new Map();
+  /** Monotonic process-local generation; changes after every successful reconnect. */
+  private serverConnectionGenerations: Map<string, number> = new Map();
   private registry = new MCPToolRegistry();
   // 懒加载：正在连接中的服务器 Promise（防止重复连接）
   private connectingServers: Map<string, Promise<void>> = new Map();
@@ -414,6 +439,7 @@ export class MCPClient extends EventEmitter {
 
       this.clients.set(config.name, connected.client);
       this.transports.set(config.name, connected.transport);
+      this.bumpServerConnectionGeneration(config.name);
 
       // 更新状态
       if (state) {
@@ -461,6 +487,7 @@ export class MCPClient extends EventEmitter {
       }
 
       this.inProcessServers.set(config.name, server);
+      this.bumpServerConnectionGeneration(config.name);
       await this.registry.discoverInProcessCapabilities(config.name, server);
 
       if (state) {
@@ -487,6 +514,9 @@ export class MCPClient extends EventEmitter {
    * 断开服务器连接
    */
   async disconnect(serverName: string): Promise<void> {
+    // Invalidate state handles before awaiting transport shutdown. A concurrent
+    // act must never validate against a connection that is already closing.
+    this.bumpServerConnectionGeneration(serverName);
     const client = this.clients.get(serverName);
     const transport = this.transports.get(serverName);
 
@@ -720,6 +750,16 @@ export class MCPClient extends EventEmitter {
     return `${serverName}:${fingerprint}`;
   }
 
+  getServerConnectionGeneration(serverName: string): string | undefined {
+    const generation = this.serverConnectionGenerations.get(serverName);
+    return generation === undefined ? undefined : `${serverName}:${generation}`;
+  }
+
+  private bumpServerConnectionGeneration(serverName: string): void {
+    const current = this.serverConnectionGenerations.get(serverName) ?? 0;
+    this.serverConnectionGenerations.set(serverName, current + 1);
+  }
+
   createTaskProtocol(serverName: string, expectedServerIdentity: string): McpTaskProtocol | null {
     const client = this.clients.get(serverName);
     const actualIdentity = this.getServerIdentity(serverName);
@@ -815,6 +855,14 @@ export class MCPClient extends EventEmitter {
     const timeoutMs = typeof options === 'number' ? options : options.timeoutMs ?? 60000;
     const abortSignal = typeof options === 'number' ? undefined : options.abortSignal;
     const sessionId = typeof options === 'number' ? undefined : options.sessionId;
+    if (shouldBlockRawCuaInvocation(serverName, options)) {
+      return {
+        toolCallId,
+        success: false,
+        error: 'Raw cua-driver tools are internal while stateful computer_use is enabled',
+        metadata: { cuaStateFacadeRequired: true },
+      };
+    }
     if (abortSignal?.aborted) {
       return buildCancelledToolResult(toolCallId);
     }
@@ -939,7 +987,8 @@ export class MCPClient extends EventEmitter {
         errorMessage.includes('Session not found') ||
         errorMessage.includes('session expired');
 
-      // 连接错误时尝试重连+重试
+      // 连接错误时尝试重连。状态化 CUA 的写操作禁止自动重放：断连可能发生在
+      // 输入事件已送达但回执尚未返回的窗口，此时重试会造成双击/重复输入。
       const isConnectionError = isSessionExpired ||
         errorMessage.includes('timed out') ||
         errorMessage.includes('Connection closed') ||
@@ -951,10 +1000,15 @@ export class MCPClient extends EventEmitter {
           // 清除缓存的能力数据（session 过期意味着服务器重启了）
           this.toolDefinitionCache.delete(serverName);
         }
-        logger.warn(`MCP server ${serverName} connection issue, attempting reconnect and retry...`);
+        const suppressRetry = shouldSuppressCuaAutoReplay(serverName, toolName);
+        logger.warn(
+          suppressRetry
+            ? `MCP server ${serverName} connection issue; reconnecting without replaying ${toolName}`
+            : `MCP server ${serverName} connection issue, attempting reconnect and retry...`,
+        );
 
         const reconnectResult = await this.reconnect(serverName);
-        if (reconnectResult.success) {
+        if (reconnectResult.success && !suppressRetry) {
           logger.info(`Reconnected to ${serverName}, retrying tool call...`);
           const retryClient = this.clients.get(serverName);
           if (retryClient) {
@@ -966,11 +1020,13 @@ export class MCPClient extends EventEmitter {
         }
       }
 
+      const deliveryUnknown = shouldSuppressCuaAutoReplay(serverName, toolName) && isConnectionError;
       return {
         toolCallId,
         success: false,
         error: errorMessage,
         duration: Date.now() - startTime,
+        ...(deliveryUnknown ? { metadata: { cuaDeliveryUnknown: true } } : {}),
       };
     }
   }

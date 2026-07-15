@@ -29,6 +29,8 @@ import { computerUseModule } from './computerUse';
 import { screenshotModule } from './screenshot';
 import { guiAgentModule } from './guiAgent';
 import { ocrSearchModule } from './ocrSearch';
+import { cuaStatefulComputerUseModule } from './cuaStatefulComputerUse';
+import { isCuaStateV2Enabled } from '../../../mcp/cuaStateConfig';
 
 export const manifest: PluginManifest = {
   id: 'builtin.computerUse',
@@ -52,9 +54,12 @@ export async function activate(api: PluginAPI): Promise<void> {
   // 运行时互切」。cua 关闭时保留旧工具作回退。
   // screenshot / ocr_search 是通用视觉工具（非桌面控制冲突项），始终保留。
   const cuaEnabled = process.env.CODE_AGENT_ENABLE_CUA === '1';
+  const cuaStateV2Enabled = isCuaStateV2Enabled();
 
   // opt-out 前缀：保留原工具名，与历史 prompt / cache / eval baseline 兼容
-  if (!cuaEnabled) {
+  if (cuaStateV2Enabled) {
+    api.registerToolModule(cuaStatefulComputerUseModule, { prefixWithPluginId: false });
+  } else if (!cuaEnabled) {
     api.registerToolModule(computerModule, { prefixWithPluginId: false });
     api.registerToolModule(computerUseModule, { prefixWithPluginId: false });
     api.registerToolModule(guiAgentModule, { prefixWithPluginId: false });
@@ -63,7 +68,9 @@ export async function activate(api: PluginAPI): Promise<void> {
   api.registerToolModule(ocrSearchModule, { prefixWithPluginId: false });
   api.log(
     'info',
-    cuaEnabled
+    cuaStateV2Enabled
+      ? `builtin.computerUse activated (cua state v2: ${cuaStatefulComputerUseModule.schema.name})`
+      : cuaEnabled
       ? `builtin.computerUse activated (cua mode: 仅 ${screenshotModule.schema.name} / ${ocrSearchModule.schema.name}，桌面控制让位 cua-driver)`
       : `builtin.computerUse activated (tools: ${computerModule.schema.name}, ${computerUseModule.schema.name}, ${screenshotModule.schema.name}, ${guiAgentModule.schema.name}, ${ocrSearchModule.schema.name})`,
   );

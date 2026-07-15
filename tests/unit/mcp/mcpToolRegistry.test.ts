@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MCPClient } from '../../../src/host/mcp/mcpClient';
+import {
+  MCPClient,
+  shouldBlockRawCuaInvocation,
+  shouldSuppressCuaAutoReplay,
+} from '../../../src/host/mcp/mcpClient';
 import { MCPToolRegistry } from '../../../src/host/mcp/mcpToolRegistry';
 import { getToolSearchService, resetToolSearchService } from '../../../src/host/services/toolSearch';
 import {
@@ -25,6 +29,52 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 describe('MCPToolRegistry.parseMCPToolName', () => {
+  it('suppresses replay only for stateful CUA mutations', () => {
+    const enabled = { CODE_AGENT_ENABLE_CUA: '1', CODE_AGENT_CUA_STATE_V2: '1' };
+    expect(shouldSuppressCuaAutoReplay('cua-driver', 'click', enabled)).toBe(true);
+    expect(shouldSuppressCuaAutoReplay('cua-driver', 'type_text', enabled)).toBe(true);
+    expect(shouldSuppressCuaAutoReplay('cua-driver', 'get_window_state', enabled)).toBe(false);
+    expect(shouldSuppressCuaAutoReplay('github', 'create_issue', enabled)).toBe(false);
+    expect(shouldSuppressCuaAutoReplay('cua-driver', 'click', {
+      CODE_AGENT_ENABLE_CUA: '1',
+    })).toBe(false);
+  });
+
+  it('requires the internal stateful facade capability for every raw CUA invocation', () => {
+    const enabled = { CODE_AGENT_ENABLE_CUA: '1', CODE_AGENT_CUA_STATE_V2: '1' };
+    expect(shouldBlockRawCuaInvocation('cua-driver', {}, enabled)).toBe(true);
+    expect(shouldBlockRawCuaInvocation('cua-driver', { cuaStatefulFacade: true }, enabled)).toBe(false);
+    expect(shouldBlockRawCuaInvocation('github', {}, enabled)).toBe(false);
+    expect(shouldBlockRawCuaInvocation('cua-driver', {}, { CODE_AGENT_ENABLE_CUA: '1' })).toBe(false);
+  });
+
+  it('blocks a raw CUA call before lazy connection when the facade is enabled', async () => {
+    const previousCua = process.env.CODE_AGENT_ENABLE_CUA;
+    const previousV2 = process.env.CODE_AGENT_CUA_STATE_V2;
+    process.env.CODE_AGENT_ENABLE_CUA = '1';
+    process.env.CODE_AGENT_CUA_STATE_V2 = '1';
+    try {
+      const client = new MCPClient();
+      const result = await client.callTool('raw-call', 'cua-driver', 'click', { pid: 1, x: 1, y: 1 });
+      expect(result).toMatchObject({
+        success: false,
+        metadata: { cuaStateFacadeRequired: true },
+      });
+    } finally {
+      if (previousCua === undefined) delete process.env.CODE_AGENT_ENABLE_CUA;
+      else process.env.CODE_AGENT_ENABLE_CUA = previousCua;
+      if (previousV2 === undefined) delete process.env.CODE_AGENT_CUA_STATE_V2;
+      else process.env.CODE_AGENT_CUA_STATE_V2 = previousV2;
+    }
+  });
+
+  it('invalidates the connection generation as soon as disconnect begins', async () => {
+    const client = new MCPClient();
+    expect(client.getServerConnectionGeneration('cua-driver')).toBeUndefined();
+    await client.disconnect('cua-driver');
+    expect(client.getServerConnectionGeneration('cua-driver')).toBe('cua-driver:1');
+  });
+
   it('parses Claude-compatible double-underscore MCP tool names', () => {
     const registry = new MCPToolRegistry();
 
@@ -62,6 +112,91 @@ describe('MCPToolRegistry.parseMCPToolName', () => {
 });
 
 describe('MCPToolRegistry permission metadata', () => {
+  it('hides raw CUA tools when the stateful facade is enabled', () => {
+    const previousCua = process.env.CODE_AGENT_ENABLE_CUA;
+    const previousV2 = process.env.CODE_AGENT_CUA_STATE_V2;
+    process.env.CODE_AGENT_ENABLE_CUA = '1';
+    process.env.CODE_AGENT_CUA_STATE_V2 = '1';
+    try {
+      resetToolSearchService();
+      const registry = new MCPToolRegistry();
+      const rawClick = {
+        serverName: 'cua-driver',
+        name: 'click',
+        description: 'raw click',
+        inputSchema: { type: 'object', properties: {} },
+      };
+      registry.tools = [rawClick];
+      registry.refreshServerTools('cua-driver', [{
+        name: rawClick.name,
+        description: rawClick.description,
+        inputSchema: rawClick.inputSchema,
+      }]);
+
+      expect(registry.getToolDefinitions()).toEqual([]);
+      expect(registry.getTools()).toHaveLength(1);
+      expect(getToolSearchService().getDeferredToolsSummary()).not.toContain('mcp__cua-driver__click');
+    } finally {
+      resetToolSearchService();
+      if (previousCua === undefined) delete process.env.CODE_AGENT_ENABLE_CUA;
+      else process.env.CODE_AGENT_ENABLE_CUA = previousCua;
+      if (previousV2 === undefined) delete process.env.CODE_AGENT_CUA_STATE_V2;
+      else process.env.CODE_AGENT_CUA_STATE_V2 = previousV2;
+    }
+  });
+
+  it('preserves CUA structuredContent and screenshot data for the internal adapter', async () => {
+    const registry = new MCPToolRegistry();
+    const client = {
+      callTool: vi.fn(async () => ({
+        isError: false,
+        structuredContent: { snapshot_id: 'snapshot-1', elements: [] },
+        content: [
+          { type: 'image', data: 'aW1hZ2U=', mimeType: 'image/png' },
+          { type: 'text', text: 'window state' },
+        ],
+      })),
+    };
+
+    const result = await registry.callExternalTool(
+      'tool-1',
+      'cua-driver',
+      'get_window_state',
+      { pid: 1, window_id: 2 },
+      client as never,
+    );
+
+    expect(result.metadata).toEqual({
+      mcpStructuredContent: { snapshot_id: 'snapshot-1', elements: [] },
+      cuaScreenshot: { data: 'aW1hZ2U=', mimeType: 'image/png' },
+    });
+  });
+
+  it('preserves CUA observation metadata after a read-only reconnect retry', async () => {
+    const registry = new MCPToolRegistry();
+    const client = {
+      callTool: vi.fn(async () => ({
+        isError: false,
+        structuredContent: { snapshot_id: 'snapshot-retry', elements: [] },
+        content: [{ type: 'image', data: 'cmV0cnk=', mimeType: 'image/png' }],
+      })),
+    };
+
+    const result = await registry.retryToolCall(
+      'tool-retry',
+      'cua-driver',
+      'get_window_state',
+      { pid: 1, window_id: 2 },
+      client as never,
+      Date.now(),
+    );
+
+    expect(result?.metadata).toEqual({
+      mcpStructuredContent: { snapshot_id: 'snapshot-retry', elements: [] },
+      cuaScreenshot: { data: 'cmV0cnk=', mimeType: 'image/png' },
+    });
+  });
+
   it('skips resource and prompt probes when server capabilities only declare tools', async () => {
     resetToolSearchService();
     const registry = new MCPToolRegistry();

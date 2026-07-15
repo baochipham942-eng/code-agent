@@ -5,7 +5,7 @@
 
 import https from 'https';
 import http from 'http';
-import { StringDecoder } from 'string_decoder';
+import { StringDecoder } from 'node:string_decoder';
 import { type ModelResponse, type StreamCallback, type ResponseContentPart, ContextLengthExceededError } from '../types';
 import { logger, getHttpsAgent, parseContextLengthError, buildToolCallFromAccumulator, safeJsonStringify } from './shared';
 import { parseOpenAIStreamChunk } from './wrappers/openaiWrapper';

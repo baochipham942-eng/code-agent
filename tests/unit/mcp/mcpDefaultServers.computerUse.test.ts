@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   pickEnvGatedComputerUseServers,
@@ -12,6 +13,7 @@ describe('pickEnvGatedComputerUseServers — computer-use 底座独立于云端�
   afterEach(() => {
     delete process.env.CODE_AGENT_ENABLE_CUA;
     delete process.env.CODE_AGENT_ENABLE_ARGUS_MCP;
+    delete process.env.CODE_AGENT_CUA_DRIVER_PATH;
   });
 
   it('CUA 开启且未注册 → 返回 cua-driver 待补注册', () => {
@@ -44,6 +46,35 @@ describe('pickEnvGatedComputerUseServers — computer-use 底座独立于云端�
     process.env.CODE_AGENT_ENABLE_CUA = '1';
     const cua = getDefaultMCPServers().find((s) => s.name === 'cua-driver');
     expect(cua?.lazyLoad).toBe(true);
+    expect((cua as { env?: Record<string, string> } | undefined)?.env).toMatchObject({
+      CUA_DRIVER_MCP_MODE: '1',
+      CUA_DRIVER_RS_UPDATE_CHECK: '0',
+      CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
+    });
+  });
+
+  it.runIf(process.platform === 'darwin')('签名 helper 通过 bundle 内 launcher 启动，禁止默认 mcp 重启旧 CuaDriver', () => {
+    process.env.CODE_AGENT_ENABLE_CUA = '1';
+    process.env.CODE_AGENT_CUA_DRIVER_PATH = path.join(
+      '/tmp',
+      'Agent Neo Computer Use.app',
+      'Contents',
+      'MacOS',
+      'cua-driver',
+    );
+
+    const cua = getDefaultMCPServers().find((s) => s.name === 'cua-driver');
+
+    expect(cua).toMatchObject({
+      command: path.join(
+        '/tmp',
+        'Agent Neo Computer Use.app',
+        'Contents',
+        'Resources',
+        'agent-neo-computer-use-mcp.sh',
+      ),
+      args: [],
+    });
   });
 
   it('不夹带其他默认 server（filesystem/docker 等仍走原有云端优先逻辑）', () => {

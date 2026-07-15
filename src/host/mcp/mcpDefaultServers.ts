@@ -28,6 +28,40 @@ const CUA_BUNDLED_BIN_RELS = [
   path.join('scripts', 'Agent Neo Computer Use.app', 'Contents', 'MacOS', 'cua-driver'),
   path.join('.tauri-resources.noindex', 'scripts', 'Agent Neo Computer Use.app', 'Contents', 'MacOS', 'cua-driver'),
 ];
+const CUA_APP_BIN_SUFFIX = path.join(
+  'Agent Neo Computer Use.app',
+  'Contents',
+  'MacOS',
+  'cua-driver',
+);
+const CUA_MCP_LAUNCHER_NAME = 'agent-neo-computer-use-mcp.sh';
+
+function resolveCuaMcpLaunch(command: string): Pick<MCPStdioServerConfig, 'command' | 'args'> {
+  const normalizedCommand = path.normalize(command);
+  if (process.platform === 'darwin' && normalizedCommand.endsWith(CUA_APP_BIN_SUFFIX)) {
+    const appRoot = path.resolve(path.dirname(normalizedCommand), '..', '..');
+    return {
+      command: path.join(appRoot, 'Contents', 'Resources', CUA_MCP_LAUNCHER_NAME),
+      args: [],
+    };
+  }
+
+  if (process.platform === 'darwin') {
+    // 开发态缺少签名 helper 时也禁止 0.8.1 默认 `mcp` 去启动旧 CuaDriver。
+    // embedded 继承 Agent Neo 宿主的 TCC；发布态始终走上面的签名 launcher。
+    return {
+      command,
+      args: [
+        'mcp',
+        '--embedded',
+        '--host-bundle-id',
+        process.env.CODE_AGENT_BUNDLE_ID || 'com.linchen.code-agent',
+      ],
+    };
+  }
+
+  return { command, args: ['mcp'] };
+}
 
 /**
  * 解析 cua-driver 二进制路径。优先级：
@@ -101,6 +135,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
   // 可用 CODE_AGENT_CUA_DRIVER_PATH 覆盖，最终回退 PATH 上的 `cua-driver`。
   const cuaEnabled = process.env.CODE_AGENT_ENABLE_CUA === '1';
   const cuaDriverCommand = resolveCuaDriverPath();
+  const cuaMcpLaunch = resolveCuaMcpLaunch(cuaDriverCommand);
   const cuaSupported = process.platform === 'darwin' || process.platform === 'win32';
 
   return [
@@ -212,14 +247,16 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
     // 工具: list_apps/get_window_state/click/type_text/set_value/screenshot/… (~30)
     {
       name: CUA_DRIVER_SERVER_NAME,
-      command: cuaDriverCommand,
-      args: ['mcp'],
+      command: cuaMcpLaunch.command,
+      args: cuaMcpLaunch.args,
       env: {
         CUA_DRIVER_MCP_MODE: '1',
         CUA_DRIVER_RS_UPDATE_CHECK: '0',
+        // 0.8.1 默认启用产品遥测；Neo 的桌面能力保持显式 opt-in，不向上游发事件。
+        CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
       },
       enabled: cuaEnabled && cuaSupported,
-      // 保持按需启动：cua-driver v0.5.1 空闲时会维持 cursor overlay 主线程刷新，
+      // 保持按需启动：cua-driver 空闲时仍会维持 cursor overlay 主线程刷新，
       // 启动即连接会让未使用 Computer Use 的普通会话也长期占 CPU。
       lazyLoad: true,
     },

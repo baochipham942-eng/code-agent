@@ -1,7 +1,7 @@
 /**
  * 跨会话 computer-use 文件锁（cua-driver 链路）。
  *
- * cua-driver 上游（trycua/cua libs/cua-driver，已核实 v0.5.1）没有跨进程互斥：
+ * cua-driver 上游（trycua/cua libs/cua-driver，已核实 v0.8.1）没有跨进程互斥：
  * 两个 agent 会话同时操作桌面会互相抢鼠标/键盘/焦点。本模块参照
  * argus src/computerUseLock.ts（源自 Claude Code）的 O_EXCL 文件锁实现，
  * 并默认使用同一个锁文件路径 ~/.claude/computer-use.lock —— 这样 Neo、
@@ -120,7 +120,7 @@ export async function tryAcquireCuaLock(sessionId: string): Promise<CuaAcquireRe
 
 /**
  * 不动鼠标键盘、不改桌面状态的工具，无需互斥。未列出的一律按操控类处理。
- * 清单对照 cua-driver 0.5.1 实测 tools/list（35 个）。
+ * 清单对照 cua-driver 0.8.1 tools/list；未列出的一律按写操作处理。
  * start_session/end_session 只声明 run 身份/清理 agent cursor，不碰桌面：
  * end_session 尤其必须放行，否则被锁挡住的 run 无法善后自己的 cursor。
  */
@@ -129,6 +129,7 @@ export const CUA_READONLY_TOOLS = new Set([
   'list_apps',
   'list_windows',
   'get_window_state',
+  'get_desktop_state',
   'get_accessibility_tree',
   'check_permissions',
   'get_screen_size',
@@ -136,6 +137,8 @@ export const CUA_READONLY_TOOLS = new Set([
   'get_config',
   'get_agent_cursor_state',
   'get_recording_state',
+  'health_report',
+  'zoom',
   'check_for_update',
   'start_session',
   'end_session',

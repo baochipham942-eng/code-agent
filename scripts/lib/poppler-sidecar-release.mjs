@@ -315,7 +315,10 @@ export function validatePopplerManifest(manifest, { expectedPlatform, expectedVe
     fail('Poppler manifest must come from the approved GitHub Actions promotion workflow', 'invalid_build_evidence');
   }
   const expectedMachineArch = platform === 'darwin-arm64' ? 'arm64' : 'x86_64';
-  const expectedRunnerLabel = platform === 'darwin-arm64' ? 'macos-latest' : 'macos-15-intel';
+  // 与 build-poppler-sidecar.yml 的 matrix 同源：清单校验钉死允许的 runner 标签，
+  // 改 workflow 的 runner 必须同步改这里，否则候选一律判非原生（这一条真拦下过）。
+  // 两个标签都不带 latest：浮动 runner 迁移会静默换掉工具链，已 promote 的哈希就复现不出来。
+  const expectedRunnerLabel = platform === 'darwin-arm64' ? 'macos-15' : 'macos-15-intel';
   if (nativeBuild.machineArchitecture !== expectedMachineArch
     || nativeBuild.runnerLabel !== expectedRunnerLabel
     || nativeBuild.rosettaTranslated !== false) {

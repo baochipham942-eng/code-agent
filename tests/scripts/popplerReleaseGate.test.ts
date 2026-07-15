@@ -179,7 +179,7 @@ describe('Poppler release hard gate', () => {
         version: '26.07.0',
         builtFromSource: true,
         declaredLicense: 'GPL-2.0-only OR GPL-3.0-only',
-        upstreamSourceUrl: 'https://poppler.freedesktop.org/poppler-26.02.0.tar.xz',
+        upstreamSourceUrl: 'https://poppler.freedesktop.org/poppler-26.07.0.tar.xz',
         sourceArchive: evidence,
         formula: evidence,
         installReceipt: evidence,
@@ -219,7 +219,7 @@ describe('Poppler release hard gate', () => {
         version: '26.07.0',
         builtFromSource: true,
         declaredLicense: 'GPL-2.0-only',
-        upstreamSourceUrl: 'https://poppler.freedesktop.org/poppler-26.02.0.tar.xz',
+        upstreamSourceUrl: 'https://poppler.freedesktop.org/poppler-26.07.0.tar.xz',
         sourceArchive: evidence,
         formula: evidence,
         installReceipt: evidence,
@@ -230,7 +230,8 @@ describe('Poppler release hard gate', () => {
       }],
     };
     expect(verifyPopplerSourceCoverage(sidecarManifest, sourceManifest)).toEqual({ componentCount: 1 });
-    sourceManifest.components[0].version = '26.07.0';
+    // 随附源码声明的版本与 sidecar 实际装的版本对不上 = 交付的源码不对应实物，GPL 义务没履行。
+    sourceManifest.components[0].version = '26.06.0';
     expect(() => verifyPopplerSourceCoverage(sidecarManifest, sourceManifest))
       .toThrowError(expect.objectContaining({ code: 'missing_component_source' }));
   });

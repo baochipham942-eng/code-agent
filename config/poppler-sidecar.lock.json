@@ -7,12 +7,12 @@
   "invocationBoundary": "separate-process-file-io",
   "artifactBaseUrl": null,
   "licenseRationale": "docs/architecture/decisions/ADR-040-C2a-poppler-license-rationale.md",
-  "popplerBrewVersion": "26.02.0_1",
+  "popplerBrewVersion": "26.07.0",
   "formula": {
     "repository": "Homebrew/homebrew-core",
-    "commit": "4ee5c1b81622e890f413a5eee4a2c144a42c3ceb",
+    "commit": "9fd96c35659cacf70db2373626ba6687799a092d",
     "path": "Formula/p/poppler.rb",
-    "sha256": "b5f8947da0a49431a59a5a2bbd85db4537b7cfafaaff3cd3e6809f1cebdd40eb"
+    "sha256": "b5f22c5d20babeef49503aea6ea07faadf0cfe9c9b1a2fbae2d78d226462bc92"
   },
   "platforms": {
     "darwin-arm64": null,

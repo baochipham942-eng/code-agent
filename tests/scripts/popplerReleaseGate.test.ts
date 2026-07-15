@@ -40,7 +40,7 @@ function lock(status: 'pending-promotion' | 'ready' = 'pending-promotion') {
     invocationBoundary: 'separate-process-file-io',
     artifactBaseUrl: status === 'ready' ? 'https://example.invalid/' : null,
     licenseRationale: 'docs/architecture/decisions/ADR-040-C2a-poppler-license-rationale.md',
-    popplerBrewVersion: '26.02.0_1',
+    popplerBrewVersion: '26.07.0',
     formula: {
       repository: 'Homebrew/homebrew-core',
       commit: 'b'.repeat(40),
@@ -82,7 +82,7 @@ function manifest(sidecarDir: string) {
     bytes: fs.statSync(path.join(sidecarDir, relativePath)).size,
     mode: relativePath === 'bin/pdftoppm' ? '0755' : '0644',
     component: relativePath.startsWith('bin/') ? 'poppler' : 'distribution-compliance',
-    componentVersion: '26.02.0_1',
+    componentVersion: '26.07.0',
     kind: 'data',
   }));
   return {
@@ -91,7 +91,7 @@ function manifest(sidecarDir: string) {
     publisher: 'Agent Neo project',
     invocationBoundary: 'separate-process-file-io',
     platform: 'darwin-arm64',
-    popplerBrewVersion: '26.02.0_1',
+    popplerBrewVersion: '26.07.0',
     nativeBuild: {
       runnerKind: 'github-actions',
       runnerLabel: 'macos-15',
@@ -173,10 +173,10 @@ describe('Poppler release hard gate', () => {
       schemaVersion: 1,
       kind: 'agent_neo_poppler_complete_source',
       publisher: 'Agent Neo project',
-      popplerBrewVersion: '26.02.0_1',
+      popplerBrewVersion: '26.07.0',
       components: [{
         name: 'poppler',
-        version: '26.02.0_1',
+        version: '26.07.0',
         builtFromSource: true,
         declaredLicense: 'GPL-2.0-only OR GPL-3.0-only',
         upstreamSourceUrl: 'https://poppler.freedesktop.org/poppler-26.02.0.tar.xz',
@@ -213,10 +213,10 @@ describe('Poppler release hard gate', () => {
       schemaVersion: 1,
       kind: 'agent_neo_poppler_complete_source',
       publisher: 'Agent Neo project',
-      popplerBrewVersion: '26.02.0_1',
+      popplerBrewVersion: '26.07.0',
       components: [{
         name: 'poppler',
-        version: '26.02.0_1',
+        version: '26.07.0',
         builtFromSource: true,
         declaredLicense: 'GPL-2.0-only',
         upstreamSourceUrl: 'https://poppler.freedesktop.org/poppler-26.02.0.tar.xz',
@@ -290,8 +290,8 @@ describe('Poppler release hard gate', () => {
   function candidateFiles(overrides: Record<string, unknown> = {}) {
     const entry = () => ({
       manifest: { name: 'poppler-sidecar-manifest-darwin-arm64.json', sha256: digest, bytes: 12 },
-      sidecarArchive: { name: 'poppler-sidecar-darwin-arm64-26.02.0_1.tar.gz', sha256: digest, bytes: 34 },
-      sourceBundle: { name: 'poppler-complete-source-darwin-arm64-26.02.0_1.tar.gz', sha256: digest, bytes: 56 },
+      sidecarArchive: { name: 'poppler-sidecar-darwin-arm64-26.07.0.tar.gz', sha256: digest, bytes: 34 },
+      sourceBundle: { name: 'poppler-complete-source-darwin-arm64-26.07.0.tar.gz', sha256: digest, bytes: 56 },
     });
     return { 'darwin-arm64': entry(), 'darwin-x64': entry(), ...overrides };
   }
@@ -315,7 +315,7 @@ describe('Poppler release hard gate', () => {
       }
 
       expect(
-        () => validatePopplerManifest(candidate, { expectedPlatform: entry.platform, expectedVersion: '26.02.0_1' }),
+        () => validatePopplerManifest(candidate, { expectedPlatform: entry.platform, expectedVersion: '26.07.0' }),
         `${entry.platform}: workflow runs on '${entry.runner}' but the manifest allowlist rejects it`,
       ).not.toThrow();
     }
@@ -336,8 +336,8 @@ describe('Poppler release hard gate', () => {
 
   it('refuses candidates whose architectures disagree on any dependency version', () => {
     expect(() => assertCrossPlatformComponentParity({
-      'darwin-arm64': manifestWithComponents({ poppler: '26.02.0_1', 'jpeg-turbo': '3.2.0', gpgme: '2.1.2' }),
-      'darwin-x64': manifestWithComponents({ poppler: '26.02.0_1', 'jpeg-turbo': '3.1.4.1', gpgme: '2.1.1' }),
+      'darwin-arm64': manifestWithComponents({ poppler: '26.07.0', 'jpeg-turbo': '3.2.0', gpgme: '2.1.2' }),
+      'darwin-x64': manifestWithComponents({ poppler: '26.07.0', 'jpeg-turbo': '3.1.4.1', gpgme: '2.1.1' }),
     })).toThrowError(expect.objectContaining({ code: 'cross_platform_version_drift' }));
   });
 
@@ -357,13 +357,13 @@ describe('Poppler release hard gate', () => {
 
   it('catches a component present on one architecture but missing on the other', () => {
     expect(() => assertCrossPlatformComponentParity({
-      'darwin-arm64': manifestWithComponents({ poppler: '26.02.0_1', 'jpeg-turbo': '3.2.0' }),
-      'darwin-x64': manifestWithComponents({ poppler: '26.02.0_1' }),
+      'darwin-arm64': manifestWithComponents({ poppler: '26.07.0', 'jpeg-turbo': '3.2.0' }),
+      'darwin-x64': manifestWithComponents({ poppler: '26.07.0' }),
     })).toThrowError(expect.objectContaining({ code: 'cross_platform_version_drift' }));
   });
 
   it('accepts architectures that agree on every component version', () => {
-    const components = { poppler: '26.02.0_1', 'jpeg-turbo': '3.1.3', gpgme: '2.1.1' };
+    const components = { poppler: '26.07.0', 'jpeg-turbo': '3.1.3', gpgme: '2.1.1' };
     expect(() => assertCrossPlatformComponentParity({
       'darwin-arm64': manifestWithComponents(components),
       'darwin-x64': manifestWithComponents(components),
@@ -372,27 +372,27 @@ describe('Poppler release hard gate', () => {
 
   it('promotes a pending lock to ready with project-controlled URLs for both architectures', () => {
     const ready = buildReadyPopplerLock(lock('pending-promotion'), {
-      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.02.0_1/',
+      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.07.0/',
       candidateFiles: candidateFiles(),
     });
 
     expect(ready.status).toBe('ready');
-    expect(ready.artifactBaseUrl).toBe('https://example.invalid/poppler-sidecar/26.02.0_1/');
+    expect(ready.artifactBaseUrl).toBe('https://example.invalid/poppler-sidecar/26.07.0/');
     expect(ready.platforms['darwin-x64'].sidecarArchive.url).toBe(
-      'https://example.invalid/poppler-sidecar/26.02.0_1/poppler-sidecar-darwin-arm64-26.02.0_1.tar.gz',
+      'https://example.invalid/poppler-sidecar/26.07.0/poppler-sidecar-darwin-arm64-26.07.0.tar.gz',
     );
     // bytes/sha256 必须原样落进 lock：gate 在 ready 时拿它跟真文件逐字节对账，差一位就整条发版挂。
     expect(ready.platforms['darwin-arm64'].sourceBundle).toMatchObject({ sha256: digest, bytes: 56 });
     // promotion 不得顺手改动许可证/formula 这些已复核过的字段。
     expect(ready.formula).toEqual(lock('pending-promotion').formula);
-    expect(ready.popplerBrewVersion).toBe('26.02.0_1');
+    expect(ready.popplerBrewVersion).toBe('26.07.0');
   });
 
   it('refuses a candidate file name that would escape the project-controlled prefix', () => {
     // 前导斜杠若被当成 URL 路径解析，会逃出 artifactBaseUrl 前缀落到桶根——lock 层的
     // 归属校验就形同虚设，因此在造 lock 时就必须拦下，而不是等 gate 事后发现。
     expect(() => buildReadyPopplerLock(lock('pending-promotion'), {
-      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.02.0_1/',
+      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.07.0/',
       candidateFiles: candidateFiles({
         'darwin-x64': {
           manifest: { name: '/evil/manifest.json', sha256: digest, bytes: 12 },
@@ -405,7 +405,7 @@ describe('Poppler release hard gate', () => {
 
   it('refuses to promote unless the source lock is pending and the base URL is a safe HTTPS prefix', () => {
     const args = {
-      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.02.0_1/',
+      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.07.0/',
       candidateFiles: candidateFiles(),
     };
     // 重复 promote 已 ready 的 lock = 覆盖已发布制品的引用，必须拦。
@@ -419,7 +419,7 @@ describe('Poppler release hard gate', () => {
 
   it('refuses to promote when either architecture candidate is absent', () => {
     expect(() => buildReadyPopplerLock(lock('pending-promotion'), {
-      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.02.0_1/',
+      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.07.0/',
       candidateFiles: { 'darwin-arm64': candidateFiles()['darwin-arm64'] },
     })).toThrow(PopplerReleaseGateError);
   });

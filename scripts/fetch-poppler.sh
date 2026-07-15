@@ -23,8 +23,9 @@
 
 set -euo pipefail
 
-# homebrew 的 Cellar 目录名带 revision 后缀（26.02.0_1 = 上游 26.02.0 的第 1 次 brew 修订）。
-# 钉全名保证产物可复现；pdftoppm -v 只打印上游版本，故下面比对时把 _N 去掉。
+# homebrew 的 Cellar 目录名可能带 revision 后缀（如 26.02.0_1 = 上游 26.02.0 的第 1 次 brew
+# 修订；26.07.0 这种没重打过包的则没有后缀）。钉全名保证产物可复现；pdftoppm -v 只打印上游
+# 版本，故下面比对时把 _N 去掉——没后缀时这个剥离是恒等的。
 LOCK_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/poppler-sidecar.lock.json"
 POPPLER_BREW_VERSION="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).popplerBrewVersion" "$LOCK_FILE")"
 POPPLER_VERSION="${POPPLER_BREW_VERSION%%_*}"

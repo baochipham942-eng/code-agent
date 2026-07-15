@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   PopplerReleaseGateError,
+  buildReadyPopplerLock,
   detectPopplerPlatform,
   selectLicenseEvidenceFiles,
   sha256File,
@@ -281,5 +282,68 @@ describe('Poppler release hard gate', () => {
     const candidates = makeLicenseTree({ LICENSE: '', 'build/COPYING': '' });
 
     expect(selectLicenseEvidenceFiles(candidates)).toEqual([]);
+  });
+
+  function candidateFiles(overrides: Record<string, unknown> = {}) {
+    const entry = () => ({
+      manifest: { name: 'poppler-sidecar-manifest-darwin-arm64.json', sha256: digest, bytes: 12 },
+      sidecarArchive: { name: 'poppler-sidecar-darwin-arm64-26.02.0_1.tar.gz', sha256: digest, bytes: 34 },
+      sourceBundle: { name: 'poppler-complete-source-darwin-arm64-26.02.0_1.tar.gz', sha256: digest, bytes: 56 },
+    });
+    return { 'darwin-arm64': entry(), 'darwin-x64': entry(), ...overrides };
+  }
+
+  it('promotes a pending lock to ready with project-controlled URLs for both architectures', () => {
+    const ready = buildReadyPopplerLock(lock('pending-promotion'), {
+      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.02.0_1/',
+      candidateFiles: candidateFiles(),
+    });
+
+    expect(ready.status).toBe('ready');
+    expect(ready.artifactBaseUrl).toBe('https://example.invalid/poppler-sidecar/26.02.0_1/');
+    expect(ready.platforms['darwin-x64'].sidecarArchive.url).toBe(
+      'https://example.invalid/poppler-sidecar/26.02.0_1/poppler-sidecar-darwin-arm64-26.02.0_1.tar.gz',
+    );
+    // bytes/sha256 必须原样落进 lock：gate 在 ready 时拿它跟真文件逐字节对账，差一位就整条发版挂。
+    expect(ready.platforms['darwin-arm64'].sourceBundle).toMatchObject({ sha256: digest, bytes: 56 });
+    // promotion 不得顺手改动许可证/formula 这些已复核过的字段。
+    expect(ready.formula).toEqual(lock('pending-promotion').formula);
+    expect(ready.popplerBrewVersion).toBe('26.02.0_1');
+  });
+
+  it('refuses a candidate file name that would escape the project-controlled prefix', () => {
+    // 前导斜杠若被当成 URL 路径解析，会逃出 artifactBaseUrl 前缀落到桶根——lock 层的
+    // 归属校验就形同虚设，因此在造 lock 时就必须拦下，而不是等 gate 事后发现。
+    expect(() => buildReadyPopplerLock(lock('pending-promotion'), {
+      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.02.0_1/',
+      candidateFiles: candidateFiles({
+        'darwin-x64': {
+          manifest: { name: '/evil/manifest.json', sha256: digest, bytes: 12 },
+          sidecarArchive: { name: 'sidecar.tar.gz', sha256: digest, bytes: 34 },
+          sourceBundle: { name: 'source.tar.gz', sha256: digest, bytes: 56 },
+        },
+      }),
+    })).toThrow(PopplerReleaseGateError);
+  });
+
+  it('refuses to promote unless the source lock is pending and the base URL is a safe HTTPS prefix', () => {
+    const args = {
+      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.02.0_1/',
+      candidateFiles: candidateFiles(),
+    };
+    // 重复 promote 已 ready 的 lock = 覆盖已发布制品的引用，必须拦。
+    expect(() => buildReadyPopplerLock(lock('ready'), args)).toThrow(PopplerReleaseGateError);
+    expect(() => buildReadyPopplerLock(lock('pending-promotion'), { ...args, artifactBaseUrl: 'http://example.invalid/x/' }))
+      .toThrow(PopplerReleaseGateError);
+    // 少了结尾斜杠，拼出来的就是同级兄弟路径而非目录前缀。
+    expect(() => buildReadyPopplerLock(lock('pending-promotion'), { ...args, artifactBaseUrl: 'https://example.invalid/x' }))
+      .toThrow(PopplerReleaseGateError);
+  });
+
+  it('refuses to promote when either architecture candidate is absent', () => {
+    expect(() => buildReadyPopplerLock(lock('pending-promotion'), {
+      artifactBaseUrl: 'https://example.invalid/poppler-sidecar/26.02.0_1/',
+      candidateFiles: { 'darwin-arm64': candidateFiles()['darwin-arm64'] },
+    })).toThrow(PopplerReleaseGateError);
   });
 });

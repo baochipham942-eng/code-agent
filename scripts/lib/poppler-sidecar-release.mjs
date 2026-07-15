@@ -492,6 +492,41 @@ export function sha256File(filePath) {
   return sha256Bytes(fs.readFileSync(filePath));
 }
 
+// 把 pending lock 升成 ready lock：给双架构的 6 个制品填 url/sha256/bytes。
+// 手填这 6 组是 promotion 里最容易出错的一步（gate 在 ready 时会逐字节对账 manifest，
+// 错一位就整条发版 fail-closed），所以由候选目录的真实文件算出来，人只复核不誊抄。
+// 产物末尾自证一次 requireComplete 校验：造不出合法 ready lock 就当场 fail，不落盘半成品。
+export function buildReadyPopplerLock(pendingLock, { artifactBaseUrl, candidateFiles }) {
+  if (pendingLock.status !== 'pending-promotion') {
+    fail(`Only a pending-promotion lock can be promoted; got ${pendingLock.status}`, 'invalid_promotion_source');
+  }
+  const baseUrl = assertHttpsUrl(artifactBaseUrl, 'artifactBaseUrl');
+  if (!baseUrl.endsWith('/')) fail('artifactBaseUrl must end with /', 'invalid_artifact_origin');
+
+  const platforms = {};
+  for (const platform of POPPLER_PLATFORMS) {
+    const entry = assertObject(candidateFiles[platform], `candidateFiles.${platform}`);
+    platforms[platform] = {};
+    for (const kind of ['manifest', 'sidecarArchive', 'sourceBundle']) {
+      const file = assertObject(entry[kind], `candidateFiles.${platform}.${kind}`);
+      const name = assertString(file.name, `candidateFiles.${platform}.${kind}.name`);
+      if (name.includes('/') || name.includes('\\')) {
+        fail(`candidateFiles.${platform}.${kind}.name must be a bare file name`, 'unsafe_artifact_path', { name });
+      }
+      platforms[platform][kind] = {
+        // 拼接而非 new URL(name, baseUrl)：后者会把 name 里的前导斜杠解成根路径，悄悄逃出前缀。
+        url: `${baseUrl}${name}`,
+        sha256: assertSha256(file.sha256, `candidateFiles.${platform}.${kind}.sha256`),
+        bytes: assertPositiveInteger(file.bytes, `candidateFiles.${platform}.${kind}.bytes`),
+      };
+    }
+  }
+
+  const readyLock = { ...pendingLock, status: 'ready', artifactBaseUrl: baseUrl, platforms };
+  validatePopplerLock(readyLock, { requireComplete: true });
+  return readyLock;
+}
+
 // 上游会在源码树里放空的许可证占位文件（实测 zstd 1.5.7 的 build/LICENSE 是 0 字节）。
 // 空文件不含任何许可证正文：收进合规包既履行不了 GPL 的「随附许可证正文」义务，也会
 // 撞上清单校验对 bytes 的正整数断言。这里丢掉空候选；筛完一个不剩时由调用方 fail-closed，

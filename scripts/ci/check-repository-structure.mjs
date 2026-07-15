@@ -14,12 +14,13 @@ const limits = {
   rootDirectories: 20,
   hostDomains: 45,
   testTopLevelDirectories: 24,
-  // 138: the four Poppler promotion/fetch/gate scripts are stable package/workflow
+  // 139: the five Poppler promotion/fetch/gate/lock scripts are stable package/workflow
   // entrypoints. Their shared validation remains under scripts/lib/.
-  directScriptFiles: 138,
-  // 14: build-poppler-sidecar.yml is the review-only native arm64/x64 promotion
-  // boundary; it cannot publish or mutate the release lock.
-  workflows: 14,
+  directScriptFiles: 139,
+  // 15: the Poppler promotion boundary is split across two workflows on purpose —
+  // build-poppler-sidecar.yml only reviews candidates and can never publish, while
+  // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.
+  workflows: 15,
 };
 
 const navigationFiles = [

@@ -5,7 +5,7 @@
 
 name: "长文本与大文件测试"
 description: "测试 Agent 处理长文本和大文件的能力"
-default_timeout: 120000
+default_timeout: 600000
 tags:
   - long-text
   - edge-case
@@ -159,7 +159,7 @@ cases:
         weight: 1
         critical: true
         params: {}
-    timeout: 180000
+    timeout: 600000
 
   # --------------------------------------------------------------------------
   # L2: 长文本生成

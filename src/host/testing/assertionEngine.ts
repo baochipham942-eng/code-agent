@@ -24,6 +24,7 @@ import type {
 } from './types';
 import { WRITE_EFFECT_TOOL_PATTERNS } from './userSimulator';
 import { evaluateGoalStatusExpectation, evaluateGoalEvidenceGateExpectation } from './goalContractEval';
+import { evaluateNoStallBeforeArtifactExpectation } from './openingShapeEval';
 
 /**
  * Assertion failure details
@@ -1092,6 +1093,17 @@ async function evaluateExpectation(
         const evaluation = expectation.type === 'goal_status'
           ? evaluateGoalStatusExpectation(params, context.goalRun)
           : evaluateGoalEvidenceGateExpectation(params, context.goalRun);
+        passed = evaluation.passed;
+        actual = evaluation.actual;
+        expected = evaluation.expected;
+        details = evaluation.details;
+        break;
+      }
+
+      case 'no_stall_before_artifact': {
+        // 方案 D 二期遗留：开场形状判据（实现在 openingShapeEval，保持本文件在债务门内；
+        // fail-loud 口径与「为什么不设默认工具表」见该模块 doc comment）。
+        const evaluation = evaluateNoStallBeforeArtifactExpectation(params, context.toolExecutions);
         passed = evaluation.passed;
         actual = evaluation.actual;
         expected = evaluation.expected;

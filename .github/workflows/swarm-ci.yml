@@ -25,6 +25,14 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/renderer-bundle.yml'
       - '.github/workflows/swarm-ci.yml'
+      # poppler 发版链：lock 是 release.yml 真读的数据（决定下载哪份 sidecar、按什么哈希验），
+      # 改它却一道门都不跑——2026-07-15 lock 翻 ready 的 PR 实测零 checks。
+      # 这几条让 popplerReleaseGate/releaseMacosGates 在改动到它们时真跑起来。
+      - 'config/poppler-sidecar.lock.json'
+      - '.github/workflows/build-poppler-sidecar.yml'
+      - '.github/workflows/promote-poppler-sidecar.yml'
+      - 'scripts/*poppler*'
+      - 'scripts/lib/poppler-sidecar-release.mjs'
       - '.github/workflows/vercel-control-plane.yml'
       - 'scripts/ci/**'
       - 'scripts/console-scan.mjs'

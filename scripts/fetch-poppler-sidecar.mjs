@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
-import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import console from 'node:console';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath, URL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import {
   detectPopplerPlatform,
+  downloadPinnedArtifact,
   sha256File,
   validatePopplerLock,
   validatePopplerManifest,
@@ -38,24 +38,6 @@ function parseArgs(argv) {
     index += 1;
   }
   return options;
-}
-
-async function download(url, destination, expected, artifactBaseUrl) {
-  const response = await globalThis.fetch(url, {
-    redirect: 'follow',
-    signal: globalThis.AbortSignal.timeout(120_000),
-  });
-  if (!response.ok) throw new Error(`GET ${url} returned HTTP ${response.status}`);
-  const finalUrl = new URL(response.url);
-  if (finalUrl.protocol !== 'https:') throw new Error(`GET ${url} redirected outside HTTPS`);
-  if (!finalUrl.toString().startsWith(artifactBaseUrl)) {
-    throw new Error(`GET ${url} redirected outside the project-controlled artifact prefix`);
-  }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  fs.writeFileSync(destination, bytes, { mode: 0o600 });
-  if (bytes.length !== expected.bytes || sha256File(destination) !== expected.sha256) {
-    throw new Error(`Downloaded artifact hash/size mismatch: ${url}`);
-  }
 }
 
 function assertSafeTar(archive) {
@@ -110,7 +92,7 @@ async function main() {
     const manifestPath = path.join(tempRoot, 'poppler-sidecar-manifest.json');
     const sidecarArchive = path.join(tempRoot, 'poppler-sidecar.tar.gz');
     const sourceBundle = path.join(tempRoot, 'poppler-complete-source.tar.gz');
-    await download(platformEntry.manifest.url, manifestPath, platformEntry.manifest, lock.artifactBaseUrl);
+    await downloadPinnedArtifact(platformEntry.manifest.url, manifestPath, platformEntry.manifest);
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     validatePopplerManifest(manifest, {
       expectedPlatform: platform,
@@ -118,8 +100,8 @@ async function main() {
     });
 
     await Promise.all([
-      download(platformEntry.sidecarArchive.url, sidecarArchive, platformEntry.sidecarArchive, lock.artifactBaseUrl),
-      download(platformEntry.sourceBundle.url, sourceBundle, platformEntry.sourceBundle, lock.artifactBaseUrl),
+      downloadPinnedArtifact(platformEntry.sidecarArchive.url, sidecarArchive, platformEntry.sidecarArchive),
+      downloadPinnedArtifact(platformEntry.sourceBundle.url, sourceBundle, platformEntry.sourceBundle),
     ]);
     for (const [key, localPath] of [
       ['sidecarArchive', sidecarArchive],

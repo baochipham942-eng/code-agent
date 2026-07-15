@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -490,6 +491,28 @@ export function sha256Bytes(value) {
 
 export function sha256File(filePath) {
   return sha256Bytes(fs.readFileSync(filePath));
+}
+
+// 下载 lock 里钉死的不可变制品。
+// 只复核最终 URL 仍是 HTTPS，不复核它的前缀：项目控制的托管都会 302 到签名的短期资产域
+// （实测 GitHub Release 跳 release-assets.githubusercontent.com，URL 一小时后过期），
+// 拿最终 URL 比对 artifactBaseUrl 会把所有 CDN 托管连同 GitHub Release 一并拒掉。
+// 归属由 validatePopplerLock 在 lock 层保证（每个 url 必须以 artifactBaseUrl 开头）；
+// 完整性由下面的 sha256+bytes 兜底——即便被劫持到任意主机，哈希对不上照样 fail-closed。
+export async function downloadPinnedArtifact(url, destination, expected) {
+  const response = await globalThis.fetch(url, {
+    redirect: 'follow',
+    signal: globalThis.AbortSignal.timeout(120_000),
+  });
+  if (!response.ok) fail(`GET ${url} returned HTTP ${response.status}`, 'artifact_http_error', { url });
+  if (new URL(response.url).protocol !== 'https:') {
+    fail(`GET ${url} redirected outside HTTPS`, 'artifact_insecure_redirect', { url, finalUrl: response.url });
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  fs.writeFileSync(destination, bytes, { mode: 0o600 });
+  if (bytes.length !== expected.bytes || sha256File(destination) !== expected.sha256) {
+    fail(`Downloaded artifact hash/size mismatch: ${url}`, 'artifact_integrity_mismatch', { url });
+  }
 }
 
 // 上游会在源码树里放空的许可证占位文件（实测 zstd 1.5.7 的 build/LICENSE 是 0 字节）。

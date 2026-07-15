@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   PopplerReleaseGateError,
   detectPopplerPlatform,
+  downloadPinnedArtifact,
   selectLicenseEvidenceFiles,
+  sha256Bytes,
   sha256File,
   validatePopplerLock,
   validatePopplerManifest,
@@ -281,5 +283,67 @@ describe('Poppler release hard gate', () => {
     const candidates = makeLicenseTree({ LICENSE: '', 'build/COPYING': '' });
 
     expect(selectLicenseEvidenceFiles(candidates)).toEqual([]);
+  });
+
+  // lock 里 url 的归属由 validatePopplerLock 保证（每个 url 必须以 artifactBaseUrl 开头）。
+  // 下载时只剩两道兵：最终 URL 仍是 HTTPS，以及 sha256+bytes 对得上。
+  function stubFetch(finalUrl: string, body: string) {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      url: finalUrl,
+      arrayBuffer: async () => new TextEncoder().encode(body).buffer,
+    })) as unknown as typeof globalThis.fetch;
+    return () => { globalThis.fetch = original; };
+  }
+
+  function downloadTarget() {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'poppler-dl-test-'));
+    tempRoots.push(root);
+    return path.join(root, 'artifact.bin');
+  }
+
+  const pinnedPrefix = 'https://github.invalid/org/repo/releases/download/poppler-sidecar-26.02.0_1/';
+
+  it('accepts a cross-host HTTPS redirect when the pinned hash matches', async () => {
+    // GitHub Release 实测 302 到 release-assets.githubusercontent.com 的签名短期 URL。
+    // 拿最终 URL 比对 artifactBaseUrl 会把这条托管路径整个拒掉，故只认 HTTPS + 哈希。
+    const body = 'immutable sidecar bytes';
+    const restore = stubFetch('https://release-assets.githubusercontent.invalid/blob?sig=abc', body);
+    try {
+      const target = downloadTarget();
+      await downloadPinnedArtifact(`${pinnedPrefix}poppler-sidecar-darwin-arm64.tar.gz`, target, {
+        sha256: sha256Bytes(Buffer.from(body)),
+        bytes: Buffer.byteLength(body),
+      });
+      expect(fs.readFileSync(target, 'utf8')).toBe(body);
+    } finally {
+      restore();
+    }
+  });
+
+  it('rejects a redirect that downgrades off HTTPS', async () => {
+    const restore = stubFetch('http://cdn.invalid/blob', 'whatever');
+    try {
+      await expect(downloadPinnedArtifact(`${pinnedPrefix}x.tar.gz`, downloadTarget(), { sha256: digest, bytes: 8 }))
+        .rejects.toThrowError(expect.objectContaining({ code: 'artifact_insecure_redirect' }));
+    } finally {
+      restore();
+    }
+  });
+
+  it('rejects tampered bytes even when the final host looks project-controlled', async () => {
+    // 放宽最终 URL 前缀后，这是唯一的完整性兵——它必须真的会红。
+    const pinned = 'the payload we pinned';
+    const restore = stubFetch(`${pinnedPrefix}x.tar.gz`, 'tampered payload');
+    try {
+      await expect(downloadPinnedArtifact(`${pinnedPrefix}x.tar.gz`, downloadTarget(), {
+        sha256: sha256Bytes(Buffer.from(pinned)),
+        bytes: Buffer.byteLength(pinned),
+      })).rejects.toThrowError(expect.objectContaining({ code: 'artifact_integrity_mismatch' }));
+    } finally {
+      restore();
+    }
   });
 });

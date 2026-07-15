@@ -14,7 +14,7 @@ import {
   getSyncService,
   initLangfuse,
 } from '../services';
-import { initUpdateService, getUpdateService } from '../services/cloud/updateService';
+import { ensureUpdateServiceInitialized } from './updateServiceBootstrap';
 import { getTelemetryUploaderService } from '../telemetry/telemetryUploaderService';
 import { getPostHogDistinctId, setCurrentDistinctId, identifyNode } from '../observability/posthogNode';
 import { initMCPClient, getMCPClient, type MCPServerConfig } from '../mcp/mcpClient';
@@ -40,7 +40,7 @@ import { initCronService, getCronService, initHeartbeatService, getHeartbeatServ
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher } from '../services/skills';
 import { getMainWindow } from './window';
-import { SYNC, UPDATE, getCloudApiUrl, MEMORY_CONSOLIDATION } from '../../shared/constants';
+import { SYNC, MEMORY_CONSOLIDATION } from '../../shared/constants';
 import { loadSoul, watchSoulFiles } from '../prompts/soulLoader';
 import { initEventBridge } from '../services/eventing';
 // Event channel constants (post-IPC_CHANNELS deprecation)
@@ -279,68 +279,6 @@ function initializeSupabaseServices(mainWindow: AppWindow | null): void {
   authService.initialize()
     .then(() => logger.info('Auth service initialized'))
     .catch((error) => logger.error('Failed to initialize auth (non-blocking)', error));
-}
-
-/**
- * Initialize update service and auto-check for updates
- */
-function initializeUpdateService(configService: ConfigService, mainWindow: AppWindow | null): void {
-  const settings = configService.getSettings();
-
-  try {
-    const updateServerUrl = settings.cloudApi?.url || getCloudApiUrl();
-    initUpdateService({
-      updateServerUrl,
-      checkInterval: UPDATE.CLOUD_CHECK_INTERVAL,
-      autoDownload: false,
-    });
-
-    const updateService = getUpdateService();
-    updateService.setProgressCallback((progress) => {
-      if (mainWindow) {
-        mainWindow.webContents.send(EVENT_CHANNELS.UPDATE, {
-          type: 'download_progress',
-          data: progress,
-        });
-      }
-    });
-
-    updateService.setCompleteCallback((filePath) => {
-      if (mainWindow) {
-        mainWindow.webContents.send(EVENT_CHANNELS.UPDATE, {
-          type: 'download_complete',
-          data: { filePath },
-        });
-      }
-    });
-
-    updateService.setErrorCallback((error) => {
-      if (mainWindow) {
-        mainWindow.webContents.send(EVENT_CHANNELS.UPDATE, {
-          type: 'download_error',
-          data: { error: error.message },
-        });
-      }
-    });
-
-    // Start auto-check for updates (after a delay to not block startup)
-    setTimeout(() => {
-      updateService.checkForUpdates().then((info) => {
-        if (info.hasUpdate && mainWindow) {
-          mainWindow.webContents.send(EVENT_CHANNELS.UPDATE, {
-            type: 'update_available',
-            data: info,
-          });
-        }
-      }).catch((err) => {
-        logger.error('Update check failed', err);
-      });
-    }, UPDATE.INITIAL_CHECK_DELAY);
-
-    logger.info('Update service initialized', { server: updateServerUrl });
-  } catch (error: unknown) {
-    logger.error('Failed to initialize update service', error);
-  }
 }
 
 /**
@@ -756,7 +694,9 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
   }
 
   // Update service
-  initializeUpdateService(configService, mainWindow);
+  ensureUpdateServiceInitialized(configService, mainWindow
+    ? (event) => mainWindow.webContents.send(EVENT_CHANNELS.UPDATE, event)
+    : undefined);
 
   // Load soul/profile personality
   try {

@@ -201,6 +201,12 @@ if (Object.keys(keys).length === 0) {
   console.error(`[verify-macos-release] control-plane public keys file has no keys: ${file}`);
   process.exit(1);
 }
+const requiredKeyIds = ["production-2026-05-17", "production-2026-06-15"];
+const missingKeyIds = requiredKeyIds.filter((keyId) => typeof keys[keyId] !== "string" || keys[keyId].trim().length === 0);
+if (missingKeyIds.length > 0) {
+  console.error(`[verify-macos-release] control-plane public keys file is missing required keys: ${missingKeyIds.join(", ")}`);
+  process.exit(1);
+}
 ' "${CONTROL_PLANE_PUBLIC_KEYS_FILE}"
 fi
 

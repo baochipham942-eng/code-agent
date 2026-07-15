@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as path from 'path';
 import type { ControlPlaneEnvelope } from '../../../../src/shared/contract/controlPlane';
 import {
   buildControlPlaneContentHash,
@@ -40,6 +41,19 @@ function buildSignedEnvelope(
 }
 
 describe('controlPlaneTrust', () => {
+  it('keeps both production signing keys in the packaged compatibility set', () => {
+    const bundledKeys = JSON.parse(fs.readFileSync(
+      path.join(process.cwd(), 'config/control-plane-public-keys.json'),
+      'utf8',
+    )) as { keys: Record<string, string> };
+
+    expect(Object.keys(bundledKeys.keys).sort()).toEqual([
+      'production-2026-05-17',
+      'production-2026-06-15',
+    ]);
+    expect(bundledKeys.keys['production-2026-06-15']).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+  });
+
   it('trusts a signed, unexpired envelope with a matching payload hash', () => {
     const payload = {
       version: 'test',

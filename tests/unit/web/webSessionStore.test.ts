@@ -145,7 +145,46 @@ describe('WebSessionStore', () => {
       title: '重复消息',
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
     });
-    expect(db.updateMessage).toHaveBeenCalledWith('duplicate-user', message);
+    expect(db.updateMessage).toHaveBeenCalledWith('duplicate-user', message, 'session-duplicate');
+  });
+
+  it('direct core fallback surfaces a cross-session duplicate guard miss', async () => {
+    setDbAvailable(true);
+    const db = createDatabaseStub();
+    db.addMessage.mockImplementationOnce(() => {
+      throw new Error('SQLITE_CONSTRAINT: UNIQUE constraint failed: messages.id');
+    });
+    db.updateMessage.mockImplementationOnce(() => {
+      throw new Error('Message update missed for session session-core-b and id forced-core-collision');
+    });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => null,
+      logger,
+      getDatabase: async () => db as unknown as DatabaseService,
+    });
+
+    const persisted = await store.prePersistUserMessage({
+      sessionId: 'session-core-b',
+      title: 'core B',
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      message: {
+        id: 'forced-core-collision',
+        role: 'user',
+        content: 'core B',
+        timestamp: 20,
+      },
+    });
+
+    expect(persisted).toBe(false);
+    expect(db.updateMessage).toHaveBeenCalledWith(
+      'forced-core-collision',
+      expect.objectContaining({ content: 'core B' }),
+      'session-core-b',
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Pre-persist user message to DB failed (continuing run):',
+      'Message update missed for session session-core-b and id forced-core-collision',
+    );
   });
 
   it('commitTurn persists through the shared DB fallback when SessionManager is unavailable', async () => {
@@ -189,6 +228,7 @@ describe('WebSessionStore', () => {
     expect(db.updateMessage).toHaveBeenCalledWith(
       'duplicate-user',
       expect.objectContaining({ id: 'duplicate-user', role: 'user', content: '仍需落库' }),
+      'session-no-sm',
     );
     expect(db.addMessage).toHaveBeenLastCalledWith(
       'session-no-sm',
@@ -247,7 +287,7 @@ describe('WebSessionStore', () => {
       },
     });
 
-    expect(result.assistantMsgId).toMatch(/^msg-\d+-a$/);
+    expect(result.assistantMsgId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     expect(sessionMessages.get('session-memory')).toEqual([
       expect.objectContaining({ id: 'user-memory', role: 'user' }),
       expect.objectContaining({
@@ -494,7 +534,9 @@ describe('WebSessionStore', () => {
       },
     });
 
-    expect(result).toEqual({ assistantMsgId: expect.stringMatching(/^msg-\d+-a$/) });
+    expect(result).toEqual({
+      assistantMsgId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+    });
 
     expect(logger.warn).toHaveBeenCalledWith(
       'Failed to persist messages to DB:',
@@ -550,7 +592,9 @@ describe('WebSessionStore', () => {
       },
     });
 
-    expect(result).toEqual({ assistantMsgId: expect.stringMatching(/^msg-\d+-a$/) });
+    expect(result).toEqual({
+      assistantMsgId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+    });
 
     expect(logger.warn).toHaveBeenCalledWith(
       '[AgentRouter] Failed to verify loop-persisted assistant messages for session-dedup-failure:',

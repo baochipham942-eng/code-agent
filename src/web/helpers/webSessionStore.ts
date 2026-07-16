@@ -2,6 +2,7 @@ import type { Message, ModelConfig, Session } from '../../shared/contract';
 import type { DatabaseService } from '../../host/services/core/databaseService';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import type { SessionCreateOptions } from '../../cli/session';
+import { generateMessageId } from '../../shared/utils/id';
 import type { WebRouteLogger } from '../routes/routeTypes';
 import {
   type CachedContentPart,
@@ -229,7 +230,7 @@ async function persistMessageToDb(
     if (!isDuplicateMessageError(error)) {
       throw error;
     }
-    db.updateMessage(message.id, message);
+    db.updateMessage(message.id, message, sessionId);
   }
 }
 
@@ -451,7 +452,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         turn,
       } = input;
 
-      const assistantMsgId = `msg-${Date.now()}-a`;
+      const assistantMsgId = generateMessageId();
       const assistantArtifacts = turn.assistantText ? extractArtifacts(turn.assistantText) : [];
       if (!dbAvailable) {
         fallbackToCollectorSessionProjection(

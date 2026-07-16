@@ -76,6 +76,19 @@ async function writeB3Workbook(name: string): Promise<string> {
   return filePath;
 }
 
+/** 真实 xlsx 格式：底层值保持数值，单元格展示分别为日期、百分比和普通数字。 */
+async function writeFormattedWorkbook(name: string): Promise<string> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Sheet1');
+  ws.addRow(['日期', '比例', '数量']);
+  ws.addRow([46096, 0.125, 100]);
+  ws.getCell('A2').numFmt = 'm/d/yy';
+  ws.getCell('B2').numFmt = '0.0%';
+  const filePath = join(workDir, name);
+  await wb.xlsx.writeFile(filePath);
+  return filePath;
+}
+
 async function excelText(filePath: string): Promise<string> {
   const handler = handlers.get('extract-excel-text');
   if (!handler) throw new Error('extract-excel-text 未注册');
@@ -176,6 +189,27 @@ describe('附件上下文的 CSV：模型不用数行', () => {
 
     expect(text).toContain('"a,b"');
     expect(text).toContain('"他说""好"""');
+  });
+});
+
+describe('附件上下文与预览的值语义各自稳定', () => {
+  it('text handler 输出日期和百分比的格式化文本，普通数字不变', async () => {
+    const filePath = await writeFormattedWorkbook('formatted.xlsx');
+    const text = await excelText(filePath);
+
+    expect(text).toContain('2,3/15/26,12.5%,100');
+    expect(text).not.toContain('46096');
+    expect(text).not.toContain('0.125');
+  });
+
+  it('preview JSON 保持日期、百分比和普通数字的 raw 数值语义', async () => {
+    const filePath = await writeFormattedWorkbook('formatted-preview.xlsx');
+    const jsonHandler = handlers.get('extract-excel-json');
+    const { sheets } = (await jsonHandler!(null, filePath)) as {
+      sheets: Array<{ rows: unknown[][] }>;
+    };
+
+    expect(sheets[0].rows[0]).toEqual([46096, 0.125, 100]);
   });
 });
 

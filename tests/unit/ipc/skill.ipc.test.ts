@@ -22,6 +22,7 @@ const svc = vi.hoisted(() => {
     getWorkingDirectory: vi.fn(() => '/work'),
     ensureInitialized: vi.fn(async () => {}),
     refreshLibraries: vi.fn(async () => {}),
+    reload: vi.fn(async () => {}),
     getAllSkills: vi.fn(() => [{ name: 'pdf' }, { name: 'excel' }]),
     registerSkillsToToolSearch: vi.fn(),
     initialize: vi.fn(async () => {}),
@@ -47,12 +48,19 @@ const svc = vi.hoisted(() => {
     confirmSkillDraft: vi.fn(async () => ({ success: true })),
     rejectSkillDraft: vi.fn(async () => ({ success: true })),
   };
+  const registry = {
+    listItems: vi.fn(async () => ({ items: [] })),
+    listItemsCached: vi.fn(async () => [] as unknown[]),
+    invalidateListCache: vi.fn(),
+    getEntry: vi.fn(async () => null),
+  };
+  const marketplaceInstall = vi.fn(async () => ({ success: true }));
   const projectPref = {
     getOverride: vi.fn<(name: string) => boolean | undefined>(() => undefined),
     setOverride: vi.fn(),
     clearOverride: vi.fn(),
   };
-  return { repo, discovery, session, cloud, config, recorder, drafts, projectPref };
+  return { repo, discovery, session, cloud, config, recorder, drafts, registry, marketplaceInstall, projectPref };
 });
 
 vi.mock('../../../src/host/services/skills/skillRepositoryService', () => ({
@@ -84,6 +92,12 @@ vi.mock('../../../src/host/services/skills/skillDraftQueue', () => ({
   confirmSkillDraft: (...a: unknown[]) => svc.drafts.confirmSkillDraft(...a),
   rejectSkillDraft: (...a: unknown[]) => svc.drafts.rejectSkillDraft(...a),
 }));
+vi.mock('../../../src/host/skills/marketplace/remoteSkillRegistryService', () => ({
+  getRemoteSkillRegistryService: () => svc.registry,
+}));
+vi.mock('../../../src/host/skills/marketplace/installService', () => ({
+  installFromRegistryEntry: (...a: unknown[]) => svc.marketplaceInstall(...a),
+}));
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
@@ -108,6 +122,7 @@ beforeEach(() => {
   svc.repo.removeRepository.mockResolvedValue(undefined);
   svc.discovery.ensureInitialized.mockResolvedValue(undefined);
   svc.discovery.refreshLibraries.mockResolvedValue(undefined);
+  svc.discovery.reload.mockResolvedValue(undefined);
   svc.discovery.registerSkillsToToolSearch.mockReturnValue(undefined);
   svc.discovery.initialize.mockResolvedValue(undefined);
   svc.repo.getLocalLibraries.mockReturnValue([{ id: 'lib1' }]);
@@ -129,6 +144,10 @@ beforeEach(() => {
   svc.drafts.listSkillDrafts.mockResolvedValue([{ id: 'd1' }]);
   svc.drafts.confirmSkillDraft.mockResolvedValue({ success: true });
   svc.drafts.rejectSkillDraft.mockResolvedValue({ success: true });
+  svc.registry.listItems.mockResolvedValue({ items: [] });
+  svc.registry.listItemsCached.mockResolvedValue([]);
+  svc.registry.getEntry.mockResolvedValue(null);
+  svc.marketplaceInstall.mockResolvedValue({ success: true });
   svc.projectPref.getOverride.mockReturnValue(undefined);
   call = register();
 });
@@ -254,9 +273,83 @@ describe('会话挂载', () => {
     expect(svc.session.getMountedSkills).toHaveBeenCalledWith('s1');
   });
 
-  it('SESSION_RECOMMEND 缺 userInput 传空串', async () => {
-    await call(SKILL_CHANNELS.SESSION_RECOMMEND, 's1');
-    expect(svc.session.recommendSkills).toHaveBeenCalledWith('s1', '');
+  it('SESSION_RECOMMEND 缺 userInput 不触发旧本地 skill 推荐', async () => {
+    expect(await call(SKILL_CHANNELS.SESSION_RECOMMEND, 's1')).toEqual([]);
+    expect(svc.registry.listItemsCached).not.toHaveBeenCalled();
+    expect(svc.session.recommendSkills).not.toHaveBeenCalled();
+  });
+
+  it('SESSION_RECOMMEND 只返回未安装 marketplace skill 并记录 session 去重', async () => {
+    svc.registry.listItemsCached.mockResolvedValue([{
+        entry: {
+          name: 'figma-skill',
+          displayName: 'Figma Skill',
+          description: 'Figma import',
+          repository: 'owner/figma-skill',
+          pinnedCommit: 'a'.repeat(40),
+          contentHash: '1'.repeat(64),
+          skills: ['skills/figma'],
+          publisher: 'Agent Neo',
+          reviewedAt: '2026-07-17',
+          keywords: ['figma'],
+        },
+        installed: false,
+        hasUpdate: false,
+      }]);
+
+    const first = await call(SKILL_CHANNELS.SESSION_RECOMMEND, 'dedupe-session', 'use figma import');
+    const second = await call(SKILL_CHANNELS.SESSION_RECOMMEND, 'dedupe-session', 'use figma import');
+
+    expect(first).toMatchObject([
+      {
+        skillName: 'figma-skill',
+        action: 'install',
+        libraryId: 'figma-skill@official-registry',
+      },
+    ]);
+    expect(second).toEqual([]);
+  });
+});
+
+describe('官方 registry 安装', () => {
+  const freshEntry = {
+    name: 'figma-skill',
+    repository: 'owner/figma-skill',
+    pinnedCommit: 'a'.repeat(40),
+    contentHash: '1'.repeat(64),
+    skills: ['skills/figma'],
+    publisher: 'Agent Neo',
+    reviewedAt: '2026-07-17',
+  };
+
+  it('REGISTRY_INSTALL 只用 name 取 host 侧新鲜 entry 并安装', async () => {
+    svc.registry.getEntry.mockResolvedValue(freshEntry);
+    const forgedRendererEntry = {
+      name: 'figma-skill',
+      pinnedCommit: 'b'.repeat(40),
+      contentHash: '2'.repeat(64),
+    };
+
+    expect(await call(SKILL_CHANNELS.REGISTRY_INSTALL, 'figma-skill', forgedRendererEntry)).toEqual({ success: true });
+    expect(svc.registry.getEntry).toHaveBeenCalledWith('figma-skill');
+    expect(svc.marketplaceInstall).toHaveBeenCalledWith(freshEntry, {
+      force: true,
+      enableAfterInstall: true,
+    });
+    expect(svc.marketplaceInstall).not.toHaveBeenCalledWith(expect.objectContaining({
+      pinnedCommit: 'b'.repeat(40),
+    }), expect.anything());
+    expect(svc.discovery.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('REGISTRY_INSTALL 找不到 entry 时不进入安装链', async () => {
+    svc.registry.getEntry.mockResolvedValue(null);
+
+    expect(await call(SKILL_CHANNELS.REGISTRY_INSTALL, 'missing-skill')).toEqual({
+      success: false,
+      error: 'Registry entry not found: missing-skill',
+    });
+    expect(svc.marketplaceInstall).not.toHaveBeenCalled();
   });
 });
 

@@ -875,6 +875,17 @@ export const en: Translations = {
     enable: 'Enable',
   },
 
+  skillRecommendations: {
+    title: 'Recommended for this task',
+    installAndSelect: 'Install and select',
+    installing: 'Installing...',
+    select: 'Select',
+    mounted: 'Mounted',
+    installedAndMounted: 'Installed and mounted',
+    installFailedPrefix: 'Install failed: ',
+    mountFailedPrefix: 'Mount failed: ',
+  },
+
   // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
   workbenchTabs: {
     openPanel: 'Open panel',

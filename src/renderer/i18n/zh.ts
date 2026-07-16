@@ -864,6 +864,17 @@ export const zh = {
     enable: '开启',
   },
 
+  skillRecommendations: {
+    title: '为这个任务推荐',
+    installAndSelect: '安装并选用',
+    installing: '安装中…',
+    select: '选用',
+    mounted: '已挂载',
+    installedAndMounted: '已安装并挂载',
+    installFailedPrefix: '安装失败: ',
+    mountFailedPrefix: '挂载失败: ',
+  },
+
   workbenchTabs: {
     openPanel: '打开面板',
     filesLabel: '文件',

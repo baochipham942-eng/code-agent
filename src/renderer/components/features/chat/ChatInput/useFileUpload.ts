@@ -91,6 +91,7 @@ export function useFileUpload() {
       } catch (e) {
         logger.warn('Docx extraction failed', { error: e });
       }
+      showToast('error', `文件 "${file.name}" 处理失败：无法解析 Word 文档。请确认文件未损坏后重试`);
       return null;
     }
 
@@ -113,12 +114,16 @@ export function useFileUpload() {
         };
       }
       logger.warn('Excel extraction failed, falling back to binary warning');
+      showToast('error', `文件 "${file.name}" 处理失败：无法解析 Excel 文件。请确认文件未损坏后重试`);
       return null;
     }
 
     if (category === 'presentation') {
       const data = await readFileAsDataUrl(file);
-      if (!data) return null;
+      if (!data) {
+        showToast('error', `文件 "${file.name}" 读取失败：无法读取演示文稿内容。请检查文件是否损坏或重新选择`);
+        return null;
+      }
 
       const summary = await buildPresentationSummary(file);
       return {
@@ -132,7 +137,10 @@ export function useFileUpload() {
 
     if (category === 'archive') {
       const data = await readFileAsDataUrl(file);
-      if (!data) return null;
+      if (!data) {
+        showToast('error', `文件 "${file.name}" 读取失败：无法读取压缩包内容。请检查文件是否损坏或重新选择`);
+        return null;
+      }
 
       const archiveManifest = await buildArchiveManifest(file);
       return {
@@ -144,6 +152,7 @@ export function useFileUpload() {
 
     if (category === 'document') {
       logger.warn('Unsupported Office document type', { fileName: file.name, mimeType: file.type });
+      showToast('warning', `文件 "${file.name}" 格式暂不支持。请转换为 DOCX 或 PDF 后重试`);
       return null;
     }
 
@@ -157,7 +166,10 @@ export function useFileUpload() {
             mimeType: file.type, data, thumbnail: data, path: filePath,
           });
         };
-        reader.onerror = () => resolve(null);
+        reader.onerror = () => {
+          showToast('error', `文件 "${file.name}" 读取失败：无法读取图片内容。请检查文件是否损坏或重新选择`);
+          resolve(null);
+        };
         reader.readAsDataURL(file);
       });
     }
@@ -173,7 +185,11 @@ export function useFileUpload() {
             data, path: filePath,
           });
         };
-        reader.onerror = () => resolve(null);
+        reader.onerror = () => {
+          const kind = category === 'audio' ? '音频' : '视频';
+          showToast('error', `文件 "${file.name}" 读取失败：无法读取${kind}内容。请检查文件是否损坏或重新选择`);
+          resolve(null);
+        };
         reader.readAsDataURL(file);
       });
     }
@@ -187,7 +203,10 @@ export function useFileUpload() {
           mimeType: file.type || 'text/plain', data, language, path: filePath,
         });
       };
-      reader.onerror = () => resolve(null);
+      reader.onerror = () => {
+        showToast('error', `文件 "${file.name}" 读取失败：无法读取文本文件内容。请检查文件是否损坏或重新选择`);
+        resolve(null);
+      };
       reader.readAsText(file);
     });
   }, [showToast]);
@@ -200,6 +219,7 @@ export function useFileUpload() {
     const files = await readDirectoryEntry(dirEntry, folderName);
     if (files.length === 0) {
       logger.warn('文件夹中没有可处理的文件', { folderName });
+      showToast('warning', `文件夹 "${folderName}" 中没有可处理的文件。请选择包含可读文件的文件夹`);
       return null;
     }
 
@@ -260,7 +280,7 @@ export function useFileUpload() {
       mimeType: 'inode/directory', data: summary, files: fileContents, path: folderPath,
       folderStats: { totalFiles: files.length, totalSize, byType },
     };
-  }, []);
+  }, [showToast]);
 
   return { processFile, processFolderEntry };
 }

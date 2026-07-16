@@ -17,6 +17,7 @@ import {
 } from '../memory/knowledgeInboxDecision';
 import { packMemoryEntries } from '../memory/memoryEntryRuntime';
 import type { MemoryPackResult } from '../../shared/contract/memory';
+import { estimateTokens } from '../context/tokenEstimator';
 
 const logger = createLogger('SeedMemoryInjector');
 
@@ -30,11 +31,8 @@ const MAX_SEED_MEMORIES = 10;
 /** Maximum total tokens for the seed memory block (~200 tokens ≈ ~800 chars) */
 const MAX_SEED_TOKENS = 200;
 
-/** Approximate chars per token for English/mixed content */
-const CHARS_PER_TOKEN = 4;
-
-/** Maximum characters for the entire block */
-const MAX_SEED_CHARS = MAX_SEED_TOKENS * CHARS_PER_TOKEN;
+/** Character budget retained for the memory packer API. */
+const MAX_SEED_CHARS = 800;
 
 /** Maximum characters per individual memory entry */
 const MAX_ENTRY_CHARS = 120;
@@ -116,28 +114,25 @@ export function buildSeedMemoryBlock(projectPath?: string): string | null {
 
     // Build entries, respecting token budget
     const entries: string[] = [];
-    let totalChars = 0;
-    const headerChars = '## Stored Memories\n'.length;
-    totalChars += headerChars;
+    let block = '## Stored Memories';
 
     for (const mem of sorted) {
       const entry = formatMemoryEntry(mem);
-      const entryChars = entry.length + 1; // +1 for newline
+      const nextBlock = `${block}\n${entry}`;
 
-      if (totalChars + entryChars > MAX_SEED_CHARS) {
+      if (estimateTokens(nextBlock) > MAX_SEED_TOKENS) {
         break;
       }
 
       entries.push(entry);
-      totalChars += entryChars;
+      block = nextBlock;
     }
 
     if (entries.length === 0) {
       return null;
     }
 
-    const block = `## Stored Memories\n${entries.join('\n')}`;
-    logger.info(`[SeedMemory] Injecting ${entries.length} seed memories (~${Math.ceil(totalChars / CHARS_PER_TOKEN)} tokens)`);
+    logger.info(`[SeedMemory] Injecting ${entries.length} seed memories (~${estimateTokens(block)} tokens)`);
 
     return block;
   } catch (error) {
@@ -184,9 +179,10 @@ export async function buildPackedSeedMemory(options: {
       return null;
     }
 
-    logger.info(`[SeedMemory] Injecting ${packed.items.length} packed memories (~${Math.ceil(packed.totalChars / CHARS_PER_TOKEN)} tokens)`);
+    const block = `## Packed Memories\n${packed.block}`;
+    logger.info(`[SeedMemory] Injecting ${packed.items.length} packed memories (~${estimateTokens(block)} tokens)`);
     return {
-      block: `## Packed Memories\n${packed.block}`,
+      block,
       packed,
     };
   } catch (error) {

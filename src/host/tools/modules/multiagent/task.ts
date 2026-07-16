@@ -39,7 +39,6 @@ import {
   getAgentMaxBudget,
   getSubagentModelConfig,
   CORE_AGENT_IDS,
-  isCoreAgent,
 } from '../../../agent/agentDefinition';
 import { taskDeduplication } from '../../../agent/taskDeduplication';
 import { resolveModelDecision } from '../../../model/modelDecision';
@@ -262,6 +261,9 @@ export async function executeTask(
   }
 
   const agentName = agentConfig.name;
+  const declaredOutputs = agentConfig.outputs && agentConfig.outputs.length > 0
+    ? agentConfig.outputs
+    : undefined;
   let systemPrompt = getAgentPrompt(agentConfig);
   const tools = getAgentTools(agentConfig);
   const maxIterations = getAgentDynamicMaxIterations(agentConfig, prompt);
@@ -421,6 +423,7 @@ Stats:
             iterations: result.iterations,
             tools: result.toolsUsed.length,
           },
+          declaredOutputs,
           result: {
             agentName,
             subagentType,
@@ -462,6 +465,7 @@ Stats:
         iterations: result.iterations,
         tools: result.toolsUsed.length,
       },
+      declaredOutputs,
       result: {
         agentName,
         subagentType,

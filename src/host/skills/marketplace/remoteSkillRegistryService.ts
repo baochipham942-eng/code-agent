@@ -36,6 +36,8 @@ const SkillRegistryEntrySchema = z.object({
   reviewedAt: z.string().min(1),
   version: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  keywords: z.array(z.string()).optional(),
+  domains: z.array(z.string()).optional(),
   risk: z.object({
     tier: z.enum(['low', 'medium', 'high']),
     reasons: z.array(z.string()).optional(),
@@ -61,8 +63,11 @@ export interface RemoteSkillRegistryServiceOptions {
   now?: number;
 }
 
+const LIST_ITEMS_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export class RemoteSkillRegistryService {
   private options: RemoteSkillRegistryServiceOptions;
+  private listItemsCache: { at: number; items: SkillRegistryListItem[] } | null = null;
 
   constructor(options: RemoteSkillRegistryServiceOptions = {}) {
     this.options = options;
@@ -149,6 +154,29 @@ export class RemoteSkillRegistryService {
       };
     });
     return { items };
+  }
+
+  /**
+   * listItems 的 TTL 缓存版，供输入期推荐等高频只读路径用。
+   * 推荐按防抖击键触发，registry 变化极低频——不缓存会让每次输入都打一次控制面网络请求。
+   * 安装/货架页仍走 listItems/getEntry 拿新鲜数据。
+   */
+  async listItemsCached(): Promise<SkillRegistryListItem[]> {
+    const now = Date.now();
+    if (this.listItemsCache && now - this.listItemsCache.at < LIST_ITEMS_CACHE_TTL_MS) {
+      return this.listItemsCache.items;
+    }
+    const { items } = await this.listItems();
+    // 拉取失败/空货架不缓存，下次重试
+    if (items.length > 0) {
+      this.listItemsCache = { at: now, items };
+    }
+    return items;
+  }
+
+  /** 安装成功后 installed 标记变化，缓存失效 */
+  invalidateListCache(): void {
+    this.listItemsCache = null;
   }
 
   /** 按名取 host 侧新鲜条目（安装/升级入口，不信任 renderer 传来的条目体） */

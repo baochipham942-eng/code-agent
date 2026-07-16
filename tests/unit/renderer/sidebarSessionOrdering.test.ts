@@ -49,6 +49,27 @@ describe('sidebarSessionOrdering', () => {
     ]);
   });
 
+  it('prioritizes needs-input sessions in the approval recovery bucket before running and done', () => {
+    const sessions = [
+      makeSession('done-new', 500),
+      makeSession('running-newer', 400),
+      makeSession('needs-input-old', 100),
+    ];
+    const kinds: Record<string, SessionStatusKind> = {
+      'done-new': 'done',
+      'running-newer': 'live',
+      'needs-input-old': 'approval',
+    };
+
+    const sorted = sortSidebarSessionsForRecovery(sessions, (session) => kinds[session.id]);
+
+    expect(sorted.map((session) => session.id)).toEqual([
+      'needs-input-old',
+      'running-newer',
+      'done-new',
+    ]);
+  });
+
   it('keeps recency order inside the same recovery bucket', () => {
     const sessions = [
       makeSession('older-running', 100),

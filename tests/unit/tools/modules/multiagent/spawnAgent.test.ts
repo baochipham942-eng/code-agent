@@ -70,7 +70,7 @@ describe('spawn_agent / AgentSpawn schemas', () => {
     expect(spawnAgentModule.schema.description).toContain('2-3 layers');
   });
 
-  it('inputSchema 含 role/task/agents/parallel/forkContext/isolation', () => {
+  it('inputSchema 含 role/task/agents/parallel/forkContext/isolation/foregroundBlockingBudgetMs', () => {
     const props = spawnAgentModule.schema.inputSchema.properties as Record<string, unknown>;
     expect(props).toHaveProperty('role');
     expect(props).toHaveProperty('task');
@@ -78,6 +78,7 @@ describe('spawn_agent / AgentSpawn schemas', () => {
     expect(props).toHaveProperty('parallel');
     expect(props).toHaveProperty('forkContext');
     expect(props).toHaveProperty('isolation');
+    expect(props).toHaveProperty('foregroundBlockingBudgetMs');
   });
 
   it('permissionLevel = execute', () => {

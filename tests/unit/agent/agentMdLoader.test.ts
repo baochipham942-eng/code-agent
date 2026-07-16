@@ -90,4 +90,42 @@ describe('parseAgentMd', () => {
     expect(config).not.toBeNull();
     expect(config!.skills).toBeUndefined();
   });
+
+  it('should parse declared inputs and outputs as string arrays', () => {
+    const content = [
+      '---',
+      'name: report-writer',
+      'description: 报告生成 agent',
+      'inputs:',
+      '  - 目标文件路径',
+      '  - 读者画像',
+      'outputs:',
+      '  - markdown 报告',
+      '  - 风险清单',
+      '---',
+      'Write a report.',
+    ].join('\n');
+
+    const config = parseAgentMd(content, 'report-writer.md');
+    expect(config).not.toBeNull();
+    expect(config!.inputs).toEqual(['目标文件路径', '读者画像']);
+    expect(config!.outputs).toEqual(['markdown 报告', '风险清单']);
+  });
+
+  it('should leave inputs and outputs undefined when not declared or empty', () => {
+    const content = [
+      '---',
+      'name: plain-io-agent',
+      'description: 无 I/O 声明',
+      'inputs: []',
+      'outputs: []',
+      '---',
+      'Prompt body.',
+    ].join('\n');
+
+    const config = parseAgentMd(content, 'plain-io-agent.md');
+    expect(config).not.toBeNull();
+    expect(config!.inputs).toBeUndefined();
+    expect(config!.outputs).toBeUndefined();
+  });
 });

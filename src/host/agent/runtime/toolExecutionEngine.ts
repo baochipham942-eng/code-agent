@@ -72,6 +72,8 @@ import {
   semanticProgressReasonForToolCall,
 } from './toolPreflightGuards';
 import { getArtifactLocatorPreflightBlock } from '../../tools/artifacts/artifactLocatorHost';
+import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
+import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 
 const logger = createLogger('AgentLoop');
 
@@ -773,6 +775,7 @@ export class ToolExecutionEngine {
           toolScope: this.ctx.toolScope,
           executionIntent: this.ctx.executionIntent,
           neoTag: this.ctx.neoTag,
+          suppressBackgroundSubagentIdleWake: Boolean(this.ctx.goalMode?.isPending()),
           abortSignal: this.ctx.control.runAbortController?.signal,
         }
       );
@@ -927,7 +930,8 @@ export class ToolExecutionEngine {
         this.contextAssembly.injectSystemMessage(readWriteWarning);
       }
 
-      const preservedToolResult = markFileEvidenceResult(toolCall, toolResult);
+      let preservedToolResult = markFileEvidenceResult(toolCall, toolResult);
+      preservedToolResult = this.appendBackgroundCompletionReminder(preservedToolResult);
 
       // User-configurable Post-Tool Hook
       if (this.ctx.hookManager) {
@@ -1108,6 +1112,24 @@ export class ToolExecutionEngine {
         this.ctx.modelConfig,
       );
       return typeof response.content === 'string' ? response.content : '';
+    };
+  }
+
+  private appendBackgroundCompletionReminder(result: ToolResult): ToolResult {
+    if (!this.ctx.sessionId) return result;
+    // 按 session 级 drain：记录钉着派生时的 runId，按当前 runId 过滤会让跨 run 的完成通知永远匹配不上而静默丢失。
+    const records = getBackgroundSubagentRegistry().drainCompletionNotifications({
+      sessionId: this.ctx.sessionId,
+    });
+    const reminder = formatSystemReminderForCompletions(records);
+    if (!reminder) return result;
+    return {
+      ...result,
+      output: result.output ? `${result.output}\n\n${reminder}` : reminder,
+      metadata: {
+        ...result.metadata,
+        backgroundCompletionReminderCount: records.length,
+      },
     };
   }
 

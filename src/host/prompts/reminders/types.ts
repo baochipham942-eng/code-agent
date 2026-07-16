@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { TaskFeatures } from '../systemReminders';
+export { estimateTokens } from '../../context/tokenEstimator';
 
 /**
  * 提醒优先级
@@ -36,11 +37,4 @@ export interface ReminderDefinition {
   shouldInclude: (context: ReminderContext) => number; // 返回 0-1 的匹配分数
   exclusiveGroup?: string; // 用于去重，同组只选一个
   category: 'mode' | 'tool' | 'safety' | 'efficiency' | 'quality';
-}
-
-/**
- * 估算文本的 token 数量
- */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
 }

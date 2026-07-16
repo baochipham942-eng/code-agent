@@ -27,6 +27,7 @@ import {
   type SwarmRunRef,
   type SwarmRunScope,
 } from '../../shared/contract/swarm';
+import { buildSubagentCompletionRecord } from './subagentCompletionNotification';
 
 const logger = createLogger('SpawnGuard');
 
@@ -842,21 +843,28 @@ class SpawnGuard {
    * Format an async notification when an agent completes (Codex-style XML).
    */
   formatNotification(agent: ManagedAgent): string {
-    const data = {
-      agent_id: agent.id,
+    return buildSubagentCompletionRecord({
+      agentId: agent.id,
       role: agent.role,
-      status: agent.status,
-      result: agent.result?.output?.slice(0, 1200),
-      stats: {
-        tool_calls: agent.result?.toolsUsed.length ?? 0,
-        iterations: agent.result?.iterations ?? 0,
-        cost: agent.result?.cost,
-        duration_ms: agent.completedAt
-          ? agent.completedAt - agent.createdAt
-          : undefined,
-      },
-    };
-    return `<subagent_notification>\n${JSON.stringify(data, null, 2)}\n</subagent_notification>`;
+      status: agent.status === 'completed'
+        ? 'completed'
+        : agent.status === 'cancelled'
+          ? 'cancelled'
+          : agent.status === 'killed'
+            ? 'killed'
+            : 'failed',
+      output: agent.result?.output,
+      error: agent.error,
+      startedAt: agent.createdAt,
+      finishedAt: agent.completedAt,
+      failureCode: agent.result?.failureCode,
+      toolsUsed: agent.result?.toolsUsed,
+      iterations: agent.result?.iterations,
+      cost: agent.result?.cost,
+      sessionId: agent.sessionId,
+      runId: agent.runId,
+      treeId: agent.treeId,
+    }).content;
   }
 
   /**

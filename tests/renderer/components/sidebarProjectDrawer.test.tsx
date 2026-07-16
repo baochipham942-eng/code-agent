@@ -24,6 +24,7 @@ describe('SidebarProjectDrawer', () => {
           displayName: 'code-agent',
           sessionCount: 8,
           unfinishedCount: 2,
+          needsInputCount: 1,
           pendingApprovalCount: 1,
           attentionCount: 1,
           runningCount: 0,

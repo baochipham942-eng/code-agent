@@ -26,6 +26,11 @@ function stringArrayValue(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : undefined;
 }
 
+function nonEmptyStringArrayValue(value: unknown): string[] | undefined {
+  const items = stringArrayValue(value)?.map((item) => item.trim()).filter(Boolean);
+  return items && items.length > 0 ? items : undefined;
+}
+
 function modelTierValue(value: unknown): ModelTier | undefined {
   return value === 'fast' || value === 'balanced' || value === 'powerful' ? value : undefined;
 }
@@ -60,6 +65,8 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     tools: stringArrayValue(frontmatter.tools) || ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'],
     // GAP-011：skills 字段（课程"方向 A"）——预装 skill 全文注入子代理 system prompt
     skills: stringArrayValue(frontmatter.skills),
+    inputs: nonEmptyStringArrayValue(frontmatter.inputs),
+    outputs: nonEmptyStringArrayValue(frontmatter.outputs),
     model: modelTierValue(frontmatter.model) || 'balanced',
     maxIterations: numberValue(frontmatter['max-iterations']) || 30,
     readonly: booleanValue(frontmatter.readonly) ?? false,

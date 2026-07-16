@@ -30,11 +30,29 @@ import { withMultiagentMeta } from './resultMeta';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { estimateTokens } from '../../../context/tokenEstimator';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
+import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
 import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
 import {
   AgentFailureCode,
   inferAgentFailureCode,
 } from '../../../../shared/contract/agentFailure';
+
+function getDeclaredOutputsForRole(role: string | undefined): string[] | undefined {
+  if (!role) return undefined;
+  try {
+    // 只走 agentRegistry 模块加载时注册的进程内 provider——顶层 createRequire(import.meta.url)
+    // 在 CJS bundle 里 import.meta.url 为 undefined，模块加载即炸（PR#417 CI 实锤）。
+    const globalRegistry = (globalThis as typeof globalThis & {
+      codeAgentAgentRegistry?: {
+        resolveAgent?: (id: string) => { outputs?: string[] } | undefined;
+      };
+    }).codeAgentAgentRegistry;
+    const outputs = globalRegistry?.resolveAgent?.(role)?.outputs;
+    return outputs && outputs.length > 0 ? outputs : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 const ROLE_ALIASES: Record<string, string> = {
   explorer: 'explore',
@@ -124,6 +142,8 @@ async function runSpawnAgent(
   // abort 会连带杀掉后台任务，"后台"语义就破了。进程内 only（不跨重启 resume）。
   if (args.run_in_background === true) {
     const bgController = new AbortController();
+    const backgroundRole = typeof normalizedArgs.role === 'string' ? normalizedArgs.role : undefined;
+    const declaredOutputs = getDeclaredOutputsForRole(backgroundRole);
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
       const bgResult = await executeSpawnAgent(normalizedArgs, {
         ...executionContext,
@@ -144,6 +164,17 @@ async function runSpawnAgent(
         iterations: 0,
         ...(failureCode ? { failureCode } : {}),
       };
+    }, {
+      sessionId: ctx.sessionId,
+      ...(ctx.runId ? { runId: ctx.runId } : {}),
+      ...(ctx.swarmRunScope?.treeId ?? ctx.spawnTreeId
+        ? { treeId: ctx.swarmRunScope?.treeId ?? ctx.spawnTreeId }
+        : {}),
+      role: backgroundRole,
+      declaredOutputs,
+      suppressIdleWake: Boolean(ctx.suppressBackgroundSubagentIdleWake),
+      ...(ctx.suppressBackgroundSubagentIdleWake ? { suppressReason: 'goal-loop' as const } : {}),
+      onComplete: scheduleBackgroundSubagentIdleWake,
     });
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug(`${schemaName} spawned in background`, { agentId });
@@ -154,7 +185,7 @@ async function runSpawnAgent(
       },
       ctx,
       schemaName,
-      { action: 'spawn', status: 'running', agentId, result: { background: true } },
+      { action: 'spawn', status: 'running', agentId, declaredOutputs, result: { background: true } },
       `${schemaName} background`,
     );
   }

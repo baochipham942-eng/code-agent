@@ -82,6 +82,7 @@ import {
   requestDurableAgentTeamLaunchApproval,
   prepareAgentTeamDurableController,
 } from '../agentTeamDurableLaunch';
+import { adoptForegroundSubagent, delegateSpawnAgentWorktreeCleanup, finalizeForegroundSpawnAgentWorktree, raceForegroundBlockingBudget, resolveForegroundBlockingBudgetMs, validateForegroundBlockingBudget } from './spawnAgentForegroundBackground';
 
 /**
  * spawn_agent / AgentSpawn protocol-native execution service.
@@ -151,6 +152,7 @@ export async function executeSpawnAgent(
     const maxBudget = params.maxBudget as number | undefined;
     const waitForCompletion = params.waitForCompletion !== false;
     const maxIterations = (params.maxIterations as number) || 20;
+    const foregroundBlockingBudgetMs = resolveForegroundBlockingBudgetMs(params.foregroundBlockingBudgetMs);
 
     // Validate required params for single agent
     if (!task) {
@@ -452,6 +454,14 @@ export async function executeSpawnAgent(
         permissionPreset,
         maxBudget: effectiveMaxBudget,
       };
+      const budgetError = validateForegroundBlockingBudget(agentName, foregroundBlockingBudgetMs);
+      if (budgetError) return budgetError;
+
+      const delegateWorktreeCleanup = (): void => {
+        if (!worktreeInfo || worktreeCleanupDelegated || worktreeFinalized) return;
+        delegateSpawnAgentWorktreeCleanup({ guard, agentId, repoPath: context.cwd, worktreeInfo, isFinalized: () => worktreeFinalized, markFinalized: () => { worktreeFinalized = true; } });
+        worktreeCleanupDelegated = true;
+      };
 
       // Covers cancellation during async worktree/context preparation. Once
       // this check passes, execute()+register() run in one synchronous turn.
@@ -459,6 +469,7 @@ export async function executeSpawnAgent(
 
       if (waitForCompletion) {
         // Execute and wait for result
+        const agentStartedAt = Date.now();
         const promise = executor.execute({
           prompt: enrichedTask,
           config: executorConfig,
@@ -476,26 +487,34 @@ export async function executeSpawnAgent(
         registeredWithGuard = true;
         slotLease = undefined;
 
-        const result = await promise;
+        const raced = await raceForegroundBlockingBudget(promise, foregroundBlockingBudgetMs);
+
+        if (raced.kind === 'timeout') {
+          delegateWorktreeCleanup();
+          return adoptForegroundSubagent({
+            promise,
+            agentId,
+            agentName,
+            role,
+            context,
+            treeId,
+            agentStartedAt,
+            foregroundBlockingBudgetMs,
+          });
+        }
+
+        const result = raced.result;
 
         // Worktree cleanup: check for changes and cleanup or preserve
-        let worktreeNote = '';
-        if (worktreeInfo) {
-          const repoPath = context.cwd;
-          if (result.cancellationReason || abortController.signal.aborted) {
-            await discardAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath);
-            worktreeFinalized = true;
-            worktreeNote = '\n- Worktree: discarded after cancellation';
-          } else {
-            const cleanup = await cleanupAgentWorktree(agentId, worktreeInfo.worktreePath, repoPath, worktreeInfo.baseCommit);
-            worktreeFinalized = true;
-            if (cleanup.hasChanges) {
-              worktreeNote = `\n- Worktree: preserved at ${cleanup.worktreePath} (branch: ${cleanup.branchName}) — review and merge changes`;
-            } else {
-              worktreeNote = '\n- Worktree: auto-cleaned (no changes)';
-            }
-          }
-        }
+        const finalizedWorktree = await finalizeForegroundSpawnAgentWorktree({
+          agentId,
+          repoPath: context.cwd,
+          worktreeInfo,
+          result,
+          aborted: abortController.signal.aborted,
+        });
+        worktreeFinalized = worktreeFinalized || finalizedWorktree.finalized;
+        const worktreeNote = finalizedWorktree.worktreeNote;
 
         if (result.success) {
           return {
@@ -560,20 +579,7 @@ Stats:
         slotLease = undefined;
 
         // Background worktree cleanup: register onComplete callback
-        if (worktreeInfo) {
-          const repoPath = context.cwd;
-          const wt = worktreeInfo;
-          guard.onComplete(async (completedAgent) => {
-            if (completedAgent.id === agentId) {
-              if (completedAgent.status === 'cancelled' || completedAgent.status === 'killed') {
-                await discardAgentWorktree(agentId, wt.worktreePath, repoPath);
-              } else {
-                await cleanupAgentWorktree(agentId, wt.worktreePath, repoPath, wt.baseCommit);
-              }
-            }
-          });
-          worktreeCleanupDelegated = true;
-        }
+        delegateWorktreeCleanup();
 
         const isolationNote = worktreeInfo
           ? `\n- Isolation: worktree (branch: ${worktreeInfo.branchName}, path: ${worktreeInfo.worktreePath})`

@@ -5,6 +5,8 @@
 // 帮助模型理解期望的行为模式
 // ============================================================================
 
+import { estimateTokens } from '../context/tokenEstimator';
+
 /**
  * 示例类型
  */
@@ -41,13 +43,6 @@ export interface FewShotExample {
   assistantResponse: string;
   tokens: number;
   tags: string[];
-}
-
-/**
- * 估算 token 数量
- */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
 }
 
 // ----------------------------------------------------------------------------

@@ -51,6 +51,7 @@ export interface SidebarProjectSummary {
   displayName: string;
   sessionCount: number;
   unfinishedCount: number;
+  needsInputCount: number;
   pendingApprovalCount: number;
   attentionCount: number;
   runningCount: number;
@@ -66,7 +67,8 @@ export interface BuildSidebarProjectSummaryArgs {
   backgroundTaskMap: Map<string, BackgroundTaskInfo>;
   sessionRuntimes: Map<string, SessionRuntimeSummary>;
   sessionStates: Record<string, TaskSessionState | undefined>;
-  hasPendingApprovalForSession: (sessionId: string) => boolean;
+  hasNeedsInputForSession?: (sessionId: string) => boolean;
+  hasPendingApprovalForSession?: (sessionId: string) => boolean;
   reviewItemsBySessionId?: Record<string, AdminReviewQueueItem[]>;
   projectMeta?: SidebarProjectMeta;
 }
@@ -76,11 +78,13 @@ export function buildSidebarProjectSummary({
   backgroundTaskMap,
   sessionRuntimes,
   sessionStates,
+  hasNeedsInputForSession,
   hasPendingApprovalForSession,
   reviewItemsBySessionId,
   projectMeta,
 }: BuildSidebarProjectSummaryArgs): SidebarProjectSummary {
-  let pendingApprovalCount = 0;
+  const needsInputForSession = hasNeedsInputForSession ?? hasPendingApprovalForSession ?? (() => false);
+  let needsInputCount = 0;
   let attentionCount = 0;
   let runningCount = 0;
   let reviewIssueCount = 0;
@@ -96,11 +100,11 @@ export function buildSidebarProjectSummary({
       messageCount: session.messageCount,
       turnCount: session.turnCount,
       sessionStatus: session.status,
-      hasPendingApproval: hasPendingApprovalForSession(session.id),
+      hasNeedsInput: needsInputForSession(session.id),
     });
 
     if (status.kind === 'approval') {
-      pendingApprovalCount += 1;
+      needsInputCount += 1;
     } else if (status.kind === 'background' || status.kind === 'live') {
       runningCount += 1;
     } else if (status.kind === 'paused' || status.kind === 'error' || status.kind === 'incomplete') {
@@ -121,8 +125,9 @@ export function buildSidebarProjectSummary({
   return {
     displayName: group.isUncategorized ? '对话' : projectMeta?.name || group.name,
     sessionCount: projectMeta?.sessionCount ?? group.sessions.length,
-    unfinishedCount: pendingApprovalCount + attentionCount + runningCount,
-    pendingApprovalCount,
+    unfinishedCount: needsInputCount + attentionCount + runningCount,
+    needsInputCount,
+    pendingApprovalCount: needsInputCount,
     attentionCount,
     runningCount,
     reviewIssueCount,
@@ -196,8 +201,8 @@ export function formatSidebarProjectSummaryLine({
       items.push(`目标：${truncateSummaryItem(summary.activeGoalTitle, 24)}`);
     }
   }
-  if (summary.pendingApprovalCount > 0) {
-    items.push(`${summary.pendingApprovalCount} 待确认`);
+  if (summary.needsInputCount > 0) {
+    items.push(`${summary.needsInputCount} 待确认`);
   }
   if (summary.runningCount > 0) {
     items.push(`${summary.runningCount} 执行中`);

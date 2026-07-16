@@ -26,6 +26,10 @@ export interface CoreAgentConfig {
   tools: string[];
   /** GAP-011：预装 skill 列表（SKILL.md 全文注入子代理 system prompt） */
   skills?: string[];
+  /** 声明式输入说明，仅用于模型可见提示和 UI/metadata 透传，不做 schema 校验。 */
+  inputs?: string[];
+  /** 声明式输出说明，仅用于模型可见提示和产物 metadata 透传，不做输出解析。 */
+  outputs?: string[];
   model: ModelTier;
   maxIterations: number;
   readonly: boolean;

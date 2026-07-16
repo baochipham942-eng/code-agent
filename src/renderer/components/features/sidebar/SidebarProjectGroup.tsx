@@ -87,7 +87,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     backgroundTaskMap,
     sessionRuntimes,
     sessionStates,
-    hasPendingApprovalForSession,
+    hasNeedsInputForSession,
     reviewItemsBySessionId,
     currentSessionId,
   } = sessionItemProps;
@@ -100,7 +100,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     backgroundTaskMap,
     sessionRuntimes,
     sessionStates,
-    hasPendingApprovalForSession,
+    hasNeedsInputForSession,
     reviewItemsBySessionId,
     projectMeta: hasSearchFilters && projectMeta
       ? { ...projectMeta, sessionCount: group.sessions.length }

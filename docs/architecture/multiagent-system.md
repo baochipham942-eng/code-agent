@@ -104,6 +104,8 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 
 自定义 agent 采用 Claude Code 兼容的 Markdown frontmatter + 正文格式，落盘位置是用户级 `~/.code-agent/agents/*.md` 和项目级 `<cwd>/.code-agent/agents/*.md`。`agentRegistry` 是新的单一来源，合并顺序为 project > user > builtin。
 
+frontmatter 支持 `inputs:` / `outputs:` 字符串数组，条目是自由文本说明，例如 `- 目标文件路径`、`- markdown 报告`。这两个字段只用于 Task / spawn_agent 描述、agent 列表投影和结果 metadata 透传；不做 schema 校验、输出解析或产物拆分。
+
 | 能力 | 当前状态 | 关键文件 / 验证 |
 |------|----------|----------------|
 | 三层 agent 合并 | builtin、user、project 同名时按 project > user > builtin 覆盖；需要原始内置定义时走 `getBuiltinAgent()` | `src/host/agent/agentRegistry.ts`、`src/host/agent/agentDefinition.ts` |

@@ -24,7 +24,7 @@ import chokidar from 'chokidar';
 import { getAgentsMdDir } from '../config/configPaths';
 import { loadAgentMdFiles } from './hybrid/agentMdLoader';
 import { CORE_AGENTS, CORE_AGENT_IDS, isCoreAgent } from './hybrid/coreAgents';
-import type { CoreAgentConfig, CoreAgentId } from './hybrid/types';
+import type { CoreAgentConfig } from './hybrid/types';
 import { createLogger } from '../services/infra/logger';
 import type { AgentSource, AgentListEntry } from '../../shared/contract/agentRegistry';
 import { listPersistentRoles } from '../services/roleAssets/roleAssetService';
@@ -163,6 +163,23 @@ export function getBuiltinAgent(id: string): RegisteredAgent | undefined {
  * 列出全部 agent（builtin + 自定义合并后的去重列表）。
  * 顺序：builtin 在前，自定义在后，自定义按 source 排序（user → project）。
  */
+function toListEntry(
+  agent: Pick<CoreAgentConfig, 'id' | 'name' | 'description' | 'model' | 'readonly' | 'tools' | 'inputs' | 'outputs'>,
+  source: AgentSource,
+): AgentListEntry {
+  return {
+    id: agent.id,
+    name: agent.name,
+    description: agent.description,
+    source,
+    modelTier: agent.model,
+    readonly: agent.readonly,
+    tools: agent.tools,
+    inputs: agent.inputs,
+    outputs: agent.outputs,
+  };
+}
+
 export function listAllAgents(): AgentListEntry[] {
   const snapshot = customAgentMap;
   const entries: AgentListEntry[] = [];
@@ -174,15 +191,7 @@ export function listAllAgents(): AgentListEntry[] {
     const customOverride = snapshot.get(id);
     // 如果被自定义覆盖，自定义条目会在后面以 user/project source 出现
     if (!customOverride) {
-      entries.push({
-        id: cfg.id,
-        name: cfg.name,
-        description: cfg.description,
-        source: 'builtin',
-        modelTier: cfg.model,
-        readonly: cfg.readonly,
-        tools: cfg.tools,
-      });
+      entries.push(toListEntry(cfg, 'builtin'));
       seen.add(id);
     }
   }
@@ -197,20 +206,24 @@ export function listAllAgents(): AgentListEntry[] {
 
   for (const agent of [...byUser, ...byProject]) {
     if (seen.has(agent.id)) continue;
-    entries.push({
-      id: agent.id,
-      name: agent.name,
-      description: agent.description,
-      source: agent.source,
-      modelTier: agent.model,
-      readonly: agent.readonly,
-      tools: agent.tools,
-    });
+    entries.push(toListEntry(agent, agent.source));
     seen.add(agent.id);
   }
 
   return entries;
 }
+
+const agentRegistryGlobal = globalThis as typeof globalThis & {
+  codeAgentAgentRegistry?: {
+    listAllAgents: typeof listAllAgents;
+    resolveAgent: typeof resolveAgent;
+  };
+};
+
+agentRegistryGlobal.codeAgentAgentRegistry = {
+  listAllAgents,
+  resolveAgent,
+};
 
 /**
  * listAllAgents + 角色标记：agents/<id>.md 同名存在 roles/<id>/ 资产目录的条目

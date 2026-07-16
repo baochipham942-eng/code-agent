@@ -16,6 +16,8 @@ const TOKEN_CACHE_MAX = 200;
 const EXACT_TOKENIZATION_MAX_CHARS = 50_000;
 const tokenCache = new Map<number, number>();
 
+export const IMAGE_TOKEN_ESTIMATE = 765;
+
 function simpleHash(str: string): number {
   let h = 0;
   for (let i = 0; i < str.length; i++) {

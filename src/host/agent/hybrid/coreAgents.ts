@@ -570,51 +570,6 @@ export function isReadonlyAgent(id: CoreAgentId): boolean {
   return CORE_AGENTS[id].readonly;
 }
 
-/**
- * 根据任务类型推荐核心角色
- */
-export function recommendCoreAgent(taskType: string): CoreAgentId {
-  const mapping: Record<string, CoreAgentId> = {
-    // 编码相关
-    'code': 'coder',
-    'write': 'coder',
-    'implement': 'coder',
-    'fix': 'coder',
-    'debug': 'coder',
-    'refactor': 'coder',
-    'document': 'coder',
-
-    // 审查相关
-    'review': 'reviewer',
-    'test': 'reviewer',
-    'audit': 'reviewer',
-    'check': 'reviewer',
-
-    // 探索相关
-    'search': 'explore',
-    'find': 'explore',
-    'explore': 'explore',
-    'research': 'explore',
-    'read': 'explore',
-    'understand': 'explore',
-
-    // 规划相关
-    'plan': 'plan',
-    'design': 'plan',
-    'architect': 'plan',
-    'analyze': 'plan',
-
-    // 等待类
-    'run': 'awaiter',
-    'execute': 'awaiter',
-    'build': 'awaiter',
-    'deploy': 'awaiter',
-    'wait': 'awaiter',
-    'monitor': 'awaiter',
-  };
-
-  return mapping[taskType.toLowerCase()] || 'coder';
-}
 
 // ============================================================================
 // Custom Agent Loading (from .code-agent/agents/*.md)

@@ -1,18 +1,15 @@
 // ============================================================================
-// useSkillRecommendations - 聊天输入的 Skill 推荐（含未安装可获取的目录推荐）
+// useSkillRecommendations - 聊天输入的 marketplace Skill 推荐
 // ============================================================================
 // 用户输入命中技能关键词时，在输入框上方推荐：
-// - 已安装未挂载的 skill → 一键挂载
-// - 推荐目录里未安装的 skill → 一键安装来源仓库并挂载
+// - 未安装的 official registry skill → 一键安装并挂载
 
 import { useState, useEffect, useCallback } from 'react';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
-import type {
-  SkillCatalogPayload,
-  SkillRecommendation,
-} from '@shared/contract/skillRepository';
+import type { SkillRecommendation } from '@shared/contract/skillRepository';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
 import { createLogger } from '../../../../utils/logger';
 import type { SkillRecommendationView } from './CapabilitySuggestionStrip';
 
@@ -58,6 +55,7 @@ export function useSkillRecommendations(
   currentSessionId: string | null,
   inputValue: string
 ): UseSkillRecommendationsResult {
+  const { t } = useI18n();
   const [recommendations, setRecommendations] = useState<SkillRecommendationView[]>([]);
   const [installingSkillName, setInstallingSkillName] = useState<string | null>(null);
 
@@ -94,37 +92,30 @@ export function useSkillRecommendations(
       recommendation.libraryId
     );
     if (mounted) {
-      toast.success(`已挂载 ${recommendation.skillName}`);
+      toast.success(`${t.skillRecommendations.mounted} ${recommendation.skillName}`);
       setRecommendations((prev) => prev.filter((item) => item.skillName !== recommendation.skillName));
       return true;
     } else {
-      toast.error(`挂载失败: ${recommendation.skillName}`);
+      toast.error(`${t.skillRecommendations.mountFailedPrefix}${recommendation.skillName}`);
       return false;
     }
-  }, [currentSessionId]);
+  }, [currentSessionId, t.skillRecommendations.mountFailedPrefix, t.skillRecommendations.mounted]);
 
-  // 安装未安装的推荐 skill：下载来源仓库 → 挂载到当前会话
+  // 安装未安装的 official registry skill：renderer 只传 name，host 侧取新鲜 entry
   const installRecommendedSkill = useCallback(async (
     recommendation: SkillRecommendationView,
     sessionIdOverride?: string | null,
   ) => {
     const targetSessionId = sessionIdOverride ?? currentSessionId;
-    if (!targetSessionId || !recommendation.repoId) return false;
+    if (!targetSessionId) return false;
     setInstallingSkillName(recommendation.skillName);
     try {
-      const catalog = await invokeSkillIPC<SkillCatalogPayload>(SKILL_CHANNELS.CATALOG);
-      const repo = catalog?.repositories.find((item) => item.id === recommendation.repoId);
-      if (!repo) {
-        toast.error('未找到来源仓库');
-        return false;
-      }
-
       const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
-        SKILL_CHANNELS.REPO_DOWNLOAD,
-        repo
+        SKILL_CHANNELS.REGISTRY_INSTALL,
+        recommendation.skillName
       );
       if (!result?.success) {
-        toast.error(result?.error || `安装失败: ${recommendation.displayName || recommendation.skillName}`);
+        toast.error(result?.error || `${t.skillRecommendations.installFailedPrefix}${recommendation.displayName || recommendation.skillName}`);
         return false;
       }
 
@@ -133,19 +124,24 @@ export function useSkillRecommendations(
         SKILL_CHANNELS.SESSION_MOUNT,
         targetSessionId,
         recommendation.skillName,
-        recommendation.repoId
+        recommendation.libraryId
       );
       if (!mounted) {
-        toast.error(`挂载失败: ${recommendation.displayName || recommendation.skillName}`);
+        toast.error(`${t.skillRecommendations.mountFailedPrefix}${recommendation.displayName || recommendation.skillName}`);
         return false;
       }
-      toast.success(`已安装并挂载「${recommendation.displayName || recommendation.skillName}」`);
+      toast.success(`${t.skillRecommendations.installedAndMounted} ${recommendation.displayName || recommendation.skillName}`);
       setRecommendations((prev) => prev.filter((item) => item.skillName !== recommendation.skillName));
       return true;
     } finally {
       setInstallingSkillName(null);
     }
-  }, [currentSessionId]);
+  }, [
+    currentSessionId,
+    t.skillRecommendations.installFailedPrefix,
+    t.skillRecommendations.installedAndMounted,
+    t.skillRecommendations.mountFailedPrefix,
+  ]);
 
   return {
     recommendations,

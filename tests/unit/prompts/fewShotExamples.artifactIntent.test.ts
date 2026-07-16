@@ -84,6 +84,27 @@ describe('detectTaskFeatures：真产物诉求要命中', () => {
   });
 });
 
+describe('T11：英文 pptx 拼写命中 PPT 产物意图', () => {
+  it('Create a pptx about our product roadmap → PPT 检测与产物示例', () => {
+    const prompt = 'Create a pptx about our product roadmap';
+    const examples = selectedExamplesFor(prompt);
+
+    expect.soft(detectTaskFeatures(prompt).isPPTTask).toBe(true);
+    expect.soft(examples.map((e) => e.type)).toContain('ppt_creation');
+    expect.soft(examples.every((e) => e.domain === 'artifact')).toBe(true);
+    expect.soft(titlesOf(examples)).not.toContain('Plan Mode 执行流程');
+  });
+
+  it.each([
+    ['Create a ppt about our product roadmap', true],
+    ['生成pptx', true],
+    ['Open roadmap.pptx', true],
+    ['fix the carousel slides bug', false],
+  ])('%s → isPPTTask=%s', (prompt, expected) => {
+    expect(detectTaskFeatures(prompt).isPPTTask).toBe(expected);
+  });
+});
+
 describe('detectTaskFeatures：代码语境不得误命中任何产物特征', () => {
   // 这些句子里 image/document/excel/slide/presentation/report/draw/video 都是代码
   // 标识符或技术术语，不是产物诉求。
@@ -105,6 +126,22 @@ describe('detectTaskFeatures：代码语境不得误命中任何产物特征', (
     '给按钮加个过渡动画',
   ])('%s → 无产物特征', (prompt) => {
     expect(artifactFeaturesOf(prompt)).toEqual([]);
+  });
+});
+
+describe('T12：去重/汇总需要明确表格语境', () => {
+  it.each([
+    '把这两个函数去重合并一下',
+    '把这些工具函数汇总到一个文件',
+  ])('%s → isExcelTask=false', (prompt) => {
+    expect(detectTaskFeatures(prompt).isExcelTask).toBe(false);
+  });
+
+  it.each([
+    '把这列数据去重',
+    '帮我汇总这张表',
+  ])('%s → isExcelTask=true', (prompt) => {
+    expect(detectTaskFeatures(prompt).isExcelTask).toBe(true);
   });
 });
 

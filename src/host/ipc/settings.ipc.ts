@@ -658,6 +658,7 @@ export function registerSettingsHandlers(
   const sheetRowsWithRealNumbers = (
     XLSX: typeof import('xlsx'),
     sheet: import('xlsx').WorkSheet,
+    options: { raw?: boolean } = {},
   ): { rows: unknown[][]; rangeStart: SheetRangeStart } => {
     // sheet_to_json 会把 used range 左上角归一成数组 [0][0]；真实起点必须从同一份
     // !ref 解一次后随结果向下传，不能让 text / preview 各自猜 A1。
@@ -665,7 +666,11 @@ export function registerSettingsHandlers(
       ? XLSX.utils.decode_range(sheet['!ref']).s
       : { r: 0, c: 0 };
     const rangeStart = { row: decodedStart.r, column: decodedStart.c };
-    const json: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: true });
+    const json: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      blankrows: true,
+      ...options,
+    });
     let end = json.length;
     while (end > 0 && isBlankRow(json[end - 1])) end--;
     return { rows: json.slice(0, end), rangeStart };
@@ -706,7 +711,13 @@ export function registerSettingsHandlers(
       let totalRows = 0;
 
       for (const sheetName of workbook.SheetNames) {
-        const { rows: trimmed, rangeStart } = sheetRowsWithRealNumbers(XLSX, workbook.Sheets[sheetName]);
+        // 模型上下文需要单元格展示文本（w），否则日期/百分比会退化成序列号；
+        // preview 不传此选项，继续保留 raw 数值供交互渲染和定位使用。
+        const { rows: trimmed, rangeStart } = sheetRowsWithRealNumbers(
+          XLSX,
+          workbook.Sheets[sheetName],
+          { raw: false },
+        );
         const csv = rowsToNumberedCsv(XLSX, trimmed, rangeStart);
         totalRows += Math.max(trimmed.length - 1, 0);
 

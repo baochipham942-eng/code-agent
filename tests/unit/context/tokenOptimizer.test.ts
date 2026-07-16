@@ -27,7 +27,6 @@ import {
   type CompressedMessage,
 } from '../../../src/host/context/tokenOptimizer';
 import { OBSERVATION_MASKING } from '../../../src/shared/constants/agent';
-import { IMAGE_TOKEN_ESTIMATE } from '../../../src/host/context/tokenEstimator';
 
 // Helper: create a tool message with given content
 function toolMsg(content: string, id?: string): CompressedMessage {
@@ -314,7 +313,8 @@ describe('estimateModelMessageTokens', () => {
       },
     ]);
 
-    expect(tokens).toBe(7 + (2 * IMAGE_TOKEN_ESTIMATE));
+    // 钉死字面量:765/张 是 ADR 拍板值,常数被改动必须在这里显式感知,不引用源码常数自我对照
+    expect(tokens).toBe(7 + 2 * 765);
   });
 });
 

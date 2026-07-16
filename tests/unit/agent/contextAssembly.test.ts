@@ -384,7 +384,6 @@ import {
   clearMemoryInjectionTracesForTest,
   listMemoryInjectionTraces,
 } from '../../../src/host/memory/memoryInjectionTrace';
-import { IMAGE_TOKEN_ESTIMATE } from '../../../src/host/context/tokenEstimator';
 import { buildGitStatusBlock } from '../../../src/host/agent/messageHandling/contextBuilder';
 import { drainCompletionNotifications } from '../../../src/host/agent/activeAgentContext';
 
@@ -1898,7 +1897,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     let thresholdChecks = 0;
     const shouldTriggerByTokens = vi.fn((tokens: number) => {
       thresholdChecks += 1;
-      return thresholdChecks === 1 ? tokens >= IMAGE_TOKEN_ESTIMATE : true;
+      return thresholdChecks === 1 ? tokens >= 765 : true;
     });
     const imageMessage = buildMessage('m0', 'user', 'tiny');
     imageMessage.attachments = [
@@ -1938,13 +1937,13 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
             content: 'compressed image summary',
             timestamp: Date.now(),
             compactedMessageCount: 1,
-            compactedTokenCount: IMAGE_TOKEN_ESTIMATE,
+            compactedTokenCount: 765,
           },
         }),
         getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 1 }),
         shouldWrapUp: vi.fn().mockReturnValue(false),
         getCompactionCount: vi.fn().mockReturnValue(1),
-        getStats: vi.fn().mockReturnValue({ compressionCount: 1, totalSavedTokens: IMAGE_TOKEN_ESTIMATE }),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 1, totalSavedTokens: 765 }),
         recordCompaction: vi.fn(),
       },
       systemPrompt: '',
@@ -1955,7 +1954,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     await assembly.checkAndAutoCompress();
 
     expect(shouldTriggerByTokens).toHaveBeenCalledWith(expect.any(Number));
-    expect(shouldTriggerByTokens.mock.calls[0][0]).toBeGreaterThanOrEqual(IMAGE_TOKEN_ESTIMATE);
+    expect(shouldTriggerByTokens.mock.calls[0][0]).toBeGreaterThanOrEqual(765);
   });
 
   it('records hard compaction into compressionState as autocompact', async () => {

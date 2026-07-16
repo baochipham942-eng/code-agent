@@ -9,6 +9,11 @@ import { vi } from 'vitest';
 // keytar 为 Electron headers 编译，在系统 Node.js 中 SIGSEGV (exit 139)
 process.env.CODE_AGENT_CLI_MODE = '1';
 
+// Most existing unit tests predate the folder trust gate and exercise loaders in a
+// "project config is readable" test context. Security gate tests explicitly clear
+// this override to cover untrusted/trusted behavior against the real service.
+process.env.CODE_AGENT_TEST_DEFAULT_FOLDER_TRUST ||= 'trusted';
+
 // 浏览器冒烟（game-runtime / visual smoke）测试态强制走 Playwright bundled headless shell。
 // 'auto' 在装有 Chrome 的机器上解析为 system-chrome-cdp，而系统 Chrome 即使 --headless=new
 // 启动时仍会向 macOS Dock 短暂注册应用，跑测试批量 spawn 会让整排 Dock 图标反复跳动。

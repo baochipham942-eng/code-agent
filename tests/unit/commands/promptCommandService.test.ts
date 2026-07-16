@@ -21,6 +21,10 @@ vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => mcpMocks,
 }));
 
+vi.mock('../../../src/host/security/folderTrustService', () => ({
+  isProjectConfigTrusted: async () => true,
+}));
+
 const configMocks = vi.hoisted(() => ({
   userDir: '',
 }));

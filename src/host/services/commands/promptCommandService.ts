@@ -26,6 +26,7 @@ import {
   type PromptCommandResolution,
 } from '../../../shared/commands/promptCommands';
 import { BUILTIN_PROMPT_COMMANDS } from '../../../shared/commands/builtinPromptCommands';
+import { isProjectConfigTrusted } from '../../security/folderTrustService';
 
 const logger = createLogger('PromptCommandService');
 
@@ -61,11 +62,14 @@ export class PromptCommandService {
   async listCommands(workingDirectory?: string): Promise<PromptCommandInfo[]> {
     const dirs = getCommandsDir(workingDirectory);
     const byName = new Map<string, PromptCommandInfo>();
+    const projectTrusted = workingDirectory
+      ? await isProjectConfigTrusted(workingDirectory, 'project-commands')
+      : false;
 
     // 注册顺序 = 优先级倒序：后写的不覆盖已有的
     // project 文件 > user 文件 > MCP prompt > builtin（内置兜底，可被同名覆盖）
     const ordered: PromptCommandInfo[] = [
-      ...(dirs.project ? await readCommandFiles(dirs.project, 'project') : []),
+      ...(dirs.project && projectTrusted ? await readCommandFiles(dirs.project, 'project') : []),
       ...(await readCommandFiles(dirs.user, 'user')),
       ...this.listMcpPromptCommands(),
       ...BUILTIN_PROMPT_COMMANDS,

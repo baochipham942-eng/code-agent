@@ -32,6 +32,28 @@ export const en: Translations = {
     cacheSavedLine: 'Cache saved {saved}',
   },
 
+  folderTrust: {
+    title: 'Trust this project folder?',
+    directory: 'Project directory',
+    realpath: 'Real path',
+    detected: 'Detected project configuration',
+    identityChanged: 'This path was trusted before, but its folder identity changed. Confirm again before loading project configuration.',
+    trust: 'Trust and load',
+    block: 'Block project config',
+    openSettings: 'Open settings',
+    saving: 'Saving...',
+    risks: {
+      execution: 'Execution',
+      mcp: 'MCP',
+      agent: 'Agent',
+      skill: 'Skill',
+      prompt: 'Prompt',
+      policy: 'Policy',
+      preference: 'Preference',
+      diagnostic: 'Config',
+    },
+  },
+
   // Design Workspace (borrowed from Kun: design tab)
   design: {
     tabCode: 'General',

@@ -17,6 +17,7 @@ import fs from 'fs/promises';
 import { createLogger } from '../services/infra/logger';
 import { getMcpScopedConfigPaths } from '../config/configPaths';
 import type { MCPServerConfig, MCPConfigScope } from './types';
+import { isProjectConfigTrusted } from '../security/folderTrustService';
 
 const logger = createLogger('MCPConfigFile');
 
@@ -166,10 +167,16 @@ export async function loadMcpConfigFiles(workingDirectory?: string): Promise<MCP
   const result: MCPServerConfig[] = [];
 
   result.push(...(await readScopeFile(paths.user, 'user')));
-  if (paths.project) {
+  const projectTrusted = workingDirectory
+    ? await isProjectConfigTrusted(workingDirectory, 'project-mcp')
+    : false;
+  if (paths.project && projectTrusted) {
     result.push(...(await readScopeFile(paths.project, 'project')));
   }
-  if (paths.local) {
+  const localTrusted = workingDirectory
+    ? projectTrusted || await isProjectConfigTrusted(workingDirectory, 'project-mcp-local')
+    : false;
+  if (paths.local && localTrusted) {
     result.push(...(await readScopeFile(paths.local, 'local')));
   }
 

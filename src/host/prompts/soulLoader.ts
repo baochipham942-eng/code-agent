@@ -21,6 +21,7 @@ import {
   TOOL_DISCIPLINE,
   MEMORY_SYSTEM,
 } from './identity';
+import { isProjectConfigTrustedSync } from '../security/folderTrustService';
 
 const logger = createLogger('SoulLoader');
 
@@ -51,7 +52,7 @@ export function loadSoul(workingDirectory?: string): string {
   // 项目级 PROFILE.md — 作为项目扩展追加
   let profileContent: string | null = null;
   let profilePath: string | null = null;
-  if (workingDirectory) {
+  if (workingDirectory && isProjectConfigTrustedSync(workingDirectory, 'project-profile')) {
     profilePath = path.join(getProjectConfigDir(workingDirectory), 'PROFILE.md');
     profileContent = readFileIfExists(profilePath);
   }
@@ -111,7 +112,7 @@ export function watchSoulFiles(workingDirectory?: string): void {
 
   const pathsToWatch: string[] = [];
 
-  if (workingDirectory) {
+  if (workingDirectory && isProjectConfigTrustedSync(workingDirectory, 'project-profile')) {
     pathsToWatch.push(path.join(getProjectConfigDir(workingDirectory), 'PROFILE.md'));
   }
   pathsToWatch.push(path.join(getUserConfigDir(), 'SOUL.md'));

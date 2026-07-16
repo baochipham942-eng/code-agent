@@ -18,6 +18,7 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { listSkillDrafts, confirmSkillDraft, rejectSkillDraft } from '../services/skills/skillDraftQueue';
 import { getRemoteSkillRegistryService } from '../skills/marketplace/remoteSkillRegistryService';
 import { installFromRegistryEntry } from '../skills/marketplace/installService';
+import { isProjectConfigTrusted } from '../security/folderTrustService';
 
 const logger = createLogger('SkillIPC');
 
@@ -152,10 +153,14 @@ async function handleSkillList() {
   const repoService = getSkillRepositoryService();
   await repoService.initialize();
   const discoveryService = getSkillDiscoveryService();
-  const prefStore = getProjectSkillPreferenceStore(getSkillIpcWorkingDirectory());
+  const workingDirectory = getSkillIpcWorkingDirectory();
+  const projectPreferencesTrusted = await isProjectConfigTrusted(workingDirectory, 'project-skill-preferences');
+  const prefStore = projectPreferencesTrusted
+    ? getProjectSkillPreferenceStore(workingDirectory)
+    : null;
   return discoveryService.getAllSkills().map((skill) => {
     const globalEnabled = repoService.isSkillEnabled(skill.name);
-    const override = prefStore.getOverride(skill.name);
+    const override = prefStore?.getOverride(skill.name);
     const projectOverride = override === undefined ? null : override;
     return {
       ...skill,

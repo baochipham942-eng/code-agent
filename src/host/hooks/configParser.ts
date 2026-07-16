@@ -8,6 +8,7 @@ import os from 'os';
 import path from 'path';
 import { CONFIG_DIR_NEW, CONFIG_DIR_LEGACY } from '../config/configPaths';
 import type { HookEvent } from '../protocol/events';
+import { isProjectConfigTrusted } from '../security/folderTrustService';
 
 // ----------------------------------------------------------------------------
 // Configuration Types
@@ -497,10 +498,16 @@ export async function loadAllHooksConfig(
   workingDirectory: string
 ): Promise<ParsedHookConfig[]> {
   const paths = getHooksConfigPaths(workingDirectory);
+  const projectTrusted = await isProjectConfigTrusted(workingDirectory, 'project-hooks');
 
+  const emptyProjectResult: { hooks: ParsedHookConfig[]; usedPath?: string; hasLegacy?: boolean } = {
+    hooks: [],
+  };
   const [globalResult, projectResult] = await Promise.all([
     loadHooksFromSource(paths.global, 'global'),
-    loadHooksFromSource(paths.project, 'project'),
+    projectTrusted
+      ? loadHooksFromSource(paths.project, 'project')
+      : Promise.resolve(emptyProjectResult),
   ]);
 
   // Log which config files are being used (for debugging)

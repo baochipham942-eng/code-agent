@@ -14,6 +14,7 @@ import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
 import { getToolSearchService } from '../toolSearch';
 import { getSkillsDir, getUserConfigDir } from '../../config';
+import { isProjectConfigTrusted, isProjectConfigTrustedSync } from '../../security/folderTrustService';
 
 const logger = createLogger('SkillDiscoveryService');
 const INCLUDE_CLAUDE_LEGACY_SKILLS_ENV = 'CODE_AGENT_INCLUDE_CLAUDE_LEGACY_SKILLS';
@@ -152,7 +153,7 @@ class SkillDiscoveryService {
     await this.loadFromEnabledMarketplacePlugins();
 
     // 5. 加载项目级 Skills（最高优先级）
-    if (skillsDirs.project) {
+    if (skillsDirs.project && await isProjectConfigTrusted(this.workingDirectory, 'project-skills')) {
       if (this.includeClaudeLegacySkills) {
         await this.scanDirectory(skillsDirs.project.legacy, 'project');
       } else {
@@ -206,7 +207,10 @@ class SkillDiscoveryService {
    */
   isSkillEnabled(skillName: string): boolean {
     try {
-      if (this.workingDirectory) {
+      if (
+        this.workingDirectory &&
+        isProjectConfigTrustedSync(this.workingDirectory, 'project-skill-preferences')
+      ) {
         const override = getProjectSkillPreferenceStore(this.workingDirectory).getOverride(skillName);
         if (override !== undefined) return override;
       }

@@ -53,6 +53,8 @@ import {
   exportSessionToMarkdown,
   suggestExportFilename,
 } from '../session/exportMarkdown';
+import { materializeGenerativeUIFallbacks } from '../services/generativeUI/generativeUIExport';
+import { getGenerativeUIRepository } from '../services/generativeUI/generativeUIRepositoryAccess';
 import { buildSessionLogExport } from '../telemetry/diagnosticBundleService';
 import type { CachedMessage, CachedSession } from '../session/localCache';
 import { loadStreamSnapshot } from '../session/streamSnapshot';
@@ -841,7 +843,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       throw new Error(`Session ${sessionId} not found`);
     }
 
-    const cachedSession = this.toCachedSession(session);
+    const cachedSession = this.toCachedSession({
+      ...session,
+      messages: materializeGenerativeUIFallbacks(
+        session.messages,
+        getGenerativeUIRepository().listBySession(sessionId),
+      ),
+    });
     const result = exportSessionToMarkdown(cachedSession, {
       title: session.title || undefined,
       includeMetadata: true,

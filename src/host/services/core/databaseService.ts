@@ -25,7 +25,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
@@ -210,6 +210,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.projectRepo = new ProjectRepository(this.db);
       this.swarmTraceRepo = createSwarmTraceRepo(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
+      new GenerativeUIRepository(this.db).markOpenManifestsOrphaned(Date.now());
       this.permissionDecisionRepo = new PermissionDecisionRepository(this.db);
       this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
       this.swarmLedgerRepo = new SwarmLedgerRepository(this.db);

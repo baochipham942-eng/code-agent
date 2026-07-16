@@ -46,6 +46,7 @@ function iconForKind(kind: string): React.ReactNode {
     case 'presentation':
       return <Presentation className={`${cls} text-fuchsia-300`} />;
     case 'generative_ui':
+    case 'neo_ui':
     case 'generic_html':
       return <Code className={`${cls} text-orange-300`} />;
     case 'mermaid':

@@ -75,6 +75,7 @@ import { registerCapabilityHandlers } from './capability.ipc';
 import { registerHandoffHandlers } from './handoff.ipc';
 import { registerPiiHandlers } from './pii.ipc';
 import { registerAlmaRegistryHandlers } from './almaRegistry.ipc';
+import { registerGenerativeUIHandlers } from './generativeUI.ipc';
 
 /**
  * IPC handler 注册所需的依赖
@@ -135,6 +136,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // PII 防线 handlers (B3 一键启用本地 GLiNER PII 防线)
   registerPiiHandlers(ipcMain);
+  registerGenerativeUIHandlers(ipcMain);
 
   // Connector handlers
   registerConnectorHandlers(ipcMain, getMainWindow, getConfigService);

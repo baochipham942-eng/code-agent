@@ -9,7 +9,9 @@ import { getToolCache } from './toolCache';
 import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
-import type { Session, Message, ModelConfig, TodoItem } from '../../../shared/contract';
+import type { Session, Message, ModelConfig, TodoItem, NeoUIExportSnapshotV1 } from '../../../shared/contract';
+import { toGenerativeUIExportSnapshot } from '../generativeUI/generativeUIExport';
+import { getGenerativeUIRepository } from '../generativeUI/generativeUIRepositoryAccess';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
 import { stripAppshotBlocks } from '../../../shared/contract/appshot';
@@ -28,6 +30,8 @@ export interface SessionWithMessages extends Session {
   todos: TodoItem[];
   messageCount: number;
   turnCount?: number;
+  /** Explicit local export only. Import ignores this snapshot and rebuilds from message specs. */
+  generativeUI?: NeoUIExportSnapshotV1[];
 }
 
 function isVisibleHistoryMessage(message: Message): boolean {
@@ -1210,7 +1214,14 @@ export class SessionManager implements Disposable {
    * 导出会话（用于分享或备份）
    */
   async exportSession(sessionId: string): Promise<SessionWithMessages | null> {
-    return this.getSession(sessionId);
+    const session = await this.getSession(sessionId, Number.MAX_SAFE_INTEGER);
+    if (!session) return null;
+    return {
+      ...session,
+      generativeUI: getGenerativeUIRepository()
+        .listBySession(sessionId)
+        .map(toGenerativeUIExportSnapshot),
+    };
   }
 
   /**

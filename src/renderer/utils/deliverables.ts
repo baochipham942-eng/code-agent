@@ -65,6 +65,8 @@ function artifactKindLabel(type: Artifact['type']): string {
   switch (type) {
     case 'generative_ui':
       return 'HTML';
+    case 'neo_ui':
+      return 'Interactive UI';
     case 'question_form':
       return 'Brief';
     case 'mermaid':

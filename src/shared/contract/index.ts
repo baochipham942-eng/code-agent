@@ -6,6 +6,7 @@
 export * from './model';
 export * from './modelDecision';
 export * from './message';
+export * from './generativeUI';
 export * from './appshot';
 export * from './tool';
 export * from './permission';

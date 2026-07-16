@@ -193,7 +193,11 @@ export function needsGenerativeUI(message: string): boolean {
   return pattern.test(message);
 }
 
-export { GENERATIVE_UI_PROMPT };
+export {
+  GENERATIVE_UI_PROMPT,
+  NATIVE_GENERATIVE_UI_PROMPT,
+  EXECUTION_MANIFEST_GENERATIVE_UI_PROMPT,
+} from './generativeUI';
 export { QUESTION_FORM_PROMPT };
 export { ARTIFACT_TASK_BRIEF_PROMPT, GAME_ARTIFACT_CONTRACT_PROMPT, needsArtifactTaskBrief, needsGameArtifactContract };
 

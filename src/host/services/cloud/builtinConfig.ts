@@ -23,6 +23,8 @@ export interface FeatureFlags {
   maxIterations: number;
   maxMessageLength: number;
   enableExperimentalTools: boolean;
+  nativeGenerativeUI: boolean;
+  executionManifestV1: boolean;
 }
 
 export type EntitlementStatus = 'active' | 'trial' | 'expired' | 'revoked';
@@ -352,6 +354,8 @@ const BUILTIN_FEATURE_FLAGS: FeatureFlags = {
   maxIterations: 50,
   maxMessageLength: 100000,
   enableExperimentalTools: false,
+  nativeGenerativeUI: false,
+  executionManifestV1: false,
 };
 
 const BUILTIN_ENTITLEMENT: EntitlementPolicy = {

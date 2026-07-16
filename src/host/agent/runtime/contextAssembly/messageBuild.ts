@@ -62,6 +62,7 @@ import { createHash } from 'crypto';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
 import { logger, MAX_SYSTEM_PROMPT_TOKENS } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
+import { appendNativeGenerativeUIPromptBlocks } from './nativeGenerativeUIPrompt';
 import { getPluginRegistry } from '../../../plugins/pluginRegistry';
 import { applyArchiveHydration } from './archiveHydration';
 import {
@@ -684,6 +685,7 @@ ${deferredToolsSummary}
     if (systemPrompt.includes(GENERATIVE_UI_PROMPT)) {
       appendedBlocks.set('generative UI', GENERATIVE_UI_PROMPT);
     }
+    systemPrompt = appendNativeGenerativeUIPromptBlocks(systemPrompt, ctx, appendedBlocks);
     // 同条件注入 question-form 规则——LLM 看到 design-brief reminder 时会按规则跳过 form。
     systemPrompt = appendPromptBlockWithinBudget(systemPrompt, QUESTION_FORM_PROMPT, 'question form', ctx);
     if (systemPrompt.includes(QUESTION_FORM_PROMPT)) {

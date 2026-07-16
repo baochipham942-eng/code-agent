@@ -9,6 +9,7 @@
 export * from './contract/model';
 export * from './contract/modelDecision';
 export * from './contract/message';
+export * from './contract/generativeUI';
 export * from './contract/tool';
 export * from './contract/permission';
 export * from './contract/permissionBoundary';

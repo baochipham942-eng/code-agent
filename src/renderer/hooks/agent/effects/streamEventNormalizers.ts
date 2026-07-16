@@ -665,6 +665,7 @@ function isArtifactType(value: unknown): value is NonNullable<Message['artifacts
     || value === 'spreadsheet'
     || value === 'document'
     || value === 'generative_ui'
+    || value === 'neo_ui'
     || value === 'mermaid'
     || value === 'question_form'
   );

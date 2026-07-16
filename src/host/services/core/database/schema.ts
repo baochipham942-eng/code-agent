@@ -687,6 +687,68 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // Agent Neo native Generative UI. Mutable state remains local by design;
+  // the source message's neo_ui fence is the cross-device initial truth.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS generative_ui_instances (
+      instance_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      source_message_id TEXT NOT NULL,
+      source_ordinal INTEGER NOT NULL,
+      source_key TEXT NOT NULL UNIQUE,
+      spec_hash TEXT NOT NULL,
+      spec_json TEXT NOT NULL,
+      state_json TEXT NOT NULL,
+      state_revision INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      error TEXT,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS generative_ui_events (
+      event_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      spec_hash TEXT NOT NULL,
+      base_state_revision INTEGER NOT NULL,
+      intent TEXT NOT NULL,
+      payload_json TEXT,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      result_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (instance_id) REFERENCES generative_ui_instances(instance_id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS execution_manifests (
+      manifest_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      nonce TEXT NOT NULL,
+      scope_hash TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      items_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      resolved_at INTEGER,
+      invalidation_reason TEXT,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (instance_id) REFERENCES generative_ui_instances(instance_id) ON DELETE CASCADE
+    )
+  `);
+
   // Episodic FTS5 index — full-text search over session messages
   // 支持 Hermes 四层记忆里的 episodic recall：LLM 通过 EpisodicRecall 工具
   // 用关键词回查历史会话原文。用 triggers 自动同步 messages 表，应用层无感知。

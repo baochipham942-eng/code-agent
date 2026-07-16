@@ -34,7 +34,7 @@ function pushArtifact(
 }
 
 /**
- * 扫描消息内容中的代码块，提取 artifact（chart / spreadsheet / mermaid / generative_ui）
+ * 扫描消息内容中的代码块，提取 artifact（chart / spreadsheet / mermaid / generative_ui / neo_ui）
  */
 export function extractArtifacts(content: string): Artifact[] {
   const artifacts: Artifact[] = [];
@@ -58,12 +58,20 @@ export function extractArtifacts(content: string): Artifact[] {
     pushArtifact(artifacts, 'mermaid', match[1]);
   }
 
-  // Match ```html blocks (generative_ui) - only substantial HTML (>500 chars)
-  const htmlRegex = /```html\n([\s\S]*?)```/g;
+  // Legacy HTML generative UI. Both historical ```html and the prompt's
+  // canonical ```generative_ui language are accepted and rebuilt on reload.
+  const htmlRegex = /```(?:html|generative_ui)\s*\n([\s\S]*?)```/g;
   while ((match = htmlRegex.exec(content)) !== null) {
     if (match[1].length > 500) {
       pushArtifact(artifacts, 'generative_ui', match[1], tryExtractHtmlTitle(match[1]));
     }
+  }
+
+  // Native declarative Generative UI. Validation and Host admission happen in
+  // GenerativeUIService; extraction only preserves the durable message artifact.
+  const neoUIRegex = /```neo_ui\s*\n([\s\S]*?)```/g;
+  while ((match = neoUIRegex.exec(content)) !== null) {
+    pushArtifact(artifacts, 'neo_ui', match[1], tryExtractTitle(match[1]));
   }
 
   // Match ```question-form blocks — design brief 收集表单（先问后做）

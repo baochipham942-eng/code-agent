@@ -1,4 +1,4 @@
-/* eslint-disable max-lines */
+ 
 // ============================================================================
 // SessionRepository - 会话 CRUD（sessions 表 + messages 表 + todos 表）
 // ============================================================================
@@ -27,6 +27,12 @@ import * as sidecarState from './sessionRepositorySidecarState';
 export type { StoredSession, StoredMessage };
 
 const logger = createLogger('SessionRepository');
+
+function sqliteTableExists(db: BetterSqlite3.Database, tableName: string): boolean {
+  const row = db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(tableName) as { found?: number } | undefined;
+  return row?.found === 1;
+}
 
 // SQLite 行类型
 type SQLiteRow = Record<string, unknown>;
@@ -390,6 +396,17 @@ export class SessionRepository {
     `,
       )
       .run(deletedAt, this.resolveSyncedAt(options), sessionId);
+    if (sqliteTableExists(this.db, 'generative_ui_instances')) {
+      this.db.prepare(`
+        UPDATE generative_ui_instances SET status = 'deleted', updated_at = ?
+        WHERE session_id = ? AND status != 'deleted'
+      `).run(deletedAt, sessionId);
+      this.db.prepare(`
+        UPDATE execution_manifests
+        SET status = 'invalidated', updated_at = ?, resolved_at = ?, invalidation_reason = 'SESSION_DELETED'
+        WHERE session_id = ? AND status IN ('pending', 'approved', 'executing')
+      `).run(deletedAt, deletedAt, sessionId);
+    }
   }
 
   /**
@@ -979,6 +996,21 @@ export class SessionRepository {
         `,
           )
           .run(rewindId, now, sessionId, ...hiddenMessageIds);
+
+        if (sqliteTableExists(this.db, 'generative_ui_instances')) {
+          this.db.prepare(`
+            UPDATE generative_ui_instances SET status = 'hidden', updated_at = ?
+            WHERE session_id = ? AND source_message_id IN (${placeholders}) AND status = 'active'
+          `).run(now, sessionId, ...hiddenMessageIds);
+          this.db.prepare(`
+            UPDATE execution_manifests
+            SET status = 'invalidated', updated_at = ?, resolved_at = ?, invalidation_reason = 'SOURCE_REWOUND'
+            WHERE session_id = ? AND instance_id IN (
+              SELECT instance_id FROM generative_ui_instances
+              WHERE session_id = ? AND source_message_id IN (${placeholders})
+            ) AND status IN ('pending', 'approved', 'executing')
+          `).run(now, now, sessionId, sessionId, ...hiddenMessageIds);
+        }
       }
 
       this.db

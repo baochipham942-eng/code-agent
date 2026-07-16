@@ -27,6 +27,7 @@ export {
   type InsertPendingApprovalInput,
   type ResolvePendingApprovalInput,
 } from './PendingApprovalRepository';
+export { GenerativeUIRepository } from './GenerativeUIRepository';
 export {
   PermissionDecisionRepository,
   type PermissionDecisionInput,

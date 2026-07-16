@@ -42,6 +42,7 @@ import { createToolExecutionLedger } from './toolExecutionLedger';
 import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { evaluateGuardFabricGate } from './guardFabricGate';
+import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
 
 const logger = createLogger('ToolExecutor');
 
@@ -945,6 +946,16 @@ export class ToolExecutor {
       const duration = Date.now() - startTime;
 
       logger.debug('Tool result', { toolName: executionToolName, success: result.success, error: result.error });
+
+      await completeArtifactLocatorGuardedWrite({
+        success: result.success,
+        toolName: executionToolName,
+        arguments: params,
+        workingDirectory: this.executionCwd,
+        sessionId: effectiveSessionId,
+        agentId: options.agentId,
+        toolCallId: options.currentToolCallId,
+      });
 
       if (result.success && writeIsolationScope) {
         if (writeIsolationScope.kind === 'file') {

@@ -30,6 +30,40 @@ import {
 /** locator 授权的工具面（ADR-040 D4 首批）：Excel cell/range、Word paragraph、PPT 页内 replace。 */
 const LOCATOR_GUARDED_TOOLS = new Set(['docedit', 'ppt_edit']);
 
+interface GuardedWritePreflight {
+  actorKey: string;
+  chainKey: string;
+  toolName: string;
+  targetPath: string;
+}
+
+interface SuccessfulGuardedWrite {
+  revision: ArtifactRevision;
+}
+
+// preflight 与执行结果分处 runtime / ToolExecutor 两层，用 toolCallId 做一次性交接。
+// chain 再按 session + agent + locator target 隔离，避免另一个 actor 对同文件的写入被冒认。
+const guardedWritePreflights = new Map<string, GuardedWritePreflight>();
+const successfulGuardedWrites = new Map<string, SuccessfulGuardedWrite>();
+
+function guardedActorKey(sessionId?: string, agentId?: string): string | null {
+  if (typeof sessionId !== 'string' || !sessionId.trim()) return null;
+  return `${sessionId.trim()}\0${typeof agentId === 'string' && agentId.trim() ? agentId.trim() : 'main'}`;
+}
+
+function guardedCallKey(actorKey: string, toolCallId: string): string {
+  return `${actorKey}\0${toolCallId}`;
+}
+
+function guardedChainKey(actorKey: string, locator: ArtifactLocatorV1, targetPath: string): string {
+  return [
+    actorKey,
+    targetPath,
+    locator.artifact.revision.value,
+    JSON.stringify(locator.target),
+  ].join('\0');
+}
+
 export const LOCATOR_BLOCK_CODE = 'ARTIFACT_LOCATOR_MISMATCH';
 
 export interface LocatorPreflightBlock {
@@ -109,8 +143,7 @@ export async function upgradeLegacyAnchor(anchor: LocalityAnchor): Promise<Artif
 
     const target = packageIndex[anchor.displayIndex];
     if (
-      !target
-      || target.relationshipId !== anchor.relationshipId
+      target?.relationshipId !== anchor.relationshipId
       || target.slidePartName !== anchor.slidePartName
       || target.textFingerprint !== anchor.textFingerprint
     ) {
@@ -295,8 +328,8 @@ function checkDocxTarget(
  * 返回 block = **不调用写工具**（ADR-040 不变量 5：失败可见且不落盘）。
  */
 export async function getArtifactLocatorPreflightBlock(
-  ctx: { messages: readonly Message[]; workingDirectory: string },
-  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
+  ctx: { messages: readonly Message[]; workingDirectory: string; sessionId?: string; agentId?: string },
+  toolCall: Pick<ToolCall, 'id' | 'name' | 'arguments'> | Pick<ToolCall, 'name' | 'arguments'>,
   recordTelemetry?: (event: ArtifactLocatorTelemetryEventData) => void,
 ): Promise<LocatorPreflightBlock | null> {
   if (!LOCATOR_GUARDED_TOOLS.has(toolCall.name.toLowerCase())) return null;
@@ -321,7 +354,13 @@ export async function getArtifactLocatorPreflightBlock(
   } catch {
     return recordLocatorTelemetry(locator, block(STALE_MESSAGE, { reason: 'revision_unreadable' }), recordTelemetry);
   }
-  if (current.value !== locator.artifact.revision.value) {
+  const actorKey = guardedActorKey(ctx.sessionId, ctx.agentId);
+  const chainKey = actorKey ? guardedChainKey(actorKey, locator, targetPath) : null;
+  const successfulWrite = chainKey ? successfulGuardedWrites.get(chainKey) : undefined;
+  if (
+    current.value !== locator.artifact.revision.value
+    && current.value !== successfulWrite?.revision.value
+  ) {
     return recordLocatorTelemetry(locator, block(STALE_MESSAGE, { reason: 'revision_drift' }), recordTelemetry);
   }
 
@@ -348,5 +387,52 @@ export async function getArtifactLocatorPreflightBlock(
       result = checkDocxTarget(locator as ArtifactLocatorV1 & { target: { kind: 'docx-paragraph' } }, toolCall.arguments);
       break;
   }
-  return recordLocatorTelemetry(locator, result, recordTelemetry);
+  const recordedResult = recordLocatorTelemetry(locator, result, recordTelemetry);
+  const toolCallId = 'id' in toolCall ? toolCall.id : undefined;
+  if (!recordedResult && actorKey && chainKey && typeof toolCallId === 'string' && toolCallId) {
+    guardedWritePreflights.set(guardedCallKey(actorKey, toolCallId), {
+      actorKey,
+      chainKey,
+      toolName: toolCall.name.toLowerCase(),
+      targetPath,
+    });
+  }
+  return recordedResult;
+}
+
+/**
+ * ToolExecutor 的成功出口回写 guarded revision。只有同一个 actor/toolCall 的已放行
+ * preflight 能推进链；失败结果只消费授权，不记录新 revision。
+ */
+export async function completeArtifactLocatorGuardedWrite(input: {
+  success: boolean;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  workingDirectory: string;
+  sessionId?: string;
+  agentId?: string;
+  toolCallId?: string;
+}): Promise<void> {
+  if (!LOCATOR_GUARDED_TOOLS.has(input.toolName.toLowerCase())) return;
+  if (typeof input.toolCallId !== 'string' || !input.toolCallId) return;
+  const actorKey = guardedActorKey(input.sessionId, input.agentId);
+  if (!actorKey) return;
+
+  const preflightKey = guardedCallKey(actorKey, input.toolCallId);
+  const preflight = guardedWritePreflights.get(preflightKey);
+  if (!preflight) return;
+  guardedWritePreflights.delete(preflightKey);
+  if (!input.success || preflight.actorKey !== actorKey) return;
+  if (preflight.toolName !== input.toolName.toLowerCase()) return;
+
+  const rawPath = input.arguments.file_path;
+  if (typeof rawPath !== 'string' || !rawPath.trim()) return;
+  const targetPath = path.isAbsolute(rawPath)
+    ? path.resolve(rawPath)
+    : path.resolve(input.workingDirectory, rawPath);
+  if (targetPath !== preflight.targetPath) return;
+
+  const revision = await computeArtifactRevision(targetPath).catch(() => null);
+  if (!revision) return;
+  successfulGuardedWrites.set(preflight.chainKey, { revision });
 }

@@ -121,7 +121,7 @@ export const AppearanceSettings: React.FC = () => {
     } catch (error) {
       logger.error('Failed to save theme', error);
       setTheme(previousTheme);
-      toast.error('主题保存失败，已恢复原设置');
+      toast.error(appearanceText.themeSaveFailed);
     }
   };
 
@@ -137,7 +137,7 @@ export const AppearanceSettings: React.FC = () => {
     } catch (error) {
       logger.error('Failed to save language', error);
       setLanguage(previousLanguage);
-      toast.error('语言保存失败，已恢复原设置');
+      toast.error(appearanceText.languageSaveFailed);
     }
   };
 
@@ -153,7 +153,7 @@ export const AppearanceSettings: React.FC = () => {
     } catch (error) {
       logger.error('Failed to save developer mode', error);
       setDeveloperMode(previousDeveloperMode);
-      toast.error('开发者模式保存失败，已恢复原设置');
+      toast.error(appearanceText.developerModeSaveFailed);
     }
   };
 
@@ -179,7 +179,7 @@ export const AppearanceSettings: React.FC = () => {
       } else {
         document.documentElement.style.removeProperty('--font-size-base');
       }
-      toast.error('字体大小保存失败，已恢复原设置');
+      toast.error(appearanceText.fontSizeSaveFailed);
     }
   };
 

@@ -5,8 +5,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
-import { AlertCircle, Palette, Loader2, X, GitCompare, Presentation } from 'lucide-react';
+import { AlertCircle, Palette, Loader2, GitCompare, Presentation } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
+import { CloseButton } from '../primitives';
 import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
 import { useDesignCanvasGeneration, type ExpandDirection } from './useDesignCanvasGeneration';
@@ -823,14 +824,12 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
         >
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
           <span className="min-w-0 flex-1 leading-relaxed">{error}</span>
-          <button
-            type="button"
+          <CloseButton
             aria-label="关闭错误提示"
             onClick={() => setError(null)}
+            size="sm"
             className="rounded-md p-0.5 text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          />
         </div>
       )}
 

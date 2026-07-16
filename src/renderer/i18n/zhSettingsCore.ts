@@ -162,6 +162,10 @@ export const zhSettingsCore = {
       },
       developerMode: '开发者模式',
       developerModeDesc: '在对话流中显示回合质量评分、路由详情等调试信息',
+      themeSaveFailed: '主题保存失败，已恢复原设置',
+      languageSaveFailed: '语言保存失败，已恢复原设置',
+      developerModeSaveFailed: '开发者模式保存失败，已恢复原设置',
+      fontSizeSaveFailed: '字体大小保存失败，已恢复原设置',
     },
     general: {
       permissions: {

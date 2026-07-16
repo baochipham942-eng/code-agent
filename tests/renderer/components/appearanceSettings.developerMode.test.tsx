@@ -6,6 +6,7 @@ import { AppearanceSettings } from '../../../src/renderer/components/features/se
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import ipcService from '../../../src/renderer/services/ipcService';
+import { zhSettingsCore } from '../../../src/renderer/i18n/zhSettingsCore';
 
 const toastError = vi.hoisted(() => vi.fn());
 
@@ -78,7 +79,7 @@ describe('AppearanceSettings developer mode toggle', () => {
     fireEvent.click(screen.getByText('浅色').closest('button')!);
 
     await waitFor(() => expect(localStorage.getItem('code-agent-theme')).toBe('dark'));
-    expect(toastError).toHaveBeenCalledWith('主题保存失败，已恢复原设置');
+    expect(toastError).toHaveBeenCalledWith(zhSettingsCore.appearance.themeSaveFailed);
   });
 
   it('语言保存失败时回滚语言并提示错误', async () => {
@@ -91,7 +92,7 @@ describe('AppearanceSettings developer mode toggle', () => {
     fireEvent.click(screen.getByText('English').closest('button')!);
 
     await waitFor(() => expect(useAppStore.getState().language).toBe('zh'));
-    expect(toastError).toHaveBeenCalledWith('语言保存失败，已恢复原设置');
+    expect(toastError).toHaveBeenCalledWith(zhSettingsCore.appearance.languageSaveFailed);
   });
 
   it('开发者模式保存失败时回滚开关并提示错误', async () => {
@@ -105,7 +106,7 @@ describe('AppearanceSettings developer mode toggle', () => {
 
     await waitFor(() => expect(useAppStore.getState().developerMode).toBe(false));
     expect(container.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('false');
-    expect(toastError).toHaveBeenCalledWith('开发者模式保存失败，已恢复原设置');
+    expect(toastError).toHaveBeenCalledWith(zhSettingsCore.appearance.developerModeSaveFailed);
   });
 
   it('字体大小保存失败时回滚选项和 CSS 变量并提示错误', async () => {
@@ -121,6 +122,6 @@ describe('AppearanceSettings developer mode toggle', () => {
       expect(document.documentElement.style.getPropertyValue('--font-size-base')).toBe('14px');
     });
     expect(screen.getByText('中', { selector: 'span' }).closest('button')?.className).toContain('bg-zinc-800/60');
-    expect(toastError).toHaveBeenCalledWith('字体大小保存失败，已恢复原设置');
+    expect(toastError).toHaveBeenCalledWith(zhSettingsCore.appearance.fontSizeSaveFailed);
   });
 });

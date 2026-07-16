@@ -162,6 +162,10 @@ export const enSettingsCore = {
       },
       developerMode: 'Developer mode',
       developerModeDesc: 'Show turn quality scores, routing details, and other debug info in the chat stream',
+      themeSaveFailed: 'Failed to save theme. Previous setting restored.',
+      languageSaveFailed: 'Failed to save language. Previous setting restored.',
+      developerModeSaveFailed: 'Failed to save developer mode. Previous setting restored.',
+      fontSizeSaveFailed: 'Failed to save font size. Previous setting restored.',
     },
     general: {
       permissions: {

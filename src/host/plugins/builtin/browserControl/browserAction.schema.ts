@@ -17,6 +17,7 @@ Routing contract:
 - Prefer lighter web_fetch/http/search/read tools for plain single-URL reading, article summaries, static page extraction, or URL lists.
 - Use browser_action when the task needs login/session state, form filling, clicking, upload/download, multi-page navigation, dynamic page state, screenshots, or visual verification.
 - Start with get_content/get_dom_snapshot/get_a11y_snapshot when possible; after a mutating browser action, refresh the DOM/a11y evidence before claiming the final page state.
+- engine (ADR-041): optional 'auto' | 'managed' | 'relay'. Default auto. managed = Neo isolated browser; relay = user-attached Chrome tab via extension. Explicit engine never silently switches.
 
 Actions:
 - launch: Start isolated managed browser (headless by default; set CODE_AGENT_BROWSER_VISIBLE=1 for visible debugging)
@@ -147,6 +148,12 @@ Examples:
       secretRef: {
         type: 'string',
         description: 'Reference to a secret value for type actions, e.g. env:CODE_AGENT_BROWSER_SECRET_PASSWORD. The secret value is never returned in output.',
+      },
+      engine: {
+        type: 'string',
+        enum: ['auto', 'managed', 'relay'],
+        description:
+          'ADR-041 browser engine. auto (default) routes by isolation/login intent; managed uses Neo isolated browser; relay drives an attached real Chrome tab. Explicit managed/relay never silently switches engines.',
       },
     },
     required: ['action'],

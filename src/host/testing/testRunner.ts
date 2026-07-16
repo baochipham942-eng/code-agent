@@ -107,6 +107,8 @@ export interface AgentInterface {
    * runner 每个 case 都会调用（无契约时传 undefined 清除上个 case 的配置）。
    */
   configureGoalContract?(contract: EvalGoalContract | undefined): void;
+  /** Inject per-case sandbox policy, currently used to force redline cases offline. */
+  configureSandboxPolicy?(policy: { redline: boolean } | undefined): void;
   /** B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据） */
   getGoalRunRecord?(): GoalRunRecord | undefined;
 }
@@ -726,6 +728,8 @@ export class TestRunner {
 
       // Reset agent state
       await agent.reset();
+
+      agent.configureSandboxPolicy?.({ redline: isRedlineCase(testCase) });
 
       // 批 6：审批门策略注入（无模拟的 case 传 undefined，清掉上个 case 的配置）
       agent.configureUserSimulation?.(testCase.user_simulation);

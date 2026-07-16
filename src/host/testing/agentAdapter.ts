@@ -10,6 +10,7 @@ import type { AgentLoop } from '../agent/agentLoop';
 import type { ModelProvider } from '../../shared/contract';
 import type { ModelConfig } from '../../shared/contract/model';
 import type { InferenceOptions } from '../model/types';
+import type { ConversationExecutionIntent } from '../../shared/contract/conversationEnvelope';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { app } from '../platform';
@@ -295,6 +296,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
   private goalContract?: EvalGoalContract;
   // goal 观测事件（goal_gate / goal_complete）的行为落账，断言锚点数据
   private goalRun?: GoalRunRecord;
+  private sandboxPolicy?: { redline: boolean };
 
   constructor(config: {
     workingDirectory: string;
@@ -442,6 +444,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
       }
 
       try {
+        const executionIntent: ConversationExecutionIntent | undefined = this.sandboxPolicy?.redline
+          ? { redline: true }
+          : undefined;
         const loop = new AgentLoop({
           sessionId: this.currentSessionId,
           workingDirectory: this.workingDirectory,
@@ -463,6 +468,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
           enableToolDeferredLoading: this.toolMode === 'deferred',
           autoApprovePlan: true,
           telemetryAdapter,
+          executionIntent,
           goalContract: loopGoalContract,
           onEvent: (event) => {
             if (this.currentSessionId) {
@@ -562,6 +568,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.goalRun = undefined;
   }
 
+  configureSandboxPolicy(policy: { redline: boolean } | undefined): void {
+    this.sandboxPolicy = policy;
+  }
+
   /**
    * B6b-①：goal run 行为落账（goal_status / goal_evidence_gate 断言的锚点数据）。
    * 返回定格快照而非活引用（审计 R2-M1）：超时后挂起的 loop 还会向内部记录推
@@ -581,6 +591,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
     this.simConfig = undefined;
     this.goalContract = undefined;
     this.goalRun = undefined;
+    this.sandboxPolicy = undefined;
   }
 
   async finalizeSession(): Promise<void> {

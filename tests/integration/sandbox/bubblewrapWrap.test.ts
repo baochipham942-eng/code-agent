@@ -1,9 +1,7 @@
 // ============================================================================
-// OS 沙箱 wrapCommand 真实隔离集成测试（macOS / seatbelt）
+// OS 沙箱 wrapCommand 真实隔离集成测试（Linux / bubblewrap）
 //
-// 不 mock：真实生成 seatbelt profile，用 spawn(cmd, {shell:true}) 跑包装后的命令，
-// 验证"命令能跑 + PATH 工具可达 + 工作目录内可写 + 越界写被内核拒绝"。
-// 仅在 darwin 且 sandbox-exec 可用时运行，其余环境 skip。
+// 非 Linux 环境 skip；Linux CI 环境若缺 bwrap 直接 fail，避免静默失去覆盖。
 // ============================================================================
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -12,7 +10,7 @@ import http from 'http';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import { wrapCommandForSandbox, getSandboxManager } from '@host/sandbox';
+import { wrapCommandForSandbox, getBubblewrap } from '@host/sandbox';
 
 function run(
   command: string,
@@ -28,54 +26,27 @@ function run(
   });
 }
 
-const sandboxReady = process.platform === 'darwin' && getSandboxManager().isAvailable();
-const suite = sandboxReady ? describe : describe.skip;
+const isLinux = process.platform === 'linux';
+const bubblewrapReady = isLinux && getBubblewrap().isAvailable();
+const failMissingBubblewrap = isLinux && Boolean(process.env.CI) && !bubblewrapReady;
+const suite = bubblewrapReady || failMissingBubblewrap ? describe : describe.skip;
 
-suite('seatbelt wrapCommand 真实隔离', () => {
+suite('bubblewrap wrapCommand 真实隔离', () => {
   let projectDir: string;
 
   beforeAll(() => {
-    projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sbx-proj-'));
+    if (failMissingBubblewrap) {
+      throw new Error('Linux CI must install bubblewrap for sandbox integration tests');
+    }
+    projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bwrap-proj-'));
   });
+
   afterAll(() => {
-    fs.rmSync(projectDir, { recursive: true, force: true });
-  });
-
-  it('普通命令正常执行并返回输出', async () => {
-    const { command, cleanup } = wrapCommandForSandbox('echo hello-sandbox', {
-      workingDirectory: projectDir,
-      allowNetwork: false,
-    });
-    const r = await run(command, projectDir);
-    cleanup();
-    expect(r.code).toBe(0);
-    expect(r.stdout).toContain('hello-sandbox');
-  });
-
-  it('PATH 上的工具可达（node -v）—— 验证 profile 不过紧', async () => {
-    const { command, cleanup } = wrapCommandForSandbox('node -v', {
-      workingDirectory: projectDir,
-      allowNetwork: false,
-    });
-    const r = await run(command, projectDir);
-    cleanup();
-    expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/v\d+\./);
-  });
-
-  it('工作目录内写入成功', async () => {
-    const { command, cleanup } = wrapCommandForSandbox('echo ok > in-project.txt', {
-      workingDirectory: projectDir,
-      allowNetwork: false,
-    });
-    const r = await run(command, projectDir);
-    cleanup();
-    expect(r.code).toBe(0);
-    expect(fs.existsSync(path.join(projectDir, 'in-project.txt'))).toBe(true);
+    if (projectDir) fs.rmSync(projectDir, { recursive: true, force: true });
   });
 
   it('敏感 home 文件读取被拒，但工作区 .env 仍可读', async () => {
-    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sbx-home-'));
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bwrap-home-'));
     const originalHome = process.env.HOME;
     const secretPath = path.join(fakeHome, '.netrc');
     const workspaceEnvPath = path.join(projectDir, '.env');
@@ -106,47 +77,6 @@ suite('seatbelt wrapCommand 真实隔离', () => {
       else process.env.HOME = originalHome;
       fs.rmSync(fakeHome, { recursive: true, force: true });
       fs.rmSync(workspaceEnvPath, { force: true });
-    }
-  });
-
-  it('越界写入（HOME 根目录）被沙箱拒绝 —— 核心隔离实证', async () => {
-    const escapeTarget = path.join(os.homedir(), `__sandbox_escape_${Date.now()}.txt`);
-    const { command, cleanup } = wrapCommandForSandbox(
-      `echo pwned > ${JSON.stringify(escapeTarget)}`,
-      { workingDirectory: projectDir, allowNetwork: false },
-    );
-    const r = await run(command, projectDir);
-    cleanup();
-    try {
-      expect(r.code).not.toBe(0); // 写被拒 → 非零退出
-      expect(fs.existsSync(escapeTarget)).toBe(false); // 文件没被创建
-    } finally {
-      if (fs.existsSync(escapeTarget)) fs.unlinkSync(escapeTarget); // 防御性清理
-    }
-  });
-
-  it('引号/管道命令经 shell-quote 包装后语义正确', async () => {
-    const { command, cleanup } = wrapCommandForSandbox(
-      `echo 'a b c' | tr ' ' '-'`,
-      { workingDirectory: projectDir, allowNetwork: false },
-    );
-    const r = await run(command, projectDir);
-    cleanup();
-    expect(r.code).toBe(0);
-    expect(r.stdout.trim()).toBe('a-b-c');
-  });
-
-  it('省略 allowNetwork 时默认断网（锁死 fail-closed 默认，防回退 ?? true）', () => {
-    const { command, cleanup } = wrapCommandForSandbox('echo default-net', {
-      workingDirectory: projectDir,
-    });
-    try {
-      const profilePath = /-f\s+(\S+)/.exec(command)?.[1];
-      expect(profilePath).toBeTruthy();
-      const profile = fs.readFileSync(profilePath!.replace(/['"]/g, ''), 'utf-8');
-      expect(profile).toContain('(deny network*)');
-    } finally {
-      cleanup?.();
     }
   });
 

@@ -8,13 +8,14 @@
 // 2. User input is validated by commandSafety (validateCommand) before reaching here
 // 3. The sandbox restricts what the command can access
 
-import { spawn, execSync } from 'child_process';
+import { spawn, execSync, execFileSync } from 'child_process';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { quote } from 'shell-quote';
 import { createLogger } from '../services/infra/logger';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
+import { getSensitiveSandboxPaths, type SensitiveSandboxPath } from './sensitivePaths';
 
 const logger = createLogger('Seatbelt');
 
@@ -48,6 +49,8 @@ export interface SeatbeltConfig {
   timeout?: number;
   /** Custom Seatbelt profile (overrides generated profile) */
   customProfile?: string;
+  /** Sensitive host paths that must be denied even under allow-default read model */
+  sensitivePaths?: SensitiveSandboxPath[];
 }
 
 /**
@@ -137,12 +140,26 @@ const DEFAULT_CONFIG: SeatbeltConfig = {
  * config.readPaths / executePaths / allowProcessExec / allowProcessFork 在本模型下不再用于
  * 限制（allow default 已覆盖），保留字段仅为兼容历史调用方。read 收紧留作 v2。
  */
-function generateProfile(config: SeatbeltConfig): string {
+export function generateProfile(config: SeatbeltConfig): string {
   const lines: string[] = [
     '(version 1)',
     '(allow default)',
     '',
   ];
+
+  const sensitivePaths = config.sensitivePaths ?? getSensitiveSandboxPaths();
+  if (sensitivePaths.length > 0) {
+    lines.push('; Deny sensitive host reads');
+    for (const entry of sensitivePaths) {
+      const resolved = realPath(entry.path);
+      if (entry.kind === 'directory') {
+        lines.push(`(deny file-read* (subpath "${escapeProfileString(resolved)}"))`);
+      } else {
+        lines.push(`(deny file-read* (literal "${escapeProfileString(resolved)}"))`);
+      }
+    }
+    lines.push('');
+  }
 
   // Network：bypass 档放行；显式关闭时 deny
   if (!config.allowNetwork) {
@@ -283,6 +300,19 @@ export class Seatbelt {
     return profilePath;
   }
 
+  private preflightProfile(profilePath: string): void {
+    try {
+      execFileSync('sandbox-exec', ['-f', profilePath, '/usr/bin/true'], {
+        encoding: 'utf-8',
+        timeout: 5000,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`sandbox-exec profile preflight failed: ${message}`, { cause: error });
+    }
+  }
+
   /**
    * Clean up old profile files
    */
@@ -333,6 +363,12 @@ export class Seatbelt {
     // Generate or use custom profile
     const profile = fullConfig.customProfile || generateProfile(fullConfig);
     const profilePath = this.writeProfile(profile);
+    try {
+      this.preflightProfile(profilePath);
+    } catch (error) {
+      this.cleanupProfile(profilePath);
+      throw error;
+    }
 
     return new Promise((resolve) => {
       let stdout = '';
@@ -425,6 +461,12 @@ export class Seatbelt {
     const fullConfig: SeatbeltConfig = { ...DEFAULT_CONFIG, ...config };
     const profile = fullConfig.customProfile || generateProfile(fullConfig);
     const profilePath = this.writeProfile(profile);
+    try {
+      this.preflightProfile(profilePath);
+    } catch (error) {
+      this.cleanupProfile(profilePath);
+      throw error;
+    }
     // 用 shell-quote 把整个 argv 拼成安全字符串：原命令作为单一 token 交给内层 /bin/sh -c。
     const wrapped = quote(['sandbox-exec', '-f', profilePath, '/bin/sh', '-c', command]);
     return { command: wrapped, cleanup: () => this.cleanupProfile(profilePath) };

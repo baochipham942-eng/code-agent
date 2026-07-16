@@ -4,7 +4,7 @@
 
 import { Command } from 'commander';
 import http from 'http';
-import { createCLIAgent, CLIAgent } from '../adapter';
+import { createCLIAgent } from '../adapter';
 import { terminalOutput } from '../output';
 import { cleanup, initializeCLIServices } from '../bootstrap';
 import type { CLIGlobalOptions, APIRunRequest, APIStatusResponse } from '../types';
@@ -19,15 +19,17 @@ interface ServeRequestHandlerOptions {
   globalOpts: CLIGlobalOptions;
 }
 
-// 全局状态
-let currentTask: {
+interface CurrentTask {
   id: string;
-  prompt: string;
+  prompt?: string;
   startTime: number;
-  agent: CLIAgent;
-  cancel: (reason?: 'user' | 'session-switch') => Promise<void>;
+  cancel?: (reason?: 'user' | 'session-switch') => Promise<void>;
   cancellationRequested: boolean;
-} | null = null;
+}
+
+// 全局状态
+let currentTask: CurrentTask | null = null;
+let nextTaskSequence = 0;
 
 export const serveCommand = new Command('serve')
   .description('启动 HTTP API 服务')
@@ -141,46 +143,50 @@ async function handleRun(
     return;
   }
 
-  // 解析请求体
-  const body = await readBody(req);
-  let parsedBody: unknown;
+  const task: CurrentTask = {
+    id: `task-${++nextTaskSequence}`,
+    startTime: Date.now(),
+    cancellationRequested: false,
+  };
+  currentTask = task;
 
   try {
-    parsedBody = JSON.parse(body) as unknown;
-  } catch {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Invalid JSON' }));
-    return;
-  }
+    // 解析请求体
+    const body = await readBody(req);
+    let parsedBody: unknown;
 
-  const request = normalizeRunRequest(parsedBody);
-  if (!request) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing prompt' }));
-    return;
-  }
+    try {
+      parsedBody = JSON.parse(body) as unknown;
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      return;
+    }
 
-  // 设置 SSE 响应头
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
+    const request = normalizeRunRequest(parsedBody);
+    if (!request) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing prompt' }));
+      return;
+    }
+    task.prompt = request.prompt;
 
-  // 创建 Agent
-  const agent = await createCLIAgent({
-    project: request.project || globalOpts?.project,
-    model: request.model || globalOpts?.model,
-    provider: request.provider || globalOpts?.provider,
-    json: true, // 内部使用 JSON 格式
-    debug: globalOpts?.debug,
-  });
+    // 设置 SSE 响应头
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
 
-  const taskId = `task-${Date.now()}`;
-  const startTime = Date.now();
+    // 创建 Agent
+    const agent = await createCLIAgent({
+      project: request.project || globalOpts?.project,
+      model: request.model || globalOpts?.model,
+      provider: request.provider || globalOpts?.provider,
+      json: true, // 内部使用 JSON 格式
+      debug: globalOpts?.debug,
+    });
 
-  // 运行任务
-  try {
     // 创建自定义的 AgentLoop 来捕获事件
     const config = agent.getConfig();
     const { createAgentLoop } = await import('../bootstrap');
@@ -193,17 +199,13 @@ async function handleRun(
       }
     );
 
-    currentTask = {
-      id: taskId,
-      prompt: request.prompt,
-      startTime,
-      agent,
-      cancel: (reason) => agentLoop.cancel(reason),
-      cancellationRequested: false,
-    };
+    task.cancel = (reason) => agentLoop.cancel(reason);
+    if (task.cancellationRequested) {
+      await task.cancel('user');
+    }
 
     // 发送任务开始事件
-    sendSSE(res, 'task_start', { taskId, prompt: request.prompt });
+    sendSSE(res, 'task_start', { taskId: task.id, prompt: request.prompt });
 
     // prompt 命令展开（/命令协议层，roadmap 2.2）：与 run/chat 入口对齐
     let effectivePrompt = request.prompt;
@@ -224,19 +226,26 @@ async function handleRun(
 
     await agentLoop.run(effectivePrompt);
 
-    const duration = Date.now() - startTime;
-    if (currentTask?.id === taskId && currentTask.cancellationRequested) {
-      sendSSE(res, 'task_cancelled', { taskId, duration });
+    const duration = Date.now() - task.startTime;
+    if (task.cancellationRequested) {
+      sendSSE(res, 'task_cancelled', { taskId: task.id, duration });
     } else {
-      sendSSE(res, 'task_complete', { taskId, duration });
+      sendSSE(res, 'task_complete', { taskId: task.id, duration });
     }
   } catch (error) {
-    sendSSE(res, 'error', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
+    if (!res.headersSent) throw error;
+    if (!res.writableEnded) {
+      sendSSE(res, 'error', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   } finally {
-    currentTask = null;
-    res.end();
+    if (currentTask === task) {
+      currentTask = null;
+    }
+    if (res.headersSent && !res.writableEnded) {
+      res.end();
+    }
   }
 }
 
@@ -283,7 +292,7 @@ async function handleCancel(res: http.ServerResponse): Promise<void> {
   }
 
   task.cancellationRequested = true;
-  await task.cancel('user');
+  await task.cancel?.('user');
 
   // AgentLoop.cancel only acknowledges delivery. The run's SSE stream owns the
   // eventual task_cancelled terminal event, so this route must stay at 202.

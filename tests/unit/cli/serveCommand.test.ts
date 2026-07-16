@@ -119,6 +119,71 @@ describe('createServeRequestHandler', () => {
     expect(mocks.createAgentLoop).not.toHaveBeenCalled();
   });
 
+  it('claims the run slot before delayed agent initialization', async () => {
+    let releaseAgentCreation!: () => void;
+    const agentCreationGate = new Promise<void>((resolve) => {
+      releaseAgentCreation = resolve;
+    });
+    mocks.createCLIAgent.mockImplementation(async () => {
+      await agentCreationGate;
+      return {
+        getConfig: () => ({ model: 'delayed-config' }),
+      };
+    });
+    mocks.createAgentLoop.mockReturnValue({
+      run: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+    });
+    await startServeApi();
+
+    const firstResponsePromise = postRun({ prompt: 'first task' });
+    await vi.waitFor(() => {
+      expect(mocks.createCLIAgent).toHaveBeenCalledTimes(1);
+    });
+
+    let secondResponseSettled = false;
+    const secondResponsePromise = postRun({ prompt: 'second task' }).then((response) => {
+      secondResponseSettled = true;
+      return response;
+    });
+    await vi.waitFor(() => {
+      expect(secondResponseSettled || mocks.createCLIAgent.mock.calls.length === 2).toBe(true);
+    });
+    releaseAgentCreation();
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      firstResponsePromise,
+      secondResponsePromise,
+    ]);
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(409);
+    expect(await readJson(secondResponse)).toMatchObject({
+      error: 'A task is already running',
+    });
+    await firstResponse.text();
+  });
+
+  it('uses unique task ids when Date.now is fixed', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(3000);
+    mocks.createCLIAgent.mockResolvedValue({
+      getConfig: () => ({ model: 'fixed-clock-config' }),
+    });
+    mocks.createAgentLoop.mockReturnValue({
+      run: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+    });
+    await startServeApi();
+
+    const firstStream = await (await postRun({ prompt: 'first fixed-clock task' })).text();
+    const secondStream = await (await postRun({ prompt: 'second fixed-clock task' })).text();
+    const firstTaskId = firstStream.match(/"taskId":"([^"]+)"/)?.[1];
+    const secondTaskId = secondStream.match(/"taskId":"([^"]+)"/)?.[1];
+
+    expect(firstTaskId).toBeDefined();
+    expect(secondTaskId).toBeDefined();
+    expect(secondTaskId).not.toBe(firstTaskId);
+  });
+
   it('streams run events, exposes running status, rejects concurrent runs, and dispatches cancel requests', async () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
     let finishRun!: () => void;
@@ -167,26 +232,34 @@ describe('createServeRequestHandler', () => {
 
     nowSpy.mockReturnValue(1250);
     const status = await fetch(`${baseUrl}/api/status`);
-    expect(await readJson(status)).toEqual({
+    const runningStatus = await readJson(status) as {
+      running: boolean;
+      taskId: string;
+      task: string;
+      startTime: number;
+      duration: number;
+    };
+    expect(runningStatus).toEqual({
       running: true,
-      taskId: 'task-1000',
+      taskId: expect.stringMatching(/^task-\d+$/),
       task: 'build endpoint tests',
       startTime: 1000,
       duration: 250,
     });
+    const { taskId } = runningStatus;
 
     const conflict = await postRun({ prompt: 'second task' });
     expect(conflict.status).toBe(409);
     expect(await readJson(conflict)).toEqual({
       error: 'A task is already running',
-      taskId: 'task-1000',
+      taskId,
     });
 
     const cancelResponse = await fetch(`${baseUrl}/api/cancel`, { method: 'POST' });
     expect(cancelResponse.status).toBe(202);
     expect(await readJson(cancelResponse)).toEqual({
       message: 'cancel_requested',
-      taskId: 'task-1000',
+      taskId,
     });
     expect(cancel).toHaveBeenCalledOnce();
     expect(cancel).toHaveBeenCalledWith('user');
@@ -194,15 +267,38 @@ describe('createServeRequestHandler', () => {
     nowSpy.mockReturnValue(1500);
     const streamText = await runResponse.text();
     expect(streamText).toContain('event: task_start');
-    expect(streamText).toContain('data: {"taskId":"task-1000","prompt":"build endpoint tests"}');
+    expect(streamText).toContain(`data: {"taskId":"${taskId}","prompt":"build endpoint tests"}`);
     expect(streamText).toContain('event: message');
     expect(streamText).toContain('data: {"prompt":"build endpoint tests","text":"started"}');
     expect(streamText).toContain('event: task_cancelled');
-    expect(streamText).toContain('data: {"taskId":"task-1000","duration":250}');
+    expect(streamText).toContain(`data: {"taskId":"${taskId}","duration":250}`);
     expect(run).toHaveBeenCalledWith('build endpoint tests');
 
     const idle = await fetch(`${baseUrl}/api/status`);
     expect(await readJson(idle)).toEqual({ running: false });
+  });
+
+  it('releases the claimed slot when agent initialization fails', async () => {
+    mocks.createCLIAgent
+      .mockRejectedValueOnce(new Error('agent initialization failed'))
+      .mockResolvedValueOnce({
+        getConfig: () => ({ model: 'recovered-config' }),
+      });
+    mocks.createAgentLoop.mockReturnValue({
+      run: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+    });
+    await startServeApi();
+
+    const failedResponse = await postRun({ prompt: 'fails during initialization' });
+    expect(failedResponse.status).toBe(200);
+    await expect(failedResponse.text()).resolves.toContain(
+      'event: error\ndata: {"message":"agent initialization failed"}'
+    );
+
+    const recoveredResponse = await postRun({ prompt: 'runs after initialization failure' });
+    expect(recoveredResponse.status).toBe(200);
+    await expect(recoveredResponse.text()).resolves.toContain('event: task_complete');
   });
 
   it('falls back to global agent options and streams agent loop errors before clearing state', async () => {

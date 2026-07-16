@@ -170,15 +170,17 @@ function runner(input: {
   guard?: () => boolean;
   trace?: GraphTracePort;
   recover?: GraphExecutorPort['recover'];
+  scheduler?: GraphSchedulerPort;
+  sleep?: (ms: number) => Promise<void>;
 }) {
   return new GraphRunner({
-    scheduler: new TestScheduler(),
+    scheduler: input.scheduler ?? new TestScheduler(),
     executors: new GraphExecutorRegistry([executor(input.execute, input.cancel, input.recover)]),
     emit: (event) => { input.events?.push({ type: event.type, nodeId: event.nodeId }); },
     persistCheckpoint: (checkpoint) => { input.checkpoints?.push(structuredClone(checkpoint)); },
     attemptGuard: input.guard,
     trace: input.trace,
-    sleep: async () => undefined,
+    sleep: input.sleep ?? (async () => undefined),
   });
 }
 
@@ -286,6 +288,77 @@ describe('GraphRunner', () => {
     } }).run(spec([node('a', [], { retryPolicy: { maxAttempts: 2 } })]));
     expect(result.status).toBe('completed');
     expect(calls).toEqual([{ nodeId: 'a', nodeAttempt: 1 }, { nodeId: 'a', nodeAttempt: 2 }]);
+  });
+
+  it('keeps a retry in backoff active when a sibling wakes the run loop', async () => {
+    const scheduler = new TestScheduler();
+    const nextReadyNodes = scheduler.nextReadyNodes.bind(scheduler);
+    let schedulerPasses = 0;
+    let resolveSiblingWakePass!: () => void;
+    const siblingWakePass = new Promise<void>((resolve) => { resolveSiblingWakePass = resolve; });
+    vi.spyOn(scheduler, 'nextReadyNodes').mockImplementation((limit) => {
+      const ready = nextReadyNodes(limit);
+      schedulerPasses++;
+      if (schedulerPasses === 2) queueMicrotask(resolveSiblingWakePass);
+      return ready;
+    });
+
+    let releaseBackoff!: () => void;
+    let resolveBackoffEntered!: () => void;
+    const backoffEntered = new Promise<void>((resolve) => { resolveBackoffEntered = resolve; });
+    const backoffGate = new Promise<void>((resolve) => { releaseBackoff = resolve; });
+    let settleSibling!: () => void;
+    const siblingGate = new Promise<void>((resolve) => { settleSibling = resolve; });
+    let resolveFirstAttemptFinished!: () => void;
+    const firstAttemptFinished = new Promise<void>((resolve) => { resolveFirstAttemptFinished = resolve; });
+    const aAttempts: number[] = [];
+    const aStarts: GraphTraceContext[] = [];
+    const trace: GraphTracePort = {
+      startGraph: vi.fn(() => ({ traceId: 'trace', spanId: 'graph' })),
+      startNode: vi.fn((_spec, current) => {
+        const nodeTrace = { traceId: 'trace', spanId: `${current.nodeId}-${current.nodeId === 'a' ? aStarts.length + 1 : 1}` };
+        if (current.nodeId === 'a') aStarts.push(nodeTrace);
+        return nodeTrace;
+      }),
+      endNode: vi.fn((nodeTrace) => {
+        if (nodeTrace === aStarts[0]) resolveFirstAttemptFinished();
+      }),
+      endGraph: vi.fn(),
+    };
+    const run = runner({
+      scheduler,
+      trace,
+      sleep: async () => {
+        resolveBackoffEntered();
+        await backoffGate;
+      },
+      execute: async (current, context) => {
+        if (current.nodeId === 'b') {
+          await siblingGate;
+          return { status: 'completed' };
+        }
+        aAttempts.push(context.nodeAttempt);
+        return context.nodeAttempt === 1
+          ? { status: 'failed', error: 'transient', retryable: true }
+          : { status: 'completed' };
+      },
+    });
+
+    const runPromise = run.run(spec([
+      node('a', [], { retryPolicy: { maxAttempts: 2, backoffMs: 100 } }),
+      node('b'),
+    ], { schedulerPolicy: { maxConcurrency: 2 } }));
+    await backoffEntered;
+    settleSibling();
+    await siblingWakePass;
+    const launchesDuringBackoff = aStarts.length;
+    releaseBackoff();
+    await firstAttemptFinished;
+    const result = await runPromise;
+
+    expect(launchesDuringBackoff, 'attempt 2 launched before backoff was released').toBe(1);
+    expect(aAttempts).toEqual([1, 2]);
+    expect(result.status).toBe('completed');
   });
 
   it('moves an uncertain side effect to requires_review without retry', async () => {

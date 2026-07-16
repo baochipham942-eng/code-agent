@@ -172,6 +172,31 @@ describe('MCPToolRegistry permission metadata', () => {
     });
   });
 
+  it('preserves the provider rejection instead of inferring delivery from later effects', async () => {
+    const registry = new MCPToolRegistry();
+    const providerMessage = 'set_value failed: AXUIElementSetAttributeValue(AXValue) failed with error -25204';
+    const client = {
+      callTool: vi.fn(async () => ({
+        isError: true,
+        content: [{ type: 'text', text: providerMessage }],
+      })),
+    };
+
+    const result = await registry.callExternalTool(
+      'tool-rejected',
+      'cua-driver',
+      'set_value',
+      { pid: 1, element_token: 'opaque', value: 'new' },
+      client as never,
+    );
+
+    expect(client.callTool).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      success: false,
+      output: providerMessage,
+    });
+  });
+
   it('preserves CUA observation metadata after a read-only reconnect retry', async () => {
     const registry = new MCPToolRegistry();
     const client = {

@@ -6,31 +6,51 @@
 // strong 档模型自带 reasoning，<thinking> 注入是重复税；nudge 过频则脱敏。
 // ============================================================================
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { SCAFFOLD_PROFILE } from '../../../shared/constants/agent';
 import { getModelScaffoldTier, type ScaffoldTier } from '../../../shared/constants/models';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('ScaffoldProfile');
-let scaffoldProfileOverride: boolean | undefined;
+
+type ScaffoldProfileOverrideScope = {
+  scaffoldProfile: boolean | undefined;
+  thinkingInjection: boolean | undefined;
+};
+
+const scaffoldProfileOverrideScope = new AsyncLocalStorage<ScaffoldProfileOverrideScope>();
 
 export function setScaffoldProfileOverride(value: boolean | undefined): void {
-  scaffoldProfileOverride = value;
+  const current = scaffoldProfileOverrideScope.getStore();
+  scaffoldProfileOverrideScope.enterWith({
+    scaffoldProfile: value,
+    thinkingInjection: current?.thinkingInjection,
+  });
 }
 
 export function getScaffoldProfileOverride(): boolean | undefined {
-  return scaffoldProfileOverride;
+  return scaffoldProfileOverrideScope.getStore()?.scaffoldProfile;
 }
 
 // 单维度实验旋钮：只覆盖 thinkingInjection，nudge/修复指令不动。
 // 2026-07-11 非劣批 B7 整套 profile 两模型腿同向回退，需定位是三件里哪件在伤成功率。
-let thinkingInjectionOverride: boolean | undefined;
-
 export function setThinkingInjectionOverride(value: boolean | undefined): void {
-  thinkingInjectionOverride = value;
+  const current = scaffoldProfileOverrideScope.getStore();
+  scaffoldProfileOverrideScope.enterWith({
+    scaffoldProfile: current?.scaffoldProfile,
+    thinkingInjection: value,
+  });
 }
 
 export function getThinkingInjectionOverride(): boolean | undefined {
-  return thinkingInjectionOverride;
+  return scaffoldProfileOverrideScope.getStore()?.thinkingInjection;
+}
+
+export function runWithScaffoldProfileOverrides<T>(
+  overrides: ScaffoldProfileOverrideScope,
+  callback: () => T,
+): T {
+  return scaffoldProfileOverrideScope.run(overrides, callback);
 }
 
 export type RepairInstructionStyle = 'full' | 'compact';

@@ -11,8 +11,6 @@ const logger = createLogger('PermissionModes');
 
 // 会话档持久化文件（审出 MED：纯内存跨重启会静默回退全局默认档）。
 const SESSION_MODES_FILE = 'session-permission-modes.json';
-// ponytail: 全量覆写小 JSON + 超上限丢最旧（Map 保插入序）；量级/并发成问题再换 DB。
-const SESSION_MODES_MAX_ENTRIES = 500;
 
 // ----------------------------------------------------------------------------
 // Types
@@ -228,6 +226,8 @@ export class PermissionModeManager {
   // ponytail: initSessionMode 的创建期快照不落盘（重启后回退当时的全局默认档），
   // 只持久化用户显式选的档——要完整快照语义再把 init 也写穿。
   private sessionModes: Map<string, PermissionMode> = new Map();
+  // 单独记录显式选档的来源：创建期快照只存在 sessionModes，不能被旁边的持久化带上磁盘。
+  private explicitSessionModes: Map<string, PermissionMode> = new Map();
   private sessionModesLoaded = false;
   // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时强制钳到不高于 acceptEdits。
   private unattendedSessions: Set<string> = new Set();
@@ -332,6 +332,7 @@ export class PermissionModeManager {
     }
     this.ensureSessionModesLoaded();
     this.sessionModes.set(sessionId, mode);
+    this.explicitSessionModes.set(sessionId, mode);
     this.persistSessionModes();
     logger.info('Session permission mode changed', { sessionId, mode, riskLevel: config.riskLevel });
     return true;
@@ -350,6 +351,7 @@ export class PermissionModeManager {
       for (const [sessionId, mode] of Object.entries(raw)) {
         if (!this.sessionModes.has(sessionId) && MODE_CONFIGS[mode]) {
           this.sessionModes.set(sessionId, mode);
+          this.explicitSessionModes.set(sessionId, mode);
         }
       }
     } catch (error) {
@@ -359,14 +361,9 @@ export class PermissionModeManager {
 
   private persistSessionModes(): void {
     try {
-      while (this.sessionModes.size > SESSION_MODES_MAX_ENTRIES) {
-        const oldest = this.sessionModes.keys().next().value;
-        if (oldest === undefined) break;
-        this.sessionModes.delete(oldest);
-      }
       const filePath = this.sessionModesFilePath();
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, JSON.stringify(Object.fromEntries(this.sessionModes)), 'utf-8');
+      fs.writeFileSync(filePath, JSON.stringify(Object.fromEntries(this.explicitSessionModes)), 'utf-8');
     } catch (error) {
       logger.warn('Failed to persist session permission modes', error);
     }

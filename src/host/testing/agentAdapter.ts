@@ -14,8 +14,8 @@ import type { ConversationExecutionIntent } from '../../shared/contract/conversa
 import { createLogger } from '../services/infra/logger';
 import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { app } from '../platform';
-import { setCompressionPipelineOverride } from '../context/compressionPipeline';
-import { setScaffoldProfileOverride, setThinkingInjectionOverride } from '../agent/runtime/scaffoldProfile';
+import { runWithCompressionPipelineOverride } from '../context/compressionPipeline';
+import { runWithScaffoldProfileOverrides } from '../agent/runtime/scaffoldProfile';
 
 const logger = createLogger('AgentAdapter');
 
@@ -39,6 +39,18 @@ type ModuleWithRequirePrototype = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function runWithHarnessOverrideScope<T>(
+  harness: HarnessVariantConfig | undefined,
+  callback: () => T,
+): T {
+  return runWithCompressionPipelineOverride(harness?.compressionPipeline, () =>
+    runWithScaffoldProfileOverrides({
+      scaffoldProfile: harness?.scaffoldProfile,
+      thinkingInjection: harness?.thinkingInjection,
+    }, callback),
+  );
 }
 
 function getAgentLoopState(agentLoop: AgentLoop): AgentLoopStateView {
@@ -433,17 +445,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
       if (goalRunForThisRun) {
         this.goalRun = goalRunForThisRun;
       }
-      if (this.harness?.compressionPipeline !== undefined) {
-        setCompressionPipelineOverride(this.harness.compressionPipeline);
-      }
-      if (this.harness?.scaffoldProfile !== undefined) {
-        setScaffoldProfileOverride(this.harness.scaffoldProfile);
-      }
-      if (this.harness?.thinkingInjection !== undefined) {
-        setThinkingInjectionOverride(this.harness.thinkingInjection);
-      }
 
-      try {
+      await runWithHarnessOverrideScope(this.harness, async () => {
         const executionIntent: ConversationExecutionIntent | undefined = this.sandboxPolicy?.redline
           ? { redline: true }
           : undefined;
@@ -538,17 +541,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
         } else {
           await loop.run(prompt);
         }
-      } finally {
-        if (this.harness?.compressionPipeline !== undefined) {
-          setCompressionPipelineOverride(undefined);
-        }
-        if (this.harness?.scaffoldProfile !== undefined) {
-          setScaffoldProfileOverride(undefined);
-        }
-        if (this.harness?.thinkingInjection !== undefined) {
-          setThinkingInjectionOverride(undefined);
-        }
-      }
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(message || String(error));

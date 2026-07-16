@@ -98,6 +98,93 @@ describe('compactionService', () => {
     expect(plan?.manifest.errors.some((item) => item.text.includes('AssertionError'))).toBe(true);
   });
 
+  it('adds a focus block after the survivor manifest and before the compacted transcript', async () => {
+    const messages = [
+      message('m1', 'user', 'Discuss renderer /compact command behavior. '.repeat(80)),
+      message('m2', 'assistant', 'Need to route focus text through compaction. '.repeat(80)),
+      message('m3', 'tool', 'ok'),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+
+    await compactMessagesWithSummary({
+      sessionId: 'session-focus',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 1,
+      focusText: '保留 /compact 命令修复大纲',
+    });
+
+    const prompt = compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0] as string;
+    const manifestIndex = prompt.indexOf('Survivor Manifest:');
+    const focusIndex = prompt.indexOf('User Focus For This Compaction:');
+    const transcriptIndex = prompt.indexOf('Compacted Transcript:');
+
+    expect(focusIndex).toBeGreaterThan(manifestIndex);
+    expect(focusIndex).toBeLessThan(transcriptIndex);
+    expect(prompt).toContain('保留 /compact 命令修复大纲');
+    expect(prompt).toContain('This is a prioritization signal only.');
+    expect(prompt).toContain('Do not ignore the Hard rules or Survivor Manifest above.');
+  });
+
+  it('keeps the no-focus prompt byte-for-byte identical for empty focus values', async () => {
+    const messages = [
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
+      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+
+    await compactMessagesWithSummary({
+      sessionId: 'session-no-focus',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 1,
+    });
+    const noFocusPrompt = compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0] as string;
+
+    compactionServiceMocks.summarizeWithMetadata.mockClear();
+    await compactMessagesWithSummary({
+      sessionId: 'session-no-focus',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 1,
+      focusText: '   ',
+    });
+
+    expect(compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0]).toBe(noFocusPrompt);
+  });
+
+  it('keeps the focus block on repair prompts', async () => {
+    compactionServiceMocks.summarizeWithMetadata
+      .mockResolvedValueOnce({
+        summary: 'Tiny summary without required survivors.',
+        metadata: compactionServiceMocks.summaryModel,
+      })
+      .mockResolvedValueOnce({
+        summary: compactionServiceMocks.summary,
+        metadata: compactionServiceMocks.summaryModel,
+      });
+    const messages = [
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      message('m2', 'assistant', 'recent answer'),
+      message('m3', 'assistant', 'recent tail'),
+    ];
+
+    await compactMessagesWithSummary({
+      sessionId: 'session-focus-repair',
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 1,
+      focusText: '只关注死掉的 /compact 命令',
+    });
+
+    expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(2);
+    const repairPrompt = compactionServiceMocks.summarizeWithMetadata.mock.calls[1][0] as string;
+    expect(repairPrompt).toContain('User Focus For This Compaction:');
+    expect(repairPrompt).toContain('只关注死掉的 /compact 命令');
+    expect(repairPrompt).toContain('Repair instruction:');
+  });
+
   it('shares file survivor mode metadata and warns the summary model about stale file records', async () => {
     const messages: Message[] = [
       {

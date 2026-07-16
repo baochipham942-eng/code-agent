@@ -358,6 +358,35 @@ describe('resolveContextHealthForSession', () => {
     expect(setMessages).toHaveBeenCalledWith(compactMocks.state.persistedMessages);
     expect(getContextHealthService().get(sessionId).currentTokens).toBeGreaterThan(0);
     expect(getContextHealthService().get(sessionId).currentTokens).toBeLessThan(result.beforeTokens);
+    expect(compactMocks.compactModelSummarizeWithMetadata.mock.calls[0][0]).not.toContain('User Focus For This Compaction:');
+  });
+
+  it('passes optional current compact focus text through IPC into the summary prompt', async () => {
+    const sessionId = 'session-compact-current-focus';
+    const messages: Message[] = Array.from({ length: 14 }, (_, index) => ({
+      id: `m${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `历史消息 ${index + 1}\n${'这是一段需要被压缩的长上下文。'.repeat(260)}`,
+      timestamp: index + 1,
+    }));
+    const appService = makeAppService(sessionId, messages, DEFAULT_MODEL);
+
+    registerContextHealthHandlers({
+      getAppService: () => appService,
+      getTaskManager: () => ({
+        getOrchestrator: vi.fn(() => ({ setMessages: vi.fn() })),
+      }) as any,
+      getSystemPromptForSession: () => '',
+    });
+
+    const handler = compactMocks.handlers.get('context:compact-current');
+    expect(handler).toBeDefined();
+
+    const result = await handler!({}, sessionId, '优先保留 /compact 命令修复线索') as CompactResult;
+
+    expect(result.success).toBe(true);
+    expect(compactMocks.compactModelSummarizeWithMetadata.mock.calls[0][0]).toContain('User Focus For This Compaction:');
+    expect(compactMocks.compactModelSummarizeWithMetadata.mock.calls[0][0]).toContain('优先保留 /compact 命令修复线索');
   });
 
   it('exposes and persists context compression config through IPC', async () => {

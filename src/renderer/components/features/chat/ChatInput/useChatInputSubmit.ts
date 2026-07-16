@@ -18,10 +18,12 @@ import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { useLoopStore } from '../../../../stores/loopStore';
 import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
 import { loopClient } from '../../../../services/loopClient';
+import { invoke } from '../../../../services/ipcService';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { buildAutomationNoticeMessage, formatCronScheduleLabel, formatLoopIntervalLabel } from '../automationNotice';
 import type { InputAreaRef } from './InputArea';
 import type { BuildEnvelope } from './useChatInputEnvelope';
+import { IPC_CHANNELS } from '@shared/ipc';
 import { parseScheduleCommand, isScheduleCommand } from './parseScheduleCommand';
 import { parseLoopCommand, isLoopCommand } from './parseLoopCommand';
 import {
@@ -38,6 +40,17 @@ type VoiceInputContextValue = {
   anchor: string;
   metadata: ConversationVoiceInputMetadata;
 } | null;
+
+export interface ParsedCompactCommand {
+  focusText?: string;
+}
+
+export function parseCompactCommand(input: string): ParsedCompactCommand | null {
+  const match = input.trim().match(/^\/compact(?:\s+(.*))?$/s);
+  if (!match) return null;
+  const focusText = match[1]?.trim();
+  return focusText ? { focusText } : {};
+}
 
 export interface UseChatInputSubmitParams {
   value: string;
@@ -220,6 +233,24 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     let contentToSend = trimmedValue;
     let preferredAgentIdOverride: string | null | undefined;
     let selectedAgentOverride: ComposerAgentSelection | null | undefined;
+
+    const compactCommand = parseCompactCommand(trimmedValue);
+    if (compactCommand) {
+      addToInputHistory(trimmedValue);
+      setValue('');
+      setVoiceInputContext(null);
+      try {
+        const result = await invoke(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, currentSessionId ?? undefined, compactCommand.focusText);
+        if (result?.success) {
+          toast.success('已压缩当前会话上下文');
+        } else if (result?.reason) {
+          toast.warning(`上下文压缩未执行：${result.reason}`);
+        }
+      } catch (err) {
+        toast.error(`上下文压缩失败：${err instanceof Error ? err.message : '未知错误'}`);
+      }
+      return;
+    }
 
     // /schedule：自然语言 → 定时任务。复用 cron:generateFromPrompt（LLM 出配置）+ createJob。
     if (isScheduleCommand(trimmedValue)) {

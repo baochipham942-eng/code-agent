@@ -4,7 +4,8 @@
 - **Worktree**: `/Users/linchen/Downloads/ai/code-agent-browser-login-reuse`
 - **ADR**: `docs/architecture/decisions/ADR-041-browser-login-reuse-parity.md`
 - **Date**: 2026-07-17
-- **Status**: code complete for M0–M4; M5 unit gate green; **manual dogfood still required on a real Mac before calling production done**
+- **Status**: M0–M5 packaging done; **worktree dogfood 2026-07-17 partial PASS** (kernel + relay host + routing verified on this Mac; full Tauri UI + extension attach still operator)
+- **Dogfood worktree**: `/Users/linchen/Downloads/ai/code-agent-browser-login-reuse` @ `feat/browser-login-reuse-m5`
 
 ## Scope delivered
 
@@ -30,7 +31,34 @@ npx vitest run \
   tests/unit/tools/vision/browserActionFinalize.test.ts
 ```
 
-Result: **7 files / 23 tests passed**.
+Result: **7 files / 23 tests passed** (re-run during dogfood).
+
+## Dogfood log (2026-07-17, this Mac)
+
+### Automated / host-level (no Tauri UI)
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| Unit gate 23 tests | **PASS** | see above |
+| `listBrowserProfiles()` real disk | **PASS** | 11 catalog entries, **4 available**: Chrome Default / Profile 1 / Guest, Arc Default |
+| Cookie import Chrome `Default` + allowlist github/google | **PASS** | `imported=30`, `skipped=718`, `domains=6`, ~417ms; Keychain+decrypt OK; result has no cookie values |
+| Cookie import Chrome `Profile 1` + same allowlist | **PASS** | `imported=113`, `skipped=3484`, many google/github domains |
+| Cookie import Arc `Default` + same allowlist | **PASS (empty)** | `imported=0` (no matching cookies / empty scope for those domains); did not fail-closed incorrectly |
+| `userConfirmed=false` gate | **PASS** | `failureCode=not_confirmed` |
+| Engine routing matrix | **PASS** | localhost→managed; attached public URL→relay; explicit relay offline→recovery `relay_not_connected` |
+| BrowserRelayService boot | **PASS** | `listening` on `23001`, extensionPath resolves to worktree `resources/browser-relay-extension`, HTTP `/api/browser-relay/status` 200, clean stop |
+| Extension assets | **PASS** | popup attach/detach handlers present |
+
+### UI / extension attach (still operator)
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| Tauri app Browser Surface import button | **NOT RUN** | no desktop app launched this session |
+| Chrome load unpacked extension + Attach | **NOT RUN** | needs human Chrome UI |
+| Agent `engine=relay` live click | **NOT RUN** | needs app + attached tab |
+| Session export redaction after real managed applyCookies | **NOT RUN** | host dogfood used stub applyCookies (decrypt only) |
+
+**Interpretation:** Cookie import kernel is **production-credible on this machine**. Relay host + routing + extension packaging are green. End-to-end “open Neo → import → browse logged-in site” and “attach tab → agent click” still need one human UI pass before release copy claims full dogfood.
 
 ## Action parity matrix (agent-facing)
 
@@ -60,53 +88,4 @@ Result: **7 files / 23 tests passed**.
 Failure expectations:
 
 | Injection | Expected |
-|-----------|----------|
-| Deny Keychain | fail-closed + recovery hint toward Relay |
-| Browser open (DB lock) | copy snapshot path still works, or clear copy-failed message |
-| Empty allowlist-filtered import | ok with 0 cookies + warning |
-
-### B. Chrome Relay
-
-1. **Start Relay** → note port + token.
-2. **Open extension directory** → Chrome load unpacked extension.
-3. Extension popup → **Attach current tab** (logged-in site).
-4. Surface **Refresh tabs** → Attach/Detach works.
-5. Agent: `browser_action` with `engine: "relay"` for list_tabs / get_content / click.
-6. Confirm tool metadata has `provider: browser-relay`, `engineRoute`, `browserComputerProof`, no auth tokens.
-
-### C. Engine auto routing
-
-| Scenario | Expected engine |
-|----------|-----------------|
-| `http://localhost:…` | managed |
-| Attached relay + public URL | relay (auto) |
-| Explicit `engine: managed` while relay ready | managed |
-| Explicit `engine: relay` while disconnected | fail with recovery, no silent switch |
-
-## Privacy / security audit (code-level)
-
-- [x] Cookie values not returned in list_profiles / import result domains-only summary
-- [x] Import requires `userConfirmed: true` (IPC + tool)
-- [x] Temp cookie DB copy cleaned in `finally`
-- [x] Finalizer redacts authToken / base64-like blobs
-- [x] No mounting of user daily `--user-data-dir` (ADR Decision 3)
-- [ ] Operator confirms live Keychain prompt copy is understandable (manual)
-- [ ] Operator confirms session export/markdown has no cookie values after real import (manual)
-
-## Remaining non-goals (still true)
-
-- Firefox / Safari profile import
-- Full localStorage / IndexedDB mirror
-- Remote browser pool
-- Default Browser automation On
-- Bypassing MFA / CAPTCHA / payments
-
-## Sign-off
-
-| Role | Item | State |
-|------|------|-------|
-| Agent | Unit matrix + docs packaging | done on this branch |
-| Human | Manual dogfood A/B/C | **pending** |
-| Human | Merge to main after dogfood | pending |
-
-After manual dogfood passes, mark ADR-041 rollout M5 as accepted in the decision log comment and merge `feat/browser-login-reuse-m5`.
+|-----------|----

@@ -1,5 +1,9 @@
 // Schema-only file (P1 Wave 3 — multiagent native migration)
 import type { ToolSchema } from '../../../protocol/tools';
+import {
+  renderAgentCatalogSection,
+  renderAgentRoleDescription,
+} from './agentDescription';
 
 const baseDescription = `Launch a sub-agent for a focused task. Sub-agents run in isolated sessions with their own context window and return only their final result to you.
 
@@ -54,12 +58,30 @@ When NOT to spawn:
 - forkContext: true to inherit parent conversation history
 - isolation: "worktree" to give coder agent an isolated git branch (auto-cleanup if no changes)`;
 
+function buildSpawnAgentDescription(): string {
+  return baseDescription.replace(
+    /## Available roles\n(?:- .+\n?)+/,
+    `## Available roles\n${renderAgentCatalogSection([
+      'Available agent types:',
+      '- explore: Read-only codebase exploration. Fast and authoritative. Spawn multiple in parallel for independent questions. Trust their results without re-verification.',
+      '- coder: Implementation work. Assign file ownership explicitly. Tell coders they are not alone in the codebase.',
+      '- reviewer: Code review and quality checks. Read-only.',
+      '- plan: Architecture design and task decomposition. Full context.',
+      '- awaiter: Long-running command monitor (tests, builds, deploys). Uses fast model, high iteration limit. Spawn in background and continue other work.',
+    ].join('\n'))}`,
+  );
+}
+
+const staticRoleDescription = 'The role/ID of the agent (built-in or predefined)';
+
 const spawnInputSchema = {
   type: 'object' as const,
   properties: {
     role: {
       type: 'string',
-      description: 'The role/ID of the agent (built-in or predefined)',
+      get description() {
+        return renderAgentRoleDescription(staticRoleDescription);
+      },
     },
     task: {
       type: 'string',
@@ -85,6 +107,10 @@ const spawnInputSchema = {
     maxIterations: {
       type: 'number',
       description: 'Maximum iterations for the agent (default: 20)',
+    },
+    foregroundBlockingBudgetMs: {
+      type: 'number',
+      description: 'Maximum foreground blocking time in milliseconds before a waiting sub-agent is moved to background. Default: 600000.',
     },
     forkContext: {
       type: 'boolean',
@@ -128,6 +154,7 @@ const spawnInputSchema = {
 export const spawnAgentSchema: ToolSchema = {
   name: 'spawn_agent',
   description: baseDescription,
+  dynamicDescription: buildSpawnAgentDescription,
   inputSchema: spawnInputSchema,
   category: 'multiagent',
   permissionLevel: 'execute',
@@ -146,6 +173,17 @@ Use this tool when you need:
 For simple synchronous task delegation, use Task instead.
 
 ${baseDescription}`,
+  dynamicDescription: () => `Advanced agent creation with full control over execution.
+
+Use this tool when you need:
+- Parallel execution (multiple agents at once)
+- Background mode (fire and forget)
+- Custom prompts or tools
+- Budget control
+
+For simple synchronous task delegation, use Task instead.
+
+${buildSpawnAgentDescription()}`,
   inputSchema: spawnInputSchema,
   category: 'multiagent',
   permissionLevel: 'execute',

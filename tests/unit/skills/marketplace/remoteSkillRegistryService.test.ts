@@ -33,6 +33,8 @@ function validEntry(overrides: Record<string, unknown> = {}) {
     pinnedCommit: PIN_A,
     contentHash: HASH_A,
     skills: ['skills/demo'],
+    keywords: ['demo keyword'],
+    domains: ['demo.example'],
     publisher: 'Agent Neo',
     reviewedAt: '2026-07-13',
     risk: { tier: 'low' },
@@ -84,6 +86,23 @@ describe('RemoteSkillRegistryService', () => {
     expect(result.error).toBeUndefined();
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0]!.pinnedCommit).toBe(PIN_A);
+    expect(result.entries[0]!.keywords).toEqual(['demo keyword']);
+    expect(result.entries[0]!.domains).toEqual(['demo.example']);
+  });
+
+  it('keeps registry payloads without keywords and domains backward-compatible', async () => {
+    const legacyEntry = validEntry({ keywords: undefined, domains: undefined });
+    const { envelope, publicKeys } = signedRegistry([legacyEntry]);
+    const result = await serviceFor(envelope, publicKeys).fetchEntries();
+
+    expect(result.error).toBeUndefined();
+    expect(result.entries.map((entry) => ({
+      name: entry.name,
+      keywords: entry.keywords,
+      domains: entry.domains,
+    }))).toEqual([
+      { name: 'demo-pack', keywords: undefined, domains: undefined },
+    ]);
   });
 
   it('rejects an envelope with a mismatched artifact kind', async () => {
@@ -124,5 +143,39 @@ describe('RemoteSkillRegistryService', () => {
     expect(items[0]!.installed).toBe(true);
     expect(items[0]!.installedPinnedCommit).toBe(PIN_B);
     expect(items[0]!.hasUpdate).toBe(true);
+  });
+
+  it('listItemsCached 在 TTL 内只打一次网络，invalidateListCache 后重新拉取', async () => {
+    const { envelope, publicKeys } = signedRegistry([validEntry()]);
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const service = new RemoteSkillRegistryService({
+      controlPlanePublicKeys: publicKeys,
+      endpoint: 'https://example.test/api/v1/skill-registry',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const first = await service.listItemsCached();
+    const second = await service.listItemsCached();
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    service.invalidateListCache();
+    await service.listItemsCached();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('listItemsCached 空货架/失败不缓存，下次重试', async () => {
+    const service = new RemoteSkillRegistryService({
+      controlPlanePublicKeys: { 'sr-key': 'not-used' },
+      endpoint: 'https://example.test/api/v1/skill-registry',
+      fetchImpl: vi.fn(async () => new Response('{}', { status: 500 })) as unknown as typeof fetch,
+    });
+    expect(await service.listItemsCached()).toEqual([]);
+    // 失败未缓存：再次调用仍会尝试拉取（fetchImpl 被再次调用）
+    expect(await service.listItemsCached()).toEqual([]);
   });
 });

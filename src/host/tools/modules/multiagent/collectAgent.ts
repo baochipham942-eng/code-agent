@@ -48,7 +48,10 @@ export async function executeCollectAgent(
   if (shouldWait) {
     await registry.await(agentId);
   }
-  const handle = registry.getStatus(agentId)!;
+  const handle = registry.getStatus(agentId);
+  if (!handle) {
+    return { ok: false, error: `Unknown background agent: ${agentId}`, code: 'NOT_FOUND' };
+  }
   onProgress?.({ stage: 'completing', percent: 100 });
 
   const icon = { running: '⏳', completed: '✅', failed: '❌' }[handle.status];
@@ -69,6 +72,7 @@ export async function executeCollectAgent(
       action: 'collect',
       status: handle.status,
       agentId: handle.agentId,
+      declaredOutputs: handle.declaredOutputs,
       result: { background: true, output: handle.result?.output, error: handle.error },
     },
     'Collect agent result',

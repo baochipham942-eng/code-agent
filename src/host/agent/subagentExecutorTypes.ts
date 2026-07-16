@@ -177,6 +177,8 @@ export interface SubagentExecutionContext {
   parentContext?: ParentContext;
   /** Parent agent remaining budget used to cap this subagent budget. */
   parentRemainingBudget?: number;
+  /** Suppress idle parent wakeups for background subagents spawned from controlled loops. */
+  suppressBackgroundSubagentIdleWake?: boolean;
   /** Worktree path if agent is running in an isolated git worktree */
   worktreePath?: string;
   /** 该 child 实际获授的能力快照；只描述权限，不携带 credential 值。 */

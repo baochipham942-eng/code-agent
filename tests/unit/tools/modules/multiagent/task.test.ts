@@ -31,7 +31,13 @@ vi.mock('../../../../../src/host/agent/agentDefinition', () => ({
   isCoreAgent: (s: string) => ['coder', 'reviewer', 'explore', 'plan', 'awaiter'].includes(s),
   getPredefinedAgent: (id: string) =>
     ['coder', 'reviewer', 'explore', 'plan', 'awaiter'].includes(id)
-      ? { id, name: id[0].toUpperCase() + id.slice(1), tools: ['read'], systemPrompt: 'sys' }
+      ? {
+        id,
+        name: id[0].toUpperCase() + id.slice(1),
+        tools: ['read'],
+        systemPrompt: 'sys',
+        ...(id === 'coder' ? { outputs: ['markdown 报告'] } : {}),
+      }
       : undefined,
   listPredefinedAgents: () => [{ id: 'coder' }, { id: 'reviewer' }],
   getAgentPrompt: () => 'system-prompt',
@@ -313,6 +319,7 @@ describe('Task happy / failure', () => {
         status: 'completed',
         targets: ['coder'],
         counts: { iterations: 5, tools: 2 },
+        declaredOutputs: ['markdown 报告'],
         request: {
           args: {
             prompt: { type: 'string', length: 8, preview: 'do thing' },
@@ -342,6 +349,7 @@ describe('Task happy / failure', () => {
           status: 'completed',
           targets: ['coder'],
           counts: { iterations: 5, tools: 2 },
+          declaredOutputs: ['markdown 报告'],
         }),
       });
     }

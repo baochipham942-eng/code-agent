@@ -45,7 +45,7 @@ describe('buildSidebarProjectSummary', () => {
       backgroundTaskMap: new Map(),
       sessionRuntimes: new Map(),
       sessionStates: {},
-      hasPendingApprovalForSession: (sessionId) => sessionId === 'approval',
+      hasNeedsInputForSession: (sessionId) => sessionId === 'approval',
       reviewItemsBySessionId: {
         running: [
           { reviewStatus: 'pending' },
@@ -67,6 +67,7 @@ describe('buildSidebarProjectSummary', () => {
     expect(summary.displayName).toBe('Agent Neo');
     expect(summary.sessionCount).toBe(12);
     expect(summary.runningCount).toBe(1);
+    expect(summary.needsInputCount).toBe(1);
     expect(summary.pendingApprovalCount).toBe(1);
     expect(summary.attentionCount).toBe(1);
     expect(summary.unfinishedCount).toBe(3);
@@ -89,7 +90,7 @@ describe('buildSidebarProjectSummary', () => {
       backgroundTaskMap: new Map(),
       sessionRuntimes: new Map(),
       sessionStates: {},
-      hasPendingApprovalForSession: () => false,
+      hasNeedsInputForSession: () => false,
     });
 
     expect(summary.displayName).toBe('对话');
@@ -101,6 +102,7 @@ describe('buildSidebarProjectSummary', () => {
         displayName: 'Agent Neo',
         sessionCount: 5,
         unfinishedCount: 2,
+        needsInputCount: 1,
         pendingApprovalCount: 1,
         attentionCount: 0,
         runningCount: 1,
@@ -125,6 +127,7 @@ describe('buildSidebarProjectSummary', () => {
         displayName: '未分类',
         sessionCount: 2,
         unfinishedCount: 0,
+        needsInputCount: 0,
         pendingApprovalCount: 0,
         attentionCount: 0,
         runningCount: 0,

@@ -133,7 +133,6 @@ const DEFAULT_MAX_ITEM_CHARS = 280;
 const DEFAULT_MAX_FILE_EXCERPT_CHARS = 360;
 const DEFAULT_MAX_FILE_EXCERPT_TOTAL_CHARS = 1400;
 const LARGE_FILE_BYTES = 96 * 1024;
-const APPROX_CHARS_PER_TOKEN = 4;
 
 const ABSOLUTE_PATH_RE =
   /(?:^|[\s([{<"'`])((?:\/(?:[^/\s"'`<>|:*?()[\]{};,]+))+|[A-Za-z]:\\(?:[^\\\s"'`<>|:*?()[\]{};,]+\\?)+)/g;
@@ -235,10 +234,19 @@ function itemBudget(options: SurvivorManifestBuildOptions): number {
   return Math.max(40, options.maxItemChars ?? DEFAULT_MAX_ITEM_CHARS);
 }
 
-function manifestBudget(options: SurvivorManifestBuildOptions): number | undefined {
-  if (typeof options.maxChars === 'number') return Math.max(0, options.maxChars);
-  if (typeof options.maxTokens === 'number') return Math.max(0, options.maxTokens * APPROX_CHARS_PER_TOKEN);
+type ManifestBudget = { kind: 'chars' | 'tokens'; value: number };
+
+function manifestBudget(options: SurvivorManifestBuildOptions): ManifestBudget | undefined {
+  if (typeof options.maxChars === 'number') return { kind: 'chars', value: Math.max(0, options.maxChars) };
+  if (typeof options.maxTokens === 'number') return { kind: 'tokens', value: Math.max(0, Math.floor(options.maxTokens)) };
   return undefined;
+}
+
+function manifestOverBudget(manifest: ContextSurvivorManifest, budget: ManifestBudget): boolean {
+  const serialized = JSON.stringify(manifest);
+  return budget.kind === 'chars'
+    ? serialized.length > budget.value
+    : estimateTokens(serialized) > budget.value;
 }
 
 function getMessageId(message: SurvivorManifestMessage, index: number): string {
@@ -635,8 +643,8 @@ function compactIds(messages: SurvivorManifestMessage[], preserveRecentCount: nu
 }
 
 function enforceManifestBudget(manifest: ContextSurvivorManifest, options: SurvivorManifestBuildOptions): ContextSurvivorManifest {
-  const maxChars = manifestBudget(options);
-  if (maxChars === undefined) return manifest;
+  const budget = manifestBudget(options);
+  if (budget === undefined) return manifest;
 
   const copy: ContextSurvivorManifest = {
     ...manifest,
@@ -650,7 +658,7 @@ function enforceManifestBudget(manifest: ContextSurvivorManifest, options: Survi
     files: manifest.files.map((file) => ({ ...file })),
   };
 
-  while (JSON.stringify(copy).length > maxChars) {
+  while (manifestOverBudget(copy, budget)) {
     if (copy.commands.length > 0) {
       copy.commands.pop();
     } else if (copy.errors.length > 0) {
@@ -667,7 +675,9 @@ function enforceManifestBudget(manifest: ContextSurvivorManifest, options: Survi
       copy.filePaths.pop();
       copy.files.pop();
     } else if (copy.dataFingerprintText) {
-      copy.dataFingerprintText = clampText(copy.dataFingerprintText, Math.max(0, Math.floor(maxChars / 2)));
+      const nextLength = Math.max(0, Math.floor(copy.dataFingerprintText.length / 2));
+      if (nextLength === copy.dataFingerprintText.length) break;
+      copy.dataFingerprintText = clampText(copy.dataFingerprintText, nextLength);
       copy.dataFingerprint = copy.dataFingerprintText;
     } else {
       break;

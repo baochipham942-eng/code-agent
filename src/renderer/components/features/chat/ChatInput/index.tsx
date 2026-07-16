@@ -45,6 +45,7 @@ import { RoleDraftNotifications } from './RoleDraftCard';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import { useSkillRecommendations } from './useSkillRecommendations';
+import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
@@ -235,13 +236,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setAttachments,
     setIsUploading: (uploading) => setIsUploading(uploading),
   });
-  // Composer typing stays passive: no pre-send Skill/MCP recommendations from text heuristics.
-  // Agent-side recommendations happen after a turn starts, via tool/search/capability reasoning.
+  // Composer typing stays passive for generic heuristics; only official registry skill
+  // keyword/domain hits surface here, and only for not-yet-installed marketplace skills.
   const {
     recommendations: skillRecommendations,
+    installingSkillName,
     mountRecommendedSkill,
     installRecommendedSkill,
-  } = useSkillRecommendations(currentSessionId, '');
+  } = useSkillRecommendations(currentSessionId, value);
   const capabilityRegistry = useWorkbenchCapabilityRegistry();
   const capabilitySuggestions = useMemo(() => [], []);
   const browserSession = useWorkbenchBrowserSession();
@@ -668,6 +670,18 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         )}
 
         <InlineWorkbenchBar />
+        <CapabilitySuggestionStrip
+          skillRecommendations={skillRecommendations}
+          capabilitySuggestions={capabilitySuggestions}
+          onSkillMount={(recommendation) => {
+            void mountRecommendedSkill(recommendation);
+          }}
+          onSkillInstall={(recommendation) => {
+            void installRecommendedSkill(recommendation);
+          }}
+          onCapabilitySelect={() => {}}
+          installingSkillName={installingSkillName}
+        />
 
         {/* Codex 风格融合：去掉明显边框 + 阴影，只用极弱 bg 区分输入区跟聊天内容 */}
         <div className="relative bg-white/[0.02] backdrop-blur-sm rounded-2xl focus-within:bg-white/[0.04] transition-colors duration-200">

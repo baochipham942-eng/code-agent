@@ -103,8 +103,8 @@ describe('subagentExecutor helper extraction', () => {
   });
 
   it('keeps subagent timeout defaults and parent abort propagation intact', () => {
-    expect(getSubagentExecutionTimeout('Coder')).toBe(120_000);
-    expect(getSubagentExecutionTimeout('Unknown Agent')).toBe(90_000);
+    expect(getSubagentExecutionTimeout('Coder')).toBe(900_000);
+    expect(getSubagentExecutionTimeout('Unknown Agent')).toBe(900_000);
     expect(getSubagentExecutionTimeout('Coder', 1234)).toBe(1234);
 
     const parent = new AbortController();

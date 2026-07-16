@@ -1,16 +1,17 @@
 import React from 'react';
 import { Sparkles } from 'lucide-react';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
+import { useI18n } from '../../../../hooks/useI18n';
 
 export interface SkillRecommendationView {
   skillName: string;
   libraryId: string;
   reason: string;
-  /** mount=已安装可挂载（默认），install=未安装可从推荐目录获取 */
+  /** mount=已安装可挂载（默认），install=未安装可安装 */
   action?: 'mount' | 'install';
-  /** action=install 时的中文显示名 */
+  /** action=install 时的显示名 */
   displayName?: string;
-  /** action=install 时的来源仓库 ID */
+  /** legacy 推荐目录来源；official registry 安装不依赖 renderer 传这个字段 */
   repoId?: string;
 }
 
@@ -113,6 +114,7 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
   onCapabilitySelect,
   installingSkillName,
 }) => {
+  const { t } = useI18n();
   // 去重：已作为「选用 X」技能推荐展示的，不再在能力建议里以「Skill X」重复出现
   const recommendedSkillNames = new Set(skillRecommendations.map((rec) => rec.skillName));
   const dedupedCapabilities = capabilitySuggestions.filter(
@@ -126,7 +128,7 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
   return (
     <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.025] px-2.5 py-2">
       <Sparkles className="h-3.5 w-3.5 shrink-0 text-fuchsia-400" />
-      <span className="shrink-0 text-[11px] text-zinc-500">为这个任务推荐</span>
+      <span className="shrink-0 text-[11px] text-zinc-500">{t.skillRecommendations.title}</span>
       {skillRecommendations.map((recommendation) => (
         recommendation.action === 'install' ? (
           <button
@@ -137,7 +139,11 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
             className="inline-flex max-w-full items-center gap-1 rounded-md border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-100 hover:border-emerald-400/40 disabled:opacity-60"
             title={recommendation.reason}
           >
-            <span>{installingSkillName === recommendation.skillName ? '安装中…' : '安装并选用'}</span>
+            <span>
+              {installingSkillName === recommendation.skillName
+                ? t.skillRecommendations.installing
+                : t.skillRecommendations.installAndSelect}
+            </span>
             <span className="truncate">{recommendation.displayName || recommendation.skillName}</span>
           </button>
         ) : (
@@ -148,7 +154,7 @@ export const CapabilitySuggestionStrip: React.FC<CapabilitySuggestionStripProps>
             className="inline-flex max-w-full items-center gap-1 rounded-md border border-fuchsia-400/20 bg-fuchsia-400/10 px-2 py-1 text-[11px] text-fuchsia-100 hover:border-fuchsia-400/40"
             title={recommendation.reason}
           >
-            <span>选用</span>
+            <span>{t.skillRecommendations.select}</span>
             <span className="truncate">{recommendation.skillName}</span>
           </button>
         )

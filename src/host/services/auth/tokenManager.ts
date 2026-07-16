@@ -5,6 +5,7 @@
 import type { Message } from '../../../shared/contract';
 import { getContextWindow } from '../../../shared/constants';
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
+import { estimateTokens as estimateTextTokens } from '../../context/tokenEstimator';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -33,26 +34,15 @@ export interface PruneResult {
 // Context window sizes sourced from shared constants
 
 // ----------------------------------------------------------------------------
-// Token Counter (简化实现，生产环境应使用 tiktoken)
+// Token Counter
 // ----------------------------------------------------------------------------
 
 /**
- * 简化的 token 计数
- * 规则：约 4 个字符 = 1 token (英文)，中文约 1.5 字符 = 1 token
+ * Token counting is sourced from the shared host estimator; message/tool
+ * structure overhead remains local to TokenManager.
  */
 function estimateTokens(text: string): number {
-  if (!text) return 0;
-
-  // 统计中文字符数
-  const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
-  // 非中文字符数
-  const otherChars = text.length - chineseChars;
-
-  // 中文字符约 1.5 字符/token，其他约 4 字符/token
-  const chineseTokens = Math.ceil(chineseChars / 1.5);
-  const otherTokens = Math.ceil(otherChars / 4);
-
-  return chineseTokens + otherTokens;
+  return estimateTextTokens(text);
 }
 
 /**

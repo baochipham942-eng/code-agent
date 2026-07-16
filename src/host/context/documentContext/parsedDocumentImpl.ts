@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { DocumentType, DocumentSection, ParsedDocument } from './types';
+import { estimateTokens } from '../tokenEstimator';
 
 /**
  * ParsedDocument 默认实现
@@ -66,9 +67,6 @@ export class ParsedDocumentImpl implements ParsedDocument {
   }
 }
 
-/**
- * 估算 token 数（简易：4 字符 ≈ 1 token）
- */
 export function estimateTokenCount(text: string): number {
-  return Math.ceil(text.length / 4);
+  return estimateTokens(text);
 }

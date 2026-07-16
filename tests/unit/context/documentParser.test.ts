@@ -55,11 +55,10 @@ describe('ParsedDocumentImpl', () => {
 // estimateTokenCount
 // --------------------------------------------------------------------------
 describe('estimateTokenCount', () => {
-  it('should estimate ~4 chars per token', () => {
+  it('uses the shared BPE token estimator', () => {
     const text = 'x'.repeat(100);
     const estimate = estimateTokenCount(text);
-    expect(estimate).toBeGreaterThan(20);
-    expect(estimate).toBeLessThan(30);
+    expect(estimate).toBe(13);
   });
 
   it('should handle empty string', () => {

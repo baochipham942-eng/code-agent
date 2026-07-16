@@ -25,6 +25,7 @@ export interface ProtocolSubagentExecutionOverrides {
   spawnTreeId?: string;
   spawnParentAgentId?: string;
   parentRemainingBudget?: number;
+  suppressBackgroundSubagentIdleWake?: boolean;
   progress?: SubagentEventPort['progress'];
 }
 
@@ -100,6 +101,8 @@ export function createProtocolSubagentExecutionContext(
     spawnParentTimeoutMs: ctx.spawnParentTimeoutMs,
     parentRemainingBudget: overrides.parentRemainingBudget ?? ctx.parentRemainingBudget,
     spawnParentAgentId: overrides.spawnParentAgentId ?? ctx.spawnParentAgentId,
+    suppressBackgroundSubagentIdleWake: overrides.suppressBackgroundSubagentIdleWake
+      ?? ctx.suppressBackgroundSubagentIdleWake,
     toolScope: ctx.toolScope,
     executionIntent: ctx.executionIntent,
   };

@@ -20,6 +20,7 @@ import {
   getSessionStatusPresentation,
   matchesSessionStatusFilter,
 } from '../../../utils/sessionPresentation';
+import { hasNeedsInputForSession as deriveHasNeedsInputForSession } from '../../../utils/sessionNeedsInput';
 import { sortSidebarSessionsForRecovery } from '../../../utils/sidebarSessionOrdering';
 import { hasSessionDeliverySignals } from '../../../utils/sessionRecoveryHints';
 import {
@@ -54,6 +55,7 @@ export interface UseSidebarDerivedSessionsParams {
 export interface SidebarDerivedSessions {
   backgroundTaskMap: Map<string, BackgroundTaskInfo>;
   replayEvidenceBySessionId: ReturnType<typeof buildSessionReplayEvidenceMap>;
+  hasNeedsInputForSession: (sessionId: string) => boolean;
   hasPendingApprovalForSession: (sessionId: string) => boolean;
   currentProjectSearchSessionIds: Set<string>;
   effectiveSearchScope: SidebarSearchScope;
@@ -107,14 +109,19 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [durableBackgroundTasks, workflowRuns],
   );
 
-  const hasPendingApprovalForSession = useCallback(
+  const hasNeedsInputForSession = useCallback(
     (sessionId: string) =>
-      Boolean(
-        (pendingPermissionRequest && pendingPermissionSessionId === sessionId) ||
-        (queuedPermissionRequests?.[sessionId]?.length ?? 0) > 0,
-      ),
-    [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests],
+      deriveHasNeedsInputForSession(sessionId, {
+        permissionState: {
+          pendingPermissionRequest,
+          pendingPermissionSessionId,
+          queuedPermissionRequests,
+        },
+        backgroundTasks: durableBackgroundTasks,
+      }),
+    [durableBackgroundTasks, pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests],
   );
+  const hasPendingApprovalForSession = hasNeedsInputForSession;
 
   const currentProjectSearchSessionIds = useMemo(
     () => getCurrentProjectSearchSessionIds(sessions, currentSessionId),
@@ -208,7 +215,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
         messageCount: session.messageCount,
         turnCount: session.turnCount,
         sessionStatus: session.status,
-        hasPendingApproval: hasPendingApprovalForSession(session.id),
+        hasNeedsInput: hasNeedsInputForSession(session.id),
       });
       const hasPendingReview = (reviewItemsBySessionId[session.id] ?? []).some(
         (item) => item.reviewStatus === 'pending',
@@ -244,7 +251,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     });
   }, [
     backgroundTaskMap,
-    hasPendingApprovalForSession,
+    hasNeedsInputForSession,
     allowedSearchSessionIds,
     hasActiveTrajectoryFilter,
     messageSearchHitsBySessionId,
@@ -345,7 +352,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
               messageCount: session.messageCount,
               turnCount: session.turnCount,
               sessionStatus: session.status,
-              hasPendingApproval: hasPendingApprovalForSession(session.id),
+              hasNeedsInput: hasNeedsInputForSession(session.id),
             }).kind,
           (session) =>
             Math.max(
@@ -355,7 +362,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
             ),
         ),
       })),
-    [backgroundTaskMap, filteredSessions, hasPendingApprovalForSession, sessionRuntimes, sessionStates],
+    [backgroundTaskMap, filteredSessions, hasNeedsInputForSession, sessionRuntimes, sessionStates],
   );
   const visibleProjectIds = useMemo(
     () =>
@@ -487,6 +494,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   return {
     backgroundTaskMap,
     replayEvidenceBySessionId,
+    hasNeedsInputForSession,
     hasPendingApprovalForSession,
     currentProjectSearchSessionIds,
     effectiveSearchScope,

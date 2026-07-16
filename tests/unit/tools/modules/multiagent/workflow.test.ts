@@ -232,6 +232,56 @@ describe('workflow tool', () => {
     }
   });
 
+  it('delivers completed script output while surfacing unknown nested side effects for review', async () => {
+    startRunMock.mockImplementation(async (rawSpec: ScriptRunSpec, deps: ScriptRunHostDeps) => {
+      const nested = rawSpec.nestedGraph!;
+      deps.emitNestedGraph?.({
+        type: 'nested:node_failed',
+        timestamp: 123,
+        error: 'agent failed after an uncertain write',
+        metadata: {
+          protocolVersion: nested.protocolVersion,
+          workflowRunId: nested.workflowRunId,
+          parentGraphId: nested.parentGraphId,
+          parentNodeId: nested.parentNodeId,
+          nestedGraphId: nested.nestedGraphId,
+          groupId: 'parallel-group',
+          groupKind: 'parallel',
+          itemId: 'risky-agent',
+          nodeId: 'parallel-node:risky-agent',
+          dependencyNodeIds: [],
+          callIndex: 0,
+          sideEffect: 'unknown',
+        },
+      });
+      return completedState({
+        result: { retained: 'script result' },
+        tokensSpent: 321,
+        phases: ['fan-out', 'synthesis'],
+      });
+    });
+
+    const r = await run({
+      script: 'const values = await parallel([() => agent("risky")]); return values;',
+    });
+
+    expect(r.ok, r.ok ? undefined : `${r.code}: ${r.error}`).toBe(true);
+    if (r.ok) {
+      expect(JSON.parse(r.output)).toEqual({ retained: 'script result' });
+      expect(r.meta).toMatchObject({
+        tokensSpent: 321,
+        phases: ['fan-out', 'synthesis'],
+        graphCheckpoint: {
+          status: 'requires_review',
+          nodes: [{
+            status: 'requires_review',
+            result: { status: 'requires_review', sideEffectState: 'unknown' },
+          }],
+        },
+      });
+    }
+  });
+
   // ── P3b: 启动审批闸 —— 拒绝时不得 startRun，归 ABORTED ──
   it('aborts before startRun when the launch approval is rejected', async () => {
     approvalHolder.approved = false;

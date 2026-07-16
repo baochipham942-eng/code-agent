@@ -10,6 +10,9 @@ import type { RunRehydrationPlan } from '../../runtime/durableRunStores';
 import type { RunHandle } from '../../runtime/runContext';
 import { RunRegistry } from '../../runtime/runRegistry';
 import { getTelemetryService } from '../../telemetry/telemetryService';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('ExternalEngineDurableLifecycle');
 
 export type ExternalEngineResumeCapability =
   | 'resumable'
@@ -237,7 +240,9 @@ export class ExternalEngineDurableLifecycle {
       summary: terminalEvidence ? 'parsed_terminal_evidence' : 'terminal_evidence_missing',
       at: Date.now(),
     };
-    await this.enqueueCheckpoint('external_terminal_evidence');
+    try {
+      await this.enqueueCheckpoint('external_terminal_evidence');
+    } catch { /* checkpoint tail already logged and self-healed */ }
     await this.checkpointQueue;
     await this.registry.terminalDurable(this.runId, {
       now: Date.now(),
@@ -274,7 +279,7 @@ export class ExternalEngineDurableLifecycle {
   }
 
   private enqueueCheckpoint(eventType: string): Promise<void> {
-    this.checkpointQueue = this.checkpointQueue.then(async () => {
+    const checkpoint = this.checkpointQueue.then(async () => {
       const now = Date.now();
       await this.registry.checkpointDurable(this.runId, {
         now,
@@ -299,7 +304,14 @@ export class ExternalEngineDurableLifecycle {
         }],
       });
     });
-    return this.checkpointQueue;
+    this.checkpointQueue = checkpoint.catch((error: unknown) => {
+      logger.error('External durable checkpoint failed', {
+        runId: this.runId,
+        eventType,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return checkpoint;
   }
 
   private buildCheckpointState(): ExternalCheckpointState {

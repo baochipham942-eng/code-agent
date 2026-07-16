@@ -62,4 +62,44 @@ describe('Modal focus management', () => {
 
     expect(screen.getByRole('dialog', { name: 'Custom settings' })).toBeTruthy();
   });
+
+  it('closes stacked modals one at a time and keeps body scroll locked', () => {
+    const Harness = () => {
+      const [isOuterOpen, setIsOuterOpen] = useState(true);
+      const [isInnerOpen, setIsInnerOpen] = useState(false);
+
+      return (
+        <Modal
+          isOpen={isOuterOpen}
+          onClose={() => setIsOuterOpen(false)}
+          title="Outer dialog"
+        >
+          <button onClick={() => setIsInnerOpen(true)}>Open inner dialog</button>
+          <Modal
+            isOpen={isInnerOpen}
+            onClose={() => setIsInnerOpen(false)}
+            title="Inner dialog"
+          >
+            Inner content
+          </Modal>
+        </Modal>
+      );
+    };
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open inner dialog' }));
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Inner dialog' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Outer dialog' })).toBeTruthy();
+    expect(document.body.style.overflow).toBe('hidden');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Outer dialog' })).toBeNull();
+    expect(document.body.style.overflow).toBe('');
+  });
 });

@@ -2,11 +2,25 @@
 // Modal - Base modal component with customizable size and layout
 // ============================================================================
 
-import React, { useEffect, useCallback, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 
 const focusableSelector =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+
+type EscapeHandlerRef = { current: () => void };
+
+const modalStack: string[] = [];
+const modalEscapeHandlers = new Map<string, EscapeHandlerRef>();
+
+const handleDocumentKeyDown = (e: KeyboardEvent) => {
+  if (e.key !== 'Escape') return;
+
+  const topmostModalId = modalStack[modalStack.length - 1];
+  if (topmostModalId) {
+    modalEscapeHandlers.get(topmostModalId)?.current();
+  }
+};
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full' | 'viewport';
 
@@ -67,35 +81,41 @@ export const Modal: React.FC<ModalProps> = ({
   zIndex = 50,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
+  const modalId = useId();
   const headerId = useId();
+  const escapeHandlerRef = useRef<() => void>(() => undefined);
 
-  // ESC key handler
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && closeOnEsc && onClose) {
-        onClose();
-      }
-    },
-    [closeOnEsc, onClose]
-  );
-
-  // Register/unregister ESC listener
-  useEffect(() => {
-    if (isOpen && closeOnEsc) {
-      document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
+  escapeHandlerRef.current = () => {
+    if (closeOnEsc && onClose) {
+      onClose();
     }
-  }, [isOpen, closeOnEsc, handleKeyDown]);
+  };
 
-  // Prevent body scroll when modal is open
+  // Coordinate Escape handling and body scroll across stacked modals.
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+
+    if (modalStack.length === 0) {
       document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = '';
-      };
+      document.addEventListener('keydown', handleDocumentKeyDown);
     }
-  }, [isOpen]);
+
+    modalStack.push(modalId);
+    modalEscapeHandlers.set(modalId, escapeHandlerRef);
+
+    return () => {
+      const stackIndex = modalStack.lastIndexOf(modalId);
+      if (stackIndex !== -1) {
+        modalStack.splice(stackIndex, 1);
+      }
+      modalEscapeHandlers.delete(modalId);
+
+      if (modalStack.length === 0) {
+        document.body.style.overflow = '';
+        document.removeEventListener('keydown', handleDocumentKeyDown);
+      }
+    };
+  }, [isOpen, modalId]);
 
   // Focus modal on open and restore focus on close
   useEffect(() => {

@@ -869,7 +869,7 @@ export class SessionManager implements Disposable {
         sessionId,
         messageId: message.id
       });
-      db.updateMessage(message.id, message);
+      db.updateMessage(message.id, message, sessionId);
     }
 
     const provenance = this.maybePersistWorkbenchProvenance(sessionId, message);

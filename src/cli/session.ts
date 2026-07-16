@@ -293,7 +293,12 @@ export class CLISessionManager {
           db.addMessage(sessionId, message);
         } catch (error) {
           if (this.isDuplicateMessageError(error)) {
-            db.updateMessage(message.id, message);
+            if (typeof db.updateMessageForSession === 'function') {
+              db.updateMessageForSession(sessionId, message.id, message);
+            } else {
+              // 兼容旧的两参数据库适配器；生产 CLIDatabaseService 始终走上面的 scoped 入口。
+              db.updateMessage(message.id, message);
+            }
           } else {
             console.warn('[SessionManager] Failed to persist message:', (error as Error).message);
           }

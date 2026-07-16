@@ -163,6 +163,60 @@ describe('ExternalEngineDurableLifecycle', () => {
     expect(mocks.terminal).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
   });
 
+  it('keeps checkpoint failure caller-visible while a later checkpoint still runs and reaches terminal', async () => {
+    const checkpointError = new Error('checkpoint unavailable: Bearer checkpoint-secret-12345');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mocks = createKernel();
+    mocks.checkpoint.mockRejectedValueOnce(checkpointError);
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(mocks.kernel);
+    const lifecycle = await ExternalEngineDurableLifecycle.start({
+      registry, engine: 'codex_cli', sessionId: 'session-checkpoint-recovery', workspace: '/tmp', cwd: '/tmp',
+    });
+
+    await expect(lifecycle.attachProcess(fakeChild(), {
+      binary: '/bin/codex', commandSummary: 'codex exec <prompt:redacted>', permissionProfile: 'read_only',
+    })).rejects.toBe(checkpointError);
+    await expect(lifecycle.finish({
+      runId: lifecycle.runId,
+      sessionId: lifecycle.sessionId,
+      engine: 'codex_cli',
+      status: 'completed',
+      exitCode: 0,
+    }, true)).resolves.toBeUndefined();
+
+    expect(mocks.checkpoint).toHaveBeenCalledTimes(2);
+    expect(mocks.terminal).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+    const serializedLog = JSON.stringify(errorLog.mock.calls);
+    expect(serializedLog).toContain(lifecycle.runId);
+    expect(serializedLog).toContain('external_process_started');
+    expect(serializedLog).not.toContain('checkpoint-secret-12345');
+  });
+
+  it('terminalizes even when the terminal-evidence checkpoint rejects', async () => {
+    const mocks = createKernel();
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(mocks.kernel);
+    const lifecycle = await ExternalEngineDurableLifecycle.start({
+      registry, engine: 'claude_code', sessionId: 'session-terminal-checkpoint', workspace: '/tmp', cwd: '/tmp',
+    });
+    await lifecycle.attachProcess(fakeChild(), {
+      binary: '/bin/claude', commandSummary: 'claude <prompt:redacted>', permissionProfile: 'read_only',
+    });
+    mocks.checkpoint.mockRejectedValueOnce(new Error('terminal checkpoint unavailable'));
+
+    await expect(lifecycle.finish({
+      runId: lifecycle.runId,
+      sessionId: lifecycle.sessionId,
+      engine: 'claude_code',
+      status: 'completed',
+      exitCode: 0,
+    }, true)).resolves.toBeUndefined();
+
+    expect(mocks.checkpoint).toHaveBeenCalledTimes(2);
+    expect(mocks.terminal).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+  });
+
   it('does not call a clean process exit completed without parsed terminal evidence', async () => {
     const mocks = createKernel();
     const registry = new RunRegistry();

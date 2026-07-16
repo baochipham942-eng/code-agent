@@ -588,7 +588,7 @@ export class CLIDatabaseService {
     }
   }
 
-  updateMessage(messageId: string, updates: Partial<Message>): void {
+  updateMessage(messageId: string, updates: Partial<Message>, sessionId?: string): void {
     if (!this.db) throw new Error('Database not initialized');
 
     const setClauses: string[] = [];
@@ -627,8 +627,23 @@ export class CLIDatabaseService {
     if (updates.metadata !== undefined) addJsonUpdate('metadata', updates.metadata);
 
     if (setClauses.length === 0) return;
-    values.push(messageId);
-    this.db.prepare(`UPDATE messages SET ${setClauses.join(', ')} WHERE id = ?`).run(...values);
+    const guardedSql = sessionId
+      ? `UPDATE messages SET ${setClauses.join(', ')} WHERE id = ? AND session_id = ?`
+      : `UPDATE messages SET ${setClauses.join(', ')} WHERE session_id = COALESCE(?, session_id) AND id = ?`;
+    if (sessionId) {
+      values.push(messageId, sessionId);
+    } else {
+      // 兼容普通 updateMessage 调用；碰撞恢复路径必须显式传入目标 sessionId。
+      values.push(null, messageId);
+    }
+    const result = this.db.prepare(guardedSql).run(...values);
+    if (result.changes === 0) {
+      throw new Error(`Message update missed for session ${sessionId ?? 'unknown'} and id ${messageId}`);
+    }
+  }
+
+  updateMessageForSession(sessionId: string, messageId: string, updates: Partial<Message>): void {
+    this.updateMessage(messageId, updates, sessionId);
   }
 
   getMessages(sessionId: string, limit?: number): Message[] {

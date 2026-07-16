@@ -505,6 +505,20 @@ pre code {
   .streaming-caret { opacity: 0.7; }
 }
 
+/* 产物更新回执：agent 重写了正在预览的文件时，预览容器内沿闪现一圈品牌色
+   高亮并渐隐——"它改了这里"的视觉回执。动画结束由调用方 onAnimationEnd
+   摘除 class；reduced-motion 下不动。 */
+@keyframes artifactFlashFade {
+  0% { box-shadow: inset 0 0 0 2px var(--brand-primary); }
+  100% { box-shadow: inset 0 0 0 2px transparent; }
+}
+.artifact-flash {
+  animation: artifactFlashFade 1.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .artifact-flash { animation: none; }
+}
+
 /* 「正在思考…」扫光文字：淡色文字本体常驻，一道比正文亮一到两档的渐变从左到右
    循环扫过（对齐 ChatGPT/Claude App 的思考态），不用图标/spinner。思考阶段
    一结束整个指示器就从 DOM 移除（由调用方控制），这里只管动画本身。 */

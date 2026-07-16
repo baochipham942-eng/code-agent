@@ -5,6 +5,9 @@ import JSZip from 'jszip';
 
 export const MAX_GITHUB_ARCHIVE_BYTES = 50 * 1024 * 1024;
 
+const UNIX_FILE_TYPE_MASK = 0o170000;
+const UNIX_SYMLINK_TYPE = 0o120000;
+
 export async function downloadArchive(
   url: string,
   maxBytes = MAX_GITHUB_ARCHIVE_BYTES,
@@ -64,6 +67,20 @@ function assertSafeZipEntry(entryName: string): void {
   }
 }
 
+function getUnixPermissions(entry: JSZip.JSZipObject): number | null {
+  return typeof entry.unixPermissions === 'number' ? entry.unixPermissions : null;
+}
+
+function assertNotSymlinkEntry(entry: JSZip.JSZipObject): void {
+  const unixPermissions = getUnixPermissions(entry);
+  if (
+    unixPermissions !== null
+    && (unixPermissions & UNIX_FILE_TYPE_MASK) === UNIX_SYMLINK_TYPE
+  ) {
+    throw new Error(`Symbolic link zip entry rejected: ${entry.name}`);
+  }
+}
+
 /**
  * TOFU boundary: the first downloaded archive is trusted and recorded. This
  * prevents post-install drift, but cannot make a malicious first install safe.
@@ -88,6 +105,7 @@ export async function extractZipSafely(archive: Buffer, destDir: string): Promis
     const originalName = (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName
       ?? entry.name;
     assertSafeZipEntry(originalName);
+    assertNotSymlinkEntry(entry);
   }
 
   await fs.mkdir(destDir, { recursive: true });
@@ -99,5 +117,9 @@ export async function extractZipSafely(archive: Buffer, destDir: string): Promis
     }
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(outputPath, await entry.async('nodebuffer'));
+    const unixPermissions = getUnixPermissions(entry);
+    if (unixPermissions !== null) {
+      await fs.chmod(outputPath, unixPermissions & 0o777);
+    }
   }
 }

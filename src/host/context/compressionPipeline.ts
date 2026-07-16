@@ -10,6 +10,7 @@
 //   L6 (overflowRecovery) — called from handleOverflow()
 // ============================================================================
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { CompressionState } from './compressionState';
 import { ProjectionEngine, type ProjectableMessage } from './projectionEngine';
 import { estimateTokens } from './tokenEstimator';
@@ -25,17 +26,31 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('CompressionPipeline');
 
-let compressionPipelineOverride: boolean | undefined;
+type CompressionPipelineOverrideScope = {
+  value: boolean | undefined;
+};
+
+const compressionPipelineOverrideScope = new AsyncLocalStorage<CompressionPipelineOverrideScope>();
 
 export function setCompressionPipelineOverride(value: boolean | undefined): void {
-  compressionPipelineOverride = value;
+  compressionPipelineOverrideScope.enterWith({ value });
   if (value !== undefined) {
     logger.info(`[compression-pipeline] arm override active: ${value ? 'on' : 'off'}`);
   }
 }
 
 export function getCompressionPipelineOverride(): boolean | undefined {
-  return compressionPipelineOverride;
+  return compressionPipelineOverrideScope.getStore()?.value;
+}
+
+export function runWithCompressionPipelineOverride<T>(
+  value: boolean | undefined,
+  callback: () => T,
+): T {
+  if (value !== undefined) {
+    logger.info(`[compression-pipeline] arm override active: ${value ? 'on' : 'off'}`);
+  }
+  return compressionPipelineOverrideScope.run({ value }, callback);
 }
 
 export interface PipelineConfig {

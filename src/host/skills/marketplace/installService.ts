@@ -91,12 +91,20 @@ async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
 }
 
 async function saveInstalledPlugins(state: InstalledPluginsFile): Promise<void> {
-  await ensureDir(path.dirname(getInstalledPluginsPath()));
-  await fs.writeFile(
-    getInstalledPluginsPath(),
-    JSON.stringify(state, null, 2) + '\n',
-    'utf8'
-  );
+  const filePath = getInstalledPluginsPath();
+  const tempPath = `${filePath}.tmp-${randomUUID()}`;
+  await ensureDir(path.dirname(filePath));
+  try {
+    await fs.writeFile(
+      tempPath,
+      JSON.stringify(state, null, 2) + '\n',
+      'utf8'
+    );
+    await fs.rename(tempPath, filePath);
+  } catch (error) {
+    await fs.rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -405,25 +413,53 @@ async function resolveEntrySourceBase(args: {
 
 async function installPluginAssets(args: {
   entrySourceBase: string;
-  scope: PluginScope;
-  projectPath?: string;
-  pluginSpec: string;
-  force?: boolean;
+  destinationRoot: string;
 }): Promise<string> {
   const stat = await fs.stat(args.entrySourceBase);
   if (!stat.isDirectory()) {
     throw new Error(`Plugin source must be a directory: ${args.entrySourceBase}`);
   }
 
-  const pluginRoot = getPluginAssetDestination(args.scope, args.projectPath, args.pluginSpec);
-  if (fsSync.existsSync(pluginRoot) && !args.force) {
-    throw new Error(`Plugin asset destination already exists: ${pluginRoot}`);
+  if (fsSync.existsSync(args.destinationRoot)) {
+    throw new Error(`Plugin asset destination already exists: ${args.destinationRoot}`);
   }
-  if (fsSync.existsSync(pluginRoot)) {
-    await fs.rm(pluginRoot, { recursive: true, force: true });
+  await copyDirectory(args.entrySourceBase, args.destinationRoot);
+  return args.destinationRoot;
+}
+
+interface RenamedPathBackup {
+  originalPath: string;
+  backupPath: string;
+}
+
+async function renamePathsToBackups(paths: string[]): Promise<RenamedPathBackup[]> {
+  const backups: RenamedPathBackup[] = [];
+  try {
+    for (const originalPath of Array.from(new Set(paths))) {
+      if (!fsSync.existsSync(originalPath)) continue;
+      const backupPath = `${originalPath}.backup-${randomUUID()}`;
+      await fs.rename(originalPath, backupPath);
+      backups.push({ originalPath, backupPath });
+    }
+    return backups;
+  } catch (error) {
+    for (const backup of backups.reverse()) {
+      await fs.rename(backup.backupPath, backup.originalPath).catch(() => {});
+    }
+    throw error;
   }
-  await copyDirectory(args.entrySourceBase, pluginRoot);
-  return pluginRoot;
+}
+
+async function restorePathBackups(backups: RenamedPathBackup[]): Promise<void> {
+  for (const backup of [...backups].reverse()) {
+    await fs.rename(backup.backupPath, backup.originalPath);
+  }
+}
+
+async function removePathBackups(backups: RenamedPathBackup[]): Promise<void> {
+  for (const backup of backups) {
+    await fs.rm(backup.backupPath, { recursive: true, force: true });
+  }
 }
 
 function getCommandNameFromFile(filePath: string): string {
@@ -719,45 +755,55 @@ async function performInstall(args: {
 }): Promise<InstallResult> {
   const { plugin, marketplace, pluginSpec, entry, entrySource, scope, projectPath, state, existing } = args;
   const options = { force: args.force, enableAfterInstall: args.enableAfterInstall };
+  const pluginRoot = getPluginAssetDestination(scope, projectPath, pluginSpec);
+  const stagingRoot = `${pluginRoot}.staging-${randomUUID()}`;
+  let rootBackups: RenamedPathBackup[] = [];
+  let commandBackups: RenamedPathBackup[] = [];
+  let stagedAssetsMoved = false;
+  let activatedCommands: string[] = [];
 
-  let installedAssetRoot: string | undefined;
+  if (fsSync.existsSync(pluginRoot) && !options.force) {
+    throw new Error(`Plugin asset destination already exists: ${pluginRoot}`);
+  }
+
   try {
-    if (existing && options.force) {
-      await deactivatePluginCommands({
-        scope: existing.scope,
-        projectPath: existing.projectPath,
-        commandNames: existing.commands || [],
-      });
-      if (existing.pluginRoot && fsSync.existsSync(existing.pluginRoot)) {
-        await fs.rm(existing.pluginRoot, { recursive: true, force: true });
-      }
-    }
-
-    const pluginRoot = await installPluginAssets({
+    await installPluginAssets({
       entrySourceBase: entrySource.sourceBase,
-      scope,
-      projectPath,
-      pluginSpec,
-      force: options.force,
+      destinationRoot: stagingRoot,
     });
-    installedAssetRoot = pluginRoot;
     const pluginTypes = getPluginEntryTypes(entry);
 
     const skillDirs = await resolveSkillDirs({
-      rootDir: pluginRoot,
-      entrySourceBase: pluginRoot,
+      rootDir: stagingRoot,
+      entrySourceBase: stagingRoot,
       skillPaths: entry.skills || [],
     });
     const installedSkills = skillDirs.map((skill) => skill.name);
     const commandFiles = await resolveCommandFiles({
-      rootDir: pluginRoot,
-      entrySourceBase: pluginRoot,
+      rootDir: stagingRoot,
+      entrySourceBase: stagingRoot,
       commandPaths: entry.commands || [],
     });
     const installedCommands = commandFiles.map((command) => command.name);
 
+    if (existing && options.force) {
+      const existingCommandsDir = getCommandsDir(existing.scope, existing.projectPath);
+      commandBackups = await renamePathsToBackups(
+        (existing.commands || []).map(commandName =>
+          path.join(existingCommandsDir, `${commandName}.md`)
+        ),
+      );
+    }
+
+    rootBackups = await renamePathsToBackups([
+      ...(existing?.pluginRoot ? [existing.pluginRoot] : []),
+      pluginRoot,
+    ]);
+    await fs.rename(stagingRoot, pluginRoot);
+    stagedAssetsMoved = true;
+
     if (options.enableAfterInstall === true) {
-      await activatePluginCommands({
+      activatedCommands = await activatePluginCommands({
         rootDir: pluginRoot,
         scope,
         projectPath,
@@ -765,8 +811,7 @@ async function performInstall(args: {
       });
     }
 
-    // Update state
-    state[pluginSpec] = {
+    const installedRecord: InstalledPluginRecord = {
       plugin,
       marketplace,
       scope,
@@ -783,22 +828,47 @@ async function performInstall(args: {
       commandPaths: commandFiles.map((command) => command.relativeSourcePath),
       sourceMarketplacePath: pluginRoot,
     };
+    await saveInstalledPlugins({ ...state, [pluginSpec]: installedRecord });
 
-    await saveInstalledPlugins(state);
+    try {
+      logger.info('Plugin installed', {
+        pluginSpec,
+        isEnabled: installedRecord.isEnabled,
+        types: pluginTypes,
+        skills: installedSkills.length,
+        commands: installedCommands.length,
+      });
+    } catch {
+      // Logging is outside the install transaction and must not trigger rollback
+      // after the new record has been persisted.
+    }
 
-    logger.info('Plugin installed', {
-      pluginSpec,
-      isEnabled: state[pluginSpec].isEnabled,
-      types: pluginTypes,
-      skills: installedSkills.length,
-      commands: installedCommands.length,
+    await removePathBackups([...commandBackups, ...rootBackups]).catch(error => {
+      try {
+        logger.warn('Failed to remove plugin install backup', {
+          pluginSpec,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } catch {
+        // Backup cleanup failure leaves the committed root intact.
+      }
     });
 
     return { pluginSpec, installedSkills, installedCommands, installedPluginRoot: pluginRoot };
   } catch (error) {
-    if (installedAssetRoot) {
-      await fs.rm(installedAssetRoot, { recursive: true, force: true }).catch(() => {});
+    if (activatedCommands.length > 0) {
+      await deactivatePluginCommands({
+        scope,
+        projectPath,
+        commandNames: activatedCommands,
+      }).catch(() => {});
     }
+    await fs.rm(stagingRoot, { recursive: true, force: true }).catch(() => {});
+    if (stagedAssetsMoved) {
+      await fs.rm(pluginRoot, { recursive: true, force: true }).catch(() => {});
+    }
+    await restorePathBackups(rootBackups).catch(() => {});
+    await restorePathBackups(commandBackups).catch(() => {});
     throw error;
   }
 }

@@ -2,6 +2,8 @@
 
 - Status: accepted（产品已拍板双通道完整对标 Alma 0.0.876，不以最小能力清单替代）
 - Date: 2026-07-16
+- Implementation branch: `feat/browser-login-reuse-m5`（worktree `code-agent-browser-login-reuse`；M0–M4 code + M5 unit/docs packaging 2026-07-17）
+- Acceptance: `docs/acceptance/browser-login-reuse-parity.md`
 - Related: `src/host/services/infra/browserService.ts`、`src/host/services/infra/browserRelayService.ts`、`resources/browser-relay-extension`、`src/renderer/components/features/browser/BrowserSurfacePanel.tsx`、`src/host/tools/vision/browserAction.ts`、`src/shared/contract/desktop.ts`、`docs/architecture/workbench.md`、`docs/ARCHITECTURE.md`
 
 ## Context
@@ -96,8 +98,8 @@ Neo 要让 Agent 在两类互补场景中复用浏览器登录态：一类是继
     - `browserService.ts` 继续拥有 Managed browser 生命周期与 Playwright context；不得吸收 profile catalog、Cookie crypto、Relay facade 或跨引擎路由职责。
 
 11. **accepted 表示产品方向与边界已生效，交付仍按里程碑验收。**
-    - 既有规格中“external Chrome profile attach / extension bridge remain backlog”的表述由本 ADR 关闭或改写为 rollout 状态。
-    - 在 M0–M5 验收完成前，产品和文档必须准确标注当前可用能力，不能因 ADR 已 accepted 宣称双通道已实现。
+    - 既有规格中“external Chrome profile attach / extension bridge remain backlog”的表述由本 ADR 关闭；架构文档已改为描述 ADR-041 已交付能力与诚实非目标。
+    - **M0–M4 代码与 M5 自动化/文档包装**已在 `feat/browser-login-reuse-m5` 落地；**人工 dogfood 签收前**不得在 release 说明里写成“生产已全面可用”，详见 acceptance 文档 Sign-off。
 
 ## Non-goals
 

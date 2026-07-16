@@ -17,6 +17,7 @@ import { permissionReasonText } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig, isDangerousCommand, getDangerReason } from './utils';
 import ipcService from '../../services/ipcService';
+import { toast } from '../../hooks/useToast';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -104,7 +105,9 @@ export function PermissionCard() {
   };
 
   const handleApproval = useCallback(
-    (level: ApprovalLevel) => {
+    async (level: ApprovalLevel) => {
+      const requestSnapshot = pendingPermissionRequest;
+      const requestSessionId = pendingPermissionSessionId;
       if (processedRequestRef.current === request.id) return;
       processedRequestRef.current = request.id;
 
@@ -125,17 +128,34 @@ export function PermissionCard() {
       }
 
       const response = toPermissionResponse(level);
-      if (ipcService.isAvailable()) {
-        ipcService.invoke(
-          IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-          request.id,
-          response,
-          request.sessionId
-        );
+      try {
+        if (ipcService.isAvailable()) {
+          await ipcService.invoke(
+            IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+            request.id,
+            response,
+            request.sessionId
+          );
+        }
+        setPendingPermissionRequest(null);
+      } catch {
+        processedRequestRef.current = null;
+        setPendingPermissionRequest(requestSnapshot, requestSessionId);
+        toast.error('审批响应发送失败，请重试');
       }
-      setPendingPermissionRequest(null);
     },
-    [request.id, request.tool, request.type, request.details, saveMemory, setPendingPermissionRequest]
+    [
+      pendingPermissionRequest,
+      pendingPermissionSessionId,
+      request.id,
+      request.sessionId,
+      request.forceConfirm,
+      request.tool,
+      request.type,
+      request.details,
+      saveMemory,
+      setPendingPermissionRequest,
+    ]
   );
 
   // 自动应用记忆的决定

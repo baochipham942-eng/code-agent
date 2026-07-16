@@ -5,6 +5,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import ipcService from '../../services/ipcService';
+import { toast } from '../../hooks/useToast';
 import { isDangerousCommand } from '../PermissionDialog/utils';
 
 function getRequestTarget(request: PermissionRequest): string {
@@ -48,21 +49,28 @@ export const ApprovalSyncCard: React.FC = () => {
     && (!pendingPermissionSessionId || !currentSessionId || pendingPermissionSessionId === currentSessionId),
   );
 
-  const respond = useCallback((response: PermissionResponse) => {
+  const respond = useCallback(async (response: PermissionResponse) => {
     const request = pendingPermissionRequest;
+    const requestSessionId = pendingPermissionSessionId;
     if (!request || processedRef.current === request.id) return;
     processedRef.current = request.id;
 
-    if (ipcService.isAvailable()) {
-      ipcService.invoke(
-        IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-        request.id,
-        response,
-        request.sessionId,
-      );
+    try {
+      if (ipcService.isAvailable()) {
+        await ipcService.invoke(
+          IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+          request.id,
+          response,
+          request.sessionId,
+        );
+      }
+      setPendingPermissionRequest(null);
+    } catch {
+      processedRef.current = null;
+      setPendingPermissionRequest(request, requestSessionId);
+      toast.error('审批响应发送失败，请重试');
     }
-    setPendingPermissionRequest(null);
-  }, [pendingPermissionRequest, setPendingPermissionRequest]);
+  }, [pendingPermissionRequest, pendingPermissionSessionId, setPendingPermissionRequest]);
 
   if (!pendingPermissionRequest || !isVisiblePending) {
     return (

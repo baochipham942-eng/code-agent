@@ -213,6 +213,13 @@ interface PrependViewportAnchor {
   offsetTop: number;
 }
 
+interface PendingPrependAnchorRestore {
+  sessionId: string;
+  firstItemIndex: number;
+  anchor: PrependViewportAnchor;
+  location: { index: number; align: 'start'; behavior: 'auto'; offset: number };
+}
+
 export function getPrependAnchorScrollLocation(
   anchor: PrependViewportAnchor | null,
   sessionId: string,
@@ -279,6 +286,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const keepActiveOutputVisibleRef = useRef(false);
   const historyPrependInProgressRef = useRef(false);
   const prependViewportAnchorRef = useRef<PrependViewportAnchor | null>(null);
+  const pendingPrependAnchorRestoreRef = useRef<PendingPrependAnchorRestore | null>(null);
+  const prependAnchorRestoreCancelRef = useRef<(() => void) | null>(null);
   const followedOutputSessionIdRef = useRef<string | null>(null);
   const followedOutputTurnIdRef = useRef<string | null>(null);
   const [followedOutputTurnId, setFollowedOutputTurnId] = useState<string | null>(null);
@@ -329,31 +338,67 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     : 1_000_000;
   historyListRef.current = { sessionId: projection.sessionId, firstTurnId, firstItemIndex };
 
-  useLayoutEffect(() => {
-    if (prependedTurnCount <= 0) return;
+  if (prependedTurnCount > 0) {
     const anchor = prependViewportAnchorRef.current;
     const location = getPrependAnchorScrollLocation(
       anchor,
       projection.sessionId,
       projection.turns,
     );
-    if (!location || !anchor) return;
+    pendingPrependAnchorRestoreRef.current = anchor && location
+      ? { sessionId: projection.sessionId, firstItemIndex, anchor, location }
+      : null;
+  }
+
+  useLayoutEffect(() => {
+    prependAnchorRestoreCancelRef.current?.();
+    prependAnchorRestoreCancelRef.current = null;
+    const pending = pendingPrependAnchorRestoreRef.current;
+    if (
+      !pending
+      || pending.sessionId !== projection.sessionId
+      || pending.firstItemIndex !== firstItemIndex
+    ) {
+      pendingPrependAnchorRestoreRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
     let cancelCorrection: (() => void) | null = null;
     const cancelPosition = scheduleAfterLayout(() => {
-      virtuosoRef.current?.scrollToIndex(location);
+      if (cancelled) return;
+      virtuosoRef.current?.scrollToIndex(pending.location);
       cancelCorrection = scheduleAfterLayout(() => {
-        const scroller = scrollerElementRef.current;
-        const anchoredTurn = scroller?.querySelector<HTMLElement>(getTraceTurnSelector(anchor.turnId));
-        if (!scroller || !anchoredTurn) return;
-        const actualOffsetTop = anchoredTurn.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-        scroller.scrollTop += getPrependAnchorScrollCorrection(anchor.offsetTop, actualOffsetTop);
+        if (cancelled) return;
+        try {
+          const scroller = scrollerElementRef.current;
+          const anchoredTurn = scroller?.querySelector<HTMLElement>(getTraceTurnSelector(pending.anchor.turnId));
+          if (!scroller || !anchoredTurn) return;
+          const actualOffsetTop = anchoredTurn.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+          scroller.scrollTop += getPrependAnchorScrollCorrection(pending.anchor.offsetTop, actualOffsetTop);
+        } finally {
+          if (pendingPrependAnchorRestoreRef.current === pending) {
+            pendingPrependAnchorRestoreRef.current = null;
+          }
+          if (prependAnchorRestoreCancelRef.current === cancelRestore) {
+            prependAnchorRestoreCancelRef.current = null;
+          }
+        }
       });
     });
-    return () => {
+    const cancelRestore = () => {
+      cancelled = true;
       cancelPosition();
       cancelCorrection?.();
     };
-  }, [firstItemIndex, prependedTurnCount, projection.sessionId, projection.turns]);
+    prependAnchorRestoreCancelRef.current = cancelRestore;
+  }, [firstItemIndex, projection.sessionId]);
+
+  useLayoutEffect(() => () => {
+    prependAnchorRestoreCancelRef.current?.();
+    prependAnchorRestoreCancelRef.current = null;
+    pendingPrependAnchorRestoreRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (!historyPrependInProgressRef.current) return;

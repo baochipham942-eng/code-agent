@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+import React from 'react';
+import { act, cleanup, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TraceProjection, TraceTurn } from '../../../src/shared/contract/trace';
 import {
   ACTIVE_DISPLAY_SCROLL_INTERVAL_MS,
@@ -21,7 +24,86 @@ import {
   getPrependedTurnCount,
   getPrependAnchorScrollLocation,
   getPrependAnchorScrollCorrection,
+  TurnBasedTraceView,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
+
+const mocks = vi.hoisted(() => ({
+  scrollToIndex: vi.fn(),
+}));
+
+vi.mock('react-virtuoso', async () => {
+  const ReactModule = await import('react');
+  return {
+    Virtuoso: ReactModule.forwardRef(function MockVirtuoso(props: Record<string, any>, ref) {
+      ReactModule.useImperativeHandle(ref, () => ({ scrollToIndex: mocks.scrollToIndex }));
+      const setScrollerRef = ReactModule.useCallback((element: HTMLDivElement | null) => {
+        props.scrollerRef?.(element);
+      }, [props.scrollerRef]);
+      return ReactModule.createElement(
+        'div',
+        { ref: setScrollerRef, 'data-testid': 'virtuoso-scroller' },
+        props.data.map((turn: TraceTurn, index: number) => ReactModule.createElement(
+          ReactModule.Fragment,
+          { key: turn.turnId },
+          props.itemContent(props.firstItemIndex + index, turn),
+        )),
+      );
+    }),
+  };
+});
+
+vi.mock('../../../src/renderer/components/features/chat/TurnCard', () => ({
+  TurnCard: () => null,
+}));
+
+vi.mock('../../../src/renderer/components/PermissionDialog/PermissionCard', () => ({
+  PermissionCard: () => null,
+}));
+
+let animationFrames: Map<number, FrameRequestCallback>;
+let nextAnimationFrameId: number;
+
+function flushAnimationFrames(): void {
+  const callbacks = [...animationFrames.values()];
+  animationFrames.clear();
+  callbacks.forEach((callback) => callback(performance.now()));
+}
+
+function rect(top: number, bottom: number): DOMRect {
+  return {
+    x: 0,
+    y: top,
+    top,
+    bottom,
+    left: 0,
+    right: 100,
+    width: 100,
+    height: bottom - top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  mocks.scrollToIndex.mockReset();
+  animationFrames = new Map();
+  nextAnimationFrameId = 1;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    const id = nextAnimationFrameId++;
+    animationFrames.set(id, callback);
+    return id;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    animationFrames.delete(id);
+  });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.runOnlyPendingTimers();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 function makeTurn(index: number): TraceTurn {
   return {
@@ -64,6 +146,56 @@ describe('TurnBasedTraceView focus helpers', () => {
       turns,
     )).toBeNull();
     expect(getPrependAnchorScrollCorrection(-24.25, 0)).toBe(24.25);
+  });
+
+  it('keeps a pending prepend anchor restore alive across streaming-only rerenders', () => {
+    const initialProjection = makeProjection(-1, 2);
+    const view = render(React.createElement(TurnBasedTraceView, { projection: initialProjection }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    scroller.getBoundingClientRect = () => rect(0, 500);
+    const initialAnchor = view.container.querySelector<HTMLElement>('[data-trace-turn-id="turn-1"]');
+    const initialSecondTurn = view.container.querySelector<HTMLElement>('[data-trace-turn-id="turn-2"]');
+    expect(initialAnchor).not.toBeNull();
+    expect(initialSecondTurn).not.toBeNull();
+    initialAnchor!.getBoundingClientRect = () => rect(20, 100);
+    initialSecondTurn!.getBoundingClientRect = () => rect(120, 200);
+
+    act(() => {
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    mocks.scrollToIndex.mockClear();
+
+    const prependedProjection: TraceProjection = {
+      ...initialProjection,
+      turns: [makeTurn(-1), ...initialProjection.turns],
+    };
+    view.rerender(React.createElement(TurnBasedTraceView, { projection: prependedProjection }));
+    const restoredAnchor = view.container.querySelector<HTMLElement>('[data-trace-turn-id="turn-1"]');
+    expect(restoredAnchor).not.toBeNull();
+    restoredAnchor!.getBoundingClientRect = () => rect(60, 140);
+
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection: {
+        ...prependedProjection,
+        turns: prependedProjection.turns.map((turn) => ({ ...turn, nodes: [...turn.nodes] })),
+      },
+    }));
+
+    act(() => {
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({
+      index: 1,
+      align: 'start',
+      behavior: 'auto',
+      offset: -20,
+    });
+    expect(scroller.scrollTop).toBe(40);
   });
 
   it('focuses the active turn while a run is streaming', () => {

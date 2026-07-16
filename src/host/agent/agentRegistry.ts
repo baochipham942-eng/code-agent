@@ -163,6 +163,23 @@ export function getBuiltinAgent(id: string): RegisteredAgent | undefined {
  * 列出全部 agent（builtin + 自定义合并后的去重列表）。
  * 顺序：builtin 在前，自定义在后，自定义按 source 排序（user → project）。
  */
+function toListEntry(
+  agent: Pick<CoreAgentConfig, 'id' | 'name' | 'description' | 'model' | 'readonly' | 'tools' | 'inputs' | 'outputs'>,
+  source: AgentSource,
+): AgentListEntry {
+  return {
+    id: agent.id,
+    name: agent.name,
+    description: agent.description,
+    source,
+    modelTier: agent.model,
+    readonly: agent.readonly,
+    tools: agent.tools,
+    inputs: agent.inputs,
+    outputs: agent.outputs,
+  };
+}
+
 export function listAllAgents(): AgentListEntry[] {
   const snapshot = customAgentMap;
   const entries: AgentListEntry[] = [];
@@ -174,17 +191,7 @@ export function listAllAgents(): AgentListEntry[] {
     const customOverride = snapshot.get(id);
     // 如果被自定义覆盖，自定义条目会在后面以 user/project source 出现
     if (!customOverride) {
-      entries.push({
-        id: cfg.id,
-        name: cfg.name,
-        description: cfg.description,
-        source: 'builtin',
-        modelTier: cfg.model,
-        readonly: cfg.readonly,
-        tools: cfg.tools,
-        inputs: cfg.inputs,
-        outputs: cfg.outputs,
-      });
+      entries.push(toListEntry(cfg, 'builtin'));
       seen.add(id);
     }
   }
@@ -199,17 +206,7 @@ export function listAllAgents(): AgentListEntry[] {
 
   for (const agent of [...byUser, ...byProject]) {
     if (seen.has(agent.id)) continue;
-    entries.push({
-      id: agent.id,
-      name: agent.name,
-      description: agent.description,
-      source: agent.source,
-      modelTier: agent.model,
-      readonly: agent.readonly,
-      tools: agent.tools,
-      inputs: agent.inputs,
-      outputs: agent.outputs,
-    });
+    entries.push(toListEntry(agent, agent.source));
     seen.add(agent.id);
   }
 

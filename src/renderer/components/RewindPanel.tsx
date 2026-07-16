@@ -100,10 +100,18 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
       ) : (
         <div className="space-y-1.5">
           {checkpoints.map(cp => (
-            <div
+            <button
               key={cp.messageId}
+              type="button"
+              aria-pressed={selectedMessageId === cp.messageId}
               onClick={() => handleSelect(cp.messageId)}
-              className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  void handleSelect(cp.messageId);
+                }
+              }}
+              className={`w-full p-3 rounded-lg border cursor-pointer text-left transition-colors ${
                 selectedMessageId === cp.messageId
                   ? 'border-blue-500/50 bg-blue-500/10'
                   : 'border-zinc-700 hover:border-zinc-600'
@@ -120,7 +128,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
               <span className="text-xs text-zinc-500 mt-1 block">
                 {cp.fileCount} file{cp.fileCount !== 1 ? 's' : ''}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}

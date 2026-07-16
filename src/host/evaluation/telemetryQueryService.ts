@@ -9,6 +9,7 @@ import { getReplayCompletenessReasons } from '../../shared/contract/evaluation';
 import { buildMemoryAuditBlock, buildTranscriptReplay, createEmptyToolDistribution, normalizeToolCategory } from './transcriptReplayBuilder';
 import { attachSessionQualityScoring } from './sessionQualityScoring';
 import { attachTelemetryReplayEvidence, buildAgentPointerReplayProjection } from './telemetryReplayEvidence';
+import { estimateTokens } from '../context/tokenEstimator';
 import type {
   ReplayBlock,
   ReplayMetricAvailability,
@@ -754,7 +755,7 @@ class TelemetryQueryService {
             content: row.thinking_content as string,
             timestamp: row.start_time as number,
           });
-          totalThinkingTokens += Math.ceil(String(row.thinking_content).length / 4);
+          totalThinkingTokens += estimateTokens(String(row.thinking_content));
         }
 
         for (const mc of turnModelCalls) {

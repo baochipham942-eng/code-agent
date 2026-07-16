@@ -45,6 +45,7 @@ on:
       - 'scripts/check-copy.mjs'
       - 'tailwind.config.js'
       - 'scripts/knip-ratchet.mjs'
+      - 'scripts/eslint-ratchet.mjs'
       - 'knip.json'
       - 'scripts/architecture-debt-report.mjs'
       - 'eslint.config.js'
@@ -141,11 +142,9 @@ jobs:
         # CI 走 setup-node 的 npm 缓存。独立 step 便于失败归因。
         run: node scripts/knip-ratchet.mjs
 
-      - name: Lint (non-blocking trend)
-        # lint 基线当前为红（46 errors + 1620 warnings 的历史债），直接 hard-gate 会卡死所有 PR。
-        # 先以 continue-on-error 接入、累计趋势；待历史 error 清零后去掉 continue-on-error 翻成 hard gate。
-        continue-on-error: true
-        run: npm run lint
+      - name: ESLint error/warning ratchet
+        # errors / warnings 双独立基线棘轮；任一超基线即阻塞，清理后只能下调。
+        run: node scripts/eslint-ratchet.mjs
 
       - name: Run swarm smoke suite
         run: npm run test:swarm:smoke -- --retry=1

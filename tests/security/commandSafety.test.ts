@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect } from 'vitest';
-import { isKnownSafeCommand, classifyCommand, validateCommand } from '../../src/host/security/commandSafety';
+import { isKnownSafeCommand, classifyCommand, validateCommand, getShellSafetyMode } from '../../src/host/security/commandSafety';
 import {
   checkCommandPolicy,
   setCommandPolicyRulesForTest,
@@ -536,5 +536,45 @@ describe('commandPolicy DSL', () => {
     expect(forkBomb.source).toBe('hard-block');
     expect(rootDelete.allowed).toBe(false);
     expect(rootDelete.source).toBe('hard-block');
+  });
+});
+
+describe('getShellSafetyMode', () => {
+  const originalEnv = process.env.CODE_AGENT_SHELL_SAFETY_MODE;
+  const originalPlatform = process.platform;
+
+  const setPlatform = (value: NodeJS.Platform) => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
+    else process.env.CODE_AGENT_SHELL_SAFETY_MODE = originalEnv;
+    setPlatform(originalPlatform);
+  });
+
+  // v0.27.3 起 Windows 正式对外分发。win32 曾默认 lenient（非硬毙命令一律放行、
+  // 不进审批），等于对全量 Windows 用户关掉命令安全闸——平台默认必须与 mac 对齐。
+  it('win32 默认 strict，不再是 lenient', () => {
+    delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
+    setPlatform('win32');
+
+    expect(getShellSafetyMode()).toBe('strict');
+  });
+
+  it('三平台默认一律 strict，安全档不随平台漂移', () => {
+    delete process.env.CODE_AGENT_SHELL_SAFETY_MODE;
+
+    for (const platform of ['win32', 'darwin', 'linux'] as NodeJS.Platform[]) {
+      setPlatform(platform);
+      expect(getShellSafetyMode()).toBe('strict');
+    }
+  });
+
+  it('lenient 仍可由 env 显式开启（朋友测试包逃生口）', () => {
+    process.env.CODE_AGENT_SHELL_SAFETY_MODE = 'lenient';
+    setPlatform('win32');
+
+    expect(getShellSafetyMode()).toBe('lenient');
   });
 });

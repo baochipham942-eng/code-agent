@@ -1,11 +1,31 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const transportMocks = vi.hoisted(() => ({
+  sseClientTransport: vi.fn(),
+  streamableHTTPClientTransport: vi.fn(),
+}));
+
+vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
+  SSEClientTransport: transportMocks.sseClientTransport,
+}));
+
+vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
+  StreamableHTTPClientTransport: transportMocks.streamableHTTPClientTransport,
+}));
+
 import {
+  createTransport,
   isRetryableRemoteMCPConnectionError,
   resolveMCPProxyUrl,
   retryTransientRemoteMCPConnection,
 } from '../../../src/host/mcp/mcpTransport';
 
 describe('mcpTransport remote connection retry', () => {
+  beforeEach(() => {
+    transportMocks.sseClientTransport.mockClear();
+    transportMocks.streamableHTTPClientTransport.mockClear();
+  });
+
   it('retries one transient fetch failure with a fresh attempt', async () => {
     const attempt = vi.fn()
       .mockRejectedValueOnce(new TypeError('fetch failed'))
@@ -43,5 +63,63 @@ describe('mcpTransport remote connection retry', () => {
     expect(resolveMCPProxyUrl(new URL('https://context7.com/mcp'), env)).toBeUndefined();
     expect(resolveMCPProxyUrl(new URL('https://api.internal.example/mcp'), env)).toBeUndefined();
     expect(resolveMCPProxyUrl(new URL('http://127.0.0.1:8180/mcp'), env)).toBeUndefined();
+  });
+
+  it('passes SSE headers through requestInit for SDK shared GET and POST headers', () => {
+    createTransport({
+      name: 'auth-sse',
+      type: 'sse',
+      serverUrl: 'https://mcp.example.com/sse',
+      enabled: true,
+      headers: { Authorization: 'Bearer test-token-abc' },
+    });
+
+    expect(transportMocks.sseClientTransport).toHaveBeenCalledTimes(1);
+    expect(transportMocks.sseClientTransport).toHaveBeenCalledWith(
+      new URL('https://mcp.example.com/sse'),
+      {
+        requestInit: {
+          headers: { Authorization: 'Bearer test-token-abc' },
+        },
+        eventSourceInit: {},
+      },
+    );
+  });
+
+  it('does not pass SSE requestInit when no headers are configured', () => {
+    createTransport({
+      name: 'plain-sse',
+      type: 'sse',
+      serverUrl: 'https://mcp.example.com/sse',
+      enabled: true,
+    });
+
+    expect(transportMocks.sseClientTransport).toHaveBeenCalledTimes(1);
+    expect(transportMocks.sseClientTransport).toHaveBeenCalledWith(
+      new URL('https://mcp.example.com/sse'),
+      {
+        eventSourceInit: {},
+      },
+    );
+  });
+
+  it('keeps HTTP streamable headers on requestInit', () => {
+    createTransport({
+      name: 'auth-http',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+      headers: { Authorization: 'Bearer test-token-abc' },
+    });
+
+    expect(transportMocks.streamableHTTPClientTransport).toHaveBeenCalledTimes(1);
+    expect(transportMocks.streamableHTTPClientTransport).toHaveBeenCalledWith(
+      new URL('https://mcp.example.com/mcp'),
+      {
+        requestInit: {
+          headers: { Authorization: 'Bearer test-token-abc' },
+        },
+      },
+    );
   });
 });

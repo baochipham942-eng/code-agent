@@ -201,10 +201,16 @@ export function createTransport(
     logger.info(`Using SSE transport for ${config.name}: ${config.serverUrl}`);
 
     const url = new URL(config.serverUrl);
+    const requestInit: RequestInit = {};
     const eventSourceInit: EventSourceInit = {};
     const proxyFetch = options.useProxy ? createRemoteMCPFetch(url) : undefined;
 
+    if (config.headers) {
+      requestInit.headers = config.headers;
+    }
+
     const transport = new SSEClientTransport(url, {
+      ...(config.headers ? { requestInit } : {}),
       eventSourceInit,
       ...(proxyFetch ? { fetch: proxyFetch } : {}),
     });

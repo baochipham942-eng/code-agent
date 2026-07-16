@@ -465,4 +465,28 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
     expect(record.pinnedCommit).toBe('b'.repeat(40));
     expect(record.contentHash).toBe(sha256(secondZip));
   });
+
+  it('preserves the installed plugin when a force upgrade fails after asset staging', async () => {
+    const firstZip = await makeRegistryZip('v1');
+    mockCodeload(firstZip);
+    await installFromRegistryEntry(registryEntry('a'.repeat(40), sha256(firstZip)));
+    const firstRecord = (await listInstalledPlugins())['remote-demo@official-registry']!;
+    const firstSkillPath = path.join(firstRecord.pluginRoot!, 'SKILL.md');
+
+    const secondZip = await makeRegistryZip('v2');
+    mockCodeload(secondZip);
+    await expect(
+      installFromRegistryEntry({
+        ...registryEntry('b'.repeat(40), sha256(secondZip)),
+        skills: ['missing-skill'],
+      }, { force: true }),
+    ).rejects.toThrow('Skill path not found');
+
+    const retainedRecord = (await listInstalledPlugins())['remote-demo@official-registry']!;
+    expect(retainedRecord).toEqual(firstRecord);
+    expect(retainedRecord.pinnedCommit).toBe('a'.repeat(40));
+    expect(retainedRecord.contentHash).toBe(sha256(firstZip));
+    expect(retainedRecord.pluginRoot).toBe(firstRecord.pluginRoot);
+    await expect(fs.readFile(firstSkillPath, 'utf8')).resolves.toBe('v1');
+  });
 });

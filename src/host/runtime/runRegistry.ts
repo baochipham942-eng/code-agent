@@ -41,6 +41,8 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { NativeRecoveryDescriptor } from './nativeRecoveryHost';
 
+const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
+
 export class RunSessionConflictError extends Error {
   readonly code = 'RUN_SESSION_CONFLICT';
 
@@ -668,18 +670,38 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   private startHeartbeat(runId: string, owner: RunOwnerLease, now: number): void {
     this.stopHeartbeat(runId);
     const intervalMs = Math.max(250, Math.floor((owner.leaseExpiresAt - now) / 3));
+    let consecutiveTransientFailures = 0;
     const timer = setInterval(() => {
-      void this.heartbeatDurable(runId).catch(async () => {
-        this.stopHeartbeat(runId);
-        this.durableOwners.delete(runId);
-        this.endAttemptSpan(runId, 'error', { 'terminal.status': 'stale_owner' });
-        const handle = this.handlesByRunId.get(runId);
-        if (handle) await handle.cancel('session-switch').catch(() => undefined);
-        this.unregister(runId, handle);
-      });
+      void this.heartbeatDurable(runId).then(
+        () => {
+          consecutiveTransientFailures = 0;
+        },
+        async (error: unknown) => {
+          if (isHeartbeatFencingError(error)) {
+            await this.standDownDurableRun(runId);
+            return;
+          }
+          if (isSqliteBusyError(error)) {
+            consecutiveTransientFailures += 1;
+            if (consecutiveTransientFailures <= HEARTBEAT_TRANSIENT_RETRY_WINDOWS) return;
+          }
+          await this.standDownDurableRun(runId);
+        },
+      );
     }, intervalMs);
     timer.unref?.();
     this.heartbeatTimers.set(runId, timer);
+  }
+
+  private async standDownDurableRun(runId: string): Promise<void> {
+    const handle = this.handlesByRunId.get(runId);
+    this.stopHeartbeat(runId);
+    this.durableOwners.delete(runId);
+    this.durableEnvelopes.delete(runId);
+    this.durableCheckpointStates.delete(runId);
+    this.endAttemptSpan(runId, 'error', { 'terminal.status': 'stale_owner' });
+    this.unregister(runId, handle);
+    if (handle) await handle.cancel('lease-lost' as never).catch(() => undefined);
   }
 
   private stopHeartbeat(runId: string): void {
@@ -722,6 +744,20 @@ function isDurableActiveSessionConstraint(error: unknown): boolean {
   const candidate = error as { code?: unknown; message?: unknown };
   return candidate.code === 'SQLITE_CONSTRAINT_UNIQUE'
     && candidate.message === 'UNIQUE constraint failed: durable_runs.session_id';
+}
+
+function isHeartbeatFencingError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const candidate = error as Error & { code?: unknown };
+  return candidate.code === 'RUN_OWNER_FENCED'
+    || /heartbeat fenced by stale owner/i.test(candidate.message);
+}
+
+function isSqliteBusyError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string'
+    && (code === 'SQLITE_BUSY' || code.startsWith('SQLITE_BUSY_'));
 }
 
 interface NativeAgentTeamProjectionState {

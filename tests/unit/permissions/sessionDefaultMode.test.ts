@@ -125,6 +125,39 @@ describe('PermissionModeManager 会话档语义', () => {
     expect(reborn.getModeForSession('s1')).toBe('readOnly');
   });
 
+  it('早期会话的显式 readOnly 不会被后续 500+ 会话淘汰，并能跨重启恢复', () => {
+    const manager = getPermissionModeManager();
+    manager.setMode('acceptEdits');
+    manager.setSessionMode('protected-session', 'readOnly');
+    manager.setSessionMode('protected-default-session', 'default');
+
+    for (let index = 0; index < 501; index += 1) {
+      manager.setSessionMode(`later-session-${index}`, 'default');
+    }
+
+    expect(manager.getModeForSession('protected-session')).toBe('readOnly');
+    expect(manager.getModeForSession('protected-default-session')).toBe('default');
+
+    resetPermissionModeManager();
+    const reborn = getPermissionModeManager();
+    reborn.setMode('acceptEdits');
+    expect(reborn.getModeForSession('protected-session')).toBe('readOnly');
+    expect(reborn.getModeForSession('protected-default-session')).toBe('default');
+  });
+
+  it('创建期快照与显式选档分开：其他会话持久化时不会把快照带上磁盘', () => {
+    const manager = getPermissionModeManager();
+    manager.setMode('acceptEdits');
+    manager.initSessionMode('snapshot-only');
+    manager.setSessionMode('explicit-session', 'readOnly');
+
+    expect(manager.getModeForSession('snapshot-only')).toBe('acceptEdits');
+    resetPermissionModeManager();
+    const reborn = getPermissionModeManager();
+    expect(reborn.getModeForSession('snapshot-only')).toBe('default');
+    expect(reborn.getModeForSession('explicit-session')).toBe('readOnly');
+  });
+
   it('未显式切档的会话重启后回退全局默认档（快照不落盘的已知上限）', () => {
     const manager = getPermissionModeManager();
     manager.setMode('acceptEdits');

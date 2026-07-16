@@ -21,6 +21,15 @@ const sendMock = vi.hoisted(() => vi.fn());
 const getAllWindowsMock = vi.hoisted(() => vi.fn());
 const hasInteractiveRendererMock = vi.hoisted(() => vi.fn());
 const notifyNeedsInputMock = vi.hoisted(() => vi.fn());
+const responseHandlerRef = vi.hoisted(() => ({
+  fn: undefined as undefined | ((event: unknown, response: unknown) => Promise<void>),
+}));
+
+ipcMainHandleMock.mockImplementation(
+  (channel: string, handler: (event: unknown, response: unknown) => Promise<void>) => {
+    if (channel === 'user-question:response') responseHandlerRef.fn = handler;
+  },
+);
 
 vi.mock('../../../../../src/host/platform', () => ({
   ipcHost: { handle: ipcMainHandleMock },
@@ -331,5 +340,50 @@ describe('AskUserQuestion CLI fallback', () => {
       expect(result.output).toContain('[用户未响应 - CLI 模式无法交互]');
       expect(result.output).toContain('[确认] 要继续吗');
     }
+  });
+});
+
+describe('AskUserQuestion renderer response', () => {
+  const questions = [
+    {
+      question: '要继续吗',
+      header: '确认',
+      options: [
+        { label: '继续', description: '继续当前操作' },
+        { label: '停止', description: '停下等待' },
+      ],
+    },
+  ];
+
+  it('declined 响应返回明确结果，让 agent loop 立即继续', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const promise = handler.execute({ questions }, makeCtx(), allowAll);
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
+    const request = sendMock.mock.calls[0][1];
+
+    await responseHandlerRef.fn?.({}, { requestId: request.id, declined: true });
+
+    const result = await promise;
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toBe('User declined to answer.');
+  });
+
+  it('旧 answers-only 响应仍按 answered 处理', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const promise = handler.execute({ questions }, makeCtx(), allowAll);
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
+    const request = sendMock.mock.calls[0][1];
+
+    await responseHandlerRef.fn?.({}, { requestId: request.id, answers: { 确认: '继续' } });
+
+    const result = await promise;
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.output).toBe('User responses:\n[确认]: 继续');
   });
 });

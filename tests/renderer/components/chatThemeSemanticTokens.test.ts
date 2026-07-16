@@ -5,6 +5,42 @@ import { describe, expect, it } from 'vitest';
 const readSource = (path: string): string =>
   readFileSync(resolve(process.cwd(), path), 'utf8');
 
+type Rgb = [number, number, number];
+
+const hexToRgb = (hex: string): Rgb => [
+  Number.parseInt(hex.slice(1, 3), 16),
+  Number.parseInt(hex.slice(3, 5), 16),
+  Number.parseInt(hex.slice(5, 7), 16),
+];
+
+const composite = (foreground: Rgb, background: Rgb, alpha: number): Rgb =>
+  foreground.map((channel, index) =>
+    channel * alpha + background[index] * (1 - alpha),
+  ) as Rgb;
+
+const luminance = (color: Rgb): number => {
+  const [red, green, blue] = color.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+};
+
+const contrast = (foreground: Rgb, background: Rgb): number => {
+  const foregroundLuminance = luminance(foreground);
+  const backgroundLuminance = luminance(background);
+  return (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+    / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+};
+
+const readHexVariable = (theme: string, variable: string): Rgb => {
+  const value = theme.match(new RegExp(`${variable}\\s*:\\s*(#[0-9A-F]{6})`, 'i'))?.[1];
+  if (!value) throw new Error(`Missing hex value for ${variable}`);
+  return hexToRgb(value);
+};
+
 const semanticTokens = [
   ['surface-faint', '--surface-faint'],
   ['surface-subtle', '--surface-subtle'],
@@ -58,6 +94,22 @@ describe('chat semantic theme tokens', () => {
     expect(darkTheme).toContain('--status-text-warning-soft: #FEF3C7;');
   });
 
+  it.each([
+    'src/renderer/styles/themes/light.css',
+    'src/renderer/styles/themes/high-contrast-light.css',
+  ])('keeps warning text above 4.5:1 on the layered warning background in %s', (themeFile) => {
+    const theme = readSource(themeFile);
+    const baseBackground = hexToRgb('#FAFAFA');
+    const warningBackground = composite(hexToRgb('#F59E0B'), baseBackground, 0.1);
+
+    expect(theme).toContain('--status-text-warning: #92400E;');
+    expect(theme).toContain('--status-text-warning-soft: #92400E;');
+    expect(contrast(readHexVariable(theme, '--status-text-warning'), warningBackground))
+      .toBeGreaterThanOrEqual(4.5);
+    expect(contrast(readHexVariable(theme, '--status-text-warning-soft'), warningBackground))
+      .toBeGreaterThanOrEqual(4.5);
+  });
+
   it('uses dedicated status text classes in the targeted chat components', () => {
     const chatView = readSource('src/renderer/components/ChatView.tsx');
     const turnCard = readSource('src/renderer/components/features/chat/TurnCard.tsx');
@@ -69,6 +121,12 @@ describe('chat semantic theme tokens', () => {
     expect(getToneClass).toContain('text-status-error');
     expect(getToneClass).not.toMatch(/text-(success|warning|error)(?:\W|$)/);
     expect(recoveryBanner).toContain('text-status-warning-soft');
+    expect(recoveryBanner).toContain('dark:text-status-warning-soft/80');
+    expect(recoveryBanner).toContain('dark:text-status-warning-soft/60');
+    expect(recoveryBanner).toContain('[.high-contrast-dark_&]:text-status-warning-soft/80');
+    expect(recoveryBanner).toContain('[.high-contrast-dark_&]:text-status-warning-soft/60');
+    expect(recoveryBanner).not.toContain('className="mt-1 text-status-warning-soft/80"');
+    expect(recoveryBanner).not.toContain('className="mt-1 text-xs text-status-warning-soft/60"');
     expect(recoveryBanner).not.toMatch(/text-warning(?:\W|$)/);
   });
 

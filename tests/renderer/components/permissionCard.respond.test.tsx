@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   sessionId: null as string | null,
 }));
 const invoke = vi.hoisted(() => vi.fn());
+const saveMemory = vi.hoisted(() => vi.fn());
 const setPendingPermissionRequest = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
 const ipcAvailable = vi.hoisted(() => ({ value: true }));
@@ -28,7 +29,7 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/stores/permissionStore', () => ({
-  usePermissionStore: () => ({ checkMemory: () => null, saveMemory: vi.fn() }),
+  usePermissionStore: () => ({ checkMemory: () => null, saveMemory }),
 }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -63,6 +64,7 @@ describe('PermissionCard respond path', () => {
   afterEach(() => {
     cleanup();
     releaseApprovalResponse(request.id);
+    vi.restoreAllMocks();
   });
 
   it('restores the snapshotted request and allows retry after delivery fails', async () => {
@@ -103,6 +105,32 @@ describe('PermissionCard respond path', () => {
     fireEvent.click(screen.getByRole('button', { name: /允许/ }));
 
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
+  });
+
+  it('releases the response claim and allows retry when saving memory throws', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    invoke.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
+    saveMemory.mockImplementationOnce(() => {
+      throw new Error('storage unavailable');
+    });
+    render(<PermissionCard />);
+
+    fireEvent.keyDown(window, { key: 's' });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(consoleError).toHaveBeenCalledWith(
+        '[PermissionCard] Failed to save approval memory',
+        expect.any(Error),
+      );
+      expect(setPendingPermissionRequest).toHaveBeenCalledWith(request, 'session-current');
+      expect(toastError).toHaveBeenCalledWith(expect.stringContaining('请重试'));
+    });
+
+    fireEvent.keyDown(window, { key: 's' });
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
   });
 

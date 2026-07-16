@@ -115,24 +115,28 @@ export function PermissionCard() {
       if (!claimApprovalResponse(request.id)) return;
       processedRequestRef.current = request.id;
 
-      if ((level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
-        const memoryReq: PermissionRequestForMemory = {
-          id: request.id,
-          tool: request.tool,
-          type: request.type as import('../../stores/permissionStore').PermissionType,
-          details: {
-            filePath: request.details.filePath || request.details.path,
-            command: request.details.command,
-            url: request.details.url,
-            server: request.details.server,
-            toolName: request.details.toolName,
-          },
-        };
-        saveMemory(memoryReq, level);
-      }
-
-      const response = toPermissionResponse(level);
       try {
+        if ((level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
+          const memoryReq: PermissionRequestForMemory = {
+            id: request.id,
+            tool: request.tool,
+            type: request.type as import('../../stores/permissionStore').PermissionType,
+            details: {
+              filePath: request.details.filePath || request.details.path,
+              command: request.details.command,
+              url: request.details.url,
+              server: request.details.server,
+              toolName: request.details.toolName,
+            },
+          };
+          try {
+            saveMemory(memoryReq, level);
+          } catch (error) {
+            console.error('[PermissionCard] Failed to save approval memory', error);
+          }
+        }
+
+        const response = toPermissionResponse(level);
         if (!ipcService.isAvailable()) throw new Error('IPC unavailable');
         await ipcService.invoke(
           IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,

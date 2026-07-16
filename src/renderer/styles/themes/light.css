@@ -58,9 +58,9 @@
 
   /* Chat status text colors */
   --status-text-success: #047857;
-  --status-text-warning: #B45309;
+  --status-text-warning: #92400E;
   --status-text-error: #B91C1C;
-  --status-text-warning-soft: #B45309;
+  --status-text-warning-soft: #92400E;
 
   /* Border colors */
   --border-subtle: rgba(0, 0, 0, 0.04);

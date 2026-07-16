@@ -29,6 +29,7 @@ import type { AppSettings } from '@shared/contract';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -240,6 +241,7 @@ export const GeneralSettings: React.FC = () => {
   const [allowRules, setAllowRules] = useState<string>('');
   const [showMigrationBanner, setShowMigrationBanner] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [pendingPermissionMode, setPendingPermissionMode] = useState<PermissionMode | null>(null);
 
   const permissionModeRows = useMemo(
     () => buildPermissionModeRows(permissionMode, generalText),
@@ -294,6 +296,22 @@ export const GeneralSettings: React.FC = () => {
     } catch (error) {
       toast.error(generalText.setModeFailedPrefix + getErrorMessage(error, generalText.unknownError));
     }
+  };
+
+  const handlePermissionModeSelect = (row: PermissionModeRow) => {
+    if (row.riskLevel === 'high') {
+      setPendingPermissionMode(row.id);
+      return;
+    }
+
+    void handlePermissionModeChange(row.id);
+  };
+
+  const handlePermissionModeConfirm = () => {
+    if (!pendingPermissionMode) return;
+    const newMode = pendingPermissionMode;
+    setPendingPermissionMode(null);
+    void handlePermissionModeChange(newMode);
   };
 
   const persistPermissions = async (patch: Partial<AppSettings['permissions']>) => {
@@ -458,7 +476,7 @@ export const GeneralSettings: React.FC = () => {
                           <button
                             type="button"
                             disabled={isWebMode() || row.selected}
-                            onClick={() => handlePermissionModeChange(row.id)}
+                            onClick={() => handlePermissionModeSelect(row)}
                             className="rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {row.actionLabel}
@@ -665,6 +683,17 @@ export const GeneralSettings: React.FC = () => {
           </div>
         </div>
       </SettingsDetails>
+
+      <ConfirmDialog
+        isOpen={pendingPermissionMode !== null}
+        title={generalText.bypassWarning.confirmTitle}
+        message={generalText.bypassWarning.description}
+        variant="danger"
+        confirmText={generalText.bypassWarning.confirmAction}
+        cancelText={t.common.cancel}
+        onConfirm={handlePermissionModeConfirm}
+        onCancel={() => setPendingPermissionMode(null)}
+      />
     </SettingsPage>
   );
 };

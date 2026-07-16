@@ -252,6 +252,8 @@ export const zhSettingsCore = {
         bypassWarning: {
           title: 'YOLO 模式已启用',
           description: '权限检查已跳过。Agent 可以直接执行文件写入、命令执行等操作，请只在可信隔离环境中使用。',
+          confirmTitle: '启用 YOLO 模式？',
+          confirmAction: '启用 YOLO 模式',
         },
         inheritanceSection: {
           title: '子 Agent 权限继承',
@@ -336,6 +338,9 @@ export const zhSettingsCore = {
       platformSuffix: '。冲突按作用域提示，系统保留组合键单独提醒。',
       globalHotkeys: '系统级热键',
       resetDefaults: '恢复默认',
+      resetConfirmTitle: '恢复全部默认快捷键？',
+      resetConfirmMessage: '所有自定义快捷键都会被默认配置替换，单项修改将无法保留。',
+      resetConfirm: '恢复全部默认',
       conflictTitle: '存在快捷键冲突',
       systemWarningTitle: '可能被系统占用',
       searchPlaceholder: '搜索快捷键、功能或作用域',

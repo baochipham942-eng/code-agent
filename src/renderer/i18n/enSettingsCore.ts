@@ -252,6 +252,8 @@ export const enSettingsCore = {
         bypassWarning: {
           title: 'YOLO mode is enabled',
           description: 'Permission checks are skipped. The Agent can write files and run commands directly, so use this only in trusted isolated environments.',
+          confirmTitle: 'Enable YOLO mode?',
+          confirmAction: 'Enable YOLO mode',
         },
         inheritanceSection: {
           title: 'Sub-agent permission inheritance',
@@ -336,6 +338,9 @@ export const enSettingsCore = {
       platformSuffix: '. Conflicts are shown by scope, and system-reserved combinations are called out separately.',
       globalHotkeys: 'System-level hotkeys',
       resetDefaults: 'Restore defaults',
+      resetConfirmTitle: 'Restore all default shortcuts?',
+      resetConfirmMessage: 'Every custom shortcut will be replaced with the default configuration. Individual changes will not be kept.',
+      resetConfirm: 'Restore all defaults',
       conflictTitle: 'Shortcut conflicts found',
       systemWarningTitle: 'May be reserved by the system',
       searchPlaceholder: 'Search shortcuts, features, or scopes',

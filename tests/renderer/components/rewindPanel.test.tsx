@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
@@ -70,5 +70,58 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
       );
     });
     expect(checkpoint.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('confirms the final rewind without interrupting checkpoint selection', async () => {
+    invoke
+      .mockResolvedValueOnce([
+        { id: 'checkpoint-1', messageId: 'message-1', timestamp: 1, description: 'Before edit', fileCount: 1 },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ success: true, filesRestored: 1 });
+    const onClose = vi.fn();
+    render(<RewindPanel isOpen={true} onClose={onClose} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Before edit/ }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
+    expect(screen.getAllByRole('dialog')).toHaveLength(2);
+    expect(invoke).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel rewind' }));
+    expect(invoke).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rewind now' }));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        IPC_CHANNELS.CHECKPOINT_REWIND,
+        'sess-1',
+        'message-1',
+      );
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows rewind failures inside the panel and leaves retry available', async () => {
+    invoke
+      .mockResolvedValueOnce([
+        { id: 'checkpoint-1', messageId: 'message-1', timestamp: 1, description: 'Before edit', fileCount: 1 },
+      ])
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('workspace locked'));
+    const onClose = vi.fn();
+    render(<RewindPanel isOpen={true} onClose={onClose} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Before edit/ }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rewind now' }));
+
+    expect(await screen.findByText(/workspace locked/)).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Rewind' }).getAttribute('disabled')).toBeNull();
   });
 });

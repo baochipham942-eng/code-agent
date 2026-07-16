@@ -24,6 +24,7 @@ import { createLogger } from '../../../../utils/logger';
 import { emitKeybindingsChanged } from '../../../../hooks/useKeybindingsSettings';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 
 const logger = createLogger('KeybindingsSettings');
 
@@ -64,6 +65,7 @@ export const KeybindingsSettings: React.FC = () => {
   const [recordingActionId, setRecordingActionId] = useState<KeybindingActionId | null>(null);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -222,7 +224,7 @@ export const KeybindingsSettings: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={resetAll}
+            onClick={() => setIsResetConfirmOpen(true)}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-600 hover:bg-zinc-800"
           >
             <RotateCcw className="h-4 w-4" />
@@ -398,6 +400,19 @@ export const KeybindingsSettings: React.FC = () => {
       <div className="text-xs text-zinc-600">
         {saving ? keybindingsText.saving : keybindingsText.autosaveHint}
       </div>
+      <ConfirmDialog
+        isOpen={isResetConfirmOpen}
+        title={keybindingsText.resetConfirmTitle}
+        message={keybindingsText.resetConfirmMessage}
+        variant="warning"
+        confirmText={keybindingsText.resetConfirm}
+        cancelText={t.common.cancel}
+        onCancel={() => setIsResetConfirmOpen(false)}
+        onConfirm={() => {
+          setIsResetConfirmOpen(false);
+          resetAll();
+        }}
+      />
     </div>
   );
 };

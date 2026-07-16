@@ -140,3 +140,49 @@ describe('WorkbenchTabs keyboard interaction', () => {
     expect(useAppStore.getState().workbenchTabs).toEqual([]);
   });
 });
+
+describe('WorkbenchTabs dirty preview confirmation', () => {
+  const dirtyPreview = {
+    id: 'preview-1',
+    path: '/tmp/example.ts',
+    content: 'changed',
+    savedContent: 'saved',
+    mode: 'edit' as const,
+    lastActivatedAt: 1,
+    isLoaded: true,
+  };
+
+  it('requires confirmation for close-button and middle-click closes of a dirty preview', () => {
+    useAppStore.setState({
+      workbenchTabs: ['preview:/tmp/example.ts'],
+      activeWorkbenchTab: 'preview:/tmp/example.ts',
+      previewTabs: [dirtyPreview],
+    });
+    const { getByLabelText, getByRole } = render(<WorkbenchTabs />);
+
+    fireEvent.click(getByLabelText(en.common.close));
+    expect(getByRole('dialog')).toBeTruthy();
+    expect(useAppStore.getState().workbenchTabs).toHaveLength(1);
+
+    fireEvent.click(getByRole('button', { name: '取消' }));
+    expect(useAppStore.getState().workbenchTabs).toHaveLength(1);
+
+    fireEvent.mouseDown(getByRole('tab').parentElement!, { button: 1 });
+    expect(getByRole('dialog')).toBeTruthy();
+    fireEvent.click(getByRole('button', { name: /不保存/ }));
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+  });
+
+  it('still closes clean previews immediately', () => {
+    useAppStore.setState({
+      workbenchTabs: ['preview:/tmp/example.ts'],
+      activeWorkbenchTab: 'preview:/tmp/example.ts',
+      previewTabs: [{ ...dirtyPreview, content: 'saved' }],
+    });
+    const { getByLabelText, queryByRole } = render(<WorkbenchTabs />);
+
+    fireEvent.click(getByLabelText(en.common.close));
+    expect(queryByRole('dialog')).toBeNull();
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+  });
+});

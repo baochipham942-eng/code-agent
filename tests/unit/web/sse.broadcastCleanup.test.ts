@@ -2,7 +2,7 @@
 // sse helpers：死连接从 sseClients 剔除、sendSSE 帧格式、空 buffer replay。
 // tests/web/sse.replay.test.ts 覆盖 ring buffer；本文件补断连清理与单播。
 // ============================================================================
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Response } from 'express';
 import {
   __resetSSEReplayBufferForTests,

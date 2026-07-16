@@ -22,6 +22,12 @@ export {
 
 // Sandbox Manager (unified API)
 export {
+  NETWORK_COMMANDS,
+  resolveSandboxNetworkPolicy,
+  type SandboxNetworkPolicyInput,
+} from './networkPolicy';
+
+export {
   SandboxManager,
   getSandboxManager,
   resetSandboxManager,

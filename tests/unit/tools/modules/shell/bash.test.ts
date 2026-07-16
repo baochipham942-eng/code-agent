@@ -891,7 +891,7 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     expect(wrapMock).toHaveBeenCalledTimes(1);
     expect(wrapMock).toHaveBeenCalledWith(
       'echo plain-output',
-      expect.objectContaining({ allowNetwork: true }),
+      expect.objectContaining({ allowNetwork: false }),
     );
     expect(result.ok).toBe(true);
     // 跑的是包装后的命令（spy 返回 echo __SANDBOXED__），证明真的走了沙箱包装结果
@@ -908,5 +908,29 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     const result = await handler.execute({ command: 'echo should-not-run' }, makeCtx(), allowAll);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('SANDBOX_UNAVAILABLE');
+  });
+
+  it('bypassPermissions 档：网络型命令才放开网络', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    const handler = await bashModule.createHandler();
+    await handler.execute({ command: 'curl https://example.com' }, makeCtx(), allowAll);
+    expect(wrapMock).toHaveBeenCalledWith(
+      'curl https://example.com',
+      expect.objectContaining({ allowNetwork: true }),
+    );
+  });
+
+  it('bypassPermissions 档 + redline：网络型命令也强制断网', async () => {
+    modeMgr.setMode('bypassPermissions', true);
+    const handler = await bashModule.createHandler();
+    await handler.execute(
+      { command: 'curl https://example.com' },
+      makeCtx({ executionIntent: { redline: true } }),
+      allowAll,
+    );
+    expect(wrapMock).toHaveBeenCalledWith(
+      'curl https://example.com',
+      expect.objectContaining({ allowNetwork: false }),
+    );
   });
 });

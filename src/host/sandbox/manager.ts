@@ -282,7 +282,7 @@ export class SandboxManager {
     }
 
     const resolved = path.resolve(opts.workingDirectory);
-    const allowNetwork = opts.allowNetwork ?? true;
+    const allowNetwork = opts.allowNetwork ?? false;
 
     switch (this.platform) {
       case 'darwin': {

@@ -45,7 +45,7 @@ import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolRes
 import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
-import { wrapCommandForSandbox } from '../../../sandbox';
+import { resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
@@ -576,7 +576,13 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
       if (!shouldSandbox) return { ok: true, command: cmd };
       try {
-        const wrapped = wrapCommandForSandbox(cmd, { workingDirectory, allowNetwork: true });
+        const wrapped = wrapCommandForSandbox(cmd, {
+          workingDirectory,
+          allowNetwork: resolveSandboxNetworkPolicy({
+            command: cmd,
+            redline: ctx.executionIntent?.redline === true,
+          }),
+        });
         sandboxCleanup = wrapped.cleanup;
         return { ok: true, command: wrapped.command };
       } catch (err) {

@@ -16,6 +16,9 @@ export default {
         elevated: 'var(--bg-elevated)',
         hover: 'var(--bg-hover)',
         active: 'var(--bg-active)',
+        'surface-faint': 'var(--surface-faint)',
+        'surface-subtle': 'var(--surface-subtle)',
+        'surface-hover': 'var(--surface-hover)',
 
         // Text hierarchy
         'text-primary': 'var(--text-primary)',
@@ -55,6 +58,9 @@ export default {
         'border-default': 'var(--border-default)',
         'border-strong': 'var(--border-strong)',
         'border-focus': 'var(--border-focus)',
+        'border-faint': 'var(--border-faint)',
+        'border-muted': 'var(--border-muted)',
+        'border-hover': 'var(--border-hover)',
 
         // Legacy color support (for gradual migration)
         primary: {

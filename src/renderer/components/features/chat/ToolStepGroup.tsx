@@ -132,7 +132,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         onClick={() => setExpanded(!expanded)}
         className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] transition-colors ${
           status === 'ok'
-            ? 'px-1 py-0.5 text-zinc-600 hover:bg-white/[0.018] hover:text-zinc-400'
+            ? 'px-1 py-0.5 text-zinc-600 hover:bg-surface-subtle hover:text-zinc-400'
             : 'border border-white/[0.04] bg-white/[0.015] px-2 py-1 text-zinc-500 hover:border-white/[0.08] hover:bg-white/[0.03] hover:text-zinc-300'
         }`}
         aria-expanded={expanded}

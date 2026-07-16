@@ -665,11 +665,11 @@ function getTurnCompletionSignal(turn: TraceTurn): string | null {
 function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'): string {
   switch (tone) {
     case 'success':
-      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
+      return 'border-emerald-500/20 bg-emerald-500/10 text-success';
     case 'warning':
-      return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
+      return 'border-amber-500/20 bg-amber-500/10 text-warning';
     case 'error':
-      return 'border-red-500/20 bg-red-500/10 text-red-300';
+      return 'border-red-500/20 bg-red-500/10 text-error';
     case 'info':
       return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
     default:
@@ -749,7 +749,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
   }
 
   return (
-    <div className="flex min-h-7 items-center gap-2 rounded-md border border-white/[0.035] bg-white/[0.012] px-2 py-1 text-[11px]">
+    <div className="flex min-h-7 items-center gap-2 rounded-md border border-border-faint bg-surface-faint px-2 py-1 text-[11px]">
       <div className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 ${getToneClass(status.tone)}`}>
         {status.icon}
         <span className="font-medium">{status.label}</span>

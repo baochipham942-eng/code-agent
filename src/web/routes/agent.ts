@@ -46,6 +46,7 @@ import type {
 } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '../../shared/utils/messageAttachments';
+import { generateMessageId } from '../../shared/utils/id';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -567,7 +568,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const requestAttachments = body.attachments ?? [];
       const persistedAttachments = sanitizeAttachmentsForPersistence(requestAttachments);
       const visiblePrompt = stripInlineAttachmentBlocks(prompt);
-      const msgId = clientMessageId || `msg-${Date.now()}`;
+      const msgId = clientMessageId || generateMessageId();
       // ADR-040：renderer 只报它诚实知道的坐标，revision 在这里读源文件现算。
       // 升不上去（PPT / 缺 sheetName / 文件读不到）就没有 locator，退回 legacy 行为。
       const artifactLocator = body.context?.localityAnchor

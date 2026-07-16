@@ -759,9 +759,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     this.sessionRepo.replaceMessages(sessionId, messages, updatedAt);
   }
-  updateMessage(messageId: string, updates: Partial<Message>): void {
+  updateMessage(messageId: string, updates: Partial<Message>, sessionId?: string): void {
     this.ensureDb();
-    this.sessionRepo.updateMessage(messageId, updates);
+    this.sessionRepo.updateMessage(messageId, updates, sessionId);
   }
   getMessages(sessionId: string, limit?: number, offset?: number, options?: { includeRewound?: boolean }): Message[] {
     this.ensureDb();

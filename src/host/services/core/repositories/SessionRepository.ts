@@ -544,7 +544,7 @@ export class SessionRepository {
     replaceFn();
   }
 
-  updateMessage(messageId: string, updates: Partial<Message>): void {
+  updateMessage(messageId: string, updates: Partial<Message>, sessionId?: string): void {
     const setClauses: string[] = [];
     const values: unknown[] = [];
 
@@ -615,9 +615,19 @@ export class SessionRepository {
     // Mark as unsynced so pushToCloud picks up the update
     setClauses.push('synced_at = NULL');
 
-    values.push(messageId);
-    const sql = `UPDATE messages SET ${setClauses.join(', ')} WHERE id = ?`;
-    this.db.prepare(sql).run(...values);
+    const sql = sessionId
+      ? `UPDATE messages SET ${setClauses.join(', ')} WHERE id = ? AND session_id = ?`
+      : `UPDATE messages SET ${setClauses.join(', ')} WHERE session_id = COALESCE(?, session_id) AND id = ?`;
+    if (sessionId) {
+      values.push(messageId, sessionId);
+    } else {
+      // 兼容普通 updateMessage 调用；碰撞恢复路径必须显式传入目标 sessionId。
+      values.push(null, messageId);
+    }
+    const result = this.db.prepare(sql).run(...values);
+    if (result.changes === 0) {
+      throw new Error(`Message update missed for session ${sessionId ?? 'unknown'} and id ${messageId}`);
+    }
   }
 
   getMessages(sessionId: string, limit?: number, offset?: number, options: MessageQueryOptions = {}): Message[] {

@@ -1173,6 +1173,7 @@ describe('createAgentRouter', () => {
         role: 'user',
         content: '重复消息仍应成功',
       }),
+      'session-duplicate-message',
     );
   });
 

@@ -16,6 +16,7 @@ import { MetricsCollector } from '../host/agent/metricsCollector';
 import { retryEvents } from '../host/model/providers/retryStrategy';
 import { getAgentDispatchInfo } from './agentDispatch';
 import { createRunContext, type RunContext } from '../host/runtime/runContext';
+import { generateMessageId } from '../shared/utils/id';
 
 export { getAgentDispatchInfo, isAgentDispatchToolName } from './agentDispatch';
 
@@ -167,7 +168,7 @@ export class CLIAgent {
 
     // 添加用户消息
     const userMessage: Message = {
-      id: `msg-${Date.now()}`,
+      id: generateMessageId(),
       role: 'user',
       content: prompt,
       timestamp: Date.now(),
@@ -524,7 +525,7 @@ export class CLIAgent {
     // 将上下文作为系统消息添加到历史
     if (context) {
       const systemMessage: Message = {
-        id: `msg-ctx-${Date.now()}`,
+        id: generateMessageId(),
         role: 'system',
         content: context,
         timestamp: Date.now(),

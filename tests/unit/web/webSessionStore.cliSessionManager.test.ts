@@ -118,6 +118,7 @@ describe('WebSessionStore CLI SessionManager backend', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await infraSessionManager?.dispose();
     coreDatabase.current = null;
     try { coreDb.close(); } catch { /* noop */ }
@@ -231,11 +232,113 @@ describe('WebSessionStore CLI SessionManager backend', () => {
     })).toBe(true);
 
     await expect(store.commitTurn(createCommitInput(sessionId))).resolves.toEqual({
-      assistantMsgId: expect.stringMatching(/^msg-\d+-a$/),
+      assistantMsgId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
     });
     expect(await cliSessionManager.getMessages(sessionId)).toHaveLength(2);
     expect(logger.debug).toHaveBeenCalledWith(
       `[AgentRouter] Infra SessionManager unavailable; skipped cache invalidation for ${sessionId}`,
     );
+  });
+
+  it('同毫秒提交两会话时使用全局唯一 assistant id，A/B 内容各自落库', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => cliSessionManager,
+      tryGetInfraSessionManager: async () => infraSessionManager,
+      logger,
+      getDatabase: async () => coreDb,
+    });
+    const inputA = createCommitInput('session-generated-a');
+    inputA.turn.assistantText = 'assistant A';
+    const inputB = createCommitInput('session-generated-b');
+    inputB.turn.assistantText = 'assistant B';
+
+    expect(await store.prePersistUserMessage({
+      sessionId: inputA.sessionId,
+      title: inputA.title,
+      modelConfig: inputA.modelConfig,
+      message: { id: 'generated-user-a', role: 'user', content: 'user A', timestamp: 1 },
+    })).toBe(true);
+    expect(await store.prePersistUserMessage({
+      sessionId: inputB.sessionId,
+      title: inputB.title,
+      modelConfig: inputB.modelConfig,
+      message: { id: 'generated-user-b', role: 'user', content: 'user B', timestamp: 2 },
+    })).toBe(true);
+
+    const resultA = await store.commitTurn(inputA);
+    const resultB = await store.commitTurn(inputB);
+
+    expect(resultA.assistantMsgId).not.toBe(resultB.assistantMsgId);
+    expect(await cliSessionManager.getMessages('session-generated-a')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'generated-user-a', content: 'user A' }),
+      expect.objectContaining({ id: resultA.assistantMsgId, content: 'assistant A' }),
+    ]));
+    expect(await cliSessionManager.getMessages('session-generated-b')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'generated-user-b', content: 'user B' }),
+      expect.objectContaining({ id: resultB.assistantMsgId, content: 'assistant B' }),
+    ]));
+  });
+
+  it('CLI manager 对跨会话重复 id fail-loud，且保留合法同会话幂等更新', async () => {
+    const messageId = 'forced-cli-collision';
+    const options = {
+      title: 'collision',
+      modelConfig: { provider: 'zhipu' as const, model: 'glm-5' },
+    };
+    await cliSessionManager.addMessageToSession('session-cli-a', {
+      id: messageId,
+      role: 'assistant',
+      content: 'CLI A v1',
+      timestamp: 1,
+    }, options);
+    await cliSessionManager.addMessageToSession('session-cli-a', {
+      id: messageId,
+      role: 'assistant',
+      content: 'CLI A v2',
+      timestamp: 2,
+    });
+
+    await expect(cliSessionManager.addMessageToSession('session-cli-b', {
+      id: messageId,
+      role: 'assistant',
+      content: 'CLI B',
+      timestamp: 3,
+    }, options)).rejects.toThrow(/message update missed.*session-cli-b.*forced-cli-collision/i);
+
+    expect(await cliSessionManager.getMessages('session-cli-a')).toEqual([
+      expect.objectContaining({ id: messageId, content: 'CLI A v2' }),
+    ]);
+    expect(await cliSessionManager.getMessages('session-cli-b')).toEqual([]);
+  });
+
+  it('infra manager 对跨会话重复 id fail-loud，不覆写原会话', async () => {
+    const messageId = 'forced-infra-collision';
+    coreDb.createSessionWithId('session-infra-a', {
+      title: 'infra A',
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    coreDb.createSessionWithId('session-infra-b', {
+      title: 'infra B',
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+    });
+    await infraSessionManager.addMessageToSession('session-infra-a', {
+      id: messageId,
+      role: 'assistant',
+      content: 'infra A',
+      timestamp: 1,
+    });
+
+    await expect(infraSessionManager.addMessageToSession('session-infra-b', {
+      id: messageId,
+      role: 'assistant',
+      content: 'infra B',
+      timestamp: 2,
+    })).rejects.toThrow(/message update missed.*session-infra-b.*forced-infra-collision/i);
+
+    expect(await infraSessionManager.getMessages('session-infra-a')).toEqual([
+      expect.objectContaining({ id: messageId, content: 'infra A' }),
+    ]);
+    expect(await infraSessionManager.getMessages('session-infra-b')).toEqual([]);
   });
 });

@@ -192,6 +192,42 @@ describe('CuaStateAdapter', () => {
     });
   });
 
+  it.each([
+    ['element_exists', { kind: 'element_exists', elementRef: 'e1' }],
+    ['window_present', { kind: 'window_present' }],
+  ] as const)('delivers click before verifying precursor-true %s expectations', async (
+    _expectationKind,
+    expectation,
+  ) => {
+    const driver = new FakeDriver();
+    driver.observations.push(
+      snapshot('before-click', [element(1, 'Submit')]),
+      snapshot('after-click', [element(1, 'Submit')]),
+    );
+    const adapter = new CuaStateAdapter(driver);
+    const state = await observe(adapter);
+
+    const result = await adapter.execute({
+      operation: 'act',
+      stateId: state.stateId,
+      mutation: { kind: 'click', elementRef: 'e1' },
+      expect: expectation,
+    }, context);
+
+    expect(driver.calls.map((call) => call.toolName)).toEqual([
+      'get_window_state',
+      'click',
+      'get_window_state',
+    ]);
+    expect(driver.calls.filter((call) => call.toolName === 'click')).toHaveLength(1);
+    if (result.response.operation !== 'act') throw new Error('expected act');
+    expect(result.response.result).toMatchObject({
+      delivery: 'confirmed',
+      verification: 'satisfied',
+      overall: 'succeeded',
+    });
+  });
+
   it('keeps a provider rejection ambiguous when the postcondition is satisfied', async () => {
     const driver = new FakeDriver();
     driver.observations.push(

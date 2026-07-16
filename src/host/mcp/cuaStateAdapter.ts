@@ -409,7 +409,11 @@ export class CuaStateAdapter {
         evidenceRef,
       ));
     }
-    const preexisting = request.expect ? this.evaluateExpectation(request.expect, state, state) : false;
+    const preexisting = request.expect
+      && request.expect.kind !== 'element_exists'
+      && request.expect.kind !== 'window_present'
+      ? this.evaluateExpectation(request.expect, state, state)
+      : false;
     if (preexisting === true) {
       return this.actionResponse({
         version: 1,

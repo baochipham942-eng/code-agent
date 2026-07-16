@@ -384,6 +384,7 @@ import {
   clearMemoryInjectionTracesForTest,
   listMemoryInjectionTraces,
 } from '../../../src/host/memory/memoryInjectionTrace';
+import { IMAGE_TOKEN_ESTIMATE } from '../../../src/host/context/tokenEstimator';
 import { buildGitStatusBlock } from '../../../src/host/agent/messageHandling/contextBuilder';
 import { drainCompletionNotifications } from '../../../src/host/agent/activeAgentContext';
 
@@ -1892,6 +1893,71 @@ describe('ContextAssembly provider variant injection semantics (audit D-Y2)', ()
 });
 
 describe('ContextAssembly.checkAndAutoCompress()', () => {
+  it('counts image attachments when deciding hard compaction threshold', async () => {
+    const sessionId = `session-autocompact-image-${Date.now()}`;
+    let thresholdChecks = 0;
+    const shouldTriggerByTokens = vi.fn((tokens: number) => {
+      thresholdChecks += 1;
+      return thresholdChecks === 1 ? tokens >= IMAGE_TOKEN_ESTIMATE : true;
+    });
+    const imageMessage = buildMessage('m0', 'user', 'tiny');
+    imageMessage.attachments = [
+      {
+        id: 'img-1',
+        type: 'image',
+        category: 'image',
+        name: 'screenshot.png',
+        size: 4,
+        mimeType: 'image/png',
+        data: 'data:image/png;base64,AAAA',
+      },
+    ];
+    const ctx = {
+      sessionId,
+      agentId: undefined,
+      messages: [
+        buildMessage('old-1', 'user', 'old request'),
+        buildMessage('old-2', 'assistant', 'old answer'),
+        imageMessage,
+        buildMessage('m1', 'assistant', 'ack'),
+      ],
+      hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+      onEvent: vi.fn(),
+      modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+      toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+      workingDirectory: process.cwd(),
+      isDefaultWorkingDirectory: true,
+      turn: TurnState.forTest({ isSimpleTaskMode: false }),
+      compressionPipeline: new CompressionPipeline(),
+      contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
+      autoCompressor: {
+        shouldTriggerByTokens,
+        compactToBlock: vi.fn().mockResolvedValue({
+          block: {
+            type: 'compaction',
+            content: 'compressed image summary',
+            timestamp: Date.now(),
+            compactedMessageCount: 1,
+            compactedTokenCount: IMAGE_TOKEN_ESTIMATE,
+          },
+        }),
+        getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 1 }),
+        shouldWrapUp: vi.fn().mockReturnValue(false),
+        getCompactionCount: vi.fn().mockReturnValue(1),
+        getStats: vi.fn().mockReturnValue({ compressionCount: 1, totalSavedTokens: IMAGE_TOKEN_ESTIMATE }),
+        recordCompaction: vi.fn(),
+      },
+      systemPrompt: '',
+      hookManager: undefined,
+    };
+
+    const assembly = new ContextAssembly(ctx as never);
+    await assembly.checkAndAutoCompress();
+
+    expect(shouldTriggerByTokens).toHaveBeenCalledWith(expect.any(Number));
+    expect(shouldTriggerByTokens.mock.calls[0][0]).toBeGreaterThanOrEqual(IMAGE_TOKEN_ESTIMATE);
+  });
+
   it('records hard compaction into compressionState as autocompact', async () => {
     const sessionId = `session-autocompact-${Date.now()}`;
     const ctx = {

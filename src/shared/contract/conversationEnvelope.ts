@@ -55,6 +55,8 @@ export interface ConversationExecutionIntent {
   browserSessionSnapshot?: BrowserSessionIntentSnapshot;
   /** 设计画布会话激活（owner==本会话，workspaceMode==='design'）。main 侧 shell 工具据此硬拦代码画图，重定向到 ProposeCanvasOps；inference 据此把画布工具提进工具表。 */
   designCanvasActive?: boolean;
+  /** Evaluation redline/security case: OS sandbox must force network off even for network-shaped commands. */
+  redline?: boolean;
 }
 
 export interface ComposerPromptCommandSelection {

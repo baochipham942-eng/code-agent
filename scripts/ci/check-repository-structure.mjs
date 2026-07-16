@@ -14,10 +14,10 @@ const limits = {
   rootDirectories: 20,
   hostDomains: 45,
   testTopLevelDirectories: 24,
-  // 140: the five Poppler promotion/fetch/gate/lock scripts plus the bundle signature
-  // audit are stable package/workflow entrypoints. Their shared validation, including
-  // the Mach-O signature predicates, remains under scripts/lib/.
-  directScriptFiles: 140,
+  // 141: the five Poppler promotion/fetch/gate/lock scripts, the bundle signature audit,
+  // and eslint-ratchet are stable package/workflow entrypoints. Their shared validation,
+  // including the Mach-O signature predicates, remains under scripts/lib/.
+  directScriptFiles: 141,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

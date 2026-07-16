@@ -48,8 +48,20 @@ export async function requestOsNotificationPermission(): Promise<boolean> {
   }
 }
 
+/**
+ * 焦点门控：窗口聚焦且页面可见时，用户正盯着 app，OS 弹窗与应用内反馈（侧栏
+ * 未读红点/会话内提示）重复，只打扰不传信 —— 抑制。失焦或页面不可见才放行。
+ */
+export function shouldSuppressOsNotification(hasFocus: boolean, visible: boolean): boolean {
+  return hasFocus && visible;
+}
+
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
 export async function postOsNotification(opts: { title: string; body: string }): Promise<void> {
+  if (shouldSuppressOsNotification(document.hasFocus(), !document.hidden)) {
+    reportDelivery({ mode: 'suppressed-focused', sent: false });
+    return;
+  }
   if (isTauriMode()) {
     try {
       const mod = await loadModule();

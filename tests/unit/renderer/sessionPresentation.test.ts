@@ -143,6 +143,18 @@ describe('getSessionStatusPresentation', () => {
       expect(status.label).toBe('待确认');
       expect(status.showBadge).toBe(true);
     });
+
+    it('needs input → approval bucket without changing stored session status', () => {
+      const status = getSessionStatusPresentation({
+        hasNeedsInput: true,
+        sessionStatus: 'running',
+        messageCount: 3,
+      });
+
+      expect(status.kind).toBe('approval');
+      expect(status.label).toBe('待确认');
+      expect(matchesSessionStatusFilter('approval', status.kind)).toBe(true);
+    });
   });
 
   describe('regression: restored sessions no longer stuck on idle', () => {

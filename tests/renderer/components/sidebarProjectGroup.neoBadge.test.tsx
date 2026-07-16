@@ -93,7 +93,7 @@ function sharedSessionProps(): SidebarSessionItemSharedProps {
     sessionRuntimes: new Map(),
     backgroundTaskMap: new Map(),
     sessionStates: {},
-    hasPendingApprovalForSession: () => false,
+    hasNeedsInputForSession: () => false,
     searchQuery: '',
     messageSearchHitsBySessionId: {},
     replayEvidenceBySessionId: new Map(),

@@ -7,6 +7,7 @@ import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { compactMessagesWithSummary } from '../../../context/compactionService';
 import type { ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { estimateTokens } from '../../../context/tokenOptimizer';
+import { IMAGE_TOKEN_ESTIMATE } from '../../../context/tokenEstimator';
 import { assessContextPressure } from '../../../context/contextPressureController';
 import { applyToolResultBudget } from '../../../context/layers/toolResultBudget';
 import { tryInsertCheckpointRebuildBoundary } from '../../../context/checkpoint/runtimeBoundary';
@@ -350,7 +351,11 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
     }
 
     const currentTokens = ctx.runtime.messages.reduce(
-      (sum, msg) => sum + estimateTokens(msg.content || ''),
+      (sum, msg) => {
+        const imageTokens = (msg.attachments || []).filter((attachment) => attachment.category === 'image').length
+          * IMAGE_TOKEN_ESTIMATE;
+        return sum + estimateTokens(msg.content || '') + imageTokens;
+      },
       0
     );
 

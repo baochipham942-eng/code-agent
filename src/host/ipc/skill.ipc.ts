@@ -18,9 +18,11 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { listSkillDrafts, confirmSkillDraft, rejectSkillDraft } from '../services/skills/skillDraftQueue';
 import { getRemoteSkillRegistryService } from '../skills/marketplace/remoteSkillRegistryService';
 import { installFromRegistryEntry } from '../skills/marketplace/installService';
+import { matchSkillRegistryDraftRecommendations } from '../skills/marketplace/skillRegistryMatcher';
 import { isProjectConfigTrusted } from '../security/folderTrustService';
 
 const logger = createLogger('SkillIPC');
+const registryDraftRecommendationsBySession = new Map<string, Set<string>>();
 
 // ============================================================================
 // Internal Handlers
@@ -135,6 +137,7 @@ async function handleRegistryInstall(name: string): Promise<{ success: boolean; 
   await installFromRegistryEntry(entry, { force: true, enableAfterInstall: true });
   // 全量 reload：marketplace plugin 来源的 skill 不在 refreshLibraries 覆盖面内
   await getSkillDiscoveryService().reload();
+  getRemoteSkillRegistryService().invalidateListCache(); // installed 标记变了，推荐缓存失效
   return { success: true };
 }
 
@@ -255,12 +258,24 @@ function handleSessionList(sessionId: string) {
 }
 
 /**
- * 获取推荐 skills
+ * 获取输入期 marketplace skill 推荐。
+ * 收窄版只推未安装 official registry 条目，不再走本地已装 skill 或泛化能力启发。
  */
 async function handleSessionRecommend(sessionId: string, userInput?: string) {
-  await ensureSkillDiscoveryForIpc();
-  const service = getSessionSkillService();
-  return service.recommendSkills(sessionId, userInput || '');
+  const input = userInput ?? '';
+  if (!input.trim()) return [];
+  const seen = registryDraftRecommendationsBySession.get(sessionId) ?? new Set<string>();
+  const items = await getRemoteSkillRegistryService().listItemsCached();
+  const recommendations = matchSkillRegistryDraftRecommendations(input, items, {
+    alreadyRecommendedSkillNames: seen,
+  });
+  if (recommendations.length > 0) {
+    for (const recommendation of recommendations) {
+      seen.add(recommendation.skillName);
+    }
+    registryDraftRecommendationsBySession.set(sessionId, seen);
+  }
+  return recommendations;
 }
 
 // ----------------------------------------------------------------------------

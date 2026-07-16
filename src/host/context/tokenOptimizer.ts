@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { estimateTokens } from './tokenEstimator';
+import { estimateTokens, IMAGE_TOKEN_ESTIMATE } from './tokenEstimator';
 import { OBSERVATION_MASKING, TOOL_RESULT_SPILL } from '../../shared/constants';
 import { ContextCompressor } from './compressor';
 
@@ -520,7 +520,9 @@ export function estimateModelMessageTokens(
       total += estimateTokens(msg.content);
     } else if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
-        if (part.text) {
+        if (part.type === 'image') {
+          total += IMAGE_TOKEN_ESTIMATE;
+        } else if (part.text) {
           total += estimateTokens(part.text);
         }
       }

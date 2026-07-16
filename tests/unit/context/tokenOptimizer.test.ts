@@ -22,9 +22,9 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import {
+  estimateModelMessageTokens,
   observationMask,
   type CompressedMessage,
-  type ObservationMaskConfig,
 } from '../../../src/host/context/tokenOptimizer';
 import { OBSERVATION_MASKING } from '../../../src/shared/constants/agent';
 
@@ -291,6 +291,30 @@ describe('observationMask', () => {
       expect(result.maskedCount).toBe(0);
       expect(result.savedTokens).toBe(0);
     });
+  });
+});
+
+describe('estimateModelMessageTokens', () => {
+  it('keeps pure text message estimates unchanged', () => {
+    expect(estimateModelMessageTokens([
+      { role: 'user', content: 'Hello, world!' },
+    ])).toBe(8);
+  });
+
+  it('counts image parts as a fixed image token estimate', () => {
+    const tokens = estimateModelMessageTokens([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Look at this' },
+          { type: 'image' },
+          { type: 'image' },
+        ],
+      },
+    ]);
+
+    // 钉死字面量:765/张 是 ADR 拍板值,常数被改动必须在这里显式感知,不引用源码常数自我对照
+    expect(tokens).toBe(7 + 2 * 765);
   });
 });
 

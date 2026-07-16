@@ -37,6 +37,10 @@ export interface SkillRegistryEntry {
   reviewedAt: string;
   version?: string;
   tags?: string[];
+  /** 草稿推荐关键词；仅用于未安装 marketplace skill 的输入期命中 */
+  keywords?: string[];
+  /** 草稿推荐域名/站点线索；仅用于未安装 marketplace skill 的输入期命中 */
+  domains?: string[];
   risk?: SkillRegistryRisk;
 }
 

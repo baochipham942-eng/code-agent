@@ -27,6 +27,9 @@ import {
   disposeAgentRegistry,
   listAllAgentsWithRoleFlag,
 } from '../../../src/host/agent/agentRegistry';
+import { renderAgentCatalogSection } from '../../../src/host/tools/modules/multiagent/agentDescription';
+import { taskSchema } from '../../../src/host/tools/modules/multiagent/task.schema';
+import { spawnAgentSchema } from '../../../src/host/tools/modules/multiagent/spawnAgent.schema';
 
 const ROLE_MD = `---
 name: 研究员
@@ -43,6 +46,10 @@ name: my-agent
 description: 普通自定义 agent
 tools: [Read]
 model: balanced
+inputs:
+  - 目标文件路径
+outputs:
+  - markdown 报告
 ---
 
 你是自定义 agent。
@@ -66,5 +73,36 @@ describe('listAllAgentsWithRoleFlag', () => {
     expect(entries.find((e) => e.id === '研究员')?.isRole).toBe(true);
     expect(entries.find((e) => e.id === 'my-agent')?.isRole).toBeUndefined();
     expect(entries.find((e) => e.id === 'coder')?.isRole).toBeUndefined();
+  });
+
+  it('listAllAgents 投影透出声明式 inputs/outputs', async () => {
+    const entries = await listAllAgentsWithRoleFlag();
+    expect(entries.find((e) => e.id === 'my-agent')).toMatchObject({
+      inputs: ['目标文件路径'],
+      outputs: ['markdown 报告'],
+    });
+  });
+
+  it('Task/spawn_agent 动态描述列出 registry 里的自定义 agent 和 I/O 契约', () => {
+    const taskDescription = taskSchema.dynamicDescription?.();
+    const taskProps = taskSchema.inputSchema.properties as Record<string, { description?: string }>;
+    const spawnProps = spawnAgentSchema.inputSchema.properties as Record<string, { description?: string }>;
+
+    expect(taskDescription).toContain('- my-agent: 普通自定义 agent (inputs: 目标文件路径; outputs: markdown 报告)');
+    expect(taskDescription).not.toBe('Available agent types: coder, reviewer, explore, plan, awaiter');
+    expect(taskProps.subagent_type.description).toContain('my-agent');
+    expect(spawnAgentSchema.dynamicDescription?.()).toContain('- my-agent: 普通自定义 agent (inputs: 目标文件路径; outputs: markdown 报告)');
+    expect(spawnProps.role.description).toContain('my-agent');
+  });
+
+  it('动态 agent catalog 在 registry 为空或异常时 fallback 且不抛错', () => {
+    expect(renderAgentCatalogSection(
+      'Available agent types: coder, reviewer, explore, plan, awaiter',
+      () => [],
+    )).toBe('Available agent types: coder, reviewer, explore, plan, awaiter');
+    expect(renderAgentCatalogSection(
+      'Available agent types: coder, reviewer, explore, plan, awaiter',
+      () => { throw new Error('registry unavailable'); },
+    )).toBe('Available agent types: coder, reviewer, explore, plan, awaiter');
   });
 });

@@ -122,6 +122,8 @@ export interface ToolContext {
   readonly parentRemainingBudget?: number;
   /** SpawnGuard tree parent id; separate from agentId, which is used by tool isolation. */
   readonly spawnParentAgentId?: string;
+  /** Suppress idle parent wakeups for background subagents spawned from controlled loops. */
+  readonly suppressBackgroundSubagentIdleWake?: boolean;
 
   // --- 文件读取缓存（CC readFileState 对应）---
   readonly fileCache?: FileReadCache;

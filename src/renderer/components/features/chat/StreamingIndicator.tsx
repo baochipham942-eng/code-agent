@@ -21,6 +21,8 @@ interface StreamingIndicatorProps {
   showCaret?: boolean;
   /** 当前正在接收思考/推理增量（尚无可见正文、也不是在等工具）。 */
   isThinking?: boolean;
+  /** 等待期具名：'model'=等模型响应，'subagent'=等子任务。缺省时维持呼吸光标。 */
+  waitingReason?: StreamingWaitingReason;
 }
 
 // 工具真正连续运行到这个时长，才是唯一值得提示的条件。
@@ -47,6 +49,30 @@ export function getStreamingIndicatorState(
   };
 }
 
+// 等待期具名（Grok Build 借鉴 T1）：从不显示"裸等待"——空窗期点名在等谁。
+// 等子任务 = 当前 running 工具是子 agent 阻塞类；等模型 = drafting 态（发出请求
+// 后、首 token 前，或工具结束后、下一段推理前）。静态文字，不加秒表不加动画。
+const SUBAGENT_WAIT_TOOLS = new Set(['spawn_agent', 'agentspawn', 'task', 'collect_agent', 'wait_agent']);
+
+export type StreamingWaitingReason = 'model' | 'subagent';
+
+export function getStreamingWaitingReason(
+  nodes: TraceNode[],
+  streamingStatus: string,
+): StreamingWaitingReason | undefined {
+  if (streamingStatus === 'using_tools' || streamingStatus === 'waiting_tool') {
+    const running = nodes.find((node) => {
+      const toolCall = node.toolCall;
+      if (!toolCall || toolCall._streaming) return false;
+      return toolCall.success === undefined && toolCall.result === undefined;
+    });
+    const name = running?.toolCall?.name.toLowerCase();
+    return name && SUBAGENT_WAIT_TOOLS.has(name) ? 'subagent' : undefined;
+  }
+  if (streamingStatus === 'drafting') return 'model';
+  return undefined;
+}
+
 export function getRunningToolStartTime(nodes: TraceNode[]): number | undefined {
   const runningStarts = nodes
     .filter((node) => {
@@ -65,6 +91,7 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
   onForceStop,
   showCaret = true,
   isThinking = false,
+  waitingReason,
 }) => {
   const { t } = useI18n();
   const [runningToolElapsed, setRunningToolElapsed] = useState<number | undefined>(undefined);
@@ -115,6 +142,17 @@ export const StreamingIndicator: React.FC<StreamingIndicatorProps> = ({
     return (
       <div className="py-1" aria-label={t.chat.thinking}>
         <span className="streaming-thinking-shimmer text-xs font-medium">{t.chat.thinking}</span>
+      </div>
+    );
+  }
+
+  // 具名等待：点名在等谁（等模型/等子任务），中性静态文字——比裸光标多一句交代，
+  // 但依旧不放计时器：等待长短不该被演成焦虑。
+  if (waitingReason) {
+    const label = waitingReason === 'subagent' ? t.chat.waitingSubagent : t.chat.waitingModel;
+    return (
+      <div className="py-1 text-xs text-zinc-500" aria-label={label}>
+        {label}
       </div>
     );
   }

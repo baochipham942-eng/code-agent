@@ -6,6 +6,7 @@ import {
   StreamingIndicator,
   getRunningToolStartTime,
   getStreamingIndicatorState,
+  getStreamingWaitingReason,
 } from '../../../src/renderer/components/features/chat/StreamingIndicator';
 
 describe('StreamingIndicator state', () => {
@@ -100,5 +101,61 @@ describe('StreamingIndicator rendering', () => {
       React.createElement(StreamingIndicator, { startTime: 100, isThinking: true, showCaret: false }),
     );
     expect(html).toBe('');
+  });
+});
+
+// Grok Build 借鉴 T1：等待期具名——空窗期点名在等谁，静态文字、无计时器。
+describe('StreamingIndicator waiting reason (具名等待)', () => {
+  it('renders the named model-wait label instead of the bare caret', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StreamingIndicator, { startTime: 100, waitingReason: 'model' }),
+    );
+    expect(html).toContain('正在等待模型响应');
+    expect(html).not.toContain('streaming-caret');
+  });
+
+  it('renders the named subagent-wait label', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StreamingIndicator, { startTime: 100, waitingReason: 'subagent' }),
+    );
+    expect(html).toContain('正在等待子任务');
+    expect(html).not.toContain('streaming-caret');
+  });
+
+  it('stays hidden while visible text is streaming (showCaret=false), waitingReason or not', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StreamingIndicator, { startTime: 100, waitingReason: 'model', showCaret: false }),
+    );
+    expect(html).toBe('');
+  });
+
+  it('derives "model" only from the drafting state and "subagent" only from a running subagent tool', () => {
+    const runningSubagent: TraceNode[] = [
+      {
+        id: 'spawn',
+        type: 'tool_call',
+        content: '',
+        timestamp: 100,
+        toolCall: { id: 'spawn', name: 'spawn_agent', args: {} },
+      },
+    ];
+    const runningBash: TraceNode[] = [
+      {
+        id: 'bash',
+        type: 'tool_call',
+        content: '',
+        timestamp: 100,
+        toolCall: { id: 'bash', name: 'Bash', args: {} },
+      },
+    ];
+
+    expect(getStreamingWaitingReason([], 'drafting')).toBe('model');
+    expect(getStreamingWaitingReason(runningSubagent, 'using_tools')).toBe('subagent');
+    expect(getStreamingWaitingReason(runningSubagent, 'waiting_tool')).toBe('subagent');
+    // 普通工具运行中：不具名（维持现状，45s 长跑提示另有通道）
+    expect(getStreamingWaitingReason(runningBash, 'using_tools')).toBeUndefined();
+    // 非 drafting/工具态（如 idle/completed）不给理由
+    expect(getStreamingWaitingReason([], 'idle')).toBeUndefined();
+    expect(getStreamingWaitingReason([], 'completed')).toBeUndefined();
   });
 });

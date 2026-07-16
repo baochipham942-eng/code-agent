@@ -18,6 +18,7 @@ import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryTool
 import type { AgentEvent } from '../../shared/contract';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import { INCOMPLETE_TOOL_RESULT_MARKER } from '../../shared/contract/agentTrajectory';
+import { redactCredentialText } from '../../shared/security/secretPatterns';
 import { sanitizeBrowserComputerToolResult } from '../../shared/utils/browserComputerRedaction';
 import {
   classifyError,
@@ -42,6 +43,29 @@ export { classifyError } from './telemetryCollectorInternal';
 
 
 const logger = createLogger('TelemetryCollector');
+
+function redactTelemetryString(value: string | undefined): string | undefined {
+  return typeof value === 'string' ? redactCredentialText(value) : value;
+}
+
+function redactTelemetryModelCall(call: TelemetryModelCall): TelemetryModelCall {
+  return {
+    ...call,
+    prompt: redactTelemetryString(call.prompt),
+    completion: redactTelemetryString(call.completion),
+    error: redactTelemetryString(call.error),
+  };
+}
+
+function redactTelemetryToolCall<T extends TelemetryToolCall>(call: T): T {
+  return {
+    ...call,
+    arguments: redactCredentialText(call.arguments),
+    actualArguments: redactTelemetryString(call.actualArguments),
+    resultSummary: redactCredentialText(call.resultSummary),
+    error: redactTelemetryString(call.error),
+  };
+}
 
 
 export class TelemetryCollector {
@@ -453,12 +477,13 @@ export class TelemetryCollector {
   }
 
   private recordDetachedModelCall(sessionId: string, turnId: string, call: TelemetryModelCall, agentId?: string): void {
+    const safeCall = redactTelemetryModelCall(call);
     const buffer = this.ensureDetachedTurnBuffer(sessionId, turnId, { agentId });
-    buffer.modelCalls.push(call);
+    buffer.modelCalls.push(safeCall);
     this.pushEvent({
       type: 'model_call',
       sessionId,
-      data: call
+      data: safeCall
     });
   }
 
@@ -814,11 +839,16 @@ export class TelemetryCollector {
       turnId,
       sessionId: this.activeTurn.sessionId!
     };
-    this.turnModelCalls.push(record);
+    const safeRecord = redactTelemetryModelCall(record);
+    this.turnModelCalls.push({
+      ...safeRecord,
+      turnId,
+      sessionId: this.activeTurn.sessionId!
+    });
     this.pushEvent({
       type: 'model_call',
       sessionId: this.activeTurn.sessionId!,
-      data: call
+      data: redactTelemetryModelCall(call)
     });
   }
 
@@ -874,7 +904,8 @@ export class TelemetryCollector {
       parallel: pending.parallel,
       ...computerSurfaceFields
     };
-    this.turnToolCalls.push(record);
+    const safeRecord = redactTelemetryToolCall(record);
+    this.turnToolCalls.push(safeRecord);
 
     if (!success) {
       this.turnErrorCount++;
@@ -894,7 +925,7 @@ export class TelemetryCollector {
     this.pushEvent({
       type: 'tool_call',
       sessionId: this.activeTurn.sessionId!,
-      data: record
+      data: safeRecord
     });
   }
 

@@ -31,7 +31,7 @@ describe('scrubString', () => {
     });
 
     it('打码 JWT (eyJ...)', () => {
-      const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payloadpart.signaturepart';
+      const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuZW8ifQ.c2lnbmF0dXJl';
       const out = scrubString(`session ${jwt} end`);
       expect(out).not.toContain(jwt);
       expect(out).toContain('[REDACTED]');

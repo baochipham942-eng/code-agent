@@ -8,6 +8,8 @@
 //
 // ============================================================================
 
+import { redactCredentialText } from '../security/secretPatterns';
+
 /** Sentry Event 中本模块会触碰的最小结构（避免给 shared 引入 sentry 依赖） */
 export interface ScrubbableStackFrame {
   filename?: string;
@@ -35,21 +37,17 @@ export interface ScrubOptions {
 
 const REDACTED = '[REDACTED]';
 
-// 常见密钥/令牌形态。命中即整体打码，宁可多打不可漏。
+// 常见密钥/令牌形态。结构化 secret 走 shared registry，key:value 兜底保留在本出口。
 const SECRET_PATTERNS: RegExp[] = [
-  /\b(sk|pk|rk)-[A-Za-z0-9_-]{8,}\b/g, // OpenAI / Stripe 类
-  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, // GitHub token
-  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, // Slack
-  /\bBearer\s+[A-Za-z0-9._-]{12,}/gi, // Authorization: Bearer xxx
+  /\b(sk|pk|rk)-[A-Za-z0-9_-]{8,}\b/g, // OpenAI / Stripe 类 legacy fallback
   /\b(api[_-]?key|secret|token|password|passwd)\s*[:=]\s*['"]?[A-Za-z0-9._\-/+]{8,}/gi, // key: value
-  /\beyJ[A-Za-z0-9._-]{20,}/g, // JWT
 ];
 
 const SENSITIVE_KEYS = /^(authorization|cookie|set-cookie|api[_-]?key|secret|token|password|passwd|prompt|userprompt|assistantresponse|completion|input|output|body|code|sourcecode|filecontent|filecontents)$/i;
 
 /** 清洗单个字符串：先抹家目录绝对路径，再打码密钥形态 */
 export function scrubString(input: string, opts: ScrubOptions = {}): string {
-  let out = input;
+  let out = redactCredentialText(input);
   if (opts.homeDir && opts.homeDir.length > 1) {
     // 把 /Users/xxx 这类家目录前缀换成 ~，避免泄露用户名/磁盘布局
     out = out.split(opts.homeDir).join('~');

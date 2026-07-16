@@ -159,6 +159,7 @@ export class GraphRunner {
     const slots = Math.max(0, spec.schedulerPolicy.maxConcurrency - this.active.size);
     if (slots === 0) return;
     for (const node of this.deps.scheduler.nextReadyNodes(slots)) {
+      if (this.active.has(node.nodeId)) continue;
       const executor = this.deps.executors.resolve(node);
       if (!executor) throw new Error(`No Graph executor for ${node.nodeId} (${node.executorRef})`);
       this.startNode(node, executor);
@@ -244,7 +245,7 @@ export class GraphRunner {
       if (result.status === 'waiting') this.waiting.set(node.nodeId, entry);
       else this.waiting.delete(node.nodeId);
     } finally {
-      this.active.delete(node.nodeId);
+      if (this.active.get(node.nodeId) === entry) this.active.delete(node.nodeId);
       this.deps.trace?.endNode(nodeTrace, result);
     }
   }

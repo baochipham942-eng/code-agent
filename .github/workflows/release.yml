@@ -111,9 +111,6 @@ jobs:
           bash scripts/fetch-rtk.sh
           bash scripts/fetch-uv.sh
           node scripts/fetch-poppler-sidecar.mjs --stage-dir "${RUNNER_TEMP}/poppler-release-assets"
-          # CUA 重签产物（universal）：从发版 OSS 拉预构建 + sha256 锁定。
-          # 源 app 上游无公开 release，CI 不依赖本机源（避免复刻 v0.16.89 rtk/uv 之坑）
-          CUA_FETCH_PREBUILT=1 bash scripts/fetch-cua-driver.sh
 
       - name: Import Developer ID certificate
         env:
@@ -137,6 +134,11 @@ jobs:
           security list-keychains -d user -s "${KEYCHAIN_PATH}"
           security set-key-partition-list -S apple-tool:,apple: -s -k "${APPLE_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
           security find-identity -v -p codesigning "${KEYCHAIN_PATH}"
+
+      - name: Fetch and re-sign CUA driver 0.8.1
+        env:
+          CUA_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh
 
       - name: Build signed Tauri updater bundle
         timeout-minutes: 60

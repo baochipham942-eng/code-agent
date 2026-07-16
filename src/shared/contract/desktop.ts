@@ -306,6 +306,127 @@ export interface ComputerSurfaceState {
   axQuality?: ComputerSurfaceAxQuality | null;
 }
 
+// ---------------------------------------------------------------------------
+// Stateful CUA computer-use contract (V1)
+// ---------------------------------------------------------------------------
+
+export interface ComputerUseRootRefV1 {
+  provider: 'cua-driver';
+  pid: number;
+  windowId: number;
+  appName?: string | null;
+  title?: string | null;
+  bounds?: { x: number; y: number; width: number; height: number } | null;
+  isOnScreen?: boolean | null;
+  onCurrentSpace?: boolean | null;
+}
+
+export interface ComputerUseElementViewV1 {
+  ref: string;
+  role: string;
+  label?: string | null;
+  value?: string | null;
+  frame?: { x: number; y: number; width: number; height: number } | null;
+  parentRef?: string | null;
+  depth?: number | null;
+}
+
+export interface ComputerUseStateViewV1 {
+  version: 1;
+  stateId: string;
+  root: ComputerUseRootRefV1;
+  hostRevision: number;
+  observedAtMs: number;
+  expiresAtMs: number;
+  screenshotId?: string | null;
+  screenshotWidth?: number | null;
+  screenshotHeight?: number | null;
+  degraded?: boolean;
+  degradedReason?: string | null;
+  elements: ComputerUseElementViewV1[];
+}
+
+type ComputerUseMutationKindV1 =
+  | 'click'
+  | 'double_click'
+  | 'right_click'
+  | 'set_value'
+  | 'type_text'
+  | 'press_key'
+  | 'hotkey'
+  | 'scroll'
+  | 'drag';
+
+export interface ComputerUseMutationV1 {
+  kind: ComputerUseMutationKindV1;
+  elementRef?: string;
+  point?: { x: number; y: number; screenshotId: string };
+  toPoint?: { x: number; y: number; screenshotId: string };
+  value?: string;
+  key?: string;
+  keys?: string[];
+  direction?: 'up' | 'down' | 'left' | 'right';
+  amount?: number;
+  deliveryMode?: 'background' | 'foreground';
+}
+
+type ComputerUseExpectationKindV1 =
+  | 'element_exists'
+  | 'element_absent'
+  | 'element_value_equals'
+  | 'text_present'
+  | 'window_present';
+
+export interface ComputerUseExpectationV1 {
+  kind: ComputerUseExpectationKindV1;
+  elementRef?: string;
+  text?: string;
+  value?: string;
+}
+
+type ComputerUseDeliveryV1 =
+  | 'not_attempted'
+  | 'confirmed'
+  | 'rejected'
+  | 'unknown';
+
+type ComputerUseVerificationV1 =
+  | 'preexisting'
+  | 'satisfied'
+  | 'unsatisfied'
+  | 'inconclusive'
+  | 'not_requested';
+
+type ComputerUseOverallV1 =
+  | 'succeeded'
+  | 'failed'
+  | 'ambiguous'
+  | 'delivered_unverified';
+
+export type ComputerUseStateErrorKindV1 =
+  | 'invalid_request'
+  | 'stale_state'
+  | 'state_conflict'
+  | 'provider_restarted'
+  | 'target_missing'
+  | 'delivery_unknown'
+  | 'verification_failed'
+  | 'provider_error';
+
+export interface ComputerUseActionResultV1 {
+  version: 1;
+  predecessorStateId: string;
+  delivery: ComputerUseDeliveryV1;
+  verification: ComputerUseVerificationV1;
+  overall: ComputerUseOverallV1;
+  successorState?: ComputerUseStateViewV1;
+  evidenceRef: string;
+  error?: {
+    kind: ComputerUseStateErrorKindV1;
+    message: string;
+  };
+}
+
 export interface DesktopTimelineQuery {
   from?: number;
   to?: number;

@@ -68,7 +68,7 @@ fi
 cat >&2 <<EOF
 [stage-cua-driver-resource] missing staged ${CUA_APP_NAME}.app
 Run one of:
-  CUA_FETCH_PREBUILT=1 bash scripts/fetch-cua-driver.sh
+  CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh
   bash scripts/fetch-cua-driver.sh
 EOF
 exit 1

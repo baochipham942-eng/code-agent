@@ -21,6 +21,8 @@ import type {
   InProcessMCPServerInterface,
 } from './types';
 import { CUA_DRIVER_SERVER_NAME } from './types';
+import { isCuaStateV2Enabled } from './cuaStateConfig';
+import { CUA_READONLY_TOOLS } from './cuaSessionLock';
 import {
   getActiveRunTraceContext,
   serializeRunTraceContext,
@@ -100,24 +102,6 @@ function mapMCPAnnotationsToPermission(
  * cua 工具多不携带 MCP annotations，若走通用映射会全部落到 network 档，粒度不准。
  * 这里按 DeepChat plugins/cua/policies 对齐：只读类自动放行，桌面动作类需审批。
  */
-// 工具名核对自实测 cua-driver v0.5.1 `list-tools`
-const CUA_READONLY_TOOLS = new Set<string>([
-  'check_permissions',
-  'check_for_update',
-  'list_apps',
-  'list_windows',
-  'get_screen_size',
-  'get_window_state',
-  'get_accessibility_tree',
-  'get_cursor_position',
-  'get_config',
-  'get_recording_state',
-  'get_agent_cursor_state',
-  'start_session',
-  'end_session',
-  'screenshot', // 仅 --claude-code-computer-use-compat 模式存在；普通模式截图走 get_window_state
-]);
-
 function mapCuaToolPermission(
   toolName: string,
 ): Pick<ToolDefinition, 'requiresPermission' | 'permissionLevel' | 'readOnly'> {
@@ -164,6 +148,41 @@ function mcpContentToText(value: unknown, includeNonText: boolean): string {
   if (value.type === 'image') return `[Image: ${value.mimeType || 'unknown'}]`;
   if (value.type === 'resource') return '[Resource]';
   return '';
+}
+
+function isRawCuaToolHidden(serverName: string): boolean {
+  return serverName === CUA_DRIVER_SERVER_NAME && isCuaStateV2Enabled();
+}
+
+function buildCuaStructuredMetadata(
+  serverName: string,
+  toolName: string,
+  result: unknown,
+): Record<string, unknown> | undefined {
+  if (serverName !== CUA_DRIVER_SERVER_NAME || !result || typeof result !== 'object') {
+    return undefined;
+  }
+  const raw = result as {
+    structuredContent?: unknown;
+    content?: Array<{ type?: string; data?: unknown; mimeType?: unknown }>;
+  };
+  const image = toolName === 'get_window_state'
+    ? raw.content?.find((item) => item.type === 'image' && typeof item.data === 'string')
+    : undefined;
+  if (raw.structuredContent === undefined && !image) return undefined;
+  return {
+    ...(raw.structuredContent !== undefined
+      ? { mcpStructuredContent: raw.structuredContent }
+      : {}),
+    ...(image
+      ? {
+          cuaScreenshot: {
+            data: image.data,
+            mimeType: typeof image.mimeType === 'string' ? image.mimeType : 'image/png',
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -304,7 +323,9 @@ export class MCPToolRegistry {
       const toolSearchService = getToolSearchService();
       // 先清掉该 server 旧的元数据，避免 listChanged 后 stale 工具残留
       toolSearchService.unregisterMCPServer(serverName);
-      const serverTools = this.tools.filter(t => t.serverName === serverName);
+      const serverTools = isRawCuaToolHidden(serverName)
+        ? []
+        : this.tools.filter(t => t.serverName === serverName);
 
       const mcpMetas = serverTools.map(tool => ({
         name: `mcp__${serverName}__${tool.name}`,
@@ -401,7 +422,7 @@ export class MCPToolRegistry {
    * 命名格式：mcp__serverName__toolName（双下划线，与 Claude Code 一致）
    */
   getToolDefinitions(): ToolDefinition[] {
-    return this.tools.map((tool) => {
+    return this.tools.filter((tool) => !isRawCuaToolHidden(tool.serverName)).map((tool) => {
       const permission =
         tool.serverName === CUA_DRIVER_SERVER_NAME
           ? mapCuaToolPermission(tool.name)
@@ -542,12 +563,14 @@ export class MCPToolRegistry {
         sessionId: options.sessionId,
         toolCallId,
       });
+      const structuredMetadata = buildCuaStructuredMetadata(serverName, toolName, result);
 
       return {
         toolCallId,
         success: !result.isError,
         output: truncatedOutput,
         duration: Date.now() - startTime,
+        ...(structuredMetadata ? { metadata: structuredMetadata } : {}),
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
@@ -592,12 +615,14 @@ export class MCPToolRegistry {
           output += mcpContentToText(content, false);
         }
       }
+      const structuredMetadata = buildCuaStructuredMetadata(serverName, toolName, retryResult);
 
       return {
         toolCallId,
         success: !retryResult.isError,
         output,
         duration: Date.now() - startTime,
+        ...(structuredMetadata ? { metadata: structuredMetadata } : {}),
       };
     } catch (retryError) {
       logger.error(`MCP tool retry also failed: ${serverName}/${toolName}`, retryError);

@@ -15,6 +15,7 @@ describe('classifyCuaFailure — 失败六分类（灰度决策数据口径）',
 
   it('元素定位失败', () => {
     expect(classifyCuaFailure('stale element_index 5, re-snapshot required')).toBe('element');
+    expect(classifyCuaFailure('element_token is stale because the snapshot was superseded')).toBe('element');
     expect(classifyCuaFailure('Element not found at index 12')).toBe('element');
   });
 

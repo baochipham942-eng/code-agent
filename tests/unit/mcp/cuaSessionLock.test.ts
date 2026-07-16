@@ -124,7 +124,7 @@ describe('cuaSessionLock — 跨会话 computer-use 文件锁', () => {
     expect(await gateCuaToolCall('check_permissions', 'session-a')).toBeNull();
   });
 
-  it('gate：会话声明与观察类工具放行（实测 cua-driver 0.5.1 的 35 工具清单）', async () => {
+  it('gate：会话声明与观察类工具放行（cua-driver 0.8.1 清单）', async () => {
     writeFileSync(
       lockPath,
       JSON.stringify({ sessionId: 'other-session', pid: 1, acquiredAt: Date.now() }),
@@ -139,6 +139,9 @@ describe('cuaSessionLock — 跨会话 computer-use 文件锁', () => {
       'get_config',
       'get_agent_cursor_state',
       'get_recording_state',
+      'get_desktop_state',
+      'health_report',
+      'zoom',
       'check_for_update',
     ]) {
       expect(await gateCuaToolCall(tool, 'session-a'), tool).toBeNull();

@@ -331,6 +331,43 @@ describe('mcpUnifiedModule (native)', () => {
       }
     });
 
+    it('does not expose raw cua-driver tools while the stateful facade is enabled', async () => {
+      const previousCua = process.env.CODE_AGENT_ENABLE_CUA;
+      const previousV2 = process.env.CODE_AGENT_CUA_STATE_V2;
+      process.env.CODE_AGENT_ENABLE_CUA = '1';
+      process.env.CODE_AGENT_CUA_STATE_V2 = '1';
+      try {
+        const client = makeMockClient({
+          getStatus: vi.fn().mockReturnValue({
+            connectedServers: ['cua-driver', 'filesystem'],
+            inProcessServers: [],
+            toolCount: 2,
+            resourceCount: 0,
+            promptCount: 0,
+          }),
+          getTools: vi.fn().mockReturnValue([
+            { name: 'click', description: 'Raw click', serverName: 'cua-driver', inputSchema: {} },
+            { name: 'read_file', description: 'Read', serverName: 'filesystem', inputSchema: {} },
+          ]),
+        });
+        getMCPClientMock.mockReturnValue(client);
+
+        const result = await run({ action: 'list_tools' });
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).not.toContain('Raw click');
+          expect(result.output).toContain('read_file');
+          expect(result.meta).toMatchObject({ count: 1, totalCount: 1 });
+        }
+      } finally {
+        if (previousCua === undefined) delete process.env.CODE_AGENT_ENABLE_CUA;
+        else process.env.CODE_AGENT_ENABLE_CUA = previousCua;
+        if (previousV2 === undefined) delete process.env.CODE_AGENT_CUA_STATE_V2;
+        else process.env.CODE_AGENT_CUA_STATE_V2 = previousV2;
+      }
+    });
+
     it('filters tools by server when args.server provided', async () => {
       const client = makeMockClient({
         getStatus: vi.fn().mockReturnValue({

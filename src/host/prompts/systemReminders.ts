@@ -475,7 +475,7 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
   // 既保住「make a presentation about X」，又不会被「presentation 层」「carousel
   // slides」咬到。
   const pptKeywords = [
-    'ppt', 'powerpoint', 'slidev', '演示文稿', '演示稿', '幻灯片',
+    'ppt', 'pptx', 'powerpoint', 'slidev', '演示文稿', '演示稿', '幻灯片',
     'slide deck', 'a presentation', 'some slides', 'make slides',
     '做个ppt', '生成ppt', '制作ppt', '写个ppt',
   ];

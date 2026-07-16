@@ -33,15 +33,21 @@ export function defaultShellKind(): ShellKind {
 export type ShellSafetyMode = 'strict' | 'lenient';
 
 /**
- * 安全模式（已决策 2026-06-10）：
- * - strict：未识别命令走用户确认（fail-closed）
- * - lenient：硬毙清单照拦，非硬毙放行（朋友测试包——当前唯一 win32 形态——默认）
- * 正式 Windows 分发前把 win32 默认翻回 strict。
+ * 安全模式（2026-06-10 决策 lenient 作 win32 默认；2026-07-16 v0.27.3 起收口）：
+ * - strict：未识别命令落分类器，判不准才走用户确认（fail-closed）——全平台默认
+ * - lenient：硬毙清单照拦，非硬毙一律放行、不进审批。**只剩 env 显式开启**：
+ *   `CODE_AGENT_SHELL_SAFETY_MODE=lenient`（朋友测试包专用）
+ *
+ * win32 曾默认 lenient，前提是「白名单从零起步，strict 会每两条命令弹一次确认」。
+ * 该前提已不成立：WINDOWS_SAFE_CMDLETS + POSIX 安全集兜底 + 别名展开已铺开，
+ * 且 strict 下未识别命令先过分类器（toolExecutor.ts 的 P1），与 mac/linux 同路径。
+ * v0.27.3 起 Windows 正式对外分发，平台默认必须与 mac 对齐，否则等于对全量
+ * Windows 用户关掉命令安全闸。
  */
 export function getShellSafetyMode(): ShellSafetyMode {
   const env = process.env.CODE_AGENT_SHELL_SAFETY_MODE;
   if (env === 'strict' || env === 'lenient') return env;
-  return process.platform === 'win32' ? 'lenient' : 'strict';
+  return 'strict';
 }
 
 // ----------------------------------------------------------------------------

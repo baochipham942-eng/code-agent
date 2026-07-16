@@ -19,7 +19,7 @@
 - **开放决策已拍板（2026-06-10，linchen）**：
   - **PowerShell 5.1 为兼容地板**（做 GBK 编码注入，不要求朋友装 pwsh 7；探测到 pwsh 优先用）。
   - **uv 带上、PII 安装链 MVP 标记不可用**（setup 脚本 Windows 化推 P3）。
-  - **安全双模式**：硬毙清单永远拦；非硬毙是否 confirm 由 strict/lenient 开关控制，**朋友测试包默认 lenient**，正式分发默认 strict（§3.2 ④）。
+  - **安全双模式**：硬毙清单永远拦；非硬毙是否 confirm 由 strict/lenient 开关控制。**全平台默认 strict**（v0.27.3 起，Windows 正式分发同时收口）；lenient 只剩 `CODE_AGENT_SHELL_SAFETY_MODE=lenient` 显式开启，供朋友测试包用（§3.2 ④）。
   - 分发页本就是朋友间私发（非公开），windows 路由随 P2 正常做，无暴露顾虑。
 - **本次核验推翻两个预设**（上游 GitHub API 实查，2026-06-10）：
   - **rtk 上游有 Windows 资产**：`rtk-x86_64-pc-windows-msvc.zip`（v0.39.0 release 实查）→ rtk 可带上。
@@ -149,10 +149,13 @@ commandSafety.ts（框架层，保留）
         Set-ExecutionPolicy Bypass、reg delete HKLM、Stop-Computer/Restart-Computer
      ③ 高危（confirm 级）：rd /s、del /f /s、Remove-Item -Recurse（非根路径）、
         schtasks /create、netsh、Set-ItemProperty 注册表写、icacls 放权
-     ④ 双模式（已决策 2026-06-10）：硬毙清单（②）任何模式下都拦；
-        strict 模式 = 未识别命令走 confirm（fail-closed）；lenient 模式 = 非硬毙放行。
-        朋友测试包默认 lenient（白名单从零起步，strict 会每两条命令弹一次确认，体验不可用），
-        正式分发默认 strict，随评测覆盖率上来再放宽
+     ④ 双模式（2026-06-10 决策；2026-07-16 v0.27.3 收口）：硬毙清单（②）任何模式下都拦；
+        strict 模式 = 未识别命令先落分类器，判不准才 confirm（fail-closed）；
+        lenient 模式 = 非硬毙一律放行、不进审批。
+        **全平台默认 strict**；lenient 只剩 CODE_AGENT_SHELL_SAFETY_MODE=lenient 显式开启。
+        原「win32 默认 lenient」的前提（白名单从零起步 → strict 会每两条命令弹一次确认）
+        已不成立：WINDOWS_SAFE_CMDLETS + POSIX 安全集兜底 + 别名展开已铺开，
+        且 strict 未识别命令与 mac/linux 同走分类器，不是直接弹窗
 ```
 
 - **shell 选型**：PowerShell 为主（`ptyExecutor.ts:228` 已选 powershell.exe；conpty prebuild 就绪；cmd 功能太弱；Git-Bash 依赖用户自装不可作默认）。增强：启动时探测 pwsh（PowerShell 7）优先、fallback Windows PowerShell 5.1；ConPTY 显式启用 + 输出编码强制 UTF-8（5.1 中文系统默认 GBK，须 `[Console]::OutputEncoding` 注入或 `chcp 65001`）。
@@ -181,7 +184,7 @@ commandSafety.ts（框架层，保留）
 - [x] `permissionPresets.ts` 等路径归属判断改 `path.relative` 体系（含 NTFS 大小写不敏感）；附带堵了 `runtimeAssetInstaller` 归档反斜杠/盘符条目的 Windows 解压逃逸（盘点时漏的真实洞）
 - [x] 7 处 `/tmp` → `os.tmpdir()`；11 处 `process.env.HOME` → `os.homedir()`（实改比盘点多）
 - [x] `backgroundTasks` spawn('bash') → platformShell（win32 PowerShell）；killProcessTree（win32 taskkill /T，POSIX 原语义零改动）
-- [x] commandSafety 平台规则包（shellRules/windowsRules.ts：结构化解析+别名/参数归一+硬毙/分级）+ strict/lenient 开关（win32 默认 lenient，env 可覆盖）
+- [x] commandSafety 平台规则包（shellRules/windowsRules.ts：结构化解析+别名/参数归一+硬毙/分级）+ strict/lenient 开关（全平台默认 strict，lenient 仅 env 显式开启）
 - [x] execPolicy BANNED_PREFIXES 补 powershell/pwsh/cmd/iex
 - [x] `windowsCommandSafety.test.ts` 51 用例（别名/缩写/cmd 形态/嵌套包裹变体爆破）；eval set Windows 子集后续随真实样本回填
 
@@ -250,7 +253,7 @@ commandSafety.ts（框架层，保留）
 - **WebView2 依赖**（真机新增，已解决）：Win11/新 Win10 自带，但**旧 Win10/Server 2019 不带**，缺了窗口创建失败秒退。已用 `embedBootstrapper` 内嵌引导器（§7 bug #4）；朋友若在很旧的离线机上装失败，退路是 `offlineInstaller`（+150MB）。
 - **conpty 真机未验**：prebuild 在、窗口与后端已真机验证，但 conpty 的 resize/挂起/**GBK 中文输出**仍需配好 key 后真机过一遍（§5 #6）。**无自有持久 Windows 验证机**（天翼云电脑按量、九州 VPS 已过期），文件占用三场景 / Defender 实测 / 终端编码合并进朋友验收。
 - **PII Windows 链路**（已决策）：uv 二进制随包带上（成本近零），PII 安装链 MVP 标记不可用（setup 脚本是 .sh），P3 出 Windows 版再开。onnxruntime win_amd64 wheel 链路理论通，届时真机验。
-- **lenient 模式的安全敞口**（已决策接受）：朋友测试包非硬毙命令不 confirm，依赖硬毙清单兜底——清单完备性靠别名变体爆破测试 + codex 对抗审计保证，测试期收集的真实命令样本回填后再切 strict。
+- ~~**lenient 模式的安全敞口**（已决策接受）：朋友测试包非硬毙命令不 confirm，依赖硬毙清单兜底——测试期收集的真实命令样本回填后再切 strict。~~ **已收口（2026-07-16，v0.27.3）**：Windows 正式对外分发，win32 平台默认翻回 strict，lenient 只剩 env 显式开启。敞口不再对全量用户敞着；`getShellSafetyMode` 的默认档已由 `tests/security/commandSafety.test.ts` 钉死（此前零测试覆盖，正是它能一直躺着的原因）。
 - **CI runner**：windows-latest 长期供应无虞（对比 macos-15-intel 2027.08 限期），无平台续命风险。
 - **工期主要不确定性**：安全规则包的评测打磨轮次（估 3–4 天可能滑到 5–6 天）+ 朋友真机回归节奏受对方时间约束（x64 同款依赖）。
 

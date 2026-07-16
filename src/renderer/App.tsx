@@ -44,6 +44,7 @@ import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
+import { FolderTrustDialog, type FolderTrustEvaluationView } from './components/FolderTrustDialog';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useTaskSync } from './hooks/useTaskSync';
@@ -207,6 +208,8 @@ export const App: React.FC = () => {
 
   // confirm_action 弹窗确认
   const [confirmActionRequest, setConfirmActionRequest] = useState<ConfirmActionRequest | null>(null);
+  const [folderTrustEvaluation, setFolderTrustEvaluation] = useState<FolderTrustEvaluationView | null>(null);
+  const [folderTrustBusy, setFolderTrustBusy] = useState(false);
 
   // Auth store
   const { showAuthModal, showPasswordResetModal, isLoading: isAuthLoading } = useAuthStore();
@@ -458,6 +461,43 @@ export const App: React.FC = () => {
     };
     loadSettings();
   }, [setLanguage, setModelConfig, setDisclosureLevel]);
+
+  const refreshFolderTrust = useCallback(async () => {
+    try {
+      const evaluation = await invokeDomain<FolderTrustEvaluationView>(IPC_DOMAINS.FOLDER_TRUST, 'get');
+      if (evaluation.state !== 'trusted' && evaluation.dangerousItems.length > 0) {
+        setFolderTrustEvaluation(evaluation);
+      } else {
+        setFolderTrustEvaluation(null);
+      }
+    } catch (error) {
+      logger.warn('Failed to evaluate folder trust', { error });
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshFolderTrust();
+  }, [refreshFolderTrust]);
+
+  const setFolderTrustDecision = useCallback(async (state: 'trusted' | 'blocked') => {
+    setFolderTrustBusy(true);
+    try {
+      const evaluation = await invokeDomain<FolderTrustEvaluationView>(
+        IPC_DOMAINS.FOLDER_TRUST,
+        'set',
+        { state },
+      );
+      if (evaluation.state === 'trusted') {
+        setFolderTrustEvaluation(null);
+      } else {
+        setFolderTrustEvaluation(evaluation);
+      }
+    } catch (error) {
+      logger.warn('Failed to update folder trust', { error });
+    } finally {
+      setFolderTrustBusy(false);
+    }
+  }, []);
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {
@@ -951,6 +991,14 @@ export const App: React.FC = () => {
           onClose={() => setConfirmActionRequest(null)}
         />
       )}
+
+      <FolderTrustDialog
+        evaluation={folderTrustEvaluation}
+        isBusy={folderTrustBusy}
+        onTrust={() => { void setFolderTrustDecision('trusted'); }}
+        onBlock={() => { void setFolderTrustDecision('blocked'); }}
+        onOpenSettings={() => setShowSettings(true)}
+      />
 
       {/* Memo Floater - Tauri 全局热键浮窗 */}
       <MemoFloater />

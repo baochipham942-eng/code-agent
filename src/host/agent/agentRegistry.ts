@@ -28,6 +28,7 @@ import type { CoreAgentConfig, CoreAgentId } from './hybrid/types';
 import { createLogger } from '../services/infra/logger';
 import type { AgentSource, AgentListEntry } from '../../shared/contract/agentRegistry';
 import { listPersistentRoles } from '../services/roleAssets/roleAssetService';
+import { isProjectConfigTrusted } from '../security/folderTrustService';
 
 const logger = createLogger('AgentRegistry');
 
@@ -94,9 +95,11 @@ async function buildMap(workingDir: string | undefined): Promise<Map<string, Reg
     next.set(agent.id, agent);
   }
 
-  const projectAgents = await scanDir(dirs.project, 'project');
-  for (const agent of projectAgents) {
-    next.set(agent.id, agent);
+  if (workingDir && dirs.project && await isProjectConfigTrusted(workingDir, 'project-agents')) {
+    const projectAgents = await scanDir(dirs.project, 'project');
+    for (const agent of projectAgents) {
+      next.set(agent.id, agent);
+    }
   }
 
   return next;
@@ -264,7 +267,9 @@ export async function initAgentRegistry(workingDir?: string): Promise<void> {
 
   const dirs = getAgentsMdDir(workingDir);
   const watchPaths = [dirs.user];
-  if (dirs.project) watchPaths.push(dirs.project);
+  if (workingDir && dirs.project && await isProjectConfigTrusted(workingDir, 'project-agents')) {
+    watchPaths.push(dirs.project);
+  }
 
   try {
     watcher = chokidar.watch(watchPaths, {

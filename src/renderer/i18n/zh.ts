@@ -31,6 +31,28 @@ export const zh = {
     cacheSavedLine: '缓存已省 {saved}',
   },
 
+  folderTrust: {
+    title: '信任这个项目文件夹？',
+    directory: '项目目录',
+    realpath: '真实路径',
+    detected: '发现的项目级配置',
+    identityChanged: '这个路径曾被信任，但目录身份已经变化，需要重新确认。',
+    trust: '信任并加载',
+    block: '阻止项目配置',
+    openSettings: '打开设置',
+    saving: '保存中…',
+    risks: {
+      execution: '执行',
+      mcp: 'MCP',
+      agent: 'Agent',
+      skill: 'Skill',
+      prompt: '提示词',
+      policy: '策略',
+      preference: '偏好',
+      diagnostic: '配置',
+    },
+  },
+
   // Design Workspace（Kun 借鉴：设计 tab）
   design: {
     tabCode: '通用',

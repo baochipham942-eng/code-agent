@@ -36,6 +36,11 @@ vi.mock('../../../../src/host/services/skills/skillRepositoryService', () => ({
   }),
 }));
 
+vi.mock('../../../../src/host/security/folderTrustService', () => ({
+  isProjectConfigTrusted: async () => true,
+  isProjectConfigTrustedSync: () => true,
+}));
+
 const marketplaceSkillDirs = vi.hoisted(() => new Set<string>());
 
 vi.mock('../../../../src/host/skills/marketplace/installService', () => ({

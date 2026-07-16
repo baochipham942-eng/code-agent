@@ -9,6 +9,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { createLogger } from '../services/infra/logger';
+import { isProjectConfigTrusted } from '../security/folderTrustService';
 
 const logger = createLogger('AgentsDiscovery');
 
@@ -162,6 +163,15 @@ export async function discoverAgentFiles(
   optionsOrDepth?: number | AgentsDiscoveryOptions
 ): Promise<AgentsDiscoveryResult> {
   const startTime = Date.now();
+  if (!await isProjectConfigTrusted(workingDirectory, 'agent-instructions')) {
+    return {
+      files: [],
+      combinedInstructions: '',
+      totalFiles: 0,
+      discoveryTimeMs: Date.now() - startTime,
+    };
+  }
+
   const files: AgentInstructions[] = [];
   const { maxDepth, maxFiles, maxDirectories } = normalizeDiscoveryOptions(optionsOrDepth);
   let visitedDirectories = 0;

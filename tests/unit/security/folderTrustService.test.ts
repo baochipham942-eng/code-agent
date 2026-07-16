@@ -25,6 +25,7 @@ describe('FolderTrustService', () => {
     dataDir = path.join(tmpRoot, 'data');
     projectDir = path.join(tmpRoot, 'project');
     await fs.mkdir(projectDir, { recursive: true });
+    vi.stubEnv('CODE_AGENT_TEST_DEFAULT_FOLDER_TRUST', '');
     vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
     resetFolderTrustServiceForTest();
   });

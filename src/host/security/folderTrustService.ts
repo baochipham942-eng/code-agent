@@ -504,6 +504,14 @@ function getFolderTrustService(): FolderTrustService {
   return singleton;
 }
 
+function getTestDefaultProjectConfigTrust(): boolean | undefined {
+  if (process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') return undefined;
+  const value = process.env.CODE_AGENT_TEST_DEFAULT_FOLDER_TRUST;
+  if (value === 'trusted') return true;
+  if (value === 'blocked' || value === 'untrusted') return false;
+  return undefined;
+}
+
 export function resetFolderTrustServiceForTest(): void {
   if (singleton) singleton.close();
   singleton = null;
@@ -530,6 +538,9 @@ export async function revokeFolderTrust(workingDirectory: string): Promise<Folde
 }
 
 export async function isProjectConfigTrusted(workingDirectory: string, kind?: DangerousConfigKind): Promise<boolean> {
+  const testDefault = getTestDefaultProjectConfigTrust();
+  if (testDefault !== undefined) return testDefault;
+
   try {
     const evaluation = await evaluateFolderTrust(workingDirectory);
     if (evaluation.state === 'trusted') return true;
@@ -548,6 +559,9 @@ export async function isProjectConfigTrusted(workingDirectory: string, kind?: Da
 }
 
 export function isProjectConfigTrustedSync(workingDirectory: string, kind?: DangerousConfigKind): boolean {
+  const testDefault = getTestDefaultProjectConfigTrust();
+  if (testDefault !== undefined) return testDefault;
+
   try {
     const evaluation = evaluateFolderTrustSync(workingDirectory);
     if (evaluation.state === 'trusted') return true;

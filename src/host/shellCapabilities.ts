@@ -145,8 +145,10 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'set',
   ],
   [IPC_DOMAINS.DESKTOP]: [
+    'attachBrowserRelayTab',
     'clearManagedBrowserCookies',
     'closeManagedBrowserSession',
+    'detachBrowserRelayTab',
     'ensureManagedBrowserSession',
     'getBrowserRelayState',
     'getComputerSurfaceState',

@@ -23,6 +23,7 @@ import {
   evaluateBrowserWorkbenchPolicy,
 } from './browserWorkbenchIntent';
 import { executeBrowserProfileAction } from './browserProfileActions';
+import { maybeDispatchRelayBrowserAction } from './browserEngineDispatch';
 
 const logger = createLogger('BrowserAction');
 
@@ -260,6 +261,16 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     }
 
     const workbenchNotes: Array<string | null | undefined> = [workbenchPolicy.note];
+    const relayDispatch = await maybeDispatchRelayBrowserAction({
+      action,
+      params,
+      url,
+      executionIntent: context.executionIntent,
+    });
+    if (relayDispatch) {
+      return relayDispatch;
+    }
+
     if (workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId }));
     }

@@ -287,6 +287,28 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           } satisfies IPCResponse<unknown>;
         }
 
+        case 'attachBrowserRelayTab': {
+          const payload = request.payload as { tabId?: number } | undefined;
+          if (typeof payload?.tabId !== 'number') {
+            throw new Error('tabId is required for attachBrowserRelayTab.');
+          }
+          return {
+            success: true,
+            data: await browserRelayService.attachTab(payload.tabId),
+          } satisfies IPCResponse<unknown>;
+        }
+
+        case 'detachBrowserRelayTab': {
+          const payload = request.payload as { tabId?: number } | undefined;
+          if (typeof payload?.tabId !== 'number') {
+            throw new Error('tabId is required for detachBrowserRelayTab.');
+          }
+          return {
+            success: true,
+            data: await browserRelayService.detachTab(payload.tabId),
+          } satisfies IPCResponse<unknown>;
+        }
+
         case 'getManagedBrowserRecoverySnapshot': {
           const payload = request.payload as { includeAccessibility?: boolean; tabId?: string } | undefined;
           const [domSnapshot, accessibilitySnapshot] = await Promise.all([

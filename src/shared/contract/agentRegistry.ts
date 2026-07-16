@@ -16,6 +16,10 @@ export interface AgentListEntry {
   modelTier: string;
   readonly: boolean;
   tools: string[];
+  /** Free-form declared input descriptions from agent frontmatter. */
+  inputs?: string[];
+  /** Free-form declared output descriptions from agent frontmatter. */
+  outputs?: string[];
   /** 该条目是角色资产（agents/<id>.md 且存在 roles/<id>/ 目录）——面板上与 agent 分组显示 */
   isRole?: boolean;
 }

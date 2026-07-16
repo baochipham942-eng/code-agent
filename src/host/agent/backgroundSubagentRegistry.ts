@@ -17,6 +17,8 @@ export type BackgroundSubagentStatus = 'running' | 'completed' | 'failed';
 export interface BackgroundSubagentHandle {
   agentId: string;
   status: BackgroundSubagentStatus;
+  role?: string;
+  declaredOutputs?: string[];
   result?: SubagentResult;
   error?: string;
   failureCode?: AgentFailureCode;
@@ -40,7 +42,7 @@ export class BackgroundSubagentRegistry {
   }
 
   /** 后台跑 run，立即返回稳定 agentId，不阻塞调用方。 */
-  spawn(run: () => Promise<SubagentResult>): string {
+  spawn(run: () => Promise<SubagentResult>, options: { role?: string; declaredOutputs?: string[] } = {}): string {
     const agentId = `subagent-bg-${++this.counter}`;
     const startedAt = this.now();
 
@@ -74,7 +76,16 @@ export class BackgroundSubagentRegistry {
       }
     })();
 
-    this.entries.set(agentId, { agentId, status: 'running', startedAt, done });
+    this.entries.set(agentId, {
+      agentId,
+      status: 'running',
+      startedAt,
+      done,
+      ...(options.role ? { role: options.role } : {}),
+      ...(options.declaredOutputs && options.declaredOutputs.length > 0
+        ? { declaredOutputs: options.declaredOutputs }
+        : {}),
+    });
     return agentId;
   }
 

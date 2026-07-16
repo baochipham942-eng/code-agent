@@ -21,6 +21,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import { createRequire } from 'node:module';
 import { executeSpawnAgent } from '../../../agent/multiagentTools/spawnAgent';
 import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import type { SubagentExecutionContext } from '../../../agent/subagentExecutorTypes';
@@ -35,6 +36,27 @@ import {
   AgentFailureCode,
   inferAgentFailureCode,
 } from '../../../../shared/contract/agentFailure';
+
+const requireFromHere = createRequire(import.meta.url);
+
+function getDeclaredOutputsForRole(role: string | undefined): string[] | undefined {
+  if (!role) return undefined;
+  try {
+    const globalRegistry = (globalThis as typeof globalThis & {
+      codeAgentAgentRegistry?: {
+        resolveAgent?: (id: string) => { outputs?: string[] } | undefined;
+      };
+    }).codeAgentAgentRegistry;
+    const resolver = globalRegistry?.resolveAgent
+      ?? (requireFromHere('../../../agent/agentRegistry') as {
+        resolveAgent: (id: string) => { outputs?: string[] } | undefined;
+      }).resolveAgent;
+    const outputs = resolver(role)?.outputs;
+    return outputs && outputs.length > 0 ? outputs : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 const ROLE_ALIASES: Record<string, string> = {
   explorer: 'explore',
@@ -124,6 +146,8 @@ async function runSpawnAgent(
   // abort 会连带杀掉后台任务，"后台"语义就破了。进程内 only（不跨重启 resume）。
   if (args.run_in_background === true) {
     const bgController = new AbortController();
+    const backgroundRole = typeof normalizedArgs.role === 'string' ? normalizedArgs.role : undefined;
+    const declaredOutputs = getDeclaredOutputsForRole(backgroundRole);
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
       const bgResult = await executeSpawnAgent(normalizedArgs, {
         ...executionContext,
@@ -144,7 +168,7 @@ async function runSpawnAgent(
         iterations: 0,
         ...(failureCode ? { failureCode } : {}),
       };
-    });
+    }, { role: backgroundRole, declaredOutputs });
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug(`${schemaName} spawned in background`, { agentId });
     return withMultiagentMeta(
@@ -154,7 +178,7 @@ async function runSpawnAgent(
       },
       ctx,
       schemaName,
-      { action: 'spawn', status: 'running', agentId, result: { background: true } },
+      { action: 'spawn', status: 'running', agentId, declaredOutputs, result: { background: true } },
       `${schemaName} background`,
     );
   }

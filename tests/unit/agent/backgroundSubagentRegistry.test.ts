@@ -33,12 +33,19 @@ describe('BackgroundSubagentRegistry', () => {
 
   it('captures the result when the run completes', async () => {
     const reg = new BackgroundSubagentRegistry();
-    const agentId = reg.spawn(async () => fakeResult('42'));
+    const agentId = reg.spawn(async () => fakeResult('42'), {
+      role: 'report-writer',
+      declaredOutputs: ['markdown 报告'],
+    });
 
     const result = await reg.await(agentId);
     expect(result?.output).toBe('42');
     expect(reg.getStatus(agentId)?.status).toBe('completed');
     expect(reg.getStatus(agentId)?.result?.output).toBe('42');
+    expect(reg.getStatus(agentId)).toMatchObject({
+      role: 'report-writer',
+      declaredOutputs: ['markdown 报告'],
+    });
   });
 
   it('marks failed and records the error when the run throws', async () => {

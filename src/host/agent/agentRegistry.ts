@@ -24,7 +24,7 @@ import chokidar from 'chokidar';
 import { getAgentsMdDir } from '../config/configPaths';
 import { loadAgentMdFiles } from './hybrid/agentMdLoader';
 import { CORE_AGENTS, CORE_AGENT_IDS, isCoreAgent } from './hybrid/coreAgents';
-import type { CoreAgentConfig, CoreAgentId } from './hybrid/types';
+import type { CoreAgentConfig } from './hybrid/types';
 import { createLogger } from '../services/infra/logger';
 import type { AgentSource, AgentListEntry } from '../../shared/contract/agentRegistry';
 import { listPersistentRoles } from '../services/roleAssets/roleAssetService';
@@ -182,6 +182,8 @@ export function listAllAgents(): AgentListEntry[] {
         modelTier: cfg.model,
         readonly: cfg.readonly,
         tools: cfg.tools,
+        inputs: cfg.inputs,
+        outputs: cfg.outputs,
       });
       seen.add(id);
     }
@@ -205,12 +207,26 @@ export function listAllAgents(): AgentListEntry[] {
       modelTier: agent.model,
       readonly: agent.readonly,
       tools: agent.tools,
+      inputs: agent.inputs,
+      outputs: agent.outputs,
     });
     seen.add(agent.id);
   }
 
   return entries;
 }
+
+const agentRegistryGlobal = globalThis as typeof globalThis & {
+  codeAgentAgentRegistry?: {
+    listAllAgents: typeof listAllAgents;
+    resolveAgent: typeof resolveAgent;
+  };
+};
+
+agentRegistryGlobal.codeAgentAgentRegistry = {
+  listAllAgents,
+  resolveAgent,
+};
 
 /**
  * listAllAgents + 角色标记：agents/<id>.md 同名存在 roles/<id>/ 资产目录的条目

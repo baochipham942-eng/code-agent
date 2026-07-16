@@ -46,6 +46,12 @@ export interface AgentCore {
    */
   skills?: string[];
 
+  /** Free-form declared input descriptions from agent frontmatter. */
+  inputs?: string[];
+
+  /** Free-form declared output descriptions from agent frontmatter. */
+  outputs?: string[];
+
   /** 模型层级 */
   model?: ModelTier;
 

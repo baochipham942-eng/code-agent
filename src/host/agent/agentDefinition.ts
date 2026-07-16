@@ -47,13 +47,10 @@ export {
 
 // 导入混合架构模块
 import {
-  type CoreAgentId,
   type CoreAgentConfig,
   CORE_AGENTS,
   CORE_AGENT_IDS,
   isCoreAgent,
-  recommendCoreAgent,
-  getModelConfig,
   MODEL_CONFIG,
 } from './hybrid';
 
@@ -83,6 +80,8 @@ function toFullAgentConfig(core: CoreAgentConfig): FullAgentConfig {
     prompt: core.prompt,
     tools: core.tools,
     skills: core.skills,
+    inputs: core.inputs,
+    outputs: core.outputs,
     model: core.model === 'fast' ? 'fast' : core.model === 'powerful' ? 'powerful' : 'balanced',
     runtime: {
       maxIterations: core.maxIterations,
@@ -160,6 +159,8 @@ export function listPredefinedAgents(): Array<{
   name: string;
   description: string;
   source?: 'builtin' | 'user' | 'project';
+  inputs?: string[];
+  outputs?: string[];
 }> {
   const fromRegistry = registryListAllAgents();
   if (fromRegistry.length > 0) {
@@ -168,6 +169,8 @@ export function listPredefinedAgents(): Array<{
       name: a.name,
       description: a.description,
       source: a.source,
+      inputs: a.inputs,
+      outputs: a.outputs,
     }));
   }
   return CORE_AGENT_IDS.map(id => ({
@@ -175,6 +178,8 @@ export function listPredefinedAgents(): Array<{
     name: CORE_AGENTS[id].name,
     description: CORE_AGENTS[id].description,
     source: 'builtin' as const,
+    inputs: CORE_AGENTS[id].inputs,
+    outputs: CORE_AGENTS[id].outputs,
   }));
 }
 
@@ -400,6 +405,4 @@ export {
 
   // 核心函数
   isCoreAgent,
-  recommendCoreAgent,
-  getModelConfig,
 } from './hybrid';

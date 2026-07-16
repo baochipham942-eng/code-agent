@@ -24,12 +24,10 @@ export {
   getCoreAgent,
   getAgent,
   listCoreAgents,
-  getModelConfig,
   getAgentModelConfig,
   isReadonlyAgent,
   isCoreAgent,
   validateAgentId,
-  recommendCoreAgent,
   loadCustomAgents,
   getCustomAgentCache,
 } from './coreAgents';

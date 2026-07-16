@@ -60,7 +60,6 @@ export class BackgroundSubagentRegistry {
   private readonly entries = new Map<string, BackgroundSubagentEntry>();
   private readonly pendingNotifications: SubagentCompletionRecord[] = [];
   private readonly queuedNotificationKeys = new Set<string>();
-  private readonly consumedNotificationKeys = new Set<string>();
   private counter = 0;
   private readonly now: () => number;
 
@@ -219,8 +218,6 @@ export class BackgroundSubagentRegistry {
         remaining.push(record);
         continue;
       }
-      if (this.consumedNotificationKeys.has(record.dedupeKey)) continue;
-      this.consumedNotificationKeys.add(record.dedupeKey);
       matched.push(record);
     }
     this.pendingNotifications.length = 0;

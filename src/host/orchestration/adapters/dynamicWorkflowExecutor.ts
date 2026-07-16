@@ -135,7 +135,12 @@ export class DynamicWorkflowExecutor implements GraphExecutorPort {
       ...(latestNestedCheckpointRef ? { latestNestedCheckpointRef } : {}),
     };
     if (uncertainSideEffect) {
-      return { status: 'requires_review', checkpoint: checkpoint as unknown as GraphJsonValue, sideEffectState: 'unknown' };
+      return {
+        status: 'requires_review',
+        output: toGraphJson(state),
+        checkpoint: checkpoint as unknown as GraphJsonValue,
+        sideEffectState: 'unknown',
+      };
     }
     if (state.status === 'completed') {
       return {

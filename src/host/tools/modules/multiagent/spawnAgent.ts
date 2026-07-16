@@ -31,6 +31,7 @@ import { withMultiagentMeta } from './resultMeta';
 import { getContextHealthService } from '../../../context/contextHealthService';
 import { estimateTokens } from '../../../context/tokenEstimator';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
+import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
 import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
 import {
   AgentFailureCode,
@@ -168,7 +169,18 @@ async function runSpawnAgent(
         iterations: 0,
         ...(failureCode ? { failureCode } : {}),
       };
-    }, { role: backgroundRole, declaredOutputs });
+    }, {
+      sessionId: ctx.sessionId,
+      ...(ctx.runId ? { runId: ctx.runId } : {}),
+      ...(ctx.swarmRunScope?.treeId ?? ctx.spawnTreeId
+        ? { treeId: ctx.swarmRunScope?.treeId ?? ctx.spawnTreeId }
+        : {}),
+      role: backgroundRole,
+      declaredOutputs,
+      suppressIdleWake: Boolean(ctx.suppressBackgroundSubagentIdleWake),
+      ...(ctx.suppressBackgroundSubagentIdleWake ? { suppressReason: 'goal-loop' as const } : {}),
+      onComplete: scheduleBackgroundSubagentIdleWake,
+    });
     onProgress?.({ stage: 'completing', percent: 100 });
     ctx.logger.debug(`${schemaName} spawned in background`, { agentId });
     return withMultiagentMeta(

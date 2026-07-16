@@ -98,6 +98,8 @@ export interface ToolContext {
   parentRemainingBudget?: number;
   /** SpawnGuard tree parent id; separate from agentId, which is used by tool isolation. */
   spawnParentAgentId?: string;
+  /** goal loop 等受控循环内的后台子 agent 不主动唤醒 idle 父会话。 */
+  suppressBackgroundSubagentIdleWake?: boolean;
 
   // ============================================================================
   // 模型回调支持（工具内二次调用模型）

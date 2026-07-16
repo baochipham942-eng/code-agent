@@ -10,18 +10,25 @@
 // ============================================================================
 
 import type { SubagentResult } from './subagentExecutorTypes';
-import { inferAgentFailureCode, type AgentFailureCode } from '../../shared/contract/agentFailure';
+import { AgentFailureCode, inferAgentFailureCode, type AgentFailureCode as AgentFailureCodeType } from '../../shared/contract/agentFailure';
+import {
+  buildSubagentCompletionRecord,
+  type SubagentCompletionRecord,
+} from './subagentCompletionNotification';
 
 export type BackgroundSubagentStatus = 'running' | 'completed' | 'failed';
 
 export interface BackgroundSubagentHandle {
   agentId: string;
   status: BackgroundSubagentStatus;
+  sessionId?: string;
+  runId?: string;
+  treeId?: string;
   role?: string;
   declaredOutputs?: string[];
   result?: SubagentResult;
   error?: string;
-  failureCode?: AgentFailureCode;
+  failureCode?: AgentFailureCodeType;
   startedAt: number;
   finishedAt?: number;
 }
@@ -31,8 +38,29 @@ interface BackgroundSubagentEntry extends BackgroundSubagentHandle {
   done: Promise<SubagentResult | undefined>;
 }
 
+export interface BackgroundSubagentScopeFilter {
+  sessionId: string;
+  runId?: string;
+  treeId?: string;
+}
+
+export interface BackgroundSubagentOptions {
+  agentId?: string;
+  sessionId?: string;
+  runId?: string;
+  treeId?: string;
+  role?: string;
+  declaredOutputs?: string[];
+  suppressIdleWake?: boolean;
+  suppressReason?: 'block-wait' | 'cancelled' | 'goal-loop';
+  onComplete?: (record: SubagentCompletionRecord) => void | Promise<void>;
+}
+
 export class BackgroundSubagentRegistry {
   private readonly entries = new Map<string, BackgroundSubagentEntry>();
+  private readonly pendingNotifications: SubagentCompletionRecord[] = [];
+  private readonly queuedNotificationKeys = new Set<string>();
+  private readonly consumedNotificationKeys = new Set<string>();
   private counter = 0;
   private readonly now: () => number;
 
@@ -42,13 +70,67 @@ export class BackgroundSubagentRegistry {
   }
 
   /** 后台跑 run，立即返回稳定 agentId，不阻塞调用方。 */
-  spawn(run: () => Promise<SubagentResult>, options: { role?: string; declaredOutputs?: string[] } = {}): string {
-    const agentId = `subagent-bg-${++this.counter}`;
+  spawn(run: () => Promise<SubagentResult>, options: BackgroundSubagentOptions = {}): string {
+    const agentId = options.agentId ?? `subagent-bg-${++this.counter}`;
     const startedAt = this.now();
+    const done = this.attachCompletion(agentId, run(), {
+      ...options,
+      agentId,
+      startedAt,
+    });
 
-    const done = (async (): Promise<SubagentResult | undefined> => {
+    this.entries.set(agentId, {
+      agentId,
+      status: 'running',
+      startedAt,
+      done,
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+      ...(options.runId ? { runId: options.runId } : {}),
+      ...(options.treeId ? { treeId: options.treeId } : {}),
+      ...(options.role ? { role: options.role } : {}),
+      ...(options.declaredOutputs && options.declaredOutputs.length > 0
+        ? { declaredOutputs: options.declaredOutputs }
+        : {}),
+    });
+    return agentId;
+  }
+
+  adopt(promise: Promise<SubagentResult>, options: BackgroundSubagentOptions & { agentId: string; startedAt?: number }):
+  string {
+    const existing = this.entries.get(options.agentId);
+    if (existing?.status === 'running') {
+      throw new Error(`Background subagent already running: ${options.agentId}`);
+    }
+    const startedAt = options.startedAt ?? this.now();
+    const done = this.attachCompletion(options.agentId, promise, {
+      ...options,
+      startedAt,
+    });
+
+    this.entries.set(options.agentId, {
+      agentId: options.agentId,
+      status: 'running',
+      startedAt,
+      done,
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+      ...(options.runId ? { runId: options.runId } : {}),
+      ...(options.treeId ? { treeId: options.treeId } : {}),
+      ...(options.role ? { role: options.role } : {}),
+      ...(options.declaredOutputs && options.declaredOutputs.length > 0
+        ? { declaredOutputs: options.declaredOutputs }
+        : {}),
+    });
+    return options.agentId;
+  }
+
+  private attachCompletion(
+    agentId: string,
+    promise: Promise<SubagentResult>,
+    options: BackgroundSubagentOptions & { startedAt: number },
+  ): Promise<SubagentResult | undefined> {
+    return (async (): Promise<SubagentResult | undefined> => {
       try {
-        const result = await run();
+        const result = await promise;
         const entry = this.entries.get(agentId);
         if (entry) {
           entry.status = result.success ? 'completed' : 'failed';
@@ -62,6 +144,7 @@ export class BackgroundSubagentRegistry {
             });
           }
           entry.finishedAt = this.now();
+          this.recordCompletion(entry, options);
         }
         return result;
       } catch (err) {
@@ -71,22 +154,39 @@ export class BackgroundSubagentRegistry {
           entry.error = err instanceof Error ? err.message : String(err);
           entry.failureCode = inferAgentFailureCode({ error: err, defaultCode: undefined });
           entry.finishedAt = this.now();
+          this.recordCompletion(entry, options);
         }
         return undefined;
       }
     })();
+  }
 
-    this.entries.set(agentId, {
-      agentId,
-      status: 'running',
-      startedAt,
-      done,
-      ...(options.role ? { role: options.role } : {}),
-      ...(options.declaredOutputs && options.declaredOutputs.length > 0
-        ? { declaredOutputs: options.declaredOutputs }
-        : {}),
+  private recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): void {
+    const record = buildSubagentCompletionRecord({
+      agentId: entry.agentId,
+      role: entry.role,
+      status: entry.status === 'completed' ? 'completed' : 'failed',
+      output: entry.result?.output,
+      error: entry.error,
+      startedAt: entry.startedAt,
+      finishedAt: entry.finishedAt,
+      failureCode: entry.failureCode,
+      toolsUsed: entry.result?.toolsUsed,
+      iterations: entry.result?.iterations,
+      cost: entry.result?.cost,
+      sessionId: entry.sessionId,
+      runId: entry.runId,
+      treeId: entry.treeId,
     });
-    return agentId;
+    if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
+      this.queuedNotificationKeys.add(record.dedupeKey);
+      this.pendingNotifications.push(record);
+    }
+    const cancelled = entry.failureCode === AgentFailureCode.CancelledByUser
+      || entry.failureCode === AgentFailureCode.CancelledByParent;
+    if (!options.suppressIdleWake && !cancelled) {
+      void options.onComplete?.(record);
+    }
   }
 
   /** 凭 agentId 查当前状态快照（不含内部 promise）。未知 id 返回 undefined。 */
@@ -107,6 +207,33 @@ export class BackgroundSubagentRegistry {
   /** 当前所有后台 subagent 的状态快照（UI/诊断用）。 */
   list(): BackgroundSubagentHandle[] {
     return [...this.entries.values()].map(({ done: _done, ...handle }) => ({ ...handle }));
+  }
+
+  drainCompletionNotifications(scope?: BackgroundSubagentScopeFilter): SubagentCompletionRecord[] {
+    if (this.pendingNotifications.length === 0) return [];
+    const matched: SubagentCompletionRecord[] = [];
+    const remaining: SubagentCompletionRecord[] = [];
+
+    for (const record of this.pendingNotifications) {
+      if (!this.matchesScope(record, scope)) {
+        remaining.push(record);
+        continue;
+      }
+      if (this.consumedNotificationKeys.has(record.dedupeKey)) continue;
+      this.consumedNotificationKeys.add(record.dedupeKey);
+      matched.push(record);
+    }
+    this.pendingNotifications.length = 0;
+    this.pendingNotifications.push(...remaining);
+    return matched;
+  }
+
+  private matchesScope(record: SubagentCompletionRecord, scope?: BackgroundSubagentScopeFilter): boolean {
+    if (!scope) return true;
+    if (!record.sessionId) return !scope.runId && record.treeId === scope.sessionId;
+    if (record.sessionId !== scope.sessionId) return false;
+    if (scope.runId && record.runId !== scope.runId) return false;
+    return !scope.treeId || record.treeId === scope.treeId;
   }
 }
 

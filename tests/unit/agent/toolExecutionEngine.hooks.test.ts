@@ -16,6 +16,7 @@ import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { computeArtifactRevision } from '../../../src/host/tools/artifacts/artifactLocatorHost';
 import type { ArtifactLocatorV1 } from '../../../src/shared/contract/artifactLocator';
+import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
 
 const serviceMocks = vi.hoisted(() => {
   const langfuse = {
@@ -356,6 +357,55 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fileReadTracker.clear();
+  });
+
+  it('appends completed background task reminders to one tool result only', async () => {
+    const sessionId = 'session-tool-reminder';
+    const runId = 'run-tool-reminder';
+    const agentId = getBackgroundSubagentRegistry().spawn(async () => ({
+      success: true,
+      output: 'background finished',
+      toolsUsed: [],
+      iterations: 1,
+    }), {
+      sessionId,
+      // 故意用与当前 run 不同的 runId：完成通知必须跨 run 可达（记录钉着派生时的 runId，
+      // 按当前 runId 过滤会让下一个 run 的工具永远捞不到 → 静默丢失）
+      runId: 'run-that-spawned-it',
+      role: 'coder',
+    });
+    await getBackgroundSubagentRegistry().await(agentId);
+
+    const toolExecutor = {
+      execute: vi.fn(async (_name: string, _args: Record<string, unknown>): Promise<ToolResult> => ({
+        toolCallId: '',
+        success: true,
+        output: 'tool output',
+      })),
+    };
+    const ctx = makeRuntimeContext({
+      sessionId,
+      runId,
+      toolExecutor: toolExecutor as never,
+    });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    } as never, { emitTaskProgress: vi.fn() } as never, {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+    } as never);
+
+    const first = await engine.executeToolsWithHooks([makeToolCall('tool-bg-1', 'a.txt')]);
+    const second = await engine.executeToolsWithHooks([makeToolCall('tool-bg-2', 'b.txt')]);
+
+    expect(first[0]?.output).toContain('<system-reminder>');
+    expect(first[0]?.output).toContain('1 background task completed');
+    expect(first[0]?.output).toContain(`"agent_id": "${agentId}"`);
+    expect(first[0]?.metadata).toMatchObject({ backgroundCompletionReminderCount: 1 });
+    expect(second[0]?.output).toBe('tool output');
   });
 
   it('injects an artifact file-write correction after mkdir-only bootstrap', async () => {

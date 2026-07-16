@@ -53,10 +53,23 @@ const EXECUTION_CONTEXT_PATH = path.resolve(
   __dirname,
   '../../../src/host/agent/subagentExecutionContext.ts',
 );
+const TIMEOUTS_PATH = path.resolve(
+  __dirname,
+  '../../../src/shared/constants/timeouts.ts',
+);
+const SUBAGENT_CANCELLATION_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/agent/subagentExecutorCancellation.ts',
+);
+const FOREGROUND_BACKGROUND_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/agent/multiagentTools/spawnAgentForegroundBackground.ts',
+);
 
 describe('executeSpawnAgent 深度截断接线', () => {
 const source = readFileSync(SPAWN_AGENT_PATH, 'utf8');
 const durableLaunchSource = readFileSync(DURABLE_LAUNCH_PATH, 'utf8');
+const foregroundBackgroundSource = readFileSync(FOREGROUND_BACKGROUND_PATH, 'utf8');
 
   it('ToolContext 暴露 spawnDepth 字段', () => {
     const types = readFileSync(TOOL_TYPES_PATH, 'utf8');
@@ -110,6 +123,32 @@ const durableLaunchSource = readFileSync(DURABLE_LAUNCH_PATH, 'utf8');
     expect(source).toMatch(/parentRemainingBudget:\s*context\.parentRemainingBudget/);
     expect(source).toMatch(/spawnParentStartedAt:\s*context\.spawnParentStartedAt/);
     expect(source).toMatch(/spawnParentTimeoutMs:\s*context\.spawnParentTimeoutMs/);
+  });
+
+  it('前台 spawn 超预算后通过 Promise.race 非破坏性转后台', () => {
+    expect(foregroundBackgroundSource).toMatch(/Promise\.race\(/);
+    expect(foregroundBackgroundSource).toMatch(/kind:\s*['"]timeout['"]/);
+    expect(source).toMatch(/foregroundBlockingBudgetMs/);
+    expect(foregroundBackgroundSource).toMatch(/getBackgroundSubagentRegistry\(\)\.adopt\(promise/);
+    expect(foregroundBackgroundSource).toMatch(/task_id=\$\{agentId\}/);
+    expect(foregroundBackgroundSource).toMatch(/Use collect_agent\("\$\{agentId\}"\)/);
+    expect(source).not.toMatch(/raced\.kind === ['"]timeout['"][\s\S]{0,500}abortController\.abort/);
+  });
+
+  it('转后台复用 onComplete cleanup 委派，避免前后重复 cleanup', () => {
+    expect(source).toMatch(/const delegateWorktreeCleanup = \(\): void =>/);
+    expect(source).toMatch(/worktreeCleanupDelegated \|\| worktreeFinalized/);
+    expect(foregroundBackgroundSource).toMatch(/if \(completedAgent\.id !== agentId \|\| isFinalized\(\)\) return/);
+    expect(source).toMatch(/delegateWorktreeCleanup\(\);[\s\S]*?adoptForegroundSubagent/);
+  });
+
+  it('600s 前台预算小于 900s role execution timeout 下限', () => {
+    const timeouts = readFileSync(TIMEOUTS_PATH, 'utf8');
+    const cancellation = readFileSync(SUBAGENT_CANCELLATION_PATH, 'utf8');
+    expect(timeouts).toMatch(/FOREGROUND_TO_BACKGROUND_BUDGET:\s*600_000/);
+    expect(timeouts).toMatch(/ROLE_EXECUTION_MINIMUM:\s*900_000/);
+    expect(foregroundBackgroundSource).toMatch(/foregroundBlockingBudgetMs\s*<\s*roleExecutionTimeout/);
+    expect(cancellation).toMatch(/DEFAULT_TIMEOUT_MS\s*=\s*SUBAGENT_EXECUTION_TIMEOUTS\.ROLE_EXECUTION_MINIMUM/);
   });
 
   it('注册到 SpawnGuard 时记录 parentId，供 N 层取消和孤儿回收 DFS 使用', () => {

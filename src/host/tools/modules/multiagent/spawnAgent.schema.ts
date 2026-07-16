@@ -108,6 +108,10 @@ const spawnInputSchema = {
       type: 'number',
       description: 'Maximum iterations for the agent (default: 20)',
     },
+    foregroundBlockingBudgetMs: {
+      type: 'number',
+      description: 'Maximum foreground blocking time in milliseconds before a waiting sub-agent is moved to background. Default: 600000.',
+    },
     forkContext: {
       type: 'boolean',
       description: 'When true, fork parent conversation history to the sub-agent. Use when the sub-agent needs full prior context (e.g. coder tasks that depend on earlier discussion).',

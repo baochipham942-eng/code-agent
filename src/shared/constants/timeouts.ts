@@ -297,6 +297,22 @@ export const CANCELLATION_TIMEOUTS = {
   ROUTE_SETTLE_POLL: 50,
 } as const;
 
+/** Subagent 执行生命周期预算。 */
+export const SUBAGENT_EXECUTION_TIMEOUTS = {
+  /** 前台阻塞 spawn 超过该预算后转入后台继续跑，不 abort 子 agent。 */
+  FOREGROUND_TO_BACKGROUND_BUDGET: 600_000,
+  /** 子 agent role execution timeout 下限，必须大于前台转后台预算。 */
+  ROLE_EXECUTION_MINIMUM: 900_000,
+} as const;
+
+/** 后台/子 agent 完成提醒预算。 */
+export const SUBAGENT_COMPLETION_NOTIFICATIONS = {
+  /** 完成提醒内联输出最大字符数；超限落盘并只给指针。 */
+  INLINE_OUTPUT_LIMIT: 4_096,
+  /** 批量 idle 唤醒合并窗口，防同一 session 同时完成时多次启动父会话。 */
+  IDLE_WAKE_DEBOUNCE: 50,
+} as const;
+
 /**
  * Renderer 轮询配置。
  *

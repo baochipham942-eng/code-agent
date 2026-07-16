@@ -113,8 +113,12 @@ export const SessionActionsMenu: React.FC = () => {
   const handleResume = useCallback(async () => {
     if (!currentSessionId) return;
     close();
-    await window.domainAPI?.invoke(IPC_DOMAINS.AGENT, 'resume', { sessionId: currentSessionId });
-  }, [currentSessionId, close]);
+    try {
+      await window.domainAPI?.invoke(IPC_DOMAINS.AGENT, 'resume', { sessionId: currentSessionId });
+    } catch (error) {
+      showToast('error', `恢复执行失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [currentSessionId, close, showToast]);
 
   const handleMoveToBackground = useCallback(async () => {
     if (!currentSessionId) return;
@@ -125,36 +129,45 @@ export const SessionActionsMenu: React.FC = () => {
   const handleExportMarkdown = useCallback(async () => {
     if (!currentSessionId) return;
     close();
-    const response = await window.domainAPI?.invoke<{ markdown: string; suggestedFileName?: string }>(
-      IPC_DOMAINS.SESSION,
-      'exportMarkdown',
-      { sessionId: currentSessionId },
-    );
-    if (!response?.success || !response.data?.markdown) {
-      throw new Error(response?.error?.message || 'Failed to export markdown');
+    try {
+      const response = await window.domainAPI?.invoke<{ markdown: string; suggestedFileName?: string }>(
+        IPC_DOMAINS.SESSION,
+        'exportMarkdown',
+        { sessionId: currentSessionId },
+      );
+      if (!response?.success || !response.data?.markdown) {
+        throw new Error(response?.error?.message || 'Failed to export markdown');
+      }
+      const blob = new Blob([response.data.markdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = response.data.suggestedFileName || `session-${currentSessionId}.md`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      showToast('success', 'Markdown 已导出');
+    } catch (error) {
+      showToast('error', `导出 Markdown 失败：${error instanceof Error ? error.message : String(error)}`);
     }
-    const blob = new Blob([response.data.markdown], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = response.data.suggestedFileName || `session-${currentSessionId}.md`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }, [currentSessionId, close]);
+  }, [currentSessionId, close, showToast]);
 
   const handleReopenWorkspace = useCallback(async () => {
     if (!sessionWorkingDirectory) return;
     close();
-    const response = await window.domainAPI?.invoke<string | null>(
-      IPC_DOMAINS.WORKSPACE,
-      'setCurrent',
-      { dir: sessionWorkingDirectory },
-    );
-    if (!response?.success) {
-      throw new Error(response?.error?.message || 'Failed to restore workspace');
+    try {
+      const response = await window.domainAPI?.invoke<string | null>(
+        IPC_DOMAINS.WORKSPACE,
+        'setCurrent',
+        { dir: sessionWorkingDirectory },
+      );
+      if (!response?.success) {
+        throw new Error(response?.error?.message || 'Failed to restore workspace');
+      }
+      setAppWorkingDirectory(response.data || sessionWorkingDirectory);
+    } catch (error) {
+      showToast('error', `恢复工作区失败：${error instanceof Error ? error.message : String(error)}`);
     }
-    setAppWorkingDirectory(response.data || sessionWorkingDirectory);
-  }, [sessionWorkingDirectory, setAppWorkingDirectory, close]);
+  }, [sessionWorkingDirectory, setAppWorkingDirectory, close, showToast]);
 
   const handleOpenReplay = useCallback(async () => {
     if (!currentSessionId || !currentSession) return;

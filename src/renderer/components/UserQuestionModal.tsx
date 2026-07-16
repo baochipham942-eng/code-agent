@@ -79,10 +79,24 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
     }
   };
 
+  const handleDismiss = async () => {
+    const response: UserQuestionResponse = {
+      requestId: request.id,
+      declined: true,
+    };
+
+    try {
+      await ipcService.invoke(IPC_CHANNELS.USER_QUESTION_RESPONSE, response);
+      onClose();
+    } catch (error) {
+      logger.error('Failed to decline response', error);
+    }
+  };
+
   return (
     <Modal
       isOpen={true}
-      onClose={onClose}
+      onClose={handleDismiss}
       size="lg"
       title="Agent 需要您的输入"
       headerBgClass="bg-blue-500/10"
@@ -91,7 +105,7 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
         <ModalFooter
           cancelText="取消"
           confirmText="提交回答"
-          onCancel={onClose}
+          onCancel={handleDismiss}
           onConfirm={handleSubmit}
           confirmColorClass="bg-blue-500 hover:bg-blue-600"
           confirmDisabled={!canSubmit()}

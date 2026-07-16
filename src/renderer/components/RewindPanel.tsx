@@ -7,6 +7,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
 import { Button, Modal } from './primitives';
+import { ConfirmDialog } from './composites/ConfirmDialog';
 
 interface Checkpoint {
   id: string;
@@ -31,6 +32,8 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewFile[]>([]);
   const [isRewinding, setIsRewinding] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [rewindError, setRewindError] = useState<string | null>(null);
   const { currentSessionId } = useSessionStore();
 
   useEffect(() => {
@@ -51,6 +54,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
 
   const handleSelect = useCallback(async (messageId: string) => {
     setSelectedMessageId(messageId);
+    setRewindError(null);
     if (!currentSessionId) return;
     try {
       const files = await ipcService.invoke(IPC_CHANNELS.CHECKPOINT_PREVIEW, currentSessionId, messageId);
@@ -63,17 +67,23 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
   const handleRewind = async () => {
     if (!selectedMessageId || !currentSessionId) return;
     setIsRewinding(true);
+    setRewindError(null);
     try {
       const result = await ipcService.invoke(IPC_CHANNELS.CHECKPOINT_REWIND, currentSessionId, selectedMessageId);
       if (result?.success) {
         onClose();
+      } else {
+        setRewindError(result?.error || 'Rewind failed. Please try again.');
       }
+    } catch (error) {
+      setRewindError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsRewinding(false);
     }
   };
 
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -86,7 +96,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
           </Button>
           <Button
             variant="primary"
-            onClick={handleRewind}
+            onClick={() => setIsConfirmOpen(true)}
             disabled={!selectedMessageId || isRewinding}
           >
             {isRewinding ? 'Rewinding...' : 'Rewind'}
@@ -94,16 +104,29 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
         </>
       }
     >
+      {rewindError && (
+        <div role="alert" className="mb-3 rounded-lg border border-red-700/50 bg-red-950/30 px-3 py-2 text-sm text-red-200">
+          Rewind failed: {rewindError}
+        </div>
+      )}
       {/* Checkpoint list */}
       {checkpoints.length === 0 ? (
         <p className="text-zinc-500 text-center py-8 text-sm">No checkpoints available</p>
       ) : (
         <div className="space-y-1.5">
           {checkpoints.map(cp => (
-            <div
+            <button
               key={cp.messageId}
+              type="button"
+              aria-pressed={selectedMessageId === cp.messageId}
               onClick={() => handleSelect(cp.messageId)}
-              className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  void handleSelect(cp.messageId);
+                }
+              }}
+              className={`w-full p-3 rounded-lg border cursor-pointer text-left transition-colors ${
                 selectedMessageId === cp.messageId
                   ? 'border-blue-500/50 bg-blue-500/10'
                   : 'border-zinc-700 hover:border-zinc-600'
@@ -120,7 +143,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
               <span className="text-xs text-zinc-500 mt-1 block">
                 {cp.fileCount} file{cp.fileCount !== 1 ? 's' : ''}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -146,5 +169,19 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
         </div>
       )}
     </Modal>
+    <ConfirmDialog
+      isOpen={isConfirmOpen}
+      title="Rewind workspace files?"
+      message="Your workspace files will be replaced with the selected checkpoint. Current changes may be lost."
+      variant="danger"
+      confirmText="Rewind now"
+      cancelText="Cancel rewind"
+      onCancel={() => setIsConfirmOpen(false)}
+      onConfirm={() => {
+        setIsConfirmOpen(false);
+        void handleRewind();
+      }}
+    />
+    </>
   );
 };

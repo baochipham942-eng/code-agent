@@ -260,7 +260,7 @@ const UserNode: React.FC<{
                   <RotateCcw className="h-3.5 w-3.5" />
                 </button>
               )}
-              <div className="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]">
+              <div className="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-border-muted">
                 <div className="text-zinc-200 leading-relaxed select-text">
                   <MessageContent
                     content={displayContent}

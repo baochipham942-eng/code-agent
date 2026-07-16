@@ -460,9 +460,9 @@ describe('TraceNodeRenderer launch request', () => {
       }),
     );
 
-    expect(html).toContain('class="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-white/[0.06]"');
+    expect(html).toContain('class="rounded-2xl px-4 py-2.5 bg-zinc-800/60 border border-border-muted"');
     expect(html).toContain('class="text-zinc-200 leading-relaxed select-text"');
-    expect(html).not.toContain('border border-white/[0.06] select-text');
+    expect(html).not.toContain('border border-border-muted select-text');
   });
 
   it('does not render assistant copy controls until text is selected', () => {

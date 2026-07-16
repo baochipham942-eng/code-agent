@@ -13,6 +13,8 @@ import {
   type KeybindingActionId,
 } from '@shared/keybindings';
 import { useKeybindingsSettings } from '../hooks/useKeybindingsSettings';
+import { ConfirmDialog } from './composites/ConfirmDialog';
+import { AGENT_NEO_HELP_URL } from '@shared/constants/network';
 
 // ============================================================================
 // Types
@@ -40,6 +42,7 @@ interface CommandPaletteProps {
 export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isClearConfirmationOpen, setIsClearConfirmationOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const { keybindings, platform } = useKeybindingsSettings();
@@ -155,7 +158,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       icon: <HelpCircle className="w-4 h-4" />,
       category: 'help',
       action: () => {
-        window.open('https://github.com/anthropics/claude-code/issues', '_blank');
+        window.open(AGENT_NEO_HELP_URL, '_blank');
       },
     },
   ], [
@@ -203,10 +206,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
 
   // 执行命令
   const executeCommand = useCallback((command: Command) => {
+    if (command.id === 'clear-chat') {
+      setIsClearConfirmationOpen(true);
+      return;
+    }
+
     command.action();
     onClose();
     setQuery('');
   }, [onClose]);
+
+  const confirmClearChat = useCallback(() => {
+    setIsClearConfirmationOpen(false);
+    clearCurrentSession();
+    onClose();
+    setQuery('');
+  }, [clearCurrentSession, onClose]);
 
   // 键盘导航
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -247,6 +262,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       inputRef.current?.focus();
       setQuery('');
       setSelectedIndex(0);
+      setIsClearConfirmationOpen(false);
     }
   }, [isOpen]);
 
@@ -273,7 +289,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
   let flatIndex = 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
+    <>
+      <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -374,7 +391,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
           </span>
         </div>
       </div>
-    </div>
+      </div>
+
+      <ConfirmDialog
+        isOpen={isClearConfirmationOpen}
+        title="清空当前对话？"
+        message="当前会话中的所有消息都会被清除，此操作无法撤销。"
+        variant="danger"
+        confirmText="清空对话"
+        onConfirm={confirmClearChat}
+        onCancel={() => setIsClearConfirmationOpen(false)}
+      />
+    </>
   );
 };
 

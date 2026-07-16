@@ -147,6 +147,11 @@ export function ToolCallDisplay({
     }
   }, [toolCall.result, toolCall.liveOutput, userToggled]);
 
+  const toggleExpanded = () => {
+    setExpanded((value) => !value);
+    setUserToggled(true);
+  };
+
   return (
     <div
       className={`group font-mono text-sm ${
@@ -159,10 +164,17 @@ export function ToolCallDisplay({
       {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [inline file badge for Write] */}
       <div
         data-testid={`tool-call-row-${toolCall.name}`}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
         className="group/row flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800 rounded px-1 py-0.5 transition-colors"
-        onClick={() => {
-          setExpanded(!expanded);
-          setUserToggled(true);
+        onClick={toggleExpanded}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggleExpanded();
+          }
         }}
       >
         <StatusIndicator status={status} quietError={quietError} />
@@ -188,7 +200,7 @@ export function ToolCallDisplay({
 
       {/* Result summary line - hidden by default, show on hover or when expanded */}
       {toolCall.result && !expanded && !isBashTool(toolCall) && (
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
           <ResultSummary toolCall={toolCall} />
         </div>
       )}

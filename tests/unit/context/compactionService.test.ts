@@ -152,6 +152,8 @@ describe('compactionService', () => {
     });
 
     expect(compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0]).toBe(noFocusPrompt);
+    // 只对比"不传 vs 传空白"会跟着实现一起变异——必须钉死旧 prompt 里没有 focus 块
+    expect(noFocusPrompt).not.toContain('User Focus For This Compaction:');
   });
 
   it('keeps the focus block on repair prompts', async () => {

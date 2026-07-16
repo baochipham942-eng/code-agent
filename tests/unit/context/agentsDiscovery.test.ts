@@ -1,7 +1,12 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/host/security/folderTrustService', () => ({
+  isProjectConfigTrusted: async () => true,
+}));
+
 import {
   clearAgentsDiscoveryCache,
   discoverAgentFilesCached,

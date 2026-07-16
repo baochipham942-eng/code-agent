@@ -10,10 +10,15 @@
 // - Config file path generation
 // ============================================================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+
+vi.mock('../../../src/host/security/folderTrustService', () => ({
+  isProjectConfigTrusted: async () => true,
+}));
+
 import {
   parseHooksConfig,
   loadAllHooksConfig,

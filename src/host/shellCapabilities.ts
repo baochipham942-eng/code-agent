@@ -140,6 +140,10 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getStats',
     'setSnapshotRetention',
   ],
+  [IPC_DOMAINS.FOLDER_TRUST]: [
+    'get',
+    'set',
+  ],
   [IPC_DOMAINS.DESKTOP]: [
     'closeManagedBrowserSession',
     'ensureManagedBrowserSession',

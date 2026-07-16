@@ -22,6 +22,7 @@ import {
   policyFromToml,
 } from './policyFile';
 import { getUserConfigDir } from '../config/configPaths';
+import { isProjectConfigTrustedSync } from './folderTrustService';
 
 const logger = createLogger('PolicyLoader');
 
@@ -34,15 +35,21 @@ const POLICY_FILENAME = 'code-agent-policy.toml';
 /**
  * Get all candidate policy file paths in priority order (lowest to highest)
  */
-function getPolicyPaths(projectDir: string): string[] {
-  return [
-    // 3. Project level (lowest priority)
-    path.join(projectDir, POLICY_FILENAME),
+function getPolicyPaths(projectDir: string, includeProject: boolean): string[] {
+  const paths = [
     // 2. User level
     path.join(getUserConfigDir(), 'policy.toml'),
     // 1. System level (highest priority)
     '/etc/code-agent/policy.toml',
   ];
+  if (includeProject) {
+    return [
+      // 3. Project level (lowest priority)
+      path.join(projectDir, POLICY_FILENAME),
+      ...paths,
+    ];
+  }
+  return paths;
 }
 
 /**
@@ -165,7 +172,7 @@ function mergePolicy(base: SecurityPolicy, override: Partial<SecurityPolicy>): S
  */
 export function loadPolicy(projectDir: string): SecurityPolicy {
   let policy = createDefaultPolicy();
-  const paths = getPolicyPaths(projectDir);
+  const paths = getPolicyPaths(projectDir, isProjectConfigTrustedSync(projectDir, 'project-policy'));
   let loadedCount = 0;
 
   // Paths are ordered lowest to highest priority
@@ -190,5 +197,5 @@ export function loadPolicy(projectDir: string): SecurityPolicy {
  * Check if any policy file exists for the given project
  */
 export function hasPolicyFile(projectDir: string): boolean {
-  return getPolicyPaths(projectDir).some(p => fs.existsSync(p));
+  return getPolicyPaths(projectDir, isProjectConfigTrustedSync(projectDir, 'project-policy')).some(p => fs.existsSync(p));
 }

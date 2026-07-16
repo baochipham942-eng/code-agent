@@ -34,6 +34,10 @@ vi.mock('../../../src/host/config/configPaths', () => ({
   getProjectConfigDir: (dir: string) => `${dir}/.code-agent`,
 }));
 
+vi.mock('../../../src/host/security/folderTrustService', () => ({
+  isProjectConfigTrustedSync: () => true,
+}));
+
 // Mock identity — 必须导出所有 soulLoader 用到的符号
 vi.mock('../../../src/host/prompts/identity', () => ({
   IDENTITY: 'DEFAULT_IDENTITY_CORE',

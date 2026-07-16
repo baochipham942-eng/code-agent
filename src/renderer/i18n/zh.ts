@@ -835,6 +835,8 @@ export const zh = {
   // 聊天转录（TurnCard / StreamingIndicator 等）
   chat: {
     thinking: '正在思考…',
+    waitingModel: '正在等待模型响应…',
+    waitingSubagent: '正在等待子任务…',
     thinkingDigest: '思考',
     thinkingSegments: ' · {count} 段',
     expandThinking: '展开思考',

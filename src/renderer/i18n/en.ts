@@ -846,6 +846,8 @@ export const en: Translations = {
   // Chat transcript (TurnCard / StreamingIndicator, etc.)
   chat: {
     thinking: 'Thinking…',
+    waitingModel: 'Waiting for the model…',
+    waitingSubagent: 'Waiting on a subtask…',
     thinkingDigest: 'Thinking',
     thinkingSegments: ' · {count} segments',
     expandThinking: 'Expand thinking',

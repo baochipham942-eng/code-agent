@@ -145,6 +145,24 @@ function normalizeUnknownRows(value: unknown): unknown[][] {
     : [];
 }
 
+function normalizeSheetRangeStart(value: unknown): { row: number; column: number } | undefined {
+  if (!isRecord(value)) return undefined;
+  const row = getNumberField(value, 'row');
+  const column = getNumberField(value, 'column');
+  if (
+    row === undefined
+    || column === undefined
+    || !Number.isInteger(row)
+    || !Number.isInteger(column)
+    || row < 0
+    || column < 0
+    || (row === 0 && column === 0)
+  ) {
+    return undefined;
+  }
+  return { row, column };
+}
+
 function normalizePdfResult(value: unknown): ExtractPdfResult {
   return {
     text: getStringField(value, 'text') ?? '',
@@ -169,11 +187,13 @@ function normalizeExcelJsonResult(value: unknown): ExtractExcelJsonResult {
     .filter((sheet): sheet is Record<string, unknown> => isRecord(sheet))
     .map((sheet) => {
       const rows = normalizeUnknownRows(sheet.rows);
+      const rangeStart = normalizeSheetRangeStart(sheet.rangeStart);
       return {
         name: getStringField(sheet, 'name') ?? '',
         headers: normalizeStringArray(sheet.headers),
         rows,
         rowCount: getNumberField(sheet, 'rowCount') ?? rows.length,
+        ...(rangeStart ? { rangeStart } : {}),
       };
     });
 

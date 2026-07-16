@@ -34,6 +34,19 @@ const spec = JSON.stringify({
   sheetCount: 2,
 });
 
+const b3StartSpec = JSON.stringify({
+  sheets: [
+    {
+      name: 'Sheet1',
+      headers: ['月份', '销售额'],
+      rows: [['一月', 100], ['三月', 300]],
+      rowCount: 2,
+      rangeStart: { row: 2, column: 1 },
+    },
+  ],
+  sheetCount: 1,
+});
+
 /** 点选某张表里「三月」那行的销售额单元格，输入反馈并回车发送 */
 function clickMarchSalesAndSend(sheetName?: string): string {
   if (sheetName) fireEvent.click(screen.getByText(sheetName));
@@ -54,6 +67,20 @@ beforeEach(() => sendPrompt.mockClear());
 afterEach(() => cleanup());
 
 describe('SpreadsheetBlock 点选单元格 → 锚点消息坐标', () => {
+  it('used range 从 B3 开始时，点 dataRow1/col0 发出的坐标是 B5', () => {
+    render(<SpreadsheetBlock spec={b3StartSpec} filePath="/tmp/b3-start.xlsx" />);
+
+    const cell = document.querySelector('td[title^="B5 · 三月"]');
+    expect(cell).not.toBeNull();
+    fireEvent.click(cell as Element);
+    const input = screen.getByPlaceholderText('这里改成…（回车发送）');
+    fireEvent.change(input, { target: { value: '改成四月' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(sendPrompt).toHaveBeenCalledTimes(1);
+    expect(sendPrompt.mock.calls[0][0]).toContain('B5');
+  });
+
   it('点「三月」那行发出的坐标是 B4，不是被空行左移后的 B3', () => {
     render(<SpreadsheetBlock spec={spec} filePath="/tmp/sales.xlsx" />);
     const prompt = clickMarchSalesAndSend();

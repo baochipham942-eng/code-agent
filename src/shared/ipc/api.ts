@@ -6,6 +6,7 @@ import type { IpcInvokeHandlers } from './handlers';
 import type { IpcEventHandlers } from './handlers';
 import type { IPCResponse } from './domains';
 import type { SpeechTranscribeOptions, SpeechTranscribeResult } from '../contract/speech';
+import type { SheetRangeStart } from '../livePreview/sheetCoords';
 
 // ----------------------------------------------------------------------------
 // Preload API exposed to renderer
@@ -41,7 +42,14 @@ export interface ElectronAPI {
 
   // Excel JSON 提取（供 SpreadsheetBlock 交互式渲染）
   extractExcelJson: (filePath: string) => Promise<{
-    sheets: Array<{ name: string; headers: string[]; rows: unknown[][]; rowCount: number }>;
+    sheets: Array<{
+      name: string;
+      headers: string[];
+      rows: unknown[][];
+      rowCount: number;
+      /** 缺省即 A1；仅非 A1 used range 才序列化。 */
+      rangeStart?: SheetRangeStart;
+    }>;
     sheetCount: number;
   } | null>;
 

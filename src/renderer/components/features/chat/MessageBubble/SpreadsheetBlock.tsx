@@ -6,7 +6,10 @@
 import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Sheet, Download, Copy, Check, ChevronLeft, ChevronRight, BarChart3, Table2, Filter, ArrowUpDown } from 'lucide-react';
 import { LocalityFeedbackBar } from '../../../LivePreview/LocalityFeedbackBar';
-import { sheetCellRef } from '@shared/livePreview/sheetCoords';
+import {
+  sheetCellRef,
+  type SheetRangeStart,
+} from '@shared/livePreview/sheetCoords';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
 
@@ -17,6 +20,7 @@ interface SheetData {
   headers: string[];
   rows: unknown[][];
   rowCount: number;
+  rangeStart?: SheetRangeStart;
 }
 
 interface SpreadsheetSpec {
@@ -45,7 +49,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function isSheetRangeStart(value: unknown): value is SheetRangeStart {
+  return (
+    isRecord(value)
+    && typeof value.row === 'number'
+    && Number.isInteger(value.row)
+    && value.row >= 0
+    && typeof value.column === 'number'
+    && Number.isInteger(value.column)
+    && value.column >= 0
+  );
+}
+
 function isSheetData(value: unknown): value is SheetData {
+  const rangeStart = isRecord(value) ? value.rangeStart : undefined;
   return (
     isRecord(value)
     && typeof value.name === 'string'
@@ -54,6 +71,7 @@ function isSheetData(value: unknown): value is SheetData {
     && Array.isArray(value.rows)
     && value.rows.every(Array.isArray)
     && typeof value.rowCount === 'number'
+    && (rangeStart === undefined || isSheetRangeStart(rangeStart))
   );
 }
 
@@ -396,7 +414,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec, 
                     const isNum = typeof value === 'number';
                     // A1 引用走共享口径：DocEdit 会照着这个引用直接改源文件，
                     // 换算只能有一份，验收脚本和单测都从同一个函数取。
-                    const cellRef = sheetCellRef(dataRowIndex, ci);
+                    const cellRef = sheetCellRef(dataRowIndex, ci, sheet.rangeStart);
                     const isCellSelected = filePath != null && selectedCell === cellRef;
 
                     return (

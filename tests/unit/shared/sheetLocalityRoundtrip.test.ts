@@ -25,6 +25,11 @@ import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
 import { executeExcelEdit } from '../../../src/host/tools/excel/excelEdit';
 import { sheetCellRef } from '../../../src/shared/livePreview/sheetCoords';
 import { buildLocalityFeedbackMessage } from '../../../src/shared/livePreview/localityFeedback';
+import {
+  getArtifactLocatorPreflightBlock,
+  upgradeLegacyAnchor,
+} from '../../../src/host/tools/artifacts/artifactLocatorHost';
+import type { Message } from '../../../src/shared/contract';
 
 type RawHandler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
 
@@ -33,6 +38,7 @@ interface SheetPreview {
   headers: string[];
   rows: unknown[][];
   rowCount: number;
+  rangeStart?: { row: number; column: number };
 }
 
 const SALES_COLUMN = 1; // 「销售额」列（0-based）→ A1 里的 B 列
@@ -93,12 +99,80 @@ function clickCellInPreview(sheet: SheetPreview, filePath: string, rowText: stri
   return {
     kind: 'sheet' as const,
     filePath,
-    cell: sheetCellRef(dataRowIndex, SALES_COLUMN),
+    cell: sheetCellRef(dataRowIndex, SALES_COLUMN, sheet.rangeStart),
     sheetName: sheet.name,
   };
 }
 
+async function writeB3Workbook(name: string): Promise<string> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Sheet1');
+  ws.getCell('B3').value = '月份';
+  ws.getCell('C3').value = '销售额';
+  ws.getCell('B4').value = '一月';
+  ws.getCell('C4').value = 100;
+  ws.getCell('B5').value = '三月';
+  ws.getCell('C5').value = 300;
+  const filePath = join(workDir, name);
+  await wb.xlsx.writeFile(filePath);
+  return filePath;
+}
+
+function locatorContext(locator: NonNullable<Awaited<ReturnType<typeof upgradeLegacyAnchor>>>) {
+  return {
+    workingDirectory: workDir,
+    messages: [{
+      id: 'u1',
+      role: 'user',
+      content: '定点反馈',
+      timestamp: 1,
+      metadata: { artifactLocator: locator },
+    }] as Message[],
+  };
+}
+
 describe('表格定点反馈：从 UI 坐标出发改到源文件', () => {
+  it('A1 起始预览 JSON 不增加 rangeStart 字段', async () => {
+    const filePath = await writeWorkbook('a1-start.xlsx', {
+      Sheet1: [['月份', '销售额'], ['一月', 100]],
+    });
+    const handler = handlers.get('extract-excel-json');
+    const result = await handler!(null, filePath);
+
+    expect(JSON.stringify(result)).toBe(
+      '{"sheets":[{"name":"Sheet1","headers":["月份","销售额"],"rows":[["一月",100]],"rowCount":1}],"sheetCount":1}',
+    );
+  });
+
+  it('B3 起始表：点 dataRow1/col0 → guard 放行 B5，DocEdit 只改 B5', async () => {
+    const filePath = await writeB3Workbook('b3-start.xlsx');
+    const [sheet] = await extract(filePath);
+    const dataRowIndex = sheet.rows.findIndex((row) => row?.[0] === '三月');
+    expect(dataRowIndex).toBe(1);
+
+    const anchor = {
+      kind: 'sheet' as const,
+      filePath,
+      sheetName: sheet.name,
+      cell: sheetCellRef(dataRowIndex, 0, sheet.rangeStart),
+    };
+    expect(anchor.cell).toBe('B5');
+
+    const locator = await upgradeLegacyAnchor(anchor);
+    expect(locator).not.toBeNull();
+    const operations = [{ action: 'set_cell', sheet: sheet.name, cell: anchor.cell, value: '四月' }];
+    const block = await getArtifactLocatorPreflightBlock(
+      locatorContext(locator!),
+      { name: 'DocEdit', arguments: { file_path: filePath, operations } },
+    );
+    expect(block).toBeNull();
+
+    const result = await executeExcelEdit({ file_path: filePath, operations }, {} as never);
+    expect(result.success).toBe(true);
+    expect(await readCell(filePath, 'Sheet1', 'B5')).toBe('四月');
+    expect(await readCell(filePath, 'Sheet1', 'A3')).toBeNull();
+  });
+
   it('有空行的表：点「三月」那行 → 真的改 xlsx 第 4 行，前后行不动', async () => {
     const filePath = await writeWorkbook('blank-row.xlsx', { Sheet1: monthlySheet(300) });
     const [sheet] = await extract(filePath);

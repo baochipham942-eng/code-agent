@@ -18,6 +18,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig, isDangerousCommand, getDangerReason } from './utils';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
+import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/approvalResponseGuard';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -111,6 +112,7 @@ export function PermissionCard() {
       const requestSnapshot = pendingPermissionRequest;
       const requestSessionId = pendingPermissionSessionId;
       if (processedRequestRef.current === request.id) return;
+      if (!claimApprovalResponse(request.id)) return;
       processedRequestRef.current = request.id;
 
       if ((level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
@@ -131,17 +133,17 @@ export function PermissionCard() {
 
       const response = toPermissionResponse(level);
       try {
-        if (ipcService.isAvailable()) {
-          await ipcService.invoke(
-            IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-            request.id,
-            response,
-            request.sessionId
-          );
-        }
+        if (!ipcService.isAvailable()) throw new Error('IPC unavailable');
+        await ipcService.invoke(
+          IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+          request.id,
+          response,
+          request.sessionId
+        );
         setPendingPermissionRequest(null);
       } catch {
         processedRequestRef.current = null;
+        releaseApprovalResponse(request.id);
         setPendingPermissionRequest(requestSnapshot, requestSessionId);
         toast.error('审批响应发送失败，请重试');
       }

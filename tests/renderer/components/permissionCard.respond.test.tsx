@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
 const invoke = vi.hoisted(() => vi.fn());
 const setPendingPermissionRequest = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
+const ipcAvailable = vi.hoisted(() => ({ value: true }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: () => ({
@@ -31,7 +32,7 @@ vi.mock('../../../src/renderer/stores/permissionStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { isAvailable: () => true, invoke },
+  default: { isAvailable: () => ipcAvailable.value, invoke },
 }));
 
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
@@ -39,6 +40,8 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
 }));
 
 import { PermissionCard } from '../../../src/renderer/components/PermissionDialog/PermissionCard';
+import { ApprovalSyncCard } from '../../../src/renderer/components/TaskPanel/ApprovalSyncCard';
+import { releaseApprovalResponse } from '../../../src/renderer/utils/approvalResponseGuard';
 
 const request: PermissionRequest = {
   id: 'permission-1',
@@ -52,11 +55,15 @@ const request: PermissionRequest = {
 describe('PermissionCard respond path', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    ipcAvailable.value = true;
     state.request = request;
     state.sessionId = 'session-current';
   });
 
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    releaseApprovalResponse(request.id);
+  });
 
   it('restores the snapshotted request and allows retry after delivery fails', async () => {
     invoke.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undefined);
@@ -78,5 +85,45 @@ describe('PermissionCard respond path', () => {
     fireEvent.click(screen.getByRole('button', { name: /允许/ }));
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
+  });
+
+  it('keeps the pending request and allows retry when IPC is unavailable', async () => {
+    ipcAvailable.value = false;
+    render(<PermissionCard />);
+
+    fireEvent.click(screen.getByRole('button', { name: /允许/ }));
+
+    await waitFor(() => {
+      expect(invoke).not.toHaveBeenCalled();
+      expect(setPendingPermissionRequest).toHaveBeenCalledWith(request, 'session-current');
+      expect(toastError).toHaveBeenCalledWith(expect.stringContaining('请重试'));
+    });
+
+    ipcAvailable.value = true;
+    fireEvent.click(screen.getByRole('button', { name: /允许/ }));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));
+  });
+
+  it('prevents the second surface from responding while the first is in flight', async () => {
+    let resolveInvoke!: () => void;
+    invoke.mockReturnValueOnce(new Promise<void>((resolve) => {
+      resolveInvoke = resolve;
+    }));
+    render(
+      <>
+        <ApprovalSyncCard />
+        <PermissionCard />
+      </>,
+    );
+
+    const allowButtons = screen.getAllByRole('button', { name: /允许/ });
+    fireEvent.click(allowButtons[0]);
+    fireEvent.click(allowButtons[1]);
+
+    expect(invoke).toHaveBeenCalledTimes(1);
+    resolveInvoke();
+    await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenCalledWith(null));
   });
 });

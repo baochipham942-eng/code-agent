@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { deserialize, serialize } from 'node:v8';
 import { SCRIPT_RUNTIME } from '../../../shared/constants';
 import { redactSecrets } from '../../security/secretRedaction';
+// eslint-disable-next-line no-restricted-imports -- process sandbox requires OS process-tree cleanup
 import { killProcessTree } from '../../tools/shell/platformShell';
 import type { RpcRequest, RpcResponse } from './types';
 import { runScriptInLegacyWorker } from './legacyWorkerSandbox';
@@ -220,6 +221,8 @@ export interface RunSandboxOptions {
   signal: AbortSignal;
   onRpc: (req: RpcRequest) => Promise<RpcResponse>;
   timeoutMs?: number;
+  /** Timeout won the sandbox terminal race; abort host-side in-flight RPC synchronously. */
+  onTimeout?: () => void;
   onProcessSpawn?: (pid: number) => void;
   /** 测试/受限宿主可显式关闭 OS wrapper；生产默认开启且不自动降级。 */
   useOsSandbox?: boolean;
@@ -341,12 +344,32 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
         killProcessTree(child, 'SIGKILL', { posixGroupKill: process.platform !== 'win32' });
       }, KILL_GRACE_MS);
     };
+    const onStdinError = (error: Error): void => {
+      if (settled || requestedOutcome) return;
+      stopTree({ ok: false, error: redactSecrets(`process sandbox stdin write failed: ${error.message}`) });
+    };
+    const writeToChild = (message: unknown): void => {
+      if (
+        settled
+        || requestedOutcome
+        || child.stdin.destroyed
+        || child.stdin.writableEnded
+        || !child.stdin.writable
+      ) return;
+      try {
+        child.stdin.write(`${encodeMessage(message)}\n`);
+      } catch (error) {
+        onStdinError(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
     const onAbort = (): void => stopTree({ ok: false, error: 'run aborted' });
-    const timeoutTimer = setTimeout(
-      () => stopTree({ ok: false, error: `process sandbox 执行超时 ${timeoutMs}ms` }),
-      timeoutMs,
-    );
+    const timeoutTimer = setTimeout(() => {
+      if (requestedOutcome) return;
+      stopTree({ ok: false, error: `process sandbox 执行超时 ${timeoutMs}ms` });
+      opts.onTimeout?.();
+    }, timeoutMs);
 
+    child.stdin.on('error', onStdinError);
     child.stderr.on('data', (chunk: Buffer | string) => {
       if (stderr.length < STDERR_LIMIT) stderr += chunk.toString().slice(0, STDERR_LIMIT - stderr.length);
     });
@@ -365,7 +388,7 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
           if (message.type === 'rpc' && message.request) {
             const req = message.request;
             if (!['agent', 'phase', 'log'].includes(req.kind)) {
-              child.stdin.write(`${encodeMessage({ type: 'rpc-response', response: { id: req.id, ok: false, error: 'unsupported primitive' } })}\n`);
+              writeToChild({ type: 'rpc-response', response: { id: req.id, ok: false, error: 'unsupported primitive' } });
             } else {
               const invokeRpc = () => opts.onRpc(req);
               let rpcPromise: Promise<RpcResponse>;
@@ -400,7 +423,7 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
                   } catch {
                     // RPC completion must not depend on tracing availability.
                   }
-                  child.stdin.write(`${encodeMessage({ type: 'rpc-response', response })}\n`);
+                  writeToChild({ type: 'rpc-response', response });
                 },
                 (error) => {
                   try {
@@ -408,10 +431,10 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
                   } catch {
                     // Preserve the original RPC error.
                   }
-                  child.stdin.write(`${encodeMessage({
+                  writeToChild({
                     type: 'rpc-response',
                     response: { id: req.id, ok: false, error: redactSecrets(error instanceof Error ? error.message : String(error)) },
-                  })}\n`);
+                  });
                 },
               );
             }
@@ -439,7 +462,7 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
       return;
     }
     opts.signal.addEventListener('abort', onAbort, { once: true });
-    child.stdin.write(`${encodeMessage({
+    writeToChild({
       type: 'init',
       script: opts.script,
       goal: opts.goal,
@@ -447,7 +470,7 @@ export function runScriptInSandbox(opts: RunSandboxOptions): Promise<WorkerOutco
       capabilities: ORCHESTRATION_CAPABILITIES,
       traceContext: opts.traceContext,
       nestedGraph: opts.nestedGraph,
-    })}\n`);
+    });
   });
 }
 

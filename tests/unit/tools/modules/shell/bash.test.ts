@@ -72,6 +72,8 @@ vi.mock('../../../../../src/host/sandbox', async (importOriginal) => ({
 
 import {
   bashModule,
+  appendFailureDiagnostics,
+  diagnoseBashFailure,
   rewriteImplicitBackgroundCommand,
   looksLikeCodeImageGeneration,
 } from '../../../../../src/host/tools/modules/shell/bash';
@@ -546,6 +548,26 @@ describe('bashModule (native)', () => {
         expect(result.error).toContain('too many tasks');
       }
     });
+
+    it('appends dependency diagnostics when background task startup fails for npx/node/npm', async () => {
+      startBackgroundTaskMock.mockReturnValue({
+        success: false,
+        error: 'spawn npx ENOENT',
+      });
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute(
+        { command: 'npx vite --host 127.0.0.1', run_in_background: true },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('FS_ERROR');
+        expect(result.error).toContain('spawn npx ENOENT');
+        expect(result.error).toContain('依赖');
+        expect(result.error).toContain('npx');
+      }
+    });
   });
 
   describe('pty mode', () => {
@@ -638,6 +660,121 @@ describe('bashModule (native)', () => {
         expect(result.error).toContain('pty unavailable');
       }
     });
+  });
+});
+
+describe('bash failure diagnostics', () => {
+  it('detects likely self-kill only when signal, fast duration, and kill command all match', () => {
+    const positive = diagnoseBashFailure({
+      command: 'kill -TERM $$',
+      signal: 'SIGTERM',
+      durationMs: 25,
+      stderr: '',
+    });
+    expect(positive.join('\n')).toContain('可能');
+    expect(positive.join('\n')).toContain('kill');
+
+    expect(diagnoseBashFailure({
+      command: 'echo "terminated"',
+      signal: 'SIGTERM',
+      durationMs: 25,
+      stderr: 'pkill matched only in stderr',
+    })).toEqual([]);
+    expect(diagnoseBashFailure({
+      command: 'pkill node',
+      signal: 'SIGTERM',
+      durationMs: 1000,
+    })).toEqual([]);
+    expect(diagnoseBashFailure({
+      command: 'pkill node',
+      signal: 'SIGHUP' as NodeJS.Signals,
+      durationMs: 25,
+    })).toEqual([]);
+  });
+
+  it('detects npx/node/npm dependency failures from ENOENT or command-not-found output', () => {
+    const enoent = diagnoseBashFailure({
+      command: 'npx vitest',
+      message: 'spawn npx ENOENT',
+    });
+    expect(enoent.join('\n')).toContain('依赖');
+    expect(enoent.join('\n')).toContain('npx');
+
+    const commandNotFound = diagnoseBashFailure({
+      command: 'npm run dev',
+      stderr: 'sh: npm: command not found',
+      code: 127,
+    });
+    expect(commandNotFound.join('\n')).toContain('依赖');
+    expect(commandNotFound.join('\n')).toContain('npm');
+  });
+
+  it('detects exit 137 as a likely OOM kill', () => {
+    const diagnostics = diagnoseBashFailure({
+      command: 'node ./scripts/build.js',
+      code: 137,
+    });
+    expect(diagnostics.join('\n')).toContain('exit 137');
+    expect(diagnostics.join('\n')).toMatch(/OOM|内存/);
+  });
+
+  it('appends diagnostics to the model-visible failure message', () => {
+    const message = appendFailureDiagnostics('Command failed with exit code 137', [
+      '诊断：exit 137 通常表示进程可能被系统 OOM killer 终止。',
+      '建议：降低并发或改用后台任务观察输出。',
+    ]);
+    expect(message).toContain('Command failed with exit code 137');
+    expect(message).toContain('诊断：exit 137');
+    expect(message).toContain('建议：降低并发');
+  });
+});
+
+describe('bashModule failure diagnostics wiring', () => {
+  it('appends likely self-kill diagnostics on foreground signal failures', async () => {
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'kill -TERM $$' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('FS_ERROR');
+      expect(result.error).toContain('可能');
+      expect(result.error).toContain('kill');
+    }
+  });
+
+  it('appends OOM diagnostics on foreground non-zero exit 137', async () => {
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute(
+      { command: 'node -e "process.exit(137)"' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('FS_ERROR');
+      expect(result.error).toContain('exit 137');
+      expect(result.error).toMatch(/OOM|内存/);
+    }
+  });
+
+  it('appends dependency diagnostics on foreground spawn errors for npx/node/npm', async () => {
+    const handler = await bashModule.createHandler();
+    const missingCwd = join(tmpdir(), `bash-missing-cwd-${process.pid}-${Date.now()}`);
+    const result = await handler.execute(
+      { command: 'npx vite', working_directory: missingCwd },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('FS_ERROR');
+      expect(result.error).toContain('ENOENT');
+      expect(result.error).toContain('依赖');
+      expect(result.error).toContain('npx');
+    }
   });
 });
 

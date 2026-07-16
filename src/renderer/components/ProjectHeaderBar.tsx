@@ -56,6 +56,7 @@ const ARTIFACT_ICON: Partial<Record<ProjectArtifact['kind'], React.ComponentType
   spreadsheet: Table2,
   document: FileText,
   generative_ui: LayoutGrid,
+  neo_ui: LayoutGrid,
   mermaid: LayoutGrid,
   question_form: FileText,
   file: FileText,

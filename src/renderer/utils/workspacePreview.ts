@@ -451,6 +451,8 @@ function artifactKind(type: string): WorkspacePreviewKind {
       return 'document';
     case 'generative_ui':
       return 'generic_html';
+    case 'neo_ui':
+      return 'file';
     case 'chart':
       return 'chart';
     case 'mermaid':
@@ -528,7 +530,7 @@ function collectMessageArtifacts(
         },
         content: {
           html: artifact.type === 'generative_ui' ? artifact.content : undefined,
-          json: ['chart', 'spreadsheet', 'document', 'question_form'].includes(artifact.type)
+          json: ['chart', 'spreadsheet', 'document', 'question_form', 'neo_ui'].includes(artifact.type)
             ? artifact.content
             : undefined,
           text: artifact.type === 'mermaid' ? artifact.content : undefined,

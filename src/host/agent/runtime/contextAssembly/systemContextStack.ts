@@ -188,6 +188,22 @@ export async function addAndPersistMessage(ctx: ContextAssemblyCtx, message: Mes
 
   if (persisted) {
     markMessagePersistedByContextAssembly(message);
+    if (
+      ctx.runtime.sessionId
+      && message.role === 'assistant'
+      && message.content.includes('```neo_ui')
+    ) {
+      try {
+        const { getGenerativeUIService } = await import('../../../services/generativeUI/generativeUIService');
+        getGenerativeUIService().admitMessage(ctx.runtime.sessionId, message);
+      } catch (error) {
+        logger.warn('[ContextAssembly] native generative UI admission failed', {
+          sessionId: ctx.runtime.sessionId,
+          messageId: message.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   } else {
     logger.warn('[ContextAssembly] message NOT persisted to db', {
       sessionId: ctx.runtime.sessionId,

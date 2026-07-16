@@ -52,6 +52,7 @@ export const IPC_DOMAINS = {
   AGENT_ENGINE: 'domain:agentEngine', // Native / Codex CLI / Claude Code execution engines
   CAPABILITY: 'domain:capability', // Skill / MCP / Tool / Channel 能力中心
   PII: 'domain:pii', // 本地 PII 防线（GLiNER 一键启用，B3 推荐组合）
+  GENERATIVE_UI: 'domain:generativeUI', // Agent Neo native generative UI state/actions
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

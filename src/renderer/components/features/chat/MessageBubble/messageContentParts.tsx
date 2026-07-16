@@ -86,6 +86,7 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   spreadsheet: { color: 'text-emerald-400', name: 'Spreadsheet' },
   document: { color: 'text-blue-400', name: 'Document' },
   generative_ui: { color: 'text-violet-400', name: 'Generative UI' },
+  neo_ui: { color: 'text-violet-300', name: 'Neo Interactive UI' },
 };
 
 // Unique ID counter for mermaid diagrams

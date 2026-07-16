@@ -162,6 +162,11 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'execPolicy',
     'logClientError',
   ],
+  [IPC_DOMAINS.GENERATIVE_UI]: [
+    'applyEvent',
+    'resolveInstance',
+    'resolveManifest',
+  ],
   [IPC_DOMAINS.HOOK]: [
     'list',
     'openConfigFile',

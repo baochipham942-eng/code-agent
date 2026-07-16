@@ -59,6 +59,7 @@ export type ProjectArtifactKind =
   | 'spreadsheet'
   | 'document'
   | 'generative_ui'
+  | 'neo_ui'
   | 'mermaid'
   | 'question_form'
   | 'file'

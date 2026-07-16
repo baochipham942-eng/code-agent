@@ -76,6 +76,7 @@ const ARTIFACT_KIND_LABEL: Record<SidebarProjectArtifactMeta['kind'], string> = 
   spreadsheet: '表格',
   document: '文档',
   generative_ui: '界面',
+  neo_ui: '交互界面',
   mermaid: '图示',
   question_form: '表单',
   file: '文件',

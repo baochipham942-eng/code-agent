@@ -105,6 +105,24 @@ function createSchema(db: BetterSqlite3.Database): void {
       persistent_system_context_json TEXT NOT NULL DEFAULT '[]',
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE generative_ui_instances (
+      instance_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      source_message_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE execution_manifests (
+      manifest_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      resolved_at INTEGER,
+      invalidation_reason TEXT
+    );
   `);
 
   db.prepare(
@@ -314,6 +332,48 @@ describe('SessionRepository runtime recovery state', () => {
     expect(audit.hidden_message_count).toBe(2);
     expect(audit.files_restored).toBe(2);
     expect(audit.files_deleted).toBe(1);
+  });
+
+  it('hides generated instances and invalidates open manifests when their source is rewound', () => {
+    for (const message of [
+      { id: 'u1', role: 'user', content: 'keep', timestamp: 10 },
+      { id: 'a1', role: 'assistant', content: 'keep answer', timestamp: 20 },
+      { id: 'u2', role: 'user', content: 'rewind here', timestamp: 30 },
+      { id: 'a2', role: 'assistant', content: 'generated UI', timestamp: 40 },
+    ] as Message[]) repo.addMessage('session-1', message);
+    db.prepare(`
+      INSERT INTO generative_ui_instances (instance_id, session_id, source_message_id, status, updated_at)
+      VALUES ('ui-1', 'session-1', 'a2', 'active', 40)
+    `).run();
+    db.prepare(`
+      INSERT INTO execution_manifests (manifest_id, session_id, instance_id, status, updated_at)
+      VALUES ('manifest-1', 'session-1', 'ui-1', 'approved', 50)
+    `).run();
+
+    repo.applyPromptRewind('session-1', 'u2', { createdAt: 100 });
+
+    expect(db.prepare('SELECT status FROM generative_ui_instances WHERE instance_id = ?').get('ui-1'))
+      .toEqual({ status: 'hidden' });
+    expect(db.prepare('SELECT status, invalidation_reason FROM execution_manifests WHERE manifest_id = ?').get('manifest-1'))
+      .toEqual({ status: 'invalidated', invalidation_reason: 'SOURCE_REWOUND' });
+  });
+
+  it('revokes generated UI authority on session deletion', () => {
+    db.prepare(`
+      INSERT INTO generative_ui_instances (instance_id, session_id, source_message_id, status, updated_at)
+      VALUES ('ui-delete', 'session-1', 'message-delete', 'active', 40)
+    `).run();
+    db.prepare(`
+      INSERT INTO execution_manifests (manifest_id, session_id, instance_id, status, updated_at)
+      VALUES ('manifest-delete', 'session-1', 'ui-delete', 'executing', 50)
+    `).run();
+
+    repo.deleteSession('session-1', { deletedAt: 200 });
+
+    expect(db.prepare('SELECT status FROM generative_ui_instances WHERE instance_id = ?').get('ui-delete'))
+      .toEqual({ status: 'deleted' });
+    expect(db.prepare('SELECT status, invalidation_reason FROM execution_manifests WHERE manifest_id = ?').get('manifest-delete'))
+      .toEqual({ status: 'invalidated', invalidation_reason: 'SESSION_DELETED' });
   });
 
   it('keeps only the remaining active line across multiple rewinds', () => {

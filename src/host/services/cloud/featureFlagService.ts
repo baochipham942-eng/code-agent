@@ -53,6 +53,8 @@ export class FeatureFlagService {
       maxIterations: this.get('maxIterations'),
       maxMessageLength: this.get('maxMessageLength'),
       enableExperimentalTools: this.get('enableExperimentalTools'),
+      nativeGenerativeUI: this.get('nativeGenerativeUI'),
+      executionManifestV1: this.get('executionManifestV1'),
     };
   }
 

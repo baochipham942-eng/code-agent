@@ -185,7 +185,7 @@ export interface CompactionBlock {
 // Generative UI Artifact（可视化产物）
 export interface Artifact {
   id: string;           // 唯一标识，如 'artifact_1'
-  type: 'chart' | 'spreadsheet' | 'document' | 'generative_ui' | 'mermaid' | 'question_form';
+  type: 'chart' | 'spreadsheet' | 'document' | 'generative_ui' | 'neo_ui' | 'mermaid' | 'question_form';
   title?: string;       // 可视化标题
   content: string;      // chart JSON spec / HTML 源码 / question-form JSON 主体
   version: number;      // 版本号，用于追踪修改

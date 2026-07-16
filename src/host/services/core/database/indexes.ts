@@ -101,6 +101,10 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_approvals_status ON pending_approvals(status)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_approvals_kind_status ON pending_approvals(kind, status)`);
 
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_instances_message ON generative_ui_instances(session_id, source_message_id, source_ordinal)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_events_instance_created ON generative_ui_events(instance_id, created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_execution_manifests_session_status ON execution_manifests(session_id, status, created_at)`);
+
   // Neo Tag work card indexes (P0)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_cards_project_updated ON neo_work_cards(project_id, updated_at DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_neo_work_cards_project_status_updated ON neo_work_cards(project_id, status, updated_at DESC)`);

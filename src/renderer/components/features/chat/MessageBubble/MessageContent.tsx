@@ -14,6 +14,8 @@ import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../ut
 import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
+import { GenerativeUIHost } from '../GenerativeUI/GenerativeUIHost';
+import { neoUIOrdinalAtOffset } from '../GenerativeUI/sourceOrdinal';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
 import { shouldRenderStreamingContentAsMarkdown, useThrottledStreamingContent } from '../../../../hooks/useThrottledStreamingContent';
@@ -122,6 +124,17 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           }
           if (language === 'generative_ui') {
             return <GenerativeUIBlock code={codeContent} />;
+          }
+          if (language === 'neo_ui') {
+            return (
+              <GenerativeUIHost
+                rawSpec={codeContent}
+                sessionId={mediaContext?.sessionId}
+                messageId={messageId}
+                sourceOrdinal={neoUIOrdinalAtOffset(content, node?.position?.start.offset)}
+                isStreaming={isStreaming}
+              />
+            );
           }
           if (language === 'spreadsheet') {
             return <SpreadsheetBlock spec={codeContent} />;
@@ -426,7 +439,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [handleOpenFile, handlePreviewHtml, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [content, handleOpenFile, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
 
   // Filter out system tags, auto-link ticket IDs, wrap file paths,

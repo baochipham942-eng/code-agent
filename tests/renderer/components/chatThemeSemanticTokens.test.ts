@@ -14,6 +14,13 @@ const semanticTokens = [
   ['border-hover', '--border-hover'],
 ] as const;
 
+const statusTextTokens = [
+  ['status-success', '--status-text-success'],
+  ['status-warning', '--status-text-warning'],
+  ['status-error', '--status-text-error'],
+  ['status-warning-soft', '--status-text-warning-soft'],
+] as const;
+
 const themeFiles = [
   'src/renderer/styles/themes/light.css',
   'src/renderer/styles/themes/dark.css',
@@ -22,10 +29,10 @@ const themeFiles = [
 ];
 
 describe('chat semantic theme tokens', () => {
-  it('registers surface, border, and status semantic colors in Tailwind', () => {
+  it('registers surface, border, and status text semantic colors in Tailwind', () => {
     const tailwindConfig = readSource('tailwind.config.js');
 
-    for (const [name, variable] of semanticTokens) {
+    for (const [name, variable] of [...semanticTokens, ...statusTextTokens]) {
       expect(tailwindConfig).toContain(`'${name}': 'var(${variable})'`);
     }
 
@@ -37,9 +44,32 @@ describe('chat semantic theme tokens', () => {
   it.each(themeFiles)('defines every new variable in %s', (themeFile) => {
     const theme = readSource(themeFile);
 
-    for (const [, variable] of semanticTokens) {
+    for (const [, variable] of [...semanticTokens, ...statusTextTokens]) {
       expect(theme).toMatch(new RegExp(`${variable}\\s*:`));
     }
+  });
+
+  it('restores the original dark chat status text literals', () => {
+    const darkTheme = readSource('src/renderer/styles/themes/dark.css');
+
+    expect(darkTheme).toContain('--status-text-success: #6EE7B7;');
+    expect(darkTheme).toContain('--status-text-warning: #FCD34D;');
+    expect(darkTheme).toContain('--status-text-error: #FCA5A5;');
+    expect(darkTheme).toContain('--status-text-warning-soft: #FEF3C7;');
+  });
+
+  it('uses dedicated status text classes in the targeted chat components', () => {
+    const chatView = readSource('src/renderer/components/ChatView.tsx');
+    const turnCard = readSource('src/renderer/components/features/chat/TurnCard.tsx');
+    const getToneClass = turnCard.match(/function getToneClass[\s\S]*?\n}/)?.[0] ?? '';
+    const recoveryBanner = chatView.match(/const StreamRecoveryBanner[\s\S]*?\n};/)?.[0] ?? '';
+
+    expect(getToneClass).toContain('text-status-success');
+    expect(getToneClass).toContain('text-status-warning');
+    expect(getToneClass).toContain('text-status-error');
+    expect(getToneClass).not.toMatch(/text-(success|warning|error)(?:\W|$)/);
+    expect(recoveryBanner).toContain('text-status-warning-soft');
+    expect(recoveryBanner).not.toMatch(/text-warning(?:\W|$)/);
   });
 
   it('removes the named dark-only literals from their targeted chat UI fragments', () => {

@@ -665,11 +665,11 @@ function getTurnCompletionSignal(turn: TraceTurn): string | null {
 function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'): string {
   switch (tone) {
     case 'success':
-      return 'border-emerald-500/20 bg-emerald-500/10 text-success';
+      return 'border-emerald-500/20 bg-emerald-500/10 text-status-success';
     case 'warning':
-      return 'border-amber-500/20 bg-amber-500/10 text-warning';
+      return 'border-amber-500/20 bg-amber-500/10 text-status-warning';
     case 'error':
-      return 'border-red-500/20 bg-red-500/10 text-error';
+      return 'border-red-500/20 bg-red-500/10 text-status-error';
     case 'info':
       return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
     default:

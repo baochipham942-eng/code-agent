@@ -922,16 +922,16 @@ const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ 
 
   return (
     <div className="px-4 pt-3">
-      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-warning">
+      <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-status-warning-soft">
         <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-300" />
         <div className="min-w-0">
           <div className="font-medium">上次回复在流式输出中断</div>
-          <div className="mt-1 text-warning/80">
+          <div className="mt-1 text-status-warning-soft/80">
             {snapshot.toolCalls.length > 0
               ? `${snapshot.toolCalls.length} 个 tool call 只保留为恢复快照，未执行：${toolNames.join(', ')}${extraCount ? ` +${extraCount}` : ''}`
               : '部分文本已保留为恢复快照。'}
           </div>
-          <div className="mt-1 text-xs text-warning/60">
+          <div className="mt-1 text-xs text-status-warning-soft/60">
             turn {snapshot.turnId.slice(0, 8)} - {timeLabel}
           </div>
         </div>

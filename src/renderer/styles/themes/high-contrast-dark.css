@@ -41,6 +41,12 @@
   --color-info: #00BFFF;
   --color-info-muted: rgba(0, 191, 255, 0.2);
 
+  /* Chat status text colors */
+  --status-text-success: #6EE7B7;
+  --status-text-warning: #FCD34D;
+  --status-text-error: #FCA5A5;
+  --status-text-warning-soft: #FEF3C7;
+
   /* Border colors - visible borders */
   --border-subtle: rgba(255, 255, 255, 0.15);
   --border-default: rgba(255, 255, 255, 0.3);

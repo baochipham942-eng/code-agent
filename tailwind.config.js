@@ -52,6 +52,10 @@ export default {
           DEFAULT: 'var(--color-info)',
           muted: 'var(--color-info-muted)',
         },
+        'status-success': 'var(--status-text-success)',
+        'status-warning': 'var(--status-text-warning)',
+        'status-error': 'var(--status-text-error)',
+        'status-warning-soft': 'var(--status-text-warning-soft)',
 
         // Border colors
         'border-subtle': 'var(--border-subtle)',

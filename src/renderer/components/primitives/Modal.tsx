@@ -2,8 +2,11 @@
 // Modal - Base modal component with customizable size and layout
 // ============================================================================
 
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useId, useRef } from 'react';
 import { X } from 'lucide-react';
+
+const focusableSelector =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full' | 'viewport';
 
@@ -64,6 +67,7 @@ export const Modal: React.FC<ModalProps> = ({
   zIndex = 50,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
+  const headerId = useId();
 
   // ESC key handler
   const handleKeyDown = useCallback(
@@ -93,10 +97,18 @@ export const Modal: React.FC<ModalProps> = ({
     }
   }, [isOpen]);
 
-  // Focus trap - focus modal on open
+  // Focus modal on open and restore focus on close
   useEffect(() => {
     if (isOpen && modalRef.current) {
+      const previouslyFocused =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       modalRef.current.focus();
+
+      return () => {
+        if (previouslyFocused?.isConnected) {
+          previouslyFocused.focus();
+        }
+      };
     }
   }, [isOpen]);
 
@@ -110,6 +122,31 @@ export const Modal: React.FC<ModalProps> = ({
 
   const handleModalClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+  };
+
+  const handleModalKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab' || !modalRef.current) return;
+
+    const focusableElements = Array.from(
+      modalRef.current.querySelectorAll<HTMLElement>(focusableSelector)
+    );
+
+    if (focusableElements.length === 0) {
+      e.preventDefault();
+      modalRef.current.focus();
+      return;
+    }
+
+    const first = focusableElements[0];
+    const last = focusableElements[focusableElements.length - 1];
+
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === modalRef.current)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
   };
 
   const zIndexStyle = { zIndex };
@@ -129,12 +166,15 @@ export const Modal: React.FC<ModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        aria-labelledby={!title && header ? headerId : undefined}
         className={`relative w-full ${sizeClasses[size]} ${size === 'viewport' ? 'max-h-none rounded-none' : 'max-h-[90vh] rounded-xl'} flex flex-col bg-zinc-900 border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn outline-hidden ${className}`}
         onClick={handleModalClick}
+        onKeyDown={handleModalKeyDown}
       >
         {/* Header */}
         {(header || title) && (
           <div
+            id={!title && header ? headerId : undefined}
             className={`flex items-center gap-3 px-6 py-4 border-b border-zinc-700 shrink-0 ${headerBgClass || ''}`}
           >
             {header ? (

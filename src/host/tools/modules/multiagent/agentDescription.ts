@@ -1,8 +1,6 @@
 import type { AgentListEntry } from '../../../../shared/contract/agentRegistry';
-import { createRequire } from 'node:module';
 
 const DESCRIPTION_LIMIT = 100;
-const requireFromHere = createRequire(import.meta.url);
 
 type AgentLister = () => readonly AgentListEntry[];
 
@@ -16,10 +14,10 @@ function defaultListAgents(): readonly AgentListEntry[] {
   // Keep schema modules lightweight at import time. Some runtime tests mock
   // low-level constants before loading tool schemas; pulling agentRegistry
   // eagerly would force coreAgents through those mocks.
-  const globalRegistry = registryGlobal();
-  if (globalRegistry?.listAllAgents) return globalRegistry.listAllAgents();
-  const registry = requireFromHere('../../../agent/agentRegistry') as { listAllAgents: AgentLister };
-  return registry.listAllAgents();
+  // 只走 agentRegistry 模块加载时注册的进程内 provider——不要在这里 require/import
+  // registry：CJS bundle 里 import.meta.url 是 undefined，顶层 createRequire 会让
+  // webServer 加载即炸（PR#417 CI 实锤）。拿不到 provider 就回静态描述。
+  return registryGlobal()?.listAllAgents?.() ?? [];
 }
 
 function normalizeText(value: string): string {

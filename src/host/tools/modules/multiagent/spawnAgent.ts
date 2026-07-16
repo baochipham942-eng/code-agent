@@ -21,7 +21,6 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { createRequire } from 'node:module';
 import { executeSpawnAgent } from '../../../agent/multiagentTools/spawnAgent';
 import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import type { SubagentExecutionContext } from '../../../agent/subagentExecutorTypes';
@@ -38,21 +37,17 @@ import {
   inferAgentFailureCode,
 } from '../../../../shared/contract/agentFailure';
 
-const requireFromHere = createRequire(import.meta.url);
-
 function getDeclaredOutputsForRole(role: string | undefined): string[] | undefined {
   if (!role) return undefined;
   try {
+    // 只走 agentRegistry 模块加载时注册的进程内 provider——顶层 createRequire(import.meta.url)
+    // 在 CJS bundle 里 import.meta.url 为 undefined，模块加载即炸（PR#417 CI 实锤）。
     const globalRegistry = (globalThis as typeof globalThis & {
       codeAgentAgentRegistry?: {
         resolveAgent?: (id: string) => { outputs?: string[] } | undefined;
       };
     }).codeAgentAgentRegistry;
-    const resolver = globalRegistry?.resolveAgent
-      ?? (requireFromHere('../../../agent/agentRegistry') as {
-        resolveAgent: (id: string) => { outputs?: string[] } | undefined;
-      }).resolveAgent;
-    const outputs = resolver(role)?.outputs;
+    const outputs = globalRegistry?.resolveAgent?.(role)?.outputs;
     return outputs && outputs.length > 0 ? outputs : undefined;
   } catch {
     return undefined;

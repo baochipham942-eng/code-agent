@@ -2,6 +2,8 @@
 // Secret Redaction - small dependency-free helpers for logs and smoke output
 // ============================================================================
 
+import { redactCredentialText } from '../../shared/security/secretPatterns';
+
 const SENSITIVE_KEY_PARTS = [
   'apikey',
   'api_key',
@@ -17,35 +19,13 @@ const SENSITIVE_KEY_PARTS = [
   'cookie',
 ];
 
-const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
-  {
-    pattern: /\b(https?:\/\/)[^:@/\s]+:[^@/\s]+@/gi,
-    replacement: '$1***REDACTED***@',
-  },
-  {
-    pattern: /\b(Set-Cookie|Cookie)(\s*:\s*)[^'"\r\n]+/gi,
-    replacement: '$1$2***REDACTED***',
-  },
-  {
-    pattern: /\b((?:session[-_\s]?cookie|cookie)\s*=\s*)[^\s'";,]+/gi,
-    replacement: '$1***REDACTED***',
-  },
-  { pattern: /\bsk-[A-Za-z0-9][A-Za-z0-9_*.-]{4,}/g, replacement: 'sk-***REDACTED***' },
-  { pattern: /\bAIza[0-9A-Za-z_-]{20,}/g, replacement: 'AIza***REDACTED***' },
-  { pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, replacement: 'Bearer ***REDACTED***' },
-];
-
 export function isSensitiveLogKey(key: string): boolean {
   const normalized = key.toLowerCase().replace(/[-_\s]/g, '');
   return SENSITIVE_KEY_PARTS.some((part) => normalized.includes(part.replace(/_/g, '')));
 }
 
 export function redactSecrets(value: string): string {
-  let redacted = value;
-  for (const { pattern, replacement } of SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, replacement);
-  }
-  return redacted;
+  return redactCredentialText(value, { redacted: '***REDACTED***' });
 }
 
 export function sanitizeLogValue(value: unknown, key?: string): unknown {

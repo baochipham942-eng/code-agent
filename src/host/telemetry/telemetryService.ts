@@ -6,8 +6,8 @@
 // ============================================================================
 
 import crypto from 'crypto';
+import { redactCredentialText } from '../../shared/security/secretPatterns';
 import { createLogger } from '../services/infra/logger';
-import { redactSecrets } from '../security/secretRedaction';
 import {
   createChildRunTraceContext,
   getActiveRunTraceContext,
@@ -115,7 +115,7 @@ function sanitizeSpanAttributes(
 ): Record<string, string | number | boolean> {
   return Object.fromEntries(Object.entries(attributes)
     .filter(([key]) => !SENSITIVE_ATTRIBUTE_KEY.test(key))
-    .map(([key, value]) => [key, typeof value === 'string' ? redactSecrets(value) : value]));
+    .map(([key, value]) => [key, typeof value === 'string' ? redactCredentialText(value) : value]));
 }
 
 // ── TelemetryService ─────────────────────────────────────────────────────

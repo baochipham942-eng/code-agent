@@ -3,6 +3,11 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import {
+  secretPatternRegistry,
+  type SecretPatternEntry,
+  type SecretPatternType,
+} from '../../shared/security/secretPatterns';
 
 const logger = createLogger('SensitiveDetector');
 
@@ -86,7 +91,31 @@ interface SensitivePattern {
   pattern: RegExp;
   confidence: SensitiveMatch['confidence'];
   maskStyle: 'full' | 'partial' | 'prefix';
+  validate?: SecretPatternEntry['validate'];
 }
+
+const SHARED_SECRET_TYPE_MAP: Record<SecretPatternType, SensitiveType> = {
+  basic_auth: 'basic_auth',
+  cookie: 'generic_secret',
+  openai_key: 'openai_key',
+  gcp_key: 'gcp_key',
+  bearer_token: 'bearer_token',
+  github_pat: 'github_pat',
+  github_token: 'github_token',
+  slack_token: 'slack_token',
+  aws_access_key: 'aws_access_key',
+  url_query_token: 'generic_secret',
+  jwt_token: 'jwt_token',
+  private_key: 'private_key',
+};
+
+const SHARED_SECRET_PATTERNS: SensitivePattern[] = secretPatternRegistry.map((entry) => ({
+  type: SHARED_SECRET_TYPE_MAP[entry.type],
+  pattern: entry.pattern,
+  confidence: entry.confidence,
+  maskStyle: entry.maskStyle === 'prefix' ? 'prefix' : 'full',
+  validate: entry.validate,
+}));
 
 /**
  * Patterns for detecting sensitive information
@@ -280,9 +309,11 @@ const SENSITIVE_PATTERNS: SensitivePattern[] = [
   // JWT Tokens
   {
     type: 'jwt_token',
-    pattern: /eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*/g,
+    pattern: secretPatternRegistry.find((entry) => entry.id === 'jwt-token')?.pattern
+      ?? /(?<![\w-])[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![\w-])/g,
     confidence: 'high',
     maskStyle: 'partial',
+    validate: secretPatternRegistry.find((entry) => entry.id === 'jwt-token')?.validate,
   },
 
   // Bearer Tokens
@@ -348,6 +379,7 @@ const SENSITIVE_PATTERNS: SensitivePattern[] = [
     confidence: 'low',
     maskStyle: 'full',
   },
+  ...SHARED_SECRET_PATTERNS,
 ];
 
 // ----------------------------------------------------------------------------
@@ -391,12 +423,15 @@ export class SensitiveDetector {
     // Track matched ranges to avoid duplicates
     const matchedRanges: Set<string> = new Set();
 
-    for (const { type, pattern, confidence, maskStyle } of allPatterns) {
+    for (const { type, pattern, confidence, maskStyle, validate } of allPatterns) {
       // Reset regex lastIndex for global patterns
       pattern.lastIndex = 0;
 
       let match: RegExpExecArray | null;
       while ((match = pattern.exec(text)) !== null) {
+        if (validate && !validate(text, match)) {
+          continue;
+        }
         const start = match.index;
         const end = start + match[0].length;
         const rangeKey = `${start}-${end}`;
@@ -464,10 +499,19 @@ export class SensitiveDetector {
   hasSensitive(text: string): boolean {
     const allPatterns = [...this.patterns, ...this.customPatterns];
 
-    for (const { pattern } of allPatterns) {
+    for (const { pattern, validate } of allPatterns) {
       pattern.lastIndex = 0;
-      if (pattern.test(text)) {
-        return true;
+      if (!validate) {
+        if (pattern.test(text)) {
+          return true;
+        }
+        continue;
+      }
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(text)) !== null) {
+        if (validate(text, match)) {
+          return true;
+        }
       }
     }
 

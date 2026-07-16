@@ -116,11 +116,11 @@ const AttachmentItem: React.FC<{
       )}
       <IconButton
         icon={<X className="w-3 h-3" />}
-        aria-label="移除附件"
+        aria-label={`移除附件 ${att.name}`}
         onClick={onRemove}
         variant="danger"
         size="sm"
-        className="absolute -top-1.5 -right-1.5 !p-0.5 !w-5 !h-5 bg-zinc-600 hover:!bg-red-500 !rounded-full !text-white opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute -top-1.5 -right-1.5 !p-0.5 !w-5 !h-5 bg-zinc-600 hover:!bg-red-500 !rounded-full !text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity"
       />
     </div>
   );

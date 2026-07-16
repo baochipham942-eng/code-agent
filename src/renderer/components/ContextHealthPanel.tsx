@@ -402,7 +402,8 @@ const NestedGroup: React.FC<{
                       <button
                         type="button"
                         onClick={() => onNavigate(source)}
-                        className="opacity-0 group-hover:opacity-70 hover:opacity-100 transition-opacity"
+                        aria-label={`跳转到 ${name} 对应面板`}
+                        className="opacity-0 group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity"
                         title="跳转到对应面板"
                       >
                         <ExternalLink className="w-3 h-3 text-zinc-500" />
@@ -412,7 +413,8 @@ const NestedGroup: React.FC<{
                       <button
                         type="button"
                         onClick={() => onUnload(source)}
-                        className="opacity-0 group-hover:opacity-70 hover:opacity-100 transition-opacity"
+                        aria-label={`卸载或断开 ${name}`}
+                        className="opacity-0 group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity"
                         title="卸载 / 断开"
                       >
                         <XIcon className="w-3 h-3 text-zinc-500 hover:text-red-400" />

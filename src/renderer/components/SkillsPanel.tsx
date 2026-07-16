@@ -63,7 +63,8 @@ const MountedSkillItem: React.FC<MountedSkillItemProps> = ({
     <button
       onClick={onUnmount}
       disabled={loading}
-      className="p-1 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      aria-label={`卸载 Skill ${mount.skillName}`}
+      className="p-1 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       title="卸载"
     >
       <Minus className="w-3.5 h-3.5" />
@@ -90,7 +91,8 @@ const AvailableSkillItem: React.FC<AvailableSkillItemProps> = ({
     <button
       onClick={onMount}
       disabled={loading}
-      className="p-1 text-zinc-500 hover:text-green-400 opacity-0 group-hover:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      aria-label={`挂载 Skill ${skill.name}`}
+      className="p-1 text-zinc-500 hover:text-green-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       title="挂载"
     >
       <Plus className="w-3.5 h-3.5" />

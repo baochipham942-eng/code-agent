@@ -187,7 +187,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
 
         {/* 右槽：运行中 spinner / 否则 时间（hover 时淡出给操作让位） */}
         {!isRenaming && (
-          <span className="shrink-0 flex items-center gap-1.5 transition-opacity duration-150 group-hover:opacity-0">
+          <span className="shrink-0 flex items-center gap-1.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
             {isRunning ? (
               <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={status.label} />
             ) : (
@@ -204,7 +204,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
 
       {/* Hover 动作簇：Replay（管理员）/ 产物 / 归档 — 默认隐藏，覆盖右槽位置 */}
       {!multiSelectMode && !isRenaming && (
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100">
           {canOpenSessionReplay && sessionHasActivity && (
             <button
               type="button"
@@ -215,7 +215,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
                 event.stopPropagation();
                 void handleOpenSessionReplay(session);
               }}
-              className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+              className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
             >
               <Eye className="h-3.5 w-3.5" />
             </button>
@@ -228,14 +228,14 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               onClick={(event) => {
                 void handleOpenSessionAssets(event, session);
               }}
-              className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+              className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
             >
               <ScrollText className="h-3.5 w-3.5" />
             </button>
           )}
           <IconButton
             icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-            aria-label={session.isArchived ? 'Unarchive session' : 'Archive session'}
+            aria-label={`${session.isArchived ? '取消归档会话' : '归档会话'} ${displayTitle}`}
             onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e)}
             variant="ghost"
             size="sm"

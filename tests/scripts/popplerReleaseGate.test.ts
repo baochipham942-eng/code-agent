@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { load as loadYaml } from 'js-yaml';
@@ -20,6 +21,7 @@ import {
 
 const tempRoots: string[] = [];
 const digest = 'a'.repeat(64);
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 function artifact(url = 'https://example.invalid/poppler.tar.gz') {
   return { url, sha256: digest, bytes: 1 };
@@ -110,11 +112,76 @@ function manifest(sidecarDir: string) {
   };
 }
 
+function invocationBoundarySource(extraSource = '') {
+  return `
+import path from 'node:path';
+const pdfPath = '/tmp/deck.pdf';
+const pdftoppm = resolveHelperBinary(path.join('poppler', 'bin', 'pdftoppm'));
+execSync(\`"\${pdftoppm}" -jpeg "\${pdfPath}"\`);
+${extraSource}
+`;
+}
+
+function runInvocationBoundaryGate(source: string) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'poppler-invocation-boundary-'));
+  tempRoots.push(root);
+  fs.mkdirSync(path.join(root, 'scripts/lib'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src/host/tools/media/ppt'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'config'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'docs/architecture/decisions'), { recursive: true });
+  for (const relativePath of [
+    'scripts/verify-poppler-release-gate.mjs',
+    'scripts/lib/poppler-sidecar-release.mjs',
+    'scripts/lib/macho-signature-audit.mjs',
+  ]) {
+    fs.copyFileSync(path.join(repoRoot, relativePath), path.join(root, relativePath));
+  }
+  fs.writeFileSync(path.join(root, 'src/host/tools/media/ppt/visualReview.ts'), source);
+  const lockPath = path.join(root, 'config/poppler-sidecar.lock.json');
+  fs.writeFileSync(lockPath, JSON.stringify(lock()));
+  fs.writeFileSync(
+    path.join(root, lock().licenseRationale),
+    'Agent Neo project THIRD_PARTY_NOTICES.txt macos-15-intel 重新评估触发器',
+  );
+  return spawnSync(process.execPath, [
+    path.join(root, 'scripts/verify-poppler-release-gate.mjs'),
+    '--lock', lockPath,
+    '--allow-pending',
+  ], { cwd: root, encoding: 'utf8' });
+}
+
 afterEach(() => {
   for (const root of tempRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe('Poppler release hard gate', () => {
+  it('fails loud when the invocation scan anchor is missing', () => {
+    const source = `
+import path from 'node:path';
+const pdfPath = '/tmp/deck.pdf';
+const sidecarPath = path.join('poppler', 'bin', 'pdftoppm');
+const pdftoppm = resolveHelperBinary('pdftoppm');
+execSync(\`"\${pdftoppm}" -jpeg "\${pdfPath}"\`);
+`;
+
+    const result = runInvocationBoundaryGate(source);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('pdftoppm invocation scan anchor missing');
+  });
+
+  it.each([
+    ['ffi', 'const ffi = true;'],
+    ['dlopen', 'runtime.dlopen(binary);'],
+    ['shared memory', 'const transport = "shared_memory";'],
+    ['node-gyp', 'const build = "node-gyp";'],
+  ])('rejects forbidden %s usage after the current invocation anchor', (_label, forbiddenSource) => {
+    const result = runInvocationBoundaryGate(invocationBoundarySource(forbiddenSource));
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('pdftoppm boundary requires re-review');
+  });
+
   it('accepts pending lock only for structure checks and blocks formal release', () => {
     expect(() => validatePopplerLock(lock(), { requireComplete: false })).not.toThrow();
     expect(() => validatePopplerLock(lock())).toThrowError(expect.objectContaining({ code: 'pending_promotion' }));

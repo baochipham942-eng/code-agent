@@ -291,10 +291,15 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
     const trimmed = instruction.trim();
     if (!selectedLabel || !trimmed || sending || useAppStore.getState().isProcessing) return;
     const codeBlock = '```mermaid\n' + code + '\n```\n';
-    const prompt = tm.editPrompt
-      .replace('{label}', selectedLabel)
-      .replace('{instruction}', trimmed)
-      .replace('{codeBlock}', codeBlock);
+    const promptValues = {
+      label: selectedLabel,
+      instruction: trimmed,
+      codeBlock,
+    };
+    const prompt = tm.editPrompt.replace(
+      /\{(label|instruction|codeBlock)\}/g,
+      (_placeholder, key: keyof typeof promptValues) => promptValues[key],
+    );
     setSending(true);
     try {
       await useMessageActionStore.getState().sendPrompt(prompt);

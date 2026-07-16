@@ -29,7 +29,12 @@ function assertInvocationBoundary() {
     if (!source.includes(marker)) throw new Error(`pdftoppm independent-process boundary lost: ${marker}`);
   }
   const forbidden = [/\bffi\b/i, /\bdlopen\b/i, /shared[_ -]?memory/i, /node-?gyp/i];
-  const popplerSection = source.slice(source.indexOf("resolveHelperBinary('pdftoppm'"));
+  const invocationAnchor = "resolveHelperBinary(path.join('poppler', 'bin', 'pdftoppm'))";
+  const invocationAnchorIndex = source.indexOf(invocationAnchor);
+  if (invocationAnchorIndex < 0) {
+    throw new Error(`pdftoppm invocation scan anchor missing: ${invocationAnchor}`);
+  }
+  const popplerSection = source.slice(invocationAnchorIndex);
   for (const pattern of forbidden) {
     if (pattern.test(popplerSection)) throw new Error(`pdftoppm boundary requires re-review: ${pattern}`);
   }

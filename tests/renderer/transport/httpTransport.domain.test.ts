@@ -193,6 +193,48 @@ describe('httpTransport domain API', () => {
     });
   });
 
+  it('preserves non-A1 sheet rangeStart across the web HTTP extraction path', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        sheets: [{
+          name: 'Sheet1',
+          headers: ['月份', '销售额'],
+          rows: [['一月', 100], ['三月', 300]],
+          rowCount: 2,
+          rangeStart: { row: 2, column: 1 },
+        }],
+        sheetCount: 1,
+      }),
+      text: async () => '',
+    });
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    const result = await api.extractExcelJson('/tmp/b3-start.xlsx');
+
+    expect(result?.sheets[0].rangeStart).toEqual({ row: 2, column: 1 });
+  });
+
+  it('keeps legacy A1 HTTP extraction output free of rangeStart', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        sheets: [{ name: 'Sheet1', headers: ['月份'], rows: [['一月']], rowCount: 1 }],
+        sheetCount: 1,
+      }),
+      text: async () => '',
+    });
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    const result = await api.extractExcelJson('/tmp/a1-start.xlsx');
+
+    expect(JSON.stringify(result)).toBe(
+      '{"sheets":[{"name":"Sheet1","headers":["月份"],"rows":[["一月"]],"rowCount":1}],"sheetCount":1}',
+    );
+  });
+
   it('promotes goal options to the /api/run goal contract for web sends', async () => {
     const api = createHttpCodeAgentAPI('http://localhost:8180');
 

@@ -7,9 +7,11 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { createLogger } from '../../../services/infra/logger';
+import { resolvePresentationPackageIndex } from '../../artifacts/presentationPackageIndex';
 import type { ReviewResult, FixSuggestion, VlmCallback, ReviewDimensionType } from './types';
 import { REVIEW_DIMENSION_WEIGHTS } from './types';
 import { LIBREOFFICE_SEARCH_PATHS, LIBREOFFICE_PATH_ENV, CONVERT_TIMEOUTS, PDF_RENDER } from './constants';
@@ -81,6 +83,13 @@ export async function convertToScreenshots(
   if (!fs.existsSync(screenshotDir)) {
     fs.mkdirSync(screenshotDir, { recursive: true });
   }
+  const baseName = path.basename(pptxPath, '.pptx');
+  clearPageImages(screenshotDir, baseName);
+
+  const expectedPageCount = (await resolvePresentationPackageIndex(pptxPath)).length;
+  if (expectedPageCount === 0) {
+    throw new Error(`Presentation has no slides: ${pptxPath}`);
+  }
 
   // Step 1: PPTX → PDF
   const pdfDir = path.join(screenshotDir, '_pdf');
@@ -95,17 +104,16 @@ export async function convertToScreenshots(
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`LibreOffice conversion failed: ${message}`);
+    throw new Error(`LibreOffice conversion failed: ${message}`, { cause: err });
   }
 
-  const baseName = path.basename(pptxPath, '.pptx');
   const pdfPath = path.join(pdfDir, `${baseName}.pdf`);
   if (!fs.existsSync(pdfPath)) {
     throw new Error(`PDF not generated: ${pdfPath}`);
   }
 
   // Step 2: PDF → PNG per page (using sips on macOS or ImageMagick/poppler)
-  const pngPaths = await pdfToImages(pdfPath, screenshotDir, baseName);
+  const pngPaths = await pdfToImages(pdfPath, screenshotDir, baseName, expectedPageCount);
   logger.debug(`Generated ${pngPaths.length} screenshots`);
 
   return pngPaths;
@@ -115,6 +123,23 @@ export async function convertToScreenshots(
 function pageNumberOf(file: string): number {
   const match = file.match(/-(\d+)\.jpg$/);
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function pageImagePattern(baseName: string): RegExp {
+  return new RegExp(`^${escapeRegExp(baseName)}-\\d+\\.jpg$`);
+}
+
+function clearPageImages(outputDir: string, baseName: string): void {
+  const pattern = pageImagePattern(baseName);
+  for (const file of fs.readdirSync(outputDir)) {
+    if (pattern.test(file)) {
+      fs.rmSync(path.join(outputDir, file), { force: true });
+    }
+  }
 }
 
 /**
@@ -127,8 +152,9 @@ function pageNumberOf(file: string): number {
  * 建议整体挂到错误页码上，且全程无报错。
  */
 export function collectPageImages(outputDir: string, baseName: string): string[] {
+  const pattern = pageImagePattern(baseName);
   return fs.readdirSync(outputDir)
-    .filter(f => f.startsWith(baseName) && f.endsWith('.jpg'))
+    .filter(f => pattern.test(f))
     .sort((a, b) => pageNumberOf(a) - pageNumberOf(b) || a.localeCompare(b))
     .map(f => path.join(outputDir, f));
 }
@@ -159,6 +185,7 @@ async function pdfToImages(
   pdfPath: string,
   outputDir: string,
   baseName: string,
+  expectedPageCount: number,
 ): Promise<string[]> {
   // 尝试 poppler (pdftoppm) — 最可靠，输出 JPEG 减小体积
   try {
@@ -170,8 +197,9 @@ async function pdfToImages(
     );
     // pdftoppm 输出 baseName-01.jpg, baseName-02.jpg, ...（补零，1-based）
     const files = collectPageImages(outputDir, baseName);
-    if (files.length > 0) return files;
+    if (files.length === expectedPageCount) return files;
   } catch { /* try next */ }
+  clearPageImages(outputDir, baseName);
 
   // 尝试 ImageMagick (convert/magick)
   try {
@@ -182,8 +210,9 @@ async function pdfToImages(
     );
     // ImageMagick %d 输出 baseName-0.jpg, baseName-1.jpg, ...（不补零，0-based）
     const files = collectPageImages(outputDir, baseName);
-    if (files.length > 0) return files;
+    if (files.length === expectedPageCount) return files;
   } catch { /* try next */ }
+  clearPageImages(outputDir, baseName);
 
   // 降级：macOS qlmanage 生成单页缩略图
   try {
@@ -196,12 +225,12 @@ async function pdfToImages(
     const qlFile = path.join(outputDir, `${path.basename(pdfPath)}.png`);
     if (fs.existsSync(qlFile)) {
       fs.renameSync(qlFile, outFile);
-      return [outFile];
+      if (expectedPageCount === 1) return [outFile];
+      fs.rmSync(outFile, { force: true });
     }
   } catch { /* no fallback left */ }
 
-  logger.warn('No PDF-to-image converter found (pdftoppm/magick/qlmanage)');
-  return [];
+  throw new Error(`Screenshot rendering failed: expected ${expectedPageCount} pages`);
 }
 
 // ============================================================================
@@ -344,27 +373,22 @@ export async function reviewPresentation(
     return [];
   }
 
-  const screenshots = await convertToScreenshots(pptxPath);
-  if (screenshots.length === 0) {
-    logger.warn('No screenshots generated, skipping review');
-    return [];
-  }
-
-  // 逐页审查（串行 + 间隔 2s 避免代理限流）
-  const results: ReviewResult[] = [];
-  for (let i = 0; i < screenshots.length; i++) {
-    if (i > 0) await new Promise(r => setTimeout(r, 2000));
-    const result = await reviewSlide(screenshots[i], i, modelCallback, vlmCallback);
-    results.push(result);
-  }
-
-  // 清理截图目录
+  const screenshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ppt-visual-review-'));
   try {
-    const screenshotDir = path.dirname(screenshots[0]);
-    fs.rmSync(screenshotDir, { recursive: true, force: true });
-  } catch { /* ignore cleanup errors */ }
+    const screenshots = await convertToScreenshots(pptxPath, screenshotDir);
 
-  return results;
+    // 逐页审查（串行 + 间隔 2s 避免代理限流）
+    const results: ReviewResult[] = [];
+    for (let i = 0; i < screenshots.length; i++) {
+      if (i > 0) await new Promise(r => setTimeout(r, 2000));
+      const result = await reviewSlide(screenshots[i], i, modelCallback, vlmCallback);
+      results.push(result);
+    }
+
+    return results;
+  } finally {
+    fs.rmSync(screenshotDir, { recursive: true, force: true });
+  }
 }
 
 // ============================================================================

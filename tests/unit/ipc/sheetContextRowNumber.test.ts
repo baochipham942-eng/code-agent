@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // D6：模型自推坐标那条链的行号对账测试。
 //
@@ -60,6 +61,21 @@ async function writeWorkbook(name: string, sheets: Record<string, unknown[][]>):
   return filePath;
 }
 
+/** ExcelJS 写出的真实 used range：表头从 B3 开始，!ref 必须是 B3:C5。 */
+async function writeB3Workbook(name: string): Promise<string> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Sheet1');
+  ws.getCell('B3').value = '月份';
+  ws.getCell('C3').value = '销售额';
+  ws.getCell('B4').value = '一月';
+  ws.getCell('C4').value = 100;
+  ws.getCell('B5').value = '三月';
+  ws.getCell('C5').value = 300;
+  const filePath = join(workDir, name);
+  await wb.xlsx.writeFile(filePath);
+  return filePath;
+}
+
 async function excelText(filePath: string): Promise<string> {
   const handler = handlers.get('extract-excel-text');
   if (!handler) throw new Error('extract-excel-text 未注册');
@@ -93,6 +109,27 @@ function parseJsonRows(output: string): Array<Record<string, unknown>> {
 }
 
 describe('附件上下文的 CSV：模型不用数行', () => {
+  it('A1 起始表的上下文文本逐字节不变', async () => {
+    const filePath = await writeWorkbook('a1-start.xlsx', {
+      Sheet1: [['月份', '销售额'], ['一月', 100]],
+    });
+
+    expect(await excelText(filePath)).toBe(
+      '=== Sheet: Sheet1 (第 1 列是 xlsx 真实行号，可直接用于 A1 引用（行号 4 + B 列 = B4）；行号跳号处是空行) ===\n'
+      + '1,月份,销售额\n'
+      + '2,一月,100',
+    );
+  });
+
+  it('used range 从 B3 开始时，表头标真实行号 3，数据行继续标 4/5', async () => {
+    const filePath = await writeB3Workbook('b3-start.xlsx');
+    const text = await excelText(filePath);
+
+    expect(labelledRowOf(text, '月份')).toMatch(/^3,/);
+    expect(labelledRowOf(text, '一月')).toMatch(/^4,/);
+    expect(labelledRowOf(text, '三月')).toMatch(/^5,/);
+  });
+
   it('「三月」标的是 xlsx 真实行号 4，不是压缩后的 3', async () => {
     const filePath = await writeWorkbook('blank-row.xlsx', { Sheet1: monthlySheet() });
     const text = await excelText(filePath);
@@ -176,6 +213,11 @@ describe('read_xlsx：主动核对这条退路也带行号', () => {
 });
 
 describe('两个数据源与预览侧同源', () => {
+  it('缺少 rangeStart 时按 A1 换算，sheetCellRef 结果逐字节不变', () => {
+    expect(sheetCellRef(0, 0, undefined)).toBe('A2');
+    expect(sheetCellRef(2, 1, undefined)).toBe('B4');
+  });
+
   it('模型看到的行号 = 预览 sheetCellRef 算出的 A1 行号', async () => {
     const filePath = await writeWorkbook('blank-row.xlsx', { Sheet1: monthlySheet() });
 

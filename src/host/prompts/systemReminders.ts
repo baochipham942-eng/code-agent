@@ -419,15 +419,19 @@ const VIDEO_FILE_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm'];
 export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): TaskFeatures {
   const normalizedPrompt = prompt.toLowerCase();
 
-  // 合并：调用方传入的扩展名 + 从 prompt 文本提取的扩展名
+  // 附件扩展名是强证据；正文里的扩展名还要结合产物意图判断。
+  const attachmentExtensions = (fileExtensions || []).map(e => e.toLowerCase());
+  const promptExtensions = extractFileExtensions(prompt);
   const allExtensions = [
-    ...(fileExtensions || []).map(e => e.toLowerCase()),
-    ...extractFileExtensions(prompt),
+    ...attachmentExtensions,
+    ...promptExtensions,
   ];
   const hasDataFile = allExtensions.some(ext => DATA_FILE_EXTENSIONS.includes(ext));
   const hasPPTFile = allExtensions.some(ext => PPT_FILE_EXTENSIONS.includes(ext));
-  const hasDocFile = allExtensions.some(ext => DOC_FILE_EXTENSIONS.includes(ext));
-  const hasImageFile = allExtensions.some(ext => IMAGE_FILE_EXTENSIONS.includes(ext));
+  const hasDocAttachment = attachmentExtensions.some(ext => DOC_FILE_EXTENSIONS.includes(ext));
+  const hasDocPromptReference = promptExtensions.some(ext => DOC_FILE_EXTENSIONS.includes(ext));
+  const hasImageAttachment = attachmentExtensions.some(ext => IMAGE_FILE_EXTENSIONS.includes(ext));
+  const hasImagePromptReference = promptExtensions.some(ext => IMAGE_FILE_EXTENSIONS.includes(ext));
   const hasVideoFile = allExtensions.some(ext => VIDEO_FILE_EXTENSIONS.includes(ext));
 
   // 维度关键词
@@ -569,10 +573,13 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     isExcelTask: (hasDataFile && allExtensions.some(ext => ['.xlsx', '.xls'].includes(ext))) ||
                  hasAnyKeyword(normalizedPrompt, excelStrongKeywords) ||
                  weakHit(excelWeakKeywords),
-    isDocumentTask: hasDocFile ||
+    isDocumentTask: hasDocAttachment ||
+                    (!hasCodeArtifactContext && hasDocPromptReference) ||
                     hasAnyKeyword(normalizedPrompt, documentStrongKeywords) ||
                     weakHit(documentWeakKeywords),
-    isImageTask: hasImageFile || hasAnyKeyword(normalizedPrompt, imageStrongKeywords),
+    isImageTask: hasImageAttachment ||
+                 (!hasCodeArtifactContext && hasImagePromptReference) ||
+                 hasAnyKeyword(normalizedPrompt, imageStrongKeywords),
     isVideoTask: hasVideoFile || hasAnyKeyword(normalizedPrompt, videoStrongKeywords),
     isFuzzyCodeReview: hasFuzzyIntent && hasCodeContext,
     isFuzzyTroubleshooting: hasFuzzyIntent && hasTroubleContext,

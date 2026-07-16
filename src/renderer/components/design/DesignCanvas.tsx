@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer, Rect as KonvaRect } from 'react-konva';
 import type Konva from 'konva';
-import { Palette, Loader2, X, GitCompare, Presentation } from 'lucide-react';
+import { AlertCircle, Palette, Loader2, X, GitCompare, Presentation } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useDesignStore } from './designStore';
 import { useDesignCanvasStore } from './designCanvasStore';
@@ -57,7 +57,7 @@ import {
 } from './canvasCameraInput';
 import { VideoPlayOverlay, DiffEvidenceOverlay } from './DesignCanvasOverlays';
 
-export const DesignCanvas: React.FC = () => {
+export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBar = false }) => {
   const { t } = useI18n();
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -77,6 +77,8 @@ export const DesignCanvas: React.FC = () => {
   const discardNode = useDesignCanvasStore((s) => s.discardNode);
   const deleteNodes = useDesignCanvasStore((s) => s.deleteNodes);
   const generating = useDesignCanvasStore((s) => s.generating);
+  const error = useDesignCanvasStore((s) => s.error);
+  const setError = useDesignCanvasStore((s) => s.setError);
   // —— 图解层（连线 / freeform 形状）——
   const connectors = useDesignCanvasStore((s) => s.connectors);
   const shapes = useDesignCanvasStore((s) => s.shapes);
@@ -551,29 +553,48 @@ export const DesignCanvas: React.FC = () => {
   };
 
   const onExport = async (node: CanvasImageNode): Promise<void> => {
-    const url = /^(data:|https?:)/.test(node.src)
-      ? node.src
-      : runDir
-        ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
-        : null;
-    if (!url) return;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = node.src.split('/').pop() || 'design.png';
-    a.click();
+    setError(null);
+    try {
+      const url = /^(data:|https?:)/.test(node.src)
+        ? node.src
+        : runDir
+          ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
+          : null;
+      if (!url) {
+        setError('图片导出失败，请确认原图仍在工作区后重试。');
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = node.src.split('/').pop() || 'design.png';
+      a.click();
+    } catch {
+      setError('图片导出失败，请稍后重试。');
+    }
   };
 
   // 选中图节点 → 单页 PDF（主进程 pdfkit 图嵌）→ 落「下载」。
   // 解析成 dataUrl 再传（data: 直用；相对路径经 readBinary 转 dataUrl）。
   // pdfkit 需要图字节，纯 http URL（未落盘的 OSS 临时链接）不直接支持，跳过。
   const onExportPdf = async (node: CanvasImageNode): Promise<void> => {
-    const dataUrl = /^data:/.test(node.src)
-      ? node.src
-      : runDir && !/^https?:/.test(node.src)
-        ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
-        : null;
-    if (!dataUrl) return;
-    await exportImagePdf({ dataUrl }, imagePdfExportName(Date.now()));
+    setError(null);
+    try {
+      const dataUrl = /^data:/.test(node.src)
+        ? node.src
+        : runDir && !/^https?:/.test(node.src)
+          ? await readWorkspaceImageAsDataUrl(`${runDir.replace(/\/+$/, '')}/${node.src}`)
+          : null;
+      if (!dataUrl) {
+        setError('PDF 导出失败，请确认原图仍在工作区后重试。');
+        return;
+      }
+      const result = await exportImagePdf({ dataUrl }, imagePdfExportName(Date.now()));
+      if (!result.filePath) {
+        setError(result.error ? `PDF 导出失败：${result.error}` : 'PDF 导出失败，请稍后重试。');
+      }
+    } catch {
+      setError('PDF 导出失败，请稍后重试。');
+    }
   };
 
   // 画布全部活动图节点 → 全幅 PPTX（每张 1 张全幅 slide）→ 落「下载」。
@@ -581,6 +602,7 @@ export const DesignCanvas: React.FC = () => {
   // （data: 直用；相对路径经 readBinary 转）后送主进程 pptxgenjs 拼装。
   const onExportPptx = async (): Promise<void> => {
     if (visibleNodes.length === 0 || exportingPptx) return;
+    setError(null);
     setExportingPptx(true);
     try {
       const images: Array<{ dataUrl?: string }> = [];
@@ -592,8 +614,16 @@ export const DesignCanvas: React.FC = () => {
             : null;
         if (dataUrl) images.push({ dataUrl });
       }
-      if (images.length === 0) return;
-      await exportCanvasPptx(images, canvasPptxExportName(Date.now()));
+      if (images.length === 0) {
+        setError('PPTX 导出失败，请确认画布中的原图仍在工作区后重试。');
+        return;
+      }
+      const result = await exportCanvasPptx(images, canvasPptxExportName(Date.now()));
+      if (!result.filePath) {
+        setError(result.error ? `PPTX 导出失败：${result.error}` : 'PPTX 导出失败，请稍后重试。');
+      }
+    } catch {
+      setError('PPTX 导出失败，请稍后重试。');
     } finally {
       setExportingPptx(false);
     }
@@ -782,6 +812,24 @@ export const DesignCanvas: React.FC = () => {
           </span>
           <button type="button" onClick={() => autonomyClear()} className="rounded-full px-2 py-0.5 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10">
             {t.design.autonomyStop}
+          </button>
+        </div>
+      )}
+
+      {showErrorBar && error && (
+        <div
+          data-testid="design-canvas-error-bar"
+          className="pointer-events-auto absolute left-1/2 top-4 z-50 flex w-[min(640px,92%)] -translate-x-1/2 items-start gap-2 rounded-xl border border-red-500/30 bg-zinc-900/95 p-3 text-sm text-zinc-200 shadow-xl backdrop-blur"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+          <span className="min-w-0 flex-1 leading-relaxed">{error}</span>
+          <button
+            type="button"
+            aria-label="关闭错误提示"
+            onClick={() => setError(null)}
+            className="rounded-md p-0.5 text-zinc-400 transition-colors hover:bg-white/[0.06] hover:text-zinc-100"
+          >
+            <X className="h-4 w-4" />
           </button>
         </div>
       )}

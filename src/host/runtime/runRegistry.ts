@@ -46,9 +46,12 @@ export class RunSessionConflictError extends Error {
 
   constructor(
     readonly sessionId: string,
-    readonly existingRunId: string,
+    readonly existingRunId?: string,
+    options?: ErrorOptions,
   ) {
-    super(`Session ${sessionId} already has active run ${existingRunId}`);
+    super(existingRunId
+      ? `Session ${sessionId} already has active run ${existingRunId}`
+      : `Session ${sessionId} already has an active durable run`, options);
     this.name = 'RunSessionConflictError';
   }
 }
@@ -94,11 +97,14 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     if (existingRunId && existingRunId !== context.runId) {
       throw new RunSessionConflictError(context.sessionId, existingRunId);
     }
-    const created = await kernel.createNativeRun({
-      runId: context.runId,
-      sessionId: context.sessionId,
-      now,
-    });
+    const created = await this.createWithSessionConflictMapping(
+      context.sessionId,
+      () => kernel.createNativeRun({
+        runId: context.runId,
+        sessionId: context.sessionId,
+        now,
+      }),
+    );
     const traceContext = createRunTraceContext({
       runId: context.runId,
       sessionId: context.sessionId,
@@ -146,22 +152,25 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         ? `external-session:${input.externalSessionId}`
         : undefined,
     });
-    const created = await kernel.createRun({
-      runId: context.runId,
-      sessionId: context.sessionId,
-      engine: {
-        kind: 'external_cli',
-        engine: input.engine,
-        ...(input.externalSessionId ? { externalSessionId: input.externalSessionId } : {}),
-      },
-      now,
-      initialEngineCursor: {
-        schemaVersion: 1,
-        engine: input.engine,
-        externalSessionId: input.externalSessionId,
-      },
-      initialPendingOperations: [launchOperation],
-    });
+    const created = await this.createWithSessionConflictMapping(
+      context.sessionId,
+      () => kernel.createRun({
+        runId: context.runId,
+        sessionId: context.sessionId,
+        engine: {
+          kind: 'external_cli',
+          engine: input.engine,
+          ...(input.externalSessionId ? { externalSessionId: input.externalSessionId } : {}),
+        },
+        now,
+        initialEngineCursor: {
+          schemaVersion: 1,
+          engine: input.engine,
+          externalSessionId: input.externalSessionId,
+        },
+        initialPendingOperations: [launchOperation],
+      }),
+    );
     const traceContext = createRunTraceContext({
       runId: context.runId,
       sessionId: context.sessionId,
@@ -550,7 +559,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     const runId = plan.envelope.runId;
     const owner = plan.envelope.owner;
     const live = this.requireDurableOwner(runId);
-    if (!owner || live.owner.epoch !== owner.epoch || live.attempt !== plan.envelope.attempt) {
+    if (live.owner.epoch !== owner?.epoch || live.attempt !== plan.envelope.attempt) {
       throw new Error(`Durable Run ${runId} recovery handle has a stale owner or attempt`);
     }
     const existing = this.handlesByRunId.get(runId);
@@ -634,6 +643,22 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return this.kernel;
   }
 
+  private async createWithSessionConflictMapping<T>(
+    sessionId: string,
+    create: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await create();
+    } catch (error) {
+      if (!isDurableActiveSessionConstraint(error)) throw error;
+      throw new RunSessionConflictError(
+        sessionId,
+        this.runIdBySessionId.get(sessionId),
+        { cause: error },
+      );
+    }
+  }
+
   private requireDurableOwner(runId: string): { owner: RunOwnerLease; attempt: number } {
     const live = this.durableOwners.get(runId);
     if (!live) throw new Error(`Durable Run ${runId} has no live owner lease`);
@@ -690,6 +715,13 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       // Tracing is diagnostic only and must never affect run ownership.
     }
   }
+}
+
+function isDurableActiveSessionConstraint(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return candidate.code === 'SQLITE_CONSTRAINT_UNIQUE'
+    && candidate.message === 'UNIQUE constraint failed: durable_runs.session_id';
 }
 
 interface NativeAgentTeamProjectionState {

@@ -6,6 +6,7 @@ import type { NativeRecoveryHostPorts } from '../runtime/nativeRecoveryHost';
 
 export function createApplicationNativeRecoveryPorts(): NativeRecoveryHostPorts {
   return {
+    continuationExecutor: 'unavailable',
     async resolveWorkspace(descriptor) {
       try {
         const [root, cwd] = await Promise.all([

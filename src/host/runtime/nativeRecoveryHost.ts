@@ -25,6 +25,8 @@ export interface NativeRecoveryResultEvidence {
 }
 
 export interface NativeRecoveryHostPorts {
+  /** Missing means the caller supplied a real recovery executor; production fallbacks must opt out explicitly. */
+  continuationExecutor?: 'available' | 'unavailable';
   resolveWorkspace(descriptor: NativeRecoveryDescriptor): Promise<
     | { ok: true; root: string; cwd: string; fingerprint: string }
     | { ok: false; reason: string }
@@ -114,17 +116,26 @@ export class NativeRecoveryHost {
 
     const input = { plan, descriptor, operation };
     let evidence: NativeRecoveryResultEvidence | null = null;
-    let action = '';
+    let action: string;
     if (operation.kind === 'model_call' && operation.status === 'prepared') {
+      if (this.ports.continuationExecutor === 'unavailable') {
+        return this.failUnrecoverable(plan, now, 'native_model_continuation_executor_unavailable');
+      }
       evidence = await this.ports.model.dispatchPrepared(input);
       action = 'execute_prepared_model_once';
     } else if (operation.kind === 'model_call' && operation.status === 'dispatched' && operation.providerOperationId) {
       evidence = await this.ports.model.queryResult({ ...input, providerOperationId: operation.providerOperationId });
       action = 'query_original_model_result';
-      if (!evidence) return this.review(plan, now, 'model_result_handle_not_queryable');
+      if (!evidence) {
+        return this.ports.continuationExecutor === 'unavailable'
+          ? this.failUnrecoverable(plan, now, 'model_result_handle_not_queryable')
+          : this.review(plan, now, 'model_result_handle_not_queryable');
+      }
     } else if (operation.kind === 'model_call' && operation.status === 'dispatched') {
       if (!await this.ports.model.canRetrySafely(input)) {
-        return this.review(plan, now, 'model_safe_retry_unproven');
+        return this.ports.continuationExecutor === 'unavailable'
+          ? this.failUnrecoverable(plan, now, 'model_safe_retry_unproven')
+          : this.review(plan, now, 'model_safe_retry_unproven');
       }
       evidence = await this.ports.model.retrySafe(input);
       action = 'retry_safe_model_compute_once';
@@ -189,7 +200,20 @@ export class NativeRecoveryHost {
       });
       return { status: 'observing' as const, reason: 'restore_same_approval' };
     }
-    return this.review(plan, now, `approval_${status}_continuation_requires_application_resume`);
+    const reason = `approval_${status}_continuation_requires_application_resume`;
+    return this.ports.continuationExecutor === 'unavailable'
+      ? this.failUnrecoverable(plan, now, reason)
+      : this.review(plan, now, reason);
+  }
+
+  private async failUnrecoverable(plan: RunRehydrationPlan, now: number, reason: string) {
+    await this.registry.terminalDurable(plan.envelope.runId, {
+      now,
+      status: 'failed',
+      reason,
+      event: { type: 'run_failed', payload: { recoveryReason: reason }, recordedAt: now },
+    });
+    return { status: 'failed' as const, reason };
   }
 
   private async review(plan: RunRehydrationPlan, now: number, reason: string) {
@@ -211,6 +235,7 @@ export class NativeRecoveryHost {
 export function createUnavailableNativeRecoveryPorts(): NativeRecoveryHostPorts {
   const unavailable = async (): Promise<never> => { throw new Error('native recovery application dependency unavailable'); };
   return {
+    continuationExecutor: 'unavailable',
     resolveWorkspace: async () => ({ ok: false, reason: 'native_workspace_resolver_unavailable' }),
     model: {
       dispatchPrepared: unavailable,

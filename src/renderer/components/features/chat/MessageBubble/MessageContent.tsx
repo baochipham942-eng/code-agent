@@ -97,6 +97,15 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     openPreview(fullPath);
   }, [openPreview, workingDirectory]);
 
+  // Filter out system tags, auto-link ticket IDs, wrap file paths,
+  // then close incomplete markdown tokens for streaming-safe rendering
+  const filteredContent = useMemo(() => {
+    const cleaned = filterSystemTags(markdownSource);
+    const withTickets = wrapTicketsAsLinks(cleaned);
+    const wrapped = wrapFilePathsInBackticks(withTickets);
+    return remend(wrapped);
+  }, [markdownSource]);
+
   // Custom components for react-markdown
   const components: Components = useMemo(
     () => ({
@@ -131,7 +140,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
                 rawSpec={codeContent}
                 sessionId={mediaContext?.sessionId}
                 messageId={messageId}
-                sourceOrdinal={neoUIOrdinalAtOffset(content, node?.position?.start.offset)}
+                sourceOrdinal={neoUIOrdinalAtOffset(filteredContent, node?.position?.start.offset)}
                 isStreaming={isStreaming}
               />
             );
@@ -439,17 +448,8 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    [content, handleOpenFile, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
+    [filteredContent, handleOpenFile, handlePreviewHtml, isStreaming, mediaContext?.sessionId, mediaContext?.turnId, mediaContext?.messageId, messageId]
   );
-
-  // Filter out system tags, auto-link ticket IDs, wrap file paths,
-  // then close incomplete markdown tokens for streaming-safe rendering
-  const filteredContent = useMemo(() => {
-    const cleaned = filterSystemTags(markdownSource);
-    const withTickets = wrapTicketsAsLinks(cleaned);
-    const wrapped = wrapFilePathsInBackticks(withTickets);
-    return remend(wrapped);
-  }, [markdownSource]);
 
   // For user messages, render as plain text (no markdown processing)
   // 使用 span 而非 div，避免复制时末尾多出换行符

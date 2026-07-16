@@ -129,6 +129,22 @@ describe('detectTaskFeatures：代码语境不得误命中任何产物特征', (
   });
 });
 
+describe('T12：去重/汇总需要明确表格语境', () => {
+  it.each([
+    '把这两个函数去重合并一下',
+    '把这些工具函数汇总到一个文件',
+  ])('%s → isExcelTask=false', (prompt) => {
+    expect(detectTaskFeatures(prompt).isExcelTask).toBe(false);
+  });
+
+  it.each([
+    '把这列数据去重',
+    '帮我汇总这张表',
+  ])('%s → isExcelTask=true', (prompt) => {
+    expect(detectTaskFeatures(prompt).isExcelTask).toBe(true);
+  });
+});
+
 describe('detectTaskFeatures：正文扩展名服从产物意图，真实附件仍是强证据', () => {
   it.each([
     ['这个 logo.svg 图标渲染模糊，帮我修一下组件代码', 'isImageTask'],

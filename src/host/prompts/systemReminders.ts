@@ -506,7 +506,13 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     '透视表', '数据透视', '单元格', '工作表', 'vlookup', 'vba', 'openpyxl', 'xlwings',
   ];
   const excelWeakKeywords = [
-    'excel', 'xlsx', 'xls', 'sheet', '公式', '数据清洗', '去重', '汇总',
+    'excel', 'xlsx', 'xls', 'sheet', '公式', '数据清洗',
+  ];
+  // 「去重/汇总」也常指代码重构，必须与明确表格语境共现。不要放裸「表/列」：
+  // 中文子串匹配会把「列表/队列」误当成表格语境。
+  const excelAmbiguousOperationKeywords = ['去重', '汇总'];
+  const excelTableContextKeywords = [
+    'excel', 'xlsx', 'xls', 'sheet', '表格', '这张表', '列数据',
   ];
 
   // 文档生成任务关键词
@@ -561,6 +567,9 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
   const hasCodeArtifactContext = hasAnyKeyword(normalizedPrompt, CODE_ARTIFACT_CONTEXT);
   const weakHit = (keywords: string[]) =>
     !hasCodeArtifactContext && hasAnyKeyword(normalizedPrompt, keywords);
+  const hasAmbiguousExcelOperation =
+    hasAnyKeyword(normalizedPrompt, excelTableContextKeywords) &&
+    weakHit(excelAmbiguousOperationKeywords);
 
   return {
     isMultiDimension: matchedDimensions.length >= 2,
@@ -572,7 +581,8 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     isDataTask: hasDataFile || dataKeywords.some((k) => normalizedPrompt.includes(k)),
     isExcelTask: (hasDataFile && allExtensions.some(ext => ['.xlsx', '.xls'].includes(ext))) ||
                  hasAnyKeyword(normalizedPrompt, excelStrongKeywords) ||
-                 weakHit(excelWeakKeywords),
+                 weakHit(excelWeakKeywords) ||
+                 hasAmbiguousExcelOperation,
     isDocumentTask: hasDocAttachment ||
                     (!hasCodeArtifactContext && hasDocPromptReference) ||
                     hasAnyKeyword(normalizedPrompt, documentStrongKeywords) ||

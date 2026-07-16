@@ -291,7 +291,7 @@ export const Sidebar: React.FC = () => {
   const {
     backgroundTaskMap,
     replayEvidenceBySessionId,
-    hasPendingApprovalForSession,
+    hasNeedsInputForSession,
     currentProjectSearchSessionIds,
     effectiveSearchScope,
     setSearchScope,
@@ -520,7 +520,7 @@ export const Sidebar: React.FC = () => {
           messageCount: session.messageCount,
           turnCount: session.turnCount,
           sessionStatus: session.status,
-          hasPendingApproval: hasPendingApprovalForSession(session.id),
+          hasNeedsInput: hasNeedsInputForSession(session.id),
         });
         const latestActivityAt = Math.max(
           session.updatedAt || 0,
@@ -559,7 +559,7 @@ export const Sidebar: React.FC = () => {
     [
       backgroundTaskMap,
       currentSessionId,
-      hasPendingApprovalForSession,
+      hasNeedsInputForSession,
       replayEvidenceBySessionId,
       reviewItemsBySessionId,
       sessionRuntimes,
@@ -577,7 +577,7 @@ export const Sidebar: React.FC = () => {
     sessionRuntimes,
     backgroundTaskMap,
     sessionStates,
-    hasPendingApprovalForSession,
+    hasNeedsInputForSession,
     searchQuery,
     messageSearchHitsBySessionId,
     replayEvidenceBySessionId,

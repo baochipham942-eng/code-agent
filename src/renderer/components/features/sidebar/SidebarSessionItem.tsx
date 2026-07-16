@@ -42,7 +42,7 @@ export interface SidebarSessionItemProps {
   sessionRuntimes: Map<string, SessionRuntimeSummary>;
   backgroundTaskMap: SidebarDerivedSessions['backgroundTaskMap'];
   sessionStates: Record<string, SessionState>;
-  hasPendingApprovalForSession: SidebarDerivedSessions['hasPendingApprovalForSession'];
+  hasNeedsInputForSession: SidebarDerivedSessions['hasNeedsInputForSession'];
   searchQuery: string;
   messageSearchHitsBySessionId: SidebarDerivedSessions['messageSearchHitsBySessionId'];
   replayEvidenceBySessionId: SidebarDerivedSessions['replayEvidenceBySessionId'];
@@ -86,7 +86,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   sessionRuntimes,
   backgroundTaskMap,
   sessionStates,
-  hasPendingApprovalForSession,
+  hasNeedsInputForSession,
   searchQuery,
   messageSearchHitsBySessionId,
   canOpenSessionReplay,
@@ -120,7 +120,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     messageCount: session.messageCount,
     turnCount: session.turnCount,
     sessionStatus: session.status,
-    hasPendingApproval: hasPendingApprovalForSession(session.id),
+    hasNeedsInput: hasNeedsInputForSession(session.id),
   });
   const isRunning = status.kind === 'live' || status.kind === 'background';
   const attentionDotClass = getAttentionDotClassName(status.kind);

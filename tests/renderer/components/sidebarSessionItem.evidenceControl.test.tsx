@@ -33,7 +33,7 @@ describe('SidebarSessionItem Evidence Control quietness', () => {
         sessionRuntimes={new Map()}
         backgroundTaskMap={new Map()}
         sessionStates={{}}
-        hasPendingApprovalForSession={() => false}
+        hasNeedsInputForSession={() => false}
         searchQuery=""
         messageSearchHitsBySessionId={{}}
         replayEvidenceBySessionId={new Map()}

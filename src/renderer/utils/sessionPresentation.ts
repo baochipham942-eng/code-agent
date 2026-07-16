@@ -102,14 +102,24 @@ export function getSessionStatusPresentation(args: {
   turnCount?: number;
   sessionStatus?: SessionStatus;
   hasPendingApproval?: boolean;
+  hasNeedsInput?: boolean;
 }): SessionStatusPresentation {
-  const { backgroundTask, runtime, taskState, messageCount, turnCount, sessionStatus, hasPendingApproval } = args;
+  const {
+    backgroundTask,
+    runtime,
+    taskState,
+    messageCount,
+    turnCount,
+    sessionStatus,
+    hasPendingApproval,
+    hasNeedsInput,
+  } = args;
 
   // P1: Actionable live signals
   if (backgroundTask?.status === 'failed' || taskState?.status === 'error') {
     return PRESENTATION.error;
   }
-  if (hasPendingApproval) {
+  if (hasNeedsInput || hasPendingApproval) {
     return PRESENTATION.approval;
   }
   if (backgroundTask?.status === 'running') {

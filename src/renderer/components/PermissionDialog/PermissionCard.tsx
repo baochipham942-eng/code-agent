@@ -70,25 +70,25 @@ export function PermissionCard() {
   const cardRef = useRef<HTMLDivElement>(null);
   const processedRequestRef = useRef<string | null>(null);
 
-  // 如果没有待处理的权限请求，不渲染
-  if (!pendingPermissionRequest) return null;
-  if (pendingPermissionSessionId && currentSessionId && pendingPermissionSessionId !== currentSessionId) {
-    return null;
-  }
-
-  const request = normalizeRequest(pendingPermissionRequest);
-  const config = getPermissionConfig(request.type);
+  const request = pendingPermissionRequest && !(
+    pendingPermissionSessionId &&
+    currentSessionId &&
+    pendingPermissionSessionId !== currentSessionId
+  )
+    ? normalizeRequest(pendingPermissionRequest)
+    : null;
 
   const isDangerous =
-    request.forceConfirm === true ||
-    request.type === 'dangerous_command' ||
-    (request.type === 'command' && isDangerousCommand(request.details.command));
+    request !== null &&
+    (request.forceConfirm === true ||
+      request.type === 'dangerous_command' ||
+      (request.type === 'command' && isDangerousCommand(request.details.command)));
 
-  const dangerReason = isDangerous ? getDangerReason(request.details.command) : undefined;
-
-  const memoryRequest = toMemoryRequest(request);
-  const isNewRequest = processedRequestRef.current !== request.id;
-  const memoryResult = isNewRequest && request.forceConfirm !== true ? checkMemory(memoryRequest) : null;
+  const memoryRequest = request ? toMemoryRequest(request) : null;
+  const isNewRequest = request !== null && processedRequestRef.current !== request.id;
+  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true
+    ? checkMemory(memoryRequest)
+    : null;
 
   const toPermissionResponse = (level: ApprovalLevel): PermissionResponse => {
     switch (level) {
@@ -106,6 +106,8 @@ export function PermissionCard() {
 
   const handleApproval = useCallback(
     async (level: ApprovalLevel) => {
+      if (!request) return;
+
       const requestSnapshot = pendingPermissionRequest;
       const requestSessionId = pendingPermissionSessionId;
       if (processedRequestRef.current === request.id) return;
@@ -147,12 +149,12 @@ export function PermissionCard() {
     [
       pendingPermissionRequest,
       pendingPermissionSessionId,
-      request.id,
-      request.sessionId,
-      request.forceConfirm,
-      request.tool,
-      request.type,
-      request.details,
+      request?.id,
+      request?.sessionId,
+      request?.forceConfirm,
+      request?.tool,
+      request?.type,
+      request?.details,
       saveMemory,
       setPendingPermissionRequest,
     ]
@@ -160,16 +162,18 @@ export function PermissionCard() {
 
   // 自动应用记忆的决定
   useEffect(() => {
-    if (memoryResult && isNewRequest) {
-      const timer = setTimeout(() => {
-        handleApproval(memoryResult);
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [memoryResult, handleApproval, isNewRequest]);
+    if (!request || !memoryResult || !isNewRequest) return;
+
+    const timer = setTimeout(() => {
+      handleApproval(memoryResult);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [request, memoryResult, handleApproval, isNewRequest]);
 
   // 键盘快捷键 — stopPropagation 防止触发 ChatView 的 Esc+Esc
   useEffect(() => {
+    if (!request) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
         e.target instanceof HTMLInputElement ||
@@ -219,11 +223,18 @@ export function PermissionCard() {
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [handleApproval, isDangerous]);
+  }, [request, handleApproval, isDangerous]);
 
   useEffect(() => {
+    if (!request) return;
     cardRef.current?.focus();
-  }, []);
+  }, [request?.id]);
+
+  // 如果没有当前会话可见的待处理权限请求，不渲染
+  if (!request) return null;
+
+  const config = getPermissionConfig(request.type);
+  const dangerReason = isDangerous ? getDangerReason(request.details.command) : undefined;
 
   return (
     <div className="w-full px-4 animate-slideUp">

@@ -9,13 +9,10 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as os from 'os';
 import * as path from 'path';
 import type { BrowserArtifactSummary, BrowserTargetRef } from '../../services/infra/browserService.js';
-import { browserService, redactBrowserWorkbenchTraceParams } from '../../services/infra/browserService.js';
+import { browserService } from '../../services/infra/browserService.js';
 import { getBrowserService } from '../../services/infra/browserPool.js';
 import { createLogger } from '../../services/infra/logger';
 import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
-import { persistBrowserComputerProofFromResult } from '../../session/browserComputerProofStore';
-import { attachBrowserActionProof } from '../../../shared/utils/browserComputerRedaction';
-import { buildAgentPointerEventFromToolCall } from '../../../shared/utils/agentPointer';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
@@ -24,6 +21,7 @@ import {
 } from './browserWorkbenchIntent';
 import { executeBrowserProfileAction } from './browserProfileActions';
 import { maybeDispatchRelayBrowserAction } from './browserEngineDispatch';
+import { finalizeBrowserActionResult } from './browserActionFinalize';
 
 const logger = createLogger('BrowserAction');
 
@@ -266,6 +264,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       params,
       url,
       executionIntent: context.executionIntent,
+      context,
     });
     if (relayDispatch) {
       return relayDispatch;
@@ -930,41 +929,28 @@ function withWorkbenchTrace(
   trace: ReturnType<typeof browserService.finishTrace>,
   context?: ToolContext,
 ): ToolExecutionResult {
-  const metadata = { ...(result.metadata || {}) };
-  const pointerEvent = buildAgentPointerEventFromToolCall({
-    id: trace.id,
-    name: trace.toolName || 'browser_action',
-    arguments: trace.params || {},
-    result: {
-      success: result.success,
-      error: result.error,
-      metadata: {
-        ...metadata,
-        traceId: trace.id,
-        workbenchTrace: trace,
-      },
+  return finalizeBrowserActionResult({
+    result,
+    action: typeof trace.action === 'string' ? trace.action : 'unknown',
+    params: (trace.params || {}) as Record<string, unknown>,
+    context,
+    trace: {
+      id: trace.id,
+      toolName: trace.toolName || 'browser_action',
+      action: typeof trace.action === 'string' ? trace.action : 'unknown',
+      params: (trace.params || {}) as Record<string, unknown>,
+      startedAtMs: trace.startedAtMs,
+      completedAtMs: trace.completedAtMs ?? null,
+      success: trace.success ?? null,
+      error: trace.error ?? null,
+      provider: trace.provider ?? null,
+      mode: trace.mode ?? null,
+      screenshotPath: trace.screenshotPath ?? null,
     },
+    provider: typeof result.metadata?.provider === 'string'
+      ? result.metadata.provider
+      : (trace.provider || 'system-chrome-cdp'),
   });
-  const safeTrace = {
-    ...trace,
-    params: redactBrowserWorkbenchTraceParams(trace.toolName || 'browser_action', trace.params || {}),
-    agentPointerEvent: pointerEvent,
-  };
-  const resultWithProof = attachBrowserActionProof({
-    ...result,
-    metadata: {
-      ...metadata,
-      traceId: safeTrace.id,
-      workbenchTrace: safeTrace,
-      agentPointerEvent: pointerEvent,
-    },
-  }, safeTrace);
-  persistBrowserComputerProofFromResult(resultWithProof, {
-    sessionId: context?.sessionId,
-    toolCallId: context?.currentToolCallId,
-    toolName: 'browser_action',
-  });
-  return resultWithProof;
 }
 
 function summarizeManagedBrowserStateForTool(state: ReturnType<typeof browserService.getSessionState>): Record<string, unknown> {

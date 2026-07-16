@@ -1,11 +1,13 @@
 /**
  * ADR-041 — decide and optionally short-circuit browser_action to relay engine.
+ * M4: finalized with proof/pointer/redaction before returning to the agent.
  */
-import type { ToolExecutionResult } from '../types';
+import type { ToolContext, ToolExecutionResult } from '../types';
 import type { BrowserActionEngine } from '../../../shared/contract/desktop';
 import { browserRelayService } from '../../services/infra/browserRelayService';
 import { executeRelayBrowserAction } from '../../services/infra/browser/relayActionFacade';
 import { resolveBrowserActionEngine } from './browserEngineRouter';
+import { finalizeBrowserActionResult } from './browserActionFinalize';
 
 const MANAGED_ONLY_ACTIONS = new Set([
   'list_profiles',
@@ -20,6 +22,7 @@ export async function maybeDispatchRelayBrowserAction(args: {
   params: Record<string, unknown>;
   url?: string;
   executionIntent?: string | null;
+  context?: ToolContext;
 }): Promise<ToolExecutionResult | null> {
   const requestedEngine = (
     typeof args.params.engine === 'string' ? args.params.engine : 'auto'
@@ -38,11 +41,24 @@ export async function maybeDispatchRelayBrowserAction(args: {
     && (requestedEngine === 'relay' || requestedEngine === 'managed')
     && route.recovery.selectedEngine === null
   ) {
-    return {
-      success: false,
-      error: route.recovery.reason || route.recovery.recommendedAction,
-      metadata: { engineRoute: route, recovery: route.recovery },
-    };
+    return finalizeBrowserActionResult({
+      result: {
+        success: false,
+        error: route.recovery.reason || route.recovery.recommendedAction,
+        metadata: {
+          engineRoute: route,
+          recovery: route.recovery,
+          provider: requestedEngine === 'relay' ? 'browser-relay' : 'system-chrome-cdp',
+        },
+      },
+      action: args.action,
+      params: args.params,
+      context: args.context,
+      provider: requestedEngine === 'relay' ? 'browser-relay' : 'system-chrome-cdp',
+      engineRoute: route,
+      recovery: route.recovery,
+      notes: ['engine routing blocked; follow recovery.recommendedAction'],
+    });
   }
 
   if (route.selectedEngine !== 'relay' || MANAGED_ONLY_ACTIONS.has(args.action)) {
@@ -70,11 +86,37 @@ export async function maybeDispatchRelayBrowserAction(args: {
     height: typeof args.params.height === 'number' ? args.params.height : undefined,
   });
 
-  return {
-    ...result,
-    metadata: {
-      ...(result.metadata || {}),
-      engineRoute: route,
+  const recovery = result.success
+    ? null
+    : {
+        code: typeof result.metadata?.capability === 'string'
+          ? `relay_${result.metadata.capability}`
+          : 'relay_action_failed',
+        requestedEngine,
+        selectedEngine: 'relay' as const,
+        recoverable: true,
+        recommendedAction: result.metadata?.capability === 'managed_only'
+          ? 'use_engine_managed_or_profile_import'
+          : 'attach_browser_tab_or_retry',
+        availableEngines: ['auto', 'managed', 'relay'] as BrowserActionEngine[],
+        reason: result.error || 'Relay action failed',
+      };
+
+  return finalizeBrowserActionResult({
+    result: {
+      ...result,
+      metadata: {
+        ...(result.metadata || {}),
+        engineRoute: route,
+        recovery,
+      },
     },
-  };
+    action: args.action,
+    params: args.params,
+    context: args.context,
+    provider: 'browser-relay',
+    engineRoute: route,
+    recovery,
+    notes: route.reason ? [`engine=${route.selectedEngine} (${route.reason})`] : undefined,
+  });
 }

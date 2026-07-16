@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getBrowserComputerActionCatalogEntry,
+  getBrowserComputerActionCatalogForArgs,
   isBrowserScopedComputerUseAction,
 } from '../../../src/shared/utils/browserComputerActionCatalog';
 
@@ -90,5 +91,16 @@ describe('browser/computer action catalog', () => {
       approvalKind: 'tool_executor_read_only',
       safeRecovery: 'desktop_readonly_probe',
     });
+  });
+
+  it('classifies stateful operation names without a legacy action field', () => {
+    expect(getBrowserComputerActionCatalogForArgs({
+      toolName: 'computer_use',
+      arguments: { operation: 'observe', target: { pid: 1, windowId: 2 } },
+    })).toMatchObject({ risk: 'read', evidenceKind: 'desktop_observation' });
+    expect(getBrowserComputerActionCatalogForArgs({
+      toolName: 'computer_use',
+      arguments: { operation: 'act', stateId: 'state-1' },
+    })).toMatchObject({ risk: 'desktop_input', evidenceKind: 'action_trace' });
   });
 });

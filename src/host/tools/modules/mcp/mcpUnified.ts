@@ -29,6 +29,8 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getMCPClient } from '../../../mcp/mcpClient';
+import { isCuaStateV2Enabled } from '../../../mcp/cuaStateConfig';
+import { CUA_DRIVER_SERVER_NAME } from '../../../mcp/types';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { mcpUnifiedSchema as schema } from './mcpUnified.schema';
 import { executeMcpInvoke } from './mcpInvoke';
@@ -140,7 +142,9 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
     };
   }
 
-  const tools = mcpClient.getTools();
+  const tools = mcpClient.getTools().filter((tool) =>
+    !(isCuaStateV2Enabled() && tool.serverName === CUA_DRIVER_SERVER_NAME));
+  const visibleToolCount = tools.length;
 
   const toolsByServer: Record<string, typeof tools> = {};
   for (const tool of tools) {
@@ -155,7 +159,7 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
 
   const lines: string[] = [];
   lines.push(`已连接的 MCP 服务器: ${status.connectedServers.join(', ')}`);
-  lines.push(`总工具数: ${status.toolCount}`);
+  lines.push(`总工具数: ${visibleToolCount}`);
   lines.push('');
 
   for (const [serverName, serverTools] of Object.entries(toolsByServer)) {
@@ -201,7 +205,7 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
       action: 'list_tools',
       resultKind: 'text',
       count: returnedCount,
-      totalCount: status.toolCount,
+      totalCount: visibleToolCount,
       truncated: false,
       connectedServers: status.connectedServers,
       artifact: createVirtualArtifact({
@@ -218,7 +222,7 @@ function actionListTools(args: Record<string, unknown>, ctx: ToolContext): ToolR
           action: 'list_tools',
           resultKind: 'text',
           count: returnedCount,
-          totalCount: status.toolCount,
+          totalCount: visibleToolCount,
           truncated: false,
         },
       }),

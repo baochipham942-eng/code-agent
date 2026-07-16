@@ -25,9 +25,16 @@ describe('runtimeAssetRegistry', () => {
     });
     expect(RUNTIME_ASSET_DEFINITIONS.find((asset) => asset.id === 'computer-use-app')).toMatchObject({
       kind: 'app-bundle',
-      version: '0.5.1',
+      version: '0.8.1',
       pinnedHashes: expect.objectContaining({
-        'darwin-arm64': expect.objectContaining({ hashKind: 'pinnedArchiveSha256' }),
+        'darwin-arm64': expect.objectContaining({
+          hash: 'dc6f901b03be002a5b4137ceafd9d02cb0eb0df9265e771c6530e7cfc0a6a4f2',
+          hashKind: 'pinnedArchiveSha256',
+        }),
+        'darwin-x64': expect.objectContaining({
+          hash: 'dc6f901b03be002a5b4137ceafd9d02cb0eb0df9265e771c6530e7cfc0a6a4f2',
+          hashKind: 'pinnedArchiveSha256',
+        }),
       }),
     });
   });

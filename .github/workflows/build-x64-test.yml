@@ -59,11 +59,6 @@ jobs:
           bash scripts/fetch-uv.sh
           node scripts/fetch-poppler-sidecar.mjs
 
-      - name: Fetch prebuilt CUA driver (Agent Neo Computer Use.app)
-        # 重签产物（universal）托管在发版 OSS assets/cua-driver/，sha256 锁定。
-        # 源 app（CuaDriver v0.5.1）上游无公开 release，CI 不依赖本机源。
-        run: CUA_FETCH_PREBUILT=1 bash scripts/fetch-cua-driver.sh
-
       - name: Import Developer ID certificate
         env:
           APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
@@ -84,6 +79,11 @@ jobs:
           security list-keychains -d user -s "${KEYCHAIN_PATH}"
           security set-key-partition-list -S apple-tool:,apple: -s -k "${APPLE_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
           security find-identity -v -p codesigning "${KEYCHAIN_PATH}"
+
+      - name: Fetch and re-sign CUA driver 0.8.1
+        env:
+          CUA_SIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: CUA_FETCH_UPSTREAM=1 bash scripts/fetch-cua-driver.sh
 
       - name: Build signed + notarized x64 bundle
         timeout-minutes: 60

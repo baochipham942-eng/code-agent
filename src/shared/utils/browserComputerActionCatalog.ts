@@ -195,6 +195,10 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
 };
 
 const COMPUTER_USE_DESKTOP_CATALOG: ActionCatalogMap = {
+  list_roots: {
+    ...DESKTOP_READ_DEFAULTS,
+    evidenceKind: "window_candidates",
+  },
   get_state: {
     ...DESKTOP_READ_DEFAULTS,
     evidenceKind: "computer_surface_state",
@@ -203,6 +207,7 @@ const COMPUTER_USE_DESKTOP_CATALOG: ActionCatalogMap = {
     ...DESKTOP_READ_DEFAULTS,
     evidenceKind: "desktop_observation",
   },
+  act: DESKTOP_INPUT_DEFAULTS,
   get_ax_elements: {
     ...DESKTOP_READ_DEFAULTS,
     evidenceKind: "ax_candidates",
@@ -325,7 +330,9 @@ export function getBrowserComputerActionCatalogForArgs(args: {
   toolName: unknown;
   arguments?: Record<string, unknown>;
 }): BrowserComputerActionCatalogEntry | null {
-  const action = isRecord(args.arguments) ? args.arguments.action : undefined;
+  const action = isRecord(args.arguments)
+    ? args.arguments.action ?? args.arguments.operation
+    : undefined;
   return getBrowserComputerActionCatalogEntry(
     args.toolName,
     action,

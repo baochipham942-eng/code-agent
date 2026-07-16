@@ -5,6 +5,7 @@
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
 import type {
+  BrowserProfileSourceId,
   DesktopSearchQuery,
   DesktopTimelineQuery,
   ManagedBrowserMode,
@@ -21,6 +22,11 @@ import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAna
 import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktop/desktopAudioCapture';
 import { browserService } from '../services/infra/browserService';
 import { browserRelayService } from '../services/infra/browserRelayService';
+import {
+  clearManagedBrowserCookiesViaService,
+  importBrowserProfileCookiesViaService,
+  listImportableBrowserProfiles,
+} from '../services/infra/browser/managedBrowserCookieImport';
 import { createLogger } from '../services/infra/logger';
 import { shell } from '../platform';
 import { prepareRuntimeAssetOnDemand } from '../services/cloud/updateService';
@@ -188,6 +194,51 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
             success: true,
             data: {
               accountState: await browserService.getAccountStateSummary(),
+              session: browserService.getSessionState(),
+            },
+          } satisfies IPCResponse<unknown>;
+
+        case 'listBrowserProfiles':
+          return {
+            success: true,
+            data: listImportableBrowserProfiles(),
+          } satisfies IPCResponse<unknown>;
+
+        case 'importBrowserProfileCookies': {
+          const payload = request.payload as {
+            source?: string;
+            profileId?: string;
+            domainAllowlist?: string[];
+            includeExpired?: boolean;
+            userConfirmed?: boolean;
+          } | undefined;
+          if (!payload?.source || !payload?.profileId) {
+            throw new Error('source and profileId are required for importBrowserProfileCookies.');
+          }
+          if (payload.userConfirmed !== true) {
+            throw new Error('Profile cookie import requires explicit userConfirmed=true (ADR-041).');
+          }
+          const result = await importBrowserProfileCookiesViaService(browserService, {
+            source: payload.source as BrowserProfileSourceId,
+            profileId: payload.profileId,
+            domainAllowlist: Array.isArray(payload.domainAllowlist) ? payload.domainAllowlist : undefined,
+            includeExpired: payload.includeExpired === true,
+            userConfirmed: true,
+          });
+          return {
+            success: true,
+            data: {
+              result,
+              session: browserService.getSessionState(),
+            },
+          } satisfies IPCResponse<unknown>;
+        }
+
+        case 'clearManagedBrowserCookies':
+          return {
+            success: true,
+            data: {
+              accountState: await clearManagedBrowserCookiesViaService(browserService),
               session: browserService.getSessionState(),
             },
           } satisfies IPCResponse<unknown>;

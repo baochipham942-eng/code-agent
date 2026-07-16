@@ -43,6 +43,9 @@ Actions:
 - get_account_state: Return cookie/storage summary without values
 - export_storage_state: Save Playwright storageState to a local artifact file
 - import_storage_state: Import cookies and storage seed from a local storageState file
+- list_profiles: List importable local Chromium browser profiles (macOS; no cookie values)
+- import_profile_cookies: Import cookies from a local browser profile (requires userConfirmed=true)
+- clear_cookies: Clear cookies in the managed browser profile
 - wait_for_download: Click an element and save the completed download as an artifact
 - upload_file: Set a file input or file chooser target to a user-approved file
 - wait: Wait for element or timeout
@@ -71,6 +74,7 @@ Examples:
           'click', 'click_text', 'type', 'press_key', 'scroll',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
+          'list_profiles', 'import_profile_cookies', 'clear_cookies',
           'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs'
         ],
         description: 'The browser action to perform',
@@ -154,6 +158,23 @@ Examples:
         enum: ['auto', 'managed', 'relay'],
         description:
           'ADR-041 browser engine. auto (default) routes by isolation/login intent; managed uses Neo isolated browser; relay drives an attached real Chrome tab. Explicit managed/relay never silently switches engines.',
+      },
+      source: {
+        type: 'string',
+        description: 'Browser profile source for import_profile_cookies (chrome, edge, brave, arc, …)',
+      },
+      profileId: {
+        type: 'string',
+        description: 'Browser profile id for import_profile_cookies (e.g. Default)',
+      },
+      domainAllowlist: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional domain allowlist for import_profile_cookies',
+      },
+      userConfirmed: {
+        type: 'boolean',
+        description: 'Required true for import_profile_cookies after explicit user approval',
       },
     },
     required: ['action'],

@@ -910,6 +910,20 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     if (!result.ok) expect(result.code).toBe('SANDBOX_UNAVAILABLE');
   });
 
+  it.each([
+    ['seatbelt profile preflight 失败', 'sandbox-exec profile preflight failed'],
+    ['bubblewrap 敏感文件占位失败', 'Failed to prepare sensitive path placeholder'],
+  ])('bypassPermissions 档 + %s：硬报错 SANDBOX_UNAVAILABLE', async (_label, message) => {
+    modeMgr.setMode('bypassPermissions', true);
+    wrapMock.mockImplementation(() => {
+      throw new Error(message);
+    });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'echo should-not-run' }, makeCtx(), allowAll);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('SANDBOX_UNAVAILABLE');
+  });
+
   it('bypassPermissions 档：网络型命令才放开网络', async () => {
     modeMgr.setMode('bypassPermissions', true);
     const handler = await bashModule.createHandler();

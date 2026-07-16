@@ -11,9 +11,12 @@
 import { spawn, execSync } from 'child_process';
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
+import { createHash } from 'crypto';
 import { quote } from 'shell-quote';
 import { createLogger } from '../services/infra/logger';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
+import { getSensitiveSandboxPaths, type SensitiveSandboxPath } from './sensitivePaths';
 
 const logger = createLogger('Bubblewrap');
 
@@ -45,6 +48,8 @@ export interface BubblewrapConfig {
   workingDirectory?: string;
   /** Timeout in milliseconds */
   timeout?: number;
+  /** Sensitive host paths that must be masked when present in mounted trees */
+  sensitivePaths?: SensitiveSandboxPath[];
 }
 
 /**
@@ -110,6 +115,118 @@ const DEFAULT_CONFIG: BubblewrapConfig = {
   customEnv: {},
   timeout: SANDBOX_TIMEOUTS.DEFAULT,
 };
+
+interface PathStatLike {
+  isDirectory: () => boolean;
+  isFile: () => boolean;
+}
+
+export interface BuildSensitivePathMountArgsOptions {
+  sensitivePaths?: SensitiveSandboxPath[];
+  placeholderDir?: string;
+  pathExists?: (targetPath: string) => boolean;
+  statPath?: (targetPath: string) => PathStatLike;
+  preparePlaceholder?: (targetPath: string, placeholderDir?: string) => string;
+}
+
+export function buildSensitivePathMountArgs(
+  options: BuildSensitivePathMountArgsOptions = {},
+): string[] {
+  const args: string[] = [];
+  const sensitivePaths = options.sensitivePaths ?? getSensitiveSandboxPaths();
+  const pathExists = options.pathExists ?? ((targetPath: string) => fs.existsSync(targetPath));
+  const statPath = options.statPath ?? ((targetPath: string) => fs.statSync(targetPath));
+  const preparePlaceholder = options.preparePlaceholder ?? prepareReadDeniedPlaceholder;
+
+  for (const entry of sensitivePaths) {
+    const target = path.resolve(entry.path);
+    if (entry.kind === 'directory') {
+      validateSensitiveDirectoryTarget(target, pathExists, statPath);
+      args.push('--tmpfs', target);
+      continue;
+    }
+
+    validateSensitiveFileTarget(target, pathExists, statPath);
+    let placeholder: string;
+    try {
+      placeholder = preparePlaceholder(target, options.placeholderDir);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to prepare sensitive path placeholder for ${target}: ${message}`, { cause: error });
+    }
+    args.push('--ro-bind', placeholder, target);
+  }
+
+  return args;
+}
+
+function validateSensitiveDirectoryTarget(
+  target: string,
+  pathExists: (targetPath: string) => boolean,
+  statPath: (targetPath: string) => PathStatLike,
+): void {
+  if (!pathExists(target)) return;
+  let stat: PathStatLike;
+  try {
+    stat = statPath(target);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to inspect sensitive directory ${target}: ${message}`, { cause: error });
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`Sensitive directory target is not a directory: ${target}`);
+  }
+}
+
+function validateSensitiveFileTarget(
+  target: string,
+  pathExists: (targetPath: string) => boolean,
+  statPath: (targetPath: string) => PathStatLike,
+): void {
+  if (!pathExists(target)) return;
+  let stat: PathStatLike;
+  try {
+    stat = statPath(target);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to inspect sensitive file ${target}: ${message}`, { cause: error });
+  }
+  if (!stat.isFile()) {
+    throw new Error(`Sensitive file target is not a file: ${target}`);
+  }
+}
+
+function prepareReadDeniedPlaceholder(
+  target: string,
+  placeholderDir = path.join(os.tmpdir(), 'code-agent-bwrap-sensitive-deny'),
+): string {
+  fs.mkdirSync(placeholderDir, { recursive: true, mode: 0o700 });
+  const digest = createHash('sha256').update(target).digest('hex').slice(0, 24);
+  const placeholder = path.join(placeholderDir, `deny-${digest}`);
+
+  if (fs.existsSync(placeholder)) {
+    const stat = fs.statSync(placeholder);
+    if (!stat.isFile()) {
+      throw new Error(`placeholder is not a file: ${placeholder}`);
+    }
+    fs.chmodSync(placeholder, 0o600);
+    fs.truncateSync(placeholder, 0);
+  } else {
+    const fd = fs.openSync(placeholder, 'wx', 0o600);
+    fs.closeSync(fd);
+  }
+
+  fs.chmodSync(placeholder, 0o000);
+  const finalStat = fs.statSync(placeholder);
+  if (!finalStat.isFile()) {
+    throw new Error(`placeholder is not a file after creation: ${placeholder}`);
+  }
+  if ((finalStat.mode & 0o777) !== 0) {
+    throw new Error(`placeholder permissions are not 000: ${placeholder}`);
+  }
+
+  return placeholder;
+}
 
 // ----------------------------------------------------------------------------
 // Bubblewrap Class
@@ -232,6 +349,10 @@ export class Bubblewrap {
       args.push('--tmpfs', p);
     }
 
+    args.push(...buildSensitivePathMountArgs({
+      sensitivePaths: config.sensitivePaths,
+    }));
+
     // Environment variables passthrough
     for (const envVar of config.envPassthrough) {
       const value = process.env[envVar];
@@ -257,12 +378,7 @@ export class Bubblewrap {
    * Check if a path exists
    */
   private pathExists(p: string): boolean {
-    try {
-      execSync(`test -e ${JSON.stringify(p)}`, { timeout: 1000 });
-      return true;
-    } catch {
-      return false;
-    }
+    return fs.existsSync(p);
   }
 
   /**

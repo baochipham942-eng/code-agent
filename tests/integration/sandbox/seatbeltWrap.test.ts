@@ -74,6 +74,41 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     expect(fs.existsSync(path.join(projectDir, 'in-project.txt'))).toBe(true);
   });
 
+  it('敏感 home 文件读取被拒，但工作区 .env 仍可读', async () => {
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sbx-home-'));
+    const originalHome = process.env.HOME;
+    const secretPath = path.join(fakeHome, '.netrc');
+    const workspaceEnvPath = path.join(projectDir, '.env');
+    fs.writeFileSync(secretPath, 'machine example.test password secret-token');
+    fs.writeFileSync(workspaceEnvPath, 'WORKSPACE_ENV_OK=1');
+
+    try {
+      process.env.HOME = fakeHome;
+      const denied = wrapCommandForSandbox(
+        `cat ${JSON.stringify(secretPath)}`,
+        { workingDirectory: projectDir, allowNetwork: false },
+      );
+      const deniedResult = await run(denied.command, projectDir);
+      denied.cleanup();
+      expect(deniedResult.code).not.toBe(0);
+      expect(deniedResult.stdout).not.toContain('secret-token');
+
+      const allowed = wrapCommandForSandbox('cat .env', {
+        workingDirectory: projectDir,
+        allowNetwork: false,
+      });
+      const allowedResult = await run(allowed.command, projectDir);
+      allowed.cleanup();
+      expect(allowedResult.code).toBe(0);
+      expect(allowedResult.stdout).toContain('WORKSPACE_ENV_OK=1');
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+      fs.rmSync(workspaceEnvPath, { force: true });
+    }
+  });
+
   it('越界写入（HOME 根目录）被沙箱拒绝 —— 核心隔离实证', async () => {
     const escapeTarget = path.join(os.homedir(), `__sandbox_escape_${Date.now()}.txt`);
     const { command, cleanup } = wrapCommandForSandbox(

@@ -28,6 +28,14 @@ export {
 } from './networkPolicy';
 
 export {
+  getSensitiveSandboxPaths,
+  isPathDeniedBySensitiveSandboxPath,
+  type SensitiveSandboxPath,
+  type SensitiveSandboxPathKind,
+  type SensitiveSandboxPathOptions,
+} from './sensitivePaths';
+
+export {
   SandboxManager,
   getSandboxManager,
   resetSandboxManager,

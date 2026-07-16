@@ -189,6 +189,9 @@ export class NativeRecoveryHost {
     const status = await this.ports.approval.read(approvalId);
     if (status === 'missing' || status === 'conflict') return this.review(plan, now, `approval_identity_${status}`);
     if (status === 'pending') {
+      if (this.ports.continuationExecutor === 'unavailable') {
+        return this.failUnrecoverable(plan, now, 'approval_pending_no_recovery_resolution_path');
+      }
       await this.registry.checkpointDurable(plan.envelope.runId, {
         now,
         status: 'waiting',
@@ -217,6 +220,9 @@ export class NativeRecoveryHost {
   }
 
   private async review(plan: RunRehydrationPlan, now: number, reason: string) {
+    if (this.ports.continuationExecutor === 'unavailable') {
+      return this.failUnrecoverable(plan, now, reason);
+    }
     await this.registry.checkpointDurable(plan.envelope.runId, {
       now,
       status: 'waiting',

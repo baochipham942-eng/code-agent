@@ -109,6 +109,20 @@ function planWith(input: {
   };
 }
 
+function withDescriptor(
+  plan: RunRehydrationPlan,
+  update: (descriptor: NativeRecoveryDescriptor) => NativeRecoveryDescriptor,
+): RunRehydrationPlan {
+  if (!plan.checkpoint) throw new Error('Expected recovery checkpoint');
+  return {
+    ...plan,
+    checkpoint: {
+      ...plan.checkpoint,
+      state: update(plan.checkpoint.state as NativeRecoveryDescriptor),
+    },
+  };
+}
+
 function unavailablePorts(input: {
   workspace?: { ok: true; root: string; cwd: string; fingerprint: string };
   approval?: 'pending' | 'approved' | 'rejected' | 'missing' | 'conflict';
@@ -123,12 +137,49 @@ function unavailablePorts(input: {
       queryResult: vi.fn(async () => null),
       canRetrySafely: vi.fn(async () => false),
     },
+    tool: { queryResult: vi.fn(async () => null) },
     approval: { read: vi.fn(async () => input.approval ?? 'pending') },
   };
 }
 
 describe('durable Native recovery lifecycle', () => {
-  it('fails an unrecoverable production run and lets the same session start again', async () => {
+  it.each([
+    {
+      branch: 'unknown write side effect',
+      operation: {
+        kind: 'tool_call' as const,
+        status: 'dispatched' as const,
+        sideEffect: true,
+        providerOperationId: undefined,
+      },
+      descriptor: { phase: 'tool_dispatched' as const },
+      ports: () => createApplicationNativeRecoveryPorts(),
+      reason: 'unknown_write_side_effect',
+    },
+    {
+      branch: 'pending approval without a recovery resolution path',
+      operation: {
+        kind: 'approval' as const,
+        status: 'waiting' as const,
+        sideEffect: false,
+        providerOperationId: 'approval:approval-before-crash',
+      },
+      descriptor: {
+        phase: 'approval_waiting' as const,
+        approvalId: 'approval-before-crash',
+      },
+      ports: () => ({
+        ...createApplicationNativeRecoveryPorts(),
+        approval: { read: vi.fn(async () => 'pending' as const) },
+      }),
+      reason: 'approval_pending_no_recovery_resolution_path',
+    },
+  ])('fails a production $branch run, preserves its evidence, and lets the same session start again', async ({
+    operation,
+    descriptor,
+    ports,
+    reason,
+  }) => {
     const workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'durable-native-recovery-')));
     const { db, repository } = createRepository();
     const firstRegistry = new RunRegistry();
@@ -145,16 +196,20 @@ describe('durable Native recovery lifecycle', () => {
       const pending = {
         ...firstKernel.prepareOperation({
           runId: original.context.runId,
-          operationId: 'model:model-call-before-crash',
-          logicalOperationId: 'model-call-before-crash',
+          operationId: operation.kind === 'approval'
+            ? 'approval:approval-before-crash'
+            : 'tool:tool-call-before-crash',
+          logicalOperationId: operation.kind === 'approval'
+            ? 'approval-before-crash'
+            : 'tool-call-before-crash',
           attempt: 1,
-          kind: 'model_call',
-          sideEffect: false,
+          kind: operation.kind,
+          sideEffect: operation.sideEffect,
           canDeduplicate: true,
-          providerOperationId: 'provider-operation-before-crash',
+          providerOperationId: operation.providerOperationId,
           now: 1_010,
         }),
-        status: 'dispatched' as const,
+        status: operation.status,
       };
       await firstRegistry.checkpointDurable(original.context.runId, {
         now: 1_010,
@@ -170,9 +225,11 @@ describe('durable Native recovery lifecycle', () => {
             cwd: workspace,
             fingerprint: createHash('sha256').update(workspace).digest('hex'),
           },
-          logicalOperationId: 'model-call-before-crash',
+          logicalOperationId: operation.kind === 'approval'
+            ? 'approval-before-crash'
+            : 'tool-call-before-crash',
           operationId: pending.operationId,
-          phase: 'after_model_dispatch',
+          ...descriptor,
           checkpointSequence: 1,
         },
         engineCursor: { schemaVersion: 1, runtime: 'native' },
@@ -185,11 +242,14 @@ describe('durable Native recovery lifecycle', () => {
       const recoveredRegistry = new RunRegistry();
       recoveredRegistry.configureDurableKernel(kernel(repository, 'process-after-crash'));
       const [plan] = await recoveredRegistry.recoverDurable(2_000);
+      const expectedPreservedOperations = plan.pendingOperations;
       const recovery = await new NativeRecoveryHost(
         recoveredRegistry,
-        createApplicationNativeRecoveryPorts(),
+        ports(),
       ).createHandler().recover(plan, 2_000);
       const persisted = await repository.get(original.context.runId);
+      const preservedOperations = await repository.listPendingOperations(original.context.runId);
+      const events = await repository.read(original.context.runId, 0, 100);
 
       let nextRun: Awaited<ReturnType<RunRegistry['startDurable']>> | undefined;
       let nextRunError: unknown;
@@ -205,7 +265,16 @@ describe('durable Native recovery lifecycle', () => {
       }
 
       expect.soft(recovery.status).toBe('failed');
+      expect.soft(recovery.reason).toBe(reason);
       expect.soft(persisted?.status).toBe('failed');
+      expect.soft(persisted?.terminal?.reason).toBe(reason);
+      expect.soft(preservedOperations).toEqual(expectedPreservedOperations);
+      expect.soft(events.at(-1)).toMatchObject({
+        type: 'run_failed',
+        payload: { recoveryReason: reason },
+      });
+      expect.soft(events).not.toContainEqual(expect.objectContaining({ type: 'native_recovery_requires_review' }));
+      expect.soft(events).not.toContainEqual(expect.objectContaining({ type: 'approval_recovered' }));
       expect.soft(recoveredRegistry.hasDurableOwner(original.context.runId)).toBe(false);
       expect(nextRunError).toBeUndefined();
       expect(nextRun?.context.runId).toBe('run-after-recovery');
@@ -293,12 +362,42 @@ describe('durable Native recovery lifecycle', () => {
       reason: 'native_recovery_descriptor_missing',
     },
     {
+      branch: 'conflicting operation identity',
+      plan: () => withDescriptor(reviewPlan(), (descriptor) => ({
+        ...descriptor,
+        operationId: 'model:conflicting-operation',
+      })),
+      ports: () => unavailablePorts(),
+      reason: 'native_operation_identity_conflict',
+    },
+    {
       branch: 'workspace drift',
       plan: () => reviewPlan(),
       ports: () => unavailablePorts({
         workspace: { ok: true, root: '/different', cwd: '/repo', fingerprint: 'fp' },
       }),
       reason: 'native_workspace_drift',
+    },
+    {
+      branch: 'missing pending operation',
+      plan: () => withDescriptor(reviewPlan(), (descriptor) => ({
+        ...descriptor,
+        logicalOperationId: 'missing-operation',
+        operationId: 'missing-operation',
+      })),
+      ports: () => unavailablePorts(),
+      reason: 'native_operation_missing',
+    },
+    {
+      branch: 'missing tool-result evidence',
+      plan: () => planWith({
+        kind: 'tool_call',
+        status: 'dispatched',
+        providerOperationId: 'tool-ledger-missing',
+        sideEffect: true,
+      }),
+      ports: () => unavailablePorts(),
+      reason: 'tool_result_evidence_missing',
     },
     {
       branch: 'unknown write side effect',
@@ -311,14 +410,100 @@ describe('durable Native recovery lifecycle', () => {
       ports: () => unavailablePorts(),
       reason: 'unknown_write_side_effect',
     },
-  ])('keeps $branch waiting for genuine human review', async ({ plan, ports, reason }) => {
+    {
+      branch: 'otherwise unsafe native operation',
+      plan: () => planWith({
+        kind: 'child_run',
+        status: 'waiting',
+        providerOperationId: undefined,
+        sideEffect: false,
+      }),
+      ports: () => unavailablePorts(),
+      reason: 'native_operation_not_safely_recoverable',
+    },
+    {
+      branch: 'approval without an identity',
+      plan: () => planWith({
+        kind: 'approval',
+        status: 'waiting',
+        providerOperationId: undefined,
+      }),
+      ports: () => unavailablePorts(),
+      reason: 'approval_identity_missing',
+    },
+    {
+      branch: 'approval identity missing from storage',
+      plan: () => planWith({
+        kind: 'approval',
+        status: 'waiting',
+        providerOperationId: 'approval:approval-review',
+        approvalId: 'approval-review',
+      }),
+      ports: () => unavailablePorts({ approval: 'missing' }),
+      reason: 'approval_identity_missing',
+    },
+    {
+      branch: 'pending approval without a resolution observer',
+      plan: () => planWith({
+        kind: 'approval',
+        status: 'waiting',
+        providerOperationId: 'approval:approval-review',
+        approvalId: 'approval-review',
+      }),
+      ports: () => unavailablePorts({ approval: 'pending' }),
+      reason: 'approval_pending_no_recovery_resolution_path',
+    },
+  ])('terminals ungated $branch when fallback Native ports cannot continue', async ({ plan, ports, reason }) => {
     const registry = {
       checkpointDurable: vi.fn(),
       terminalDurable: vi.fn(),
     } as unknown as RunRegistry;
 
     await expect(new NativeRecoveryHost(registry, ports()).createHandler().recover(plan(), 10)).resolves.toMatchObject({
+      status: 'failed',
+      reason,
+    });
+    expect(registry.terminalDurable).toHaveBeenCalledWith('run-review', expect.objectContaining({
+      status: 'failed',
+      reason,
+      event: expect.objectContaining({ type: 'run_failed' }),
+    }));
+    expect(registry.checkpointDurable).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      branch: 'unknown write side effect',
+      plan: () => planWith({
+        kind: 'tool_call',
+        status: 'dispatched',
+        providerOperationId: undefined,
+        sideEffect: true,
+      }),
+      reason: 'unknown_write_side_effect',
       status: 'requires_review',
+    },
+    {
+      branch: 'pending approval',
+      plan: () => planWith({
+        kind: 'approval',
+        status: 'waiting',
+        providerOperationId: 'approval:approval-review',
+        approvalId: 'approval-review',
+      }),
+      reason: 'restore_same_approval',
+      status: 'observing',
+    },
+  ])('keeps $branch waiting when the host declares a continuation executor', async ({ plan, reason, status }) => {
+    const registry = {
+      checkpointDurable: vi.fn(),
+      terminalDurable: vi.fn(),
+    } as unknown as RunRegistry;
+    const ports = unavailablePorts({ approval: 'pending' });
+    ports.continuationExecutor = 'available';
+
+    await expect(new NativeRecoveryHost(registry, ports).createHandler().recover(plan(), 10)).resolves.toMatchObject({
+      status,
       reason,
     });
     expect(registry.checkpointDurable).toHaveBeenCalledWith('run-review', expect.objectContaining({ status: 'waiting' }));

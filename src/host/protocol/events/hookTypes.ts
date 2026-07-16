@@ -338,6 +338,37 @@ export const HOOK_ENV_VARS = {
   SUBAGENT_ID: 'HOOK_SUBAGENT_ID',
 } as const;
 
+const MAX_HOOK_ENV_ENTRY_BYTES = 128 * 1024;
+const HOOK_ENV_TRUNCATED_MARKER = '[truncated]';
+
+function getHookEnvEntryByteLength(name: string, value: string): number {
+  return Buffer.byteLength(`${name}=${value}`) + 1;
+}
+
+function truncateHookEnvValue(name: string, value: string): string {
+  if (getHookEnvEntryByteLength(name, value) <= MAX_HOOK_ENV_ENTRY_BYTES) {
+    return value;
+  }
+
+  const entryOverheadBytes = Buffer.byteLength(`${name}=`) + 1;
+  const valueBudgetBytes = MAX_HOOK_ENV_ENTRY_BYTES - entryOverheadBytes;
+  const markerBytes = Buffer.byteLength(HOOK_ENV_TRUNCATED_MARKER);
+  const contentBudgetBytes = valueBudgetBytes - markerBytes;
+
+  let usedBytes = 0;
+  let truncated = '';
+  for (const codePoint of value) {
+    const codePointBytes = Buffer.byteLength(codePoint);
+    if (usedBytes + codePointBytes > contentBudgetBytes) {
+      break;
+    }
+    truncated += codePoint;
+    usedBytes += codePointBytes;
+  }
+
+  return `${truncated}${HOOK_ENV_TRUNCATED_MARKER}`;
+}
+
 /**
  * Type guard for ToolHookContext
  */
@@ -367,12 +398,12 @@ export function createHookEnvVars(context: AnyHookContext): Record<string, strin
   // Tool hook contexts (PreToolUse, PostToolUse, PostToolUseFailure)
   if (isToolHookContext(context)) {
     env[HOOK_ENV_VARS.TOOL_NAME] = context.toolName;
-    env[HOOK_ENV_VARS.TOOL_INPUT] = context.toolInput;
+    env[HOOK_ENV_VARS.TOOL_INPUT] = truncateHookEnvValue(HOOK_ENV_VARS.TOOL_INPUT, context.toolInput);
     if (context.toolOutput) {
-      env[HOOK_ENV_VARS.TOOL_OUTPUT] = context.toolOutput;
+      env[HOOK_ENV_VARS.TOOL_OUTPUT] = truncateHookEnvValue(HOOK_ENV_VARS.TOOL_OUTPUT, context.toolOutput);
     }
     if (context.errorMessage) {
-      env[HOOK_ENV_VARS.ERROR_MESSAGE] = context.errorMessage;
+      env[HOOK_ENV_VARS.ERROR_MESSAGE] = truncateHookEnvValue(HOOK_ENV_VARS.ERROR_MESSAGE, context.errorMessage);
     }
   }
 
@@ -387,7 +418,7 @@ export function createHookEnvVars(context: AnyHookContext): Record<string, strin
   }
 
   if ('prompt' in context) {
-    env[HOOK_ENV_VARS.USER_PROMPT] = context.prompt;
+    env[HOOK_ENV_VARS.USER_PROMPT] = truncateHookEnvValue(HOOK_ENV_VARS.USER_PROMPT, context.prompt);
   }
 
   // Task lifecycle contexts
@@ -412,7 +443,10 @@ export function createHookEnvVars(context: AnyHookContext): Record<string, strin
 
   // Stop failure context
   if (context.event === 'StopFailure' && 'phase' in context) {
-    env[HOOK_ENV_VARS.ERROR_MESSAGE] = String((context as StopFailureContext).error);
+    env[HOOK_ENV_VARS.ERROR_MESSAGE] = truncateHookEnvValue(
+      HOOK_ENV_VARS.ERROR_MESSAGE,
+      String((context as StopFailureContext).error),
+    );
     env['HOOK_PHASE'] = String((context as StopFailureContext).phase);
   }
 

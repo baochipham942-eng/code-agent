@@ -847,7 +847,7 @@ export class TelemetryCollector {
     });
     this.pushEvent({
       type: 'model_call',
-      sessionId: this.activeTurn.sessionId!,
+      sessionId: record.sessionId,
       data: redactTelemetryModelCall(call)
     });
   }

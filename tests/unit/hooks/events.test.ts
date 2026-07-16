@@ -25,6 +25,13 @@ import {
   createHookEnvVars,
 } from '../../../src/host/hooks';
 
+const MAX_HOOK_ENV_ENTRY_BYTES = 128 * 1024;
+const HOOK_ENV_TRUNCATED_MARKER = '[truncated]';
+
+function envEntryByteLength(name: string, value: string): number {
+  return Buffer.byteLength(`${name}=${value}`) + 1;
+}
+
 describe('Hook Events', () => {
   // --------------------------------------------------------------------------
   // HOOK_EVENT_DESCRIPTIONS
@@ -161,6 +168,159 @@ describe('Hook Events', () => {
       const env = createHookEnvVars(context);
 
       expect(env.HOOK_USER_PROMPT).toBe('Help me with this code');
+    });
+
+    it('should preserve hook env payloads below the entry byte limit', () => {
+      const toolInput = 'input'.repeat(100);
+      const toolOutput = 'output'.repeat(100);
+      const errorMessage = 'error'.repeat(100);
+      const prompt = 'prompt'.repeat(100);
+
+      const toolEnv = createHookEnvVars({
+        event: 'PostToolUseFailure',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        toolName: 'bash',
+        toolInput,
+        toolOutput,
+        errorMessage,
+      });
+      const promptEnv = createHookEnvVars({
+        event: 'UserPromptSubmit',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        prompt,
+      });
+
+      expect(toolEnv.HOOK_TOOL_INPUT).toBe(toolInput);
+      expect(toolEnv.HOOK_TOOL_INPUT).not.toContain(HOOK_ENV_TRUNCATED_MARKER);
+      expect(toolEnv.HOOK_TOOL_OUTPUT).toBe(toolOutput);
+      expect(toolEnv.HOOK_TOOL_OUTPUT).not.toContain(HOOK_ENV_TRUNCATED_MARKER);
+      expect(toolEnv.HOOK_ERROR_MESSAGE).toBe(errorMessage);
+      expect(toolEnv.HOOK_ERROR_MESSAGE).not.toContain(HOOK_ENV_TRUNCATED_MARKER);
+      expect(promptEnv.HOOK_USER_PROMPT).toBe(prompt);
+      expect(promptEnv.HOOK_USER_PROMPT).not.toContain(HOOK_ENV_TRUNCATED_MARKER);
+    });
+
+    it('should truncate oversized tool input env entries', () => {
+      const env = createHookEnvVars({
+        event: 'PreToolUse',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        toolName: 'bash',
+        toolInput: 'x'.repeat(MAX_HOOK_ENV_ENTRY_BYTES + 1024),
+      });
+
+      expect(env.HOOK_TOOL_INPUT).toMatch(/\[truncated\]$/);
+      expect(envEntryByteLength('HOOK_TOOL_INPUT', env.HOOK_TOOL_INPUT)).toBeLessThanOrEqual(MAX_HOOK_ENV_ENTRY_BYTES);
+    });
+
+    it('should truncate oversized tool output env entries', () => {
+      const env = createHookEnvVars({
+        event: 'PostToolUse',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        toolName: 'bash',
+        toolInput: '{}',
+        toolOutput: 'x'.repeat(MAX_HOOK_ENV_ENTRY_BYTES + 1024),
+      });
+
+      expect(env.HOOK_TOOL_OUTPUT).toMatch(/\[truncated\]$/);
+      expect(envEntryByteLength('HOOK_TOOL_OUTPUT', env.HOOK_TOOL_OUTPUT)).toBeLessThanOrEqual(MAX_HOOK_ENV_ENTRY_BYTES);
+    });
+
+    it('should truncate oversized user prompt env entries', () => {
+      const env = createHookEnvVars({
+        event: 'UserPromptSubmit',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        prompt: 'x'.repeat(MAX_HOOK_ENV_ENTRY_BYTES + 1024),
+      });
+
+      expect(env.HOOK_USER_PROMPT).toMatch(/\[truncated\]$/);
+      expect(envEntryByteLength('HOOK_USER_PROMPT', env.HOOK_USER_PROMPT)).toBeLessThanOrEqual(MAX_HOOK_ENV_ENTRY_BYTES);
+    });
+
+    it('should truncate oversized error message env entries', () => {
+      const env = createHookEnvVars({
+        event: 'PostToolUseFailure',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        toolName: 'bash',
+        toolInput: '{}',
+        errorMessage: 'x'.repeat(MAX_HOOK_ENV_ENTRY_BYTES + 1024),
+      });
+      const stopFailureEnv = createHookEnvVars({
+        event: 'StopFailure',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        phase: 'execute',
+        error: 'x'.repeat(MAX_HOOK_ENV_ENTRY_BYTES + 1024),
+      });
+
+      expect(env.HOOK_ERROR_MESSAGE).toMatch(/\[truncated\]$/);
+      expect(envEntryByteLength('HOOK_ERROR_MESSAGE', env.HOOK_ERROR_MESSAGE)).toBeLessThanOrEqual(MAX_HOOK_ENV_ENTRY_BYTES);
+      expect(stopFailureEnv.HOOK_ERROR_MESSAGE).toMatch(/\[truncated\]$/);
+      expect(envEntryByteLength('HOOK_ERROR_MESSAGE', stopFailureEnv.HOOK_ERROR_MESSAGE)).toBeLessThanOrEqual(MAX_HOOK_ENV_ENTRY_BYTES);
+    });
+
+    it('should truncate multibyte hook env values without splitting code points', () => {
+      const env = createHookEnvVars({
+        event: 'PostToolUse',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        toolName: 'bash',
+        toolInput: '你'.repeat(60000),
+        toolOutput: '😀'.repeat(40000),
+      });
+
+      expect(env.HOOK_TOOL_INPUT).toMatch(/\[truncated\]$/);
+      expect(env.HOOK_TOOL_INPUT).not.toContain('\uFFFD');
+      expect(env.HOOK_TOOL_INPUT.slice(0, -HOOK_ENV_TRUNCATED_MARKER.length)).toMatch(/你$/);
+      expect(envEntryByteLength('HOOK_TOOL_INPUT', env.HOOK_TOOL_INPUT)).toBeLessThanOrEqual(MAX_HOOK_ENV_ENTRY_BYTES);
+
+      expect(env.HOOK_TOOL_OUTPUT).toMatch(/\[truncated\]$/);
+      expect(env.HOOK_TOOL_OUTPUT).not.toContain('\uFFFD');
+      expect(env.HOOK_TOOL_OUTPUT.slice(0, -HOOK_ENV_TRUNCATED_MARKER.length)).toMatch(/😀$/u);
+      expect(envEntryByteLength('HOOK_TOOL_OUTPUT', env.HOOK_TOOL_OUTPUT)).toBeLessThanOrEqual(MAX_HOOK_ENV_ENTRY_BYTES);
+    });
+
+    it('should cap multiple oversized hook env payloads independently', () => {
+      const env = createHookEnvVars({
+        event: 'PostToolUseFailure',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        toolName: 'bash',
+        toolInput: 'input'.repeat(40000),
+        toolOutput: 'output'.repeat(40000),
+        errorMessage: 'error'.repeat(40000),
+      });
+      const promptEnv = createHookEnvVars({
+        event: 'UserPromptSubmit',
+        sessionId: 'test-session',
+        timestamp: Date.now(),
+        workingDirectory: '/test',
+        prompt: 'prompt'.repeat(40000),
+      });
+
+      for (const [name, value] of [
+        ['HOOK_TOOL_INPUT', env.HOOK_TOOL_INPUT],
+        ['HOOK_TOOL_OUTPUT', env.HOOK_TOOL_OUTPUT],
+        ['HOOK_ERROR_MESSAGE', env.HOOK_ERROR_MESSAGE],
+        ['HOOK_USER_PROMPT', promptEnv.HOOK_USER_PROMPT],
+      ] as const) {
+        expect(value).toMatch(/\[truncated\]$/);
+        expect(envEntryByteLength(name, value)).toBeLessThanOrEqual(MAX_HOOK_ENV_ENTRY_BYTES);
+      }
     });
 
     it('should handle stop context', () => {

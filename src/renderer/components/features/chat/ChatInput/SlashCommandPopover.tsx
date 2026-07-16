@@ -638,17 +638,17 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: sc.compact.label,
       description: sc.compact.description,
       icon: <Zap className="w-4 h-4" />,
-      action: () => {
-        const count = useSessionStore.getState().messages.length;
-        if (count < 4) {
-          writeAssistant('Too few messages to compact');
-          return;
+      action: async () => {
+        try {
+          const result = await invoke(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, currentSessionId ?? undefined);
+          if (result?.success) {
+            writeAssistant(`已压缩当前会话上下文，节省 ${result.savedTokens.toLocaleString('en-US')} tokens。`);
+          } else {
+            writeAssistant(`上下文压缩未执行${result?.reason ? `：${result.reason}` : ''}`);
+          }
+        } catch (err) {
+          writeAssistant(`上下文压缩失败：${err instanceof Error ? err.message : String(err)}`);
         }
-        const health = useAppStore.getState().contextHealth;
-        const ctxLine = health && health.currentTokens > 0
-          ? `\n当前上下文 ${health.usagePercent.toFixed(1)}%（${health.currentTokens.toLocaleString('en-US')} tokens）。`
-          : '';
-        writeAssistant(`当前会话 ${count} 条消息。${ctxLine}\n上下文压缩会在接近窗口上限时自动触发，无需手动干预。`);
       },
     },
     {

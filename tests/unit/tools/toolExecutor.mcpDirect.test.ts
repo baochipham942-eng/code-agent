@@ -177,7 +177,9 @@ describe('ToolExecutor MCP dynamic direct execution', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('缺少必填参数');
+    expect(result.error).toContain('参数校验失败');
+    expect(result.error).toContain('field_path=query');
+    expect(result.error).toContain('category=missing_required');
     expect(requestPermission).not.toHaveBeenCalled();
     expect(mocks.callTool).not.toHaveBeenCalled();
   });

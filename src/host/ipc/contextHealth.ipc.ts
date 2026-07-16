@@ -385,7 +385,7 @@ export async function resolveContextHealthForSession(
 
 async function compactSession(
   deps: ContextHealthDependencies,
-  options: { sessionId?: string; messageId?: string },
+  options: { sessionId?: string; messageId?: string; focusText?: string },
 ): Promise<CompactResult> {
   const contextHealthService = getContextHealthService();
   const appService = deps.getAppService();
@@ -432,6 +432,7 @@ async function compactSession(
     hookManager: resolveHookManagerForSession(deps, sessionId),
     usagePercent: beforePercent,
     skipAudit: !compressionConfig.auditEnabled,
+    focusText: options.focusText,
   });
 
   if (!compaction.success || !compaction.newMessages || !compaction.summaryMessage || !compaction.block) {
@@ -594,9 +595,9 @@ export function registerContextHealthHandlers(deps: ContextHealthDependencies): 
   });
 
   // 手动 Compact：主动压缩当前会话，保留最近消息
-  ipcHost.handle(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, async (_event, sessionId?: string) => {
+  ipcHost.handle(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, async (_event, sessionId?: string, focusText?: string) => {
     try {
-      return await compactSession(deps, { sessionId });
+      return await compactSession(deps, { sessionId, focusText });
     } catch (error) {
       logger.error('Failed to compact current session:', error);
       return emptyCompactResult();

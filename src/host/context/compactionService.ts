@@ -43,6 +43,7 @@ const TRANSCRIPT_MAX_TOKENS = 12000;
 const TRANSCRIPT_ITEM_MAX_CHARS = 1200;
 const TOOL_ARGS_MAX_CHARS = 700;
 const TOOL_ERROR_MAX_CHARS = 600;
+const FOCUS_TEXT_MAX_CHARS = 1000;
 const logger = createLogger('CompactionService');
 
 export interface CompactionPlanOptions {
@@ -58,6 +59,7 @@ export interface CompactionPlanOptions {
   skipAudit?: boolean;
   now?: number;
   archivedToolResults?: ToolResultArchiveRef[];
+  focusText?: string;
 }
 
 export interface CompactionPlan {
@@ -74,6 +76,7 @@ export interface CompactionPlan {
   systemPrompt?: string;
   modelConfig?: Pick<ModelConfig, 'provider' | 'model'>;
   hookPreservedContext?: string;
+  focusText?: string;
 }
 
 export interface CompactionServiceResult {
@@ -109,6 +112,12 @@ function clampPromptText(value: string, maxChars: number): string {
   const head = Math.max(0, Math.floor(maxChars * 0.65));
   const tail = Math.max(0, maxChars - head - marker.length);
   return `${text.slice(0, head)}${marker}${text.slice(text.length - tail)}`;
+}
+
+function normalizeFocusText(value: string | undefined): string | undefined {
+  if (value == null) return undefined;
+  const text = clampPromptText(value, FOCUS_TEXT_MAX_CHARS);
+  return text || undefined;
 }
 
 function summarizeOmittedText(value: unknown): string {
@@ -336,6 +345,11 @@ function toSharedManifest(manifest: ContextSurvivorManifest): CompactionSurvivor
   };
 }
 
+function buildFocusBlock(focusText: string | undefined): string {
+  if (!focusText) return '';
+  return `\n\nUser Focus For This Compaction:\n${focusText}\n\nThis is a prioritization signal only. Do not ignore the Hard rules or Survivor Manifest above. Preserve required survivor items even when they are unrelated to this focus.`;
+}
+
 function buildSummaryPrompt(plan: CompactionPlan, previousSummary?: string, repairInstruction?: string): string {
   const repairBlock = previousSummary && repairInstruction
     ? `\n\nPrevious summary:\n${previousSummary}\n\nRepair instruction:\n${repairInstruction}\n\nRegenerate the full handoff summary with the missing survivor items included.`
@@ -343,6 +357,7 @@ function buildSummaryPrompt(plan: CompactionPlan, previousSummary?: string, repa
   const preservedContextBlock = plan.hookPreservedContext
     ? `\n\nPreserved Context From PreCompact Hooks:\n${plan.hookPreservedContext.slice(0, 4000)}`
     : '';
+  const focusBlock = buildFocusBlock(plan.focusText);
 
   return `You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume this task.
 
@@ -374,7 +389,7 @@ ${plan.systemPrompt ? plan.systemPrompt.slice(0, 4000) : '(none)'}
 ${preservedContextBlock}
 
 Survivor Manifest:
-${renderSurvivorManifestForPrompt(plan.manifest)}
+${renderSurvivorManifestForPrompt(plan.manifest)}${focusBlock}
 
 Compacted Transcript:
 ${plan.contentToSummarize}${repairBlock}
@@ -419,6 +434,7 @@ export function createCompactionPlan(options: CompactionPlanOptions): Compaction
     originalTokens: countMessageTokens(split.compactedMessages),
     systemPrompt: options.systemPrompt,
     modelConfig: options.modelConfig,
+    focusText: normalizeFocusText(options.focusText),
   };
 }
 
@@ -497,6 +513,7 @@ export async function compactMessagesWithSummary(
         originalTokens: 0,
         systemPrompt: options.systemPrompt,
         modelConfig: options.modelConfig,
+        focusText: normalizeFocusText(options.focusText),
       },
       beforeTokens,
       afterTokens: beforeTokens,

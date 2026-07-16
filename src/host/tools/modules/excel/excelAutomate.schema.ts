@@ -115,7 +115,7 @@ Parameters:
         description: '[read/generate/automate/list_sheets/get_range] Excel file path',
       },
       sheet: {
-        type: 'string',
+        type: ['string', 'number'] as unknown as string,
         description: '[read/automate/get_range] Sheet name or index',
       },
       format: {

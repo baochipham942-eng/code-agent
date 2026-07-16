@@ -21,7 +21,7 @@ The output always includes column names, which you should reference exactly when
         description: 'Excel 文件路径',
       },
       sheet: {
-        type: 'string',
+        type: ['string', 'number'] as unknown as string,
         description: '工作表名称或索引（默认: 第一个工作表）',
       },
       format: {

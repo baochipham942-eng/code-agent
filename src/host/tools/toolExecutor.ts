@@ -45,6 +45,7 @@ import { evaluateGuardFabricGate } from './guardFabricGate';
 
 const logger = createLogger('ToolExecutor');
 
+import { validateToolInputSchema, formatToolSchemaValidationError } from './toolSchemaValidator';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -344,18 +345,14 @@ export class ToolExecutor {
       }
     }
 
-    // Required-field guardrail: 在执行前校验 schema 里声明的 required 字段是否都提供了。
-    // 模型经常幻觉工具名并传空参数，护栏把错误往前移到 executor 入口，避免下游 handler 炸。
-    const requiredFields = toolDef.inputSchema?.required ?? [];
-    const missing = requiredFields.filter((field) => {
-      const value = params[field];
-      return value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
-    });
-    if (missing.length > 0) {
-      logger.warn('Tool call missing required fields', { toolName: executionToolName, requestedToolName, missing });
+    // Executor-level schema guardrail: direct ToolExecutor callers may bypass the
+    // agent runtime's lighter validator, so keep this fail-closed before permission/dispatch.
+    const schemaIssues = validateToolInputSchema(toolDef.inputSchema, params);
+    if (schemaIssues.length > 0) {
+      logger.warn('Tool call failed schema validation', { toolName: executionToolName, requestedToolName, issues: schemaIssues });
       return {
         success: false,
-        error: `工具 "${executionToolName}" 缺少必填参数: ${missing.join(', ')}。请检查工具 schema 并重新调用。`,
+        error: formatToolSchemaValidationError(executionToolName, schemaIssues),
       };
     }
 

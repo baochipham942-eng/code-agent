@@ -226,11 +226,6 @@ body.theme-switching * {
   border-radius: var(--radius-md);
 }
 
-button:focus-visible,
-[role="button"]:focus-visible {
-  outline: none;
-}
-
 .chat-composer-textarea:focus,
 .chat-composer-textarea:focus-visible {
   outline: none !important;

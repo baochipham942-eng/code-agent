@@ -24,7 +24,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { TraceNodeRenderer } from './TraceNodeRenderer';
-import { StreamingIndicator, getRunningToolStartTime } from './StreamingIndicator';
+import { StreamingIndicator, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { ToolStepGroup } from './ToolStepGroup';
 import {
@@ -297,6 +297,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 runningToolStartTime={runningToolStartTime}
                 showCaret={!lastNodeIsStreamingText}
                 isThinking={isThinkingPhase}
+                waitingReason={getStreamingWaitingReason(turn.nodes, streamingState.status)}
               />
             )}
           </>

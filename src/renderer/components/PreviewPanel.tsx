@@ -95,6 +95,31 @@ interface DesignPptScreenshotArtifact {
   slidesCount?: number;
 }
 
+// ============================================================================
+// 产物更新回执（闪现渐隐）判据
+//
+// 只有「同一 tab 的磁盘重载带来了不是用户刚看到的内容」才算 agent 更新：
+//   - 首次加载 / 切 tab（prev 为空或 tabId 变了）→ 不闪
+//   - savedContent 没变（普通重渲染）→ 不闪
+//   - 用户自己保存（savedContent 追上了当时显示的 content）→ 不闪
+// ============================================================================
+interface LoadedSnapshot {
+  tabId: string;
+  savedContent: string;
+  /** 快照时用户正看到的内容（含未保存编辑），用于区分"用户保存"和"外来更新"。 */
+  content: string;
+}
+
+export function shouldFlashOnDiskLoad(
+  prev: LoadedSnapshot | null,
+  next: { tabId: string; savedContent: string },
+): boolean {
+  if (!prev || prev.tabId !== next.tabId) return false;
+  if (next.savedContent === prev.savedContent) return false;
+  if (next.savedContent === prev.content) return false;
+  return true;
+}
+
 export function parseDesignPptArtifactContent(content: string): DesignPptScreenshotArtifact | null {
   try {
     const parsed = JSON.parse(content) as Partial<DesignPptScreenshotArtifact>;
@@ -407,6 +432,10 @@ export const PreviewPanel: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 产物更新回执（闪现渐隐）：记录上一次已加载态的快照，磁盘重载带来"不是
+  // 用户刚保存的内容"时点亮一次 artifact-flash。
+  const [artifactFlash, setArtifactFlash] = useState(false);
+  const lastLoadedRef = useRef<LoadedSnapshot | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   // 预览用 HTML：把同目录相对 css/js 内联进来（srcDoc iframe 无法解析相对引用）。
@@ -443,6 +472,17 @@ export const PreviewPanel: React.FC = () => {
     if (activeTab.isLoaded) return;
     void loadContent(activeTab.id, activeTab.path);
   }, [activeTab?.id, activeTab?.isLoaded]);
+
+  // 产物更新回执：只在同一 tab 的磁盘重载落地、且新内容不是用户刚看到/刚保存的
+  // 内容时闪现（首次加载、切 tab、用户自己保存都不闪）。
+  useEffect(() => {
+    if (!activeTab?.isLoaded) return;
+    const next = { tabId: activeTab.id, savedContent };
+    if (shouldFlashOnDiskLoad(lastLoadedRef.current, next)) {
+      setArtifactFlash(true);
+    }
+    lastLoadedRef.current = { ...next, content };
+  }, [activeTab?.id, activeTab?.isLoaded, savedContent, content]);
 
   // 仅对要走 iframe 渲染的 HTML 产物，内联同目录相对 css/js 供预览。
   // markdown/csv/code/图片/pdf 各有专门渲染路径，不需要。
@@ -716,7 +756,14 @@ export const PreviewPanel: React.FC = () => {
       </div>
 
       {/* Content */}
-      <div className={`flex-1 overflow-hidden ${isMarkdown || isCsv || isImage || isAudio || isVideo || isArchive || isOffice ? 'bg-zinc-900' : 'bg-white'}`}>
+      <div
+        className={`flex-1 overflow-hidden ${isMarkdown || isCsv || isImage || isAudio || isVideo || isArchive || isOffice ? 'bg-zinc-900' : 'bg-white'}${artifactFlash ? ' artifact-flash' : ''}`}
+        onAnimationEnd={(e) => {
+          if (e.target === e.currentTarget && e.animationName === 'artifactFlashFade') {
+            setArtifactFlash(false);
+          }
+        }}
+      >
         {isLoading ? (
           <div className="flex items-center justify-center h-full bg-zinc-700">
             <div className="flex flex-col items-center gap-3">

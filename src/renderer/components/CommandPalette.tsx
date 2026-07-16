@@ -14,6 +14,7 @@ import {
 } from '@shared/keybindings';
 import { useKeybindingsSettings } from '../hooks/useKeybindingsSettings';
 import { ConfirmDialog } from './composites/ConfirmDialog';
+import { AGENT_NEO_HELP_URL } from '@shared/constants/network';
 
 // ============================================================================
 // Types
@@ -157,7 +158,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       icon: <HelpCircle className="w-4 h-4" />,
       category: 'help',
       action: () => {
-        window.open('https://github.com/anthropics/claude-code/issues', '_blank');
+        window.open(AGENT_NEO_HELP_URL, '_blank');
       },
     },
   ], [

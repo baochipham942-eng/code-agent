@@ -15,6 +15,10 @@ import { isRuntimeProviderConfigured } from '../../shared/modelRuntime';
 import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/providerIconAssets';
 import { handleDiscoverModels, type DiscoveredProviderModel, type DiscoverModelsResult } from './provider.ipc';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
+import {
+  resolveSheetCoordinate,
+  type SheetRangeStart,
+} from '../../shared/livePreview/sheetCoords';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -654,11 +658,17 @@ export function registerSettingsHandlers(
   const sheetRowsWithRealNumbers = (
     XLSX: typeof import('xlsx'),
     sheet: import('xlsx').WorkSheet,
-  ): unknown[][] => {
+  ): { rows: unknown[][]; rangeStart: SheetRangeStart } => {
+    // sheet_to_json 会把 used range 左上角归一成数组 [0][0]；真实起点必须从同一份
+    // !ref 解一次后随结果向下传，不能让 text / preview 各自猜 A1。
+    const decodedStart = sheet['!ref']
+      ? XLSX.utils.decode_range(sheet['!ref']).s
+      : { r: 0, c: 0 };
+    const rangeStart = { row: decodedStart.r, column: decodedStart.c };
     const json: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: true });
     let end = json.length;
     while (end > 0 && isBlankRow(json[end - 1])) end--;
-    return json.slice(0, end);
+    return { rows: json.slice(0, end), rangeStart };
   };
 
   const SHEET_ROWNUM_LEGEND = '第 1 列是 xlsx 真实行号，可直接用于 A1 引用（行号 4 + B 列 = B4）；行号跳号处是空行';
@@ -672,9 +682,13 @@ export function registerSettingsHandlers(
    * 一行起全错（实测：「四月」会被标成 R5）。把行号绑进数据就不受文本换行影响，
    * 转义也全部归 XLSX，不用手搓 CSV quoting。
    */
-  const rowsToNumberedCsv = (XLSX: typeof import('xlsx'), trimmed: unknown[][]): string => {
+  const rowsToNumberedCsv = (
+    XLSX: typeof import('xlsx'),
+    trimmed: unknown[][],
+    rangeStart: SheetRangeStart,
+  ): string => {
     const numbered = trimmed
-      .map((row, index) => [index + 1, ...(row || [])])
+      .map((row, index) => [resolveSheetCoordinate(index, 0, rangeStart).row, ...(row || [])])
       .filter((row) => !isBlankRow(row.slice(1)));
     return XLSX.utils.sheet_to_csv(XLSX.utils.aoa_to_sheet(numbered));
   };
@@ -692,8 +706,8 @@ export function registerSettingsHandlers(
       let totalRows = 0;
 
       for (const sheetName of workbook.SheetNames) {
-        const trimmed = sheetRowsWithRealNumbers(XLSX, workbook.Sheets[sheetName]);
-        const csv = rowsToNumberedCsv(XLSX, trimmed);
+        const { rows: trimmed, rangeStart } = sheetRowsWithRealNumbers(XLSX, workbook.Sheets[sheetName]);
+        const csv = rowsToNumberedCsv(XLSX, trimmed, rangeStart);
         totalRows += Math.max(trimmed.length - 1, 0);
 
         sheets.push(`=== Sheet: ${sheetName} (${SHEET_ROWNUM_LEGEND}) ===\n${csv}`);
@@ -715,7 +729,13 @@ export function registerSettingsHandlers(
 
   // Excel → JSON (for SpreadsheetBlock interactive rendering)
   ipcMain.handle('extract-excel-json', async (_, filePath: string): Promise<{
-    sheets: Array<{ name: string; headers: string[]; rows: unknown[][]; rowCount: number }>;
+    sheets: Array<{
+      name: string;
+      headers: string[];
+      rows: unknown[][];
+      rowCount: number;
+      rangeStart?: SheetRangeStart;
+    }>;
     sheetCount: number;
   }> => {
     try {
@@ -729,10 +749,17 @@ export function registerSettingsHandlers(
         // 行号谓词与 extract-excel-text 共用（见 sheetRowsWithRealNumbers）：预览里的
         // 数组下标是 UI 算 A1（B7）的依据，而定点反馈把这个 A1 交给 DocEdit 直接改
         // 源文件；模型侧看到的行号必须是同一套，否则两侧各错各的谁也照不出来。
-        const trimmed = sheetRowsWithRealNumbers(XLSX, workbook.Sheets[sheetName]);
+        const { rows: trimmed, rangeStart } = sheetRowsWithRealNumbers(XLSX, workbook.Sheets[sheetName]);
         const headers = (trimmed[0] || []) as string[];
         const rows = trimmed.slice(1, 501); // Cap at 500 rows for UI performance
-        return { name: sheetName, headers, rows, rowCount: Math.max(trimmed.length - 1, 0) };
+        return {
+          name: sheetName,
+          headers,
+          rows,
+          rowCount: Math.max(trimmed.length - 1, 0),
+          // A1 是主路径，保持 JSON 逐字节不变；只有真实存在偏移时才扩展契约。
+          ...(rangeStart.row !== 0 || rangeStart.column !== 0 ? { rangeStart } : {}),
+        };
       });
 
       return { sheets, sheetCount: workbook.SheetNames.length };

@@ -108,6 +108,29 @@ describe('detectTaskFeatures：代码语境不得误命中任何产物特征', (
   });
 });
 
+describe('detectTaskFeatures：正文扩展名服从产物意图，真实附件仍是强证据', () => {
+  it.each([
+    ['这个 logo.svg 图标渲染模糊，帮我修一下组件代码', 'isImageTask'],
+    ['把 spec.pdf 里的需求实现成代码', 'isDocumentTask'],
+  ])('%s → %s=false', (prompt, feature) => {
+    expect(detectTaskFeatures(prompt)[feature as 'isImageTask' | 'isDocumentTask']).toBe(false);
+  });
+
+  it.each([
+    ['把 logo.svg 转成海报', 'isImageTask'],
+    ['帮我把这份 spec.pdf 总结成文档', 'isDocumentTask'],
+  ])('%s → %s=true', (prompt, feature) => {
+    expect(detectTaskFeatures(prompt)[feature as 'isImageTask' | 'isDocumentTask']).toBe(true);
+  });
+
+  it.each([
+    ['帮我修一下组件代码', ['.svg'], 'isImageTask'],
+    ['把里面的需求实现成代码', ['.pdf'], 'isDocumentTask'],
+  ])('%s + 附件 %j → %s=true', (prompt, extensions, feature) => {
+    expect(detectTaskFeatures(prompt, extensions)[feature as 'isImageTask' | 'isDocumentTask']).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 第二层：few-shot 选择
 // ---------------------------------------------------------------------------

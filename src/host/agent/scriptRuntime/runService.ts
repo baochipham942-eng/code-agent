@@ -277,11 +277,16 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
       }
     }
 
+    let sandboxTimedOut = false;
     const outcome = await runScriptInSandbox({
       script: spec.script,
       goal: spec.goal,
       budgetTotal: budget.total,
       signal: controller.signal,
+      onTimeout: () => {
+        sandboxTimedOut = true;
+        controller.abort();
+      },
       onRpc: (req) => handleRpc(req, ctx),
       useOsSandbox: deps.useOsSandbox,
       legacyWorkerFallback: process.env.CODE_AGENT_WORKFLOW_LEGACY_WORKER_FALLBACK === '1',
@@ -308,7 +313,7 @@ export async function startRun(spec: ScriptRunSpec, deps: ScriptRunHostDeps): Pr
         /* 观测面非权威，不反噬权威结果 */
       }
     } else {
-      state.status = controller.signal.aborted ? 'cancelled' : 'failed';
+      state.status = controller.signal.aborted && !sandboxTimedOut ? 'cancelled' : 'failed';
       state.error = outcome.error ? redactSecrets(outcome.error) : outcome.error;
       try {
         emit({

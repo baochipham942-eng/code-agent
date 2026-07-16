@@ -7,6 +7,22 @@
 
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
+const processSandboxHarness = vi.hoisted(() => ({
+  spawned: [] as import('node:child_process').ChildProcessWithoutNullStreams[],
+}));
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    spawn: (...args: Parameters<typeof actual.spawn>) => {
+      const child = actual.spawn(...args);
+      processSandboxHarness.spawned.push(child);
+      return child;
+    },
+  };
+});
+
 // worker 用 mock 隔离（不真起 worker_threads）
 vi.mock('../../../../src/host/agent/scriptRuntime/sandbox', () => ({
   runScriptInSandbox: vi.fn(async () => ({ ok: true, result: 'ok' })),
@@ -14,6 +30,7 @@ vi.mock('../../../../src/host/agent/scriptRuntime/sandbox', () => ({
 
 import { runScriptInSandbox } from '../../../../src/host/agent/scriptRuntime/sandbox';
 import { startRun, cancelRun, getRunState, type ScriptRunHostDeps } from '../../../../src/host/agent/scriptRuntime';
+import type { RpcResponse } from '../../../../src/host/agent/scriptRuntime/types';
 
 const baseModel = { provider: 'xiaomi', model: 'm', apiKey: 'k' };
 
@@ -66,6 +83,77 @@ describe('runService activeRuns 异常安全', () => {
     expect(events).not.toContain('run:error');
     expect(getRunState(runId)).toBeUndefined();
   });
+
+  it('aborts in-flight RPC synchronously on sandbox timeout while preserving timeout classification', async () => {
+    const timeoutError = 'process sandbox 执行超时 50ms';
+    let signalAbortedWhenTimeoutHandled = false;
+    vi.mocked(runScriptInSandbox).mockImplementationOnce(async (opts) => {
+      const onTimeout = (opts as typeof opts & { onTimeout?: () => void }).onTimeout;
+      onTimeout?.();
+      signalAbortedWhenTimeoutHandled = opts.signal.aborted;
+      return { ok: false, error: timeoutError };
+    });
+
+    const state = await startRun(
+      { runId: 'wf-timeout-abort', script: 'return agent("slow")', defaultProvider: 'xiaomi', defaultModel: 'm' },
+      makeDeps(),
+    );
+
+    expect(signalAbortedWhenTimeoutHandled).toBe(true);
+    expect(state).toMatchObject({ status: 'failed', error: timeoutError });
+    expect(getRunState('wf-timeout-abort')).toBeUndefined();
+  });
+
+  it.each(['resolve', 'reject'] as const)(
+    'does not write a late %s RPC response after the real sandbox child is dead',
+    async (settlement) => {
+      const { runScriptInSandbox: runActualSandbox } = await vi.importActual<
+        typeof import('../../../../src/host/agent/scriptRuntime/sandbox')
+      >('../../../../src/host/agent/scriptRuntime/sandbox');
+      let resolveRpc!: (response: RpcResponse) => void;
+      let rejectRpc!: (error: Error) => void;
+      let rpcStarted!: () => void;
+      const started = new Promise<void>((resolve) => { rpcStarted = resolve; });
+      const rpc = new Promise<RpcResponse>((resolve, reject) => {
+        resolveRpc = resolve;
+        rejectRpc = reject;
+      });
+      const spawnIndex = processSandboxHarness.spawned.length;
+
+      const running = runActualSandbox({
+        script: 'return agent("late host response")',
+        signal: new AbortController().signal,
+        useOsSandbox: false,
+        timeoutMs: 5_000,
+        onRpc: async () => {
+          rpcStarted();
+          return rpc;
+        },
+      });
+
+      await started;
+      const child = processSandboxHarness.spawned[spawnIndex];
+      expect(child).toBeDefined();
+      const writeSpy = vi.spyOn(child.stdin, 'write');
+      const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
+      process.kill(child.pid!, 'SIGKILL');
+      await closed;
+      expect(child.stdin.destroyed).toBe(true);
+      writeSpy.mockClear();
+
+      if (settlement === 'resolve') {
+        expect(() => resolveRpc({ id: 1, ok: true, result: 'late' })).not.toThrow();
+      } else {
+        expect(() => rejectRpc(new Error('late failure'))).not.toThrow();
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(writeSpy).not.toHaveBeenCalled();
+      expect(() => child.stdin.emit('error', new Error('late stdin error'))).not.toThrow();
+      await expect(running).resolves.toMatchObject({ ok: false });
+      writeSpy.mockRestore();
+    },
+  );
 
   it('redacts credentials before final checkpoint persistence', async () => {
     const journal = {

@@ -11,6 +11,9 @@ import { ipcService } from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useSessionUIStore } from '../../../stores/sessionUIStore';
 import { createPendingSearchJumpFromCrossSessionResult } from '../../../utils/sessionSearchJump';
+import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
+import { formatRelativeTime } from '../../../utils/i18nTime';
 
 export interface SearchMatch {
   turnIndex: number;
@@ -36,6 +39,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
   onMatchesChange,
   onActiveMatchChange,
 }) => {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<SearchTab>('current');
@@ -185,7 +189,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={tab === 'current' ? '搜索当前会话…' : '搜索所有会话…'}
+          placeholder={tab === 'current' ? t.chatSearch.placeholderCurrent : t.chatSearch.placeholderCross}
           className="flex-1 bg-transparent text-sm text-zinc-200 placeholder-zinc-600 outline-hidden"
         />
 
@@ -199,7 +203,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
                 : 'text-zinc-500 hover:text-zinc-400'
             }`}
           >
-            当前
+            {t.chatSearch.tabCurrent}
           </button>
           <button
             onClick={() => handleTabChange('cross')}
@@ -209,7 +213,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
                 : 'text-zinc-500 hover:text-zinc-400'
             }`}
           >
-            跨会话
+            {t.chatSearch.tabCross}
           </button>
         </div>
 
@@ -217,13 +221,13 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
         {tab === 'current' && query && (
           <>
             <span className="text-xs text-zinc-500 tabular-nums flex-shrink-0">
-              {matches.length > 0 ? `${activeIndex + 1}/${matches.length}` : '0 结果'}
+              {matches.length > 0 ? `${activeIndex + 1}/${matches.length}` : t.chatSearch.zeroResults}
             </span>
             <button
               onClick={() => goToMatch(activeIndex - 1)}
               disabled={matches.length === 0}
               className="p-1 rounded hover:bg-zinc-800 text-zinc-500 disabled:opacity-30 transition-colors"
-              title="上一个 (Shift+Enter)"
+              title={t.chatSearch.prevMatch}
             >
               <ChevronUp className="w-3.5 h-3.5" />
             </button>
@@ -231,7 +235,7 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
               onClick={() => goToMatch(activeIndex + 1)}
               disabled={matches.length === 0}
               className="p-1 rounded hover:bg-zinc-800 text-zinc-500 disabled:opacity-30 transition-colors"
-              title="下一个 (Enter)"
+              title={t.chatSearch.nextMatch}
             >
               <ChevronDown className="w-3.5 h-3.5" />
             </button>
@@ -241,18 +245,20 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
         {/* Cross session: summary */}
         {tab === 'cross' && query && !crossLoading && crossResults && (
           <span className="text-xs text-zinc-500 tabular-nums flex-shrink-0">
-            {crossResults.totalMatches} 条 / {crossResults.sessionsWithMatches} 会话
+            {t.chatSearch.crossSummary
+              .replace('{matches}', String(crossResults.totalMatches))
+              .replace('{sessions}', String(crossResults.sessionsWithMatches))}
             {crossResults.searchTime > 0 && ` (${crossResults.searchTime}ms)`}
           </span>
         )}
         {tab === 'cross' && crossLoading && (
-          <span className="text-xs text-zinc-500 flex-shrink-0">搜索中…</span>
+          <span className="text-xs text-zinc-500 flex-shrink-0">{t.chatSearch.searching}</span>
         )}
 
         <button
           onClick={onClose}
           className="p-1 rounded hover:bg-zinc-800 text-zinc-500 transition-colors"
-          title="关闭 (Esc)"
+          title={t.chatSearch.close}
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -266,13 +272,14 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
               key={`${item.sessionId}-${item.timestamp}-${i}`}
               item={item}
               onJump={handleJumpToSession}
+              t={t}
             />
           ))}
         </div>
       )}
       {tab === 'cross' && crossResults?.results.length === 0 && query.trim() && !crossLoading && (
         <div className="px-4 py-3 text-xs text-zinc-600 border-t border-zinc-800">
-          未找到匹配结果
+          {t.chatSearch.noMatches}
         </div>
       )}
     </div>
@@ -286,11 +293,12 @@ export const ChatSearchBar: React.FC<ChatSearchBarProps> = ({
 const CrossSessionResultRow: React.FC<{
   item: CrossSessionSearchResultItem;
   onJump: (item: CrossSessionSearchResultItem) => void;
-}> = ({ item, onJump }) => {
-  const timeStr = formatRelativeTime(item.timestamp);
-  const roleLabel = item.role === 'user' ? '用户' : item.role === 'assistant' ? '助手' : '系统';
+  t: Translations;
+}> = ({ item, onJump, t }) => {
+  const timeStr = formatRelativeTime(t, item.timestamp);
+  const roleLabel = item.role === 'user' ? t.chatSearch.roleUser : item.role === 'assistant' ? t.chatSearch.roleAssistant : t.chatSearch.roleSystem;
   const turnLabel = typeof item.turnNumber === 'number' && item.turnNumber > 0
-    ? `第 ${item.turnNumber} 轮`
+    ? t.chatSearch.turnNumber.replace('{n}', String(item.turnNumber))
     : null;
 
   // Strip markdown bold markers from snippet for display
@@ -323,19 +331,3 @@ const CrossSessionResultRow: React.FC<{
   );
 };
 
-// ----------------------------------------------------------------------------
-// Helpers
-// ----------------------------------------------------------------------------
-
-function formatRelativeTime(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}小时前`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}天前`;
-  const months = Math.floor(days / 30);
-  return `${months}个月前`;
-}

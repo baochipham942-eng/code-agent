@@ -23,6 +23,9 @@ import type {
   SidebarProjectSummary,
 } from '../../../utils/sidebarProjectSummary';
 import type { ProjectStatus } from '@shared/contract/project';
+import { useI18n } from '../../../hooks/useI18n';
+import type { Language, Translations } from '../../../i18n';
+import { localeForLanguage } from '../../../utils/i18nTime';
 
 export interface SidebarProjectDrawerSession {
   id: string;
@@ -64,47 +67,44 @@ export interface SidebarProjectDrawerProps {
   onSetProjectStatus?: (status: ProjectStatus) => void | Promise<void>;
 }
 
-const GOAL_STATUS_LABEL: Record<SidebarProjectGoalMeta['status'], string> = {
-  active: '进行中',
-  met: '已达成',
-  aborted: '待处理',
-  archived: '已归档',
-};
+function getGoalStatusLabel(status: SidebarProjectGoalMeta['status'], t: Translations): string {
+  const p = t.sidebarProject;
+  switch (status) {
+    case 'met':
+      return p.goalStatusMet;
+    case 'aborted':
+      return p.goalStatusPending;
+    case 'archived':
+      return p.goalStatusArchived;
+    default:
+      return p.goalStatusActive;
+  }
+}
 
-const ARTIFACT_KIND_LABEL: Record<SidebarProjectArtifactMeta['kind'], string> = {
-  chart: '图表',
-  spreadsheet: '表格',
-  document: '文档',
-  generative_ui: '界面',
-  neo_ui: '交互界面',
-  mermaid: '图示',
-  question_form: '表单',
-  file: '文件',
-  generic_html: '网页',
-  web_snapshot: '网页',
-  link: '链接',
-  text: '文本',
-  binary: '二进制',
-  image: '图片',
-  audio: '音频',
-  video: '视频',
-  web: '网页',
-  search: '搜索',
-  'process-output': '输出',
-  'process-log': '日志',
-};
+function getArtifactKindLabel(kind: SidebarProjectArtifactMeta['kind'], t: Translations): string {
+  const k = t.sidebarProject.artifactKind;
+  switch (kind) {
+    case 'process-output':
+      return k.processOutput;
+    case 'process-log':
+      return k.processLog;
+    default:
+      return k[kind] ?? kind;
+  }
+}
 
-const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
-  active: '进行中',
-  idle: '空闲',
-  archived: '已归档',
-};
+function getProjectStatusLabel(status: ProjectStatus, t: Translations): string {
+  const p = t.sidebarProject;
+  if (status === 'idle') return p.statusIdle;
+  if (status === 'archived') return p.statusArchived;
+  return p.statusActive;
+}
 
-function formatRelativeUpdatedAt(timestamp: number | undefined): string | null {
+function formatRelativeUpdatedAt(timestamp: number | undefined, language: Language): string | null {
   if (!timestamp || !Number.isFinite(timestamp)) {
     return null;
   }
-  return new Date(timestamp).toLocaleString();
+  return new Date(timestamp).toLocaleString(localeForLanguage(language));
 }
 
 function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.ReactNode {
@@ -114,17 +114,17 @@ function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.Reac
   return <Target className="h-3.5 w-3.5 text-violet-300" />;
 }
 
-function formatArtifactMeta(artifact: SidebarProjectArtifactMeta): string {
+function formatArtifactMeta(artifact: SidebarProjectArtifactMeta, t: Translations): string {
   return [
-    ARTIFACT_KIND_LABEL[artifact.kind] ?? artifact.kind,
+    getArtifactKindLabel(artifact.kind, t),
     artifact.toolName?.trim(),
     artifact.sessionTitle?.trim(),
   ].filter(Boolean).join(' · ');
 }
 
-function getPrimaryPath(paths: string[]): string {
+function getPrimaryPath(paths: string[], t: Translations): string {
   const primary = paths.find((path) => path.trim());
-  return primary || '未绑定工作区';
+  return primary || t.sidebarProject.unboundWorkspace;
 }
 
 export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
@@ -146,6 +146,8 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
   onSetProjectDescription,
   onSetProjectStatus,
 }) => {
+  const { t, language } = useI18n();
+  const p = t.sidebarProject;
   const [editingProject, setEditingProject] = React.useState(false);
   const [draftName, setDraftName] = React.useState(title);
   const [draftDescription, setDraftDescription] = React.useState(meta?.description ?? '');
@@ -155,9 +157,9 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
   const visibleGoals = meta?.goals?.filter((goal) => goal.status !== 'archived').slice(0, 8) ?? [];
   const visibleArtifacts = meta?.recentArtifacts?.slice(0, 8) ?? [];
   const visibleRoles = meta?.roleIds?.slice(0, 12) ?? [];
-  const updatedAt = formatRelativeUpdatedAt(meta?.updatedAt ?? summary.latestActivityAt);
+  const updatedAt = formatRelativeUpdatedAt(meta?.updatedAt ?? summary.latestActivityAt, language);
   const activeGoalCount = visibleGoals.filter((goal) => goal.status === 'active').length;
-  const drawerSessionLabel = filtered ? '当前筛选会话' : '最近会话';
+  const drawerSessionLabel = filtered ? p.drawerFilteredSessions : p.drawerRecentSessions;
   const canEditProject = Boolean(onRenameProject || onSetProjectDescription || onSetProjectStatus);
 
   React.useEffect(() => {
@@ -178,7 +180,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
   const handleSaveProject = async (): Promise<void> => {
     const nextName = draftName.trim();
     if (!nextName) {
-      setEditError('项目名不能为空');
+      setEditError(p.nameRequired);
       return;
     }
     setSavingProject(true);
@@ -197,17 +199,17 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
       }
       setEditingProject(false);
     } catch (error) {
-      setEditError(error instanceof Error ? error.message : '保存项目失败');
+      setEditError(error instanceof Error ? error.message : p.saveFailed);
     } finally {
       setSavingProject(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[9998] flex justify-end bg-black/45" role="dialog" aria-modal="true" aria-label={`${title} 项目控制台`}>
+    <div className="fixed inset-0 z-[9998] flex justify-end bg-black/45" role="dialog" aria-modal="true" aria-label={p.consoleAria.replace('{title}', title)}>
       <button /* ds-allow:button: 抽屉背景遮罩点击关闭，绝对铺满透明按钮，primitive 变体会渲染可见样式 */
         type="button"
-        aria-label="关闭项目控制台背景"
+        aria-label={p.closeBackdropAria}
         className="absolute inset-0 cursor-default"
         onClick={onClose}
       />
@@ -224,27 +226,27 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     <input
                       value={draftName}
                       onChange={(event) => setDraftName(event.target.value)}
-                      aria-label="项目名称"
+                      aria-label={p.nameLabel}
                       className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm font-medium text-zinc-100 outline-hidden focus:border-violet-500/60"
                     />
                     <select
                       value={draftStatus}
                       onChange={(event) => setDraftStatus(event.target.value as ProjectStatus)}
-                      aria-label="项目状态"
+                      aria-label={p.statusFieldLabel}
                       className="shrink-0 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-[11px] text-zinc-300 outline-hidden focus:border-violet-500/60"
                     >
-                      <option value="active">进行中</option>
-                      <option value="idle">空闲</option>
-                      <option value="archived">已归档</option>
+                      <option value="active">{p.statusActive}</option>
+                      <option value="idle">{p.statusIdle}</option>
+                      <option value="archived">{p.statusArchived}</option>
                     </select>
                   </div>
                   <textarea
                     value={draftDescription}
                     onChange={(event) => setDraftDescription(event.target.value)}
-                    aria-label="项目描述"
+                    aria-label={p.descriptionPlaceholder}
                     rows={2}
                     className="min-h-[52px] resize-none rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] leading-5 text-zinc-300 outline-hidden focus:border-violet-500/60"
-                    placeholder="项目描述"
+                    placeholder={p.descriptionPlaceholder}
                   />
                   <div className="flex items-center gap-1.5">
                     <button /* ds-allow:button: 项目保存按钮，violet 语义色描边超小尺寸（py-0.5），primitive 无对应变体 */
@@ -253,7 +255,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       onClick={() => { void handleSaveProject(); }}
                       className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-200 transition-colors hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {savingProject ? '保存中' : '保存'}
+                      {savingProject ? p.saving : p.save}
                     </button>
                     <button /* ds-allow:button: 项目编辑取消按钮，描边超小尺寸（py-0.5），primitive 最小 sm 仍更大 */
                       type="button"
@@ -261,7 +263,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       onClick={handleCancelEdit}
                       className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      取消
+                      {p.cancel}
                     </button>
                     {editError && <span className="min-w-0 truncate text-[10px] text-rose-300">{editError}</span>}
                   </div>
@@ -272,28 +274,28 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     <h2 className="truncate text-sm font-semibold text-zinc-100">{title}</h2>
                     {meta?.status && (
                       <span className="shrink-0 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400">
-                        {PROJECT_STATUS_LABEL[meta.status]}
+                        {getProjectStatusLabel(meta.status, t)}
                       </span>
                     )}
                   </div>
                   <p className="mt-0.5 truncate text-[11px] text-zinc-500">{meta?.description?.trim() || summaryLine}</p>
                 </>
               )}
-              <p className="mt-0.5 truncate text-[10px] text-zinc-600">{getPrimaryPath(paths)}</p>
+              <p className="mt-0.5 truncate text-[10px] text-zinc-600">{getPrimaryPath(paths, t)}</p>
             </div>
             {canEditProject && !editingProject && (
               <button /* ds-allow:button: 项目编辑入口，描边超小尺寸文本按钮（py-1 text-[11px]），primitive 最小 sm 仍更大 */
                 type="button"
-                aria-label={`编辑 ${title} 项目`}
+                aria-label={p.editProjectAria.replace('{title}', title)}
                 onClick={() => setEditingProject(true)}
                 className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
               >
-                编辑
+                {p.edit}
               </button>
             )}
             <button /* ds-allow:button: 抽屉关闭图标按钮 p-1，primitive 变体会改变尺寸与外观 */
               type="button"
-              aria-label="关闭项目控制台"
+              aria-label={p.closeConsoleAria}
               onClick={onClose}
               className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
             >
@@ -303,23 +305,23 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
 
           <div className="mt-3 grid grid-cols-5 gap-1.5 text-center text-[10px]">
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
-              <div className="text-zinc-500">会话</div>
+              <div className="text-zinc-500">{p.statSessions}</div>
               <div className="mt-0.5 text-xs font-medium text-zinc-200">{summary.sessionCount}</div>
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
-              <div className="text-zinc-500">未完成</div>
+              <div className="text-zinc-500">{p.statUnfinished}</div>
               <div className="mt-0.5 text-xs font-medium text-amber-300">{summary.unfinishedCount}</div>
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
-              <div className="text-zinc-500">目标</div>
+              <div className="text-zinc-500">{p.statGoals}</div>
               <div className="mt-0.5 text-xs font-medium text-violet-200">{summary.goalCount ?? visibleGoals.length}</div>
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
-              <div className="text-zinc-500">产物</div>
+              <div className="text-zinc-500">{p.statArtifacts}</div>
               <div className="mt-0.5 text-xs font-medium text-cyan-200">{summary.artifactCount ?? visibleArtifacts.length}</div>
             </div>
             <div className="rounded-md border border-zinc-800 bg-zinc-900/55 px-1.5 py-1.5">
-              <div className="text-zinc-500">待审</div>
+              <div className="text-zinc-500">{p.statReview}</div>
               <div className="mt-0.5 text-xs font-medium text-amber-200">{summary.reviewIssueCount}</div>
             </div>
           </div>
@@ -332,7 +334,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
               >
                 <MessageSquare className="h-3.5 w-3.5" />
-                新建项目会话
+                {p.newProjectSession}
               </button>
             )}
             {onOpenWorkspaceAssets && (
@@ -342,7 +344,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
               >
                 <ScrollText className="h-3.5 w-3.5" />
-                打开项目产物
+                {p.openProjectAssets}
               </button>
             )}
           </div>
@@ -353,9 +355,9 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
                 <Target className="h-3.5 w-3.5 text-zinc-500" />
-                目标
+                {p.goals}
               </div>
-              <span className="text-[10px] text-zinc-600">{activeGoalCount} 进行中</span>
+              <span className="text-[10px] text-zinc-600">{p.activeCount.replace('{count}', String(activeGoalCount))}</span>
             </div>
             {visibleGoals.length > 0 ? (
               <div className="grid gap-1.5">
@@ -366,14 +368,14 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-xs font-medium text-zinc-200">{goal.title}</div>
                         <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-zinc-600">
-                          <span>{GOAL_STATUS_LABEL[goal.status]}</span>
-                          {goal.lastRunSessionId && <span>已有启动会话</span>}
+                          <span>{getGoalStatusLabel(goal.status, t)}</span>
+                          {goal.lastRunSessionId && <span>{p.hasStartedSession}</span>}
                         </div>
                       </div>
                       {goal.lastRunSessionId && onOpenGoalSession && (
                         <button /* ds-allow:button: 打开目标上次会话图标按钮 p-1，primitive 变体会改变尺寸 */
                           type="button"
-                          aria-label={`打开目标 ${goal.title} 的上次会话`}
+                          aria-label={p.openGoalLastSession.replace('{title}', goal.title)}
                           onClick={() => { void onOpenGoalSession(goal.lastRunSessionId as string); }}
                           className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
                         >
@@ -383,7 +385,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       {goal.status === 'active' && onStartGoal && (
                         <button /* ds-allow:button: 从目标新建会话图标按钮 p-1，primitive 变体会改变尺寸 */
                           type="button"
-                          aria-label={`从目标 ${goal.title} 新建项目会话`}
+                          aria-label={p.newSessionFromGoal.replace('{title}', goal.title)}
                           onClick={() => { void onStartGoal(goal); }}
                           className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
                         >
@@ -396,7 +398,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
               </div>
             ) : (
               <div className="rounded-md border border-zinc-800 bg-zinc-900/35 px-2.5 py-2 text-xs text-zinc-500">
-                这个项目暂未暴露目标
+                {p.noGoals}
               </div>
             )}
           </section>
@@ -404,7 +406,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
           <section className="mt-4">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-zinc-300">
               <FileText className="h-3.5 w-3.5 text-zinc-500" />
-              产物
+              {p.artifacts}
             </div>
             {visibleArtifacts.length > 0 ? (
               <div className="grid gap-1.5">
@@ -415,7 +417,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       key={`${artifact.sessionId}:${artifact.id}:${artifact.createdAt}`}
                       type="button"
                       disabled={!canOpen}
-                      aria-label={canOpen ? `打开产物 ${artifact.title} 的来源会话` : undefined}
+                      aria-label={canOpen ? p.openArtifactSource.replace('{title}', artifact.title) : undefined}
                       onClick={() => {
                         if (canOpen) void onOpenArtifactSession?.(artifact);
                       }}
@@ -426,14 +428,14 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-200">{artifact.title}</span>
                         {canOpen && <ArrowRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />}
                       </div>
-                      <div className="mt-0.5 truncate pl-5 text-[10px] text-zinc-600">{formatArtifactMeta(artifact)}</div>
+                      <div className="mt-0.5 truncate pl-5 text-[10px] text-zinc-600">{formatArtifactMeta(artifact, t)}</div>
                     </button>
                   );
                 })}
               </div>
             ) : (
               <div className="rounded-md border border-zinc-800 bg-zinc-900/35 px-2.5 py-2 text-xs text-zinc-500">
-                这个项目暂未发现产物
+                {p.noArtifacts}
               </div>
             )}
           </section>
@@ -444,7 +446,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                 <MessageSquare className="h-3.5 w-3.5 text-zinc-500" />
                 {drawerSessionLabel}
               </div>
-              <span className="text-[10px] text-zinc-600">{sessions.length} 条</span>
+              <span className="text-[10px] text-zinc-600">{p.sessionCountUnit.replace('{count}', String(sessions.length))}</span>
             </div>
             {sessions.length > 0 ? (
               <div className="grid gap-1.5">
@@ -452,7 +454,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                   <button /* ds-allow:button: 会话卡片，全宽左对齐多行内容+当前态边框，primitive 居中变体不兼容 */
                     key={session.id}
                     type="button"
-                    aria-label={`打开项目会话 ${session.title}`}
+                    aria-label={p.openProjectSession.replace('{title}', session.title)}
                     onClick={() => { void onOpenSession(session.id); }}
                     className={`rounded-md border px-2.5 py-2 text-left transition-colors hover:bg-zinc-800/70 ${
                       session.isCurrent
@@ -475,7 +477,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                     </div>
                     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-zinc-600">
                       <span className="min-w-0 flex-1 truncate">
-                        {session.summary || session.workingDirectory || `${session.messageCount ?? 0} 消息`}
+                        {session.summary || session.workingDirectory || p.messageCount.replace('{count}', String(session.messageCount ?? 0))}
                       </span>
                       <span className="shrink-0">{session.lastActiveLabel}</span>
                     </div>
@@ -493,7 +495,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       )}
                       {session.hasDeliverySignals && (
                         <span className="rounded border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] text-cyan-300">
-                          交付线索
+                          {p.deliverySignals}
                         </span>
                       )}
                       {session.replayEvidenceCount ? (
@@ -504,19 +506,19 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
                       {session.pendingReviewCount ? (
                         <span className="inline-flex items-center gap-1 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
                           <ShieldAlert className="h-3 w-3" />
-                          待审 {session.pendingReviewCount}
+                          {p.reviewCount.replace('{count}', String(session.pendingReviewCount))}
                         </span>
                       ) : null}
                     </div>
                   </button>
                 ))}
                 {sessions.length > 12 && (
-                  <div className="px-1 text-[10px] text-zinc-600">另有 {sessions.length - 12} 条会话未展示</div>
+                  <div className="px-1 text-[10px] text-zinc-600">{p.moreSessionsHidden.replace('{count}', String(sessions.length - 12))}</div>
                 )}
               </div>
             ) : (
               <div className="rounded-md border border-zinc-800 bg-zinc-900/35 px-2.5 py-2 text-xs text-zinc-500">
-                当前没有可展示会话
+                {p.noSessionsToShow}
               </div>
             )}
           </section>
@@ -524,12 +526,12 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
           <section className="mt-4">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-zinc-300">
               <Users className="h-3.5 w-3.5 text-zinc-500" />
-              项目上下文
+              {p.projectContext}
             </div>
             <div className="grid gap-1.5">
               {paths.length > 0 && (
                 <div className="rounded-md border border-zinc-800 bg-zinc-900/35 px-2.5 py-2">
-                  <div className="text-[10px] font-medium text-zinc-500">工作区</div>
+                  <div className="text-[10px] font-medium text-zinc-500">{p.workspace}</div>
                   <div className="mt-1 grid gap-1">
                     {paths.slice(0, 6).map((path) => (
                       <div key={path} className="truncate text-[11px] text-zinc-400">{path}</div>
@@ -539,7 +541,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
               )}
               {visibleRoles.length > 0 && (
                 <div className="rounded-md border border-zinc-800 bg-zinc-900/35 px-2.5 py-2">
-                  <div className="text-[10px] font-medium text-zinc-500">角色</div>
+                  <div className="text-[10px] font-medium text-zinc-500">{p.roles}</div>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {visibleRoles.map((roleId) => (
                       <span key={roleId} className="rounded border border-zinc-800 bg-zinc-950/50 px-1.5 py-0.5 text-[10px] text-zinc-500">
@@ -552,7 +554,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
               {updatedAt && (
                 <div className="flex items-center gap-1.5 text-[10px] text-zinc-600">
                   <Clock3 className="h-3 w-3" />
-                  最近活动 {updatedAt}
+                  {p.lastActivity.replace('{time}', updatedAt)}
                 </div>
               )}
             </div>

@@ -13,6 +13,9 @@ import {
   type KeybindingActionId,
 } from '@shared/keybindings';
 import { useKeybindingsSettings } from '../hooks/useKeybindingsSettings';
+import { ConfirmDialog } from './composites/ConfirmDialog';
+import { useI18n } from '../hooks/useI18n';
+import { AGENT_NEO_HELP_URL } from '@shared/constants/network';
 
 // ============================================================================
 // Types
@@ -38,8 +41,10 @@ interface CommandPaletteProps {
 // ============================================================================
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose }) => {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isClearConfirmationOpen, setIsClearConfirmationOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const { keybindings, platform } = useKeybindingsSettings();
@@ -71,8 +76,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     // Session commands
     {
       id: 'new-session',
-      label: '新建会话',
-      description: '创建一个新的对话会话',
+      label: t.slashCommands.new.label,
+      description: t.slashCommands.new.description,
       icon: <Plus className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.new'),
       category: 'session',
@@ -80,8 +85,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     },
     {
       id: 'clear-chat',
-      label: '清空当前对话',
-      description: '清除当前会话的所有消息',
+      label: t.slashCommands.clear.label,
+      description: t.slashCommands.clear.description,
       icon: <Trash2 className="w-4 h-4" />,
       shortcut: getShortcutLabel('session.clear'),
       category: 'session',
@@ -89,8 +94,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     },
     {
       id: 'archive-session',
-      label: '归档当前会话',
-      description: '将当前会话移至归档',
+      label: t.slashCommands.archive.label,
+      description: t.slashCommands.archive.description,
       icon: <Archive className="w-4 h-4" />,
       category: 'session',
       action: async () => {
@@ -103,8 +108,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     // View commands
     {
       id: 'toggle-sidebar',
-      label: sidebarCollapsed ? '显示侧边栏' : '隐藏侧边栏',
-      description: '切换侧边栏显示状态',
+      label: sidebarCollapsed ? t.slashCommands.sidebar.labelShow : t.slashCommands.sidebar.labelHide,
+      description: t.slashCommands.sidebar.description,
       icon: <FileText className="w-4 h-4" />,
       shortcut: getShortcutLabel('sidebar.toggle'),
       category: 'view',
@@ -112,8 +117,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     },
     {
       id: 'toggle-dag',
-      label: showDAGPanel ? '隐藏 DAG 面板' : '显示 DAG 面板',
-      description: '切换任务 DAG 可视化面板',
+      label: showDAGPanel ? t.slashCommands.dag.labelHide : t.slashCommands.dag.labelShow,
+      description: t.slashCommands.dag.description,
       icon: <BarChart2 className="w-4 h-4" />,
       shortcut: getShortcutLabel('dag.toggle'),
       category: 'view',
@@ -121,8 +126,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     },
     {
       id: 'toggle-workspace',
-      label: showWorkspace ? '隐藏工作区' : '显示工作区',
-      description: '切换工作区面板',
+      label: showWorkspace ? t.slashCommands.workspace.labelHide : t.slashCommands.workspace.labelShow,
+      description: t.slashCommands.workspace.description,
       icon: <FolderOpen className="w-4 h-4" />,
       shortcut: getShortcutLabel('workspace.toggle'),
       category: 'view',
@@ -131,8 +136,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     // Settings commands
     {
       id: 'open-settings',
-      label: '打开设置',
-      description: '打开应用设置面板',
+      label: t.slashCommands.settings.label,
+      description: t.slashCommands.settings.description,
       icon: <Settings className="w-4 h-4" />,
       shortcut: getShortcutLabel('settings.open'),
       category: 'settings',
@@ -140,8 +145,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     },
     {
       id: 'keyboard-shortcuts',
-      label: '键盘快捷键',
-      description: '查看和自定义快捷键',
+      label: t.slashCommands.shortcuts.label,
+      description: t.slashCommands.shortcuts.description,
       icon: <Keyboard className="w-4 h-4" />,
       category: 'settings',
       action: () => openSettingsTab('keybindings'),
@@ -150,12 +155,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     // Help commands
     {
       id: 'show-help',
-      label: '帮助',
-      description: '查看帮助文档',
+      label: t.slashCommands.help.label,
+      description: t.slashCommands.help.description,
       icon: <HelpCircle className="w-4 h-4" />,
       category: 'help',
       action: () => {
-        window.open('https://github.com/anthropics/claude-code/issues', '_blank');
+        window.open(AGENT_NEO_HELP_URL, '_blank');
       },
     },
   ], [
@@ -172,6 +177,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     showWorkspace,
     setSidebarCollapsed,
     sidebarCollapsed,
+    t,
   ]);
 
   // 过滤命令
@@ -203,10 +209,22 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
 
   // 执行命令
   const executeCommand = useCallback((command: Command) => {
+    if (command.id === 'clear-chat') {
+      setIsClearConfirmationOpen(true);
+      return;
+    }
+
     command.action();
     onClose();
     setQuery('');
   }, [onClose]);
+
+  const confirmClearChat = useCallback(() => {
+    setIsClearConfirmationOpen(false);
+    clearCurrentSession();
+    onClose();
+    setQuery('');
+  }, [clearCurrentSession, onClose]);
 
   // 键盘导航
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -247,6 +265,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       inputRef.current?.focus();
       setQuery('');
       setSelectedIndex(0);
+      setIsClearConfirmationOpen(false);
     }
   }, [isOpen]);
 
@@ -264,16 +283,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
   if (!isOpen) return null;
 
   const categoryLabels: Record<string, string> = {
-    session: '会话',
-    view: '视图',
-    settings: '设置',
-    help: '帮助',
+    session: t.commandPalette.categorySession,
+    view: t.commandPalette.categoryView,
+    settings: t.commandPalette.categorySettings,
+    help: t.commandPalette.categoryHelp,
   };
 
   let flatIndex = 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
+    <>
+      <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -281,7 +301,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       />
 
       {/* Modal */}
-      <div role="dialog" aria-modal="true" aria-label="命令面板" className="relative w-full max-w-lg bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn">
+      <div role="dialog" aria-modal="true" aria-label={t.commandPalette.ariaLabel} className="relative w-full max-w-lg bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn">
         {/* Search input */}
         <div className="flex items-center px-4 py-3 border-b border-zinc-700">
           <Search className="w-5 h-5 text-zinc-500 shrink-0" />
@@ -291,13 +311,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="搜索命令…"
+            placeholder={t.commandPalette.searchPlaceholder}
             className="flex-1 ml-3 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden"
           />
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-zinc-700 transition-colors"
-            aria-label="关闭命令面板"
+            aria-label={t.commandPalette.closeAriaLabel}
           >
             <X className="w-4 h-4 text-zinc-500" />
           </button>
@@ -310,7 +330,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
         >
           {filteredCommands.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-zinc-500">
-              没有找到匹配的命令
+              {t.commandPalette.noMatches}
             </div>
           ) : (
             Object.entries(groupedCommands).map(([category, commands]) => {
@@ -364,17 +384,28 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
         {/* Footer hint */}
         <div className="px-4 py-2 border-t border-zinc-700 text-xs text-zinc-500 flex items-center gap-4">
           <span>
-            <kbd className="px-1 py-0.5 bg-zinc-700 rounded">↑↓</kbd> 导航
+            <kbd className="px-1 py-0.5 bg-zinc-700 rounded">↑↓</kbd> {t.commandPalette.footerNavigate}
           </span>
           <span>
-            <kbd className="px-1 py-0.5 bg-zinc-700 rounded">Enter</kbd> 执行
+            <kbd className="px-1 py-0.5 bg-zinc-700 rounded">Enter</kbd> {t.commandPalette.footerExecute}
           </span>
           <span>
-            <kbd className="px-1 py-0.5 bg-zinc-700 rounded">Esc</kbd> 关闭
+            <kbd className="px-1 py-0.5 bg-zinc-700 rounded">Esc</kbd> {t.commandPalette.footerClose}
           </span>
         </div>
       </div>
-    </div>
+      </div>
+
+      <ConfirmDialog
+        isOpen={isClearConfirmationOpen}
+        title={t.commandPalette.clearConfirmTitle}
+        message={t.commandPalette.clearConfirmMessage}
+        variant="danger"
+        confirmText={t.commandPalette.clearConfirmAction}
+        onConfirm={confirmClearChat}
+        onCancel={() => setIsClearConfirmationOpen(false)}
+      />
+    </>
   );
 };
 

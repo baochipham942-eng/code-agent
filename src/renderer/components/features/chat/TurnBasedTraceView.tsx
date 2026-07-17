@@ -14,6 +14,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
@@ -213,6 +214,13 @@ interface PrependViewportAnchor {
   offsetTop: number;
 }
 
+interface PendingPrependAnchorRestore {
+  sessionId: string;
+  firstItemIndex: number;
+  anchor: PrependViewportAnchor;
+  location: { index: number; align: 'start'; behavior: 'auto'; offset: number };
+}
+
 export function getPrependAnchorScrollLocation(
   anchor: PrependViewportAnchor | null,
   sessionId: string,
@@ -261,6 +269,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   activeMatchIndex = 0,
   onRewindUserPrompt,
 }) => {
+  const { t } = useI18n();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerElementRef = useRef<HTMLElement | null>(null);
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
@@ -279,6 +288,8 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const keepActiveOutputVisibleRef = useRef(false);
   const historyPrependInProgressRef = useRef(false);
   const prependViewportAnchorRef = useRef<PrependViewportAnchor | null>(null);
+  const pendingPrependAnchorRestoreRef = useRef<PendingPrependAnchorRestore | null>(null);
+  const prependAnchorRestoreCancelRef = useRef<(() => void) | null>(null);
   const followedOutputSessionIdRef = useRef<string | null>(null);
   const followedOutputTurnIdRef = useRef<string | null>(null);
   const [followedOutputTurnId, setFollowedOutputTurnId] = useState<string | null>(null);
@@ -329,31 +340,67 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     : 1_000_000;
   historyListRef.current = { sessionId: projection.sessionId, firstTurnId, firstItemIndex };
 
-  useLayoutEffect(() => {
-    if (prependedTurnCount <= 0) return;
+  if (prependedTurnCount > 0) {
     const anchor = prependViewportAnchorRef.current;
     const location = getPrependAnchorScrollLocation(
       anchor,
       projection.sessionId,
       projection.turns,
     );
-    if (!location || !anchor) return;
+    pendingPrependAnchorRestoreRef.current = anchor && location
+      ? { sessionId: projection.sessionId, firstItemIndex, anchor, location }
+      : null;
+  }
+
+  useLayoutEffect(() => {
+    prependAnchorRestoreCancelRef.current?.();
+    prependAnchorRestoreCancelRef.current = null;
+    const pending = pendingPrependAnchorRestoreRef.current;
+    if (
+      !pending
+      || pending.sessionId !== projection.sessionId
+      || pending.firstItemIndex !== firstItemIndex
+    ) {
+      pendingPrependAnchorRestoreRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
     let cancelCorrection: (() => void) | null = null;
     const cancelPosition = scheduleAfterLayout(() => {
-      virtuosoRef.current?.scrollToIndex(location);
+      if (cancelled) return;
+      virtuosoRef.current?.scrollToIndex(pending.location);
       cancelCorrection = scheduleAfterLayout(() => {
-        const scroller = scrollerElementRef.current;
-        const anchoredTurn = scroller?.querySelector<HTMLElement>(getTraceTurnSelector(anchor.turnId));
-        if (!scroller || !anchoredTurn) return;
-        const actualOffsetTop = anchoredTurn.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-        scroller.scrollTop += getPrependAnchorScrollCorrection(anchor.offsetTop, actualOffsetTop);
+        if (cancelled) return;
+        try {
+          const scroller = scrollerElementRef.current;
+          const anchoredTurn = scroller?.querySelector<HTMLElement>(getTraceTurnSelector(pending.anchor.turnId));
+          if (!scroller || !anchoredTurn) return;
+          const actualOffsetTop = anchoredTurn.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+          scroller.scrollTop += getPrependAnchorScrollCorrection(pending.anchor.offsetTop, actualOffsetTop);
+        } finally {
+          if (pendingPrependAnchorRestoreRef.current === pending) {
+            pendingPrependAnchorRestoreRef.current = null;
+          }
+          if (prependAnchorRestoreCancelRef.current === cancelRestore) {
+            prependAnchorRestoreCancelRef.current = null;
+          }
+        }
       });
     });
-    return () => {
+    const cancelRestore = () => {
+      cancelled = true;
       cancelPosition();
       cancelCorrection?.();
     };
-  }, [firstItemIndex, prependedTurnCount, projection.sessionId, projection.turns]);
+    prependAnchorRestoreCancelRef.current = cancelRestore;
+  }, [firstItemIndex, projection.sessionId]);
+
+  useLayoutEffect(() => () => {
+    prependAnchorRestoreCancelRef.current?.();
+    prependAnchorRestoreCancelRef.current = null;
+    pendingPrependAnchorRestoreRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (!historyPrependInProgressRef.current) return;
@@ -799,10 +846,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     if (!hasOlderMessages) return null;
     return (
       <div className="flex justify-center py-3 text-zinc-500 text-sm">
-        {isLoadingOlder ? '加载更早的消息…' : '↑ 滚动加载更多'}
+        {isLoadingOlder ? t.traceView.loadingOlder : t.traceView.scrollToLoadMore}
       </div>
     );
-  }, [hasOlderMessages, isLoadingOlder]);
+  }, [hasOlderMessages, isLoadingOlder, t]);
 
   // Footer: permission card (plan moved to PinnedTodoBar above the input)
   const Footer = useCallback(() => (
@@ -818,7 +865,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         ref={virtuosoRef}
         role="log"
         aria-live="polite"
-        aria-label="对话消息"
+        aria-label={t.traceView.conversationLog}
         className="h-full min-h-0 pt-3 pb-0 overflow-x-hidden"
         scrollerRef={handleScrollerRef}
         data={projection.turns}
@@ -848,7 +895,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         <button
           type="button"
           onClick={handleJumpToBottom}
-          aria-label="回到底部"
+          aria-label={t.traceView.jumpToBottom}
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center w-9 h-9 rounded-full bg-zinc-800/80 hover:bg-zinc-700/90 border border-zinc-600/50 text-zinc-200 shadow-lg backdrop-blur-sm transition-colors animate-fade-in"
         >
           <ArrowDown className="w-4 h-4" />

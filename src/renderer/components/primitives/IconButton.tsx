@@ -94,6 +94,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       'rounded-md',
       'transition-colors duration-200',
       'focus:outline-hidden',
+      'focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
       'disabled:opacity-50 disabled:cursor-not-allowed',
     ].join(' ');
 

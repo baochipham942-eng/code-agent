@@ -15,6 +15,7 @@ import {
   initTemplateValues,
   type ScheduleTemplate,
 } from './scheduleTemplates';
+import { useI18n } from '../../../../hooks/useI18n';
 
 interface ScheduleComposerCardProps {
   creating: boolean;
@@ -27,6 +28,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
   onSubmit,
   onDismiss,
 }) => {
+  const { t } = useI18n();
   const [selected, setSelected] = useState<ScheduleTemplate | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [handoffPrompt, setHandoffPrompt] = useState('');
@@ -47,17 +49,17 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
       <div className="flex items-start gap-2">
         <Clock3 className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-indigo-300">创建定时任务</div>
+          <div className="text-xs font-medium text-indigo-300">{t.scheduleComposer.title}</div>
           <div className="mt-0.5 text-[11px] text-indigo-200/60 leading-relaxed">
-            定时任务会按你设定的时间在后台自动跑一个 agent，跑完发通知、点通知能跳到结果会话。
-            可以额外填一条唤醒后交接提示词，完成后会发回本会话继续下一步。
+            {t.scheduleComposer.descLine1}
+            {t.scheduleComposer.descLine2}
           </div>
         </div>
         <button
           type="button"
           onClick={onDismiss}
           className="p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
-          title="取消"
+          title={t.common.cancel}
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -118,16 +120,16 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
 
           {/* 预览将要创建的自然语言描述（自定义模式下即用户原文，不重复展示） */}
           {selected.id !== CUSTOM_TEMPLATE_ID && composed && (
-            <div className="text-[10px] text-indigo-200/40 leading-relaxed">将创建：{composed}</div>
+            <div className="text-[10px] text-indigo-200/40 leading-relaxed">{t.scheduleComposer.willCreate.replace('{composed}', composed)}</div>
           )}
 
           <label className="block">
-            <span className="block mb-1 text-[10px] text-indigo-200/50">唤醒后交接提示词</span>
+            <span className="block mb-1 text-[10px] text-indigo-200/50">{t.scheduleComposer.handoffLabel}</span>
             <textarea
               data-schedule-field="handoffPrompt"
               value={handoffPrompt}
               onChange={(e) => setHandoffPrompt(e.target.value)}
-              placeholder="例如：读取结果会话，判断是否达标；若达标继续下一阶段，若未达标给出 follow-up。"
+              placeholder={t.scheduleComposer.handoffPlaceholder}
               rows={2}
               className="w-full bg-zinc-800 border border-indigo-500/30 rounded px-2 py-1 text-xs text-zinc-200 outline-hidden focus:border-indigo-500/50 resize-none"
             />
@@ -141,7 +143,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
               className="flex items-center gap-1 px-2 py-1 text-[11px] text-indigo-200/60 hover:text-indigo-200 transition-colors disabled:opacity-50"
             >
               <ChevronLeft className="w-3 h-3" />
-              换模板
+              {t.scheduleComposer.switchTemplate}
             </button>
             <div className="flex-1" />
             <button
@@ -152,7 +154,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
               className="flex items-center gap-1 px-3 py-1 text-xs bg-indigo-500/20 text-indigo-200 rounded hover:bg-indigo-500/30 transition-colors disabled:opacity-50"
             >
               {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock3 className="w-3 h-3" />}
-              创建定时任务
+              {t.scheduleComposer.createAction}
             </button>
           </div>
         </div>

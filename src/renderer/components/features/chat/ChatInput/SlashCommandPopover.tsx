@@ -29,6 +29,7 @@ import {
 } from '@shared/keybindings';
 import type { ExtensionValidationResult } from '@shared/contract/extension';
 import type { AgentListEntry } from '@shared/contract/agentRegistry';
+import { AGENT_NEO_HELP_URL } from '@shared/constants/network';
 import { invoke, invokeDomain, unsafeInvoke } from '../../../../services/ipcService';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import type { SkillRecommendationView } from './CapabilitySuggestionStrip';
@@ -309,7 +310,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       label: sc.help.label,
       description: sc.help.description,
       icon: <HelpCircle className="w-4 h-4" />,
-      action: () => window.open('https://github.com/anthropics/claude-code/issues', '_blank'),
+      action: () => window.open(AGENT_NEO_HELP_URL, '_blank'),
     },
     {
       id: 'archive',

@@ -9,6 +9,7 @@
 // 调用方语义：
 // - no-renderer：CLI/headless 无浏览器连接 → 调用方决定 fallback（成本确认=不花钱）
 // - answered：拿到用户选择
+// - declined：用户主动拒绝回答
 // - timeout / aborted：未得到选择
 // ============================================================================
 import type {
@@ -20,7 +21,7 @@ import { IPC_CHANNELS } from '../../../shared/ipc';
 import { AppWindow, ipcHost } from '../../platform';
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
 
-export type PromptUserStatus = 'answered' | 'no-renderer' | 'timeout' | 'aborted';
+export type PromptUserStatus = 'answered' | 'declined' | 'no-renderer' | 'timeout' | 'aborted';
 
 export interface PromptUserResult {
   status: PromptUserStatus;
@@ -123,7 +124,7 @@ export async function promptUserInChat(
         );
       }
     });
-    return { status: 'answered', response };
+    return { status: response.declined === true ? 'declined' : 'answered', response };
   } catch (err) {
     const msg = err instanceof Error ? err.message : '';
     return { status: msg === 'aborted' ? 'aborted' : 'timeout' };

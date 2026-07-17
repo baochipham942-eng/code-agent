@@ -15,6 +15,7 @@ import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
 import { useDesignCanvasStore } from './design/designCanvasStore';
 import { saveCanvasDoc } from './design/designCanvasPersistence';
+import { ConfirmDialog } from './composites/ConfirmDialog';
 
 const PREVIEW_PREFIX = 'preview:';
 
@@ -46,7 +47,9 @@ export const WorkbenchTabs: React.FC = () => {
 
   // "+" 按钮的 popover 状态：列出未打开的 Task/Skills/Files 让用户重开
   const [addOpen, setAddOpen] = useState(false);
+  const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
   const addRef = useRef<HTMLDivElement | null>(null);
+  const tabRefs = useRef(new Map<WorkbenchTabId, HTMLButtonElement>());
   useEffect(() => {
     if (!addOpen) return;
     const onMouseDown = (e: MouseEvent) => {
@@ -113,20 +116,28 @@ export const WorkbenchTabs: React.FC = () => {
     return { id, label: getFileName(path), title: path, isDirty };
   });
 
+  const requestClose = (meta: TabMeta) => {
+    if (meta.isDirty) {
+      setPendingClose(meta);
+      return;
+    }
+    closeWorkbenchTab(meta.id);
+  };
+
   return (
+    <>
     <div className="flex items-center px-2 py-1 border-b border-zinc-700 bg-zinc-900">
       {/* tabs 自己滚动；[+] 不在滚动区里，popover 才能 escape overflow 弹出来 */}
-      <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none flex-1 min-w-0">
+      <div role="tablist" className="flex items-center gap-0.5 overflow-x-auto scrollbar-none flex-1 min-w-0">
       {metas.map((meta) => {
         const isActive = meta.id === activeWorkbenchTab;
         return (
           <div
             key={meta.id}
-            onClick={() => setActiveWorkbenchTab(meta.id)}
             onMouseDown={(e) => {
               if (e.button === 1) {
                 e.preventDefault();
-                closeWorkbenchTab(meta.id);
+                requestClose(meta);
               }
             }}
             className={`group flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors max-w-[160px] flex-shrink-0 ${
@@ -136,15 +147,43 @@ export const WorkbenchTabs: React.FC = () => {
             }`}
             title={meta.title}
           >
-            <span className="truncate">{meta.label}</span>
-            {meta.isDirty && (
-              <span className="text-amber-400 text-[10px] leading-none" title="未保存">●</span>
-            )}
+            <button
+              ref={(element) => {
+                if (element) tabRefs.current.set(meta.id, element);
+                else tabRefs.current.delete(meta.id);
+              }}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
+              onClick={() => setActiveWorkbenchTab(meta.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setActiveWorkbenchTab(meta.id);
+                  return;
+                }
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                const offset = event.key === 'ArrowRight' ? 1 : -1;
+                const currentIndex = metas.findIndex((item) => item.id === meta.id);
+                const next = metas[(currentIndex + offset + metas.length) % metas.length];
+                if (!next) return;
+                setActiveWorkbenchTab(next.id);
+                tabRefs.current.get(next.id)?.focus();
+              }}
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+            >
+              <span className="truncate">{meta.label}</span>
+              {meta.isDirty && (
+                <span className="text-amber-400 text-[10px] leading-none" title="未保存">●</span>
+              )}
+            </button>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                closeWorkbenchTab(meta.id);
+                requestClose(meta);
               }}
               className={`flex-shrink-0 p-0.5 rounded hover:bg-zinc-700 transition-opacity ${
                 isActive ? 'opacity-70 hover:opacity-100' : 'opacity-0 group-hover:opacity-70 hover:opacity-100'
@@ -282,5 +321,18 @@ export const WorkbenchTabs: React.FC = () => {
         </div>
       )}
     </div>
+    <ConfirmDialog
+      isOpen={pendingClose !== null}
+      title="关闭未保存的文件？"
+      message={pendingClose ? `${pendingClose.label} 的修改尚未保存，关闭后这些修改会丢失。` : ''}
+      variant="danger"
+      confirmText="关闭且不保存"
+      onCancel={() => setPendingClose(null)}
+      onConfirm={() => {
+        if (pendingClose) closeWorkbenchTab(pendingClose.id);
+        setPendingClose(null);
+      }}
+    />
+    </>
   );
 };

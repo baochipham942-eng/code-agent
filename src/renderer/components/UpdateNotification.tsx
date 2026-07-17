@@ -150,7 +150,12 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
   const handleOpenFile = useCallback(async () => {
     if (!downloadedFilePath) return;
-    await invokeUpdate('openFile', { filePath: downloadedFilePath });
+    try {
+      await invokeUpdate('openFile', { filePath: downloadedFilePath });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '打开安装包失败');
+      setDownloadState('error');
+    }
   }, [downloadedFilePath]);
 
   const handleRetry = useCallback(() => {

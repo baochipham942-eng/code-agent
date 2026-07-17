@@ -14,7 +14,7 @@ export const DesignCanvasTab: React.FC = () => {
 
   return (
     <div data-testid="design-canvas-tab" className="h-full w-full bg-zinc-950">
-      <DesignCanvas />
+      <DesignCanvas showErrorBar />
     </div>
   );
 };

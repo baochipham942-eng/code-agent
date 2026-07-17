@@ -5,6 +5,9 @@
 import type { Translations } from './zh';
 import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
+import { chatTranscriptEn } from './chatTranscript';
+import { chatInputEn } from './chatInput';
+import { sidebarEn } from './sidebar';
 
 export const en: Translations = {
   // Common
@@ -18,6 +21,7 @@ export const en: Translations = {
     delete: 'Delete',
     edit: 'Edit',
     loading: 'Loading...',
+    retry: 'Retry',
     error: 'Error',
     success: 'Success',
     active: 'Active',
@@ -844,17 +848,13 @@ export const en: Translations = {
   sessionReplay: sessionReplayEn,
 
   // Chat transcript (TurnCard / StreamingIndicator, etc.)
-  chat: {
-    thinking: 'Thinking…',
-    waitingModel: 'Waiting for the model…',
-    waitingSubagent: 'Waiting on a subtask…',
-    thinkingDigest: 'Thinking',
-    thinkingSegments: ' · {count} segments',
-    expandThinking: 'Expand thinking',
-    collapseThinking: 'Collapse thinking',
-  },
+
 
   // Chat-flow Mermaid diagram card (pan/zoom + annotate-to-edit)
+  ...chatTranscriptEn,
+  ...chatInputEn,
+  ...sidebarEn,
+
   mermaid: {
     zoomIn: 'Zoom in',
     zoomOut: 'Zoom out',
@@ -902,6 +902,25 @@ export const en: Translations = {
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
+
+  // Command palette (Cmd/Ctrl+K)
+  commandPalette: {
+    ariaLabel: 'Command palette',
+    searchPlaceholder: 'Search commands…',
+    closeAriaLabel: 'Close command palette',
+    noMatches: 'No matching commands',
+    categorySession: 'Session',
+    categoryView: 'View',
+    categorySettings: 'Settings',
+    categoryHelp: 'Help',
+    footerNavigate: 'Navigate',
+    footerExecute: 'Run',
+    footerClose: 'Close',
+    clearConfirmTitle: 'Clear this conversation?',
+    clearConfirmMessage: 'All messages in this session will be removed. This cannot be undone.',
+    clearConfirmAction: 'Clear conversation',
+  },
+
   slashCommands: {
     // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）
     picker: {

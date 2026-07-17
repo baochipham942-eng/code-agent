@@ -4,6 +4,7 @@ import type { ConfigScopeSummary } from '@shared/contract/configScope';
 import type { StructuredReplay } from '@shared/contract/evaluation';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { ToastType } from '../../../stores/uiStore';
+import type { Translations } from '../../../i18n';
 import ipcService from '../../../services/ipcService';
 import { createLogger } from '../../../utils/logger';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
@@ -56,6 +57,7 @@ export interface UseSidebarRowActionsParams {
   setRenameValue: Dispatch<SetStateAction<string>>;
   renameInputRef: React.RefObject<HTMLInputElement | null>;
   renameSession: (sessionId: string, title: string) => void;
+  t: Translations;
 }
 
 export interface SidebarRowActions {
@@ -87,7 +89,9 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     setRenameValue,
     renameInputRef,
     renameSession,
+    t,
   } = params;
+  const menu = t.sessionMenu;
 
   // 重命名 input 聚焦
   useEffect(() => {
@@ -115,11 +119,11 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
     if (!saved?.success || !saved.data?.filePath) {
       throw new Error(saved?.error?.message || 'Failed to save export');
     }
-    showToast('success', `已导出到下载文件夹：${fileName}`);
+    showToast('success', menu.savedToDownloads.replace('{fileName}', fileName));
     void window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'showItemInFolder', {
       filePath: saved.data.filePath,
     });
-  }, [showToast]);
+  }, [showToast, menu]);
 
   const openRuntimeLogsFolder = useCallback(async (): Promise<boolean> => {
     try {
@@ -153,14 +157,14 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
 
   const handleOpenSessionReplay = useCallback(async (session: SessionWithMeta) => {
     if (!canOpenSessionReplay) {
-      showToast('warning', 'Replay 目前仅管理员可用');
+      showToast('warning', menu.replayAdminOnlyToast);
       return;
     }
 
     try {
       const replay = await ipcService.invoke(IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA, session.id) as StructuredReplay | null;
       if (!replay) {
-        showToast('warning', '当前会话还没有可用 Replay 数据');
+        showToast('warning', menu.replayEmpty);
         return;
       }
       setReplayDialog({
@@ -170,9 +174,9 @@ export function useSidebarRowActions(params: UseSidebarRowActionsParams): Sideba
       });
     } catch (error) {
       logger.error('Failed to open session replay', error);
-      showToast('error', `打开 Replay 失败：${error instanceof Error ? error.message : String(error)}`);
+      showToast('error', menu.openReplayFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
     }
-  }, [canOpenSessionReplay, setReplayDialog, showToast]);
+  }, [canOpenSessionReplay, setReplayDialog, showToast, menu]);
 
   const handleOpenReplayEvidence = useCallback(async (
     session: SessionWithMeta,

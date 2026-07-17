@@ -30,6 +30,7 @@ import {
 import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
 import ProjectHeaderBar from './ProjectHeaderBar';
+import { ConfirmDialog } from './composites/ConfirmDialog';
 import {
   kindLabel,
   getPreviewItemText,
@@ -59,6 +60,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const [activeDrawer, setActiveDrawer] = useState<WorkspaceAssetDrawer | null>(null);
   const [copied, setCopied] = useState(false);
   const [assetActionError, setAssetActionError] = useState<string | null>(null);
+  const [isRestoreConfirmationOpen, setIsRestoreConfirmationOpen] = useState(false);
   const [isRestoringRevision, setIsRestoringRevision] = useState(false);
   const [revisionActionError, setRevisionActionError] = useState<string | null>(null);
   const [revisionActionMessage, setRevisionActionMessage] = useState<string | null>(null);
@@ -97,9 +99,15 @@ export const WorkspacePreviewPanel: React.FC = () => {
   }, [selected, selectedId, setSelectedId]);
 
   useEffect(() => {
+    setIsRestoreConfirmationOpen(false);
     setRevisionActionError(null);
     setRevisionActionMessage(null);
   }, [selected?.id]);
+
+  const requestRestoreSelectedCheckpoint = useCallback(() => {
+    if (!selected?.source.messageId || !currentSessionId || isRestoringRevision) return;
+    setIsRestoreConfirmationOpen(true);
+  }, [currentSessionId, isRestoringRevision, selected?.source.messageId]);
 
   const handleRestoreSelectedCheckpoint = useCallback(async () => {
     if (!selected?.source.messageId || !currentSessionId || isRestoringRevision) return;
@@ -361,7 +369,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
                   actionError={revisionActionError}
                   actionMessage={revisionActionMessage}
                   onSelect={setSelectedId}
-                  onRestore={handleRestoreSelectedCheckpoint}
+                  onRestore={requestRestoreSelectedCheckpoint}
                 />
                 <PreviewBody item={selected} />
               </div>
@@ -428,6 +436,20 @@ export const WorkspacePreviewPanel: React.FC = () => {
           )}
         </AssetDrawerPanel>
       )}
+
+      <ConfirmDialog
+        isOpen={isRestoreConfirmationOpen}
+        title="恢复到这个时间点？"
+        message="将把工作区文件恢复到这个时间点，当前修改会被覆盖。"
+        variant="warning"
+        confirmText="确认恢复"
+        cancelText="取消"
+        onConfirm={() => {
+          setIsRestoreConfirmationOpen(false);
+          void handleRestoreSelectedCheckpoint();
+        }}
+        onCancel={() => setIsRestoreConfirmationOpen(false)}
+      />
 
     </div>
   );

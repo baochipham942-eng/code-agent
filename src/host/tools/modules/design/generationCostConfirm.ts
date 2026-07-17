@@ -50,7 +50,7 @@ export async function confirmGenerationCost(
     notify: { title: '生成成本确认', body: question.question },
   });
 
-  if (result.status !== 'answered' || !result.response) return false;
+  if (result.status !== 'answered' || !result.response || result.response.declined) return false;
   const answer = result.response.answers[COST_CONFIRM_HEADER];
   const picked = Array.isArray(answer) ? answer[0] : answer;
   return picked === confirmLabel;

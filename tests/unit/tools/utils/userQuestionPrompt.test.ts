@@ -92,6 +92,20 @@ describe('promptUserInChat', () => {
     expect(r.response?.answers).toEqual({ 确认: '继续' });
   });
 
+  it('renderer 回传 declined → 立即解析为 status=declined', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+
+    const promise = promptUserInChat(Q, { timeoutMs: 5000 });
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
+    const request = sendMock.mock.calls[0][1];
+
+    await responseHandlerRef.fn?.({}, { requestId: request.id, declined: true });
+
+    const r = await promise;
+    expect(r.status).toBe('declined');
+  });
+
   it('超时 → status=timeout', async () => {
     vi.useFakeTimers();
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);

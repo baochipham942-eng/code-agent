@@ -136,13 +136,29 @@ export const WorkingFolder: React.FC = () => {
           {/* Workspace path or select button */}
           {workingDirectory ? (
             <>
-              <div
-                className="text-xs text-zinc-500 mb-2 truncate cursor-pointer hover:text-zinc-400 transition-colors"
-                title={workingDirectory}
-                onClick={isWebMode() ? undefined : () => handleOpenInFinder(workingDirectory)}
-              >
-                {workingDirectory.split('/').slice(-3).join('/')}
-              </div>
+              {isTauriMode() ? (
+                <button
+                  type="button"
+                  className="block w-full text-left text-xs text-zinc-500 mb-2 truncate cursor-pointer hover:text-zinc-400 transition-colors"
+                  title={workingDirectory}
+                  onClick={() => handleOpenInFinder(workingDirectory)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      void handleOpenInFinder(workingDirectory);
+                    }
+                  }}
+                >
+                  {workingDirectory.split('/').slice(-3).join('/')}
+                </button>
+              ) : (
+                <div
+                  className="text-xs text-zinc-500 mb-2 truncate"
+                  title={workingDirectory}
+                >
+                  {workingDirectory.split('/').slice(-3).join('/')}
+                </div>
+              )}
               {composerWorkingDirectory && composerWorkingDirectory !== workingDirectory && (
                 <div className="mb-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 px-2 py-1 text-[11px] text-cyan-300">
                   下一条消息将使用：{composerWorkingDirectory}
@@ -165,12 +181,28 @@ export const WorkingFolder: React.FC = () => {
 
           {/* Recent files */}
           {recentFiles.length > 0 ? (
-            recentFiles.map((file) => (
-              <div
+            recentFiles.map((file) => isTauriMode() ? (
+              <button
                 key={file.path}
-                className="flex items-center gap-2 py-1 px-2 rounded hover:bg-zinc-800 transition-colors cursor-pointer"
+                type="button"
+                className="flex w-full items-center gap-2 py-1 px-2 rounded text-left hover:bg-zinc-800 transition-colors cursor-pointer"
                 title={file.path}
                 onClick={() => handleOpenInFinder(file.path)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    void handleOpenInFinder(file.path);
+                  }
+                }}
+              >
+                <FileText className="w-3.5 h-3.5 text-zinc-500" />
+                <span className="text-sm text-zinc-400 truncate">{file.name}</span>
+              </button>
+            ) : (
+              <div
+                key={file.path}
+                className="flex items-center gap-2 py-1 px-2 rounded"
+                title={file.path}
               >
                 <FileText className="w-3.5 h-3.5 text-zinc-500" />
                 <span className="text-sm text-zinc-400 truncate">{file.name}</span>

@@ -178,6 +178,15 @@ export async function executeAskUserQuestion(
       pendingQuestions.set(request.id, { resolve, reject, timeout });
     });
 
+    if (response.declined === true) {
+      onProgress?.({ stage: 'completing', percent: 100 });
+      ctx.logger.debug('AskUserQuestion declined', { requestId: request.id });
+      return {
+        ok: true,
+        output: 'User declined to answer.',
+      };
+    }
+
     const answerLines = Object.entries(response.answers).map(([header, answer]) => {
       const answerStr = Array.isArray(answer) ? answer.join(', ') : answer;
       return `[${header}]: ${answerStr}`;

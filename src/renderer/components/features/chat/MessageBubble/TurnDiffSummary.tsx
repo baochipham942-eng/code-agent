@@ -9,8 +9,11 @@ import type { TraceTurn } from '@shared/contract/trace';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { toast } from '../../../../hooks/useToast';
 import { DiffView } from '../../../DiffView';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { buildTurnFileChanges } from '../../../../utils/turnDiffSummary';
+import { useI18n } from '../../../../hooks/useI18n';
 
 interface CheckpointListItem {
   id: string;
@@ -27,12 +30,14 @@ type UndoState = 'idle' | 'done' | 'error';
 
 export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const { t } = useI18n();
 
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [isUndoing, setIsUndoing] = useState(false);
   const [undoState, setUndoState] = useState<UndoState>('idle');
   const [undoError, setUndoError] = useState<string | null>(null);
   const [anchorMessageId, setAnchorMessageId] = useState<string | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   // 聚合 turn.nodes 里成功的 Edit/Write，按 filePath 合并（纯逻辑抽到 utils 便于单测）
   const fileChanges = useMemo(() => buildTurnFileChanges(turn), [turn]);
@@ -72,9 +77,10 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
 
   const handleUndo = useCallback(async () => {
     if (!currentSessionId || !anchorMessageId) return;
-    if (isUndoing || undoState !== 'idle') return;
+    if (isUndoing || undoState === 'done') return;
 
     setIsUndoing(true);
+    setUndoError(null);
     try {
       const result = (await ipcService.invoke(
         IPC_CHANNELS.CHECKPOINT_REWIND,
@@ -85,16 +91,25 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
       if (result?.success) {
         setUndoState('done');
       } else {
+        const message = result?.error || 'Rewind failed';
         setUndoState('error');
-        setUndoError(result?.error || 'Rewind failed');
+        setUndoError(message);
+        toast.error(t.turnDiff.undoToastFailed.replace('{message}', message));
       }
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       setUndoState('error');
-      setUndoError(String(err));
+      setUndoError(message);
+      toast.error(t.turnDiff.undoToastFailed.replace('{message}', message));
     } finally {
       setIsUndoing(false);
     }
   }, [currentSessionId, anchorMessageId, isUndoing, undoState]);
+
+  const requestUndo = useCallback(() => {
+    if (!currentSessionId || !anchorMessageId || isUndoing || undoState === 'done') return;
+    setIsConfirmOpen(true);
+  }, [anchorMessageId, currentSessionId, isUndoing, undoState]);
 
   const toggleFile = useCallback((filePath: string) => {
     setExpandedFiles((prev) => {
@@ -119,7 +134,9 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
       {/* Header: N files changed +X -Y + Undo */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-800/40">
         <span className="text-xs text-zinc-300">
-          {fileChanges.length} file{fileChanges.length > 1 ? 's' : ''} changed
+          {fileChanges.length > 1
+            ? t.turnDiff.filesChangedMany.replace('{count}', String(fileChanges.length))
+            : t.turnDiff.filesChangedOne}
         </span>
         {totalAdded > 0 && (
           <span className="text-xs text-emerald-400">+{totalAdded}</span>
@@ -130,15 +147,15 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
         <div className="flex-1" />
         {undoState === 'idle' && (
           <button
-            onClick={handleUndo}
+            onClick={requestUndo}
             disabled={!canUndo || isUndoing}
             className="flex items-center gap-1 px-2 py-0.5 rounded text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             title={
               canUndo
-                ? '撤销本轮所有文件变更'
+                ? t.turnDiff.undoAllTitle
                 : turn.status === 'streaming'
-                ? '会话进行中'
-                : '无可用 checkpoint'
+                ? t.turnDiff.sessionRunning
+                : t.turnDiff.noCheckpoint
             }
           >
             {isUndoing ? (
@@ -146,22 +163,32 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
             ) : (
               <Undo2 className="w-3 h-3" />
             )}
-            <span>Undo</span>
+            <span>{t.turnDiff.undo}</span>
           </button>
         )}
         {undoState === 'done' && (
           <span className="flex items-center gap-1 px-2 py-0.5 text-xs text-emerald-400">
             <Check className="w-3 h-3" />
-            Undone
+            {t.turnDiff.undone}
           </span>
         )}
         {undoState === 'error' && (
-          <span
-            className="text-xs text-rose-400 truncate max-w-[160px]"
-            title={undoError || 'Undo failed'}
-          >
-            Undo failed
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span
+              className="text-xs text-rose-400 truncate max-w-[160px]"
+              title={undoError || t.turnDiff.undoFailed}
+            >
+              {t.turnDiff.undoFailed}
+            </span>
+            <button
+              type="button"
+              onClick={requestUndo}
+              disabled={isUndoing}
+              className="rounded px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40"
+            >
+              {t.common.retry}
+            </button>
+          </div>
         )}
       </div>
 
@@ -196,7 +223,7 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
                   <span className="text-zinc-300">{fileName}</span>
                   {fc.isNewFile && (
                     <span className="ml-2 text-[10px] text-emerald-400/80">
-                      new
+                      {t.turnDiff.newFileBadge}
                     </span>
                   )}
                   {fc.editCount > 1 && (
@@ -230,6 +257,18 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
           );
         })}
       </div>
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        title={t.turnDiff.confirmTitle}
+        message={t.turnDiff.confirmMessage.replace('{count}', String(fileChanges.length))}
+        variant="warning"
+        confirmText={t.turnDiff.confirmAction}
+        onCancel={() => setIsConfirmOpen(false)}
+        onConfirm={() => {
+          setIsConfirmOpen(false);
+          void handleUndo();
+        }}
+      />
     </div>
   );
 };

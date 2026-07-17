@@ -90,3 +90,99 @@ describe('WorkbenchTabs 顶栏按钮 a11y + i18n（en 态无硬编码中文）',
     }
   });
 });
+
+describe('WorkbenchTabs keyboard interaction', () => {
+  it('exposes tab semantics and activates tabs with Enter and Space', () => {
+    useAppStore.setState({ workbenchTabs: ['task', 'files'], activeWorkbenchTab: 'task' });
+    const { getAllByRole, getByRole } = render(<WorkbenchTabs />);
+    const tabs = getAllByRole('tab');
+
+    expect(getByRole('tablist')).toBeTruthy();
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+    expect(tabs[0].getAttribute('tabindex')).toBe('0');
+    expect(tabs[1].getAttribute('aria-selected')).toBe('false');
+    expect(tabs[1].getAttribute('tabindex')).toBe('-1');
+
+    fireEvent.keyDown(tabs[1], { key: 'Enter' });
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
+
+    fireEvent.keyDown(tabs[0], { key: ' ' });
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('task');
+  });
+
+  it('moves focus and activation with Left and Right without disturbing close buttons', () => {
+    useAppStore.setState({ workbenchTabs: ['task', 'files'], activeWorkbenchTab: 'task' });
+    const { getAllByRole } = render(<WorkbenchTabs />);
+    const tabs = getAllByRole('tab');
+
+    tabs[0].focus();
+    fireEvent.keyDown(tabs[0], { key: 'ArrowRight' });
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
+    expect(document.activeElement).toBe(tabs[1]);
+
+    fireEvent.keyDown(tabs[1], { key: 'ArrowLeft' });
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('task');
+    expect(document.activeElement).toBe(tabs[0]);
+  });
+
+  it('preserves click activation, middle-click close, and isolated close-button clicks', () => {
+    useAppStore.setState({ workbenchTabs: ['task', 'files'], activeWorkbenchTab: 'task' });
+    const { getAllByLabelText, getAllByRole } = render(<WorkbenchTabs />);
+
+    fireEvent.click(getAllByRole('tab')[1]);
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
+
+    fireEvent.click(getAllByLabelText(en.common.close)[1]);
+    expect(useAppStore.getState().workbenchTabs).toEqual(['task']);
+
+    const remainingTab = getAllByRole('tab')[0];
+    fireEvent.mouseDown(remainingTab.parentElement!, { button: 1 });
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+  });
+});
+
+describe('WorkbenchTabs dirty preview confirmation', () => {
+  const dirtyPreview = {
+    id: 'preview-1',
+    path: '/tmp/example.ts',
+    content: 'changed',
+    savedContent: 'saved',
+    mode: 'edit' as const,
+    lastActivatedAt: 1,
+    isLoaded: true,
+  };
+
+  it('requires confirmation for close-button and middle-click closes of a dirty preview', () => {
+    useAppStore.setState({
+      workbenchTabs: ['preview:/tmp/example.ts'],
+      activeWorkbenchTab: 'preview:/tmp/example.ts',
+      previewTabs: [dirtyPreview],
+    });
+    const { getByLabelText, getByRole } = render(<WorkbenchTabs />);
+
+    fireEvent.click(getByLabelText(en.common.close));
+    expect(getByRole('dialog')).toBeTruthy();
+    expect(useAppStore.getState().workbenchTabs).toHaveLength(1);
+
+    fireEvent.click(getByRole('button', { name: '取消' }));
+    expect(useAppStore.getState().workbenchTabs).toHaveLength(1);
+
+    fireEvent.mouseDown(getByRole('tab').parentElement!, { button: 1 });
+    expect(getByRole('dialog')).toBeTruthy();
+    fireEvent.click(getByRole('button', { name: /不保存/ }));
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+  });
+
+  it('still closes clean previews immediately', () => {
+    useAppStore.setState({
+      workbenchTabs: ['preview:/tmp/example.ts'],
+      activeWorkbenchTab: 'preview:/tmp/example.ts',
+      previewTabs: [{ ...dirtyPreview, content: 'saved' }],
+    });
+    const { getByLabelText, queryByRole } = render(<WorkbenchTabs />);
+
+    fireEvent.click(getByLabelText(en.common.close));
+    expect(queryByRole('dialog')).toBeNull();
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+  });
+});

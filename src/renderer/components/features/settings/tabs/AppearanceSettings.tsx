@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Moon, Sun, Monitor, Check } from 'lucide-react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { useTheme, type Theme } from '../../../../hooks/useTheme';
+import { toast } from '../../../../hooks/useToast';
 import { useAppStore } from '../../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
@@ -109,6 +110,7 @@ export const AppearanceSettings: React.FC = () => {
 
   // 处理主题切换
   const handleThemeChange = async (newTheme: Theme) => {
+    const previousTheme = theme;
     setTheme(newTheme);
     // 保存到后端
     try {
@@ -118,11 +120,14 @@ export const AppearanceSettings: React.FC = () => {
       logger.info('Theme saved', { theme: newTheme });
     } catch (error) {
       logger.error('Failed to save theme', error);
+      setTheme(previousTheme);
+      toast.error(appearanceText.themeSaveFailed);
     }
   };
 
   // 处理语言切换
   const handleLanguageChange = async (lang: Language) => {
+    const previousLanguage = language;
     setLanguage(lang);
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
@@ -131,11 +136,14 @@ export const AppearanceSettings: React.FC = () => {
       logger.info('Language saved', { lang });
     } catch (error) {
       logger.error('Failed to save language', error);
+      setLanguage(previousLanguage);
+      toast.error(appearanceText.languageSaveFailed);
     }
   };
 
   // 处理开发者模式开关
   const handleDeveloperModeChange = async (enabled: boolean) => {
+    const previousDeveloperMode = developerMode;
     setDeveloperMode(enabled);
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
@@ -144,11 +152,15 @@ export const AppearanceSettings: React.FC = () => {
       logger.info('Developer mode saved', { enabled });
     } catch (error) {
       logger.error('Failed to save developer mode', error);
+      setDeveloperMode(previousDeveloperMode);
+      toast.error(appearanceText.developerModeSaveFailed);
     }
   };
 
   // 处理字体大小切换
   const handleFontSizeChange = async (size: 'small' | 'medium' | 'large') => {
+    const previousFontSize = fontSize;
+    const previousCssFontSize = document.documentElement.style.getPropertyValue('--font-size-base');
     setFontSize(size);
     // 应用字体大小
     const sizeMap = { small: 13, medium: 14, large: 16 };
@@ -161,6 +173,13 @@ export const AppearanceSettings: React.FC = () => {
       logger.info('Font size saved', { size });
     } catch (error) {
       logger.error('Failed to save font size', error);
+      setFontSize(previousFontSize);
+      if (previousCssFontSize) {
+        document.documentElement.style.setProperty('--font-size-base', previousCssFontSize);
+      } else {
+        document.documentElement.style.removeProperty('--font-size-base');
+      }
+      toast.error(appearanceText.fontSizeSaveFailed);
     }
   };
 

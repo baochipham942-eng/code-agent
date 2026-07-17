@@ -21,7 +21,14 @@ export interface UserQuestionRequest {
   timestamp: number;
 }
 
-export interface UserQuestionResponse {
-  requestId: string;
-  answers: Record<string, string | string[]>; // question header -> selected option(s)
-}
+export type UserQuestionResponse =
+  | {
+      requestId: string;
+      answers: Record<string, string | string[]>; // question header -> selected option(s)
+      declined?: false;
+    }
+  | {
+      requestId: string;
+      declined: true;
+      answers?: never;
+    };

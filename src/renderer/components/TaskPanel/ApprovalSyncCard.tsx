@@ -1,10 +1,12 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback } from 'react';
 import { AlertTriangle, Check, Clock, X } from 'lucide-react';
 import type { PermissionRequest, PermissionResponse } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import ipcService from '../../services/ipcService';
+import { toast } from '../../hooks/useToast';
+import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/approvalResponseGuard';
 import { isDangerousCommand } from '../PermissionDialog/utils';
 
 function getRequestTarget(request: PermissionRequest): string {
@@ -40,29 +42,32 @@ export const ApprovalSyncCard: React.FC = () => {
     queuedPermissionRequests,
     setPendingPermissionRequest,
   } = useAppStore();
-  const processedRef = useRef<string | null>(null);
-
   const queueCount = getVisibleQueueCount(queuedPermissionRequests, currentSessionId);
   const isVisiblePending = Boolean(
     pendingPermissionRequest
     && (!pendingPermissionSessionId || !currentSessionId || pendingPermissionSessionId === currentSessionId),
   );
 
-  const respond = useCallback((response: PermissionResponse) => {
+  const respond = useCallback(async (response: PermissionResponse) => {
     const request = pendingPermissionRequest;
-    if (!request || processedRef.current === request.id) return;
-    processedRef.current = request.id;
+    const requestSessionId = pendingPermissionSessionId;
+    if (!request || !claimApprovalResponse(request.id)) return;
 
-    if (ipcService.isAvailable()) {
-      ipcService.invoke(
+    try {
+      if (!ipcService.isAvailable()) throw new Error('IPC unavailable');
+      await ipcService.invoke(
         IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
         request.id,
         response,
         request.sessionId,
       );
+      setPendingPermissionRequest(null);
+    } catch {
+      releaseApprovalResponse(request.id);
+      setPendingPermissionRequest(request, requestSessionId);
+      toast.error('审批响应发送失败，请重试');
     }
-    setPendingPermissionRequest(null);
-  }, [pendingPermissionRequest, setPendingPermissionRequest]);
+  }, [pendingPermissionRequest, pendingPermissionSessionId, setPendingPermissionRequest]);
 
   if (!pendingPermissionRequest || !isVisiblePending) {
     return (

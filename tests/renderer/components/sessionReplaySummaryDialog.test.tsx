@@ -391,7 +391,7 @@ describe('SessionReplaySummaryDialog', () => {
     expect(html).toContain('执行中：Implementation');
     expect(html).toContain('run workflow-run-1');
     expect(html).toContain('1 running · 1 done');
-    expect(html).toContain('Phases：Research · Implementation');
+    expect(html).toContain('Phases: Research · Implementation');
     expect(html).toContain('另有 1 个 workflow run');
     expect(html).toContain('Reviewer');
     expect(html).toContain('执行中');

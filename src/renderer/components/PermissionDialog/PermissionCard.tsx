@@ -17,6 +17,8 @@ import { permissionReasonText } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig, isDangerousCommand, getDangerReason } from './utils';
 import ipcService from '../../services/ipcService';
+import { toast } from '../../hooks/useToast';
+import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/approvalResponseGuard';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -69,25 +71,25 @@ export function PermissionCard() {
   const cardRef = useRef<HTMLDivElement>(null);
   const processedRequestRef = useRef<string | null>(null);
 
-  // 如果没有待处理的权限请求，不渲染
-  if (!pendingPermissionRequest) return null;
-  if (pendingPermissionSessionId && currentSessionId && pendingPermissionSessionId !== currentSessionId) {
-    return null;
-  }
-
-  const request = normalizeRequest(pendingPermissionRequest);
-  const config = getPermissionConfig(request.type);
+  const request = pendingPermissionRequest && !(
+    pendingPermissionSessionId &&
+    currentSessionId &&
+    pendingPermissionSessionId !== currentSessionId
+  )
+    ? normalizeRequest(pendingPermissionRequest)
+    : null;
 
   const isDangerous =
-    request.forceConfirm === true ||
-    request.type === 'dangerous_command' ||
-    (request.type === 'command' && isDangerousCommand(request.details.command));
+    request !== null &&
+    (request.forceConfirm === true ||
+      request.type === 'dangerous_command' ||
+      (request.type === 'command' && isDangerousCommand(request.details.command)));
 
-  const dangerReason = isDangerous ? getDangerReason(request.details.command) : undefined;
-
-  const memoryRequest = toMemoryRequest(request);
-  const isNewRequest = processedRequestRef.current !== request.id;
-  const memoryResult = isNewRequest && request.forceConfirm !== true ? checkMemory(memoryRequest) : null;
+  const memoryRequest = request ? toMemoryRequest(request) : null;
+  const isNewRequest = request !== null && processedRequestRef.current !== request.id;
+  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true
+    ? checkMemory(memoryRequest)
+    : null;
 
   const toPermissionResponse = (level: ApprovalLevel): PermissionResponse => {
     switch (level) {
@@ -104,52 +106,80 @@ export function PermissionCard() {
   };
 
   const handleApproval = useCallback(
-    (level: ApprovalLevel) => {
+    async (level: ApprovalLevel) => {
+      if (!request) return;
+
+      const requestSnapshot = pendingPermissionRequest;
+      const requestSessionId = pendingPermissionSessionId;
       if (processedRequestRef.current === request.id) return;
+      if (!claimApprovalResponse(request.id)) return;
       processedRequestRef.current = request.id;
 
-      if ((level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
-        const memoryReq: PermissionRequestForMemory = {
-          id: request.id,
-          tool: request.tool,
-          type: request.type as import('../../stores/permissionStore').PermissionType,
-          details: {
-            filePath: request.details.filePath || request.details.path,
-            command: request.details.command,
-            url: request.details.url,
-            server: request.details.server,
-            toolName: request.details.toolName,
-          },
-        };
-        saveMemory(memoryReq, level);
-      }
+      try {
+        if ((level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
+          const memoryReq: PermissionRequestForMemory = {
+            id: request.id,
+            tool: request.tool,
+            type: request.type as import('../../stores/permissionStore').PermissionType,
+            details: {
+              filePath: request.details.filePath || request.details.path,
+              command: request.details.command,
+              url: request.details.url,
+              server: request.details.server,
+              toolName: request.details.toolName,
+            },
+          };
+          try {
+            saveMemory(memoryReq, level);
+          } catch (error) {
+            console.error('[PermissionCard] Failed to save approval memory', error);
+          }
+        }
 
-      const response = toPermissionResponse(level);
-      if (ipcService.isAvailable()) {
-        ipcService.invoke(
+        const response = toPermissionResponse(level);
+        if (!ipcService.isAvailable()) throw new Error('IPC unavailable');
+        await ipcService.invoke(
           IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
           request.id,
           response,
           request.sessionId
         );
+        setPendingPermissionRequest(null);
+      } catch {
+        processedRequestRef.current = null;
+        releaseApprovalResponse(request.id);
+        setPendingPermissionRequest(requestSnapshot, requestSessionId);
+        toast.error('审批响应发送失败，请重试');
       }
-      setPendingPermissionRequest(null);
     },
-    [request.id, request.tool, request.type, request.details, saveMemory, setPendingPermissionRequest]
+    [
+      pendingPermissionRequest,
+      pendingPermissionSessionId,
+      request?.id,
+      request?.sessionId,
+      request?.forceConfirm,
+      request?.tool,
+      request?.type,
+      request?.details,
+      saveMemory,
+      setPendingPermissionRequest,
+    ]
   );
 
   // 自动应用记忆的决定
   useEffect(() => {
-    if (memoryResult && isNewRequest) {
-      const timer = setTimeout(() => {
-        handleApproval(memoryResult);
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [memoryResult, handleApproval, isNewRequest]);
+    if (!request || !memoryResult || !isNewRequest) return;
+
+    const timer = setTimeout(() => {
+      handleApproval(memoryResult);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [request, memoryResult, handleApproval, isNewRequest]);
 
   // 键盘快捷键 — stopPropagation 防止触发 ChatView 的 Esc+Esc
   useEffect(() => {
+    if (!request) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
         e.target instanceof HTMLInputElement ||
@@ -199,11 +229,18 @@ export function PermissionCard() {
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [handleApproval, isDangerous]);
+  }, [request, handleApproval, isDangerous]);
 
   useEffect(() => {
+    if (!request) return;
     cardRef.current?.focus();
-  }, []);
+  }, [request?.id]);
+
+  // 如果没有当前会话可见的待处理权限请求，不渲染
+  if (!request) return null;
+
+  const config = getPermissionConfig(request.type);
+  const dangerReason = isDangerous ? getDangerReason(request.details.command) : undefined;
 
   return (
     <div className="w-full px-4 animate-slideUp">

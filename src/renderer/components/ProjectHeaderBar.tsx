@@ -44,6 +44,7 @@ import {
   updateProjectGoalStatus,
 } from '../services/projectClient';
 import { useSessionStore } from '../stores/sessionStore';
+import { useUIStore } from '../stores/uiStore';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('ProjectHeaderBar');
@@ -77,6 +78,7 @@ const ARTIFACT_ICON: Partial<Record<ProjectArtifact['kind'], React.ComponentType
 export const ProjectHeaderBar: React.FC = () => {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const sessions = useSessionStore((s) => s.sessions);
+  const showToast = useUIStore((s) => s.showToast);
   const projectId = useMemo(
     () => sessions.find((s) => s.id === currentSessionId)?.projectId,
     [sessions, currentSessionId],
@@ -119,11 +121,12 @@ export const ProjectHeaderBar: React.FC = () => {
     try {
       await renameProject(projectId, nameDraft.trim());
       await refresh();
+      setEditingName(false);
     } catch (err) {
       logger.warn('改名失败', { err: err instanceof Error ? err.message : String(err) });
+      showToast('error', '项目改名失败，请重试');
     }
-    setEditingName(false);
-  }, [projectId, nameDraft, refresh]);
+  }, [projectId, nameDraft, refresh, showToast]);
 
   const handleToggleArchive = useCallback(async () => {
     if (!detail) return;
@@ -133,8 +136,9 @@ export const ProjectHeaderBar: React.FC = () => {
       await refresh();
     } catch (err) {
       logger.warn('切换归档失败', { err: err instanceof Error ? err.message : String(err) });
+      showToast('error', next === 'archived' ? '项目归档失败，请重试' : '恢复项目失败，请重试');
     }
-  }, [detail, refresh]);
+  }, [detail, refresh, showToast]);
 
   const handleAddGoal = useCallback(async () => {
     if (!projectId || !goalDraft.trim()) {
@@ -147,9 +151,10 @@ export const ProjectHeaderBar: React.FC = () => {
       await refresh();
     } catch (err) {
       logger.warn('新增目标失败', { err: err instanceof Error ? err.message : String(err) });
+      showToast('error', '新增项目目标失败，请重试');
     }
     setAddingGoal(false);
-  }, [projectId, goalDraft, refresh]);
+  }, [projectId, goalDraft, refresh, showToast]);
 
   const handleToggleGoal = useCallback(
     async (goal: ProjectGoal) => {
@@ -159,9 +164,10 @@ export const ProjectHeaderBar: React.FC = () => {
         await refresh();
       } catch (err) {
         logger.warn('更新目标状态失败', { err: err instanceof Error ? err.message : String(err) });
+        showToast('error', '更新项目目标失败，请重试');
       }
     },
-    [refresh],
+    [refresh, showToast],
   );
 
   const openRolePicker = useCallback(async () => {
@@ -185,9 +191,10 @@ export const ProjectHeaderBar: React.FC = () => {
         await refresh();
       } catch (err) {
         logger.warn('角色入驻失败', { err: err instanceof Error ? err.message : String(err) });
+        showToast('error', '角色入驻失败，请重试');
       }
     },
-    [projectId, refresh],
+    [projectId, refresh, showToast],
   );
 
   const handleRemoveRole = useCallback(
@@ -198,9 +205,10 @@ export const ProjectHeaderBar: React.FC = () => {
         await refresh();
       } catch (err) {
         logger.warn('角色退出失败', { err: err instanceof Error ? err.message : String(err) });
+        showToast('error', '角色退出失败，请重试');
       }
     },
-    [projectId, refresh],
+    [projectId, refresh, showToast],
   );
 
   if (!projectId || !detail) return null;

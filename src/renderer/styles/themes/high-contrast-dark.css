@@ -13,6 +13,11 @@
   --bg-hover: #252525;
   --bg-active: #303030;
 
+  /* Translucent surface tiers - strengthened for high contrast */
+  --surface-faint: rgba(255, 255, 255, 0.08);
+  --surface-subtle: rgba(255, 255, 255, 0.12);
+  --surface-hover: rgba(255, 255, 255, 0.2);
+
   /* Text hierarchy - high contrast white */
   --text-primary: #FFFFFF;
   --text-secondary: #E0E0E0;
@@ -36,11 +41,20 @@
   --color-info: #00BFFF;
   --color-info-muted: rgba(0, 191, 255, 0.2);
 
+  /* Chat status text colors */
+  --status-text-success: #6EE7B7;
+  --status-text-warning: #FCD34D;
+  --status-text-error: #FCA5A5;
+  --status-text-warning-soft: #FEF3C7;
+
   /* Border colors - visible borders */
   --border-subtle: rgba(255, 255, 255, 0.15);
   --border-default: rgba(255, 255, 255, 0.3);
   --border-strong: rgba(255, 255, 255, 0.5);
   --border-focus: var(--brand-primary);
+  --border-faint: rgba(255, 255, 255, 0.15);
+  --border-muted: rgba(255, 255, 255, 0.3);
+  --border-hover: rgba(255, 255, 255, 0.5);
 
   /* Shadow system - minimal shadows, rely on borders */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.8);

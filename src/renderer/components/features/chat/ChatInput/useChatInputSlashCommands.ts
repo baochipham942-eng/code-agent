@@ -11,6 +11,7 @@ import { useSessionStore } from '../../../../stores/sessionStore';
 import { useSkillStore } from '../../../../stores/skillStore';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
+import { useI18n } from '../../../../hooks/useI18n';
 import { type SkillRecommendationView } from './CapabilitySuggestionStrip';
 import type { SlashCommand } from './SlashCommandPopover';
 import {
@@ -46,6 +47,7 @@ export interface UseChatInputSlashCommandsParams {
  * 共享项（setActiveAgentId / 各 composer 卡片开关等）经 params 注入。
  */
 export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParams) {
+  const { t } = useI18n();
   const {
     value,
     currentSessionId,
@@ -81,9 +83,9 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
 
   const ensureSessionForSkill = useCallback(async (): Promise<string | null> => {
     if (currentSessionId) return currentSessionId;
-    const session = await createSession('新对话');
+    const session = await createSession(t.sidebar.newSessionTitle);
     return session?.id ?? null;
-  }, [createSession, currentSessionId]);
+  }, [createSession, currentSessionId, t]);
 
   const selectSkillForCurrentTurn = useCallback(async (input: {
     skillName: string;
@@ -95,7 +97,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     if (!input.mounted) {
       const targetSessionId = await ensureSessionForSkill();
       if (!targetSessionId) {
-        toast.error(`挂载 Skill 失败：无法创建会话`);
+        toast.error(t.slashSelect.mountSkillNoSession);
         focusComposer();
         return false;
       }
@@ -111,7 +113,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
       }
 
       if (!mounted) {
-        toast.error(`挂载 Skill 失败：${input.skillName}`);
+        toast.error(t.slashSelect.mountSkillFailedPrefix + input.skillName);
         focusComposer();
         return false;
       }
@@ -127,6 +129,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     mountRecommendedSkill,
     mountSkill,
     setSkillCurrentSession,
+    t,
   ]);
 
   const selectWorkbenchCapabilityForCurrentTurn = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
@@ -143,7 +146,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
 
     if (capability.kind === 'connector') {
       if (!capability.connected) {
-        toast.warning(capability.blockedReason?.detail || `请先连接 ${capability.label}`);
+        toast.warning(capability.blockedReason?.detail || t.slashSelect.connectFirstPrefix + capability.label);
         openCapabilitySettingsTarget({ kind: capability.kind, id: capability.id });
         focusComposer();
         return;
@@ -156,7 +159,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     }
 
     if (capability.status !== 'connected' && capability.status !== 'lazy') {
-      toast.warning(capability.blockedReason?.detail || `请先连接 MCP：${capability.label}`);
+      toast.warning(capability.blockedReason?.detail || t.slashSelect.connectMcpFirstPrefix + capability.label);
       openCapabilitySettingsTarget({ kind: capability.kind, id: capability.id });
       focusComposer();
       return;
@@ -173,6 +176,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     setSelectedMcpServerIds,
     setTurnCapabilityScopeMode,
     setValue,
+    t,
   ]);
 
   const handleSlashCommandSelect = useCallback((cmd: SlashCommand) => {

@@ -592,7 +592,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             submitting={submittingGoal}
             onSubmit={async (draft) => {
               setSubmittingGoal(true);
-              const parsed = goalComposerDraftToParsed(draft);
+              const parsed = goalComposerDraftToParsed(draft, t);
               const ok = await startGoalRun(parsed, `/goal ${parsed.goal}`);
               setSubmittingGoal(false);
               if (!ok) setGoalConfirm({ initialGoal: parsed.goal });

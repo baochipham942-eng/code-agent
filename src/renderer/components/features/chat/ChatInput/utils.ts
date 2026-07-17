@@ -5,6 +5,7 @@
 import type { AttachmentCategory, MessageAttachment } from '../../../../../shared/contract';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
+import type { Translations } from '../../../../i18n/zh';
 
 const logger = createLogger('ChatInputUtils');
 
@@ -176,7 +177,7 @@ export async function readDirectoryEntry(
             Object.defineProperty(file, 'relativePath', { value: fullPath, writable: false });
             files.push(file);
           } catch (err) {
-            logger.warn('无法读取文件', { path: fullPath, error: err });
+            logger.warn('Failed to read file', { path: fullPath, error: err });
           }
         }
       } else if (entry.isDirectory) {
@@ -187,7 +188,7 @@ export async function readDirectoryEntry(
       }
     }
   } catch (err) {
-    logger.error('读取目录失败', err);
+    logger.error('Failed to read directory', err);
   }
   return files;
 }
@@ -277,14 +278,17 @@ export async function collectDroppedAttachments(
 /**
  * 从 PDF 文件中提取文本内容 - 通过主进程 IPC 处理
  */
-export async function extractPdfText(filePath: string): Promise<{ text: string; pageCount: number }> {
+export async function extractPdfText(t: Translations, filePath: string): Promise<{ text: string; pageCount: number }> {
   try {
     const result = await ipcService.extractPdfText(filePath);
     if (result) return result;
-    return { text: '[PDF 解析失败: IPC 调用失败]', pageCount: 0 };
+    return { text: t.chatInput.pdfExtractIpcFailed, pageCount: 0 };
   } catch (error) {
-    logger.error('PDF 文本提取失败', error);
-    return { text: `[PDF 解析失败: ${error instanceof Error ? error.message : '未知错误'}]`, pageCount: 0 };
+    logger.error('PDF text extraction failed', error);
+    return {
+      text: t.chatInput.pdfExtractFailedPrefix.replace('{err}', error instanceof Error ? error.message : t.chatInput.unknownError),
+      pageCount: 0,
+    };
   }
 }
 

@@ -136,8 +136,8 @@ export const AbilityMenu: React.FC<AbilityMenuProps> = ({ disabled = false, defa
             ? 'bg-primary-500/15 text-primary-200 hover:bg-primary-500/20'
             : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-        aria-label="能力"
-        title="Routing / Browser 配置"
+        aria-label={t.abilityMenu.summaryFallback}
+        title={t.abilityMenu.configTitle}
       >
         <GitBranch className="w-3.5 h-3.5" />
         <span className="max-w-[140px] truncate">{summary()}</span>

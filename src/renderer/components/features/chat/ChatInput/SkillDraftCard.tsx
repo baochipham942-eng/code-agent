@@ -161,7 +161,7 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
             ) : (
               <Check className="w-3 h-3" />
             )}
-            采纳
+            {s.accept}
           </button>
 
           <button
@@ -170,7 +170,7 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
             disabled={busyId !== null}
             className="px-2 py-1 text-xs text-zinc-400 rounded hover:text-zinc-200 hover:bg-zinc-700/50 transition-colors disabled:opacity-50"
           >
-            不需要
+            {s.reject}
           </button>
         </div>
         );

@@ -188,7 +188,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
         type="button"
         onClick={() => hasDetails && setExpanded((value) => !value)}
         disabled={!hasDetails}
-        className="flex max-w-full items-center gap-1.5 rounded-md border border-white/[0.06] bg-white/[0.025] px-2 py-1 text-left text-[11px] text-zinc-400 transition-colors hover:border-white/[0.12] hover:text-zinc-200 disabled:cursor-default disabled:hover:border-white/[0.06] disabled:hover:text-zinc-400"
+        className="flex max-w-full items-center gap-1.5 rounded-md border border-border-muted bg-surface-subtle px-2 py-1 text-left text-[11px] text-zinc-400 transition-colors hover:border-border-hover hover:text-zinc-200 disabled:cursor-default disabled:hover:border-border-muted disabled:hover:text-zinc-400"
         aria-expanded={expanded}
         title={expanded ? '收起本轮质量信息' : '展开本轮质量信息'}
       >
@@ -226,10 +226,10 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
       </button>
 
       {expanded && (
-        <div className="mt-1.5 rounded-md border border-white/[0.06] bg-black/15 px-2.5 py-2 text-[11px] text-zinc-400">
+        <div className="mt-1.5 rounded-md border border-border-muted bg-black/15 px-2.5 py-2 text-[11px] text-zinc-400">
           <div className="mb-2 grid gap-1.5 md:grid-cols-2">
             {score.breakdown.map((item) => (
-              <div key={item.dimension} className="rounded-md border border-white/[0.06] bg-white/[0.025] px-2 py-1.5">
+              <div key={item.dimension} className="rounded-md border border-border-muted bg-surface-subtle px-2 py-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-zinc-300">{item.dimension}</span>
                   <span className="font-mono text-zinc-500">{item.score}/{item.max}</span>
@@ -293,7 +293,7 @@ export const TurnQualityStrip: React.FC<TurnQualityStripProps> = ({ summary }) =
                 const isArchived = archivedEntryIds.has(item.entryId);
                 const busy = busyEntryId === item.entryId;
                 return (
-                  <div key={item.entryId} className="rounded-md bg-white/[0.025] px-2 py-1.5">
+                  <div key={item.entryId} className="rounded-md bg-surface-subtle px-2 py-1.5">
                     <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-zinc-200">{unescapeHtmlEntities(item.title)}</div>

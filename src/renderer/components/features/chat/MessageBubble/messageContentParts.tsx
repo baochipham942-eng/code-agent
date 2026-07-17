@@ -851,7 +851,7 @@ export const InlineCode = memo(function InlineCode({
   // Regular inline code (not a file) — Codex 风格：无 border，柔和灰底
   if (!isFile) {
     return (
-      <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-white/[0.06] text-zinc-200 text-xs font-mono">
+      <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-surface-hover text-zinc-200 text-xs font-mono">
         {children}
       </code>
     );
@@ -862,7 +862,7 @@ export const InlineCode = memo(function InlineCode({
 
   return (
     <code
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-white/[0.06] text-primary-300 text-xs font-mono cursor-pointer hover:bg-white/[0.1] hover:text-primary-200 transition-colors group"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-surface-hover text-primary-300 text-xs font-mono cursor-pointer hover:bg-white/[0.1] hover:text-primary-200 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
           onPreviewHtml(filePath);

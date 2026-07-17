@@ -607,7 +607,7 @@ function getTimelineContainerClass(tone: TurnTimelinePayload['tone']): string {
     case 'info':
       return 'border-sky-500/20 bg-sky-500/10';
     default:
-      return 'border-white/[0.06] bg-white/[0.02]';
+      return 'border-border-muted bg-surface-subtle';
   }
 }
 
@@ -874,7 +874,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
   ) : null;
 
   const sourcesBlock = hasLinks ? (
-    <div className={`rounded-lg border px-3 py-2 border-white/[0.06] bg-white/[0.02] ${outputsCard ? 'mt-1.5' : ''}`}>
+    <div className={`rounded-lg border px-3 py-2 border-border-muted bg-surface-subtle ${outputsCard ? 'mt-1.5' : ''}`}>
       <button
         type="button"
         onClick={() => setSourcesOpen((v) => !v)}

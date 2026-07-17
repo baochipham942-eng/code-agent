@@ -684,7 +684,7 @@ function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'
     case 'info':
       return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
     default:
-      return 'border-white/[0.06] bg-white/[0.02] text-zinc-400';
+      return 'border-border-muted bg-surface-subtle text-zinc-400';
   }
 }
 
@@ -777,7 +777,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
       )}
       {!hasPhase && <div className="flex-1" />}
       {completionSignal && (
-        <div className="inline-flex items-center gap-1 rounded-md bg-white/[0.03] px-1.5 py-0.5 text-[11px] text-zinc-500">
+        <div className="inline-flex items-center gap-1 rounded-md bg-surface-subtle px-1.5 py-0.5 text-[11px] text-zinc-500">
           <FileText className="h-3 w-3" />
           <span>{completionSignal}</span>
         </div>

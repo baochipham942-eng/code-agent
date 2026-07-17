@@ -1,5 +1,66 @@
 import { TestCase } from '../../src/types.js';
 
+// 关闭分步执行留档：曾用 steps: 分步跑，改回单次调用 + 清单式 prompt 后原地保留，
+// 不再是 TestCase 的字段，未来要恢复分步执行时把下面这份塞回 steps: disabledSteps 即可。
+const disabledSteps: NonNullable<TestCase['steps']> = [
+  {
+    instruction: '读取 prisma/schema.prisma 文件',
+  },
+  {
+    instruction: '使用 edit_file 修改 prisma/schema.prisma，在 User model 中添加 avatar String? 字段',
+    validation: {
+      type: 'file-contains',
+      target: 'prisma/schema.prisma',
+      contains: ['avatar'],
+    },
+  },
+  {
+    instruction: '读取 src/api/services/user.service.ts 文件',
+  },
+  {
+    instruction: '使用 edit_file 修改 src/api/services/user.service.ts，在 User 接口中添加 avatar?: string 字段',
+    validation: {
+      type: 'file-contains',
+      target: 'src/api/services/user.service.ts',
+      contains: ['avatar'],
+    },
+  },
+  {
+    instruction: '读取 src/store/user.store.ts 文件',
+  },
+  {
+    instruction: '使用 edit_file 修改 src/store/user.store.ts，在 User 接口中添加 avatar?: string 字段',
+    validation: {
+      type: 'file-contains',
+      target: 'src/store/user.store.ts',
+      contains: ['avatar'],
+    },
+  },
+  {
+    instruction: '读取 src/api/routes/users.ts 文件',
+  },
+  {
+    instruction: '使用 edit_file 修改 src/api/routes/users.ts，在 createUser 函数参数中添加 avatar',
+    validation: {
+      type: 'file-contains',
+      target: 'src/api/routes/users.ts',
+      contains: ['avatar'],
+    },
+  },
+  {
+    instruction: '读取 src/components/UserList.tsx 文件',
+  },
+  {
+    instruction: '使用 edit_file 修改 src/components/UserList.tsx，显示 user.avatar（例如添加 <img> 或 <span> 元素）',
+    validation: {
+      type: 'file-contains',
+      target: 'src/components/UserList.tsx',
+      contains: ['avatar'],
+    },
+  },
+];
+void disabledSteps;
+
 export const M01: TestCase = {
   id: 'M01',
   name: '添加字段（多文件）',
@@ -67,65 +128,6 @@ export const M01: TestCase = {
   // stepByStepExecution: true,
   retries: 3,
   nudgeOnMissingFile: true,
-  _disabledSteps: [
-    {
-      instruction: '读取 prisma/schema.prisma 文件',
-    },
-    {
-      instruction: '使用 edit_file 修改 prisma/schema.prisma，在 User model 中添加 avatar String? 字段',
-      validation: {
-        type: 'file-contains',
-        target: 'prisma/schema.prisma',
-        contains: ['avatar'],
-      },
-    },
-    {
-      instruction: '读取 src/api/services/user.service.ts 文件',
-    },
-    {
-      instruction: '使用 edit_file 修改 src/api/services/user.service.ts，在 User 接口中添加 avatar?: string 字段',
-      validation: {
-        type: 'file-contains',
-        target: 'src/api/services/user.service.ts',
-        contains: ['avatar'],
-      },
-    },
-    {
-      instruction: '读取 src/store/user.store.ts 文件',
-    },
-    {
-      instruction: '使用 edit_file 修改 src/store/user.store.ts，在 User 接口中添加 avatar?: string 字段',
-      validation: {
-        type: 'file-contains',
-        target: 'src/store/user.store.ts',
-        contains: ['avatar'],
-      },
-    },
-    {
-      instruction: '读取 src/api/routes/users.ts 文件',
-    },
-    {
-      instruction: '使用 edit_file 修改 src/api/routes/users.ts，在 createUser 函数参数中添加 avatar',
-      validation: {
-        type: 'file-contains',
-        target: 'src/api/routes/users.ts',
-        contains: ['avatar'],
-      },
-    },
-    {
-      instruction: '读取 src/components/UserList.tsx 文件',
-    },
-    {
-      instruction: '使用 edit_file 修改 src/components/UserList.tsx，显示 user.avatar（例如添加 <img> 或 <span> 元素）',
-      validation: {
-        type: 'file-contains',
-        target: 'src/components/UserList.tsx',
-        contains: ['avatar'],
-      },
-    },
-  ],
-
-  retries: 2,
 };
 
 export default M01;

@@ -4,11 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import {
-  ReleasePostPublishVerificationError,
-  auditServerLogs,
-  verifyReleasePostPublish,
-} from '../../scripts/release-post-publish-verify.mjs';
+// @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
+import { ReleasePostPublishVerificationError, auditServerLogs, verifyReleasePostPublish } from '../../scripts/release-post-publish-verify.mjs';
 
 const repoRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const baseUrl = 'https://agentneo.test';

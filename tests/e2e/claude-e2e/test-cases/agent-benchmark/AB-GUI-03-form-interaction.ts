@@ -33,14 +33,12 @@ export const ABGUI03: TestCase = {
   validations: [
     {
       type: 'output-contains',
-      contains: ['表单', 'form', 'input', '字段', 'Customer', 'Telephone'],
-      matchMode: 'any',
+      containsAny: ['表单', 'form', 'input', '字段', 'Customer', 'Telephone'],
       message: '应包含表单字段分析',
     },
     {
       type: 'output-contains',
-      contains: ['文本', '单选', '复选', 'checkbox', 'radio', 'text'],
-      matchMode: 'any',
+      containsAny: ['文本', '单选', '复选', 'checkbox', 'radio', 'text'],
       message: '应识别字段类型',
     },
   ],

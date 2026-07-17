@@ -162,7 +162,7 @@ vi.mock('../../src/host/services/cloud/cloudConfigService', () => ({
 
 import { AgentOrchestrator } from '../../src/host/agent/agentOrchestrator';
 import type { ConfigService } from '../../src/host/services/core/configService';
-import type { Message } from '../../src/shared/contract';
+import type { AgentEvent, Message } from '../../src/shared/contract';
 
 // 部分目标是 private 方法 / 内部状态，特征测试经类型逃逸访问（测试专用）
 interface OrchestratorInternals {
@@ -184,7 +184,7 @@ function makeMessage(id: string, role: Message['role'], content: string): Messag
 describe('AgentOrchestrator', () => {
   let orchestrator: AgentOrchestrator;
   let mockConfigService: ConfigService;
-  let mockOnEvent: ReturnType<typeof vi.fn>;
+  let mockOnEvent: ReturnType<typeof vi.fn<(event: AgentEvent) => void>>;
 
   beforeEach(() => {
     // Mock ConfigService

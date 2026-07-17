@@ -58,6 +58,7 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 import { resetDecisionHistory, getDecisionHistory } from '../../src/host/security/decisionHistory';
 import { getGuardFabric, resetGuardFabric } from '../../src/host/permissions';
 import { ToolExecutor } from '../../src/host/tools/toolExecutor';
+import type { PermissionRequestData } from '../../src/host/tools/types';
 
 describe('ToolExecutor GuardFabric topology wiring', () => {
   beforeEach(() => {
@@ -83,7 +84,7 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     });
   });
 
-  function makeExecutor(requestPermission = vi.fn(async () => true)): ToolExecutor {
+  function makeExecutor(requestPermission = vi.fn(async (_request: PermissionRequestData) => true)): ToolExecutor {
     const executor = new ToolExecutor({
       requestPermission,
       workingDirectory: '/tmp/workbench',
@@ -232,7 +233,7 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
 
   it('does not force confirmation for non-topology verdicts (sources 与主权限链重复评估，gate 只认 topology 规则)', async () => {
     defineWrite();
-    const requestPermission = vi.fn(async () => true);
+    const requestPermission = vi.fn(async (_request: { forceConfirm?: boolean }) => true);
     const executor = makeExecutor(requestPermission);
 
     // write/teammate 没有 topology 规则；sources 的 default-ask/'rules' ask 不得穿透为 forceConfirm，
@@ -244,7 +245,7 @@ describe('ToolExecutor GuardFabric topology wiring', () => {
     );
 
     expect(result.success).toBe(true);
-    const permissionCalls = requestPermission.mock.calls as Array<[{ forceConfirm?: boolean }]>;
+    const permissionCalls = requestPermission.mock.calls;
     for (const [request] of permissionCalls) {
       expect(request.forceConfirm).not.toBe(true);
     }

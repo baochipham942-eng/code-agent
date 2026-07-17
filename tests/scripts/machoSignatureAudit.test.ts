@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+// @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
 import { findUnsignedMachO, hasDeveloperIdSignature, isMachO } from '../../scripts/lib/macho-signature-audit.mjs';
 
 // 真实 codesign -dvv 输出的形状（签名的走 stdout+stderr，未签名的只在 stderr 打一行）。

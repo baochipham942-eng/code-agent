@@ -25,8 +25,7 @@ export const ABWEB02: TestCase = {
   validations: [
     {
       type: 'output-contains',
-      contains: ['GAIA', 'AgentBench', 'SWE-bench', 'benchmark', '评测'],
-      matchMode: 'any',
+      containsAny: ['GAIA', 'AgentBench', 'SWE-bench', 'benchmark', '评测'],
       message: '应包含主流评测基准名称',
     },
   ],

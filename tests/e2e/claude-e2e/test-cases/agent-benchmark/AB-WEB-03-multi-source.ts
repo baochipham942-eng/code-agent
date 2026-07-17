@@ -29,14 +29,12 @@ export const ABWEB03: TestCase = {
   validations: [
     {
       type: 'output-contains',
-      contains: ['GPT', 'Claude', 'OpenAI', 'Anthropic'],
-      matchMode: 'any',
+      containsAny: ['GPT', 'Claude', 'OpenAI', 'Anthropic'],
       message: '应包含两家公司的模型信息',
     },
     {
       type: 'output-contains',
-      contains: ['对比', '表格', '价格', 'token', '上下文'],
-      matchMode: 'any',
+      containsAny: ['对比', '表格', '价格', 'token', '上下文'],
       message: '应包含对比分析内容',
     },
   ],

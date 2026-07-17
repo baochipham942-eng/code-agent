@@ -458,7 +458,7 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
         now: Date.now(),
         status: 'running',
         state: originalState,
-        pendingOperations: latestAfterRecovery.pendingOperations,
+        pendingOperations: latestAfterRecovery.pendingOperations ?? [],
         childRuns: latestAfterRecovery.childRuns,
         events: [{ type: 'stale_write', payload: null, recordedAt: Date.now() }],
       });
@@ -479,7 +479,7 @@ async function recoverAndExit(selected: DurableRunKillRestartScenario): Promise<
   const operation = (await repository.listPendingOperations(envelope.runId))[0];
   const state = (await repository.getLatest(envelope.runId))?.state as PersistedAcceptanceState & { recoveredByPid?: number };
   const initialState = JSON.parse(String((db.prepare(`SELECT state_json FROM durable_run_checkpoints
-    WHERE run_id = ? AND checkpoint_seq = 1`).get(envelope.runId) as { state_json: string }).state_json)) as PersistedAcceptanceState;
+    WHERE run_id = ? AND checkpoint_seq = 1`).get(envelope.runId) as { state_json: string }).state_json)) as PersistedAcceptanceState & { recoveredByPid?: number };
   const evidenceState = selected.coreId === 'external-engine'
     || selected.coreId === 'dynamic-workflow'
     || selected.id === 'child-agent-running' ? initialState : state;

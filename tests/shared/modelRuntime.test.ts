@@ -57,7 +57,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     const runtimeModels = getProviderRuntimeModels(PROVIDER_MODELS_MAP.custom, settings.models.providers.custom);
     expect(runtimeModels.find((model) => model.id === 'custom-model')?.enabled).toBe(false);
@@ -87,7 +87,7 @@ describe('modelRuntime', () => {
           moonshot: { enabled: true, apiKeyConfigured: true },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     const options = buildRuntimeModelOptions(settings, ['deepseek', 'claude', 'moonshot']);
     expect(new Set(options.map((option) => option.provider))).toEqual(new Set(['moonshot']));
@@ -115,7 +115,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     expect(buildRuntimeModelOptions(settings, ['local'], {
       includeDisabledProviders: ['local'],
@@ -141,7 +141,7 @@ describe('modelRuntime', () => {
         defaultProvider: 'local',
         providers: { local: localProvider },
       },
-    } as AppSettings, ['local'])).toEqual([]);
+    } as unknown as AppSettings, ['local'])).toEqual([]); // partial fixture, intentionally missing fields
   });
 
   it('shows only locally discovered Ollama models when local discovery succeeds', () => {
@@ -162,7 +162,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     const options = buildRuntimeModelOptions(settings, ['local']);
     expect(options.map((option) => option.model)).toEqual(expect.arrayContaining(['qwen3:8b', 'llama3.2']));
@@ -181,7 +181,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     expect(buildRuntimeModelOptions(settings, ['openai'])).toEqual([]);
     expect(buildRuntimeModelOptions(settings, ['openai'], {
@@ -205,7 +205,7 @@ describe('modelRuntime', () => {
           local: { enabled: false },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     expect(hasConfiguredRuntimeModels(settings)).toBe(false);
     expect(buildRuntimeModelOptions(settings, ['xiaomi'], {
@@ -222,7 +222,7 @@ describe('modelRuntime', () => {
           xiaomi: { enabled: true, apiKeyConfigured: true },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
     const localSettings = {
       models: {
         default: 'local',
@@ -238,7 +238,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     expect(hasConfiguredRuntimeModels(keyedSettings)).toBe(true);
     expect(hasConfiguredRuntimeModels(localSettings)).toBe(true);
@@ -263,7 +263,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     expect(hasConfiguredRuntimeModels(settings)).toBe(true);
     expect(hasConfiguredDefaultRuntimeModel(settings)).toBe(true);
@@ -285,7 +285,7 @@ describe('modelRuntime', () => {
           claude: { enabled: true, apiKeyConfigured: true, model: 'claude-sonnet-4-6' },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     expect(hasConfiguredRuntimeModels(settings)).toBe(true);
     expect(hasConfiguredDefaultRuntimeModel(settings)).toBe(false);
@@ -320,7 +320,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     const provider = buildProviderInfoFromSettings('custom-longcat', settings.models.providers['custom-longcat']);
     expect(provider).toMatchObject({
@@ -364,7 +364,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     expect(buildRuntimeModelOptions(settings, [])).toEqual([
       expect.objectContaining({
@@ -408,7 +408,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     const options = buildRuntimeModelOptions(settings, []);
 
@@ -480,7 +480,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     const options = buildRuntimeModelOptions(settings, ['claude']);
 
@@ -530,7 +530,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     const options = buildRuntimeModelOptions(settings, ['claude']);
 
@@ -645,7 +645,7 @@ describe('modelRuntime', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings; // partial fixture, intentionally missing fields
 
     const options = buildRuntimeModelOptions(settings, ['moonshot']);
     expect(options).toEqual(expect.arrayContaining([

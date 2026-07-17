@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildControlPlaneContentHash,
-  CONTROL_PLANE_ARTIFACTS,
-  runControlPlaneSmoke,
-} from '../../scripts/control-plane-smoke.mjs';
+// @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
+import { buildControlPlaneContentHash, CONTROL_PLANE_ARTIFACTS, runControlPlaneSmoke } from '../../scripts/control-plane-smoke.mjs';
 
 type MockResponse = {
   status: number;
@@ -78,7 +75,7 @@ describe('control-plane smoke script', () => {
       fetchImpl,
     });
 
-    expect(results.map((result) => result.kind)).toEqual([
+    expect(results.map((result: { kind: string }) => result.kind)).toEqual([
       'cloud_config',
       'prompt_registry',
       'capability_registry',
@@ -92,7 +89,7 @@ describe('control-plane smoke script', () => {
       '/api/v1/control-plane?artifact=agent_engine_models',
       '/api/v1/control-plane?artifact=renderer_bundle_rollout',
     ]);
-    expect(calls.every((call) => call.init.headers?.Authorization === 'Bearer server-token')).toBe(true);
+    expect(calls.every((call) => (call.init.headers as Record<string, string> | undefined)?.Authorization === 'Bearer server-token')).toBe(true);
   });
 
   it('reports control-plane configuration gaps from 503 unconfigured responses', async () => {

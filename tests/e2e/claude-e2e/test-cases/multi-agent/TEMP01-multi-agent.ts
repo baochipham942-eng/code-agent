@@ -43,9 +43,9 @@ export const TEMP01: TestCase = {
     },
   ],
 
-  processValidation: {
-    agentDispatched: true,
-    expectedAgentTypes: ['explore'],
-    minToolCalls: 3,
-  },
+  processValidations: [
+    { type: 'agent-dispatched' },
+    { type: 'agent-type', agentType: ['explore'] },
+    { type: 'tool-count-min', count: 3 },
+  ],
 };

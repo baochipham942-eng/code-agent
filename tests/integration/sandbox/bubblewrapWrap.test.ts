@@ -27,7 +27,7 @@ function run(
 }
 
 const isLinux = process.platform === 'linux';
-const bubblewrapReady = isLinux && getBubblewrap().isAvailable();
+const bubblewrapReady = isLinux && getBubblewrap().checkAvailability().available;
 const failMissingBubblewrap = isLinux && Boolean(process.env.CI) && !bubblewrapReady;
 const suite = bubblewrapReady || failMissingBubblewrap ? describe : describe.skip;
 

@@ -701,7 +701,7 @@ describe('Channel Message Reply', () => {
     });
 
     it('非 Error 对象异常 → fallback 到 Unknown error', () => {
-      const error = 'string error';
+      const error: unknown = 'string error';
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       expect(errorMessage).toBe('Unknown error');
     });

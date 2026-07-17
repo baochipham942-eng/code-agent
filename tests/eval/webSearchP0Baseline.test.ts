@@ -24,7 +24,7 @@ type WebSearchEvalCase = {
 
 type LifecycleProbe = {
   blocked: boolean;
-  control: ControlState;
+  externalDataCallCount: number;
   injectedMessages: string[];
   citationsUpdatedEvents: number;
   results: ToolResult[];

@@ -76,7 +76,7 @@ async function createSessionViaApi(
   const result = await response.json() as { success?: boolean; data?: { id?: unknown } };
   expect(result.success).toBe(true);
   expect(result.data?.id).toEqual(expect.any(String));
-  return result.data.id as string;
+  return result.data!.id as string; // 上一行 expect 已断言 data.id 是 string
 }
 
 function task(overrides: Partial<SessionTask> & Pick<SessionTask, 'id' | 'subject' | 'status'>): SessionTask {

@@ -36,7 +36,8 @@ describe('normalizeOpenAIUsage', () => {
       prompt_tokens: 10_000,
       completion_tokens: 200,
       prompt_cache_hit_tokens: 8_000,
-      prompt_cache_miss_tokens: 2_000,
+      // prompt_cache_miss_tokens 不在 OpenAIUsageShape 里：normalizeOpenAIUsage 只认
+      // prompt_tokens - prompt_cache_hit_tokens，miss 字段从未被读取，故不传。
     });
     expect(usage).toEqual({
       inputTokens: 2_000,

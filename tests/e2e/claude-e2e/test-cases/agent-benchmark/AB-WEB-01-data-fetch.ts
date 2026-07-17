@@ -34,8 +34,7 @@ export const ABWEB01: TestCase = {
     },
     {
       type: 'output-contains',
-      contains: ['JavaScript', 'TypeScript', 'star', 'fork'],
-      matchMode: 'any',
+      containsAny: ['JavaScript', 'TypeScript', 'star', 'fork'],
       message: '应包含仓库统计信息',
     },
   ],

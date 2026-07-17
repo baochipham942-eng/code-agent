@@ -68,8 +68,8 @@ describe('P6 grandfathering — 默认行为', () => {
 describe('P6 grandfathering — Settings schema 契约', () => {
   it('AppSettings.permissions 接受 inheritanceMigrationAcked 字段', async () => {
     // 类型契约测试：避免后续重构悄悄删字段
-    const { default: contract } = await import('../../../src/shared/contract/settings');
-    expect(contract).toBeUndefined(); // 模块只有 interface，无 runtime 导出
+    const contractModule = (await import('../../../src/shared/contract/settings')) as Record<string, unknown>;
+    expect(contractModule.default).toBeUndefined(); // 模块只有 interface，无 runtime 导出
   });
 
   it('configService 启动逻辑：inheritance === undefined → _legacyPermissions=true', () => {
@@ -83,7 +83,7 @@ describe('P6 grandfathering — Settings schema 契约', () => {
     }
 
     // 旧配置：无 inheritance
-    expect(applyLegacyFlag({}).legacyPermissions ?? applyLegacyFlag({})._legacyPermissions).toBe(true);
+    expect(applyLegacyFlag({})._legacyPermissions).toBe(true);
     // 新配置：用户显式选了
     expect(applyLegacyFlag({ inheritance: 'strict-inherit' })._legacyPermissions).toBe(false);
     expect(applyLegacyFlag({ inheritance: 'child-narrow' })._legacyPermissions).toBe(false);

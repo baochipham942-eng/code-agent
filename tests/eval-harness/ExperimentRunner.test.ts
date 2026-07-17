@@ -100,7 +100,7 @@ describe('ExperimentRunner', () => {
 
   it('emits session, replay key, and telemetry completeness for real-agent-run trials', async () => {
     vi.mocked(runSwissCheese).mockResolvedValueOnce({
-      aggregateScore: 88,
+      scores: [], aggregateScore: 88,
       passed: true,
       consensusCount: 3,
     });
@@ -139,7 +139,7 @@ describe('ExperimentRunner', () => {
 
   it('ADR-036 F6/F7: 把 case 的 expectedOutput 喂给 judge（判对错而非判像不像）', async () => {
     vi.mocked(runSwissCheese).mockResolvedValueOnce({
-      aggregateScore: 90,
+      scores: [], aggregateScore: 90,
       passed: true,
       consensusCount: 4,
     });
@@ -161,12 +161,12 @@ describe('ExperimentRunner', () => {
   it('keeps raw real-agent-run case results failed when any trial is degraded despite high median score', async () => {
     vi.mocked(runSwissCheese)
       .mockResolvedValueOnce({
-        aggregateScore: 95,
+        scores: [], aggregateScore: 95,
         passed: true,
         consensusCount: 3,
       })
       .mockResolvedValueOnce({
-        aggregateScore: 99,
+        scores: [], aggregateScore: 99,
         passed: true,
         consensusCount: 3,
       });

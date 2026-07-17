@@ -30,8 +30,7 @@ export const ABGUI01: TestCase = {
   validations: [
     {
       type: 'output-contains',
-      contains: ['窗口', '屏幕', '应用', 'UI', '元素', '界面'],
-      matchMode: 'any',
+      containsAny: ['窗口', '屏幕', '应用', 'UI', '元素', '界面'],
       message: '应包含 UI 元素分析内容',
     },
   ],

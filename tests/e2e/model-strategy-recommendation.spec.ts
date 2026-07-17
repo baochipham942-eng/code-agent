@@ -19,7 +19,8 @@
 
 import { expect, test } from '@playwright/test';
 import { chromium, type Browser, type Page } from 'playwright';
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'stream';
 import { constants, createWriteStream } from 'fs';
 import { access, mkdir, mkdtemp, readdir, writeFile } from 'fs/promises';
 import http from 'http';
@@ -45,13 +46,13 @@ interface E2EEnv {
 
 type StartedServer = {
   baseUrl: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   output: () => string;
 };
 
 type StartedBrowser = {
   browser: Browser;
-  child?: ChildProcessWithoutNullStreams;
+  child?: ChildProcessByStdio<null, Readable, Readable>;
   endpoint?: string;
   output?: () => string;
 };
@@ -259,7 +260,7 @@ async function startBrowserExecutableOverCdp(params: {
   let lastError = '';
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      throw new Error(`${params.label} exited early with ${child.exitCode}\n${started.output()}`);
+      throw new Error(`${params.label} exited early with ${child.exitCode}\n${started.output?.()}`);
     }
     try {
       const { response, json } = await fetchJsonWithTimeout<{ webSocketDebuggerUrl?: string }>(
@@ -278,7 +279,7 @@ async function startBrowserExecutableOverCdp(params: {
   }
 
   await stopChrome(started).catch(() => undefined);
-  throw new Error(`Timed out waiting for ${params.label} CDP. Last error: ${lastError}\n${started.output()}`);
+  throw new Error(`Timed out waiting for ${params.label} CDP. Last error: ${lastError}\n${started.output?.()}`);
 }
 
 async function startChrome(): Promise<StartedBrowser> {

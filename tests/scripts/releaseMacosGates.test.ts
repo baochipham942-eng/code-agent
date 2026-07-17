@@ -30,6 +30,7 @@ type WorkflowJob = {
 
 type WorkflowFile = {
   on?: unknown;
+  permissions?: Record<string, string>;
   jobs?: Record<string, WorkflowJob>;
 };
 

@@ -18,6 +18,8 @@
 //
 // 清理记录：
 //   2026-07-18 建门，基线 1229（CI）。
+//   2026-07-18 B1：tsconfig.tests.json 开 allowImportingTsExtensions，消 82 处 TS5097（配置类，
+//               非 bug）——本地 1228→1146，基线 1229→1147。
 //
 // 自检 guard 有意 fail loud（[[gate-must-report-own-blindspot]]）：引擎二进制/配置失效、
 // 配置匹配 0 个文件（TS18003）、tsc 被 kill —— 任一发生都说明门失去测量能力，此时静默通过
@@ -31,7 +33,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const BASELINE_MAX = 1229;
+const BASELINE_MAX = 1147;
 const MAX_FINDINGS_TO_PRINT = 40;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

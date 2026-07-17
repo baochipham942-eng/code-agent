@@ -4,7 +4,6 @@
 
 // Chat Components
 export { ChatInput } from './chat/ChatInput';
-export { MessageBubble } from './chat/MessageBubble';
 export { ContextUsageIndicator } from './chat/ContextUsageIndicator';
 export type { ContextUsageIndicatorProps, ContextUsageSize } from './chat/ContextUsageIndicator';
 export { ThoughtDisplay, CompactThoughtDisplay } from './chat/ThoughtDisplay';

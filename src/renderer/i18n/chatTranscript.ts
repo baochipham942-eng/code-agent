@@ -193,6 +193,15 @@ turnRun: {
   resumeBadge: '可继续',
   outputsSignal: '{count} 个产出',
   toolsSignal: '{count} 次工具调用',
+},
+
+// 系统错误节点兜底文案（TraceNodeRenderer 的 node.subtype === 'error'）——
+// 分类错误走 humanizeToolError 已有文案，这里只兜分不出类别的情况 + 折叠按钮。
+systemError: {
+  fallbackSummary: '执行时出了问题',
+  fallbackDetail: '可以重试一次，或换个说法再试试。',
+  viewDetails: '查看详情',
+  hideDetails: '收起',
 }
 };
 
@@ -385,5 +394,15 @@ turnRun: {
   resumeBadge: 'resume',
   outputsSignal: '{count} outputs',
   toolsSignal: '{count} tool calls',
+},
+
+// System error node fallback copy (TraceNodeRenderer node.subtype === 'error') —
+// classified errors use humanizeToolError's existing copy; this only covers
+// the unclassified fallback + the collapse toggle.
+systemError: {
+  fallbackSummary: 'Something went wrong while running this',
+  fallbackDetail: 'Try again, or rephrase your request.',
+  viewDetails: 'View details',
+  hideDetails: 'Hide',
 }
 };

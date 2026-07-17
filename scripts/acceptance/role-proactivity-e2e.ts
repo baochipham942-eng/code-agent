@@ -19,7 +19,8 @@
 //   AC5 event 触发：跑长任务（spawn 研究员，≥5 迭代）→ run 结束后研究员自动醒来（履历出现 event 条目）
 // ============================================================================
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { access, appendFile, mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { constants, createWriteStream } from 'fs';
 import http from 'http';
@@ -54,7 +55,7 @@ const MAX_WAKES_PER_DAY = 4;
 type StartedServer = {
   baseUrl: string;
   token: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   output: () => string;
 };
 

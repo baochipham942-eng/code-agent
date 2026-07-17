@@ -109,7 +109,6 @@ async function main(): Promise<void> {
 
     const agent = new testing.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
-      generation: 'e2e-real-agent-replay-eval',
       modelConfig: {
         provider: 'openai',
         model: 'e2e-local-agent-model',

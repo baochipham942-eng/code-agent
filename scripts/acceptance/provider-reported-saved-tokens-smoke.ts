@@ -252,7 +252,10 @@ async function main(): Promise<void> {
   const liveResponse = getStringOption(parsed, 'live-response');
   const manualProvider = hasFlag(parsed, 'manual-provider');
   if (liveResponse) {
-    validateProviderReportedSavedTokensLiveGate({ manualProvider, env: process.env });
+    validateProviderReportedSavedTokensLiveGate({
+      manualProvider,
+      env: { CODE_AGENT_PROVIDER_SAVED_TOKENS_SMOKE: process.env.CODE_AGENT_PROVIDER_SAVED_TOKENS_SMOKE },
+    });
     const response = JSON.parse(await fs.readFile(liveResponse, 'utf8')) as unknown;
     const result = validateProviderReportedSavedTokensLiveResponse({ response, liveResponse });
 

@@ -1,4 +1,5 @@
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -102,7 +103,7 @@ try {
 }
 process.exit(finalExitCode);
 
-function startChild(args: string[]): ChildProcessWithoutNullStreams {
+function startChild(args: string[]): ChildProcessByStdio<null, Readable, Readable> {
   const isolatedDataDir = args.at(-1)!;
   return spawn(tsx, [childEntry, ...args], {
     cwd: root,
@@ -114,7 +115,7 @@ function startChild(args: string[]): ChildProcessWithoutNullStreams {
   });
 }
 
-async function waitForMarker(child: ChildProcessWithoutNullStreams, expected: string): Promise<Record<string, unknown>> {
+async function waitForMarker(child: ChildProcessByStdio<null, Readable, Readable>, expected: string): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let stdout = '';
     let stderr = '';
@@ -143,7 +144,7 @@ async function waitForMarker(child: ChildProcessWithoutNullStreams, expected: st
   });
 }
 
-async function forceKill(child: ChildProcessWithoutNullStreams): Promise<void> {
+async function forceKill(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F']);
   } else {
@@ -152,7 +153,7 @@ async function forceKill(child: ChildProcessWithoutNullStreams): Promise<void> {
   await waitForExit(child);
 }
 
-async function waitForExit(child: ChildProcessWithoutNullStreams): Promise<number | null> {
+async function waitForExit(child: ChildProcessByStdio<null, Readable, Readable>): Promise<number | null> {
   if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
   return new Promise((resolve) => child.once('exit', resolve));
 }

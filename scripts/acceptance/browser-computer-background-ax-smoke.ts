@@ -1,7 +1,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { execFile, spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { promisify } from 'util';
 import {
   finishWithError,
@@ -194,7 +195,7 @@ async function createTargetApp(tmpRoot: string): Promise<string> {
   return targetPath;
 }
 
-async function openTargetApp(targetPath: string, statePath: string): Promise<ChildProcessWithoutNullStreams> {
+async function openTargetApp(targetPath: string, statePath: string): Promise<ChildProcessByStdio<null, Readable, Readable>> {
   const child = spawn(targetPath, [statePath], {
     cwd: path.dirname(targetPath),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -258,7 +259,7 @@ async function activateFinder(): Promise<void> {
   }).catch(() => undefined);
 }
 
-async function cleanupTarget(targetPath: string, child: ChildProcessWithoutNullStreams | null): Promise<void> {
+async function cleanupTarget(targetPath: string, child: ChildProcessByStdio<null, Readable, Readable> | null): Promise<void> {
   if (child && child.exitCode === null && !child.killed) {
     child.kill('SIGTERM');
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -285,7 +286,7 @@ async function main(): Promise<void> {
   const context = makeToolContext();
   const failures: string[] = [];
   let targetPath: string | null = null;
-  let targetProcess: ChildProcessWithoutNullStreams | null = null;
+  let targetProcess: ChildProcessByStdio<null, Readable, Readable> | null = null;
   let frontmostBeforeAction: ComputerSurfaceSnapshot | null;
   let listResult: ToolExecutionResult;
   let typeResult: ToolExecutionResult | null = null;
@@ -376,14 +377,16 @@ async function main(): Promise<void> {
       buttonElement,
       type: typeResult ? {
         success: typeResult.success,
-        computerSurfaceMode: typeResult.metadata?.computerSurfaceMode ?? null,
+        // metadata is Record<string, unknown>; computerSurfaceMode is always a string mode id when present.
+        computerSurfaceMode: (typeResult.metadata?.computerSurfaceMode as string | undefined) ?? null,
         targetAxPath: getTargetAxPath(typeResult),
         traceId: getTrace(typeResult)?.id ?? null,
         traceMode: getTrace(typeResult)?.mode ?? null,
       } : null,
       click: clickResult ? {
         success: clickResult.success,
-        computerSurfaceMode: clickResult.metadata?.computerSurfaceMode ?? null,
+        // metadata is Record<string, unknown>; computerSurfaceMode is always a string mode id when present.
+        computerSurfaceMode: (clickResult.metadata?.computerSurfaceMode as string | undefined) ?? null,
         targetAxPath: getTargetAxPath(clickResult),
         traceId: getTrace(clickResult)?.id ?? null,
         traceMode: getTrace(clickResult)?.mode ?? null,

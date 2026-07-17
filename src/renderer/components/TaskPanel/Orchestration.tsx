@@ -49,10 +49,10 @@ import {
   buildContextTimeline,
   buildProvenanceEntries,
   formatTokens,
+  getPhaseMeta,
   getUsageTextClass,
   getUsageToneClass,
   isContextViewResponse,
-  phaseMeta,
   summarizeContextSources,
   toneClassMap,
 } from './orchestration/model';
@@ -93,8 +93,8 @@ export const Orchestration: React.FC = () => {
   const contextHealth = runtimeContextHealth ?? appContextHealth ?? null;
   const contextSources = useMemo(() => summarizeContextSources(messages), [messages]);
   const contextTimeline = useMemo(
-    () => buildContextTimeline(messages, contextView, contextHealth),
-    [messages, contextView, contextHealth],
+    () => buildContextTimeline(messages, contextView, contextHealth, t),
+    [messages, contextView, contextHealth, t],
   );
   const agentContextSnapshots = useMemo(
     () => agents.filter((agent) => Boolean(agent.contextSnapshot)),
@@ -141,7 +141,7 @@ export const Orchestration: React.FC = () => {
     ? 8
     : 0;
   const elapsed = startTime ? formatDuration(Date.now() - startTime) : '0s';
-  const phase = phaseMeta[executionPhase];
+  const phase = getPhaseMeta(executionPhase, t);
   const contextUsagePercent = contextView?.usagePercent ?? contextHealth?.usagePercent ?? 0;
   const contextTotalTokens = contextView?.totalTokens ?? contextHealth?.currentTokens ?? 0;
   const contextMaxTokens = contextView?.maxTokens ?? contextHealth?.maxTokens ?? 0;

@@ -17,7 +17,7 @@ import { SessionCreateBodySchema } from './sessionBodySchemas';
 import type { WebRouteLogger } from './routeTypes';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import {
-  mapDurableRunToSessionStatus,
+  projectDurableRunToSessionPayload,
   type DurableRunReadService,
 } from '../../host/app/durableRunReadService';
 
@@ -79,6 +79,46 @@ interface SessionsRouterDeps {
   getDurableRunReadService?: () => DurableRunReadService | undefined;
 }
 
+type DurableRestoredSessionPayload = Session & { messages: Message[]; durableWaitingInput?: true };
+
+function stripDurableWaitingInput<T extends { durableWaitingInput?: true }>(session: T): Omit<T, 'durableWaitingInput'> {
+  const { durableWaitingInput: _durableWaitingInput, ...rest } = session;
+  return rest;
+}
+
+async function withDurableSessionReplayPayload<T extends Session>(
+  session: T,
+  readService: DurableRunReadService | undefined,
+): Promise<T & { durableWaitingInput?: true }> {
+  const base = stripDurableWaitingInput(session as T & { durableWaitingInput?: true });
+  if (!readService) {
+    return base as T;
+  }
+  const run = await readService.readSessionReplay(session.id, () => ({
+    status: session.status === 'running' || session.status === 'paused' ? session.status : 'idle',
+    updatedAt: session.updatedAt,
+  }));
+  return {
+    ...base,
+    ...projectDurableRunToSessionPayload(run),
+  } as T & { durableWaitingInput?: true };
+}
+
+async function withDurableSessionListPayload(
+  sessions: unknown[],
+  readService: DurableRunReadService | undefined,
+): Promise<unknown[]> {
+  if (!readService) {
+    return sessions;
+  }
+  return Promise.all(sessions.map(async (session) => {
+    if (!session || typeof session !== 'object' || typeof (session as { id?: unknown }).id !== 'string') {
+      return session;
+    }
+    return withDurableSessionReplayPayload(session as Session, readService);
+  }));
+}
+
 function mapSupabaseMessage(row: SupabaseMessageRow): Pick<Message, 'id' | 'role' | 'content' | 'timestamp' | 'toolCalls' | 'artifacts'> {
   const artifacts = row.role === 'assistant' ? extractArtifacts(row.content) : [];
   return {
@@ -101,7 +141,8 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       if (sm) {
         const includeArchived = _req.query.includeArchived === 'true';
         const sessions = await sm.listSessions({ includeArchived });
-        res.json({ success: true, data: sessions });
+        const data = await withDurableSessionListPayload(sessions, deps.getDurableRunReadService?.());
+        res.json({ success: true, data });
         return;
       }
       // Supabase 降级：从云端读取会话列表
@@ -201,27 +242,23 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
       if (sm) {
         const session = await sm.restoreSession(sessionId);
         if (session) {
-          const readService = deps.getDurableRunReadService?.();
-          if (readService) {
-            const run = await readService.readSessionReplay(sessionId, () => ({
-              status: session.status === 'running' || session.status === 'paused' ? session.status : 'idle',
-              updatedAt: session.updatedAt,
-            }));
-            session.status = mapDurableRunToSessionStatus(run.status);
-          }
+          const sessionPayload: DurableRestoredSessionPayload = await withDurableSessionReplayPayload(
+            session,
+            deps.getDurableRunReadService?.(),
+          );
           // DB 路径找到了会话但消息可能为空 — 用内存缓存补充
           const cachedMessages = getSessionMessagesProjection(sessionId);
-          if (session.messages.length === 0 && cachedMessages) {
+          if (sessionPayload.messages.length === 0 && cachedMessages) {
             const memMessages = cachedMessages.map(m => ({
               ...m,
               toolCalls: m.toolCalls || [],
             }));
             if (memMessages.length > 0) {
               logger.info('GET /api/sessions/:id — DB messages empty, falling back to in-memory cache', { sessionId, memCount: memMessages.length });
-              session.messages = memMessages as import('../../shared/contract').Message[];
+              sessionPayload.messages = memMessages as import('../../shared/contract').Message[];
             }
           }
-          res.json({ success: true, data: session });
+          res.json({ success: true, data: sessionPayload });
           return;
         }
         // SM 找不到会话 — 不要直接返回 NOT_FOUND，继续尝试内存/Supabase 降级

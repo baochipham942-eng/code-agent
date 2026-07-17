@@ -2,6 +2,8 @@ import express from 'express';
 import http from 'http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionsRouter } from '../../../src/web/routes/sessions';
+import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
+import { resolveDurableRunRollout } from '../../../src/host/app/durableRunRollout';
 import {
   inMemorySessionsProjection as inMemorySessions,
   sessionMessagesProjection as sessionMessages,
@@ -22,6 +24,8 @@ interface SessionApiBody {
     }>;
     isArchived?: boolean;
     archivedAt?: number;
+    status?: string;
+    durableWaitingInput?: true;
   };
   error?: {
     code?: string;
@@ -117,6 +121,7 @@ const logger = {
 async function startSessionsApi(deps: {
   tryGetSessionManager: () => Promise<unknown>;
   getSupabaseForSession?: () => Promise<unknown>;
+  getDurableRunReadService?: () => DurableRunReadService | undefined;
 }) {
   const app = express();
   app.use(express.json());
@@ -124,6 +129,7 @@ async function startSessionsApi(deps: {
     logger,
     tryGetSessionManager: deps.tryGetSessionManager,
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
+    getDurableRunReadService: deps.getDurableRunReadService,
   }));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -174,6 +180,32 @@ async function fetchJson(pathname: string, init?: RequestInit) {
   };
 }
 
+function durableEnvelope(status: 'waiting' | 'running' | 'completed' | 'failed' | 'cancelled', sessionId = 'session-durable') {
+  return {
+    schemaVersion: 1 as const,
+    runId: `run-${status}`,
+    sessionId,
+    engine: { kind: 'native' as const },
+    status,
+    attempt: 1,
+    cursor: { nextEventSeq: 2, checkpointSeq: 1 },
+    ...(status === 'completed' || status === 'failed' || status === 'cancelled'
+      ? { terminal: { status, eventSeq: 1, at: 2 } }
+      : {}),
+    createdAt: 1,
+    updatedAt: 2,
+  };
+}
+
+function durableReadServiceFor(statusBySessionId: Record<string, ReturnType<typeof durableEnvelope> | null>) {
+  return new DurableRunReadService(
+    resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }),
+    {
+      getLatestBySession: vi.fn(async (sessionId: string) => statusBySessionId[sessionId] ?? null),
+    },
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   inMemorySessions.clear();
@@ -204,6 +236,110 @@ describe('createSessionsRouter', () => {
       data: [{ id: 'archived-session', title: 'Archived' }],
     });
     expect(listSessions).toHaveBeenCalledWith({ includeArchived: true });
+  });
+
+  it('adds durableWaitingInput to listed durable waiting sessions without changing the running projection', async () => {
+    const listSessions = vi.fn(async () => [
+      {
+        id: 'session-durable',
+        title: 'Waiting durable',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 10,
+        messageCount: 0,
+      },
+    ]);
+
+    await startSessionsApi({
+      tryGetSessionManager: async () => ({ listSessions }),
+      getDurableRunReadService: () => durableReadServiceFor({
+        'session-durable': durableEnvelope('waiting', 'session-durable'),
+      }),
+    });
+
+    const result = await fetchJson('/api/sessions');
+    const sessions = result.body.data as unknown as Array<{ id: string; status?: string; durableWaitingInput?: true }>;
+
+    expect(result.status).toBe(200);
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        id: 'session-durable',
+        status: 'running',
+        durableWaitingInput: true,
+      }),
+    ]);
+  });
+
+  it('does not add durableWaitingInput to running, terminal, rollout-off, or missing durable sessions', async () => {
+    const listSessions = vi.fn(async () => [
+      { id: 'session-running', title: 'Running', status: 'running', createdAt: 1, updatedAt: 10, messageCount: 0 },
+      { id: 'session-terminal', title: 'Terminal', status: 'running', createdAt: 1, updatedAt: 11, messageCount: 0 },
+      { id: 'session-missing', title: 'Missing', status: 'running', createdAt: 1, updatedAt: 12, messageCount: 0 },
+    ]);
+
+    await startSessionsApi({
+      tryGetSessionManager: async () => ({ listSessions }),
+      getDurableRunReadService: () => durableReadServiceFor({
+        'session-running': durableEnvelope('running', 'session-running'),
+        'session-terminal': durableEnvelope('completed', 'session-terminal'),
+        'session-missing': null,
+      }),
+    });
+
+    const result = await fetchJson('/api/sessions');
+    const sessions = result.body.data as unknown as Array<{ id: string; durableWaitingInput?: true }>;
+
+    expect(result.status).toBe(200);
+    expect(sessions).toHaveLength(3);
+    expect(sessions.every((session) => session.durableWaitingInput === undefined)).toBe(true);
+
+    await closeServer();
+    await startSessionsApi({
+      tryGetSessionManager: async () => ({
+        listSessions: vi.fn(async () => [
+          { id: 'session-rollout-off', title: 'Legacy', status: 'running', createdAt: 1, updatedAt: 13, messageCount: 0 },
+        ]),
+      }),
+      getDurableRunReadService: () => new DurableRunReadService(
+        resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'legacy' }),
+        {
+          getLatestBySession: vi.fn(async () => durableEnvelope('waiting', 'session-rollout-off')),
+        },
+      ),
+    });
+
+    const legacyResult = await fetchJson('/api/sessions');
+    const legacySessions = legacyResult.body.data as unknown as Array<{ id: string; durableWaitingInput?: true }>;
+    expect(legacyResult.status).toBe(200);
+    expect(legacySessions[0]).not.toHaveProperty('durableWaitingInput');
+  });
+
+  it('adds durableWaitingInput to restored durable waiting sessions and keeps session.status projected to running', async () => {
+    const restoreSession = vi.fn(async () => ({
+      id: 'session-durable',
+      title: 'DB session',
+      status: 'idle',
+      createdAt: 1,
+      updatedAt: 2,
+      messageCount: 0,
+      messages: [],
+    }));
+
+    await startSessionsApi({
+      tryGetSessionManager: async () => ({ restoreSession }),
+      getDurableRunReadService: () => durableReadServiceFor({
+        'session-durable': durableEnvelope('waiting', 'session-durable'),
+      }),
+    });
+
+    const result = await fetchJson('/api/sessions/session-durable');
+
+    expect(result.body.success).toBe(true);
+    expect(result.body.data).toEqual(expect.objectContaining({
+      id: 'session-durable',
+      status: 'running',
+      durableWaitingInput: true,
+    }));
   });
 
   it('lists in-memory sessions sorted by recency and filters archived sessions by default', async () => {

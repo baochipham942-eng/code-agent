@@ -5,7 +5,7 @@
 // - schema 字段名 / required / nested options enum / max-questions 校验
 // - **IPC 协议严格断言**（不可改动）：
 //   * channel name = 'user-question:ask' / 'user-question:response'
-//   * request shape: {id, questions, timestamp}
+//   * request shape: {id, sessionId?, questions, timestamp}
 //   * response shape: {requestId, answers}
 //   * webContents.send 的 channel 名 + payload 字段对齐 renderer
 // - 五链：参数校验 / canUseTool / abort / onProgress / 错误码
@@ -99,7 +99,7 @@ describe('AskUserQuestion IPC protocol invariants', () => {
     expect(IPC_CHANNELS.USER_QUESTION_RESPONSE).toBe('user-question:response');
   });
 
-  it('webContents.send(USER_QUESTION_ASK, request) shape = {id, questions, timestamp} + ipcHost.handle 注册 USER_QUESTION_RESPONSE', async () => {
+  it('webContents.send(USER_QUESTION_ASK, request) shape = {id, sessionId, questions, timestamp} + ipcHost.handle 注册 USER_QUESTION_RESPONSE', async () => {
     const window = { webContents: { send: sendMock } };
     getAllWindowsMock.mockReturnValue([window]);
     hasInteractiveRendererMock.mockReturnValue(true);
@@ -137,6 +137,7 @@ describe('AskUserQuestion IPC protocol invariants', () => {
     expect(channel).toBe('user-question:ask');
     expect(channel).toBe(IPC_CHANNELS.USER_QUESTION_ASK);
     expect(payload).toMatchObject({
+      sessionId: 'sess-1',
       questions: [
         expect.objectContaining({ question: 'q1?', header: 'h1' }),
       ],

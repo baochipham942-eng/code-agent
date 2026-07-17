@@ -8,6 +8,7 @@ import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
 import { createLogger } from '../services/infra/logger';
@@ -28,6 +29,13 @@ export const STDIO_FIRST_RUN_TIMEOUT = MCP_TIMEOUTS.FIRST_RUN;
 export const REMOTE_MCP_CONNECT_MAX_ATTEMPTS = 2;
 export const REMOTE_MCP_CONNECT_RETRY_DELAY_MS = 400;
 const mcpProxyAgents = new Map<string, ProxyAgent>();
+
+function headersWithoutAuthorization(headers: Record<string, string>): Record<string, string> | undefined {
+  const sanitized = Object.fromEntries(
+    Object.entries(headers).filter(([key]) => key.toLowerCase() !== 'authorization'),
+  );
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}
 
 function noProxyMatches(target: URL, rawNoProxy: string | undefined): boolean {
   if (!rawNoProxy) return false;
@@ -179,7 +187,7 @@ export function createStdioMCPEnv(
  */
 export function createTransport(
   config: MCPServerConfig,
-  options: { useProxy?: boolean } = {},
+  options: { useProxy?: boolean; authProvider?: OAuthClientProvider } = {},
 ): { transport: Transport; connectTimeout: number } {
   if (isHttpStreamableConfig(config)) {
     logger.info(`Using HTTP Streamable transport for ${config.name}: ${config.serverUrl}`);
@@ -189,22 +197,34 @@ export function createTransport(
     const proxyFetch = options.useProxy ? createRemoteMCPFetch(url) : undefined;
 
     if (config.headers) {
-      requestInit.headers = config.headers;
+      const headers = options.authProvider
+        ? headersWithoutAuthorization(config.headers)
+        : config.headers;
+      if (headers) {
+        requestInit.headers = headers;
+      }
     }
 
     const transport = new StreamableHTTPClientTransport(url, {
       requestInit,
       ...(proxyFetch ? { fetch: proxyFetch } : {}),
+      ...(options.authProvider ? { authProvider: options.authProvider } : {}),
     });
     return { transport, connectTimeout: SSE_CONNECT_TIMEOUT };
   } else if (isSSEConfig(config)) {
     logger.info(`Using SSE transport for ${config.name}: ${config.serverUrl}`);
 
     const url = new URL(config.serverUrl);
+    const requestInit: RequestInit = {};
     const eventSourceInit: EventSourceInit = {};
     const proxyFetch = options.useProxy ? createRemoteMCPFetch(url) : undefined;
 
+    if (config.headers) {
+      requestInit.headers = config.headers;
+    }
+
     const transport = new SSEClientTransport(url, {
+      ...(config.headers ? { requestInit } : {}),
       eventSourceInit,
       ...(proxyFetch ? { fetch: proxyFetch } : {}),
     });

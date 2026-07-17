@@ -16,6 +16,7 @@ export interface UserQuestion {
 
 export interface UserQuestionRequest {
   id: string;
+  sessionId?: string;
   questions: UserQuestion[];
   timestamp: number;
 }

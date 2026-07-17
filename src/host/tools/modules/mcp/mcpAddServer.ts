@@ -317,6 +317,7 @@ export async function executeMcpAddServer(
     args.headers && typeof args.headers === 'object' && !Array.isArray(args.headers)
       ? (args.headers as Record<string, string>)
       : undefined;
+  const auth = typeof args.auth === 'string' ? args.auth : undefined;
   const autoConnect = typeof args.auto_connect === 'boolean' ? args.auto_connect : true;
 
   const mcpClient = getMCPClient();
@@ -353,6 +354,14 @@ export async function executeMcpAddServer(
         meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
       };
     }
+    if (auth && (type !== 'http-streamable' || auth !== 'oauth')) {
+      return {
+        ok: false,
+        error: "auth must be 'oauth' for HTTP Streamable MCP servers",
+        code: 'INVALID_ARGS',
+        meta: buildMcpAddServerErrorMeta({ name, type, errorCode: 'INVALID_ARGS' }),
+      };
+    }
     if (type === 'sse') {
       serverConfig = {
         name,
@@ -366,6 +375,7 @@ export async function executeMcpAddServer(
         name,
         type: 'http-streamable',
         serverUrl,
+        ...(auth === 'oauth' ? { auth } : {}),
         headers,
         enabled: true,
       } as MCPHttpStreamableServerConfig;

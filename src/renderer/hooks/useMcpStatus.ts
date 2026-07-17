@@ -5,13 +5,15 @@ import ipcService from '../services/ipcService';
 export interface MCPServerStateSummary {
   config: {
     name: string;
-    type: 'stdio' | 'sse' | 'in-process';
+    type: 'stdio' | 'sse' | 'http-streamable' | 'in-process';
     enabled: boolean;
   };
   status: 'lazy' | 'disconnected' | 'connecting' | 'connected' | 'error';
   error?: string;
   toolCount: number;
   resourceCount: number;
+  authMode?: 'oauth';
+  hasOAuthTokens?: boolean;
 }
 
 export interface MCPStatusSummary {

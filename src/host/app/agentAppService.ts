@@ -75,7 +75,10 @@ import {
 import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine';
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { RunRegistry } from '../runtime/runRegistry';
-import type { DurableRunReadService } from './durableRunReadService';
+import {
+  projectDurableRunToSessionPayload,
+  type DurableRunReadService,
+} from './durableRunReadService';
 import { listTasks } from '../services/planning/taskStore';
 import { upgradeLegacyAnchor } from '../tools/artifacts/artifactLocatorHost';
 
@@ -150,6 +153,21 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       }
       throw error;
     }
+  }
+
+  private async withDurableSessionReplayPayload(session: Session): Promise<Session> {
+    if (!this.durableRunReadService) {
+      return session;
+    }
+    const { durableWaitingInput: _durableWaitingInput, ...base } = session;
+    const run = await this.durableRunReadService.readSessionReplay(session.id, () => ({
+      status: session.status === 'running' || session.status === 'paused' ? session.status : 'idle',
+      updatedAt: session.updatedAt,
+    }));
+    return {
+      ...base,
+      ...projectDurableRunToSessionPayload(run),
+    };
   }
 
   // === Helper: get orchestrator or throw ===
@@ -727,7 +745,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   }
 
   async listSessions(options?: { includeArchived?: boolean }): Promise<Session[]> {
-    return getSessionManager().listSessions({ includeArchived: options?.includeArchived });
+    const sessions = await getSessionManager().listSessions({ includeArchived: options?.includeArchived });
+    return Promise.all(sessions.map((session) => this.withDurableSessionReplayPayload(session)));
   }
 
   async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {

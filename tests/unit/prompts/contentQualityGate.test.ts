@@ -12,6 +12,7 @@ import {
 import {
   REMINDER_DEFINITIONS,
 } from '../../../src/host/prompts/reminderRegistry';
+import type { ReminderContext } from '../../../src/host/prompts/reminders/types';
 
 // ============================================================================
 // detectTaskFeatures — 意图识别
@@ -173,7 +174,7 @@ describe('reminderRegistry — 3 个新 P1 提醒定义', () => {
   });
 
   it('shouldInclude 只在对应 taskType 时返回 1.0', () => {
-    const baseCtx = {
+    const baseCtx: ReminderContext = {
       taskFeatures: {
         isMultiDimension: false,
         isComplexTask: false,
@@ -188,6 +189,7 @@ describe('reminderRegistry — 3 个新 P1 提醒定义', () => {
         isVideoTask: false,
         isFuzzyCodeReview: false,
         isFuzzyTroubleshooting: false,
+        isScreenCaptureTask: false,
         dimensions: [],
       },
       toolsUsedInTurn: [],

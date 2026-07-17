@@ -20,6 +20,9 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     pendingPermissionRequest: state.request,
     pendingPermissionSessionId: state.sessionId,
     setPendingPermissionRequest,
+    language: 'zh',
+    setLanguage: () => {},
+    cloudUIStrings: undefined,
   }),
 }));
 

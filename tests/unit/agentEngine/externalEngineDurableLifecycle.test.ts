@@ -40,7 +40,7 @@ function createKernel() {
     checksum: 'checksum', createdAt: input.now,
   }));
   const terminal = vi.fn(async (input: any) => ({ runId: input.runId, status: input.status }));
-  const recoverOnStartup = vi.fn(async () => []);
+  const recoverOnStartup = vi.fn(async (): Promise<RunRehydrationPlan[]> => []);
   const release = vi.fn(async () => true);
   const kernel = {
     createRun, createNativeRun, prepareOperation, checkpoint, terminal, recoverOnStartup,

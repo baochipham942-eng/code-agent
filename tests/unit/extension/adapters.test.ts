@@ -108,7 +108,7 @@ describe('pluginManifestToMetadata', () => {
   });
 
   it('source-specific 字段(permissions/nativeDeps/main)不进 metadata', () => {
-    const result = pluginManifestToMetadata(fullManifest()) as Record<string, unknown>;
+    const result = pluginManifestToMetadata(fullManifest()) as unknown as Record<string, unknown>;
     expect(result).not.toHaveProperty('permissions');
     expect(result).not.toHaveProperty('nativeDeps');
     expect(result).not.toHaveProperty('main');
@@ -182,7 +182,7 @@ describe('parsedSkillToMetadata', () => {
   });
 
   it('source-specific 字段(promptContent/allowedTools/bins/envVars 等)不进 metadata', () => {
-    const result = parsedSkillToMetadata(fullSkill()) as Record<string, unknown>;
+    const result = parsedSkillToMetadata(fullSkill()) as unknown as Record<string, unknown>;
     expect(result).not.toHaveProperty('promptContent');
     expect(result).not.toHaveProperty('basePath');
     expect(result).not.toHaveProperty('allowedTools');

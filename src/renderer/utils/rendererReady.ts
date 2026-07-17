@@ -22,6 +22,8 @@ export const RENDERER_READY_SETTLE_CAP_MS = 2500;
 
 /** 通知桌面壳 renderer 已就绪(可显示窗口)。幂等;非 Tauri 环境为 no-op。 */
 export async function signalRendererReady(): Promise<void> {
+  // recon: 打点放在 Tauri 判定之前，headless 浏览器测量也能拿到
+  performance.mark('boot:renderer-ready');
   if (signaled || !isTauriMode()) return;
   signaled = true;
   try {

@@ -23,7 +23,11 @@ concurrency:
 jobs:
   full:
     name: Full typecheck + full vitest
-    runs-on: ubuntu-latest
+    # macOS runner（公有仓免费）：全量套件的绿色档案建立在 darwin 上——
+    # bubblewrap 集成测试在 Linux 会真跑、runtime assets/folder-trust inode
+    # 语义也随平台漂,首跑 ubuntu 实测 10 个文件环境性红。与开发机同环境
+    # 才能让「本地全量绿=门绿」成立。
+    runs-on: macos-latest
     timeout-minutes: 40
     steps:
       - name: Checkout
@@ -36,23 +40,30 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        # 同 swarm-ci：lockfile 生成于 macOS，补 linux rollup binary；
-        # --no-save --no-package-lock 保证 lockfile 不被改。
-        run: |
-          npm ci --ignore-scripts
-          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
+        # lockfile 生成于 macOS（darwin-arm64 rollup binary 已在 lockfile 内），
+        # macOS runner 无需 linux binary 补装。
+        run: npm ci --ignore-scripts
 
       - name: Install better-sqlite3 native binding
-        # 同 swarm-ci smoke：prebuild-install 拉当前 Node ABI 的预编译 binary；
-        # 失败静默 fallback in-memory（本门目标是组合断裂检测，不是 sqlite 真路径验证）。
+        # --ignore-scripts 跳过了 prebuild-install hook；失败静默 fallback
+        # in-memory（本门目标是组合断裂检测，不是 sqlite 真路径验证）。
         working-directory: node_modules/better-sqlite3
         run: ../.bin/prebuild-install || true
 
+      - name: Install Playwright Chromium
+        # browser 族测试(mediaAssetLightbox/artifactPreviewHealth/designPreviewRepair/
+        # goalCompletionGate 冒烟)依赖内置 Chromium,runner 上缺席会连环红。
+        run: npx playwright install chromium
+
       - name: Full typecheck (root tsc --noEmit)
+        # macos-latest runner 7GB,V8 默认老生代堆顶不够本仓 tsc(首跑 Abort trap 6/exit 134 OOM)
         run: npm run typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Full vitest
         # --retry=1 与 swarm-ci flake 约定一致，吸收 game/browser 族已知负载抖动。
         run: npx vitest run --retry=1
         env:
           CI: 'true'
+          NODE_OPTIONS: --max-old-space-size=6144

@@ -38,7 +38,6 @@ describe('exportSessionToMarkdown after managed profile cookie import (ADR-041 P
         selectedEngine: 'managed',
         reason: 'explicit_managed',
         requestedEngine: 'auto',
-        relayAttached: false,
         recovery: null,
       },
       result: {
@@ -324,7 +323,6 @@ describe('exportSessionToMarkdown after managed profile cookie import (ADR-041 P
         selectedEngine: 'relay',
         reason: 'explicit_relay',
         requestedEngine: 'relay',
-        relayAttached: true,
         recovery: null,
       },
       result: {

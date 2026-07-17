@@ -4,6 +4,7 @@ import {
   runPreCompactHooks,
   type CompactionHookManagerLike,
 } from '../../../src/host/context/compactionHooks';
+import type { Message } from '../../../src/shared/contract';
 
 const messages = [
   {
@@ -75,7 +76,7 @@ describe('compaction hook helpers', () => {
       postRecords: [] as string[],
       triggerPreCompact(
         sessionId: string,
-        hookMessages: typeof messages,
+        hookMessages: Message[],
         tokenCount: number,
         targetTokenCount: number
       ) {

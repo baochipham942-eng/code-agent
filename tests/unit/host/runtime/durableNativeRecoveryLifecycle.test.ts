@@ -293,7 +293,7 @@ describe('durable Native recovery lifecycle', () => {
     } as unknown as RunRegistry;
     const ports: NativeRecoveryHostPorts = {
       continuationExecutor: 'available',
-      resolveWorkspace: vi.fn(async () => ({ ok: true, root: '/repo', cwd: '/repo', fingerprint: 'fp' })),
+      resolveWorkspace: vi.fn(async (_descriptor: NativeRecoveryDescriptor) => ({ ok: true as const, root: '/repo', cwd: '/repo', fingerprint: 'fp' })),
       model: {
         dispatchPrepared: vi.fn(async () => ({ resultRef: 'unused' })),
         queryResult: vi.fn(async () => null),
@@ -301,7 +301,7 @@ describe('durable Native recovery lifecycle', () => {
         retrySafe: vi.fn(async () => ({ resultRef: 'unused' })),
       },
       tool: { queryResult: vi.fn(async () => null) },
-      approval: { read: vi.fn(async () => 'pending') },
+      approval: { read: vi.fn(async (_approvalId: string) => 'pending' as const) },
     };
 
     await expect(new NativeRecoveryHost(registry, ports).createHandler().recover(reviewPlan(), 10))

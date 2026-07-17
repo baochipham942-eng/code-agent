@@ -107,6 +107,7 @@ function makeRepo(detail: SwarmRunDetail | null, runs: SwarmRunListItem[] = []):
     appendEvent: () => {},
     listRuns: (limit: number) => runs.slice(0, limit),
     getRunDetail: () => detail,
+    replaceRunCache: () => {},
     deleteRun: () => true,
     clearAll: () => {},
   };
@@ -253,7 +254,7 @@ describe('TaskStatusProvider.listProjects（隐私契约）', () => {
       project: baseProject,
       goals: [
         { id: 'g1', projectId: 'p1', goal: 'SECRET_GOAL_TEXT', verify: 'SECRET_VERIFY', review: 'SECRET_REVIEW', status: 'active', lastRunSessionId: null, createdAt: 1, updatedAt: 2 },
-        { id: 'g2', projectId: 'p1', goal: 'g2text', verify: null, review: null, status: 'completed', lastRunSessionId: 's9', createdAt: 1, updatedAt: 2 },
+        { id: 'g2', projectId: 'p1', goal: 'g2text', verify: null, review: null, status: 'met', lastRunSessionId: 's9', createdAt: 1, updatedAt: 2 },
       ],
       roles: [{}, {}],
       sessionIds: ['s1', 's2', 's3'],
@@ -279,10 +280,10 @@ describe('TaskStatusProvider.listProjects（隐私契约）', () => {
 
     expect(p.name).toBe('My Project'); // 名称作为协调身份标识保留
     expect(p.goalCount).toBe(2);
-    expect(p.goalStatusCounts).toEqual({ active: 1, completed: 1 });
+    expect(p.goalStatusCounts).toEqual({ active: 1, met: 1 });
     expect(p.roleCount).toBe(2);
     expect(p.sessionCount).toBe(3);
-    expect(p.goals.map((g) => g.status)).toEqual(['active', 'completed']);
+    expect(p.goals.map((g) => g.status)).toEqual(['active', 'met']);
     expect(p.goals[0].goal).toBeUndefined();
   });
 

@@ -49,15 +49,15 @@ function fixture() {
   };
   const protocol: McpTaskProtocol = {
     createTask: vi.fn(async () => ({
-      taskId: 'task-provider-1', status: 'working', ttl: 60_000,
+      taskId: 'task-provider-1', status: 'working' as const, ttl: 60_000,
       createdAt: '2026-07-11T00:00:00Z', lastUpdatedAt: '2026-07-11T00:00:00Z',
     })),
     getTask: vi.fn(async () => ({
-      taskId: 'task-provider-1', status: 'working', ttl: 60_000,
+      taskId: 'task-provider-1', status: 'working' as const, ttl: 60_000,
       createdAt: '2026-07-11T00:00:00Z', lastUpdatedAt: '2026-07-11T00:00:01Z',
     })),
     cancelTask: vi.fn(async () => ({
-      taskId: 'task-provider-1', status: 'cancelled', ttl: 60_000,
+      taskId: 'task-provider-1', status: 'cancelled' as const, ttl: 60_000,
       createdAt: '2026-07-11T00:00:00Z', lastUpdatedAt: '2026-07-11T00:00:02Z',
     })),
     resolveTaskResult: vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] })),

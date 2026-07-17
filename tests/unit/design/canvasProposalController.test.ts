@@ -1,8 +1,8 @@
 // ADR-026 D2-A：Apply/Reject 落地逻辑（依赖注入）。
 import { describe, it, expect, vi } from 'vitest';
 import { applyProposal, rejectProposal } from '../../../src/renderer/components/design/canvasProposalController';
-import type { CanvasOpProposal } from '../../../src/shared/contract/canvasProposal';
-import type { ProposalApplyResult } from '../../../src/renderer/components/design/applyCanvasProposal';
+import type { CanvasOpProposal, ProposeGenerateImageOp } from '../../../src/shared/contract/canvasProposal';
+import type { ProposalApplyResult, ProposalApplyOpts } from '../../../src/renderer/components/design/applyCanvasProposal';
 
 const proposal: CanvasOpProposal = {
   requestId: 'cp-1',
@@ -12,8 +12,8 @@ const proposal: CanvasOpProposal = {
 
 function deps(result: ProposalApplyResult, discard: { applied: number; skipped: number } = { applied: 0, skipped: 0 }) {
   return {
-    applyBatch: vi.fn(() => result),
-    applyDiscards: vi.fn(() => discard),
+    applyBatch: vi.fn((_ops: CanvasOpProposal['ops'], _opts: ProposalApplyOpts) => result),
+    applyDiscards: vi.fn((_nodeIds: string[]) => discard),
     save: vi.fn(),
     respond: vi.fn(),
     genId: (k: string, i: number) => `${k}-${i}`,
@@ -142,9 +142,9 @@ describe('applyProposal 二刀：含付费生成（Layer2）', () => {
     let genCall = 0;
     return {
       order,
-      applyBatch: vi.fn(() => { order.push('applyBatch'); return result; }),
-      applyDiscards: vi.fn(() => { order.push('applyDiscards'); return discard; }),
-      generate: vi.fn(async () => { order.push('generate'); return genResults[genCall++] ?? { ok: false }; }),
+      applyBatch: vi.fn((_ops: CanvasOpProposal['ops'], _opts: ProposalApplyOpts) => { order.push('applyBatch'); return result; }),
+      applyDiscards: vi.fn((_nodeIds: string[]) => { order.push('applyDiscards'); return discard; }),
+      generate: vi.fn(async (_op: ProposeGenerateImageOp) => { order.push('generate'); return genResults[genCall++] ?? { ok: false }; }),
       clearHistory: vi.fn(() => { order.push('clearHistory'); }),
       save: vi.fn(() => { order.push('save'); }),
       respond: vi.fn(),

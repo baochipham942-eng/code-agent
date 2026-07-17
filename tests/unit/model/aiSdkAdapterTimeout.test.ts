@@ -7,7 +7,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { streamText, generateText } from 'ai';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import type { StreamChunk, StreamCallback } from '../../../src/host/model/types';
-import type { ModelConfig } from '../../../src/host/shared/contract';
+import type { ModelConfig } from '../../../src/shared/contract';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),

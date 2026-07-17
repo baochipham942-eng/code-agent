@@ -661,43 +661,46 @@ describe('Agent trajectory G0/G1/G2 gate', () => {
   });
 
   it('builds P3 collection blockers with affected session ids by scope', () => {
-    const blockers = buildP3CollectionBlockers({
-      reviewItems: [
-        {
-          sessionId: 'session-agent-1',
-          reviewScope: 'agent_candidate',
-          currentDatasetRole: 'diagnostic',
-          suggestedAction: 'review_diagnostic',
-          priority: 'high',
-          tier: 'G1',
-          taskKind: 'search',
-          collectionSource: 'audit_backfill',
-          failures: ['missing_tool_schemas', 'missing_tool_definition'],
-        },
-        {
-          sessionId: 'session-agent-2',
-          reviewScope: 'agent_candidate',
-          currentDatasetRole: 'core_eval',
-          suggestedAction: 'verify_core_eval',
-          priority: 'medium',
-          tier: 'G2',
-          taskKind: 'coding',
-          collectionSource: 'audit_backfill',
-          failures: ['missing_tool_schemas'],
-        },
-        {
-          sessionId: 'session-excluded',
-          reviewScope: 'excluded_control',
-          currentDatasetRole: 'excluded',
-          suggestedAction: 'confirm_excluded',
-          priority: 'low',
-          tier: 'G0',
-          taskKind: 'ordinary_chat',
-          collectionSource: 'audit_backfill',
-          failures: ['missing_tool_schemas', 'ordinary_chat_no_tool'],
-        },
-      ],
-    });
+    // buildP3CollectionBlockers 只投影 { sessionId, reviewScope, failures }（比 ReviewPacketItem
+    // 窄很多，ReviewPacketItem 本身在 scripts/export-agent-trajectories.ts 里未导出）。这里的
+    // fixture 沿用完整 ReviewPacketItem 形状（其他用例复用），先赋给未标注类型的局部变量，
+    // 让多余字段走结构兼容检查而非 fresh 字面量的 excess-property 检查。
+    const reviewItems = [
+      {
+        sessionId: 'session-agent-1',
+        reviewScope: 'agent_candidate' as const,
+        currentDatasetRole: 'diagnostic',
+        suggestedAction: 'review_diagnostic',
+        priority: 'high',
+        tier: 'G1',
+        taskKind: 'search',
+        collectionSource: 'audit_backfill',
+        failures: ['missing_tool_schemas', 'missing_tool_definition'],
+      },
+      {
+        sessionId: 'session-agent-2',
+        reviewScope: 'agent_candidate' as const,
+        currentDatasetRole: 'core_eval',
+        suggestedAction: 'verify_core_eval',
+        priority: 'medium',
+        tier: 'G2',
+        taskKind: 'coding',
+        collectionSource: 'audit_backfill',
+        failures: ['missing_tool_schemas'],
+      },
+      {
+        sessionId: 'session-excluded',
+        reviewScope: 'excluded_control' as const,
+        currentDatasetRole: 'excluded',
+        suggestedAction: 'confirm_excluded',
+        priority: 'low',
+        tier: 'G0',
+        taskKind: 'ordinary_chat',
+        collectionSource: 'audit_backfill',
+        failures: ['missing_tool_schemas', 'ordinary_chat_no_tool'],
+      },
+    ];
+    const blockers = buildP3CollectionBlockers({ reviewItems });
 
     expect(blockers[0]).toMatchObject({
       failure: 'missing_tool_schemas',

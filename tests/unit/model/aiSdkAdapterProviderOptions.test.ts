@@ -230,7 +230,9 @@ describe('inferenceViaAiSdk provider options', () => {
         properties: { path: { type: 'string' } },
         required: ['path'],
       },
-    } as ToolDefinition;
+      requiresPermission: false,
+      permissionLevel: 'read',
+    };
 
     await inferenceViaAiSdk([{ role: 'user', content: 'read file' }], [readTool], {
       provider: 'qwen',

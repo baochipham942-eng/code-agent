@@ -20,9 +20,9 @@ import {
   compressMessages,
   ContextCompressor,
   DEFAULT_STRATEGIES,
-  type Message,
   type CompressionResult,
 } from '../../../src/host/context/compressor';
+import type { Message } from '../../../src/host/context/tokenEstimator';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 
 describe('ContextCompressor', () => {

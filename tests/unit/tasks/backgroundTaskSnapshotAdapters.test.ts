@@ -6,8 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getAllBackgroundTasks: vi.fn(),
   getAllPtySessions: vi.fn(),
-  onBackgroundTaskLifecycleEvent: vi.fn(() => () => {}),
-  onPtySessionLifecycleEvent: vi.fn(() => () => {}),
+  onBackgroundTaskLifecycleEvent: vi.fn((_listener: (event: BackgroundTaskLifecycleEvent) => void) => () => {}),
+  onPtySessionLifecycleEvent: vi.fn((_listener: (event: PtySessionLifecycleEvent) => void) => () => {}),
 }));
 
 vi.unmock('better-sqlite3');
@@ -26,6 +26,10 @@ import {
   installBackgroundTaskEventAdapters,
   syncBackgroundTaskSnapshotsToLedger,
 } from '../../../src/host/task/backgroundTaskSnapshotAdapters';
+import type {
+  BackgroundTaskLifecycleEvent,
+  PtySessionLifecycleEvent,
+} from '../../../src/host/tools/modules/shell/backgroundTaskSources';
 
 describe('backgroundTaskSnapshotAdapters', () => {
   beforeEach(() => {

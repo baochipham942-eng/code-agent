@@ -81,6 +81,7 @@ describe('StandaloneAgentAdapter harness override scope', () => {
       workingDirectory: '/tmp',
       modelConfig: { provider: 'mock', model: 'mock-model' },
       harness: {
+        name: 'override-scope-test',
         compressionPipeline: false,
         scaffoldProfile: true,
         thinkingInjection: false,

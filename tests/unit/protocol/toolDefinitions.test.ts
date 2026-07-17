@@ -274,6 +274,7 @@ describe('toolDefinitions deferred loading', () => {
       description: 'Bad metadata',
       score: 1,
       source: 'builtin',
+      tags: [],
       loadable: true,
       canonicalInvocation: 'phantom_tool',
     };

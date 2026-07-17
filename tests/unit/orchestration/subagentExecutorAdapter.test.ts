@@ -5,6 +5,7 @@ import {
   type GraphExecutorContext,
   type GraphNode,
 } from '../../../src/host/orchestration';
+import type { SubagentExecutionRequest } from '../../../src/host/agent/subagentExecutorTypes';
 
 function graphContext(signal: AbortSignal): GraphExecutorContext {
   return {
@@ -34,7 +35,7 @@ const node: GraphNode = {
 
 describe('SubagentExecutorAdapter', () => {
   it('preserves protocol-native run/session/workspace/cwd/trace and node cancel signal', async () => {
-    const execute = vi.fn(async () => ({
+    const execute = vi.fn(async (_request: SubagentExecutionRequest) => ({
       success: true, output: 'done', toolsUsed: ['Read'], iterations: 1,
     }));
     const controller = new AbortController();
@@ -58,8 +59,9 @@ describe('SubagentExecutorAdapter', () => {
           processInstanceId: 'process',
           sessionId: graph.sessionId,
           runId: graph.runId,
-          traceFlags: '01',
-          tracestate: undefined,
+          workspaceFingerprint: 'fp',
+          traceFlags: 1,
+          traceState: undefined,
           parentRunId: undefined,
         } : undefined,
       }),

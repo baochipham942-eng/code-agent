@@ -112,7 +112,7 @@ describe('classifyIntent — Lightweight Agent Routing', () => {
     });
 
     it('does not memoize failure fallbacks so the next call can retry', async () => {
-      quickTaskMock.mockResolvedValueOnce({ success: false, content: null, error: 'boom' });
+      quickTaskMock.mockResolvedValueOnce({ success: false, content: undefined, error: 'boom' });
       quickTaskMock.mockResolvedValueOnce({
         success: true,
         content: '{"intent":"code","references_past_context":true}',
@@ -172,7 +172,7 @@ describe('classifyIntent — Lightweight Agent Routing', () => {
     });
 
     it('should default to general when LLM returns empty content', async () => {
-      quickTaskMock.mockResolvedValueOnce({ success: true, content: null });
+      quickTaskMock.mockResolvedValueOnce({ success: true, content: undefined });
       const result = await classifyIntent('please classify this ambiguous input', mockRouter);
       expect(result).toEqual({ intent: 'general', references_past_context: false });
     });

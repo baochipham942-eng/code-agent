@@ -9,7 +9,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { streamText } from 'ai';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import type { ModelMessage, StreamCallback } from '../../../src/host/model/types';
-import type { ModelConfig, ToolDefinition } from '../../../src/host/shared/contract';
+import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -40,7 +40,9 @@ const TASK_TOOL: ToolDefinition = {
   name: 'Task',
   description: 'launch a subagent',
   inputSchema: { type: 'object', properties: { subagent_type: { type: 'string' } }, required: [] },
-} as ToolDefinition;
+  requiresPermission: true,
+  permissionLevel: 'execute',
+};
 
 // 流只发一个 finish，让 streamViaAiSdk 直接收尾返回（本测试只关心传入的 messages）。
 function finishOnlyStream() {

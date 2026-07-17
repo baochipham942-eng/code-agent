@@ -34,7 +34,9 @@ describe('Generative UI contract', () => {
 
   it('rejects arbitrary code and approval intents', () => {
     const spec = validSpec();
-    spec.components[0].props = { command: 'rm -rf /' };
+    // props 的静态类型来自 validSpec() 字面量推断（真实契约是 Record<string, unknown>），
+    // 这里刻意构造运行时应被拒绝的畸形 payload，走 JSON.stringify 后交给字符串校验器判定。
+    spec.components[0].props = { command: 'rm -rf /' } as unknown as typeof spec.components[0]['props'];
     spec.components[0].actions = [{
       event: 'submit',
       intent: 'approval.respond',
@@ -52,7 +54,7 @@ describe('Generative UI contract', () => {
     expect(parseNeoUIModelSpec(JSON.stringify(nodeField))).toMatchObject({ success: false });
 
     const urlAlias = validSpec();
-    urlAlias.components[0].props = { imageURL: 'https://attacker.example/pixel', onClick: 'steal()' };
+    urlAlias.components[0].props = { imageURL: 'https://attacker.example/pixel', onClick: 'steal()' } as unknown as typeof urlAlias.components[0]['props'];
     expect(parseNeoUIModelSpec(JSON.stringify(urlAlias))).toMatchObject({ success: false });
 
     const actionField = validSpec();

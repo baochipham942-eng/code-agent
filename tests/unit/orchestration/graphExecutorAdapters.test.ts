@@ -43,7 +43,7 @@ describe('remaining Graph executor adapters', () => {
 
   it('maps external lifecycle identity and refuses unsafe recovery', async () => {
     const lifecycle = { runId: 'run', sessionId: 'session', attempt: 1, terminateProcess: vi.fn(async () => {}) };
-    const launch = vi.fn(async () => ({ runId: 'run', sessionId: 'session', engine: 'codex_cli', status: 'completed', outputText: 'ok' }));
+    const launch = vi.fn(async () => ({ runId: 'run', sessionId: 'session', engine: 'codex_cli' as const, status: 'completed' as const, outputText: 'ok' }));
     const adapter = new ExternalEngineExecutor({ resolve: () => ({ lifecycle: lifecycle as never, launch }) });
     await expect(adapter.execute(node('external_engine', { engine: 'codex_cli' }), context())).resolves.toMatchObject({
       status: 'completed', checkpoint: { engine: 'codex_cli', runId: 'run', attempt: 1 },

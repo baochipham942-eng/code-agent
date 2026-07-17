@@ -9,19 +9,19 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as os from 'os';
 import * as path from 'path';
 import type { BrowserArtifactSummary, BrowserTargetRef } from '../../services/infra/browserService.js';
-import { browserService, redactBrowserWorkbenchTraceParams } from '../../services/infra/browserService.js';
+import { browserService } from '../../services/infra/browserService.js';
 import { getBrowserService } from '../../services/infra/browserPool.js';
 import { createLogger } from '../../services/infra/logger';
 import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
-import { persistBrowserComputerProofFromResult } from '../../session/browserComputerProofStore';
-import { attachBrowserActionProof } from '../../../shared/utils/browserComputerRedaction';
-import { buildAgentPointerEventFromToolCall } from '../../../shared/utils/agentPointer';
 import {
   appendBrowserWorkbenchNote,
   buildBrowserWorkbenchBlockedResult,
   ensureManagedBrowserSessionForWorkbench,
   evaluateBrowserWorkbenchPolicy,
 } from './browserWorkbenchIntent';
+import { executeBrowserProfileAction } from './browserProfileActions';
+import { maybeDispatchRelayBrowserAction } from './browserEngineDispatch';
+import { finalizeBrowserActionResult } from './browserActionFinalize';
 
 const logger = createLogger('BrowserAction');
 
@@ -51,6 +51,9 @@ type BrowserActionType =
   | 'get_account_state'
   | 'export_storage_state'
   | 'import_storage_state'
+  | 'list_profiles'
+  | 'import_profile_cookies'
+  | 'clear_cookies'
   | 'wait_for_download'
   | 'upload_file'
   | 'wait'
@@ -77,6 +80,8 @@ const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
   'get_account_state',
   'export_storage_state',
   'import_storage_state',
+  'import_profile_cookies',
+  'clear_cookies',
   'wait_for_download',
   'upload_file',
   'wait',
@@ -85,61 +90,12 @@ const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
 
 export const browserActionTool: Tool = {
   name: 'browser_action',
-  description: `Control a browser for web automation and testing.
+  description: `Control a browser for web automation and testing (tabs, click/type, screenshots, DOM/a11y snapshots, forms, uploads/downloads, account state).
 
-Use this tool to:
-- Launch/close browser
-- Navigate to URLs and interact with web pages
-- Click elements, type text, fill forms
-- Take screenshots for visual verification
-- Read page content and find elements
-
-Routing contract:
-- Prefer lighter web_fetch/http/search/read tools for plain single-URL reading, article summaries, static page extraction, or URL lists.
-- Use browser_action when the task needs login/session state, form filling, clicking, upload/download, multi-page navigation, dynamic page state, screenshots, or visual verification.
-- Start with get_content/get_dom_snapshot/get_a11y_snapshot when possible; after a mutating browser action, refresh the DOM/a11y evidence before claiming the final page state.
-
-Actions:
-- launch: Start isolated managed browser (headless by default; set CODE_AGENT_BROWSER_VISIBLE=1 for visible debugging)
-- close: Close browser
-- new_tab: Open new tab (url optional)
-- close_tab: Close a tab
-- list_tabs: List all open tabs
-- switch_tab: Switch to a specific tab
-- navigate: Go to URL
-- back/forward/reload: Navigation controls
-- set_viewport: Switch the managed browser viewport
-- click: Click element by selector
-- click_text: Click element by text content
-- type: Type text into element
-- press_key: Press keyboard key (Enter, Tab, Escape, etc.)
-- scroll: Scroll page (up/down)
-- screenshot: Capture page screenshot (with optional AI analysis)
-- get_content: Get page text and links
-- get_elements: Find elements by selector
-- get_dom_snapshot: Get structured headings and interactive elements
-- get_a11y_snapshot: Get accessibility snapshot when available, with DOM fallback
-- get_workbench_state: Return managed browser session/workbench state
-- get_account_state: Return cookie/storage summary without values
-- export_storage_state: Save Playwright storageState to a local artifact file
-- import_storage_state: Import cookies and storage seed from a local storageState file
-- wait_for_download: Click an element and save the completed download as an artifact
-- upload_file: Set a file input or file chooser target to a user-approved file
-- wait: Wait for element or timeout
-- fill_form: Fill multiple form fields
-- get_logs: Get recent browser operation logs (for debugging)
-
-All operations return detailed logs for transparency.
-
-Examples:
-- {"action": "launch"}
-- {"action": "new_tab", "url": "https://example.com"}
-- {"action": "click", "selector": "button.submit"}
-- {"action": "click_text", "text": "Sign In"}
-- {"action": "type", "selector": "#search", "text": "hello"}
-- {"action": "screenshot"}
-- {"action": "screenshot", "analyze": true, "prompt": "描述页面内容"}
-- {"action": "get_content"}`,
+Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state.
+engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
+Profile login reuse: list_profiles; import_profile_cookies requires userConfirmed=true (Browser Surface); clear_cookies clears managed profile cookies. Never log cookie values.
+storageState file path: export_storage_state / import_storage_state for CI/scripts.`,
   requiresPermission: true,
   permissionLevel: 'execute',
   inputSchema: {
@@ -153,6 +109,7 @@ Examples:
           'click', 'click_text', 'type', 'press_key', 'scroll',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
+          'list_profiles', 'import_profile_cookies', 'clear_cookies',
           'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs'
         ],
         description: 'The browser action to perform',
@@ -231,6 +188,29 @@ Examples:
         type: 'string',
         description: 'Reference to a secret value for type actions, e.g. env:CODE_AGENT_BROWSER_SECRET_PASSWORD. The secret value is never returned in output.',
       },
+      engine: {
+        type: 'string',
+        enum: ['auto', 'managed', 'relay'],
+        description:
+          'ADR-041 browser engine. auto (default) routes by isolation/login intent; managed uses Neo isolated browser; relay drives an attached real Chrome tab. Explicit managed/relay never silently switches engines.',
+      },
+      source: {
+        type: 'string',
+        description: 'Browser profile source for list_profiles/import_profile_cookies (chrome, edge, brave, arc, …)',
+      },
+      profileId: {
+        type: 'string',
+        description: 'Browser profile id for import_profile_cookies (e.g. Default, Profile 1)',
+      },
+      domainAllowlist: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional domain allowlist for import_profile_cookies',
+      },
+      userConfirmed: {
+        type: 'boolean',
+        description: 'Required true for import_profile_cookies — only set after explicit user approval (ADR-041)',
+      },
     },
     required: ['action'],
   },
@@ -279,6 +259,17 @@ Examples:
     }
 
     const workbenchNotes: Array<string | null | undefined> = [workbenchPolicy.note];
+    const relayDispatch = await maybeDispatchRelayBrowserAction({
+      action,
+      params,
+      url,
+      executionIntent: context.executionIntent,
+      context,
+    });
+    if (relayDispatch) {
+      return relayDispatch;
+    }
+
     if (workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId }));
     }
@@ -616,6 +607,15 @@ Examples:
           };
         }
 
+        case 'list_profiles':
+        case 'import_profile_cookies':
+        case 'clear_cookies':
+          return executeBrowserProfileAction({
+            action,
+            browserService,
+            params,
+          });
+
         case 'wait_for_download': {
           if (!selector && !targetRef) {
             return { success: false, error: 'selector or targetRef required for wait_for_download' };
@@ -929,41 +929,28 @@ function withWorkbenchTrace(
   trace: ReturnType<typeof browserService.finishTrace>,
   context?: ToolContext,
 ): ToolExecutionResult {
-  const metadata = { ...(result.metadata || {}) };
-  const pointerEvent = buildAgentPointerEventFromToolCall({
-    id: trace.id,
-    name: trace.toolName || 'browser_action',
-    arguments: trace.params || {},
-    result: {
-      success: result.success,
-      error: result.error,
-      metadata: {
-        ...metadata,
-        traceId: trace.id,
-        workbenchTrace: trace,
-      },
+  return finalizeBrowserActionResult({
+    result,
+    action: typeof trace.action === 'string' ? trace.action : 'unknown',
+    params: (trace.params || {}) as Record<string, unknown>,
+    context,
+    trace: {
+      id: trace.id,
+      toolName: trace.toolName || 'browser_action',
+      action: typeof trace.action === 'string' ? trace.action : 'unknown',
+      params: (trace.params || {}) as Record<string, unknown>,
+      startedAtMs: trace.startedAtMs,
+      completedAtMs: trace.completedAtMs ?? null,
+      success: trace.success ?? null,
+      error: trace.error ?? null,
+      provider: trace.provider ?? null,
+      mode: trace.mode ?? null,
+      screenshotPath: trace.screenshotPath ?? null,
     },
+    provider: typeof result.metadata?.provider === 'string'
+      ? result.metadata.provider
+      : (trace.provider || 'system-chrome-cdp'),
   });
-  const safeTrace = {
-    ...trace,
-    params: redactBrowserWorkbenchTraceParams(trace.toolName || 'browser_action', trace.params || {}),
-    agentPointerEvent: pointerEvent,
-  };
-  const resultWithProof = attachBrowserActionProof({
-    ...result,
-    metadata: {
-      ...metadata,
-      traceId: safeTrace.id,
-      workbenchTrace: safeTrace,
-      agentPointerEvent: pointerEvent,
-    },
-  }, safeTrace);
-  persistBrowserComputerProofFromResult(resultWithProof, {
-    sessionId: context?.sessionId,
-    toolCallId: context?.currentToolCallId,
-    toolName: 'browser_action',
-  });
-  return resultWithProof;
 }
 
 function summarizeManagedBrowserStateForTool(state: ReturnType<typeof browserService.getSessionState>): Record<string, unknown> {

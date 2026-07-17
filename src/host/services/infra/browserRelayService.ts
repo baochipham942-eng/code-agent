@@ -245,6 +245,33 @@ export class BrowserRelayService implements Disposable {
     return this.sendCommand('tabs.navigate', { tabId, url });
   }
 
+  async attachTab(tabId: number): Promise<unknown> {
+    return this.sendCommand('debugger.attach', { tabId });
+  }
+
+  async detachTab(tabId: number): Promise<unknown> {
+    return this.sendCommand('debugger.detach', { tabId });
+  }
+
+  async screenshotTab(
+    tabId: number,
+    options?: { format?: string; quality?: number },
+  ): Promise<unknown> {
+    return this.sendCommand('tabs.screenshot', {
+      tabId,
+      format: options?.format || 'jpeg',
+      quality: options?.quality || 80,
+    });
+  }
+
+  async sendCdp(
+    tabId: number,
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    return this.sendCommand('cdp.send', { tabId, method, params });
+  }
+
   async dispose(): Promise<void> {
     await this.stop();
   }
@@ -383,7 +410,9 @@ export class BrowserRelayService implements Disposable {
       return 'Waiting for the Chrome extension to connect.';
     }
     if (this.status === 'connected') {
-      return 'Chrome extension connected. Real Chrome tabs can be controlled after explicit user setup.';
+      return this.attachedTabs.length > 0
+        ? `Chrome extension connected with ${this.attachedTabs.length} attached tab(s). Agent can use engine=relay.`
+        : 'Chrome extension connected. Attach a tab from the extension popup or Browser Surface.';
     }
     return this.lastError;
   }

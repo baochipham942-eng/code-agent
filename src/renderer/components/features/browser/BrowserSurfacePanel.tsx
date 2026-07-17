@@ -1,8 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Copy,
   ExternalLink,
   Globe,
+  KeyRound,
   Loader2,
   PlugZap,
   ShieldCheck,
@@ -10,6 +11,8 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   AgentPointerEvent,
+  BrowserCookieImportResult,
+  BrowserProfileDescriptor,
   ManagedBrowserAccountStateSummary,
   ManagedBrowserExternalBridgeState,
   ManagedBrowserSessionState,
@@ -39,7 +42,37 @@ type BusyAction =
   | 'startRelay'
   | 'stopRelay'
   | 'openExtension'
-  | 'copyToken';
+  | 'copyToken'
+  | 'listProfiles'
+  | 'importProfile'
+  | 'clearCookies'
+  | 'listRelayTabs'
+  | 'attachRelayTab'
+  | 'detachRelayTab';
+
+interface RelayTabInfo {
+  id?: number;
+  url?: string;
+  title?: string;
+  active?: boolean;
+  attached?: boolean;
+}
+
+interface ProfileImportIpcResult {
+  result: BrowserCookieImportResult;
+  session: ManagedBrowserSessionState;
+}
+
+interface AccountClearResult {
+  accountState: ManagedBrowserAccountStateSummary;
+  session: ManagedBrowserSessionState;
+}
+
+function summarizeProfilePath(profileDir: string): string {
+  if (!profileDir) return '—';
+  const parts = profileDir.split(/[/\\]/).filter(Boolean);
+  return parts.slice(-3).join('/') || profileDir;
+}
 
 function getBridgeLabel(bridge: ManagedBrowserExternalBridgeState | null | undefined): string {
   if (!bridge) return '未知';
@@ -69,6 +102,11 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
   const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<BrowserProfileDescriptor[]>([]);
+  const [profilesLoaded, setProfilesLoaded] = useState(false);
+  const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
+  const [lastImport, setLastImport] = useState<BrowserCookieImportResult | null>(null);
+  const [relayTabs, setRelayTabs] = useState<RelayTabInfo[]>([]);
   const livePointer = useLiveAgentPointer('browser');
 
   const managedRows = useMemo(
@@ -159,6 +197,113 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
     setNotice('Relay token 已复制。');
   }), [bridge?.authToken, run]);
 
+  const handleListRelayTabs = useCallback(() => run('listRelayTabs', async () => {
+    const tabs = await ipcService.invokeDomain<RelayTabInfo[]>(
+      IPC_DOMAINS.DESKTOP,
+      'listBrowserRelayTabs',
+    );
+    setRelayTabs(Array.isArray(tabs) ? tabs : []);
+    setNotice(`已刷新 Chrome 标签列表（${Array.isArray(tabs) ? tabs.length : 0}）。`);
+  }), [run]);
+
+  const handleAttachRelayTab = useCallback((tabId: number) => run('attachRelayTab', async () => {
+    await ipcService.invokeDomain(IPC_DOMAINS.DESKTOP, 'attachBrowserRelayTab', { tabId });
+    const tabs = await ipcService.invokeDomain<RelayTabInfo[]>(
+      IPC_DOMAINS.DESKTOP,
+      'listBrowserRelayTabs',
+    );
+    setRelayTabs(Array.isArray(tabs) ? tabs : []);
+    setNotice(`已附着标签 ${tabId}。Agent 可用 engine=relay 操作。`);
+  }), [run]);
+
+  const handleDetachRelayTab = useCallback((tabId: number) => run('detachRelayTab', async () => {
+    await ipcService.invokeDomain(IPC_DOMAINS.DESKTOP, 'detachBrowserRelayTab', { tabId });
+    const tabs = await ipcService.invokeDomain<RelayTabInfo[]>(
+      IPC_DOMAINS.DESKTOP,
+      'listBrowserRelayTabs',
+    );
+    setRelayTabs(Array.isArray(tabs) ? tabs : []);
+    setNotice(`已解除附着标签 ${tabId}。`);
+  }), [run]);
+
+  const handleListProfiles = useCallback(() => run('listProfiles', async () => {
+    const list = await ipcService.invokeDomain<BrowserProfileDescriptor[]>(
+      IPC_DOMAINS.DESKTOP,
+      'listBrowserProfiles',
+    );
+    setProfiles(Array.isArray(list) ? list : []);
+    setProfilesLoaded(true);
+    const firstAvailable = (Array.isArray(list) ? list : []).find((item) => item.available);
+    if (firstAvailable) {
+      setSelectedProfileKey(`${firstAvailable.source}::${firstAvailable.profileId}`);
+    }
+    setNotice(`已扫描 ${Array.isArray(list) ? list.length : 0} 个浏览器 profile（macOS Chromium 系）。`);
+  }), [run]);
+
+  const handleImportProfile = useCallback(() => run('importProfile', async () => {
+    const selected = profiles.find((item) => `${item.source}::${item.profileId}` === selectedProfileKey);
+    if (!selected) {
+      throw new Error('请先选择一个可导入的浏览器 profile。');
+    }
+    if (!selected.available) {
+      throw new Error(selected.unavailableMessage || '该 profile 当前不可用。');
+    }
+    setBrowserSessionMode('managed');
+    const response = await ipcService.invokeDomain<ProfileImportIpcResult>(
+      IPC_DOMAINS.DESKTOP,
+      'importBrowserProfileCookies',
+      {
+        source: selected.source,
+        profileId: selected.profileId,
+        userConfirmed: true,
+      },
+    );
+    const result = response?.result;
+    setLastImport(result || null);
+    if (!result?.ok) {
+      throw new Error(
+        result?.failureMessage
+        || 'Cookie 导入失败。可改用 Chrome Relay 附着已登录标签。',
+      );
+    }
+    setNotice(
+      `已从 ${selected.appName} / ${selected.profileName} 导入 ${result.importedCookieCount} 条 Cookie`
+      + (result.domainCount ? `（${result.domainCount} 个 domain）` : '')
+      + '。托管浏览器已 reload。',
+    );
+  }), [profiles, run, selectedProfileKey, setBrowserSessionMode]);
+
+  const handleClearCookies = useCallback(() => run('clearCookies', async () => {
+    await ipcService.invokeDomain<AccountClearResult>(
+      IPC_DOMAINS.DESKTOP,
+      'clearManagedBrowserCookies',
+    );
+    setLastImport(null);
+    setNotice('已清除托管浏览器 Cookie。');
+  }), [run]);
+
+  useEffect(() => {
+    // Load profile catalog once when surface opens; failures stay quiet until user clicks refresh.
+    void ipcService.invokeDomain<BrowserProfileDescriptor[]>(
+      IPC_DOMAINS.DESKTOP,
+      'listBrowserProfiles',
+    ).then((list) => {
+      setProfiles(Array.isArray(list) ? list : []);
+      setProfilesLoaded(true);
+      const firstAvailable = (Array.isArray(list) ? list : []).find((item) => item.available);
+      if (firstAvailable) {
+        setSelectedProfileKey(`${firstAvailable.source}::${firstAvailable.profileId}`);
+      }
+    }).catch(() => {
+      setProfilesLoaded(true);
+    });
+  }, []);
+
+  const availableProfiles = useMemo(
+    () => profiles.filter((item) => item.available),
+    [profiles],
+  );
+
   const isBusy = (action: BusyAction) => busyAction === action;
   const bridgeReady = bridge?.status === 'connected';
   const browserReady = browserSession.managedSession.running;
@@ -185,7 +330,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
       <FullScreenPageHeader
         icon={<Globe className="h-4 w-4 text-sky-300" />}
         title="Browser Surface"
-        description="打开真实网页、保留托管浏览器登录态，并准备接入 Chrome Relay"
+        description="托管浏览器登录态、本机 profile Cookie 导入，以及 Chrome Relay（ADR-041）"
         onClose={onClose}
         closeLabel="关闭 Browser Surface"
       />
@@ -289,10 +434,149 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
                 <BrowserActionButton busy={isBusy('openExtension')} disabled={Boolean(busyAction) || !bridge?.extensionPath} onClick={handleOpenExtension}>
                   打开扩展目录
                 </BrowserActionButton>
+                <BrowserActionButton busy={isBusy('listRelayTabs')} disabled={Boolean(busyAction) || !bridgeReady} onClick={handleListRelayTabs}>
+                  刷新标签
+                </BrowserActionButton>
                 <BrowserActionButton busy={isBusy('stopRelay')} disabled={Boolean(busyAction) || bridge?.status === 'stopped'} onClick={handleStopRelay}>
                   停止
                 </BrowserActionButton>
               </div>
+
+              <div className="mt-3 rounded-md border border-white/[0.06] bg-black/10 px-2 py-2 text-[11px] leading-relaxed text-zinc-500">
+                向导：1) 启动 Relay → 2) 打开扩展目录，Chrome 加载已解压扩展 → 3) 扩展 popup「Attach current tab」或下方附着 → 4) Agent 用 engine=relay。
+              </div>
+
+              {relayTabs.length > 0 && (
+                <div className="mt-2 max-h-36 space-y-1 overflow-y-auto">
+                  {relayTabs.slice(0, 20).map((tab) => (
+                    <div
+                      key={String(tab.id)}
+                      className="flex items-center gap-2 rounded border border-white/[0.06] bg-zinc-900/50 px-2 py-1 text-[11px]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-zinc-200">{tab.title || '(untitled)'}</div>
+                        <div className="truncate text-zinc-500">{tab.url || ''}</div>
+                      </div>
+                      <span className={tab.attached ? 'text-emerald-300' : 'text-zinc-500'}>
+                        {tab.attached ? 'attached' : '—'}
+                      </span>
+                      {typeof tab.id === 'number' && (
+                        tab.attached ? (
+                          <BrowserActionButton
+                            busy={isBusy('detachRelayTab')}
+                            disabled={Boolean(busyAction)}
+                            onClick={() => handleDetachRelayTab(tab.id as number)}
+                          >
+                            Detach
+                          </BrowserActionButton>
+                        ) : (
+                          <BrowserActionButton
+                            busy={isBusy('attachRelayTab')}
+                            disabled={Boolean(busyAction)}
+                            onClick={() => handleAttachRelayTab(tab.id as number)}
+                          >
+                            Attach
+                          </BrowserActionButton>
+                        )
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="lg:col-span-2 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+                    <KeyRound className="h-3.5 w-3.5 text-amber-300" />
+                    复用浏览器登录
+                  </div>
+                  <div className="text-[11px] text-zinc-500">
+                    从本机 Chrome / Edge / Brave / Arc… 导入 Cookie 到托管浏览器（需 Keychain 授权，不落 cookie value）
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <BrowserActionButton busy={isBusy('listProfiles')} disabled={Boolean(busyAction)} onClick={handleListProfiles}>
+                    刷新 profile 列表
+                  </BrowserActionButton>
+                  <BrowserActionButton
+                    busy={isBusy('importProfile')}
+                    disabled={Boolean(busyAction) || !selectedProfileKey}
+                    onClick={handleImportProfile}
+                  >
+                    导入选中 profile
+                  </BrowserActionButton>
+                  <BrowserActionButton
+                    busy={isBusy('clearCookies')}
+                    disabled={Boolean(busyAction)}
+                    onClick={handleClearCookies}
+                  >
+                    清除托管 Cookie
+                  </BrowserActionButton>
+                </div>
+              </div>
+
+              {!profilesLoaded ? (
+                <div className="text-[11px] text-zinc-500">正在扫描本机浏览器 profile…</div>
+              ) : availableProfiles.length === 0 ? (
+                <div className="text-[11px] text-zinc-500">
+                  未发现可用 Chromium profile。请确认已安装并运行过对应浏览器，或改用 Chrome Relay。
+                </div>
+              ) : (
+                <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+                  {availableProfiles.map((profile) => {
+                    const key = `${profile.source}::${profile.profileId}`;
+                    const selected = key === selectedProfileKey;
+                    return (
+                      <label
+                        key={key}
+                        className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-colors ${
+                          selected
+                            ? 'border-amber-400/40 bg-amber-500/10 text-zinc-100'
+                            : 'border-white/[0.06] bg-black/10 text-zinc-300 hover:border-white/[0.12]'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="browser-profile"
+                          className="mt-0.5"
+                          checked={selected}
+                          onChange={() => setSelectedProfileKey(key)}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="font-medium text-zinc-100">
+                            {profile.appName}
+                            {' · '}
+                            {profile.profileName}
+                          </span>
+                          <span className="mt-0.5 block truncate text-zinc-500" title={profile.profileDir}>
+                            {summarizeProfilePath(profile.profileDir)}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              {lastImport && (
+                <div className="mt-2 rounded-md border border-white/[0.06] bg-black/10 px-2 py-1.5 text-[11px] text-zinc-400">
+                  上次导入：
+                  {lastImport.ok
+                    ? `${lastImport.importedCookieCount} cookies / ${lastImport.domainCount} domains`
+                    : (lastImport.failureMessage || lastImport.failureCode || 'failed')}
+                  {lastImport.ok && lastImport.domains.length > 0 && (
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      {lastImport.domains.slice(0, 10).map((domain) => (
+                        <span key={domain} className="rounded border border-white/[0.06] px-1.5 py-0.5 text-zinc-300">
+                          {domain}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </div>
+              )}
             </section>
 
             <section className="lg:col-span-2">

@@ -564,6 +564,21 @@ export const enSettingsModels = {
         description: 'MCP concept notes and automatic connection behavior.',
         body: 'MCP (Model Context Protocol) is an open protocol that lets AI models securely access external tools and data sources. Configured servers connect automatically when the app starts. Cloud config supports hot updates without restarting the app.',
       },
+      oauthConsent: {
+        title: 'Authorize MCP server',
+        description: 'An authorization page will open in your system browser. Confirm the request source and callback address before continuing.',
+        authorize: 'Authorize',
+        decline: 'Decline',
+        emptyValue: '-',
+        fields: {
+          serverName: 'Server',
+          serverUrl: 'Canonical URL',
+          configSource: 'Config source',
+          scope: 'Scope',
+          authorizationServer: 'Authorization server',
+          redirectHost: 'Redirect address',
+        },
+      },
       discover: {
         chinaDirect: 'China direct',
         officialFeatured: 'Official featured',

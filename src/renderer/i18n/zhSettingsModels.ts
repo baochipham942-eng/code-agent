@@ -564,6 +564,21 @@ export const zhSettingsModels = {
         description: 'MCP 的概念说明和自动连接行为。',
         body: 'MCP (Model Context Protocol) 是一个开放协议，允许 AI 模型安全地访问外部工具和数据源。已配置的服务器会在应用启动时自动连接。云端配置支持热更新，无需重启应用。',
       },
+      oauthConsent: {
+        title: '授权 MCP 服务器',
+        description: '即将在系统浏览器打开授权页。请确认请求来源和回调地址后再继续。',
+        authorize: '授权',
+        decline: '拒绝',
+        emptyValue: '-',
+        fields: {
+          serverName: '服务器',
+          serverUrl: 'Canonical URL',
+          configSource: '配置来源',
+          scope: 'Scope',
+          authorizationServer: '授权服务器',
+          redirectHost: '回调地址',
+        },
+      },
       discover: {
         chinaDirect: '国内直连',
         officialFeatured: '官方精选',

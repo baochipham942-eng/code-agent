@@ -15,6 +15,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { TitleBar } from './components/TitleBar';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { MCPElicitationModal } from './components/MCPElicitationModal';
+import { MCPOAuthConsentModal } from './components/MCPOAuthConsentModal';
 import { AuthModal } from './components/AuthModal';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
@@ -60,7 +61,7 @@ import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
-import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo, Message } from '@shared/contract';
+import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getDefaultModelForProvider, getProviderEndpointForProtocol } from '@shared/constants';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './utils/logger';
@@ -194,6 +195,7 @@ export const App: React.FC = () => {
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
+  const [mcpOAuthConsent, setMcpOAuthConsent] = useState<MCPOAuthConsentRequest | null>(null);
 
   // 强制更新状态
   const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -587,6 +589,21 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // Listen for MCP OAuth consent events
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.MCP_OAUTH_CONSENT_REQUEST,
+      (request: MCPOAuthConsentRequest) => {
+        logger.info('Received MCP OAuth consent request', { id: request.requestId, server: request.serverName });
+        setMcpOAuthConsent(request);
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
   // Listen for notification click events (切换到对应会话)
   useEffect(() => {
     const unsubscribe = ipcService.on(
@@ -913,6 +930,14 @@ export const App: React.FC = () => {
         <MCPElicitationModal
           request={mcpElicitation}
           onClose={() => setMcpElicitation(null)}
+        />
+      )}
+
+      {/* MCP OAuth Consent Modal */}
+      {mcpOAuthConsent && (
+        <MCPOAuthConsentModal
+          request={mcpOAuthConsent}
+          onClose={() => setMcpOAuthConsent(null)}
         />
       )}
 

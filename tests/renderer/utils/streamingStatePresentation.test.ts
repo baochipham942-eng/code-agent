@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 import type { StreamRecoverySnapshot } from '../../../src/shared/contract/session';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
 import {
   buildStreamingUiState,
   hasCancelledRunMarker,
@@ -164,6 +165,40 @@ describe('streamingStatePresentation', () => {
     expect(state.status).toBe('cancelled');
     expect(state.detail).toContain('未保留半截内容');
     expect(shouldShowStreamingState(state)).toBe(true);
+  });
+
+  // detail 长句此前跟 label 同一批硬编码中文，但只有 label 迁了键——en 用户会看到
+  // 英文 label + 中文 detail 混排。补上 en 态验证 detail 也走 turnRun.detail.* 键。
+  it('detail 跟 label 走同一套 t，不会出现 en label + zh detail 混排', () => {
+    const turn = makeTurn({
+      status: 'completed',
+      nodes: [
+        {
+          id: 'user-1',
+          type: 'user',
+          content: 'cancel this run',
+          timestamp: 1_000,
+          metadata: {
+            workbench: {
+              runCancellation: {
+                status: 'cancelled',
+                cancelledAt: 2_000,
+              },
+            },
+          },
+        },
+      ],
+    });
+    const state = buildStreamingUiState({
+      t: en,
+      turn,
+      isActiveTurn: false,
+      sessionStatus: 'idle',
+    });
+
+    expect(state.label).toBe(en.turnRun.status.cancelled);
+    expect(state.detail).toBe(en.turnRun.detail.cancelled);
+    expect(state.detail).not.toMatch(/[一-鿿]/);
   });
 
   it('surfaces stale processing without replaying an old stream', () => {

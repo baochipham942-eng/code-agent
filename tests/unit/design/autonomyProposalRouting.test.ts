@@ -58,7 +58,7 @@ describe('decideProposalHandling · 自动 vs 人闸', () => {
 describe('makeBudgetedGenerate · 预算闸 + 消费', () => {
   function setup(env = grantEnvelope({ maxVariants: 3, maxCny: 1 })) {
     let current = env as ReturnType<typeof grantEnvelope> | null;
-    const raw = vi.fn(async () => ({ ok: true, costCny: 0.14 }));
+    const raw = vi.fn(async (): Promise<{ ok: boolean; costCny?: number }> => ({ ok: true, costCny: 0.14 }));
     const estimateCost = vi.fn(() => 0.14);
     const setEnvelope = vi.fn((e: ReturnType<typeof grantEnvelope>) => { current = e; });
     const gate = makeBudgetedGenerate({
@@ -116,7 +116,7 @@ describe('makeBudgetedGenerate · 预算闸 + 消费', () => {
   });
 
   it('无信封 → 不调 rawGenerate（auto 路径不该到这，防御）', async () => {
-    const raw = vi.fn(async () => ({ ok: true, costCny: 0.14 }));
+    const raw = vi.fn(async (): Promise<{ ok: boolean; costCny?: number }> => ({ ok: true, costCny: 0.14 }));
     const gate = makeBudgetedGenerate({ estimateCost: () => 0.14, rawGenerate: raw, getEnvelope: () => null, setEnvelope: vi.fn() });
     const r = await gate(gen());
     expect(r.ok).toBe(false);

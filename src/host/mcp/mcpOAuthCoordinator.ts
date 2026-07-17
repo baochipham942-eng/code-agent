@@ -38,7 +38,6 @@ export interface McpOAuthCoordinatorOptions {
 interface FlowRecord extends McpOAuthFlow {
   server: Server;
   timeout: ReturnType<typeof setTimeout>;
-  consumed: boolean;
   settled: boolean;
   resolve: (result: McpOAuthCallbackResult) => void;
   reject: (error: Error) => void;
@@ -165,7 +164,6 @@ export class McpOAuthCoordinator {
       redirectUrl,
       server,
       timeout,
-      consumed: false,
       settled: false,
       resolve,
       reject,
@@ -229,18 +227,14 @@ export class McpOAuthCoordinator {
       return;
     }
 
-    if (flow.consumed) {
-      this.sendText(res, 409, 'OAuth flow already completed');
-      return;
-    }
-
     const code = requestUrl.searchParams.get('code');
     if (!code) {
       this.sendText(res, 400, 'Missing OAuth code');
       return;
     }
 
-    flow.consumed = true;
+    // 重放防护 = state 保密性 + promise 单次 resolve(重复 resolve 是 no-op)
+    // + settle 后立即关闭 server 并销毁存量连接。
     flow.settled = true;
     flow.resolve({
       flowId: flow.flowId,
@@ -274,6 +268,7 @@ export class McpOAuthCoordinator {
   private closeServer(server: Server): void {
     try {
       server.close(() => {});
+      server.closeAllConnections();
     } catch {
       // The server may already be closed by a prior cleanup path.
     }

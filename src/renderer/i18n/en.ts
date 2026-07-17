@@ -9,6 +9,7 @@ import { chatTranscriptEn } from './chatTranscript';
 import { chatInputEn } from './chatInput';
 import { sidebarEn } from './sidebar';
 import { previewWorkspaceEn } from './previewWorkspace';
+import { modalPrimitivesEn } from './modalPrimitives';
 
 export const en: Translations = {
   // Common
@@ -21,6 +22,7 @@ export const en: Translations = {
     confirm: 'Confirm',
     delete: 'Delete',
     edit: 'Edit',
+    undo: 'Undo',
     loading: 'Loading...',
     retry: 'Retry',
     error: 'Error',
@@ -856,6 +858,7 @@ export const en: Translations = {
   ...chatInputEn,
   ...sidebarEn,
   ...previewWorkspaceEn,
+  ...modalPrimitivesEn,
 
   mermaid: {
     zoomIn: 'Zoom in',

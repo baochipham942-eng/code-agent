@@ -60,6 +60,11 @@ function scrubResultMetadata(metadata: Record<string, unknown> | undefined): Rec
   if (next.token) next.token = '[redacted]';
   if (next.cookies) next.cookies = '[redacted]';
   if (next.cookie) next.cookie = '[redacted]';
+  // ADR-041 P1: never leave import/export seed arrays or raw cookie rows in tool metadata.
+  if (next.seeds) next.seeds = '[redacted]';
+  if (next.cookieSeeds) next.cookieSeeds = '[redacted]';
+  if (next.cookieRows) next.cookieRows = '[redacted]';
+  if (next.storageState) next.storageState = '[redacted]';
   return next;
 }
 

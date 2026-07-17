@@ -1,7 +1,12 @@
 import { makeEvidenceRef, type EvidenceKind, type EvidenceRef, type EvidenceState, type RedactionStatus } from "../contract/evidence";
 import type { AgentPointerEvent } from "../contract/desktop";
+import {
+  redactBrowserCookiePayloadsInText,
+  redactCookieValueFieldsInRecord,
+} from './browserComputerCookieRedaction';
 
 export { sanitizeLargeTextToolArguments } from './browserComputerLargeTextRedaction';
+export { redactBrowserCookiePayloadsInText } from './browserComputerCookieRedaction';
 
 const BROWSER_COMPUTER_TOOLS = new Set(["browser_action", "computer_use"]);
 const INPUT_PAYLOAD_ACTIONS = new Set(["type", "smart_type", "fill_form"]);
@@ -23,6 +28,8 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "authToken",
   "cookie",
   "cookies",
+  "cookieRows",
+  "cookieSeeds",
   "encrypted_value",
   "encryptedValue",
   "keychainPassword",
@@ -36,6 +43,7 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "rawHtml",
   "screenshotBase64",
   "screenshotData",
+  "seeds",
   "sessionStorage",
   "storageState",
   "userDataDir",
@@ -861,10 +869,14 @@ function sanitizeBrowserComputerMetadataValue(
       args,
       value,
     );
+    const cookieRedacted =
+      typeof payloadRedacted === "string"
+        ? redactBrowserCookiePayloadsInText(payloadRedacted)
+        : payloadRedacted;
     if (key && /url|href|uri/i.test(key)) {
-      return summarizeBrowserComputerUrl(String(payloadRedacted));
+      return summarizeBrowserComputerUrl(String(cookieRedacted));
     }
-    return payloadRedacted;
+    return cookieRedacted;
   }
   if (Array.isArray(value)) {
     return value
@@ -872,8 +884,9 @@ function sanitizeBrowserComputerMetadataValue(
       .filter((item) => item !== OMIT);
   }
   if (isRecord(value)) {
+    const cookieSafe = redactCookieValueFieldsInRecord(value);
     const entries: Array<[string, unknown]> = [];
-    for (const [entryKey, item] of Object.entries(value)) {
+    for (const [entryKey, item] of Object.entries(cookieSafe)) {
       const sanitized = sanitizeBrowserComputerMetadataValue(
         toolName,
         args,
@@ -926,10 +939,18 @@ export function sanitizeBrowserComputerToolResult<
     safeArgs,
     result.error,
   );
+  const safeOutput =
+    typeof output === "string"
+      ? redactBrowserCookiePayloadsInText(output)
+      : output;
+  const safeError =
+    typeof error === "string"
+      ? redactBrowserCookiePayloadsInText(error)
+      : error;
   return {
     ...result,
-    output: typeof output === "string" ? output : result.output,
-    error: typeof error === "string" ? error : result.error,
+    output: typeof safeOutput === "string" ? safeOutput : result.output,
+    error: typeof safeError === "string" ? safeError : result.error,
     metadata: sanitizeBrowserComputerMetadata(
       toolName,
       safeArgs,
@@ -993,12 +1014,20 @@ export function redactBrowserComputerInputPayloadsInValue(
   value: unknown,
 ): unknown {
   const payloads = collectBrowserComputerInputPayloads(toolName, args);
+  const applyCookieText =
+    isBrowserComputerToolName(toolName) && typeof value === "string"
+      ? (text: string) => redactBrowserCookiePayloadsInText(text)
+      : (text: string) => text;
+
   if (payloads.length === 0) {
+    if (typeof value === "string" && isBrowserComputerToolName(toolName)) {
+      return applyCookieText(value);
+    }
     return value;
   }
 
   if (typeof value === "string") {
-    return redactPayloadsInString(value, payloads);
+    return applyCookieText(redactPayloadsInString(value, payloads));
   }
   if (Array.isArray(value)) {
     return value.map((item) =>

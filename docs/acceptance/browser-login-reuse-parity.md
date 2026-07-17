@@ -60,9 +60,17 @@ Result: **7 files / 23 tests passed** (re-run during dogfood).
 | Chrome load unpacked extension + WS connect | **PASS** | Chrome 150: CLI `--load-extension` broken; **CDP `Extensions.loadUnpacked` + `--enable-unsafe-extension-debugging`** works → SW `chrome-extension://ipbidahl…/background.js`, relay `status=connected` |
 | Attach tab (example.com) | **PASS** | `attachBrowserRelayTab` → `attachedTabCount=1`, reason: Agent can use engine=relay |
 | Agent `engine=relay` live actions | **PASS** | Via `/api/dev/exec-tool` (temp allowlist for dogfood): `list_tabs` / `get_content` / `click(a)` / `screenshot` all success; metadata `provider=browser-relay`, `engine=relay`, `engineRoute.reason=explicit_relay`, `browserComputerProof` present |
-| Session export redaction after real managed applyCookies | **PARTIAL** | UI/API import result redacted; full session markdown export not re-checked this pass |
+| Session export redaction after real managed applyCookies | **PASS (2026-07-17 P1 follow-up)** | Real Chrome Default import (github/google allowlist, **114 cookies**) → producer summary domains-only; `exportSessionToMarkdown` with tool details had **0 value leaks** even when adversarial `cookies`/`seeds` re-attached. Regression: `tests/unit/session/exportMarkdown.profileCookieImport.test.ts` (5). Hardening: cookie seed JSON `"value"` scrub + finalizer omits `seeds`/`storageState`. |
 
-**Interpretation:** Dogfood **A** (import + crypto), **B** (extension connect + attach), **C** (`engine=relay` live) all green on this Mac. Playwright `--load-extension` still flaky on Chrome 150; automation path is CDP `Extensions.loadUnpacked`. Artifact: `/tmp/browser-surface-dogfood/relay-bc-live.json`.
+### P1 follow-up (2026-07-17, post-merge #422)
+
+| Check | Result | Notes |
+|-------|--------|-------|
+| Session markdown export redaction (unit + adversarial) | **PASS** | import_profile_cookies happy path; Cookie/Set-Cookie/Bearer/authToken; bare seed JSON `"value"`; storage_state path collapse; relay authToken |
+| Live Keychain decrypt → applyCookies stub → markdown export | **PASS** | 114 real cookie values captured only in stub; producer JSON leak=0; export leak=0; domains `google.com` / `github.com` / `accounts.google.com` still visible |
+| True logged-in site UI attach (optional polish) | **deferred** | Prior B/C used example.com; full “open github.com as logged-in user in managed/relay” left as optional operator dogfood (P2) |
+
+**Interpretation:** Dogfood **A** (import + crypto), **B** (extension connect + attach), **C** (`engine=relay` live) green on this Mac; **P1 session export redaction** closed. Playwright `--load-extension` still flaky on Chrome 150; automation path is CDP `Extensions.loadUnpacked`. Artifact: `/tmp/browser-surface-dogfood/relay-bc-live.json`.
 
 ## Action parity matrix (agent-facing)
 
@@ -123,7 +131,7 @@ Failure expectations:
 - [x] Finalizer redacts authToken / base64-like blobs
 - [x] No mounting of user daily `--user-data-dir` (ADR Decision 3)
 - [ ] Operator confirms live Keychain prompt copy is understandable (manual)
-- [ ] Operator confirms session export/markdown has no cookie values after real import (manual)
+- [x] Session export/markdown has no cookie values after real import (P1 2026-07-17: unit + live 114-cookie scan)
 
 ## Remaining non-goals (still true)
 
@@ -154,4 +162,4 @@ Failure expectations:
 4. 打开已登录站点 → 扩展 popup → **Attach current tab**
 5. Surface **刷新标签** → 应见 attached；Agent `browser_action` + `engine: "relay"`
 
-Dogfood A/B/C green on worktree; remaining manual polish: session markdown export redaction re-check, Keychain prompt copy, real logged-in site attach.
+Dogfood A/B/C green; P1 session markdown export redaction closed (2026-07-17). Remaining polish: Keychain prompt copy, optional real logged-in site attach UI dogfood.

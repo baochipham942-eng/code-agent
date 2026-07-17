@@ -5,6 +5,7 @@
 import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
+import { BUTTON_PRIMARY_CLASS } from './Button';
 
 const focusableSelector =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
@@ -324,7 +325,7 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
   confirmText,
   onCancel,
   onConfirm,
-  confirmColorClass = 'bg-blue-600 hover:bg-blue-500',
+  confirmColorClass = BUTTON_PRIMARY_CLASS,
   confirmDisabled = false,
   hideCancel = false,
   children,

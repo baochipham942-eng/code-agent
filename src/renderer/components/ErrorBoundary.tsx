@@ -8,6 +8,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { captureRendererException } from '../observability/sentryRenderer';
 import { languages } from '../i18n';
 import { useAppStore } from '../stores/appStore';
+import { Button } from './primitives/Button';
 
 interface Props {
   children: ReactNode;
@@ -93,19 +94,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
             {/* 操作按钮 */}
             <div className="flex gap-3 justify-center">
-              <button
-                onClick={this.handleRetry}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <RefreshCw className="w-4 h-4" />
+              <Button onClick={this.handleRetry} leftIcon={<RefreshCw className="w-4 h-4" />}>
                 {t.common.retry}
-              </button>
-              <button
-                onClick={this.handleReload}
-                className="px-4 py-2 bg-zinc-600 rounded-lg hover:bg-zinc-600 transition-colors"
-              >
+              </Button>
+              <Button variant="secondary" onClick={this.handleReload}>
                 {t.errorBoundary.refresh}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

@@ -41,7 +41,7 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
           transition-all duration-200
           ${mode === 'normal'
             ? 'bg-zinc-800-700 text-white shadow-sm'
-            : 'text-zinc-400 hover:text-zinc-400 hover:bg-zinc-800-700/50'
+            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800-700/50'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
@@ -60,7 +60,7 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
           transition-all duration-200
           ${mode === 'deep-research'
             ? 'bg-primary-500/20 text-primary-400 shadow-sm'
-            : 'text-zinc-400 hover:text-zinc-400 hover:bg-zinc-800-700/50'
+            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800-700/50'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}

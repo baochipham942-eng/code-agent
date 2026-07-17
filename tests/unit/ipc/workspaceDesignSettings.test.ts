@@ -49,7 +49,7 @@ describe('handleUpdateDesignSettings', () => {
       // @ts-expect-error 故意传未知键，验证被剥离
       evil: 'rm -rf',
       __proto__pollute: 1,
-    } as never);
+    });
     expect(svc.update).toHaveBeenCalledWith({ regionLockStrict: true });
   });
 

@@ -600,10 +600,10 @@ describe('memory.ipc memoryAudit', () => {
         description: input.description,
         type: input.type,
         content: input.content,
-        entryId: input.entryId,
-        status: input.status,
-        source: input.source,
-        schemaVersion: input.schemaVersion,
+        entryId: input.entryId ?? oldFile.entryId,
+        status: input.status ?? oldFile.status,
+        source: input.source ?? oldFile.source,
+        schemaVersion: input.schemaVersion ?? oldFile.schemaVersion,
         updatedAt: '2026-05-13T12:30:00.000Z',
       };
       return currentFile;

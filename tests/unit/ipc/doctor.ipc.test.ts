@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { runDiagnostics } from '../../../src/host/ipc/doctor.ipc';
-import type { DiagnosticItem, DiagnosticReport } from '../../../src/host/ipc/doctor.ipc';
+import type { DoctorItem } from '../../../src/host/ipc/doctor.ipc';
 
-const VALID_STATUSES = new Set<DiagnosticItem['status']>(['pass', 'warn', 'fail']);
-const VALID_CATEGORIES = new Set<DiagnosticItem['category']>(['environment', 'network', 'config', 'database', 'disk']);
+const VALID_STATUSES = new Set<DoctorItem['status']>(['pass', 'warn', 'fail', 'skip']);
+const VALID_CATEGORIES = new Set<DoctorItem['category']>(['environment', 'network', 'config', 'database', 'disk']);
 
 describe('runDiagnostics()', () => {
   it('returns a DiagnosticReport with required top-level fields', async () => {
@@ -24,13 +24,14 @@ describe('runDiagnostics()', () => {
 
   it('summary counts match actual item statuses', async () => {
     const report = await runDiagnostics();
-    const counted = { pass: 0, warn: 0, fail: 0 };
+    const counted = { pass: 0, warn: 0, fail: 0, skip: 0 };
     for (const item of report.items) {
       counted[item.status]++;
     }
     expect(report.summary.pass).toBe(counted.pass);
     expect(report.summary.warn).toBe(counted.warn);
     expect(report.summary.fail).toBe(counted.fail);
+    expect(report.summary.skip).toBe(counted.skip);
   });
 
   it('Node.js version check passes for current environment (>= 18)', async () => {

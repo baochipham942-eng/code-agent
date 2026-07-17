@@ -4,6 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useI18n } from '../../hooks/useI18n';
 
 interface CardProps {
   title: string;
@@ -51,6 +52,8 @@ export function Card({
   storageKey,
   children,
 }: CardProps) {
+  const { t } = useI18n();
+  const cardT = t.taskStatusPanels.card;
   const [expanded, setExpanded] = useState(() => readStoredExpanded(storageKey, defaultExpanded));
 
   // 没有 storageKey 时跟随 caller 控制（旧行为）；有 storageKey 时一旦用户主动操作就以 localStorage 为准
@@ -98,7 +101,7 @@ export function Card({
           onClick={toggle}
           className="flex items-center flex-shrink-0"
           type="button"
-          aria-label={expanded ? '折叠' : '展开'}
+          aria-label={expanded ? cardT.collapseAria : cardT.expandAria}
         >
           {expanded ? (
             <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />

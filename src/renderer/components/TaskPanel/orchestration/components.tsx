@@ -13,6 +13,7 @@ import type { SwarmAgentState, SwarmRunRef } from '@shared/contract/swarm';
 import { formatDuration } from '../../../../shared/utils/format';
 import type { SwarmPlanReview } from '../../../stores/swarmStore';
 import ipcService from '../../../services/ipcService';
+import { useI18n } from '../../../hooks/useI18n';
 import {
   formatTokens,
   getUsageTextClass,
@@ -91,6 +92,8 @@ export const AgentLaneCard: React.FC<{
   canceling,
   retrying,
 }) => {
+  const { t } = useI18n();
+  const al = t.taskStatusPanels.agentLane;
   const statusTone =
     agent.status === 'completed'
       ? 'border-emerald-500/20'
@@ -102,7 +105,7 @@ export const AgentLaneCard: React.FC<{
 
   const duration = agent.startTime
     ? formatDuration((agent.endTime || Date.now()) - agent.startTime)
-    : '待启动';
+    : al.pendingStart;
 
   return (
     <div className={`rounded-lg border ${statusTone} bg-zinc-800/70 p-3`}>
@@ -126,7 +129,7 @@ export const AgentLaneCard: React.FC<{
             </span>
           </div>
           <div className="mt-1 text-xs text-zinc-500">
-            {agent.lastReport || agent.resultPreview || agent.error || '等待任务分配'}
+            {agent.lastReport || agent.resultPreview || agent.error || al.waitingAssignment}
           </div>
         </div>
       </div>
@@ -171,7 +174,7 @@ export const AgentLaneCard: React.FC<{
           onClick={() => onOpenTeam(agent.id)}
           className="rounded-md border border-white/[0.06] bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-primary-500/20 hover:text-zinc-100"
         >
-          对话
+          {al.openChat}
         </button>
         {agent.status === 'running' && (
           <button
@@ -179,7 +182,7 @@ export const AgentLaneCard: React.FC<{
             disabled={canceling}
             className="rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {canceling ? '取消中…' : '取消'}
+            {canceling ? al.cancelling : al.cancel}
           </button>
         )}
         {(agent.status === 'failed' || agent.status === 'cancelled') && (
@@ -188,7 +191,7 @@ export const AgentLaneCard: React.FC<{
             disabled={retrying}
             className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300 transition-colors hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {retrying ? '重试中…' : '重试'}
+            {retrying ? al.retrying : al.retry}
           </button>
         )}
       </div>
@@ -216,6 +219,9 @@ export const AgentLaneCard: React.FC<{
 export const AgentContextCard: React.FC<{
   agent: SwarmAgentState;
 }> = ({ agent }) => {
+  const { t } = useI18n();
+  const al = t.taskStatusPanels.agentLane;
+  const o = t.taskStatusPanels.orchestration;
   const snapshot = agent.contextSnapshot;
   if (!snapshot) return null;
 
@@ -240,16 +246,16 @@ export const AgentContextCard: React.FC<{
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-          预算 <span className="ml-1 text-zinc-200">{formatTokens(snapshot.currentTokens)} / {formatTokens(snapshot.maxTokens)}</span>
+          {al.budget} <span className="ml-1 text-zinc-200">{formatTokens(snapshot.currentTokens)} / {formatTokens(snapshot.maxTokens)}</span>
         </div>
         <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-          消息 <span className="ml-1 text-zinc-200">{snapshot.messageCount}</span>
+          {al.messages} <span className="ml-1 text-zinc-200">{snapshot.messageCount}</span>
         </div>
         <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-          警告 <span className={`ml-1 ${getUsageTextClass(snapshot.usagePercent)}`}>{snapshot.warningLevel}</span>
+          {al.warning} <span className={`ml-1 ${getUsageTextClass(snapshot.usagePercent)}`}>{snapshot.warningLevel}</span>
         </div>
         <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-          压缩 <span className="ml-1 text-zinc-200">{snapshot.truncatedMessages}</span>
+          {o.compression} <span className="ml-1 text-zinc-200">{snapshot.truncatedMessages}</span>
         </div>
       </div>
 
@@ -302,7 +308,7 @@ export const AgentContextCard: React.FC<{
                 <span className="ml-auto text-[10px] text-zinc-500">{formatTokens(preview.tokens)} tokens</span>
               </div>
               <div className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">
-                {preview.contentPreview || '空消息'}
+                {preview.contentPreview || al.emptyPreview}
               </div>
             </div>
           ))}
@@ -316,6 +322,8 @@ export const ApprovalCard: React.FC<{
   review: SwarmPlanReview;
   scope: SwarmRunRef;
 }> = ({ review, scope }) => {
+  const { t } = useI18n();
+  const ac = t.taskStatusPanels.approvalCard;
   const [feedback, setFeedback] = useState(review.feedback || '');
   const [submitting, setSubmitting] = useState<'approve' | 'reject' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -338,10 +346,10 @@ export const ApprovalCard: React.FC<{
         feedback: feedback.trim() || undefined,
       });
       if (!success) {
-        setError('审批失败，计划可能已被处理。');
+        setError(ac.approveFailedRetry);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '审批失败');
+      setError(err instanceof Error ? err.message : ac.approveFailedGeneric);
     } finally {
       setSubmitting(null);
     }
@@ -350,7 +358,7 @@ export const ApprovalCard: React.FC<{
   const handleReject = async () => {
     const trimmed = feedback.trim();
     if (!trimmed) {
-      setError('驳回时需要填写原因。');
+      setError(ac.rejectReasonRequired);
       return;
     }
 
@@ -364,10 +372,10 @@ export const ApprovalCard: React.FC<{
         feedback: trimmed,
       });
       if (!success) {
-        setError('驳回失败，计划可能已被处理。');
+        setError(ac.rejectFailedRetry);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '驳回失败');
+      setError(err instanceof Error ? err.message : ac.rejectFailedGeneric);
     } finally {
       setSubmitting(null);
     }
@@ -379,7 +387,7 @@ export const ApprovalCard: React.FC<{
         <ShieldAlert className="w-4 h-4 text-amber-400" />
         <div className="text-sm text-zinc-200">Agent {review.agentId}</div>
         <span className={`ml-auto rounded-full px-1.5 py-0.5 text-[10px] ${badgeClass}`}>
-          {review.status === 'pending' ? '待处理' : review.status === 'approved' ? '已通过' : '已驳回'}
+          {review.status === 'pending' ? ac.statusPending : review.status === 'approved' ? ac.statusApproved : ac.statusRejected}
         </span>
       </div>
       {review.content && (
@@ -390,7 +398,7 @@ export const ApprovalCard: React.FC<{
           <textarea
             value={feedback}
             onChange={(event) => setFeedback(event.target.value)}
-            placeholder="可选反馈；驳回时填写原因"
+            placeholder={ac.feedbackPlaceholder}
             className="min-h-[72px] w-full resize-y rounded-lg border border-zinc-700 bg-zinc-900/80 px-2.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 outline-hidden transition-colors focus:border-zinc-500"
           />
           {error && <div className="text-xs text-red-400">{error}</div>}
@@ -400,14 +408,14 @@ export const ApprovalCard: React.FC<{
               disabled={submitting !== null}
               className="rounded-md bg-emerald-500/15 px-2.5 py-1.5 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting === 'approve' ? '通过中…' : '通过'}
+              {submitting === 'approve' ? ac.approving : ac.approve}
             </button>
             <button
               onClick={handleReject}
               disabled={submitting !== null}
               className="rounded-md bg-red-500/15 px-2.5 py-1.5 text-xs text-red-300 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting === 'reject' ? '驳回中…' : '驳回'}
+              {submitting === 'reject' ? ac.rejecting : ac.reject}
             </button>
           </div>
         </div>

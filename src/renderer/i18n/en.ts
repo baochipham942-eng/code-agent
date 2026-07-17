@@ -659,6 +659,8 @@ export const en: Translations = {
     // WorkingFolder
     inputDirPlaceholder: 'Enter workspace path',
     confirm: 'OK',
+    selectDirectoryTitle: 'Select working directory',
+    nextMessageWillUse: 'Next message will use: {path}',
     // Connectors
     status: 'Status',
     toolCount: 'Tools',

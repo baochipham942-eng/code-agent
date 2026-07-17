@@ -92,7 +92,7 @@ export const WorkingFolder: React.FC = () => {
         return;
       }
       if (isTauriMode()) {
-        const result = await pickNativeDirectory({ title: '选择工作目录' });
+        const result = await pickNativeDirectory({ title: t.taskPanel.selectDirectoryTitle });
         if (result) {
           setWorkingDirectory(result);
         }
@@ -161,7 +161,7 @@ export const WorkingFolder: React.FC = () => {
               )}
               {composerWorkingDirectory && composerWorkingDirectory !== workingDirectory && (
                 <div className="mb-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 px-2 py-1 text-[11px] text-cyan-300">
-                  下一条消息将使用：{composerWorkingDirectory}
+                  {t.taskPanel.nextMessageWillUse.replace('{path}', composerWorkingDirectory)}
                 </div>
               )}
             </>

@@ -7,6 +7,7 @@ import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
 import { chatInputZh } from './chatInput';
 import { sidebarZh } from './sidebar';
+import { previewWorkspaceZh } from './previewWorkspace';
 
 export const zh = {
   // Common
@@ -842,6 +843,7 @@ export const zh = {
   ...chatTranscriptZh,
   ...chatInputZh,
   ...sidebarZh,
+  ...previewWorkspaceZh,
 
   // 聊天流 Mermaid 图卡片（缩放/平移 + 标注即编辑）
   mermaid: {

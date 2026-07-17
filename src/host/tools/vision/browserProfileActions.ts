@@ -1,7 +1,7 @@
 /**
  * ADR-041 browser_action handlers for profile list/import/clear.
  */
-import type { ToolExecutionResult } from '../../protocol/tools';
+import type { ToolExecutionResult } from '../types';
 import type { BrowserProfileSourceId } from '../../../shared/contract/desktop';
 import type { BrowserService } from '../../services/infra/browserService';
 import {

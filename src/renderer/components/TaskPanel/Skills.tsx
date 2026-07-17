@@ -23,7 +23,7 @@ import {
 } from '../../utils/workbenchCapabilitySheet';
 
 export const Skills: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const { openSettingsTab } = useAppStore();
   const { skills } = useWorkbenchCapabilityRegistry();
   const { history } = useWorkbenchInsights();
@@ -106,7 +106,7 @@ export const Skills: React.FC = () => {
             ) : (
               <div className="space-y-1">
                 {mountedSkills.map((skill) => {
-                  const secondary = formatWorkbenchSkillSecondaryText(skill, { locale: 'zh' });
+                  const secondary = formatWorkbenchSkillSecondaryText(skill, { locale: language });
                   return (
                     <div
                       key={skill.id}
@@ -154,20 +154,20 @@ export const Skills: React.FC = () => {
                 {showAvailable && (
                   <div className="mt-2 space-y-1">
                     {availableSkills.slice(0, 8).map((skill) => {
-                      const secondary = formatWorkbenchSkillSecondaryText(skill, { locale: 'zh' });
+                      const secondary = formatWorkbenchSkillSecondaryText(skill, { locale: language });
                       return (
                         <div key={skill.id} className="flex items-center gap-1">
                           <button
                             onClick={() => handleMount(skill.id)}
                             disabled={loading}
                             className="flex-1 flex items-center gap-2 py-1 px-2 text-left hover:bg-zinc-800 rounded transition-colors"
-                            title={getWorkbenchCapabilityTitle(skill, { locale: 'zh' })}
+                            title={getWorkbenchCapabilityTitle(skill, { locale: language })}
                           >
                             <Plus className="w-3 h-3 text-zinc-500" />
                             <WorkbenchLabelStack
                               label={skill.label}
                               secondary={secondary}
-                              title={getWorkbenchCapabilityTitle(skill, { locale: 'zh' })}
+                              title={getWorkbenchCapabilityTitle(skill, { locale: language })}
                               labelClassName="text-xs text-zinc-400 truncate"
                             />
                           </button>

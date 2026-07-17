@@ -9,6 +9,9 @@ import {
   type WorkbenchPreset,
   type WorkbenchRecipe,
 } from '@shared/contract/workbenchPreset';
+import { useI18n } from '../hooks/useI18n';
+import type { Translations } from '../i18n';
+import { localeForLanguage } from '../utils/i18nTime';
 
 export type WorkspaceAssetTab = 'apps' | 'gallery' | 'preview';
 
@@ -26,8 +29,8 @@ export function isGalleryItem(item: WorkspacePreviewItem): boolean {
   return Boolean(item.content?.imageDataUrl) || VISUAL_ASSET_KINDS.has(item.kind);
 }
 
-function formatAssetTime(ms: number): string {
-  return new Intl.DateTimeFormat('zh-CN', {
+function formatAssetTime(ms: number, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -36,19 +39,19 @@ function formatAssetTime(ms: number): string {
   }).format(new Date(ms));
 }
 
-function basename(path?: string | null): string {
-  if (!path) return '未绑定工作区';
+function basename(path: string | null | undefined, fallback: string): string {
+  if (!path) return fallback;
   return path.split('/').filter(Boolean).pop() || path;
 }
 
-function presetContextSummary(preset: WorkbenchPreset): string {
+function presetContextSummary(preset: WorkbenchPreset, t: Translations): string {
   const context = preset.context;
   const capabilityCount =
     context.selectedSkillIds.length +
     context.selectedConnectorIds.length +
     context.selectedMcpServerIds.length;
   const parts = [
-    basename(context.workingDirectory),
+    basename(context.workingDirectory, t.previewWorkspace.assets.unboundWorkspace),
     context.routingMode,
     capabilityCount > 0 ? `${capabilityCount} capabilities` : null,
     context.browserSessionMode !== 'none' ? context.browserSessionMode : null,
@@ -56,11 +59,11 @@ function presetContextSummary(preset: WorkbenchPreset): string {
   return parts.join(' · ');
 }
 
-function recipeSummary(recipe: WorkbenchRecipe): string {
+function recipeSummary(recipe: WorkbenchRecipe, t: Translations): string {
   const context = createWorkbenchRecipeMergedContext(recipe);
   const parts = [
     `${recipe.steps.length} steps`,
-    basename(context.workingDirectory),
+    basename(context.workingDirectory, t.previewWorkspace.assets.unboundWorkspace),
     context.routingMode,
   ].filter(Boolean);
   return parts.join(' · ');
@@ -150,6 +153,7 @@ export function AssetDrawerPanel({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <aside
       role="dialog"
@@ -163,8 +167,8 @@ export function AssetDrawerPanel({
         </div>
         <button
           type="button"
-          aria-label="关闭面板"
-          title="关闭面板"
+          aria-label={t.previewWorkspace.assets.closePanel}
+          title={t.previewWorkspace.assets.closePanel}
           onClick={onClose}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.025] text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100"
         >
@@ -190,14 +194,17 @@ export function PromptAppLibrary({
   onUsePreset: (preset: WorkbenchPreset) => void;
   onUseRecipe: (recipe: WorkbenchRecipe) => void;
 }) {
+  const { t, language } = useI18n();
+  const a = t.previewWorkspace.assets;
+  const locale = localeForLanguage(language);
   if (presets.length === 0 && recipes.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center px-6 text-center">
         <div>
           <Sparkles className="mx-auto h-8 w-8 text-zinc-600" />
-          <div className="mt-3 text-sm text-zinc-300">暂无 Prompt Apps</div>
+          <div className="mt-3 text-sm text-zinc-300">{a.noPromptApps}</div>
           <div className="mt-1 max-w-sm text-xs leading-relaxed text-zinc-500">
-            从会话右键保存工作台为 Preset，或把多个 Preset 合成 Recipe 后，会出现在这里。
+            {a.promptAppsHint}
           </div>
         </div>
       </div>
@@ -211,7 +218,7 @@ export function PromptAppLibrary({
           <section>
             <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-zinc-200">
               <LayoutGrid className="h-3.5 w-3.5 text-cyan-300" />
-              Recipes
+              {a.recipes}
             </div>
             <div className="grid gap-2">
               {recipes.map((recipe) => (
@@ -222,14 +229,14 @@ export function PromptAppLibrary({
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium text-zinc-100">{recipe.name}</div>
-                      <div className="mt-1 truncate text-xs text-zinc-500">{recipeSummary(recipe)}</div>
+                      <div className="mt-1 truncate text-xs text-zinc-500">{recipeSummary(recipe, t)}</div>
                       {recipe.description && (
                         <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-400">
                           {recipe.description}
                         </div>
                       )}
                       <div className="mt-1 text-[11px] text-zinc-600">
-                        updated {formatAssetTime(recipe.updatedAt)}
+                        {a.updated.replace('{time}', formatAssetTime(recipe.updatedAt, locale))}
                       </div>
                     </div>
                     <button
@@ -238,7 +245,7 @@ export function PromptAppLibrary({
                       className="inline-flex items-center gap-1 rounded-md border border-cyan-500/20 bg-cyan-500/[0.08] px-2.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/[0.14]"
                     >
                       <Play className="h-3 w-3" />
-                      Use
+                      {a.use}
                     </button>
                   </div>
                 </div>
@@ -251,7 +258,7 @@ export function PromptAppLibrary({
           <section>
             <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-zinc-200">
               <Sparkles className="h-3.5 w-3.5 text-violet-300" />
-              Presets
+              {a.presets}
             </div>
             <div className="grid gap-2">
               {presets.map((preset) => (
@@ -262,7 +269,7 @@ export function PromptAppLibrary({
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium text-zinc-100">{preset.name}</div>
-                      <div className="mt-1 truncate text-xs text-zinc-500">{presetContextSummary(preset)}</div>
+                      <div className="mt-1 truncate text-xs text-zinc-500">{presetContextSummary(preset, t)}</div>
                       {preset.description && (
                         <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-400">
                           {preset.description}
@@ -270,11 +277,11 @@ export function PromptAppLibrary({
                       )}
                       {preset.source.kind === 'session' && preset.source.sessionTitle && (
                         <div className="mt-1 truncate text-[11px] text-zinc-600">
-                          from {preset.source.sessionTitle}
+                          {a.from.replace('{name}', preset.source.sessionTitle)}
                         </div>
                       )}
                       <div className="mt-1 text-[11px] text-zinc-600">
-                        updated {formatAssetTime(preset.updatedAt)}
+                        {a.updated.replace('{time}', formatAssetTime(preset.updatedAt, locale))}
                       </div>
                     </div>
                     <button
@@ -283,7 +290,7 @@ export function PromptAppLibrary({
                       className="inline-flex items-center gap-1 rounded-md border border-violet-500/20 bg-violet-500/[0.08] px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/[0.14]"
                     >
                       <Play className="h-3 w-3" />
-                      Use
+                      {a.use}
                     </button>
                   </div>
                 </div>

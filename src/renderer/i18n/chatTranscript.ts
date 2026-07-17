@@ -193,6 +193,23 @@ turnRun: {
   resumeBadge: '可继续',
   outputsSignal: '{count} 个产出',
   toolsSignal: '{count} 次工具调用',
+},
+
+// 系统错误节点兜底文案（TraceNodeRenderer 的 node.subtype === 'error'）——
+// 分类错误走 humanizeToolError 已有文案，这里只兜分不出类别的情况 + 折叠按钮。
+systemError: {
+  fallbackSummary: '执行时出了问题',
+  fallbackDetail: '可以重试一次，或换个说法再试试。',
+  viewDetails: '查看详情',
+  hideDetails: '收起',
+},
+
+// 实时预览诊断条（LivePreviewFrame）——frameError 原文 + CSP snippet 折叠在
+// systemError 的查看详情/收起键后面，这里只放固定的人话摘要+建议。
+livePreview: {
+  loadFailedSummary: '预览没加载出来',
+  loadFailedSuggestion: '试试刷新页面，或让 agent 重新生成一次预览。',
+  cspLabel: '生效 CSP',
 }
 };
 
@@ -385,5 +402,24 @@ turnRun: {
   resumeBadge: 'resume',
   outputsSignal: '{count} outputs',
   toolsSignal: '{count} tool calls',
+},
+
+// System error node fallback copy (TraceNodeRenderer node.subtype === 'error') —
+// classified errors use humanizeToolError's existing copy; this only covers
+// the unclassified fallback + the collapse toggle.
+systemError: {
+  fallbackSummary: 'Something went wrong while running this',
+  fallbackDetail: 'Try again, or rephrase your request.',
+  viewDetails: 'View details',
+  hideDetails: 'Hide',
+},
+
+// Live preview diagnostic strip (LivePreviewFrame) — frameError text + CSP
+// snippet collapse behind systemError's view/hide keys; this only holds the
+// fixed human summary + suggestion.
+livePreview: {
+  loadFailedSummary: "The preview didn't load",
+  loadFailedSuggestion: 'Try refreshing the page, or ask the agent to regenerate the preview.',
+  cspLabel: 'Effective CSP',
 }
 };

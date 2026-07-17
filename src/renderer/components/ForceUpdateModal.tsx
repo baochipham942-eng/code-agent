@@ -10,6 +10,7 @@ import { Modal, ModalHeader } from './primitives/Modal';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 import { useI18n } from '../hooks/useI18n';
+import type { Translations } from '../i18n';
 
 const logger = createLogger('ForceUpdateModal');
 
@@ -19,6 +20,33 @@ async function invokeUpdate<T>(action: string, payload?: unknown): Promise<T> {
     throw new Error(response?.error?.message || `Update action failed: ${action}`);
   }
   return response.data as T;
+}
+
+export type DownloadErrorKind = 'network' | 'disk' | 'unknown';
+
+/** 下载失败原文 → 错误类别。判别顺序有意为之：磁盘类特征（ENOSPC/EACCES）比网络类更具体，先判。 */
+export function classifyDownloadErrorKind(error: string): DownloadErrorKind {
+  if (/enospc|no space|disk full|eacces|eperm|permission denied/i.test(error)) return 'disk';
+  if (/timeout|timed ?out|etimedout|network|enotfound|econnrefused|econnreset|eai_again|proxy|\bdns\b/i.test(error)) return 'network';
+  return 'unknown';
+}
+
+export interface DownloadErrorPresentation {
+  /** 一行人话摘要，替代满屏原始报错 */
+  message: string;
+  /** 分不出类别时才有：原始报错文本，展示层进折叠/tooltip，不裸露成主文案 */
+  detail?: string;
+}
+
+/** 下载失败原文 → 展示层文案。网络/磁盘类给对应人话，分不出类别用通用兜底 + 原文进 detail。 */
+export function toDownloadErrorPresentation(
+  error: string,
+  n: Translations['notices']['update'],
+): DownloadErrorPresentation {
+  const kind = classifyDownloadErrorKind(error);
+  if (kind === 'network') return { message: n.downloadErrorNetwork };
+  if (kind === 'disk') return { message: n.downloadErrorDisk };
+  return { message: n.unknownError, detail: error };
 }
 
 type UpdateEvent =
@@ -63,6 +91,8 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 原始报错文本（分不出网络/磁盘类别时才有）：只挂 tooltip，不裸露成主文案。
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const { t } = useI18n();
   const n = t.notices.update;
 
@@ -84,10 +114,13 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           setDownloadState('downloaded');
           break;
 
-        case 'download_error':
-          setError(event.data.error);
+        case 'download_error': {
+          const presentation = toDownloadErrorPresentation(event.data.error, n);
+          setError(presentation.message);
+          setErrorDetail(presentation.detail ?? null);
           setDownloadState('error');
           break;
+        }
       }
     };
 
@@ -96,7 +129,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
     return () => {
       unsubscribe?.();
     };
-  }, []);
+  }, [n]);
 
   const handleDownload = useCallback(async () => {
     if (!updateInfo?.downloadUrl) return;
@@ -105,9 +138,13 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
       setDownloadState('downloading');
       setDownloadProgress({ percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
       setError(null);
+      setErrorDetail(null);
       await invokeUpdate<string>('download', { downloadUrl: updateInfo.downloadUrl });
     } catch (err) {
-      setError(err instanceof Error ? err.message : n.downloadFailed);
+      const raw = err instanceof Error ? err.message : String(err);
+      const presentation = toDownloadErrorPresentation(raw, n);
+      setError(presentation.message);
+      setErrorDetail(presentation.detail ?? null);
       setDownloadState('error');
     }
   }, [updateInfo?.downloadUrl, n]);
@@ -119,6 +156,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
 
   const handleRetry = useCallback(() => {
     setError(null);
+    setErrorDetail(null);
     setDownloadState('idle');
   }, []);
 
@@ -293,7 +331,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">{n.downloadFailed}</p>
-                <p className="text-sm text-zinc-400 mt-1">
+                <p className="text-sm text-zinc-400 mt-1" title={errorDetail ?? undefined}>
                   {error || n.unknownError}
                 </p>
               </div>

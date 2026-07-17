@@ -50,14 +50,17 @@ vi.mock('../../../src/host/diagnostics/desktopShellDiagnostics', () => ({
 
 import { registerDiagnosticsHandlers } from '../../../src/host/ipc/diagnostics.ipc';
 
-function captureHandler() {
-  let handler: ((e: unknown, req: IPCRequest) => Promise<IPCResponse>) | null = null;
+type DiagnosticsHandler = (e: unknown, req: IPCRequest) => Promise<IPCResponse>;
+
+function captureHandler(): DiagnosticsHandler {
+  const handlers = new Map<string, DiagnosticsHandler>();
   const fakeIpcMain = {
-    handle: (domain: string, fn: (e: unknown, req: IPCRequest) => Promise<IPCResponse>) => {
-      if (domain === IPC_DOMAINS.DIAGNOSTICS) handler = fn;
+    handle: (domain: string, fn: DiagnosticsHandler) => {
+      handlers.set(domain, fn);
     },
   };
   registerDiagnosticsHandlers(fakeIpcMain as never);
+  const handler = handlers.get(IPC_DOMAINS.DIAGNOSTICS);
   if (!handler) throw new Error('diagnostics handler not registered');
   return handler;
 }

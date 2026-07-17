@@ -30,7 +30,10 @@ describe('formatSchemaForModel', () => {
   });
 
   it('falls back to "any" for fields without a declared type', () => {
-    const lines = formatSchemaForModel({ x: { description: 'no type' } }, []);
+    // 故意构造缺 type 的畸形 schema（真实数据可能来自旧版/第三方 MCP schema），
+    // 测的就是运行时兜底成 "any"；JSONSchemaProperty.type 是必填字段，这里按
+    // 已知的"缺字段"输入形状断言。
+    const lines = formatSchemaForModel({ x: { description: 'no type' } as JSONSchemaProperty }, []);
     expect(lines.join('\n')).toContain('`x`: any (可选) — no type');
   });
 });

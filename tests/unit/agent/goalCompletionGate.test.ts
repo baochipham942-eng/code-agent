@@ -49,6 +49,7 @@ function failedEvidence(): VerificationEvidence {
       id: 'goal-contract:verifyCommand', command: 'npm test', cwd: '/tmp/w', required: true,
       kind: 'goal_contract', reason: 'Goal contract verifyCommand.', pass: false, exitCode: 1,
       durationMs: 10, timedOut: false, stdoutTail: '', stderrTail: 'FAIL', output: '1 test failed',
+      spawnFailed: false,
       evidenceRef: { id: 'ev1', kind: 'test', ref: 'x', source: 's', state: 'fresh', redactionStatus: 'clean', capturedAtMs: 1 } as never,
     }],
     skippedChecks: [],

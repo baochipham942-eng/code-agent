@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { TelemetryToolCall } from '../../../../src/shared/contract/telemetry';
+import type { FailurePattern } from '../../../../src/host/lightMemory/failureJournal';
 
 // ── Mocks ──
 
@@ -28,7 +29,7 @@ vi.mock('../../../../src/host/telemetry/telemetryStorage', () => ({
 }));
 
 const journalMocks = vi.hoisted(() => ({
-  recordFailurePatterns: vi.fn(async () => 1),
+  recordFailurePatterns: vi.fn(async (_patterns: FailurePattern[]) => 1),
 }));
 
 // 保留纯函数（buildFailurePatternKey / normalizeErrorMessage），只 mock 落盘

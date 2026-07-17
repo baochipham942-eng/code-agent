@@ -69,7 +69,9 @@ function ctx(filePath = 'tmp/runner.html', metadata: Record<string, unknown> = {
 }
 
 function emptySmoke(passed = false): SmokeResult {
-  return { attempted: true, passed, checks: [], failures: [], coverage: {} };
+  // 注：SmokeResult 早已把诊断字段从 coverage 重命名为 diagnostics（且从未收窄到
+  // 具体形状），这里没有测试读 coverage，直接去掉这个过时字段。
+  return { attempted: true, passed, checks: [], failures: [] };
 }
 
 describe('RunnerChecker', () => {

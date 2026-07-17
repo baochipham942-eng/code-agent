@@ -228,6 +228,21 @@ async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T>
   return response.data as T;
 }
 
+/**
+ * IPC/引擎报错 → 展示层错误状态。message 永远是调用方传入的人话 fallback
+ * （loadFileFailed/saveFailed 等既有键），原始异常文本只进 detail（挂 tooltip，
+ * 不裸露成可见文案）——別把这两个反过来。
+ */
+export function toPreviewErrorState(
+  err: unknown,
+  fallbackMessage: string,
+): { message: string; detail: string } {
+  return {
+    message: fallbackMessage,
+    detail: err instanceof Error ? err.message : String(err),
+  };
+}
+
 function parseArchiveInspection(content: string): ArchiveInspection | null {
   try {
     const parsed = JSON.parse(content) as ArchiveInspection;
@@ -355,6 +370,37 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
   );
 }
 
+// 加载/保存失败的展示层：message 永远是人话摘要（loadFileFailed/saveFailed 等既有
+// 键），原始 IPC/引擎错误文本只挂在 title tooltip 里，不裸露进可见文案。
+export function PreviewErrorState({
+  message,
+  detail,
+  onRetry,
+}: {
+  message: string;
+  detail?: string | null;
+  onRetry: () => void;
+}) {
+  const { t } = useI18n();
+  const pv = t.previewWorkspace.preview;
+  return (
+    <div className="flex items-center justify-center h-full bg-zinc-700">
+      <div className="flex flex-col items-center gap-3 text-center px-4">
+        <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+          <X className="w-6 h-6 text-red-400" />
+        </div>
+        <span className="text-sm text-red-400" title={detail ?? undefined}>{message}</span>
+        <button
+          onClick={onRetry}
+          className="px-4 py-2 rounded-lg bg-zinc-600 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors"
+        >
+          {pv.retry}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PresentationPreview({ content }: { content: string }) {
   const { t } = useI18n();
   const pv = t.previewWorkspace.preview;
@@ -441,6 +487,13 @@ export const PreviewPanel: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // IPC/引擎原始错误信息（往往是英文异常消息）不直接进 error 的可见文案，
+  // 只挂在 tooltip 里给需要排查的人看——error 本身永远是人话摘要。
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const setErrorState = (message: string | null, detail?: string) => {
+    setError(message);
+    setErrorDetail(detail ?? null);
+  };
   // 产物更新回执（闪现渐隐）：记录上一次已加载态的快照，磁盘重载带来"不是
   // 用户刚保存的内容"时点亮一次 artifact-flash。
   const [artifactFlash, setArtifactFlash] = useState(false);
@@ -513,7 +566,7 @@ export const PreviewPanel: React.FC = () => {
 
   const loadContent = async (tabId: string, filePath: string) => {
     setIsLoading(true);
-    setError(null);
+    setErrorState(null);
     try {
       const tabExt = getExtension(filePath);
       const isArchiveTab = ARCHIVE_EXTS.has(tabExt);
@@ -556,7 +609,8 @@ export const PreviewPanel: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to load file', err);
-      setError(err instanceof Error ? err.message : pv.loadFileFailed);
+      const { message, detail } = toPreviewErrorState(err, pv.loadFileFailed);
+      setErrorState(message, detail);
     } finally {
       setIsLoading(false);
     }
@@ -569,13 +623,14 @@ export const PreviewPanel: React.FC = () => {
   const handleSave = async () => {
     if (!activeTab || !isDirty || isSaving) return;
     setIsSaving(true);
-    setError(null);
+    setErrorState(null);
     try {
       await invokeWorkspace('writeFile', { filePath: activeTab.path, content: activeTab.content });
       markPreviewTabSaved(activeTab.id);
     } catch (err) {
       logger.error('Failed to save file', err);
-      setError(err instanceof Error ? err.message : pv.saveFailed);
+      const { message, detail } = toPreviewErrorState(err, pv.saveFailed);
+      setErrorState(message, detail);
     } finally {
       setIsSaving(false);
     }
@@ -589,12 +644,12 @@ export const PreviewPanel: React.FC = () => {
     const doc = iframe.contentDocument;
     const target = doc?.documentElement;
     if (!doc || !target) {
-      setError(pv.previewDocAccessFailed);
+      setErrorState(pv.previewDocAccessFailed);
       return;
     }
 
     setIsExporting(true);
-    setError(null);
+    setErrorState(null);
     try {
       // 懒加载 html2canvas（~45KB gzipped）
       const { default: html2canvas } = await import('html2canvas');
@@ -612,7 +667,7 @@ export const PreviewPanel: React.FC = () => {
 
       canvas.toBlob((blob) => {
         if (!blob) {
-          setError(pv.screenshotFailed);
+          setErrorState(pv.screenshotFailed);
           setIsExporting(false);
           return;
         }
@@ -632,9 +687,9 @@ export const PreviewPanel: React.FC = () => {
       const msg = err instanceof Error ? err.message : String(err);
       // CORS tainted canvas 会抛 SecurityError
       if (msg.includes('tainted') || msg.includes('SecurityError')) {
-        setError(pv.crossOriginScreenshot);
+        setErrorState(pv.crossOriginScreenshot);
       } else {
-        setError(pv.exportScreenshotFailed.replace('{message}', msg));
+        setErrorState(pv.exportScreenshotFailed.replace('{message}', msg));
       }
       setIsExporting(false);
     }
@@ -781,20 +836,7 @@ export const PreviewPanel: React.FC = () => {
             </div>
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center h-full bg-zinc-700">
-            <div className="flex flex-col items-center gap-3 text-center px-4">
-              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
-                <X className="w-6 h-6 text-red-400" />
-              </div>
-              <span className="text-sm text-red-400">{error}</span>
-              <button
-                onClick={handleRefresh}
-                className="px-4 py-2 rounded-lg bg-zinc-600 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors"
-              >
-                {pv.retry}
-              </button>
-            </div>
-          </div>
+          <PreviewErrorState message={error} detail={errorDetail} onRetry={handleRefresh} />
         ) : isImage ? (
           <div className="flex items-center justify-center h-full overflow-auto bg-zinc-950 p-4">
             <img

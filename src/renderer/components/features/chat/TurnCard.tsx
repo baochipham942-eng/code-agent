@@ -249,6 +249,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                     nodes={d.tools}
                     sessionId={sessionId}
                     defaultExpanded={false}
+                    isStreamingTurn={isStreaming}
                   />
                 );
               }

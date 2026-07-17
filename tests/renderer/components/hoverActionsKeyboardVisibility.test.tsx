@@ -79,6 +79,7 @@ describe('hover actions remain visible to keyboard users', () => {
           backgroundTaskMap: new Map(),
           sessionStates: {},
           hasPendingApprovalForSession: () => false,
+          hasNeedsInputForSession: () => false,
           searchQuery: '',
           messageSearchHitsBySessionId: {},
           replayEvidenceBySessionId: {},

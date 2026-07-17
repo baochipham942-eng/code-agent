@@ -237,7 +237,7 @@ describe('ModelRouter', () => {
           role: 'user' as const,
           content: [
             { type: 'text' as const, text: 'What is in this image?' },
-            { type: 'image' as const, source: { type: 'base64', media_type: 'image/png', data: 'abc' } },
+            { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png', data: 'abc' } },
           ],
         },
       ];
@@ -266,7 +266,7 @@ describe('ModelRouter', () => {
           role: 'user' as const,
           content: [
             { type: 'text' as const, text: '请在图上框出关键区域' },
-            { type: 'image' as const, source: { type: 'base64', media_type: 'image/png', data: 'abc' } },
+            { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png', data: 'abc' } },
           ],
         },
       ];

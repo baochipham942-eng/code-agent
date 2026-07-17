@@ -5,7 +5,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { streamText, generateText } from 'ai';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import type { StreamChunk, StreamCallback } from '../../../src/host/model/types';
-import type { ModelConfig, ToolDefinition } from '../../../src/host/shared/contract';
+import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -38,7 +38,9 @@ const READ_TOOL: ToolDefinition = {
   name: 'Read',
   description: 'read a file',
   inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
-} as ToolDefinition;
+  requiresPermission: false,
+  permissionLevel: 'read',
+};
 
 /** 用一组受控事件构造 streamText 返回值（只实现被消费的 fullStream）。 */
 function fakeStream(parts: unknown[]) {

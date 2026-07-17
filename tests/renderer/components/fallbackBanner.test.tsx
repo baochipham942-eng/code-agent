@@ -5,9 +5,10 @@ import { FallbackBanner } from '../../../src/renderer/components/features/chat/M
 import { encodeModelFallbackNotice } from '../../../src/renderer/components/features/chat/fallbackNotice';
 
 describe('FallbackBanner', () => {
-	  it('renders tried, skipped, selected trace steps and disabled tool policy', () => {
+	  it('renders tried, skipped, selected trace steps and disabled tool policy when expanded', () => {
 	    const html = renderToStaticMarkup(
 	      <FallbackBanner
+	        defaultExpanded
 	        content={encodeModelFallbackNotice({
 	          reason: 'vision',
 	          category: 'capability',
@@ -101,9 +102,10 @@ describe('FallbackBanner', () => {
     expect(html).toContain('disabled: Read, Edit, Write, Append, Bash, Task');
   });
 
-  it('renders exhausted fallback traces', () => {
+  it('renders exhausted fallback traces when expanded', () => {
     const html = renderToStaticMarkup(
       <FallbackBanner
+        defaultExpanded
         content={encodeModelFallbackNotice({
           reason: 'Moonshot API error: 503 service unavailable',
           category: 'provider_unavailable',
@@ -138,5 +140,52 @@ describe('FallbackBanner', () => {
 
   it('renders nothing for malformed fallback notice content', () => {
     expect(renderToStaticMarkup(<FallbackBanner content="not a fallback notice" />)).toBe('');
+  });
+
+  // 折叠是降级不是删除：默认态只留一行摘要（模型已降级 + from->to + reason），
+  // strategy pill/identity/trace 分组/工具策略这些工程细节都收进展开态。
+  it('collapses to a one-line summary by default; engineering detail stays reachable via expand', () => {
+    const html = renderToStaticMarkup(
+      <FallbackBanner
+        content={encodeModelFallbackNotice({
+          reason: 'vision',
+          category: 'capability',
+          strategy: 'adaptive-capability-fallback',
+          from: 'mock/text-only',
+          to: 'zhipu/glm-4.5v',
+          fromIdentity: {
+            provider: 'mock',
+            sourceLabel: 'Mock Relay',
+            protocol: 'openai',
+          },
+          tried: [
+            {
+              provider: 'mock',
+              model: 'text-only',
+              status: 'tried',
+              reason: 'missing_capability',
+              category: 'vision',
+            },
+          ],
+          toolPolicy: {
+            status: 'disabled',
+            reason: 'fallback_model_without_tool_support',
+            originalToolCount: 6,
+            effectiveToolCount: 0,
+            disabledToolNames: ['Read'],
+          },
+        })}
+      />,
+    );
+
+    expect(html).toContain('模型已降级');
+    expect(html).toContain('mock/text-only');
+    expect(html).toContain('zhipu/glm-4.5v');
+    expect(html).toContain('aria-expanded="false"');
+    // 展开态才有的工程细节，默认不该出现
+    expect(html).not.toContain('能力自动切换');
+    expect(html).not.toContain('Mock Relay');
+    expect(html).not.toContain('已尝试');
+    expect(html).not.toContain('工具已关闭');
   });
 });

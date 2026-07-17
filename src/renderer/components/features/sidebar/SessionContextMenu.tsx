@@ -3,10 +3,11 @@
 // ============================================================================
 
 import React, { useEffect, useRef, useCallback } from 'react';
+import { Z_LAYERS } from '../../../styles/zLayers';
 
 export interface ContextMenuItem {
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   onClick: () => void;
   danger?: boolean;
   disabled?: boolean;
@@ -91,8 +92,8 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-[9999] min-w-[160px] py-1 bg-zinc-900 border border-zinc-700/80 rounded-lg shadow-xl"
-      style={{ left: pos.left, top: pos.top }}
+      className="fixed min-w-[160px] py-1 bg-zinc-900 border border-zinc-700/80 rounded-lg shadow-xl"
+      style={{ left: pos.left, top: pos.top, zIndex: Z_LAYERS.contextMenu }}
     >
       {items.map((item, index) => (
         <button

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session, Message, SessionTask, TodoItem, StreamRecoverySnapshot } from '@shared/contract';
+import type { Session, Message, SessionTask, TodoItem, StreamRecoverySnapshot, UserQuestionRequest } from '@shared/contract';
 import type { AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import type { DesignBrief } from '@shared/contract/designBrief';
@@ -197,6 +197,7 @@ interface SessionState {
   backgroundTasks: BackgroundTaskInfo[];
   hasOlderMessages: boolean;
   isLoadingOlder: boolean;
+  pendingUserQuestionsBySessionId: Map<string, UserQuestionRequest[]>;
   // 当前会话锁定的 design brief（来自 question-form 提交，仅运行时内存态，不进 DB）
   sessionDesignBriefs: Map<string, DesignBrief>;
 }
@@ -233,6 +234,10 @@ interface SessionActions {
   updateBackgroundTask: (event: BackgroundTaskUpdateEvent) => void;
   getBackgroundTaskCount: () => number;
   renameSession: (id: string, title: string) => Promise<void>;
+  addPendingUserQuestion: (request: UserQuestionRequest) => void;
+  clearPendingUserQuestion: (request: Pick<UserQuestionRequest, 'id' | 'sessionId'>) => void;
+  clearPendingUserQuestionsForSession: (sessionId: string) => void;
+  getPendingUserQuestions: (sessionId: string) => UserQuestionRequest[];
   setSessionDesignBrief: (sessionId: string, brief: DesignBrief) => void;
   clearSessionDesignBrief: (sessionId: string) => void;
   getSessionDesignBrief: (sessionId: string) => DesignBrief | undefined;
@@ -256,6 +261,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     backgroundTasks: [],
     hasOlderMessages: false,
     isLoadingOlder: false,
+    pendingUserQuestionsBySessionId: new Map<string, UserQuestionRequest[]>(),
     sessionDesignBriefs: new Map<string, DesignBrief>(),
 
     getPendingSessionCreate: () => _pendingSessionCreate,
@@ -873,6 +879,47 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
+    addPendingUserQuestion: (request) => {
+      const { sessionId } = request;
+      if (!sessionId) return;
+      set((state) => {
+        const next = new Map(state.pendingUserQuestionsBySessionId);
+        const existing = next.get(sessionId) ?? [];
+        const deduped = existing.filter((item) => item.id !== request.id);
+        next.set(sessionId, [...deduped, request]);
+        return { pendingUserQuestionsBySessionId: next };
+      });
+    },
+
+    clearPendingUserQuestion: (request) => {
+      const { sessionId } = request;
+      if (!sessionId) return;
+      set((state) => {
+        if (!state.pendingUserQuestionsBySessionId.has(sessionId)) return state;
+        const next = new Map(state.pendingUserQuestionsBySessionId);
+        const remaining = (next.get(sessionId) ?? []).filter((item) => item.id !== request.id);
+        if (remaining.length === 0) {
+          next.delete(sessionId);
+        } else {
+          next.set(sessionId, remaining);
+        }
+        return { pendingUserQuestionsBySessionId: next };
+      });
+    },
+
+    clearPendingUserQuestionsForSession: (sessionId) => {
+      set((state) => {
+        if (!state.pendingUserQuestionsBySessionId.has(sessionId)) return state;
+        const next = new Map(state.pendingUserQuestionsBySessionId);
+        next.delete(sessionId);
+        return { pendingUserQuestionsBySessionId: next };
+      });
+    },
+
+    getPendingUserQuestions: (sessionId) => {
+      return get().pendingUserQuestionsBySessionId.get(sessionId) ?? [];
+    },
+
     setSessionDesignBrief: (sessionId, brief) => {
       set((state) => {
         const next = new Map(state.sessionDesignBriefs);
@@ -927,6 +974,7 @@ function clearSessionStateForAuthChange(): void {
     backgroundTasks: [],
     hasOlderMessages: false,
     isLoadingOlder: false,
+    pendingUserQuestionsBySessionId: new Map<string, UserQuestionRequest[]>(),
     sessionDesignBriefs: new Map<string, DesignBrief>(),
   });
 }

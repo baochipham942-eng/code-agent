@@ -164,7 +164,7 @@ describe('WorkbenchTabs dirty preview confirmation', () => {
     expect(getByRole('dialog')).toBeTruthy();
     expect(useAppStore.getState().workbenchTabs).toHaveLength(1);
 
-    fireEvent.click(getByRole('button', { name: '取消' }));
+    fireEvent.click(getByRole('button', { name: en.common.cancel }));
     expect(useAppStore.getState().workbenchTabs).toHaveLength(1);
 
     fireEvent.mouseDown(getByRole('tab').parentElement!, { button: 1 });

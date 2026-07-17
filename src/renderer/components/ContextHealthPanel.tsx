@@ -13,12 +13,15 @@ import {
   Sparkles,
   ExternalLink,
   X as XIcon,
+  Shrink,
+  Loader2,
 } from 'lucide-react';
 import type {
   ContextHealthState,
   ContextHealthWarningLevel,
   SourceTag,
 } from '@shared/contract/contextHealth';
+import { useI18n } from '../hooks/useI18n';
 
 interface ContextHealthPanelProps {
   health: ContextHealthState | null;
@@ -28,6 +31,10 @@ interface ContextHealthPanelProps {
   onNavigate?: (target: SourceTag) => void;
   /** 点击某 source 的卸载/禁用图标时调（step 10 接 SkillsPanel.unmount / MCP.disable） */
   onUnload?: (target: SourceTag) => void;
+  /** critical 时展示「立即压缩」按钮；未传时不渲染按钮（纯展示模式，组件不知道 IPC 存在） */
+  onCompact?: () => void;
+  /** 压缩进行中——按钮 disabled，避免重复触发 */
+  isCompacting?: boolean;
 }
 
 /**
@@ -75,10 +82,15 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
   onToggle,
   onNavigate,
   onUnload,
+  onCompact,
+  isCompacting = false,
 }) => {
+  const { t } = useI18n();
+  const ch = t.taskStatusPanels.contextHealth;
   const [isExpanded, setIsExpanded] = useState(!collapsed);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showBySource, setShowBySource] = useState(true);
+  const [showDroppedBlocks, setShowDroppedBlocks] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     skills: true,
     mcp: true,
@@ -116,7 +128,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           <ChevronRight className="w-4 h-4 text-zinc-500" />
         )}
         <IconComponent className={`w-4 h-4 ${colors.iconColor}`} />
-        <span className="text-sm font-medium text-zinc-200">上下文健康度</span>
+        <span className="text-sm font-medium text-zinc-200">{ch.title}</span>
         <span className={`ml-auto text-sm font-mono ${colors.textColor}`}>
           {health.usagePercent.toFixed(1)}%
         </span>
@@ -151,29 +163,29 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
               ) : (
                 <ChevronRight className="w-3 h-3" />
               )}
-              <span>Token 分解</span>
+              <span>{ch.tokenBreakdown}</span>
             </button>
 
             {showBreakdown && (
               <div className="mt-2 space-y-1.5 pl-4">
                 <BreakdownItem
-                  label="System Prompt"
+                  label={ch.bkSystemPrompt}
                   tokens={health.breakdown.systemPrompt}
                   total={health.currentTokens}
                 />
                 <BreakdownItem
-                  label="Messages"
+                  label={ch.bkMessages}
                   tokens={health.breakdown.messages}
                   total={health.currentTokens}
                 />
                 <BreakdownItem
-                  label="Tool Results"
+                  label={ch.bkToolResults}
                   tokens={health.breakdown.toolResults}
                   total={health.currentTokens}
                 />
                 {health.breakdown.toolDefinitions !== undefined && (
                   <BreakdownItem
-                    label="Tool Defs"
+                    label={ch.bkToolDefs}
                     tokens={health.breakdown.toolDefinitions}
                     total={health.currentTokens}
                   />
@@ -194,14 +206,14 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
                 ) : (
                   <ChevronRight className="w-3 h-3" />
                 )}
-                <span>按产品来源</span>
+                <span>{ch.bySource}</span>
               </button>
 
               {showBySource && (
                 <div className="mt-2 space-y-1.5 pl-4">
                   {/* Rules — 标量 */}
                   <BreakdownItem
-                    label="Rules"
+                    label={ch.bkRules}
                     tokens={health.breakdown.bySource.rules}
                     total={health.currentTokens}
                   />
@@ -244,14 +256,14 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
 
                   {/* File Reads — 标量 */}
                   <BreakdownItem
-                    label="File Reads"
+                    label={ch.bkFileReads}
                     tokens={health.breakdown.bySource.fileReads}
                     total={health.currentTokens}
                   />
 
                   {/* Conversation — 派生值 */}
                   <BreakdownItem
-                    label="Conversation"
+                    label={ch.bkConversation}
                     tokens={health.breakdown.bySource.conversation}
                     total={health.currentTokens}
                   />
@@ -264,8 +276,8 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           <div className="flex items-center gap-1.5 text-xs text-zinc-500">
             <Sparkles className="w-3 h-3" />
             <span>
-              预估剩余:{' '}
-              <span className="text-zinc-400">~{health.estimatedTurnsRemaining} 轮</span>
+              {ch.estimatedRemaining}{' '}
+              <span className="text-zinc-400">{ch.turnsRemaining.replace('{count}', String(health.estimatedTurnsRemaining))}</span>
             </span>
           </div>
 
@@ -273,18 +285,30 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           {(health.droppedPromptBlocks?.length ?? 0) > 0 && (
             <div className="flex items-start gap-2 p-2 bg-orange-500/20 rounded-md">
               <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-              <div className="text-xs text-orange-300 space-y-1">
-                <div>以下上下文块因 system prompt 预算超限被丢弃，agent 部分能力可能不可见：</div>
-                <div className="flex flex-wrap gap-1">
-                  {health.droppedPromptBlocks?.map((block) => (
-                    <span
-                      key={block}
-                      className="px-1.5 py-0.5 bg-orange-500/20 rounded font-mono text-orange-200"
-                    >
-                      {block}
-                    </span>
-                  ))}
+              <div className="min-w-0 flex-1 text-xs text-orange-300 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span>{ch.droppedBlocks} {health.droppedPromptBlocks?.length}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDroppedBlocks((value) => !value)}
+                    aria-expanded={showDroppedBlocks}
+                    className="shrink-0 text-orange-300/70 hover:text-orange-200 transition-colors"
+                  >
+                    {showDroppedBlocks ? t.systemError.hideDetails : t.systemError.viewDetails}
+                  </button>
                 </div>
+                {showDroppedBlocks && (
+                  <div className="flex flex-wrap gap-1">
+                    {health.droppedPromptBlocks?.map((block) => (
+                      <span
+                        key={block}
+                        className="px-1.5 py-0.5 bg-orange-500/20 rounded font-mono text-orange-200"
+                      >
+                        {block}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -293,9 +317,25 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           {health.warningLevel === 'critical' && (
             <div className="flex items-center gap-2 p-2 bg-red-500/20 rounded-md">
               <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-              <span className="text-xs text-red-300">
-                上下文即将耗尽，建议开启新会话或压缩上下文
+              <span className="flex-1 text-xs text-red-300">
+                {ch.nearlyExhausted}
               </span>
+              {onCompact && (
+                <button
+                  type="button"
+                  onClick={onCompact}
+                  disabled={isCompacting}
+                  title={ch.compactHint}
+                  className="shrink-0 inline-flex items-center gap-1 rounded-md border border-red-400/30 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/20 disabled:cursor-wait disabled:opacity-70"
+                >
+                  {isCompacting ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Shrink className="w-3 h-3" />
+                  )}
+                  {isCompacting ? ch.compacting : ch.compactNow}
+                </button>
+              )}
             </div>
           )}
 
@@ -303,7 +343,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
             <div className="flex items-center gap-2 p-2 bg-yellow-500/20 rounded-md">
               <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
               <span className="text-xs text-yellow-300">
-                上下文使用率较高，请注意控制对话长度
+                {ch.highUsage}
               </span>
             </div>
           )}
@@ -347,6 +387,8 @@ const NestedGroup: React.FC<{
   onNavigate?: (target: SourceTag) => void;
   onUnload?: (target: SourceTag) => void;
 }> = ({ label, entries, total, isExpanded, onToggle, sourceFactory, onNavigate, onUnload }) => {
+  const { t } = useI18n();
+  const ch = t.taskStatusPanels.contextHealth;
   const names = Object.keys(entries);
   const sum = Object.values(entries).reduce((a, b) => a + b, 0);
   const percent = total > 0 ? ((sum / total) * 100).toFixed(1) : '0.0';
@@ -402,9 +444,9 @@ const NestedGroup: React.FC<{
                       <button
                         type="button"
                         onClick={() => onNavigate(source)}
-                        aria-label={`跳转到 ${name} 对应面板`}
+                        aria-label={ch.jumpToPanelAria.replace('{name}', name)}
                         className="opacity-0 group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                        title="跳转到对应面板"
+                        title={ch.jumpToPanel}
                       >
                         <ExternalLink className="w-3 h-3 text-zinc-500" />
                       </button>
@@ -413,9 +455,9 @@ const NestedGroup: React.FC<{
                       <button
                         type="button"
                         onClick={() => onUnload(source)}
-                        aria-label={`卸载或断开 ${name}`}
+                        aria-label={ch.unmountAria.replace('{name}', name)}
                         className="opacity-0 group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                        title="卸载 / 断开"
+                        title={ch.unmountDisconnect}
                       >
                         <XIcon className="w-3 h-3 text-zinc-500 hover:text-red-400" />
                       </button>

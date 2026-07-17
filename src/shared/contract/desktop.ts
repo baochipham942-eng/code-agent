@@ -69,6 +69,116 @@ export type ManagedBrowserLeaseStatus = 'active' | 'expired' | 'released';
 export type ManagedBrowserProxyMode = 'direct' | 'http' | 'socks';
 export type ManagedBrowserProxySource = 'default' | 'env' | 'request';
 
+/** ADR-041: browser_action engine selection (Managed vs Relay). */
+export type BrowserActionEngine = 'auto' | 'managed' | 'relay';
+
+/**
+ * Execution provider recorded in proof / workbench traces.
+ * Import source is separate from the runtime provider that holds the session.
+ */
+export type BrowserExecutionProvider =
+  | ManagedBrowserProvider
+  | 'browser-relay';
+
+/** Alma-aligned Chromium-family browser sources for profile cookie import (macOS first). */
+export type BrowserProfileSourceId =
+  | 'chrome'
+  | 'chrome-beta'
+  | 'chrome-canary'
+  | 'chromium'
+  | 'edge'
+  | 'brave'
+  | 'arc'
+  | 'vivaldi';
+
+export type BrowserProfileUnavailableReason =
+  | 'unsupported_platform'
+  | 'app_not_found'
+  | 'profile_dir_missing'
+  | 'cookie_db_missing'
+  | 'cookie_db_locked'
+  | 'keychain_unavailable'
+  | 'schema_unsupported'
+  | 'unknown';
+
+export interface BrowserProfileDescriptor {
+  source: BrowserProfileSourceId;
+  appName: string;
+  profileId: string;
+  profileName: string;
+  /** Absolute profile directory. UI should show path tail only. */
+  profileDir: string;
+  cookieDbPath?: string | null;
+  lastActiveAtMs?: number | null;
+  available: boolean;
+  unavailableReason?: BrowserProfileUnavailableReason | null;
+  unavailableMessage?: string | null;
+}
+
+export interface BrowserCookieImportRequest {
+  source: BrowserProfileSourceId;
+  profileId: string;
+  /** When set, only cookies whose domain matches (exact or subdomain) are imported. */
+  domainAllowlist?: string[];
+  includeExpired?: boolean;
+  /** Must be true — silent agent/background import is forbidden (ADR-041). */
+  userConfirmed: true;
+}
+
+export type BrowserCookieImportFailureCode =
+  | 'unsupported_platform'
+  | 'profile_not_found'
+  | 'cookie_db_missing'
+  | 'cookie_db_copy_failed'
+  | 'keychain_denied'
+  | 'keychain_unavailable'
+  | 'decrypt_failed'
+  | 'schema_unsupported'
+  | 'not_confirmed'
+  | 'managed_browser_unavailable'
+  | 'unknown';
+
+export interface BrowserCookieImportResult {
+  ok: boolean;
+  source: BrowserProfileSourceId;
+  profileId: string;
+  profileName?: string | null;
+  importedCookieCount: number;
+  skippedCookieCount: number;
+  expiredSkippedCount: number;
+  domainCount: number;
+  /** Truncated domain list for UI/proof (never cookie values). */
+  domains: string[];
+  selectedDomainCount?: number | null;
+  accountState?: ManagedBrowserAccountStateSummary | null;
+  failureCode?: BrowserCookieImportFailureCode | null;
+  failureMessage?: string | null;
+  warnings: string[];
+  durationMs: number;
+  importSource: {
+    kind: 'browser-profile-cookies';
+    source: BrowserProfileSourceId;
+    profileId: string;
+  };
+}
+
+export interface BrowserEngineRecovery {
+  code: string;
+  requestedEngine: BrowserActionEngine;
+  selectedEngine: BrowserActionEngine | null;
+  recoverable: boolean;
+  recommendedAction: string;
+  availableEngines: BrowserActionEngine[];
+  reason?: string | null;
+}
+
+export interface BrowserEngineRouteDecision {
+  selectedEngine: 'managed' | 'relay';
+  requestedEngine: BrowserActionEngine;
+  reason: string;
+  recovery?: BrowserEngineRecovery | null;
+}
+
 export interface ManagedBrowserLeaseState {
   leaseId: string;
   owner: string;

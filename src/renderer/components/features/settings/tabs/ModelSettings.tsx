@@ -977,7 +977,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                   variant={saveStatus === 'error' ? 'danger' : 'primary'}
                   className={`w-full ${saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}`}
                 >
-                  {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : modelText.header.saveConfig}
+                  {isSaving ? t.common.saving : saveStatus === 'success' ? t.common.saved : saveStatus === 'error' ? t.common.error : modelText.header.saveConfig}
                 </Button>
                 <span className="text-xs text-zinc-500">
                   {modelText.header.saveHintPrefix}{providerTitle}{modelText.header.saveHintSuffix}

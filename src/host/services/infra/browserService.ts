@@ -120,6 +120,8 @@ type ManagedBrowserSessionChangeReason =
   | 'history'
   | 'reload'
   | 'set_viewport'
+  | 'import_profile_cookies'
+  | 'clear_cookies'
   | 'crashed';
 
 export class BrowserService implements Disposable {

@@ -180,7 +180,7 @@ const TaskAssignments: React.FC<{ agents: SwarmAgentState[] }> = ({ agents }) =>
     <div className="border-b border-zinc-700">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-400 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
       >
         <ListTodo className="w-3.5 h-3.5" />
         <span className="font-medium">任务分配</span>

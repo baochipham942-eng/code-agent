@@ -22,6 +22,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { useI18n } from '../../hooks/useI18n';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
@@ -48,15 +49,17 @@ import {
   buildContextTimeline,
   buildProvenanceEntries,
   formatTokens,
+  getPhaseMeta,
   getUsageTextClass,
   getUsageToneClass,
   isContextViewResponse,
-  phaseMeta,
   summarizeContextSources,
   toneClassMap,
 } from './orchestration/model';
 
 export const Orchestration: React.FC = () => {
+  const { t } = useI18n();
+  const o = t.taskStatusPanels.orchestration;
   const { setShowAgentTeamPanel, setSelectedSwarmAgentId, contextHealth: appContextHealth } = useAppStore();
   const { currentSessionId, messages, sessionRuntimes } = useSessionStore();
   const {
@@ -90,8 +93,8 @@ export const Orchestration: React.FC = () => {
   const contextHealth = runtimeContextHealth ?? appContextHealth ?? null;
   const contextSources = useMemo(() => summarizeContextSources(messages), [messages]);
   const contextTimeline = useMemo(
-    () => buildContextTimeline(messages, contextView, contextHealth),
-    [messages, contextView, contextHealth],
+    () => buildContextTimeline(messages, contextView, contextHealth, t),
+    [messages, contextView, contextHealth, t],
   );
   const agentContextSnapshots = useMemo(
     () => agents.filter((agent) => Boolean(agent.contextSnapshot)),
@@ -138,7 +141,7 @@ export const Orchestration: React.FC = () => {
     ? 8
     : 0;
   const elapsed = startTime ? formatDuration(Date.now() - startTime) : '0s';
-  const phase = phaseMeta[executionPhase];
+  const phase = getPhaseMeta(executionPhase, t);
   const contextUsagePercent = contextView?.usagePercent ?? contextHealth?.usagePercent ?? 0;
   const contextTotalTokens = contextView?.totalTokens ?? contextHealth?.currentTokens ?? 0;
   const contextMaxTokens = contextView?.maxTokens ?? contextHealth?.maxTokens ?? 0;
@@ -223,10 +226,10 @@ export const Orchestration: React.FC = () => {
         <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
           <div className="flex items-center gap-2 text-zinc-300">
             <GitBranch className="w-4 h-4 text-primary-400" />
-            <span className="text-sm font-medium">编排视图</span>
+            <span className="text-sm font-medium">{o.title}</span>
           </div>
           <div className="mt-3 text-xs leading-6 text-zinc-500">
-            当前没有活跃的多 agent 编排。触发并行执行后，这里会显示 agent 泳道、审批队列、协作动态和最终汇总。
+            {o.empty}
           </div>
         </div>
         <SwarmTraceHistory
@@ -301,7 +304,7 @@ export const Orchestration: React.FC = () => {
       <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-3">
         <div className="flex items-center gap-2">
           <GitBranch className="w-4 h-4 text-primary-400" />
-          <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">编排态势</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">{o.posture}</span>
           <button
             onClick={() => {
               setSelectedSwarmAgentId(null);
@@ -310,20 +313,20 @@ export const Orchestration: React.FC = () => {
             className="ml-auto flex items-center gap-1 rounded-md border border-white/[0.06] bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-primary-500/20 hover:text-zinc-100"
           >
             <MessageSquare className="w-3 h-3" />
-            协作
+            {o.collaborate}
           </button>
           <button
             onClick={toggleDelegateMode}
             disabled={delegateModeLoading || delegateModePending}
             className="flex items-center gap-1 rounded-md border border-white/[0.06] bg-zinc-800/80 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-primary-500/20 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
-            title="开启后优先走 delegate 编排路径"
+            title={o.takeoverTooltip}
           >
             {delegateMode ? (
               <ToggleRight className="w-3.5 h-3.5 text-emerald-400" />
             ) : (
               <ToggleLeft className="w-3.5 h-3.5 text-zinc-500" />
             )}
-            {delegateModePending ? '切换中…' : delegateMode ? '接管开' : '接管关'}
+            {delegateModePending ? o.switching : delegateMode ? o.takeoverOn : o.takeoverOff}
           </button>
           <span className={`rounded-full px-2 py-1 text-[11px] ${phase.className}`}>
             {phase.label}
@@ -332,11 +335,14 @@ export const Orchestration: React.FC = () => {
 
         <div className="mt-2 flex items-center justify-between text-sm">
           <div className="text-zinc-100">
-            {displayAgentCount} 个 agent
+            {o.agentCount.replace('{count}', String(displayAgentCount))}
             <span className="ml-2 text-zinc-500">
               {pendingLaunches.length > 0 && !isRunning
-                ? '等待启动确认'
-                : `${statistics.running} 运行 / ${statistics.pending} 等待 / ${statistics.completed} 完成`}
+                ? o.waitingLaunch
+                : o.runningStats
+                    .replace('{running}', String(statistics.running))
+                    .replace('{pending}', String(statistics.pending))
+                    .replace('{completed}', String(statistics.completed))}
             </span>
           </div>
           <div className="text-xs text-zinc-500">{elapsed}</div>
@@ -352,31 +358,31 @@ export const Orchestration: React.FC = () => {
         <div className="mt-3 grid grid-cols-2 gap-2">
           <MetricCard
             icon={<Users className="w-3.5 h-3.5 text-primary-400" />}
-            label="并行峰值"
+            label={o.parallelPeak}
             value={statistics.parallelPeak || statistics.running}
             emphasis="text-primary-300"
           />
           <MetricCard
             icon={<ShieldAlert className="w-3.5 h-3.5 text-amber-400" />}
-            label="待确认"
+            label={o.pendingConfirm}
             value={pendingLaunches.length + pendingReviews.length}
             emphasis={pendingLaunches.length + pendingReviews.length > 0 ? 'text-amber-300' : 'text-zinc-200'}
           />
           <MetricCard
             icon={<Ban className="w-3.5 h-3.5 text-red-400" />}
-            label="阻塞中"
+            label={o.blocking}
             value={agents.filter((agent) => agent.status === 'failed' || agent.status === 'cancelled').length}
             emphasis="text-red-300"
           />
           <MetricCard
             icon={<Zap className="w-3.5 h-3.5 text-cyan-400" />}
-            label="总 Token"
+            label={o.totalToken}
             value={formatTokens(statistics.totalTokens)}
             emphasis="text-cyan-300"
           />
           <MetricCard
             icon={<FileText className="w-3.5 h-3.5 text-emerald-400" />}
-            label="变更文件"
+            label={o.changedFiles}
             value={aggregation?.filesChanged.length ?? 0}
             emphasis="text-emerald-300"
           />
@@ -385,11 +391,11 @@ export const Orchestration: React.FC = () => {
 
       {launchRequests.length > 0 && (
         <Section
-          title="启动确认"
+          title={o.launchConfirm}
           extra={
             pendingLaunches.length > 0 ? (
               <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
-                {pendingLaunches.length} 待确认
+                {o.pendingLaunchCount.replace('{count}', String(pendingLaunches.length))}
               </span>
             ) : undefined
           }
@@ -413,7 +419,7 @@ export const Orchestration: React.FC = () => {
       )}
 
       {activeLaunchRequest && (
-        <Section title="依赖拓扑" defaultExpanded>
+        <Section title={o.dependencyTopology} defaultExpanded>
           <SwarmDependencyMap
             launchRequest={activeLaunchRequest}
             agents={agents}
@@ -428,7 +434,7 @@ export const Orchestration: React.FC = () => {
 
       {(contextHealth || contextView || contextViewLoading) && (
         <Section
-          title="上下文空间"
+          title={o.contextSpace}
           extra={
             <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${getUsageTextClass(contextUsagePercent)}`}>
               {contextUsagePercent.toFixed(1)}%
@@ -439,11 +445,11 @@ export const Orchestration: React.FC = () => {
             <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <div className="text-sm font-medium text-zinc-100">Context Budget</div>
+                  <div className="text-sm font-medium text-zinc-100">{o.contextBudget}</div>
                   <div className="mt-1 text-xs text-zinc-500">
                     {selectedContextAgent
-                      ? `当前仅展示 ${selectedContextAgent.name} (${selectedContextAgent.id}) 的上下文视图`
-                      : '当前展示全局上下文视图；点击 DAG agent 节点可切到对应 subagent'}
+                      ? o.contextViewOne.replace('{name}', selectedContextAgent.name).replace('{id}', selectedContextAgent.id)
+                      : o.contextViewGlobal}
                   </div>
                 </div>
                 {selectedContextAgentId && (
@@ -451,7 +457,7 @@ export const Orchestration: React.FC = () => {
                     onClick={() => setSelectedContextAgentId(null)}
                     className="rounded-md border border-white/[0.06] bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-primary-500/20 hover:text-zinc-100"
                   >
-                    查看全局
+                    {o.viewGlobal}
                   </button>
                 )}
                 {contextViewLoading && (
@@ -469,25 +475,25 @@ export const Orchestration: React.FC = () => {
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <MetricCard
                   icon={<Zap className="w-3.5 h-3.5 text-cyan-400" />}
-                  label="上下文预算"
+                  label={o.contextBudget}
                   value={`${formatTokens(contextTotalTokens)} / ${formatTokens(contextMaxTokens)}`}
                   emphasis={getUsageTextClass(contextUsagePercent)}
                 />
                 <MetricCard
                   icon={<Clock className="w-3.5 h-3.5 text-emerald-400" />}
-                  label="预估剩余"
-                  value={contextHealth ? `~${contextHealth.estimatedTurnsRemaining} 轮` : '—'}
+                  label={o.estimatedRemaining}
+                  value={contextHealth ? o.turnsRemaining.replace('{count}', String(contextHealth.estimatedTurnsRemaining)) : '—'}
                   emphasis="text-emerald-300"
                 />
                 <MetricCard
                   icon={<Activity className="w-3.5 h-3.5 text-violet-400" />}
-                  label="消息视图"
+                  label={o.messageView}
                   value={contextView?.messageCount ?? messages.length}
                   emphasis="text-violet-300"
                 />
                 <MetricCard
                   icon={<ShieldAlert className="w-3.5 h-3.5 text-amber-400" />}
-                  label="健康等级"
+                  label={o.healthLevel}
                   value={contextHealth?.warningLevel ?? 'normal'}
                   emphasis={getUsageTextClass(contextUsagePercent)}
                 />
@@ -496,7 +502,7 @@ export const Orchestration: React.FC = () => {
 
             {contextDistribution.length > 0 && (
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
-                <div className="text-sm font-medium text-zinc-100">Context Breakdown</div>
+                <div className="text-sm font-medium text-zinc-100">{o.contextBreakdown}</div>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   {contextDistribution.map((entry) => {
                     const percent = contextTotalTokens > 0
@@ -517,20 +523,20 @@ export const Orchestration: React.FC = () => {
 
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
-                <div className="text-sm font-medium text-zinc-100">Compression</div>
+                <div className="text-sm font-medium text-zinc-100">{o.compression}</div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-                    提交次数 <span className="ml-1 text-zinc-200">{compressionCount}</span>
+                    {o.compressionCount} <span className="ml-1 text-zinc-200">{compressionCount}</span>
                   </div>
                   <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-                    节省 Token <span className="ml-1 text-emerald-300">{formatTokens(compressionSavedTokens)}</span>
+                    {o.savedToken} <span className="ml-1 text-emerald-300">{formatTokens(compressionSavedTokens)}</span>
                   </div>
                   <div className="col-span-2 rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-                    触发层 <span className="ml-1 text-zinc-200">{compressionLayers.length > 0 ? compressionLayers.join(', ') : '—'}</span>
+                    {o.triggerLayer} <span className="ml-1 text-zinc-200">{compressionLayers.length > 0 ? compressionLayers.join(', ') : '—'}</span>
                   </div>
                   {contextView && (
                     <div className="col-span-2 rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-                      裁剪状态
+                      {o.trimStatus}
                       <span className="ml-1 text-zinc-200">
                         snip {contextView.compressionStatus.snippedCount} / collapse {contextView.compressionStatus.collapsedSpans}
                       </span>
@@ -540,11 +546,11 @@ export const Orchestration: React.FC = () => {
               </div>
 
             <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
-              <div className="text-sm font-medium text-zinc-100">Context Sources</div>
-              <div className="mt-2 text-xs text-zinc-500">最近 20 条消息里被带入上下文的附件与工具</div>
+              <div className="text-sm font-medium text-zinc-100">{o.contextSources}</div>
+              <div className="mt-2 text-xs text-zinc-500">{o.recentAttachments}</div>
               <div className="mt-3 space-y-2">
                 <div>
-                  <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-500">Attachments</div>
+                  <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-500">{o.attachments}</div>
                   <div className="flex flex-wrap gap-1.5">
                     {contextSources.attachments.length > 0 ? contextSources.attachments.map((name) => (
                       <span
@@ -555,12 +561,12 @@ export const Orchestration: React.FC = () => {
                         {name}
                       </span>
                     )) : (
-                      <span className="text-[10px] text-zinc-600">无附件上下文</span>
+                      <span className="text-[10px] text-zinc-600">{o.noAttachmentContext}</span>
                     )}
                   </div>
                 </div>
                   <div>
-                    <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-500">Tools</div>
+                    <div className="mb-1 text-[11px] uppercase tracking-wide text-zinc-500">{o.tools}</div>
                     <div className="flex flex-wrap gap-1.5">
                       {contextSources.tools.length > 0 ? contextSources.tools.map((name) => (
                         <span
@@ -570,7 +576,7 @@ export const Orchestration: React.FC = () => {
                           {name}
                         </span>
                       )) : (
-                        <span className="text-[10px] text-zinc-600">无工具上下文</span>
+                        <span className="text-[10px] text-zinc-600">{o.noToolContext}</span>
                       )}
                     </div>
                   </div>
@@ -594,7 +600,7 @@ export const Orchestration: React.FC = () => {
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
                 <div className="flex items-center gap-2">
                   <Activity className="h-4 w-4 text-primary-400" />
-                  <div className="text-sm font-medium text-zinc-100">Context Timeline</div>
+                  <div className="text-sm font-medium text-zinc-100">{o.contextTimeline}</div>
                 </div>
                 <div className="mt-3 space-y-2">
                   {contextTimeline.map((entry) => (
@@ -619,7 +625,7 @@ export const Orchestration: React.FC = () => {
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-primary-400" />
-                  <div className="text-sm font-medium text-zinc-100">Agent Context Snapshots</div>
+                  <div className="text-sm font-medium text-zinc-100">{o.agentSnapshots}</div>
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
                   {agentContextSnapshots.map((agent) => (
@@ -631,7 +637,7 @@ export const Orchestration: React.FC = () => {
 
             {messagePreview.length > 0 && (
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
-                <div className="text-sm font-medium text-zinc-100">API View Preview</div>
+                <div className="text-sm font-medium text-zinc-100">{o.apiViewPreview}</div>
                 <div className="mt-3 space-y-2">
                   {messagePreview.map((item) => (
                     <div
@@ -658,7 +664,7 @@ export const Orchestration: React.FC = () => {
 
       {agents.length > 0 && (
         <Section
-          title="Agent 泳道"
+          title={o.agentLanes}
           extra={<span className="text-[11px] text-zinc-600">{agents.length}</span>}
         >
           <div className="space-y-2">
@@ -679,11 +685,11 @@ export const Orchestration: React.FC = () => {
 
       {activeScope && (pendingReviews.length > 0 || resolvedReviews.length > 0) && (
         <Section
-          title="审批队列"
+          title={o.approvalQueue}
           extra={
             pendingReviews.length > 0 ? (
               <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
-                {pendingReviews.length} 待处理
+                {o.pendingReviewCount.replace('{count}', String(pendingReviews.length))}
               </span>
             ) : undefined
           }
@@ -708,7 +714,7 @@ export const Orchestration: React.FC = () => {
       )}
 
       {recentEvents.length > 0 && (
-        <Section title="协作动态" extra={<MessageSquareText className="w-3.5 h-3.5 text-zinc-500" />}>
+        <Section title={o.collaborationFeed} extra={<MessageSquareText className="w-3.5 h-3.5 text-zinc-500" />}>
           <div className="space-y-2">
             {recentEvents.map((event) => (
               <div
@@ -730,18 +736,18 @@ export const Orchestration: React.FC = () => {
       )}
 
       {(aggregation || verification) && (
-        <Section title="结果收口" extra={<Sparkles className="w-3.5 h-3.5 text-violet-400" />}>
+        <Section title={o.resultClosure} extra={<Sparkles className="w-3.5 h-3.5 text-violet-400" />}>
           <div className="space-y-3">
             {aggregation && (
               <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3">
-                <div className="text-sm font-medium text-zinc-100">聚合摘要</div>
+                <div className="text-sm font-medium text-zinc-100">{o.aggregateSummary}</div>
                 <div className="mt-2 text-xs leading-6 text-zinc-400">{aggregation.summary}</div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-                    加速比 <span className="ml-1 text-cyan-300">{aggregation.speedup.toFixed(1)}x</span>
+                    {o.speedup} <span className="ml-1 text-cyan-300">{aggregation.speedup.toFixed(1)}x</span>
                   </div>
                   <div className="rounded bg-zinc-900/70 px-2 py-1.5 text-zinc-400">
-                    成功率 <span className="ml-1 text-emerald-300">{(aggregation.successRate * 100).toFixed(0)}%</span>
+                    {o.successRate} <span className="ml-1 text-emerald-300">{(aggregation.successRate * 100).toFixed(0)}%</span>
                   </div>
                 </div>
               </div>
@@ -755,7 +761,7 @@ export const Orchestration: React.FC = () => {
                   ) : (
                     <XCircle className="w-4 h-4 text-red-400" />
                   )}
-                  验证{verification.passed ? '通过' : '未通过'}
+                  {verification.passed ? o.verifyPassed : o.verifyFailed}
                   <span className="ml-auto text-xs text-zinc-500">
                     {(verification.score * 100).toFixed(0)}%
                   </span>

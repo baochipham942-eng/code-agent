@@ -3,13 +3,15 @@
 // ============================================================================
 
 import React from 'react';
+import { Check, X, Info, AlertTriangle } from 'lucide-react';
 import { useToastStore, type ToastType } from '../hooks/useToast';
+import { Z_LAYERS } from '../styles/zLayers';
 
-const ICON_MAP: Record<ToastType, string> = {
-  success: '✓',
-  error: '✕',
-  info: 'ℹ',
-  warning: '⚠',
+const ICON_MAP: Record<ToastType, React.ReactNode> = {
+  success: <Check className="h-3.5 w-3.5" />,
+  error: <X className="h-3.5 w-3.5" />,
+  info: <Info className="h-3.5 w-3.5" />,
+  warning: <AlertTriangle className="h-3.5 w-3.5" />,
 };
 
 const COLOR_MAP: Record<ToastType, string> = {
@@ -25,7 +27,7 @@ export const ToastContainer: React.FC = () => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm">
+    <div className="fixed top-4 right-4 flex flex-col gap-2 max-w-sm" style={{ zIndex: Z_LAYERS.toast }}>
       {toasts.map((t) => (
         <div
           key={t.id}
@@ -36,9 +38,9 @@ export const ToastContainer: React.FC = () => {
           <span className="text-sm text-zinc-200 break-words">{t.message}</span>
           <button
             onClick={() => removeToast(t.id)}
-            className="ml-auto text-zinc-500 hover:text-zinc-300 text-xs shrink-0"
+            className="ml-auto text-zinc-500 hover:text-zinc-300 shrink-0"
           >
-            ✕
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       ))}

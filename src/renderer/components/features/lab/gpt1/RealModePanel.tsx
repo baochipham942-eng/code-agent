@@ -26,6 +26,7 @@ import { IPC_CHANNELS } from '../../../../../shared/ipc';
 import { isWebMode, isTauriMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
 import { pickNativeDirectory } from '../../../../services/tauriPluginFacade';
+import { useI18n } from '../../../../hooks/useI18n';
 import type {
   PythonEnvStatus,
   LabProjectStatus,
@@ -44,6 +45,8 @@ interface TrainingLog {
 }
 
 export const RealModePanel: React.FC = () => {
+  const { t } = useI18n();
+  const rm = t.labGpt1.realModePanel;
   // Python 环境状态
   const [pythonEnv, setPythonEnv] = useState<PythonEnvStatus | null>(null);
   const [checkingEnv, setCheckingEnv] = useState(true);
@@ -89,7 +92,7 @@ export const RealModePanel: React.FC = () => {
       const result = await ipcService.invoke(IPC_CHANNELS.LAB_CHECK_PYTHON_ENV);
       setPythonEnv(result ?? null);
     } catch (error) {
-      console.error('检查 Python 环境失败:', error);
+      console.error('Failed to check Python environment:', error);
       setPythonEnv(null);
     } finally {
       setCheckingEnv(false);
@@ -108,7 +111,7 @@ export const RealModePanel: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('获取项目状态失败:', error);
+      console.error('Failed to fetch project status:', error);
     }
   }, []);
 
@@ -147,12 +150,12 @@ export const RealModePanel: React.FC = () => {
           case 'complete':
             setTrainingUIStatus('completed');
             setTrainingProgress(100);
-            addLog('success', event.message || '训练完成！');
+            addLog('success', event.message || rm.logs.trainingComplete);
             fetchProjectStatus();
             break;
           case 'error':
             setTrainingUIStatus('error');
-            addLog('error', event.error || '训练出错');
+            addLog('error', event.error || rm.logs.trainingError);
             break;
         }
       }
@@ -161,12 +164,12 @@ export const RealModePanel: React.FC = () => {
     return () => {
       unsubscribe?.();
     };
-  }, [addLog, fetchProjectStatus]);
+  }, [addLog, fetchProjectStatus, rm]);
 
   // 下载项目
   const handleDownloadProject = async () => {
     setProjectUIStatus('downloading');
-    addLog('info', '正在克隆 minimal-gpt1-pytorch 项目…');
+    addLog('info', rm.logs.cloningProject);
 
     try {
       const result = await ipcService.invoke(IPC_CHANNELS.LAB_DOWNLOAD_PROJECT, {
@@ -177,15 +180,15 @@ export const RealModePanel: React.FC = () => {
       if (result?.success) {
         setProjectPath(result.projectPath ?? null);
         setProjectUIStatus('downloaded');
-        addLog('success', `项目已下载到: ${result.projectPath}`);
+        addLog('success', rm.logs.projectDownloadedTo.replace('{path}', String(result.projectPath)));
         fetchProjectStatus();
       } else {
         setProjectUIStatus('error');
-        addLog('error', result?.error || '下载失败');
+        addLog('error', result?.error || rm.logs.downloadFailed);
       }
     } catch (error) {
       setProjectUIStatus('error');
-      addLog('error', `下载失败: ${error instanceof Error ? error.message : String(error)}`);
+      addLog('error', rm.logs.downloadFailedWithError.replace('{error}', error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -196,19 +199,19 @@ export const RealModePanel: React.FC = () => {
         if (!manualPath?.trim()) return;
         setProjectPath(manualPath.trim());
         setProjectUIStatus('downloaded');
-        addLog('info', `已选择项目目录: ${manualPath.trim()}`);
+        addLog('info', rm.logs.directorySelected.replace('{path}', manualPath.trim()));
         return;
       }
       if (isTauriMode()) {
-        const result = await pickNativeDirectory({ title: '选择项目目录' });
+        const result = await pickNativeDirectory({ title: rm.selectDirectoryDialogTitle });
         if (result) {
           setProjectPath(result);
           setProjectUIStatus('downloaded');
-          addLog('info', `已选择项目目录: ${result}`);
+          addLog('info', rm.logs.directorySelected.replace('{path}', result));
         }
       }
     } catch (error) {
-      addLog('error', `选择目录失败: ${error instanceof Error ? error.message : String(error)}`);
+      addLog('error', rm.logs.selectDirectoryFailed.replace('{error}', error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -218,7 +221,7 @@ export const RealModePanel: React.FC = () => {
     if (file) {
       setCustomDataFile(file);
       setUseCustomData(true);
-      addLog('info', `已选择自定义数据文件: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+      addLog('info', rm.logs.customDataSelected.replace('{name}', file.name).replace('{size}', (file.size / 1024).toFixed(1)));
 
       // 读取文件内容并上传
       setUploadingData(true);
@@ -231,12 +234,12 @@ export const RealModePanel: React.FC = () => {
         });
 
         if (result?.success) {
-          addLog('success', `数据已上传到: ${result.filePath}`);
+          addLog('success', rm.logs.dataUploadedTo.replace('{path}', String(result.filePath)));
         } else {
-          addLog('error', result?.error || '上传失败');
+          addLog('error', result?.error || rm.logs.uploadFailed);
         }
       } catch (error) {
-        addLog('error', `上传失败: ${error instanceof Error ? error.message : String(error)}`);
+        addLog('error', rm.logs.uploadFailedWithError.replace('{error}', error instanceof Error ? error.message : String(error)));
       } finally {
         setUploadingData(false);
       }
@@ -246,7 +249,7 @@ export const RealModePanel: React.FC = () => {
   // 开始训练
   const handleStartTraining = async () => {
     if (projectUIStatus !== 'downloaded') {
-      addLog('error', '请先下载或选择项目');
+      addLog('error', rm.logs.needProjectFirst);
       return;
     }
 
@@ -254,7 +257,7 @@ export const RealModePanel: React.FC = () => {
     setTrainingProgress(0);
     setCurrentIteration(0);
     setCurrentLoss(0);
-    addLog('info', '准备训练环境…');
+    addLog('info', rm.logs.preparingEnv);
 
     try {
       const result = await ipcService.invoke(IPC_CHANNELS.LAB_START_TRAINING, {
@@ -270,14 +273,14 @@ export const RealModePanel: React.FC = () => {
 
       if (result?.success) {
         setTrainingUIStatus('training');
-        addLog('info', `训练进程已启动 (PID: ${result.processId})`);
+        addLog('info', rm.logs.trainingStarted.replace('{pid}', String(result.processId)));
       } else {
         setTrainingUIStatus('error');
-        addLog('error', result?.error || '启动训练失败');
+        addLog('error', result?.error || rm.logs.startTrainingFailed);
       }
     } catch (error) {
       setTrainingUIStatus('error');
-      addLog('error', `启动训练失败: ${error instanceof Error ? error.message : String(error)}`);
+      addLog('error', rm.logs.startTrainingFailedWithError.replace('{error}', error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -287,12 +290,12 @@ export const RealModePanel: React.FC = () => {
       const result = await ipcService.invoke(IPC_CHANNELS.LAB_STOP_TRAINING, 'gpt1');
       if (result?.success) {
         setTrainingUIStatus('idle');
-        addLog('info', '训练已停止');
+        addLog('info', rm.logs.trainingStopped);
       } else {
-        addLog('error', result?.error || '停止训练失败');
+        addLog('error', result?.error || rm.logs.stopTrainingFailed);
       }
     } catch (error) {
-      addLog('error', `停止训练失败: ${error instanceof Error ? error.message : String(error)}`);
+      addLog('error', rm.logs.stopTrainingFailedWithError.replace('{error}', error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -312,9 +315,9 @@ export const RealModePanel: React.FC = () => {
         maxTokens: 50,
       });
 
-      setInferenceOutput(result?.text || '推理失败');
+      setInferenceOutput(result?.text || rm.inferenceFailed);
     } catch (error) {
-      setInferenceOutput(`错误: ${error instanceof Error ? error.message : String(error)}`);
+      setInferenceOutput(`${rm.inferenceErrorPrefix}${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsInferencing(false);
     }
@@ -345,8 +348,8 @@ export const RealModePanel: React.FC = () => {
                 checkingEnv ? 'text-zinc-200' :
                 envReady ? 'text-emerald-200' : 'text-amber-200'
               }`}>
-                {checkingEnv ? '检查环境中…' :
-                 envReady ? 'Python 环境就绪' : '环境配置不完整'}
+                {checkingEnv ? rm.envChecking :
+                 envReady ? rm.envReady : rm.envIncomplete}
               </h3>
 
               {!checkingEnv && pythonEnv && (
@@ -358,7 +361,7 @@ export const RealModePanel: React.FC = () => {
                       <XCircle className="w-3 h-3 text-red-400" />
                     )}
                     <span className="text-zinc-400">
-                      Python {pythonEnv.pythonVersion || '未安装'}
+                      {rm.pythonLabel.replace('{version}', pythonEnv.pythonVersion || rm.notInstalled)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -368,7 +371,7 @@ export const RealModePanel: React.FC = () => {
                       <XCircle className="w-3 h-3 text-red-400" />
                     )}
                     <span className="text-zinc-400">
-                      PyTorch {pythonEnv.pytorchVersion || '未安装'}
+                      {rm.pytorchLabel.replace('{version}', pythonEnv.pytorchVersion || rm.notInstalled)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -377,15 +380,14 @@ export const RealModePanel: React.FC = () => {
                     ) : (
                       <XCircle className="w-3 h-3 text-red-400" />
                     )}
-                    <span className="text-zinc-400">SentencePiece</span>
+                    <span className="text-zinc-400">{rm.sentencepieceLabel}</span>
                   </div>
                 </div>
               )}
 
               {!checkingEnv && pythonEnv?.missingDependencies && pythonEnv.missingDependencies.length > 0 && (
                 <p className="text-xs text-amber-200/70 mt-2">
-                  缺失依赖: {pythonEnv.missingDependencies.join(', ')}。
-                  请安装后刷新页面。
+                  {rm.missingDepsLabel.replace('{list}', pythonEnv.missingDependencies.join(', '))}
                 </p>
               )}
 
@@ -395,7 +397,7 @@ export const RealModePanel: React.FC = () => {
                 className="mt-2 text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
               >
                 <RefreshCw className={`w-3 h-3 ${checkingEnv ? 'animate-spin' : ''}`} />
-                重新检测
+                {rm.recheckButton}
               </button>
             </div>
           </div>
@@ -412,7 +414,7 @@ export const RealModePanel: React.FC = () => {
                 }`}>
                   {projectUIStatus === 'downloaded' ? <Check className="w-4 h-4" /> : '1'}
                 </div>
-                <h3 className="text-sm font-semibold text-zinc-200">下载项目</h3>
+                <h3 className="text-sm font-semibold text-zinc-200">{rm.step1Title}</h3>
               </div>
 
               <div className="space-y-3">
@@ -430,11 +432,11 @@ export const RealModePanel: React.FC = () => {
                   <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                     <div className="flex items-center gap-2 text-emerald-400 text-sm">
                       <Check className="w-4 h-4" />
-                      <span>项目已就绪</span>
+                      <span>{rm.projectReadyLabel}</span>
                     </div>
                     <p className="text-xs text-zinc-500 mt-1 truncate">{projectPath}</p>
                     {projectStatus?.hasTrainedModel && (
-                      <p className="text-xs text-emerald-400/70 mt-1">已有训练好的模型</p>
+                      <p className="text-xs text-emerald-400/70 mt-1">{rm.hasTrainedModelLabel}</p>
                     )}
                   </div>
                 ) : (
@@ -449,10 +451,10 @@ export const RealModePanel: React.FC = () => {
                       ) : (
                         <Download className="w-4 h-4" />
                       )}
-                      {projectUIStatus === 'downloading' ? '下载中…' : '自动下载'}
+                      {projectUIStatus === 'downloading' ? rm.downloading : rm.autoDownload}
                     </button>
 {isWebMode() ? (
-                      <WebProjectPathInput onSubmit={(p) => handleSelectProject(p)} disabled={!envReady} />
+                      <WebProjectPathInput onSubmit={(p) => handleSelectProject(p)} disabled={!envReady} placeholder={rm.webPathPlaceholder} submitLabel={rm.useThisPath} />
                     ) : (
                       <button
                         onClick={() => handleSelectProject()}
@@ -460,7 +462,7 @@ export const RealModePanel: React.FC = () => {
                         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 disabled:opacity-50 transition-colors"
                       >
                         <FolderOpen className="w-4 h-4" />
-                        选择目录
+                        {rm.selectDirectory}
                       </button>
                     )}
                   </div>
@@ -476,7 +478,7 @@ export const RealModePanel: React.FC = () => {
                 }`}>
                   2
                 </div>
-                <h3 className="text-sm font-semibold text-zinc-200">数据集</h3>
+                <h3 className="text-sm font-semibold text-zinc-200">{rm.step2Title}</h3>
               </div>
 
               <div className="space-y-3">
@@ -489,8 +491,8 @@ export const RealModePanel: React.FC = () => {
                     className="text-emerald-500"
                   />
                   <div className="flex-1">
-                    <div className="text-sm text-zinc-200">使用默认对话数据集</div>
-                    <div className="text-xs text-zinc-500">27 种对话模式，约 130K tokens</div>
+                    <div className="text-sm text-zinc-200">{rm.defaultDatasetLabel}</div>
+                    <div className="text-xs text-zinc-500">{rm.defaultDatasetDesc}</div>
                   </div>
                   <Database className="w-4 h-4 text-zinc-500" />
                 </label>
@@ -504,11 +506,11 @@ export const RealModePanel: React.FC = () => {
                     className="text-emerald-500"
                   />
                   <div className="flex-1">
-                    <div className="text-sm text-zinc-200">上传自定义数据集</div>
+                    <div className="text-sm text-zinc-200">{rm.customDatasetLabel}</div>
                     {customDataFile ? (
                       <div className="text-xs text-emerald-400">{customDataFile.name}</div>
                     ) : (
-                      <div className="text-xs text-zinc-500">支持 .txt 格式</div>
+                      <div className="text-xs text-zinc-500">{rm.customDatasetHint}</div>
                     )}
                   </div>
                   {uploadingData ? (
@@ -532,7 +534,7 @@ export const RealModePanel: React.FC = () => {
                       disabled={projectUIStatus !== 'downloaded' || uploadingData}
                       className="w-full py-2 rounded-lg border border-dashed border-zinc-700 text-zinc-400 text-sm hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50 transition-colors"
                     >
-                      {uploadingData ? '上传中…' : '点击选择文件'}
+                      {uploadingData ? rm.uploading : rm.clickToSelectFile}
                     </button>
                   </div>
                 )}
@@ -547,14 +549,14 @@ export const RealModePanel: React.FC = () => {
                 }`}>
                   {trainingUIStatus === 'completed' ? <Check className="w-4 h-4" /> : '3'}
                 </div>
-                <h3 className="text-sm font-semibold text-zinc-200">训练模型</h3>
+                <h3 className="text-sm font-semibold text-zinc-200">{rm.step3Title}</h3>
               </div>
 
               {/* 进度显示 */}
               {(trainingUIStatus === 'training' || trainingUIStatus === 'completed') && (
                 <div className="mb-4">
                   <div className="flex justify-between text-xs text-zinc-500 mb-1">
-                    <span>Iter {currentIteration}/{totalIterations}</span>
+                    <span>{rm.iterLabel.replace('{current}', String(currentIteration)).replace('{total}', String(totalIterations))}</span>
                     <span>{trainingProgress.toFixed(0)}%</span>
                   </div>
                   <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
@@ -565,7 +567,7 @@ export const RealModePanel: React.FC = () => {
                   </div>
                   {currentLoss > 0 && (
                     <div className="text-xs text-zinc-500 mt-1">
-                      当前 Loss: <span className="text-emerald-400">{currentLoss.toFixed(4)}</span>
+                      {rm.currentLossLabel}<span className="text-emerald-400">{currentLoss.toFixed(4)}</span>
                     </div>
                   )}
                 </div>
@@ -578,7 +580,7 @@ export const RealModePanel: React.FC = () => {
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/30 transition-colors"
                   >
                     <Square className="w-4 h-4" />
-                    停止训练
+                    {rm.stopTraining}
                   </button>
                 ) : (
                   <button
@@ -591,7 +593,7 @@ export const RealModePanel: React.FC = () => {
                     ) : (
                       <Play className="w-4 h-4" />
                     )}
-                    {trainingUIStatus === 'preparing' ? '准备中…' : '开始训练'}
+                    {trainingUIStatus === 'preparing' ? rm.preparing : rm.startTraining}
                   </button>
                 )}
 
@@ -605,7 +607,7 @@ export const RealModePanel: React.FC = () => {
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 transition-colors"
                   >
                     <RefreshCw className="w-4 h-4" />
-                    重新训练
+                    {rm.retrain}
                   </button>
                 )}
               </div>
@@ -618,7 +620,7 @@ export const RealModePanel: React.FC = () => {
             <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
               <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
                 <Terminal className="w-4 h-4 text-zinc-400" />
-                训练日志
+                {rm.trainingLogsTitle}
               </h3>
               <div className="h-48 overflow-y-auto bg-zinc-950 rounded-lg p-3 font-mono text-xs">
                 {trainingLogs.length > 0 ? (
@@ -639,7 +641,7 @@ export const RealModePanel: React.FC = () => {
                     </div>
                   ))
                 ) : (
-                  <div className="text-zinc-600">等待操作…</div>
+                  <div className="text-zinc-600">{rm.logsEmpty}</div>
                 )}
                 <div ref={logsEndRef} />
               </div>
@@ -649,7 +651,7 @@ export const RealModePanel: React.FC = () => {
             <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
               <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-zinc-400" />
-                推理测试
+                {rm.inferenceTitle}
               </h3>
 
               <div className="space-y-3">
@@ -658,7 +660,7 @@ export const RealModePanel: React.FC = () => {
                     type="text"
                     value={inferenceInput}
                     onChange={(e) => setInferenceInput(e.target.value)}
-                    placeholder="输入测试文本…"
+                    placeholder={rm.inferenceInputPlaceholder}
                     disabled={!projectStatus?.hasTrainedModel && trainingUIStatus !== 'completed'}
                     className="flex-1 px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-500 disabled:opacity-50"
                   />
@@ -673,14 +675,14 @@ export const RealModePanel: React.FC = () => {
 
                 {inferenceOutput && (
                   <div className="p-3 rounded-lg bg-zinc-800 border border-zinc-700">
-                    <div className="text-xs text-zinc-500 mb-1">模型输出:</div>
+                    <div className="text-xs text-zinc-500 mb-1">{rm.modelOutputLabel}</div>
                     <div className="text-sm text-zinc-200">{inferenceOutput}</div>
                   </div>
                 )}
 
                 {!projectStatus?.hasTrainedModel && trainingUIStatus !== 'completed' && (
                   <p className="text-xs text-zinc-600 text-center">
-                    训练完成后可以测试模型
+                    {rm.inferenceHint}
                   </p>
                 )}
               </div>
@@ -693,7 +695,7 @@ export const RealModePanel: React.FC = () => {
 };
 
 /** Web mode: project directory path input */
-function WebProjectPathInput({ onSubmit, disabled }: { onSubmit: (path: string) => void; disabled: boolean }) {
+function WebProjectPathInput({ onSubmit, disabled, placeholder, submitLabel }: { onSubmit: (path: string) => void; disabled: boolean; placeholder: string; submitLabel: string }) {
   const [value, setValue] = React.useState('');
   return (
     <div className="flex-1 flex gap-2">
@@ -701,7 +703,7 @@ function WebProjectPathInput({ onSubmit, disabled }: { onSubmit: (path: string) 
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && !disabled && onSubmit(value)}
-        placeholder="输入项目目录路径"
+        placeholder={placeholder}
         className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-hidden"
         disabled={disabled}
       />
@@ -711,7 +713,7 @@ function WebProjectPathInput({ onSubmit, disabled }: { onSubmit: (path: string) 
         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 disabled:opacity-50 transition-colors"
       >
         <FolderOpen className="w-4 h-4" />
-        使用路径
+        {submitLabel}
       </button>
     </div>
   );

@@ -1,10 +1,1 @@
-[
-  { "file": "components/StatusBar/AgentSwitcher.tsx", "value": 9999, "reason": "createPortal 弹层，需盖过所有 fixed 容器" },
-  { "file": "components/StatusBar/ModelSwitcher.tsx", "value": 9999, "reason": "createPortal 弹层，需盖过所有 fixed 容器" },
-  { "file": "components/features/sidebar/SidebarProjectDrawer.tsx", "value": 9998, "reason": "全屏抽屉遮罩，低于 Toast/ContextMenu 一层" },
-  { "file": "components/features/sidebar/SessionContextMenu.tsx", "value": 9999, "reason": "右键菜单，需盖过抽屉遮罩" },
-  { "file": "components/features/voice/VoicePasteIndicator.tsx", "value": 9999, "reason": "全局语音粘贴浮标" },
-  { "file": "components/features/memo/MemoFloater.tsx", "value": 100, "reason": "memo 浮层，只需盖过页面内容" },
-  { "file": "components/primitives/UndoToast.tsx", "value": 9998, "reason": "撤销 Toast，低于通知 Toast 一层" },
-  { "file": "components/Toast.tsx", "value": 9999, "reason": "全局通知 Toast，最顶层" }
-]
+[]

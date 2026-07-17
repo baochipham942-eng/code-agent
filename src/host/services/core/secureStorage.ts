@@ -88,6 +88,8 @@ interface SecureStorageData {
   'integration.jira'?: string;
   // Allow arbitrary integration keys
   [key: `integration.${string}`]: string | undefined;
+  // MCP OAuth credentials, isolated per server identity.
+  [key: `mcp-oauth:${string}`]: string | undefined;
 }
 
 /**

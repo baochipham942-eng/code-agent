@@ -2,7 +2,7 @@
 // promptUserInChat — 共享会话内交互 round-trip（Slice A 地基）
 //
 // 抽自 AskUserQuestion 的 USER_QUESTION_ASK/RESPONSE round-trip，供成本确认等
-// tool 内部复用。覆盖：no-renderer 安全短路 / send shape / 响应回灌 answered /
+// tool 内部复用。覆盖：no-renderer 安全短路 / send shape+sessionId / 响应回灌 answered /
 // 超时 timeout / abort。
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -27,8 +27,12 @@ vi.mock('../../../../src/host/services/infra/notificationService', () => ({
 }));
 
 import { promptUserInChat } from '../../../../src/host/tools/utils/userQuestionPrompt';
+import { askUserQuestionModule } from '../../../../src/host/tools/modules/planning/askUserQuestion';
+import { confirmGenerationCost } from '../../../../src/host/tools/modules/design/generationCostConfirm';
 import { IPC_CHANNELS } from '../../../../src/shared/ipc';
 import type { UserQuestion, UserQuestionResponse } from '../../../../src/shared/contract';
+import type { CanUseToolFn, Logger, ToolContext } from '../../../../src/host/protocol/tools';
+import { formatCny } from '../../../../src/shared/media/imageCost';
 
 const Q: UserQuestion[] = [
   {
@@ -40,6 +44,22 @@ const Q: UserQuestion[] = [
     ],
   },
 ];
+
+function makeLogger(): Logger {
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
+
+function makeCtx(sessionId: string): ToolContext {
+  return {
+    sessionId,
+    workingDir: '/tmp',
+    abortSignal: new AbortController().signal,
+    logger: makeLogger(),
+    emit: vi.fn(),
+  } as unknown as ToolContext;
+}
+
+const allowAll: CanUseToolFn = async () => ({ allow: true });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -64,11 +84,11 @@ describe('promptUserInChat', () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
-  it('有 renderer → 发 USER_QUESTION_ASK，shape={id,questions,timestamp}，响应回灌 answered', async () => {
+  it('有 renderer → 发 USER_QUESTION_ASK，shape={id,sessionId,questions,timestamp}，响应回灌 answered', async () => {
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
     hasInteractiveRendererMock.mockReturnValue(true);
 
-    const promise = promptUserInChat(Q, { timeoutMs: 5000 });
+    const promise = promptUserInChat(Q, { sessionId: 'prompt-session', timeoutMs: 5000 });
     await new Promise((r) => setTimeout(r, 5));
 
     // send 协议
@@ -77,6 +97,7 @@ describe('promptUserInChat', () => {
     expect(channel).toBe(IPC_CHANNELS.USER_QUESTION_ASK);
     expect(typeof payload.id).toBe('string');
     expect(payload.id).toMatch(/^q-\d+/);
+    expect(payload.sessionId).toBe('prompt-session');
     expect(typeof payload.timestamp).toBe('number');
     expect(payload.questions).toEqual(Q);
 
@@ -115,5 +136,73 @@ describe('promptUserInChat', () => {
     const r = await promise;
     expect(r.status).toBe('timeout');
     vi.useRealTimers();
+  });
+
+  it('同进程先成本确认后 AskUserQuestion，两个 pending 按 requestId 收到自己的回复', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+
+    const costPromise = confirmGenerationCost({
+      mediaLabel: '图片',
+      estCny: 0.14,
+      detail: '2 张',
+      sessionId: 'cost-session',
+    });
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
+    const costRequest = sendMock.mock.calls[0][1];
+
+    const handler = await askUserQuestionModule.createHandler();
+    const askPromise = handler.execute({ questions: Q }, makeCtx('ask-session'), allowAll);
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(2));
+    const askRequest = sendMock.mock.calls[1][1];
+
+    await responseHandlerRef.fn?.({}, {
+      requestId: askRequest.id,
+      answers: { 确认: '停止' },
+    } as UserQuestionResponse);
+    await responseHandlerRef.fn?.({}, {
+      requestId: costRequest.id,
+      answers: { 成本确认: `确认 ${formatCny(0.14)}` },
+    } as UserQuestionResponse);
+
+    await expect(askPromise).resolves.toMatchObject({
+      ok: true,
+      output: 'User responses:\n[确认]: 停止',
+    });
+    await expect(costPromise).resolves.toBe(true);
+  });
+
+  it('同进程先 AskUserQuestion 后成本确认，两个 pending 按 requestId 收到自己的回复', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const askPromise = handler.execute({ questions: Q }, makeCtx('ask-session'), allowAll);
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
+    const askRequest = sendMock.mock.calls[0][1];
+
+    const costPromise = confirmGenerationCost({
+      mediaLabel: '图片',
+      estCny: 0.14,
+      detail: '2 张',
+      sessionId: 'cost-session',
+    });
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(2));
+    const costRequest = sendMock.mock.calls[1][1];
+
+    await responseHandlerRef.fn?.({}, {
+      requestId: costRequest.id,
+      answers: { 成本确认: '取消' },
+    } as UserQuestionResponse);
+    await responseHandlerRef.fn?.({}, {
+      requestId: askRequest.id,
+      answers: { 确认: '继续' },
+    } as UserQuestionResponse);
+
+    await expect(costPromise).resolves.toBe(false);
+    await expect(askPromise).resolves.toMatchObject({
+      ok: true,
+      output: 'User responses:\n[确认]: 继续',
+    });
   });
 });

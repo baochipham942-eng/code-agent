@@ -90,4 +90,40 @@ describe('reloadSessionsForAuthChange', () => {
     expect(useSessionStore.getState().messages).toHaveLength(0);
     expect(useAppStore.getState().workingDirectory).toBeNull();
   });
+
+  it('keeps durableWaitingInput from the session list payload and clears it when the payload drops the field', async () => {
+    mockDomainInvoke.mockImplementationOnce(async (_domain: string, action: string) => {
+      if (action === 'list') {
+        return {
+          success: true,
+          data: [
+            { ...makeRawSession('s1'), status: 'running', durableWaitingInput: true },
+          ],
+        };
+      }
+      return { success: true, data: null };
+    });
+
+    await useSessionStore.getState().loadSessions();
+    expect(useSessionStore.getState().sessions[0]).toEqual(expect.objectContaining({
+      id: 's1',
+      status: 'running',
+      durableWaitingInput: true,
+    }));
+
+    mockDomainInvoke.mockImplementationOnce(async (_domain: string, action: string) => {
+      if (action === 'list') {
+        return {
+          success: true,
+          data: [
+            { ...makeRawSession('s1'), status: 'running' },
+          ],
+        };
+      }
+      return { success: true, data: null };
+    });
+
+    await useSessionStore.getState().loadSessions();
+    expect(useSessionStore.getState().sessions[0]).not.toHaveProperty('durableWaitingInput');
+  });
 });

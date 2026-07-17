@@ -41,6 +41,7 @@ import {
 } from '../../../utils/streamingStatePresentation';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -77,6 +78,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
 }) => {
+  const { t } = useI18n();
   const stats = useMemo(() => {
     const duration = turn.endTime ? turn.endTime - turn.startTime : null;
     const time = new Date(turn.startTime).toLocaleTimeString('zh-CN', {
@@ -147,13 +149,14 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   const streamingState = useMemo(
     () => buildStreamingUiState({
       turn,
+      t,
       isActiveTurn: Boolean(isActiveTurn),
       sessionStatus,
       isSessionProcessing,
       streamSnapshot,
       runningToolStartTime,
     }),
-    [isActiveTurn, isSessionProcessing, runningToolStartTime, sessionStatus, streamSnapshot, turn],
+    [isActiveTurn, isSessionProcessing, runningToolStartTime, sessionStatus, streamSnapshot, t, turn],
   );
   const hookActivity = useMemo(() => getTurnHookActivity(turn), [turn]);
   const skillActivity = useMemo(() => getTurnSkillActivity(turn), [turn]);
@@ -246,6 +249,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                     nodes={d.tools}
                     sessionId={sessionId}
                     defaultExpanded={false}
+                    isStreamingTurn={isStreaming}
                   />
                 );
               }
@@ -581,7 +585,10 @@ function getLastToolNode(turn: TraceTurn): TraceNode | null {
   return null;
 }
 
-function getTurnRunStatus(turn: TraceTurn, streamingState?: StreamingUiState): {
+// status key（稳定枚举字符串，供 shouldHideTurnRunHeader/测试等逻辑判断用）
+// 与 label（走 i18n 的人话显示文案）分开——逻辑别读人话文案。
+function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: StreamingUiState): {
+  key: string;
   label: string;
   tone: 'neutral' | 'info' | 'success' | 'warning' | 'error';
   icon: React.ReactNode;
@@ -589,28 +596,28 @@ function getTurnRunStatus(turn: TraceTurn, streamingState?: StreamingUiState): {
   if (streamingState) {
     switch (streamingState.status) {
       case 'cancelling':
-        return { label: 'cancelling', tone: 'warning', icon: <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> };
+        return { key: 'cancelling', label: streamingState.label, tone: 'warning', icon: <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> };
       case 'resumable':
-        return { label: 'resumable', tone: 'warning', icon: <RotateCcw className="h-3.5 w-3.5" /> };
+        return { key: 'resumable', label: streamingState.label, tone: 'warning', icon: <RotateCcw className="h-3.5 w-3.5" /> };
       case 'stale':
-        return { label: 'stale_stream', tone: 'neutral', icon: <CircleDot className="h-3.5 w-3.5" /> };
+        return { key: 'stale_stream', label: streamingState.label, tone: 'neutral', icon: <CircleDot className="h-3.5 w-3.5" /> };
       case 'waiting_tool':
-        return { label: 'waiting_tool', tone: 'neutral', icon: <Wrench className="h-3.5 w-3.5" /> };
+        return { key: 'waiting_tool', label: streamingState.label, tone: 'neutral', icon: <Wrench className="h-3.5 w-3.5" /> };
       case 'using_tools':
-        return { label: 'using_tools', tone: 'neutral', icon: <Wrench className="h-3.5 w-3.5" /> };
+        return { key: 'using_tools', label: streamingState.label, tone: 'neutral', icon: <Wrench className="h-3.5 w-3.5" /> };
       case 'drafting':
-        return { label: 'running', tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
+        return { key: 'running', label: streamingState.label, tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
       case 'blocked':
-        return { label: 'blocked', tone: 'error', icon: <ShieldAlert className="h-3.5 w-3.5" /> };
+        return { key: 'blocked', label: streamingState.label, tone: 'error', icon: <ShieldAlert className="h-3.5 w-3.5" /> };
       case 'cancelled':
-        return { label: 'cancelled', tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
+        return { key: 'cancelled', label: streamingState.label, tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
       default:
         break;
     }
   }
 
   if (hasCancelledRunMarker(turn)) {
-    return { label: 'cancelled', tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
+    return { key: 'cancelled', label: t.turnRun.status.cancelled, tone: 'warning', icon: <XCircle className="h-3.5 w-3.5" /> };
   }
 
   const timelines = turn.nodes
@@ -618,18 +625,18 @@ function getTurnRunStatus(turn: TraceTurn, streamingState?: StreamingUiState): {
     .filter(Boolean);
   const hasError = turn.status === 'error' || timelines.some((timeline) => timeline?.tone === 'error');
   if (hasError) {
-    return { label: 'blocked', tone: 'error', icon: <ShieldAlert className="h-3.5 w-3.5" /> };
+    return { key: 'blocked', label: t.turnRun.status.blocked, tone: 'error', icon: <ShieldAlert className="h-3.5 w-3.5" /> };
   }
 
   const lastTool = getLastToolNode(turn)?.toolCall;
   if (turn.status === 'streaming') {
     if (lastTool && (lastTool._streaming || lastTool.result === undefined)) {
-      return { label: 'using_tools', tone: 'neutral', icon: <Wrench className="h-3.5 w-3.5" /> };
+      return { key: 'using_tools', label: t.turnRun.status.usingTools, tone: 'neutral', icon: <Wrench className="h-3.5 w-3.5" /> };
     }
-    return { label: 'running', tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
+    return { key: 'running', label: t.turnRun.status.running, tone: 'info', icon: <CircleDot className="h-3.5 w-3.5" /> };
   }
 
-  return { label: 'completed', tone: 'success', icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
+  return { key: 'completed', label: t.turnRun.status.completed, tone: 'success', icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
 }
 
 function getTurnPhase(turn: TraceTurn): string | null {
@@ -653,12 +660,16 @@ function getTurnPhase(turn: TraceTurn): string | null {
   return assistantText ? '回复已生成' : '等待输出';
 }
 
-function getTurnCompletionSignal(turn: TraceTurn): string | null {
+function getTurnCompletionSignal(turn: TraceTurn, t: Translations): string | null {
   const artifacts = turn.nodes.find((node) => node.turnTimeline?.kind === 'artifact_ownership')?.turnTimeline?.artifactOwnership;
   const deliverableArtifacts = artifacts?.filter((item) => !isReadOnlyArtifactOwnershipItem(item)) ?? [];
-  if (deliverableArtifacts.length && turn.status !== 'completed') return `${deliverableArtifacts.length} outputs`;
+  if (deliverableArtifacts.length && turn.status !== 'completed') {
+    return t.turnRun.outputsSignal.replace('{count}', String(deliverableArtifacts.length));
+  }
   const toolCount = turn.nodes.filter((node) => node.type === 'tool_call').length;
-  if (toolCount > 0 && turn.status !== 'completed') return `${toolCount} tools`;
+  if (toolCount > 0 && turn.status !== 'completed') {
+    return t.turnRun.toolsSignal.replace('{count}', String(toolCount));
+  }
   return null;
 }
 
@@ -673,7 +684,7 @@ function getToneClass(tone: 'neutral' | 'info' | 'success' | 'warning' | 'error'
     case 'info':
       return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
     default:
-      return 'border-white/[0.06] bg-white/[0.02] text-zinc-400';
+      return 'border-border-muted bg-surface-subtle text-zinc-400';
   }
 }
 
@@ -708,43 +719,48 @@ function getStreamingBannerIcon(state: StreamingUiState): React.ReactNode {
   }
 }
 
-const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) => (
-  <div className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${getToneClass(state.tone)}`}>
-    <div className="shrink-0">{getStreamingBannerIcon(state)}</div>
-    <div className="min-w-0 flex-1">
-      <div className="truncate font-medium">{state.label}</div>
-      {state.detail && (
-        <div className="truncate text-[11px] opacity-80">{state.detail}</div>
+const StreamingStateBanner: React.FC<{ state: StreamingUiState }> = ({ state }) => {
+  const { t } = useI18n();
+  return (
+    <div className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${getToneClass(state.tone)}`}>
+      <div className="shrink-0">{getStreamingBannerIcon(state)}</div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium">{state.label}</div>
+        {state.detail && (
+          <div className="truncate text-[11px] opacity-80">{state.detail}</div>
+        )}
+      </div>
+      {state.showCancelCleanup && (
+        <span className="shrink-0 text-[10px] opacity-60">{t.turnRun.cleanupBadge}</span>
+      )}
+      {state.showResumeHint && (
+        <span className="shrink-0 text-[10px] opacity-60">{t.turnRun.resumeBadge}</span>
       )}
     </div>
-    {state.showCancelCleanup && (
-      <span className="shrink-0 text-[10px] opacity-60">cleanup</span>
-    )}
-    {state.showResumeHint && (
-      <span className="shrink-0 text-[10px] opacity-60">resume</span>
-    )}
-  </div>
-);
+  );
+};
 
 // 顶部 run 横幅可见性：完成态 + 正常流式进度（running / using_tools / waiting_tool）
 // 统一隐藏。这些状态在流式期间随工具边界来回切换，会让蓝色 running 横幅 mount/unmount
 // 「跳上跳下」。正常 live 进度由底部 StreamingIndicator + 工具组内联指示承担；顶部横幅
 // 只在异常/终态（blocked/cancelled/resumable/stale）显示稳定状态。
-export function shouldHideTurnRunHeader(statusLabel: string, statusTone: string): boolean {
+// 吃 status key（稳定枚举），不吃 label（人话显示文案）——语言切换不能影响这条逻辑判断。
+export function shouldHideTurnRunHeader(statusKey: string, statusTone: string): boolean {
   return statusTone === 'success'
-    || statusLabel === 'running'
-    || statusLabel === 'using_tools'
-    || statusLabel === 'waiting_tool';
+    || statusKey === 'running'
+    || statusKey === 'using_tools'
+    || statusKey === 'waiting_tool';
 }
 
 const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiState }> = ({ turn, streamingState }) => {
-  const status = getTurnRunStatus(turn, streamingState);
+  const { t } = useI18n();
+  const status = getTurnRunStatus(turn, t, streamingState);
   const phase = getTurnPhase(turn);
-  const completionSignal = getTurnCompletionSignal(turn);
+  const completionSignal = getTurnCompletionSignal(turn, t);
   const failedTool = turn.nodes.find((node) => node.type === 'tool_call' && node.toolCall?.success === false)?.toolCall;
   const hasPhase = Boolean(phase?.trim());
 
-  if (shouldHideTurnRunHeader(status.label, status.tone)) {
+  if (shouldHideTurnRunHeader(status.key, status.tone)) {
     return null;
   }
 
@@ -761,7 +777,7 @@ const TurnRunHeader: React.FC<{ turn: TraceTurn; streamingState?: StreamingUiSta
       )}
       {!hasPhase && <div className="flex-1" />}
       {completionSignal && (
-        <div className="inline-flex items-center gap-1 rounded-md bg-white/[0.03] px-1.5 py-0.5 text-[11px] text-zinc-500">
+        <div className="inline-flex items-center gap-1 rounded-md bg-surface-subtle px-1.5 py-0.5 text-[11px] text-zinc-500">
           <FileText className="h-3 w-3" />
           <span>{completionSignal}</span>
         </div>

@@ -74,6 +74,7 @@ export async function promptUserInChat(
 
   const request: UserQuestionRequest = {
     id: `q-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
+    sessionId: opts.sessionId,
     questions,
     timestamp: Date.now(),
   };
@@ -83,46 +84,56 @@ export async function promptUserInChat(
     return { status: 'no-renderer' };
   }
 
-  mainWindow.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
-
-  if (opts.notify) {
-    try {
-      const { notificationService } = await import('../../services/infra/notificationService');
-      notificationService.notifyNeedsInput({
-        sessionId: opts.sessionId || '',
-        title: opts.notify.title,
-        body: opts.notify.body,
-      });
-    } catch {
-      /* ignore */
-    }
-  }
-
   const timeoutMs = opts.timeoutMs ?? INTERACTION_TIMEOUTS.USER_QUESTION;
+  const responsePromise = new Promise<UserQuestionResponse>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pending.delete(request.id);
+      reject(new Error('timeout'));
+    }, timeoutMs);
+    pending.set(request.id, { resolve, timeout });
+
+    if (opts.abortSignal) {
+      opts.abortSignal.addEventListener(
+        'abort',
+        () => {
+          const p = pending.get(request.id);
+          if (p) {
+            clearTimeout(p.timeout);
+            pending.delete(request.id);
+            reject(new Error('aborted'));
+          }
+        },
+        { once: true },
+      );
+    }
+  });
 
   try {
-    const response = await new Promise<UserQuestionResponse>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        pending.delete(request.id);
-        reject(new Error('timeout'));
-      }, timeoutMs);
-      pending.set(request.id, { resolve, timeout });
+    mainWindow.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
+  } catch (error) {
+    const p = pending.get(request.id);
+    if (p) {
+      clearTimeout(p.timeout);
+      pending.delete(request.id);
+    }
+    throw error;
+  }
 
-      if (opts.abortSignal) {
-        opts.abortSignal.addEventListener(
-          'abort',
-          () => {
-            const p = pending.get(request.id);
-            if (p) {
-              clearTimeout(p.timeout);
-              pending.delete(request.id);
-              reject(new Error('aborted'));
-            }
-          },
-          { once: true },
-        );
+  try {
+    if (opts.notify) {
+      try {
+        const { notificationService } = await import('../../services/infra/notificationService');
+        notificationService.notifyNeedsInput({
+          sessionId: opts.sessionId || '',
+          title: opts.notify.title,
+          body: opts.notify.body,
+        });
+      } catch {
+        /* ignore */
       }
-    });
+    }
+
+    const response = await responsePromise;
     return { status: response.declined === true ? 'declined' : 'answered', response };
   } catch (err) {
     const msg = err instanceof Error ? err.message : '';

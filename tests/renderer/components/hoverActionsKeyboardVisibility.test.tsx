@@ -1,5 +1,10 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -79,6 +84,7 @@ describe('hover actions remain visible to keyboard users', () => {
           backgroundTaskMap: new Map(),
           sessionStates: {},
           hasPendingApprovalForSession: () => false,
+          hasNeedsInputForSession: () => false,
           searchQuery: '',
           messageSearchHitsBySessionId: {},
           replayEvidenceBySessionId: {},

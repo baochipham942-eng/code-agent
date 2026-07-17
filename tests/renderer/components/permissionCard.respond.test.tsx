@@ -15,11 +15,18 @@ const setPendingPermissionRequest = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
 const ipcAvailable = vi.hoisted(() => ({ value: true }));
 
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: () => ({
     pendingPermissionRequest: state.request,
     pendingPermissionSessionId: state.sessionId,
     setPendingPermissionRequest,
+    language: 'zh',
+    setLanguage: () => {},
+    cloudUIStrings: undefined,
   }),
 }));
 

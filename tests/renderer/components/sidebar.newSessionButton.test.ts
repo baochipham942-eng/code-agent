@@ -4,6 +4,11 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
+
 const sessionState = {
   sessions: [] as any[],
   currentSessionId: null as string | null,
@@ -148,6 +153,6 @@ describe('Sidebar new session button', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/renderer/components/Sidebar.tsx'), 'utf8');
 
     expect(source).toContain('openProjectCollaborationPage(currentSessionProjectId)');
-    expect(source).toContain('label="Neo 协同"');
+    expect(source).toContain('label={sb.menuNeoCollab}');
   });
 });

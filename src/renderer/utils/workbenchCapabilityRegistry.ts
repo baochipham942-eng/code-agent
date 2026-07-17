@@ -444,6 +444,8 @@ function withMissingMcpServers(
       toolCount: server.toolCount,
       resourceCount: server.resourceCount,
       error: server.error,
+      authMode: server.authMode,
+      hasOAuthTokens: server.hasOAuthTokens,
     });
   }
 

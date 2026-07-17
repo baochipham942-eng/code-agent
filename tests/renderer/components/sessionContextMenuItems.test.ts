@@ -4,6 +4,7 @@ import {
   type SessionContextMenuDeps,
 } from '../../../src/renderer/components/features/sidebar/sessionContextMenuItems';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 function makeSession(overrides: Partial<SessionWithMeta> = {}): SessionWithMeta {
   return {
@@ -35,6 +36,7 @@ function makeDeps(overrides: Partial<SessionContextMenuDeps> = {}): SessionConte
     saveExportToDownloads: vi.fn(),
     showToast: vi.fn(() => 'toast-id'),
     openRuntimeLogsFolder: vi.fn(async () => true),
+    t: zh,
     ...overrides,
   };
 }

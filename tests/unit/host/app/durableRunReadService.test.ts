@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DurableRunReadService } from '../../../../src/host/app/durableRunReadService';
+import {
+  DurableRunReadService,
+  hasDurableWaitingInputRun,
+  projectDurableRunToSessionPayload,
+} from '../../../../src/host/app/durableRunReadService';
 import { resolveDurableRunRollout } from '../../../../src/host/app/durableRunRollout';
 
 const envelope = {
@@ -28,5 +32,50 @@ describe('DurableRunReadService migrated consumers', () => {
     await expect(missing.readNativeStatus('historical', () => ({ status: 'idle' }))).resolves.toMatchObject({ source: 'legacy' });
     const failing = new DurableRunReadService(policy, { getLatestBySession: vi.fn(async () => { throw new Error('db failed'); }) });
     await expect(failing.readNativeStatus('session', () => ({ status: 'running' }))).rejects.toThrow('db failed');
+  });
+
+  it('derives durable waiting input only from raw durable waiting while keeping the session projection running', async () => {
+    const waiting = { ...envelope, status: 'waiting' as const, terminal: undefined };
+    const reader = { getLatestBySession: vi.fn(async () => waiting) };
+    const service = new DurableRunReadService(resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }), reader);
+
+    const view = await service.readSessionReplay('session', () => ({ status: 'idle' }));
+    expect(hasDurableWaitingInputRun(view)).toBe(true);
+    expect(projectDurableRunToSessionPayload(view)).toEqual({
+      status: 'running',
+      durableWaitingInput: true,
+    });
+  });
+
+  it('does not derive durable waiting input for running or terminal durable rows', async () => {
+    const running = {
+      ...envelope,
+      status: 'running' as const,
+      terminal: undefined,
+    };
+    const terminal = {
+      ...envelope,
+      status: 'completed' as const,
+      terminal: { status: 'completed' as const, eventSeq: 1, at: 2 },
+    };
+
+    expect(projectDurableRunToSessionPayload({
+      source: 'durable',
+      consumer: 'session_replay',
+      runId: running.runId,
+      sessionId: running.sessionId,
+      status: running.status,
+      engine: running.engine,
+      terminal: false,
+    })).toEqual({ status: 'running' });
+    expect(projectDurableRunToSessionPayload({
+      source: 'durable',
+      consumer: 'session_replay',
+      runId: terminal.runId,
+      sessionId: terminal.sessionId,
+      status: terminal.status,
+      engine: terminal.engine,
+      terminal: true,
+    })).toEqual({ status: 'idle' });
   });
 });

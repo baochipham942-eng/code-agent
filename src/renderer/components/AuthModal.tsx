@@ -4,9 +4,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../stores/authStore';
-import { Loader2, UserPlus, LogIn, KeyRound, ArrowLeft, CheckCircle } from 'lucide-react';
+import { UserPlus, LogIn, KeyRound, ArrowLeft, CheckCircle } from 'lucide-react';
 import { FormField, Input } from './composites/FormField';
 import { Modal } from './primitives/Modal';
+import { Button } from './primitives/Button';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
 
@@ -171,7 +172,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {/* Back button */}
           <button
             onClick={() => handleModeChange('signin')}
-            className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-400 transition-colors"
+            className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             返回登录
@@ -189,12 +190,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   点击邮件中的链接重置密码
                 </p>
               </div>
-              <button
-                onClick={() => handleModeChange('signin')}
-                className="mt-4 px-4 py-2 bg-zinc-600 hover:bg-zinc-600 rounded-lg text-sm transition-colors"
-              >
+              <Button variant="secondary" size="sm" onClick={() => handleModeChange('signin')} className="mt-4">
                 返回登录
-              </button>
+              </Button>
             </div>
           ) : (
             /* Reset form */
@@ -211,15 +209,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   required
                 />
               </FormField>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors min-h-[42px]"
-              >
-                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+              <Button type="submit" fullWidth loading={isLoading} className="min-h-[42px]">
                 发送重置链接
-                {isLoading && '...'}
-              </button>
+              </Button>
             </form>
           )}
         </div>
@@ -233,7 +225,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               className={`flex-1 pb-2 text-sm transition-colors ${
                 mode === 'signin'
                   ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-zinc-400 hover:text-zinc-400'
+                  : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               <LogIn className="w-4 h-4 inline mr-1" />
@@ -244,7 +236,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               className={`flex-1 pb-2 text-sm transition-colors ${
                 mode === 'signup'
                   ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-zinc-400 hover:text-zinc-400'
+                  : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               <UserPlus className="w-4 h-4 inline mr-1" />
@@ -303,15 +295,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <span className="text-sm text-zinc-400">记住密码</span>
             </label>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors min-h-[42px]"
-            >
-              {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+            <Button type="submit" fullWidth loading={isLoading} className="min-h-[42px]">
               {mode === 'signin' ? '登录' : '注册'}
-              {isLoading && '中…'}
-            </button>
+            </Button>
 
             {/* Forgot password link - only show in signin mode */}
             {mode === 'signin' && (

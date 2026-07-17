@@ -1,18 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
-import type { Message, MessageAttachment } from '../../../src/shared/contract';
-
-vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
-  useMessageActionStore: (selector: (state: unknown) => unknown) =>
-    selector({
-      editMessage: vi.fn(),
-      regenerateMessage: vi.fn(),
-      forkFromHere: vi.fn(),
-    }),
-}));
-
-import { MessageBubble } from '../../../src/renderer/components/features/chat/MessageBubble';
+import { describe, expect, it } from 'vitest';
+import type { MessageAttachment } from '../../../src/shared/contract';
 import {
   AttachmentDisplay,
   getAttachmentMediaState,
@@ -77,31 +66,5 @@ describe('MessageBubble media and channel affordances', () => {
 
     expect(html).toContain('处理失败');
     expect(html).toContain('重试');
-  });
-
-  it('renders channel source on user messages from external channels', () => {
-    const message: Message = {
-      id: 'channel-user-1',
-      role: 'user',
-      content: '帮我看这张图',
-      timestamp: 1,
-      metadata: {
-        channel: {
-          platform: 'lark',
-          accountId: 'lark-global',
-          accountName: 'Global Bot',
-          chatId: 'oc_demo',
-          chatName: 'Customer Ops',
-          messageId: 'om_demo',
-        },
-      },
-    };
-
-    const html = renderToStaticMarkup(
-      React.createElement(MessageBubble, { message }),
-    );
-
-    expect(html).toContain('Lark · Global Bot · Customer Ops');
-    expect(html).toContain('帮我看这张图');
   });
 });

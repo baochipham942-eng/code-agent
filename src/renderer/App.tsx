@@ -15,6 +15,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { TitleBar } from './components/TitleBar';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { MCPElicitationModal } from './components/MCPElicitationModal';
+import { MCPOAuthConsentModal } from './components/MCPOAuthConsentModal';
 import { AuthModal } from './components/AuthModal';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
@@ -60,7 +61,7 @@ import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import { postOsNotification, registerNotificationClick } from './utils/osNotification';
-import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, UpdateInfo, Message } from '@shared/contract';
+import type { AppSettings, ModelConfig, ModelProvider, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getDefaultModelForProvider, getProviderEndpointForProtocol } from '@shared/constants';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './utils/logger';
@@ -194,6 +195,7 @@ export const App: React.FC = () => {
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
+  const [mcpOAuthConsent, setMcpOAuthConsent] = useState<MCPOAuthConsentRequest | null>(null);
 
   // 强制更新状态
   const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -233,6 +235,15 @@ export const App: React.FC = () => {
   const workflowPendingLaunchRequest = useWorkflowStore((state) => (
     state.pendingLaunchRequest(currentSessionId ?? undefined)
   ));
+
+  const closeUserQuestion = useCallback(() => {
+    setUserQuestion((current) => {
+      if (current) {
+        useSessionStore.getState().clearPendingUserQuestion(current);
+      }
+      return null;
+    });
+  }, []);
 
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
   const { isStandard, dagPanelEnabled } = useDisclosure();
@@ -562,7 +573,8 @@ export const App: React.FC = () => {
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.USER_QUESTION_ASK,
       (request: UserQuestionRequest) => {
-        logger.info('Received user question', { id: request.id });
+        logger.info('Received user question', { id: request.id, sessionId: request.sessionId });
+        useSessionStore.getState().addPendingUserQuestion(request);
         setUserQuestion(request);
       }
     );
@@ -579,6 +591,21 @@ export const App: React.FC = () => {
       (request: MCPElicitationRequest) => {
         logger.info('Received MCP elicitation request', { id: request.id, server: request.serverName });
         setMcpElicitation(request);
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Listen for MCP OAuth consent events
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.MCP_OAUTH_CONSENT_REQUEST,
+      (request: MCPOAuthConsentRequest) => {
+        logger.info('Received MCP OAuth consent request', { id: request.requestId, server: request.serverName });
+        setMcpOAuthConsent(request);
       }
     );
 
@@ -904,7 +931,7 @@ export const App: React.FC = () => {
       {userQuestion && (
         <UserQuestionModal
           request={userQuestion}
-          onClose={() => setUserQuestion(null)}
+          onClose={closeUserQuestion}
         />
       )}
 
@@ -913,6 +940,14 @@ export const App: React.FC = () => {
         <MCPElicitationModal
           request={mcpElicitation}
           onClose={() => setMcpElicitation(null)}
+        />
+      )}
+
+      {/* MCP OAuth Consent Modal */}
+      {mcpOAuthConsent && (
+        <MCPOAuthConsentModal
+          request={mcpOAuthConsent}
+          onClose={() => setMcpOAuthConsent(null)}
         />
       )}
 

@@ -45,11 +45,11 @@ describe('DesignLayerPanel helpers', () => {
   });
 
   it('derives display names and kind labels', () => {
-    expect(layerDisplayName(image({ label: 'Hero' }))).toBe('Hero');
-    expect(layerDisplayName(image({ prompt: '首页' }))).toBe('首页');
-    expect(layerDisplayName(image())).toBe('未命名节点');
-    expect(layerKindLabel(video())).toBe('视频');
-    expect(layerKindLabel(image())).toBe('图片');
+    expect(layerDisplayName(image({ label: 'Hero' }), '未命名节点')).toBe('Hero');
+    expect(layerDisplayName(image({ prompt: '首页' }), '未命名节点')).toBe('首页');
+    expect(layerDisplayName(image(), '未命名节点')).toBe('未命名节点');
+    expect(layerKindLabel(video(), { image: '图片', video: '视频' })).toBe('视频');
+    expect(layerKindLabel(image(), { image: '图片', video: '视频' })).toBe('图片');
   });
 });
 

@@ -30,6 +30,10 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
     currentSessionId: 'session-1',
   }),
 }));
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
 vi.mock('../../../src/renderer/hooks/useKeybindingsSettings', () => ({
   useKeybindingsSettings: () => ({ keybindings: {}, platform: 'mac' }),
 }));
@@ -53,7 +57,7 @@ describe('CommandPalette clear-chat confirmation', () => {
     const onClose = vi.fn();
     render(<CommandPalette isOpen onClose={onClose} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /清空当前对话/ }));
+    fireEvent.click(screen.getByRole('button', { name: /清空对话/ }));
 
     expect(screen.getByRole('dialog', { name: '命令面板' })).toBeTruthy();
     expect(screen.getByRole('dialog', { name: '清空当前对话？' })).toBeTruthy();

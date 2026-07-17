@@ -18,6 +18,7 @@ import { invokeDomain } from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { useAppStore } from '../../../../stores/appStore';
 import { SettingsPage } from '../SettingsLayout';
+import { Toggle } from '../../../primitives/Toggle';
 import {
   CustomImageModelManagerView,
   emptyCustomModelForm,
@@ -247,23 +248,15 @@ const RegionLockStrictToggle: React.FC<{
           <p className="text-sm text-zinc-200">{label}</p>
           <p className="mt-1 text-xs leading-relaxed text-zinc-500">{hint}</p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={strict}
-          aria-label={label}
-          disabled={saving}
-          onClick={handleToggle}
-          className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
-            strict ? 'bg-primary-500' : 'bg-zinc-600'
-          }`}
-        >
-          <span
-            className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-              strict ? 'translate-x-[22px]' : 'translate-x-0.5'
-            }`}
+        <span className="mt-0.5 shrink-0">
+          <Toggle
+            size="md"
+            checked={strict}
+            disabled={saving}
+            onChange={() => handleToggle()}
+            aria-label={label}
           />
-        </button>
+        </span>
       </div>
     </section>
   );

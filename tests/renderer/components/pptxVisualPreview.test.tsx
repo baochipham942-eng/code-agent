@@ -42,12 +42,12 @@ describe('PPTX 预览：有截图走可视预览，无则 fallback 大纲', () =
     const html = renderToStaticMarkup(<PresentationPreview content={artifactJson} />);
     expect(html).toContain('<img');
     expect(html).toContain('slide-1.png');
-    expect(html).not.toContain('PPTX outline');
+    expect(html).not.toContain('PPTX 大纲');
   });
 
   it('无截图产物时仍渲染「PPTX outline」大纲（fallback 不回归）', () => {
     const html = renderToStaticMarkup(<PresentationPreview content={outlineJson} />);
-    expect(html).toContain('PPTX outline');
+    expect(html).toContain('PPTX 大纲');
     expect(html).toContain('封面');
   });
 });

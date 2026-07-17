@@ -8,6 +8,8 @@ import React, { useState, useEffect } from 'react';
 import { FlaskConical, Check, X, Loader2 } from 'lucide-react';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
+import type { Translations } from '../../../../i18n/zh';
 import type { SkillDraftOrigin } from '../../../../../shared/contract/agent';
 
 export interface SkillDraftSummary {
@@ -21,10 +23,10 @@ export interface SkillDraftSummary {
 }
 
 /** 来源徽标文案 + 配色（区分 telemetry 经验蒸馏 vs LLM 自沉淀） */
-function originBadge(origin?: SkillDraftOrigin): { label: string; className: string } {
+function originBadge(t: Translations, origin?: SkillDraftOrigin): { label: string; className: string } {
   return origin === 'llm-review'
-    ? { label: 'AI 自沉淀', className: 'bg-violet-500/20 text-violet-300' }
-    : { label: '经验蒸馏', className: 'bg-sky-500/20 text-sky-300' };
+    ? { label: t.skillDraft.originLlm, className: 'bg-violet-500/20 text-violet-300' }
+    : { label: t.skillDraft.originTelemetry, className: 'bg-sky-500/20 text-sky-300' };
 }
 
 /**
@@ -73,6 +75,8 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
   onResolved,
   onDismiss,
 }) => {
+  const { t } = useI18n();
+  const s = t.skillDraft;
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const handleConfirm = async (draftId: string) => {
@@ -81,12 +85,12 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
       const result = await invokeSkillDraft<{ success: boolean }>('skill:draft:confirm', draftId);
       if (result?.success) {
         onResolved(draftId);
-        toast.success('Skill 已保存');
+        toast.success(s.savedToast);
       } else {
-        toast.error('Skill 草稿采纳失败');
+        toast.error(s.acceptFailedToast);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Skill 草稿采纳失败');
+      toast.error(error instanceof Error ? error.message : s.acceptFailedToast);
     } finally {
       setBusyId(null);
     }
@@ -97,9 +101,9 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
     try {
       await invokeSkillDraft<{ success: boolean }>('skill:draft:reject', draftId);
       onResolved(draftId);
-      toast.info('已跳过 Skill 草稿');
+      toast.info(s.discardedToast);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Skill 草稿处理失败');
+      toast.error(error instanceof Error ? error.message : s.processFailedToast);
     } finally {
       setBusyId(null);
     }
@@ -112,24 +116,24 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
       <div className="flex items-center gap-2 mb-1">
         <FlaskConical className="w-4 h-4 text-sky-400 flex-shrink-0" />
         <span className="text-xs text-sky-300 flex-1">
-          经验沉淀：检测到 {drafts.length} 个可复用的工作流草稿，确认后才会保存为 Skill
+          {s.bannerPrefix}{drafts.length}{s.bannerSuffix}
         </span>
         <button
           type="button"
           onClick={onDismiss}
           className="p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
-          title="稍后处理"
+          title={s.laterTitle}
         >
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
 
       {drafts.map((draft) => {
-        const badge = originBadge(draft.origin);
+        const badge = originBadge(t, draft.origin);
         // LLM 自沉淀草稿没有工具序列，副标题展示描述；经验蒸馏展示工具序列 + 成功次数
         const subtitle = draft.origin === 'llm-review'
           ? draft.description
-          : `${draft.toolSequence.join(' → ')}（成功 ${draft.occurrences} 次）`;
+          : `${draft.toolSequence.join(' → ')}${s.subtitleSuffix.replace('{n}', String(draft.occurrences))}`;
         return (
         <div key={draft.id} className="flex items-center gap-2 py-1">
           <div className="flex-1 min-w-0">
@@ -157,7 +161,7 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
             ) : (
               <Check className="w-3 h-3" />
             )}
-            采纳
+            {s.accept}
           </button>
 
           <button
@@ -166,7 +170,7 @@ export const SkillDraftCard: React.FC<SkillDraftCardProps> = ({
             disabled={busyId !== null}
             className="px-2 py-1 text-xs text-zinc-400 rounded hover:text-zinc-200 hover:bg-zinc-700/50 transition-colors disabled:opacity-50"
           >
-            不需要
+            {s.reject}
           </button>
         </div>
         );

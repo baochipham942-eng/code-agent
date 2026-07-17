@@ -4,6 +4,19 @@
 
 import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
+import { chatTranscriptZh } from './chatTranscript';
+import { chatInputZh } from './chatInput';
+import { chatInputModelStrategyZh } from './chatInputModelStrategy';
+import { sidebarZh } from './sidebar';
+import { previewWorkspaceZh } from './previewWorkspace';
+import { modalPrimitivesZh } from './modalPrimitives';
+import { taskStatusPanelsZh } from './taskStatusPanels';
+import { noticesZh } from './notices';
+import { labZh } from './lab';
+import { labGpt1Zh } from './labGpt1';
+import { labNanogptZh } from './labNanogpt';
+import { labLlamafactoryZh } from './labLlamafactory';
+import { labAlignmentZh } from './labAlignment';
 
 export const zh = {
   // Common
@@ -16,7 +29,9 @@ export const zh = {
     confirm: '确认',
     delete: '删除',
     edit: '编辑',
+    undo: '撤销',
     loading: '加载中…',
+    retry: '重试',
     error: '错误',
     success: '成功',
     active: '当前',
@@ -637,6 +652,8 @@ export const zh = {
     // WorkingFolder
     inputDirPlaceholder: '输入工作目录路径',
     confirm: '确定',
+    selectDirectoryTitle: '选择工作目录',
+    nextMessageWillUse: '下一条消息将使用：{path}',
     // Connectors
     status: '状态',
     toolCount: '工具数',
@@ -833,15 +850,21 @@ export const zh = {
 
   // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
   // 聊天转录（TurnCard / StreamingIndicator 等）
-  chat: {
-    thinking: '正在思考…',
-    waitingModel: '正在等待模型响应…',
-    waitingSubagent: '正在等待子任务…',
-    thinkingDigest: '思考',
-    thinkingSegments: ' · {count} 段',
-    expandThinking: '展开思考',
-    collapseThinking: '收起思考',
-  },
+
+
+  ...chatTranscriptZh,
+  ...chatInputZh,
+  ...chatInputModelStrategyZh,
+  ...sidebarZh,
+  ...previewWorkspaceZh,
+  ...modalPrimitivesZh,
+  ...taskStatusPanelsZh,
+  ...noticesZh,
+  ...labZh,
+  ...labGpt1Zh,
+  ...labNanogptZh,
+  ...labLlamafactoryZh,
+  ...labAlignmentZh,
 
   // 聊天流 Mermaid 图卡片（缩放/平移 + 标注即编辑）
   mermaid: {
@@ -890,6 +913,25 @@ export const zh = {
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
+
+  // 命令面板（Cmd/Ctrl+K）
+  commandPalette: {
+    ariaLabel: '命令面板',
+    searchPlaceholder: '搜索命令…',
+    closeAriaLabel: '关闭命令面板',
+    noMatches: '没有找到匹配的命令',
+    categorySession: '会话',
+    categoryView: '视图',
+    categorySettings: '设置',
+    categoryHelp: '帮助',
+    footerNavigate: '导航',
+    footerExecute: '执行',
+    footerClose: '关闭',
+    clearConfirmTitle: '清空当前对话？',
+    clearConfirmMessage: '当前会话中的所有消息都会被清除，此操作无法撤销。',
+    clearConfirmAction: '清空对话',
+  },
+
   slashCommands: {
     // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）
     picker: {

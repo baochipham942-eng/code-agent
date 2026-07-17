@@ -266,10 +266,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   );
   const inputPlaceholder = useMemo(() => {
     if (routingMode === 'direct') {
-      return buildDirectRoutingPlaceholder(selectedDirectAgents, swarmAgents);
+      return buildDirectRoutingPlaceholder(selectedDirectAgents, swarmAgents, t);
     }
     return undefined;
-  }, [routingMode, selectedDirectAgents, swarmAgents]);
+  }, [routingMode, selectedDirectAgents, swarmAgents, t]);
   const neoTagInvocation = useMemo(() => parseLeadingNeoTagInvocation(value), [value]);
 
   const buildEnvelope = useChatInputEnvelope({
@@ -503,8 +503,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const resolvedPlaceholder = useMemo(() => {
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
-    return '引导对话，本轮结束后发送…';
-  }, [inputPlaceholder, isProcessing]);
+    return t.chatInput.queuedGuidePlaceholder;
+  }, [inputPlaceholder, isProcessing, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
   const { handleSubmit, runScheduleCreation, startGoalRun } = useChatInputSubmit({
@@ -592,7 +592,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             submitting={submittingGoal}
             onSubmit={async (draft) => {
               setSubmittingGoal(true);
-              const parsed = goalComposerDraftToParsed(draft);
+              const parsed = goalComposerDraftToParsed(draft, t);
               const ok = await startGoalRun(parsed, `/goal ${parsed.goal}`);
               setSubmittingGoal(false);
               if (!ok) setGoalConfirm({ initialGoal: parsed.goal });
@@ -608,7 +608,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             className="flex items-center gap-2 px-3 py-2 mb-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg hover:bg-indigo-500/20 transition-colors w-full text-left"
           >
             <FileText className="w-4 h-4 text-indigo-400" />
-            <span className="text-sm text-indigo-400">查看实现计划</span>
+            <span className="text-sm text-indigo-400">{t.chatInput.viewPlan}</span>
           </button>
         )}
 
@@ -616,7 +616,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {isUploading && (
           <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
             <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-amber-400">文件处理中…</span>
+            <span className="text-sm text-amber-400">{t.chatInput.processingFiles}</span>
           </div>
         )}
 
@@ -647,7 +647,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <div className="absolute inset-0 flex items-center justify-center bg-zinc-800-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-primary-500">
             <div className="flex flex-col items-center gap-2 text-primary-400">
               <Image className="w-8 h-8" />
-              <span className="text-sm">拖放文件或文件夹到这里</span>
+              <span className="text-sm">{t.chat.dropFilesHere}</span>
             </div>
           </div>
         )}
@@ -815,30 +815,30 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                   <div className="max-w-[86%]">
                     <div className="mb-1 flex items-center justify-end gap-2 text-[11px] text-zinc-400">
                       <CornerDownRight className="h-3.5 w-3.5" />
-                      <span>已引导对话</span>
+                      <span>{t.chatInput.guidedBadge}</span>
                       {item.attachmentsCount > 0 && (
-                        <span className="text-zinc-500">附件 {item.attachmentsCount}</span>
+                        <span className="text-zinc-500">{t.chatInput.queuedAttachments.replace('{count}', String(item.attachmentsCount))}</span>
                       )}
                       {isProcessing ? (
                         <span className="inline-flex items-center gap-1 text-zinc-500">
                           <Clock3 className="h-3 w-3" />
-                          等待发送
+                          {t.chatInput.queuedWaiting}
                         </span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => onSendQueuedRuntimeInput?.(item.id)}
                           className="text-zinc-400 hover:text-zinc-200"
-                          title="立即发送这条排队消息"
+                          title={t.chatInput.queuedSendNowTitle}
                         >
-                          发送
+                          {t.chatInput.queuedSendNow}
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={() => onCancelQueuedRuntimeInput?.(item.id)}
                         className="inline-flex h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
-                        title="撤回这条排队消息"
+                        title={t.chatInput.queuedWithdrawTitle}
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>

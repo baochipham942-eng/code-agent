@@ -41,7 +41,7 @@ const variantStyles: Record<ButtonVariant, string> = {
     'disabled:from-primary-800/50 disabled:to-primary-700/50',
   ].join(' '),
   secondary: [
-    'bg-zinc-600 hover:bg-zinc-600',
+    'bg-zinc-600 hover:bg-zinc-500',
     'text-zinc-200',
     'disabled:bg-zinc-700',
   ].join(' '),
@@ -56,6 +56,11 @@ const variantStyles: Record<ButtonVariant, string> = {
     'disabled:bg-red-600/50',
   ].join(' '),
 };
+
+// 收敛源：其他地方（如 Modal/ConfirmDialog 的手搓 confirm 按钮）复用这两个类串，
+// 别各自维护一份颜色字面量、慢慢和 Button 视觉漂移。
+export const BUTTON_PRIMARY_CLASS = variantStyles.primary;
+export const BUTTON_DANGER_CLASS = variantStyles.danger;
 
 const sizeStyles: Record<ButtonSize, string> = {
   sm: 'px-3 py-1.5 text-xs gap-1.5',

@@ -9,9 +9,10 @@ import type {
 } from '@shared/contract/agentTrajectory';
 import {
   TRAJECTORY_TIER_FILTER_OPTIONS,
-  TRAJECTORY_FAILURE_FILTER_OPTIONS,
-  TRAJECTORY_REVIEW_FILTER_OPTIONS,
+  buildTrajectoryFailureFilterOptions,
+  buildTrajectoryReviewFilterOptions,
 } from './sidebarFilterOptions';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface SidebarStatusFilterDropdownProps {
   statusFilterOpen: boolean;
@@ -48,14 +49,16 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
   hasActiveStatusDropdownFilter,
   activeStatusFilterLabel,
 }) => {
+  const { t } = useI18n();
+  const f = t.sidebarFilters;
   return (
     <div className="relative shrink-0" ref={statusFilterRef}>
       <button
         type="button"
         onClick={() => setStatusFilterOpen((v) => !v)}
-        aria-label="按状态筛选会话"
+        aria-label={f.filterByStatusAria}
         aria-expanded={statusFilterOpen}
-        title={!hasActiveStatusDropdownFilter ? '按状态筛选会话' : `状态筛选：${activeStatusFilterLabel}`}
+        title={!hasActiveStatusDropdownFilter ? f.filterByStatusAria : f.statusFilterTitle.replace('{label}', activeStatusFilterLabel)}
         className={`relative inline-flex h-8 w-8 items-center justify-center rounded-md border transition-colors ${hasActiveStatusDropdownFilter ? 'border-zinc-500 bg-zinc-700/70 text-zinc-100' : 'border-transparent text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
       >
         <ListFilter className="h-4 w-4" />
@@ -65,7 +68,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
       </button>
       {statusFilterOpen && (
         <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg border border-zinc-700 bg-zinc-800 py-1 shadow-xl">
-          <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">按状态筛选</div>
+          <div className="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-zinc-500">{f.filterByStatus}</div>
           {visibleStatusFilterOptions.map((option) => {
             const active = sessionStatusFilter === option.id;
             return (
@@ -94,7 +97,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
           </div>
           <div className="px-2 py-1">
             <div className="mb-1 flex flex-wrap gap-1">
-              {TRAJECTORY_REVIEW_FILTER_OPTIONS.map((option) => {
+              {buildTrajectoryReviewFilterOptions(t).map((option) => {
                 const active = trajectoryReviewFilter === option.id;
                 return (
                   <button
@@ -128,7 +131,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
               })}
             </div>
             <div className="grid gap-0.5">
-              {TRAJECTORY_FAILURE_FILTER_OPTIONS.map((option) => {
+              {buildTrajectoryFailureFilterOptions(t).map((option) => {
                 const active = trajectoryFailureFilter === option.id;
                 return (
                   <button
@@ -156,7 +159,7 @@ export const SidebarStatusFilterDropdown: React.FC<SidebarStatusFilterDropdownPr
                 }}
                 className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900/40 px-2 py-1 text-left text-[11px] text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-200"
               >
-                清除 Trajectory 筛选
+                {f.clearTrajectoryFilter}
               </button>
             )}
           </div>

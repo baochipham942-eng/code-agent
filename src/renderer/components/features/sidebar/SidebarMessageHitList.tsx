@@ -3,6 +3,14 @@ import {
   formatSidebarMessageSearchHitMeta,
   type SidebarMessageSearchHit,
 } from '../../../utils/sidebarMessageSearch';
+import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
+
+function getRoleLabel(role: SidebarMessageSearchHit['role'], t: Translations): string {
+  if (role === 'user') return t.chatSearch.roleUser;
+  if (role === 'assistant') return t.chatSearch.roleAssistant;
+  return t.chatSearch.roleSystem;
+}
 
 interface SidebarMessageHitListProps {
   sessionId: string;
@@ -14,17 +22,12 @@ interface SidebarMessageHitListProps {
   ) => void | Promise<void>;
 }
 
-function getRoleLabel(role: SidebarMessageSearchHit['role']): string {
-  if (role === 'user') return '用户';
-  if (role === 'assistant') return '助手';
-  return '系统';
-}
-
 export const SidebarMessageHitList: React.FC<SidebarMessageHitListProps> = ({
   sessionId,
   hits,
   onSelectHit,
 }) => {
+  const { t } = useI18n();
   const additionalHits = hits.slice(1, 4);
   if (additionalHits.length === 0) {
     return null;
@@ -41,7 +44,7 @@ export const SidebarMessageHitList: React.FC<SidebarMessageHitListProps> = ({
           title={hit.snippet}
         >
           <span className="shrink-0 text-zinc-600">
-            {getRoleLabel(hit.role)}
+            {getRoleLabel(hit.role, t)}
           </span>
           <span className="shrink-0 text-zinc-600">
             {formatSidebarMessageSearchHitMeta(hit)}

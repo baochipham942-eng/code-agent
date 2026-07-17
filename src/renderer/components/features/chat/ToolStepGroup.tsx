@@ -6,28 +6,35 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
-import type { ToolCall } from '@shared/contract';
+import type { ToolCall, ToolLiveOutput } from '@shared/contract';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
+import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
 import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGrouping';
 import {
   formatToolDuration,
   isAutoLoadedRetry,
   isEscalatedToolError,
 } from '../../../utils/toolExecutionPresentation';
+import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
   sessionId?: string;
   /** Streaming turn: default expanded so user sees live progress */
   defaultExpanded?: boolean;
+  /** ADR-043：turn 仍在流式输出中——驱动中间档（Truncated）的自动展示 */
+  isStreamingTurn?: boolean;
 }
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes,
   sessionId,
   defaultExpanded = false,
+  isStreamingTurn = false,
 }) => {
+  const { t } = useI18n();
   const label = useMemo(() => {
     if (nodes.length === 1) {
       const tc = nodes[0].toolCall;
@@ -76,6 +83,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           shortDescription: tc.shortDescription,
           targetContext: tc.targetContext,
           expectedOutcome: tc.expectedOutcome,
+          liveOutput: tc.liveOutput,
           result:
             tc.result !== undefined
               ? {
@@ -106,13 +114,46 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   );
   const forceExpandOnFailure = (status === 'error' || status === 'partial') && hasEscalatedError;
   const [expanded, setExpanded] = useState(defaultExpanded || forceExpandOnFailure);
+  // 用户手动点过展开/收起后冻结自动档，不再被流式中间档/流式收尾自动切换抢走（ADR-043 决策 2/3）。
+  const [userToggled, setUserToggled] = useState(false);
   useEffect(() => {
     if (forceExpandOnFailure) {
       setExpanded(true);
     }
   }, [forceExpandOnFailure]);
 
-  const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls), [toolCalls]);
+  // 正在运行的那一步 = 组内最后一个还没有 result 的 toolCall（真实"在跑"信号，
+  // 不是 tc._streaming 参数流标记——同一工具参数流完时 result 仍未到位也算在跑）。
+  const runningToolCall = useMemo<ToolCall | null>(() => {
+    for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
+      if (toolCalls[i].result === undefined) return toolCalls[i];
+    }
+    return null;
+  }, [toolCalls]);
+  const completedStepsCount = useMemo(
+    () => toolCalls.filter((tc) => tc.result !== undefined).length,
+    [toolCalls],
+  );
+  const isFailureStatus = status === 'error' || status === 'partial';
+  // 三态档位（ADR-043）：需介入失败/用户已展开 → 全展开；未冻结且流式中且有正在跑的
+  // 一步且组内还没出现失败 → 中间档；其余 → 收起。中间档不进 aria-expanded 语义。
+  const tier: 'collapsed' | 'truncated' | 'expanded' = forceExpandOnFailure || expanded
+    ? 'expanded'
+    : !userToggled && isStreamingTurn && runningToolCall && !isFailureStatus
+      ? 'truncated'
+      : 'collapsed';
+  const ariaExpanded = tier === 'expanded';
+
+  // 中间档专用：实时输出截尾 5 行（ADR-043 决策 4，复用 bashOutputPreview 里
+  // isPending=true 的现成尾部截断，不新造截断逻辑）。全展开态用原始 runningToolCall——
+  // 这里不重复截断，但 LiveToolOutput 自身现在也做同一套尾截断（遗留刀1），
+  // 所以两层截断在全展开态下是等效的，不是"不受影响/无上限"。
+  const truncatedRunningToolCall = useMemo<ToolCall | null>(() => {
+    if (tier !== 'truncated' || !runningToolCall) return null;
+    return { ...runningToolCall, liveOutput: tailTruncateLiveOutput(runningToolCall.liveOutput) };
+  }, [tier, runningToolCall]);
+
+  const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls, t), [toolCalls, t]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
@@ -129,15 +170,18 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   return (
     <div className="my-0.5">
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          setUserToggled(true);
+          setExpanded((value) => !value);
+        }}
         className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] transition-colors ${
           status === 'ok'
             ? 'px-1 py-0.5 text-zinc-600 hover:bg-surface-subtle hover:text-zinc-400'
             : 'border border-white/[0.04] bg-white/[0.015] px-2 py-1 text-zinc-500 hover:border-white/[0.08] hover:bg-white/[0.03] hover:text-zinc-300'
         }`}
-        aria-expanded={expanded}
+        aria-expanded={ariaExpanded}
       >
-        {expanded ? (
+        {ariaExpanded ? (
           <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-600" />
         ) : (
           <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-600" />
@@ -145,39 +189,63 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         {status === 'error' && (
           <span
             className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-red-400' : 'bg-zinc-500'}`}
-            aria-label="失败"
+            aria-label={t.toolGroup.statusFailed}
           />
         )}
         {status === 'partial' && (
           <span
             className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-amber-400' : 'bg-zinc-500'}`}
-            aria-label="部分失败"
+            aria-label={t.toolGroup.statusPartial}
           />
         )}
         {status !== 'ok' && (
-          <span className={`flex-shrink-0 ${getToolGroupStatusClass(status, hasEscalatedError)}`}>{getToolGroupStatusLabel(status)}</span>
+          <span className={`flex-shrink-0 ${getToolGroupStatusClass(status, hasEscalatedError)}`}>{getToolGroupStatusLabel(status, t)}</span>
         )}
         <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
         {recoveredCount > 0 && (
           <span
             className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500"
-            title="这次失败后已自动恢复"
+            title={t.toolGroup.recoveredTitle}
           >
-            已恢复
+            {t.toolGroup.recovered}
           </span>
         )}
         {status !== 'ok' && resultSummary && (
           <span className="hidden max-w-[220px] truncate text-zinc-600 sm:inline">{resultSummary}</span>
         )}
         {status !== 'ok' && outputCount > 0 && (
-          <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{outputCount} output{outputCount > 1 ? 's' : ''}</span>
+          <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{t.toolGroup.outputCount.replace('{count}', String(outputCount))}</span>
         )}
         {totalDuration && (
           <span className="flex-shrink-0 text-[10px] text-zinc-600">{totalDuration}</span>
         )}
       </button>
 
-      {expanded && (
+      {tier === 'truncated' && (
+        <div className="ml-4 mt-1 space-y-1 pl-3">
+          {truncatedRunningToolCall && (
+            <ToolCallDisplay
+              toolCall={truncatedRunningToolCall}
+              index={0}
+              total={1}
+              compact
+              mediaContext={{
+                sessionId,
+                messageId:
+                  nodes.find((node) => node.toolCall?.id === truncatedRunningToolCall.id)?.messageId ||
+                  truncatedRunningToolCall.id,
+              }}
+            />
+          )}
+          {completedStepsCount > 0 && (
+            <div className="pl-1 text-[10px] text-zinc-600">
+              {t.toolGroup.completedSteps.replace('{count}', String(completedStepsCount))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tier === 'expanded' && (
         <div className="ml-4 mt-1 space-y-1 border-l border-zinc-800 pl-3">
           {toolCalls.map((tc, i) => (
             <div
@@ -227,6 +295,20 @@ function isReadOrSearchTool(name: string): boolean {
 }
 
 /**
+ * 中间档实时输出截尾（ADR-043 决策 4）：stdout/stderr 各自只留最后 5 行，
+ * 复用 bashOutputPreview.ts 的 isPending=true 分支（"运行中尾 5 行"），不新造截断逻辑。
+ * 纯函数，便于单测。
+ */
+export function tailTruncateLiveOutput(live: ToolLiveOutput | undefined): ToolLiveOutput | undefined {
+  if (!live) return live;
+  return {
+    ...live,
+    stdout: live.stdout ? computeBashPreviewLines(live.stdout, true).displayLines.join('\n') : live.stdout,
+    stderr: live.stderr ? computeBashPreviewLines(live.stderr, true).displayLines.join('\n') : live.stderr,
+  };
+}
+
+/**
  * 组头摘要（P0 #1 失败去重）：
  *  · 多工具 → 计数（"N failed / M empty / K completed"），保留；
  *  · 单工具且失败 → null：错误**只**由下方工具 cell 单处渲染（红 glyph + 一行 humanize），
@@ -234,15 +316,15 @@ function isReadOrSearchTool(name: string): boolean {
  *  · 单工具其它（成功/空）→ summarizeTool 的结果摘要（如「找到 3 个文件」），保留。
  * 纯函数，便于单测。
  */
-export function buildToolGroupHeadSummary(toolCalls: ToolCall[]): string | null {
+export function buildToolGroupHeadSummary(toolCalls: ToolCall[], t: Translations): string | null {
   if (toolCalls.length === 0) return null;
-  if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls);
+  if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls, t);
   const only = toolCalls[0];
   if (only.result?.success === false) return null;
   return summarizeTool(only);
 }
 
-function summarizeToolGroupResults(toolCalls: ToolCall[]): string | null {
+function summarizeToolGroupResults(toolCalls: ToolCall[], t: Translations): string | null {
   let failed = 0;
   let emptySearches = 0;
   let completed = 0;
@@ -265,9 +347,9 @@ function summarizeToolGroupResults(toolCalls: ToolCall[]): string | null {
   }
 
   const parts: string[] = [];
-  if (failed > 0) parts.push(`${failed} failed`);
-  if (emptySearches > 0) parts.push(`${emptySearches} empty`);
-  if (completed > 0) parts.push(`${completed} completed`);
+  if (failed > 0) parts.push(t.toolGroup.summaryFailed.replace('{count}', String(failed)));
+  if (emptySearches > 0) parts.push(t.toolGroup.summaryEmpty.replace('{count}', String(emptySearches)));
+  if (completed > 0) parts.push(t.toolGroup.summaryCompleted.replace('{count}', String(completed)));
 
   return parts.length > 0 ? parts.join(', ') : null;
 }
@@ -279,11 +361,11 @@ function isEmptySearchResult(toolCall: ToolCall): boolean {
   return /(?:No matches found|No files matched the pattern|No matches|0 matches)/i.test(output.trim());
 }
 
-function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok'): string {
-  if (status === 'streaming') return 'running';
-  if (status === 'partial') return 'partial';
-  if (status === 'error') return 'failed';
-  return 'completed';
+function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok', t: Translations): string {
+  if (status === 'streaming') return t.toolGroup.statusRunning;
+  if (status === 'partial') return t.toolGroup.statusPartial;
+  if (status === 'error') return t.toolGroup.statusFailed;
+  return t.toolGroup.statusCompleted;
 }
 
 // hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——

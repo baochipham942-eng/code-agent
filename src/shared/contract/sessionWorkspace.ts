@@ -445,6 +445,9 @@ function buildRoutingSummary(metadata?: WorkbenchMessageMetadata): string | unde
   return 'Direct';
 }
 
+/** workbench snapshot 的「纯对话」哨兵值——renderer 判空/降噪时必须引用本常量，别复写字面量 */
+export const PLAIN_CHAT_SUMMARY_LABEL = '纯对话';
+
 export function deriveSessionWorkbenchSnapshot(
   messages: Array<Pick<Message, 'toolCalls' | 'toolResults' | 'metadata' | 'timestamp'>> = [],
   options: {
@@ -510,7 +513,7 @@ export function deriveSessionWorkbenchSnapshot(
   labels.push(...capabilities.skillIds.map((id) => `技能:${id}`));
 
   const summarySegments: string[] = [];
-  summarySegments.push(primarySurface?.label || '纯对话');
+  summarySegments.push(primarySurface?.label || PLAIN_CHAT_SUMMARY_LABEL);
   if (routingSummary) {
     summarySegments.push(routingSummary);
   }
@@ -523,7 +526,7 @@ export function deriveSessionWorkbenchSnapshot(
 
   return {
     summary: summarySegments.join(' · '),
-    labels: labels.length > 0 ? dedupe(labels) : ['纯对话'],
+    labels: labels.length > 0 ? dedupe(labels) : [PLAIN_CHAT_SUMMARY_LABEL],
     recentToolNames,
     primarySurface: primarySurface?.kind || 'chat',
     evidenceSource: primarySurface?.source || 'session_metadata',

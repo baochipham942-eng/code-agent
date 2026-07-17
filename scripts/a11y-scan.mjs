@@ -25,7 +25,7 @@ const repoRoot = path.resolve(scriptDir, '..');
 
 // 基线上限：当前 src/renderer 的历史命中数（脚本口径实测 48：5×R2 + 43×R3）。
 // 棘轮只降不升；清理后调小，归零转 hard-fail。
-const BASELINE_MAX = 48;
+const BASELINE_MAX = 33;
 
 const ALLOW_COMMENT = 'a11y-scan-allow';
 

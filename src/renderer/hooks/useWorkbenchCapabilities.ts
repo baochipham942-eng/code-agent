@@ -49,6 +49,8 @@ export interface WorkbenchMcpCapability {
   toolCount: number;
   resourceCount: number;
   error?: string;
+  authMode?: MCPServerStateSummary['authMode'];
+  hasOAuthTokens?: boolean;
 }
 
 export interface WorkbenchCapabilities {
@@ -197,6 +199,8 @@ export function buildWorkbenchCapabilities(args: {
       toolCount: server?.toolCount || 0,
       resourceCount: server?.resourceCount || 0,
       error: server?.error,
+      authMode: server?.authMode,
+      hasOAuthTokens: server?.hasOAuthTokens,
     };
   });
 

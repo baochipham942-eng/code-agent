@@ -117,3 +117,17 @@ export function mapDurableRunToSessionStatus(status: DurableRunView['status']): 
   if (status === 'created' || status === 'running' || status === 'waiting' || status === 'recovering') return 'running';
   return 'idle';
 }
+
+export function hasDurableWaitingInputRun(view: DurableRunView): boolean {
+  return view.source === 'durable' && view.status === 'waiting';
+}
+
+export function projectDurableRunToSessionPayload(view: DurableRunView): {
+  status: SessionStatus;
+  durableWaitingInput?: true;
+} {
+  return {
+    status: mapDurableRunToSessionStatus(view.status),
+    ...(hasDurableWaitingInputRun(view) ? { durableWaitingInput: true as const } : {}),
+  };
+}

@@ -26,6 +26,7 @@ describe('model strategy fallback visibility acceptance', () => {
         bannerShowsTraceGroups: true,
         bannerShowsToolPolicyDisabled: true,
         bannerShowsExhaustedProviderFallback: true,
+        bannerCollapsedShowsFromTo: true,
         providerToastUsesStrategyMode: true,
         providerToastShowsMainTaskRecovery: true,
       },

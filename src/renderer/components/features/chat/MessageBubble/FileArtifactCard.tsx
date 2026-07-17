@@ -91,7 +91,7 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
         return (
           <div
             key={`${item.sourceNodeId || ''}:${mediaAsset.path || mediaAsset.url || item.label}`}
-            className="overflow-hidden rounded-md border border-white/[0.06] bg-white/[0.018] transition-colors hover:border-white/[0.1] hover:bg-white/[0.03]"
+            className="overflow-hidden rounded-md border border-border-muted bg-surface-subtle transition-colors hover:border-border-muted hover:bg-surface-subtle"
             title={mediaAsset.path || mediaAsset.url || item.label}
           >
             <div className="flex items-center gap-2 px-2.5 py-1.5">
@@ -126,7 +126,7 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
               </button>
             )}
 
-            <div className="flex items-center justify-between gap-2 border-t border-white/[0.05] bg-black/10 px-2.5 py-1.5">
+            <div className="flex items-center justify-between gap-2 border-t border-border-muted bg-black/10 px-2.5 py-1.5">
               <span className="truncate text-[11px] text-zinc-500">{extractToolName(item.ownerLabel)}</span>
               <MediaAssetActionBar
                 asset={mediaAsset}

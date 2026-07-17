@@ -1,7 +1,7 @@
 import type { ToolCall } from '@shared/contract';
-import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import type { ToolStatus } from '../components/features/chat/MessageBubble/ToolCallDisplay/styles';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
+import type { Translations } from '../i18n';
 
 export type ToolPermissionView =
   | 'read'
@@ -12,25 +12,6 @@ export type ToolPermissionView =
   | 'memory'
   | 'mcp'
   | 'unknown';
-
-export interface ToolLoopDecisionSummary {
-  action: string;
-  reason: string;
-  expectedNextAction: string;
-  tone: 'neutral' | 'info' | 'success' | 'warning' | 'error';
-}
-
-export interface ToolLikeForDecision {
-  name: string;
-  shortDescription?: string;
-  expectedOutcome?: string;
-  result?: unknown;
-  success?: boolean;
-  _streaming?: boolean;
-  metadata?: Record<string, unknown> | null;
-  /** 同一轮里之后又成功了，这次失败已被恢复，不应触发「工具报错」决策 */
-  recovered?: boolean;
-}
 
 /**
  * 判定一条工具结果是否「自动加载重试」的良性内部状态（success:false 但不是真失败）。
@@ -120,151 +101,124 @@ export interface HumanizedToolError {
   escalate?: boolean;
 }
 
+/** 分类结果（无文案，纯逻辑）——humanizeToolError 在此基础上补 t 驱动的文案。 */
+interface ToolErrorClassification {
+  kind: ToolErrorKind;
+  action?: ToolErrorAction;
+  settingsHint?: boolean;
+  escalate?: boolean;
+  /** 仅 quota 类命中具体搜索源时填充 */
+  sources?: string[];
+}
+
 /**
- * 把工具的原始报错翻成人话 + 可操作提示。识别不了的返回 null（让调用方退回原始展示）。
- * 目标：报错说人话、可操作，而不是把 HTTP 401/402/429/503 + JSON 糊用户一脸。
+ * 识别工具报错属于哪一类（额度/限流/鉴权/过载/超时/网络/自动加载重试），不产出文案。
+ * 识别不了的返回 null。判定与文案分离：isEscalatedToolError 只需要 escalate 位，
+ * 不该为了读一个布尔值被迫牵进 Translations。
  *
  * 判别顺序有意为之：**额度/余额排最前**——上游常把额度错误裹成「HTTP 401: insufficient_quota」，
  * 若 auth(401) 在前会误判成鉴权。auth 不收 `permission denied`（避免误伤 Bash 文件权限错误）。
  */
-export function humanizeToolError(error?: string, _toolName?: string): HumanizedToolError | null {
-  if (!error?.trim()) return null;
+function classifyToolError(error: string): ToolErrorClassification | null {
   const lower = error.toLowerCase();
 
   // 1. 额度/余额/欠费（最先）：搜索源 quota、exa credits、insufficient balance、402、欠费等
   if (/quota|insufficient_quota|no_more_credits|credits?\b|usage limit|billing|exceeded your|insufficient[_ ]?balance|余额不足|欠费|arrearage|payment required|\b402\b/i.test(error)) {
     const sources = ['perplexity', 'exa', 'tavily', 'brave', 'serper', 'bing', 'openai']
       .filter((s) => lower.includes(s));
-    if (sources.length) {
-      return {
-        summary: `联网搜索额度不足：${sources.join(' / ')} 的 API 套餐用量已耗尽`,
-        detail: '要恢复这些源请充值，或换一个还有额度的 key。',
-        settingsHint: true,
-        kind: 'quota',
-        action: 'settings',
-        escalate: true,
-      };
-    }
     return {
-      summary: '额度/余额不足：当前服务的用量或余额已耗尽',
-      detail: '请充值，或在设置里换一个还有额度的 key。',
-      settingsHint: true,
       kind: 'quota',
       action: 'settings',
+      settingsHint: true,
       escalate: true,
+      sources: sources.length ? sources : undefined,
     };
   }
 
   // 2. 限流 429
   if (/\b429\b|too many requests|rate.?limit|requests per minute|rate exceeded/i.test(error)) {
-    return {
-      summary: '请求过于频繁，被限流',
-      detail: '稍等片刻会自动重试；如持续可降低并发或稍后再试。',
-      kind: 'rate_limit',
-      action: 'retry',
-      escalate: true,
-    };
+    return { kind: 'rate_limit', action: 'retry', escalate: true };
   }
 
   // 3. 鉴权 401/403（不收 permission denied，避免误伤 shell/文件权限错误）
   if (/\b401\b|\b403\b|unauthorized|forbidden|invalid[_ ]?api[_ ]?key|invalid token|authentication failed|authentication error/i.test(error)) {
-    return {
-      summary: '鉴权失败：API Key 无效或无权限',
-      detail: '去「设置 > Service API Keys」检查对应服务的 Key。',
-      settingsHint: true,
-      kind: 'auth',
-      action: 'settings',
-      escalate: true,
-    };
+    return { kind: 'auth', action: 'settings', settingsHint: true, escalate: true };
   }
 
   // 4. 过载 / 网关（含 504 gateway timeout，排在超时前）
   if (/\b50[234]\b|overloaded|capacity|service unavailable|bad gateway|gateway timeout|server is busy|temporarily unavailable/i.test(error)) {
-    return {
-      summary: '服务过载或暂时不可用',
-      detail: '稍后会自动重试。',
-      kind: 'overloaded',
-      action: 'retry',
-    };
+    return { kind: 'overloaded', action: 'retry' };
   }
 
   // 5. 超时
   if (/timeout|timed out|etimedout|inactivity timeout|deadline exceeded/i.test(error)) {
-    return {
-      summary: '请求超时',
-      detail: '稍后重试，或检查网络 / 代理。',
-      kind: 'timeout',
-      action: 'retry',
-    };
+    return { kind: 'timeout', action: 'retry' };
   }
 
   // 6. 网络连接异常
   if (/econnreset|econnrefused|enotfound|eai_again|socket hang up|socket disconnected|network error|network request failed|fetch failed/i.test(error)) {
-    return {
-      summary: '网络异常，连接失败',
-      detail: '检查网络或代理后重试。',
-      kind: 'network',
-      action: 'retry',
-    };
+    return { kind: 'network', action: 'retry' };
   }
 
   // 7. 工具自动加载重试（villain 修复后一般不会走到这，留作防御）
   if (lower.includes('auto-loaded')) {
-    return { summary: '工具已自动加载，正在用正确参数重试', kind: 'auto_loaded' };
+    return { kind: 'auto_loaded' };
   }
 
   return null;
+}
+
+/**
+ * 把工具的原始报错翻成人话 + 可操作提示。识别不了的返回 null（让调用方退回原始展示）。
+ * 目标：报错说人话、可操作，而不是把 HTTP 401/402/429/503 + JSON 糊用户一脸。
+ */
+export function humanizeToolError(error: string | undefined, _toolName: string | undefined, t: Translations): HumanizedToolError | null {
+  if (!error?.trim()) return null;
+  const classification = classifyToolError(error);
+  if (!classification) return null;
+  const { kind, action, settingsHint, escalate, sources } = classification;
+
+  switch (kind) {
+    case 'quota':
+      if (sources?.length) {
+        return {
+          summary: t.toolErrors.quota.sourcesSummary.replace('{sources}', sources.join(' / ')),
+          detail: t.toolErrors.quota.sourcesDetail,
+          settingsHint,
+          kind,
+          action,
+          escalate,
+        };
+      }
+      return { summary: t.toolErrors.quota.summary, detail: t.toolErrors.quota.detail, settingsHint, kind, action, escalate };
+    case 'rate_limit':
+      return { summary: t.toolErrors.rateLimit.summary, detail: t.toolErrors.rateLimit.detail, kind, action, escalate };
+    case 'auth':
+      return { summary: t.toolErrors.auth.summary, detail: t.toolErrors.auth.detail, settingsHint, kind, action, escalate };
+    case 'overloaded':
+      return { summary: t.toolErrors.overloaded.summary, detail: t.toolErrors.overloaded.detail, kind, action };
+    case 'timeout':
+      return { summary: t.toolErrors.timeout.summary, detail: t.toolErrors.timeout.detail, kind, action };
+    case 'network':
+      return { summary: t.toolErrors.network.summary, detail: t.toolErrors.network.detail, kind, action };
+    case 'auto_loaded':
+      return { summary: t.toolErrors.autoLoaded.summary, kind };
+  }
 }
 
 /**
  * 判断一次工具失败是否需要用户介入（额度耗尽 / 鉴权失效 / 限流），而非 agent
  * 探索过程中的良性试错（工具未安装、非零退出码、超时、网络抖动等）。
- * 未被 humanizeToolError 分类的错误一律按探索性失败处理——宁可保守安静，因为
- * agent 最终会在回复里说清楚结果，不需要每次试错都喊给用户看。
+ * 未被分类的错误一律按探索性失败处理——宁可保守安静，因为 agent 最终会在
+ * 回复里说清楚结果，不需要每次试错都喊给用户看。只读 escalate 位，不涉及
+ * 文案，故不需要 Translations。
  */
 export function isEscalatedToolError(toolCall: Pick<ToolCall, 'result'>): boolean {
   const result = toolCall.result;
   if (result?.success !== false) return false;
   const errorText = result.error || (typeof result.output === 'string' ? result.output : '');
-  return humanizeToolError(errorText)?.escalate === true;
-}
-
-/** API/额度类错误升级成全局 banner 的数据（P0 #3）。 */
-export interface ApiErrorBannerData {
-  summary: string;
-  detail?: string;
-  kind: ToolErrorKind;
-  action?: ToolErrorAction;
-}
-
-/**
- * 从最近一轮的工具节点派生需要升级成全局 banner 的 API/额度错误（P0 #3）。
- * 设计取舍：
- * - **只看最后一轮**——新一轮（用户发新消息）开始即自然清空，错误不会无限挂着；
- * - 已被恢复（recovered，同轮后续重试成功）的失败不再报；
- * - 只升级 humanize 标了 escalate 的类别（额度/限流/鉴权这类需用户介入或阻塞进度的），
- *   过载/超时/网络等瞬态可自动重试的不升 banner，避免打扰。
- * 取最后一轮里**最新**一条未恢复的 escalate 错误。
- */
-export function deriveApiErrorBanner(
-  turns: readonly TraceTurn[] | null | undefined,
-): ApiErrorBannerData | null {
-  if (!turns || turns.length === 0) return null;
-  const lastTurn = turns[turns.length - 1];
-  for (let i = lastTurn.nodes.length - 1; i >= 0; i -= 1) {
-    const toolCall = lastTurn.nodes[i].toolCall;
-    if (toolCall?.success !== false || toolCall.recovered) continue;
-    const humanized = humanizeToolError(toolCall.result, toolCall.name);
-    if (humanized?.escalate && humanized.kind) {
-      return {
-        summary: humanized.summary,
-        detail: humanized.detail,
-        kind: humanized.kind,
-        action: humanized.action,
-      };
-    }
-  }
-  return null;
+  if (!errorText?.trim()) return false;
+  return classifyToolError(errorText)?.escalate === true;
 }
 
 export interface ToolErrorActionState {
@@ -301,69 +255,14 @@ export function buildToolErrorActions(
   };
 }
 
-export function getToolRecoveryHint(toolCall: ToolCall, status: ToolStatus): string {
-  if (status === 'pending') return '等待结果';
-  if (status === 'interrupted') return '可重新运行';
+export function getToolRecoveryHint(toolCall: ToolCall, status: ToolStatus, t: Translations): string {
+  const hint = t.toolRecoveryHint;
+  if (status === 'pending') return hint.pending;
+  if (status === 'interrupted') return hint.interrupted;
   if (status === 'error') {
-    if (toolCall.expectedOutcome) return `可重试：${toolCall.expectedOutcome}`;
-    return '可以重试或换个工具';
+    if (toolCall.expectedOutcome) return hint.errorWithOutcome.replace('{outcome}', toolCall.expectedOutcome);
+    return hint.errorGeneric;
   }
-  if (toolCall.result?.outputPath) return '产物已记录';
-  return '结果已记录';
-}
-
-function bestToolReason(tool: ToolLikeForDecision): string {
-  return tool.expectedOutcome || tool.shortDescription || tool.name;
-}
-
-export function summarizeToolLoopDecision(allTools: ToolLikeForDecision[]): ToolLoopDecisionSummary | null {
-  // 自动加载重试 + 已恢复的失败都是良性/已收尾状态，决策判定里完全忽略——否则会被误判成
-  // 失败弹「工具报错」，把成功的一轮演成翻车。
-  const tools = allTools.filter((tool) => !isAutoLoadedRetry(tool.metadata) && !tool.recovered);
-  if (tools.length === 0) return null;
-
-  const failed = tools.find((tool) => tool.success === false);
-  if (failed) {
-    return {
-      action: '工具报错',
-      reason: bestToolReason(failed),
-      expectedNextAction: '可以重试，或换个工具试试',
-      tone: 'error',
-    };
-  }
-
-  const pending = tools.find((tool) => tool._streaming || tool.result === undefined);
-  if (pending) {
-    return {
-      action: '等待工具返回',
-      reason: bestToolReason(pending),
-      expectedNextAction: '收到结果后继续汇总或执行下一步',
-      tone: 'neutral',
-    };
-  }
-
-  return {
-    action: tools.length > 1 ? `完成 ${tools.length} 个工具调用` : '工具结果已返回',
-    reason: bestToolReason(tools[0]),
-    expectedNextAction: '把结果并入回复或继续下一步',
-    tone: 'success',
-  };
-}
-
-export function summarizeToolLoopDecisionFromNodes(nodes: TraceNode[]): ToolLoopDecisionSummary | null {
-  const tools: ToolLikeForDecision[] = nodes
-    .map((node) => node.toolCall)
-    .filter((toolCall): toolCall is NonNullable<TraceNode['toolCall']> => Boolean(toolCall))
-    .map((toolCall) => ({
-      name: toolCall.name,
-      shortDescription: toolCall.shortDescription,
-      expectedOutcome: toolCall.expectedOutcome,
-      result: toolCall.result,
-      success: toolCall.success,
-      _streaming: toolCall._streaming,
-      metadata: toolCall.metadata,
-      recovered: toolCall.recovered,
-    }));
-
-  return summarizeToolLoopDecision(tools);
+  if (toolCall.result?.outputPath) return hint.outputRecorded;
+  return hint.resultRecorded;
 }

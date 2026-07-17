@@ -1,16 +1,22 @@
 import React from 'react';
 import { Clock3, GitBranch, HeartPulse } from 'lucide-react';
 import type { SessionType } from '@shared/contract/session';
+import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
 
 export type SidebarSessionTypeFilter = 'all' | SessionType;
 
-const SESSION_TYPE_FILTERS: Array<{ value: SidebarSessionTypeFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'chat', label: 'Chat' },
-  { value: 'schedule', label: 'Schedule' },
-  { value: 'heartbeat', label: 'Heartbeat' },
-  { value: 'subagent', label: 'Subagent' },
-];
+function buildSessionTypeFilters(
+  t: Translations,
+): Array<{ value: SidebarSessionTypeFilter; label: string }> {
+  return [
+    { value: 'all', label: t.sidebarFilters.all },
+    { value: 'chat', label: 'Chat' },
+    { value: 'schedule', label: 'Schedule' },
+    { value: 'heartbeat', label: 'Heartbeat' },
+    { value: 'subagent', label: 'Subagent' },
+  ];
+}
 
 export function getSessionTypeLabel(type: SessionType | undefined): string | null {
   switch (type) {
@@ -30,10 +36,12 @@ interface SessionTypeFilterBarProps {
   onChange: (value: SidebarSessionTypeFilter) => void;
 }
 
-export const SessionTypeFilterBar: React.FC<SessionTypeFilterBarProps> = ({ value, onChange }) => (
+export const SessionTypeFilterBar: React.FC<SessionTypeFilterBarProps> = ({ value, onChange }) => {
+  const { t } = useI18n();
+  return (
   <div className="px-2 pb-1 flex-shrink-0">
     <div className="flex items-center gap-1 overflow-x-auto">
-      {SESSION_TYPE_FILTERS.map((filter) => (
+      {buildSessionTypeFilters(t).map((filter) => (
         <button
           key={filter.value}
           type="button"
@@ -52,4 +60,5 @@ export const SessionTypeFilterBar: React.FC<SessionTypeFilterBarProps> = ({ valu
       ))}
     </div>
   </div>
-);
+  );
+};

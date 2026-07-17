@@ -274,11 +274,43 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'getStatus') {
-    sendResponse({
-      connectionState,
-      attachedTabs: Array.from(attachedTabs),
-      port: config.port,
+    chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+      const active = tabs[0] || null;
+      sendResponse({
+        connectionState,
+        attachedTabs: Array.from(attachedTabs),
+        port: config.port,
+        currentTab: active
+          ? {
+              id: active.id,
+              title: active.title || '',
+              url: active.url || '',
+              attached: attachedTabs.has(active.id),
+            }
+          : null,
+      });
+    }).catch(() => {
+      sendResponse({
+        connectionState,
+        attachedTabs: Array.from(attachedTabs),
+        port: config.port,
+        currentTab: null,
+      });
     });
+    return true;
+  }
+  if (message.type === 'attachCurrentTab') {
+    getActiveTabId()
+      .then((tabId) => ensureAttached(tabId).then(() => ({ ok: true, tabId })))
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message || String(error) }));
+    return true;
+  }
+  if (message.type === 'detachCurrentTab') {
+    getActiveTabId()
+      .then((tabId) => handleDebuggerDetach({ tabId }))
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: error.message || String(error) }));
     return true;
   }
   if (message.type === 'reconnect') {

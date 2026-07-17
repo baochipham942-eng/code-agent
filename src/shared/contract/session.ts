@@ -111,6 +111,8 @@ export interface Session {
   workbenchSnapshot?: SessionWorkbenchSnapshot; // 最小 workbench 解释快照
   workbenchProvenance?: SessionWorkbenchProvenance; // 本地持久化的最后一次明确 workbench 上下文
   streamSnapshot?: StreamRecoverySnapshot; // 上次中断的流式输出恢复快照
+  /** Raw Durable Run status is waiting; session.status remains the projected SessionStatus. */
+  durableWaitingInput?: true;
   // 归档状态
   isArchived?: boolean; // 是否已归档
   archivedAt?: number; // 归档时间

@@ -4,9 +4,11 @@
 // 展示从工具结果中提取的引用源（文件行号、URL、单元格等）
 
 import React from 'react';
+import { FileText, Link, Table2, Search, Brain } from 'lucide-react';
 import type { Citation } from '@shared/contract/citation';
 import { isWebMode, isTauriMode, copyPathToClipboard } from '../../utils/platform';
 import { openNativePath } from '../../services/tauriPluginFacade';
+import { useI18n } from '../../hooks/useI18n';
 
 interface CitationListProps {
   citations: Citation[];
@@ -46,12 +48,12 @@ interface CitationChipProps {
   onClick?: (citation: Citation) => void;
 }
 
-const TYPE_STYLES: Record<string, { bg: string; text: string; icon: string }> = {
-  file: { bg: 'bg-blue-500/10', text: 'text-blue-400', icon: '📄' },
-  url: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', icon: '🔗' },
-  cell: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', icon: '📊' },
-  query: { bg: 'bg-amber-500/10', text: 'text-amber-400', icon: '🔍' },
-  memory: { bg: 'bg-purple-500/10', text: 'text-purple-400', icon: '🧠' },
+const TYPE_STYLES: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
+  file: { bg: 'bg-blue-500/10', text: 'text-blue-400', icon: <FileText className="h-2.5 w-2.5" /> },
+  url: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', icon: <Link className="h-2.5 w-2.5" /> },
+  cell: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', icon: <Table2 className="h-2.5 w-2.5" /> },
+  query: { bg: 'bg-amber-500/10', text: 'text-amber-400', icon: <Search className="h-2.5 w-2.5" /> },
+  memory: { bg: 'bg-purple-500/10', text: 'text-purple-400', icon: <Brain className="h-2.5 w-2.5" /> },
 };
 
 function CitationChip({ citation, onClick }: CitationChipProps) {
@@ -115,6 +117,7 @@ export function CitationSummary({
   maxShow = 5,
   onViewAll,
 }: CitationSummaryProps) {
+  const { t } = useI18n();
   if (citations.length === 0) return null;
 
   const visible = citations.slice(0, maxShow);
@@ -122,7 +125,7 @@ export function CitationSummary({
 
   return (
     <div className="flex items-center gap-1 mt-1.5">
-      <span className="text-[10px] text-gray-500 mr-0.5">引用:</span>
+      <span className="text-[10px] text-gray-500 mr-0.5">{t.citations.label}</span>
       {visible.map((c) => (
         <CitationChip key={c.id} citation={c} />
       ))}

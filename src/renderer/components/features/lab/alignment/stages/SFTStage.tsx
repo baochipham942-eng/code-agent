@@ -15,6 +15,7 @@ import {
   User,
   Bot,
 } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 interface SFTStageProps {
   onComplete: () => void;
@@ -56,6 +57,9 @@ const beforeAfterExamples = [
 ];
 
 export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
+  const { t } = useI18n();
+  const s = t.labAlignment.sft;
+  const common = t.labAlignment.common;
   const [selectedExample, setSelectedExample] = useState(0);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingStep, setTrainingStep] = useState(0);
@@ -108,10 +112,10 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
         <div className="flex items-start gap-3">
           <FileText className="w-5 h-5 text-purple-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">🎓 教 AI「按规矩回答」</h3>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">{s.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              预训练后的 AI 就像一个读了很多书的学生，虽然知识渊博，但不知道怎么好好回答问题。
-              <span className="text-purple-400">监督微调</span>就是给它看很多「标准答案」，让它学会该怎么回答！
+              {s.introPara1}
+              <span className="text-purple-400">{s.introHighlight}</span>{s.introPara2}
             </p>
           </div>
         </div>
@@ -119,23 +123,23 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
 
       {/* 打个比方 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">💡 打个比方</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{common.analogyTitle}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center p-4 bg-zinc-800 rounded-lg border border-zinc-800">
               <div className="text-3xl mb-2">📚</div>
-              <div className="text-sm font-medium text-zinc-400">预训练后的 AI</div>
-              <div className="text-xs text-zinc-500 mt-1">读了很多书，但回答乱七八糟</div>
+              <div className="text-sm font-medium text-zinc-400">{s.analogyCards.pretrainedAi.label}</div>
+              <div className="text-xs text-zinc-500 mt-1">{s.analogyCards.pretrainedAi.desc}</div>
             </div>
             <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
               <div className="text-3xl mb-2">📝</div>
-              <div className="text-sm font-medium text-purple-400">看标准答案学习</div>
-              <div className="text-xs text-zinc-500 mt-1">「问这个要这样答」</div>
+              <div className="text-sm font-medium text-purple-400">{s.analogyCards.learnFromAnswers.label}</div>
+              <div className="text-xs text-zinc-500 mt-1">{s.analogyCards.learnFromAnswers.desc}</div>
             </div>
             <div className="text-center p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
               <div className="text-3xl mb-2">✨</div>
-              <div className="text-sm font-medium text-emerald-400">学会规矩的 AI</div>
-              <div className="text-xs text-zinc-500 mt-1">知道怎么好好回答了</div>
+              <div className="text-sm font-medium text-emerald-400">{s.analogyCards.trainedAi.label}</div>
+              <div className="text-xs text-zinc-500 mt-1">{s.analogyCards.trainedAi.desc}</div>
             </div>
           </div>
         </div>
@@ -143,7 +147,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
 
       {/* Instruction Dataset */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">📖 「标准答案」长什么样？</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{s.datasetSectionTitle}</h3>
         <div className="flex gap-2 mb-3">
           {instructionExamples.map((ex, idx) => (
             <button
@@ -167,7 +171,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               <User className="w-4 h-4 text-blue-400" />
             </div>
             <div className="flex-1">
-              <div className="text-xs text-blue-400 mb-1">用户问</div>
+              <div className="text-xs text-blue-400 mb-1">{s.userAskedLabel}</div>
               <p className="text-sm text-zinc-200 bg-blue-500/10 rounded-lg p-3 border border-blue-500/20">
                 {currentExample.question}
               </p>
@@ -180,7 +184,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               <Bot className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="flex-1">
-              <div className="text-xs text-emerald-400 mb-1">标准答案</div>
+              <div className="text-xs text-emerald-400 mb-1">{s.standardAnswerLabel}</div>
               <pre className="text-sm text-zinc-200 bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/20 whitespace-pre-wrap">
                 {currentExample.answer}
               </pre>
@@ -190,7 +194,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
 
         <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
           <div className="text-xs text-amber-400">
-            💡 就像老师批改作业一样，给 AI 看成千上万个「问题 + 标准答案」，它就学会该怎么回答了！
+            {s.tipText}
           </div>
         </div>
       </div>
@@ -198,7 +202,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
       {/* Training Simulation */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-zinc-400">🏋️ 让 AI 学习</h3>
+          <h3 className="text-sm font-medium text-zinc-400">{s.trainingSectionTitle}</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={resetTraining}
@@ -217,12 +221,12 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               {isTraining ? (
                 <>
                   <Pause className="w-4 h-4" />
-                  暂停学习
+                  {s.pauseLearning}
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4" />
-                  开始学习
+                  {s.startLearning}
                 </>
               )}
             </button>
@@ -232,17 +236,17 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <div className="text-xs text-zinc-500 mb-1">学习进度</div>
+              <div className="text-xs text-zinc-500 mb-1">{s.progressLabel}</div>
               <div className="text-2xl font-bold text-purple-400">{trainingStep}%</div>
             </div>
             <div>
-              <div className="text-xs text-zinc-500 mb-1">学会了多少题</div>
-              <div className="text-2xl font-bold text-emerald-400">{learnedCount} 道</div>
+              <div className="text-xs text-zinc-500 mb-1">{s.learnedCountLabel}</div>
+              <div className="text-2xl font-bold text-emerald-400">{s.learnedCountValue.replace('{count}', String(learnedCount))}</div>
             </div>
             <div>
-              <div className="text-xs text-zinc-500 mb-1">状态</div>
+              <div className="text-xs text-zinc-500 mb-1">{common.statusLabel}</div>
               <div className={`text-lg font-medium ${isTraining ? 'text-amber-400' : trainingStep >= 100 ? 'text-emerald-400' : 'text-zinc-400'}`}>
-                {isTraining ? '努力学习中…' : trainingStep >= 100 ? '学完啦！' : '准备好了'}
+                {isTraining ? s.statusTraining : trainingStep >= 100 ? s.statusDone : s.statusReady}
               </div>
             </div>
           </div>
@@ -261,15 +265,15 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
 
       {/* Before/After Comparison */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">📊 学习前后对比</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{s.beforeAfterSectionTitle}</h3>
         <div className="grid grid-cols-2 gap-4">
           {/* Before SFT */}
           <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4">
             <div className="flex items-center gap-2 mb-3">
               <Bot className="w-4 h-4 text-zinc-500" />
-              <span className="text-sm font-medium text-zinc-400">学习前</span>
+              <span className="text-sm font-medium text-zinc-400">{s.beforeLabel}</span>
             </div>
-            <div className="mb-2 text-xs text-blue-400">问：{beforeAfterExamples[0].question}</div>
+            <div className="mb-2 text-xs text-blue-400">{s.questionPrefix.replace('{question}', beforeAfterExamples[0].question)}</div>
             <div className="bg-zinc-950/50 p-3 rounded text-sm text-zinc-500 whitespace-pre-wrap">
               {beforeAfterExamples[0].before}
             </div>
@@ -280,9 +284,9 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
           <div className="bg-purple-500/5 rounded-lg border border-purple-500/30 p-4">
             <div className="flex items-center gap-2 mb-3">
               <Bot className="w-4 h-4 text-purple-400" />
-              <span className="text-sm font-medium text-purple-400">学习后</span>
+              <span className="text-sm font-medium text-purple-400">{s.afterLabel}</span>
             </div>
-            <div className="mb-2 text-xs text-blue-400">问：{beforeAfterExamples[0].question}</div>
+            <div className="mb-2 text-xs text-blue-400">{s.questionPrefix.replace('{question}', beforeAfterExamples[0].question)}</div>
             <div className="bg-zinc-950/50 p-3 rounded text-sm text-emerald-400 whitespace-pre-wrap">
               {beforeAfterExamples[0].after}
             </div>
@@ -293,20 +297,14 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
 
       {/* Key Takeaways */}
       <div className="bg-purple-500/5 rounded-lg border border-purple-500/20 p-4">
-        <h4 className="text-sm font-medium text-purple-400 mb-2">📌 小结</h4>
+        <h4 className="text-sm font-medium text-purple-400 mb-2">{common.summaryTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
-          <li className="flex items-start gap-2">
-            <span className="text-purple-400">•</span>
-            <span><strong className="text-zinc-400">标准答案的质量很重要</strong>：老师教得好，学生才能学得好</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-purple-400">•</span>
-            <span><strong className="text-zinc-400">要有足够多的例子</strong>：做一道题学不会，得多做才行</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-purple-400">•</span>
-            <span><strong className="text-zinc-400">这只是第一步</strong>：学会「格式」，但还没学会什么是「好」</span>
-          </li>
+          {s.summaryPoints.map((point) => (
+            <li key={point.title} className="flex items-start gap-2">
+              <span className="text-purple-400">•</span>
+              <span><strong className="text-zinc-400">{point.title}</strong>：{point.text}</span>
+            </li>
+          ))}
         </ul>
       </div>
 
@@ -314,20 +312,15 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {common.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'SFT', zh: '监督微调', desc: 'Supervised Fine-Tuning，用标注好的问答对训练模型' },
-            { en: 'Instruction Tuning', zh: '指令微调', desc: '教模型理解和遵循人类指令的训练方式' },
-            { en: 'Instruction Dataset', zh: '指令数据集', desc: '包含问题和标准答案的训练数据' },
-            { en: 'Demonstration', zh: '示范', desc: '给模型展示正确回答的例子，作为学习样本' },
-          ].map((term) => (
+          {s.glossaryTerms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                <span className="text-sm text-zinc-400">{term.meaning}</span>
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
@@ -341,7 +334,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
           onClick={onComplete}
           className="flex items-center gap-2 px-5 py-2.5 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 border border-purple-500/30 transition-all font-medium"
         >
-          下一步：教 AI 分辨好坏
+          {s.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

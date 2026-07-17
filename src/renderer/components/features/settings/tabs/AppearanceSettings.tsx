@@ -15,6 +15,7 @@ import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
+import { Toggle } from '../../../primitives/Toggle';
 
 const logger = createLogger('AppearanceSettings');
 
@@ -332,22 +333,11 @@ export const AppearanceSettings: React.FC = () => {
             <h3 className="text-sm font-medium text-zinc-200 mb-1">{appearanceText.developerMode}</h3>
             <p className="text-xs text-zinc-500">{appearanceText.developerModeDesc}</p>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={developerMode ? 'true' : 'false'}
+          <Toggle
+            checked={developerMode}
+            onChange={handleDeveloperModeChange}
             aria-label={appearanceText.developerMode}
-            onClick={() => handleDeveloperModeChange(!developerMode)}
-            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-              developerMode ? 'bg-primary-500' : 'bg-zinc-700'
-            }`}
-          >
-            <span
-              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                developerMode ? 'translate-x-[18px]' : 'translate-x-[3px]'
-              }`}
-            />
-          </button>
+          />
         </div>
       </div>
     </div>

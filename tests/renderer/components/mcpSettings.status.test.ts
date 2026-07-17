@@ -1,8 +1,11 @@
+// @vitest-environment jsdom
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkbenchMcpRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const invalidTokenError = [
   'Streamable HTTP error: Error POSTing to endpoint:',
@@ -80,6 +83,32 @@ const disconnectedSlackServer: WorkbenchMcpRegistryItem = {
     connectionState: 'disconnected' as const,
   },
 };
+
+const oauthNotionServer: WorkbenchMcpRegistryItem = {
+  kind: 'mcp' as const,
+  key: 'mcp:notion',
+  id: 'notion',
+  label: 'notion',
+  selected: false,
+  status: 'connected' as const,
+  enabled: true,
+  transport: 'http-streamable',
+  toolCount: 2,
+  resourceCount: 1,
+  authMode: 'oauth',
+  hasOAuthTokens: true,
+  available: true,
+  blocked: false,
+  visibleInWorkbench: true,
+  health: 'healthy' as const,
+  lifecycle: {
+    installState: 'not_applicable' as const,
+    mountState: 'not_applicable' as const,
+    connectionState: 'connected' as const,
+  },
+};
+
+const mockDomainInvoke = vi.fn();
 
 const serverStates = [
   {
@@ -200,6 +229,16 @@ describe('MCPSettings status', () => {
   beforeEach(() => {
     mcpServers = [connectedGithubServer];
     authIsAdmin = true;
+    mockDomainInvoke.mockResolvedValue({ success: true, data: { success: true } });
+    (window as unknown as { domainAPI?: { invoke: typeof mockDomainInvoke } }).domainAPI = {
+      invoke: mockDomainInvoke,
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete (window as unknown as { domainAPI?: unknown }).domainAPI;
+    mockDomainInvoke.mockReset();
   });
 
   it('renders overall MCP status and server list from the shared MCP hook', () => {
@@ -242,6 +281,34 @@ describe('MCPSettings status', () => {
 
     expect(html).toContain(mcpText.management.reconnect);
     expect(html).not.toContain(mcpText.management.reauthorize);
+  });
+
+  it('shows OAuth authorization status and sign-out only for OAuth servers', () => {
+    mcpServers = [oauthNotionServer, connectedGithubServer];
+
+    const html = renderToStaticMarkup(
+      React.createElement(MCPSettings),
+    );
+
+    expect(html).toContain(mcpText.management.oauthStatusLabel);
+    expect(html).toContain(mcpText.management.oauthAuthorized);
+    expect(html).toContain(mcpText.management.signOut);
+    expect((html.match(new RegExp(mcpText.management.signOut, 'g')) || []).length).toBe(1);
+  });
+
+  it('invokes signOutServer for OAuth server rows', async () => {
+    mcpServers = [oauthNotionServer];
+
+    render(React.createElement(MCPSettings));
+    fireEvent.click(screen.getByText(mcpText.management.signOut));
+
+    await waitFor(() => {
+      expect(mockDomainInvoke).toHaveBeenCalledWith(
+        IPC_DOMAINS.MCP,
+        'signOutServer',
+        { serverName: 'notion' },
+      );
+    });
   });
 
   it('lets non-admin users manage MCP servers while hiding bridge diagnostics', () => {

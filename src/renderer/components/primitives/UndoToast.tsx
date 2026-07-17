@@ -3,6 +3,8 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
+import { useI18n } from '../../hooks/useI18n';
+import { Z_LAYERS } from '../../styles/zLayers';
 
 export interface UndoToastProps {
   /** 显示的消息文本 */
@@ -21,6 +23,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
   onDismiss,
   duration = 5000,
 }) => {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(true);
   const [progress, setProgress] = useState(100);
 
@@ -57,9 +60,10 @@ export const UndoToast: React.FC<UndoToastProps> = ({
 
   return (
     <div
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[9998] transition-all duration-200 ${
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 transition-all duration-200 ${
         visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
       }`}
+      style={{ zIndex: Z_LAYERS.undoToast }}
     >
       <div className="flex items-center gap-3 px-4 py-2.5 bg-zinc-700 border border-zinc-700/60 rounded-lg shadow-lg">
         <span className="text-sm text-zinc-400">{message}</span>
@@ -67,7 +71,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
           onClick={handleUndo}
           className="text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors whitespace-nowrap"
         >
-          撤销
+          {t.common.undo}
         </button>
       </div>
       {/* 进度条 */}

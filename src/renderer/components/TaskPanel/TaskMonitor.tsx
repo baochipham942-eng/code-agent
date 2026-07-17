@@ -71,7 +71,8 @@ export const TaskMonitor: React.FC = () => {
   const currentTurnRoutingEvidence = useCurrentTurnRoutingEvidence();
   const workspacePreviewItems = useWorkspacePreviewModel();
   const { runningActionKey, actionErrors, completedActions, runQuickAction } = useWorkbenchCapabilityQuickActionRunner();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const m = t.taskStatusPanels.monitor;
   const { toolTimeout } = useToolProgress(currentSessionId);
 
   const model = useStatusRailModel();
@@ -211,7 +212,7 @@ export const TaskMonitor: React.FC = () => {
       )}
 
       <Card
-        title="任务"
+        title={m.task}
         storageKey="task"
         count={runWorkbench.tasks.length > 0 ? String(runWorkbench.tasks.length) : undefined}
         highlight={runWorkbench.run.status === 'blocked' || runWorkbench.run.status === 'waiting_approval'}
@@ -221,7 +222,7 @@ export const TaskMonitor: React.FC = () => {
 
       {runWorkbench.subagents.length > 0 && (
         <Card
-          title="子代理"
+          title={m.subagent}
           storageKey="subagents"
           count={String(runWorkbench.subagents.length)}
           highlight={runWorkbench.subagents.some((agent) => agent.status === 'failed' || agent.status === 'blocked')}
@@ -289,7 +290,7 @@ export const TaskMonitor: React.FC = () => {
           <div className="space-y-2">
             {shouldShowCapabilityScope && currentTurnCapabilityScope && (
               <SourceSubsection
-                title="当前能力"
+                title={m.currentCapability}
                 count={`#${currentTurnCapabilityScope.turnNumber}`}
                 highlight={blockedScopeCount > 0}
               >
@@ -307,7 +308,7 @@ export const TaskMonitor: React.FC = () => {
 
             {shouldShowRoutingEvidence && currentTurnRoutingEvidence && (
               <SourceSubsection
-                title="路由异常"
+                title={m.routingAnomaly}
                 count={`#${currentTurnRoutingEvidence.turnNumber}`}
                 highlight
               >
@@ -316,7 +317,7 @@ export const TaskMonitor: React.FC = () => {
             )}
 
             <SourceSubsection
-              title="本轮调用"
+              title={m.turnInvocations}
               count={referencedWorkbenchItems.length > 0 ? String(referencedWorkbenchItems.length) : '0'}
             >
               {referencedWorkbenchItems.length > 0 ? (
@@ -325,7 +326,7 @@ export const TaskMonitor: React.FC = () => {
                     <WorkbenchReferenceRow
                       key={`${reference.kind}-${reference.id}`}
                       reference={reference}
-                      locale="zh"
+                      locale={language}
                       onOpenDetails={() => openCapabilitySheet({
                         kind: reference.kind,
                         id: reference.id,
@@ -382,13 +383,15 @@ function getUniqueFileContextItems(context: StatusRailContextModel): LoopFileIte
 }
 
 function LoopFilesSummary({ items }: { items: LoopFileItem[] }) {
+  const { t } = useI18n();
+  const m = t.taskStatusPanels.monitor;
   const [expanded, setExpanded] = useState(false);
   const visibleItems = expanded ? items.slice(0, 20) : items.slice(0, 6);
 
   return (
     <div className="rounded-md border border-white/[0.06] bg-black/10 px-2.5 py-2">
       <div className="mb-2 text-[10px] text-zinc-500">
-        最近进入对话链路的文件
+        {m.recentContextFiles}
       </div>
       <div className="space-y-0.5">
         {visibleItems.map((item) => (
@@ -411,13 +414,13 @@ function LoopFilesSummary({ items }: { items: LoopFileItem[] }) {
           onClick={() => setExpanded((prev) => !prev)}
           className="mt-2 text-[10px] text-zinc-500 transition-colors hover:text-zinc-300"
         >
-          {expanded ? '收起' : `展开 ${Math.min(items.length, 20)} 个`}
-          {items.length > 20 && !expanded ? `，另有 ${items.length - 20} 个` : ''}
+          {expanded ? m.collapse : m.expandCount.replace('{count}', String(Math.min(items.length, 20)))}
+          {items.length > 20 && !expanded ? m.moreCount.replace('{count}', String(items.length - 20)) : ''}
         </button>
       )}
       {expanded && items.length > 20 && (
         <div className="mt-1 text-[10px] text-zinc-700">
-          还有 {items.length - 20} 个文件未显示
+          {m.moreFilesHidden.replace('{count}', String(items.length - 20))}
         </div>
       )}
     </div>
@@ -504,6 +507,7 @@ function InvokedCapabilityRows({
   items: TurnCapabilityInvocationItem[];
   onOpenCapability: (target: WorkbenchCapabilityTarget) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="space-y-1.5">
       {items.map((item) => {
@@ -517,7 +521,7 @@ function InvokedCapabilityRows({
               {item.label}
             </WorkbenchPill>
             <div className="min-w-0 flex-1 text-[11px] text-zinc-400">
-              {actionSummary || '已调用'}
+              {actionSummary || t.taskStatusPanels.monitor.invoked}
             </div>
             <div className="text-[10px] text-zinc-600">{item.count}x</div>
             <WorkbenchCapabilityDetailButton
@@ -606,12 +610,18 @@ function CurrentTurnCapabilityScopeCard({
     blockedReason?: BlockedCapabilityReason | null,
   ) => void;
 }) {
+  const { t } = useI18n();
+  const m = t.taskStatusPanels.monitor;
   const { scope } = scopeView;
   const hasRouting = scope.selected.length > 0 || scope.allowed.length > 0 || scope.blocked.length > 0;
-  const title = hasRouting ? '能力范围' : '实际调用';
+  const title = hasRouting ? m.capabilityScope : m.actualInvocation;
   const summary = hasRouting
-    ? `已选 ${scope.selected.length} · 放行 ${scope.allowed.length} · 阻塞 ${scope.blocked.length} · 调用 ${scope.invoked.length}`
-    : `调用 ${scope.invoked.length}`;
+    ? m.scopeSummary
+        .replace('{selected}', String(scope.selected.length))
+        .replace('{allowed}', String(scope.allowed.length))
+        .replace('{blocked}', String(scope.blocked.length))
+        .replace('{invoked}', String(scope.invoked.length))
+    : m.invokedOnly.replace('{invoked}', String(scope.invoked.length));
   const selectedCapabilityMap = new Map(
     scopeView.selectedCapabilities.map((capability) => [
       `${capability.kind}:${capability.id}`,
@@ -638,7 +648,7 @@ function CurrentTurnCapabilityScopeCard({
       <div className="space-y-2">
         {scope.selected.length > 0 && (
           <CompactCapabilityScopeSection
-            label="用户选择"
+            label={m.userSelection}
             emptyLabel=""
             hasContent
           >
@@ -648,7 +658,7 @@ function CurrentTurnCapabilityScopeCard({
 
         {scope.allowed.length > 0 && (
           <CompactCapabilityScopeSection
-            label="运行时放行"
+            label={m.runtimeAllowed}
             emptyLabel=""
             hasContent
           >
@@ -658,7 +668,7 @@ function CurrentTurnCapabilityScopeCard({
 
         {scope.blocked.length > 0 && (
           <CompactCapabilityScopeSection
-            label="运行时阻塞"
+            label={m.runtimeBlocked}
             emptyLabel=""
             hasContent
           >
@@ -734,7 +744,7 @@ function CurrentTurnCapabilityScopeCard({
 
         {scope.invoked.length > 0 && (
           <CompactCapabilityScopeSection
-            label={hasRouting ? '实际调用' : '调用明细'}
+            label={hasRouting ? m.actualInvocation : m.invocationDetail}
             emptyLabel=""
             hasContent
           >
@@ -751,13 +761,15 @@ function CurrentTurnRoutingEvidenceCard({
 }: {
   routingView: NonNullable<ReturnType<typeof useCurrentTurnRoutingEvidence>>;
 }) {
+  const { t } = useI18n();
+  const m = t.taskStatusPanels.monitor;
   const routing = routingView.routingEvidence;
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-[11px] text-zinc-300">
         <GitBranch className="h-3.5 w-3.5 text-cyan-300" />
-        <span>Routing 证据</span>
+        <span>{m.routingEvidence}</span>
         <WorkbenchPill tone="info">{getRoutingModeLabel(routing.mode)}</WorkbenchPill>
       </div>
 
@@ -769,8 +781,8 @@ function CurrentTurnRoutingEvidenceCard({
       </div>
 
       <CompactCapabilityScopeSection
-        label="Execution Steps"
-        emptyLabel="当前没有额外的 routing 执行证据。"
+        label={m.executionSteps}
+        emptyLabel={m.noRoutingEvidence}
         hasContent={routing.steps.length > 0}
       >
         <div className="space-y-1.5">

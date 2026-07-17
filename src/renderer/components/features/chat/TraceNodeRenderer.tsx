@@ -1,6 +1,8 @@
 // ============================================================================
 // TraceNodeRenderer - Render individual trace nodes by type
-// Reuses existing MessageContent, ToolCallDisplay, UserMessage components
+// Reuses existing MessageContent, ToolCallDisplay components; UserNode below
+// is its own implementation (not MessageBubble/UserMessage.tsx, which was
+// dead code removed in ADR-043 T2 遗留刀2).
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -29,6 +31,8 @@ import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface TraceNodeRendererProps {
   node: TraceNode;
@@ -603,7 +607,7 @@ function getTimelineContainerClass(tone: TurnTimelinePayload['tone']): string {
     case 'info':
       return 'border-sky-500/20 bg-sky-500/10';
     default:
-      return 'border-white/[0.06] bg-white/[0.02]';
+      return 'border-border-muted bg-surface-subtle';
   }
 }
 
@@ -747,10 +751,10 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
                     <span className="text-zinc-200">{HOOK_EVENT_LABELS[item.event] || item.event}</span>
                     {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
                     <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>
-                      {item.action === 'block' ? 'blocked' : 'allow'}
+                      {item.action === 'block' ? '阻止' : '放行'}
                     </WorkbenchPill>
-                    {item.modified && <WorkbenchPill tone="info">modified</WorkbenchPill>}
-                    {hasError && <WorkbenchPill tone="info">error {item.errorCount}</WorkbenchPill>}
+                    {item.modified && <WorkbenchPill tone="info">改写输入</WorkbenchPill>}
+                    {hasError && <WorkbenchPill tone="info">{item.errorCount} 个错误</WorkbenchPill>}
                     <span className="text-zinc-600">{item.hookCount} hooks · {item.durationMs}ms</span>
                   </div>
                   {item.message && (
@@ -870,7 +874,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
   ) : null;
 
   const sourcesBlock = hasLinks ? (
-    <div className={`rounded-lg border px-3 py-2 border-white/[0.06] bg-white/[0.02] ${outputsCard ? 'mt-1.5' : ''}`}>
+    <div className={`rounded-lg border px-3 py-2 border-border-muted bg-surface-subtle ${outputsCard ? 'mt-1.5' : ''}`}>
       <button
         type="button"
         onClick={() => setSourcesOpen((v) => !v)}
@@ -890,6 +894,42 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
       {outputsCard}
       {sourcesBlock}
     </>
+  );
+};
+
+// ---- System error node ----
+// 系统错误原文(往往是堆栈/工程报错)对非程序员用户是噪音：先给一句人话+建议，
+// 原文进「查看详情」折叠。分类复用 humanizeToolError（quota/rate_limit/auth/
+// overloaded/timeout/network 已有文案），分不出类别时给通用兜底。
+const SystemErrorNode: React.FC<{ content: string }> = ({ content }) => {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const humanized = humanizeToolError(content, undefined, t);
+  const summary = humanized?.summary ?? t.systemError.fallbackSummary;
+  const detail = humanized?.detail ?? t.systemError.fallbackDetail;
+
+  return (
+    <div className="py-1">
+      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
+        <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-red-300">{summary}</div>
+          {detail && <div className="mt-0.5 text-[11px] text-red-300/70">{detail}</div>}
+        </div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          className="shrink-0 text-[11px] text-red-300/70 hover:text-red-300 transition-colors"
+        >
+          {expanded ? t.systemError.hideDetails : t.systemError.viewDetails}
+        </button>
+      </div>
+      {expanded && (
+        <div className="mt-2 px-3 py-2.5 rounded-md bg-red-500/5 border border-red-500/10">
+          <ExpandableContent content={content} maxLines={30} />
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -922,12 +962,7 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   }
 
   if (node.subtype === 'error') {
-    return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
-        <AlertTriangle className="w-4 h-4 text-red-400" />
-        <span className="text-xs text-red-300">{node.content}</span>
-      </div>
-    );
+    return <SystemErrorNode content={node.content} />;
   }
 
   if (node.subtype === 'skill_status') {

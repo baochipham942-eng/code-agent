@@ -10,6 +10,7 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/contract';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
+import { useI18n } from '../hooks/useI18n';
 import { isTauriMode } from '../utils/platform';
 import { tauriInstallUpdate, tauriOpenUpdateUrl } from '../utils/tauriUpdater';
 
@@ -67,6 +68,8 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
   updateInfo,
   onClose,
 }) => {
+  const { t } = useI18n();
+  const n = t.notices.update;
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null);
@@ -143,20 +146,20 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
       await invokeUpdate<string>('download', { downloadUrl: updateInfo.downloadUrl });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '下载失败');
+      setError(err instanceof Error ? err.message : n.downloadFailed);
       setDownloadState('error');
     }
-  }, [runningInTauri, updateInfo?.downloadUrl]);
+  }, [runningInTauri, updateInfo?.downloadUrl, n]);
 
   const handleOpenFile = useCallback(async () => {
     if (!downloadedFilePath) return;
     try {
       await invokeUpdate('openFile', { filePath: downloadedFilePath });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '打开安装包失败');
+      setError(err instanceof Error ? err.message : n.openInstallerFailed);
       setDownloadState('error');
     }
-  }, [downloadedFilePath]);
+  }, [downloadedFilePath, n]);
 
   const handleRetry = useCallback(() => {
     setError(null);
@@ -179,31 +182,31 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
   // 下载中不允许关闭
   const canClose = downloadState !== 'downloading';
-  const latestVersionLabel = updateInfo.latestVersion ? `v${updateInfo.latestVersion}` : '新版本';
-  const currentVersionLabel = updateInfo.currentVersion ? `v${updateInfo.currentVersion}` : '当前版本';
+  const latestVersionLabel = updateInfo.latestVersion ? `v${updateInfo.latestVersion}` : n.newVersion;
+  const currentVersionLabel = updateInfo.currentVersion ? `v${updateInfo.currentVersion}` : n.currentVersion;
   const canStartUpdate = runningInTauri || Boolean(updateInfo.downloadUrl);
-  const primaryActionLabel = runningInTauri ? '立即更新' : '立即下载';
+  const primaryActionLabel = runningInTauri ? n.updateNow : n.downloadNow;
 
   return (
     <Modal
       isOpen={true}
       onClose={onClose}
-      title="软件更新"
+      title={n.title}
       size="md"
       closeOnBackdropClick={canClose}
       closeOnEsc={canClose}
       header={
         <>
           <div className="flex-1">
-            <h2 className="text-lg font-semibold text-zinc-100">软件更新</h2>
-            <p className="mt-1 text-sm font-medium text-zinc-400">发现新版本可用</p>
+            <h2 className="text-lg font-semibold text-zinc-100">{n.title}</h2>
+            <p className="mt-1 text-sm font-medium text-zinc-400">{n.newVersionAvailable}</p>
           </div>
           {canClose && (
             <IconButton
               variant="default"
               size="md"
               icon={<X className="w-5 h-5" />}
-              aria-label="关闭更新窗口"
+              aria-label={n.closeAria}
               onClick={onClose}
             />
           )}
@@ -217,7 +220,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                 onClick={onClose}
                 className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
               >
-                取消
+                {t.common.cancel}
               </button>
               <button
                 onClick={handleDownload}
@@ -236,7 +239,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               className="inline-flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-500/60 text-zinc-950 rounded-full font-semibold"
             >
               <Loader2 className="w-4 h-4 animate-spin" />
-              更新中…
+              {n.updating}
             </button>
           )}
 
@@ -246,13 +249,13 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                 onClick={onClose}
                 className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
               >
-                稍后安装
+                {n.installLater}
               </button>
               <button
                 onClick={handleOpenFile}
                 className="px-5 py-2.5 text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 rounded-full transition-colors font-semibold"
               >
-                立即安装
+                {n.installNow}
               </button>
             </>
           )}
@@ -262,7 +265,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               onClick={onClose}
               className="px-5 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-full transition-colors font-semibold"
             >
-              关闭
+              {t.common.close}
             </button>
           )}
 
@@ -272,13 +275,13 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                 onClick={onClose}
                 className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
               >
-                关闭
+                {t.common.close}
               </button>
               <button
                 onClick={handleRetry}
                 className="px-5 py-2.5 text-sm bg-blue-500 hover:bg-blue-400 text-zinc-950 rounded-full transition-colors font-semibold"
               >
-                重新下载
+                {n.redownload}
               </button>
             </>
           )}
@@ -295,16 +298,16 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                 </div>
 
                 <div>
-                  <p className="mb-2 text-xs font-semibold text-zinc-400">更新内容</p>
+                  <p className="mb-2 text-xs font-semibold text-zinc-400">{n.updateContent}</p>
                   <div className="max-h-[160px] overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/45 p-3">
                     <div className="whitespace-pre-wrap text-[13px] leading-6 text-zinc-300">
-                      {updateInfo.releaseNotes?.trim() || '暂无更新内容'}
+                      {updateInfo.releaseNotes?.trim() || n.noReleaseNotes}
                     </div>
                   </div>
                 </div>
 
                 {updateInfo.fileSize && (
-                  <p className="text-sm text-zinc-500">安装包大小：{formatSize(updateInfo.fileSize)}</p>
+                  <p className="text-sm text-zinc-500">{n.fileSize.replace('{size}', formatSize(updateInfo.fileSize))}</p>
                 )}
               </div>
             )}
@@ -318,7 +321,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-lg font-medium text-white">
-                      {runningInTauri ? '正在下载并安装更新' : '正在下载更新'}
+                      {runningInTauri ? n.downloadingInstalling : n.downloading}
                     </p>
                     {downloadProgress ? (
                       <p className="text-sm text-zinc-400 mt-1">
@@ -326,7 +329,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                         {downloadProgress.bytesPerSecond > 0 && ` · ${formatSpeed(downloadProgress.bytesPerSecond)}`}
                       </p>
                     ) : (
-                      <p className="text-sm text-zinc-400 mt-1">应用会在安装完成后自动重启</p>
+                      <p className="text-sm text-zinc-400 mt-1">{n.autoRestart}</p>
                     )}
                   </div>
                   {downloadProgress && (
@@ -347,7 +350,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                 </div>
 
                 <p className="text-xs text-zinc-500 text-center">
-                  请勿关闭应用，更新完成后再继续使用
+                  {n.dontClose}
                 </p>
               </div>
             )}
@@ -360,9 +363,9 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                     <CheckCircle className="w-6 h-6 text-emerald-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-lg font-medium text-white">下载完成</p>
+                    <p className="text-lg font-medium text-white">{n.downloadComplete}</p>
                     <p className="text-sm text-zinc-400 mt-1">
-                      点击下方按钮启动安装程序
+                      {n.clickToInstall}
                     </p>
                   </div>
                 </div>
@@ -377,9 +380,9 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                     <CheckCircle className="w-6 h-6 text-emerald-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-lg font-medium text-white">已打开更新页面</p>
+                    <p className="text-lg font-medium text-white">{n.openedUpdatePage}</p>
                     <p className="text-sm text-zinc-400 mt-1">
-                      请在浏览器中选择适合当前系统的安装包。
+                      {n.selectInstaller}
                     </p>
                   </div>
                 </div>
@@ -394,9 +397,9 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                     <AlertCircle className="w-6 h-6 text-rose-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-lg font-medium text-white">下载失败</p>
+                    <p className="text-lg font-medium text-white">{n.downloadFailed}</p>
                     <p className="text-sm text-zinc-400 mt-1">
-                      {error || '发生未知错误，请稍后重试'}
+                      {error || n.unknownError}
                     </p>
                   </div>
                 </div>

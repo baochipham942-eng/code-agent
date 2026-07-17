@@ -52,10 +52,14 @@ import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
-import type { AppSettings, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
+import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
 import type { PromptRewindResult } from '@shared/contract/appService';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
+import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
+import { useI18n } from '../hooks/useI18n';
+import type { Translations } from '../i18n';
+import { localeForLanguage } from '../utils/i18nTime';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
@@ -79,6 +83,7 @@ import {
   Search,
   AlertTriangle,
   MessageSquare,
+  X,
 } from 'lucide-react';
 
 function formatChannelSessionSource(session: ReturnType<typeof useSessionStore.getState>['sessions'][number] | undefined): string | null {
@@ -106,6 +111,7 @@ function formatChannelSessionSource(session: ReturnType<typeof useSessionStore.g
 }
 
 export const ChatView: React.FC = () => {
+  const { t } = useI18n();
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
@@ -354,7 +360,7 @@ export const ChatView: React.FC = () => {
 
     const handler = (e: Event) => {
       const data = (e as CustomEvent).detail;
-      const toolName = data?.tool || '未知工具';
+      const toolName = data?.tool || t.chat.unknownTool;
 
       // 1. Bridge 未连接
       if (bridgeStatus !== 'connected') {
@@ -382,7 +388,7 @@ export const ChatView: React.FC = () => {
 
     window.addEventListener('bridge-tool-call', handler);
     return () => window.removeEventListener('bridge-tool-call', handler);
-  }, [bridgeStatus, bridgeVersion, workingDirectory, compareVersions]);
+  }, [bridgeStatus, bridgeVersion, workingDirectory, compareVersions, t]);
 
   const { requireAuthAsync } = useRequireAuth();
 
@@ -523,17 +529,17 @@ export const ChatView: React.FC = () => {
         return true;
       }
       if (hasConfiguredRuntimeModels(settings)) {
-        toast.info('当前主任务模型未配置 API Key，请切换到已配置的模型后再发送。');
+        toast.info(t.chat.configureModelKeyFirst);
         openSettingsTab('model');
         return false;
       }
-      toast.info('先配置一个模型后再发送。');
+      toast.info(t.chat.configureModelFirst);
       openSettingsTab('model');
       return false;
     } catch {
       return true;
     }
-  }, [openSettingsTab]);
+  }, [openSettingsTab, t]);
 
   // 发送消息需要登录
   const handleSendEnvelope = useCallback(async (envelope: ConversationEnvelope): Promise<boolean> => {
@@ -615,6 +621,14 @@ export const ChatView: React.FC = () => {
     return handleSendEnvelope(buildEnvelope(content, attachments));
   }, [buildEnvelope, handleSendEnvelope]);
 
+  // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
+  // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
+  // 字段指回原始用户消息——唯一可靠锚点是结构性推导：addMessage 一律无条件清空 streamSnapshot
+  // (sessionStore.ts addMessage)，所以只要 streamSnapshot 还在，messages 数组末尾就不可能是
+  // 之后新增的消息；由于中断的助手回复从未落进 messages（只活在 ephemeral snapshot 里），
+  // 末位消息必然就是触发这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
+  const retryTurnMessage = deriveRetryTurnMessage(streamSnapshot, messages);
+
   // 对话式建角色：入口（RolesTab / AgentSwitcher）起新会话后写入种子消息，
   // 这里在新会话就绪后自动发出可见的种子消息，触发 create-role skill。
   const pendingRoleChatSeed = useAppStore((state) => state.pendingRoleChatSeed);
@@ -651,11 +665,11 @@ export const ChatView: React.FC = () => {
   const handleRequestPromptRewind = useCallback((messageId: string, content: string) => {
     if (!currentSessionId) return;
     if (effectiveIsProcessing) {
-      toast.warning('会话还在运行，先停止后再回退。');
+      toast.warning(t.chat.rewindWhileRunning);
       return;
     }
     setPendingPromptRewind({ messageId, content });
-  }, [currentSessionId, effectiveIsProcessing]);
+  }, [currentSessionId, effectiveIsProcessing, t]);
 
   const handleConfirmPromptRewind = useCallback(async () => {
     if (!currentSessionId || !pendingPromptRewind || isPromptRewinding) return;
@@ -672,13 +686,13 @@ export const ChatView: React.FC = () => {
       setMessages(result.activeMessages);
       chatInputRef.current?.setDraft(result.draft);
       setPendingPromptRewind(null);
-      toast.success(`已回到这条提示词，恢复 ${result.filesRestored + result.filesDeleted} 个文件。`);
+      toast.success(t.chat.rewindSuccess.replace('{count}', String(result.filesRestored + result.filesDeleted)));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       setIsPromptRewinding(false);
     }
-  }, [currentSessionId, isPromptRewinding, pendingPromptRewind, setMessages]);
+  }, [currentSessionId, isPromptRewinding, pendingPromptRewind, setMessages, t]);
 
   return (
     <div
@@ -699,7 +713,7 @@ export const ChatView: React.FC = () => {
         >
           <div className="flex flex-col items-center gap-3 text-primary-400 pointer-events-none">
             <Image className="w-12 h-12" />
-            <span className="text-lg font-medium">拖放文件或文件夹到这里</span>
+            <span className="text-lg font-medium">{t.chat.dropFilesHere}</span>
           </div>
         </div>
       )}
@@ -720,7 +734,11 @@ export const ChatView: React.FC = () => {
         />
 
         {streamSnapshot && (
-          <StreamRecoveryBanner snapshot={streamSnapshot} />
+          <StreamRecoveryBanner
+            snapshot={streamSnapshot}
+            retryMessage={retryTurnMessage}
+            onSend={handleSendMessage}
+          />
         )}
 
         {channelSessionSource && (
@@ -841,16 +859,16 @@ export const ChatView: React.FC = () => {
       <RewindPanel isOpen={showRewindPanel} onClose={() => setShowRewindPanel(false)} />
       <ConfirmDialog
         isOpen={Boolean(pendingPromptRewind)}
-        title="回到这条提示词？"
+        title={t.chat.rewindConfirmTitle}
         message={
           <div className="space-y-3 text-sm text-zinc-400 leading-relaxed">
-            <p>会恢复工作区文件到这轮之前，并隐藏这条提示词及之后的对话。</p>
-            <p>原提示词会放回输入框，下一轮只会基于回退后的 active 对话继续。</p>
+            <p>{t.chat.rewindConfirmLine1}</p>
+            <p>{t.chat.rewindConfirmLine2}</p>
           </div>
         }
         variant="warning"
-        confirmText={isPromptRewinding ? '回退中…' : '确认回退'}
-        cancelText="取消"
+        confirmText={isPromptRewinding ? t.chat.rewindInProgress : t.chat.rewindConfirmAction}
+        cancelText={t.common.cancel}
         confirmDisabled={isPromptRewinding}
         onConfirm={handleConfirmPromptRewind}
         onCancel={() => {
@@ -874,67 +892,124 @@ interface SuggestionItem {
 }
 
 // 新会话任务卡：一键直出可运行/可交互产物或真实 agent 产出，第一轮不追问、即见结果。
-export const defaultSuggestions: SuggestionItem[] = [
-  {
-    icon: Gamepad2,
-    title: '做个能玩的小游戏',
-    description: '霓虹贪吃蛇，键盘直接开玩',
-    prompt: '用单个 HTML 文件做一个能直接玩的霓虹风《贪吃蛇》：方向键控制、实时计分与最高分、随长度逐渐加速、撞墙或咬到自己结束并可按键重开；深色背景、霓虹描边、流畅动画。直接给出完整可运行的单文件，不要问我任何问题。',
-    accent: 'bg-amber-500/10 border-amber-500/20',
-    iconColor: 'text-amber-400',
-  },
-  {
-    icon: BarChart3,
-    title: '出一张可交互数据图表',
-    description: '聊天里直接渲染，可切换可悬停',
-    prompt: '在聊天里直接渲染一张折线图，不要写 HTML 文件、不要调用任何工具。直接在回复里输出一个代码块（语言标记用 chart 或 json 均可），内容是图表 JSON，schema：{"type":"line","title":"编程语言流行度趋势 (2015–2024)","xKey":"year","series":[{"key":"Python"},{"key":"JavaScript"},{"key":"TypeScript"},{"key":"Rust"},{"key":"Go"}],"data":[{"year":2015,"Python":64,"JavaScript":90,"TypeScript":20,"Rust":8,"Go":18}, … 每年一条直到 2024]}。流行度取 0–100、用你掌握的合理近似。只输出这个代码块加一句话说明，不要问我任何问题。',
-    accent: 'bg-sky-500/10 border-sky-500/20',
-    iconColor: 'text-blue-400',
-  },
-  {
-    icon: Search,
-    title: '搜一份最新行业简报',
-    description: '联网汇总近一周 AI 要闻',
-    prompt: '联网搜索过去一周 AI 行业最值得关注的 5 件事：每条给标题、一句话摘要、为什么重要、来源链接，最后用一句话总结整体趋势。直接联网开始，不要问我任何问题。',
-    accent: 'bg-violet-500/10 border-violet-500/20',
-    iconColor: 'text-violet-400',
-  },
-  {
-    icon: HardDrive,
-    title: '梳理磁盘空间占用',
-    description: '找出最占地的目录，给清理建议',
-    prompt: '帮我梳理这台 Mac 的磁盘占用：用命令找出主目录下最占空间的前 15 个目录/文件并按大小排序，识别其中可安全清理的缓存、临时文件和重复构建产物，给出每项预计可释放的空间和具体清理命令（先列出，不要直接执行删除）。直接开始，不要问我任何问题。',
-    accent: 'bg-emerald-500/10 border-emerald-500/20',
-    iconColor: 'text-emerald-400',
-  },
-];
+// 文案（含 prompt 本体）随 UI 语言走 i18n：中文用户发中文 prompt，英文用户发英文 prompt。
+export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
+  return [
+    {
+      icon: Gamepad2,
+      ...t.chat.suggestions.game,
+      accent: 'bg-amber-500/10 border-amber-500/20',
+      iconColor: 'text-amber-400',
+    },
+    {
+      icon: BarChart3,
+      ...t.chat.suggestions.chart,
+      accent: 'bg-sky-500/10 border-sky-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
+      icon: Search,
+      ...t.chat.suggestions.briefing,
+      accent: 'bg-violet-500/10 border-violet-500/20',
+      iconColor: 'text-violet-400',
+    },
+    {
+      icon: HardDrive,
+      ...t.chat.suggestions.disk,
+      accent: 'bg-emerald-500/10 border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+  ];
+}
 
-const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ snapshot }) => {
+/**
+ * D-1「重试该轮」锚点推导：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID
+ * （streamHandler.ts beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无
+ * 关联，snapshot 里也没有任何字段指回原始用户消息——唯一可靠锚点是结构性推导：
+ * addMessage 一律无条件清空 streamSnapshot（sessionStore.ts addMessage），所以只要
+ * streamSnapshot 还在，messages 数组末尾就不可能是之后新增的消息；由于中断的助手
+ * 回复从未落进 messages（只活在 ephemeral snapshot 里），末位消息必然就是触发这轮
+ * 的用户消息。取不到（数组为空或末位不是 user）就返回 null，不重试。
+ */
+export function deriveRetryTurnMessage(
+  streamSnapshot: StreamRecoverySnapshot | null,
+  messages: Message[],
+): Message | null {
+  if (!streamSnapshot || messages.length === 0) return null;
+  const last = messages[messages.length - 1];
+  return last.role === 'user' ? last : null;
+}
+
+export const StreamRecoveryBanner: React.FC<{
+  snapshot: StreamRecoverySnapshot;
+  /** 触发这轮中断的原始用户消息；找不到可靠锚点时为 null，不渲染重试按钮。 */
+  retryMessage: Message | null;
+  onSend: (content: string, attachments?: MessageAttachment[]) => Promise<boolean>;
+}> = ({ snapshot, retryMessage, onSend }) => {
+  const { t, language } = useI18n();
+  // 无现成 dismiss 通道（streamSnapshot 只在发新消息/切会话时被清空），本地记住已关闭
+  // 的 turnId 即可；换了新的未完成流（不同 turnId）时横幅照常重新出现。
+  const [dismissedTurnId, setDismissedTurnId] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const handleRetryClick = async () => {
+    if (!retryMessage || isRetrying) return;
+    setIsRetrying(true);
+    try {
+      await onSend(retryMessage.content, retryMessage.attachments);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
   const toolNames = snapshot.toolCalls
     .map((toolCall) => toolCall.name || toolCall.id)
     .filter(Boolean)
     .slice(0, 3);
   const extraCount = Math.max(0, snapshot.toolCalls.length - toolNames.length);
-  const timeLabel = new Date(snapshot.timestamp).toLocaleTimeString([], {
+  const timeLabel = new Date(snapshot.timestamp).toLocaleTimeString(localeForLanguage(language), {
     hour: '2-digit',
     minute: '2-digit',
   });
+
+  if (dismissedTurnId === snapshot.turnId) {
+    return null;
+  }
 
   return (
     <div className="px-4 pt-3">
       <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-status-warning-soft">
         <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-status-warning-soft dark:text-amber-300 [.high-contrast-dark_&]:text-amber-300" />
-        <div className="min-w-0">
-          <div className="font-medium">上次回复在流式输出中断</div>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">{t.chat.streamInterruptedTitle}</div>
           <div className="mt-1 text-status-warning-soft dark:text-status-warning-soft/80 [.high-contrast-dark_&]:text-status-warning-soft/80">
             {snapshot.toolCalls.length > 0
-              ? `${snapshot.toolCalls.length} 个 tool call 只保留为恢复快照，未执行：${toolNames.join(', ')}${extraCount ? ` +${extraCount}` : ''}`
-              : '部分文本已保留为恢复快照。'}
+              ? t.chat.streamInterruptedToolCalls
+                  .replace('{count}', String(snapshot.toolCalls.length))
+                  .replace('{names}', `${toolNames.join(', ')}${extraCount ? ` +${extraCount}` : ''}`)
+              : t.chat.streamInterruptedText}
           </div>
           <div className="mt-1 text-xs text-status-warning-soft dark:text-status-warning-soft/60 [.high-contrast-dark_&]:text-status-warning-soft/60">
-            turn {snapshot.turnId.slice(0, 8)} - {timeLabel}
+            {timeLabel}
           </div>
+          {retryMessage && (
+            <button
+              type="button"
+              onClick={handleRetryClick}
+              disabled={isRetrying}
+              className="mt-2 inline-flex items-center rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-status-warning-soft transition-colors hover:bg-amber-500/20 disabled:cursor-wait disabled:opacity-70"
+            >
+              {isRetrying ? t.chat.retryTurnInProgress : t.chat.retryTurn}
+            </button>
+          )}
         </div>
+        <button
+          type="button"
+          onClick={() => setDismissedTurnId(snapshot.turnId)}
+          className="shrink-0 rounded-md p-1 text-status-warning-soft/60 transition-colors hover:bg-white/[0.06] hover:text-status-warning-soft"
+          aria-label={t.common.close}
+          title={t.common.close}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   );
@@ -950,14 +1025,15 @@ const NewSessionWelcome: React.FC<{
   workingDirectory,
   workbenchSnapshot,
 }) => {
-  const suggestions = defaultSuggestions;
+  const { t } = useI18n();
+  const suggestions = buildDefaultSuggestions(t);
   // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
   const hasWorkspaceContext = Boolean(workingDirectory?.trim());
-  const contextLabel = hasWorkspaceContext ? formatNewSessionContextLabel(workingDirectory) : null;
-  const contextTitle = hasWorkspaceContext ? `继承工作区：${workingDirectory!.trim()}` : '';
+  const contextLabel = hasWorkspaceContext ? formatNewSessionContextLabel(t, workingDirectory) : null;
+  const contextTitle = hasWorkspaceContext ? t.chat.inheritedWorkspace.replace('{path}', workingDirectory!.trim()) : '';
   const contextDetails = hasWorkspaceContext
-    ? buildNewSessionContextDetails(workbenchSnapshot)
+    ? buildNewSessionContextDetails(t, workbenchSnapshot)
     : null;
 
   return (
@@ -965,9 +1041,9 @@ const NewSessionWelcome: React.FC<{
       <div className="w-full max-w-2xl animate-fade-in">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-zinc-100">想完成什么？</h1>
+            <h1 className="text-xl font-semibold text-zinc-100">{t.chat.welcomeTitle}</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              选一个示例，或者直接输入你想完成的事。
+              {t.chat.welcomeSubtitle}
             </p>
           </div>
           {contextLabel && (
@@ -1000,24 +1076,24 @@ const NewSessionWelcome: React.FC<{
   );
 };
 
-function formatNewSessionContextLabel(workingDirectory?: string | null): string {
+function formatNewSessionContextLabel(t: Translations, workingDirectory?: string | null): string {
   const trimmed = workingDirectory?.trim();
   if (!trimmed) {
-    return '空白会话';
+    return t.chat.blankSession;
   }
   const parts = trimmed.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean);
   const name = parts[parts.length - 1] || trimmed;
-  return `项目会话 · ${name}`;
+  return t.chat.projectSession.replace('{name}', name);
 }
 
-function buildNewSessionContextDetails(snapshot?: SessionWorkbenchSnapshot | null): string | null {
+function buildNewSessionContextDetails(t: Translations, snapshot?: SessionWorkbenchSnapshot | null): string | null {
   if (!snapshot) {
     return null;
   }
 
   const parts: string[] = [];
   const summary = snapshot.summary?.trim();
-  if (summary && summary !== '纯对话') {
+  if (summary && summary !== PLAIN_CHAT_SUMMARY_LABEL) {
     parts.push(summary);
   }
 
@@ -1027,7 +1103,7 @@ function buildNewSessionContextDetails(snapshot?: SessionWorkbenchSnapshot | nul
     .slice(0, 2);
   if (recentTools.length > 0) {
     const remaining = Math.max(0, (snapshot.recentToolNames?.length ?? 0) - recentTools.length);
-    parts.push(`最近工具 ${recentTools.join(', ')}${remaining > 0 ? ` +${remaining}` : ''}`);
+    parts.push(t.chat.recentTools.replace('{names}', `${recentTools.join(', ')}${remaining > 0 ? ` +${remaining}` : ''}`));
   }
 
   const skillCount = snapshot.skillIds?.length ?? 0;
@@ -1037,7 +1113,7 @@ function buildNewSessionContextDetails(snapshot?: SessionWorkbenchSnapshot | nul
   if (connectorCount > 0) parts.push(`${connectorCount} Connector`);
   if (mcpCount > 0) parts.push(`${mcpCount} MCP`);
 
-  return parts.length > 0 ? `继承：${parts.join(' · ')}` : null;
+  return parts.length > 0 ? t.chat.inheritedPrefix.replace('{parts}', parts.join(' · ')) : null;
 }
 
 // Suggestion card component

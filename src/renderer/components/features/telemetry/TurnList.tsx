@@ -64,7 +64,7 @@ export const TurnList: React.FC<TurnListProps> = ({ turns, selectedTurnId, onSel
             className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
               isSelected
                 ? 'bg-zinc-700 border-zinc-600'
-                : 'bg-zinc-800 border-transparent hover:bg-zinc-800 hover:border-zinc-700'
+                : 'bg-zinc-800 border-transparent hover:bg-zinc-700 hover:border-zinc-700'
             }`}
           >
             <div className="flex items-center justify-between mb-1">

@@ -14,6 +14,7 @@ import { FallbackBanner } from '../../src/renderer/components/features/chat/Mess
 import { encodeModelFallbackNotice } from '../../src/renderer/components/features/chat/fallbackNotice.ts';
 import { formatProviderFallbackToast } from '../../src/renderer/components/ProviderStatusNotice.tsx';
 import type { ProviderFallbackEvent } from '../../src/shared/ipc';
+import { zh } from '../../src/renderer/i18n/zh';
 
 export interface ModelStrategyFallbackVisibilityResult {
   ok: boolean;
@@ -28,66 +29,78 @@ function includesAll(text: string, values: string[]): boolean {
 }
 
 export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallbackVisibilityResult {
-  const capabilityHtml = renderToStaticMarkup(React.createElement(FallbackBanner, {
-    content: encodeModelFallbackNotice({
-      reason: 'vision',
-      category: 'capability',
-      strategy: 'adaptive-capability-fallback',
-      from: 'mock/text-only',
-      to: 'zhipu/glm-4.5v',
-      fromIdentity: {
+  const capabilityNoticeContent = encodeModelFallbackNotice({
+    reason: 'vision',
+    category: 'capability',
+    strategy: 'adaptive-capability-fallback',
+    from: 'mock/text-only',
+    to: 'zhipu/glm-4.5v',
+    fromIdentity: {
+      provider: 'mock',
+      sourceLabel: 'Mock Relay',
+      protocol: 'openai',
+      transportLabel: 'OpenAI-compatible',
+      endpoint: 'https://mock.example/v1',
+    },
+    toIdentity: {
+      provider: 'zhipu',
+      displayName: 'Zhipu Relay',
+      protocol: 'openai',
+      transportLabel: 'OpenAI-compatible',
+      endpoint: 'https://relay.example.com/zhipu/v1',
+    },
+    tried: [
+      {
         provider: 'mock',
-        sourceLabel: 'Mock Relay',
-        protocol: 'openai',
-        transportLabel: 'OpenAI-compatible',
-        endpoint: 'https://mock.example/v1',
+        model: 'text-only',
+        status: 'tried',
+        reason: 'missing_capability',
+        category: 'vision',
+        detail: '需要 vision 能力',
       },
-      toIdentity: {
+      {
         provider: 'zhipu',
-        displayName: 'Zhipu Relay',
-        protocol: 'openai',
-        transportLabel: 'OpenAI-compatible',
-        endpoint: 'https://relay.example.com/zhipu/v1',
+        model: 'glm-4.5v',
+        status: 'selected',
+        reason: 'capability_fallback_selected',
+        category: 'vision',
+        detail: '具备 vision 能力',
       },
-      tried: [
-        {
-          provider: 'mock',
-          model: 'text-only',
-          status: 'tried',
-          reason: 'missing_capability',
-          category: 'vision',
-          detail: '需要 vision 能力',
-        },
-        {
-          provider: 'zhipu',
-          model: 'glm-4.5v',
-          status: 'selected',
-          reason: 'capability_fallback_selected',
-          category: 'vision',
-          detail: '具备 vision 能力',
-        },
-      ],
-      skipped: [
-        {
-          provider: 'openai',
-          model: 'gpt-5.4-mini',
-          status: 'skipped',
-          reason: 'missing_api_key',
-          category: 'vision',
-        },
-      ],
-      toolPolicy: {
-        status: 'disabled',
-        reason: 'fallback_model_without_tool_support',
-        originalToolCount: 6,
-        effectiveToolCount: 0,
-        disabledToolNames: ['Read', 'Edit', 'Write', 'Append', 'Bash', 'Task'],
-        detail: 'Fallback 模型 zhipu/glm-4.5v 不支持工具调用，本轮改为纯文本回复。',
+    ],
+    skipped: [
+      {
+        provider: 'openai',
+        model: 'gpt-5.4-mini',
+        status: 'skipped',
+        reason: 'missing_api_key',
+        category: 'vision',
       },
-    }),
+    ],
+    toolPolicy: {
+      status: 'disabled',
+      reason: 'fallback_model_without_tool_support',
+      originalToolCount: 6,
+      effectiveToolCount: 0,
+      disabledToolNames: ['Read', 'Edit', 'Write', 'Append', 'Bash', 'Task'],
+      detail: 'Fallback 模型 zhipu/glm-4.5v 不支持工具调用，本轮改为纯文本回复。',
+    },
+  });
+
+  // FallbackBanner 默认折叠（B2-3 人话化：只露一行 from->to 摘要，详情要点开）。
+  // 这份契约要证明的是「策略/身份/trace/工具策略文案存在且正确」，不是「默认就展开」，
+  // 所以这里显式 defaultExpanded: true 渲染展开态去核对详情；折叠态的可达性由
+  // bannerCollapsedShowsFromTo 另外单独锁（同一份 content，只是不传 defaultExpanded）。
+  const capabilityHtml = renderToStaticMarkup(React.createElement(FallbackBanner, {
+    defaultExpanded: true,
+    content: capabilityNoticeContent,
+  }));
+
+  const capabilityCollapsedHtml = renderToStaticMarkup(React.createElement(FallbackBanner, {
+    content: capabilityNoticeContent,
   }));
 
   const exhaustedHtml = renderToStaticMarkup(React.createElement(FallbackBanner, {
+    defaultExpanded: true,
     content: encodeModelFallbackNotice({
       reason: 'Moonshot API error: 503 service unavailable',
       category: 'provider_unavailable',
@@ -119,7 +132,7 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
     reason: 'Moonshot API error: 503 service unavailable',
     category: 'provider_unavailable',
     strategy: 'adaptive-provider-fallback',
-  } satisfies ProviderFallbackEvent);
+  } satisfies ProviderFallbackEvent, zh);
 
   const mainTaskToast = formatProviderFallbackToast({
     from: { provider: 'zhipu', model: 'glm-4.7-flash' },
@@ -127,7 +140,7 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
     reason: 'Zhipu API error: 429 rate limit exceeded',
     category: 'rate_limit',
     strategy: 'adaptive-main-task-recovery',
-  } satisfies ProviderFallbackEvent);
+  } satisfies ProviderFallbackEvent, zh);
 
   const checks: Record<string, boolean> = {
     bannerShowsCapabilityStrategy: capabilityHtml.includes('能力自动切换'),
@@ -158,6 +171,12 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
       'deepseek/deepseek-v4-flash',
       '未切换',
     ]),
+    // B2-3 折叠设计的另一半锁：默认折叠时一行摘要（from -> to + reason）必须可达，
+    // 且详情（策略标签/工具策略等）必须真的不在——不然折叠态跟展开态没区别，等于白折叠。
+    bannerCollapsedShowsFromTo: includesAll(capabilityCollapsedHtml, [
+      'mock/text-only',
+      'zhipu/glm-4.5v',
+    ]) && !capabilityCollapsedHtml.includes('工具已关闭'),
     providerToastUsesStrategyMode: providerToast === '自动策略恢复：moonshot/kimi-k2.5 服务不可用，已切换到 deepseek/deepseek-v4-flash 继续任务',
     providerToastShowsMainTaskRecovery: mainTaskToast === '回到主任务模型：zhipu/glm-4.7-flash 触发限流，已回到 moonshot/kimi-k2.5 继续任务',
   };

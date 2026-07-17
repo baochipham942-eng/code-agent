@@ -75,6 +75,8 @@ export interface MCPHttpStreamableServerConfig {
   type: 'http-streamable';
   serverUrl: string;
   enabled: boolean;
+  /** Optional OAuth flow for HTTP Streamable transport */
+  auth?: 'oauth';
   /** Optional headers for authentication */
   headers?: Record<string, string>;
   /** Required environment variables (server disabled if missing) */

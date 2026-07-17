@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { MessageSquare, Microscope } from 'lucide-react';
+import { useI18n } from '../../../../hooks/useI18n';
 
 // ============================================================================
 // 类型定义
@@ -27,6 +28,7 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
   onModeChange,
   disabled,
 }) => {
+  const { t } = useI18n();
   return (
     <div className="flex items-center gap-1 p-1 bg-zinc-800-800 rounded-lg">
       {/* 正常模式 */}
@@ -39,13 +41,13 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
           transition-all duration-200
           ${mode === 'normal'
             ? 'bg-zinc-800-700 text-white shadow-sm'
-            : 'text-zinc-400 hover:text-zinc-400 hover:bg-zinc-800-700/50'
+            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800-700/50'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
       >
         <MessageSquare className="w-4 h-4" />
-        <span>正常</span>
+        <span>{t.modeSwitch.normal}</span>
       </button>
 
       {/* 深度研究模式 */}
@@ -58,13 +60,13 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
           transition-all duration-200
           ${mode === 'deep-research'
             ? 'bg-primary-500/20 text-primary-400 shadow-sm'
-            : 'text-zinc-400 hover:text-zinc-400 hover:bg-zinc-800-700/50'
+            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800-700/50'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
       >
         <Microscope className="w-4 h-4" />
-        <span>深度研究</span>
+        <span>{t.modeSwitch.deepResearch}</span>
       </button>
     </div>
   );

@@ -7,6 +7,7 @@ import {
 } from './agentMentionRouting';
 import {
   buildNeoTopicMentionCandidates,
+  localizeNeoTagMentionAgent,
   NEO_TAG_MENTION_AGENT,
   NEO_TOPIC_MENTION_PREFIX,
 } from './neoMentionRouting';
@@ -67,13 +68,13 @@ export function useChatInputAgentCommand(params: UseChatInputAgentCommandParams)
       title: detail.workCard.title,
       status: detail.workCard.status,
       updatedAt: detail.workCard.updatedAt,
-    }))),
-    [detailsById],
+    })), t),
+    [detailsById, t],
   );
 
   const agentMentionAutocomplete = useMemo(
-    () => getLeadingAgentMentionAutocomplete(value, swarmAgents, neoTopicCandidates),
-    [neoTopicCandidates, swarmAgents, value],
+    () => getLeadingAgentMentionAutocomplete(value, swarmAgents, neoTopicCandidates, t),
+    [neoTopicCandidates, swarmAgents, value, t],
   );
 
   useEffect(() => {

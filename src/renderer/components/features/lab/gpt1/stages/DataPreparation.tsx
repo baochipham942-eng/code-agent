@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { ChevronRight, Plus, Database, BarChart3, FileText } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 // 示例对话数据
 const sampleDialogues = [
@@ -31,6 +32,8 @@ interface Props {
 }
 
 export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
+  const { t } = useI18n();
+  const dp = t.labGpt1.dataPreparation;
   const [customDialogue, setCustomDialogue] = useState({ user: '', assistant: '' });
   const [addedDialogues, setAddedDialogues] = useState<typeof sampleDialogues>([]);
 
@@ -50,51 +53,50 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <FileText className="w-4 h-4 text-blue-400" />
-              为什么需要对话数据？
+              {dp.whyTitle}
             </h3>
             <p className="text-sm text-zinc-400 leading-relaxed mb-3">
-              想象你在教一个外星人学中文对话。你会怎么教？
+              {dp.whyIntro}
             </p>
             <p className="text-sm text-zinc-400 leading-relaxed">
-              最简单的方法：给它听大量的<span className="text-emerald-400">「你说一句，我说一句」</span>的对话，
-              让它自己找出规律。AI 学说话也是一样——先"听"足够多的对话，才能学会怎么回答。
+              {dp.methodPrefix}<span className="text-emerald-400">{dp.methodHighlight}</span>{dp.methodSuffix}
             </p>
           </div>
 
           {/* 数据格式说明 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">对话长什么样？</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">{dp.formatTitle}</h3>
             <div className="bg-zinc-950 rounded-lg p-3 text-sm">
               <div className="flex gap-2 items-start mb-2">
-                <span className="text-blue-400 font-medium shrink-0">你：</span>
-                <span className="text-zinc-400">你好呀</span>
+                <span className="text-blue-400 font-medium shrink-0">{dp.formatUserLabel}</span>
+                <span className="text-zinc-400">{dp.formatUserExample}</span>
               </div>
               <div className="flex gap-2 items-start">
-                <span className="text-emerald-400 font-medium shrink-0">AI：</span>
-                <span className="text-zinc-400">你好！很高兴和你聊天。</span>
+                <span className="text-emerald-400 font-medium shrink-0">{dp.formatAiLabel}</span>
+                <span className="text-zinc-400">{dp.formatAiExample}</span>
               </div>
             </div>
             <p className="text-xs text-zinc-500 mt-2">
-              就是这么简单！一问一答，成千上万组。
+              {dp.formatHint}
             </p>
           </div>
 
           {/* 数据增强策略 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">怎么让 AI 学得更好？</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">{dp.augmentTitle}</h3>
             <div className="space-y-3 text-sm text-zinc-400">
               <div className="flex items-start gap-2">
                 <span className="text-xl">📚</span>
                 <div>
-                  <span className="text-zinc-400 font-medium">多听几遍：</span>
-                  就像背单词要重复多遍，同样的对话让 AI 看 {dataStats.repetitions} 次，印象更深
+                  <span className="text-zinc-400 font-medium">{dp.augmentRepeatLabel}</span>
+                  {dp.augmentRepeatDesc.replace('{count}', String(dataStats.repetitions))}
                 </div>
               </div>
               <div className="flex items-start gap-2">
                 <span className="text-xl">🎭</span>
                 <div>
-                  <span className="text-zinc-400 font-medium">话题多样：</span>
-                  打招呼、聊天气、讲笑话……各种场景都要有
+                  <span className="text-zinc-400 font-medium">{dp.augmentVarietyLabel}</span>
+                  {dp.augmentVarietyDesc}
                 </div>
               </div>
             </div>
@@ -104,20 +106,20 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <span className="text-emerald-400">📝</span>
-              数据准备过程（简化版）
+              {dp.processTitle}
             </h3>
             <div className="space-y-3 text-sm">
               <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800">
                 <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center font-bold">1</span>
-                <span className="text-zinc-400">收集 {dataStats.dialoguePatterns} 种不同的对话</span>
+                <span className="text-zinc-400">{dp.processStep1.replace('{count}', String(dataStats.dialoguePatterns))}</span>
               </div>
               <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800">
                 <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center font-bold">2</span>
-                <span className="text-zinc-400">每种对话重复 {dataStats.repetitions} 次</span>
+                <span className="text-zinc-400">{dp.processStep2.replace('{count}', String(dataStats.repetitions))}</span>
               </div>
               <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800">
                 <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center font-bold">3</span>
-                <span className="text-zinc-400">得到约 {(dataStats.totalTokens / 1000).toFixed(0)}K 字的训练材料</span>
+                <span className="text-zinc-400">{dp.processStep3.replace('{count}', (dataStats.totalTokens / 1000).toFixed(0))}</span>
               </div>
             </div>
           </div>
@@ -129,24 +131,24 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
             <h3 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-emerald-400" />
-              数据统计
+              {dp.statsTitle}
             </h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 rounded-lg bg-zinc-900">
                 <div className="text-2xl font-bold text-emerald-400">{dataStats.dialoguePatterns}</div>
-                <div className="text-xs text-zinc-500">对话模式</div>
+                <div className="text-xs text-zinc-500">{dp.statsPatterns}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
                 <div className="text-2xl font-bold text-blue-400">{dataStats.totalTokens.toLocaleString()}</div>
-                <div className="text-xs text-zinc-500">总 Tokens</div>
+                <div className="text-xs text-zinc-500">{dp.statsTokens}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
                 <div className="text-2xl font-bold text-amber-400">{dataStats.repetitions}x</div>
-                <div className="text-xs text-zinc-500">数据重复</div>
+                <div className="text-xs text-zinc-500">{dp.statsRepetitions}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
                 <div className="text-2xl font-bold text-purple-400">{dataStats.vocabSize}</div>
-                <div className="text-xs text-zinc-500">词汇表大小</div>
+                <div className="text-xs text-zinc-500">{dp.statsVocab}</div>
               </div>
             </div>
           </div>
@@ -155,7 +157,7 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <Database className="w-4 h-4 text-blue-400" />
-              训练数据预览
+              {dp.previewTitle}
             </h3>
             <div className="space-y-3 max-h-64 overflow-y-auto">
               {[...sampleDialogues, ...addedDialogues].map((dialogue, index) => (
@@ -168,15 +170,15 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
                   }`}
                 >
                   <div className="text-xs">
-                    <span className="text-blue-400">用户: </span>
+                    <span className="text-blue-400">{dp.previewUserPrefix}</span>
                     <span className="text-zinc-400">{dialogue.user}</span>
                   </div>
                   <div className="text-xs mt-1">
-                    <span className="text-emerald-400">助手: </span>
+                    <span className="text-emerald-400">{dp.previewAssistantPrefix}</span>
                     <span className="text-zinc-400">{dialogue.assistant}</span>
                   </div>
                   {index >= sampleDialogues.length && (
-                    <div className="text-xs text-emerald-400 mt-1">✨ 你添加的</div>
+                    <div className="text-xs text-emerald-400 mt-1">{dp.previewAddedBadge}</div>
                   )}
                 </div>
               ))}
@@ -187,26 +189,26 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <Plus className="w-4 h-4 text-emerald-400" />
-              添加自定义对话
+              {dp.addTitle}
             </h3>
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">用户输入</label>
+                <label className="text-xs text-zinc-500 mb-1 block">{dp.addUserLabel}</label>
                 <input
                   type="text"
                   value={customDialogue.user}
                   onChange={(e) => setCustomDialogue({ ...customDialogue, user: e.target.value })}
-                  placeholder="输入用户的问题…"
+                  placeholder={dp.addUserPlaceholder}
                   className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
                 />
               </div>
               <div>
-                <label className="text-xs text-zinc-500 mb-1 block">助手回复</label>
+                <label className="text-xs text-zinc-500 mb-1 block">{dp.addAssistantLabel}</label>
                 <input
                   type="text"
                   value={customDialogue.assistant}
                   onChange={(e) => setCustomDialogue({ ...customDialogue, assistant: e.target.value })}
-                  placeholder="输入助手的回复…"
+                  placeholder={dp.addAssistantPlaceholder}
                   className="w-full px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
                 />
               </div>
@@ -215,7 +217,7 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
                 disabled={!customDialogue.user.trim() || !customDialogue.assistant.trim()}
                 className="w-full py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                添加到训练数据
+                {dp.addButton}
               </button>
             </div>
           </div>
@@ -226,15 +228,10 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {dp.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'Dataset', zh: '数据集', desc: '用于训练 AI 的数据集合，这里是大量的对话样本' },
-            { en: 'Token', zh: '词元/标记', desc: '文本被切分后的最小单位，可以是字、词或子词' },
-            { en: 'Training Data', zh: '训练数据', desc: 'AI 学习时使用的数据，"老师"的教材' },
-            { en: 'Data Augmentation', zh: '数据增强', desc: '通过重复、变换等方式增加数据量的技术' },
-          ].map((term) => (
+          {dp.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
@@ -253,7 +250,7 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           onClick={onComplete}
           className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors"
         >
-          下一步: 分词器
+          {dp.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

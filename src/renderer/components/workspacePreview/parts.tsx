@@ -24,6 +24,7 @@ import { formatDesignBriefLabel } from '@shared/contract/designBrief';
 import type { DesignBrief } from '@shared/contract/designBrief';
 import type { DirectionTokens } from '@/design/direction-tokens';
 import { useAppStore } from '../../stores/appStore';
+import { useI18n } from '../../hooks/useI18n';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { isPreviewable } from '../../utils/previewable';
 import { buildWorkspacePreviewHtmlSrcdoc, type WorkspacePreviewRuntimeStatus } from '../../utils/workspacePreview';
@@ -176,6 +177,8 @@ export function PreviewListItem({
 }
 
 function FilePreviewCallout({ item }: { item: WorkspacePreviewItem }) {
+  const { t } = useI18n();
+  const p = t.previewWorkspace.parts;
   const openPreview = useAppStore((state) => state.openPreview);
   const path = item.file?.path;
   const previewable = isPreviewable(path);
@@ -196,7 +199,7 @@ function FilePreviewCallout({ item }: { item: WorkspacePreviewItem }) {
             onClick={() => openPreview(path)}
             className="rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200 hover:bg-zinc-700"
           >
-            {previewable ? 'Open file preview' : 'Open file'}
+            {previewable ? p.openFilePreview : p.openFile}
           </button>
         )}
       </div>
@@ -205,15 +208,18 @@ function FilePreviewCallout({ item }: { item: WorkspacePreviewItem }) {
 }
 
 function TextPreview({ item }: { item: WorkspacePreviewItem }) {
+  const { t } = useI18n();
   const text = item.content?.text || item.content?.summary || item.content?.diff || '';
   return (
     <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap rounded-lg border border-white/[0.08] bg-black/30 p-4 text-xs leading-relaxed text-zinc-300">
-      {text || 'No preview content.'}
+      {text || t.previewWorkspace.parts.noPreviewContent}
     </pre>
   );
 }
 
 function WorkspaceHtmlPreview({ item }: { item: WorkspacePreviewItem }) {
+  const { t } = useI18n();
+  const p = t.previewWorkspace.parts;
   const html = item.content?.html || '';
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(320);
@@ -264,7 +270,7 @@ function WorkspaceHtmlPreview({ item }: { item: WorkspacePreviewItem }) {
       <div className="relative">
         {runtimeStatus !== 'ready' && (
           <div className="pointer-events-none absolute right-2 top-2 z-10 max-w-[70%] rounded border border-white/[0.08] bg-zinc-950/90 px-2 py-1 text-[10px] text-zinc-400 shadow">
-            {runtimeStatus === 'error' ? runtimeMessage || 'Preview runtime error' : 'Loading preview'}
+            {runtimeStatus === 'error' ? runtimeMessage || p.previewRuntimeError : p.loadingPreview}
           </div>
         )}
         <iframe
@@ -282,6 +288,8 @@ function WorkspaceHtmlPreview({ item }: { item: WorkspacePreviewItem }) {
 }
 
 function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
+  const { t } = useI18n();
+  const p = t.previewWorkspace.parts;
   const openPreview = useAppStore((state) => state.openPreview);
   const spec = parseDesignPptArtifact(item);
   const screenshots = spec?.screenshots || [];
@@ -293,15 +301,15 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
     <div className="space-y-3">
       <div className="grid gap-3 rounded-lg border border-white/[0.08] bg-black/20 p-3 text-xs text-zinc-400 sm:grid-cols-4">
         <div>
-          <div className="text-[10px] uppercase text-zinc-600">Slides</div>
+          <div className="text-[10px] uppercase text-zinc-600">{p.slidesLabel}</div>
           <div className="mt-1 text-sm font-semibold text-zinc-100">{spec?.slidesCount || screenshots.length || '-'}</div>
         </div>
         <div>
-          <div className="text-[10px] uppercase text-zinc-600">Theme</div>
+          <div className="text-[10px] uppercase text-zinc-600">{p.themeLabel}</div>
           <div className="mt-1 text-sm font-semibold text-zinc-100">{spec?.theme || '-'}</div>
         </div>
         <div>
-          <div className="text-[10px] uppercase text-zinc-600">Iterations</div>
+          <div className="text-[10px] uppercase text-zinc-600">{p.iterationsLabel}</div>
           <div className="mt-1 text-sm font-semibold text-zinc-100">{spec?.iterations ?? '-'}</div>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -311,7 +319,7 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
               onClick={() => openPreview(pptxPath)}
               className="rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200 hover:bg-zinc-700"
             >
-              Open PPTX
+              {p.openPptx}
             </button>
           )}
           {spec?.slideCodePath && (
@@ -320,7 +328,7 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
               onClick={() => openPreview(spec.slideCodePath!)}
               className="rounded-md border border-white/[0.08] bg-zinc-800 px-2.5 py-1 text-xs text-zinc-200 hover:bg-zinc-700"
             >
-              Edit code
+              {p.editCode}
             </button>
           )}
         </div>
@@ -330,13 +338,13 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
         <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-950">
           <img
             src={resolveFileUrl(selectedScreenshot)}
-            alt={`Slide ${selectedIndex + 1}`}
+            alt={p.slideN.replace('{n}', String(selectedIndex + 1))}
             className="w-full bg-zinc-950 object-contain"
           />
         </div>
       ) : (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.05] p-3 text-xs text-amber-200">
-          {spec?.screenshotError || 'No slide screenshots available.'}
+          {spec?.screenshotError || p.noSlideScreenshots}
         </div>
       )}
 
@@ -344,7 +352,7 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
       {pptxPath && selectedScreenshot && (
         <LocalityFeedbackBar
           anchor={{ kind: 'ppt', filePath: pptxPath, slideIndex: selectedIndex, displayName: item.title }}
-          locationLabel={`第 ${selectedIndex + 1} 页`}
+          locationLabel={t.previewWorkspace.parts.pageNumber.replace('{n}', String(selectedIndex + 1))}
         />
       )}
 
@@ -360,14 +368,14 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
                   ? 'border-cyan-400 bg-cyan-500/10'
                   : 'border-white/[0.08] bg-white/[0.025] hover:border-white/[0.16]'
               }`}
-              title={`Slide ${index + 1}`}
+              title={p.slideN.replace('{n}', String(index + 1))}
             >
               <img
                 src={resolveFileUrl(screenshot)}
-                alt={`Slide ${index + 1}`}
+                alt={p.slideN.replace('{n}', String(index + 1))}
                 className="aspect-video w-full object-cover"
               />
-              <div className="px-2 py-1 text-left text-[10px] text-zinc-400">Slide {index + 1}</div>
+              <div className="px-2 py-1 text-left text-[10px] text-zinc-400">{p.slideN.replace('{n}', String(index + 1))}</div>
             </button>
           ))}
         </div>
@@ -402,6 +410,8 @@ export function RevisionPanel({
   onSelect: (itemId: string) => void;
   onRestore: () => void;
 }) {
+  const { t } = useI18n();
+  const p = t.previewWorkspace.parts;
   const history = useMemo(() => buildWorkspaceRevisionHistory(items, selected), [items, selected]);
   const comparison = useMemo(() => buildWorkspaceRevisionComparison(items, selected), [items, selected]);
   const canRestoreCheckpoint = Boolean(selected.file?.path && selected.source.messageId && currentSessionId);
@@ -411,14 +421,12 @@ export function RevisionPanel({
   return (
     <div className="space-y-2 rounded-lg border border-white/[0.08] bg-black/20 p-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
+        <div
+          className="flex min-w-0 items-center gap-2"
+          title={selected.revision?.sha256 || undefined}
+        >
           <GitCompare className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
-          <div className="truncate text-xs font-medium text-zinc-200">Versions</div>
-          {selected.revision?.sha256 && (
-            <div className="truncate font-mono text-[10px] text-zinc-600">
-              {selected.revision.sha256.slice(0, 12)}
-            </div>
-          )}
+          <div className="truncate text-xs font-medium text-zinc-200">{p.versions}</div>
         </div>
         {selected.file?.path && (
           <button
@@ -426,14 +434,10 @@ export function RevisionPanel({
             onClick={onRestore}
             disabled={!canRestoreCheckpoint || isRestoring}
             className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-800 px-2 py-1 text-[11px] text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-            title={
-              canRestoreCheckpoint
-                ? 'Restore files to this message checkpoint'
-                : 'No checkpoint anchor is available for this artifact'
-            }
+            title={canRestoreCheckpoint ? p.restoreCheckpointTitle : p.noCheckpointAnchor}
           >
             <RotateCcw className={`h-3.5 w-3.5 ${isRestoring ? 'animate-spin' : ''}`} />
-            Restore checkpoint
+            {p.restoreCheckpoint}
           </button>
         )}
       </div>
@@ -461,7 +465,9 @@ export function RevisionPanel({
       {comparison ? (
         <div className="space-y-1">
           <div className="text-[10px] text-zinc-500">
-            Compare {comparison.beforeLabel} {revisionLabel(comparison.previous, Math.max(0, history.indexOf(comparison.previous)))} to {comparison.afterLabel} {revisionLabel(comparison.current, Math.max(0, history.indexOf(comparison.current)))}
+            {p.compare
+              .replace('{before}', `${comparison.beforeLabel} ${revisionLabel(comparison.previous, Math.max(0, history.indexOf(comparison.previous)))}`)
+              .replace('{after}', `${comparison.afterLabel} ${revisionLabel(comparison.current, Math.max(0, history.indexOf(comparison.current)))}`)}
           </div>
           <div className="max-h-[360px] overflow-auto rounded border border-white/[0.06]">
             <DiffView
@@ -473,7 +479,7 @@ export function RevisionPanel({
         </div>
       ) : (
         <div className="rounded border border-white/[0.06] bg-zinc-950/60 px-2 py-1.5 text-[11px] text-zinc-500">
-          {history.length > 1 ? 'No inline comparable content for this revision.' : 'No previous revision found in this session.'}
+          {history.length > 1 ? p.noInlineComparable : p.noPreviousRevision}
         </div>
       )}
 

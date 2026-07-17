@@ -5,6 +5,19 @@
 import type { Translations } from './zh';
 import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
+import { chatTranscriptEn } from './chatTranscript';
+import { chatInputEn } from './chatInput';
+import { chatInputModelStrategyEn } from './chatInputModelStrategy';
+import { sidebarEn } from './sidebar';
+import { previewWorkspaceEn } from './previewWorkspace';
+import { modalPrimitivesEn } from './modalPrimitives';
+import { taskStatusPanelsEn } from './taskStatusPanels';
+import { noticesEn } from './notices';
+import { labEn } from './lab';
+import { labGpt1En } from './labGpt1';
+import { labNanogptEn } from './labNanogpt';
+import { labLlamafactoryEn } from './labLlamafactory';
+import { labAlignmentEn } from './labAlignment';
 
 export const en: Translations = {
   // Common
@@ -17,7 +30,9 @@ export const en: Translations = {
     confirm: 'Confirm',
     delete: 'Delete',
     edit: 'Edit',
+    undo: 'Undo',
     loading: 'Loading...',
+    retry: 'Retry',
     error: 'Error',
     success: 'Success',
     active: 'Active',
@@ -649,6 +664,8 @@ export const en: Translations = {
     // WorkingFolder
     inputDirPlaceholder: 'Enter workspace path',
     confirm: 'OK',
+    selectDirectoryTitle: 'Select working directory',
+    nextMessageWillUse: 'Next message will use: {path}',
     // Connectors
     status: 'Status',
     toolCount: 'Tools',
@@ -844,17 +861,23 @@ export const en: Translations = {
   sessionReplay: sessionReplayEn,
 
   // Chat transcript (TurnCard / StreamingIndicator, etc.)
-  chat: {
-    thinking: 'Thinking…',
-    waitingModel: 'Waiting for the model…',
-    waitingSubagent: 'Waiting on a subtask…',
-    thinkingDigest: 'Thinking',
-    thinkingSegments: ' · {count} segments',
-    expandThinking: 'Expand thinking',
-    collapseThinking: 'Collapse thinking',
-  },
+
 
   // Chat-flow Mermaid diagram card (pan/zoom + annotate-to-edit)
+  ...chatTranscriptEn,
+  ...chatInputEn,
+  ...chatInputModelStrategyEn,
+  ...sidebarEn,
+  ...previewWorkspaceEn,
+  ...modalPrimitivesEn,
+  ...taskStatusPanelsEn,
+  ...noticesEn,
+  ...labEn,
+  ...labGpt1En,
+  ...labNanogptEn,
+  ...labLlamafactoryEn,
+  ...labAlignmentEn,
+
   mermaid: {
     zoomIn: 'Zoom in',
     zoomOut: 'Zoom out',
@@ -902,6 +925,25 @@ export const en: Translations = {
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
+
+  // Command palette (Cmd/Ctrl+K)
+  commandPalette: {
+    ariaLabel: 'Command palette',
+    searchPlaceholder: 'Search commands…',
+    closeAriaLabel: 'Close command palette',
+    noMatches: 'No matching commands',
+    categorySession: 'Session',
+    categoryView: 'View',
+    categorySettings: 'Settings',
+    categoryHelp: 'Help',
+    footerNavigate: 'Navigate',
+    footerExecute: 'Run',
+    footerClose: 'Close',
+    clearConfirmTitle: 'Clear this conversation?',
+    clearConfirmMessage: 'All messages in this session will be removed. This cannot be undone.',
+    clearConfirmAction: 'Clear conversation',
+  },
+
   slashCommands: {
     // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）
     picker: {

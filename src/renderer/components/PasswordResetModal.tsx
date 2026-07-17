@@ -4,9 +4,10 @@
 
 import React, { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
-import { Loader2, KeyRound, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { KeyRound, CheckCircle, Eye, EyeOff } from 'lucide-react';
 import { FormField, Input } from './composites/FormField';
 import { Modal } from './primitives/Modal';
+import { Button } from './primitives/Button';
 
 export const PasswordResetModal: React.FC = () => {
   const {
@@ -78,12 +79,9 @@ export const PasswordResetModal: React.FC = () => {
               您的密码已成功重置，现在可以使用新密码登录了。
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors"
-          >
+          <Button onClick={onClose} className="mt-4 px-6">
             完成
-          </button>
+          </Button>
         </div>
       ) : (
         /* Reset form */
@@ -106,7 +104,7 @@ export const PasswordResetModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-400"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200"
               >
                 {showPassword ? (
                   <EyeOff className="w-4 h-4" />
@@ -162,15 +160,15 @@ export const PasswordResetModal: React.FC = () => {
             </div>
           )}
 
-          <button
+          <Button
             type="submit"
-            disabled={isLoading || password !== confirmPassword || password.length < 6}
-            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors min-h-[42px]"
+            fullWidth
+            loading={isLoading}
+            disabled={password !== confirmPassword || password.length < 6}
+            className="min-h-[42px]"
           >
-            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
             确认修改
-            {isLoading && '...'}
-          </button>
+          </Button>
         </form>
       )}
     </Modal>

@@ -21,7 +21,10 @@ const limits = {
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.
-  workflows: 15,
+  // 16: main-full-gate.yml is the post-merge combo-break detector (full tsc + full
+  // vitest on main push) — PR gates run shards, so cross-PR combination breakage
+  // (4 incidents on 2026-07-17 alone) was previously invisible until the next PR.
+  workflows: 16,
 };
 
 const navigationFiles = [

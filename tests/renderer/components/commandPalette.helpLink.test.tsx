@@ -62,6 +62,10 @@ vi.mock('../../../src/renderer/stores/modeStore', () => ({
 vi.mock('../../../src/renderer/stores/statusStore', () => ({
   useStatusStore: { getState: () => ({ workingDirectory: '/tmp' }) },
 }));
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
 vi.mock('../../../src/renderer/hooks/useKeybindingsSettings', () => ({
   useKeybindingsSettings: () => ({ keybindings: {}, platform: 'mac' }),
 }));

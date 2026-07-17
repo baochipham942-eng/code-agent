@@ -107,7 +107,6 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
           confirmText="提交回答"
           onCancel={handleDismiss}
           onConfirm={handleSubmit}
-          confirmColorClass="bg-blue-500 hover:bg-blue-600"
           confirmDisabled={!canSubmit()}
         />
       }

@@ -1,32 +1,6 @@
 import React from 'react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 
-export function getRelativeTime(timestamp: number, compact = false): string {
-  if (!timestamp || !Number.isFinite(timestamp)) return '';
-  const now = Date.now();
-  const diff = now - timestamp;
-  if (!Number.isFinite(diff) || diff < 0) return '';
-  const minutes = Math.floor(diff / (1000 * 60));
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (compact) {
-    if (minutes < 1) return '刚刚';
-    if (minutes < 60) return `${minutes}m`;
-    if (hours < 24) return `${hours}h`;
-    if (days < 7) return `${days}d`;
-    if (days < 30) return `${Math.floor(days / 7)}w`;
-    return `${Math.floor(days / 30)}mo`;
-  }
-
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  if (hours < 24) return `${hours}小时前`;
-  if (days < 7) return `${days}天前`;
-  if (days < 30) return `${Math.floor(days / 7)}周前`;
-  return `${Math.floor(days / 30)}月前`;
-}
-
 export function getReusableWorkbenchDirectory(session: SessionWithMeta): string | null {
   const candidates = [
     session.workbenchProvenance?.workingDirectory,

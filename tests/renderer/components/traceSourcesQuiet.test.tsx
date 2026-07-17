@@ -59,7 +59,7 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
     expect(html).not.toContain('bg-emerald-500');
     expect(html).not.toContain('text-emerald-300');
     // 改用中性灰卡片
-    expect(html).toContain('border-white/[0.06]');
+    expect(html).toContain('border-border-muted');
 
     // 溯源能力仍在：点开后条目可见
     const { container } = render(
@@ -94,7 +94,7 @@ describe('Sources (纯链接来源) 视觉降级 — 不长得像交付物卡', 
     expect(html).toContain('Outputs');
     expect(html).toContain('Sources');
     expect(html).toContain('border-emerald-500'); // Outputs 绿
-    expect(html).toContain('border-white/[0.06]'); // Sources 中性灰
+    expect(html).toContain('border-border-muted'); // Sources 中性灰
     // Sources 区出现在 Outputs 之后（来源在产物下方、降级呈现）
     expect(html.indexOf('Outputs')).toBeLessThan(html.indexOf('Sources'));
     // 文件产物直接可见；来源域名折叠在 Sources 头后

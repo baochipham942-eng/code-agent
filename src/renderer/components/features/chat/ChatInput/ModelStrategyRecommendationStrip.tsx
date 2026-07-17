@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, Sparkles } from 'lucide-react';
 import type { ModelStrategyRecommendation } from './modelStrategyRecommendation';
+import { useI18n } from '../../../../hooks/useI18n';
 
 export interface ModelStrategyRecommendationStripProps {
   recommendation: ModelStrategyRecommendation;
@@ -12,7 +13,9 @@ export const ModelStrategyRecommendationStrip: React.FC<ModelStrategyRecommendat
   recommendation,
   onApply,
   onDismiss,
-}) => (
+}) => {
+  const { t } = useI18n();
+  return (
   <div
     className={`mb-2 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
       recommendation.tone === 'warning'
@@ -48,7 +51,7 @@ export const ModelStrategyRecommendationStrip: React.FC<ModelStrategyRecommendat
         onClick={onApply}
         className="shrink-0 rounded border border-sky-400/30 bg-sky-400/10 px-2 py-1 text-[11px] font-medium text-sky-100 transition hover:bg-sky-400/20"
       >
-        {recommendation.primaryLabel ?? '采用建议'}
+        {recommendation.primaryLabel ?? t.modelStrategy.primaryLabelSwitch}
       </button>
     )}
     <button
@@ -56,8 +59,9 @@ export const ModelStrategyRecommendationStrip: React.FC<ModelStrategyRecommendat
       onClick={onDismiss}
       className="shrink-0 rounded px-2 py-1 text-[11px] text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-200"
     >
-      保持当前
+      {t.modelStrategy.strip.dismiss}
     </button>
   </div>
-);
+  );
+};
 

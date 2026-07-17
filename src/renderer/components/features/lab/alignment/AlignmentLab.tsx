@@ -12,6 +12,8 @@ import {
   Check,
   Sparkles,
 } from 'lucide-react';
+import { useI18n } from '../../../../hooks/useI18n';
+import type { Translations } from '../../../../i18n/zh';
 import { SFTStage } from './stages/SFTStage';
 import { RewardModelStage } from './stages/RewardModelStage';
 import { PPOStage } from './stages/PPOStage';
@@ -30,46 +32,39 @@ interface StageConfig {
   difficulty: 1 | 2 | 3 | 4;
 }
 
-const stages: StageConfig[] = [
-  {
-    id: 'sft',
-    title: '教 AI 按格式回答',
-    shortTitle: '学格式',
-    icon: <GraduationCap className="w-4 h-4" />,
-    description: '给 AI 看大量"问题→标准答案"的例子，让它学会这种对话格式',
-    learningPoint: '就像学生做例题：先看老师怎么答，再照着学',
-    difficulty: 2,
-  },
-  {
-    id: 'reward',
-    title: '教 AI 分辨好坏',
-    shortTitle: '打分',
-    icon: <Users className="w-4 h-4" />,
-    description: '人类给 AI 的回答打分，AI 学会什么样的回答更好',
-    learningPoint: '就像老师批改作业：这个答案好，那个答案不好',
-    difficulty: 3,
-  },
-  {
-    id: 'ppo',
-    title: '让 AI 追求高分',
-    shortTitle: '求好',
-    icon: <Brain className="w-4 h-4" />,
-    description: 'AI 学会追求"高分"，努力给出人类喜欢的回答',
-    learningPoint: '就像学生为了得高分，会调整自己的答题方式',
-    difficulty: 4,
-  },
-  {
-    id: 'comparison',
-    title: '前后对比',
-    shortTitle: '对比',
-    icon: <MessageSquare className="w-4 h-4" />,
-    description: '看看训练前后 AI 的回答有什么变化',
-    learningPoint: '训练后的 AI 回答更有帮助、更礼貌、更安全',
-    difficulty: 1,
-  },
-];
+function buildStages(t: Translations): StageConfig[] {
+  const s = t.labAlignment.alignmentLab.stages;
+  return [
+    {
+      id: 'sft',
+      ...s.sft,
+      icon: <GraduationCap className="w-4 h-4" />,
+      difficulty: 2,
+    },
+    {
+      id: 'reward',
+      ...s.reward,
+      icon: <Users className="w-4 h-4" />,
+      difficulty: 3,
+    },
+    {
+      id: 'ppo',
+      ...s.ppo,
+      icon: <Brain className="w-4 h-4" />,
+      difficulty: 4,
+    },
+    {
+      id: 'comparison',
+      ...s.comparison,
+      icon: <MessageSquare className="w-4 h-4" />,
+      difficulty: 1,
+    },
+  ];
+}
 
 export const AlignmentLab: React.FC = () => {
+  const { t } = useI18n();
+  const stages = buildStages(t);
   const [currentStage, setCurrentStage] = useState<Stage>('sft');
   const [completedStages, setCompletedStages] = useState<Set<Stage>>(new Set());
 
@@ -135,13 +130,13 @@ export const AlignmentLab: React.FC = () => {
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-purple-400" />
-            <span className="text-sm text-zinc-400">概念演示模式</span>
+            <span className="text-sm text-zinc-400">{t.labAlignment.alignmentLab.conceptDemoMode}</span>
             <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
-              无需真实训练
+              {t.labAlignment.alignmentLab.noRealTrainingBadge}
             </span>
           </div>
           <div className="text-xs text-zinc-500">
-            📚 了解 ChatGPT 是如何变得"听话"的
+            {t.labAlignment.alignmentLab.chatgptHint}
           </div>
         </div>
       </div>
@@ -219,7 +214,9 @@ export const AlignmentLab: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-semibold text-zinc-200">
-                  阶段 {currentStageIndex + 1}: {currentStageConfig.title}
+                  {t.labAlignment.alignmentLab.stageHeading
+                    .replace('{number}', String(currentStageIndex + 1))
+                    .replace('{title}', currentStageConfig.title)}
                 </h2>
                 {renderDifficulty(currentStageConfig.difficulty)}
               </div>
@@ -237,7 +234,7 @@ export const AlignmentLab: React.FC = () => {
         <div className="max-w-5xl mx-auto flex items-center gap-2">
           <span className="text-purple-400">💡</span>
           <span className="text-sm text-zinc-400">
-            <span className="text-zinc-400 font-medium">学习要点：</span>
+            <span className="text-zinc-400 font-medium">{t.labAlignment.alignmentLab.learningPointLabel}</span>
             {currentStageConfig.learningPoint}
           </span>
         </div>

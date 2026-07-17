@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChevronRight, ChevronLeft, Type, Zap, BookOpen } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 // 模拟分词器词汇表（简化版）
 const mockVocab: Record<string, number> = {
@@ -51,6 +52,8 @@ interface Props {
 }
 
 export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
+  const { t } = useI18n();
+  const tk = t.labGpt1.tokenizerStage;
   const [inputText, setInputText] = useState('你好，今天天气怎么样？');
   const [tokens, setTokens] = useState<{ token: string; id: number }[]>([]);
 
@@ -72,34 +75,34 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-blue-400" />
-              为什么要教 AI 认字？
+              {tk.whyTitle}
             </h3>
             <p className="text-sm text-zinc-400 leading-relaxed mb-3">
-              电脑只认识数字（0、1、2…），不认识汉字。所以我们需要给每个字
-              <span className="text-emerald-400">「编个号」</span>，
-              就像给学生分配学号一样。
+              {tk.whyPrefix}
+              <span className="text-emerald-400">{tk.whyHighlight}</span>
+              {tk.whySuffix}
             </p>
             <p className="text-sm text-zinc-400 leading-relaxed">
-              「你」= 42号，「好」= 18号… 这样 AI 就能用数字来「认字」了！
+              {tk.whyExample}
             </p>
           </div>
 
           {/* 认字规则 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">AI 的「认字」规则</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">{tk.rulesTitle}</h3>
             <div className="space-y-3 text-sm text-zinc-400">
               <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <span className="text-xl">📖</span>
                 <div>
-                  <div className="text-emerald-300 font-medium">常见的组合 → 记成一个词</div>
-                  <div className="text-xs text-zinc-500 mt-1">比如「天气」经常一起出现，就当成一个单位</div>
+                  <div className="text-emerald-300 font-medium">{tk.ruleCommonLabel}</div>
+                  <div className="text-xs text-zinc-500 mt-1">{tk.ruleCommonDesc}</div>
                 </div>
               </div>
               <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                 <span className="text-xl">✂️</span>
                 <div>
-                  <div className="text-blue-300 font-medium">不常见的 → 拆成单个字</div>
-                  <div className="text-xs text-zinc-500 mt-1">生僻词就一个字一个字地认</div>
+                  <div className="text-blue-300 font-medium">{tk.ruleRareLabel}</div>
+                  <div className="text-xs text-zinc-500 mt-1">{tk.ruleRareDesc}</div>
                 </div>
               </div>
             </div>
@@ -107,35 +110,35 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
 
           {/* 词汇表配置 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">AI 认识多少字？</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">{tk.vocabTitle}</h3>
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-800">
-                <span className="text-sm text-zinc-400">总共能认的字/词</span>
-                <span className="text-sm font-bold text-emerald-400">280 个</span>
+                <span className="text-sm text-zinc-400">{tk.vocabCountLabel}</span>
+                <span className="text-sm font-bold text-emerald-400">{tk.vocabCountValue}</span>
               </div>
               <p className="text-xs text-zinc-500">
-                💡 这是一个「迷你」词汇表，只够日常对话用。真正的 ChatGPT 能认识几万个词！
+                {tk.vocabHint}
               </p>
             </div>
           </div>
 
           {/* 工作流程 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">认字过程演示</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">{tk.demoTitle}</h3>
             <div className="space-y-3">
               <div className="p-3 rounded-lg bg-zinc-800">
-                <div className="text-xs text-zinc-500 mb-2">第 1 步：看到一句话</div>
-                <div className="text-sm text-zinc-400">「你好，今天天气怎么样？」</div>
+                <div className="text-xs text-zinc-500 mb-2">{tk.demoStep1Label}</div>
+                <div className="text-sm text-zinc-400">{tk.demoStep1Example}</div>
               </div>
-              <div className="text-center text-zinc-600">↓ 查字典，找编号</div>
+              <div className="text-center text-zinc-600">{tk.demoArrow}</div>
               <div className="p-3 rounded-lg bg-zinc-800">
-                <div className="text-xs text-zinc-500 mb-2">第 2 步：翻译成数字</div>
+                <div className="text-xs text-zinc-500 mb-2">{tk.demoStep2Label}</div>
                 <div className="text-sm">
-                  <span className="text-emerald-400">[42, 18, 5, 67, 123, 156, 78, 6]</span>
+                  <span className="text-emerald-400">{tk.demoStep2Example}</span>
                 </div>
               </div>
               <p className="text-xs text-zinc-500 text-center">
-                这样 AI 就能「读懂」这句话了！
+                {tk.demoHint}
               </p>
             </div>
           </div>
@@ -147,24 +150,24 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
             <h3 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
               <Zap className="w-4 h-4 text-blue-400" />
-              实时分词演示
+              {tk.liveTitle}
             </h3>
 
             {/* 输入框 */}
             <div className="mb-4">
-              <label className="text-xs text-zinc-500 mb-1 block">输入文本</label>
+              <label className="text-xs text-zinc-500 mb-1 block">{tk.liveInputLabel}</label>
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="输入任意中文文本…"
+                placeholder={tk.liveInputPlaceholder}
                 className="w-full px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-blue-500"
               />
             </div>
 
             {/* 分词结果 */}
             <div className="mb-4">
-              <label className="text-xs text-zinc-500 mb-2 block">分词结果</label>
+              <label className="text-xs text-zinc-500 mb-2 block">{tk.liveResultLabel}</label>
               <div className="flex flex-wrap gap-2 min-h-[60px] p-3 rounded-lg bg-zinc-900 border border-zinc-700">
                 {tokens.map((token, index) => (
                   <div
@@ -178,7 +181,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                   </div>
                 ))}
                 {tokens.length === 0 && (
-                  <span className="text-sm text-zinc-600">输入文本查看分词结果</span>
+                  <span className="text-sm text-zinc-600">{tk.liveResultEmpty}</span>
                 )}
               </div>
             </div>
@@ -187,11 +190,11 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-700">
                 <div className="text-xl font-bold text-blue-400">{tokens.length}</div>
-                <div className="text-xs text-zinc-500">Token 数量</div>
+                <div className="text-xs text-zinc-500">{tk.liveTokenCount}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-700">
                 <div className="text-xl font-bold text-emerald-400">{inputText.length}</div>
-                <div className="text-xs text-zinc-500">字符数量</div>
+                <div className="text-xs text-zinc-500">{tk.liveCharCount}</div>
               </div>
             </div>
           </div>
@@ -200,7 +203,7 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <Type className="w-4 h-4 text-purple-400" />
-              AI 的「字典」（部分）
+              {tk.dictTitle}
             </h3>
             <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
               {Object.entries(mockVocab).slice(0, 32).map(([token, id]) => (
@@ -209,40 +212,40 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
                   className="flex items-center justify-between p-2 rounded bg-zinc-800 text-xs"
                 >
                   <span className="text-zinc-400">
-                    {token === '\n' ? '换行' : token === ' ' ? '空格' : token}
+                    {token === '\n' ? tk.dictNewline : token === ' ' ? tk.dictSpace : token}
                   </span>
                   <span className="text-emerald-400 font-bold">#{id}</span>
                 </div>
               ))}
             </div>
             <p className="text-xs text-zinc-600 mt-2 text-center">
-              每个字/词都有自己的「学号」👆
+              {tk.dictHint}
             </p>
           </div>
 
           {/* 双向转换 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">字 ↔ 数字 可以互相转换</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">{tk.convertTitle}</h3>
             <div className="space-y-3">
               <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <div className="text-xs text-emerald-400 mb-1">📝 文字 → 数字（AI 读取时）</div>
+                <div className="text-xs text-emerald-400 mb-1">{tk.encodeLabel}</div>
                 <div className="text-sm">
-                  <span className="text-zinc-400">「你好」</span>
-                  <span className="text-zinc-600 mx-2">变成</span>
-                  <span className="text-emerald-400 font-bold">[42, 18]</span>
+                  <span className="text-zinc-400">{tk.encodeExampleFrom}</span>
+                  <span className="text-zinc-600 mx-2">{tk.encodeArrow}</span>
+                  <span className="text-emerald-400 font-bold">{tk.encodeExampleTo}</span>
                 </div>
               </div>
               <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                <div className="text-xs text-blue-400 mb-1">💬 数字 → 文字（AI 输出时）</div>
+                <div className="text-xs text-blue-400 mb-1">{tk.decodeLabel}</div>
                 <div className="text-sm">
-                  <span className="text-blue-400 font-bold">[42, 18]</span>
-                  <span className="text-zinc-600 mx-2">变回</span>
-                  <span className="text-zinc-400">「你好」</span>
+                  <span className="text-blue-400 font-bold">{tk.decodeExampleFrom}</span>
+                  <span className="text-zinc-600 mx-2">{tk.decodeArrow}</span>
+                  <span className="text-zinc-400">{tk.decodeExampleTo}</span>
                 </div>
               </div>
             </div>
             <p className="text-xs text-zinc-500 mt-3 text-center">
-              💡 就像密码本：知道规则就能加密解密
+              {tk.convertHint}
             </p>
           </div>
         </div>
@@ -252,17 +255,10 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {tk.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'Tokenizer', zh: '分词器', desc: '把文本切分成词元的工具，相当于 AI 的"认字本"' },
-            { en: 'Vocabulary', zh: '词汇表', desc: 'AI 认识的所有字/词的集合，每个都有唯一编号' },
-            { en: 'Token ID', zh: '词元编号', desc: '每个字/词对应的数字编号，AI 通过编号来"认字"' },
-            { en: 'Encoding', zh: '编码', desc: '把文字转换成数字的过程（文字 → 数字）' },
-            { en: 'Decoding', zh: '解码', desc: '把数字转换回文字的过程（数字 → 文字）' },
-            { en: 'BPE', zh: '字节对编码', desc: 'Byte Pair Encoding，一种常用的分词算法' },
-          ].map((term) => (
+          {tk.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
@@ -282,13 +278,13 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-zinc-700 text-zinc-400 font-medium hover:bg-zinc-600 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {tk.backButton}
         </button>
         <button
           onClick={onComplete}
           className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors"
         >
-          下一步: 模型架构
+          {tk.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

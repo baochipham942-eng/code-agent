@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { ChevronRight, FileText, Database, BookOpen, Play, Check } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 interface DataPreparationProps {
   onComplete: () => void;
@@ -12,7 +13,7 @@ interface DataPreparationProps {
 
 type DatasetType = 'shakespeare' | 'openwebtext';
 
-// 示例数据
+// 示例数据 —— 训练语料预览，属于演示数据本身，不进 i18n（翻译会改变演示语义）
 const shakespearePreview = `第一市民：
 在我们继续之前，请听我说。
 
@@ -28,6 +29,7 @@ const shakespearePreview = `第一市民：
 第一市民：
 首先，你们知道凯厄斯·马修斯是人民的死敌。`;
 
+// 分词演示数据，对应上面语料前几个字符，同样不进 i18n
 const tokenizedPreview = {
   shakespeare: [
     { char: '第', id: 24 },
@@ -39,35 +41,30 @@ const tokenizedPreview = {
   ],
 };
 
-const datasetStats = {
-  shakespeare: {
-    totalChars: '约 100 万字',
-    uniqueChars: '65 种',
-    trainSize: '90 万字用来学',
-    valSize: '10 万字用来考试',
-    vocabType: '一个字一个字认',
-  },
-  openwebtext: {
-    totalTokens: '约 90 亿词',
-    uniqueTokens: '5 万个词',
-    trainSize: '81 亿词用来学',
-    valSize: '9 亿词用来考试',
-    vocabType: '按常见词组认',
-  },
-};
-
 export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) => {
+  const { t } = useI18n();
+  const dp = t.labNanogpt.dataPreparation;
+  const datasetStats = {
+    shakespeare: {
+      totalChars: dp.shakespeareStatTotalChars,
+      uniqueChars: dp.shakespeareStatUniqueChars,
+      trainSize: dp.shakespeareStatTrainSize,
+      valSize: dp.shakespeareStatValSize,
+      vocabType: dp.shakespeareStatVocabType,
+    },
+    openwebtext: {
+      totalTokens: dp.openwebtextStatTotalTokens,
+      uniqueTokens: dp.openwebtextStatUniqueTokens,
+      trainSize: dp.openwebtextStatTrainSize,
+      valSize: dp.openwebtextStatValSize,
+      vocabType: dp.openwebtextStatVocabType,
+    },
+  };
   const [selectedDataset, setSelectedDataset] = useState<DatasetType>('shakespeare');
   const [preparationStep, setPreparationStep] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const preparationSteps = [
-    { id: 0, title: '📚 找书', desc: '找到莎士比亚全集' },
-    { id: 1, title: '📝 列字表', desc: '看看书里用了哪些字' },
-    { id: 2, title: '🔢 编号', desc: '给每个字编上号码' },
-    { id: 3, title: '✂️ 分堆', desc: '90%学习，10%考试' },
-    { id: 4, title: '💾 保存', desc: '整理好放进书包' },
-  ];
+  const preparationSteps = dp.preparationSteps.map((step, id) => ({ id, ...step }));
 
   const runPreparation = () => {
     setIsProcessing(true);
@@ -89,11 +86,11 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
         <div className="flex items-start gap-3">
           <BookOpen className="w-5 h-5 text-purple-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">📖 给 AI 选「课外书」</h3>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">{dp.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              就像小朋友学说话需要听大人讲话一样，AI 学写作也需要
-              <span className="text-purple-400">「阅读材料」</span>。
-              我们给它准备书来读，它就能学会写类似的文字！
+              {dp.introBodyPre}
+              <span className="text-purple-400">{dp.introBodyHighlight}</span>
+              {dp.introBodyPost}
             </p>
           </div>
         </div>
@@ -101,7 +98,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
 
       {/* Dataset Selection */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">选择 AI 的「课外书」</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{dp.datasetSelectionLabel}</h3>
         <div className="grid grid-cols-2 gap-4">
           {/* Shakespeare */}
           <button
@@ -115,15 +112,15 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
             <div className="flex items-center gap-3 mb-2">
               <span className="text-2xl">📚</span>
               <span className={`font-medium ${selectedDataset === 'shakespeare' ? 'text-emerald-400' : 'text-zinc-200'}`}>
-                经典名著
+                {dp.shakespeareName}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">入门推荐</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">{dp.shakespeareBadge}</span>
             </div>
             <p className="text-xs text-zinc-500">
-              读莎士比亚的戏剧，约 100 万字，像「一本厚书」
+              {dp.shakespeareDesc}
             </p>
             <p className="text-xs text-emerald-400/70 mt-1">
-              ✨ 学完后能写出「古典风格」的对话
+              {dp.shakespeareHighlight}
             </p>
           </button>
 
@@ -139,15 +136,15 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
             <div className="flex items-center gap-3 mb-2">
               <span className="text-2xl">🌐</span>
               <span className={`font-medium ${selectedDataset === 'openwebtext' ? 'text-emerald-400' : 'text-zinc-200'}`}>
-                网页百科
+                {dp.openwebtextName}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">进阶挑战</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">{dp.openwebtextBadge}</span>
             </div>
             <p className="text-xs text-zinc-500">
-              读互联网上的文章，约 90 亿词，像「一整个图书馆」
+              {dp.openwebtextDesc}
             </p>
             <p className="text-xs text-amber-400/70 mt-1">
-              ⚡ 需要很强的电脑才能学完
+              {dp.openwebtextHighlight}
             </p>
           </button>
         </div>
@@ -155,37 +152,37 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
 
       {/* Data Preview */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">📖 书的内容长这样</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{dp.previewLabel}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-lg">📄</span>
             <span className="text-xs text-zinc-500">
-              {selectedDataset === 'shakespeare' ? '莎士比亚戏剧片段' : '网页文章片段'}
+              {selectedDataset === 'shakespeare' ? dp.previewShakespeareCaption : dp.previewOpenwebtextCaption}
             </span>
           </div>
           <pre className="text-sm text-zinc-400 whitespace-pre-wrap bg-zinc-950/50 p-3 rounded border border-zinc-700 max-h-40 overflow-auto">
             {shakespearePreview}
           </pre>
           <p className="text-xs text-zinc-500 mt-2">
-            💡 AI 会反复阅读这样的对话，学习「人物对话」的写法
+            {dp.previewHint}
           </p>
         </div>
       </div>
 
       {/* Dataset Statistics */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">📊 这本「书」有多厚？</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{dp.statsLabel}</h3>
         <div className="grid grid-cols-5 gap-3">
           {Object.entries(datasetStats[selectedDataset]).map(([key, value]) => (
             <div key={key} className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
               <div className="text-xs text-zinc-500 mb-1">
-                {key === 'totalChars' && '📚 总字数'}
-                {key === 'totalTokens' && '📚 总词数'}
-                {key === 'uniqueChars' && '🔤 用了多少种字'}
-                {key === 'uniqueTokens' && '📖 用了多少种词'}
-                {key === 'trainSize' && '📝 学习用'}
-                {key === 'valSize' && '✏️ 考试用'}
-                {key === 'vocabType' && '👁️ 认字方式'}
+                {key === 'totalChars' && dp.statTotalChars}
+                {key === 'totalTokens' && dp.statTotalTokens}
+                {key === 'uniqueChars' && dp.statUniqueChars}
+                {key === 'uniqueTokens' && dp.statUniqueTokens}
+                {key === 'trainSize' && dp.statTrainSize}
+                {key === 'valSize' && dp.statValSize}
+                {key === 'vocabType' && dp.statVocabType}
               </div>
               <div className="text-sm font-medium text-emerald-400">{value}</div>
             </div>
@@ -196,10 +193,10 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
       {/* Token Encoding Visualization */}
       {selectedDataset === 'shakespeare' && (
         <div className="space-y-3">
-          <h3 className="text-sm font-medium text-zinc-400">🔢 把文字变成数字</h3>
+          <h3 className="text-sm font-medium text-zinc-400">{dp.tokenEncodingLabel}</h3>
           <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
             <p className="text-xs text-zinc-500 mb-3">
-              电脑只认识数字，所以要给每个字「编号」：
+              {dp.tokenEncodingHint}
             </p>
             <div className="flex flex-wrap gap-2">
               {tokenizedPreview.shakespeare.map((token, idx) => (
@@ -208,7 +205,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
                   className="group relative flex flex-col items-center"
                 >
                   <div className="px-3 py-2 bg-zinc-800 rounded-lg text-base text-zinc-400 border border-zinc-700">
-                    {token.char === '\n' ? '换行' : token.char === ' ' ? '空格' : token.char}
+                    {token.char === '\n' ? dp.tokenEncodingNewline : token.char === ' ' ? dp.tokenEncodingSpace : token.char}
                   </div>
                   <div className="text-xs text-emerald-400 mt-1 font-bold">#{token.id}</div>
                 </div>
@@ -217,6 +214,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
             </div>
             <div className="mt-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
               <div className="text-xs text-emerald-400">
+                {/* ponytail: 「第」是24号「一」是47号 直接对应上面 tokenizedPreview 语料数据，随内容保留中文不迁移 */}
                 💡 就像给班级同学编学号一样！「第」是24号，「一」是47号…
               </div>
             </div>
@@ -227,7 +225,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
       {/* Preparation Pipeline */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-zinc-400">🎬 准备工作流程（点击体验）</h3>
+          <h3 className="text-sm font-medium text-zinc-400">{dp.preparationLabel}</h3>
           <button
             onClick={runPreparation}
             disabled={isProcessing || preparationStep >= preparationSteps.length}
@@ -238,7 +236,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
             }`}
           >
             <Play className="w-4 h-4" />
-            {preparationStep >= preparationSteps.length ? '✅ 准备好了！' : '▶️ 开始准备'}
+            {preparationStep >= preparationSteps.length ? dp.runButtonReady : dp.runButtonStart}
           </button>
         </div>
 
@@ -280,32 +278,32 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
       {/* Output Files */}
       {preparationStep >= preparationSteps.length && (
         <div className="space-y-3">
-          <h3 className="text-sm font-medium text-zinc-400">🎒 准备好的「学习材料」</h3>
+          <h3 className="text-sm font-medium text-zinc-400">{dp.outputFilesLabel}</h3>
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/20">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📗</span>
-                <span className="text-sm text-zinc-200">学习用的书</span>
+                <span className="text-sm text-zinc-200">{dp.outputCard1Title}</span>
               </div>
-              <p className="text-xs text-zinc-500">AI 平时学习用（90%的内容）</p>
+              <p className="text-xs text-zinc-500">{dp.outputCard1Desc}</p>
             </div>
             <div className="bg-blue-500/10 rounded-lg p-3 border border-blue-500/20">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📘</span>
-                <span className="text-sm text-zinc-200">考试用的卷</span>
+                <span className="text-sm text-zinc-200">{dp.outputCard2Title}</span>
               </div>
-              <p className="text-xs text-zinc-500">测试 AI 学得好不好（10%的内容）</p>
+              <p className="text-xs text-zinc-500">{dp.outputCard2Desc}</p>
             </div>
             <div className="bg-purple-500/10 rounded-lg p-3 border border-purple-500/20">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lg">📒</span>
-                <span className="text-sm text-zinc-200">字典</span>
+                <span className="text-sm text-zinc-200">{dp.outputCard3Title}</span>
               </div>
-              <p className="text-xs text-zinc-500">记录每个字的编号</p>
+              <p className="text-xs text-zinc-500">{dp.outputCard3Desc}</p>
             </div>
           </div>
           <p className="text-xs text-emerald-400 text-center">
-            🎉 材料准备好了，可以开始学习啦！
+            {dp.outputFooter}
           </p>
         </div>
       )}
@@ -314,20 +312,15 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {dp.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'Dataset', zh: '数据集', desc: '用于训练 AI 的数据集合，可以是书籍、文章等' },
-            { en: 'Train/Val Split', zh: '训练/验证集划分', desc: '把数据分成两部分：学习用和考试用，检验是否真的学会了' },
-            { en: 'Character-level', zh: '字符级', desc: '一个字一个字地处理文本的方式，词汇表小但序列长' },
-            { en: 'Corpus', zh: '语料库', desc: '大量文本数据的集合，AI 的"阅读材料"' },
-          ].map((term) => (
+          {dp.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                <span className="text-sm text-zinc-400">{term.label}</span>
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
@@ -341,7 +334,7 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
           onClick={onComplete}
           className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 border border-blue-500/30 transition-all font-medium"
         >
-          下一步：教 AI 认字
+          {dp.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

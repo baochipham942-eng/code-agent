@@ -5,6 +5,7 @@
 import React from 'react';
 import { AlertTriangle, Info, ShieldAlert } from 'lucide-react';
 import { Modal, ModalFooter } from '../primitives/Modal';
+import { BUTTON_PRIMARY_CLASS, BUTTON_DANGER_CLASS } from '../primitives/Button';
 
 export type ConfirmDialogVariant = 'info' | 'warning' | 'danger';
 
@@ -21,7 +22,7 @@ const variantConfig: Record<
     icon: <Info className="w-6 h-6" />,
     iconBgClass: 'bg-blue-500/10',
     iconColorClass: 'text-blue-400',
-    confirmColorClass: 'bg-blue-600 hover:bg-blue-500',
+    confirmColorClass: BUTTON_PRIMARY_CLASS,
   },
   warning: {
     icon: <AlertTriangle className="w-6 h-6" />,
@@ -33,7 +34,7 @@ const variantConfig: Record<
     icon: <ShieldAlert className="w-6 h-6" />,
     iconBgClass: 'bg-red-500/10',
     iconColorClass: 'text-red-400',
-    confirmColorClass: 'bg-red-600 hover:bg-red-500',
+    confirmColorClass: BUTTON_DANGER_CLASS,
   },
 };
 
@@ -67,8 +68,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   title,
   message,
   variant = 'warning',
-  confirmText = '确认',
-  cancelText = '取消',
+  confirmText,
+  cancelText,
   onConfirm,
   onCancel,
   singleAction = false,

@@ -1,0 +1,58 @@
+name: Main Full Gate (post-merge combo check)
+
+# 动机（2026-07-17）：一小时内三处「PR 各自 CI 绿、合入 main 后组合断裂」
+# （#427 类型改名×引用、#429 schema 副本失同步、#431 mock 假定失效）。
+# PR 门（Swarm CI）只跑分层 smoke/e2e + 局部 typecheck，root 全量
+# `npm run typecheck` 与全量 vitest 在合并后从来没人跑——组合断裂只能
+# 靠下一个倒霉 PR 或本地全量撞见。
+#
+# 本 workflow 是**检测型**门：push main 后跑全量 tsc + 全量 vitest，
+# 断了立刻红在 main 的 checks 上（不阻塞已完成的合并，但把发现成本
+# 从「下个 PR 一轮 CI+靠猜」降到「合后一轮、点名文件」）。
+# 预防型（merge queue / ship 本地组合态）另列 P1。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: main-full-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full:
+    name: Full typecheck + full vitest
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        # 同 swarm-ci：lockfile 生成于 macOS，补 linux rollup binary；
+        # --no-save --no-package-lock 保证 lockfile 不被改。
+        run: |
+          npm ci --ignore-scripts
+          npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu
+
+      - name: Install better-sqlite3 native binding
+        # 同 swarm-ci smoke：prebuild-install 拉当前 Node ABI 的预编译 binary；
+        # 失败静默 fallback in-memory（本门目标是组合断裂检测，不是 sqlite 真路径验证）。
+        working-directory: node_modules/better-sqlite3
+        run: ../.bin/prebuild-install || true
+
+      - name: Full typecheck (root tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Full vitest
+        # --retry=1 与 swarm-ci flake 约定一致，吸收 game/browser 族已知负载抖动。
+        run: npx vitest run --retry=1
+        env:
+          CI: 'true'

@@ -1,12 +1,18 @@
+// @vitest-environment jsdom
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const appState = {
   workingDirectory: '/repo/other',
   setWorkingDirectory: vi.fn(),
   setShowEvalCenter: vi.fn(),
   openDevServerLauncher: vi.fn(),
+  openWorkbenchTab: vi.fn(),
+  pendingPermissionRequest: null as any,
+  pendingPermissionSessionId: null as string | null,
+  queuedPermissionRequests: {} as Record<string, any[]>,
 };
 
 const sessionState = {
@@ -14,6 +20,7 @@ const sessionState = {
   sessions: [] as any[],
   sessionRuntimes: new Map<string, any>(),
   backgroundTasks: [] as any[],
+  pendingUserQuestionsBySessionId: new Map<string, any[]>(),
   moveToBackground: vi.fn(async () => true),
 };
 
@@ -87,6 +94,10 @@ vi.mock('../../../src/renderer/stores/evalCenterStore', () => ({
 import { SessionActionsMenu } from '../../../src/renderer/components/SessionActionsMenu';
 
 describe('SessionActionsMenu session-state rendering', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     authState.user = null;
@@ -104,6 +115,7 @@ describe('SessionActionsMenu session-state rendering', () => {
       ['session-1', { sessionId: 'session-1', status: 'paused', activeAgentCount: 0, contextHealth: null, lastActivityAt: Date.now() - 3_000 }],
     ]);
     sessionState.backgroundTasks = [];
+    sessionState.pendingUserQuestionsBySessionId = new Map();
     taskState.sessionStates = {
       'session-1': { status: 'idle' },
     };
@@ -129,5 +141,61 @@ describe('SessionActionsMenu session-state rendering', () => {
     const html = renderToStaticMarkup(React.createElement(SessionActionsMenu));
 
     expect(html).toContain('会话动作');
+  });
+
+  it('keeps Move to Background visible for ordinary running sessions', () => {
+    sessionState.sessionRuntimes = new Map([
+      ['session-1', { sessionId: 'session-1', status: 'running', activeAgentCount: 1, contextHealth: null, lastActivityAt: Date.now() - 1_000 }],
+    ]);
+    taskState.sessionStates = {
+      'session-1': { status: 'running' },
+    };
+
+    render(React.createElement(SessionActionsMenu));
+    fireEvent.click(screen.getByLabelText('会话动作'));
+
+    expect(screen.getByText('移到后台')).toBeTruthy();
+  });
+
+  it('does not show Move to Background for durable waiting-input sessions', () => {
+    sessionState.sessions = [
+      {
+        id: 'session-1',
+        title: '等待用户输入',
+        workingDirectory: '/repo/code-agent',
+        messageCount: 6,
+        turnCount: 2,
+        status: 'running',
+        durableWaitingInput: true,
+      },
+    ];
+    sessionState.sessionRuntimes = new Map([
+      ['session-1', { sessionId: 'session-1', status: 'running', activeAgentCount: 1, contextHealth: null, lastActivityAt: Date.now() - 1_000 }],
+    ]);
+    taskState.sessionStates = {
+      'session-1': { status: 'running' },
+    };
+
+    render(React.createElement(SessionActionsMenu));
+    fireEvent.click(screen.getByLabelText('会话动作'));
+
+    expect(screen.queryByText('移到后台')).toBeNull();
+  });
+
+  it('does not show Move to Background for pending user-question sessions', () => {
+    sessionState.sessionRuntimes = new Map([
+      ['session-1', { sessionId: 'session-1', status: 'running', activeAgentCount: 1, contextHealth: null, lastActivityAt: Date.now() - 1_000 }],
+    ]);
+    taskState.sessionStates = {
+      'session-1': { status: 'running' },
+    };
+    sessionState.pendingUserQuestionsBySessionId = new Map([
+      ['session-1', [{ id: 'q-1', sessionId: 'session-1', questions: [], timestamp: Date.now() }]],
+    ]);
+
+    render(React.createElement(SessionActionsMenu));
+    fireEvent.click(screen.getByLabelText('会话动作'));
+
+    expect(screen.queryByText('移到后台')).toBeNull();
   });
 });

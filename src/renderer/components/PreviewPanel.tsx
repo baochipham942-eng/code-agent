@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
+import { useI18n } from '../hooks/useI18n';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
 import { inlineHtmlAssets } from '../utils/inlineHtmlAssets';
@@ -311,6 +312,7 @@ function parsePresentationPagePreview(content: string): PresentationPagePreviewR
 }
 
 function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtifact }) {
+  const { t } = useI18n();
   const screenshots = artifact.screenshots;
   const [selected, setSelected] = useState(0);
   const active = screenshots[Math.min(selected, screenshots.length - 1)];
@@ -319,7 +321,7 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
         <span className="inline-flex items-center gap-1 rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-zinc-200">
           <Presentation className="h-3.5 w-3.5" />
-          PPT 预览
+          {t.previewWorkspace.preview.pptPreview}
         </span>
         <span>{artifact.slidesCount || screenshots.length} slides</span>
       </div>
@@ -417,6 +419,8 @@ export function PresentationPreview({ content }: { content: string }) {
 }
 
 export const PreviewPanel: React.FC = () => {
+  const { t } = useI18n();
+  const pv = t.previewWorkspace.preview;
   const previewTabs = useAppStore((s) => s.previewTabs);
   const activePreviewTabId = useAppStore((s) => s.activePreviewTabId);
   const updatePreviewTabContent = useAppStore((s) => s.updatePreviewTabContent);
@@ -547,7 +551,7 @@ export const PreviewPanel: React.FC = () => {
       }
     } catch (err) {
       logger.error('Failed to load file', err);
-      setError(err instanceof Error ? err.message : '加载文件失败');
+      setError(err instanceof Error ? err.message : pv.loadFileFailed);
     } finally {
       setIsLoading(false);
     }
@@ -566,7 +570,7 @@ export const PreviewPanel: React.FC = () => {
       markPreviewTabSaved(activeTab.id);
     } catch (err) {
       logger.error('Failed to save file', err);
-      setError(err instanceof Error ? err.message : '保存失败');
+      setError(err instanceof Error ? err.message : pv.saveFailed);
     } finally {
       setIsSaving(false);
     }
@@ -580,7 +584,7 @@ export const PreviewPanel: React.FC = () => {
     const doc = iframe.contentDocument;
     const target = doc?.documentElement;
     if (!doc || !target) {
-      setError('无法访问预览文档（可能是跨域限制）');
+      setError(pv.previewDocAccessFailed);
       return;
     }
 
@@ -603,7 +607,7 @@ export const PreviewPanel: React.FC = () => {
 
       canvas.toBlob((blob) => {
         if (!blob) {
-          setError('生成截图失败');
+          setError(pv.screenshotFailed);
           setIsExporting(false);
           return;
         }
@@ -623,9 +627,9 @@ export const PreviewPanel: React.FC = () => {
       const msg = err instanceof Error ? err.message : String(err);
       // CORS tainted canvas 会抛 SecurityError
       if (msg.includes('tainted') || msg.includes('SecurityError')) {
-        setError('存在跨域外链资源，无法生成截图。请本地化资源后重试。');
+        setError(pv.crossOriginScreenshot);
       } else {
-        setError(`导出截图失败：${msg}`);
+        setError(pv.exportScreenshotFailed.replace('{message}', msg));
       }
       setIsExporting(false);
     }
@@ -667,7 +671,7 @@ export const PreviewPanel: React.FC = () => {
           isMaximized ? 'fixed inset-0 z-50' : 'w-full h-full'
         }`}
       >
-        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">加载 Live Preview…</div>}>
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">{pv.loadingLivePreview}</div>}>
           <LivePreviewFrame
             key={`${activeTab.id}:${activeTab.devServerUrl}`}
             tabId={activeTab.id}
@@ -695,7 +699,7 @@ export const PreviewPanel: React.FC = () => {
                   ? 'bg-primary-500/20 text-primary-300 hover:bg-primary-500/30'
                   : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
               }`}
-              title={mode === 'edit' ? '切到预览' : '切到编辑'}
+              title={mode === 'edit' ? pv.switchToPreview : pv.switchToEdit}
             >
               {mode === 'edit'
                 ? <Eye className="w-4 h-4" />
@@ -707,7 +711,7 @@ export const PreviewPanel: React.FC = () => {
               onClick={handleSave}
               disabled={!isDirty || isSaving}
               className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title={isDirty ? '保存 (Cmd+S)' : '已保存'}
+              title={isDirty ? pv.saveShortcut : pv.saved}
             >
               <Save className={`w-4 h-4 ${isSaving ? 'animate-pulse' : ''}`} />
             </button>
@@ -715,7 +719,7 @@ export const PreviewPanel: React.FC = () => {
           <button
             onClick={handleRefresh}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="刷新"
+            title={pv.refresh}
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
@@ -723,28 +727,28 @@ export const PreviewPanel: React.FC = () => {
             onClick={handleExportLongScreenshot}
             disabled={isExporting || isLoading || !!error || isMarkdown || isCsv || isCode || isBinary || isArchive || isOffice}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title={isMarkdown || isCsv || isCode || isBinary || isArchive || isOffice ? '长图仅支持 HTML 预览' : '导出长图'}
+            title={isMarkdown || isCsv || isCode || isBinary || isArchive || isOffice ? pv.longScreenshotHtmlOnly : pv.exportLongScreenshot}
           >
             <Camera className={`w-4 h-4 ${isExporting ? 'animate-pulse' : ''}`} />
           </button>
           <button
             onClick={handleRevealInFolder}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="在 Finder 中显示"
+            title={pv.revealInFinder}
           >
             <FolderOpen className="w-4 h-4" />
           </button>
           <button
             onClick={handleOpenInBrowser}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="用默认程序打开"
+            title={pv.openWithDefault}
           >
             <ExternalLink className="w-4 h-4" />
           </button>
           <button
             onClick={() => setIsMaximized(!isMaximized)}
             className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title={isMaximized ? '还原' : '最大化'}
+            title={isMaximized ? pv.restore : pv.maximize}
           >
             {isMaximized ? (
               <Minimize2 className="w-4 h-4" />
@@ -768,7 +772,7 @@ export const PreviewPanel: React.FC = () => {
           <div className="flex items-center justify-center h-full bg-zinc-700">
             <div className="flex flex-col items-center gap-3">
               <RefreshCw className="w-8 h-8 text-zinc-400 animate-spin" />
-              <span className="text-sm text-zinc-400">加载中…</span>
+              <span className="text-sm text-zinc-400">{pv.loading}</span>
             </div>
           </div>
         ) : error ? (
@@ -782,7 +786,7 @@ export const PreviewPanel: React.FC = () => {
                 onClick={handleRefresh}
                 className="px-4 py-2 rounded-lg bg-zinc-600 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors"
               >
-                重试
+                {pv.retry}
               </button>
             </div>
           </div>
@@ -826,7 +830,7 @@ export const PreviewPanel: React.FC = () => {
             <Suspense
               fallback={
                 <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                  加载文档…
+                  {pv.loadingDocument}
                 </div>
               }
             >
@@ -838,7 +842,7 @@ export const PreviewPanel: React.FC = () => {
             <Suspense
               fallback={
                 <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                  加载表格…
+                  {pv.loadingSpreadsheet}
                 </div>
               }
             >
@@ -849,7 +853,7 @@ export const PreviewPanel: React.FC = () => {
           <Suspense
             fallback={
               <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
-                加载编辑器…
+                {pv.loadingEditor}
               </div>
             }
           >
@@ -866,7 +870,7 @@ export const PreviewPanel: React.FC = () => {
           <Suspense
             fallback={
               <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
-                加载编辑器…
+                {pv.loadingEditor}
               </div>
             }
           >
@@ -891,7 +895,7 @@ export const PreviewPanel: React.FC = () => {
           <Suspense
             fallback={
               <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
-                加载表格…
+                {pv.loadingSpreadsheet}
               </div>
             }
           >

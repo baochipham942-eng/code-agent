@@ -14,6 +14,7 @@ import {
 } from '@shared/contract/workbenchPreset';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
+import { useI18n } from '../hooks/useI18n';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
@@ -47,6 +48,8 @@ import {
 type WorkspaceAssetDrawer = 'apps' | 'gallery' | 'feedback';
 
 export const WorkspacePreviewPanel: React.FC = () => {
+  const { t } = useI18n();
+  const wp = t.previewWorkspace.workspacePreview;
   const items = useWorkspacePreviewModel();
   const selectedId = useAppStore((state) => state.selectedWorkspacePreviewId);
   const setSelectedId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
@@ -312,8 +315,8 @@ export const WorkspacePreviewPanel: React.FC = () => {
         <div className="flex flex-1 items-center justify-center px-6 text-center">
           <div>
             <Clipboard className="mx-auto h-8 w-8 text-zinc-600" />
-            <div className="mt-3 text-sm text-zinc-300">暂无可预览文件</div>
-            <div className="mt-1 text-xs leading-relaxed text-zinc-500">当前会话还没有文件产物。</div>
+            <div className="mt-3 text-sm text-zinc-300">{wp.noPreviewableFiles}</div>
+            <div className="mt-1 text-xs leading-relaxed text-zinc-500">{wp.noArtifactsYet}</div>
           </div>
         </div>
       ) : (
@@ -381,7 +384,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
       {activeDrawer && (
         <button
           type="button"
-          aria-label="关闭资源面板"
+          aria-label={wp.closeAssetPanel}
           className="absolute inset-0 z-20 cursor-default bg-black/20"
           onClick={() => setActiveDrawer(null)}
         />
@@ -419,7 +422,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
             <div className="flex min-h-full items-center justify-center px-6 text-center">
               <div>
                 <Image className="mx-auto h-8 w-8 text-zinc-600" />
-                <div className="mt-3 text-sm text-zinc-300">暂无 Gallery 资产</div>
+                <div className="mt-3 text-sm text-zinc-300">{wp.noGalleryAssets}</div>
               </div>
             </div>
           ) : (
@@ -439,11 +442,11 @@ export const WorkspacePreviewPanel: React.FC = () => {
 
       <ConfirmDialog
         isOpen={isRestoreConfirmationOpen}
-        title="恢复到这个时间点？"
-        message="将把工作区文件恢复到这个时间点，当前修改会被覆盖。"
+        title={wp.restoreConfirmTitle}
+        message={wp.restoreConfirmMessage}
         variant="warning"
-        confirmText="确认恢复"
-        cancelText="取消"
+        confirmText={wp.restoreConfirmAction}
+        cancelText={wp.cancel}
         onConfirm={() => {
           setIsRestoreConfirmationOpen(false);
           void handleRestoreSelectedCheckpoint();

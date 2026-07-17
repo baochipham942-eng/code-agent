@@ -24,6 +24,7 @@ import { formatDesignBriefLabel } from '@shared/contract/designBrief';
 import type { DesignBrief } from '@shared/contract/designBrief';
 import type { DirectionTokens } from '@/design/direction-tokens';
 import { useAppStore } from '../../stores/appStore';
+import { useI18n } from '../../hooks/useI18n';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { isPreviewable } from '../../utils/previewable';
 import { buildWorkspacePreviewHtmlSrcdoc, type WorkspacePreviewRuntimeStatus } from '../../utils/workspacePreview';
@@ -282,6 +283,7 @@ function WorkspaceHtmlPreview({ item }: { item: WorkspacePreviewItem }) {
 }
 
 function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
+  const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
   const spec = parseDesignPptArtifact(item);
   const screenshots = spec?.screenshots || [];
@@ -344,7 +346,7 @@ function DesignPptPreview({ item }: { item: WorkspacePreviewItem }) {
       {pptxPath && selectedScreenshot && (
         <LocalityFeedbackBar
           anchor={{ kind: 'ppt', filePath: pptxPath, slideIndex: selectedIndex, displayName: item.title }}
-          locationLabel={`第 ${selectedIndex + 1} 页`}
+          locationLabel={t.previewWorkspace.parts.pageNumber.replace('{n}', String(selectedIndex + 1))}
         />
       )}
 

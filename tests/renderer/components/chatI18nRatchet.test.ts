@@ -42,6 +42,11 @@ const MIGRATED: string[] = [
   'features/sidebar/useSidebarDerivedSessions.ts',
   'features/sidebar/useSidebarRowActions.ts',
   'features/sidebar/useSidebarSessionActions.ts',
+  'PreviewPanel.tsx',
+  'WorkspacePreviewPanel.tsx',
+  'WorkspaceAssets.tsx',
+  'workspacePreview/helpers.ts',
+  'workspacePreview/parts.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

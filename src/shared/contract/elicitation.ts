@@ -41,3 +41,24 @@ export interface MCPElicitationResponse {
   action: 'accept' | 'decline' | 'cancel';
   content?: Record<string, string | number | boolean | string[]>;
 }
+
+/**
+ * MCP OAuth 授权 consent 请求。
+ */
+export interface MCPOAuthConsentRequest {
+  requestId: string;
+  serverName: string;
+  serverUrl: string;
+  configSource: string | undefined;
+  scope: string;
+  authorizationServer: string;
+  redirectHost: string;
+}
+
+/**
+ * 前端返回的 MCP OAuth consent 决策。
+ */
+export interface MCPOAuthConsentResponse {
+  requestId: string;
+  action: 'authorize' | 'decline';
+}

@@ -119,6 +119,9 @@ export const IPC_CHANNELS = {
   // MCP Elicitation channels (server requests user input)
   MCP_ELICITATION_REQUEST: 'mcp-elicitation:request',
   MCP_ELICITATION_RESPONSE: 'mcp-elicitation:response',
+  // MCP OAuth consent channels (server OAuth authorization opens system browser)
+  MCP_OAUTH_CONSENT_REQUEST: 'mcp-oauth-consent:request',
+  MCP_OAUTH_CONSENT_RESPONSE: 'mcp-oauth-consent:response',
 
   // Auth channels
   AUTH_GET_STATUS: 'auth:get-status',

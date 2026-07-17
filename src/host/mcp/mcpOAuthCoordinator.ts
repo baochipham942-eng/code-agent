@@ -11,12 +11,16 @@ const LISTEN_MAX_ATTEMPTS = 2;
 export interface BeginMcpOAuthFlowInput {
   serverName: string;
   serverIdentity: string;
+  serverUrl?: string;
+  configSource?: string;
 }
 
 export interface McpOAuthFlow {
   flowId: string;
   serverName: string;
   serverIdentity: string;
+  serverUrl?: string;
+  configSource?: string;
   state: string;
   redirectUrl: string;
   authorizationUrl?: string;
@@ -33,6 +37,13 @@ export interface McpOAuthCallbackResult {
 export interface McpOAuthCoordinatorOptions {
   timeoutMs?: number;
   openAuthorization?: (authUrl: URL, flow: McpOAuthFlow) => void | Promise<void>;
+}
+
+export class McpOAuthAuthorizationDeclinedError extends Error {
+  constructor(message = 'MCP OAuth authorization declined') {
+    super(message);
+    this.name = 'McpOAuthAuthorizationDeclinedError';
+  }
 }
 
 interface FlowRecord extends McpOAuthFlow {
@@ -53,9 +64,7 @@ export class McpOAuthCoordinator {
 
   constructor(options: McpOAuthCoordinatorOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? MCP_OAUTH_FLOW_TIMEOUT_MS;
-    this.openAuthorization = options.openAuthorization ?? (() => {
-      throw new Error('MCP OAuth consent flow not wired yet');
-    });
+    this.openAuthorization = options.openAuthorization ?? openAuthorizationWithConsent;
   }
 
   async beginFlow(input: BeginMcpOAuthFlowInput): Promise<McpOAuthFlow> {
@@ -98,7 +107,12 @@ export class McpOAuthCoordinator {
     }
 
     flow.authorizationUrl = input.authUrl.toString();
-    await this.openAuthorization(input.authUrl, this.snapshot(flow));
+    try {
+      await this.openAuthorization(input.authUrl, this.snapshot(flow));
+    } catch (error) {
+      this.cancelFlow(flow.flowId);
+      throw error;
+    }
   }
 
   waitForCallback(flowId: string): Promise<McpOAuthCallbackResult> {
@@ -160,6 +174,8 @@ export class McpOAuthCoordinator {
       flowId,
       serverName: input.serverName,
       serverIdentity: input.serverIdentity,
+      ...(input.serverUrl !== undefined ? { serverUrl: input.serverUrl } : {}),
+      ...(input.configSource !== undefined ? { configSource: input.configSource } : {}),
       state,
       redirectUrl,
       server,
@@ -279,6 +295,8 @@ export class McpOAuthCoordinator {
       flowId: flow.flowId,
       serverName: flow.serverName,
       serverIdentity: flow.serverIdentity,
+      ...(flow.serverUrl !== undefined ? { serverUrl: flow.serverUrl } : {}),
+      ...(flow.configSource !== undefined ? { configSource: flow.configSource } : {}),
       state: flow.state,
       redirectUrl: flow.redirectUrl,
       ...(flow.authorizationUrl ? { authorizationUrl: flow.authorizationUrl } : {}),
@@ -300,6 +318,28 @@ export class McpOAuthCoordinator {
     });
     res.end(body);
   }
+}
+
+async function openAuthorizationWithConsent(authUrl: URL, flow: McpOAuthFlow): Promise<void> {
+  const [{ requestMcpOAuthConsent }, { openExternal }] = await Promise.all([
+    import('./mcpOAuthConsent'),
+    import('../platform/nativeShell'),
+  ]);
+  const redirectHost = new URL(flow.redirectUrl).host;
+  const consentGranted = await requestMcpOAuthConsent({
+    serverName: flow.serverName,
+    serverUrl: flow.serverUrl ?? '',
+    configSource: flow.configSource,
+    scope: authUrl.searchParams.get('scope') ?? '',
+    authorizationServer: authUrl.origin,
+    redirectHost,
+  });
+
+  if (!consentGranted) {
+    throw new McpOAuthAuthorizationDeclinedError();
+  }
+
+  await openExternal(authUrl.toString());
 }
 
 let mcpOAuthCoordinator: McpOAuthCoordinator | undefined;

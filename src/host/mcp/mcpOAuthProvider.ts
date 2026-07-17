@@ -162,6 +162,8 @@ export function createOAuthProviderForServer(
     activeFlow = await coordinator.beginFlow({
       serverName: config.name,
       serverIdentity,
+      serverUrl: new URL(config.serverUrl).toString(),
+      ...(config.scope !== undefined ? { configSource: config.scope } : {}),
     });
     return activeFlow;
   };

@@ -17,6 +17,7 @@ import type {
   OpenchronicleStatus,
 } from '../../../../../shared/contract/openchronicle';
 import { DEFAULT_OPENCHRONICLE_SETTINGS } from '../../../../../shared/contract/openchronicle';
+import { Toggle } from '../../../primitives/Toggle';
 
 const logger = createLogger('OpenchronicleSettings');
 
@@ -57,23 +58,13 @@ export const OpenchronicleToggleSwitch: React.FC<OpenchronicleToggleSwitchProps>
 }) => {
   const { t } = useI18n();
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={t.settings.openchronicle.control.enableScreenMemory}
-      onClick={onToggle}
+    <Toggle
+      size="md"
+      checked={checked}
       disabled={busy}
-      className={`relative inline-flex h-6 w-12 shrink-0 items-center rounded-full transition-colors focus:outline-hidden ${
-        checked ? 'bg-emerald-500' : 'bg-zinc-600'
-      } ${busy ? 'cursor-wait opacity-50' : 'cursor-pointer'}`}
-    >
-      <span
-        className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-          checked ? 'translate-x-6' : 'translate-x-0'
-        }`}
-      />
-    </button>
+      onChange={() => onToggle()}
+      aria-label={t.settings.openchronicle.control.enableScreenMemory}
+    />
   );
 };
 

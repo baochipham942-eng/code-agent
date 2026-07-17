@@ -177,7 +177,15 @@ vi.mock('../../../src/renderer/utils/platform', () => ({
   isWebMode: () => false,
 }));
 
-import { ChatView, defaultSuggestions } from '../../../src/renderer/components/ChatView';
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
+
+import { ChatView, buildDefaultSuggestions } from '../../../src/renderer/components/ChatView';
+import { zh } from '../../../src/renderer/i18n/zh';
+
+const defaultSuggestions = buildDefaultSuggestions(zh);
 
 describe('ChatView session shell', () => {
   it('keeps session actions out of the chat body', () => {

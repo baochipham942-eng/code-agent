@@ -11,6 +11,7 @@ import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
 import { TargetContextIcon } from './TargetContextIcon';
 import { useAppStore } from '../../../../../stores/appStore';
+import { useI18n } from '../../../../../hooks/useI18n';
 import { UI } from '@shared/constants';
 
 interface Props {
@@ -52,6 +53,7 @@ function getWriteFilePath(toolCall: ToolCall): string | null {
 export function ToolHeader({ toolCall, status }: Props) {
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
+  const { t } = useI18n();
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示，
   // 同时屏蔽 params 副标题以避免语义重复；没有时 fallback 到原有渲染。
   // feature flag 关闭时强制 fallback，便于 A/B 对比。
@@ -61,7 +63,7 @@ export function ToolHeader({ toolCall, status }: Props) {
   const displayName = hasShortDesc
     ? toolCall.shortDescription!.trim()
     : getToolDisplayName(toolCall.name);
-  const statusLabel = getToolStatusLabel(toolCall, status);
+  const statusLabel = getToolStatusLabel(toolCall, status, t);
   const writeFilePath = getWriteFilePath(toolCall);
   const params = hasShortDesc || writeFilePath ? '' : formatParams(toolCall);
   const duration = toolCall.result?.duration;

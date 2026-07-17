@@ -15,6 +15,8 @@ import {
   isAutoLoadedRetry,
   isEscalatedToolError,
 } from '../../../utils/toolExecutionPresentation';
+import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
 
 interface ToolStepGroupProps {
   nodes: TraceNode[];
@@ -28,6 +30,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   sessionId,
   defaultExpanded = false,
 }) => {
+  const { t } = useI18n();
   const label = useMemo(() => {
     if (nodes.length === 1) {
       const tc = nodes[0].toolCall;
@@ -112,7 +115,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     }
   }, [forceExpandOnFailure]);
 
-  const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls), [toolCalls]);
+  const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls, t), [toolCalls, t]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
   }, [toolCalls]);
@@ -145,32 +148,32 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         {status === 'error' && (
           <span
             className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-red-400' : 'bg-zinc-500'}`}
-            aria-label="失败"
+            aria-label={t.toolGroup.statusFailed}
           />
         )}
         {status === 'partial' && (
           <span
             className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${hasEscalatedError ? 'bg-amber-400' : 'bg-zinc-500'}`}
-            aria-label="部分失败"
+            aria-label={t.toolGroup.statusPartial}
           />
         )}
         {status !== 'ok' && (
-          <span className={`flex-shrink-0 ${getToolGroupStatusClass(status, hasEscalatedError)}`}>{getToolGroupStatusLabel(status)}</span>
+          <span className={`flex-shrink-0 ${getToolGroupStatusClass(status, hasEscalatedError)}`}>{getToolGroupStatusLabel(status, t)}</span>
         )}
         <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
         {recoveredCount > 0 && (
           <span
             className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500"
-            title="这次失败后已自动恢复"
+            title={t.toolGroup.recoveredTitle}
           >
-            已恢复
+            {t.toolGroup.recovered}
           </span>
         )}
         {status !== 'ok' && resultSummary && (
           <span className="hidden max-w-[220px] truncate text-zinc-600 sm:inline">{resultSummary}</span>
         )}
         {status !== 'ok' && outputCount > 0 && (
-          <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{outputCount} output{outputCount > 1 ? 's' : ''}</span>
+          <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{t.toolGroup.outputCount.replace('{count}', String(outputCount))}</span>
         )}
         {totalDuration && (
           <span className="flex-shrink-0 text-[10px] text-zinc-600">{totalDuration}</span>
@@ -234,15 +237,15 @@ function isReadOrSearchTool(name: string): boolean {
  *  · 单工具其它（成功/空）→ summarizeTool 的结果摘要（如「找到 3 个文件」），保留。
  * 纯函数，便于单测。
  */
-export function buildToolGroupHeadSummary(toolCalls: ToolCall[]): string | null {
+export function buildToolGroupHeadSummary(toolCalls: ToolCall[], t: Translations): string | null {
   if (toolCalls.length === 0) return null;
-  if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls);
+  if (toolCalls.length > 1) return summarizeToolGroupResults(toolCalls, t);
   const only = toolCalls[0];
   if (only.result?.success === false) return null;
   return summarizeTool(only);
 }
 
-function summarizeToolGroupResults(toolCalls: ToolCall[]): string | null {
+function summarizeToolGroupResults(toolCalls: ToolCall[], t: Translations): string | null {
   let failed = 0;
   let emptySearches = 0;
   let completed = 0;
@@ -265,9 +268,9 @@ function summarizeToolGroupResults(toolCalls: ToolCall[]): string | null {
   }
 
   const parts: string[] = [];
-  if (failed > 0) parts.push(`${failed} failed`);
-  if (emptySearches > 0) parts.push(`${emptySearches} empty`);
-  if (completed > 0) parts.push(`${completed} completed`);
+  if (failed > 0) parts.push(t.toolGroup.summaryFailed.replace('{count}', String(failed)));
+  if (emptySearches > 0) parts.push(t.toolGroup.summaryEmpty.replace('{count}', String(emptySearches)));
+  if (completed > 0) parts.push(t.toolGroup.summaryCompleted.replace('{count}', String(completed)));
 
   return parts.length > 0 ? parts.join(', ') : null;
 }
@@ -279,11 +282,11 @@ function isEmptySearchResult(toolCall: ToolCall): boolean {
   return /(?:No matches found|No files matched the pattern|No matches|0 matches)/i.test(output.trim());
 }
 
-function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok'): string {
-  if (status === 'streaming') return 'running';
-  if (status === 'partial') return 'partial';
-  if (status === 'error') return 'failed';
-  return 'completed';
+function getToolGroupStatusLabel(status: 'streaming' | 'partial' | 'error' | 'ok', t: Translations): string {
+  if (status === 'streaming') return t.toolGroup.statusRunning;
+  if (status === 'partial') return t.toolGroup.statusPartial;
+  if (status === 'error') return t.toolGroup.statusFailed;
+  return t.toolGroup.statusCompleted;
 }
 
 // hasEscalatedError=false（探索性失败，非用户需介入）一律用中性色，不顶红/顶黄——

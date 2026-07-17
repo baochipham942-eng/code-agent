@@ -1,6 +1,8 @@
 // ============================================================================
 // TraceNodeRenderer - Render individual trace nodes by type
-// Reuses existing MessageContent, ToolCallDisplay, UserMessage components
+// Reuses existing MessageContent, ToolCallDisplay components; UserNode below
+// is its own implementation (not MessageBubble/UserMessage.tsx, which was
+// dead code removed in ADR-043 T2 遗留刀2).
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';

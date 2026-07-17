@@ -904,7 +904,7 @@ const ArtifactOwnershipNode: React.FC<{ timeline: TurnTimelinePayload; sessionId
 const SystemErrorNode: React.FC<{ content: string }> = ({ content }) => {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
-  const humanized = humanizeToolError(content);
+  const humanized = humanizeToolError(content, undefined, t);
   const summary = humanized?.summary ?? t.systemError.fallbackSummary;
   const detail = humanized?.detail ?? t.systemError.fallbackDetail;
 

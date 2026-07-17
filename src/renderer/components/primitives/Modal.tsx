@@ -270,6 +270,7 @@ export const ModalHeader: React.FC<ModalHeaderProps> = ({
   onClose,
   children,
 }) => {
+  const { t } = useI18n();
   return (
     <>
       {icon && (
@@ -286,7 +287,7 @@ export const ModalHeader: React.FC<ModalHeaderProps> = ({
         <button
           onClick={onClose}
           className="p-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-          aria-label="Close modal"
+          aria-label={t.common.close}
         >
           <X className="w-5 h-5" />
         </button>

@@ -939,47 +939,23 @@ export const Sidebar: React.FC = () => {
                 {advancedToolsOpen && (
                   <div className="pb-1">
                     <AccountMenuItem
-                      onClick={() => {
-                        setShowLab(true);
-                        setShowUserMenu(false);
-                      }}
-                      icon={
-                        <FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />
-                      }
+                      onClick={() => { setShowLab(true); setShowUserMenu(false); }}
+                      icon={<FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
                       label="模型训练"
                     />
                     <AccountMenuItem
-                      onClick={() => {
-                        setShowTimeCapabilityCenter(!showTimeCapabilityCenter);
-                        setShowUserMenu(false);
-                      }}
-                      icon={
-                        <CalendarDays
-                          className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`}
-                        />
-                      }
+                      onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); setShowUserMenu(false); }}
+                      icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />}
                       label="时间与能力"
                     />
                     <AccountMenuItem
-                      onClick={() => {
-                        setShowDesktopPanel(!showDesktopPanel);
-                        setShowUserMenu(false);
-                      }}
-                      icon={
-                        <Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
-                      }
+                      onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
+                      icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
                       label="桌面采集"
                     />
                     <AccountMenuItem
-                      onClick={() => {
-                        setShowBrowserSurfacePanel(true);
-                        setShowUserMenu(false);
-                      }}
-                      icon={
-                        <Globe
-                          className={`w-4 h-4 ${showBrowserSurfacePanel ? 'text-sky-400' : 'text-sky-400/80'}`}
-                        />
-                      }
+                      onClick={() => { setShowBrowserSurfacePanel(true); setShowUserMenu(false); }}
+                      icon={<Globe className={`w-4 h-4 ${showBrowserSurfacePanel ? 'text-sky-400' : 'text-sky-400/80'}`} />}
                       label="浏览器"
                     />
                   </div>

@@ -142,11 +142,11 @@ Failure expectations:
 | Human / agent | UI dogfood A (Surface import + managed applyCookies) | **PASS 2026-07-17** (3544 cookies / 24 domains; crypto fix landed) |
 | Agent | Menu 高级工具→浏览器 | **PASS** (`Sidebar.tsx` restored) |
 | Agent | Relay host listen/config/extension path | **PASS** (:23001 listening, token, extension dir) |
-| Agent | Playwright load-extension connect | **FAIL on this Mac** (MV3 SW never starts under Playwright Chrome) |
-| Human | UI dogfood B attach + C engine=relay click | **pending** (load unpacked in real Chrome) |
-| Human | Merge to main after B attach or accept partial | pending |
+| Agent | Playwright `--load-extension` connect | **FAIL on Chrome 150** (MV3 SW never starts); use CDP `Extensions.loadUnpacked` instead |
+| Agent | UI dogfood B attach + C engine=relay | **PASS 2026-07-17** (CDP loadUnpacked + attach + live actions) |
+| Human | Merge to main after CI green | via PR #422 |
 
-### Human Relay attach (5 min)
+### Operator Relay attach (manual path, still valid)
 
 1. Neo → 用户菜单 → 高级工具 → **浏览器** → **启动 Relay**
 2. **打开扩展目录** → Chrome `chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选 `resources/browser-relay-extension`
@@ -154,4 +154,4 @@ Failure expectations:
 4. 打开已登录站点 → 扩展 popup → **Attach current tab**
 5. Surface **刷新标签** → 应见 attached；Agent `browser_action` + `engine: "relay"`
 
-After A + menu + relay host green; B attach still one human step. Merge when attach confirmed or product accepts host-only relay packaging.
+Dogfood A/B/C green on worktree; remaining manual polish: session markdown export redaction re-check, Keychain prompt copy, real logged-in site attach.

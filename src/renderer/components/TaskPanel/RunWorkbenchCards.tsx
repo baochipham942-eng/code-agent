@@ -50,6 +50,31 @@ function runStatusClass(status: RunUiStatus): string {
   }
 }
 
+/** run.status（RunUiStatus）不是 TaskRecord['status']，两套枚举不共用同一份
+ * 翻译表——running/completed/blocked/cancelled 复用既有 rw.status* 键，
+ * planning/waiting_approval/using_tools/verifying 是 RunUiStatus 独有值。 */
+function getRunUiStatusLabel(status: RunUiStatus, t: Translations): string {
+  const rw = t.taskStatusPanels.runWorkbench;
+  switch (status) {
+    case 'completed':
+      return rw.statusCompleted;
+    case 'blocked':
+      return rw.statusBlocked;
+    case 'cancelled':
+      return rw.statusCancelled;
+    case 'waiting_approval':
+      return rw.statusWaitingApproval;
+    case 'using_tools':
+      return rw.statusUsingTools;
+    case 'verifying':
+      return rw.statusVerifying;
+    case 'planning':
+    case 'running':
+    default:
+      return rw.statusRunning;
+  }
+}
+
 function subagentStatusClass(status: SubagentRunView['status']): string {
   switch (status) {
     case 'completed':
@@ -75,6 +100,7 @@ interface RunOverviewProps {
 }
 
 export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
+  const { t } = useI18n();
   const { run, memoryActivities } = model;
   const isCompleted = run.status === 'completed';
 
@@ -92,7 +118,7 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
               <span className="truncate text-xs text-zinc-300">{run.phase}</span>
             ) : (
               <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
-                {run.status}
+                {getRunUiStatusLabel(run.status, t)}
               </span>
             )}
             {run.activeToolName && (
@@ -214,7 +240,7 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
         >
           <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-sky-300" />
           <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${runStatusClass(run.status)}`}>
-            {run.status}
+            {getRunUiStatusLabel(run.status, t)}
           </span>
           <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{run.phase}</span>
           {run.activeToolName && (

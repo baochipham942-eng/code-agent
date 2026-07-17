@@ -48,6 +48,28 @@ describe('TaskDashboardSummary 运行中空态（UI 审计 #8）', () => {
     }
   });
 
+  // RunUiStatus 徽章此前直出裸英文枚举值（'using_tools'/'waiting_approval' 等）。
+  // 现在走 getRunUiStatusLabel，回归钉子：不同状态渲染人话文案，不再是枚举字面量。
+  it('运行状态徽章显示人话文案，不是裸英文枚举值', () => {
+    const cases: Array<[string, string]> = [
+      ['using_tools', '使用工具中'],
+      ['waiting_approval', '等待确认'],
+      ['verifying', '核实中'],
+      ['planning', '进行中'],
+      ['running', '进行中'],
+    ];
+    for (const [status, expectedLabel] of cases) {
+      const html = renderToStaticMarkup(
+        React.createElement(TaskDashboardSummary, {
+          tasks: [],
+          run: makeRun(status, '规划任务'),
+        }),
+      );
+      expect(html, status).toContain(expectedLabel);
+      expect(html, status).not.toMatch(new RegExp(`>${status}<`));
+    }
+  });
+
   it('live 空态显示当前工具名', () => {
     const html = renderToStaticMarkup(
       React.createElement(TaskDashboardSummary, {

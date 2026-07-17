@@ -8,6 +8,7 @@ import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
 import { chatInputEn } from './chatInput';
 import { sidebarEn } from './sidebar';
+import { previewWorkspaceEn } from './previewWorkspace';
 
 export const en: Translations = {
   // Common
@@ -854,6 +855,7 @@ export const en: Translations = {
   ...chatTranscriptEn,
   ...chatInputEn,
   ...sidebarEn,
+  ...previewWorkspaceEn,
 
   mermaid: {
     zoomIn: 'Zoom in',

@@ -14,6 +14,7 @@ import {
 } from '@shared/contract/workbenchPreset';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
+import { useI18n } from '../hooks/useI18n';
 import { useAppStore } from '../stores/appStore';
 import { useComposerStore } from '../stores/composerStore';
 import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
@@ -47,6 +48,8 @@ import {
 type WorkspaceAssetDrawer = 'apps' | 'gallery' | 'feedback';
 
 export const WorkspacePreviewPanel: React.FC = () => {
+  const { t } = useI18n();
+  const wp = t.previewWorkspace.workspacePreview;
   const items = useWorkspacePreviewModel();
   const selectedId = useAppStore((state) => state.selectedWorkspacePreviewId);
   const setSelectedId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
@@ -123,7 +126,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
       if (!result?.success) {
         throw new Error(result?.error || 'Checkpoint restore failed');
       }
-      setRevisionActionMessage(`Restored ${result.filesRestored} file${result.filesRestored === 1 ? '' : 's'}.`);
+      setRevisionActionMessage(wp.restoredFiles.replace('{count}', String(result.filesRestored)));
     } catch (error) {
       setRevisionActionError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -271,22 +274,25 @@ export const WorkspacePreviewPanel: React.FC = () => {
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <Clipboard className="h-4 w-4 shrink-0 text-cyan-300" />
-            <div className="truncate text-sm font-semibold text-zinc-100">Preview</div>
+            <div className="truncate text-sm font-semibold text-zinc-100">{wp.title}</div>
           </div>
           <div className="mt-0.5 truncate text-xs text-zinc-500">
-            {items.length} files · {galleryItems.length} visuals · {appAssetCount} apps
+            {wp.statsSummary
+              .replace('{files}', String(items.length))
+              .replace('{visuals}', String(galleryItems.length))
+              .replace('{apps}', String(appAssetCount))}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <AssetToolbarButton
-            label={`Prompt Apps (${appAssetCount})`}
+            label={wp.promptAppsButton.replace('{count}', String(appAssetCount))}
             icon={<LayoutGrid className="h-4 w-4" />}
             count={appAssetCount}
             active={activeDrawer === 'apps'}
             onClick={() => setActiveDrawer((current) => (current === 'apps' ? null : 'apps'))}
           />
           <AssetToolbarButton
-            label={`Gallery (${galleryItems.length})`}
+            label={wp.galleryButton.replace('{count}', String(galleryItems.length))}
             icon={<Image className="h-4 w-4" />}
             count={galleryItems.length}
             active={activeDrawer === 'gallery'}
@@ -294,13 +300,13 @@ export const WorkspacePreviewPanel: React.FC = () => {
           />
           <div className="mx-1 h-5 w-px bg-white/[0.08]" />
           <AssetToolbarButton
-            label={copied ? 'Copied' : 'Copy preview'}
+            label={copied ? wp.copied : wp.copyPreview}
             icon={copied ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}
             disabled={!selected}
             onClick={copySelected}
           />
           <AssetToolbarButton
-            label="Export bundle"
+            label={wp.exportBundle}
             icon={<Archive className="h-4 w-4" />}
             disabled={!selected?.file?.path}
             onClick={exportSelectedBundle}
@@ -312,15 +318,15 @@ export const WorkspacePreviewPanel: React.FC = () => {
         <div className="flex flex-1 items-center justify-center px-6 text-center">
           <div>
             <Clipboard className="mx-auto h-8 w-8 text-zinc-600" />
-            <div className="mt-3 text-sm text-zinc-300">暂无可预览文件</div>
-            <div className="mt-1 text-xs leading-relaxed text-zinc-500">当前会话还没有文件产物。</div>
+            <div className="mt-3 text-sm text-zinc-300">{wp.noPreviewableFiles}</div>
+            <div className="mt-1 text-xs leading-relaxed text-zinc-500">{wp.noArtifactsYet}</div>
           </div>
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="shrink-0 border-b border-white/[0.06] p-3">
             <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-zinc-500">
-              <span>Files</span>
+              <span>{wp.filesHeader}</span>
               <span>{items.length}</span>
             </div>
             <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
@@ -381,7 +387,7 @@ export const WorkspacePreviewPanel: React.FC = () => {
       {activeDrawer && (
         <button
           type="button"
-          aria-label="关闭资源面板"
+          aria-label={wp.closeAssetPanel}
           className="absolute inset-0 z-20 cursor-default bg-black/20"
           onClick={() => setActiveDrawer(null)}
         />
@@ -389,8 +395,8 @@ export const WorkspacePreviewPanel: React.FC = () => {
 
       {activeDrawer === 'apps' && (
         <AssetDrawerPanel
-          title="Prompt Apps"
-          subtitle={`${appAssetCount} saved`}
+          title={wp.promptAppsTitle}
+          subtitle={wp.savedCount.replace('{count}', String(appAssetCount))}
           onClose={() => setActiveDrawer(null)}
         >
           <div className="flex min-h-full flex-col">
@@ -411,15 +417,15 @@ export const WorkspacePreviewPanel: React.FC = () => {
 
       {activeDrawer === 'gallery' && (
         <AssetDrawerPanel
-          title="Gallery"
-          subtitle={`${galleryItems.length} visual assets`}
+          title={wp.galleryTitle}
+          subtitle={wp.visualAssets.replace('{count}', String(galleryItems.length))}
           onClose={() => setActiveDrawer(null)}
         >
           {galleryItems.length === 0 ? (
             <div className="flex min-h-full items-center justify-center px-6 text-center">
               <div>
                 <Image className="mx-auto h-8 w-8 text-zinc-600" />
-                <div className="mt-3 text-sm text-zinc-300">暂无 Gallery 资产</div>
+                <div className="mt-3 text-sm text-zinc-300">{wp.noGalleryAssets}</div>
               </div>
             </div>
           ) : (
@@ -439,11 +445,11 @@ export const WorkspacePreviewPanel: React.FC = () => {
 
       <ConfirmDialog
         isOpen={isRestoreConfirmationOpen}
-        title="恢复到这个时间点？"
-        message="将把工作区文件恢复到这个时间点，当前修改会被覆盖。"
+        title={wp.restoreConfirmTitle}
+        message={wp.restoreConfirmMessage}
         variant="warning"
-        confirmText="确认恢复"
-        cancelText="取消"
+        confirmText={wp.restoreConfirmAction}
+        cancelText={wp.cancel}
         onConfirm={() => {
           setIsRestoreConfirmationOpen(false);
           void handleRestoreSelectedCheckpoint();

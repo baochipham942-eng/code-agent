@@ -5,12 +5,18 @@ import { describe, expect, it, vi } from 'vitest';
 // useAppStore 以 selector 形式调用，mock 成受控状态；ipcService 仅在 handler 用，mock 防导入副作用。
 const mockState = vi.hoisted(() => ({ open: true }));
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (s: unknown) => unknown) =>
-    selector({
+  // useI18n 无 selector 整取 store,组件本体带 selector 取——两种调用形状都要接住
+  useAppStore: (selector?: (s: unknown) => unknown) => {
+    const state = {
       devServerLauncherOpen: mockState.open,
       closeDevServerLauncher: () => {},
       openLivePreview: () => {},
-    }),
+      language: 'zh',
+      setLanguage: () => {},
+      cloudUIStrings: undefined,
+    };
+    return selector ? selector(state) : state;
+  },
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   invokeDomain: async () => ({}),

@@ -269,13 +269,10 @@ function makeToolContext(provider: string, mode: 'headless' | 'visible'): ToolCo
     requestPermission: async () => true,
     executionIntent: {
       browserSessionMode: 'managed',
-      browserProvider: provider,
       preferBrowserSession: true,
       allowBrowserAutomation: true,
       browserSessionSnapshot: {
         ready: true,
-        provider,
-        mode,
       },
     },
   };
@@ -887,7 +884,7 @@ async function createRecipeSourceTrace(
 
 function getProvider(args: ReturnType<typeof parseArgs>): string {
   const value = args.options.provider;
-  if (value === undefined || value === true) {
+  if (value === undefined || typeof value === 'boolean') {
     return SYSTEM_CHROME_CDP_PROVIDER;
   }
   return Array.isArray(value) ? value[value.length - 1] : value;

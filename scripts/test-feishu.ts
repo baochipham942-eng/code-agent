@@ -33,9 +33,10 @@ async function testFeishuConnection() {
 
   // 创建 WebSocket 客户端
   const wsClient = new lark.WSClient({
-    appId: APP_ID,
-    appSecret: APP_SECRET,
-    eventDispatcher,
+    // Guarded by the module-level `if (!APP_ID || !APP_SECRET) process.exit(1)` check above;
+    // TS can't carry that narrowing across the function boundary.
+    appId: APP_ID!,
+    appSecret: APP_SECRET!,
     loggerLevel: lark.LoggerLevel.info,
   });
 
@@ -44,7 +45,7 @@ async function testFeishuConnection() {
   console.log('\n等待连接建立中...\n');
 
   // 不用 await，让它在后台建立连接
-  wsClient.start().catch(() => {
+  wsClient.start({ eventDispatcher }).catch(() => {
     // 忽略错误，继续保持运行
   });
 

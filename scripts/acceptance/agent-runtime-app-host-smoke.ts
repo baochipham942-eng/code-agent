@@ -1,4 +1,5 @@
-import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { execFileSync, spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
@@ -23,7 +24,7 @@ import {
 
 interface SmokeChromeSession {
   browser: Browser;
-  chrome: ChildProcessWithoutNullStreams;
+  chrome: ChildProcessByStdio<null, Readable, Readable>;
   executable: string;
   port: number;
   profileDir: string;
@@ -124,7 +125,7 @@ async function ensureBuild(skipBuild: boolean): Promise<void> {
 
 async function waitForHealth(
   baseUrl: string,
-  server: ChildProcessWithoutNullStreams,
+  server: ChildProcessByStdio<null, Readable, Readable>,
   output: () => string,
 ): Promise<{ ok: boolean; status: number; body: string }> {
   const start = Date.now();
@@ -156,7 +157,7 @@ Last body: ${lastBody || 'N/A'}
 ${output()}`);
 }
 
-function startAppHost(port: number, dataDir: string): { child: ChildProcessWithoutNullStreams; output: () => string } {
+function startAppHost(port: number, dataDir: string): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
   let logs = '';
   const child = spawn('node', ['dist/web/webServer.cjs'], {
     cwd: process.cwd(),
@@ -184,7 +185,7 @@ function startAppHost(port: number, dataDir: string): { child: ChildProcessWitho
   return { child, output: () => logs };
 }
 
-async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
+async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
   if (child.killed || child.exitCode !== null) return;
 
   await new Promise<void>((resolve) => {
@@ -241,7 +242,7 @@ async function launchSmokeChromeSession(options: { profilePrefix: string }): Pro
 
 async function connectToSmokeChrome(
   port: number,
-  chrome: ChildProcessWithoutNullStreams,
+  chrome: ChildProcessByStdio<null, Readable, Readable>,
   output: () => string,
   timeoutMs = 10_000,
 ): Promise<Browser> {

@@ -5,8 +5,9 @@
  */
 
 import { config } from 'dotenv';
-import { ModelRouter } from '../src/host/model/ModelRouter';
-import type { ToolDefinition, ModelConfig } from '../src/shared/types';
+import { ModelRouter } from '../src/host/model/modelRouter';
+import type { ToolDefinition } from '../src/shared/contract/tool';
+import type { ModelConfig } from '../src/shared/contract/model';
 
 // Load environment variables
 config();
@@ -30,6 +31,8 @@ const testTools: ToolDefinition[] = [
       },
       required: ['path'],
     },
+    requiresPermission: false,
+    permissionLevel: 'read',
   },
   {
     name: 'read_file',
@@ -41,6 +44,8 @@ const testTools: ToolDefinition[] = [
       },
       required: ['file_path'],
     },
+    requiresPermission: false,
+    permissionLevel: 'read',
   },
 ];
 

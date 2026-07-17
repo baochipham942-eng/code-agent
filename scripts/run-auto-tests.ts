@@ -47,8 +47,8 @@ function parseArgs(): {
     ids: undefined as string[] | undefined,
     stopOnFailure: false,
     verbose: false,
-    provider: DEFAULT_PROVIDER,
-    model: DEFAULT_MODEL,
+    provider: DEFAULT_PROVIDER as string,
+    model: DEFAULT_MODEL as string,
     runs: 1,
     real: false,
     help: false,
@@ -235,7 +235,7 @@ async function main(): Promise<void> {
         console.log('📦 Build complete\n');
       } catch (err: unknown) {
         const stderr = typeof err === 'object' && err !== null && 'stderr' in err
-          ? (err as { stderr?: { toString?: () => string } }).stderr?.toString()
+          ? (err as { stderr?: { toString?: () => string } }).stderr?.toString?.()
           : undefined;
         const message = err instanceof Error ? err.message : String(err);
         console.error('❌ Build failed:', stderr || message);

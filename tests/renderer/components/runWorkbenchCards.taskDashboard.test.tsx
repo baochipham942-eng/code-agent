@@ -1,8 +1,9 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
+import { TaskDashboardSummary, getRunUiStatusLabel } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -68,6 +69,12 @@ describe('TaskDashboardSummary 运行中空态（UI 审计 #8）', () => {
       expect(html, status).toContain(expectedLabel);
       expect(html, status).not.toMatch(new RegExp(`>${status}<`));
     }
+  });
+
+  // 未知 RunUiStatus 值不该静默吞成「运行中」——兜底显示原值（同 A-7 惯例）。
+  it('getRunUiStatusLabel 对未知状态值兜底显示原值，不是 statusRunning', () => {
+    expect(getRunUiStatusLabel('exotic_status' as never, zh)).toBe('exotic_status');
+    expect(getRunUiStatusLabel('running', zh)).toBe(zh.taskStatusPanels.runWorkbench.statusRunning);
   });
 
   it('live 空态显示当前工具名', () => {

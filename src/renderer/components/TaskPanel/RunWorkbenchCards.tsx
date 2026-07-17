@@ -53,7 +53,7 @@ function runStatusClass(status: RunUiStatus): string {
 /** run.status（RunUiStatus）不是 TaskRecord['status']，两套枚举不共用同一份
  * 翻译表——running/completed/blocked/cancelled 复用既有 rw.status* 键，
  * planning/waiting_approval/using_tools/verifying 是 RunUiStatus 独有值。 */
-function getRunUiStatusLabel(status: RunUiStatus, t: Translations): string {
+export function getRunUiStatusLabel(status: RunUiStatus, t: Translations): string {
   const rw = t.taskStatusPanels.runWorkbench;
   switch (status) {
     case 'completed':
@@ -70,8 +70,10 @@ function getRunUiStatusLabel(status: RunUiStatus, t: Translations): string {
       return rw.statusVerifying;
     case 'planning':
     case 'running':
-    default:
       return rw.statusRunning;
+    default:
+      // 未知状态兜底显示原值（同 A-7 run.status 映射模式），别静默吞成「运行中」。
+      return status;
   }
 }
 

@@ -20,6 +20,9 @@ on:
       - 'vercel-api/**'
       - 'package.json'
       - 'package-lock.json'
+      # tsc 门真读的配置：改窄了 include（= 悄悄缩小门的覆盖面）却一道门都不跑，
+      # 是 poppler lock 那个坑的同形状。
+      - 'tsconfig.json'
       - 'playwright.config.ts'
       - 'tests/e2e/playwright.e2e.config.ts'
       - '.github/workflows/release.yml'
@@ -103,6 +106,24 @@ jobs:
         # 静默 fallback 到 in-memory），真实编译验证由下方 full job 的 --build-from-source 兜底。
         working-directory: node_modules/better-sqlite3
         run: ../.bin/prebuild-install || true
+
+      - name: Typecheck (tsc — src/ only)
+        # CI 此前**没有任何 tsc 门**：smoke/full 跑的 vitest 都是子集，类型错只要不落在子集
+        # 覆盖的文件里就能一路溜进 main（2026-07-17 实测：ADR-041 在 main 上留了 2 个 tsc
+        # error 没人发现）。全量 vitest 太贵，tsc 只要几十秒——本仓最便宜的一道真门。
+        #
+        # ⚠️ 这道门的盲区（明写，别当它是全量门）：`npm run typecheck` = `tsc --noEmit`，而
+        # tsconfig.json 的 include 只有 `src/**`——**tests/ 和 scripts/ 完全在门外**。所以它
+        # 抓不到 A-8 那类漏网调用方（给 formatProviderFallbackToast 加 t 参数漏了
+        # scripts/acceptance/model-strategy-fallback-visibility.ts），也抓不到测试侧的组合断裂。
+        #
+        # 为什么不顺手把 include 扩到 tests+scripts：2026-07-17 实测过，扩了之后有 **1220 个
+        # 存量 error**（tests 1052 / scripts 168；src 为 0）——那是一个独立的债务清理项目，
+        # 不是本批能顺手带的，扩容即全红。要做得先立棘轮基线再逐批清偿。
+        # （另注：初次探测误报"只有 1 个 error"，因为 tests/e2e/claude-e2e/fixtures 里
+        # bug-syntax-error 这个**故意**写坏的样例工程抛 TS1005，让 tsc 提前中止了后续检查。
+        # 真要扩容，exclude 必须先排除那个 fixtures 目录，否则读数是假的。）
+        run: npm run typecheck
 
       - name: Typecheck Vercel control-plane
         # vercel-api 是独立 package，不属于 root npm workspace；root npm ci 不会装它自己的依赖。

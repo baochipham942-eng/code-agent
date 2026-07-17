@@ -8,8 +8,8 @@ import type {
   CanUseToolFn,
   Logger,
   PlanModeController,
-  AgentEvent,
 } from '../../../../../src/host/protocol/tools';
+import type { AgentEvent } from '../../../../../src/host/protocol/events';
 import {
   enterPlanModeModule,
   DEFAULT_ENTER_REASON,
@@ -127,7 +127,7 @@ describe('enterPlanModeModule (native)', () => {
     });
 
     it('emits plan_mode_entered AgentEvent', async () => {
-      const emit = vi.fn<[AgentEvent], void>();
+      const emit = vi.fn<(event: AgentEvent) => void>();
       const ctx = makeCtx({ emit });
       await run({ reason: 'abc' }, ctx);
       expect(emit).toHaveBeenCalledTimes(1);

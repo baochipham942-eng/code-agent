@@ -8,8 +8,8 @@ import type {
   CanUseToolFn,
   Logger,
   PlanModeController,
-  AgentEvent,
 } from '../../../../../src/host/protocol/tools';
+import type { AgentEvent } from '../../../../../src/host/protocol/events';
 import {
   planModeFacadeModule,
   PLAN_MODE_ACTIONS,
@@ -98,7 +98,7 @@ describe('planModeFacadeModule (native)', () => {
   describe('dispatch', () => {
     it('action=enter delegates to enter_plan_mode handler', async () => {
       const planMode = makeFakePlanMode();
-      const emit = vi.fn<[AgentEvent], void>();
+      const emit = vi.fn<(event: AgentEvent) => void>();
       const ctx = makeCtx({ planMode, emit });
       const result = await run({ action: 'enter', reason: 'facade-test' }, ctx);
       expect(result.ok).toBe(true);
@@ -112,7 +112,7 @@ describe('planModeFacadeModule (native)', () => {
 
     it('action=exit delegates to exit_plan_mode handler', async () => {
       const planMode = makeFakePlanMode(true);
-      const emit = vi.fn<[AgentEvent], void>();
+      const emit = vi.fn<(event: AgentEvent) => void>();
       const ctx = makeCtx({ planMode, emit });
       const plan = '## Plan\n- A\n- B';
       const result = await run({ action: 'exit', plan }, ctx);

@@ -42,7 +42,7 @@ describe('propose_role tool', () => {
   });
 
   it('起草成功：入队 + 发 role_draft_pending 事件 + 返回 ok', async () => {
-    const handler = proposeRoleModule.createHandler();
+    const handler = await proposeRoleModule.createHandler();
     const ctx = makeCtx();
     const result = await handler.execute(
       {
@@ -66,7 +66,7 @@ describe('propose_role tool', () => {
   it('改已有角色：带 editingRoleId → 入队不拒同名 + 事件透传 editingRoleId', async () => {
     // 预置一个真实存在的持久化角色
     await fs.mkdir(path.join(mockConfigDir.dir, 'roles', '研究员'), { recursive: true });
-    const handler = proposeRoleModule.createHandler();
+    const handler = await proposeRoleModule.createHandler();
     const ctx = makeCtx();
     const result = await handler.execute(
       {
@@ -86,7 +86,7 @@ describe('propose_role tool', () => {
   });
 
   it('缺 systemPrompt → INVALID_ARGS，不发事件', async () => {
-    const handler = proposeRoleModule.createHandler();
+    const handler = await proposeRoleModule.createHandler();
     const ctx = makeCtx();
     const result = await handler.execute(
       { roleId: 'x', systemPrompt: '   ' },
@@ -94,14 +94,14 @@ describe('propose_role tool', () => {
       allow as never,
     );
     expect(result.ok).toBe(false);
-    expect(result.code).toBe('INVALID_ARGS');
+    if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
     expect(ctx.emit).not.toHaveBeenCalled();
   });
 
   it('重名 → DRAFT_REJECTED，把原因回给模型', async () => {
     // 预置同名持久化角色
     await fs.mkdir(path.join(mockConfigDir.dir, 'roles', '研究员'), { recursive: true });
-    const handler = proposeRoleModule.createHandler();
+    const handler = await proposeRoleModule.createHandler();
     const ctx = makeCtx();
     const result = await handler.execute(
       { roleId: '研究员', description: 'd', systemPrompt: 'p' },
@@ -109,13 +109,15 @@ describe('propose_role tool', () => {
       allow as never,
     );
     expect(result.ok).toBe(false);
-    expect(result.code).toBe('DRAFT_REJECTED');
-    expect(result.error).toMatch(/已存在同名角色/);
+    if (!result.ok) {
+      expect(result.code).toBe('DRAFT_REJECTED');
+      expect(result.error).toMatch(/已存在同名角色/);
+    }
     expect(ctx.emit).not.toHaveBeenCalled();
   });
 
   it('权限被拒 → PERMISSION_DENIED', async () => {
-    const handler = proposeRoleModule.createHandler();
+    const handler = await proposeRoleModule.createHandler();
     const ctx = makeCtx();
     const deny = vi.fn(async () => ({ allow: false, reason: 'nope' }));
     const result = await handler.execute(
@@ -124,6 +126,6 @@ describe('propose_role tool', () => {
       deny as never,
     );
     expect(result.ok).toBe(false);
-    expect(result.code).toBe('PERMISSION_DENIED');
+    if (!result.ok) expect(result.code).toBe('PERMISSION_DENIED');
   });
 });

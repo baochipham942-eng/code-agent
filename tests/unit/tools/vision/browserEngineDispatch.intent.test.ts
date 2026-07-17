@@ -70,7 +70,7 @@ describe('relay dispatch login_reuse intent mapping (ADR-041 follow-up)', () => 
 
   it('desktop intent with relay offline falls back to managed path (null)', async () => {
     vi.mocked(browserRelayService.getState).mockReturnValue(
-      relayState({ status: 'disconnected', attachedTabCount: 0 }),
+      relayState({ status: 'stopped', attachedTabCount: 0 }),
     );
     const result = await maybeDispatchRelayBrowserAction({
       action: 'get_content',
@@ -97,7 +97,7 @@ describe('relay dispatch login_reuse intent mapping (ADR-041 follow-up)', () => 
 
   it('managed workbench intent does not map to login_reuse', async () => {
     vi.mocked(browserRelayService.getState).mockReturnValue(
-      relayState({ status: 'disconnected', attachedTabCount: 0 }),
+      relayState({ status: 'stopped', attachedTabCount: 0 }),
     );
     const result = await maybeDispatchRelayBrowserAction({
       action: 'get_content',

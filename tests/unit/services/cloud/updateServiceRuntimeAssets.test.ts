@@ -13,6 +13,24 @@ import type { RuntimeAssetsManifest } from '../../../../src/host/runtime/runtime
 import { readActiveRuntimeAssets } from '../../../../src/host/runtime/runtimeAssetInstaller';
 import { createControlPlaneEnvelope } from '../../../../vercel-api/lib/controlPlaneEnvelope';
 
+// `cachedUpdateInfo`/`isDownloading`/`downloadFile`/`runtimeAssetPreparations`/`runtimeAssetQueue`
+// are private on UpdateService. Intersecting `UpdateService & {...}` collides with the private
+// members and TS reduces the type to `never`, so this harness type stands alone (not intersected)
+// and only pulls the two public methods through indexed access to stay in sync with the class.
+type UpdateServiceRuntimeHarness = {
+  cachedUpdateInfo: UpdateInfo;
+  isDownloading: boolean;
+  downloadFile: (
+    url: string,
+    destPath: string,
+    onProgress?: (progress: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => void,
+  ) => Promise<string>;
+  runtimeAssetPreparations: Map<string, Promise<unknown>>;
+  runtimeAssetQueue: Promise<void>;
+  prepareRuntimeAsset: UpdateService['prepareRuntimeAsset'];
+  getRuntimeAssetPreparationStatus: UpdateService['getRuntimeAssetPreparationStatus'];
+};
+
 const tempRoots: string[] = [];
 
 const TEST_CONTROL_PLANE_KEY_ID = 'runtime-assets-test-key';
@@ -223,13 +241,7 @@ describe('UpdateService runtime assets', () => {
     const root = makeTempRoot();
     const runtimeBaseDir = path.join(root, 'runtime');
     const remote = createRuntimePackage(root);
-    const service = Object.create(UpdateService.prototype) as UpdateService & {
-      cachedUpdateInfo: UpdateInfo;
-      isDownloading: boolean;
-      downloadFile: (url: string, destPath: string) => Promise<string>;
-      runtimeAssetPreparations: Map<string, Promise<unknown>>;
-      runtimeAssetQueue: Promise<void>;
-    };
+    const service = Object.create(UpdateService.prototype) as unknown as UpdateServiceRuntimeHarness;
     service.cachedUpdateInfo = {
       hasUpdate: false,
       currentVersion: '0.16.79',
@@ -269,17 +281,7 @@ describe('UpdateService runtime assets', () => {
     const remote = createRuntimePackage(root, true);
     const observedProgress: Array<ReturnType<UpdateService['getRuntimeAssetPreparationStatus']>> = [];
     let failPlaywrightOnce = true;
-    const service = Object.create(UpdateService.prototype) as UpdateService & {
-      cachedUpdateInfo: UpdateInfo;
-      isDownloading: boolean;
-      downloadFile: (
-        url: string,
-        destPath: string,
-        onProgress?: (progress: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => void,
-      ) => Promise<string>;
-      runtimeAssetPreparations: Map<string, Promise<unknown>>;
-      runtimeAssetQueue: Promise<void>;
-    };
+    const service = Object.create(UpdateService.prototype) as unknown as UpdateServiceRuntimeHarness;
     service.cachedUpdateInfo = {
       hasUpdate: false,
       currentVersion: '0.26.5',

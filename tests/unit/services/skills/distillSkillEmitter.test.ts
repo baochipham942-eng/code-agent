@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { emitSkillAsset } from '../../../../src/host/services/skills/distillSkillEmitter';
+import { emitSkillAsset, type SkillEmitDeps } from '../../../../src/host/services/skills/distillSkillEmitter';
 
 const NOW = Date.UTC(2026, 5, 12, 9, 0, 0);
 
 describe('distillSkillEmitter', () => {
   it('manual（draft=false）→ 走 SkillCreate 通道，返回真实路径并激活', async () => {
-    const skillCreate = vi.fn(async () => ({
+    const skillCreate = vi.fn<NonNullable<SkillEmitDeps['skillCreate']>>(async () => ({
       ok: true as const,
       output: 'created',
       meta: { name: 'weekly-report', scope: 'user', path: '/home/.code-agent/skills/weekly-report/SKILL.md' },
@@ -39,7 +39,7 @@ describe('distillSkillEmitter', () => {
   });
 
   it('auto（draft=true）→ 走 skillDraftQueue 入队（origin llm-review），不激活', async () => {
-    const enqueueDraft = vi.fn(async () => ({
+    const enqueueDraft = vi.fn<NonNullable<SkillEmitDeps['enqueueDraft']>>(async () => ({
       id: 'weekly-report-123',
       name: 'weekly-report',
       description: 'd',

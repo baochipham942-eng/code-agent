@@ -49,10 +49,10 @@ describe('schema', () => {
     expect(proposeCanvasOpsModule.schema.category).toBe('planning');
     expect(proposeCanvasOpsModule.schema.permissionLevel).toBe('execute');
     expect(proposeCanvasOpsModule.schema.inputSchema.required).toEqual(['ops']);
-    const opSchema = proposeCanvasOpsModule.schema.inputSchema.properties.ops.items;
+    const opSchema = proposeCanvasOpsModule.schema.inputSchema.properties!.ops!.items!;
     expect(opSchema.required).toEqual(['kind', 'intent', 'source', 'affectedNodes']);
-    expect(opSchema.properties.source.enum).toContain('design_acceptance_contract');
-    expect(opSchema.properties.affectedNodes.items).toEqual({ type: 'string' });
+    expect(opSchema.properties!.source!.enum).toContain('design_acceptance_contract');
+    expect(opSchema.properties!.affectedNodes!.items).toEqual({ type: 'string' });
   });
 });
 

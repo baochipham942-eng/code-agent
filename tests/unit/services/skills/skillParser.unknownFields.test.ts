@@ -9,7 +9,7 @@
 // 课程依据：《Claude Code 工程化实战》第 05 讲评论区
 // "permissionMode: plan 被静默忽略 = 用户以为加了护栏其实没有"
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -17,7 +17,7 @@ import { parseSkillMd, parseSkillMetadataOnly } from '../../../../src/host/servi
 
 describe('Skill frontmatter unknown field warnings (GAP-007)', () => {
   let tempDir: string;
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: MockInstance<typeof console.warn>;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-parser-test-'));
@@ -112,7 +112,7 @@ describe('Skill frontmatter unknown field warnings (GAP-007)', () => {
 
 describe('Hooks config unknown event/field warnings (GAP-007)', () => {
   let tempDir: string;
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: MockInstance<typeof console.warn>;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-parser-test-'));
@@ -142,7 +142,7 @@ describe('Hooks config unknown event/field warnings (GAP-007)', () => {
       ],
     });
 
-    const warnings = warnSpy.mock.calls.map(args => String(args[0]));
+    const warnings = warnSpy.mock.calls.map((args) => String(args[0]));
     const eventWarning = warnings.find(w => w.includes('preToolUse'));
     expect(eventWarning).toBeDefined();
     expect(eventWarning).toContain('PreToolUse'); // 大小写建议
@@ -155,7 +155,7 @@ describe('Hooks config unknown event/field warnings (GAP-007)', () => {
       ],
     });
 
-    const warnings = warnSpy.mock.calls.map(args => String(args[0]));
+    const warnings = warnSpy.mock.calls.map((args) => String(args[0]));
     expect(warnings.some(w => w.includes('invalid type'))).toBe(true);
   });
 
@@ -166,7 +166,7 @@ describe('Hooks config unknown event/field warnings (GAP-007)', () => {
       ],
     });
 
-    const warnings = warnSpy.mock.calls.map(args => String(args[0]));
+    const warnings = warnSpy.mock.calls.map((args) => String(args[0]));
     expect(warnings.some(w => w.includes('missing "command" field'))).toBe(true);
   });
 
@@ -180,7 +180,7 @@ describe('Hooks config unknown event/field warnings (GAP-007)', () => {
       ],
     });
 
-    const warnings = warnSpy.mock.calls.map(args => String(args[0]));
+    const warnings = warnSpy.mock.calls.map((args) => String(args[0]));
     expect(warnings.some(w => w.includes('timout'))).toBe(true);
   });
 });

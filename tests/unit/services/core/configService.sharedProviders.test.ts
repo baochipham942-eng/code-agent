@@ -92,7 +92,7 @@ describe('ConfigService.reconcileManagedProviders', () => {
 
     await service.reconcileManagedProviders([relayProvider]);
 
-    const providers = service.getSettings().models.providers as Record<string, Record<string, unknown>>;
+    const providers = service.getSettings().models.providers as unknown as Record<string, Record<string, unknown>>;
     const injected = providers['custom-team-relay'];
     expect(injected).toBeTruthy();
     expect(injected.enabled).toBe(true);

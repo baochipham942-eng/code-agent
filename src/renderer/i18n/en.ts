@@ -7,6 +7,7 @@ import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
 import { chatInputEn } from './chatInput';
+import { sidebarEn } from './sidebar';
 
 export const en: Translations = {
   // Common
@@ -852,6 +853,7 @@ export const en: Translations = {
   // Chat-flow Mermaid diagram card (pan/zoom + annotate-to-edit)
   ...chatTranscriptEn,
   ...chatInputEn,
+  ...sidebarEn,
 
   mermaid: {
     zoomIn: 'Zoom in',

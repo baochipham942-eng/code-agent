@@ -53,7 +53,9 @@ import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
-import { AccountMenuItem, AccountMenuLabel, getRelativeTime } from './features/sidebar/sidebarPresentation';
+import { AccountMenuItem, AccountMenuLabel } from './features/sidebar/sidebarPresentation';
+import { useI18n } from '../hooks/useI18n';
+import { formatRelativeTime } from '../utils/i18nTime';
 import ipcService from '../services/ipcService';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
@@ -65,10 +67,10 @@ import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionAc
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import {
-  SESSION_STATUS_FILTER_OPTIONS,
-  SESSION_STATUS_FILTER_LABELS,
-  TRAJECTORY_FAILURE_FILTER_OPTIONS,
-  TRAJECTORY_REVIEW_FILTER_LABELS,
+  buildSessionStatusFilterOptions,
+  buildSessionStatusFilterLabels,
+  buildTrajectoryFailureFilterOptions,
+  buildTrajectoryReviewFilterLabels,
 } from './features/sidebar/sidebarFilterOptions';
 import type { StructuredReplay } from '@shared/contract/evaluation';
 import type {
@@ -76,6 +78,7 @@ import type {
   AgentTrajectorySessionQualitySummary,
 } from '@shared/contract/agentTrajectory';
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
+import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 
 export { resolveRuntimeLogsDir };
 
@@ -90,6 +93,8 @@ export function isAccountMenuEventOutside(
 }
 
 export const Sidebar: React.FC = () => {
+  const { t } = useI18n();
+  const sb = t.sidebar;
   const {
     clearPlanningState,
     setShowSettings,
@@ -184,7 +189,7 @@ export const Sidebar: React.FC = () => {
   const isVerifiedAdmin = user?.isAdmin === true;
   const isAdminPendingVerification = !isVerifiedAdmin && hasCachedAdminClaim && sessionTrustState === 'cached';
   const adminPendingTitle =
-    authBackendAvailable === false ? '登录服务启动失败，管理员身份暂时不能验证' : '正在验证管理员身份';
+    authBackendAvailable === false ? sb.adminPendingLoginFailed : sb.adminPendingVerifying;
   const sessionStates = useTaskStore((state) => state.sessionStates);
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -396,6 +401,7 @@ export const Sidebar: React.FC = () => {
     archiveSession,
     openWorkspacePreview,
     setProjectMetaById,
+    t,
   });
 
   const showToast = useUIStore((state) => state.showToast);
@@ -420,6 +426,7 @@ export const Sidebar: React.FC = () => {
     setRenameValue,
     renameInputRef,
     renameSession,
+    t,
   });
 
   const getContextMenuItems = useCallback(
@@ -444,6 +451,7 @@ export const Sidebar: React.FC = () => {
         saveExportToDownloads,
         showToast,
         openRuntimeLogsFolder,
+        t,
       }),
     [
       applySessionWorkbenchPreset,
@@ -463,6 +471,7 @@ export const Sidebar: React.FC = () => {
       softDelete,
       togglePin,
       unarchiveSession,
+      t,
     ],
   );
 
@@ -474,26 +483,26 @@ export const Sidebar: React.FC = () => {
   const showSearchScopeControls = Boolean(searchQuery.trim()) && canSearchCurrentProject;
   const activeTrajectoryFilterLabel = [
     trajectoryTierFilter !== 'all' ? trajectoryTierFilter : null,
-    trajectoryReviewFilter !== 'all' ? TRAJECTORY_REVIEW_FILTER_LABELS[trajectoryReviewFilter] : null,
+    trajectoryReviewFilter !== 'all' ? buildTrajectoryReviewFilterLabels(t)[trajectoryReviewFilter] : null,
     trajectoryFailureFilter !== 'all'
-      ? (TRAJECTORY_FAILURE_FILTER_OPTIONS.find((option) => option.id === trajectoryFailureFilter)?.label ??
+      ? (buildTrajectoryFailureFilterOptions(t).find((option) => option.id === trajectoryFailureFilter)?.label ??
         trajectoryFailureFilter)
       : null,
   ]
     .filter(Boolean)
     .join(' · ');
   const activeStatusFilterLabel = [
-    SESSION_STATUS_FILTER_LABELS[sessionStatusFilter] ?? '匹配',
+    buildSessionStatusFilterLabels(t)[sessionStatusFilter] ?? sb.statusMatchFallback,
     activeTrajectoryFilterLabel || null,
   ]
     .filter(Boolean)
     .join(' · ');
   const hasActiveStatusDropdownFilter = sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter;
-  const visibleStatusFilterOptions = SESSION_STATUS_FILTER_OPTIONS.filter(
+  const visibleStatusFilterOptions = buildSessionStatusFilterOptions(t).filter(
     (option) => !option.adminOnly || canOpenSessionReplay,
   );
   const showOptionalUpdateButton = isOptionalUpdateAvailable(optionalUpdateInfo);
-  const optionalUpdateLabel = optionalUpdateInfo?.latestVersion ? `v${optionalUpdateInfo.latestVersion}` : '新版本';
+  const optionalUpdateLabel = optionalUpdateInfo?.latestVersion ? `v${optionalUpdateInfo.latestVersion}` : sb.newVersion;
   const handleUpdateTrajectoryCollection = useCallback(
     async (datasetRole: AgentTrajectoryDatasetRole): Promise<void> => {
       if (!replayDialog) return;
@@ -503,12 +512,12 @@ export const Sidebar: React.FC = () => {
           patch: { datasetRole },
         })) as AgentTrajectorySessionQualitySummary;
         mergeTrajectoryQualitySummary(replayDialog.sessionId, summary);
-        showToast('success', `已标记为 ${datasetRole}`);
+        showToast('success', sb.markedAsDataset.replace('{role}', datasetRole));
       } catch (error) {
         logger.warn('Failed to update trajectory collection metadata', {
           errorMessage: error instanceof Error ? error.message : String(error),
         });
-        showToast('error', `更新数据集标记失败：${error instanceof Error ? error.message : String(error)}`);
+        showToast('error', sb.updateDatasetFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
       }
     },
     [mergeTrajectoryQualitySummary, replayDialog, showToast],
@@ -537,7 +546,7 @@ export const Sidebar: React.FC = () => {
           (item) => item.reviewStatus === 'pending',
         ).length;
         const snapshotSummary = session.workbenchSnapshot?.summary?.trim();
-        const hasMeaningfulSummary = Boolean(snapshotSummary && snapshotSummary !== '纯对话');
+        const hasMeaningfulSummary = Boolean(snapshotSummary && snapshotSummary !== PLAIN_CHAT_SUMMARY_LABEL);
 
         return {
           id: session.id,
@@ -547,7 +556,7 @@ export const Sidebar: React.FC = () => {
           showStatusBadge: status.showBadge,
           typeLabel: getSessionTypeLabel(session.type),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-          lastActiveLabel: getRelativeTime(latestActivityAt, true),
+          lastActiveLabel: formatRelativeTime(t, latestActivityAt),
           workingDirectory: session.workingDirectory,
           gitBranch: session.gitBranch,
           prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,
@@ -569,6 +578,7 @@ export const Sidebar: React.FC = () => {
       reviewItemsBySessionId,
       sessionRuntimes,
       sessionStates,
+      t,
     ],
   );
 
@@ -615,7 +625,7 @@ export const Sidebar: React.FC = () => {
         <button
           onClick={handleNewChat}
           disabled={isCreatingSession || creatingWorkspaceKey !== null}
-          title="新建会话（纯对话，不继承项目上下文）"
+          title={sb.newChatTitle}
           className="flex min-w-0 flex-1 items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
         >
           <span className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center">
@@ -625,7 +635,7 @@ export const Sidebar: React.FC = () => {
               <Plus className="w-3.5 h-3.5 stroke-[2]" />
             )}
           </span>
-          <span className="text-sm font-normal">新会话</span>
+          <span className="text-sm font-normal">{sb.newChat}</span>
         </button>
 
         {/* 状态筛选：仅管理员可见，收成一个图标 + 下拉（不再平铺一整排 tab） */}
@@ -658,7 +668,7 @@ export const Sidebar: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索会话…"
+            placeholder={sb.searchPlaceholder}
             className="w-full pl-8 pr-7 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-600 transition-colors"
           />
           {searchQuery && (
@@ -674,8 +684,8 @@ export const Sidebar: React.FC = () => {
           {showSearchScopeControls && (
             <>
               {[
-                { id: 'current-project' as const, label: '当前项目' },
-                { id: 'all' as const, label: '全部' },
+                { id: 'current-project' as const, label: sb.scopeCurrentProject },
+                { id: 'all' as const, label: sb.scopeAll },
               ].map((option) => {
                 const active = effectiveSearchScope === option.id;
                 return (
@@ -694,7 +704,7 @@ export const Sidebar: React.FC = () => {
           )}
           {/* 状态筛选已移到顶部「新会话」右侧的筛选图标下拉（仅管理员）。这里只保留搜索范围 + 搜索状态。 */}
           {messageSearchLoading && searchQuery.trim() && (
-            <span className="shrink-0 px-1 text-[11px] text-zinc-600">搜消息中…</span>
+            <span className="shrink-0 px-1 text-[11px] text-zinc-600">{sb.searchingMessagesShort}</span>
           )}
         </div>
       </div>
@@ -704,25 +714,25 @@ export const Sidebar: React.FC = () => {
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
-            <span className="text-xs text-zinc-500">加载中…</span>
+            <span className="text-xs text-zinc-500">{sb.loading}</span>
           </div>
         ) : !hasAnySessions ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex items-center justify-center mb-3">
               <MessageSquare className="w-6 h-6 text-zinc-500" />
             </div>
-            <p className="text-sm text-zinc-400 mb-1">暂无对话</p>
-            <p className="text-xs text-zinc-500">开始新的对话</p>
+            <p className="text-sm text-zinc-400 mb-1">{sb.noSessions}</p>
+            <p className="text-xs text-zinc-500">{sb.startNewChat}</p>
           </div>
         ) : filteredSessions.length === 0 && hasSearchFilters ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-4">
             <Search className="w-6 h-6 text-zinc-600 mb-2" />
             <p className="text-sm text-zinc-500">
               {messageSearchLoading
-                ? '搜索消息内容中…'
+                ? sb.searchingMessageContent
                 : !searchQuery && sessionStatusFilter !== 'all'
-                  ? `当前没有${activeStatusFilterLabel}会话`
-                  : '未找到匹配的会话'}
+                  ? sb.noStatusSessions.replace('{label}', activeStatusFilterLabel)
+                  : sb.noMatchedSessions}
             </p>
           </div>
         ) : (
@@ -764,17 +774,17 @@ export const Sidebar: React.FC = () => {
       {/* 多选模式底部操作栏 */}
       {multiSelectMode && selectedSessionIds.size > 0 && (
         <div className="px-3 py-2 border-t border-zinc-700 flex items-center justify-between">
-          <span className="text-xs text-zinc-400">已选 {selectedSessionIds.size} 个</span>
+          <span className="text-xs text-zinc-400">{sb.selectedCount.replace('{count}', String(selectedSessionIds.size))}</span>
           <div className="flex items-center gap-2">
             <button onClick={clearSelection} className="text-xs text-zinc-500 hover:text-zinc-400 transition-colors">
-              取消
+              {sb.cancel}
             </button>
             <button
               onClick={batchDelete}
               className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              删除
+              {sb.delete}
             </button>
           </div>
         </div>
@@ -786,14 +796,14 @@ export const Sidebar: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowOptionalUpdateModal(true)}
-            aria-label={`查看 Agent Neo ${optionalUpdateLabel} 更新内容`}
-            title={`查看 Agent Neo ${optionalUpdateLabel} 更新内容`}
+            aria-label={sb.viewUpdateContent.replace('{version}', optionalUpdateLabel)}
+            title={sb.viewUpdateContent.replace('{version}', optionalUpdateLabel)}
             className="group flex w-full items-center gap-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-sm text-indigo-200 transition-colors hover:border-indigo-400/30 hover:bg-indigo-500/15 hover:text-indigo-100 focus:outline-hidden"
           >
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-300 group-hover:text-indigo-200">
               <Download className="h-3.5 w-3.5" />
             </span>
-            <span className="min-w-0 flex-1 truncate text-left font-medium">更新可用</span>
+            <span className="min-w-0 flex-1 truncate text-left font-medium">{sb.updateAvailable}</span>
             <span className="shrink-0 font-mono text-[11px] text-indigo-300/80">{optionalUpdateLabel}</span>
           </button>
         </div>
@@ -805,7 +815,7 @@ export const Sidebar: React.FC = () => {
           <>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
-              aria-label="用户菜单"
+              aria-label={sb.userMenu}
               aria-expanded={showUserMenu}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
             >
@@ -819,14 +829,14 @@ export const Sidebar: React.FC = () => {
               </span>
               {isVerifiedAdmin ? (
                 <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-                  管理员
+                  {sb.adminBadge}
                 </span>
               ) : isAdminPendingVerification ? (
                 <span
                   className="shrink-0 rounded border border-zinc-500/30 bg-zinc-500/10 px-1.5 py-0.5 text-[10px] font-medium text-zinc-300"
                   title={adminPendingTitle}
                 >
-                  管理员待验证
+                  {sb.adminPendingBadge}
                 </span>
               ) : null}
               <ChevronDown
@@ -836,14 +846,14 @@ export const Sidebar: React.FC = () => {
             {/* User Dropdown Menu */}
             {showUserMenu && (
               <div className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
-                <AccountMenuLabel>常用</AccountMenuLabel>
+                <AccountMenuLabel>{sb.menuCommon}</AccountMenuLabel>
                 <AccountMenuItem
                   onClick={() => {
                     setShowActivityPanel(true);
                     setShowUserMenu(false);
                   }}
                   icon={<Activity className={`w-4 h-4 ${showActivityPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
-                  label="活动"
+                  label={sb.menuActivity}
                 />
                 <AccountMenuItem
                   onClick={() => {
@@ -855,7 +865,7 @@ export const Sidebar: React.FC = () => {
                       className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`}
                     />
                   }
-                  label="知识与记忆"
+                  label={sb.menuKnowledgeMemory}
                 />
                 <AccountMenuItem
                   onClick={() => {
@@ -867,7 +877,7 @@ export const Sidebar: React.FC = () => {
                       className={`w-4 h-4 ${showComputerUsePanel ? 'text-cyan-400' : 'text-cyan-400/80'}`}
                     />
                   }
-                  label="桌面操作"
+                  label={sb.menuComputerUse}
                 />
                 <AccountMenuItem
                   onClick={() => {
@@ -879,7 +889,7 @@ export const Sidebar: React.FC = () => {
                       className={`w-4 h-4 ${showProjectCollaborationPage ? 'text-violet-400' : 'text-violet-400/80'}`}
                     />
                   }
-                  label="Neo 协同"
+                  label={sb.menuNeoCollab}
                 />
                 <AccountMenuItem
                   onClick={() => {
@@ -887,7 +897,7 @@ export const Sidebar: React.FC = () => {
                     setShowUserMenu(false);
                   }}
                   icon={<Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}
-                  label="自动化"
+                  label={sb.menuAutomation}
                 />
                 {canOpenPromptManager && (
                   <AccountMenuItem
@@ -896,7 +906,7 @@ export const Sidebar: React.FC = () => {
                       setShowUserMenu(false);
                     }}
                     icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
-                    label="提示词"
+                    label={sb.menuPrompts}
                   />
                 )}
                 {canOpenUserDashboard && (
@@ -906,7 +916,7 @@ export const Sidebar: React.FC = () => {
                       setShowUserMenu(false);
                     }}
                     icon={<Users className="w-4 h-4 text-amber-400/80" />}
-                    label="用户管理"
+                    label={sb.menuUserManagement}
                   />
                 )}
                 {canOpenInviteCodes && (
@@ -916,7 +926,7 @@ export const Sidebar: React.FC = () => {
                       setShowUserMenu(false);
                     }}
                     icon={<Ticket className="w-4 h-4 text-amber-400/80" />}
-                    label="邀请码管理"
+                    label={sb.menuInviteCodes}
                   />
                 )}
 
@@ -929,10 +939,10 @@ export const Sidebar: React.FC = () => {
                   <ChevronRight
                     className={`h-3.5 w-3.5 transition-transform ${advancedToolsOpen ? 'rotate-90' : ''}`}
                   />
-                  <span className="min-w-0 flex-1 text-left">高级工具</span>
+                  <span className="min-w-0 flex-1 text-left">{sb.advancedTools}</span>
                   {hasActiveAdvancedTool && (
                     <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                      运行中
+                      {sb.advancedToolsRunning}
                     </span>
                   )}
                 </button>
@@ -941,22 +951,22 @@ export const Sidebar: React.FC = () => {
                     <AccountMenuItem
                       onClick={() => { setShowLab(true); setShowUserMenu(false); }}
                       icon={<FlaskConical className={`w-4 h-4 ${showLab ? 'text-emerald-400' : 'text-emerald-400/80'}`} />}
-                      label="模型训练"
+                      label={sb.menuModelTraining}
                     />
                     <AccountMenuItem
                       onClick={() => { setShowTimeCapabilityCenter(!showTimeCapabilityCenter); setShowUserMenu(false); }}
                       icon={<CalendarDays className={`w-4 h-4 ${showTimeCapabilityCenter ? 'text-sky-400' : 'text-sky-400/80'}`} />}
-                      label="时间与能力"
+                      label={sb.menuTimeCapability}
                     />
                     <AccountMenuItem
                       onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
                       icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
-                      label="桌面采集"
+                      label={sb.menuDesktopCapture}
                     />
                     <AccountMenuItem
                       onClick={() => { setShowBrowserSurfacePanel(true); setShowUserMenu(false); }}
                       icon={<Globe className={`w-4 h-4 ${showBrowserSurfacePanel ? 'text-sky-400' : 'text-sky-400/80'}`} />}
-                      label="浏览器"
+                      label={sb.menuBrowser}
                     />
                   </div>
                 )}
@@ -968,7 +978,7 @@ export const Sidebar: React.FC = () => {
                     setShowUserMenu(false);
                   }}
                   icon={<Settings className="w-4 h-4" />}
-                  label="设置"
+                  label={sb.menuSettings}
                 />
                 <AccountMenuItem
                   onClick={() => {
@@ -976,7 +986,7 @@ export const Sidebar: React.FC = () => {
                     setShowUserMenu(false);
                   }}
                   icon={<LogOut className="w-4 h-4" />}
-                  label="退出登录"
+                  label={sb.menuSignOut}
                 />
               </div>
             )}
@@ -987,7 +997,7 @@ export const Sidebar: React.FC = () => {
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-400 text-sm font-medium transition-colors"
           >
             <LogIn className="w-4 h-4" />
-            登录
+            {sb.signIn}
           </button>
         )}
       </div>
@@ -1025,7 +1035,7 @@ export const Sidebar: React.FC = () => {
       {/* 撤销删除 Toast */}
       {pendingDelete && (
         <UndoToast
-          message={`已删除 ${pendingDelete.ids.length} 个对话`}
+          message={sb.deletedCount.replace('{count}', String(pendingDelete.ids.length))}
           onUndo={undoDelete}
           onDismiss={() => {
             // timer 已经在 softDelete 中设置了，这里是视觉消失后的回调

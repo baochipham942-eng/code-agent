@@ -26,6 +26,22 @@ const MIGRATED: string[] = [
   'features/chat/ChatInput/SendButton.tsx',
   'features/chat/ChatInput/useFileUpload.ts',
   'features/chat/ChatInput/ScheduleComposerCard.tsx',
+  'Sidebar.tsx',
+  'features/sidebar/SessionContextMenu.tsx',
+  'features/sidebar/SessionReplaySummaryDialog.tsx',
+  'features/sidebar/SessionTypeFilterBar.tsx',
+  'features/sidebar/SidebarMessageHitList.tsx',
+  'features/sidebar/SidebarProjectDetail.tsx',
+  'features/sidebar/SidebarProjectDrawer.tsx',
+  'features/sidebar/SidebarProjectGroup.tsx',
+  'features/sidebar/SidebarSessionItem.tsx',
+  'features/sidebar/SidebarStatusFilterDropdown.tsx',
+  'features/sidebar/sessionContextMenuItems.ts',
+  'features/sidebar/sidebarFilterOptions.ts',
+  'features/sidebar/sidebarPresentation.tsx',
+  'features/sidebar/useSidebarDerivedSessions.ts',
+  'features/sidebar/useSidebarRowActions.ts',
+  'features/sidebar/useSidebarSessionActions.ts',
 ];
 
 const HAN_RE = /[一-鿿]/;

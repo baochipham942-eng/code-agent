@@ -4,6 +4,7 @@ import type { CreateSessionOptions, SessionWithMeta } from '../../../stores/sess
 import type { PendingSessionSearchJump } from '../../../stores/sessionUIStore';
 import type { Session } from '@shared/contract';
 import type { ProjectStatus } from '@shared/contract/project';
+import type { Translations } from '../../../i18n';
 import { getSidebarGroupKeyForSession } from '../../../utils/workspaceGrouping';
 import { buildSessionAssetsNavigation } from '../../../utils/sessionAssetsNavigation';
 import {
@@ -44,6 +45,7 @@ export interface UseSidebarSessionActionsParams {
   archiveSession: (sessionId: string) => Promise<void>;
   openWorkspacePreview: (previewItemId?: string | null) => void;
   setProjectMetaById: Dispatch<SetStateAction<Record<string, SidebarProjectMeta>>>;
+  t: Translations;
 }
 
 export interface SidebarSessionActions {
@@ -93,6 +95,7 @@ export function useSidebarSessionActions(
     archiveSession,
     openWorkspacePreview,
     setProjectMetaById,
+    t,
   } = params;
 
   const handleToggleWorkspaceGroup = useCallback((workspaceKey: string, view: SidebarGroupExpansionView) => {
@@ -141,7 +144,7 @@ export function useSidebarSessionActions(
 
     setCreatingSessionMode('current');
     try {
-      const session = await createSession('新对话', { workingDirectory: null });
+      const session = await createSession(t.sidebar.newSessionTitle, { workingDirectory: null });
       if (session) {
         setWorkspaceExpanded(getSidebarGroupKeyForSession(session), true);
       }
@@ -162,7 +165,7 @@ export function useSidebarSessionActions(
 
     setCreatingWorkspaceKey(workspaceKey);
     try {
-      const session = await createSession('新对话', { workingDirectory: directory });
+      const session = await createSession(t.sidebar.newSessionTitle, { workingDirectory: directory });
       if (session) {
         setWorkingDirectory(directory);
         setWorkspaceExpanded(workspaceKey, true);
@@ -179,6 +182,7 @@ export function useSidebarSessionActions(
     setCreatingWorkspaceKey,
     setWorkspaceExpanded,
     setWorkingDirectory,
+    t,
   ]);
 
   const handleNewWorkspaceChat = async (
@@ -266,7 +270,8 @@ export function useSidebarSessionActions(
     workingDirectory?: string,
   ) => {
     const directory = workingDirectory?.trim() || null;
-    const title = goal.title.length > 42 ? `目标：${goal.title.slice(0, 39)}…` : `目标：${goal.title}`;
+    const goalTitleText = goal.title.length > 42 ? `${goal.title.slice(0, 39)}…` : goal.title;
+    const title = t.sidebar.goalSessionTitle.replace('{title}', goalTitleText);
     const session = await createSession(title, { workingDirectory: directory });
     if (!session) {
       return;
@@ -301,7 +306,7 @@ export function useSidebarSessionActions(
       return next;
     });
     clearPlanningState();
-  }, [clearPlanningState, createSession, setProjectMetaById, setWorkspaceExpanded, setWorkingDirectory]);
+  }, [clearPlanningState, createSession, setProjectMetaById, setWorkspaceExpanded, setWorkingDirectory, t]);
 
   const handleRenameSidebarProject = useCallback(async (projectId: string, name: string) => {
     const updated = await renameProject(projectId, name);

@@ -5,6 +5,8 @@ import type {
   SidebarProjectGoalMeta,
   SidebarProjectMeta,
 } from '../../../utils/sidebarProjectSummary';
+import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n';
 
 export interface SidebarProjectDetailProps {
   meta?: SidebarProjectMeta;
@@ -22,35 +24,31 @@ function formatList(items: string[] | undefined, fallback: string): string {
   return visibleItems.length > 0 ? visibleItems.join(' · ') : fallback;
 }
 
-const GOAL_STATUS_LABEL: Record<SidebarProjectGoalMeta['status'], string> = {
-  active: '进行中',
-  met: '已达成',
-  aborted: '已终止',
-  archived: '已归档',
-};
+function getGoalStatusLabel(status: SidebarProjectGoalMeta['status'], t: Translations): string {
+  const p = t.sidebarProject;
+  switch (status) {
+    case 'met':
+      return p.goalStatusMet;
+    case 'aborted':
+      return p.goalStatusTerminated;
+    case 'archived':
+      return p.goalStatusArchived;
+    default:
+      return p.goalStatusActive;
+  }
+}
 
-const ARTIFACT_KIND_LABEL: Record<SidebarProjectArtifactMeta['kind'], string> = {
-  chart: '图表',
-  spreadsheet: '表格',
-  document: '文档',
-  generative_ui: '界面',
-  neo_ui: '交互界面',
-  mermaid: '图示',
-  question_form: '表单',
-  file: '文件',
-  generic_html: '网页',
-  web_snapshot: '网页',
-  link: '链接',
-  text: '文本',
-  binary: '二进制',
-  image: '图片',
-  audio: '音频',
-  video: '视频',
-  web: '网页',
-  search: '搜索',
-  'process-output': '输出',
-  'process-log': '日志',
-};
+function getArtifactKindLabel(kind: SidebarProjectArtifactMeta['kind'], t: Translations): string {
+  const k = t.sidebarProject.artifactKind;
+  switch (kind) {
+    case 'process-output':
+      return k.processOutput;
+    case 'process-log':
+      return k.processLog;
+    default:
+      return k[kind] ?? kind;
+  }
+}
 
 function getGoalStatusIcon(status: SidebarProjectGoalMeta['status']): React.ReactNode {
   if (status === 'met') return <CheckCircle2 className="h-3 w-3 text-emerald-500" />;
@@ -71,8 +69,8 @@ function getGoalCounts(goals: SidebarProjectGoalMeta[] | undefined): Record<Side
   return counts;
 }
 
-function formatRecentArtifactLine(artifact: SidebarProjectArtifactMeta): string {
-  const parts = [ARTIFACT_KIND_LABEL[artifact.kind] ?? artifact.kind];
+function formatRecentArtifactLine(artifact: SidebarProjectArtifactMeta, t: Translations): string {
+  const parts = [getArtifactKindLabel(artifact.kind, t)];
   if (artifact.toolName?.trim()) {
     parts.push(artifact.toolName.trim());
   }
@@ -88,9 +86,11 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
   onOpenArtifactSession,
   onStartGoal,
 }) => {
+  const { t } = useI18n();
+  const p = t.sidebarProject;
   const sessionCount = meta?.sessionCount ?? fallbackSessionCount;
-  const goalFallback = meta ? `${meta.goalCount ?? 0} 个目标` : '项目详情加载中';
-  const artifactFallback = meta ? `${meta.artifactCount ?? 0} 个产物` : '项目详情加载中';
+  const goalFallback = meta ? p.goalCountFallback.replace('{count}', String(meta.goalCount ?? 0)) : p.detailLoading;
+  const artifactFallback = meta ? p.artifactCountFallback.replace('{count}', String(meta.artifactCount ?? 0)) : p.detailLoading;
   const goalCounts = getGoalCounts(meta?.goals);
   const visibleGoals = meta?.goals?.slice(0, 4) ?? [];
   const visibleArtifacts = meta?.recentArtifacts?.slice(0, 4) ?? [];
@@ -101,15 +101,15 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
       <div className="flex items-center justify-between gap-2 border-b border-zinc-800/70 pb-2">
         <div className="min-w-0">
           <div className="truncate text-xs font-medium text-zinc-300">
-            {meta?.name ?? '项目详情'}
+            {meta?.name ?? p.projectDetailTitle}
           </div>
           <div className="mt-0.5 truncate text-[10px] text-zinc-600">
-            {meta?.description?.trim() || `${sessionCount} 会话 · ${meta?.artifactCount ?? 0} 产物`}
+            {meta?.description?.trim() || p.sessionArtifactSummary.replace('{sessions}', String(sessionCount)).replace('{artifacts}', String(meta?.artifactCount ?? 0))}
           </div>
         </div>
         {meta?.status && (
           <span className="shrink-0 rounded border border-zinc-800 bg-zinc-900/70 px-1.5 py-0.5 text-[10px] text-zinc-400">
-            {meta.status === 'active' ? '进行中' : meta.status === 'archived' ? '已归档' : '空闲'}
+            {meta.status === 'active' ? p.statusActive : meta.status === 'archived' ? p.statusArchived : p.statusIdle}
           </span>
         )}
       </div>
@@ -118,10 +118,13 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
         <section className="grid gap-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <Target className="h-3 w-3 shrink-0 text-zinc-600" />
-            <span className="shrink-0 text-zinc-500">目标</span>
+            <span className="shrink-0 text-zinc-500">{p.goals}</span>
             <span className="min-w-0 flex-1 truncate text-zinc-600">
               {meta
-                ? `${goalCounts.active} 进行中 · ${goalCounts.met} 已达成 · ${goalCounts.aborted} 待处理`
+                ? p.goalCountsLine
+                    .replace('{active}', String(goalCounts.active))
+                    .replace('{met}', String(goalCounts.met))
+                    .replace('{aborted}', String(goalCounts.aborted))
                 : goalFallback}
             </span>
           </div>
@@ -132,9 +135,9 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
                   {getGoalStatusIcon(goal.status)}
                   <span className="min-w-0 flex-1 truncate text-zinc-400">{goal.title}</span>
                   {goal.lastRunSessionId && (
-                    <span className="shrink-0 text-[10px] text-zinc-600">已启动</span>
+                    <span className="shrink-0 text-[10px] text-zinc-600">{p.goalStarted}</span>
                   )}
-                  <span className="shrink-0 text-[10px] text-zinc-600">{GOAL_STATUS_LABEL[goal.status]}</span>
+                  <span className="shrink-0 text-[10px] text-zinc-600">{getGoalStatusLabel(goal.status, t)}</span>
                   {onStartGoal && goal.status === 'active' && (
                     <button
                       type="button"
@@ -143,8 +146,8 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
                         event.stopPropagation();
                         void onStartGoal(goal);
                       }}
-                      aria-label={`从目标 ${goal.title} 新建项目会话`}
-                      title={`从目标 ${goal.title} 新建项目会话`}
+                      aria-label={p.newSessionFromGoal.replace('{title}', goal.title)}
+                      title={p.newSessionFromGoal.replace('{title}', goal.title)}
                       className="shrink-0 rounded p-0.5 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
                     >
                       <Play className="h-3 w-3" />
@@ -165,9 +168,9 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
         <section className="grid gap-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <FileText className="h-3 w-3 shrink-0 text-zinc-600" />
-            <span className="shrink-0 text-zinc-500">产物</span>
+            <span className="shrink-0 text-zinc-500">{p.artifacts}</span>
             <span className="min-w-0 flex-1 truncate text-zinc-600">
-              {meta ? `${meta.artifactCount ?? 0} 个产物` : artifactFallback}
+              {meta ? p.artifactCountFallback.replace('{count}', String(meta.artifactCount ?? 0)) : artifactFallback}
             </span>
           </div>
           {visibleArtifacts.length > 0 ? (
@@ -180,7 +183,7 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
                     <Layers3 className="h-3 w-3 shrink-0 text-zinc-600" />
                     <span className="min-w-0 flex-1 truncate text-zinc-400">{artifact.title}</span>
                     <span className="shrink-0 truncate text-[10px] text-zinc-600">
-                      {formatRecentArtifactLine(artifact)}
+                      {formatRecentArtifactLine(artifact, t)}
                     </span>
                   </>
                 );
@@ -194,8 +197,8 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
                         event.stopPropagation();
                         void onOpenArtifactSession?.(artifact);
                       }}
-                      aria-label={`打开产物 ${artifact.title} 的来源会话`}
-                      title={`打开产物 ${artifact.title} 的来源会话`}
+                      aria-label={p.openArtifactSource.replace('{title}', artifact.title)}
+                      title={p.openArtifactSource.replace('{title}', artifact.title)}
                       className={`${className} transition-colors hover:bg-zinc-800/70 hover:text-zinc-200`}
                     >
                       {content}
@@ -221,9 +224,11 @@ export const SidebarProjectDetail: React.FC<SidebarProjectDetailProps> = ({
         <section className="grid gap-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <Users className="h-3 w-3 shrink-0 text-zinc-600" />
-            <span className="shrink-0 text-zinc-500">上下文</span>
+            <span className="shrink-0 text-zinc-500">{p.context}</span>
             <span className="min-w-0 flex-1 truncate text-zinc-600">
-              {meta ? `${meta.roleCount ?? 0} 角色 · ${sessionCount} 会话` : `${sessionCount} 会话`}
+              {meta
+                ? p.roleSessionSummary.replace('{roles}', String(meta.roleCount ?? 0)).replace('{sessions}', String(sessionCount))
+                : p.sessionCountLabel.replace('{sessions}', String(sessionCount))}
             </span>
           </div>
           {visibleRoles.length > 0 && (

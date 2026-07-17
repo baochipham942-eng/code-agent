@@ -118,7 +118,7 @@ jobs:
         #
         # 这道门只管 `src/**`（tsconfig.json 的 include）。tests/ 和 scripts/ 的类型检查
         # 由下一步 "Typecheck ratchet (tests/ + scripts/)" 单独把关（2026-07-18 建门，基线
-        # 1228 存量 error，只降不升）——A-8 那类漏改 scripts 调用方 + 测试侧组合断裂现在被那道
+        # 1229 存量 error，只降不升）——A-8 那类漏改 scripts 调用方 + 测试侧组合断裂现在被那道
         # 棘轮门抓。（历史坑：tests/e2e/claude-e2e/fixtures/bug-syntax-error 是**故意**写坏的
         # 样例工程，会抛 TS1005 让 tsc 提前中止，tsconfig.tests.json 已在 exclude 里排除它。）
         run: npm run typecheck

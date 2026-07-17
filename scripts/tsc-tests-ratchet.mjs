@@ -8,12 +8,16 @@
 // 加参数漏改 scripts 侧调用方（A-8）、测试侧组合断裂溜进 main。本门用 typescript7 原生引擎
 // 跑 tsconfig.tests.json（把 tests+scripts 纳入检查），error 计数只降不升。
 //
-// 存量基线（2026-07-18 在 origin/main 实测）：1228 errors（src 恒 0，tsconfig.tests.json 里
-// include 带上 src/** 只是为加载 ambient 全局声明，不产生 src error）。分批清偿见工单
-// docs/audits/2026-07-18-tsc-tests-scripts-ratchet-ticket.md。
+// 存量基线（2026-07-18 实测）：CI(Linux)=1229 errors，本地(macOS arm64)=1228——差 1 是
+// 平台相关的类型错（某个 error 只在 Linux 上浮现，clean npm ci 后仍稳定复现该差）。基线以
+// 门的真正执行环境 CI 为准=1229；本地跑会显示 delta=-1（"可收紧到 1228"），那只是提示不阻塞。
+// src 恒 0（tsconfig.tests.json include 带 src/** 只为加载 ambient 全局声明，不产生 src error）。
+//
+// ⚠️ Phase 2 清偿更新基线时：以 PR 自己 CI 跑出的 current 为准（本地读数比 CI 低 1），别照抄本地。
+// 分批清偿见工单 docs/audits/2026-07-18-tsc-tests-scripts-ratchet-ticket.md。
 //
 // 清理记录：
-//   2026-07-18 建门，基线 1228。
+//   2026-07-18 建门，基线 1229（CI）。
 //
 // 自检 guard 有意 fail loud（[[gate-must-report-own-blindspot]]）：引擎二进制/配置失效、
 // 配置匹配 0 个文件（TS18003）、tsc 被 kill —— 任一发生都说明门失去测量能力，此时静默通过
@@ -27,7 +31,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const BASELINE_MAX = 1228;
+const BASELINE_MAX = 1229;
 const MAX_FINDINGS_TO_PRINT = 40;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

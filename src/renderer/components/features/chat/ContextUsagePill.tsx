@@ -170,7 +170,7 @@ export const ContextUsagePill: React.FC = () => {
       </button>
 
       {open && (
-        <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-white/[0.12] bg-zinc-900/95 px-4 py-3 text-center shadow-2xl backdrop-blur">
+        <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-border-hover bg-zinc-900/95 px-4 py-3 text-center shadow-2xl backdrop-blur">
           <div className="text-[11px] font-medium text-zinc-400">背景信息窗口</div>
           <div className="mt-1.5 text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
             {hasData
@@ -188,7 +188,7 @@ export const ContextUsagePill: React.FC = () => {
               type="button"
               onClick={handleCompact}
               disabled={isCompacting}
-              className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.06] px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-white/[0.1] disabled:cursor-wait disabled:opacity-70"
+              className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border-muted bg-surface-hover px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-white/[0.1] disabled:cursor-wait disabled:opacity-70"
               title="主动压缩上下文"
             >
               {isCompacting ? (

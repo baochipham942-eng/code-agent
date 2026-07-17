@@ -64,7 +64,7 @@ function getCapabilityKindLabel(capability: WorkbenchCapabilityRegistryItem): st
 function getQuickActionButtonClasses(action: WorkbenchQuickAction): string {
   return action.emphasis === 'primary'
     ? 'border-amber-500/30 bg-amber-500/10 text-amber-200 hover:border-amber-500/50 hover:bg-amber-500/15'
-    : 'border-white/[0.08] bg-zinc-900/60 text-zinc-300 hover:border-white/[0.14] hover:text-zinc-100';
+    : 'border-border-muted bg-zinc-900/60 text-zinc-300 hover:border-border-hover hover:text-zinc-100';
 }
 
 function sortCapabilities<T extends WorkbenchCapabilityRegistryItem>(items: T[]): T[] {
@@ -229,7 +229,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   const summaryText = summaryParts.join(' · ');
 
   return (
-    <div className="mb-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-1.5">
+    <div className="mb-2 rounded-xl border border-border-muted bg-surface-subtle px-3 py-1.5">
       {showCapabilitySummary && (
         <>
           <div className="flex items-center gap-2">
@@ -244,7 +244,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
                 : <ChevronRight className="h-3 w-3 shrink-0" />}
               <span className="truncate">{summaryText || 'Capabilities'}</span>
             </button>
-            <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-white/[0.08] bg-zinc-950/40">
+            <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border-muted bg-zinc-950/40">
               <button
                 type="button"
                 onClick={() => setTurnCapabilityScopeMode('auto')}
@@ -260,7 +260,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
               <button
                 type="button"
                 onClick={() => setTurnCapabilityScopeMode('manual')}
-                className={`border-l border-white/[0.08] px-2 py-0.5 text-[10px] transition-colors ${
+                className={`border-l border-border-muted px-2 py-0.5 text-[10px] transition-colors ${
                   turnCapabilityScopeMode === 'manual'
                     ? 'bg-zinc-700 text-zinc-100'
                     : 'text-zinc-500 hover:text-zinc-300'
@@ -402,7 +402,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
       )}
 
       {blockedCapabilities.length > 0 && (
-        <div className="mt-3 border-t border-white/[0.06] pt-2">
+        <div className="mt-3 border-t border-border-muted pt-2">
           <WorkbenchSectionHeader
             icon={<Wrench className="h-3.5 w-3.5 text-amber-400" />}
             label="Quick Actions"
@@ -478,7 +478,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
       )}
 
       {resolvedCapabilities.length > 0 && (
-        <div className="mt-3 border-t border-white/[0.06] pt-2">
+        <div className="mt-3 border-t border-border-muted pt-2">
           <WorkbenchSectionHeader
             icon={<Check className="h-3.5 w-3.5 text-emerald-400" />}
             label="Ready Next Turn"

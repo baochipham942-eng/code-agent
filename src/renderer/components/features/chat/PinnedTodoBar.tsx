@@ -32,11 +32,11 @@ export const PinnedTodoBar: React.FC<PinnedTodoBarProps> = ({ plan, sessionId })
   return (
     <div className="px-4 shrink-0">
       <div className="mb-2 max-w-3xl mx-auto">
-        <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] backdrop-blur-sm overflow-hidden">
+        <div className="rounded-lg border border-border-muted bg-surface-subtle backdrop-blur-sm overflow-hidden">
           <button
             type="button"
             onClick={() => setCollapsed(!collapsed)}
-            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-white/[0.04] transition-colors text-left"
+            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-hover transition-colors text-left"
             aria-expanded={!collapsed}
             title={collapsed ? '展开任务列表' : '折叠任务列表'}
           >

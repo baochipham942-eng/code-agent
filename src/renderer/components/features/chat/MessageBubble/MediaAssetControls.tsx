@@ -291,7 +291,7 @@ export function MediaAssetLightbox({
         className="flex max-h-full w-full max-w-6xl flex-col gap-3"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-zinc-950/80 px-3 py-2 shadow-xl">
+        <div className="flex items-center gap-3 rounded-lg border border-border-muted bg-zinc-950/80 px-3 py-2 shadow-xl">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium text-zinc-100" title={fileName}>
               {fileName}
@@ -303,7 +303,7 @@ export function MediaAssetLightbox({
                 {sourceLabels.map((label) => (
                   <span
                     key={label}
-                    className="max-w-40 truncate rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-zinc-300"
+                    className="max-w-40 truncate rounded border border-border-muted bg-surface-hover px-1.5 py-0.5 text-zinc-300"
                     title={label}
                   >
                     {label}
@@ -317,7 +317,7 @@ export function MediaAssetLightbox({
                 {parentLabels.map((label) => (
                   <span
                     key={label}
-                    className="max-w-40 truncate rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-zinc-300"
+                    className="max-w-40 truncate rounded border border-border-muted bg-surface-hover px-1.5 py-0.5 text-zinc-300"
                     title={label}
                   >
                     {label}
@@ -338,7 +338,7 @@ export function MediaAssetLightbox({
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center">
           {!src ? (
-            <div className="rounded-lg border border-white/10 bg-zinc-950/90 px-4 py-3 text-sm text-zinc-400 shadow-2xl">
+            <div className="rounded-lg border border-border-muted bg-zinc-950/90 px-4 py-3 text-sm text-zinc-400 shadow-2xl">
               内联媒体过大，已跳过预览
             </div>
           ) : asset.kind === 'video' ? (
@@ -348,7 +348,7 @@ export function MediaAssetLightbox({
               className="max-h-[calc(100vh-7rem)] max-w-full rounded-lg bg-black shadow-2xl"
             />
           ) : asset.kind === 'audio' ? (
-            <div className="w-full max-w-xl rounded-lg border border-white/10 bg-zinc-950/90 p-4">
+            <div className="w-full max-w-xl rounded-lg border border-border-muted bg-zinc-950/90 p-4">
               <audio src={src} controls className="w-full" />
             </div>
           ) : (

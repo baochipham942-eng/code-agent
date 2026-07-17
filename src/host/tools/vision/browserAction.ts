@@ -263,6 +263,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       action,
       params,
       url,
+      executionIntent: context.executionIntent,
       context,
     });
     if (relayDispatch) {

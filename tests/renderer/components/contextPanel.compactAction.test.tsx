@@ -10,7 +10,19 @@ const panelMocks = vi.hoisted(() => ({
       currentTokens: 9500,
       maxTokens: 10000,
       usagePercent: 95,
-      breakdown: { systemPrompt: 200, messages: 9100, toolResults: 200 },
+      breakdown: {
+        systemPrompt: 200,
+        messages: 9100,
+        toolResults: 200,
+        bySource: {
+          rules: 0,
+          skills: { 'my-skill': 100 },
+          mcp: {},
+          subagents: {},
+          fileReads: 0,
+          conversation: 0,
+        },
+      },
       warningLevel: 'critical' as const,
       estimatedTurnsRemaining: 1,
       lastUpdated: Date.now(),
@@ -26,6 +38,7 @@ const panelMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   invokeDomain: vi.fn(),
   refreshContextHealth: vi.fn(),
+  unmountSkill: vi.fn(),
 }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
@@ -35,8 +48,8 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/stores/skillStore', () => ({
-  useSkillStore: (selector?: (state: { unmountSkill: () => void }) => unknown) => {
-    const state = { unmountSkill: vi.fn() };
+  useSkillStore: (selector?: (state: { unmountSkill: typeof panelMocks.unmountSkill }) => unknown) => {
+    const state = { unmountSkill: panelMocks.unmountSkill };
     return selector ? selector(state) : state;
   },
 }));
@@ -55,6 +68,15 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
     invoke: panelMocks.invoke,
     invokeDomain: panelMocks.invokeDomain,
   },
+}));
+
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}));
+vi.mock('../../../src/renderer/hooks/useToast', () => ({
+  toast: toastMocks,
 }));
 
 import { ContextPanel } from '../../../src/renderer/components/ContextPanel';
@@ -97,5 +119,36 @@ describe('ContextPanel — 立即压缩 handler', () => {
     expect(button.disabled).toBe(true);
     fireEvent.click(button);
     expect(panelMocks.invoke).not.toHaveBeenCalled();
+  });
+});
+
+// D-2：handleUnload 的中文迁 i18n 后带插值（{name}/{message}），钉住替换是不是真按
+// 消息内容/角色名把占位符填对，而不是只看"调用过 toast"这种不看参数的弱断言
+// （D-1 回炉正是因为类似的"只断言调用过"漏了参数错误）。
+describe('ContextPanel — handleUnload 卸载 skill toast', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useContextCompactionStore.setState({ status: 'idle', result: null, error: null, updatedAt: 0 });
+  });
+
+  afterEach(cleanup);
+
+  it('卸载成功：toast.success 内容把 {name} 换成 skill 名', async () => {
+    panelMocks.unmountSkill.mockResolvedValue(undefined);
+    render(<ContextPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: '卸载或断开 my-skill' }));
+
+    await waitFor(() => expect(panelMocks.unmountSkill).toHaveBeenCalledWith('my-skill'));
+    expect(toastMocks.success).toHaveBeenCalledWith('已卸载 skill: my-skill');
+  });
+
+  it('卸载失败：toast.error 内容把 {message} 换成真实错误信息', async () => {
+    panelMocks.unmountSkill.mockRejectedValue(new Error('disk full'));
+    render(<ContextPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: '卸载或断开 my-skill' }));
+
+    await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith('卸载失败: disk full'));
   });
 });

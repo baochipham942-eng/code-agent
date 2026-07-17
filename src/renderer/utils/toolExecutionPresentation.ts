@@ -1,5 +1,4 @@
 import type { ToolCall } from '@shared/contract';
-import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import type { ToolStatus } from '../components/features/chat/MessageBubble/ToolCallDisplay/styles';
 import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
@@ -13,25 +12,6 @@ export type ToolPermissionView =
   | 'memory'
   | 'mcp'
   | 'unknown';
-
-export interface ToolLoopDecisionSummary {
-  action: string;
-  reason: string;
-  expectedNextAction: string;
-  tone: 'neutral' | 'info' | 'success' | 'warning' | 'error';
-}
-
-export interface ToolLikeForDecision {
-  name: string;
-  shortDescription?: string;
-  expectedOutcome?: string;
-  result?: unknown;
-  success?: boolean;
-  _streaming?: boolean;
-  metadata?: Record<string, unknown> | null;
-  /** 同一轮里之后又成功了，这次失败已被恢复，不应触发「工具报错」决策 */
-  recovered?: boolean;
-}
 
 /**
  * 判定一条工具结果是否「自动加载重试」的良性内部状态（success:false 但不是真失败）。
@@ -241,45 +221,6 @@ export function isEscalatedToolError(toolCall: Pick<ToolCall, 'result'>): boolea
   return classifyToolError(errorText)?.escalate === true;
 }
 
-/** API/额度类错误升级成全局 banner 的数据（P0 #3）。 */
-export interface ApiErrorBannerData {
-  summary: string;
-  detail?: string;
-  kind: ToolErrorKind;
-  action?: ToolErrorAction;
-}
-
-/**
- * 从最近一轮的工具节点派生需要升级成全局 banner 的 API/额度错误（P0 #3）。
- * 设计取舍：
- * - **只看最后一轮**——新一轮（用户发新消息）开始即自然清空，错误不会无限挂着；
- * - 已被恢复（recovered，同轮后续重试成功）的失败不再报；
- * - 只升级 humanize 标了 escalate 的类别（额度/限流/鉴权这类需用户介入或阻塞进度的），
- *   过载/超时/网络等瞬态可自动重试的不升 banner，避免打扰。
- * 取最后一轮里**最新**一条未恢复的 escalate 错误。
- */
-export function deriveApiErrorBanner(
-  turns: readonly TraceTurn[] | null | undefined,
-  t: Translations,
-): ApiErrorBannerData | null {
-  if (!turns || turns.length === 0) return null;
-  const lastTurn = turns[turns.length - 1];
-  for (let i = lastTurn.nodes.length - 1; i >= 0; i -= 1) {
-    const toolCall = lastTurn.nodes[i].toolCall;
-    if (toolCall?.success !== false || toolCall.recovered) continue;
-    const humanized = humanizeToolError(toolCall.result, toolCall.name, t);
-    if (humanized?.escalate && humanized.kind) {
-      return {
-        summary: humanized.summary,
-        detail: humanized.detail,
-        kind: humanized.kind,
-        action: humanized.action,
-      };
-    }
-  }
-  return null;
-}
-
 export interface ToolErrorActionState {
   /** 是否展示通用错误 action 行（仅失败工具结果） */
   show: boolean;
@@ -314,69 +255,14 @@ export function buildToolErrorActions(
   };
 }
 
-export function getToolRecoveryHint(toolCall: ToolCall, status: ToolStatus): string {
-  if (status === 'pending') return '等待结果';
-  if (status === 'interrupted') return '可重新运行';
+export function getToolRecoveryHint(toolCall: ToolCall, status: ToolStatus, t: Translations): string {
+  const hint = t.toolRecoveryHint;
+  if (status === 'pending') return hint.pending;
+  if (status === 'interrupted') return hint.interrupted;
   if (status === 'error') {
-    if (toolCall.expectedOutcome) return `可重试：${toolCall.expectedOutcome}`;
-    return '可以重试或换个工具';
+    if (toolCall.expectedOutcome) return hint.errorWithOutcome.replace('{outcome}', toolCall.expectedOutcome);
+    return hint.errorGeneric;
   }
-  if (toolCall.result?.outputPath) return '产物已记录';
-  return '结果已记录';
-}
-
-function bestToolReason(tool: ToolLikeForDecision): string {
-  return tool.expectedOutcome || tool.shortDescription || tool.name;
-}
-
-export function summarizeToolLoopDecision(allTools: ToolLikeForDecision[]): ToolLoopDecisionSummary | null {
-  // 自动加载重试 + 已恢复的失败都是良性/已收尾状态，决策判定里完全忽略——否则会被误判成
-  // 失败弹「工具报错」，把成功的一轮演成翻车。
-  const tools = allTools.filter((tool) => !isAutoLoadedRetry(tool.metadata) && !tool.recovered);
-  if (tools.length === 0) return null;
-
-  const failed = tools.find((tool) => tool.success === false);
-  if (failed) {
-    return {
-      action: '工具报错',
-      reason: bestToolReason(failed),
-      expectedNextAction: '可以重试，或换个工具试试',
-      tone: 'error',
-    };
-  }
-
-  const pending = tools.find((tool) => tool._streaming || tool.result === undefined);
-  if (pending) {
-    return {
-      action: '等待工具返回',
-      reason: bestToolReason(pending),
-      expectedNextAction: '收到结果后继续汇总或执行下一步',
-      tone: 'neutral',
-    };
-  }
-
-  return {
-    action: tools.length > 1 ? `完成 ${tools.length} 个工具调用` : '工具结果已返回',
-    reason: bestToolReason(tools[0]),
-    expectedNextAction: '把结果并入回复或继续下一步',
-    tone: 'success',
-  };
-}
-
-export function summarizeToolLoopDecisionFromNodes(nodes: TraceNode[]): ToolLoopDecisionSummary | null {
-  const tools: ToolLikeForDecision[] = nodes
-    .map((node) => node.toolCall)
-    .filter((toolCall): toolCall is NonNullable<TraceNode['toolCall']> => Boolean(toolCall))
-    .map((toolCall) => ({
-      name: toolCall.name,
-      shortDescription: toolCall.shortDescription,
-      expectedOutcome: toolCall.expectedOutcome,
-      result: toolCall.result,
-      success: toolCall.success,
-      _streaming: toolCall._streaming,
-      metadata: toolCall.metadata,
-      recovered: toolCall.recovered,
-    }));
-
-  return summarizeToolLoopDecision(tools);
+  if (toolCall.result?.outputPath) return hint.outputRecorded;
+  return hint.resultRecorded;
 }

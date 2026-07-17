@@ -57,9 +57,9 @@ export const ContextPanel: React.FC = () => {
       case 'skill':
         try {
           await unmountSkill(target.name);
-          toast.success(`已卸载 skill: ${target.name}`);
+          toast.success(ch.unmountSkillSuccessToast.replace('{name}', target.name));
         } catch (err) {
-          toast.error(`卸载失败: ${err instanceof Error ? err.message : '未知错误'}`);
+          toast.error(ch.unmountFailedToast.replace('{message}', err instanceof Error ? err.message : ch.unknownError));
         }
         break;
       case 'mcp':
@@ -68,13 +68,13 @@ export const ContextPanel: React.FC = () => {
             serverName: target.server,
             enabled: false,
           });
-          toast.success(`已禁用 MCP server: ${target.server}`);
+          toast.success(ch.disableMcpSuccessToast.replace('{name}', target.server));
         } catch (err) {
-          toast.error(`禁用失败: ${err instanceof Error ? err.message : '未知错误'}`);
+          toast.error(ch.disableFailedToast.replace('{message}', err instanceof Error ? err.message : ch.unknownError));
         }
         break;
       case 'subagent':
-        toast.info('Subagent 执行完会自动从占用中移除');
+        toast.info(ch.subagentAutoRemoveToast);
         break;
     }
   };

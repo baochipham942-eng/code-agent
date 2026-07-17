@@ -164,6 +164,35 @@ turnDiff: {
   confirmMessage: '将回滚本轮对 {count} 个文件的全部修改，当前内容会被 checkpoint 覆盖。',
   confirmAction: '撤销变更',
   newFileBadge: '新建',
+},
+
+// 回合运行状态（TurnCard 顶部状态条 + 流式状态横幅）——两处消费同一套键，别建两套
+turnRun: {
+  status: {
+    cancelling: '正在停止',
+    resumable: '已中断，可继续',
+    stale: '连接已断开',
+    waitingTool: '等待工具',
+    usingTools: '正在使用工具',
+    running: '进行中',
+    blocked: '遇到问题',
+    cancelled: '已取消',
+    completed: '已完成',
+  },
+  detail: {
+    cancelling: '正在清理本轮流式输出和未完成工具',
+    blocked: '本轮运行遇到错误，等待恢复或重新执行',
+    resumable: '上次流式输出未完成，可从会话操作里继续',
+    cancelled: '本轮流式输出已停止，未保留半截内容',
+    waitingTool: '工具调用仍在返回结果',
+    usingTools: '工具调用已开始，结果会并入当前回复',
+    running: '内容正在流式写入当前回复',
+    stale: '保留现场但不重复播放旧内容',
+  },
+  cleanupBadge: '清理中',
+  resumeBadge: '可继续',
+  outputsSignal: '{count} 个产出',
+  toolsSignal: '{count} 次工具调用',
 }
 };
 
@@ -327,5 +356,34 @@ turnDiff: {
   confirmMessage: 'This rolls back all changes to {count} files from this turn; current contents will be overwritten by the checkpoint.',
   confirmAction: 'Undo changes',
   newFileBadge: 'new',
+},
+
+// Turn run status (TurnCard header chip + streaming state banner) — shared key set
+turnRun: {
+  status: {
+    cancelling: 'Stopping…',
+    resumable: 'Interrupted — resumable',
+    stale: 'Connection lost',
+    waitingTool: 'Waiting for tool',
+    usingTools: 'Using tools',
+    running: 'In progress',
+    blocked: 'Ran into a problem',
+    cancelled: 'Cancelled',
+    completed: 'Completed',
+  },
+  detail: {
+    cancelling: 'Cleaning up this turn’s streaming output and unfinished tools',
+    blocked: 'This turn ran into an error. Waiting to resume or retry.',
+    resumable: 'The last stream was left unfinished. You can continue it from the session actions.',
+    cancelled: 'This turn’s stream was stopped; no partial content was kept.',
+    waitingTool: 'The tool call is still returning a result.',
+    usingTools: 'A tool call has started; its result will be folded into the current reply.',
+    running: 'Content is streaming into the current reply.',
+    stale: 'Keeping the state without replaying old content.',
+  },
+  cleanupBadge: 'cleanup',
+  resumeBadge: 'resume',
+  outputsSignal: '{count} outputs',
+  toolsSignal: '{count} tool calls',
 }
 };

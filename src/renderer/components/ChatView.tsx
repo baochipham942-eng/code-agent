@@ -83,6 +83,7 @@ import {
   Search,
   AlertTriangle,
   MessageSquare,
+  X,
 } from 'lucide-react';
 
 function formatChannelSessionSource(session: ReturnType<typeof useSessionStore.getState>['sessions'][number] | undefined): string | null {
@@ -911,6 +912,9 @@ export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
 
 const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ snapshot }) => {
   const { t, language } = useI18n();
+  // 无现成 dismiss 通道（streamSnapshot 只在发新消息/切会话时被清空），本地记住已关闭
+  // 的 turnId 即可；换了新的未完成流（不同 turnId）时横幅照常重新出现。
+  const [dismissedTurnId, setDismissedTurnId] = useState<string | null>(null);
   const toolNames = snapshot.toolCalls
     .map((toolCall) => toolCall.name || toolCall.id)
     .filter(Boolean)
@@ -921,11 +925,15 @@ const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ 
     minute: '2-digit',
   });
 
+  if (dismissedTurnId === snapshot.turnId) {
+    return null;
+  }
+
   return (
     <div className="px-4 pt-3">
       <div className="max-w-3xl mx-auto flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-status-warning-soft">
         <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-status-warning-soft dark:text-amber-300 [.high-contrast-dark_&]:text-amber-300" />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="font-medium">{t.chat.streamInterruptedTitle}</div>
           <div className="mt-1 text-status-warning-soft dark:text-status-warning-soft/80 [.high-contrast-dark_&]:text-status-warning-soft/80">
             {snapshot.toolCalls.length > 0
@@ -935,9 +943,18 @@ const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ 
               : t.chat.streamInterruptedText}
           </div>
           <div className="mt-1 text-xs text-status-warning-soft dark:text-status-warning-soft/60 [.high-contrast-dark_&]:text-status-warning-soft/60">
-            turn {snapshot.turnId.slice(0, 8)} - {timeLabel}
+            {timeLabel}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setDismissedTurnId(snapshot.turnId)}
+          className="shrink-0 rounded-md p-1 text-status-warning-soft/60 transition-colors hover:bg-white/[0.06] hover:text-status-warning-soft"
+          aria-label={t.common.close}
+          title={t.common.close}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   );

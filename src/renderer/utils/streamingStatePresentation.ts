@@ -1,5 +1,6 @@
 import type { TraceTurn } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
+import type { Translations } from '../i18n';
 
 export type RuntimeSessionStatus =
   | 'idle'
@@ -36,6 +37,7 @@ export interface StreamingUiState {
 
 export interface BuildStreamingUiStateInput {
   turn: TraceTurn;
+  t: Translations;
   isActiveTurn: boolean;
   sessionStatus?: RuntimeSessionStatus | null;
   isSessionProcessing?: boolean;
@@ -85,6 +87,7 @@ function hasRunningTool(turn: TraceTurn): boolean {
 
 export function buildStreamingUiState({
   turn,
+  t,
   isActiveTurn,
   sessionStatus = null,
   isSessionProcessing = false,
@@ -95,8 +98,8 @@ export function buildStreamingUiState({
   if (sessionStatus === 'cancelling') {
     return {
       status: 'cancelling',
-      label: '取消中',
-      detail: '正在清理本轮流式输出和未完成工具',
+      label: t.turnRun.status.cancelling,
+      detail: t.turnRun.detail.cancelling,
       tone: 'warning',
       shouldAnimate: true,
       showResumeHint: false,
@@ -107,8 +110,8 @@ export function buildStreamingUiState({
   if (turn.status === 'error' || sessionStatus === 'error') {
     return {
       status: 'blocked',
-      label: '已阻塞',
-      detail: '本轮运行遇到错误，等待恢复或重新执行',
+      label: t.turnRun.status.blocked,
+      detail: t.turnRun.detail.blocked,
       tone: 'error',
       shouldAnimate: false,
       showResumeHint: false,
@@ -119,8 +122,8 @@ export function buildStreamingUiState({
   if (sessionStatus === 'paused' || hasIncompleteStreamSnapshot(streamSnapshot, turn.turnId)) {
     return {
       status: 'resumable',
-      label: '可恢复',
-      detail: '上次流式输出未完成，可从会话操作里继续',
+      label: t.turnRun.status.resumable,
+      detail: t.turnRun.detail.resumable,
       tone: 'warning',
       shouldAnimate: false,
       showResumeHint: true,
@@ -131,8 +134,8 @@ export function buildStreamingUiState({
   if (sessionStatus === 'cancelled' || hasCancelledRunMarker(turn)) {
     return {
       status: 'cancelled',
-      label: '已取消',
-      detail: '本轮流式输出已停止，未保留半截内容',
+      label: t.turnRun.status.cancelled,
+      detail: t.turnRun.detail.cancelled,
       tone: 'warning',
       shouldAnimate: false,
       showResumeHint: false,
@@ -148,8 +151,8 @@ export function buildStreamingUiState({
       now - runningToolStartTime >= TOOL_WAIT_THRESHOLD_MS;
     return {
       status: isWaitingTool ? 'waiting_tool' : 'using_tools',
-      label: isWaitingTool ? '工具等待中' : '正在使用工具',
-      detail: isWaitingTool ? '工具调用仍在返回结果' : '工具调用已开始，结果会并入当前回复',
+      label: isWaitingTool ? t.turnRun.status.waitingTool : t.turnRun.status.usingTools,
+      detail: isWaitingTool ? t.turnRun.detail.waitingTool : t.turnRun.detail.usingTools,
       tone: 'neutral',
       shouldAnimate: true,
       showResumeHint: false,
@@ -160,8 +163,8 @@ export function buildStreamingUiState({
   if (streaming && isActiveTurn) {
     return {
       status: 'drafting',
-      label: '生成草稿中',
-      detail: '内容正在流式写入当前回复',
+      label: t.turnRun.status.running,
+      detail: t.turnRun.detail.running,
       tone: 'info',
       shouldAnimate: true,
       showResumeHint: false,
@@ -176,8 +179,8 @@ export function buildStreamingUiState({
   ) {
     return {
       status: 'stale',
-      label: '旧流状态',
-      detail: '保留现场但不重复播放旧内容',
+      label: t.turnRun.status.stale,
+      detail: t.turnRun.detail.stale,
       tone: 'neutral',
       shouldAnimate: false,
       showResumeHint: false,
@@ -188,7 +191,7 @@ export function buildStreamingUiState({
   if (turn.status === 'completed') {
     return {
       status: 'completed',
-      label: '已完成',
+      label: t.turnRun.status.completed,
       detail: '',
       tone: 'success',
       shouldAnimate: false,

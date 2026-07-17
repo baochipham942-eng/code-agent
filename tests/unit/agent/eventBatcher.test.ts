@@ -2,6 +2,29 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEvent } from '../../../src/shared/contract';
 import { EventBatcher } from '../../../src/host/agent/eventBatcher';
 
+// EventBatcher 内部实现（eventBatcher.ts 的 StreamTextBuffer/合并逻辑）确实读写
+// isMeta 字段来判断可见/隐藏流文本是否可合并，但共享契约里 AgentEvent 的
+// stream_chunk / message_delta data 类型都没声明这个字段。这里用扩展类型让
+// EventBatcher<TEvent> 的泛型接受 isMeta，不改 src 的契约类型。
+type StreamChunkEventWithMeta = {
+  type: 'stream_chunk';
+  data: { content: string | undefined; turnId?: string; parentToolUseId?: string; isMeta?: boolean };
+};
+type MessageDeltaEventWithMeta = {
+  type: 'message_delta';
+  data: {
+    role: 'assistant';
+    path: 'content' | 'reasoning';
+    op: 'append' | 'replace';
+    text: string;
+    turnId?: string;
+    messageId?: string;
+    deltaSeq?: number;
+    parentToolUseId?: string;
+    isMeta?: boolean;
+  };
+};
+
 describe('EventBatcher', () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -24,7 +47,7 @@ describe('EventBatcher', () => {
   it('preserves isMeta when stream chunks are merged', () => {
     vi.useFakeTimers();
     const onFlush = vi.fn();
-    const batcher = new EventBatcher({ onFlush, flushInterval: 16 });
+    const batcher = new EventBatcher<StreamChunkEventWithMeta>({ onFlush, flushInterval: 16 });
 
     batcher.emit({ type: 'stream_chunk', data: { content: 'hidden ', turnId: 'turn-1', isMeta: true } });
     batcher.emit({ type: 'stream_chunk', data: { content: 'text', turnId: 'turn-1', isMeta: true } });
@@ -37,7 +60,7 @@ describe('EventBatcher', () => {
 
   it('does not merge visible and meta stream chunks', () => {
     const onFlush = vi.fn();
-    const batcher = new EventBatcher({ onFlush });
+    const batcher = new EventBatcher<StreamChunkEventWithMeta>({ onFlush });
 
     batcher.emit({ type: 'stream_chunk', data: { content: 'visible', turnId: 'turn-1' } });
     batcher.emit({ type: 'stream_chunk', data: { content: 'hidden', turnId: 'turn-1', isMeta: true } });
@@ -174,7 +197,7 @@ describe('EventBatcher', () => {
   it('preserves isMeta when message deltas are merged', () => {
     vi.useFakeTimers();
     const onFlush = vi.fn();
-    const batcher = new EventBatcher({ onFlush, flushInterval: 16 });
+    const batcher = new EventBatcher<MessageDeltaEventWithMeta>({ onFlush, flushInterval: 16 });
 
     batcher.emit({
       type: 'message_delta',

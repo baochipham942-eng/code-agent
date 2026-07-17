@@ -53,7 +53,7 @@ describe('toSchemaOnlyTools', () => {
   it('防御性剥离 execute 闭包，保留 schema 字段', () => {
     const withExecute = [makeTool('read_file', { execute: vi.fn() })];
     const out = toSchemaOnlyTools(withExecute);
-    expect((out[0] as Record<string, unknown>).execute).toBeUndefined();
+    expect((out[0] as unknown as Record<string, unknown>).execute).toBeUndefined();
     expect(out[0].name).toBe('read_file');
     expect(out[0].description).toBe('read_file tool');
     expect(out[0].inputSchema).toEqual({ type: 'object', properties: {} });
@@ -63,7 +63,7 @@ describe('toSchemaOnlyTools', () => {
     const execute = vi.fn();
     const withExecute = [makeTool('read_file', { execute })];
     toSchemaOnlyTools(withExecute);
-    expect((withExecute[0] as Record<string, unknown>).execute).toBe(execute);
+    expect((withExecute[0] as unknown as Record<string, unknown>).execute).toBe(execute);
   });
 });
 

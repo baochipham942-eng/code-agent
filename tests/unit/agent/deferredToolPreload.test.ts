@@ -42,8 +42,8 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 function runtime(
-  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages'>>,
-): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages'> {
+  overrides: Partial<Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn'>>,
+): Pick<RuntimeContext, 'enableToolDeferredLoading' | 'executionIntent' | 'messages' | 'turn'> {
   return {
     enableToolDeferredLoading: true,
     executionIntent: undefined,

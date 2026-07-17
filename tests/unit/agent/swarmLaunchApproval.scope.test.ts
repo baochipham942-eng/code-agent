@@ -38,7 +38,7 @@ describe('SwarmLaunchApprovalGate run scope', () => {
     vi.useFakeTimers();
     const gate = new SwarmLaunchApprovalGate({ approvalTimeoutMs: 60_000 });
     const events: SwarmEvent[] = [];
-    getEventBus().subscribe<SwarmEvent>('swarm', (event) => events.push(event.data));
+    getEventBus().subscribe<SwarmEvent>('swarm', (event) => { events.push(event.data); });
 
     const pendingA = gate.requestApproval({ scope: SCOPE_A, tasks: [TASK] });
     const pendingB = gate.requestApproval({ scope: SCOPE_B, tasks: [TASK] });

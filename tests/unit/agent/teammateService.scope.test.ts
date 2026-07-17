@@ -46,7 +46,7 @@ describe('TeammateService run scope', () => {
     service.register(agentB, 'Reviewer', 'reviewer');
 
     const events: SwarmEvent[] = [];
-    getEventBus().subscribe<SwarmEvent>('swarm', (event) => events.push(event.data));
+    getEventBus().subscribe<SwarmEvent>('swarm', (event) => { events.push(event.data); });
 
     const messageA = service.onUserMessage(SCOPE_A, agentA, 'message-a', {
       id: 'source-message',

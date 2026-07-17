@@ -357,6 +357,7 @@ vi.mock('../../../src/host/services/skills/skillInvocationResolver', () => ({
 
 import { ConversationRuntime } from '../../../src/host/agent/runtime/conversationRuntime';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
+import type { StructuredOutputConfig } from '../../../src/host/agent/structuredOutput';
 import { GoalModeController } from '../../../src/host/agent/goalModeController';
 import { buildPackedSeedMemory, buildSeedMemoryBlock } from '../../../src/host/utils/seedMemoryInjector';
 import {
@@ -371,6 +372,11 @@ import {
 // --------------------------------------------------------------------------
 // Helper — create a minimal RuntimeContext mock
 // --------------------------------------------------------------------------
+
+// RuntimeContext 的字段在 src 里全是 readonly（不可变契约）。这里的测试需要在
+// 用例中间原地改字段模拟状态变化（如 ctx.maxIterations = 2），Mutable 只在测试
+// 侧去掉 readonly 修饰，不影响 src 的只读契约。
+type Mutable<T> = { -readonly [P in keyof T]: T[P] };
 
 function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
   return {
@@ -414,7 +420,8 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
 
     stepByStepMode: false,
 
-    stats: RunStatsState.forTest({ traceId: '' } as never),
+    // 注：这里原来还有一个更早的 `stats:` 键（{ traceId: '' }，对象字面量重复键
+    // TS1117），JS 运行时只有后面那个 stats 生效，故删掉死代码，不改变既有行为。
     turnTrace: {
       setTurn: () => {},
       record: () => {},
@@ -475,7 +482,7 @@ function createMockModules() {
 // --------------------------------------------------------------------------
 
 describe('ConversationRuntime', () => {
-  let ctx: RuntimeContext;
+  let ctx: Mutable<RuntimeContext>;
   let runtime: ConversationRuntime;
   let modules: ReturnType<typeof createMockModules>;
 
@@ -558,7 +565,7 @@ describe('ConversationRuntime', () => {
 
   describe('structured output', () => {
     it('should set and get structured output config', () => {
-      const config = { enabled: true, schema: { type: 'object' } };
+      const config: StructuredOutputConfig = { enabled: true, schema: { type: 'object' } };
       runtime.setStructuredOutput(config);
 
       expect(runtime.getStructuredOutput()).toBe(config);
@@ -566,24 +573,24 @@ describe('ConversationRuntime', () => {
     });
 
     it('should clear structured output config', () => {
-      runtime.setStructuredOutput({ enabled: true, schema: {} });
+      runtime.setStructuredOutput({ enabled: true, schema: { type: 'object' } });
       runtime.setStructuredOutput(undefined);
       expect(runtime.getStructuredOutput()).toBeUndefined();
     });
 
     it('shouldRetryStructuredOutput returns false on success', () => {
-      runtime.setStructuredOutput({ enabled: true, schema: {} });
+      runtime.setStructuredOutput({ enabled: true, schema: { type: 'object' } });
       expect(runtime.shouldRetryStructuredOutput({ success: true } as any)).toBe(false);
     });
 
     it('shouldRetryStructuredOutput returns true when retries remain', () => {
-      runtime.setStructuredOutput({ enabled: true, schema: {} });
+      runtime.setStructuredOutput({ enabled: true, schema: { type: 'object' } });
       runtime.flowStateForTest.structuredOutputRetryCount = 0;
       expect(runtime.shouldRetryStructuredOutput({ success: false } as any)).toBe(true);
     });
 
     it('shouldRetryStructuredOutput returns false when max retries reached', () => {
-      runtime.setStructuredOutput({ enabled: true, schema: {} });
+      runtime.setStructuredOutput({ enabled: true, schema: { type: 'object' } });
       runtime.flowStateForTest.structuredOutputRetryCount = 3;
       ctx.maxStructuredOutputRetries = 3;
       expect(runtime.shouldRetryStructuredOutput({ success: false } as any)).toBe(false);
@@ -997,10 +1004,10 @@ describe('ConversationRuntime', () => {
       vi.mocked(buildSkillInvocationContext).mockResolvedValueOnce({
         block: '<required-skill-invocation name="edit-role">...</required-skill-invocation>',
         contextModifier: {
-          preApprovedTools: invocation.skill.allowedTools,
+          preApprovedTools: [...invocation.skill.allowedTools],
           toolBoundary: {
             skillName: 'edit-role',
-            allowedTools: invocation.skill.allowedTools,
+            allowedTools: [...invocation.skill.allowedTools],
             strict: true,
           },
         },

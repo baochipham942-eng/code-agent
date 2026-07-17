@@ -152,3 +152,64 @@ describe('ContextPanel — handleUnload 卸载 skill toast', () => {
     await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith('卸载失败: disk full'));
   });
 });
+
+// i18n 残尾迁移：handleNavigate 的 mcp/subagent toast 迁 i18n 后带插值（{name}），
+// 同 D-2 套路钉住替换是不是真按名字填对，不是只断言"调用过"。
+describe('ContextPanel — handleNavigate toast', () => {
+  const originalBySource = panelMocks.appState.contextHealth.breakdown.bySource;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useContextCompactionStore.setState({ status: 'idle', result: null, error: null, updatedAt: 0 });
+    panelMocks.appState.contextHealth.breakdown.bySource = {
+      ...originalBySource,
+      mcp: { 'my-mcp': 50 },
+      subagents: { 'my-subagent': 30 },
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+    panelMocks.appState.contextHealth.breakdown.bySource = originalBySource;
+  });
+
+  it('跳转到 mcp 来源：toast.info 内容把 {name} 换成 server 名', () => {
+    render(<ContextPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: '跳转到 my-mcp 对应面板' }));
+
+    expect(toastMocks.info).toHaveBeenCalledWith('MCP server: my-mcp（详细管理请到设置）');
+  });
+
+  it('跳转到 subagent 来源：toast.info 内容把 {name} 换成 subagent 名', () => {
+    render(<ContextPanel />);
+    // subagents 分组默认折叠，须先展开
+    fireEvent.click(screen.getByRole('button', { name: /Subagents/ }));
+
+    fireEvent.click(screen.getByRole('button', { name: '跳转到 my-subagent 对应面板' }));
+
+    expect(toastMocks.info).toHaveBeenCalledWith('Subagent: my-subagent（执行完即移除占用）');
+  });
+});
+
+// i18n 残尾迁移：无 contextHealth 数据时的空态文案迁 i18n，钉住渲染内容。
+describe('ContextPanel — 空态', () => {
+  const originalContextHealth = panelMocks.appState.contextHealth;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (panelMocks.appState as { contextHealth: unknown }).contextHealth = null;
+  });
+
+  afterEach(() => {
+    cleanup();
+    panelMocks.appState.contextHealth = originalContextHealth;
+  });
+
+  it('渲染空态标题和提示文案', () => {
+    render(<ContextPanel />);
+
+    expect(screen.getByText('暂无上下文数据。')).toBeTruthy();
+    expect(screen.getByText('发送一条消息或挂载 skill / MCP 后会自动出现。')).toBeTruthy();
+  });
+});

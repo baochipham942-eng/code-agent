@@ -7,6 +7,7 @@ import { Loader2, Shrink } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
+import { useI18n } from '../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
@@ -34,6 +35,8 @@ const TONE_STYLES: Record<Tone, { ring: string; text: string; hoverBg: string }>
 };
 
 export const ContextUsagePill: React.FC = () => {
+  const { t } = useI18n();
+  const ch = t.taskStatusPanels.contextHealth;
   const contextHealth = useAppStore((s) => s.contextHealth);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const clearTimerRef = useRef<number | null>(null);
@@ -96,11 +99,11 @@ export const ContextUsagePill: React.FC = () => {
           void useSessionStore.getState().refreshContextHealth(sessionId);
         }
       } else {
-        failCompaction('压缩失败');
+        failCompaction(ch.compactFailed);
       }
       scheduleFeedbackClear(4500);
     } catch {
-      failCompaction('压缩失败');
+      failCompaction(ch.compactFailed);
       scheduleFeedbackClear(3500);
     }
   }, [
@@ -143,8 +146,11 @@ export const ContextUsagePill: React.FC = () => {
         onClick={() => setOpen((prev) => !prev)}
         onFocus={() => setOpen(true)}
         className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
-        aria-label="上下文使用"
-        title={`${displayPct}% 已用 · ${formatTokens(currentTokens)}/${formatTokens(maxTokens)} 标记`}
+        aria-label={ch.usageAriaLabel}
+        title={ch.usageTitle
+          .replace('{percent}', displayPct)
+          .replace('{used}', formatTokens(currentTokens))
+          .replace('{max}', formatTokens(maxTokens))}
       >
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
           <circle
@@ -171,16 +177,16 @@ export const ContextUsagePill: React.FC = () => {
 
       {open && (
         <div className="absolute bottom-full right-0 z-30 mb-2 min-w-[200px] rounded-xl border border-border-hover bg-zinc-900/95 px-4 py-3 text-center shadow-2xl backdrop-blur">
-          <div className="text-[11px] font-medium text-zinc-400">背景信息窗口</div>
+          <div className="text-[11px] font-medium text-zinc-400">{ch.windowLabel}</div>
           <div className="mt-1.5 text-sm font-semibold leading-tight tracking-normal text-zinc-50 tabular-nums">
             {hasData
-              ? `${displayPct}% 已用 · 剩余 ${displayRemainingPct}%`
-              : '等待首轮对话'}
+              ? ch.usageSummary.replace('{percent}', displayPct).replace('{remaining}', displayRemainingPct)
+              : ch.waitingFirstTurn}
           </div>
           <div className="mt-1 text-[11px] leading-tight text-zinc-400 tabular-nums">
             {hasData
-              ? `${formatTokens(currentTokens)} / ${formatTokens(maxTokens)} 标记`
-              : '等待统计上下文容量'}
+              ? ch.tokensFraction.replace('{used}', formatTokens(currentTokens)).replace('{max}', formatTokens(maxTokens))
+              : ch.waitingCapacity}
           </div>
 
           {canCompact && (
@@ -189,22 +195,22 @@ export const ContextUsagePill: React.FC = () => {
               onClick={handleCompact}
               disabled={isCompacting}
               className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border-muted bg-surface-hover px-3 text-xs font-medium text-zinc-100 transition-colors hover:bg-white/[0.1] disabled:cursor-wait disabled:opacity-70"
-              title="主动压缩上下文"
+              title={ch.compactButtonTitle}
             >
               {isCompacting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Shrink className="h-3.5 w-3.5" />
               )}
-              <span>{isCompacting ? '正在压缩' : '压缩'}</span>
+              <span>{isCompacting ? ch.compacting : ch.compactNow}</span>
             </button>
           )}
 
           {compactResult && (
             <div className="mt-2 text-[11px] text-emerald-400">
               {compactResult.totalSavedTokens > 0
-                ? `释放 ${formatTokens(compactResult.totalSavedTokens)} 标记`
-                : `已压缩 ${compactResult.compressionCount} 次`}
+                ? ch.freedTokens.replace('{tokens}', formatTokens(compactResult.totalSavedTokens))
+                : ch.compactedCount.replace('{count}', String(compactResult.compressionCount))}
             </div>
           )}
           {compactError && (

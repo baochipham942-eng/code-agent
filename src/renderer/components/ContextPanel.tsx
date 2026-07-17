@@ -42,11 +42,11 @@ export const ContextPanel: React.FC = () => {
         openWorkbenchTab('skills');
         setActiveWorkbenchTab('skills');
         setWorkbenchHighlight({ kind: 'mcp', name: target.server });
-        toast.info(`MCP server: ${target.server}（详细管理请到设置）`);
+        toast.info(ch.mcpNavigateToast.replace('{name}', target.server));
         break;
       case 'subagent':
         setWorkbenchHighlight({ kind: 'subagent', name: target.name });
-        toast.info(`Subagent: ${target.name}（执行完即移除占用）`);
+        toast.info(ch.subagentNavigateToast.replace('{name}', target.name));
         break;
     }
   };
@@ -115,9 +115,9 @@ export const ContextPanel: React.FC = () => {
         />
       ) : (
         <div className="p-6 text-sm text-zinc-500">
-          <p>暂无上下文数据。</p>
+          <p>{ch.emptyStateTitle}</p>
           <p className="mt-2 text-xs text-zinc-600">
-            发送一条消息或挂载 skill / MCP 后会自动出现。
+            {ch.emptyStateHint}
           </p>
         </div>
       )}

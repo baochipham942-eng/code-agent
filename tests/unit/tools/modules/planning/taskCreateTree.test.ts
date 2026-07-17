@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CanUseToolFn } from '../../../../../src/host/protocol/tools';
 
 const dbState = vi.hoisted(() => ({
   db: {
@@ -32,7 +33,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
   } as never;
 }
 
-const canUseTool = vi.fn(async () => ({ allow: true }));
+const canUseTool = vi.fn<CanUseToolFn>(async () => ({ allow: true }));
 
 describe('taskCreate — tree/owner semantics', () => {
   beforeEach(() => {

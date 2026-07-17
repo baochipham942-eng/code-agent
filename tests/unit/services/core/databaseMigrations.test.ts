@@ -4,14 +4,16 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
 import { applyTelemetryTurnsMigrations } from '../../../../src/host/services/core/database/migrations';
+import type { Logger } from '../../../../src/host/services/core/database/schemaHelpers';
 
 function createLogger() {
+  // Logger = ReturnType<typeof createLogger>（infra/logger）带私有字段/方法，plain object 无法结构满足，需 cast。
   return {
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
-  };
+  } as unknown as Logger;
 }
 
 describe('database migrations', () => {

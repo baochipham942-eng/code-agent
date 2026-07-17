@@ -662,7 +662,8 @@ async function main(): Promise<void> {
       frontmostBeforeAction,
       diagnose: diagnoseResult ? {
         success: diagnoseResult.success,
-        cgEventSuitable: diagnoseResult.metadata?.cgEventSuitable ?? null,
+        // metadata is Record<string, unknown>; cgEventSuitable is always boolean when present.
+        cgEventSuitable: (diagnoseResult.metadata?.cgEventSuitable as boolean | undefined) ?? null,
         axSuitable: diagnoseResult.metadata?.axSuitable ?? null,
         tcc: diagnoseResult.metadata?.tcc ?? null,
         recommendedWindow: diagnoseResult.metadata?.recommendedWindow ?? null,

@@ -1,6 +1,7 @@
 #!/usr/bin/env npx tsx
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { access, mkdtemp, rm } from 'fs/promises';
 import { constants } from 'fs';
 import http from 'http';
@@ -41,7 +42,7 @@ type AgentTeamSmokeResponse = {
 type StartedServer = {
   baseUrl: string;
   token: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   output: () => string;
 };
 

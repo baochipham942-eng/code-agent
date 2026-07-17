@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import type { DesktopActivityEvent, DesktopCollectorStatus } from '../../src/shared/types/desktop.ts';
+import type { DesktopActivityEvent, DesktopCollectorStatus } from '../../src/shared/contract/desktop';
 import {
   finishWithError,
   formatTimestamp,

@@ -18,7 +18,8 @@
 //   AC7 记忆接管：~/.code-agent/projects/<key>/meta.json 写入了 projectId（只换索引）
 // ============================================================================
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { access, mkdir, mkdtemp, readFile } from 'fs/promises';
 import { constants, createWriteStream } from 'fs';
 import * as crypto from 'crypto';
@@ -30,7 +31,7 @@ import { setTimeout as delay } from 'timers/promises';
 type StartedServer = {
   baseUrl: string;
   token: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   output: () => string;
 };
 

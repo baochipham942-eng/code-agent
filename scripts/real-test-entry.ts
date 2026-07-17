@@ -72,8 +72,8 @@ function parseArgs() {
     ids: undefined as string[] | undefined,
     stopOnFailure: false,
     verbose: false,
-    provider: DEFAULT_PROVIDER,
-    model: DEFAULT_MODEL,
+    provider: DEFAULT_PROVIDER as string,
+    model: DEFAULT_MODEL as string,
     runs: 1,
     timeout: 0,
   };

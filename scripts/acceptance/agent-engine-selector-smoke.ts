@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import crypto from 'crypto';
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { createServer, type Server } from 'http';
@@ -239,7 +240,7 @@ function startAppHost(
   port: number,
   fakeBinDir: string,
   catalog: { url: string; publicKeysJson: string },
-): { child: ChildProcessWithoutNullStreams; output: () => string } {
+): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
   let logs = '';
   const child = spawn('node', ['dist/web/webServer.cjs'], {
     cwd: process.cwd(),
@@ -270,7 +271,7 @@ function startAppHost(
   return { child, output: () => logs };
 }
 
-async function waitForHealth(baseUrl: string, server: ChildProcessWithoutNullStreams, output: () => string): Promise<void> {
+async function waitForHealth(baseUrl: string, server: ChildProcessByStdio<null, Readable, Readable>, output: () => string): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < 30_000) {
     if (server.exitCode !== null) {
@@ -290,7 +291,7 @@ async function waitForHealth(baseUrl: string, server: ChildProcessWithoutNullStr
   throw new Error(`Timed out waiting for app-host health at ${baseUrl}/api/health\n${output()}`);
 }
 
-async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
+async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
   if (child.killed || child.exitCode !== null) return;
 
   await new Promise<void>((resolve) => {

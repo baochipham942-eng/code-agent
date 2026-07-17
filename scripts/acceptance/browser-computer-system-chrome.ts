@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { existsSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -9,7 +10,7 @@ export const SYSTEM_CHROME_CDP_PROVIDER = 'system-chrome-cdp';
 
 export interface SystemChromeSession {
   browser: Browser;
-  chrome: ChildProcessWithoutNullStreams;
+  chrome: ChildProcessByStdio<null, Readable, Readable>;
   executable: string;
   port: number;
   profileDir: string;
@@ -94,7 +95,7 @@ export function startSystemChrome(options: {
   visible?: boolean;
   initialUrl?: string;
   executable?: string;
-}): ChildProcessWithoutNullStreams {
+}): ChildProcessByStdio<null, Readable, Readable> {
   const executable = options.executable || getSystemChromeExecutable();
   ensureSystemChromeAvailable(executable);
 
@@ -120,7 +121,7 @@ export function startSystemChrome(options: {
 
 export async function connectToSystemChrome(
   port: number,
-  chrome: ChildProcessWithoutNullStreams,
+  chrome: ChildProcessByStdio<null, Readable, Readable>,
   output: () => string,
   timeoutMs = 10_000,
 ): Promise<Browser> {

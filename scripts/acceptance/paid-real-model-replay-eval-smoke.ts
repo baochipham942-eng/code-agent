@@ -319,7 +319,6 @@ async function main(): Promise<void> {
 
     const agent = new testing.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
-      generation: 'paid-real-model-replay-eval',
       modelConfig: {
         provider,
         model: guardrails.model,

@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { existsSync } from 'fs';
 import type { Page } from 'playwright';
 import {
@@ -85,7 +86,7 @@ async function ensureBuild(skipBuild: boolean): Promise<void> {
   await runCommand(npmCommand(), ['run', 'build:renderer'], 'build:renderer');
 }
 
-async function waitForHealth(baseUrl: string, server: ChildProcessWithoutNullStreams, output: () => string): Promise<void> {
+async function waitForHealth(baseUrl: string, server: ChildProcessByStdio<null, Readable, Readable>, output: () => string): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < 30_000) {
     if (server.exitCode !== null) {
@@ -105,7 +106,7 @@ async function waitForHealth(baseUrl: string, server: ChildProcessWithoutNullStr
   throw new Error(`Timed out waiting for app-host health at ${baseUrl}/api/health\n${output()}`);
 }
 
-function startAppHost(port: number): { child: ChildProcessWithoutNullStreams; output: () => string } {
+function startAppHost(port: number): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
   let logs = '';
   const child = spawn('node', ['dist/web/webServer.cjs'], {
     cwd: process.cwd(),
@@ -325,7 +326,7 @@ async function activateRepairAction(page: Page, selector: string, label: string)
   throw new Error(`${label} repair action could not be activated. Last error:\n${lastError}\nCurrent AbilityMenu text:\n${menuText}`);
 }
 
-async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
+async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
   if (child.killed || child.exitCode !== null) return;
 
   await new Promise<void>((resolve) => {
@@ -347,7 +348,7 @@ async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void>
 
 function getProviderOption(args: ReturnType<typeof parseArgs>): string {
   const value = args.options.provider;
-  if (value === undefined || value === true) {
+  if (value === undefined || typeof value === 'boolean') {
     return SYSTEM_CHROME_CDP_PROVIDER;
   }
   return Array.isArray(value) ? value[value.length - 1] : value;

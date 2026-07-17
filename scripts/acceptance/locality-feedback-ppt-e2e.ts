@@ -46,7 +46,7 @@ function prepareIsolatedHome(): { fakeHome: string; dataDir: string } {
 
 // 解 pptx（zip）读某页 XML 文本，验标题真改了。slide_index 0 → ppt/slides/slide1.xml
 async function readSlideXml(pptxPath: string, slideIndex: number): Promise<string> {
-  const mod = await import('jszip') as typeof import('jszip');
+  const mod = await import('jszip');
   const JSZip = mod.default ?? mod;
   const zip = await JSZip.loadAsync(readFileSync(pptxPath));
   const entry = zip.file(`ppt/slides/slide${slideIndex + 1}.xml`);

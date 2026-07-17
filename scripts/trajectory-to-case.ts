@@ -13,6 +13,7 @@
 
 import { homedir } from 'os';
 import path from 'path';
+import { createHash } from 'crypto';
 import process from 'process';
 import Database from 'better-sqlite3';
 import {

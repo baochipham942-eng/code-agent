@@ -64,7 +64,7 @@ function buildSignedManifest(
     .toString('base64');
   return {
     envelope,
-    publicKeys: { [envelope.keyId]: publicKey.export({ type: 'spki', format: 'pem' }).toString() },
+    publicKeys: { [envelope.keyId!]: publicKey.export({ type: 'spki', format: 'pem' }).toString() },
   };
 }
 

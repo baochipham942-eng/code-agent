@@ -50,7 +50,7 @@ export function hasFlag(args: ParsedArgs, key: string): boolean {
 
 export function getStringOption(args: ParsedArgs, key: string): string | undefined {
   const value = args.options[key];
-  if (value === undefined || value === true) return undefined;
+  if (value === undefined || typeof value === 'boolean') return undefined;
   if (Array.isArray(value)) return value[value.length - 1];
   return value;
 }

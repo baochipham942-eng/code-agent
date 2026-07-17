@@ -3,6 +3,7 @@ import {
   PermissionRequestReason,
   permissionReasonText,
 } from '../../../src/shared/contract/permission';
+import type { PermissionRequestData } from '../../../src/host/tools/types';
 
 // 复用 toolExecutor.permissionBoundary.test.ts 的 mock 套路：
 // 通过 requestPermission spy 捕获 buildPermissionRequest 产出的 request 对象。
@@ -115,7 +116,7 @@ describe('ToolExecutor buildPermissionRequest reasonCode 分类', () => {
     resolverState.execute.mockResolvedValue({ success: true, output: 'ok' });
   });
 
-  function makeExecutor(requestPermission: ReturnType<typeof vi.fn>) {
+  function makeExecutor(requestPermission: (request: PermissionRequestData) => Promise<boolean>) {
     const executor = new ToolExecutor({
       requestPermission,
       workingDirectory: '/tmp/workbench',
@@ -153,7 +154,7 @@ describe('ToolExecutor buildPermissionRequest reasonCode 分类', () => {
   });
 
   it('写工作区内文件 → reasonCode 不误标为“工作区外”（undefined）', async () => {
-    const requestPermission = vi.fn(async () => true);
+    const requestPermission = vi.fn<(request: PermissionRequestData) => Promise<boolean>>(async () => true);
     await makeExecutor(requestPermission).execute(
       'Write',
       { file_path: 'src/app.ts', content: 'x' },

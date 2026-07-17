@@ -886,6 +886,25 @@ export const zh = {
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
+
+  // 命令面板（Cmd/Ctrl+K）
+  commandPalette: {
+    ariaLabel: '命令面板',
+    searchPlaceholder: '搜索命令…',
+    closeAriaLabel: '关闭命令面板',
+    noMatches: '没有找到匹配的命令',
+    categorySession: '会话',
+    categoryView: '视图',
+    categorySettings: '设置',
+    categoryHelp: '帮助',
+    footerNavigate: '导航',
+    footerExecute: '执行',
+    footerClose: '关闭',
+    clearConfirmTitle: '清空当前对话？',
+    clearConfirmMessage: '当前会话中的所有消息都会被清除，此操作无法撤销。',
+    clearConfirmAction: '清空对话',
+  },
+
   slashCommands: {
     // 候选装饰文案（slashPickerModel 工厂函数的 labels 注入，同 agentCommand 模式）
     picker: {

@@ -9,8 +9,11 @@ const compactModelMocks = vi.hoisted(() => {
       model: {
         provider: 'xiaomi',
         model: 'mimo-v2.5-pro',
+        temperature: 0.7,
+        maxTokens: 4096,
       },
       models: {
+        default: 'mimo-v2.5-pro',
         providers: {
           xiaomi: {
             enabled: true,
@@ -20,6 +23,12 @@ const compactModelMocks = vi.hoisted(() => {
             enabled: true,
             baseUrl: 'https://cn.haioi.net/v1',
           },
+        },
+        routing: {
+          code: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+          vision: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+          fast: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+          gui: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
         },
       },
     } as Partial<AppSettings> as AppSettings,

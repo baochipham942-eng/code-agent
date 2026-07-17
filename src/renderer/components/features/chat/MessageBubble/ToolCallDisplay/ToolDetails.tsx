@@ -26,6 +26,7 @@ import { getBrowserComputerActionCatalogEntry } from '@shared/utils/browserCompu
 import { MemoryCitationGroup } from '../../../../citations/MemoryCitationGroup';
 import type { Citation } from '@shared/contract/citation';
 import { humanizeToolError, buildToolErrorActions } from '../../../../../utils/toolExecutionPresentation';
+import { useI18n } from '../../../../../hooks/useI18n';
 import { useMessageActionStore } from '../../../../../stores/messageActionStore';
 import { copyPathToClipboard } from '../../../../../utils/platform';
 import {
@@ -134,10 +135,11 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
   const [showRawError, setShowRawError] = useState(false);
   const openPreview = useAppStore((state) => state.openPreview);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
+  const { t } = useI18n();
 
   // 报错说人话：识别得了的错误（如搜索源额度耗尽）给一行摘要 + 去设置入口，原始报错折叠。
   const humanError = result && !result.success
-    ? humanizeToolError(result.error, name)
+    ? humanizeToolError(result.error, name, t)
     : null;
 
   // Check if this is Edit tool

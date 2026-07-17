@@ -369,10 +369,15 @@ export const ProjectHeaderBar: React.FC = () => {
                       key={r.roleId}
                       type="button"
                       onClick={() => handleAddRole(r.roleId)}
-                      className="flex w-full items-center gap-1.5 truncate rounded px-1.5 py-0.5 text-left text-zinc-300 hover:bg-zinc-700"
+                      className="flex w-full items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-zinc-300 hover:bg-zinc-700"
                     >
                       <RoleIcon name={r.icon} className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
-                      <span className="min-w-0 flex-1 truncate">{r.roleId}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{r.roleId}</span>
+                        {r.description && (
+                          <span className="block truncate text-xs text-zinc-500">{r.description}</span>
+                        )}
+                      </span>
                     </button>
                   ))
                 )}

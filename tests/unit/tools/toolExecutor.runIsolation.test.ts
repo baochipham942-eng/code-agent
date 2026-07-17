@@ -362,7 +362,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
       name: toolName,
       description: 'Observe Native Run and Agent Team identities',
       inputSchema: { type: 'object', properties: {} },
-      category: 'other',
+      category: 'fs',
       permissionLevel: 'read',
       readOnly: true,
     };

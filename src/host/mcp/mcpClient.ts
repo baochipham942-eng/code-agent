@@ -14,6 +14,7 @@
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
@@ -34,7 +35,7 @@ import type {
   MCPServerState,
   InProcessMCPServerInterface,
 } from './types';
-import { isStdioConfig, isInProcessConfig, CUA_DRIVER_SERVER_NAME } from './types';
+import { isStdioConfig, isInProcessConfig, isHttpStreamableConfig, CUA_DRIVER_SERVER_NAME } from './types';
 import { buildCuaAgentCursorCapabilityForToolCall } from './cuaAgentCursor';
 import { CUA_READONLY_TOOLS, gateCuaToolCall } from './cuaSessionLock';
 import { gateCuaBudget } from './cuaTrajectoryBudget';
@@ -59,6 +60,8 @@ import { MCPToolRegistry } from './mcpToolRegistry';
 import { McpSdkTaskProtocol } from './mcpTaskProtocol';
 import type { McpTaskCapability, McpTaskProtocol } from './mcpDurableTask';
 import { registerElicitationHandler } from './mcpElicitation';
+import { createOAuthProviderForServer } from './mcpOAuthProvider';
+import { getMcpOAuthCoordinator } from './mcpOAuthCoordinator';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
   DEFAULT_MCP_SERVERS as _DEFAULT_MCP_SERVERS,
@@ -88,6 +91,19 @@ export { isInProcessConfig } from './types';
 
 const logger = createLogger('MCPClient');
 const CUA_SEARCH_KEYWORDS = new Set(['computer', 'desktop', 'screen', 'cursor', 'cua', 'driver']);
+const OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX = 'oauth-authorization-required';
+
+type OAuthFinishAuthTransport = Transport & {
+  finishAuth?: (authorizationCode: string) => Promise<void>;
+};
+
+function formatMcpConnectionError(error: unknown): string {
+  if (error instanceof UnauthorizedError) {
+    const message = error.message || 'authorization required';
+    return `${OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX}: ${message}`;
+  }
+  return error instanceof Error ? error.message : 'Unknown error';
+}
 
 export interface MCPToolCallOptions {
   timeoutMs?: number;
@@ -157,6 +173,7 @@ export class MCPClient extends EventEmitter {
   private registry = new MCPToolRegistry();
   // 懒加载：正在连接中的服务器 Promise（防止重复连接）
   private connectingServers: Map<string, Promise<void>> = new Map();
+  private pendingOAuthAuthorizations: Map<string, Promise<void>> = new Map();
 
   // ========================================================================
   // LRU 缓存 + 会话管理
@@ -358,7 +375,7 @@ export class MCPClient extends EventEmitter {
         const state = this.serverStates.get(config.name);
         if (state) {
           state.status = 'error';
-          state.error = error instanceof Error ? error.message : 'Unknown error';
+          state.error = formatMcpConnectionError(error);
         }
       }
     };
@@ -411,8 +428,15 @@ export class MCPClient extends EventEmitter {
         // Prefer the native fetch path. If it hits a transient network failure,
         // rebuild once through the configured proxy instead of forcing every MCP
         // endpoint through a proxy that may not preserve streaming semantics.
+        const serverIdentity = isHttpStreamableConfig(config) && config.auth === 'oauth'
+          ? this.getServerIdentity(config.name)
+          : undefined;
+        const authProvider = isHttpStreamableConfig(config) && config.auth === 'oauth' && serverIdentity
+          ? createOAuthProviderForServer(config, serverIdentity)
+          : undefined;
         const { transport, connectTimeout } = createTransport(config, {
           useProxy: attemptNumber > 1,
+          ...(authProvider ? { authProvider } : {}),
         });
         const client = createMCPSDKClient(this.buildListChangedHandlers(config.name));
 
@@ -424,7 +448,12 @@ export class MCPClient extends EventEmitter {
           await this.registry.discoverCapabilities(config.name, client);
           return { client, transport };
         } catch (error) {
-          await transport.close().catch(() => {});
+          const awaitingAuthorization = serverIdentity
+            ? this.maybeStartOAuthAuthorizationCompletion(config, serverIdentity, transport, error)
+            : false;
+          if (!awaitingAuthorization) {
+            await transport.close().catch(() => {});
+          }
           throw error;
         }
       }, {
@@ -462,9 +491,67 @@ export class MCPClient extends EventEmitter {
 
       if (state) {
         state.status = 'error';
-        state.error = error instanceof Error ? error.message : 'Unknown error';
+        state.error = formatMcpConnectionError(error);
       }
       throw error;
+    }
+  }
+
+  private maybeStartOAuthAuthorizationCompletion(
+    config: MCPServerConfig,
+    serverIdentity: string,
+    transport: Transport,
+    error: unknown,
+  ): boolean {
+    if (!isHttpStreamableConfig(config) || config.auth !== 'oauth' || !(error instanceof UnauthorizedError)) {
+      return false;
+    }
+
+    const coordinator = getMcpOAuthCoordinator();
+    const flow = coordinator.getFlowForServerIdentity(serverIdentity);
+    if (!flow) {
+      return false;
+    }
+
+    if (this.pendingOAuthAuthorizations.has(config.name)) {
+      transport.close().catch(() => {});
+      return true;
+    }
+
+    const task = this.completeOAuthAuthorization(config.name, serverIdentity, flow.flowId, transport);
+    this.pendingOAuthAuthorizations.set(config.name, task);
+    task.finally(() => {
+      this.pendingOAuthAuthorizations.delete(config.name);
+    }).catch(() => {});
+    return true;
+  }
+
+  private async completeOAuthAuthorization(
+    serverName: string,
+    serverIdentity: string,
+    flowId: string,
+    transport: Transport,
+  ): Promise<void> {
+    const coordinator = getMcpOAuthCoordinator();
+    try {
+      const callback = await coordinator.waitForCallback(flowId);
+      if (callback.serverIdentity !== serverIdentity) {
+        throw new Error('MCP OAuth callback server identity mismatch');
+      }
+
+      const finishAuth = (transport as OAuthFinishAuthTransport).finishAuth;
+      if (typeof finishAuth !== 'function') {
+        throw new Error('MCP OAuth transport does not support finishAuth');
+      }
+
+      await finishAuth.call(transport, callback.code);
+      await transport.close().catch(() => {});
+      await this.reconnect(serverName);
+    } catch (error) {
+      logger.warn(`MCP OAuth authorization did not complete for ${serverName}`, {
+        errorName: error instanceof Error ? error.name : typeof error,
+      });
+      await transport.close().catch(() => {});
     }
   }
 

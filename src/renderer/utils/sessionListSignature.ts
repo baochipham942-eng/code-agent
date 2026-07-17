@@ -15,6 +15,7 @@ export function sessionsSignature(list: SessionWithMeta[]): string {
         s.messageCount ?? 0,
         s.turnCount ?? 0,
         s.isArchived ? 1 : 0,
+        s.durableWaitingInput ? 1 : 0,
         s.title ?? '',
         s.workingDirectory ?? '',
       ].join(':'),

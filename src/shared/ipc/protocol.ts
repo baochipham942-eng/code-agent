@@ -88,6 +88,7 @@ export type McpAction =
   | 'addServer'
   | 'setServerEnabled'
   | 'reconnectServer'
+  | 'signOutServer'
   | 'refreshFromCloud';
 
 /**

@@ -46,6 +46,13 @@ describe('sessionsSignature', () => {
     );
   });
 
+  it('changes when durable waiting input appears or clears', () => {
+    const waiting = [session({ id: 'a', updatedAt: 100, status: 'running', durableWaitingInput: true })];
+    const cleared = [session({ id: 'a', updatedAt: 100, status: 'running' })];
+
+    expect(sessionsSignature(waiting)).not.toBe(sessionsSignature(cleared));
+  });
+
   it('changes when a session is added or removed', () => {
     const one = [session({ id: 'a', updatedAt: 100 })];
     const two = [session({ id: 'a', updatedAt: 100 }), session({ id: 'b', updatedAt: 100 })];

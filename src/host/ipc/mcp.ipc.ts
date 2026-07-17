@@ -7,9 +7,13 @@ import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import {
   getMCPClient,
+  isHttpStreamableConfig,
   refreshMCPServersFromCloud,
   type MCPServerConfig,
+  type MCPServerState,
 } from '../mcp/mcpClient';
+import { McpOAuthProvider } from '../mcp/mcpOAuthProvider';
+import { getMcpOAuthCoordinator } from '../mcp/mcpOAuthCoordinator';
 import { ensureConfigDir, getMcpConfigPath, pathExists } from '../config';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getCloudConfigService } from '../services/cloud';
@@ -33,6 +37,11 @@ const BLOCKED_STDIO_COMMANDS = new Set([
 interface RegisterMcpHandlersOptions {
   getWorkingDirectory?: () => string | undefined;
 }
+
+type McpServerStateSummary = MCPServerState & {
+  authMode?: 'oauth';
+  hasOAuthTokens?: boolean;
+};
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -113,6 +122,42 @@ function validateHttpUrl(serverUrl: string): void {
   }
 }
 
+function createOAuthManagementProvider(serverName: string, serverIdentity: string): McpOAuthProvider {
+  return new McpOAuthProvider({
+    serverIdentity,
+    serverName,
+    redirectUrl: () => 'http://127.0.0.1/oauth-management',
+    state: () => 'oauth-management',
+    onRedirectToAuthorization: () => {
+      throw new Error('OAuth management provider cannot start authorization');
+    },
+  });
+}
+
+function getOAuthProviderForState(state: MCPServerState): McpOAuthProvider | undefined {
+  if (!isHttpStreamableConfig(state.config) || state.config.auth !== 'oauth') {
+    return undefined;
+  }
+  const serverIdentity = getMCPClient().getServerIdentity(state.config.name);
+  if (!serverIdentity) {
+    return undefined;
+  }
+  return createOAuthManagementProvider(state.config.name, serverIdentity);
+}
+
+function summarizeMcpServerState(state: MCPServerState): McpServerStateSummary {
+  const oauthProvider = getOAuthProviderForState(state);
+  if (!oauthProvider) {
+    return state;
+  }
+
+  return {
+    ...state,
+    authMode: 'oauth',
+    hasOAuthTokens: Boolean(oauthProvider.tokens()),
+  };
+}
+
 export function normalizeMcpSettingsServerConfig(input: unknown): MCPServerConfig {
   const config = asRecord(input, 'config');
   const name = readRequiredString(config, 'name', 'Server name is required');
@@ -141,11 +186,25 @@ export function normalizeMcpSettingsServerConfig(input: unknown): MCPServerConfi
     );
     validateHttpUrl(serverUrl);
     const headers = optionalStringMap(config.headers, 'headers');
+    const auth = typeof config.auth === 'string' ? config.auth.trim() : undefined;
+    if (auth && (type !== 'http' || auth !== 'oauth')) {
+      throw new Error("auth must be 'oauth' for http MCP servers");
+    }
+    if (type === 'sse') {
+      const serverConfig = {
+        name,
+        type: 'sse' as const,
+        serverUrl,
+        enabled: false,
+      };
+      return headers ? { ...serverConfig, headers } : serverConfig;
+    }
     const serverConfig = {
       name,
-      type: type === 'sse' ? 'sse' as const : 'http-streamable' as const,
+      type: 'http-streamable' as const,
       serverUrl,
       enabled: false,
+      ...(auth === 'oauth' ? { auth: 'oauth' as const } : {}),
     };
     return headers ? { ...serverConfig, headers } : serverConfig;
   }
@@ -275,7 +334,7 @@ async function handleListResources(): Promise<unknown> {
 }
 
 async function handleGetServerStates(): Promise<unknown> {
-  return getMCPClient().getServerStates();
+  return getMCPClient().getServerStates().map(summarizeMcpServerState);
 }
 
 async function handleSetServerEnabled(serverName: string, enabled: boolean): Promise<void> {
@@ -288,6 +347,40 @@ async function handleSetServerEnabled(serverName: string, enabled: boolean): Pro
 
 async function handleReconnectServer(serverName: string): Promise<{ success: boolean; error?: string }> {
   return getMCPClient().reconnect(serverName);
+}
+
+async function handleSignOutServer(serverName: string): Promise<{
+  success: true;
+  serverName: string;
+  hadOAuthTokens: boolean;
+  cancelledFlow: boolean;
+}> {
+  const client = getMCPClient();
+  const state = client.getServerState(serverName);
+  if (!state) {
+    throw new Error(`MCP server "${serverName}" not found`);
+  }
+  if (!isHttpStreamableConfig(state.config) || state.config.auth !== 'oauth') {
+    throw new Error(`MCP server "${serverName}" is not configured for OAuth`);
+  }
+
+  const serverIdentity = client.getServerIdentity(serverName);
+  if (!serverIdentity) {
+    throw new Error(`MCP server "${serverName}" identity is unavailable`);
+  }
+
+  const provider = createOAuthManagementProvider(serverName, serverIdentity);
+  const hadOAuthTokens = Boolean(provider.tokens());
+  provider.invalidateCredentials('all');
+  const cancelledFlow = getMcpOAuthCoordinator().cancelFlowForServerIdentity(serverIdentity);
+  await client.disconnect(serverName);
+
+  return {
+    success: true,
+    serverName,
+    hadOAuthTokens,
+    cancelledFlow,
+  };
 }
 
 async function handleRefreshFromCloud(): Promise<void> {
@@ -343,6 +436,11 @@ export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandle
         case 'reconnectServer': {
           const payload = request.payload as { serverName: string };
           data = await handleReconnectServer(payload.serverName);
+          break;
+        }
+        case 'signOutServer': {
+          const payload = request.payload as { serverName: string };
+          data = await handleSignOutServer(payload.serverName);
           break;
         }
         case 'refreshFromCloud':

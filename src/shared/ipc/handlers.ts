@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
-import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
+import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, MCPOAuthConsentRequest, MCPOAuthConsentResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
 import type { ServiceApiKey } from '../contract/configService';
 
 import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
@@ -139,6 +139,7 @@ export interface IpcInvokeHandlers {
 
   // MCP Elicitation (server requests user input)
   [IPC_CHANNELS.MCP_ELICITATION_RESPONSE]: (response: MCPElicitationResponse) => Promise<void>;
+  [IPC_CHANNELS.MCP_OAUTH_CONSENT_RESPONSE]: (response: MCPOAuthConsentResponse) => Promise<void>;
 
   // Confirm action (Gen 3+ confirm_action)
   [IPC_CHANNELS.CONFIRM_ACTION_RESPONSE]: (response: { requestId: string; confirmed: boolean }) => Promise<void>;
@@ -547,6 +548,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CANVAS_AUTONOMY_ASK]: (request: AutonomyEnvelopeRequest) => void;
   [IPC_CHANNELS.CANVAS_AUTONOMY_CANCEL]: (payload: { requestId: string }) => void;
   [IPC_CHANNELS.MCP_ELICITATION_REQUEST]: (request: MCPElicitationRequest) => void;
+  [IPC_CHANNELS.MCP_OAUTH_CONSENT_REQUEST]: (request: MCPOAuthConsentRequest) => void;
   [IPC_CHANNELS.CONFIRM_ACTION_ASK]: (request: ConfirmActionRequest) => void;
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
   [IPC_CHANNELS.AUTH_PASSWORD_RESET_CALLBACK]: (data: { accessToken: string; refreshToken: string }) => void;

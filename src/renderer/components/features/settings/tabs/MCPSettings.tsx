@@ -8,6 +8,7 @@ import {
   CheckCircle,
   AlertCircle,
   KeyRound,
+  LogOut,
   Loader2,
   Plug,
   PlugZap,
@@ -98,6 +99,7 @@ export const MCPSettings: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [reconnectingServer, setReconnectingServer] = useState<string | null>(null);
+  const [signingOutServer, setSigningOutServer] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorInitialConfig, setEditorInitialConfig] = useState<Partial<McpServerConfig> | undefined>(undefined);
   const [discoverActionLoading, setDiscoverActionLoading] = useState<string | null>(null);
@@ -230,6 +232,28 @@ export const MCPSettings: React.FC = () => {
   const handleReauthorize = useCallback((server: WorkbenchMcpRegistryItem) => {
     setMessage({ type: 'info', text: getMcpAuthenticationRecoveryMessage(server) });
   }, []);
+
+  const handleSignOut = async (serverName: string) => {
+    if (!canManageMcp) return;
+    setSigningOutServer(serverName);
+    try {
+      const result = await window.domainAPI?.invoke<{ success: boolean; error?: string }>(
+        IPC_DOMAINS.MCP, 'signOutServer', { serverName },
+      );
+      if (result?.success && result?.data?.success) {
+        setMessage({ type: 'success', text: `${serverName}${mcpText.toast.signOutSuccessSuffix}` });
+      } else {
+        const errorMsg = result?.data?.error || result?.error?.message || mcpText.toast.unknownError;
+        setMessage({ type: 'error', text: `${serverName}${mcpText.toast.signOutFailedMiddle}${errorMsg}` });
+      }
+      await reloadMcpStatus();
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : mcpText.toast.unknownError;
+      setMessage({ type: 'error', text: `${serverName}${mcpText.toast.signOutFailedMiddle}${errorMsg}` });
+    } finally {
+      setSigningOutServer(null);
+    }
+  };
 
   const handleAddServer = useCallback(async (config: McpServerConfig) => {
     if (!canManageMcp) return;
@@ -533,6 +557,7 @@ export const MCPSettings: React.FC = () => {
                     const serverStatus = getWorkbenchCapabilityStatusPresentation(server, { locale: language });
                     const statusClass = getStatusBadgeClass(server.lifecycle.connectionState);
                     const requiresReauthorization = isMcpAuthenticationFailure(server);
+                    const isOAuthServer = server.authMode === 'oauth';
 
                     return (
                       <tr
@@ -566,6 +591,16 @@ export const MCPSettings: React.FC = () => {
                           <div className="mt-1 max-w-[260px] text-[11px] leading-snug text-zinc-500">
                             {getMcpTrustSummary(server, mcpText.trustSummary)}
                           </div>
+                          {isOAuthServer && (
+                            <div className="mt-1 text-[11px] leading-snug text-zinc-400">
+                              {mcpText.management.oauthStatusLabel}
+                              <span className={server.hasOAuthTokens ? 'text-emerald-300' : 'text-amber-300'}>
+                                {server.hasOAuthTokens
+                                  ? mcpText.management.oauthAuthorized
+                                  : mcpText.management.oauthNotAuthorized}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td className="max-w-[220px] px-3 py-3 align-middle">
                           {server.error ? (
@@ -600,6 +635,17 @@ export const MCPSettings: React.FC = () => {
                               label={server.label}
                               onClick={() => openCapabilitySheet(server)}
                             />
+                            {canManageMcp && isOAuthServer && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleSignOut(server.id)}
+                                loading={signingOutServer === server.id}
+                                leftIcon={<LogOut className="w-3 h-3" />}
+                              >
+                                {mcpText.management.signOut}
+                              </Button>
+                            )}
                             {canManageMcp && server.enabled && !server.available && (
                               requiresReauthorization ? (
                                 <Button

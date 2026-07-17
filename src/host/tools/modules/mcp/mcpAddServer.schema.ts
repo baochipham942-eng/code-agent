@@ -16,6 +16,7 @@ Parameters:
 - name (required): Unique server name identifier
 - type (required): 'http-streamable'/'http', 'sse', or 'stdio'
 - serverUrl/url (Remote required): Server URL for HTTP Streamable or SSE type
+- auth (HTTP Streamable optional): 'oauth' to enable SDK OAuth authProvider
 - headers (Remote optional): HTTP headers object
 - command (Stdio required): Command to run for Stdio type
 - args (Stdio optional): Command arguments array
@@ -51,6 +52,11 @@ Examples:
         type: 'object',
         description: 'HTTP headers (remote types only)',
         additionalProperties: true,
+      },
+      auth: {
+        type: 'string',
+        enum: ['oauth'],
+        description: "Authentication mode for HTTP Streamable servers. Only 'oauth' is supported.",
       },
       command: {
         type: 'string',

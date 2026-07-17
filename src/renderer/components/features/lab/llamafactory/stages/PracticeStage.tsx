@@ -14,70 +14,51 @@ import {
   ArrowRight,
   RefreshCw,
 } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
+import type { Translations } from '../../../../../i18n/zh';
 
 interface PracticeStageProps {
   onBack: () => void;
 }
 
 // 场景选择题
-const scenarios = [
-  {
-    id: 1,
-    question: '你想让客服机器人学会公司特有的业务知识和回答风格',
-    options: [
-      { label: 'SFT', correct: true, reason: '新增领域知识是 SFT 的强项' },
-      { label: 'DPO', correct: false, reason: 'DPO 主要用于调整风格偏好，不太适合注入新知识' },
-      { label: 'RLHF', correct: false, reason: '太复杂了，SFT 就够用' },
-    ],
-  },
-  {
-    id: 2,
-    question: '模型会回答问题，但回答太冷漠，想让它更友好、更有帮助',
-    options: [
-      { label: 'SFT', correct: false, reason: 'SFT 不太擅长调整"风格"' },
-      { label: 'DPO', correct: true, reason: '偏好优化正是调整风格的最佳选择' },
-      { label: 'RFT', correct: false, reason: 'RFT 用于推理能力，不是风格' },
-    ],
-  },
-  {
-    id: 3,
-    question: '数学解题模型经常算错，想提高准确率',
-    options: [
-      { label: 'SFT', correct: false, reason: 'SFT 可以帮助，但不如 RFT 针对性强' },
-      { label: 'DPO', correct: false, reason: 'DPO 不擅长提升推理能力' },
-      { label: 'RFT', correct: true, reason: 'RFT 专门用于提升可验证任务的推理能力' },
-    ],
-  },
-  {
-    id: 4,
-    question: '想用最少的资源在 24GB 显卡上微调 7B 模型',
-    options: [
-      { label: '全量微调', correct: false, reason: '显存不够，7B 全量需要 40GB+' },
-      { label: 'LoRA', correct: false, reason: '可行但不是最省' },
-      { label: 'QLoRA', correct: true, reason: 'QLoRA 是显存最省的方案，24GB 足够' },
-    ],
-  },
-];
+function buildScenarios(t: Translations) {
+  return t.labLlamafactory.practice.scenarios.map((sc, idx) => ({
+    id: idx + 1,
+    question: sc.question,
+    options: sc.options.map((opt) => ({ ...opt, correct: opt.label === correctLabels[idx] })),
+  }));
+}
+// 每题的正确答案标签（与 i18n 词条里的选项顺序一一对应）
+const correctLabels = ['SFT', 'DPO', 'RFT', 'QLoRA'];
 
 // 完整流程总结
-const workflowSummary = [
-  { step: 1, title: '确定目标', desc: '新增能力 → SFT | 调整风格 → DPO | 提升推理 → RFT', icon: '🎯' },
-  { step: 2, title: '准备数据', desc: '50-100 条高质量数据起步，质量比数量重要', icon: '📊' },
-  { step: 3, title: '选择方法', desc: 'QLoRA 最省资源，LoRA 平衡，全量追求极致', icon: '⚙️' },
-  { step: 4, title: '训练监控', desc: '关注 Loss 曲线，防止过拟合', icon: '📈' },
-  { step: 5, title: '模型合并', desc: 'LoRA 权重合并到基座，导出完整模型', icon: '🔗' },
-  { step: 6, title: '评估部署', desc: '验证集测试 + 人工评估，确认后部署', icon: '🚀' },
-];
+function buildWorkflowSummary(t: Translations) {
+  const icons = ['🎯', '📊', '⚙️', '📈', '🔗', '🚀'];
+  return t.labLlamafactory.practice.workflowSteps.map((step, idx) => ({
+    step: idx + 1,
+    ...step,
+    icon: icons[idx],
+  }));
+}
 
 // 导出格式
-const exportFormats = [
-  { name: 'Hugging Face', desc: 'safetensors 格式，最通用', icon: '🤗' },
-  { name: 'GGUF', desc: 'llama.cpp 格式，本地推理', icon: '🦙' },
-  { name: 'vLLM', desc: '高性能推理服务', icon: '⚡' },
-  { name: 'ONNX', desc: '跨平台部署', icon: '📦' },
-];
+function buildExportFormats(t: Translations) {
+  const f = t.labLlamafactory.practice.exportFormats;
+  return [
+    { ...f.huggingface, icon: '🤗' },
+    { ...f.gguf, icon: '🦙' },
+    { ...f.vllm, icon: '⚡' },
+    { ...f.onnx, icon: '📦' },
+  ];
+}
 
 export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
+  const { t } = useI18n();
+  const p = t.labLlamafactory.practice;
+  const scenarios = buildScenarios(t);
+  const workflowSummary = buildWorkflowSummary(t);
+  const exportFormats = buildExportFormats(t);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -121,10 +102,9 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
         <div className="flex items-start gap-3">
           <Trophy className="w-5 h-5 text-orange-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">🏆 综合实践</h3>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">{p.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              恭喜你学完了所有理论知识！现在来做几道选择题，检验一下学习成果，
-              然后了解模型合并和部署流程。
+              {p.introDesc}
             </p>
           </div>
         </div>
@@ -135,7 +115,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
             <HelpCircle className="w-4 h-4 text-orange-400" />
-            场景选择测验
+            {p.quizSectionTitle}
           </h3>
           {!quizCompleted && (
             <span className="text-xs text-zinc-500">
@@ -196,7 +176,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
                   onClick={nextQuestion}
                   className="w-full py-2 rounded-lg bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30 transition-all text-sm"
                 >
-                  {currentQuestion < scenarios.length - 1 ? '下一题' : '查看结果'}
+                  {currentQuestion < scenarios.length - 1 ? p.nextQuestionButton : p.viewResultButton}
                 </button>
               )}
             </>
@@ -207,21 +187,21 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
                 {correctCount === scenarios.length ? '🎉' : correctCount >= scenarios.length / 2 ? '👍' : '📚'}
               </div>
               <div className="text-xl font-bold text-zinc-200 mb-2">
-                得分：{correctCount} / {scenarios.length}
+                {p.scoreLabel}{correctCount} / {scenarios.length}
               </div>
               <p className="text-sm text-zinc-400 mb-4">
                 {correctCount === scenarios.length
-                  ? '完美！你已经掌握了微调的核心知识！'
+                  ? p.resultPerfect
                   : correctCount >= scenarios.length / 2
-                    ? '不错！再复习一下之前的内容会更好。'
-                    : '建议回顾之前的阶段，加深理解。'}
+                    ? p.resultGood
+                    : p.resultNeedsReview}
               </p>
               <button
                 onClick={resetQuiz}
                 className="flex items-center gap-2 px-4 py-2 mx-auto rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 transition-all text-sm"
               >
                 <RefreshCw className="w-4 h-4" />
-                重新测验
+                {p.retryButton}
               </button>
             </div>
           )}
@@ -232,12 +212,12 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <GitMerge className="w-4 h-4 text-orange-400" />
-          模型合并
+          {p.mergeSectionTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="mb-4">
             <p className="text-sm text-zinc-400 mb-3">
-              LoRA 训练后会得到一个小的权重文件（adapter）。要部署时，需要把它合并到基座模型中。
+              {p.mergeDesc}
             </p>
             <button
               onClick={() => setShowMergeAnimation(true)}
@@ -250,7 +230,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
                 }
               `}
             >
-              {showMergeAnimation ? '✓ 合并完成' : '演示合并'}
+              {showMergeAnimation ? p.mergeDoneButton : p.mergeDemoButton}
             </button>
           </div>
 
@@ -261,8 +241,8 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
               ${showMergeAnimation ? 'opacity-50' : 'bg-zinc-800 border-zinc-800'}
             `}>
               <div className="text-2xl mb-1">🦙</div>
-              <div className="text-xs text-zinc-400">基座模型</div>
-              <div className="text-xs text-zinc-500">7B 参数</div>
+              <div className="text-xs text-zinc-400">{p.mergeBaseModel}</div>
+              <div className="text-xs text-zinc-500">{p.mergeBaseModelParams}</div>
             </div>
 
             <div className="text-zinc-600">+</div>
@@ -272,8 +252,8 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
               ${showMergeAnimation ? 'opacity-50' : 'bg-blue-500/10 border-blue-500/20'}
             `}>
               <div className="text-2xl mb-1">🎯</div>
-              <div className="text-xs text-blue-400">LoRA 权重</div>
-              <div className="text-xs text-zinc-500">~10MB</div>
+              <div className="text-xs text-blue-400">{p.mergeLoraWeights}</div>
+              <div className="text-xs text-zinc-500">{p.mergeLoraSize}</div>
             </div>
 
             <ArrowRight className={`w-6 h-6 transition-all duration-500 ${showMergeAnimation ? 'text-emerald-400' : 'text-zinc-600'}`} />
@@ -286,13 +266,13 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
               }
             `}>
               <div className="text-2xl mb-1">✨</div>
-              <div className={`text-xs ${showMergeAnimation ? 'text-emerald-400' : 'text-zinc-400'}`}>合并后模型</div>
-              <div className="text-xs text-zinc-500">7B 参数</div>
+              <div className={`text-xs ${showMergeAnimation ? 'text-emerald-400' : 'text-zinc-400'}`}>{p.mergedModel}</div>
+              <div className="text-xs text-zinc-500">{p.mergedModelParams}</div>
             </div>
           </div>
 
           <div className="text-xs text-zinc-500 text-center">
-            合并公式：W_merged = W_base + B × A × scaling
+            {p.mergeFormula}
           </div>
         </div>
       </div>
@@ -301,7 +281,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Rocket className="w-4 h-4 text-orange-400" />
-          导出与部署
+          {p.exportSectionTitle}
         </h3>
         <div className="grid grid-cols-4 gap-3">
           {exportFormats.map((format) => (
@@ -316,7 +296,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
 
       {/* Complete Workflow */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">📋 完整工作流总结</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{p.workflowSectionTitle}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-3 gap-4">
             {workflowSummary.map((item) => (
@@ -335,10 +315,9 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       {/* Congratulations */}
       <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-lg border border-emerald-500/20 p-6 text-center">
         <div className="text-4xl mb-3">🎓</div>
-        <h3 className="text-lg font-bold text-emerald-400 mb-2">恭喜完成学习！</h3>
+        <h3 className="text-lg font-bold text-emerald-400 mb-2">{p.congratsTitle}</h3>
         <p className="text-sm text-zinc-400 mb-4">
-          你已经了解了 LLaMA Factory 微调的完整流程：从 SFT 到 RLHF/DPO，从 LoRA 到部署。
-          现在可以动手实践了！
+          {p.congratsDesc}
         </p>
         <div className="flex items-center justify-center gap-4">
           <a
@@ -347,7 +326,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
             rel="noopener noreferrer"
             className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 transition-all text-sm"
           >
-            访问 LLaMA Factory
+            {p.visitLlamaFactoryLink}
           </a>
           <a
             href="https://platform.openai.com/docs/guides/fine-tuning"
@@ -355,31 +334,21 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
             rel="noopener noreferrer"
             className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 transition-all text-sm"
           >
-            OpenAI 微调指南
+            {p.visitOpenAiGuideLink}
           </a>
         </div>
       </div>
 
       {/* Key Takeaways */}
       <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
-        <h4 className="text-sm font-medium text-orange-400 mb-2">📌 全课程总结</h4>
+        <h4 className="text-sm font-medium text-orange-400 mb-2">{p.takeawaysTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">微调是工具</strong>：先优化 prompt，实在不够再考虑微调</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">数据决定上限</strong>：高质量数据比大量数据更重要</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">选对方法</strong>：新能力用 SFT，调风格用 DPO，练推理用 RFT</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">资源高效</strong>：QLoRA 让消费级显卡也能微调大模型</span>
-          </li>
+          {p.takeaways.map((item) => (
+            <li key={item.label} className="flex items-start gap-2">
+              <span className="text-orange-400">•</span>
+              <span><strong className="text-zinc-400">{item.label}</strong>：{item.text}</span>
+            </li>
+          ))}
         </ul>
       </div>
 
@@ -390,7 +359,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
           className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {p.backButton}
         </button>
       </div>
     </div>

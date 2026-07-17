@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { ChevronLeft, MessageSquare, RefreshCw } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 interface InferenceProps {
   onBack: () => void;
@@ -17,7 +18,8 @@ interface SamplingConfig {
   maxTokens: number;
 }
 
-// 模拟的 token 概率分布（使用中文便于理解）
+// 模拟的 token 概率分布 —— 候选下一词演示数据本身，不进 i18n（翻译会改变
+// 这段"AI 在想下一个字"演示要展示的候选词分布效果）
 const mockTokenDistribution = [
   { token: '美丽', prob: 0.15 },
   { token: '温柔', prob: 0.12 },
@@ -31,7 +33,8 @@ const mockTokenDistribution = [
   { token: '混乱', prob: 0.03 },
 ];
 
-// 根据采样参数生成不同风格的文本
+// 根据采样参数生成不同风格的文本 —— 生成结果本身是演示数据（含风格评语），
+// 不进 i18n（翻译会改变"创意程度不同时中文写作质量对比"这个演示要展示的内容）
 const generateText = (prompt: string, config: SamplingConfig): string => {
   const { temperature } = config;
 
@@ -73,6 +76,8 @@ const generateText = (prompt: string, config: SamplingConfig): string => {
 };
 
 export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
+  const { t } = useI18n();
+  const inf = t.labNanogpt.inference;
   const [config, setConfig] = useState<SamplingConfig>({
     temperature: 0.8,
     topK: 40,
@@ -121,11 +126,13 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
         <div className="flex items-start gap-3">
           <MessageSquare className="w-5 h-5 text-blue-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">✍️ 让 AI 开口「说话」</h3>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">{inf.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              AI 学完后，就可以让它创作啦！我们可以调整它的「性格」——
-              是更<span className="text-amber-400">「天马行空」</span>还是更
-              <span className="text-blue-400">「稳重可靠」</span>？
+              {inf.introBodyPre}
+              <span className="text-amber-400">{inf.introBodyHighlight1}</span>
+              {inf.introBodyMid}
+              <span className="text-blue-400">{inf.introBodyHighlight2}</span>
+              {inf.introBodyPost}
             </p>
           </div>
         </div>
@@ -133,7 +140,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
 
       {/* Sampling Parameters - Simplified */}
       <div className="space-y-4">
-        <h3 className="text-sm font-medium text-zinc-400">🎛️ 调整 AI 的「性格」</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{inf.sectionLabel}</h3>
 
         {/* Main Temperature Control */}
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-6">
@@ -141,8 +148,8 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
             <div className="flex items-center gap-3">
               <span className="text-2xl">🌡️</span>
               <div>
-                <div className="text-sm font-medium text-zinc-200">创意程度</div>
-                <div className="text-xs text-zinc-500">数值越高，AI 越有创意但可能会「跑题」</div>
+                <div className="text-sm font-medium text-zinc-200">{inf.tempLabel}</div>
+                <div className="text-xs text-zinc-500">{inf.tempDesc}</div>
               </div>
             </div>
             <div className="text-2xl font-bold text-amber-400">{config.temperature.toFixed(1)}</div>
@@ -159,18 +166,18 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           <div className="flex justify-between mt-3">
             <div className="text-center">
               <div className="text-2xl">🤖</div>
-              <div className="text-xs text-blue-400">稳重保守</div>
-              <div className="text-xs text-zinc-600">内容可靠</div>
+              <div className="text-xs text-blue-400">{inf.tempConservative}</div>
+              <div className="text-xs text-zinc-600">{inf.tempConservativeDesc}</div>
             </div>
             <div className="text-center">
               <div className="text-2xl">⚖️</div>
-              <div className="text-xs text-emerald-400">平衡</div>
-              <div className="text-xs text-zinc-600">推荐</div>
+              <div className="text-xs text-emerald-400">{inf.tempBalanced}</div>
+              <div className="text-xs text-zinc-600">{inf.tempBalancedDesc}</div>
             </div>
             <div className="text-center">
               <div className="text-2xl">🎨</div>
-              <div className="text-xs text-amber-400">天马行空</div>
-              <div className="text-xs text-zinc-600">创意十足</div>
+              <div className="text-xs text-amber-400">{inf.tempCreative}</div>
+              <div className="text-xs text-zinc-600">{inf.tempCreativeDesc}</div>
             </div>
           </div>
         </div>
@@ -181,9 +188,9 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-lg">📚</span>
-              <span className="text-sm font-medium text-zinc-200">选词范围</span>
+              <span className="text-sm font-medium text-zinc-200">{inf.topKLabel}</span>
             </div>
-            <p className="text-xs text-zinc-500 mb-3">从最可能的几个词里选（数字越小越保守）</p>
+            <p className="text-xs text-zinc-500 mb-3">{inf.topKDesc}</p>
             <input
               type="range"
               min="1"
@@ -194,9 +201,9 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
               className="w-full h-2 bg-zinc-600 rounded-lg appearance-none cursor-pointer"
             />
             <div className="flex justify-between mt-2 text-xs">
-              <span className="text-zinc-500">只选1个</span>
-              <span className="text-emerald-400 font-bold">{config.topK} 个</span>
-              <span className="text-zinc-500">选100个</span>
+              <span className="text-zinc-500">{inf.topKMin}</span>
+              <span className="text-emerald-400 font-bold">{config.topK} {inf.topKUnit}</span>
+              <span className="text-zinc-500">{inf.topKMax}</span>
             </div>
           </div>
 
@@ -204,9 +211,9 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-lg">📝</span>
-              <span className="text-sm font-medium text-zinc-200">写多少字</span>
+              <span className="text-sm font-medium text-zinc-200">{inf.maxTokensLabel}</span>
             </div>
-            <p className="text-xs text-zinc-500 mb-3">AI 最多写多少字后停下来</p>
+            <p className="text-xs text-zinc-500 mb-3">{inf.maxTokensDesc}</p>
             <input
               type="range"
               min="10"
@@ -217,9 +224,9 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
               className="w-full h-2 bg-zinc-600 rounded-lg appearance-none cursor-pointer"
             />
             <div className="flex justify-between mt-2 text-xs">
-              <span className="text-zinc-500">简短</span>
-              <span className="text-blue-400 font-bold">{config.maxTokens} 字</span>
-              <span className="text-zinc-500">详细</span>
+              <span className="text-zinc-500">{inf.maxTokensMin}</span>
+              <span className="text-blue-400 font-bold">{config.maxTokens} {inf.maxTokensUnit}</span>
+              <span className="text-zinc-500">{inf.maxTokensMax}</span>
             </div>
           </div>
         </div>
@@ -227,10 +234,10 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
 
       {/* Probability Distribution Visualization */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">🤔 AI 在想：下一个字说什么？</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{inf.distributionLabel}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <p className="text-xs text-zinc-500 mb-4">
-            AI 会给每个候选词打分，分数越高越可能被选中。当前创意程度：<span className="text-amber-400 font-bold">{config.temperature.toFixed(1)}</span>
+            {inf.distributionHintPrefix}<span className="text-amber-400 font-bold">{config.temperature.toFixed(1)}</span>
           </p>
 
           <div className="space-y-2">
@@ -246,7 +253,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
                   />
                 </div>
                 <span className="w-16 text-sm text-zinc-400 text-right">
-                  {(item.normalizedProb * 100).toFixed(0)}% 概率
+                  {(item.normalizedProb * 100).toFixed(0)}{inf.probSuffix}
                 </span>
               </div>
             ))}
@@ -254,7 +261,7 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
 
           <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
             <div className="text-xs text-amber-400">
-              💡 创意程度低时，AI 会选最「安全」的词；创意程度高时，一些不常见的词也可能被选中！
+              {inf.distributionFooter}
             </div>
           </div>
         </div>
@@ -262,17 +269,17 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
 
       {/* Generation Interface */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">🎯 试试让 AI 写点东西</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{inf.generationLabel}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           {/* Prompt Input */}
           <div className="mb-4">
-            <label className="text-xs text-zinc-500 mb-2 block">给 AI 一个开头：</label>
+            <label className="text-xs text-zinc-500 mb-2 block">{inf.promptInputLabel}</label>
             <div className="flex gap-3">
               <input
                 type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="输入一个开头…"
+                placeholder={inf.promptPlaceholder}
                 className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-hidden focus:border-blue-500/50"
               />
               <button
@@ -285,16 +292,16 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
                 }`}
               >
                 <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
-                {isGenerating ? '思考中…' : '✨ 开始写'}
+                {isGenerating ? inf.generatingLabel : inf.generateButton}
               </button>
             </div>
           </div>
 
           {/* Output */}
           <div className="bg-zinc-950/50 rounded-lg p-4 min-h-[140px]">
-            <div className="text-xs text-zinc-600 mb-2">AI 写的内容：</div>
+            <div className="text-xs text-zinc-600 mb-2">{inf.outputLabel}</div>
             <div className="text-base text-zinc-400 whitespace-pre-wrap leading-relaxed">
-              {output || <span className="text-zinc-600">点击「开始写」让 AI 创作…</span>}
+              {output || <span className="text-zinc-600">{inf.outputPlaceholder}</span>}
               {isGenerating && <span className="animate-pulse text-emerald-400">|</span>}
             </div>
           </div>
@@ -303,27 +310,27 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
 
       {/* Simple Summary */}
       <div className="p-4 rounded-xl bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20">
-        <h3 className="text-sm font-medium text-zinc-200 mb-3">📚 小结：AI 说话的「性格」</h3>
+        <h3 className="text-sm font-medium text-zinc-200 mb-3">{inf.summaryLabel}</h3>
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div className="flex items-start gap-2">
             <span className="text-xl">🤖</span>
             <div>
-              <div className="text-blue-400 font-medium">创意程度低</div>
-              <div className="text-xs text-zinc-500">说话稳重，内容可靠，不容易出错</div>
+              <div className="text-blue-400 font-medium">{inf.summaryLowLabel}</div>
+              <div className="text-xs text-zinc-500">{inf.summaryLowDesc}</div>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="text-xl">⚖️</span>
             <div>
-              <div className="text-emerald-400 font-medium">创意程度中</div>
-              <div className="text-xs text-zinc-500">既有新意又通顺，推荐使用</div>
+              <div className="text-emerald-400 font-medium">{inf.summaryMidLabel}</div>
+              <div className="text-xs text-zinc-500">{inf.summaryMidDesc}</div>
             </div>
           </div>
           <div className="flex items-start gap-2">
             <span className="text-xl">🎨</span>
             <div>
-              <div className="text-amber-400 font-medium">创意程度高</div>
-              <div className="text-xs text-zinc-500">天马行空，但可能会跑题</div>
+              <div className="text-amber-400 font-medium">{inf.summaryHighLabel}</div>
+              <div className="text-xs text-zinc-500">{inf.summaryHighDesc}</div>
             </div>
           </div>
         </div>
@@ -332,11 +339,11 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
       {/* 恭喜完成 */}
       <div className="p-6 rounded-xl bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-emerald-500/20 text-center">
         <div className="text-4xl mb-3">🎉</div>
-        <h3 className="text-lg font-bold text-emerald-400 mb-2">恭喜你完成了 nanoGPT 学习之旅！</h3>
+        <h3 className="text-lg font-bold text-emerald-400 mb-2">{inf.congratsTitle}</h3>
         <p className="text-sm text-zinc-400">
-          你已经了解了 AI 是如何「读书」→「学习」→「进阶」→「创作」的全过程。
+          {inf.congratsBodyLine1}
           <br />
-          现在你对 AI 语言模型的工作原理有了更深入的理解！
+          {inf.congratsBodyLine2}
         </p>
       </div>
 
@@ -344,22 +351,15 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {inf.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'Inference', zh: '推理', desc: '使用训练好的模型生成输出的过程' },
-            { en: 'Temperature', zh: '温度', desc: '控制生成随机性的参数，越高越有创意' },
-            { en: 'Top-K Sampling', zh: 'Top-K 采样', desc: '只从概率最高的 K 个词中选择下一个词' },
-            { en: 'Top-P Sampling', zh: 'Top-P 采样', desc: '从累计概率达到 P 的词集中选择，又叫核采样' },
-            { en: 'Autoregressive', zh: '自回归', desc: '一个词一个词地生成，用前文预测后文' },
-            { en: 'Prompt', zh: '提示词', desc: '给模型的输入文本，引导生成方向' },
-          ].map((term) => (
+          {inf.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                <span className="text-sm text-zinc-400">{term.label}</span>
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
@@ -374,10 +374,10 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
           className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {inf.backButton}
         </button>
         <div className="text-sm text-emerald-400 flex items-center gap-2 font-medium">
-          ✅ 已完成全部学习
+          {inf.completedLabel}
         </div>
       </div>
     </div>

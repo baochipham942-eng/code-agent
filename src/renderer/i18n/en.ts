@@ -14,6 +14,10 @@ import { modalPrimitivesEn } from './modalPrimitives';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { labEn } from './lab';
+import { labGpt1En } from './labGpt1';
+import { labNanogptEn } from './labNanogpt';
+import { labLlamafactoryEn } from './labLlamafactory';
+import { labAlignmentEn } from './labAlignment';
 
 export const en: Translations = {
   // Common
@@ -867,6 +871,10 @@ export const en: Translations = {
   ...taskStatusPanelsEn,
   ...noticesEn,
   ...labEn,
+  ...labGpt1En,
+  ...labNanogptEn,
+  ...labLlamafactoryEn,
+  ...labAlignmentEn,
 
   mermaid: {
     zoomIn: 'Zoom in',

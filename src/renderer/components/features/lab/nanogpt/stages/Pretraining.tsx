@@ -12,6 +12,7 @@ import {
   RotateCcw,
   BookOpen,
 } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 interface PretrainingProps {
   onComplete: () => void;
@@ -57,6 +58,8 @@ const generateTrainingData = (step: number): { loss: number; valLoss: number; lr
 };
 
 export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) => {
+  const { t } = useI18n();
+  const pt = t.labNanogpt.pretraining;
   const [config, setConfig] = useState<TrainingConfig>(defaultConfig);
   const [isTraining, setIsTraining] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
@@ -183,11 +186,13 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
         <div className="flex items-start gap-3">
           <BookOpen className="w-5 h-5 text-purple-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">📚 AI 开始「读书学习」了！</h3>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">{pt.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              就像学生需要反复读书、做练习才能掌握知识一样，AI 也需要
-              <span className="text-purple-400">「读」大量的文字</span>，
-              通过不断<span className="text-purple-400">「猜下一个字」</span>的练习来学会写作。
+              {pt.introBodyPre}
+              <span className="text-purple-400">{pt.introBodyHighlight1}</span>
+              {pt.introBodyMid}
+              <span className="text-purple-400">{pt.introBodyHighlight2}</span>
+              {pt.introBodyPost}
             </p>
           </div>
         </div>
@@ -195,27 +200,27 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
 
       {/* Training Config */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">📋 学习计划设置</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{pt.planLabel}</h3>
         <div className="grid grid-cols-5 gap-3">
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
-            <div className="text-xs text-zinc-500 mb-1">📖 每次读几段</div>
-            <div className="text-sm font-medium text-emerald-400">{config.batchSize} 段</div>
+            <div className="text-xs text-zinc-500 mb-1">{pt.planBatchLabel}</div>
+            <div className="text-sm font-medium text-emerald-400">{config.batchSize} {pt.planBatchSuffix}</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
-            <div className="text-xs text-zinc-500 mb-1">✏️ 改正的力度</div>
-            <div className="text-sm font-medium text-emerald-400">适中</div>
+            <div className="text-xs text-zinc-500 mb-1">{pt.planLrLabel}</div>
+            <div className="text-sm font-medium text-emerald-400">{pt.planLrValue}</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
-            <div className="text-xs text-zinc-500 mb-1">🔄 练习多少轮</div>
-            <div className="text-sm font-medium text-emerald-400">{(config.maxIters / 1000).toFixed(0)}K 轮</div>
+            <div className="text-xs text-zinc-500 mb-1">{pt.planItersLabel}</div>
+            <div className="text-sm font-medium text-emerald-400">{(config.maxIters / 1000).toFixed(0)}{pt.planItersSuffix}</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
-            <div className="text-xs text-zinc-500 mb-1">🧠 记忆积累</div>
-            <div className="text-sm font-medium text-emerald-400">{config.gradAccumSteps} 次</div>
+            <div className="text-xs text-zinc-500 mb-1">{pt.planAccumLabel}</div>
+            <div className="text-sm font-medium text-emerald-400">{config.gradAccumSteps} {pt.planAccumSuffix}</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-800">
-            <div className="text-xs text-zinc-500 mb-1">🌡️ 热身阶段</div>
-            <div className="text-sm font-medium text-emerald-400">{config.warmupIters} 步</div>
+            <div className="text-xs text-zinc-500 mb-1">{pt.planWarmupLabel}</div>
+            <div className="text-sm font-medium text-emerald-400">{config.warmupIters} {pt.planWarmupSuffix}</div>
           </div>
         </div>
       </div>
@@ -223,12 +228,12 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
       {/* Training Visualization */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-zinc-400">📈 看 AI 学习进步（点击体验）</h3>
+          <h3 className="text-sm font-medium text-zinc-400">{pt.vizLabel}</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={resetTraining}
               className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 border border-zinc-700 transition-all"
-              title="重新开始"
+              title={pt.resetTitle}
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -243,12 +248,12 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
               {isTraining ? (
                 <>
                   <Pause className="w-4 h-4" />
-                  暂停学习
+                  {pt.pauseLabel}
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4" />
-                  ▶️ 开始学习
+                  {pt.startLabel}
                 </>
               )}
             </button>
@@ -261,15 +266,15 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-1 bg-emerald-500 rounded" />
-                <span className="text-xs text-zinc-400">练习时的错误率</span>
+                <span className="text-xs text-zinc-400">{pt.legendTrain}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-1 bg-amber-500 rounded" />
-                <span className="text-xs text-zinc-400">考试时的错误率</span>
+                <span className="text-xs text-zinc-400">{pt.legendVal}</span>
               </div>
             </div>
             <div className="text-xs text-zinc-500">
-              已学习 <span className="text-emerald-400 font-bold">{currentStep.toLocaleString()}</span> / 100,000 轮
+              {pt.progressPrefix} <span className="text-emerald-400 font-bold">{currentStep.toLocaleString()}</span> {pt.progressSuffix}
             </div>
           </div>
 
@@ -283,26 +288,26 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
           {/* Metrics */}
           <div className="mt-4 pt-3 border-t border-zinc-700 grid grid-cols-4 gap-4">
             <div className="text-center p-2 bg-emerald-500/10 rounded-lg">
-              <div className="text-xs text-zinc-500 mb-1">📝 练习错误率</div>
+              <div className="text-xs text-zinc-500 mb-1">{pt.metricTrainLabel}</div>
               <div className="text-xl font-bold text-emerald-400">{latestLoss}</div>
-              <div className="text-xs text-zinc-600">越低越好</div>
+              <div className="text-xs text-zinc-600">{pt.metricLowerBetter}</div>
             </div>
             <div className="text-center p-2 bg-amber-500/10 rounded-lg">
-              <div className="text-xs text-zinc-500 mb-1">📋 考试错误率</div>
+              <div className="text-xs text-zinc-500 mb-1">{pt.metricValLabel}</div>
               <div className="text-xl font-bold text-amber-400">{latestValLoss}</div>
-              <div className="text-xs text-zinc-600">越低越好</div>
+              <div className="text-xs text-zinc-600">{pt.metricLowerBetter}</div>
             </div>
             <div className="text-center p-2 bg-blue-500/10 rounded-lg">
-              <div className="text-xs text-zinc-500 mb-1">✏️ 改正力度</div>
+              <div className="text-xs text-zinc-500 mb-1">{pt.metricLrLabel}</div>
               <div className="text-xl font-bold text-blue-400">
-                {currentLr > 0 ? '适中' : '未开始'}
+                {currentLr > 0 ? pt.metricLrActive : pt.metricLrInactive}
               </div>
-              <div className="text-xs text-zinc-600">会逐渐减小</div>
+              <div className="text-xs text-zinc-600">{pt.metricLrHint}</div>
             </div>
             <div className="text-center p-2 bg-purple-500/10 rounded-lg">
-              <div className="text-xs text-zinc-500 mb-1">📊 学习进度</div>
+              <div className="text-xs text-zinc-500 mb-1">{pt.metricProgressLabel}</div>
               <div className="text-xl font-bold text-purple-400">{((currentStep / 100000) * 100).toFixed(1)}%</div>
-              <div className="text-xs text-zinc-600">加油！</div>
+              <div className="text-xs text-zinc-600">{pt.metricProgressHint}</div>
             </div>
           </div>
         </div>
@@ -310,17 +315,18 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
 
       {/* Training Techniques */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">🎯 学习的小技巧</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{pt.techniquesLabel}</h3>
         <div className="grid grid-cols-2 gap-4">
           {/* 学习过程 */}
           <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-lg">📚</span>
-              <span className="text-sm font-medium text-zinc-200">边读边记</span>
+              <span className="text-sm font-medium text-zinc-200">{pt.techniqueReadTitle}</span>
             </div>
             <p className="text-sm text-zinc-400">
-              AI 一次读 {config.batchSize} 段文字，读完 {config.gradAccumSteps} 次后再「总结记忆」，
-              这样能学得更扎实。
+              {pt.techniqueReadDesc
+                .replace('{batch}', String(config.batchSize))
+                .replace('{accum}', String(config.gradAccumSteps))}
             </p>
           </div>
 
@@ -328,11 +334,10 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
           <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-lg">✏️</span>
-              <span className="text-sm font-medium text-zinc-200">逐步放缓</span>
+              <span className="text-sm font-medium text-zinc-200">{pt.techniqueSlowTitle}</span>
             </div>
             <p className="text-sm text-zinc-400">
-              刚开始学习时改正力度大，后来慢慢减小。
-              就像学骑车，一开始大幅调整，熟练后微调即可。
+              {pt.techniqueSlowDesc}
             </p>
           </div>
 
@@ -340,11 +345,10 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
           <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-lg">🌡️</span>
-              <span className="text-sm font-medium text-zinc-200">先热身</span>
+              <span className="text-sm font-medium text-zinc-200">{pt.techniqueWarmupTitle}</span>
             </div>
             <p className="text-sm text-zinc-400">
-              开始时先慢慢「预热」，不急着全力学习。
-              就像运动前要热身一样，能防止「学歪」。
+              {pt.techniqueWarmupDesc}
             </p>
           </div>
 
@@ -352,11 +356,10 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
           <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-lg">📉</span>
-              <span className="text-sm font-medium text-zinc-200">错误越来越少</span>
+              <span className="text-sm font-medium text-zinc-200">{pt.techniqueProgressTitle}</span>
             </div>
             <p className="text-sm text-zinc-400">
-              观察上面的曲线：随着学习进行，错误率会不断下降。
-              当曲线变平时，说明学得差不多了！
+              {pt.techniqueProgressDesc}
             </p>
           </div>
         </div>
@@ -364,10 +367,9 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
 
       {/* 学习总结 */}
       <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border border-emerald-500/20">
-        <h3 className="text-sm font-medium text-zinc-200 mb-2">💡 学习的关键是什么？</h3>
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">{pt.summaryLabel}</h3>
         <p className="text-sm text-zinc-400">
-          AI 通过「猜下一个字」来学习。看到「今天天气真」，它要猜下一个是「好」。
-          猜对了就继续，猜错了就调整自己。重复几十万次后，它就学会了写作的规律！
+          {pt.summaryBody}
         </p>
       </div>
 
@@ -375,22 +377,15 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {pt.glossaryLabel}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'Pretraining', zh: '预训练', desc: '在大量通用数据上训练模型，学习语言的基本规律' },
-            { en: 'Loss', zh: '损失', desc: '衡量模型预测错误程度的指标，越小越好' },
-            { en: 'Validation Loss', zh: '验证损失', desc: '在未见过的数据上的表现，检验是否真正学会' },
-            { en: 'Gradient Accumulation', zh: '梯度累积', desc: '多次计算后再更新参数，相当于用更大批次训练' },
-            { en: 'Warmup', zh: '预热', desc: '训练初期逐渐增大学习率，防止一开始学歪' },
-            { en: 'Iteration', zh: '迭代', desc: '一次参数更新过程，训练通常需要数十万次迭代' },
-          ].map((term) => (
+          {pt.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                <span className="text-sm text-zinc-400">{term.label}</span>
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
@@ -405,13 +400,13 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
           className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {pt.backButton}
         </button>
         <button
           onClick={onComplete}
           className="flex items-center gap-2 px-5 py-2.5 bg-amber-500/20 text-amber-400 rounded-lg hover:bg-amber-500/30 border border-amber-500/30 transition-all font-medium"
         >
-          下一步：进阶学习
+          {pt.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

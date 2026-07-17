@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { IPC_CHANNELS } from '../../../../../shared/ipc';
 import ipcService from '../../../../services/ipcService';
+import { useI18n } from '../../../../hooks/useI18n';
 import type {
   PythonEnvStatus,
   LabProjectStatus,
@@ -51,6 +52,8 @@ const defaultConfig: TrainingConfig = {
 };
 
 export const RealModePanel: React.FC = () => {
+  const { t } = useI18n();
+  const nano = t.labNanogpt.realMode;
   // 状态
   const [pythonEnv, setPythonEnv] = useState<PythonEnvStatus | null>(null);
   const [projectStatus, setProjectStatus] = useState<LabProjectStatus | null>(null);
@@ -76,26 +79,32 @@ export const RealModePanel: React.FC = () => {
   // 下载项目
   const downloadProject = useCallback(async () => {
     setIsDownloading(true);
-    setTrainingLogs((prev) => [...prev, '📦 开始下载 nanoGPT 项目…']);
+    setTrainingLogs((prev) => [...prev, nano.logDownloadStart]);
 
     const result = await ipcService.invoke(IPC_CHANNELS.LAB_DOWNLOAD_PROJECT, {
       projectType: 'nanogpt',
     });
 
     if (result?.success) {
-      setTrainingLogs((prev) => [...prev, '✅ 项目下载完成']);
+      setTrainingLogs((prev) => [...prev, nano.logDownloadComplete]);
       await getProjectStatus();
     } else {
-      setTrainingLogs((prev) => [...prev, `❌ 下载失败: ${result?.error || '未知错误'}`]);
+      setTrainingLogs((prev) => [
+        ...prev,
+        nano.logDownloadFailed.replace('{error}', result?.error || nano.unknownError),
+      ]);
     }
 
     setIsDownloading(false);
-  }, [getProjectStatus]);
+  }, [getProjectStatus, nano]);
 
   // 开始训练
   const startTraining = useCallback(async () => {
     setIsTraining(true);
-    setTrainingLogs((prev) => [...prev, `🚀 开始${config.mode === 'finetune' ? '微调' : '预训练'}…`]);
+    setTrainingLogs((prev) => [
+      ...prev,
+      config.mode === 'finetune' ? nano.logTrainStartFinetune : nano.logTrainStartPretrain,
+    ]);
     setCurrentStep(0);
     setCurrentLoss(null);
 
@@ -116,18 +125,21 @@ export const RealModePanel: React.FC = () => {
     });
 
     if (!result?.success) {
-      setTrainingLogs((prev) => [...prev, `❌ 训练启动失败: ${result?.error || '未知错误'}`]);
+      setTrainingLogs((prev) => [
+        ...prev,
+        nano.logTrainStartFailed.replace('{error}', result?.error || nano.unknownError),
+      ]);
       setIsTraining(false);
     }
-  }, [config]);
+  }, [config, nano]);
 
   // 停止训练
   const stopTraining = useCallback(async () => {
-    setTrainingLogs((prev) => [...prev, '⏹️ 正在停止训练…']);
+    setTrainingLogs((prev) => [...prev, nano.logStopping]);
     await ipcService.invoke(IPC_CHANNELS.LAB_STOP_TRAINING, 'nanogpt');
     setIsTraining(false);
-    setTrainingLogs((prev) => [...prev, '✅ 训练已停止']);
-  }, []);
+    setTrainingLogs((prev) => [...prev, nano.logStopped]);
+  }, [nano]);
 
   // 监听训练进度事件
   useEffect(() => {
@@ -145,10 +157,10 @@ export const RealModePanel: React.FC = () => {
           setCurrentLoss(event.loss ?? null);
         } else if (event.type === 'complete') {
           setIsTraining(false);
-          setTrainingLogs((prev) => [...prev, '🎉 训练完成！']);
+          setTrainingLogs((prev) => [...prev, nano.logComplete]);
         } else if (event.type === 'error') {
           setIsTraining(false);
-          setTrainingLogs((prev) => [...prev, `❌ 训练错误: ${event.message}`]);
+          setTrainingLogs((prev) => [...prev, nano.logErrorPrefix.replace('{message}', event.message ?? '')]);
         }
       }
     );
@@ -156,7 +168,7 @@ export const RealModePanel: React.FC = () => {
     return () => {
       unsubscribe?.();
     };
-  }, []);
+  }, [nano]);
 
   // 初始化
   useEffect(() => {
@@ -170,8 +182,8 @@ export const RealModePanel: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-200">nanoGPT 真实训练</h2>
-            <p className="text-sm text-zinc-500">克隆 Karpathy 的 nanoGPT，执行真实的模型训练</p>
+            <h2 className="text-lg font-semibold text-zinc-200">{nano.title}</h2>
+            <p className="text-sm text-zinc-500">{nano.subtitle}</p>
           </div>
           <button
             onClick={() => {
@@ -190,33 +202,33 @@ export const RealModePanel: React.FC = () => {
           <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4">
             <div className="flex items-center gap-2 mb-3">
               <Terminal className="w-4 h-4 text-zinc-400" />
-              <span className="text-sm font-medium text-zinc-200">Python 环境</span>
+              <span className="text-sm font-medium text-zinc-200">{nano.pythonEnvLabel}</span>
             </div>
             {pythonEnv ? (
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Python</span>
+                  <span className="text-zinc-500">{nano.pythonLabel}</span>
                   <span className={pythonEnv.pythonInstalled ? 'text-emerald-400' : 'text-red-400'}>
-                    {pythonEnv.pythonInstalled ? pythonEnv.pythonVersion : '未安装'}
+                    {pythonEnv.pythonInstalled ? pythonEnv.pythonVersion : nano.notInstalled}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">PyTorch</span>
+                  <span className="text-zinc-500">{nano.pytorchLabel}</span>
                   <span className={pythonEnv.pytorchInstalled ? 'text-emerald-400' : 'text-red-400'}>
-                    {pythonEnv.pytorchInstalled ? pythonEnv.pytorchVersion : '未安装'}
+                    {pythonEnv.pytorchInstalled ? pythonEnv.pytorchVersion : nano.notInstalled}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">tiktoken</span>
+                  <span className="text-zinc-500">{nano.tiktokenLabel}</span>
                   <span className={pythonEnv.sentencepieceInstalled ? 'text-emerald-400' : 'text-amber-400'}>
-                    {pythonEnv.sentencepieceInstalled ? '已安装' : '需要安装'}
+                    {pythonEnv.sentencepieceInstalled ? nano.installed : nano.needInstall}
                   </span>
                 </div>
               </div>
             ) : (
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                检测中…
+                {nano.detecting}
               </div>
             )}
           </div>
@@ -225,12 +237,12 @@ export const RealModePanel: React.FC = () => {
           <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4">
             <div className="flex items-center gap-2 mb-3">
               <FolderOpen className="w-4 h-4 text-zinc-400" />
-              <span className="text-sm font-medium text-zinc-200">项目状态</span>
+              <span className="text-sm font-medium text-zinc-200">{nano.projectStatusLabel}</span>
             </div>
             {projectStatus ? (
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">已下载</span>
+                  <span className="text-zinc-500">{nano.downloadedLabel}</span>
                   {projectStatus.downloaded ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   ) : (
@@ -240,17 +252,17 @@ export const RealModePanel: React.FC = () => {
                 {projectStatus.downloaded && (
                   <>
                     <div className="flex items-center justify-between">
-                      <span className="text-zinc-500">路径</span>
+                      <span className="text-zinc-500">{nano.pathLabel}</span>
                       <span className="text-zinc-400 truncate max-w-[200px]" title={projectStatus.projectPath || ''}>
                         {projectStatus.projectPath?.split('/').slice(-2).join('/')}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-zinc-500">已训练模型</span>
+                      <span className="text-zinc-500">{nano.trainedModelLabel}</span>
                       {projectStatus.hasTrainedModel ? (
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                       ) : (
-                        <span className="text-zinc-500">无</span>
+                        <span className="text-zinc-500">{nano.noneLabel}</span>
                       )}
                     </div>
                   </>
@@ -259,7 +271,7 @@ export const RealModePanel: React.FC = () => {
             ) : (
               <div className="flex items-center gap-2 text-xs text-zinc-500">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                检测中…
+                {nano.detecting}
               </div>
             )}
           </div>
@@ -279,12 +291,12 @@ export const RealModePanel: React.FC = () => {
             {isDownloading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                下载中…
+                {nano.downloading}
               </>
             ) : (
               <>
                 <Download className="w-4 h-4" />
-                下载 nanoGPT 项目
+                {nano.downloadProject}
               </>
             )}
           </button>
@@ -295,13 +307,13 @@ export const RealModePanel: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <Settings className="w-4 h-4 text-zinc-400" />
-              <span className="text-sm font-medium text-zinc-200">训练配置</span>
+              <span className="text-sm font-medium text-zinc-200">{nano.trainingConfigLabel}</span>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
               {/* Training Mode */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">训练模式</label>
+                <label className="text-xs text-zinc-500">{nano.trainingModeLabel}</label>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setConfig((c) => ({ ...c, mode: 'finetune', initFrom: 'gpt2' }))}
@@ -311,7 +323,7 @@ export const RealModePanel: React.FC = () => {
                         : 'bg-zinc-800 text-zinc-500 border border-zinc-800'
                     }`}
                   >
-                    微调
+                    {nano.finetuneOption}
                   </button>
                   <button
                     onClick={() => setConfig((c) => ({ ...c, mode: 'pretrain', initFrom: 'scratch' }))}
@@ -321,42 +333,42 @@ export const RealModePanel: React.FC = () => {
                         : 'bg-zinc-800 text-zinc-500 border border-zinc-800'
                     }`}
                   >
-                    预训练
+                    {nano.pretrainOption}
                   </button>
                 </div>
               </div>
 
               {/* Init From */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">初始化来源</label>
+                <label className="text-xs text-zinc-500">{nano.initFromLabel}</label>
                 <select
                   value={config.initFrom}
                   onChange={(e) => setConfig((c) => ({ ...c, initFrom: e.target.value as InitFrom }))}
                   className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-400"
                 >
-                  <option value="scratch">从头训练</option>
-                  <option value="gpt2">GPT-2 (124M)</option>
-                  <option value="gpt2-medium">GPT-2 Medium (350M)</option>
+                  <option value="scratch">{nano.fromScratchOption}</option>
+                  <option value="gpt2">{nano.gpt2Option}</option>
+                  <option value="gpt2-medium">{nano.gpt2MediumOption}</option>
                 </select>
               </div>
 
               {/* Device */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">设备</label>
+                <label className="text-xs text-zinc-500">{nano.deviceLabel}</label>
                 <select
                   value={config.device}
                   onChange={(e) => setConfig((c) => ({ ...c, device: e.target.value as 'cpu' | 'mps' | 'cuda' }))}
                   className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-400"
                 >
-                  <option value="cpu">CPU</option>
-                  <option value="mps">MPS (Apple Silicon)</option>
-                  <option value="cuda">CUDA (NVIDIA)</option>
+                  <option value="cpu">{nano.cpuOption}</option>
+                  <option value="mps">{nano.mpsOption}</option>
+                  <option value="cuda">{nano.cudaOption}</option>
                 </select>
               </div>
 
               {/* Batch Size */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">Batch Size</label>
+                <label className="text-xs text-zinc-500">{nano.batchSizeLabel}</label>
                 <input
                   type="number"
                   value={config.batchSize}
@@ -367,7 +379,7 @@ export const RealModePanel: React.FC = () => {
 
               {/* Learning Rate */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">Learning Rate</label>
+                <label className="text-xs text-zinc-500">{nano.learningRateLabel}</label>
                 <input
                   type="text"
                   value={config.learningRate.toExponential(0)}
@@ -378,7 +390,7 @@ export const RealModePanel: React.FC = () => {
 
               {/* Max Iters */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">Max Iterations</label>
+                <label className="text-xs text-zinc-500">{nano.maxItersLabel}</label>
                 <input
                   type="number"
                   value={config.maxIters}
@@ -404,12 +416,12 @@ export const RealModePanel: React.FC = () => {
                 {isTraining ? (
                   <>
                     <Square className="w-4 h-4" />
-                    停止训练
+                    {nano.stopTraining}
                   </>
                 ) : (
                   <>
                     <Play className="w-4 h-4" />
-                    开始{config.mode === 'finetune' ? '微调' : '预训练'}
+                    {config.mode === 'finetune' ? nano.startFinetune : nano.startPretrain}
                   </>
                 )}
               </button>
@@ -423,16 +435,16 @@ export const RealModePanel: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-zinc-400" />
-                <span className="text-sm font-medium text-zinc-200">训练进度</span>
+                <span className="text-sm font-medium text-zinc-200">{nano.progressLabel}</span>
               </div>
               {isTraining && (
                 <div className="flex items-center gap-4 text-xs">
                   <span className="text-zinc-500">
-                    Step: <span className="text-zinc-400">{currentStep}</span> / {config.maxIters}
+                    {nano.stepLabel}: <span className="text-zinc-400">{currentStep}</span> / {config.maxIters}
                   </span>
                   {currentLoss !== null && (
                     <span className="text-zinc-500">
-                      Loss: <span className="text-emerald-400">{currentLoss.toFixed(4)}</span>
+                      {nano.lossLabel}: <span className="text-emerald-400">{currentLoss.toFixed(4)}</span>
                     </span>
                   )}
                 </div>

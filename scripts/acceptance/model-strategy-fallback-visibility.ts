@@ -14,6 +14,7 @@ import { FallbackBanner } from '../../src/renderer/components/features/chat/Mess
 import { encodeModelFallbackNotice } from '../../src/renderer/components/features/chat/fallbackNotice.ts';
 import { formatProviderFallbackToast } from '../../src/renderer/components/ProviderStatusNotice.tsx';
 import type { ProviderFallbackEvent } from '../../src/shared/ipc';
+import { zh } from '../../src/renderer/i18n/zh';
 
 export interface ModelStrategyFallbackVisibilityResult {
   ok: boolean;
@@ -119,7 +120,7 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
     reason: 'Moonshot API error: 503 service unavailable',
     category: 'provider_unavailable',
     strategy: 'adaptive-provider-fallback',
-  } satisfies ProviderFallbackEvent);
+  } satisfies ProviderFallbackEvent, zh);
 
   const mainTaskToast = formatProviderFallbackToast({
     from: { provider: 'zhipu', model: 'glm-4.7-flash' },
@@ -127,7 +128,7 @@ export function buildModelStrategyFallbackVisibilityResult(): ModelStrategyFallb
     reason: 'Zhipu API error: 429 rate limit exceeded',
     category: 'rate_limit',
     strategy: 'adaptive-main-task-recovery',
-  } satisfies ProviderFallbackEvent);
+  } satisfies ProviderFallbackEvent, zh);
 
   const checks: Record<string, boolean> = {
     bannerShowsCapabilityStrategy: capabilityHtml.includes('能力自动切换'),

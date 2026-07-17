@@ -13,6 +13,8 @@ import {
   Sparkles,
   ExternalLink,
   X as XIcon,
+  Shrink,
+  Loader2,
 } from 'lucide-react';
 import type {
   ContextHealthState,
@@ -29,6 +31,10 @@ interface ContextHealthPanelProps {
   onNavigate?: (target: SourceTag) => void;
   /** 点击某 source 的卸载/禁用图标时调（step 10 接 SkillsPanel.unmount / MCP.disable） */
   onUnload?: (target: SourceTag) => void;
+  /** critical 时展示「立即压缩」按钮；未传时不渲染按钮（纯展示模式，组件不知道 IPC 存在） */
+  onCompact?: () => void;
+  /** 压缩进行中——按钮 disabled，避免重复触发 */
+  isCompacting?: boolean;
 }
 
 /**
@@ -76,6 +82,8 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
   onToggle,
   onNavigate,
   onUnload,
+  onCompact,
+  isCompacting = false,
 }) => {
   const { t } = useI18n();
   const ch = t.taskStatusPanels.contextHealth;
@@ -309,9 +317,25 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           {health.warningLevel === 'critical' && (
             <div className="flex items-center gap-2 p-2 bg-red-500/20 rounded-md">
               <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-              <span className="text-xs text-red-300">
+              <span className="flex-1 text-xs text-red-300">
                 {ch.nearlyExhausted}
               </span>
+              {onCompact && (
+                <button
+                  type="button"
+                  onClick={onCompact}
+                  disabled={isCompacting}
+                  title={ch.compactHint}
+                  className="shrink-0 inline-flex items-center gap-1 rounded-md border border-red-400/30 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/20 disabled:cursor-wait disabled:opacity-70"
+                >
+                  {isCompacting ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Shrink className="w-3 h-3" />
+                  )}
+                  {isCompacting ? ch.compacting : ch.compactNow}
+                </button>
+              )}
             </div>
           )}
 

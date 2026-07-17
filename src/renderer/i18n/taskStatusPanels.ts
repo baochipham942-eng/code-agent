@@ -272,6 +272,11 @@ export const taskStatusPanelsZh = {
       bkRules: '规则',
       bkFileReads: '文件读取',
       bkConversation: '对话',
+      compactNow: '立即压缩',
+      compacting: '压缩中…',
+      compactHint: '会调用摘要模型压缩当前对话内容',
+      compactFailed: '压缩失败',
+      compactFailedToast: '上下文压缩失败，请重试',
     },
   },
 };
@@ -544,6 +549,11 @@ export const taskStatusPanelsEn: typeof taskStatusPanelsZh = {
       bkRules: 'Rules',
       bkFileReads: 'File Reads',
       bkConversation: 'Conversation',
+      compactNow: 'Compact now',
+      compacting: 'Compacting…',
+      compactHint: 'Calls a summarization model to compress the current conversation',
+      compactFailed: 'Compaction failed',
+      compactFailedToast: 'Failed to compact context. Please try again.',
     },
   },
 };

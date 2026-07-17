@@ -16,6 +16,7 @@ import { useAppStore, type LivePreviewSelectedElement } from '../../stores/appSt
 import { useMessageActionStore } from '../../stores/messageActionStore';
 import { invokeDomain } from '../../services/ipcService';
 import { TweakPanel } from './TweakPanel';
+import { useI18n } from '../../hooks/useI18n';
 
 interface Props {
   tabId: string;
@@ -60,6 +61,40 @@ export function isTrustedLivePreviewBridgeEvent(
   if (!expectedOrigin || event.origin !== expectedOrigin) return false;
   return true;
 }
+
+// 诊断条：frameError 原文（bridge 定位失败/CSP 拒绝/超时等六种工程报错）+
+// CSP snippet 对非程序员用户是黑话。第一层固定人话摘要+建议，原文和 CSP
+// 进「查看详情」折叠（复用 systemError 域的折叠按钮键，同一套交互）。
+export const LivePreviewDiagnosticStrip: React.FC<{ frameError: string; cspSnippet: string }> = ({
+  frameError,
+  cspSnippet,
+}) => {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="px-3 py-2 text-xs bg-amber-500/10 border-b border-amber-500/30 text-amber-200 space-y-1">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-medium">{t.livePreview.loadFailedSummary}</div>
+          <div className="text-amber-300/80">{t.livePreview.loadFailedSuggestion}</div>
+        </div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          className="shrink-0 text-amber-300/80 hover:text-amber-200 transition-colors"
+        >
+          {expanded ? t.systemError.hideDetails : t.systemError.viewDetails}
+        </button>
+      </div>
+      {expanded && (
+        <div className="space-y-0.5 font-mono text-amber-300/80">
+          <div>⚠ {frameError}</div>
+          <div>{t.livePreview.cspLabel}: {cspSnippet}</div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -351,12 +386,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
       )}
 
       {/* 诊断条 */}
-      {frameError && (
-        <div className="px-3 py-2 text-xs bg-amber-500/10 border-b border-amber-500/30 text-amber-200 space-y-1">
-          <div className="font-mono">⚠ {frameError}</div>
-          <div className="font-mono text-amber-300/80">生效 CSP: {cspSnippet}</div>
-        </div>
-      )}
+      {frameError && <LivePreviewDiagnosticStrip frameError={frameError} cspSnippet={cspSnippet} />}
 
       {/* iframe + TweakPanel 抽屉（V2-B） */}
       <div className="flex-1 flex overflow-hidden">

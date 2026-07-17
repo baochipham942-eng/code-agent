@@ -9,15 +9,20 @@ import type {
   ContextProvenanceCategory,
   ContextProvenanceListEntry,
 } from '@shared/contract/contextView';
+import { useI18n } from '../../hooks/useI18n';
+import type { Translations } from '../../i18n';
 
-const actionLabels: Record<ContextProvenanceAction, string> = {
-  added: '加入',
-  retrieved: '检索',
-  compressed: '压缩',
-  pinned: '钉住',
-  excluded: '排除',
-  retained: '保留',
-};
+function getActionLabels(t: Translations): Record<ContextProvenanceAction, string> {
+  const cp = t.taskStatusPanels.contextProvenance;
+  return {
+    added: cp.actionAdded,
+    retrieved: cp.actionRetrieved,
+    compressed: cp.actionCompressed,
+    pinned: cp.actionPinned,
+    excluded: cp.actionExcluded,
+    retained: cp.actionRetained,
+  };
+}
 
 const categoryLabels: Record<ContextProvenanceCategory, string> = {
   recent_turn: 'Recent Turn',
@@ -61,6 +66,10 @@ function actionTone(action: ContextProvenanceAction): string {
 }
 
 export const ContextProvenancePanel: React.FC<Props> = ({ entries }) => {
+  const { t } = useI18n();
+  const cp = t.taskStatusPanels.contextProvenance;
+  const actionLabels = getActionLabels(t);
+
   if (entries.length === 0) {
     return null;
   }
@@ -69,7 +78,7 @@ export const ContextProvenancePanel: React.FC<Props> = ({ entries }) => {
     <div className="rounded-lg border border-white/[0.04] bg-zinc-900/70 p-3">
       <div className="flex items-center gap-2">
         <Activity className="w-4 h-4 text-primary-400" />
-        <div className="text-sm font-medium text-zinc-100">上下文来源</div>
+        <div className="text-sm font-medium text-zinc-100">{cp.title}</div>
         <span className="text-[10px] text-zinc-500">Provenance</span>
       </div>
       <div className="mt-3 space-y-2 text-xs text-zinc-300">

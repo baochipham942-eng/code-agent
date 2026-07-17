@@ -7,6 +7,7 @@ import type {
   SwarmLaunchRequest,
 } from '@shared/contract/swarm';
 import type { SwarmExecutionPhase } from '../../stores/swarmStore';
+import { useI18n } from '../../hooks/useI18n';
 
 const PHASE_STATUS_MAP: Record<SwarmExecutionPhase, DAGStatus> = {
   idle: 'idle',
@@ -34,6 +35,8 @@ const SwarmDependencyMap: React.FC<{
   selectedAgentId: string | null;
   onAgentSelect: (agentId: string | null) => void;
 }> = ({ launchRequest, agents, phase, parallelPeak, lastEventAt, selectedAgentId, onAgentSelect }) => {
+  const { t } = useI18n();
+  const dm = t.taskStatusPanels.dependencyMap;
   const dagState = useMemo<DAGVisualizationState | null>(() => {
     if (!launchRequest || launchRequest.tasks.length === 0) return null;
 
@@ -146,7 +149,9 @@ const SwarmDependencyMap: React.FC<{
     return {
       dagId: launchRequest.id,
       name: launchRequest.summary,
-      description: `${launchRequest.agentCount} 个 agent · ${launchRequest.dependencyCount} 条依赖`,
+      description: dm.summaryDescription
+        .replace('{agentCount}', String(launchRequest.agentCount))
+        .replace('{dependencyCount}', String(launchRequest.dependencyCount)),
       status: PHASE_STATUS_MAP[phase] ?? 'running',
       statistics,
       nodes,
@@ -154,7 +159,7 @@ const SwarmDependencyMap: React.FC<{
       startedAt: earliestStart,
       completedAt: latestFinish || undefined,
     };
-  }, [launchRequest, agents, phase, parallelPeak, lastEventAt]);
+  }, [launchRequest, agents, phase, parallelPeak, lastEventAt, dm]);
 
   const warns = useMemo(() => {
     if (!dagState) return [];
@@ -164,7 +169,7 @@ const SwarmDependencyMap: React.FC<{
   if (!dagState) {
     return (
       <div className="rounded-lg border border-white/[0.04] bg-zinc-900/50 px-3 py-6 text-xs text-zinc-400">
-        等待并行任务编排数据。
+        {dm.waitingData}
       </div>
     );
   }
@@ -179,7 +184,7 @@ const SwarmDependencyMap: React.FC<{
   return (
     <div className="rounded-lg border border-white/[0.04] bg-zinc-800/70 p-3 space-y-3">
       <div className="flex items-center justify-between text-xs text-zinc-400">
-        <span>依赖拓扑</span>
+        <span>{t.taskStatusPanels.orchestration.dependencyTopology}</span>
         <span className="text-[11px] uppercase tracking-wide">Avg context {averageUsage.toFixed(1)}%</span>
       </div>
       <div className="h-[320px] rounded-lg border border-white/[0.02] bg-zinc-900/80">
@@ -194,12 +199,12 @@ const SwarmDependencyMap: React.FC<{
         />
       </div>
       <div className="flex flex-wrap items-center gap-2 text-[10px] text-zinc-400">
-        <span>节点 {dagState.nodes.length}</span>
-        <span>依赖 {dagState.edges.length}</span>
-        <span>上下文告警 {warns.length}</span>
+        <span>{dm.nodeCount.replace('{count}', String(dagState.nodes.length))}</span>
+        <span>{dm.dependencyCount.replace('{count}', String(dagState.edges.length))}</span>
+        <span>{dm.contextWarningCount.replace('{count}', String(warns.length))}</span>
         {warns.length > 0 && (
           <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300">
-            {warns.length} 个 agent 接近上下文上限
+            {dm.nearLimitWarning.replace('{count}', String(warns.length))}
           </span>
         )}
       </div>

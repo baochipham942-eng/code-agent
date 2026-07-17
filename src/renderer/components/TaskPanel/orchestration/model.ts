@@ -8,16 +8,34 @@ import type {
   SwarmExecutionPhase,
   SwarmTimelineEvent,
 } from '../../../stores/swarmStore';
+import type { Translations } from '../../../i18n';
 
-export const phaseMeta: Record<SwarmExecutionPhase, { label: string; className: string }> = {
-  idle: { label: '空闲', className: 'bg-zinc-700/60 text-zinc-300' },
-  planning: { label: '编排中', className: 'bg-blue-500/15 text-blue-300' },
-  waiting_approval: { label: '等审批', className: 'bg-amber-500/15 text-amber-300' },
-  executing: { label: '执行中', className: 'bg-primary-500/15 text-primary-300' },
-  completed: { label: '已完成', className: 'bg-emerald-500/15 text-emerald-300' },
-  failed: { label: '失败', className: 'bg-red-500/15 text-red-300' },
-  cancelled: { label: '已取消', className: 'bg-zinc-700/60 text-zinc-300' },
+const phaseClassName: Record<SwarmExecutionPhase, string> = {
+  idle: 'bg-zinc-700/60 text-zinc-300',
+  planning: 'bg-blue-500/15 text-blue-300',
+  waiting_approval: 'bg-amber-500/15 text-amber-300',
+  executing: 'bg-primary-500/15 text-primary-300',
+  completed: 'bg-emerald-500/15 text-emerald-300',
+  failed: 'bg-red-500/15 text-red-300',
+  cancelled: 'bg-zinc-700/60 text-zinc-300',
 };
+
+export function getPhaseMeta(
+  phase: SwarmExecutionPhase,
+  t: Translations,
+): { label: string; className: string } {
+  const o = t.taskStatusPanels.orchestration;
+  const labels: Record<SwarmExecutionPhase, string> = {
+    idle: o.phaseIdle,
+    planning: o.phasePlanning,
+    waiting_approval: o.phaseWaitingApproval,
+    executing: o.phaseExecuting,
+    completed: o.phaseCompleted,
+    failed: o.phaseFailed,
+    cancelled: o.phaseCancelled,
+  };
+  return { label: labels[phase], className: phaseClassName[phase] };
+}
 
 export const toneClassMap: Record<SwarmTimelineEvent['tone'], string> = {
   neutral: 'border-zinc-700 bg-zinc-800/70 text-zinc-300',
@@ -97,14 +115,15 @@ export function summarizeContextSources(messages: Message[]): ContextSourceSumma
   };
 }
 
-export function formatCommitLabel(operation: string, layer: string): string {
+export function formatCommitLabel(operation: string, layer: string, t: Translations): string {
+  const o = t.taskStatusPanels.orchestration;
   const operationMap: Record<string, string> = {
-    truncate: '截断',
-    snip: '裁剪',
-    compact: '压缩',
-    collapse: '折叠',
-    drain: '抽离',
-    reset: '重置',
+    truncate: o.opTruncate,
+    snip: o.opSnip,
+    compact: o.opCompact,
+    collapse: o.opCollapse,
+    drain: o.opDrain,
+    reset: o.opReset,
   };
 
   const layerMap: Record<string, string> = {
@@ -124,14 +143,18 @@ export function buildContextTimeline(
   messages: Message[],
   contextView: ContextViewResponse | null,
   contextHealth: ContextHealthState | null,
+  t: Translations,
 ): ContextTimelineEntry[] {
+  const o = t.taskStatusPanels.orchestration;
   const entries: ContextTimelineEntry[] = [];
 
   for (const commit of contextView?.recentCommits ?? []) {
     entries.push({
       id: `commit-${commit.timestamp}-${commit.layer}-${commit.operation}`,
-      title: formatCommitLabel(commit.operation, commit.layer),
-      summary: commit.targetCount > 0 ? `影响 ${commit.targetCount} 条消息` : '系统级上下文调整',
+      title: formatCommitLabel(commit.operation, commit.layer, t),
+      summary: commit.targetCount > 0
+        ? o.timelineAffectedMessages.replace('{count}', String(commit.targetCount))
+        : o.timelineSystemAdjustment,
       timestamp: commit.timestamp,
       tone: commit.operation === 'reset' ? 'neutral' : 'warning',
     });
@@ -146,8 +169,8 @@ export function buildContextTimeline(
     if (attachmentCount > 0) {
       entries.push({
         id: `attachment-${message.id}`,
-        title: '附件进入上下文',
-        summary: `${attachmentCount} 个附件被带入当前会话`,
+        title: o.timelineAttachmentTitle,
+        summary: o.timelineAttachmentSummary.replace('{count}', String(attachmentCount)),
         timestamp,
         tone: 'neutral',
       });
@@ -156,7 +179,7 @@ export function buildContextTimeline(
     if (toolNames.length > 0) {
       entries.push({
         id: `tools-${message.id}`,
-        title: '工具结果进入上下文',
+        title: o.timelineToolTitle,
         summary: toolNames.slice(0, 3).join(', '),
         timestamp,
         tone: 'neutral',
@@ -167,8 +190,10 @@ export function buildContextTimeline(
   if (contextView && contextView.usagePercent >= 70) {
     entries.push({
       id: `budget-${contextView.usagePercent}`,
-      title: contextView.usagePercent >= 85 ? '上下文预算告急' : '上下文预算升高',
-      summary: `当前已使用 ${contextView.usagePercent.toFixed(1)}%，剩余 ${Math.max(0, 100 - contextView.usagePercent).toFixed(1)}%`,
+      title: contextView.usagePercent >= 85 ? o.contextBudgetCritical : o.contextBudgetRising,
+      summary: o.contextBudgetSummary
+        .replace('{used}', contextView.usagePercent.toFixed(1))
+        .replace('{remaining}', Math.max(0, 100 - contextView.usagePercent).toFixed(1)),
       timestamp: recentMessages[recentMessages.length - 1]?.timestamp ?? Date.now(),
       tone: contextView.usagePercent >= 85 ? 'warning' : 'neutral',
     });
@@ -177,8 +202,8 @@ export function buildContextTimeline(
   if (contextHealth?.compression?.lastCompressionAt) {
     entries.push({
       id: `health-compression-${contextHealth.compression.lastCompressionAt}`,
-      title: '自动压缩生效',
-      summary: `累计节省 ${formatTokens(contextHealth.compression.totalSavedTokens)} tokens`,
+      title: o.autoCompressionActive,
+      summary: o.cumulativeSavedTokens.replace('{tokens}', formatTokens(contextHealth.compression.totalSavedTokens)),
       timestamp: contextHealth.compression.lastCompressionAt,
       tone: 'success',
     });

@@ -2,12 +2,13 @@
 // GenerativeUIBlock - Sandboxed iframe renderer for AI-generated HTML widgets
 // ============================================================================
 
-import { memo, useState, useCallback, useRef, useEffect } from 'react';
+import { memo, useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
 import { Sparkles, Code2, Copy, Check, ExternalLink } from 'lucide-react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
+
+// Prism 语法高亮按需动态加载,只在用户点开"查看源码"时才下载。
+const LazyPrismCodeBlock = lazy(() => import('./PrismCodeBlock'));
 
 const INJECTED_STYLES = `<style>
 body {
@@ -69,27 +70,33 @@ const SourceView = memo(function SourceView({ code }: { code: string }) {
 
   return (
     <div className="relative">
-      <SyntaxHighlighter
-        style={oneDark}
-        language="html"
-        showLineNumbers={showLineNumbers}
-        customStyle={{
-          margin: 0,
-          padding: '1rem',
-          background: 'transparent',
-          fontSize: '0.75rem',
-          lineHeight: '1.25rem',
-        }}
-        lineNumberStyle={{
-          minWidth: '2.5em',
-          paddingRight: '1em',
-          color: 'rgb(113 113 122)',
-          userSelect: 'none',
-        }}
-        wrapLongLines={false}
+      <Suspense
+        fallback={
+          <pre className="scrollbar-hidden overflow-x-auto p-4 text-xs leading-5 text-zinc-200">
+            {code}
+          </pre>
+        }
       >
-        {code}
-      </SyntaxHighlighter>
+        <LazyPrismCodeBlock
+          language="html"
+          showLineNumbers={showLineNumbers}
+          customStyle={{
+            margin: 0,
+            padding: '1rem',
+            background: 'transparent',
+            fontSize: '0.75rem',
+            lineHeight: '1.25rem',
+          }}
+          lineNumberStyle={{
+            minWidth: '2.5em',
+            paddingRight: '1em',
+            color: 'rgb(113 113 122)',
+            userSelect: 'none',
+          }}
+          wrapLongLines={false}
+          code={code}
+        />
+      </Suspense>
     </div>
   );
 });

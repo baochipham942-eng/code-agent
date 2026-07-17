@@ -109,14 +109,14 @@ describe('normalizeProposalOp', () => {
     const op = normalizeProposalOp({ kind: 'generateImage', prompt: 'p'.repeat(PROPOSAL_PROMPT_MAX + 100) });
     expect(op).toMatchObject({ kind: 'generateImage' });
     expect((op as { prompt: string }).prompt.length).toBe(PROPOSAL_PROMPT_MAX);
-    expect(op as Record<string, unknown>).not.toHaveProperty('model');
-    expect(op as Record<string, unknown>).not.toHaveProperty('aspectRatio');
+    expect(op as unknown as Record<string, unknown>).not.toHaveProperty('model');
+    expect(op as unknown as Record<string, unknown>).not.toHaveProperty('aspectRatio');
   });
 
   it('generateImage：非字符串 model/aspectRatio 丢弃（不带进契约）', () => {
     const op = normalizeProposalOp({ kind: 'generateImage', prompt: 'x', model: 123, aspectRatio: {} });
-    expect(op as Record<string, unknown>).not.toHaveProperty('model');
-    expect(op as Record<string, unknown>).not.toHaveProperty('aspectRatio');
+    expect(op as unknown as Record<string, unknown>).not.toHaveProperty('model');
+    expect(op as unknown as Record<string, unknown>).not.toHaveProperty('aspectRatio');
   });
 
   it('未知 kind / 非对象 → null（deleteNode 硬删仍不在白名单）', () => {

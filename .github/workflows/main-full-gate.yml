@@ -50,6 +50,11 @@ jobs:
         working-directory: node_modules/better-sqlite3
         run: ../.bin/prebuild-install || true
 
+      - name: Install Playwright Chromium
+        # browser 族测试(mediaAssetLightbox/artifactPreviewHealth/designPreviewRepair/
+        # goalCompletionGate 冒烟)依赖内置 Chromium,runner 上缺席会连环红。
+        run: npx playwright install chromium
+
       - name: Full typecheck (root tsc --noEmit)
         # macos-latest runner 7GB,V8 默认老生代堆顶不够本仓 tsc(首跑 Abort trap 6/exit 134 OOM)
         run: npm run typecheck

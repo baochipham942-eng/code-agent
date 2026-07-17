@@ -57,6 +57,10 @@ vi.mock('../../../src/renderer/stores/uiStore', () => ({
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke: vi.fn() },
 }));
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
 
 import { SessionActionsMenu } from '../../../src/renderer/components/SessionActionsMenu';
 

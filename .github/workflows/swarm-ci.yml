@@ -23,6 +23,10 @@ on:
       # tsc 门真读的配置：改窄了 include（= 悄悄缩小门的覆盖面）却一道门都不跑，
       # 是 poppler lock 那个坑的同形状。
       - 'tsconfig.json'
+      # tests/scripts tsc 棘轮门真读的配置 + 脚本自身。#452 教训：path 触发盲区会让删除类 PR
+      # （改窄 include / 删测试目录）溜过门。
+      - 'tsconfig.tests.json'
+      - 'scripts/tsc-tests-ratchet.mjs'
       - 'playwright.config.ts'
       - 'tests/e2e/playwright.e2e.config.ts'
       - '.github/workflows/release.yml'
@@ -112,18 +116,18 @@ jobs:
         # 覆盖的文件里就能一路溜进 main（2026-07-17 实测：ADR-041 在 main 上留了 2 个 tsc
         # error 没人发现）。全量 vitest 太贵，tsc 只要几十秒——本仓最便宜的一道真门。
         #
-        # ⚠️ 这道门的盲区（明写，别当它是全量门）：`npm run typecheck` = `tsc --noEmit`，而
-        # tsconfig.json 的 include 只有 `src/**`——**tests/ 和 scripts/ 完全在门外**。所以它
-        # 抓不到 A-8 那类漏网调用方（给 formatProviderFallbackToast 加 t 参数漏了
-        # scripts/acceptance/model-strategy-fallback-visibility.ts），也抓不到测试侧的组合断裂。
-        #
-        # 为什么不顺手把 include 扩到 tests+scripts：2026-07-17 实测过，扩了之后有 **1220 个
-        # 存量 error**（tests 1052 / scripts 168；src 为 0）——那是一个独立的债务清理项目，
-        # 不是本批能顺手带的，扩容即全红。要做得先立棘轮基线再逐批清偿。
-        # （另注：初次探测误报"只有 1 个 error"，因为 tests/e2e/claude-e2e/fixtures 里
-        # bug-syntax-error 这个**故意**写坏的样例工程抛 TS1005，让 tsc 提前中止了后续检查。
-        # 真要扩容，exclude 必须先排除那个 fixtures 目录，否则读数是假的。）
+        # 这道门只管 `src/**`（tsconfig.json 的 include）。tests/ 和 scripts/ 的类型检查
+        # 由下一步 "Typecheck ratchet (tests/ + scripts/)" 单独把关（2026-07-18 建门，基线
+        # 1228 存量 error，只降不升）——A-8 那类漏改 scripts 调用方 + 测试侧组合断裂现在被那道
+        # 棘轮门抓。（历史坑：tests/e2e/claude-e2e/fixtures/bug-syntax-error 是**故意**写坏的
+        # 样例工程，会抛 TS1005 让 tsc 提前中止，tsconfig.tests.json 已在 exclude 里排除它。）
         run: npm run typecheck
+
+      - name: Typecheck ratchet (tests/ + scripts/)
+        # 根 typecheck 只管 src/；这道棘轮门补上 tests/ 和 scripts/（一直在 tsc 门外，A-8 那类
+        # 漏改 scripts 调用方 + 测试侧组合断裂都从这里溜进过 main）。用 typescript7 引擎跑
+        # tsconfig.tests.json，error 数只降不升，基线锁在 scripts/tsc-tests-ratchet.mjs 头注。
+        run: node scripts/tsc-tests-ratchet.mjs
 
       - name: Typecheck Vercel control-plane
         # vercel-api 是独立 package，不属于 root npm workspace；root npm ci 不会装它自己的依赖。

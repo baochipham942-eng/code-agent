@@ -1,0 +1,21 @@
+{
+  // tests/ + scripts/ 的类型检查配置——根 tsconfig 的 include 只有 src/**，这两处一直在
+  // tsc 门外（2026-07-17 侦察，见 docs/audits/2026-07-17-tsc-gate-blindspot-tests-scripts-debt.md）。
+  // 本文件把它们纳入检查，配 scripts/tsc-tests-ratchet.mjs 做只降不升的棘轮清偿。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // vitest globals（describe/it/expect 等）——vitest.config 里 globals:true，测试文件不 import 也能用。
+    "types": ["node", "vitest/globals"]
+  },
+  // src/** 也纳入：不是为了检查 src（根门已管，恒 0），而是让 src 里的 ambient 全局声明
+  // （如 window.domainAPI 的 .d.ts 增强）随之加载。否则测试 import 的 src 文件会丢失这些
+  // 全局声明，报出一堆纯属配置假象的 src error（实测 designFiles/api 等 ~90 处）。
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "release",
+    // 故意写坏语法的样例工程（TS1005 会让 tsc 提前中止后续检查，读数变假）。见 swarm-ci.yml 门注。
+    "tests/e2e/claude-e2e/fixtures/bug-syntax-error"
+  ]
+}

@@ -22,6 +22,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useWorkflowStore } from '../stores/workflowStore';
 import { getSessionStatusPresentation } from '../utils/sessionPresentation';
+import { hasNeedsInputForSession } from '../utils/sessionNeedsInput';
 import { canAccessFeature } from '../utils/accessControl';
 import { buildSessionReplayContext } from '../utils/sessionReplayContext';
 import { openSessionReplayEvidenceTarget } from '../utils/openSessionReplayEvidence';
@@ -51,6 +52,7 @@ export const SessionActionsMenu: React.FC = () => {
   const sessions = useSessionStore((s) => s.sessions);
   const sessionRuntimes = useSessionStore((s) => s.sessionRuntimes);
   const backgroundTasks = useSessionStore((s) => s.backgroundTasks);
+  const pendingUserQuestionsBySessionId = useSessionStore((s) => s.pendingUserQuestionsBySessionId);
   const moveToBackground = useSessionStore((s) => s.moveToBackground);
 
   const sessionStates = useTaskStore((s) => s.sessionStates);
@@ -84,6 +86,23 @@ export const SessionActionsMenu: React.FC = () => {
   const currentBackgroundTask = backgroundTasks.find((t) => t.sessionId === currentSessionId) || undefined;
   const currentSessionRuntime = currentSessionId ? sessionRuntimes.get(currentSessionId) : undefined;
   const currentSessionState = currentSessionId ? sessionStates[currentSessionId] : null;
+  const durableWaitingInputSessionIds = useMemo(
+    () => new Set(sessions.filter((session) => session.durableWaitingInput === true).map((session) => session.id)),
+    [sessions],
+  );
+  const currentSessionNeedsInput = Boolean(
+    currentSessionId &&
+    hasNeedsInputForSession(currentSessionId, {
+      permissionState: {
+        pendingPermissionRequest,
+        pendingPermissionSessionId,
+        queuedPermissionRequests,
+      },
+      backgroundTasks: durableBackgroundTasks,
+      pendingUserQuestionsBySessionId,
+      durableWaitingInputSessionIds,
+    }),
+  );
   const currentSessionStatus = getSessionStatusPresentation({
     backgroundTask: currentBackgroundTask,
     runtime: currentSessionRuntime,
@@ -91,13 +110,7 @@ export const SessionActionsMenu: React.FC = () => {
     messageCount: currentSession?.messageCount,
     turnCount: currentSession?.turnCount,
     sessionStatus: currentSession?.status,
-    hasPendingApproval: Boolean(
-      currentSessionId &&
-      (
-        (pendingPermissionRequest && pendingPermissionSessionId === currentSessionId) ||
-        (queuedPermissionRequests?.[currentSessionId]?.length ?? 0) > 0
-      )
-    ),
+    hasNeedsInput: currentSessionNeedsInput,
   });
 
   const canResume = currentSessionStatus.kind === 'paused';

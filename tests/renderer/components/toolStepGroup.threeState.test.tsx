@@ -64,6 +64,22 @@ function doneNode(name: string, success = true, result = 'ok'): TraceNode {
   } as TraceNode;
 }
 
+function runningNodeWithLiveOutput(name: string, stdoutLines: string[]): TraceNode {
+  nid += 1;
+  return {
+    id: `tool-${nid}`,
+    type: 'tool_call',
+    content: '',
+    timestamp: nid,
+    toolCall: {
+      id: `call-${nid}`,
+      name,
+      args: {},
+      liveOutput: { stdout: stdoutLines.join('\n') },
+    },
+  } as TraceNode;
+}
+
 const EXPANDED_MARKER = 'border-l border-zinc-800';
 
 describe('ToolStepGroup 三态折叠预览（ADR-043 T2）', () => {
@@ -162,5 +178,54 @@ describe('ToolStepGroup 三态折叠预览（ADR-043 T2）', () => {
     render(<ToolStepGroup nodes={[runningNode('Bash')]} isStreamingTurn />);
     expect(screen.getByTestId('tool-call-row-Bash')).toBeTruthy();
     expect(screen.queryByText(/已完成 \d+ 步/)).toBeNull();
+  });
+
+  it('⑧ 中间档实时输出截尾 5 行（拍板决策 4）：早期行不见，末尾行仍在', () => {
+    const stdoutLines = Array.from({ length: 20 }, (_, i) => `line${i + 1}`);
+    render(
+      <ToolStepGroup nodes={[runningNodeWithLiveOutput('Bash', stdoutLines)]} isStreamingTurn />,
+    );
+    // 尾 5 行（line16~line20）应该在
+    for (let i = 16; i <= 20; i += 1) {
+      expect(screen.queryByText(new RegExp(`line${i}\\b`))).not.toBeNull();
+    }
+    // 早期行（line1~line15）应该被截掉，不再出现在 DOM 里
+    for (let i = 1; i <= 15; i += 1) {
+      expect(document.body.innerHTML).not.toMatch(new RegExp(`line${i}(?!\\d)`));
+    }
+  });
+
+  it('⑧b 全展开态不截断：同样的 20 行输出，早期行仍完整可见', () => {
+    const stdoutLines = Array.from({ length: 20 }, (_, i) => `line${i + 1}`);
+    render(
+      <ToolStepGroup
+        nodes={[runningNodeWithLiveOutput('Bash', stdoutLines)]}
+        isStreamingTurn={false}
+        defaultExpanded
+      />,
+    );
+    expect(document.body.innerHTML).toContain(EXPANDED_MARKER);
+    expect(document.body.innerHTML).toMatch(/line1(?!\d)/);
+    expect(document.body.innerHTML).toMatch(/line20\b/);
+  });
+
+  it('⑨ 中间档运行中途出现需介入失败（rerender）→ 立刻切到全展开，不停留在中间档', () => {
+    const { rerender } = render(
+      <ToolStepGroup nodes={[doneNode('Read'), runningNode('Bash')]} isStreamingTurn />,
+    );
+    // 起点：中间档
+    expect(screen.getByTestId('tool-call-row-Bash')).toBeTruthy();
+    expect(document.body.innerHTML).not.toContain(EXPANDED_MARKER);
+
+    // 流式中途：Bash 那步以需介入失败收尾（同一 turn 仍在流式中）
+    rerender(
+      <ToolStepGroup
+        nodes={[doneNode('Read'), doneNode('Bash', false, '401 Unauthorized: invalid api key')]}
+        isStreamingTurn
+      />,
+    );
+    expect(document.body.innerHTML).toContain(EXPANDED_MARKER);
+    // Read 成功 + Bash 需介入失败 = partial 态，顶色是 amber（error 态才是 red）
+    expect(document.body.innerHTML).toContain('bg-amber-400');
   });
 });

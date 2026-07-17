@@ -6,9 +6,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
-import type { ToolCall } from '@shared/contract';
+import type { ToolCall, ToolLiveOutput } from '@shared/contract';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
+import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
 import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGrouping';
 import {
   formatToolDuration,
@@ -143,6 +144,14 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
       : 'collapsed';
   const ariaExpanded = tier === 'expanded';
 
+  // 中间档专用：实时输出截尾 5 行（ADR-043 决策 4，复用 bashOutputPreview 里
+  // isPending=true 的现成尾部截断，不新造截断逻辑）。全展开态用原始 runningToolCall，
+  // 不受影响——那是用户主动要看全量。
+  const truncatedRunningToolCall = useMemo<ToolCall | null>(() => {
+    if (tier !== 'truncated' || !runningToolCall) return null;
+    return { ...runningToolCall, liveOutput: tailTruncateLiveOutput(runningToolCall.liveOutput) };
+  }, [tier, runningToolCall]);
+
   const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls, t), [toolCalls, t]);
   const outputCount = useMemo(() => {
     return toolCalls.filter((toolCall) => hasToolOutputArtifact(toolCall)).length;
@@ -213,17 +222,17 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
 
       {tier === 'truncated' && (
         <div className="ml-4 mt-1 space-y-1 pl-3">
-          {runningToolCall && (
+          {truncatedRunningToolCall && (
             <ToolCallDisplay
-              toolCall={runningToolCall}
+              toolCall={truncatedRunningToolCall}
               index={0}
               total={1}
               compact
               mediaContext={{
                 sessionId,
                 messageId:
-                  nodes.find((node) => node.toolCall?.id === runningToolCall.id)?.messageId ||
-                  runningToolCall.id,
+                  nodes.find((node) => node.toolCall?.id === truncatedRunningToolCall.id)?.messageId ||
+                  truncatedRunningToolCall.id,
               }}
             />
           )}
@@ -282,6 +291,20 @@ function isReadOrSearchTool(name: string): boolean {
     'LS',
     'list_directory',
   ].includes(name);
+}
+
+/**
+ * 中间档实时输出截尾（ADR-043 决策 4）：stdout/stderr 各自只留最后 5 行，
+ * 复用 bashOutputPreview.ts 的 isPending=true 分支（"运行中尾 5 行"），不新造截断逻辑。
+ * 纯函数，便于单测。
+ */
+export function tailTruncateLiveOutput(live: ToolLiveOutput | undefined): ToolLiveOutput | undefined {
+  if (!live) return live;
+  return {
+    ...live,
+    stdout: live.stdout ? computeBashPreviewLines(live.stdout, true).displayLines.join('\n') : live.stdout,
+    stderr: live.stderr ? computeBashPreviewLines(live.stderr, true).displayLines.join('\n') : live.stderr,
+  };
 }
 
 /**

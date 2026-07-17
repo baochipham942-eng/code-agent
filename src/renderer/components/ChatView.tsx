@@ -52,7 +52,7 @@ import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
-import type { AppSettings, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
+import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
 import type { PromptRewindResult } from '@shared/contract/appService';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
@@ -621,6 +621,14 @@ export const ChatView: React.FC = () => {
     return handleSendEnvelope(buildEnvelope(content, attachments));
   }, [buildEnvelope, handleSendEnvelope]);
 
+  // D-1「重试该轮」锚点：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID（streamHandler.ts
+  // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
+  // 字段指回原始用户消息——唯一可靠锚点是结构性推导：addMessage 一律无条件清空 streamSnapshot
+  // (sessionStore.ts addMessage)，所以只要 streamSnapshot 还在，messages 数组末尾就不可能是
+  // 之后新增的消息；由于中断的助手回复从未落进 messages（只活在 ephemeral snapshot 里），
+  // 末位消息必然就是触发这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
+  const retryTurnMessage = deriveRetryTurnMessage(streamSnapshot, messages);
+
   // 对话式建角色：入口（RolesTab / AgentSwitcher）起新会话后写入种子消息，
   // 这里在新会话就绪后自动发出可见的种子消息，触发 create-role skill。
   const pendingRoleChatSeed = useAppStore((state) => state.pendingRoleChatSeed);
@@ -726,7 +734,11 @@ export const ChatView: React.FC = () => {
         />
 
         {streamSnapshot && (
-          <StreamRecoveryBanner snapshot={streamSnapshot} />
+          <StreamRecoveryBanner
+            snapshot={streamSnapshot}
+            retryMessage={retryTurnMessage}
+            onSend={handleSendMessage}
+          />
         )}
 
         {channelSessionSource && (
@@ -910,11 +922,44 @@ export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
   ];
 }
 
-const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ snapshot }) => {
+/**
+ * D-1「重试该轮」锚点推导：streamSnapshot.turnId 是每轮流式开始时现铸的 UUID
+ * （streamHandler.ts beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无
+ * 关联，snapshot 里也没有任何字段指回原始用户消息——唯一可靠锚点是结构性推导：
+ * addMessage 一律无条件清空 streamSnapshot（sessionStore.ts addMessage），所以只要
+ * streamSnapshot 还在，messages 数组末尾就不可能是之后新增的消息；由于中断的助手
+ * 回复从未落进 messages（只活在 ephemeral snapshot 里），末位消息必然就是触发这轮
+ * 的用户消息。取不到（数组为空或末位不是 user）就返回 null，不重试。
+ */
+export function deriveRetryTurnMessage(
+  streamSnapshot: StreamRecoverySnapshot | null,
+  messages: Message[],
+): Message | null {
+  if (!streamSnapshot || messages.length === 0) return null;
+  const last = messages[messages.length - 1];
+  return last.role === 'user' ? last : null;
+}
+
+export const StreamRecoveryBanner: React.FC<{
+  snapshot: StreamRecoverySnapshot;
+  /** 触发这轮中断的原始用户消息；找不到可靠锚点时为 null，不渲染重试按钮。 */
+  retryMessage: Message | null;
+  onSend: (content: string, attachments?: MessageAttachment[]) => Promise<boolean>;
+}> = ({ snapshot, retryMessage, onSend }) => {
   const { t, language } = useI18n();
   // 无现成 dismiss 通道（streamSnapshot 只在发新消息/切会话时被清空），本地记住已关闭
   // 的 turnId 即可；换了新的未完成流（不同 turnId）时横幅照常重新出现。
   const [dismissedTurnId, setDismissedTurnId] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const handleRetryClick = async () => {
+    if (!retryMessage || isRetrying) return;
+    setIsRetrying(true);
+    try {
+      await onSend(retryMessage.content, retryMessage.attachments);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
   const toolNames = snapshot.toolCalls
     .map((toolCall) => toolCall.name || toolCall.id)
     .filter(Boolean)
@@ -945,6 +990,16 @@ const StreamRecoveryBanner: React.FC<{ snapshot: StreamRecoverySnapshot }> = ({ 
           <div className="mt-1 text-xs text-status-warning-soft dark:text-status-warning-soft/60 [.high-contrast-dark_&]:text-status-warning-soft/60">
             {timeLabel}
           </div>
+          {retryMessage && (
+            <button
+              type="button"
+              onClick={handleRetryClick}
+              disabled={isRetrying}
+              className="mt-2 inline-flex items-center rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-xs font-medium text-status-warning-soft transition-colors hover:bg-amber-500/20 disabled:cursor-wait disabled:opacity-70"
+            >
+              {isRetrying ? t.chat.retryTurnInProgress : t.chat.retryTurn}
+            </button>
+          )}
         </div>
         <button
           type="button"

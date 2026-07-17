@@ -17,6 +17,7 @@ import {
   isNativeCommandRuntimeAvailable,
 } from '../../../../services/nativeCommandFacade';
 import { useI18n } from '../../../../hooks/useI18n';
+import { Toggle } from '../../../primitives/Toggle';
 
 const logger = createLogger('AppshotsSettings');
 const TARGET_SESSION_OPTIONS = ['current', 'new'] as const;
@@ -90,22 +91,13 @@ export const AppshotsSettings: React.FC = () => {
             {appshotsText.enableDescriptionSuffix}
           </p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={enabled}
+        <Toggle
+          size="md"
+          checked={enabled}
           disabled={web}
-          onClick={handleToggle}
-          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
-            enabled ? 'bg-primary-500' : 'bg-zinc-600'
-          }`}
-        >
-          <span
-            className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-              enabled ? 'translate-x-[22px]' : 'translate-x-0.5'
-            }`}
-          />
-        </button>
+          onChange={() => handleToggle()}
+          aria-label={appshotsText.enableTitle}
+        />
       </div>
 
       {/* 触发方式（固定手势，只读说明）*/}

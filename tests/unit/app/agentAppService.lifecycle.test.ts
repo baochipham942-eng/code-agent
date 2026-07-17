@@ -530,7 +530,10 @@ describe('AgentAppService lifecycle routing', () => {
         messages: [],
     });
     vi.mocked(loadStreamSnapshot).mockReturnValue({
+      schemaVersion: 2,
+      workspace: '/tmp/project',
       sessionId: 'session-1',
+      runId: 'run-1',
       turnId: 'turn-1',
       content: '',
       reasoning: '',
@@ -539,10 +542,12 @@ describe('AgentAppService lifecycle routing', () => {
       ],
       estimatedTokens: 1,
       timestamp: 100,
+      updatedAt: 100,
       isFinal: false,
       streamStatus: 'incomplete',
       stableForExecution: false,
       incompleteToolCallIds: ['tool-1'],
+      executionToolCalls: [],
     });
 
     const service = createService(taskManager);
@@ -592,17 +597,22 @@ describe('AgentAppService lifecycle routing', () => {
         messages: [],
     });
     vi.mocked(loadStreamSnapshot).mockReturnValue({
+      schemaVersion: 2,
+      workspace: '/tmp/project',
       sessionId: 'other-session',
+      runId: 'run-1',
       turnId: 'turn-1',
       content: '',
       reasoning: '',
       toolCalls: [],
       estimatedTokens: 1,
       timestamp: 100,
+      updatedAt: 100,
       isFinal: false,
       streamStatus: 'incomplete',
       stableForExecution: false,
       incompleteToolCallIds: [],
+      executionToolCalls: [],
     });
 
     const service = createService(taskManager);

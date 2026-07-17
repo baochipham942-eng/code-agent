@@ -308,9 +308,9 @@ describe('workbenchTurnContext', () => {
       },
     );
 
-    expect(merged.turnSystemContext?.[0]).toContain('优先考虑这些已挂载 skills');
-    expect(merged.turnSystemContext?.[0]).toContain('docx');
-    expect(merged.toolScope).toEqual({
+    expect(merged?.turnSystemContext?.[0]).toContain('优先考虑这些已挂载 skills');
+    expect(merged?.turnSystemContext?.[0]).toContain('docx');
+    expect(merged?.toolScope).toEqual({
       allowedSkillIds: ['docx'],
     });
   });
@@ -417,7 +417,7 @@ describe('workbenchTurnContext', () => {
   });
 
   it('returns the original options when nothing is selected', () => {
-    const options = { mode: 'normal', reportStyle: 'summary' } as const;
+    const options = { mode: 'normal', reportStyle: 'default' } as const;
 
     expect(withWorkbenchTurnSystemContext(options, undefined)).toBe(options);
   });

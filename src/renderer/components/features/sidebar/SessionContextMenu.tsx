@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 
 export interface ContextMenuItem {
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   onClick: () => void;
   danger?: boolean;
   disabled?: boolean;

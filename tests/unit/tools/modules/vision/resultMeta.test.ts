@@ -317,7 +317,8 @@ describe('vision wrapper ToolResult contract', () => {
       sizeBytes: 128,
       sha256: 'abc123',
     });
-    expect(result.meta?.artifact?.metadata).toMatchObject({
+    const artifact = result.meta?.artifact as { metadata?: Record<string, unknown> } | undefined;
+    expect(artifact?.metadata).toMatchObject({
       sourceKey: 'browserArtifact',
       legacyBrowserArtifact: expect.objectContaining({ artifactId: 'download_1' }),
     });

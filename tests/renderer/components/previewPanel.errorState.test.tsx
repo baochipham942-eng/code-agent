@@ -1,7 +1,18 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { PreviewErrorState, toPreviewErrorState } from '../../../src/renderer/components/PreviewPanel';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT = path.resolve(__dirname, '../../..');
+
+function readSource(relativePath: string): string {
+  return readFileSync(path.join(ROOT, relativePath), 'utf8');
+}
 
 // 原 bug 形状：loadContent/handleSave 的 catch 块把三元表达式写反了——
 // `err instanceof Error ? err.message : pv.xxxFailed`，导致最常见的 Error
@@ -49,5 +60,20 @@ describe('PreviewErrorState — 加载/保存失败人话化', () => {
 
     expect(html).toContain('保存失败');
     expect(html).not.toContain('title=');
+  });
+});
+
+// 接线钉子：只单测 toPreviewErrorState/PreviewErrorState 本身，钉不住调用点是否
+// 真的接了它们——把 loadContent/handleSave 的 catch 块改回旧 bug 形状
+// （`setErrorState(err instanceof Error ? err.message : pv.xxxFailed)`）不会让
+// 上面两个 describe 变红。读源文件断言调用点真实形状（先例：mainTaskModelCopy.test.ts）。
+describe('PreviewPanel 接线钉子 — catch 块真的走 toPreviewErrorState', () => {
+  it('loadContent/handleSave 的 catch 调用 toPreviewErrorState，不退回把 err.message 直接当主文案的旧形状', () => {
+    const source = readSource('src/renderer/components/PreviewPanel.tsx');
+
+    expect(source).toContain('toPreviewErrorState(err, pv.loadFileFailed)');
+    expect(source).toContain('toPreviewErrorState(err, pv.saveFailed)');
+    expect(source).not.toContain('err instanceof Error ? err.message : pv.loadFileFailed');
+    expect(source).not.toContain('err instanceof Error ? err.message : pv.saveFailed');
   });
 });

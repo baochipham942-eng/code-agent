@@ -1,7 +1,18 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LivePreviewDiagnosticStrip } from '../../../src/renderer/components/LivePreview/LivePreviewFrame';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT = path.resolve(__dirname, '../../..');
+
+function readSource(relativePath: string): string {
+  return readFileSync(path.join(ROOT, relativePath), 'utf8');
+}
 
 // 诊断条此前把 frameError 原文（bridge 定位失败/CSP 拒绝/超时等六种工程报错
 // 之一）和 CSP snippet 直接拼进可见文案。现在拆两层：固定人话摘要+建议默认
@@ -35,5 +46,21 @@ describe('LivePreviewDiagnosticStrip — 诊断条两层人话化', () => {
       expect(html).toContain('预览没加载出来');
       expect(html).not.toContain(variant);
     }
+  });
+});
+
+// 接线钉子：只单测 LivePreviewDiagnosticStrip 本身，钉不住 LivePreviewFrame 的
+// 渲染点是否真的用了它——把调用点改回裸 `⚠ {frameError}` 不会让上面的
+// describe 变红。读源文件断言诊断条调用点真实形状（先例：mainTaskModelCopy.test.ts）。
+describe('LivePreviewFrame 接线钉子 — 诊断条调用点真的用 LivePreviewDiagnosticStrip', () => {
+  it('{/* 诊断条 */} 注释后紧跟 <LivePreviewDiagnosticStrip，不是裸 frameError 渲染', () => {
+    const source = readSource('src/renderer/components/LivePreview/LivePreviewFrame.tsx');
+    const marker = '{/* 诊断条 */}';
+    const markerIndex = source.indexOf(marker);
+    expect(markerIndex, '找不到诊断条调用点注释，文件被改动过？').toBeGreaterThan(-1);
+
+    const callSite = source.slice(markerIndex, markerIndex + 200);
+    expect(callSite).toContain('<LivePreviewDiagnosticStrip');
+    expect(callSite).not.toContain('⚠ {frameError}');
   });
 });

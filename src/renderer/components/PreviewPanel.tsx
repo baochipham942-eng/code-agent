@@ -392,7 +392,7 @@ export function PreviewErrorState({
         <span className="text-sm text-red-400" title={detail ?? undefined}>{message}</span>
         <button
           onClick={onRetry}
-          className="px-4 py-2 rounded-lg bg-zinc-600 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors"
+          className="px-4 py-2 rounded-lg bg-zinc-600 text-zinc-200 text-sm hover:bg-zinc-500 transition-colors"
         >
           {pv.retry}
         </button>

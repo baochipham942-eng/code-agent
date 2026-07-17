@@ -108,6 +108,7 @@ toolGroup: {
   summaryFailed: '{count} 失败',
   summaryEmpty: '{count} 空结果',
   summaryCompleted: '{count} 完成',
+  completedSteps: '已完成 {count} 步',
 },
 
 // 单工具状态词表（statusLabels.ts 整表）
@@ -320,6 +321,7 @@ toolGroup: {
   summaryFailed: '{count} failed',
   summaryEmpty: '{count} empty',
   summaryCompleted: '{count} completed',
+  completedSteps: '{count} steps completed',
 },
 
 // Per-tool status labels (statusLabels.ts)

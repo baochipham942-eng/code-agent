@@ -9,7 +9,7 @@ function makeMessage(transcript: string): ChannelMessage {
     id: 'm1',
     channelId: 'telegram',
     sender: { id: 'u1', name: 'Tester' },
-    context: { chatId: 'c1', chatType: 'private' },
+    context: { chatId: 'c1', chatType: 'p2p' },
     content: 'hello',
     timestamp: 0,
     attachments: [

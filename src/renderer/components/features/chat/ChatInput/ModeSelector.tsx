@@ -6,6 +6,7 @@
 import React from 'react';
 import { Terminal, ClipboardList, MessageCircleQuestion } from 'lucide-react';
 import type { InteractionMode } from '../../../../../shared/contract/agent';
+import { useI18n } from '../../../../hooks/useI18n';
 
 // ============================================================================
 // 配置
@@ -62,6 +63,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
   onChange,
   disabled,
 }) => {
+  const { t } = useI18n();
   return (
     <div className="flex items-center gap-0.5 p-0.5 bg-white/[0.03] rounded-lg border border-white/[0.06]">
       {MODE_OPTIONS.map((option) => {
@@ -72,7 +74,7 @@ export const ModeSelector: React.FC<ModeSelectorProps> = ({
             type="button"
             onClick={() => onChange(option.value)}
             disabled={disabled}
-            title={`交互模式: ${option.label}`}
+            title={t.chatInput.modeSelectorTitleTemplate.replace('{label}', option.label)}
             className={`
               flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium
               transition-all duration-150

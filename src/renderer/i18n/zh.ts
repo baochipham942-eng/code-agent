@@ -6,6 +6,7 @@ import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
 import { chatInputZh } from './chatInput';
+import { chatInputModelStrategyZh } from './chatInputModelStrategy';
 import { sidebarZh } from './sidebar';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
@@ -846,6 +847,7 @@ export const zh = {
 
   ...chatTranscriptZh,
   ...chatInputZh,
+  ...chatInputModelStrategyZh,
   ...sidebarZh,
   ...previewWorkspaceZh,
   ...modalPrimitivesZh,

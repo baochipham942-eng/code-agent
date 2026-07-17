@@ -6,6 +6,7 @@
 import React from 'react';
 import { Zap, ZapOff, Flame } from 'lucide-react';
 import type { EffortLevel } from '../../../../../shared/contract/agent';
+import { useI18n } from '../../../../hooks/useI18n';
 
 // ============================================================================
 // 配置
@@ -62,6 +63,7 @@ export const EffortSelector: React.FC<EffortSelectorProps> = ({
   onChange,
   disabled,
 }) => {
+  const { t } = useI18n();
   return (
     <div className="flex items-center gap-0.5 p-0.5 bg-white/[0.03] rounded-lg border border-white/[0.06]">
       {EFFORT_OPTIONS.map((option) => {
@@ -72,7 +74,7 @@ export const EffortSelector: React.FC<EffortSelectorProps> = ({
             type="button"
             onClick={() => onChange(option.value)}
             disabled={disabled}
-            title={`推理强度: ${option.label}`}
+            title={t.chatInput.effortTitleTemplate.replace('{label}', option.label)}
             className={`
               flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium
               transition-all duration-150

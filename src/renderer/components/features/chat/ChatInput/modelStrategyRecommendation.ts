@@ -3,6 +3,7 @@ import type { AgentEngineSessionMetadata } from '@shared/contract/agentEngine';
 import type { BillingMode } from '@shared/contract/modelDecision';
 import type { ModelProvider } from '@shared/contract/model';
 import type { ModelDomainCapability } from '@shared/constants';
+import type { Translations } from '../../../../i18n/zh';
 
 export type ModelStrategyRecommendationAction = 'enable-auto' | 'switch-model' | 'switch-native-engine';
 export type ModelStrategyRecommendationTone = 'info' | 'warning';
@@ -199,19 +200,23 @@ export function buildModelStrategyRecommendationFeedback(
   };
 }
 
-export async function applyModelStrategyRecommendationAction({
-  currentSessionId,
-  recommendation,
-  currentProvider,
-  currentModel,
-  switchModel,
-  updateSessionEngine,
-  applyOverride,
-  dismiss,
-  recordFeedback,
-  notifySuccess,
-  notifyError,
-}: ApplyModelStrategyRecommendationOptions): Promise<ApplyModelStrategyRecommendationResult> {
+export async function applyModelStrategyRecommendationAction(
+  t: Translations,
+  {
+    currentSessionId,
+    recommendation,
+    currentProvider,
+    currentModel,
+    switchModel,
+    updateSessionEngine,
+    applyOverride,
+    dismiss,
+    recordFeedback,
+    notifySuccess,
+    notifyError,
+  }: ApplyModelStrategyRecommendationOptions,
+): Promise<ApplyModelStrategyRecommendationResult> {
+  const { apply } = t.modelStrategy;
   if (!currentSessionId || !recommendation) return 'noop';
   try {
     if (recommendation.primaryAction === 'switch-native-engine') {
@@ -222,7 +227,7 @@ export async function applyModelStrategyRecommendationAction({
       dismiss(recommendation.key);
       const feedback = buildModelStrategyRecommendationFeedback(recommendation, 'applied');
       if (feedback) recordFeedback?.(feedback);
-      notifySuccess('已切回 Native 主任务模型');
+      notifySuccess(apply.switchedNativeSuccess);
       return 'switch-native-engine';
     }
 
@@ -240,7 +245,7 @@ export async function applyModelStrategyRecommendationAction({
     if (!res?.success) {
       const feedback = buildModelStrategyRecommendationFeedback(recommendation, 'apply-failed');
       if (feedback) recordFeedback?.(feedback);
-      notifyError('采用模型建议失败: ' + (res?.error?.message ?? '未知错误'));
+      notifyError(apply.applyFailedPrefix + (res?.error?.message ?? apply.unknownError));
       return 'failed';
     }
 
@@ -249,16 +254,18 @@ export async function applyModelStrategyRecommendationAction({
     const feedback = buildModelStrategyRecommendationFeedback(recommendation, 'applied');
     if (feedback) recordFeedback?.(feedback);
     if (recommendation.primaryAction === 'switch-model') {
-      notifySuccess(`已切换到 ${recommendation.targetProviderLabel ?? switchPayload.provider} / ${recommendation.targetModelLabel ?? switchPayload.model}`);
+      notifySuccess(apply.switchedModelSuccess
+        .replace('{provider}', recommendation.targetProviderLabel ?? switchPayload.provider)
+        .replace('{model}', recommendation.targetModelLabel ?? switchPayload.model));
       return 'switch-model';
     }
 
-    notifySuccess('已采用自动模型策略');
+    notifySuccess(apply.autoStrategySuccess);
     return 'enable-auto';
   } catch (error) {
     const feedback = buildModelStrategyRecommendationFeedback(recommendation, 'apply-failed');
     if (feedback) recordFeedback?.(feedback);
-    notifyError('采用模型建议失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    notifyError(apply.applyFailedPrefix + (error instanceof Error ? error.message : apply.unknownError));
     return 'failed';
   }
 }
@@ -320,36 +327,25 @@ function resolveModelSpeed(input: ModelStrategyRecommendationInput): ModelStrate
   return 'standard';
 }
 
-function getEngineLabel(engineKind: AgentEngineKind): string {
+function getEngineLabel(t: Translations, engineKind: AgentEngineKind): string {
   switch (engineKind) {
     case 'claude_code':
       return 'Claude Code';
     case 'codex_cli':
       return 'Codex CLI';
     default:
-      return '当前引擎';
+      return t.modelStrategy.currentEngineFallback;
   }
 }
 
-const ENGINE_FAILURE_LABELS: Record<AgentEngineFailureDiagnostics['category'], string> = {
-  auth: '认证失败',
-  quota: '额度受限',
-  timeout: '运行超时',
-  network: '网络异常',
-  permission: '权限不足',
-  missing_cli: 'CLI 不可用',
-  model_config: '模型配置错误',
-  runtime: '运行失败',
-  unknown: '运行失败',
-};
-
-function formatFailureAge(occurredAt?: number, now = Date.now()): string {
-  if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return '最近失败';
+function formatFailureAge(t: Translations, occurredAt?: number, now = Date.now()): string {
+  const { failureAge } = t.modelStrategy;
+  if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return failureAge.recent;
   const ageMs = Math.max(0, now - occurredAt);
-  if (ageMs < 60_000) return '刚刚失败';
-  if (ageMs < 60 * 60_000) return `${Math.floor(ageMs / 60_000)} 分钟前失败`;
-  if (ageMs < 24 * 60 * 60_000) return `${Math.floor(ageMs / (60 * 60_000))} 小时前失败`;
-  return `${Math.floor(ageMs / (24 * 60 * 60_000))} 天前失败`;
+  if (ageMs < 60_000) return failureAge.justNow;
+  if (ageMs < 60 * 60_000) return failureAge.minutesAgo.replace('{n}', String(Math.floor(ageMs / 60_000)));
+  if (ageMs < 24 * 60 * 60_000) return failureAge.hoursAgo.replace('{n}', String(Math.floor(ageMs / (60 * 60_000))));
+  return failureAge.daysAgo.replace('{n}', String(Math.floor(ageMs / (24 * 60 * 60_000))));
 }
 
 function normalizeProviderHealthState(status?: string): ModelStrategyProviderHealthState {
@@ -364,40 +360,25 @@ function normalizeProviderHealthState(status?: string): ModelStrategyProviderHea
   }
 }
 
-const PROVIDER_HEALTH_LABELS: Record<ModelStrategyProviderHealthState, string> = {
-  healthy: '健康',
-  recovering: '恢复中',
-  unknown: '未检测',
-  degraded: '降级',
-  unavailable: '不可用',
-};
-
-const CAPABILITY_LABELS: Record<ModelDomainCapability, string> = {
-  tool: '工具',
-  vision: '视觉',
-  reasoning: '推理',
-  'long-context': '长上下文',
-  search: '搜索',
-};
-
-function formatCapabilityList(capabilities: ModelDomainCapability[]): string {
-  return capabilities.map((capability) => CAPABILITY_LABELS[capability] ?? capability).join(' / ');
+function formatCapabilityList(t: Translations, capabilities: ModelDomainCapability[]): string {
+  const labels = t.modelStrategy.capabilityLabels;
+  return capabilities.map((capability) => labels[capability] ?? capability).join(' / ');
 }
 
-function formatProviderHealthState(health?: ModelStrategyProviderHealthSnapshot | null): string {
-  return PROVIDER_HEALTH_LABELS[normalizeProviderHealthState(health?.status)];
+function formatProviderHealthState(t: Translations, health?: ModelStrategyProviderHealthSnapshot | null): string {
+  return t.modelStrategy.providerHealthLabels[normalizeProviderHealthState(health?.status)];
 }
 
-function formatProviderHealthMetric(health?: ModelStrategyProviderHealthSnapshot | null): string | null {
+function formatProviderHealthMetric(t: Translations, health?: ModelStrategyProviderHealthSnapshot | null): string | null {
   const parts = [
     typeof health?.latencyP50 === 'number' && Number.isFinite(health.latencyP50)
       ? `P50 ${Math.round(health.latencyP50)}ms`
       : null,
     typeof health?.errorRate === 'number' && Number.isFinite(health.errorRate)
-      ? `错误率 ${Math.round(health.errorRate * 100)}%`
+      ? t.modelStrategy.errorRateMetric.replace('{pct}', String(Math.round(health.errorRate * 100)))
       : null,
   ].filter(Boolean);
-  return parts.length > 0 ? parts.join('，') : null;
+  return parts.length > 0 ? parts.join(t.modelStrategy.metricJoiner) : null;
 }
 
 function candidateHasCapability(candidate: ModelStrategyCandidate, capability: ModelDomainCapability): boolean {
@@ -530,7 +511,7 @@ function buildTaskSignal(args: {
   };
 }
 
-function buildSwitchModelRecommendation(args: {
+function buildSwitchModelRecommendation(t: Translations, args: {
   key: string;
   title: string;
   body: string;
@@ -539,15 +520,16 @@ function buildSwitchModelRecommendation(args: {
   requiredCapabilities?: ModelDomainCapability[];
   taskSignal?: ModelStrategyRecommendationTaskSignal;
 }): ModelStrategyRecommendation {
+  const { factorLabels } = t.modelStrategy;
   const strategyFactors = [
     ...(args.strategyFactors ?? []),
     ...(args.requiredCapabilities?.length
-      ? [{ label: '需要', value: formatCapabilityList(args.requiredCapabilities) }]
+      ? [{ label: factorLabels.need, value: formatCapabilityList(t, args.requiredCapabilities) }]
       : []),
     ...(args.candidate
       ? [
-        { label: '候选', value: `${args.candidate.providerLabel} / ${args.candidate.modelLabel}` },
-        { label: '候选状态', value: formatProviderHealthState(args.candidate.providerHealth) },
+        { label: factorLabels.candidate, value: `${args.candidate.providerLabel} / ${args.candidate.modelLabel}` },
+        { label: factorLabels.candidateStatus, value: formatProviderHealthState(t, args.candidate.providerHealth) },
       ]
       : []),
   ];
@@ -556,14 +538,14 @@ function buildSwitchModelRecommendation(args: {
     tone: 'warning',
     title: args.title,
     body: args.candidate
-      ? `${args.body} 建议切到 ${args.candidate.providerLabel} / ${args.candidate.modelLabel}。`
+      ? args.body + t.modelStrategy.switchSuggestionSuffix.replace('{candidate}', `${args.candidate.providerLabel} / ${args.candidate.modelLabel}`)
       : args.body,
     ...(strategyFactors.length > 0 ? { strategyFactors } : {}),
     ...(args.taskSignal ? { taskSignal: args.taskSignal } : {}),
     ...(args.candidate
       ? {
         primaryAction: 'switch-model' as const,
-        primaryLabel: '采用建议',
+        primaryLabel: t.modelStrategy.primaryLabelSwitch,
         targetProvider: args.candidate.provider,
         targetModel: args.candidate.model,
         targetModelLabel: args.candidate.modelLabel,
@@ -574,10 +556,12 @@ function buildSwitchModelRecommendation(args: {
 }
 
 function buildSimpleTaskRecommendation(
+  t: Translations,
   input: ModelStrategyRecommendationInput,
   text: string,
 ): ModelStrategyRecommendation | null {
   if (!looksLikeSimpleTask(text)) return null;
+  const { factorLabels, factorValues, simpleFast, simpleAuto } = t.modelStrategy;
 
   const billingMode = input.billingMode ?? 'payg';
   const modelSpeed = resolveModelSpeed(input);
@@ -591,11 +575,11 @@ function buildSimpleTaskRecommendation(
 
   if ((billingMode === 'plan' || billingMode === 'free' || billingMode === 'unknown')
     && fastCandidate) {
-    const billingCopy = billingMode === 'unknown' ? '计费未知时' : '当前计费模式下';
-    return buildSwitchModelRecommendation({
+    const billingCopy = billingMode === 'unknown' ? simpleFast.billingCopyUnknown : simpleFast.billingCopyDefault;
+    return buildSwitchModelRecommendation(t, {
       key: `simple:fast:${billingMode}:${input.modelLabel}:${fastCandidate.provider}:${fastCandidate.model}`,
-      title: '简单任务建议快模型',
-      body: `这轮像简单问答。当前 ${input.modelLabel} 偏重，${billingCopy}自动策略不一定会为了省钱切模型，快模型更适合降低等待。`,
+      title: simpleFast.title,
+      body: simpleFast.body.replace('{model}', input.modelLabel).replace('{billingCopy}', billingCopy),
       candidate: fastCandidate,
       taskSignal: buildTaskSignal({
         input,
@@ -606,9 +590,9 @@ function buildSimpleTaskRecommendation(
         modelSpeed,
       }),
       strategyFactors: [
-        { label: '任务', value: '简单问答' },
-        { label: '计费', value: billingMode === 'unknown' ? '未知' : billingMode === 'plan' ? '套餐' : '免费' },
-        { label: '速度', value: '当前偏重' },
+        { label: factorLabels.task, value: factorValues.simpleTask },
+        { label: factorLabels.billing, value: billingMode === 'unknown' ? factorValues.billingUnknown : billingMode === 'plan' ? factorValues.billingPlan : factorValues.billingFree },
+        { label: factorLabels.speed, value: factorValues.currentHeavy },
       ],
     });
   }
@@ -617,13 +601,13 @@ function buildSimpleTaskRecommendation(
   if (billingMode !== 'payg') return null;
 
   const heavyModelNote = modelSpeed === 'slow'
-    ? `当前 ${input.modelLabel} 偏重，按量计费下可能更慢或更贵。`
+    ? simpleAuto.heavyModelNote.replace('{model}', input.modelLabel)
     : '';
   return {
     key: `simple:auto:${billingMode}:${modelSpeed}:${text}`,
     tone: 'info',
-    title: modelSpeed === 'slow' ? '简单任务不必占用重模型' : '简单任务可用自动策略',
-    body: `这轮像简单问答。${heavyModelNote}自动模式会在按量计费下优先快模型，降低等待和成本。`,
+    title: modelSpeed === 'slow' ? simpleAuto.titleSlow : simpleAuto.titleDefault,
+    body: simpleAuto.body.replace('{heavyModelNote}', heavyModelNote),
     taskSignal: buildTaskSignal({
       input,
       text,
@@ -633,33 +617,40 @@ function buildSimpleTaskRecommendation(
       modelSpeed,
     }),
     strategyFactors: [
-      { label: '任务', value: '简单问答' },
-      { label: '计费', value: '按量' },
-      { label: '速度', value: modelSpeed === 'slow' ? '当前偏重' : '标准' },
+      { label: factorLabels.task, value: factorValues.simpleTask },
+      { label: factorLabels.billing, value: factorValues.billingPayg },
+      { label: factorLabels.speed, value: modelSpeed === 'slow' ? factorValues.currentHeavy : factorValues.standard },
     ],
     primaryAction: 'enable-auto',
-    primaryLabel: '采用自动',
+    primaryLabel: t.modelStrategy.primaryLabelAuto,
   };
 }
 
 export function buildModelStrategyRecommendation(
+  t: Translations,
   input: ModelStrategyRecommendationInput,
 ): ModelStrategyRecommendation | null {
+  const { factorLabels, factorValues, externalFailure, externalAttachment, externalReadonly, providerHealth: providerHealthCopy, vision: visionCopy, longContextTask, search: searchCopy, tool: toolCopy } = t.modelStrategy;
   const text = input.inputValue.trim();
   if (!text && !input.hasImageAttachments) return null;
   const taskRequiredCapabilities = deriveTaskRequiredCapabilities(input, text);
   const simpleTask = taskRequiredCapabilities.length === 0 && looksLikeSimpleTask(text);
 
   if (input.engineKind !== 'native') {
-    const engineLabel = getEngineLabel(input.engineKind);
+    const engineLabel = getEngineLabel(t, input.engineKind);
     if (input.externalEngineFailure) {
       const failure = input.externalEngineFailure;
-      const failureAge = formatFailureAge(failure.occurredAt);
+      const failureAge = formatFailureAge(t, failure.occurredAt);
       return {
         key: `external-failure:${input.engineKind}:${failure.reason}:${failure.occurredAt ?? 'unknown'}`,
         tone: 'warning',
-        title: `${engineLabel} 最近运行失败`,
-        body: `${engineLabel} ${failureAge}：${ENGINE_FAILURE_LABELS[failure.category]}（${failure.reason}）。${failure.suggestion}`,
+        title: externalFailure.title.replace('{engine}', engineLabel),
+        body: externalFailure.body
+          .replace('{engine}', engineLabel)
+          .replace('{failureAge}', failureAge)
+          .replace('{failureLabel}', t.modelStrategy.engineFailureLabels[failure.category])
+          .replace('{reason}', failure.reason)
+          .replace('{suggestion}', failure.suggestion),
         taskSignal: buildTaskSignal({
           input,
           text,
@@ -669,14 +660,14 @@ export function buildModelStrategyRecommendation(
           requiredCapabilities: taskRequiredCapabilities,
         }),
         strategyFactors: [
-          { label: '引擎', value: engineLabel },
-          { label: '失败', value: ENGINE_FAILURE_LABELS[failure.category] },
-          { label: '时间', value: failureAge },
-          { label: '恢复', value: failure.retryable ? '可重试' : '需处理' },
+          { label: factorLabels.engine, value: engineLabel },
+          { label: factorLabels.failure, value: t.modelStrategy.engineFailureLabels[failure.category] },
+          { label: factorLabels.time, value: failureAge },
+          { label: factorLabels.recovery, value: failure.retryable ? factorValues.retryable : factorValues.needsAttention },
         ],
         ...(failure.retryable ? {} : {
           primaryAction: 'switch-native-engine' as const,
-          primaryLabel: '切回 Native',
+          primaryLabel: t.modelStrategy.switchNativeLabel,
         }),
       };
     }
@@ -684,8 +675,8 @@ export function buildModelStrategyRecommendation(
       return {
         key: `external-attachments:${input.engineKind}:${buildTaskInputKey(text, 'attachment')}`,
         tone: 'warning',
-        title: '外部引擎暂不接收附件',
-        body: `当前 ${engineLabel} 通道只接收文本 prompt。图片任务请先去掉附件，或切回 Native 主任务模型使用视觉 fallback。`,
+        title: externalAttachment.title,
+        body: externalAttachment.body.replace('{engine}', engineLabel),
         taskSignal: buildTaskSignal({
           input,
           text,
@@ -695,20 +686,20 @@ export function buildModelStrategyRecommendation(
           requiredCapabilities: ['vision'],
         }),
         strategyFactors: [
-          { label: '引擎', value: engineLabel },
-          { label: '输入', value: '图片附件' },
-          { label: '链路', value: '文本 prompt' },
+          { label: factorLabels.engine, value: engineLabel },
+          { label: factorLabels.input, value: factorValues.imageAttachment },
+          { label: factorLabels.channel, value: factorValues.textPromptChannel },
         ],
         primaryAction: 'switch-native-engine',
-        primaryLabel: '切回 Native',
+        primaryLabel: t.modelStrategy.switchNativeLabel,
       };
     }
     if (looksLikeCodeTask(text) || looksLikeArtifactTask(text)) {
       return {
         key: `external-readonly:${input.engineKind}:${buildTaskInputKey(text, 'write-task')}`,
         tone: 'warning',
-        title: '外部引擎当前是只读链路',
-        body: `这轮看起来需要代码或产物落地。当前 ${engineLabel} 走只读 CLI 链路，不会直接修改工作区；需要写文件时建议切回 Native 主任务模型。`,
+        title: externalReadonly.title,
+        body: externalReadonly.body.replace('{engine}', engineLabel),
         taskSignal: buildTaskSignal({
           input,
           text,
@@ -718,12 +709,12 @@ export function buildModelStrategyRecommendation(
           requiredCapabilities: ['tool'],
         }),
         strategyFactors: [
-          { label: '引擎', value: engineLabel },
-          { label: '任务', value: '代码/产物' },
-          { label: '链路', value: '只读 CLI' },
+          { label: factorLabels.engine, value: engineLabel },
+          { label: factorLabels.task, value: factorValues.codeArtifactTask },
+          { label: factorLabels.channel, value: factorValues.readonlyCliChannel },
         ],
         primaryAction: 'switch-native-engine',
-        primaryLabel: '切回 Native',
+        primaryLabel: t.modelStrategy.switchNativeLabel,
       };
     }
     return null;
@@ -731,8 +722,10 @@ export function buildModelStrategyRecommendation(
 
   const providerHealthState = normalizeProviderHealthState(input.providerHealth?.status);
   if (providerHealthState === 'degraded' || providerHealthState === 'unavailable') {
-    const providerLabel = input.providerLabel || '当前 provider';
-    const metric = formatProviderHealthMetric(input.providerHealth);
+    const providerLabel = input.providerLabel || providerHealthCopy.currentProviderFallback;
+    const metric = formatProviderHealthMetric(t, input.providerHealth);
+    const metricSuffix = metric ? t.modelStrategy.metricWrap.replace('{metric}', metric) : '';
+    const statusLabel = providerHealthState === 'unavailable' ? providerHealthCopy.statusUnavailable : providerHealthCopy.statusDegraded;
     const taskKeySegment = buildTaskKeySegment({
       simpleTask,
       requiredCapabilities: taskRequiredCapabilities,
@@ -749,8 +742,12 @@ export function buildModelStrategyRecommendation(
       return {
         key: `provider-health:${taskKeySegment}:${providerLabel}:${providerHealthState}:${metric ?? 'no-metric'}:${candidate.provider}:${candidate.model}`,
         tone: 'warning',
-        title: providerHealthState === 'unavailable' ? '当前 provider 不可用' : '当前 provider 状态降级',
-        body: `${providerLabel} 最近状态为${providerHealthState === 'unavailable' ? '不可用' : '降级'}${metric ? `（${metric}）` : ''}。这轮可能变慢或触发 fallback，建议切到 ${candidate.providerLabel} / ${candidate.modelLabel}。`,
+        title: providerHealthState === 'unavailable' ? providerHealthCopy.titleUnavailable : providerHealthCopy.titleDegraded,
+        body: providerHealthCopy.bodyWithCandidate
+          .replace('{provider}', providerLabel)
+          .replace('{status}', statusLabel)
+          .replace('{metric}', metricSuffix)
+          .replace('{candidate}', `${candidate.providerLabel} / ${candidate.modelLabel}`),
         taskSignal: buildTaskSignal({
           input,
           text,
@@ -761,17 +758,17 @@ export function buildModelStrategyRecommendation(
           providerHealthState,
         }),
         strategyFactors: [
-          { label: 'Provider', value: formatProviderHealthState(input.providerHealth) },
-          ...(metric ? [{ label: '样本', value: metric }] : []),
-          ...(simpleTask ? [{ label: '任务', value: '简单问答' }] : []),
+          { label: factorLabels.provider, value: formatProviderHealthState(t, input.providerHealth) },
+          ...(metric ? [{ label: factorLabels.sample, value: metric }] : []),
+          ...(simpleTask ? [{ label: factorLabels.task, value: factorValues.simpleTask }] : []),
           ...(taskRequiredCapabilities.length > 0
-            ? [{ label: '需要', value: formatCapabilityList(taskRequiredCapabilities) }]
+            ? [{ label: factorLabels.need, value: formatCapabilityList(t, taskRequiredCapabilities) }]
             : []),
-          { label: '候选', value: `${candidate.providerLabel} / ${candidate.modelLabel}` },
-          { label: '候选状态', value: formatProviderHealthState(candidate.providerHealth) },
+          { label: factorLabels.candidate, value: `${candidate.providerLabel} / ${candidate.modelLabel}` },
+          { label: factorLabels.candidateStatus, value: formatProviderHealthState(t, candidate.providerHealth) },
         ],
         primaryAction: 'switch-model',
-        primaryLabel: '采用建议',
+        primaryLabel: t.modelStrategy.primaryLabelSwitch,
         targetProvider: candidate.provider,
         targetModel: candidate.model,
         targetModelLabel: candidate.modelLabel,
@@ -781,8 +778,11 @@ export function buildModelStrategyRecommendation(
     return {
       key: `provider-health:${taskKeySegment}:${providerLabel}:${providerHealthState}:${metric ?? 'no-metric'}`,
       tone: 'warning',
-      title: providerHealthState === 'unavailable' ? '当前 provider 不可用' : '当前 provider 状态降级',
-      body: `${providerLabel} 最近状态为${providerHealthState === 'unavailable' ? '不可用' : '降级'}${metric ? `（${metric}）` : ''}。这轮可能变慢或触发 fallback，建议采用自动策略或切到健康 provider。`,
+      title: providerHealthState === 'unavailable' ? providerHealthCopy.titleUnavailable : providerHealthCopy.titleDegraded,
+      body: providerHealthCopy.bodyWithoutCandidate
+        .replace('{provider}', providerLabel)
+        .replace('{status}', statusLabel)
+        .replace('{metric}', metricSuffix),
       taskSignal: buildTaskSignal({
         input,
         text,
@@ -793,14 +793,14 @@ export function buildModelStrategyRecommendation(
         providerHealthState,
       }),
       strategyFactors: [
-        { label: 'Provider', value: formatProviderHealthState(input.providerHealth) },
-        ...(metric ? [{ label: '样本', value: metric }] : []),
-        ...(simpleTask ? [{ label: '任务', value: '简单问答' }] : []),
+        { label: factorLabels.provider, value: formatProviderHealthState(t, input.providerHealth) },
+        ...(metric ? [{ label: factorLabels.sample, value: metric }] : []),
+        ...(simpleTask ? [{ label: factorLabels.task, value: factorValues.simpleTask }] : []),
         ...(taskRequiredCapabilities.length > 0
-          ? [{ label: '需要', value: formatCapabilityList(taskRequiredCapabilities) }]
+          ? [{ label: factorLabels.need, value: formatCapabilityList(t, taskRequiredCapabilities) }]
           : []),
       ],
-      ...(input.adaptiveEnabled ? {} : { primaryAction: 'enable-auto' as const, primaryLabel: '采用自动' }),
+      ...(input.adaptiveEnabled ? {} : { primaryAction: 'enable-auto' as const, primaryLabel: t.modelStrategy.primaryLabelAuto }),
     };
   }
 
@@ -811,10 +811,10 @@ export function buildModelStrategyRecommendation(
       currentModel: input.currentModel,
       requiredCapabilities: ['vision'],
     });
-    return buildSwitchModelRecommendation({
+    return buildSwitchModelRecommendation(t, {
       key: `vision:${input.modelLabel}:${buildTaskInputKey(text, 'attachment')}`,
-      title: '图片任务建议视觉能力',
-      body: `当前 ${input.modelLabel} 不直接读图，会先走视觉 fallback。复杂截图建议切到带视觉能力的主任务模型。`,
+      title: visionCopy.title,
+      body: visionCopy.body.replace('{model}', input.modelLabel),
       candidate,
       taskSignal: buildTaskSignal({
         input,
@@ -824,7 +824,7 @@ export function buildModelStrategyRecommendation(
         recommendationReason: 'missing-vision-capability',
         requiredCapabilities: ['vision'],
       }),
-      strategyFactors: [{ label: '任务', value: '图片理解' }],
+      strategyFactors: [{ label: factorLabels.task, value: factorValues.imageUnderstanding }],
       requiredCapabilities: ['vision'],
     });
   }
@@ -836,10 +836,10 @@ export function buildModelStrategyRecommendation(
       currentModel: input.currentModel,
       requiredCapabilities: ['long-context'],
     });
-    return buildSwitchModelRecommendation({
+    return buildSwitchModelRecommendation(t, {
       key: `long-context:${input.modelLabel}:${buildTaskInputKey(text, 'long-context')}`,
-      title: '长上下文任务建议长上下文模型',
-      body: `当前 ${input.modelLabel} 未标记长上下文能力。全仓、多文件或大段资料任务更适合长上下文主任务模型。`,
+      title: longContextTask.title,
+      body: longContextTask.body.replace('{model}', input.modelLabel),
       candidate,
       taskSignal: buildTaskSignal({
         input,
@@ -849,7 +849,7 @@ export function buildModelStrategyRecommendation(
         recommendationReason: 'missing-long-context-capability',
         requiredCapabilities: ['long-context'],
       }),
-      strategyFactors: [{ label: '任务', value: '长上下文' }],
+      strategyFactors: [{ label: factorLabels.task, value: factorValues.longContext }],
       requiredCapabilities: ['long-context'],
     });
   }
@@ -865,10 +865,10 @@ export function buildModelStrategyRecommendation(
       currentModel: input.currentModel,
       requiredCapabilities: ['search'],
     });
-    return buildSwitchModelRecommendation({
+    return buildSwitchModelRecommendation(t, {
       key: `search:${input.modelLabel}:${buildTaskInputKey(text, 'search')}`,
-      title: '这个任务可能需要联网搜索',
-      body: `这轮要查最新/联网信息，当前 ${input.modelLabel} 不太擅长搜索，换一个更会搜的模型结果更稳。`,
+      title: searchCopy.title,
+      body: searchCopy.body.replace('{model}', input.modelLabel),
       candidate,
       taskSignal: buildTaskSignal({
         input,
@@ -878,7 +878,7 @@ export function buildModelStrategyRecommendation(
         recommendationReason: 'missing-search-capability',
         requiredCapabilities: ['search'],
       }),
-      strategyFactors: [{ label: '任务', value: '联网检索' }],
+      strategyFactors: [{ label: factorLabels.task, value: factorValues.webSearch }],
       requiredCapabilities: ['search'],
     });
   }
@@ -891,10 +891,10 @@ export function buildModelStrategyRecommendation(
       currentModel: input.currentModel,
       requiredCapabilities: ['tool'],
     });
-    return buildSwitchModelRecommendation({
+    return buildSwitchModelRecommendation(t, {
       key: `tool:${input.modelLabel}:${buildTaskInputKey(text, 'tool-task')}`,
-      title: '这轮更依赖工具能力',
-      body: `当前 ${input.modelLabel} 未标记工具调用能力。代码、产物或检索任务建议使用工具能力稳定的主任务模型。`,
+      title: toolCopy.title,
+      body: toolCopy.body.replace('{model}', input.modelLabel),
       candidate,
       taskSignal: buildTaskSignal({
         input,
@@ -904,12 +904,12 @@ export function buildModelStrategyRecommendation(
         recommendationReason: 'missing-tool-capability',
         requiredCapabilities: ['tool'],
       }),
-      strategyFactors: [{ label: '任务', value: looksLikeArtifactTask(text) ? '产物生成' : '代码任务' }],
+      strategyFactors: [{ label: factorLabels.task, value: looksLikeArtifactTask(text) ? factorValues.artifactGeneration : factorValues.codeTask }],
       requiredCapabilities: ['tool'],
     });
   }
 
-  const simpleTaskRecommendation = buildSimpleTaskRecommendation(input, text);
+  const simpleTaskRecommendation = buildSimpleTaskRecommendation(t, input, text);
   if (simpleTaskRecommendation) return simpleTaskRecommendation;
 
   return null;

@@ -266,10 +266,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   );
   const inputPlaceholder = useMemo(() => {
     if (routingMode === 'direct') {
-      return buildDirectRoutingPlaceholder(selectedDirectAgents, swarmAgents);
+      return buildDirectRoutingPlaceholder(selectedDirectAgents, swarmAgents, t);
     }
     return undefined;
-  }, [routingMode, selectedDirectAgents, swarmAgents]);
+  }, [routingMode, selectedDirectAgents, swarmAgents, t]);
   const neoTagInvocation = useMemo(() => parseLeadingNeoTagInvocation(value), [value]);
 
   const buildEnvelope = useChatInputEnvelope({

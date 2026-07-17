@@ -7,12 +7,14 @@ import React, { useEffect } from 'react';
 import { RefreshCw, Square } from 'lucide-react';
 import { RENDERER_POLLING } from '@shared/constants';
 import { useLoopStore } from '../../../../stores/loopStore';
+import { useI18n } from '../../../../hooks/useI18n';
 
 interface LoopStatusBarProps {
   sessionId: string | null;
 }
 
 export const LoopStatusBar: React.FC<LoopStatusBarProps> = ({ sessionId }) => {
+  const { t } = useI18n();
   const refresh = useLoopStore((s) => s.refresh);
   const stop = useLoopStore((s) => s.stop);
   const loops = useLoopStore((s) => s.loops);
@@ -47,10 +49,10 @@ export const LoopStatusBar: React.FC<LoopStatusBarProps> = ({ sessionId }) => {
         >
           <RefreshCw size={13} className="shrink-0 animate-spin" />
           <span className="shrink-0 font-medium">
-            循环中 · 第 {l.turn} 轮
+            {t.loopStatusBar.runningPrefix}{l.turn}{t.loopStatusBar.runningSuffix}
             {l.intervalMs
-              ? `（每 ${Math.round(l.intervalMs / 1000)}s）`
-              : '（自定步调）'}
+              ? t.loopStatusBar.intervalSuffix.replace('{s}', String(Math.round(l.intervalMs / 1000)))
+              : t.loopStatusBar.selfPacedSuffix}
           </span>
           <span className="min-w-0 flex-1 truncate text-blue-300/80" title={l.prompt}>
             {l.prompt}
@@ -61,7 +63,7 @@ export const LoopStatusBar: React.FC<LoopStatusBarProps> = ({ sessionId }) => {
             className="flex shrink-0 items-center gap-1 rounded-md bg-blue-500/20 px-2 py-0.5 text-blue-100 hover:bg-red-500/30 hover:text-red-100"
           >
             <Square size={11} />
-            停止
+            {t.loopStatusBar.stop}
           </button>
         </div>
       ))}

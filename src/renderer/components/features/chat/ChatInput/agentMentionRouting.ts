@@ -1,4 +1,5 @@
-import { NEO_TAG_MENTION_AGENT, shouldSuggestNeoMention } from './neoMentionRouting';
+import { localizeNeoTagMentionAgent, shouldSuggestNeoMention } from './neoMentionRouting';
+import { zh, type Translations } from '../../../../i18n/zh';
 
 export interface MentionRoutingAgent {
   id: string;
@@ -88,48 +89,56 @@ export function getPreferredAgentMentionToken(agent: MentionRoutingAgent): strin
   return normalizeMentionToken(agent.name) || normalizeMentionToken(agent.id);
 }
 
-function formatAgentList(agents: MentionRoutingAgent[]): string {
-  return agents.map((agent) => agent.name).join('、');
+function formatAgentList(agents: MentionRoutingAgent[], joiner: string): string {
+  return agents.map((agent) => agent.name).join(joiner);
 }
 
 export function buildDirectRoutingHint(
   selectedAgents: MentionRoutingAgent[],
   availableAgents: MentionRoutingAgent[],
+  t: Translations = zh,
 ): string {
+  const copy = t.agentMentionRouting;
   if (selectedAgents.length > 0) {
     if (selectedAgents.length === 1) {
       const target = selectedAgents[0]!;
-      return `这条消息会发给 ${target.name}，也可以直接输入 @${getPreferredAgentMentionToken(target)} …`;
+      return copy.directHintSingle
+        .replace('{name}', target.name)
+        .replace('{token}', getPreferredAgentMentionToken(target));
     }
-    return `这条消息会发给 ${formatAgentList(selectedAgents)}，也可以继续输入 @agent 调整目标。`;
+    return copy.directHintMulti.replace('{names}', formatAgentList(selectedAgents, copy.listJoiner));
   }
 
   const sampleAgent = availableAgents[0];
   if (sampleAgent) {
-    return `Direct 模式：点上面的 agent，或直接输入 @${getPreferredAgentMentionToken(sampleAgent)} 开始。`;
+    return copy.directHintSample.replace('{token}', getPreferredAgentMentionToken(sampleAgent));
   }
 
-  return 'Direct 模式：先点上面的 agent，或直接输入 @agent 开始。';
+  return copy.directHintEmpty;
 }
 
 export function buildDirectRoutingPlaceholder(
   selectedAgents: MentionRoutingAgent[],
   availableAgents: MentionRoutingAgent[],
+  t: Translations = zh,
 ): string {
+  const copy = t.agentMentionRouting;
   if (selectedAgents.length > 0) {
     if (selectedAgents.length === 1) {
       const target = selectedAgents[0]!;
-      return `发给 ${target.name}，或直接写 @${getPreferredAgentMentionToken(target)} …`;
+      return copy.directPlaceholderSingle
+        .replace('{name}', target.name)
+        .replace('{token}', getPreferredAgentMentionToken(target));
     }
-    return `发给 ${selectedAgents.length} 个 agent，或继续写 @agent …`;
+    return copy.directPlaceholderMulti.replace('{count}', String(selectedAgents.length));
   }
 
   const sampleAgent = availableAgents[0];
   if (sampleAgent) {
-    return `Direct 模式：输入 @${getPreferredAgentMentionToken(sampleAgent)} 开始`;
+    return copy.directPlaceholderSample.replace('{token}', getPreferredAgentMentionToken(sampleAgent));
   }
 
-  return 'Direct 模式：输入 @agent 开始';
+  return copy.directPlaceholderEmpty;
 }
 
 export function syncLeadingAgentMentions(
@@ -155,6 +164,7 @@ export function getLeadingAgentMentionAutocomplete(
   value: string,
   agents: MentionRoutingAgent[],
   neoTopicCandidates?: MentionRoutingAgent[],
+  t: Translations = zh,
 ): AgentMentionAutocompleteResult | null {
   const query = getTrailingMentionQuery(value);
   if (query === null) {
@@ -177,7 +187,7 @@ export function getLeadingAgentMentionAutocomplete(
   // 输入 @n / @ne / @neo 时把 Neo 工作卡作为可点候选置顶（发现性 + 顺带压掉文件 popup），
   // 紧随其后是「续接既有 topic」候选（ADR-035 D1）。
   const withNeo = shouldSuggestNeoMention(query)
-    ? [NEO_TAG_MENTION_AGENT, ...(neoTopicCandidates ?? []), ...matches]
+    ? [localizeNeoTagMentionAgent(t), ...(neoTopicCandidates ?? []), ...matches]
     : matches;
 
   if (withNeo.length === 0) {

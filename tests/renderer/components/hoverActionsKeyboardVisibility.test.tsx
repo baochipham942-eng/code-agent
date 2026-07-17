@@ -67,7 +67,7 @@ describe('hover actions remain visible to keyboard users', () => {
           session: {
             id: 'session-1',
             title: 'M2 键盘验收',
-            modelConfig: {},
+            modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
             workingDirectory: '/tmp/m2',
             createdAt: 1,
             updatedAt: 1,
@@ -87,7 +87,7 @@ describe('hover actions remain visible to keyboard users', () => {
           hasNeedsInputForSession: () => false,
           searchQuery: '',
           messageSearchHitsBySessionId: {},
-          replayEvidenceBySessionId: {},
+          replayEvidenceBySessionId: new Map(),
           canOpenSessionReplay: true,
           reviewItemsBySessionId: {},
           trajectoryQualityBySessionId: {},

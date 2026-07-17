@@ -18,6 +18,7 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
 
 import { createHttpCodeAgentAPI, createHttpDomainAPI } from '../../../src/renderer/api/httpTransport';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import type { AgentMessageRequest } from '../../../src/shared/ipc/types';
 import { TELEMETRY_CHANNELS } from '../../../src/shared/ipc/channels';
 import { DEFAULT_OPENCHRONICLE_SETTINGS } from '../../../src/shared/contract/openchronicle';
 
@@ -169,11 +170,13 @@ describe('httpTransport domain API', () => {
   it('forwards clientMessageId for SSE-backed chat sends', async () => {
     const api = createHttpCodeAgentAPI('http://localhost:8180');
 
+    // clientMessageId 是 httpTransport.ts 运行时真实读取的字段（与 useAgentIPC.ts 生产
+    // 调用点一致），但 AgentMessageRequest 接口未声明它，故用交叉类型如实标注这个缺口。
     await api.invoke('agent:send-message', {
       content: 'hello',
       sessionId: 'session-chat',
       clientMessageId: 'client-msg-chat',
-    });
+    } as AgentMessageRequest & { clientMessageId: string });
 
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
     const [url, init] = fetchMock.mock.calls[0];

@@ -125,7 +125,9 @@ describe('ModelStrategyRecommendationStrip', () => {
       onDismiss,
     });
 
-    const buttons = collectButtonElements(element);
+    // React 19 类型下函数组件可同步/异步双态（FunctionComponent 返回 ReactNode | Promise<ReactNode>），
+    // 这里是直接调用组件函数拿同步渲染树（非 JSX 挂载），运行时必为同步结果，去掉 Promise 分支。
+    const buttons = collectButtonElements(element as Exclude<typeof element, Promise<unknown>>);
     expect(buttons).toHaveLength(2);
     expect(renderToStaticMarkup(buttons[0])).toContain('采用建议');
     expect(renderToStaticMarkup(buttons[1])).toContain('保持当前');

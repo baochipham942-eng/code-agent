@@ -12,7 +12,7 @@ import {
 
 // Setup legacy window.electronAPI and window.domainAPI mocks
 const mockInvoke = vi.fn();
-const mockOn = vi.fn(() => () => {});
+const mockOn = vi.fn((_channel: string, _callback: (...args: any[]) => void) => () => {});
 const mockOff = vi.fn();
 const mockGetPathForFile = vi.fn();
 const mockExtractPdfText = vi.fn();

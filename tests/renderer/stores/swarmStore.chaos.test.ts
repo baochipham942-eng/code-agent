@@ -210,7 +210,7 @@ describe('swarmStore chaos — 重复事件幂等性', () => {
   it('agent:message 重复投递不应重复入队', () => {
     const store = useSwarmStore.getState();
     const msg = evt('swarm:agent:message', {
-      message: { from: 'a1', to: 'a2', content: 'hi', messageType: 'coordination' },
+      message: { id: 'msg-dedup', from: 'a1', to: 'a2', content: 'hi', messageType: 'coordination' },
     }, 5000);
 
     store.handleEvent(msg);

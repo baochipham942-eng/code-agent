@@ -8,6 +8,7 @@ import {
 import { saveCanvasDoc } from '../../../src/renderer/components/design/designCanvasPersistence';
 import type {
   CanvasImageNode,
+  CanvasNode,
   CanvasVideoNode,
   DesignCanvasDoc,
 } from '../../../src/renderer/components/design/designCanvasTypes';
@@ -40,7 +41,7 @@ const video = (over: Partial<CanvasVideoNode> = {}): CanvasVideoNode => ({
   ...over,
 });
 
-const doc = (nodes = [image()]): DesignCanvasDoc => ({
+const doc = (nodes: CanvasNode[] = [image()]): DesignCanvasDoc => ({
   version: 1,
   camera: { x: 1, y: 2, scale: 1.5 },
   nodes,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { CreateNeoWorkCardDraftRequest, NeoWorkCardDetail } from '../../../src/shared/contract/tag';
+import type { ContinueNeoWorkCardRequest, CreateNeoWorkCardDraftRequest, NeoWorkCardDetail } from '../../../src/shared/contract/tag';
 import {
   buildNeoTagContinuationMessage,
   buildNeoTagSourceMessage,
@@ -226,7 +226,7 @@ describe('Neo tag continuation submit (ADR-035)', () => {
   });
 
   it('works without @neo prefix — the chip itself is the intent', async () => {
-    const runContinuation = vi.fn(async () => fakeResult());
+    const runContinuation = vi.fn(async (_input: ContinueNeoWorkCardRequest) => fakeResult());
     await submitNeoTagContinuation({
       envelope: { content: '补上定价维度' },
       conversationId: 'conv_B',

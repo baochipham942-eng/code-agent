@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
 import type { DesignCanvasDoc, CanvasImageNode } from '../../../src/renderer/components/design/designCanvasTypes';
-import type { CanvasConnector, CanvasShape } from '../../../src/renderer/components/design/designDiagramTypes';
+import type { CanvasConnector, CanvasShape, RectShape } from '../../../src/renderer/components/design/designDiagramTypes';
 
 const n = (id: string): CanvasImageNode => ({
   id,
@@ -94,7 +94,7 @@ describe('designCanvasStore 图解层形状', () => {
   it('updateShape 改几何，id/kind 不被越权改写', () => {
     get().addShape(rect('s1'));
     get().updateShape('s1', { x: 99, kind: 'ellipse' } as Partial<CanvasShape>);
-    expect(get().shapes[0].x).toBe(99);
+    expect((get().shapes[0] as RectShape).x).toBe(99);
     expect(get().shapes[0].kind).toBe('rect'); // kind 受保护
   });
 

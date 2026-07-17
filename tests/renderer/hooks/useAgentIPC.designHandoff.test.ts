@@ -14,8 +14,10 @@ const node = (id: string, overrides: Partial<CanvasNode> = {}): CanvasNode => ({
   width: 300,
   height: 180,
   createdAt: 1,
+  // 展开 Partial<联合类型> 会让 TS 把 kind 挤成 "video" | undefined，判别联合校验过不去；
+  // overrides 由调用方负责传出合法组合（如 video 节点须带 kind+durationSec），这里按约定信任。
   ...overrides,
-});
+} as CanvasNode);
 
 function loadCanvas(runDir: string, nodes: CanvasNode[]) {
   const doc: DesignCanvasDoc = {

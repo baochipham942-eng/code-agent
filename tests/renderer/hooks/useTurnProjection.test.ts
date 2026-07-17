@@ -26,6 +26,8 @@ describe('projectTurns', () => {
       {
         id: 'launch-old',
         sessionId: 'session-1',
+        runId: 'run-old',
+        treeId: 'tree-old',
         status: 'approved',
         requestedAt: 170,
         resolvedAt: 171,
@@ -38,6 +40,8 @@ describe('projectTurns', () => {
       {
         id: 'launch-pending',
         sessionId: 'session-1',
+        runId: 'run-pending',
+        treeId: 'tree-pending',
         status: 'pending',
         requestedAt: 200,
         summary: '准备启动 3 个 agent',
@@ -333,6 +337,8 @@ describe('projectTurns', () => {
       {
         id: 'launch-only',
         sessionId: 'session-2',
+        runId: 'run-only',
+        treeId: 'tree-only',
         status: 'pending',
         requestedAt: 500,
         summary: '等待启动审批',
@@ -356,6 +362,8 @@ describe('projectTurns', () => {
       {
         id: 'launch-approved',
         sessionId: 'session-3',
+        runId: 'run-approved',
+        treeId: 'tree-approved',
         status: 'approved',
         requestedAt: 300,
         resolvedAt: 320,
@@ -737,6 +745,8 @@ describe('projectTurns', () => {
       {
         id: 'launch-other-session',
         sessionId: 'session-2',
+        runId: 'run-other-session',
+        treeId: 'tree-other-session',
         status: 'pending',
         requestedAt: 120,
         summary: '别的会话的并行启动',

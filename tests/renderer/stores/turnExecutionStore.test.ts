@@ -53,6 +53,8 @@ describe('turnExecutionStore', () => {
       durationMs: 6,
       hookCount: 1,
       modified: true,
+      sources: ['project'],
+      hookType: 'decision',
       toolName: 'Bash',
     });
 

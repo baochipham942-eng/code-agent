@@ -169,7 +169,11 @@ describe('sessionStore context health refresh', () => {
   });
 
   it('keeps a newly created session when an older switch response returns later', async () => {
-    let resolveOldLoad: ((value: { success: true; data: Session & { messages: Message[]; todos: TodoItem[] } }) => void) | null = null;
+    type ResolveOldLoad = (value: { success: true; data: Session & { messages: Message[]; todos: TodoItem[] } }) => void;
+    // ponytail: 用 ref 对象而非裸 let 闭包变量持有 resolver——TS（含 typescript7）对
+    // "let 变量在嵌套函数里被重新赋值" 这个模式有窄化 bug，会把外层引用点误判成 never
+    // （在 vanilla tsc 上复现过，与本仓库改动无关）。对象属性赋值不触发该窄化路径。
+    const resolveOldLoadRef: { current: ResolveOldLoad | null } = { current: null };
     const oldSession: Session & { messages: Message[]; todos: TodoItem[] } = {
       id: 'old-session',
       title: '旧会话',
@@ -198,7 +202,7 @@ describe('sessionStore context health refresh', () => {
       },
       createdAt: 3,
       updatedAt: 3,
-      status: 'active',
+      status: 'idle',
     };
 
     useSessionStore.setState({
@@ -212,7 +216,7 @@ describe('sessionStore context health refresh', () => {
     mockDomainInvoke.mockImplementation(async (domain: string, action: string) => {
       if (domain === IPC_DOMAINS.SESSION && action === 'load') {
         return new Promise((resolve) => {
-          resolveOldLoad = resolve as typeof resolveOldLoad;
+          resolveOldLoadRef.current = resolve as ResolveOldLoad;
         });
       }
       if (domain === IPC_DOMAINS.SESSION && action === 'getSessionTasks') {
@@ -230,7 +234,7 @@ describe('sessionStore context health refresh', () => {
     await useSessionStore.getState().createSession('新建会话', { workingDirectory: null });
     expect(useSessionStore.getState().currentSessionId).toBe('new-session');
 
-    resolveOldLoad?.({ success: true, data: oldSession });
+    resolveOldLoadRef.current?.({ success: true, data: oldSession });
     await switchPromise;
 
     expect(useSessionStore.getState().currentSessionId).toBe('new-session');

@@ -2,12 +2,12 @@
 // Context - Display context items (files, tools, etc.) with expandable details
 // ============================================================================
 
-import React, { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import React, { useState, lazy, Suspense } from 'react';
 import { FileText, Wrench, Image, FolderArchive, ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
+
+const MarkdownCore = lazy(() => import('../features/chat/MessageBubble/MarkdownCore'));
 
 interface ContextItem {
   type: 'file' | 'image' | 'tool';
@@ -97,9 +97,9 @@ export const Context: React.FC = () => {
           <div className="text-zinc-500 font-medium mb-0.5">{key}:</div>
           {isLongText ? (
             <div className="text-zinc-400 prose prose-sm prose-invert max-w-none prose-p:my-1 prose-pre:my-1 prose-code:text-xs">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {stringValue}
-              </ReactMarkdown>
+              <Suspense fallback={<div className="whitespace-pre-wrap break-words">{stringValue}</div>}>
+                <MarkdownCore content={stringValue} gfm />
+              </Suspense>
             </div>
           ) : (
             <pre className="text-zinc-400 overflow-x-auto scrollbar-hidden whitespace-pre-wrap break-all">

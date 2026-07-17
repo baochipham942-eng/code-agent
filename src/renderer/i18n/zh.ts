@@ -4,6 +4,7 @@
 
 import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
+import { chatTranscriptZh } from './chatTranscript';
 
 export const zh = {
   // Common
@@ -17,6 +18,7 @@ export const zh = {
     delete: '删除',
     edit: '编辑',
     loading: '加载中…',
+    retry: '重试',
     error: '错误',
     success: '成功',
     active: '当前',
@@ -833,15 +835,9 @@ export const zh = {
 
   // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
   // 聊天转录（TurnCard / StreamingIndicator 等）
-  chat: {
-    thinking: '正在思考…',
-    waitingModel: '正在等待模型响应…',
-    waitingSubagent: '正在等待子任务…',
-    thinkingDigest: '思考',
-    thinkingSegments: ' · {count} 段',
-    expandThinking: '展开思考',
-    collapseThinking: '收起思考',
-  },
+
+
+  ...chatTranscriptZh,
 
   // 聊天流 Mermaid 图卡片（缩放/平移 + 标注即编辑）
   mermaid: {

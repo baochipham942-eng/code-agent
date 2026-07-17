@@ -5,6 +5,7 @@
 import type { Translations } from './zh';
 import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
+import { chatTranscriptEn } from './chatTranscript';
 
 export const en: Translations = {
   // Common
@@ -18,6 +19,7 @@ export const en: Translations = {
     delete: 'Delete',
     edit: 'Edit',
     loading: 'Loading...',
+    retry: 'Retry',
     error: 'Error',
     success: 'Success',
     active: 'Active',
@@ -844,17 +846,11 @@ export const en: Translations = {
   sessionReplay: sessionReplayEn,
 
   // Chat transcript (TurnCard / StreamingIndicator, etc.)
-  chat: {
-    thinking: 'Thinking…',
-    waitingModel: 'Waiting for the model…',
-    waitingSubagent: 'Waiting on a subtask…',
-    thinkingDigest: 'Thinking',
-    thinkingSegments: ' · {count} segments',
-    expandThinking: 'Expand thinking',
-    collapseThinking: 'Collapse thinking',
-  },
+
 
   // Chat-flow Mermaid diagram card (pan/zoom + annotate-to-edit)
+  ...chatTranscriptEn,
+
   mermaid: {
     zoomIn: 'Zoom in',
     zoomOut: 'Zoom out',

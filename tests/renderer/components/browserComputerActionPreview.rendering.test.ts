@@ -542,13 +542,13 @@ describe('browser/computer action preview rendering', () => {
       },
     ];
 
-    // 组头摘要（"1 failed, 2 empty, 1 completed"）在组头按钮里，折叠/展开态都可见。
+    // 组头摘要（"1 失败, 2 空结果, 1 完成"）在组头按钮里，折叠/展开态都可见。
     // "File not found" 是未分类的探索性失败，产品拍板后默认折叠成一行，逐条文件路径
     // 明细移到点开之后——折叠不等于信息丢失，只是不再强制摊开。
     const collapsedHtml = renderToStaticMarkup(
       React.createElement(ToolStepGroup, { nodes, defaultExpanded: false }),
     );
-    expect(collapsedHtml).toContain('1 failed, 2 empty, 1 completed');
+    expect(collapsedHtml).toContain('1 失败, 2 空结果, 1 完成');
     expect(collapsedHtml).not.toContain('4/4 results');
     expect(collapsedHtml).not.toContain('1 output');
     expect(collapsedHtml).not.toContain('/Users/linchen/.claude/projects/-Users-linchen/memory/openclaw.md');

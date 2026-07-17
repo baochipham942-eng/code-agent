@@ -15,6 +15,7 @@ import {
   type DynamicWorkflowDurableState,
   type DynamicWorkflowRecoveryHost,
 } from '../../../../src/host/runtime/dynamicWorkflowRecovery';
+import type { GraphRunSpec } from '../../../../src/host/orchestration';
 import type { RunRehydrationPlan } from '../../../../src/host/runtime/durableRunStores';
 import type { RunRegistry } from '../../../../src/host/runtime/runRegistry';
 import { validateDynamicWorkflowRecoveryWorkspace } from '../../../../src/host/app/dynamicWorkflowRecoveryHost';
@@ -43,7 +44,10 @@ function state(status: 'running' | 'completed' = 'running'): DynamicWorkflowDura
     workspace: { root: '/tmp', cwd: '/tmp', fingerprint: fingerprintRunWorkspace('/tmp') },
     model: { provider: 'test', model: 'model' },
     toolProfile: 'readonly',
-    graphSpec: structuredClone(graphSpec),
+    // graphSpec 上层用 `as const` 声明字面量以复用给 recovery handler 断言，
+    // structuredClone 会保留 readonly 元组类型（与 GraphRunSpec 的可写数组结构差异
+    // 大到 tsc 判定"不足以重叠"），这里按 tsc 建议先转 unknown 再转回目标类型。
+    graphSpec: structuredClone(graphSpec) as unknown as GraphRunSpec,
     graphCheckpoint: {
       version: 1, graphId: graphSpec.graphId, runId: graphSpec.runId, sessionId: graphSpec.sessionId,
       attempt: 1, status, eventSequence: 4,
@@ -69,8 +73,8 @@ function plan(durableState: DynamicWorkflowDurableState): RunRehydrationPlan {
       ownerEpoch: 1, status: 'ended', startedAt: 1,
     },
     checkpoint: {
-      runId: 'run-dynamic', attempt: 1, checkpointSeq: 1, status: 'running', state: durableState,
-      cursor: { nextEventSeq: 5, checkpointSeq: 1 }, pendingOperations: [], childRuns: [], recordedAt: 2,
+      runId: 'run-dynamic', attempt: 1, checkpointSeq: 1, eventSeq: 4, status: 'running', state: durableState,
+      cursor: { nextEventSeq: 5, checkpointSeq: 1 }, checksum: 'x', createdAt: 2,
     },
     pendingOperations: [], childRuns: [], requiresHumanConfirmation: [],
   };
@@ -115,7 +119,7 @@ describe('Dynamic Workflow startup recovery', () => {
   it('rebuilds Host deps after a simulated process restart and resumes the same logical workflow', async () => {
     const currentRegistry = registry();
     const currentHost = host();
-    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: currentRegistry.value, host: currentHost }).recover(plan(state()));
+    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: currentRegistry.value, host: currentHost }).recover(plan(state()), 10);
     expect(result.status).toBe('recovered');
     expect(currentHost.resolve).toHaveBeenCalledOnce();
     expect(runScriptInSandbox).toHaveBeenCalledOnce();
@@ -127,7 +131,7 @@ describe('Dynamic Workflow startup recovery', () => {
 
   it('does not execute an already completed Graph node or manufacture a second Graph terminal', async () => {
     const currentRegistry = registry();
-    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: currentRegistry.value, host: host() }).recover(plan(state('completed')));
+    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: currentRegistry.value, host: host() }).recover(plan(state('completed')), 10);
     expect(result.status).toBe('recovered');
     expect(runScriptInSandbox).not.toHaveBeenCalled();
     expect((currentRegistry.value.checkpointDurable as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
@@ -137,21 +141,21 @@ describe('Dynamic Workflow startup recovery', () => {
     const result = await createDynamicWorkflowGraphRecoveryHandler({
       registry: registry().value,
       host: host({ ok: false, reason: 'readonly tool dependency is unavailable' }),
-    }).recover(plan(state()));
+    }).recover(plan(state()), 10);
     expect(result).toMatchObject({ status: 'requires_review', reason: expect.stringContaining('dependency') });
     expect(runScriptInSandbox).not.toHaveBeenCalled();
   });
 
   it('converts a Host resolver exception into requires_review', async () => {
     const throwingHost: DynamicWorkflowRecoveryHost = { resolve: vi.fn(async () => { throw new Error('model registry offline'); }) };
-    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: registry().value, host: throwingHost }).recover(plan(state()));
+    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: registry().value, host: throwingHost }).recover(plan(state()), 10);
     expect(result).toMatchObject({ status: 'requires_review', reason: expect.stringContaining('model registry offline') });
     expect(runScriptInSandbox).not.toHaveBeenCalled();
   });
 
   it('fails closed when the owner/attempt binding is stale', async () => {
     const currentRegistry = registry({ bindRecoveredHandle: vi.fn(() => { throw new Error('stale owner epoch'); }) as never });
-    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: currentRegistry.value, host: host() }).recover(plan(state()));
+    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: currentRegistry.value, host: host() }).recover(plan(state()), 10);
     expect(result).toMatchObject({ status: 'requires_review', reason: expect.stringContaining('stale owner') });
     expect(runScriptInSandbox).not.toHaveBeenCalled();
   });
@@ -163,7 +167,7 @@ describe('Dynamic Workflow startup recovery', () => {
     const result = await createDynamicWorkflowGraphRecoveryHandler({
       registry: currentRegistry.value,
       host: host(),
-    }).recover(plan(state()));
+    }).recover(plan(state()), 10);
     expect(result).toMatchObject({ status: 'requires_review', reason: expect.stringContaining('Graph attempt is stale') });
     expect((currentRegistry.value.checkpointDurable as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
@@ -171,7 +175,7 @@ describe('Dynamic Workflow startup recovery', () => {
   it('requires review instead of replaying an unknown side effect', async () => {
     const unsafe = state();
     unsafe.graphSpec.nodes[0].sideEffect = 'unknown';
-    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: registry().value, host: host() }).recover(plan(unsafe));
+    const result = await createDynamicWorkflowGraphRecoveryHandler({ registry: registry().value, host: host() }).recover(plan(unsafe), 10);
     expect(result).toMatchObject({ status: 'requires_review', reason: expect.stringContaining('uncertain') });
     expect(runScriptInSandbox).not.toHaveBeenCalled();
   });

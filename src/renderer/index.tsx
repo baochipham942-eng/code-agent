@@ -3,6 +3,10 @@ import { initSentryRenderer } from "./observability/sentryRenderer";
 import { initPostHogRenderer, trackRenderer } from "./observability/posthogRenderer";
 import { POSTHOG_EVENTS } from "@shared/observability/posthog-events";
 
+// recon: 挂载耗时打点——本 mark 在全部 eager import 求值完成后执行，
+// [navigationStart → 此处] ≈ 首包下载+parse+eval（H1/H2 段）
+performance.mark('boot:module-eval-done');
+
 // Must run before React renders — injects HTTP polyfill in browser mode
 initTransport();
 // 崩溃上报尽早初始化（无 VITE_SENTRY_DSN 时为 no-op）
@@ -150,6 +154,7 @@ if (!container) {
   throw new Error('Root element not found');
 }
 
+performance.mark('boot:before-createRoot');
 const root = createRoot(container);
 root.render(
   <React.StrictMode>

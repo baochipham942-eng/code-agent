@@ -1006,6 +1006,7 @@ export async function reloadSessionsForAuthChange(options?: { principalChanged?:
 export async function initializeSessionStore(): Promise<void> {
   if (_initialized) return;
   _initialized = true;
+  performance.mark('boot:session-init-start');
 
   const store = useSessionStore.getState();
 
@@ -1023,6 +1024,7 @@ export async function initializeSessionStore(): Promise<void> {
       await store.createSession('新对话', { workingDirectory: null });
     }
   } finally {
+    performance.mark('boot:session-settled');
     // 失败也要 settle：renderer-ready 就绪门不许挂死窗口显示
     _settleInitialSessionState?.();
   }

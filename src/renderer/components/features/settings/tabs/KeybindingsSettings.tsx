@@ -25,6 +25,7 @@ import { emitKeybindingsChanged } from '../../../../hooks/useKeybindingsSettings
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
+import { Toggle } from '../../../primitives/Toggle';
 
 const logger = createLogger('KeybindingsSettings');
 
@@ -353,25 +354,16 @@ export const KeybindingsSettings: React.FC = () => {
                     </button>
 
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={binding.enabled}
-                        onClick={() => updateBinding(definition.id, {
+                      <Toggle
+                        size="md"
+                        checked={binding.enabled}
+                        onChange={(next) => updateBinding(definition.id, {
                           ...binding,
-                          enabled: !binding.enabled,
+                          enabled: next,
                         })}
-                        className={`relative h-6 w-11 rounded-full transition-colors ${
-                          binding.enabled ? 'bg-primary-500' : 'bg-zinc-700'
-                        }`}
+                        aria-label={binding.enabled ? keybindingsText.disableShortcut : keybindingsText.enableShortcut}
                         title={binding.enabled ? keybindingsText.disableShortcut : keybindingsText.enableShortcut}
-                      >
-                        <span
-                          className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                            binding.enabled ? 'translate-x-[22px]' : 'translate-x-0.5'
-                          }`}
-                        />
-                      </button>
+                      />
                       <button
                         type="button"
                         onClick={() => updateBinding(definition.id, { enabled: false, accelerator: null })}

@@ -10,6 +10,11 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
       openPreview: vi.fn(),
     }),
 }));
+// humanizeToolError 迁 i18n 后 ToolDetails 新接了 useI18n，同 turnDiffSummary.confirmation.test.tsx 先例直接 mock。
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
 
 import {
   ToolDetails,

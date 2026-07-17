@@ -591,19 +591,6 @@ pre code {
   /* ----------------------------------------
      Buttons
      ---------------------------------------- */
-  .btn-primary {
-    @apply btn text-white;
-    background-color: var(--brand-primary);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background-color: var(--brand-primary-hover);
-  }
-
-  .btn-primary:focus-visible {
-    box-shadow: 0 0 0 3px var(--focus-ring);
-  }
-
   .btn-secondary {
     @apply btn;
     background-color: var(--bg-elevated);

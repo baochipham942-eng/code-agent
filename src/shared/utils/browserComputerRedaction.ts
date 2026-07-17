@@ -1,7 +1,12 @@
 import { makeEvidenceRef, type EvidenceKind, type EvidenceRef, type EvidenceState, type RedactionStatus } from "../contract/evidence";
 import type { AgentPointerEvent } from "../contract/desktop";
+import {
+  redactBrowserCookiePayloadsInText,
+  redactCookieValueFieldsInRecord,
+} from './browserComputerCookieRedaction';
 
 export { sanitizeLargeTextToolArguments } from './browserComputerLargeTextRedaction';
+export { redactBrowserCookiePayloadsInText } from './browserComputerCookieRedaction';
 
 const BROWSER_COMPUTER_TOOLS = new Set(["browser_action", "computer_use"]);
 const INPUT_PAYLOAD_ACTIONS = new Set(["type", "smart_type", "fill_form"]);
@@ -42,13 +47,6 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "sessionStorage",
   "storageState",
   "userDataDir",
-]);
-/** Object keys that hold cookie plaintext / ciphertext when present on cookie-like records. */
-const COOKIE_VALUE_FIELD_KEYS = new Set([
-  "value",
-  "encrypted_value",
-  "encryptedValue",
-  "cookieValue",
 ]);
 const OMIT = Symbol("omit-browser-computer-metadata");
 
@@ -827,67 +825,6 @@ function sanitizeEvidenceRef(value: EvidenceRef): EvidenceRef {
     ...value,
     ref: sanitizeEvidenceRefTarget(value.ref),
   };
-}
-
-/**
- * Looks like a Playwright/Chromium cookie seed: name + value and/or domain.
- * Used to redact nested `value` fields without blanking unrelated form field maps.
- */
-function looksLikeCookieRecord(value: Record<string, unknown>): boolean {
-  const hasName = typeof value.name === "string" && value.name.length > 0;
-  const hasDomain =
-    (typeof value.domain === "string" && value.domain.length > 0)
-    || (typeof value.host === "string" && value.host.length > 0);
-  const hasValueField = [...COOKIE_VALUE_FIELD_KEYS].some((field) => field in value);
-  return hasValueField && (hasName || hasDomain);
-}
-
-function redactCookieValueFieldsInRecord(
-  value: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!looksLikeCookieRecord(value)) {
-    return value;
-  }
-  const next: Record<string, unknown> = { ...value };
-  for (const field of COOKIE_VALUE_FIELD_KEYS) {
-    if (field in next) {
-      next[field] = "[redacted]";
-    }
-  }
-  return next;
-}
-
-/**
- * Defense-in-depth for session export / tool summaries: strip cookie plaintext
- * from JSON-ish strings even when producers mis-emit seeds or storageState.
- */
-export function redactBrowserCookiePayloadsInText(value: string): string {
-  let redacted = value;
-  // Explicit secret field names (always scrub when quoted JSON-style).
-  redacted = redacted.replace(
-    /("(?:encrypted_?value|cookieValue|keychainPassword|keyMaterial|authToken)"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
-    '$1"[redacted]"',
-  );
-  // Cookie seed object: "name":"...","value":"SECRET"
-  redacted = redacted.replace(
-    /("name"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"value"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
-    '$1"[redacted]"',
-  );
-  // Cookie seed object: "value":"SECRET","domain":"..."
-  redacted = redacted.replace(
-    /("value"\s*:\s*)"(?:\\.|[^"\\])*"(\s*,\s*"(?:domain|host|path|expires|httpOnly|secure|sameSite)")/gi,
-    '$1"[redacted]"$2',
-  );
-  // storageState.cookies[] style: "domain":"...","name":"...","value":"SECRET"
-  redacted = redacted.replace(
-    /("(?:domain|host)"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"name"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"value"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
-    '$1"[redacted]"',
-  );
-  redacted = redacted.replace(
-    /("name"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"(?:domain|host)"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"value"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
-    '$1"[redacted]"',
-  );
-  return redacted;
 }
 
 function sanitizeBrowserComputerMetadataValue(

@@ -8,6 +8,7 @@ import { chatTranscriptZh } from './chatTranscript';
 import { chatInputZh } from './chatInput';
 import { sidebarZh } from './sidebar';
 import { previewWorkspaceZh } from './previewWorkspace';
+import { modalPrimitivesZh } from './modalPrimitives';
 
 export const zh = {
   // Common
@@ -20,6 +21,7 @@ export const zh = {
     confirm: '确认',
     delete: '删除',
     edit: '编辑',
+    undo: '撤销',
     loading: '加载中…',
     retry: '重试',
     error: '错误',
@@ -844,6 +846,7 @@ export const zh = {
   ...chatInputZh,
   ...sidebarZh,
   ...previewWorkspaceZh,
+  ...modalPrimitivesZh,
 
   // 聊天流 Mermaid 图卡片（缩放/平移 + 标注即编辑）
   mermaid: {

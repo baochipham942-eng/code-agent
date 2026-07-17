@@ -7,6 +7,7 @@ import React from 'react';
 import type { Citation } from '@shared/contract/citation';
 import { isWebMode, isTauriMode, copyPathToClipboard } from '../../utils/platform';
 import { openNativePath } from '../../services/tauriPluginFacade';
+import { useI18n } from '../../hooks/useI18n';
 
 interface CitationListProps {
   citations: Citation[];
@@ -115,6 +116,7 @@ export function CitationSummary({
   maxShow = 5,
   onViewAll,
 }: CitationSummaryProps) {
+  const { t } = useI18n();
   if (citations.length === 0) return null;
 
   const visible = citations.slice(0, maxShow);
@@ -122,7 +124,7 @@ export function CitationSummary({
 
   return (
     <div className="flex items-center gap-1 mt-1.5">
-      <span className="text-[10px] text-gray-500 mr-0.5">引用:</span>
+      <span className="text-[10px] text-gray-500 mr-0.5">{t.citations.label}</span>
       {visible.map((c) => (
         <CitationChip key={c.id} citation={c} />
       ))}

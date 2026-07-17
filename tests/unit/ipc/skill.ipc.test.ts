@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { SKILL_CHANNELS } from '../../../src/shared/ipc/channels';
+import type { SkillRegistryEntry } from '../../../src/shared/contract/skillRegistry';
 
 // skill.ipc.ts 是 skill:* 通道的注册中枢：仓库管理 / skill 启停 / 会话挂载 /
 // 推荐目录 / SkillsMP 社区搜索 / combo 录制 / 草稿确认队列，全是瘦 try-catch 包装
@@ -14,7 +15,7 @@ const svc = vi.hoisted(() => {
     updateRepository: vi.fn(async () => ({ success: true, hasUpdates: true })),
     removeRepository: vi.fn(async () => {}),
     addCustomRepository: vi.fn(async () => ({ success: true })),
-    isSkillEnabled: vi.fn(() => true),
+    isSkillEnabled: vi.fn((_skillName: string) => true),
     enableSkill: vi.fn(),
     disableSkill: vi.fn(),
   };
@@ -34,27 +35,27 @@ const svc = vi.hoisted(() => {
     recommendSkills: vi.fn(async () => [{ name: 'excel' }]),
   };
   const cloud = { getSkillCatalog: vi.fn(() => ({ repositories: [{ id: 'cloud-repo' }], categories: [] })) };
-  const config = { getServiceApiKey: vi.fn(() => 'key-123') };
+  const config = { getServiceApiKey: vi.fn((): string | undefined => 'key-123') };
   const recorder = {
     startRecording: vi.fn(),
     stopRecording: vi.fn(),
     markTurn: vi.fn(),
     checkSuggestion: vi.fn(() => ({ suggested: false })),
     saveAsSkill: vi.fn(async () => ({ success: true })),
-    getRecording: vi.fn(() => ({ sessionId: 's', toolNames: new Set(['read', 'write']) })),
+    getRecording: vi.fn((): { sessionId: string; toolNames: Set<string> } | null => ({ sessionId: 's', toolNames: new Set(['read', 'write']) })),
   };
   const drafts = {
-    listSkillDrafts: vi.fn(async () => [{ id: 'd1' }]),
-    confirmSkillDraft: vi.fn(async () => ({ success: true })),
-    rejectSkillDraft: vi.fn(async () => ({ success: true })),
+    listSkillDrafts: vi.fn(async (..._a: unknown[]) => [{ id: 'd1' }]),
+    confirmSkillDraft: vi.fn(async (..._a: unknown[]) => ({ success: true })),
+    rejectSkillDraft: vi.fn(async (..._a: unknown[]) => ({ success: true })),
   };
   const registry = {
     listItems: vi.fn(async () => ({ items: [] })),
     listItemsCached: vi.fn(async () => [] as unknown[]),
     invalidateListCache: vi.fn(),
-    getEntry: vi.fn(async () => null),
+    getEntry: vi.fn(async (): Promise<SkillRegistryEntry | null> => null),
   };
-  const marketplaceInstall = vi.fn(async () => ({ success: true }));
+  const marketplaceInstall = vi.fn(async (..._a: unknown[]) => ({ success: true }));
   const projectPref = {
     getOverride: vi.fn<(name: string) => boolean | undefined>(() => undefined),
     setOverride: vi.fn(),
@@ -377,7 +378,7 @@ describe('SkillsMP 社区搜索', () => {
   });
 
   it('未配置 API Key → MISSING_API_KEY', async () => {
-    svc.config.getServiceApiKey.mockReturnValue(null);
+    svc.config.getServiceApiKey.mockReturnValue(undefined);
     expect(await call(SKILL_CHANNELS.SKILLSMP_SEARCH, 'pdf')).toMatchObject({
       success: false,
       error: { code: 'MISSING_API_KEY' },

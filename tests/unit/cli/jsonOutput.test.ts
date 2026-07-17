@@ -16,7 +16,7 @@ describe('CLI JSONOutput', () => {
   }
 
   function loggedObjects(log: ReturnType<typeof vi.spyOn>): unknown[] {
-    return log.mock.calls.map(([value]) => JSON.parse(String(value)));
+    return log.mock.calls.map(([value]: [unknown]) => JSON.parse(String(value)));
   }
 
   it('emits task progress, tool calls, messages, errors, and deduped completion metadata', () => {
@@ -28,7 +28,7 @@ describe('CLI JSONOutput', () => {
     output.start();
 
     now.mockReturnValueOnce(1010);
-    output.handleEvent({ type: 'task_progress', data: { phase: 'plan', step: 'scan' } } as AgentEvent);
+    output.handleEvent({ type: 'task_progress', data: { turnId: 'turn-1', phase: 'thinking', step: 'scan' } } as AgentEvent);
 
     now.mockReturnValueOnce(1020);
     output.handleEvent({
@@ -61,7 +61,7 @@ describe('CLI JSONOutput', () => {
       {
         type: 'thinking',
         timestamp: 1010,
-        data: { phase: 'plan', step: 'scan' },
+        data: { phase: 'thinking', step: 'scan' },
       },
       {
         type: 'tool_call',

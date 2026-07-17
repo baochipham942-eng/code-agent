@@ -49,6 +49,7 @@ describe('SubagentStop trace query entry (GAP-012)', () => {
     // 用 command hook 验证 env vars（createHookEnvVars 从 context 取值）
     const matchingConfig: MergedHookConfig = {
       event: 'SubagentStop',
+      matcher: null,
       hooks: [{ type: 'command', command: 'printf "type=$HOOK_SUBAGENT_TYPE id=$HOOK_SUBAGENT_ID"' }],
       sources: ['project'],
       parallel: false,
@@ -111,6 +112,7 @@ describe('Hook trigger history sanitization (GAP-015)', () => {
     const leakedKey = 'sk-ant-api03-' + 'a'.repeat(90);
     const matchingConfig: MergedHookConfig = {
       event: 'Stop',
+      matcher: null,
       hooks: [{ type: 'command', command: `printf "found key: ${leakedKey}"` }],
       sources: ['project'],
       parallel: false,
@@ -131,6 +133,7 @@ describe('Hook trigger history sanitization (GAP-015)', () => {
     const { getHooksForEvent } = await import('../../../src/host/hooks/merger');
     const matchingConfig: MergedHookConfig = {
       event: 'Stop',
+      matcher: null,
       hooks: [{ type: 'command', command: 'printf "lint passed: 0 errors"' }],
       sources: ['project'],
       parallel: false,
@@ -153,6 +156,7 @@ describe('Hook trigger history sanitization (GAP-015)', () => {
 
     const matchingConfig: MergedHookConfig = {
       event: 'Stop',
+      matcher: null,
       hooks: [{ type: 'command', command: `printf "token: ${leakedKey}"` }],
       sources: ['project'],
       parallel: false,

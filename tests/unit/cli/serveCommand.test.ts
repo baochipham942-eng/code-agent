@@ -190,7 +190,7 @@ describe('createServeRequestHandler', () => {
     const runGate = new Promise<void>((resolve) => {
       finishRun = resolve;
     });
-    const run = vi.fn(async () => {
+    const run = vi.fn(async (_prompt: string) => {
       await runGate;
     });
     mocks.createCLIAgent.mockResolvedValue({

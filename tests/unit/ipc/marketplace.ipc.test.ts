@@ -7,18 +7,18 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 // manifest 读失败降级 / refresh-all 容错 / 安装记录回填 / 错误归一 errorResult。
 
 const mp = vi.hoisted(() => ({
-  listMarketplaces: vi.fn(async (): Promise<Record<string, unknown>> => ({})),
-  addMarketplace: vi.fn(async () => ({ name: 'official' })),
-  removeMarketplace: vi.fn(async () => {}),
-  refreshMarketplace: vi.fn(async () => {}),
-  getMarketplaceInfo: vi.fn(async () => ({ manifest: { description: 'desc', plugins: [{}, {}] } })),
-  listAllPlugins: vi.fn(async (): Promise<unknown[]> => []),
-  searchPlugins: vi.fn(async (): Promise<unknown[]> => []),
-  installPlugin: vi.fn(async () => ({ installedSkills: [], installedCommands: [], installedPluginRoot: '/root' })),
-  uninstallPlugin: vi.fn(async () => {}),
-  listInstalledPlugins: vi.fn(async (): Promise<Record<string, unknown>> => ({})),
-  enablePlugin: vi.fn(async () => {}),
-  disablePlugin: vi.fn(async () => {}),
+  listMarketplaces: vi.fn(async (..._a: unknown[]): Promise<Record<string, unknown>> => ({})),
+  addMarketplace: vi.fn(async (..._a: unknown[]) => ({ name: 'official' })),
+  removeMarketplace: vi.fn(async (..._a: unknown[]) => {}),
+  refreshMarketplace: vi.fn(async (..._a: unknown[]) => {}),
+  getMarketplaceInfo: vi.fn(async (..._a: unknown[]) => ({ manifest: { description: 'desc', plugins: [{}, {}] } })),
+  listAllPlugins: vi.fn(async (..._a: unknown[]): Promise<unknown[]> => []),
+  searchPlugins: vi.fn(async (..._a: unknown[]): Promise<unknown[]> => []),
+  installPlugin: vi.fn(async (..._a: unknown[]): Promise<{ installedSkills: string[]; installedCommands: string[]; installedPluginRoot: string }> => ({ installedSkills: [], installedCommands: [], installedPluginRoot: '/root' })),
+  uninstallPlugin: vi.fn(async (..._a: unknown[]) => {}),
+  listInstalledPlugins: vi.fn(async (..._a: unknown[]): Promise<Record<string, unknown>> => ({})),
+  enablePlugin: vi.fn(async (..._a: unknown[]) => {}),
+  disablePlugin: vi.fn(async (..._a: unknown[]) => {}),
   isAdmin: true,
 }));
 

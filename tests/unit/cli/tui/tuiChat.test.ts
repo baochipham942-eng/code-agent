@@ -91,9 +91,8 @@ function makeAgent(overrides: Partial<{
     run: overrides.run ?? vi.fn().mockResolvedValue({ success: true, output: 'ok' }),
     cancel: overrides.cancel ?? vi.fn(),
     getIsRunning: overrides.getIsRunning ?? vi.fn().mockReturnValue(false),
-    setEventObserver: overrides.setEventObserver ?? vi.fn(function (this: typeof agent, obs: (e: AgentEvent) => void) {
-      this._observer = obs;
-    }),
+    // 默认占位，falsy 分支会在下面被真正的捕获实现覆盖（避免 typeof agent 自引用）
+    setEventObserver: overrides.setEventObserver ?? vi.fn(),
   };
   // rebind setEventObserver default to capture observer on this agent
   if (!overrides.setEventObserver) {

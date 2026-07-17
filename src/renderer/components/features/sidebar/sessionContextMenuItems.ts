@@ -1,3 +1,7 @@
+import { createElement } from 'react';
+import {
+  Pin, Pencil, IdCard, Undo2, Archive, Trash2, Wrench, Save, Puzzle, FlaskConical, FileText, ScrollText,
+} from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import {
   createWorkbenchRecipeMergedContext,
@@ -94,7 +98,7 @@ export function buildSessionContextMenuItems(
   const reusableWorkbench = canReuseSessionWorkbench(session);
   const recentPresetItems: ContextMenuItem[] = savedWorkbenchPresets.slice(0, 3).map((preset: WorkbenchPreset) => ({
     label: menu.applyPreset.replace('{name}', formatPresetMenuLabel(preset.name)),
-    icon: '🧩',
+    icon: createElement(Puzzle, { className: 'h-4 w-4' }),
     onClick: async () => {
       try {
         const presetDirectory = preset.context.workingDirectory?.trim();
@@ -118,7 +122,7 @@ export function buildSessionContextMenuItems(
   }));
   const recentRecipeItems: ContextMenuItem[] = savedWorkbenchRecipes.slice(0, 3).map((recipe: WorkbenchRecipe) => ({
     label: menu.applyRecipe.replace('{name}', formatPresetMenuLabel(recipe.name)),
-    icon: '🧪',
+    icon: createElement(FlaskConical, { className: 'h-4 w-4' }),
     onClick: async () => {
       try {
         const recipeContext = createWorkbenchRecipeMergedContext(recipe);
@@ -145,12 +149,12 @@ export function buildSessionContextMenuItems(
   return [
     {
       label: isPinned ? menu.unpin : menu.pin,
-      icon: '📌',
+      icon: createElement(Pin, { className: 'h-4 w-4' }),
       onClick: () => togglePin(session.id),
     },
     {
       label: menu.rename,
-      icon: '✏️',
+      icon: createElement(Pencil, { className: 'h-4 w-4' }),
       onClick: () => {
         setRenamingId(session.id);
         setRenameValue(getDisplaySessionTitle(session.title));
@@ -158,7 +162,7 @@ export function buildSessionContextMenuItems(
     },
     {
       label: menu.copySessionId,
-      icon: '🆔',
+      icon: createElement(IdCard, { className: 'h-4 w-4' }),
       onClick: async () => {
         try {
           const copied = await copyPathToClipboard(session.id);
@@ -172,7 +176,7 @@ export function buildSessionContextMenuItems(
     },
     {
       label: canOpenSessionReplay ? menu.openReplay : menu.replayAdminOnly,
-      icon: '↩',
+      icon: createElement(Undo2, { className: 'h-4 w-4' }),
       disabled: !canOpenSessionReplay,
       onClick: async () => {
         await handleOpenSessionReplay(session);
@@ -180,7 +184,7 @@ export function buildSessionContextMenuItems(
     },
     {
       label: isArchived ? menu.unarchive : menu.archive,
-      icon: '📦',
+      icon: createElement(Archive, { className: 'h-4 w-4' }),
       onClick: () => {
         if (isArchived) {
           unarchiveSession(session.id);
@@ -191,7 +195,7 @@ export function buildSessionContextMenuItems(
     },
     {
       label: menu.delete,
-      icon: '🗑',
+      icon: createElement(Trash2, { className: 'h-4 w-4' }),
       onClick: () => softDelete([session.id]),
       danger: true,
     },
@@ -199,7 +203,7 @@ export function buildSessionContextMenuItems(
       ? [
           {
             label: menu.reuseWorkbench,
-            icon: '🧰',
+            icon: createElement(Wrench, { className: 'h-4 w-4' }),
             onClick: async () => {
               try {
                 if (reusableWorkbenchDirectory) {
@@ -222,7 +226,7 @@ export function buildSessionContextMenuItems(
           },
           {
             label: menu.savePreset,
-            icon: '💾',
+            icon: createElement(Save, { className: 'h-4 w-4' }),
             onClick: () => {
               const fallbackName = getDefaultWorkbenchPresetName(session);
               const promptedName =
@@ -244,7 +248,7 @@ export function buildSessionContextMenuItems(
     ...recentRecipeItems,
     {
       label: menu.exportMarkdown,
-      icon: '📝',
+      icon: createElement(FileText, { className: 'h-4 w-4' }),
       onClick: async () => {
         try {
           const response = await window.domainAPI?.invoke<{ markdown: string; suggestedFileName: string }>(
@@ -267,7 +271,7 @@ export function buildSessionContextMenuItems(
     },
     {
       label: menu.exportSessionLog,
-      icon: '🧾',
+      icon: createElement(ScrollText, { className: 'h-4 w-4' }),
       onClick: async () => {
         try {
           const response = await rejectAfter(

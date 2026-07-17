@@ -5,6 +5,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
+
 const invoke = vi.hoisted(() => vi.fn());
 
 // 静态渲染下 effect 不跑（checkpoints 维持空），mock store + ipcService 让模块可导入。
@@ -36,10 +41,10 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
 
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
-    expect(html).toContain('Rewind to Checkpoint');
-    expect(html).toContain('No checkpoints available');
-    expect(html).toContain('Cancel');
-    expect(html).toContain('Rewind');
+    expect(html).toContain('回退到检查点');
+    expect(html).toContain('暂无可用检查点');
+    expect(html).toContain('取消');
+    expect(html).toContain('回退');
   });
 
   it('puts checkpoint rows in the Tab order and previews on Enter', async () => {
@@ -86,15 +91,15 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
+    fireEvent.click(screen.getByRole('button', { name: '回退' }));
     expect(screen.getAllByRole('dialog')).toHaveLength(2);
     expect(invoke).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel rewind' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消回退' }));
     expect(invoke).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Rewind now' }));
+    fireEvent.click(screen.getByRole('button', { name: '回退' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认回退' }));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
         IPC_CHANNELS.CHECKPOINT_REWIND,
@@ -117,11 +122,11 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Before edit/ }));
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
-    fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Rewind now' }));
+    fireEvent.click(screen.getByRole('button', { name: '回退' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认回退' }));
 
     expect(await screen.findByText(/workspace locked/)).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Rewind' }).getAttribute('disabled')).toBeNull();
+    expect(screen.getByRole('button', { name: '回退' }).getAttribute('disabled')).toBeNull();
   });
 });

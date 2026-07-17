@@ -52,6 +52,14 @@ const MIGRATED: string[] = [
   'composites/ConfirmDialog.tsx',
   'ErrorBoundary.tsx',
   'citations/CitationList.tsx',
+  'PlanningPanel.tsx',
+  'RewindPanel.tsx',
+  'SkillsPanel.tsx',
+  'ContextHealthPanel.tsx',
+  'TaskPanel/TaskMonitor.tsx',
+  'TaskPanel/Orchestration.tsx',
+  'TaskPanel/RunWorkbenchCards.tsx',
+  'TaskPanel/ApprovalSyncCard.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

@@ -6,6 +6,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
+import { useI18n } from '../../hooks/useI18n';
 import { claimApprovalResponse, releaseApprovalResponse } from '../../utils/approvalResponseGuard';
 import { isDangerousCommand } from '../PermissionDialog/utils';
 
@@ -35,6 +36,8 @@ function getVisibleQueueCount(
 }
 
 export const ApprovalSyncCard: React.FC = () => {
+  const { t } = useI18n();
+  const a = t.taskStatusPanels.approval;
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const {
     pendingPermissionRequest,
@@ -65,14 +68,14 @@ export const ApprovalSyncCard: React.FC = () => {
     } catch {
       releaseApprovalResponse(request.id);
       setPendingPermissionRequest(request, requestSessionId);
-      toast.error('审批响应发送失败，请重试');
+      toast.error(a.responseSendFailed);
     }
-  }, [pendingPermissionRequest, pendingPermissionSessionId, setPendingPermissionRequest]);
+  }, [pendingPermissionRequest, pendingPermissionSessionId, setPendingPermissionRequest, a]);
 
   if (!pendingPermissionRequest || !isVisiblePending) {
     return (
       <div className="text-xs text-zinc-600">
-        {queueCount > 0 ? `队列中还有 ${queueCount} 个审批` : '暂无审批请求'}
+        {queueCount > 0 ? a.queueRemaining.replace('{count}', String(queueCount)) : a.noRequest}
       </div>
     );
   }
@@ -98,9 +101,9 @@ export const ApprovalSyncCard: React.FC = () => {
           {target}
         </div>
         <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-600">
-          <span>{pendingPermissionSessionId ? '当前会话' : '全局审批'}</span>
-          {traceCount > 0 && <span>{traceCount} step trace</span>}
-          {queueCount > 0 && <span>队列 {queueCount}</span>}
+          <span>{pendingPermissionSessionId ? a.currentSession : a.globalApproval}</span>
+          {traceCount > 0 && <span>{a.stepTrace.replace('{count}', String(traceCount))}</span>}
+          {queueCount > 0 && <span>{a.queue.replace('{count}', String(queueCount))}</span>}
         </div>
       </div>
 
@@ -111,7 +114,7 @@ export const ApprovalSyncCard: React.FC = () => {
           className="inline-flex items-center justify-center gap-1 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-300 hover:bg-emerald-500/15"
         >
           <Check className="h-3 w-3" />
-          允许
+          {a.allow}
         </button>
         <button
           type="button"
@@ -120,7 +123,7 @@ export const ApprovalSyncCard: React.FC = () => {
           className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-500/20 bg-sky-500/10 px-2 py-1.5 text-[11px] text-sky-300 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Clock className="h-3 w-3" />
-          会话
+          {a.session}
         </button>
         <button
           type="button"
@@ -128,7 +131,7 @@ export const ApprovalSyncCard: React.FC = () => {
           className="inline-flex items-center justify-center gap-1 rounded-md border border-red-500/20 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-300 hover:bg-red-500/15"
         >
           <X className="h-3 w-3" />
-          拒绝
+          {a.deny}
         </button>
       </div>
     </div>

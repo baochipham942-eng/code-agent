@@ -10,6 +10,7 @@ import { chatInputEn } from './chatInput';
 import { sidebarEn } from './sidebar';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
+import { taskStatusPanelsEn } from './taskStatusPanels';
 
 export const en: Translations = {
   // Common
@@ -859,6 +860,7 @@ export const en: Translations = {
   ...sidebarEn,
   ...previewWorkspaceEn,
   ...modalPrimitivesEn,
+  ...taskStatusPanelsEn,
 
   mermaid: {
     zoomIn: 'Zoom in',

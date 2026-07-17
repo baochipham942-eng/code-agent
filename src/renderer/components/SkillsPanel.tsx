@@ -14,6 +14,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useSkillStore } from '../stores/skillStore';
+import { useI18n } from '../hooks/useI18n';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
 import type { SessionSkillMount } from '@shared/contract/skillRepository';
@@ -42,7 +43,10 @@ const MountedSkillItem: React.FC<MountedSkillItemProps> = ({
   onUnmount,
   loading,
   highlighted,
-}) => (
+}) => {
+  const { t } = useI18n();
+  const sk = t.taskStatusPanels.skills;
+  return (
   <div
     data-skill-name={mount.skillName}
     className={`flex items-center justify-between px-2 py-1.5 rounded group transition-colors ${
@@ -63,14 +67,15 @@ const MountedSkillItem: React.FC<MountedSkillItemProps> = ({
     <button
       onClick={onUnmount}
       disabled={loading}
-      aria-label={`卸载 Skill ${mount.skillName}`}
+      aria-label={sk.unmountSkillAria.replace('{name}', mount.skillName)}
       className="p-1 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-      title="卸载"
+      title={sk.unmount}
     >
       <Minus className="w-3.5 h-3.5" />
     </button>
   </div>
-);
+  );
+};
 
 interface AvailableSkillItemProps {
   skill: ParsedSkill;
@@ -82,7 +87,10 @@ const AvailableSkillItem: React.FC<AvailableSkillItemProps> = ({
   skill,
   onMount,
   loading,
-}) => (
+}) => {
+  const { t } = useI18n();
+  const sk = t.taskStatusPanels.skills;
+  return (
   <div className="flex items-center justify-between px-2 py-1.5 hover:bg-zinc-800 rounded group">
     <div className="flex-1 min-w-0">
       <div className="text-sm text-zinc-400 truncate">{skill.name}</div>
@@ -91,20 +99,23 @@ const AvailableSkillItem: React.FC<AvailableSkillItemProps> = ({
     <button
       onClick={onMount}
       disabled={loading}
-      aria-label={`挂载 Skill ${skill.name}`}
+      aria-label={sk.mountSkillAria.replace('{name}', skill.name)}
       className="p-1 text-zinc-500 hover:text-green-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-      title="挂载"
+      title={sk.mount}
     >
       <Plus className="w-3.5 h-3.5" />
     </button>
   </div>
-);
+  );
+};
 
 // ----------------------------------------------------------------------------
 // Main Component
 // ----------------------------------------------------------------------------
 
 export const SkillsPanel: React.FC = () => {
+  const { t } = useI18n();
+  const sk = t.taskStatusPanels.skills;
   const { currentSessionId } = useSessionStore();
   const { setShowSettings, closeWorkbenchTab } = useAppStore();
   const workbenchHighlight = useAppStore((s) => s.workbenchHighlight);
@@ -218,7 +229,7 @@ export const SkillsPanel: React.FC = () => {
             onClick={handleRefresh}
             disabled={isRefreshing || loading}
             className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors disabled:opacity-50"
-            title="刷新"
+            title={sk.refresh}
           >
             <RefreshCw
               className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
@@ -239,13 +250,13 @@ export const SkillsPanel: React.FC = () => {
       <div className="flex-1 overflow-y-auto">
         <div className="px-3 py-2">
           <h4 className="text-xs font-medium text-zinc-400 mb-2">
-            当前挂载 ({mountedSkills.length})
+            {sk.mounted.replace('{count}', String(mountedSkills.length))}
           </h4>
 
           {mountedSkills.length === 0 ? (
             <div className="text-xs text-zinc-500 py-2 flex items-center gap-2">
               <Package className="w-4 h-4 opacity-50" />
-              暂无挂载的 Skills
+              {sk.noMounted}
             </div>
           ) : (
             <div className="space-y-1">
@@ -268,7 +279,7 @@ export const SkillsPanel: React.FC = () => {
 
         {/* 快速添加 */}
         <div className="px-3 py-2">
-          <h4 className="text-xs font-medium text-zinc-400 mb-2">快速添加</h4>
+          <h4 className="text-xs font-medium text-zinc-400 mb-2">{sk.quickAdd}</h4>
 
           {/* 搜索框 */}
           <div className="relative mb-2">
@@ -277,7 +288,7 @@ export const SkillsPanel: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索 skill…"
+              placeholder={sk.searchPlaceholder}
               className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-700 border border-zinc-700 rounded text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-600"
             />
           </div>
@@ -285,11 +296,11 @@ export const SkillsPanel: React.FC = () => {
           {/* 可用 Skills 列表 */}
           {availableSkills.length === 0 ? (
             <div className="text-xs text-zinc-500 py-2">
-              {loading ? '加载中…' : '暂无可用 Skills'}
+              {loading ? t.common.loading : sk.noAvailable}
             </div>
           ) : filteredSkills.length === 0 ? (
             <div className="text-xs text-zinc-500 py-2">
-              {searchQuery ? '未找到匹配的 Skill' : '所有 Skills 已挂载'}
+              {searchQuery ? sk.noSearchMatch : sk.allMounted}
             </div>
           ) : (
             <div className="space-y-1 max-h-48 overflow-y-auto">
@@ -303,7 +314,7 @@ export const SkillsPanel: React.FC = () => {
               ))}
               {filteredSkills.length > 10 && (
                 <div className="text-xs text-zinc-500 py-1 text-center">
-                  还有 {filteredSkills.length - 10} 个…
+                  {sk.moreCount.replace('{count}', String(filteredSkills.length - 10))}
                 </div>
               )}
             </div>
@@ -318,7 +329,7 @@ export const SkillsPanel: React.FC = () => {
           className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded transition-colors"
         >
           <Settings className="w-3.5 h-3.5" />
-          在设置中管理 Skill 库
+          {sk.manageInSettings}
         </button>
       </div>
     </div>

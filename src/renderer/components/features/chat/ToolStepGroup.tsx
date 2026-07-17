@@ -6,9 +6,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { TraceNode } from '@shared/contract/trace';
-import type { ToolCall } from '@shared/contract';
+import type { ToolCall, ToolLiveOutput } from '@shared/contract';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
+import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
 import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGrouping';
 import {
   formatToolDuration,
@@ -23,12 +24,15 @@ interface ToolStepGroupProps {
   sessionId?: string;
   /** Streaming turn: default expanded so user sees live progress */
   defaultExpanded?: boolean;
+  /** ADR-043：turn 仍在流式输出中——驱动中间档（Truncated）的自动展示 */
+  isStreamingTurn?: boolean;
 }
 
 export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   nodes,
   sessionId,
   defaultExpanded = false,
+  isStreamingTurn = false,
 }) => {
   const { t } = useI18n();
   const label = useMemo(() => {
@@ -79,6 +83,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           shortDescription: tc.shortDescription,
           targetContext: tc.targetContext,
           expectedOutcome: tc.expectedOutcome,
+          liveOutput: tc.liveOutput,
           result:
             tc.result !== undefined
               ? {
@@ -109,11 +114,43 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   );
   const forceExpandOnFailure = (status === 'error' || status === 'partial') && hasEscalatedError;
   const [expanded, setExpanded] = useState(defaultExpanded || forceExpandOnFailure);
+  // 用户手动点过展开/收起后冻结自动档，不再被流式中间档/流式收尾自动切换抢走（ADR-043 决策 2/3）。
+  const [userToggled, setUserToggled] = useState(false);
   useEffect(() => {
     if (forceExpandOnFailure) {
       setExpanded(true);
     }
   }, [forceExpandOnFailure]);
+
+  // 正在运行的那一步 = 组内最后一个还没有 result 的 toolCall（真实"在跑"信号，
+  // 不是 tc._streaming 参数流标记——同一工具参数流完时 result 仍未到位也算在跑）。
+  const runningToolCall = useMemo<ToolCall | null>(() => {
+    for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
+      if (toolCalls[i].result === undefined) return toolCalls[i];
+    }
+    return null;
+  }, [toolCalls]);
+  const completedStepsCount = useMemo(
+    () => toolCalls.filter((tc) => tc.result !== undefined).length,
+    [toolCalls],
+  );
+  const isFailureStatus = status === 'error' || status === 'partial';
+  // 三态档位（ADR-043）：需介入失败/用户已展开 → 全展开；未冻结且流式中且有正在跑的
+  // 一步且组内还没出现失败 → 中间档；其余 → 收起。中间档不进 aria-expanded 语义。
+  const tier: 'collapsed' | 'truncated' | 'expanded' = forceExpandOnFailure || expanded
+    ? 'expanded'
+    : !userToggled && isStreamingTurn && runningToolCall && !isFailureStatus
+      ? 'truncated'
+      : 'collapsed';
+  const ariaExpanded = tier === 'expanded';
+
+  // 中间档专用：实时输出截尾 5 行（ADR-043 决策 4，复用 bashOutputPreview 里
+  // isPending=true 的现成尾部截断，不新造截断逻辑）。全展开态用原始 runningToolCall，
+  // 不受影响——那是用户主动要看全量。
+  const truncatedRunningToolCall = useMemo<ToolCall | null>(() => {
+    if (tier !== 'truncated' || !runningToolCall) return null;
+    return { ...runningToolCall, liveOutput: tailTruncateLiveOutput(runningToolCall.liveOutput) };
+  }, [tier, runningToolCall]);
 
   const resultSummary = useMemo(() => buildToolGroupHeadSummary(toolCalls, t), [toolCalls, t]);
   const outputCount = useMemo(() => {
@@ -132,15 +169,18 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   return (
     <div className="my-0.5">
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          setUserToggled(true);
+          setExpanded((value) => !value);
+        }}
         className={`flex w-full min-w-0 items-center gap-1.5 rounded-md text-left text-[11px] transition-colors ${
           status === 'ok'
             ? 'px-1 py-0.5 text-zinc-600 hover:bg-surface-subtle hover:text-zinc-400'
             : 'border border-white/[0.04] bg-white/[0.015] px-2 py-1 text-zinc-500 hover:border-white/[0.08] hover:bg-white/[0.03] hover:text-zinc-300'
         }`}
-        aria-expanded={expanded}
+        aria-expanded={ariaExpanded}
       >
-        {expanded ? (
+        {ariaExpanded ? (
           <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-600" />
         ) : (
           <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-600" />
@@ -180,7 +220,31 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         )}
       </button>
 
-      {expanded && (
+      {tier === 'truncated' && (
+        <div className="ml-4 mt-1 space-y-1 pl-3">
+          {truncatedRunningToolCall && (
+            <ToolCallDisplay
+              toolCall={truncatedRunningToolCall}
+              index={0}
+              total={1}
+              compact
+              mediaContext={{
+                sessionId,
+                messageId:
+                  nodes.find((node) => node.toolCall?.id === truncatedRunningToolCall.id)?.messageId ||
+                  truncatedRunningToolCall.id,
+              }}
+            />
+          )}
+          {completedStepsCount > 0 && (
+            <div className="pl-1 text-[10px] text-zinc-600">
+              {t.toolGroup.completedSteps.replace('{count}', String(completedStepsCount))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tier === 'expanded' && (
         <div className="ml-4 mt-1 space-y-1 border-l border-zinc-800 pl-3">
           {toolCalls.map((tc, i) => (
             <div
@@ -227,6 +291,20 @@ function isReadOrSearchTool(name: string): boolean {
     'LS',
     'list_directory',
   ].includes(name);
+}
+
+/**
+ * 中间档实时输出截尾（ADR-043 决策 4）：stdout/stderr 各自只留最后 5 行，
+ * 复用 bashOutputPreview.ts 的 isPending=true 分支（"运行中尾 5 行"），不新造截断逻辑。
+ * 纯函数，便于单测。
+ */
+export function tailTruncateLiveOutput(live: ToolLiveOutput | undefined): ToolLiveOutput | undefined {
+  if (!live) return live;
+  return {
+    ...live,
+    stdout: live.stdout ? computeBashPreviewLines(live.stdout, true).displayLines.join('\n') : live.stdout,
+    stderr: live.stderr ? computeBashPreviewLines(live.stderr, true).displayLines.join('\n') : live.stderr,
+  };
 }
 
 /**

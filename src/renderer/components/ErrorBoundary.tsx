@@ -6,6 +6,8 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { captureRendererException } from '../observability/sentryRenderer';
+import { languages } from '../i18n';
+import { useAppStore } from '../stores/appStore';
 
 interface Props {
   children: ReactNode;
@@ -54,7 +56,8 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
-      // 默认的错误 UI
+      // 默认的错误 UI —— class 组件不能用 hook，render 内直接读 store 语言（带 zh 兜底防错误 UI 自身崩溃）
+      const t = languages[useAppStore.getState().language] ?? languages.zh;
       return (
         <div className="h-screen flex items-center justify-center bg-zinc-900 text-zinc-200">
           <div className="text-center p-8 max-w-md">
@@ -66,16 +69,16 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
 
             {/* 错误标题 */}
-            <h1 className="text-xl font-bold mb-2">出错了</h1>
+            <h1 className="text-xl font-bold mb-2">{t.errorBoundary.title}</h1>
             <p className="text-zinc-400 mb-6">
-              应用遇到了一个意外错误，请尝试重试或刷新页面。
+              {t.errorBoundary.message}
             </p>
 
             {/* 错误详情（折叠显示） */}
             {this.state.error && (
               <details className="mb-6 text-left">
                 <summary className="cursor-pointer text-zinc-500 hover:text-zinc-400 text-sm">
-                  查看错误详情
+                  {t.errorBoundary.viewDetails}
                 </summary>
                 <div className="mt-2 p-3 bg-zinc-700 rounded-lg text-xs font-mono text-red-300 overflow-auto max-h-32">
                   <p className="font-semibold">{this.state.error.name}: {this.state.error.message}</p>
@@ -95,13 +98,13 @@ export class ErrorBoundary extends Component<Props, State> {
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
               >
                 <RefreshCw className="w-4 h-4" />
-                重试
+                {t.common.retry}
               </button>
               <button
                 onClick={this.handleReload}
                 className="px-4 py-2 bg-zinc-600 rounded-lg hover:bg-zinc-600 transition-colors"
               >
-                刷新页面
+                {t.errorBoundary.refresh}
               </button>
             </div>
           </div>

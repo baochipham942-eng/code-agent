@@ -47,6 +47,11 @@ const MIGRATED: string[] = [
   'WorkspaceAssets.tsx',
   'workspacePreview/helpers.ts',
   'workspacePreview/parts.tsx',
+  'primitives/Modal.tsx',
+  'primitives/UndoToast.tsx',
+  'composites/ConfirmDialog.tsx',
+  'ErrorBoundary.tsx',
+  'citations/CitationList.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

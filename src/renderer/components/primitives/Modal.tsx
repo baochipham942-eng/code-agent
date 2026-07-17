@@ -4,6 +4,7 @@
 
 import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
+import { useI18n } from '../../hooks/useI18n';
 
 const focusableSelector =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
@@ -80,6 +81,7 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   zIndex = 50,
 }) => {
+  const { t } = useI18n();
   const modalRef = useRef<HTMLDivElement>(null);
   const modalId = useId();
   const headerId = useId();
@@ -211,7 +213,7 @@ export const Modal: React.FC<ModalProps> = ({
                   <button
                     onClick={onClose}
                     className="p-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-                    aria-label="关闭"
+                    aria-label={t.common.close}
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -268,6 +270,7 @@ export const ModalHeader: React.FC<ModalHeaderProps> = ({
   onClose,
   children,
 }) => {
+  const { t } = useI18n();
   return (
     <>
       {icon && (
@@ -284,7 +287,7 @@ export const ModalHeader: React.FC<ModalHeaderProps> = ({
         <button
           onClick={onClose}
           className="p-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-          aria-label="Close modal"
+          aria-label={t.common.close}
         >
           <X className="w-5 h-5" />
         </button>
@@ -317,8 +320,8 @@ export interface ModalFooterProps {
 }
 
 export const ModalFooter: React.FC<ModalFooterProps> = ({
-  cancelText = '取消',
-  confirmText = '确认',
+  cancelText,
+  confirmText,
   onCancel,
   onConfirm,
   confirmColorClass = 'bg-blue-600 hover:bg-blue-500',
@@ -326,9 +329,12 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
   hideCancel = false,
   children,
 }) => {
+  const { t } = useI18n();
   if (children) {
     return <>{children}</>;
   }
+  const cancelLabel = cancelText ?? t.common.cancel;
+  const confirmLabel = confirmText ?? t.common.confirm;
 
   return (
     <>
@@ -337,7 +343,7 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
           onClick={onCancel}
           className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded-lg transition-colors"
         >
-          {cancelText}
+          {cancelLabel}
         </button>
       )}
       {onConfirm && (
@@ -350,7 +356,7 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
               : confirmColorClass
           }`}
         >
-          {confirmText}
+          {confirmLabel}
         </button>
       )}
     </>

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
+import { useI18n } from '../../hooks/useI18n';
 
 export interface UndoToastProps {
   /** 显示的消息文本 */
@@ -21,6 +22,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
   onDismiss,
   duration = 5000,
 }) => {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(true);
   const [progress, setProgress] = useState(100);
 
@@ -67,7 +69,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
           onClick={handleUndo}
           className="text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors whitespace-nowrap"
         >
-          撤销
+          {t.common.undo}
         </button>
       </div>
       {/* 进度条 */}

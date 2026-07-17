@@ -13,6 +13,7 @@ import {
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
 
 const logger = createLogger('NativeConnectorsSection');
@@ -225,9 +226,9 @@ export function getRuntimeConnectorLifecycleRequest(
   };
 }
 
-function formatCheckedAt(checkedAt?: number): string | null {
+function formatCheckedAt(checkedAt: number | undefined, locale: string): string | null {
   if (!checkedAt) return null;
-  return new Date(checkedAt).toLocaleString('zh-CN', {
+  return new Date(checkedAt).toLocaleString(locale, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -256,9 +257,11 @@ interface NativeConnectorItemsProps {
   text?: NativeConnectorsText;
   onToggle: (id: string, enabled: boolean) => void;
   onLifecycleAction: (id: string, action: NativeConnectorUiAction) => void;
+  locale: string;
 }
 
 export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
+  locale,
   rows,
   busyKey,
   text = DEFAULT_NATIVE_CONNECTORS_TEXT,
@@ -270,7 +273,7 @@ export const NativeConnectorItems: React.FC<NativeConnectorItemsProps> = ({
       const readiness = getNativeConnectorReadiness(row, text.readiness);
       const lifecycleActions = getNativeConnectorLifecycleActions(row);
       const rowBusy = Boolean(busyKey?.startsWith(`${row.id}:`));
-      const checkedAt = formatCheckedAt(row.status?.checkedAt);
+      const checkedAt = formatCheckedAt(row.status?.checkedAt, locale);
       const detail = row.status?.error || row.status?.detail;
 
       return (
@@ -357,9 +360,11 @@ interface RuntimeConnectorItemsProps {
   busyKey: string | null;
   text?: NativeConnectorsText;
   onLifecycleAction: (id: string, action: RuntimeConnectorUiAction) => void;
+  locale: string;
 }
 
 export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
+  locale,
   rows,
   busyKey,
   text = DEFAULT_NATIVE_CONNECTORS_TEXT,
@@ -370,7 +375,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
       const readiness = getRuntimeConnectorReadiness(row, text.readiness);
       const lifecycleActions = getRuntimeConnectorLifecycleActions(row);
       const rowBusy = Boolean(busyKey?.startsWith(`${row.id}:`));
-      const checkedAt = formatCheckedAt(row.checkedAt);
+      const checkedAt = formatCheckedAt(row.checkedAt, locale);
       const detail = row.error || row.detail;
 
       return (
@@ -439,7 +444,7 @@ export const RuntimeConnectorItems: React.FC<RuntimeConnectorItemsProps> = ({
 );
 
 export const NativeConnectorsSection: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const connectorText = t.settings.nativeConnectors;
   const [items, setItems] = useState<NativeConnectorInventoryItem[]>([]);
   const [statuses, setStatuses] = useState<ConnectorStatusSummary[]>([]);
@@ -558,6 +563,7 @@ export const NativeConnectorsSection: React.FC = () => {
       ) : (
         <>
           <NativeConnectorItems
+            locale={localeForLanguage(language)}
             rows={rows}
             busyKey={busyKey}
             text={connectorText}
@@ -569,6 +575,7 @@ export const NativeConnectorsSection: React.FC = () => {
             <div className="mt-4 border-t border-zinc-700 pt-3">
               <div className="mb-2 text-xs font-medium text-zinc-300">{connectorText.otherConnectors}</div>
               <RuntimeConnectorItems
+                locale={localeForLanguage(language)}
                 rows={runtimeRows}
                 busyKey={busyKey}
                 text={connectorText}

@@ -14,6 +14,7 @@ import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
 
 type UserStatusFilter = 'all' | AdminUserDashboardItem['status'];
@@ -30,11 +31,12 @@ const STATUS_FILTERS: UserStatusFilter[] = ['all', 'active', 'suspended', 'delet
 function formatDate(
   value?: string | number,
   emptyLabel = DEFAULT_USER_DASHBOARD_TEXT.dateNever,
+  locale: string = localeForLanguage('zh'),
 ): string {
   if (!value) return emptyLabel;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return emptyLabel;
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -82,7 +84,7 @@ const SummaryTile: React.FC<{
 };
 
 export const UserDashboardSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const userText = t.settings.users;
   const currentUserId = useAuthStore((state) => state.user?.id);
   const [users, setUsers] = useState<AdminUserDashboardItem[]>([]);
@@ -349,10 +351,10 @@ export const UserDashboardSettings: React.FC = () => {
                       <div className="text-zinc-300">{user.signupSource || user.provider || 'unknown'}</div>
                       <div className="mt-1 font-mono text-[11px] text-zinc-500">{user.inviteCode || '-'}</div>
                     </td>
-                    <td className="px-3 py-3 text-zinc-400">{formatDate(user.createdAt, userText.dateNever)}</td>
-                    <td className="px-3 py-3 text-zinc-400">{formatDate(user.lastSignInAt, userText.dateNever)}</td>
+                    <td className="px-3 py-3 text-zinc-400">{formatDate(user.createdAt, userText.dateNever, localeForLanguage(language))}</td>
+                    <td className="px-3 py-3 text-zinc-400">{formatDate(user.lastSignInAt, userText.dateNever, localeForLanguage(language))}</td>
                     <td className="px-3 py-3 text-zinc-400">
-                      {formatDate(user.lastActiveAt || user.lastSessionUpdatedAt, userText.dateNever)}
+                      {formatDate(user.lastActiveAt || user.lastSessionUpdatedAt, userText.dateNever, localeForLanguage(language))}
                     </td>
                     <td className="px-3 py-3 text-right tabular-nums text-zinc-300">{user.deviceCount}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-zinc-300">

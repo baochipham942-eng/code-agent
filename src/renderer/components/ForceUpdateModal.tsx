@@ -9,6 +9,7 @@ import type { UpdateInfo, DownloadProgress } from '../../shared/contract';
 import { Modal, ModalHeader } from './primitives/Modal';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
+import { useI18n } from '../hooks/useI18n';
 
 const logger = createLogger('ForceUpdateModal');
 
@@ -62,6 +63,8 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
+  const n = t.notices.update;
 
   // Listen for download events from main process
   useEffect(() => {
@@ -104,10 +107,10 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
       setError(null);
       await invokeUpdate<string>('download', { downloadUrl: updateInfo.downloadUrl });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '下载失败');
+      setError(err instanceof Error ? err.message : n.downloadFailed);
       setDownloadState('error');
     }
-  }, [updateInfo?.downloadUrl]);
+  }, [updateInfo?.downloadUrl, n]);
 
   const handleOpenFile = useCallback(async () => {
     if (!downloadedFilePath) return;
@@ -142,7 +145,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
             onClick={handleDownload}
             className="w-full px-4 py-2.5 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-medium"
           >
-            立即下载更新
+            {n.downloadUpdateNow}
           </button>
         );
       case 'downloaded':
@@ -151,7 +154,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
             onClick={handleOpenFile}
             className="w-full px-4 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
           >
-            立即安装
+            {n.installNow}
           </button>
         );
       case 'error':
@@ -160,7 +163,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
             onClick={handleRetry}
             className="w-full px-4 py-2.5 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-medium"
           >
-            重新下载
+            {n.redownload}
           </button>
         );
       default:
@@ -183,8 +186,8 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
           icon={<ShieldAlert className="w-5 h-5" />}
           iconBgClass="bg-rose-500/20"
           iconColorClass="text-rose-400"
-          title="需要更新"
-          subtitle="请更新到最新版本以继续使用"
+          title={n.forceTitle}
+          subtitle={n.forceSubtitle}
           showCloseButton={false}
         />
       }
@@ -200,14 +203,14 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">
-                  新版本 v{updateInfo.latestVersion} 可用
+                  {n.versionAvailable.replace('{version}', updateInfo.latestVersion ?? '')}
                 </p>
                 <p className="text-sm text-zinc-400 mt-1">
-                  当前版本: v{updateInfo.currentVersion}
+                  {n.currentVersionLine.replace('{version}', updateInfo.currentVersion ?? '')}
                 </p>
                 {updateInfo.fileSize && (
                   <p className="text-sm text-zinc-500 mt-0.5">
-                    文件大小: {formatSize(updateInfo.fileSize)}
+                    {n.fileSizeLine.replace('{size}', formatSize(updateInfo.fileSize))}
                   </p>
                 )}
               </div>
@@ -216,7 +219,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
             {/* Release Notes */}
             {updateInfo.releaseNotes && (
               <div className="bg-zinc-800 rounded-lg p-4 max-h-40 overflow-y-auto">
-                <p className="text-xs font-medium text-zinc-400 mb-2">更新内容</p>
+                <p className="text-xs font-medium text-zinc-400 mb-2">{n.updateContent}</p>
                 <div className="text-sm text-zinc-400 whitespace-pre-wrap">
                   {updateInfo.releaseNotes}
                 </div>
@@ -225,7 +228,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
 
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
               <p className="text-xs text-amber-200">
-                此版本包含重要更新，需要安装后才能继续使用应用。
+                {n.forceNote}
               </p>
             </div>
           </div>
@@ -239,7 +242,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
                 <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-lg font-medium text-white">正在下载更新</p>
+                <p className="text-lg font-medium text-white">{n.downloading}</p>
                 <p className="text-sm text-zinc-400 mt-1">
                   {formatSize(downloadProgress.transferred)} / {formatSize(downloadProgress.total)}
                   {downloadProgress.bytesPerSecond > 0 && ` • ${formatSpeed(downloadProgress.bytesPerSecond)}`}
@@ -259,7 +262,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
             </div>
 
             <p className="text-xs text-zinc-500 text-center">
-              请勿关闭应用，下载完成后可安装更新
+              {n.dontCloseForce}
             </p>
           </div>
         )}
@@ -272,9 +275,9 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
                 <CheckCircle className="w-6 h-6 text-emerald-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-lg font-medium text-white">下载完成</p>
+                <p className="text-lg font-medium text-white">{n.downloadComplete}</p>
                 <p className="text-sm text-zinc-400 mt-1">
-                  点击下方按钮启动安装程序
+                  {n.clickToInstall}
                 </p>
               </div>
             </div>
@@ -289,9 +292,9 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
                 <AlertCircle className="w-6 h-6 text-rose-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-lg font-medium text-white">下载失败</p>
+                <p className="text-lg font-medium text-white">{n.downloadFailed}</p>
                 <p className="text-sm text-zinc-400 mt-1">
-                  {error || '发生未知错误，请稍后重试'}
+                  {error || n.unknownError}
                 </p>
               </div>
             </div>

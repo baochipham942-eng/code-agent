@@ -4,6 +4,7 @@ import type { AppSettings } from '@shared/contract';
 import type { AgentEngineModelCatalogResult, ExternalAgentEngineKind } from '@shared/contract/agentEngine';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localeForLanguage } from '../../../../utils/i18nTime';
 import { toast } from '../../../../hooks/useToast';
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
@@ -20,11 +21,11 @@ const AGENT_ENGINE_LABELS: Record<ExternalAgentEngineKind, string> = {
   kimi_code: 'Kimi',
 };
 
-function formatCatalogDate(value?: string): string {
+function formatCatalogDate(value?: string, locale: string = localeForLanguage('zh')): string {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -35,7 +36,7 @@ function formatCatalogDate(value?: string): string {
 }
 
 export const AgentEngineModelCatalogSection: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const section = t.engineCompat.catalogSection;
   const [catalogResult, setCatalogResult] = useState<AgentEngineModelCatalogResult | null>(null);
   const [defaults, setDefaults] = useState<Partial<Record<ExternalAgentEngineKind, string>>>({});
@@ -125,7 +126,7 @@ export const AgentEngineModelCatalogSection: React.FC = () => {
                     : '-',
               section.sourceCaption,
             ],
-            [section.updatedAtLabel, formatCatalogDate(catalogResult?.catalog.updatedAt), section.updatedAtCaption],
+            [section.updatedAtLabel, formatCatalogDate(catalogResult?.catalog.updatedAt, localeForLanguage(language)), section.updatedAtCaption],
             [section.engineCountLabel, String(catalogResult?.catalog.engines.length ?? 0), section.engineCountCaption],
           ].map(([label, value, caption]) => (
             <div key={label} className="bg-zinc-900/80 px-3 py-3">

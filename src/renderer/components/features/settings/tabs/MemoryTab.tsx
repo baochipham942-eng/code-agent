@@ -35,6 +35,7 @@ import ipcService from '../../../../services/ipcService';
 import { useAppStore, type SettingsMemoryFocus } from '../../../../stores/appStore';
 import { MemoryEntriesManager } from './MemoryEntriesManager';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
 
 // ============================================================================
@@ -172,6 +173,7 @@ export function formatMemoryUpdatedAt(
   iso: string,
   now = new Date(),
   labels: MemorySettingsText['relativeDate'] = zh.settings.memory.relativeDate,
+  locale: string = localeForLanguage('zh'),
 ): string {
   const date = new Date(iso);
   const diffMs = now.getTime() - date.getTime();
@@ -179,7 +181,7 @@ export function formatMemoryUpdatedAt(
   if (diffDays === 0) return labels.today;
   if (diffDays === 1) return labels.yesterday;
   if (diffDays < 7) return `${diffDays}${labels.daysAgoSuffix}`;
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 export function getMemoryTypeConfig(
@@ -251,11 +253,13 @@ export function buildMemoryManagementRows({
   selectedFilename,
   now = new Date(),
   labels = zh.settings.memory,
+  locale = localeForLanguage('zh'),
 }: {
   files: LightMemoryFile[];
   selectedFilename: string | null;
   now?: Date;
   labels?: MemorySettingsText;
+  locale?: string;
 }): MemoryManagementRow[] {
   return files.map((file) => {
     const typeConfig = getMemoryTypeConfig(file.type || 'unknown', labels.typeLabels);
@@ -267,7 +271,7 @@ export function buildMemoryManagementRows({
       typeLabel: typeConfig.label,
       typeIcon: typeConfig.icon,
       typeColor: typeConfig.color,
-      updatedAtLabel: formatMemoryUpdatedAt(file.updatedAt, now, labels.relativeDate),
+      updatedAtLabel: formatMemoryUpdatedAt(file.updatedAt, now, labels.relativeDate, locale),
       contentLength: file.content.length,
       selected: file.filename === selectedFilename,
     };
@@ -335,7 +339,7 @@ async function invokeLightMemory<T>(request: LightMemoryRequest): Promise<LightM
 // ============================================================================
 
 export const MemoryTab: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const memoryText = t.settings.memory;
   const settingsMemoryFocus = useAppStore((state) => state.settingsMemoryFocus);
   const clearSettingsMemoryFocus = useAppStore((state) => state.clearSettingsMemoryFocus);
@@ -420,8 +424,9 @@ export const MemoryTab: React.FC = () => {
       files: filteredFiles,
       selectedFilename: selectedFile?.filename || null,
       labels: memoryText,
+      locale: localeForLanguage(language),
     }),
-    [filteredFiles, memoryText, selectedFile?.filename],
+    [filteredFiles, memoryText, selectedFile?.filename, language],
   );
   const memorySummary = useMemo(
     () => buildMemoryManagementSummary({ files, filteredFiles, stats }),
@@ -910,7 +915,7 @@ export const MemoryTab: React.FC = () => {
       {selectedFile && (
         <SettingsSection
           title={memoryText.files.detailTitle}
-          description={`${selectedFile.filename} · ${formatMemoryUpdatedAt(selectedFile.updatedAt, new Date(), memoryText.relativeDate)}`}
+          description={`${selectedFile.filename} · ${formatMemoryUpdatedAt(selectedFile.updatedAt, new Date(), memoryText.relativeDate, localeForLanguage(language))}`}
         >
           <div className="grid gap-4 rounded-lg border border-zinc-700/70 bg-zinc-900/60 p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
             <pre
@@ -937,7 +942,7 @@ export const MemoryTab: React.FC = () => {
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-zinc-500">Updated</dt>
-                  <dd className="text-zinc-300">{formatMemoryUpdatedAt(selectedFile.updatedAt, new Date(), memoryText.relativeDate)}</dd>
+                  <dd className="text-zinc-300">{formatMemoryUpdatedAt(selectedFile.updatedAt, new Date(), memoryText.relativeDate, localeForLanguage(language))}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-zinc-500">Chars</dt>

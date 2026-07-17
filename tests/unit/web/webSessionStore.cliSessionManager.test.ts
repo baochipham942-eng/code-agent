@@ -66,7 +66,9 @@ function createCommitInput(sessionId: string) {
         '```',
       ].join('\n'),
       assistantThinking: '确认文件内容',
-      assistantMetadata: { source: 'web-store' },
+      // MessageMetadata 无自由文本 source 字段，借 workbench.workingDirectory 承载
+      // 一个可辨识的标记值，验证 metadata 原样落库/读回。
+      assistantMetadata: { workbench: { workingDirectory: 'web-store' } },
       assistantToolCalls: [{ id: 'call-read', name: 'Read', arguments: { path: 'src' } }],
       lastLoopAssistantMessageId: undefined,
       contentParts: [
@@ -107,7 +109,9 @@ describe('WebSessionStore CLI SessionManager backend', () => {
     coreDb = new DatabaseService();
     coreConnection = new Database(path.join(tmpDir, 'code-agent.db'));
     coreConnection.pragma('journal_mode = WAL');
-    applySchema(coreConnection, logger);
+    // 本地 logger 只 mock debug/info/warn/error 四个被测路径用到的方法；
+    // applySchema/applySessionsMigrations 要求完整的服务 Logger（含 level/setLevel/log/dispose）。
+    applySchema(coreConnection, logger as never);
     applySessionsMigrations(coreConnection, logger as never);
     Object.assign(coreDb as unknown as Record<string, unknown>, {
       db: coreConnection,
@@ -162,7 +166,8 @@ describe('WebSessionStore CLI SessionManager backend', () => {
           metadata: { source: 'upload' },
         },
       ],
-      metadata: { source: 'web-store-user' },
+      // 同上：MessageMetadata 无 source 字段，借 workbench.workingDirectory 承载标记值。
+      metadata: { workbench: { workingDirectory: 'web-store-user' } },
     };
     const invalidateSessionCache = vi.spyOn(infraSessionManager, 'invalidateSessionCache');
     const getDatabase = vi.fn(async () => coreDb);
@@ -198,7 +203,7 @@ describe('WebSessionStore CLI SessionManager backend', () => {
       role: 'assistant',
       thinking: '确认文件内容',
       contentParts: createCommitInput(sessionId).turn.contentParts,
-      metadata: { source: 'web-store' },
+      metadata: { workbench: { workingDirectory: 'web-store' } },
       artifacts: [expect.objectContaining({ type: 'chart', title: 'Files' })],
     });
 

@@ -10,6 +10,7 @@ import { DEFAULT_SPEECH_INPUT_SETTINGS, VOICE_INPUT_SETTINGS_UPDATED_EVENT } fro
 import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
+import { Toggle } from '../../../primitives/Toggle';
 
 const logger = createLogger('VoiceInputSettings');
 
@@ -111,21 +112,12 @@ export const VoiceInputSettings: React.FC = () => {
           <h3 className="mb-1 text-sm font-medium text-zinc-200">{voiceText.enableTitle}</h3>
           <p className="text-xs text-zinc-500">{voiceText.enableDescription}</p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={settings.enabled}
-          onClick={() => persist({ enabled: !settings.enabled })}
-          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-            settings.enabled ? 'bg-primary-500' : 'bg-zinc-600'
-          }`}
-        >
-          <span
-            className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-              settings.enabled ? 'translate-x-[22px]' : 'translate-x-0.5'
-            }`}
-          />
-        </button>
+        <Toggle
+          size="md"
+          checked={settings.enabled}
+          onChange={(next) => persist({ enabled: next })}
+          aria-label={voiceText.enableTitle}
+        />
       </div>
 
       <div className="border-t border-zinc-700 pt-4">

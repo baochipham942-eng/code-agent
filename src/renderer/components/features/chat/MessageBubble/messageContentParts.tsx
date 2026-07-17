@@ -3,18 +3,10 @@
 // 从 MessageContent.tsx 纯结构性拆出，零行为改动；主组件按需 import 回去
 // ============================================================================
 
-import React, { useState, useMemo, useCallback, memo, useRef, useEffect } from 'react';
-import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import remarkBreaks from 'remark-breaks';
-import rehypeKatex from 'rehype-katex';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import React, { useState, useMemo, useCallback, memo, useRef, useEffect, lazy, Suspense } from 'react';
 import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, Eye, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
 import { loadMermaid } from './mermaidLoader';
 import { UI } from '@shared/constants';
-import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
 import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
@@ -34,6 +26,12 @@ import {
   MediaAssetActionBar,
   MediaAssetLightbox,
 } from './MediaAssetControls';
+
+// react-markdown + katex/remark 插件家族(vendor-markdown/vendor-katex)与
+// react-syntax-highlighter(Prism)按需动态加载,只在真正渲染消息正文/代码块时才下载,
+// 移出首屏关键路径(同 mermaidLoader.ts 的设计动机)。
+const LazyMarkdownCore = lazy(() => import('./MarkdownCore'));
+const LazyPrismCodeBlock = lazy(() => import('./PrismCodeBlock'));
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
@@ -546,18 +544,27 @@ const HighlightedCodeChunk = memo(function HighlightedCodeChunk({
   wrapLines: boolean;
 }) {
   return (
-    <SyntaxHighlighter
-      className="scrollbar-hidden"
-      style={oneDark}
-      language={language || 'text'}
-      showLineNumbers={showLineNumbers}
-      startingLineNumber={chunk.startIndex + 1}
-      customStyle={codeBlockStyle}
-      lineNumberStyle={codeLineNumberStyle}
-      wrapLongLines={wrapLines}
+    <Suspense
+      fallback={
+        <PlainCodeLines
+          lines={chunk.code.split('\n')}
+          showLineNumbers={showLineNumbers}
+          startLineNumber={chunk.startIndex + 1}
+          wrapLines={wrapLines}
+        />
+      }
     >
-      {chunk.code}
-    </SyntaxHighlighter>
+      <LazyPrismCodeBlock
+        className="scrollbar-hidden"
+        language={language || 'text'}
+        showLineNumbers={showLineNumbers}
+        startingLineNumber={chunk.startIndex + 1}
+        customStyle={codeBlockStyle}
+        lineNumberStyle={codeLineNumberStyle}
+        wrapLongLines={wrapLines}
+        code={chunk.code}
+      />
+    </Suspense>
   );
 }, (prev, next) => (
   prev.chunk === next.chunk
@@ -741,17 +748,26 @@ export const CodeBlock = memo(function CodeBlock({
             )}
           </>
         ) : (
-          <SyntaxHighlighter
-            className="scrollbar-hidden"
-            style={oneDark}
-            language={language || 'text'}
-            showLineNumbers={showLineNumbers}
-            customStyle={codeBlockStyle}
-            lineNumberStyle={codeLineNumberStyle}
-            wrapLongLines={wrapLines}
+          <Suspense
+            fallback={
+              <PlainCodeLines
+                lines={lines}
+                showLineNumbers={showLineNumbers}
+                startLineNumber={1}
+                wrapLines={wrapLines}
+              />
+            }
           >
-            {displayCode}
-          </SyntaxHighlighter>
+            <LazyPrismCodeBlock
+              className="scrollbar-hidden"
+              language={language || 'text'}
+              showLineNumbers={showLineNumbers}
+              customStyle={codeBlockStyle}
+              lineNumberStyle={codeLineNumberStyle}
+              wrapLongLines={wrapLines}
+              code={displayCode}
+            />
+          </Suspense>
         )}
       </div>
       {/* Expand/collapse for long blocks */}
@@ -992,9 +1008,8 @@ export const IACTNavCard: React.FC<{ href: string; children: React.ReactNode }> 
 };
 
 // neo:// 是自定义 scheme，react-markdown 默认 urlTransform 白名单仅 http/https/mailto/xmpp，
-// 会把 neo:// 剥成空 href 导致卡片不渲染；放行 neo://，其余仍走默认净化。
-const neoUrlTransform = (url: string): string =>
-  url.startsWith('neo://') ? url : defaultUrlTransform(url);
+// 会把 neo:// 剥成空 href 导致卡片不渲染；放行 neo://，其余仍走默认净化（实现见 MarkdownCore）。
+const NEO_URL_SCHEMES = ['neo://'];
 
 export const MarkdownRenderer = memo(function markdownRenderer({
   content,
@@ -1016,14 +1031,16 @@ export const MarkdownRenderer = memo(function markdownRenderer({
   });
 
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-      rehypePlugins={[rehypeKatex]}
-      urlTransform={neoUrlTransform}
-      components={components}
-    >
-      {content}
-    </ReactMarkdown>
+    <Suspense fallback={<div className="whitespace-pre-wrap break-words">{content}</div>}>
+      <LazyMarkdownCore
+        content={content}
+        gfm
+        math
+        breaks
+        allowSchemes={NEO_URL_SCHEMES}
+        components={components}
+      />
+    </Suspense>
   );
 });
 

@@ -6,6 +6,8 @@
 // 解析结果交给 ChatInput 校验 goal 非空；未显式提供 verify/review 时走默认软目标评审。
 // ============================================================================
 
+import { zh, type Translations } from '../../../../i18n/zh';
+
 export interface ParsedGoalCommand {
   goal: string;
   verify?: string;
@@ -80,8 +82,8 @@ export function parseGoalCommand(raw: string): ParsedGoalCommand | null {
   return result;
 }
 
-export function buildDefaultGoalReview(goal: string): string {
-  return `结果满足目标描述中的全部要求，且没有明显未完成项：${goal}`;
+export function buildDefaultGoalReview(goal: string, t: Translations = zh): string {
+  return t.goalContract.defaultReviewPrefix + goal;
 }
 
 function cleanDraftField(value: string | undefined): string | undefined {
@@ -89,26 +91,27 @@ function cleanDraftField(value: string | undefined): string | undefined {
   return cleaned ? cleaned : undefined;
 }
 
-export function buildGoalContractReview(draft: GoalComposerDraft): string {
+export function buildGoalContractReview(draft: GoalComposerDraft, t: Translations = zh): string {
   const goal = draft.goal.trim();
-  const acceptance = cleanDraftField(draft.acceptance) ?? buildDefaultGoalReview(goal);
-  const boundaries = cleanDraftField(draft.boundaries) ?? '只修改与目标直接相关的文件和配置，避免无关重构、无关功能和破坏性操作。';
-  const pauseConditions = cleanDraftField(draft.pauseConditions) ?? '需要凭证、付费、生产数据、破坏性操作、范围扩大，或连续 2 轮验证失败且没有新证据时暂停。';
+  const copy = t.goalContract;
+  const acceptance = cleanDraftField(draft.acceptance) ?? buildDefaultGoalReview(goal, t);
+  const boundaries = cleanDraftField(draft.boundaries) ?? t.goalConfirm.defaultBoundaries;
+  const pauseConditions = cleanDraftField(draft.pauseConditions) ?? t.goalConfirm.defaultPauseConditions;
 
   return [
-    '目标合同：',
-    `目标：${goal}`,
-    `验收：${acceptance}`,
-    `边界：${boundaries}`,
-    '证据：完成前说明运行过的命令、检查过的文件、截图或日志证据；没有证据的要求按未完成处理。',
-    `暂停条件：${pauseConditions}`,
+    copy.header,
+    `${copy.goalLinePrefix}${goal}`,
+    `${copy.acceptanceLinePrefix}${acceptance}`,
+    `${copy.boundariesLinePrefix}${boundaries}`,
+    copy.evidenceLine,
+    `${copy.pauseLinePrefix}${pauseConditions}`,
   ].join('\n');
 }
 
-export function goalComposerDraftToParsed(draft: GoalComposerDraft): ParsedGoalCommand {
+export function goalComposerDraftToParsed(draft: GoalComposerDraft, t: Translations = zh): ParsedGoalCommand {
   const parsed: ParsedGoalCommand = {
     goal: draft.goal.trim(),
-    review: buildGoalContractReview(draft),
+    review: buildGoalContractReview(draft, t),
   };
   const verify = cleanDraftField(draft.verify);
   if (verify) parsed.verify = verify;
@@ -124,12 +127,12 @@ export function goalComposerDraftToParsed(draft: GoalComposerDraft): ParsedGoalC
   return parsed;
 }
 
-export function normalizeGoalCommand(parsed: ParsedGoalCommand): ParsedGoalCommand {
+export function normalizeGoalCommand(parsed: ParsedGoalCommand, t: Translations = zh): ParsedGoalCommand {
   if (!parsed.goal || parsed.verify || parsed.review) {
     return parsed;
   }
   return {
     ...parsed,
-    review: buildDefaultGoalReview(parsed.goal),
+    review: buildDefaultGoalReview(parsed.goal, t),
   };
 }

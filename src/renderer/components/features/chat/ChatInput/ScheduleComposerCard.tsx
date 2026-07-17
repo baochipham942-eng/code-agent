@@ -7,10 +7,10 @@
 // 创建统一回调 onSubmit(description)，由 ChatInput 走 cron:generateFromPrompt → createJob。
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Clock3, X, Loader2, ChevronLeft } from 'lucide-react';
 import {
-  SCHEDULE_TEMPLATES,
+  getScheduleTemplates,
   CUSTOM_TEMPLATE_ID,
   initTemplateValues,
   type ScheduleTemplate,
@@ -29,6 +29,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
   onDismiss,
 }) => {
   const { t } = useI18n();
+  const scheduleTemplates = useMemo(() => getScheduleTemplates(t), [t]);
   const [selected, setSelected] = useState<ScheduleTemplate | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [handoffPrompt, setHandoffPrompt] = useState('');
@@ -68,7 +69,7 @@ export const ScheduleComposerCard: React.FC<ScheduleComposerCardProps> = ({
       {!selected ? (
         // 第一步：模板选择
         <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-          {SCHEDULE_TEMPLATES.map((template) => (
+          {scheduleTemplates.map((template) => (
             <button
               key={template.id}
               type="button"

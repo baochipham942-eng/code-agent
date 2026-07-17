@@ -1,4 +1,5 @@
 import { isPanelVisibleAgent, type AgentListEntry } from '@shared/contract/agentRegistry';
+import { zh } from '../../../../i18n/zh';
 
 export interface AgentCommandOption {
   id: string | null;
@@ -40,7 +41,7 @@ export function getAgentCommandOptions(
   const defaultOption: AgentCommandOption = {
     id: null,
     name: labels?.defaultName ?? 'Default',
-    description: labels?.defaultDescription ?? '恢复自动路由',
+    description: labels?.defaultDescription ?? zh.agentCommand.defaultDescription,
     token: 'default',
     group: 'agent',
   };

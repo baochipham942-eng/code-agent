@@ -536,11 +536,11 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       description: sc.agents.description,
       icon: <Terminal className="w-4 h-4" />,
       action: async () => {
-        const lines: string[] = ['最近完成'];
+        const lines: string[] = [t.slashDiagnostics.agentsRecentHeader];
         try {
           const history = await invoke(IPC_CHANNELS.SWARM_GET_AGENT_HISTORY, { limit: 10 });
           if (!history || history.length === 0) {
-            lines.push('  (无历史记录)');
+            lines.push(t.slashDiagnostics.agentsNoHistory);
           } else {
             for (const run of history) {
               const icon = run.status === 'completed' ? '✓' : run.status === 'failed' ? '✗' : '○';
@@ -551,9 +551,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
             }
           }
         } catch (err) {
-          lines.push(`  (无法获取: ${err instanceof Error ? err.message : String(err)})`);
+          lines.push(`${t.slashDiagnostics.agentsFetchFailedPrefix}${err instanceof Error ? err.message : String(err)}${t.slashDiagnostics.agentsFetchFailedSuffix}`);
         }
-        lines.push('', '运行中的实时状态见任务面板 / DAG 视图');
+        lines.push('', t.slashDiagnostics.agentsFooterLine);
         writeAssistant(lines.join('\n'));
       },
     },
@@ -578,7 +578,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
           }
           writeAssistant(lines.join('\n'));
         } catch (err) {
-          writeAssistant(`❌ Hooks 查询失败：${err instanceof Error ? err.message : String(err)}`);
+          writeAssistant(`${t.slashDiagnostics.hooksFailedPrefix}${err instanceof Error ? err.message : String(err)}`);
         }
       },
     },
@@ -631,7 +631,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       icon: <Cpu className="w-4 h-4" />,
       action: () => {
         const mc = useAppStore.getState().modelConfig;
-        writeAssistant(`当前模型: ${mc.provider}/${mc.model}\n\n（切换模型用输入框下方的模型按钮）`);
+        writeAssistant(t.slashDiagnostics.modelSwitchHint.replace('{provider}', mc.provider).replace('{model}', mc.model));
       },
     },
     {
@@ -643,12 +643,12 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
         try {
           const result = await invoke(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, currentSessionId ?? undefined);
           if (result?.success) {
-            writeAssistant(`已压缩当前会话上下文，节省 ${result.savedTokens.toLocaleString('en-US')} tokens。`);
+            writeAssistant(t.slashDiagnostics.compactedSuccess.replace('{n}', result.savedTokens.toLocaleString('en-US')));
           } else {
-            writeAssistant(`上下文压缩未执行${result?.reason ? `：${result.reason}` : ''}`);
+            writeAssistant(t.slashDiagnostics.compactNotExecuted + (result?.reason ? t.slashDiagnostics.compactNotExecutedReasonWrap.replace('{reason}', result.reason) : ''));
           }
         } catch (err) {
-          writeAssistant(`上下文压缩失败：${err instanceof Error ? err.message : String(err)}`);
+          writeAssistant(`${t.slashDiagnostics.compactFailedPrefix}${err instanceof Error ? err.message : String(err)}`);
         }
       },
     },
@@ -660,13 +660,13 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
       action: () => {
         const mc = useAppStore.getState().modelConfig;
         const wd = useStatusStore.getState().workingDirectory ?? 'N/A';
-        const sid = useSessionStore.getState().currentSessionId ?? '未创建';
+        const sid = useSessionStore.getState().currentSessionId ?? t.slashDiagnostics.configNoSession;
         writeAssistant(
-          `当前配置\n` +
-          `  工作目录: ${wd}\n` +
-          `  模型: ${mc.model}\n` +
-          `  提供商: ${mc.provider}\n` +
-          `  会话 ID: ${sid}`
+          t.slashDiagnostics.configHeader +
+          t.slashDiagnostics.configWorkingDir.replace('{wd}', wd) +
+          t.slashDiagnostics.configModel.replace('{model}', mc.model) +
+          t.slashDiagnostics.configProvider.replace('{provider}', mc.provider) +
+          t.slashDiagnostics.configSessionId.replace('{sid}', sid)
         );
       },
     },
@@ -727,7 +727,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
             )
             .catch((err: unknown) => {
               const message = err instanceof Error ? err.message : String(err);
-              writeAssistant('❌ ')(`/${def.id} 执行失败：${message}`);
+              writeAssistant('❌ ')(`/${def.id}${t.slashDiagnostics.registryCommandFailedPrefix}${message}`);
             });
         },
       }, sc.picker));

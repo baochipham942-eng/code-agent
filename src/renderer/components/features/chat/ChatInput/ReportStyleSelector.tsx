@@ -3,8 +3,10 @@
 // 深度研究模式下选择报告输出风格
 // ============================================================================
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ChevronDown, FileText } from 'lucide-react';
+import { useI18n } from '../../../../hooks/useI18n';
+import type { Translations } from '../../../../i18n/zh';
 
 // ============================================================================
 // 类型定义
@@ -34,14 +36,17 @@ interface ReportStyleSelectorProps {
 // 风格选项配置
 // ============================================================================
 
-const STYLE_OPTIONS: StyleOption[] = [
-  { value: 'default', label: '默认', description: '通用报告格式' },
-  { value: 'academic', label: '学术论文', description: '正式、引用规范' },
-  { value: 'popular_science', label: '科普文章', description: '通俗易懂、有趣' },
-  { value: 'news', label: '新闻报道', description: '倒金字塔、简洁' },
-  { value: 'social_media', label: '社交媒体', description: '简短、列表化' },
-  { value: 'strategic_investment', label: '投资分析', description: '深度、量化数据' },
-];
+function buildStyleOptions(t: Translations): StyleOption[] {
+  const { options } = t.reportStyle;
+  return [
+    { value: 'default', ...options.default },
+    { value: 'academic', ...options.academic },
+    { value: 'popular_science', ...options.popular_science },
+    { value: 'news', ...options.news },
+    { value: 'social_media', ...options.social_media },
+    { value: 'strategic_investment', ...options.strategic_investment },
+  ];
+}
 
 // ============================================================================
 // 组件
@@ -52,9 +57,11 @@ export const ReportStyleSelector: React.FC<ReportStyleSelectorProps> = ({
   onChange,
   disabled,
 }) => {
+  const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const selectedOption = STYLE_OPTIONS.find(opt => opt.value === value);
+  const styleOptions = useMemo(() => buildStyleOptions(t), [t]);
+  const selectedOption = styleOptions.find(opt => opt.value === value);
 
   // 点击外部关闭下拉
   useEffect(() => {
@@ -87,7 +94,7 @@ export const ReportStyleSelector: React.FC<ReportStyleSelectorProps> = ({
         `}
       >
         <FileText className="w-4 h-4 text-zinc-400" />
-        <span className="text-zinc-400">报告风格:</span>
+        <span className="text-zinc-400">{t.reportStyle.selectorLabel}</span>
         <span className="text-white">{selectedOption?.label}</span>
         <ChevronDown
           className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${
@@ -98,7 +105,7 @@ export const ReportStyleSelector: React.FC<ReportStyleSelectorProps> = ({
 
       {isOpen && !disabled && (
         <div className="absolute bottom-full left-0 mb-2 w-64 py-1 bg-zinc-800-800 border border-zinc-700 rounded-lg shadow-xl z-20">
-          {STYLE_OPTIONS.map((option) => (
+          {styleOptions.map((option) => (
             <button
               key={option.value}
               type="button"

@@ -3,6 +3,7 @@ import type { ParsedSkill } from '@shared/contract/agentSkill';
 import type { SessionSkillMount } from '@shared/contract/skillRepository';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { getAgentCommandOptions } from './agentCommand';
+import { zh } from '../../../../i18n/zh';
 
 export type SlashCandidateKind = 'command' | 'prompt' | 'agent' | 'skill' | 'connector' | 'mcp';
 
@@ -194,8 +195,8 @@ export function createCommandCandidate(input: {
     description: input.description,
     slashText,
     effectLabel: input.effectLabel ?? (input.actionKind === 'prefill-leading-command'
-      ? (labels?.prefillCommand ?? '预填命令')
-      : (labels?.executeNow ?? '立即执行')),
+      ? (labels?.prefillCommand ?? zh.slashCommands.picker.prefillCommand)
+      : (labels?.executeNow ?? zh.slashCommands.picker.executeNow)),
     shortcut: input.shortcut,
     emptyQueryVisible: input.emptyQueryVisible,
     emptyQueryRank: input.emptyQueryRank,
@@ -212,18 +213,18 @@ export function createPromptCandidate(
   const sourceLabel = command.source === 'mcp'
     ? `MCP${command.serverName ? `:${command.serverName}` : ''}`
     : command.source === 'builtin'
-      ? (labels?.builtinCommand ?? '内置命令')
+      ? (labels?.builtinCommand ?? zh.slashCommands.picker.builtinCommand)
       : command.scope === 'project'
         ? 'Project command'
         : 'User command';
   const hintLabel = command.hints.length > 0
-    ? `${labels?.paramsPrefix ?? '参数: '}${command.hints.join(' ')}`
-    : (labels?.noParams ?? '无参数');
+    ? `${labels?.paramsPrefix ?? zh.slashCommands.picker.paramsPrefix}${command.hints.join(' ')}`
+    : (labels?.noParams ?? zh.slashCommands.picker.noParams);
   const contentPreview = command.contentPreview?.trim();
   const description = (
     command.description || (command.source === 'mcp'
-      ? (labels?.mcpPromptFallback ?? 'MCP prompt 命令')
-      : (labels?.filePromptFallback ?? '自定义命令'))
+      ? (labels?.mcpPromptFallback ?? zh.slashCommands.picker.mcpPromptFallback)
+      : (labels?.filePromptFallback ?? zh.slashCommands.picker.filePromptFallback))
   ) + `（${sourceLabel} · ${hintLabel}）`;
 
   return {
@@ -236,8 +237,8 @@ export function createPromptCandidate(
     slashText,
     source: command.source,
     effectLabel: command.hints.length > 0
-      ? (labels?.prefillPromptWithArgs ?? '预填后补参数')
-      : (labels?.prefillPrompt ?? '预填 prompt'),
+      ? (labels?.prefillPromptWithArgs ?? zh.slashCommands.picker.prefillPromptWithArgs)
+      : (labels?.prefillPrompt ?? zh.slashCommands.picker.prefillPrompt),
     promptName: command.name,
     promptSource: command.source,
     promptHints: command.hints,
@@ -274,8 +275,8 @@ export function createAgentCandidates(
     description: option.description,
     slashText: `/agent ${option.token}`,
     effectLabel: option.id
-      ? (labels?.setAgentForTurn ?? '设为本轮 agent')
-      : (labels?.restoreAutoAgent ?? '恢复自动 agent'),
+      ? (labels?.setAgentForTurn ?? zh.slashCommands.picker.setAgentForTurn)
+      : (labels?.restoreAutoAgent ?? zh.slashCommands.picker.restoreAutoAgent),
     agentToken: option.token,
     agentId: option.id,
     searchText: buildSearchText([
@@ -321,8 +322,8 @@ export function createSkillCandidates(input: {
       description: skill.description || 'Skill',
       slashText: `/skills:${skill.name}`,
       effectLabel: mounted
-        ? (labels?.selectForTurn ?? '选入本轮')
-        : (labels?.mountAndSelect ?? '挂载并选入本轮'),
+        ? (labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn)
+        : (labels?.mountAndSelect ?? zh.slashCommands.picker.mountAndSelect),
       source: skill.source,
       suggested: Boolean(recommendation),
       emptyQueryVisible: Boolean(recommendation || mounted || selected.has(skill.name)),
@@ -353,9 +354,9 @@ export function createSkillCandidates(input: {
       group: recommendation ? 'suggested' : 'skill',
       actionKind: 'select-skill',
       label: recommendation?.displayName || mount.skillName,
-      description: `${labels?.mountedSkillPrefix ?? '已挂载 Skill'} (${mount.libraryId})`,
+      description: `${labels?.mountedSkillPrefix ?? zh.slashCommands.picker.mountedSkillPrefix} (${mount.libraryId})`,
       slashText: `/skills:${mount.skillName}`,
-      effectLabel: labels?.selectForTurn ?? '选入本轮',
+      effectLabel: labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn,
       source: mount.source,
       suggested: Boolean(recommendation),
       emptyQueryVisible: true,
@@ -388,8 +389,8 @@ export function createSkillCandidates(input: {
       description: recommendation.reason,
       slashText: `/skills:${recommendation.skillName}`,
       effectLabel: recommendation.action === 'install'
-        ? (labels?.installAndSelect ?? '安装并选入本轮')
-        : (labels?.mountAndSelect ?? '挂载并选入本轮'),
+        ? (labels?.installAndSelect ?? zh.slashCommands.picker.installAndSelect)
+        : (labels?.mountAndSelect ?? zh.slashCommands.picker.mountAndSelect),
       source: recommendation.repoId,
       suggested: true,
       emptyQueryVisible: true,
@@ -434,11 +435,11 @@ export function createWorkbenchCapabilityCandidates(
         group: isSuggested ? 'suggested' : 'connector',
         actionKind: 'select-connector',
         label: capability.label,
-        description: capability.detail || capability.error || (labels?.localConnector ?? '本地 connector'),
+        description: capability.detail || capability.error || (labels?.localConnector ?? zh.slashCommands.picker.localConnector),
         slashText: `/connectors:${capability.id}`,
         effectLabel: capability.connected
-          ? (labels?.selectForTurn ?? '选入本轮')
-          : (labels?.connectorNeedsConnection ?? '打开后需先连接'),
+          ? (labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn)
+          : (labels?.connectorNeedsConnection ?? zh.slashCommands.picker.connectorNeedsConnection),
         source: capability.readiness,
         suggested: isSuggested,
         emptyQueryVisible: isSuggested || capability.selected,
@@ -466,8 +467,8 @@ export function createWorkbenchCapabilityCandidates(
       description: capability.error || `${capability.status} · ${capability.toolCount} tools`,
       slashText: `/mcp:${capability.id}`,
       effectLabel: capability.status === 'connected' || capability.status === 'lazy'
-        ? (labels?.selectForTurn ?? '选入本轮')
-        : (labels?.mcpNeedsConnection ?? '需要先连接'),
+        ? (labels?.selectForTurn ?? zh.slashCommands.picker.selectForTurn)
+        : (labels?.mcpNeedsConnection ?? zh.slashCommands.picker.mcpNeedsConnection),
       source: capability.transport,
       suggested: isSuggested,
       emptyQueryVisible: capability.selected,

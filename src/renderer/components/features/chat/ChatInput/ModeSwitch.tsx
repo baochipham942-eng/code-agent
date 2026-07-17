@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { MessageSquare, Microscope } from 'lucide-react';
+import { useI18n } from '../../../../hooks/useI18n';
 
 // ============================================================================
 // 类型定义
@@ -27,6 +28,7 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
   onModeChange,
   disabled,
 }) => {
+  const { t } = useI18n();
   return (
     <div className="flex items-center gap-1 p-1 bg-zinc-800-800 rounded-lg">
       {/* 正常模式 */}
@@ -45,7 +47,7 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
         `}
       >
         <MessageSquare className="w-4 h-4" />
-        <span>正常</span>
+        <span>{t.modeSwitch.normal}</span>
       </button>
 
       {/* 深度研究模式 */}
@@ -64,7 +66,7 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
         `}
       >
         <Microscope className="w-4 h-4" />
-        <span>深度研究</span>
+        <span>{t.modeSwitch.deepResearch}</span>
       </button>
     </div>
   );

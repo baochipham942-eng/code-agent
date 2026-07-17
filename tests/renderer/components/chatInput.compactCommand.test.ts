@@ -23,17 +23,10 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: compactCommandMocks.toast,
 }));
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({
-    t: {
-      agentCommand: {
-        notFoundPrefix: 'unknown agent ',
-        restoredAuto: 'restored',
-        switchedToPrefix: 'switched ',
-      },
-    },
-  }),
-}));
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
 
 import {
   parseCompactCommand,

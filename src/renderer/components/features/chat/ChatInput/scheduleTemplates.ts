@@ -6,6 +6,8 @@
 // 单一创建路径——模板只负责降低输入成本，不另起 schedule 解析逻辑。
 // ============================================================================
 
+import type { Translations } from '../../../../i18n/zh';
+
 export interface ScheduleTemplateField {
   key: string;
   label: string;
@@ -29,58 +31,66 @@ export interface ScheduleTemplate {
 /** 自定义模板 id——card 据此切到自由文本模式。 */
 export const CUSTOM_TEMPLATE_ID = 'custom';
 
-export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
-  {
-    id: 'daily-briefing',
-    emoji: '📰',
-    name: '每日简报',
-    blurb: '每天定点整理一份简报',
-    fields: [
-      { key: 'time', label: '时间', placeholder: '09:00', defaultValue: '09:00' },
-      { key: 'topic', label: '主题 / 数据来源', placeholder: '汇总昨天的行业要闻和团队动态' },
-    ],
-    compose: (v) => `每天 ${v.time || '09:00'}，${v.topic || '汇总当天要点'}，整理成一份简报发给我`,
-  },
-  {
-    id: 'bug-scan',
-    emoji: '🐛',
-    name: '缺陷扫描',
-    blurb: '定期扫描缺陷并汇报',
-    fields: [
-      { key: 'time', label: '时间', placeholder: '09:30', defaultValue: '09:30' },
-      { key: 'scope', label: '扫描范围', placeholder: '主仓库 main 分支的最新改动' },
-    ],
-    compose: (v) =>
-      `每天 ${v.time || '09:30'} 扫描 ${v.scope || '代码仓库'} 的缺陷、报错与异常，汇总成一份报告`,
-  },
-  {
-    id: 'weekly-review',
-    emoji: '📅',
-    name: '周回顾',
-    blurb: '每周复盘并输出总结',
-    fields: [
-      { key: 'when', label: '时间', placeholder: '周五 18:00', defaultValue: '周五 18:00' },
-      { key: 'focus', label: '回顾内容', placeholder: '本周的进展、卡点和下周计划' },
-    ],
-    compose: (v) =>
-      `每周 ${v.when || '周五 18:00'}，回顾 ${v.focus || '本周工作'}，输出一份周回顾总结`,
-  },
-  {
-    id: CUSTOM_TEMPLATE_ID,
-    emoji: '✏️',
-    name: '自定义',
-    blurb: '用自然语言描述你要的定时任务',
-    fields: [
-      {
-        key: 'description',
-        label: '任务描述',
-        placeholder: '例如：每个工作日下午 5 点提醒我提交日报',
-        multiline: true,
-      },
-    ],
-    compose: (v) => (v.description || '').trim(),
-  },
-];
+/** 词条来自 t.scheduleTemplates（zh 默认值内嵌进 compose，随 t 一起本地化）。 */
+export function getScheduleTemplates(t: Translations): ScheduleTemplate[] {
+  const s = t.scheduleTemplates;
+  return [
+    {
+      id: 'daily-briefing',
+      emoji: '📰',
+      name: s.dailyBriefing.name,
+      blurb: s.dailyBriefing.blurb,
+      fields: [
+        { key: 'time', label: s.dailyBriefing.timeLabel, placeholder: s.dailyBriefing.timeDefault, defaultValue: s.dailyBriefing.timeDefault },
+        { key: 'topic', label: s.dailyBriefing.topicLabel, placeholder: s.dailyBriefing.topicPlaceholder },
+      ],
+      compose: (v) => s.dailyBriefing.composeTemplate
+        .replace('{time}', v.time || s.dailyBriefing.timeDefault)
+        .replace('{topic}', v.topic || s.dailyBriefing.topicDefault),
+    },
+    {
+      id: 'bug-scan',
+      emoji: '🐛',
+      name: s.bugScan.name,
+      blurb: s.bugScan.blurb,
+      fields: [
+        { key: 'time', label: s.dailyBriefing.timeLabel, placeholder: s.bugScan.timeDefault, defaultValue: s.bugScan.timeDefault },
+        { key: 'scope', label: s.bugScan.scopeLabel, placeholder: s.bugScan.scopePlaceholder },
+      ],
+      compose: (v) => s.bugScan.composeTemplate
+        .replace('{time}', v.time || s.bugScan.timeDefault)
+        .replace('{scope}', v.scope || s.bugScan.scopeDefault),
+    },
+    {
+      id: 'weekly-review',
+      emoji: '📅',
+      name: s.weeklyReview.name,
+      blurb: s.weeklyReview.blurb,
+      fields: [
+        { key: 'when', label: s.weeklyReview.whenLabel, placeholder: s.weeklyReview.whenDefault, defaultValue: s.weeklyReview.whenDefault },
+        { key: 'focus', label: s.weeklyReview.focusLabel, placeholder: s.weeklyReview.focusPlaceholder },
+      ],
+      compose: (v) => s.weeklyReview.composeTemplate
+        .replace('{when}', v.when || s.weeklyReview.whenDefault)
+        .replace('{focus}', v.focus || s.weeklyReview.focusDefault),
+    },
+    {
+      id: CUSTOM_TEMPLATE_ID,
+      emoji: '✏️',
+      name: s.custom.name,
+      blurb: s.custom.blurb,
+      fields: [
+        {
+          key: 'description',
+          label: s.custom.descriptionLabel,
+          placeholder: s.custom.descriptionPlaceholder,
+          multiline: true,
+        },
+      ],
+      compose: (v) => (v.description || '').trim(),
+    },
+  ];
+}
 
 /** 用模板默认值初始化填空 state。 */
 export function initTemplateValues(template: ScheduleTemplate): Record<string, string> {

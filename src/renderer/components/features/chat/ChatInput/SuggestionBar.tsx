@@ -3,6 +3,8 @@
 // ============================================================================
 
 import React, { useState } from 'react';
+import { useI18n } from '../../../../hooks/useI18n';
+import { formatRelativeTime } from '../../../../utils/i18nTime';
 
 interface Suggestion {
   id: string;
@@ -18,30 +20,19 @@ interface SuggestionBarProps {
   onSelect: (text: string) => void;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  plan_step: '计划步骤',
-  desktop_task: '桌面任务',
-  workspace_signal: '工作区信号',
-};
-
 const CATEGORY_ORDER = ['plan_step', 'desktop_task', 'workspace_signal'] as const;
-
-function formatRelativeTime(timestampMs: number | undefined): string | null {
-  if (!timestampMs) return null;
-  const diffMs = Date.now() - timestampMs;
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return '刚刚';
-  if (diffMin < 60) return `${diffMin}分钟前`;
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}小时前`;
-  return `${Math.floor(diffHour / 24)}天前`;
-}
 
 function hasRecoveryCategories(suggestions: Suggestion[]): boolean {
   return suggestions.some((s) => s.category);
 }
 
 const RecoveryPanel: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) => {
+  const { t } = useI18n();
+  const categoryLabels: Record<string, string> = {
+    plan_step: t.suggestionBar.categoryPlanStep,
+    desktop_task: t.suggestionBar.categoryDesktopTask,
+    workspace_signal: t.suggestionBar.categoryWorkspaceSignal,
+  };
   const [expanded, setExpanded] = useState(true);
 
   const grouped = new Map<string, Suggestion[]>();
@@ -64,8 +55,8 @@ const RecoveryPanel: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) 
         onClick={() => setExpanded(!expanded)}
         className="flex items-center justify-between w-full px-3 py-2 text-xs text-zinc-400 hover:text-zinc-300 transition-colors"
       >
-        <span className="font-medium">继续上次的工作</span>
-        <span className="text-[10px]">{expanded ? '收起' : '展开'}</span>
+        <span className="font-medium">{t.suggestionBar.continueLastWork}</span>
+        <span className="text-[10px]">{expanded ? t.suggestionBar.collapse : t.suggestionBar.expand}</span>
       </button>
 
       {expanded && (
@@ -76,11 +67,11 @@ const RecoveryPanel: React.FC<SuggestionBarProps> = ({ suggestions, onSelect }) 
             return (
               <div key={cat}>
                 <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wider">
-                  {CATEGORY_LABELS[cat] || cat}
+                  {categoryLabels[cat] || cat}
                 </div>
                 <div className="space-y-1">
                   {items.map((s) => {
-                    const time = formatRelativeTime(s.timestampMs);
+                    const time = s.timestampMs ? formatRelativeTime(t, s.timestampMs) : null;
                     return (
                       <button
                         key={s.id}

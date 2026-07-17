@@ -7,6 +7,7 @@ import {
   buildModelStrategySwitchModelRequest,
   type ModelStrategyCandidate,
 } from '../../../src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -14,7 +15,7 @@ afterEach(() => {
 
 describe('buildModelStrategyRecommendation', () => {
   it('emits privacy-bounded task feedback signals for recommendation decisions', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -54,7 +55,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('recommends auto strategy for short native simple tasks', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -71,7 +72,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('calls out cost and speed risk when simple payg tasks use a heavy model', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -106,7 +107,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('does not suggest cost-saving auto routing for plan providers on standard simple tasks', () => {
-    expect(buildModelStrategyRecommendation({
+    expect(buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -120,7 +121,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('suggests a fast model for plan simple tasks when the current model is slow', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -161,7 +162,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('does not suggest a fast model with unknown health for plan simple tasks', () => {
-    expect(buildModelStrategyRecommendation({
+    expect(buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -185,7 +186,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('does not recommend auto again when adaptive is already enabled', () => {
-    expect(buildModelStrategyRecommendation({
+    expect(buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -196,7 +197,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('warns when image input uses a model without vision capability', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下这张截图哪里有问题',
       hasImageAttachments: true,
       engineKind: 'native',
@@ -212,7 +213,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('warns and suggests auto strategy when the current native provider is degraded', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '帮我修复这个 React hook 的 bug，并改测试',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -239,7 +240,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('suggests switching to a healthy provider/model when the current provider is degraded', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '帮我修复这个 React hook 的 bug，并改测试',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -303,7 +304,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('keeps provider-health switch recommendations aligned to required task capabilities', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下这张截图哪里有问题',
       hasImageAttachments: true,
       engineKind: 'native',
@@ -345,7 +346,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('prefers a healthy fast candidate for simple tasks when the current provider is degraded', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -397,7 +398,7 @@ describe('buildModelStrategyRecommendation', () => {
         providerHealth: { status: 'healthy' },
       },
     ];
-    const simpleRecommendation = buildModelStrategyRecommendation({
+    const simpleRecommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -410,7 +411,7 @@ describe('buildModelStrategyRecommendation', () => {
       providerHealth: { status: 'degraded' },
       candidates: sharedCandidates,
     });
-    const visionRecommendation = buildModelStrategyRecommendation({
+    const visionRecommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下这张截图哪里有问题',
       hasImageAttachments: true,
       engineKind: 'native',
@@ -430,7 +431,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('does not switch away from a degraded provider to a provider with unknown health', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '帮我修复这个 React hook 的 bug，并改测试',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -460,7 +461,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('warns without repeating the auto action when provider is unavailable and adaptive is already enabled', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -483,7 +484,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('builds an adaptive switchModel request for enable-auto recommendations', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -517,7 +518,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('does not warn for healthy provider status by itself', () => {
-    expect(buildModelStrategyRecommendation({
+    expect(buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -534,7 +535,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('suggests a concrete vision model when image input uses a non-vision model', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下这张截图哪里有问题',
       hasImageAttachments: true,
       engineKind: 'native',
@@ -564,7 +565,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('scopes vision recommendation keys by task input', () => {
-    const firstRecommendation = buildModelStrategyRecommendation({
+    const firstRecommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下登录页截图哪里有问题',
       hasImageAttachments: true,
       engineKind: 'native',
@@ -574,7 +575,7 @@ describe('buildModelStrategyRecommendation', () => {
       modelCapabilities: ['tool'],
       adaptiveEnabled: false,
     });
-    const secondRecommendation = buildModelStrategyRecommendation({
+    const secondRecommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下设置页截图哪里有问题',
       hasImageAttachments: true,
       engineKind: 'native',
@@ -591,7 +592,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('suggests a concrete search model when web-search input uses a model without search or tool capability', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '查一下最新 release note 有什么变化',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -638,7 +639,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('does not warn for web-search input when the current model is search-capable', () => {
-    expect(buildModelStrategyRecommendation({
+    expect(buildModelStrategyRecommendation(zh, {
       inputValue: '查一下最新 release note 有什么变化',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -653,7 +654,7 @@ describe('buildModelStrategyRecommendation', () => {
   it('does not warn for web-search input when the model has tool capability (can search via WebSearch tool)', () => {
     // MiMo 等有工具能力的模型靠 WebSearch 工具就能联网搜索（实测 3.3s 搜完），
     // 不应在输入阶段误报"不太擅长搜索"——这是"狼来了"，会让用户无视所有提示。
-    expect(buildModelStrategyRecommendation({
+    expect(buildModelStrategyRecommendation(zh, {
       inputValue: '查一下最新 release note 有什么变化',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -676,7 +677,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('warns when code or artifact tasks use a model without tool capability', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '帮我修复这个 React hook 的 bug，并改测试',
       hasImageAttachments: false,
       engineKind: 'native',
@@ -692,7 +693,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('leaves external engines alone for simple text prompts', () => {
-    expect(buildModelStrategyRecommendation({
+    expect(buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'claude_code',
@@ -705,7 +706,7 @@ describe('buildModelStrategyRecommendation', () => {
   it('warns before sending when the selected external engine has a recent failure', () => {
     vi.useFakeTimers();
     vi.setSystemTime(180_000);
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'claude_code',
@@ -753,7 +754,7 @@ describe('buildModelStrategyRecommendation', () => {
   it('applies a native-engine switch for non-retryable external engine failures', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(180_000);
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'claude_code',
@@ -777,7 +778,7 @@ describe('buildModelStrategyRecommendation', () => {
     const notifySuccess = vi.fn();
     const notifyError = vi.fn();
 
-    await expect(applyModelStrategyRecommendationAction({
+    await expect(applyModelStrategyRecommendationAction(zh, {
       currentSessionId: 'session-1',
       recommendation,
       currentProvider: 'moonshot',
@@ -828,7 +829,7 @@ describe('buildModelStrategyRecommendation', () => {
     const notifySuccess = vi.fn();
     const notifyError = vi.fn();
 
-    await expect(applyModelStrategyRecommendationAction({
+    await expect(applyModelStrategyRecommendationAction(zh, {
       currentSessionId: 'session-vision',
       recommendation,
       currentProvider: 'moonshot',
@@ -882,7 +883,7 @@ describe('buildModelStrategyRecommendation', () => {
     const notifySuccess = vi.fn();
     const notifyError = vi.fn();
 
-    await expect(applyModelStrategyRecommendationAction({
+    await expect(applyModelStrategyRecommendationAction(zh, {
       currentSessionId: 'session-simple',
       recommendation,
       currentProvider: 'moonshot',
@@ -918,7 +919,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('does not offer a native-engine switch for retryable external engine failures', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '解释一下 HTTP 缓存',
       hasImageAttachments: false,
       engineKind: 'codex_cli',
@@ -944,7 +945,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('warns when external engines receive image attachments', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下这张截图',
       hasImageAttachments: true,
       engineKind: 'claude_code',
@@ -978,7 +979,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('scopes external attachment recommendation keys by task input', () => {
-    const firstRecommendation = buildModelStrategyRecommendation({
+    const firstRecommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下登录页截图',
       hasImageAttachments: true,
       engineKind: 'claude_code',
@@ -986,7 +987,7 @@ describe('buildModelStrategyRecommendation', () => {
       modelCapabilities: [],
       adaptiveEnabled: false,
     });
-    const secondRecommendation = buildModelStrategyRecommendation({
+    const secondRecommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下设置页截图',
       hasImageAttachments: true,
       engineKind: 'claude_code',
@@ -1001,7 +1002,7 @@ describe('buildModelStrategyRecommendation', () => {
   });
 
   it('warns when external engines are used for write-heavy code or artifact tasks', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '帮我实现这个组件并改测试',
       hasImageAttachments: false,
       engineKind: 'codex_cli',

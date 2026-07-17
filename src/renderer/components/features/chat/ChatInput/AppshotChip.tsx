@@ -8,34 +8,37 @@ import React, { useState } from 'react';
 import { Download, FileText, X, Image as ImageIcon } from 'lucide-react';
 import type { AppshotCapture, AppshotTextSource } from '@shared/contract/appshot';
 import { IconButton, Modal } from '../../../primitives';
+import { useI18n } from '../../../../hooks/useI18n';
+import type { Translations } from '../../../../i18n/zh';
 
 export interface AppshotChipProps {
   capture: AppshotCapture;
   onRemove: () => void;
 }
 
-function textSourceLabel(source: AppshotTextSource): { label: string; className: string } {
+function textSourceLabel(t: Translations, source: AppshotTextSource): { label: string; className: string } {
   switch (source) {
     case 'ax':
-      return { label: '已读取窗口文字', className: 'text-emerald-400' };
+      return { label: t.appshotChip.textSourceAx, className: 'text-emerald-400' };
     case 'ocr':
-      return { label: 'OCR 识别文字', className: 'text-amber-400' };
+      return { label: t.appshotChip.textSourceOcr, className: 'text-amber-400' };
     default:
-      return { label: '仅截图 · 无文字', className: 'text-zinc-500' };
+      return { label: t.appshotChip.textSourceNone, className: 'text-zinc-500' };
   }
 }
 
 export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove }) => {
+  const { t } = useI18n();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [view, setView] = useState<'image' | 'text'>('image');
-  const source = textSourceLabel(capture.textSource);
-  const text = capture.axText?.trim() || '未读取到窗口文字';
+  const source = textSourceLabel(t, capture.textSource);
+  const text = capture.axText?.trim() || t.appshotChip.noTextFallback;
 
   const handleDownload = () => {
     if (!capture.screenshotDataUrl) return;
     const anchor = document.createElement('a');
     anchor.href = capture.screenshotDataUrl;
-    anchor.download = `${capture.appName || 'Appshot'} 截图.png`;
+    anchor.download = `${capture.appName || 'Appshot'}${t.appshotChip.screenshotFilenameSuffix}`;
     anchor.click();
   };
 
@@ -46,7 +49,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove }) =
           type="button"
           onClick={() => setPreviewOpen(true)}
           className="flex w-full items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-700/60 px-3 py-2 text-left transition-colors hover:border-zinc-500 hover:bg-zinc-700"
-          aria-label="查看 Appshot"
+          aria-label={t.appshotChip.viewAria}
         >
           {capture.screenshotDataUrl ? (
             <img
@@ -73,7 +76,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove }) =
         </button>
         <IconButton
           icon={<X className="w-3 h-3" />}
-          aria-label="移除 Appshot"
+          aria-label={t.appshotChip.removeAria}
           onClick={onRemove}
           variant="danger"
           size="sm"
@@ -103,7 +106,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove }) =
                 className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs transition-colors ${view === 'image' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
               >
                 <ImageIcon className="h-3.5 w-3.5" />
-                截图
+                {t.appshotChip.screenshotTab}
               </button>
               <button
                 type="button"
@@ -111,7 +114,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove }) =
                 className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs transition-colors ${view === 'text' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
               >
                 <FileText className="h-3.5 w-3.5" />
-                文字
+                {t.appshotChip.textTab}
               </button>
             </div>
             <button
@@ -119,7 +122,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove }) =
               onClick={handleDownload}
               disabled={!capture.screenshotDataUrl}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"
-              aria-label="下载截图"
+              aria-label={t.appshotChip.downloadAria}
             >
               <Download className="h-4 w-4" />
             </button>
@@ -127,7 +130,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove }) =
               type="button"
               onClick={() => setPreviewOpen(false)}
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100"
-              aria-label="关闭"
+              aria-label={t.appshotChip.closeAria}
             >
               <X className="h-4 w-4" />
             </button>
@@ -146,7 +149,7 @@ export const AppshotChip: React.FC<AppshotChipProps> = ({ capture, onRemove }) =
                 />
               ) : (
                 <div className="flex h-64 items-center justify-center text-sm text-zinc-500">
-                  截图仍在读取
+                  {t.appshotChip.screenshotLoading}
                 </div>
               )}
             </div>

@@ -6,6 +6,7 @@ import type { ConversationVoiceInputMetadata } from '@shared/contract/conversati
 import { UI } from '@shared/constants';
 import { toast } from '../../../../hooks/useToast';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { useI18n } from '../../../../hooks/useI18n';
 import type { InputAreaRef } from './InputArea';
 
 type VoiceInputContextValue = {
@@ -30,6 +31,7 @@ export interface UseChatInputComposerActionsParams {
  * 纯结构性抽取自 index.tsx，零行为改动。
  */
 export function useChatInputComposerActions(params: UseChatInputComposerActionsParams) {
+  const { t } = useI18n();
   const {
     currentSessionId,
     currentSessionMemoryMode,
@@ -114,11 +116,11 @@ export function useChatInputComposerActions(params: UseChatInputComposerActionsP
     const nextMode = currentSessionMemoryMode === 'off' ? 'auto' : 'off';
     try {
       await updateSessionMemoryMode(currentSessionId, nextMode);
-      toast.success(nextMode === 'off' ? '本会话记忆已关闭' : '本会话记忆已开启');
+      toast.success(nextMode === 'off' ? t.chatInput.memoryDisabledToast : t.chatInput.memoryEnabledToast);
     } catch (error) {
-      toast.error(`更新记忆设置失败：${error instanceof Error ? error.message : '未知错误'}`);
+      toast.error(t.chatInput.memoryUpdateFailedPrefix + (error instanceof Error ? error.message : t.chatInput.unknownError));
     }
-  }, [currentSessionId, currentSessionMemoryMode, updateSessionMemoryMode]);
+  }, [currentSessionId, currentSessionMemoryMode, updateSessionMemoryMode, t]);
 
   return {
     handleFileSelect,

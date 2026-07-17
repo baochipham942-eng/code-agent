@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Save, X, Loader2 } from 'lucide-react';
 import ipcService from '../../../../services/ipcService';
+import { useI18n } from '../../../../hooks/useI18n';
 
 interface ComboSuggestion {
   sessionId: string;
@@ -31,6 +32,7 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
   onDismiss,
   onSaved,
 }) => {
+  const { t } = useI18n();
   const [name, setName] = useState(suggestion.suggestedName);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -60,7 +62,7 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
 
       <div className="flex-1 min-w-0">
         <div className="text-xs text-amber-300">
-          检测到可复用的工作流（{suggestion.stepCount} 步 · {suggestion.toolNames.length} 工具）
+          {t.comboSkill.bannerPrefix}{suggestion.stepCount}{t.comboSkill.bannerMiddle}{suggestion.toolNames.length}{t.comboSkill.bannerSuffix}
         </div>
         {isEditing ? (
           <input
@@ -77,9 +79,9 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
             type="button"
             onClick={() => setIsEditing(true)}
             className="mt-0.5 text-xs text-amber-200/70 hover:text-amber-200 truncate block"
-            title="点击修改名称"
+            title={t.comboSkill.editNameTitle}
           >
-            保存为 &quot;{name}&quot;
+            {t.comboSkill.saveAsPrefix}{name}{t.comboSkill.saveAsSuffix}
           </button>
         )}
       </div>
@@ -95,14 +97,14 @@ export const ComboSkillCard: React.FC<ComboSkillCardProps> = ({
         ) : (
           <Save className="w-3 h-3" />
         )}
-        保存
+        {t.comboSkill.save}
       </button>
 
       <button
         type="button"
         onClick={onDismiss}
         className="p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
-        title="忽略"
+        title={t.comboSkill.ignore}
       >
         <X className="w-3.5 h-3.5" />
       </button>

@@ -59,7 +59,7 @@ const compactMocks = vi.hoisted(() => {
     database,
     configService,
     compactModelSummarize: vi.fn(async () => '压缩摘要'),
-    compactModelSummarizeWithMetadata: vi.fn(async () => ({
+    compactModelSummarizeWithMetadata: vi.fn(async (_prompt: string, _maxTokens: number, _options?: { useMainModel?: boolean; instructions?: string }) => ({
       summary: '压缩摘要',
       metadata: {
         provider: 'moonshot',
@@ -150,18 +150,21 @@ function makeAppService(sessionId: string, messages: Message[], modelOverride?: 
     importSession: async () => sessionId,
     setCurrentSessionId: () => {},
     getMemoryContext: async () => null,
-    switchModel: () => {},
+    switchModel: async () => ({ persisted: true }),
     getModelOverride: () => modelOverride ? {
       provider: 'openai',
       model: modelOverride,
     } : undefined,
-    clearModelOverride: () => {},
+    clearModelOverride: async () => ({ persisted: true }),
     setDelegateMode: () => {},
     isDelegateMode: () => false,
     setEffortLevel: () => {},
+    setThinkingEnabled: () => {},
     setInteractionMode: () => {},
     pause: () => {},
     resume: () => {},
+    rewindToPrompt: async () => { throw new Error('not implemented'); },
+    exportSessionDiagnostics: async () => { throw new Error('not implemented'); },
   };
 }
 
@@ -226,7 +229,7 @@ describe('resolveContextHealthForSession', () => {
     expect(health.breakdown.messages).toBeGreaterThan(0);
     expect(health.maxTokens).toBe(getContextWindow(DEFAULT_MODEL));
     expect(getContextHealthService().get(sessionId).currentTokens).toBe(health.currentTokens);
-    expect(getSessionStateManager().getSummary(sessionId)?.contextHealth.currentTokens).toBe(health.currentTokens);
+    expect(getSessionStateManager().getSummary(sessionId)?.contextHealth?.currentTokens).toBe(health.currentTokens);
   });
 
   it('includes assistant tool call arguments when deriving context health', async () => {

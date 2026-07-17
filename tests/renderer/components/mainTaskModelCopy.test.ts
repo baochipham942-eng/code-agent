@@ -14,7 +14,7 @@ function readSource(relativePath: string): string {
 
 describe('main task model copy', () => {
   it('uses main task model wording in chat send readiness prompts', () => {
-    const source = readSource('src/renderer/components/ChatView.tsx');
+    const source = readSource('src/renderer/i18n/chatTranscript.ts');
 
     expect(source).toContain('当前主任务模型未配置 API Key');
     expect(source).not.toContain('当前默认模型未配置 API Key');

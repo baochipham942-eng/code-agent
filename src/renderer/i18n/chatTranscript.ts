@@ -178,7 +178,7 @@ chat: {
   collapseThinking: 'Collapse thinking',
   unknownTool: 'Unknown tool',
   dropFilesHere: 'Drop files or folders here',
-  configureModelKeyFirst: 'The current default model has no API key configured. Switch to a configured model before sending.',
+  configureModelKeyFirst: 'The main task model has no API key configured. Switch to a configured model before sending.',
   configureModelFirst: 'Configure a model before sending.',
   rewindWhileRunning: 'The session is still running. Stop it before rewinding.',
   rewindSuccess: 'Rewound to this prompt and restored {count} files.',

@@ -66,7 +66,7 @@ function makeDb(sessions: FakeSession[], messagesBySession: Record<string, Messa
         .map(({ msg, sessionId }) => ({
           messageId: msg.id,
           sessionId,
-          kind: 'message' as const,
+          kind: 'user_text' as const,
           toolName: null,
           snippet: String(msg.content ?? '').slice(0, 300),
           timestamp: Number(msg.timestamp ?? NOW),

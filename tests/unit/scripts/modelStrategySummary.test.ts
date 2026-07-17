@@ -25,7 +25,7 @@ describe('model strategy acceptance summary', () => {
 
     const summary = buildModelStrategyAcceptanceSummary({
       packageScripts,
-      env: {},
+      env: { XIAOMI_API_KEY: undefined },
     });
 
     expect(summary).toMatchObject({
@@ -119,7 +119,7 @@ describe('model strategy acceptance summary', () => {
 
     const summary = buildModelStrategyAcceptanceSummary({
       packageScripts,
-      env: {},
+      env: { XIAOMI_API_KEY: undefined },
       localEnvPresence: { XIAOMI_API_KEY: '<present>' },
       codexCliSmokeResult: {
         ok: true,
@@ -208,7 +208,7 @@ describe('model strategy acceptance summary', () => {
       packageScripts: {
         'acceptance:claude-subscription-cli': 'npx tsx scripts/acceptance/claude-subscription-cli-smoke.ts',
       },
-      env: {},
+      env: { XIAOMI_API_KEY: undefined },
     });
 
     expect(summary.ok).toBe(false);

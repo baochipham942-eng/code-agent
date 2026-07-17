@@ -63,14 +63,14 @@ describe('renderer capability diff', () => {
       ],
     });
 
-    expect(diff.added.map((capability) => capability.id)).toEqual([
+    expect(diff.added.map((capability: { id: string }) => capability.id)).toEqual([
       'domain:workspace/openPath',
       'native:tauri/desktop_get_capabilities',
     ]);
-    expect(diff.removed.map((capability) => capability.id)).toEqual([
+    expect(diff.removed.map((capability: { id: string }) => capability.id)).toEqual([
       'domain:update/check',
     ]);
-    expect(diff.unsupported.map((capability) => capability.id)).toEqual([
+    expect(diff.unsupported.map((capability: { id: string }) => capability.id)).toEqual([
       'native:tauri/desktop_get_capabilities',
     ]);
     expect(diff.layers).toEqual({

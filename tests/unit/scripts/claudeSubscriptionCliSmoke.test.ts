@@ -192,7 +192,7 @@ describe('claude subscription CLI smoke helpers', () => {
 
     expect(() => validateClaudeSubscriptionSmokeGate({
       manualClaude: true,
-      env: {},
+      env: { CODE_AGENT_CLAUDE_CLI_SMOKE: undefined },
     })).toThrow(/CODE_AGENT_CLAUDE_CLI_SMOKE=1/);
 
     expect(() => validateClaudeSubscriptionSmokeGate({

@@ -236,6 +236,15 @@ export const App: React.FC = () => {
     state.pendingLaunchRequest(currentSessionId ?? undefined)
   ));
 
+  const closeUserQuestion = useCallback(() => {
+    setUserQuestion((current) => {
+      if (current) {
+        useSessionStore.getState().clearPendingUserQuestion(current);
+      }
+      return null;
+    });
+  }, []);
+
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
   const { isStandard, dagPanelEnabled } = useDisclosure();
 
@@ -564,7 +573,8 @@ export const App: React.FC = () => {
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.USER_QUESTION_ASK,
       (request: UserQuestionRequest) => {
-        logger.info('Received user question', { id: request.id });
+        logger.info('Received user question', { id: request.id, sessionId: request.sessionId });
+        useSessionStore.getState().addPendingUserQuestion(request);
         setUserQuestion(request);
       }
     );
@@ -921,7 +931,7 @@ export const App: React.FC = () => {
       {userQuestion && (
         <UserQuestionModal
           request={userQuestion}
-          onClose={() => setUserQuestion(null)}
+          onClose={closeUserQuestion}
         />
       )}
 

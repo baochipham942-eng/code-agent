@@ -87,6 +87,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const sessionRuntimes = useSessionStore((state) => state.sessionRuntimes);
   const backgroundTasks = useSessionStore((state) => state.backgroundTasks);
+  const pendingUserQuestionsBySessionId = useSessionStore((state) => state.pendingUserQuestionsBySessionId);
   const durableBackgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const workflowRuns = useWorkflowStore((state) => state.runs);
   const sessionStates = useTaskStore((state) => state.sessionStates);
@@ -118,8 +119,15 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
           queuedPermissionRequests,
         },
         backgroundTasks: durableBackgroundTasks,
+        pendingUserQuestionsBySessionId,
       }),
-    [durableBackgroundTasks, pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests],
+    [
+      durableBackgroundTasks,
+      pendingPermissionRequest,
+      pendingPermissionSessionId,
+      pendingUserQuestionsBySessionId,
+      queuedPermissionRequests,
+    ],
   );
   const hasPendingApprovalForSession = hasNeedsInputForSession;
 

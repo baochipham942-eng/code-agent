@@ -1,4 +1,5 @@
 import type { PermissionRequest } from '@shared/contract';
+import type { UserQuestionRequest } from '@shared/contract';
 import type { Task } from '@shared/contract/backgroundTask';
 
 export interface SessionPermissionNeedsInputState {
@@ -10,6 +11,7 @@ export interface SessionPermissionNeedsInputState {
 export interface SessionNeedsInputSources {
   permissionState?: SessionPermissionNeedsInputState;
   backgroundTasks?: readonly Task[];
+  pendingUserQuestionsBySessionId?: Map<string, readonly UserQuestionRequest[]> | null;
 }
 
 export function hasPendingPermissionForSession(
@@ -36,6 +38,13 @@ export function hasWaitingInputBackgroundTaskForSession(
   return tasks.some((task) => task.sessionId === sessionId && task.status === 'waiting_input');
 }
 
+export function hasPendingUserQuestionForSession(
+  sessionId: string,
+  pendingUserQuestionsBySessionId?: Map<string, readonly UserQuestionRequest[]> | null,
+): boolean {
+  return (pendingUserQuestionsBySessionId?.get(sessionId)?.length ?? 0) > 0;
+}
+
 export function hasNeedsInputForSession(
   sessionId: string,
   sources: SessionNeedsInputSources = {},
@@ -43,7 +52,7 @@ export function hasNeedsInputForSession(
   return (
     hasPendingPermissionForSession(sessionId, sources.permissionState) ||
     hasQueuedPermissionForSession(sessionId, sources.permissionState) ||
-    hasWaitingInputBackgroundTaskForSession(sessionId, sources.backgroundTasks)
+    hasWaitingInputBackgroundTaskForSession(sessionId, sources.backgroundTasks) ||
+    hasPendingUserQuestionForSession(sessionId, sources.pendingUserQuestionsBySessionId)
   );
 }
-

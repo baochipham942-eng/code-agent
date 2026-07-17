@@ -2,7 +2,7 @@
 // promptUserInChat — 共享会话内交互 round-trip（Slice A 地基）
 //
 // 抽自 AskUserQuestion 的 USER_QUESTION_ASK/RESPONSE round-trip，供成本确认等
-// tool 内部复用。覆盖：no-renderer 安全短路 / send shape / 响应回灌 answered /
+// tool 内部复用。覆盖：no-renderer 安全短路 / send shape+sessionId / 响应回灌 answered /
 // 超时 timeout / abort。
 // ============================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -64,11 +64,11 @@ describe('promptUserInChat', () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
-  it('有 renderer → 发 USER_QUESTION_ASK，shape={id,questions,timestamp}，响应回灌 answered', async () => {
+  it('有 renderer → 发 USER_QUESTION_ASK，shape={id,sessionId,questions,timestamp}，响应回灌 answered', async () => {
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
     hasInteractiveRendererMock.mockReturnValue(true);
 
-    const promise = promptUserInChat(Q, { timeoutMs: 5000 });
+    const promise = promptUserInChat(Q, { sessionId: 'prompt-session', timeoutMs: 5000 });
     await new Promise((r) => setTimeout(r, 5));
 
     // send 协议
@@ -77,6 +77,7 @@ describe('promptUserInChat', () => {
     expect(channel).toBe(IPC_CHANNELS.USER_QUESTION_ASK);
     expect(typeof payload.id).toBe('string');
     expect(payload.id).toMatch(/^q-\d+/);
+    expect(payload.sessionId).toBe('prompt-session');
     expect(typeof payload.timestamp).toBe('number');
     expect(payload.questions).toEqual(Q);
 

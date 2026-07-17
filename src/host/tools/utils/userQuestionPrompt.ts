@@ -73,6 +73,7 @@ export async function promptUserInChat(
 
   const request: UserQuestionRequest = {
     id: `q-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
+    sessionId: opts.sessionId,
     questions,
     timestamp: Date.now(),
   };

@@ -131,9 +131,11 @@ export async function executeAskUserQuestion(
   // Register response handler (idempotent)
   registerResponseHandler();
 
-  // Create request — shape 必须与 legacy 一致：{id, questions, timestamp}
+  // Create request — legacy payloads may omit sessionId, but native hosts should
+  // include it so renderer-side needs-input state can attribute the question.
   const request: UserQuestionRequest = {
     id: `q-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
+    sessionId: ctx.sessionId,
     questions,
     timestamp: Date.now(),
   };

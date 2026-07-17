@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { ChevronRight, ChevronLeft, Layers, Box, Zap, Info } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 // 模型配置
 const modelConfig = {
@@ -38,33 +39,24 @@ interface Props {
 type SelectedLayer = 'embedding' | 'attention' | 'ffn' | 'output' | null;
 
 export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
+  const { t } = useI18n();
+  const ma = t.labGpt1.modelArchitecture;
   const [selectedLayer, setSelectedLayer] = useState<SelectedLayer>(null);
 
   // 层详情内容 - 用通俗的比喻解释
   const layerDetails: Record<NonNullable<SelectedLayer>, { title: string; description: string; analogy: string; simple: string }> = {
     embedding: {
-      title: '把字变成"感觉"',
-      description: '电脑不认识汉字，只认识数字。这一层把每个字变成一串数字（384个数字），这些数字代表了这个字的"含义"。',
-      analogy: '🎨 就像画家用RGB颜色来表示颜色一样，AI用一串数字来表示每个字的"感觉"',
-      simple: `每个字 → ${modelConfig.nEmbd} 个数字`,
+      ...ma.layers.embedding,
+      simple: ma.layers.embedding.simple.replace('{count}', String(modelConfig.nEmbd)),
     },
     attention: {
-      title: '理解前后文关系',
-      description: '这是 AI 最神奇的能力！它能同时"看"句子里的所有字，理解它们之间的关系。比如"苹果很甜"和"苹果公司"里的"苹果"意思不同，AI 就是通过这一层来理解的。',
-      analogy: '👀 就像读书时，你会联系上下文来理解一个词的意思',
-      simple: `同时关注 ${modelConfig.nHead} 个不同的方面`,
+      ...ma.layers.attention,
+      simple: ma.layers.attention.simple.replace('{count}', String(modelConfig.nHead)),
     },
-    ffn: {
-      title: '深度思考',
-      description: '上一层理解了字之间的关系，这一层负责"消化"这些信息，进行更深入的分析和推理。',
-      analogy: '🧠 就像大脑处理信息：先把信息"展开"仔细分析，再"归纳"成结论',
-      simple: '信息 → 展开分析 → 归纳总结',
-    },
+    ffn: ma.layers.ffn,
     output: {
-      title: '猜下一个字',
-      description: '根据前面所有字的信息，猜测下一个最可能出现的字是什么。每个字都会得到一个"可能性分数"。',
-      analogy: '🎯 就像填空题：根据上文，猜最合适的下一个字',
-      simple: `从 ${modelConfig.vocabSize} 个字中选出最可能的`,
+      ...ma.layers.output,
+      simple: ma.layers.output.simple.replace('{count}', String(modelConfig.vocabSize)),
     },
   };
 
@@ -77,13 +69,13 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
               <Layers className="w-4 h-4 text-blue-400" />
-              AI 大脑结构图
+              {ma.diagramTitle}
             </h3>
 
             <div className="space-y-3">
               {/* Input */}
               <div className="text-center text-xs text-zinc-500 mb-2">
-                ⬇️ 输入一句话（最多 {modelConfig.blockSize} 个字）
+                {ma.diagramInput.replace('{count}', String(modelConfig.blockSize))}
               </div>
 
               {/* Embedding Layer */}
@@ -95,9 +87,9 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                     : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                 }`}
               >
-                <div className="text-sm font-medium">把字变成数字</div>
+                <div className="text-sm font-medium">{ma.embeddingButtonTitle}</div>
                 <div className="text-xs text-zinc-500 mt-1">
-                  每个字 → {modelConfig.nEmbd} 个数字
+                  {ma.embeddingButtonSub.replace('{count}', String(modelConfig.nEmbd))}
                 </div>
               </button>
 
@@ -106,7 +98,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
 
               {/* Transformer Blocks */}
               <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-800">
-                <div className="text-xs text-zinc-500 mb-2 text-center">🧠 思考层 × {modelConfig.nLayer}（重复 {modelConfig.nLayer} 遍，想得更深）</div>
+                <div className="text-xs text-zinc-500 mb-2 text-center">{ma.thinkingLayerLabel.replaceAll('{count}', String(modelConfig.nLayer))}</div>
 
                 {/* Attention */}
                 <button
@@ -117,11 +109,11 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                       : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                   }`}
                 >
-                  <div className="text-xs">👀 理解上下文关系</div>
+                  <div className="text-xs">{ma.attentionButtonLabel}</div>
                 </button>
 
                 {/* Residual */}
-                <div className="text-center text-xs text-zinc-600 mb-2">↓ 保留之前的信息</div>
+                <div className="text-center text-xs text-zinc-600 mb-2">{ma.residualLabel}</div>
 
                 {/* FFN */}
                 <button
@@ -132,11 +124,11 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                       : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                   }`}
                 >
-                  <div className="text-xs">🧠 深度思考和分析</div>
+                  <div className="text-xs">{ma.ffnButtonLabel}</div>
                 </button>
 
                 {/* Residual */}
-                <div className="text-center text-xs text-zinc-600 mt-2">↓ 保留之前的信息</div>
+                <div className="text-center text-xs text-zinc-600 mt-2">{ma.residualLabel}</div>
               </div>
 
               {/* Arrow */}
@@ -151,20 +143,20 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                     : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                 }`}
               >
-                <div className="text-sm font-medium">🎯 猜下一个字</div>
+                <div className="text-sm font-medium">{ma.outputButtonTitle}</div>
                 <div className="text-xs text-zinc-500 mt-1">
-                  从 {modelConfig.vocabSize} 个字中选一个
+                  {ma.outputButtonSub.replace('{count}', String(modelConfig.vocabSize))}
                 </div>
               </button>
 
               {/* Output */}
               <div className="text-center text-xs text-zinc-500 mt-2">
-                ⬇️ 输出：最可能的下一个字
+                {ma.diagramOutput}
               </div>
             </div>
 
             <p className="text-xs text-zinc-600 mt-4 text-center">
-              点击各层查看详细说明 ↑
+              {ma.diagramHint}
             </p>
           </div>
 
@@ -172,16 +164,16 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <Box className="w-4 h-4 text-blue-400" />
-              AI 大脑有多大？
+              {ma.paramsTitle}
             </h3>
             <div className="text-3xl font-bold text-blue-400 mb-2">
-              ~{(totalParams / 1e6).toFixed(0)} 百万
+              {ma.paramsValue.replace('{count}', (totalParams / 1e6).toFixed(0))}
             </div>
             <div className="text-sm text-zinc-400">
-              个可调节的"旋钮"（参数）
+              {ma.paramsUnit}
             </div>
             <p className="text-xs text-zinc-500 mt-2">
-              💡 ChatGPT 有约 1750 亿个参数，是这个的 1.5 万倍！
+              {ma.paramsHint}
             </p>
           </div>
         </div>
@@ -204,7 +196,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 </div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-800">
-                <div className="text-xs text-zinc-500 mb-1">简单来说</div>
+                <div className="text-xs text-zinc-500 mb-1">{ma.simpleLabel}</div>
                 <div className="text-sm text-emerald-400">
                   {layerDetails[selectedLayer].simple}
                 </div>
@@ -216,14 +208,14 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-400" />
-              AI 大脑的"配置"
+              {ma.configTitle}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: '能认识多少字', value: modelConfig.vocabSize, color: 'text-emerald-400' },
-                { label: '一次能看多少字', value: modelConfig.blockSize, color: 'text-blue-400' },
-                { label: '思考多少遍', value: modelConfig.nLayer, color: 'text-purple-400' },
-                { label: '同时关注几个方面', value: modelConfig.nHead, color: 'text-amber-400' },
+                { label: ma.configLabels.vocabSize, value: modelConfig.vocabSize, color: 'text-emerald-400' },
+                { label: ma.configLabels.blockSize, value: modelConfig.blockSize, color: 'text-blue-400' },
+                { label: ma.configLabels.nLayer, value: modelConfig.nLayer, color: 'text-purple-400' },
+                { label: ma.configLabels.nHead, value: modelConfig.nHead, color: 'text-amber-400' },
               ].map((item) => (
                 <div key={item.label} className="p-3 rounded-lg bg-zinc-800">
                   <div className={`text-xl font-bold ${item.color}`}>{item.value}</div>
@@ -232,7 +224,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
               ))}
             </div>
             <p className="text-xs text-zinc-500 mt-3">
-              💡 这些数字越大，AI 越"聪明"，但也需要更多计算资源
+              {ma.configHint}
             </p>
           </div>
 
@@ -240,35 +232,35 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <span className="text-emerald-400">🔄</span>
-              AI 是怎么"想"的？
+              {ma.workflowTitle}
             </h3>
             <div className="space-y-3">
               <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <span className="text-2xl">📝</span>
                 <div>
-                  <div className="text-sm text-emerald-300 font-medium">第 1 步：认字</div>
-                  <div className="text-xs text-zinc-400">把"你好"变成数字 [45, 78]</div>
+                  <div className="text-sm text-emerald-300 font-medium">{ma.workflowStep1Label}</div>
+                  <div className="text-xs text-zinc-400">{ma.workflowStep1Desc}</div>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                 <span className="text-2xl">🔗</span>
                 <div>
-                  <div className="text-sm text-blue-300 font-medium">第 2 步：理解关系</div>
-                  <div className="text-xs text-zinc-400">"你"和"好"组合起来是打招呼的意思</div>
+                  <div className="text-sm text-blue-300 font-medium">{ma.workflowStep2Label}</div>
+                  <div className="text-xs text-zinc-400">{ma.workflowStep2Desc}</div>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
                 <span className="text-2xl">🧠</span>
                 <div>
-                  <div className="text-sm text-purple-300 font-medium">第 3 步：深度思考</div>
-                  <div className="text-xs text-zinc-400">根据对话习惯，应该回一句问候…</div>
+                  <div className="text-sm text-purple-300 font-medium">{ma.workflowStep3Label}</div>
+                  <div className="text-xs text-zinc-400">{ma.workflowStep3Desc}</div>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
                 <span className="text-2xl">🎯</span>
                 <div>
-                  <div className="text-sm text-amber-300 font-medium">第 4 步：输出</div>
-                  <div className="text-xs text-zinc-400">猜测下一个字最可能是"你"（接着说"你好"）</div>
+                  <div className="text-sm text-amber-300 font-medium">{ma.workflowStep4Label}</div>
+                  <div className="text-xs text-zinc-400">{ma.workflowStep4Desc}</div>
                 </div>
               </div>
             </div>
@@ -280,19 +272,10 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {ma.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'Transformer', zh: '变换器', desc: 'GPT 使用的核心架构，2017年由 Google 提出，革新了 NLP 领域' },
-            { en: 'Embedding', zh: '嵌入', desc: '把离散的字/词转换成连续的数字向量，捕捉语义信息' },
-            { en: 'Attention', zh: '注意力机制', desc: '让模型能同时"看"到句子中所有位置，理解词之间的关系' },
-            { en: 'Self-Attention', zh: '自注意力', desc: '句子内部各词相互关注的机制，是 Transformer 的核心' },
-            { en: 'FFN', zh: '前馈神经网络', desc: 'Feed-Forward Network，对注意力结果进行深度处理' },
-            { en: 'Parameters', zh: '参数', desc: '模型中可学习的数值，参数越多模型越"聪明"' },
-            { en: 'Residual Connection', zh: '残差连接', desc: '让信息可以"跳跃"传递，帮助训练更深的网络' },
-            { en: 'Layer Normalization', zh: '层归一化', desc: '稳定训练过程的技术，让数值保持在合理范围' },
-          ].map((term) => (
+          {ma.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
@@ -312,13 +295,13 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-zinc-700 text-zinc-400 font-medium hover:bg-zinc-600 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {ma.backButton}
         </button>
         <button
           onClick={onComplete}
           className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors"
         >
-          下一步: 训练循环
+          {ma.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

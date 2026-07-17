@@ -16,6 +16,8 @@ import {
   Pause,
   RotateCcw,
 } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
+import type { Translations } from '../../../../../i18n/zh';
 
 interface RLHFStageProps {
   onComplete: () => void;
@@ -23,65 +25,28 @@ interface RLHFStageProps {
 }
 
 // RLHF 三步流程
-const rlhfSteps = [
-  {
-    id: 'sft',
-    title: 'SFT 监督微调',
-    subtitle: '建立基础',
-    description: '先用高质量数据训练出基础模型，让它学会回答问题的基本格式',
-    icon: '📝',
-    color: 'blue',
-  },
-  {
-    id: 'rm',
-    title: '训练奖励模型',
-    subtitle: '学会打分',
-    description: '用人类的偏好数据训练一个"评委"模型，它能给回答打分',
-    icon: '⭐',
-    color: 'purple',
-  },
-  {
-    id: 'ppo',
-    title: 'PPO 强化学习',
-    subtitle: '追求高分',
-    description: '让模型不断尝试，奖励模型打高分就加强，打低分就削弱',
-    icon: '🎯',
-    color: 'emerald',
-  },
-];
+function buildRlhfSteps(t: Translations) {
+  const s = t.labLlamafactory.rlhf.steps;
+  return [
+    { id: 'sft', ...s.sft, icon: '📝', color: 'blue' },
+    { id: 'rm', ...s.rm, icon: '⭐', color: 'purple' },
+    { id: 'ppo', ...s.ppo, icon: '🎯', color: 'emerald' },
+  ];
+}
 
 // 方法对比
-const methodComparison = [
-  {
-    name: 'RLHF',
-    description: '完整强化学习流程',
-    steps: ['SFT', 'Reward Model', 'PPO'],
-    pros: ['效果最好', '完整控制'],
-    cons: ['复杂度高', '训练不稳定', '需要大量资源'],
-    useCase: '追求极致效果',
-    color: 'purple',
-  },
-  {
-    name: 'DPO',
-    description: '直接从偏好学习',
-    steps: ['SFT', 'DPO'],
-    pros: ['简单稳定', '无需 RM'],
-    cons: ['效果略逊 RLHF'],
-    useCase: '大多数场景首选',
-    color: 'blue',
-  },
-  {
-    name: 'RFT',
-    description: '强化推理能力',
-    steps: ['SFT', '生成解法', '验证', '继续训练'],
-    pros: ['提升推理能力', '可程序验证'],
-    cons: ['需要可验证任务'],
-    useCase: '数学、代码等推理任务',
-    color: 'amber',
-  },
-];
+function buildMethodComparison(t: Translations) {
+  const m = t.labLlamafactory.rlhf.methods;
+  return [
+    { name: 'RLHF', ...m.rlhf, steps: ['SFT', 'Reward Model', 'PPO'], color: 'purple' },
+    { name: 'DPO', ...m.dpo, steps: ['SFT', 'DPO'], color: 'blue' },
+    { name: 'RFT', ...m.rft, steps: ['SFT', ...t.labLlamafactory.rlhf.rftStepLabels], color: 'amber' },
+  ];
+}
 
 // RFT 示例
+// ponytail: question/solution 是 RFT 演示中"模型生成的解法/推理轨迹"本身，
+// 属于喂给 Grader 验证的输入数据，翻译会改变演示内容，故不进 i18n。
 const rftExample = {
   question: '计算 23 × 17 = ?',
   attempts: [
@@ -93,6 +58,10 @@ const rftExample = {
 };
 
 export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
+  const { t } = useI18n();
+  const r = t.labLlamafactory.rlhf;
+  const rlhfSteps = buildRlhfSteps(t);
+  const methodComparison = buildMethodComparison(t);
   const [activeStep, setActiveStep] = useState<number>(0);
   const [isTraining, setIsTraining] = useState(false);
   const [rewardHistory, setRewardHistory] = useState<number[]>([0]);
@@ -204,10 +173,10 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
         <div className="flex items-start gap-3">
           <Brain className="w-5 h-5 text-orange-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">🧠 RLHF 与 RFT</h3>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">{r.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              <span className="text-orange-400">RLHF</span> (人类反馈强化学习) 是 ChatGPT 的核心训练方法。
-              <span className="text-orange-400">RFT</span> (强化微调) 则专注于提升推理能力，让模型在数学、代码等任务上更强。
+              <span className="text-orange-400">{r.introRlhfLabel}</span>{r.introRlhfText}
+              <span className="text-orange-400">{r.introRftLabel}</span>{r.introRftText}
             </p>
           </div>
         </div>
@@ -217,7 +186,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Target className="w-4 h-4 text-orange-400" />
-          RLHF 三步流程
+          {r.threeStepsSectionTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="flex items-center justify-between mb-4">
@@ -263,7 +232,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
             <Trophy className="w-4 h-4 text-orange-400" />
-            PPO 训练模拟
+            {r.ppoSimSectionTitle}
           </h3>
           <div className="flex items-center gap-2">
             <button
@@ -285,12 +254,12 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
               {isTraining ? (
                 <>
                   <Pause className="w-4 h-4" />
-                  暂停
+                  {r.pauseButton}
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4" />
-                  开始 PPO
+                  {r.startPpoButton}
                 </>
               )}
             </button>
@@ -300,29 +269,29 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="text-center">
-              <div className="text-xs text-zinc-500 mb-1">训练步数</div>
+              <div className="text-xs text-zinc-500 mb-1">{r.trainingStepsLabel}</div>
               <div className="text-xl font-bold text-orange-400">{trainingStep}</div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-zinc-500 mb-1">当前奖励</div>
+              <div className="text-xs text-zinc-500 mb-1">{r.currentRewardLabel}</div>
               <div className="text-xl font-bold text-emerald-400">
                 {rewardHistory[rewardHistory.length - 1]?.toFixed(3) || '0.000'}
               </div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-zinc-500 mb-1">状态</div>
+              <div className="text-xs text-zinc-500 mb-1">{r.statusLabel}</div>
               <div className={`text-lg font-medium ${
                 isTraining ? 'text-amber-400' :
                 trainingStep >= 100 ? 'text-emerald-400' : 'text-zinc-400'
               }`}>
-                {isTraining ? '优化中…' : trainingStep >= 100 ? '收敛' : '就绪'}
+                {isTraining ? r.statusOptimizing : trainingStep >= 100 ? r.statusConverged : r.statusReady}
               </div>
             </div>
           </div>
 
           {/* Reward Curve */}
           <div className="p-3 rounded-lg bg-zinc-950">
-            <div className="text-xs text-zinc-500 mb-2">Reward 曲线（追求高分）</div>
+            <div className="text-xs text-zinc-500 mb-2">{r.rewardCurveLabel}</div>
             <canvas
               ref={canvasRef}
               width={600}
@@ -333,8 +302,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
 
           <div className="mt-3 p-2 rounded bg-blue-500/10 border border-blue-500/20">
             <p className="text-xs text-blue-400">
-              💡 PPO 让模型不断尝试，奖励模型打高分就加强这种回答方式，打低分就削弱。
-              同时用 KL 散度约束，防止模型偏离太远。
+              {r.ppoHint}
             </p>
           </div>
         </div>
@@ -344,20 +312,19 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Zap className="w-4 h-4 text-orange-400" />
-          RFT 强化微调 - 提升推理能力
+          {r.rftSectionTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
             <p className="text-sm text-zinc-400">
-              <span className="text-amber-400 font-medium">RFT</span> 用于提升模型的推理能力。
-              让模型生成多个解法，用可编程的 Grader 验证对错，正确的加强，错误的削弱。
+              <span className="text-amber-400 font-medium">{r.rftLabel}</span> {r.rftIntroText}
             </p>
           </div>
 
           {/* RFT Example */}
           <div className="p-4 rounded-lg bg-zinc-800 border border-zinc-800">
             <div className="mb-3">
-              <span className="text-xs text-zinc-500">问题：</span>
+              <span className="text-xs text-zinc-500">{r.rftQuestionLabel}</span>
               <span className="text-sm text-zinc-200 ml-2">{rftExample.question}</span>
             </div>
 
@@ -374,9 +341,9 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
                   `}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-zinc-500">尝试 {idx + 1}</span>
+                    <span className="text-xs text-zinc-500">{r.rftAttemptLabel} {idx + 1}</span>
                     <span className={`text-xs font-medium ${attempt.correct ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {attempt.correct ? '✓ 正确 (reward +1)' : '✗ 错误 (reward -1)'}
+                      {attempt.correct ? r.rftCorrect : r.rftIncorrect}
                     </span>
                   </div>
                   <code className="text-sm text-zinc-400">{attempt.solution}</code>
@@ -385,7 +352,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
             </div>
 
             <div className="mt-3 text-xs text-zinc-500">
-              Grader 验证：答案 = {rftExample.answer}。正确的解法会被用来继续训练模型。
+              {r.rftGraderVerifyLabel} {rftExample.answer}{r.rftGraderVerifySuffix}
             </div>
           </div>
         </div>
@@ -393,7 +360,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
 
       {/* Method Comparison */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">📊 方法对比：RLHF vs DPO vs RFT</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{r.comparisonSectionTitle}</h3>
         <div className="grid grid-cols-3 gap-4">
           {methodComparison.map((method) => {
             const colors = getColorClasses(method.color);
@@ -406,7 +373,7 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
                 <p className="text-xs text-zinc-500 mb-3">{method.description}</p>
 
                 <div className="mb-3">
-                  <div className="text-xs text-zinc-400 mb-1">流程</div>
+                  <div className="text-xs text-zinc-400 mb-1">{r.flowLabel}</div>
                   <div className="flex flex-wrap gap-1">
                     {method.steps.map((step, idx) => (
                       <React.Fragment key={step}>
@@ -419,15 +386,15 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
 
                 <div className="space-y-2 text-xs">
                   <div>
-                    <span className="text-emerald-400">优点：</span>
+                    <span className="text-emerald-400">{r.prosLabel}</span>
                     <span className="text-zinc-400">{method.pros.join('、')}</span>
                   </div>
                   <div>
-                    <span className="text-red-400">缺点：</span>
+                    <span className="text-red-400">{r.consLabel}</span>
                     <span className="text-zinc-400">{method.cons.join('、')}</span>
                   </div>
                   <div className="pt-2 border-t border-zinc-800">
-                    <span className="text-amber-400">适用：</span>
+                    <span className="text-amber-400">{r.useCaseLabel}</span>
                     <span className="text-zinc-400">{method.useCase}</span>
                   </div>
                 </div>
@@ -439,20 +406,14 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
 
       {/* Key Takeaways */}
       <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
-        <h4 className="text-sm font-medium text-orange-400 mb-2">📌 小结</h4>
+        <h4 className="text-sm font-medium text-orange-400 mb-2">{r.takeawaysTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">RLHF 是 ChatGPT 的秘密</strong>：三步流程让模型变得有帮助、安全、诚实</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">DPO 更简单</strong>：效果接近 RLHF，但不需要训练奖励模型</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">RFT 专攻推理</strong>：用可验证的任务提升模型的数学、代码能力</span>
-          </li>
+          {r.takeaways.map((item) => (
+            <li key={item.label} className="flex items-start gap-2">
+              <span className="text-orange-400">•</span>
+              <span><strong className="text-zinc-400">{item.label}</strong>：{item.text}</span>
+            </li>
+          ))}
         </ul>
       </div>
 
@@ -460,15 +421,10 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {r.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'RLHF', zh: '人类反馈强化学习', desc: 'Reinforcement Learning from Human Feedback' },
-            { en: 'PPO', zh: '近端策略优化', desc: 'Proximal Policy Optimization，常用的强化学习算法' },
-            { en: 'Reward Model', zh: '奖励模型', desc: '学习人类偏好，给回答打分的模型' },
-            { en: 'RFT', zh: '强化微调', desc: 'Reinforcement Fine-Tuning，用于提升推理能力' },
-          ].map((term) => (
+          {r.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
@@ -488,13 +444,13 @@ export const RLHFStage: React.FC<RLHFStageProps> = ({ onComplete, onBack }) => {
           className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {r.backButton}
         </button>
         <button
           onClick={onComplete}
           className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 border border-orange-500/30 transition-all font-medium"
         >
-          下一步：综合实践
+          {r.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

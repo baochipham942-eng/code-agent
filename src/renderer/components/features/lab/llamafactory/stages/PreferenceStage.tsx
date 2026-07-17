@@ -13,6 +13,8 @@ import {
   Zap,
   ArrowRight,
 } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
+import type { Translations } from '../../../../../i18n/zh';
 
 interface PreferenceStageProps {
   onComplete: () => void;
@@ -20,58 +22,19 @@ interface PreferenceStageProps {
 }
 
 // 偏好方法对比
-const preferenceMethods = [
-  {
-    id: 'dpo',
-    name: 'DPO',
-    fullName: 'Direct Preference Optimization',
-    zh: '直接偏好优化',
-    description: '直接从偏好数据学习，无需训练 Reward Model',
-    dataFormat: 'prompt + chosen + rejected',
-    pros: ['实现简单', '训练稳定', '效果好'],
-    cons: ['需要配对数据', '计算成本中等'],
-    difficulty: 2,
-    color: 'purple',
-  },
-  {
-    id: 'kto',
-    name: 'KTO',
-    fullName: 'Kahneman-Tversky Optimization',
-    zh: '卡尼曼-特沃斯基优化',
-    description: '仅需单个好或坏的回答，数据更容易获取',
-    dataFormat: 'prompt + response + label',
-    pros: ['数据要求低', '易于收集', '效果接近 DPO'],
-    cons: ['相对较新', '调参经验少'],
-    difficulty: 2,
-    color: 'blue',
-  },
-  {
-    id: 'orpo',
-    name: 'ORPO',
-    fullName: 'Odds Ratio Preference Optimization',
-    zh: '比值比偏好优化',
-    description: 'SFT + 偏好优化一体化，单阶段完成',
-    dataFormat: 'prompt + chosen + rejected',
-    pros: ['单阶段训练', '效率高', '效果稳定'],
-    cons: ['需要配对数据', '灵活性较低'],
-    difficulty: 2,
-    color: 'emerald',
-  },
-  {
-    id: 'simpo',
-    name: 'SimPO',
-    fullName: 'Simple Preference Optimization',
-    zh: '简化偏好优化',
-    description: '简化版 DPO，无需参考模型，更节省资源',
-    dataFormat: 'prompt + chosen + rejected',
-    pros: ['无需参考模型', '显存更少', '训练更快'],
-    cons: ['效果略逊于 DPO', '较新方法'],
-    difficulty: 1,
-    color: 'amber',
-  },
-];
+function buildPreferenceMethods(t: Translations) {
+  const m = t.labLlamafactory.preference.methods;
+  return [
+    { id: 'dpo', name: 'DPO', ...m.dpo, dataFormat: 'prompt + chosen + rejected', difficulty: 2, color: 'purple' },
+    { id: 'kto', name: 'KTO', ...m.kto, dataFormat: 'prompt + response + label', difficulty: 2, color: 'blue' },
+    { id: 'orpo', name: 'ORPO', ...m.orpo, dataFormat: 'prompt + chosen + rejected', difficulty: 2, color: 'emerald' },
+    { id: 'simpo', name: 'SimPO', ...m.simpo, dataFormat: 'prompt + chosen + rejected', difficulty: 1, color: 'amber' },
+  ];
+}
 
 // 偏好数据示例
+// ponytail: prompt/chosen/rejected 是 DPO 偏好训练数据本身（一对 chosen/rejected 回答），
+// 翻译会改变正在演示的训练数据语义，故不进 i18n。
 const preferenceExample = {
   prompt: '请给我推荐一部电影',
   chosen: '我推荐《肖申克的救赎》！这是一部关于希望和自由的经典电影，讲述了银行家安迪在监狱中的故事。影片节奏紧凑，结局令人感动，非常值得一看。',
@@ -79,16 +42,23 @@ const preferenceExample = {
 };
 
 // SFT vs SFT+DPO 对比
-const comparisonExamples = [
-  {
-    prompt: '如何看待加班文化？',
-    sftOnly: '加班文化是指员工在正常工作时间之外继续工作的现象。它在很多公司中存在，有时是因为工作量大，有时是因为公司文化。加班有利有弊，可以提高产出但也会影响健康。',
-    sftPlusDpo: '这是个值得深思的问题。首先我理解你可能正在经历加班困扰。\n\n从不同角度来看：\n1. 偶尔的项目冲刺可以理解\n2. 常态化加班往往意味着管理问题\n3. 身心健康应该是底线\n\n建议与上级坦诚沟通工作量，设定合理边界。你怎么看？',
-    diff: 'SFT 给了正确但干巴巴的信息；DPO 后的回答更有同理心、更有结构、更有互动性',
-  },
-];
+// ponytail: prompt/sftOnly/sftPlusDpo 是模拟的模型输入输出内容（同上原因不迁移）；
+// diff 是解释给用户看的对比说明，属 UI 文案，走 i18n（见组件内 buildComparisonExamples）。
+const comparisonExampleData = {
+  prompt: '如何看待加班文化？',
+  sftOnly: '加班文化是指员工在正常工作时间之外继续工作的现象。它在很多公司中存在，有时是因为工作量大，有时是因为公司文化。加班有利有弊，可以提高产出但也会影响健康。',
+  sftPlusDpo: '这是个值得深思的问题。首先我理解你可能正在经历加班困扰。\n\n从不同角度来看：\n1. 偶尔的项目冲刺可以理解\n2. 常态化加班往往意味着管理问题\n3. 身心健康应该是底线\n\n建议与上级坦诚沟通工作量，设定合理边界。你怎么看？',
+};
+
+function buildComparisonExamples(t: Translations) {
+  return [{ ...comparisonExampleData, diff: t.labLlamafactory.preference.comparisonDiff }];
+}
 
 export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, onBack }) => {
+  const { t } = useI18n();
+  const p = t.labLlamafactory.preference;
+  const preferenceMethods = buildPreferenceMethods(t);
+  const comparisonExamples = buildComparisonExamples(t);
   const [selectedMethod, setSelectedMethod] = useState<string>('dpo');
   const [userChoice, setUserChoice] = useState<'chosen' | 'rejected' | null>(null);
   const [showComparison, setShowComparison] = useState(false);
@@ -110,11 +80,10 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
         <div className="flex items-start gap-3">
           <Heart className="w-5 h-5 text-orange-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">❤️ 偏好优化方法</h3>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">{p.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              SFT 教会模型"怎么回答"，但没教"什么是好回答"。
-              <span className="text-orange-400">偏好优化</span>让模型从人类偏好中学习，
-              输出更有帮助、更安全、更符合期望的回答。
+              {p.introDescPart1}
+              <span className="text-orange-400">{p.introDescHighlight}</span>{p.introDescPart2}
             </p>
           </div>
         </div>
@@ -124,12 +93,12 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <ThumbsUp className="w-4 h-4 text-orange-400" />
-          什么是偏好数据？试试选择
+          {p.demoSectionTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           {/* Prompt */}
           <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <div className="text-xs text-blue-400 mb-1">用户问题</div>
+            <div className="text-xs text-blue-400 mb-1">{p.userQuestionLabel}</div>
             <p className="text-sm text-zinc-200">{preferenceExample.prompt}</p>
           </div>
 
@@ -181,13 +150,11 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
               <p className="text-sm">
                 {userChoice === 'chosen' ? (
                   <span className="text-emerald-400">
-                    ✓ 正确！回答 A 更有帮助、更具体、更友好。这就是"chosen"（优选）回答。
-                    模型会学习生成更接近 A 的回答。
+                    {p.feedbackChosen}
                   </span>
                 ) : (
                   <span className="text-amber-400">
-                    回答 B 虽然"没错"，但缺乏帮助性。这就是"rejected"（劣选）回答。
-                    模型会学习避免这种敷衍的风格。
+                    {p.feedbackRejected}
                   </span>
                 )}
               </p>
@@ -200,7 +167,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Zap className="w-4 h-4 text-orange-400" />
-          四种偏好优化方法对比
+          {p.methodsSectionTitle}
         </h3>
         <div className="grid grid-cols-4 gap-3">
           {preferenceMethods.map((method) => {
@@ -254,11 +221,11 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
 
                   <div className="grid grid-cols-3 gap-4">
                     <div className="p-3 rounded-lg bg-zinc-800">
-                      <div className="text-xs text-zinc-500 mb-2">数据格式</div>
+                      <div className="text-xs text-zinc-500 mb-2">{p.dataFormatLabel}</div>
                       <code className="text-xs text-orange-400">{method.dataFormat}</code>
                     </div>
                     <div className="p-3 rounded-lg bg-zinc-800">
-                      <div className="text-xs text-emerald-400 mb-2">优点</div>
+                      <div className="text-xs text-emerald-400 mb-2">{p.prosLabel}</div>
                       <ul className="space-y-1">
                         {method.pros.map((pro, idx) => (
                           <li key={idx} className="text-xs text-zinc-400">+ {pro}</li>
@@ -266,7 +233,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                       </ul>
                     </div>
                     <div className="p-3 rounded-lg bg-zinc-800">
-                      <div className="text-xs text-red-400 mb-2">缺点</div>
+                      <div className="text-xs text-red-400 mb-2">{p.consLabel}</div>
                       <ul className="space-y-1">
                         {method.cons.map((con, idx) => (
                           <li key={idx} className="text-xs text-zinc-400">- {con}</li>
@@ -284,7 +251,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
       {/* SFT vs SFT+DPO */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-zinc-400">📊 SFT vs SFT+DPO 效果对比</h3>
+          <h3 className="text-sm font-medium text-zinc-400">{p.comparisonSectionTitle}</h3>
           <button
             onClick={() => setShowComparison(!showComparison)}
             className={`
@@ -295,7 +262,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
               }
             `}
           >
-            {showComparison ? '隐藏对比' : '查看对比'}
+            {showComparison ? p.hideComparisonButton : p.showComparisonButton}
           </button>
         </div>
 
@@ -304,17 +271,17 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
             {comparisonExamples.map((example, idx) => (
               <div key={idx}>
                 <div className="mb-3 p-2 rounded bg-blue-500/10 border border-blue-500/20">
-                  <span className="text-xs text-blue-400">问题：</span>
+                  <span className="text-xs text-blue-400">{p.comparisonQuestionLabel}</span>
                   <span className="text-sm text-zinc-400 ml-2">{example.prompt}</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 mb-3">
                   <div className="p-3 rounded-lg bg-zinc-800 border border-zinc-800">
-                    <div className="text-xs text-zinc-500 mb-2">仅 SFT</div>
+                    <div className="text-xs text-zinc-500 mb-2">{p.sftOnlyLabel}</div>
                     <p className="text-sm text-zinc-400 whitespace-pre-line">{example.sftOnly}</p>
                   </div>
                   <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
-                    <div className="text-xs text-purple-400 mb-2">SFT + DPO</div>
+                    <div className="text-xs text-purple-400 mb-2">{p.sftPlusDpoLabel}</div>
                     <p className="text-sm text-zinc-400 whitespace-pre-line">{example.sftPlusDpo}</p>
                   </div>
                 </div>
@@ -330,49 +297,43 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
 
       {/* Workflow */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-400">🔄 推荐工作流</h3>
+        <h3 className="text-sm font-medium text-zinc-400">{p.workflowSectionTitle}</h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="flex items-center justify-between">
             <div className="flex-1 text-center p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
               <div className="text-2xl mb-1">📝</div>
-              <div className="text-sm font-medium text-blue-400">SFT</div>
-              <div className="text-xs text-zinc-500">建立基础能力</div>
+              <div className="text-sm font-medium text-blue-400">{p.workflowSft.title}</div>
+              <div className="text-xs text-zinc-500">{p.workflowSft.desc}</div>
             </div>
             <ArrowRight className="w-6 h-6 text-zinc-600 mx-4" />
             <div className="flex-1 text-center p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
               <div className="text-2xl mb-1">❤️</div>
-              <div className="text-sm font-medium text-purple-400">DPO/偏好优化</div>
-              <div className="text-xs text-zinc-500">学习人类偏好</div>
+              <div className="text-sm font-medium text-purple-400">{p.workflowDpo.title}</div>
+              <div className="text-xs text-zinc-500">{p.workflowDpo.desc}</div>
             </div>
             <ArrowRight className="w-6 h-6 text-zinc-600 mx-4" />
             <div className="flex-1 text-center p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
               <div className="text-2xl mb-1">✅</div>
-              <div className="text-sm font-medium text-emerald-400">评估</div>
-              <div className="text-xs text-zinc-500">验证效果</div>
+              <div className="text-sm font-medium text-emerald-400">{p.workflowEval.title}</div>
+              <div className="text-xs text-zinc-500">{p.workflowEval.desc}</div>
             </div>
           </div>
           <div className="mt-3 text-xs text-zinc-500 text-center">
-            先 SFT 再 DPO 效果更好。也可以用 ORPO 一步到位，但灵活性较低。
+            {p.workflowHint}
           </div>
         </div>
       </div>
 
       {/* Key Takeaways */}
       <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
-        <h4 className="text-sm font-medium text-orange-400 mb-2">📌 小结</h4>
+        <h4 className="text-sm font-medium text-orange-400 mb-2">{p.takeawaysTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">DPO 是首选</strong>：实现简单、效果好、训练稳定</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">KTO 数据要求低</strong>：只要标注好/坏，不需要配对</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">先 SFT 再偏好</strong>：两阶段效果通常优于单阶段</span>
-          </li>
+          {p.takeaways.map((item) => (
+            <li key={item.label} className="flex items-start gap-2">
+              <span className="text-orange-400">•</span>
+              <span><strong className="text-zinc-400">{item.label}</strong>：{item.text}</span>
+            </li>
+          ))}
         </ul>
       </div>
 
@@ -380,15 +341,10 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {p.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'DPO', zh: '直接偏好优化', desc: 'Direct Preference Optimization，直接从偏好数据学习' },
-            { en: 'KTO', zh: '卡尼曼-特沃斯基优化', desc: '仅需单个标签的偏好学习方法' },
-            { en: 'Chosen', zh: '优选回答', desc: '偏好数据中被标注为更好的回答' },
-            { en: 'Rejected', zh: '劣选回答', desc: '偏好数据中被标注为较差的回答' },
-          ].map((term) => (
+          {p.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
@@ -408,13 +364,13 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
           className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {p.backButton}
         </button>
         <button
           onClick={onComplete}
           className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 border border-orange-500/30 transition-all font-medium"
         >
-          下一步：RLHF 与 RFT
+          {p.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

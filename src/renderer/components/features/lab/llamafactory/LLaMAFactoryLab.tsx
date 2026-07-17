@@ -14,6 +14,8 @@ import {
   Check,
   Sparkles,
 } from 'lucide-react';
+import { useI18n } from '../../../../hooks/useI18n';
+import type { Translations } from '../../../../i18n/zh';
 import { IntroStage } from './stages/IntroStage';
 import { MethodStage } from './stages/MethodStage';
 import { SFTStage } from './stages/SFTStage';
@@ -34,64 +36,51 @@ interface StageConfig {
   difficulty: 1 | 2 | 3 | 4;
 }
 
-const stages: StageConfig[] = [
-  {
-    id: 'intro',
-    title: '微调全景图',
-    shortTitle: '全景',
-    icon: <Map className="w-4 h-4" />,
-    description: '微调技术栈总览、各方法定位、LLaMA Factory 介绍',
-    learningPoint: '认识培训体系：预训练 → SFT → RLHF/DPO → 评估',
-    difficulty: 1,
-  },
-  {
-    id: 'method',
-    title: '参数高效微调',
-    shortTitle: 'PEFT',
-    icon: <Layers className="w-4 h-4" />,
-    description: 'LoRA/QLoRA/全量微调原理对比、显存计算',
-    learningPoint: '选择学习策略：用更少资源获得更好效果',
-    difficulty: 2,
-  },
-  {
-    id: 'sft',
-    title: 'SFT 监督微调',
-    shortTitle: 'SFT',
-    icon: <GraduationCap className="w-4 h-4" />,
-    description: '数据准备、训练流程、超参数调优',
-    learningPoint: '做标准练习题：给模型新增知识和能力',
-    difficulty: 3,
-  },
-  {
-    id: 'preference',
-    title: '偏好优化方法',
-    shortTitle: 'DPO',
-    icon: <Heart className="w-4 h-4" />,
-    description: 'DPO/KTO/ORPO/SimPO 原理与对比',
-    learningPoint: '学会哪个答案更好：让模型学习风格和偏好',
-    difficulty: 3,
-  },
-  {
-    id: 'rlhf',
-    title: 'RLHF 与 RFT',
-    shortTitle: 'RLHF',
-    icon: <Brain className="w-4 h-4" />,
-    description: '奖励模型、PPO 流程、RFT 强化微调',
-    learningPoint: '追求高分与推理：强化学习提升模型能力',
-    difficulty: 4,
-  },
-  {
-    id: 'practice',
-    title: '综合实践',
-    shortTitle: '实践',
-    icon: <Trophy className="w-4 h-4" />,
-    description: '工作流选择、模型合并、评估部署',
-    learningPoint: '毕业考试：完整流程串联',
-    difficulty: 2,
-  },
-];
+function buildStages(t: Translations): StageConfig[] {
+  const s = t.labLlamafactory.lab.stages;
+  return [
+    {
+      id: 'intro',
+      ...s.intro,
+      icon: <Map className="w-4 h-4" />,
+      difficulty: 1,
+    },
+    {
+      id: 'method',
+      ...s.method,
+      icon: <Layers className="w-4 h-4" />,
+      difficulty: 2,
+    },
+    {
+      id: 'sft',
+      ...s.sft,
+      icon: <GraduationCap className="w-4 h-4" />,
+      difficulty: 3,
+    },
+    {
+      id: 'preference',
+      ...s.preference,
+      icon: <Heart className="w-4 h-4" />,
+      difficulty: 3,
+    },
+    {
+      id: 'rlhf',
+      ...s.rlhf,
+      icon: <Brain className="w-4 h-4" />,
+      difficulty: 4,
+    },
+    {
+      id: 'practice',
+      ...s.practice,
+      icon: <Trophy className="w-4 h-4" />,
+      difficulty: 2,
+    },
+  ];
+}
 
 export const LLaMAFactoryLab: React.FC = () => {
+  const { t } = useI18n();
+  const stages = buildStages(t);
   const [currentStage, setCurrentStage] = useState<Stage>('intro');
   const [completedStages, setCompletedStages] = useState<Set<Stage>>(new Set());
 
@@ -161,13 +150,13 @@ export const LLaMAFactoryLab: React.FC = () => {
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-orange-400" />
-            <span className="text-sm text-zinc-400">概念演示模式</span>
+            <span className="text-sm text-zinc-400">{t.labLlamafactory.lab.conceptDemoMode}</span>
             <span className="text-xs px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
-              无需真实训练
+              {t.labLlamafactory.lab.noRealTrainingNeeded}
             </span>
           </div>
           <div className="text-xs text-zinc-500">
-            🦙 掌握 LLaMA Factory 微调全流程
+            {t.labLlamafactory.lab.footerTagline}
           </div>
         </div>
       </div>
@@ -245,7 +234,7 @@ export const LLaMAFactoryLab: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-semibold text-zinc-200">
-                  阶段 {currentStageIndex + 1}: {currentStageConfig.title}
+                  {t.labLlamafactory.lab.stagePrefix} {currentStageIndex + 1}: {currentStageConfig.title}
                 </h2>
                 {renderDifficulty(currentStageConfig.difficulty)}
               </div>
@@ -263,7 +252,7 @@ export const LLaMAFactoryLab: React.FC = () => {
         <div className="max-w-5xl mx-auto flex items-center gap-2">
           <span className="text-orange-400">💡</span>
           <span className="text-sm text-zinc-400">
-            <span className="text-zinc-400 font-medium">学习要点：</span>
+            <span className="text-zinc-400 font-medium">{t.labLlamafactory.lab.learningPointLabel}</span>
             {currentStageConfig.learningPoint}
           </span>
         </div>

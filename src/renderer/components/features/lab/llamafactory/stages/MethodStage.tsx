@@ -12,6 +12,8 @@ import {
   Cpu,
   Zap,
 } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
+import type { Translations } from '../../../../../i18n/zh';
 
 interface MethodStageProps {
   onComplete: () => void;
@@ -19,44 +21,38 @@ interface MethodStageProps {
 }
 
 // 微调方法对比
-const methods = [
-  {
-    id: 'full',
-    name: '全量微调',
-    en: 'Full Fine-tuning',
-    description: '更新模型所有参数',
-    pros: ['效果最好', '完全适配任务'],
-    cons: ['显存消耗大', '训练时间长', '容易过拟合'],
-    vramMultiplier: 16, // 相对基准
-    icon: '🏋️',
-    color: 'purple',
-    trainableParams: '100%',
-  },
-  {
-    id: 'lora',
-    name: 'LoRA',
-    en: 'Low-Rank Adaptation',
-    description: '只训练低秩分解矩阵',
-    pros: ['显存消耗小', '训练快', '可以叠加多个'],
-    cons: ['效果略逊于全量', '需要调整 rank'],
-    vramMultiplier: 1.2,
-    icon: '🎯',
-    color: 'blue',
-    trainableParams: '0.1-1%',
-  },
-  {
-    id: 'qlora',
-    name: 'QLoRA',
-    en: '4-bit LoRA',
-    description: '量化基座 + LoRA',
-    pros: ['显存最少', '消费级显卡可用', '效果接近 LoRA'],
-    cons: ['推理需要反量化', '略慢于 LoRA'],
-    vramMultiplier: 0.5,
-    icon: '🔧',
-    color: 'emerald',
-    trainableParams: '0.1-1%',
-  },
-];
+function buildMethods(t: Translations) {
+  const m = t.labLlamafactory.method.methods;
+  return [
+    {
+      id: 'full',
+      ...m.full,
+      en: 'Full Fine-tuning',
+      vramMultiplier: 16, // 相对基准
+      icon: '🏋️',
+      color: 'purple',
+      trainableParams: '100%',
+    },
+    {
+      id: 'lora',
+      ...m.lora,
+      en: 'Low-Rank Adaptation',
+      vramMultiplier: 1.2,
+      icon: '🎯',
+      color: 'blue',
+      trainableParams: '0.1-1%',
+    },
+    {
+      id: 'qlora',
+      ...m.qlora,
+      en: '4-bit LoRA',
+      vramMultiplier: 0.5,
+      icon: '🔧',
+      color: 'emerald',
+      trainableParams: '0.1-1%',
+    },
+  ];
+}
 
 // 模型规模选项
 const modelSizes = [
@@ -70,7 +66,7 @@ const modelSizes = [
 const loraRanks = [8, 16, 32, 64, 128];
 
 // LoRA 可视化矩阵
-const LoRAVisualization: React.FC<{ rank: number }> = ({ rank }) => {
+const LoRAVisualization: React.FC<{ rank: number; originalWeightLabel: string; frozenLabel: string }> = ({ rank, originalWeightLabel, frozenLabel }) => {
   const originalDim = 100;
   const scaledRank = Math.max(4, Math.floor(rank / 8));
 
@@ -86,7 +82,7 @@ const LoRAVisualization: React.FC<{ rank: number }> = ({ rank }) => {
             W<sub>0</sub>
           </div>
         </div>
-        <span className="text-xs text-zinc-500 mt-1">原始权重</span>
+        <span className="text-xs text-zinc-500 mt-1">{originalWeightLabel}</span>
         <span className="text-xs text-zinc-600">d × d</span>
       </div>
 
@@ -102,7 +98,7 @@ const LoRAVisualization: React.FC<{ rank: number }> = ({ rank }) => {
             W<sub>0</sub>
           </div>
         </div>
-        <span className="text-xs text-zinc-500 mt-1">冻结</span>
+        <span className="text-xs text-zinc-500 mt-1">{frozenLabel}</span>
       </div>
 
       <span className="text-zinc-500 text-xl">+</span>
@@ -139,6 +135,9 @@ const LoRAVisualization: React.FC<{ rank: number }> = ({ rank }) => {
 };
 
 export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) => {
+  const { t } = useI18n();
+  const m = t.labLlamafactory.method;
+  const methods = buildMethods(t);
   const [selectedMethod, setSelectedMethod] = useState<string>('lora');
   const [selectedModel, setSelectedModel] = useState(0); // 7B
   const [selectedRank, setSelectedRank] = useState(2); // rank=32
@@ -178,10 +177,9 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
         <div className="flex items-start gap-3">
           <Layers className="w-5 h-5 text-orange-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">⚙️ 参数高效微调 (PEFT)</h3>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">{m.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              微调大模型需要大量显存。<span className="text-orange-400">参数高效微调</span>只更新一小部分参数，
-              用更少的资源达到接近全量微调的效果。就像只练习薄弱环节，而不是重学所有知识。
+              {m.introDescPrefix}<span className="text-orange-400">{m.introDescHighlight}</span>{m.introDescSuffix}
             </p>
           </div>
         </div>
@@ -191,7 +189,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Cpu className="w-4 h-4 text-orange-400" />
-          微调方法对比
+          {m.comparisonSectionTitle}
         </h3>
         <div className="grid grid-cols-3 gap-4">
           {methods.map((method) => {
@@ -223,7 +221,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
 
                 <div className="space-y-2">
                   <div>
-                    <div className="text-xs text-emerald-400 mb-1">优点</div>
+                    <div className="text-xs text-emerald-400 mb-1">{m.prosLabel}</div>
                     <ul className="space-y-0.5">
                       {method.pros.map((pro, idx) => (
                         <li key={idx} className="text-xs text-zinc-500 flex items-center gap-1">
@@ -233,7 +231,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                     </ul>
                   </div>
                   <div>
-                    <div className="text-xs text-red-400 mb-1">缺点</div>
+                    <div className="text-xs text-red-400 mb-1">{m.consLabel}</div>
                     <ul className="space-y-0.5">
                       {method.cons.map((con, idx) => (
                         <li key={idx} className="text-xs text-zinc-500 flex items-center gap-1">
@@ -246,7 +244,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
 
                 <div className="mt-3 pt-3 border-t border-zinc-800">
                   <div className="flex justify-between text-xs">
-                    <span className="text-zinc-500">可训练参数</span>
+                    <span className="text-zinc-500">{m.trainableParamsLabel}</span>
                     <span className={isSelected ? colors.text : 'text-zinc-400'}>{method.trainableParams}</span>
                   </div>
                 </div>
@@ -260,25 +258,24 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Zap className="w-4 h-4 text-orange-400" />
-          LoRA 原理可视化
+          {m.loraVisualizationTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
             <p className="text-sm text-zinc-400">
-              <span className="text-blue-400 font-medium">核心思想</span>：权重的变化量 ΔW 可以用两个小矩阵 B×A 近似。
-              原本更新 d×d 个参数，现在只更新 2×d×r 个参数（r 远小于 d）。
+              <span className="text-blue-400 font-medium">{m.loraCoreIdeaLabel}</span>{m.loraCoreIdeaText}
             </p>
             <div className="mt-2 text-xs text-zinc-500">
-              公式：W = W<sub>0</sub> + ΔW ≈ W<sub>0</sub> + B × A
+              {m.loraFormulaLabel}<sub>0</sub> + ΔW ≈ W<sub>0</sub> + B × A
             </div>
           </div>
 
-          <LoRAVisualization rank={currentRank} />
+          <LoRAVisualization rank={currentRank} originalWeightLabel={m.originalWeightLabel} frozenLabel={m.frozenLabel} />
 
           {/* Rank Slider */}
           <div className="mt-4 p-3 rounded-lg bg-zinc-800">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-zinc-400">LoRA Rank (r)</span>
+              <span className="text-sm text-zinc-400">{m.loraRankLabel}</span>
               <span className="text-sm font-medium text-orange-400">{currentRank}</span>
             </div>
             <input
@@ -295,7 +292,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
               ))}
             </div>
             <p className="text-xs text-zinc-500 mt-2">
-              Rank 越大 → 表达能力越强，但参数量和显存消耗也越大。通常 8-64 就够用。
+              {m.loraRankHint}
             </p>
           </div>
         </div>
@@ -305,12 +302,12 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Calculator className="w-4 h-4 text-orange-400" />
-          显存估算器
+          {m.vramCalculatorTitle}
         </h3>
         <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           {/* Model Size Selector */}
           <div className="mb-4">
-            <div className="text-sm text-zinc-400 mb-2">选择模型规模</div>
+            <div className="text-sm text-zinc-400 mb-2">{m.selectModelSizeLabel}</div>
             <div className="flex gap-2">
               {modelSizes.map((model, idx) => (
                 <button
@@ -357,9 +354,9 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                     />
                   </div>
                   <div className="text-xs text-zinc-500 mt-2">
-                    {method.id === 'qlora' && '消费级显卡可用'}
-                    {method.id === 'lora' && '专业显卡推荐'}
-                    {method.id === 'full' && '需要高端设备'}
+                    {method.id === 'qlora' && m.qloraConsumerGpu}
+                    {method.id === 'lora' && m.loraProGpu}
+                    {method.id === 'full' && m.fullHighEndDevice}
                   </div>
                 </div>
               );
@@ -369,10 +366,10 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
           {/* Practical Advice */}
           <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
             <div className="text-xs text-amber-400">
-              💡 实用建议：对于 {currentModel.name} 模型，
+              💡 {m.practicalAdvicePrefix}{currentModel.name}{m.practicalAdviceModelSuffix}
               {calculateVram('qlora') <= 24
-                ? `QLoRA 仅需 ${calculateVram('qlora')} GB 显存，RTX 3090/4090 (24GB) 就能跑！`
-                : `QLoRA 需要 ${calculateVram('qlora')} GB 显存，建议使用多卡或云服务。`
+                ? m.practicalAdviceQloraFits.replace('{vram}', String(calculateVram('qlora')))
+                : m.practicalAdviceQloraNeedsMore.replace('{vram}', String(calculateVram('qlora')))
               }
             </div>
           </div>
@@ -381,20 +378,14 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
 
       {/* Key Takeaways */}
       <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
-        <h4 className="text-sm font-medium text-orange-400 mb-2">📌 小结</h4>
+        <h4 className="text-sm font-medium text-orange-400 mb-2">{m.takeawaysTitle}</h4>
         <ul className="space-y-2 text-sm text-zinc-400">
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">LoRA 是首选</strong>：效果好、显存省、训练快，适合大多数场景</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">QLoRA 更省</strong>：消费级显卡可用，是个人开发者的福音</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-400">全量微调</strong>：效果最好但代价大，除非追求极致效果否则不推荐</span>
-          </li>
+          {m.takeaways.map((item) => (
+            <li key={item.label} className="flex items-start gap-2">
+              <span className="text-orange-400">•</span>
+              <span><strong className="text-zinc-400">{item.label}</strong>：{item.text}</span>
+            </li>
+          ))}
         </ul>
       </div>
 
@@ -402,15 +393,10 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {m.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'PEFT', zh: '参数高效微调', desc: 'Parameter-Efficient Fine-Tuning，只更新少量参数' },
-            { en: 'LoRA', zh: '低秩适配', desc: 'Low-Rank Adaptation，用低秩矩阵近似权重变化' },
-            { en: 'QLoRA', zh: '量化 LoRA', desc: '4-bit 量化基座 + LoRA，显存消耗最少' },
-            { en: 'Rank', zh: '秩', desc: 'LoRA 矩阵的维度，控制表达能力和参数量' },
-          ].map((term) => (
+          {m.glossary.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
@@ -430,13 +416,13 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
           className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {m.backButton}
         </button>
         <button
           onClick={onComplete}
           className="flex items-center gap-2 px-5 py-2.5 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 border border-orange-500/30 transition-all font-medium"
         >
-          下一步：SFT 监督微调
+          {m.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

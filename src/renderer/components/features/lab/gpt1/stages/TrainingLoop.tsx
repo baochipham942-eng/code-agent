@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronLeft, Play, Pause, Square, RotateCcw, TrendingDown } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 // 训练配置
 interface TrainingConfig {
@@ -46,6 +47,8 @@ interface Props {
 }
 
 export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
+  const { t } = useI18n();
+  const tl = t.labGpt1.trainingLoop;
   const [config, setConfig] = useState<TrainingConfig>({
     batchSize: 32,
     learningRate: 3e-4,
@@ -209,42 +212,42 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <RotateCcw className="w-4 h-4 text-blue-400" />
-              AI 怎么「练习」？
+              {tl.practiceTitle}
             </h3>
             <div className="space-y-3 text-sm text-zinc-400">
-              <p>就像学生做练习题一样，AI 的学习过程是：</p>
+              <p>{tl.practiceIntro}</p>
               <ol className="space-y-2">
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">📝</span>
-                  <span><span className="text-emerald-300 font-medium">做题：</span>看一句话，猜下一个字是什么</span>
+                  <span><span className="text-emerald-300 font-medium">{tl.practiceStep1Label}</span>{tl.practiceStep1Desc}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">❌</span>
-                  <span><span className="text-red-300 font-medium">对答案：</span>比较自己的猜测和正确答案，看差多少</span>
+                  <span><span className="text-red-300 font-medium">{tl.practiceStep2Label}</span>{tl.practiceStep2Desc}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">🔍</span>
-                  <span><span className="text-amber-300 font-medium">找错因：</span>分析是哪里出了问题</span>
+                  <span><span className="text-amber-300 font-medium">{tl.practiceStep3Label}</span>{tl.practiceStep3Desc}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-2xl">✏️</span>
-                  <span><span className="text-blue-300 font-medium">改正：</span>调整自己的「思路」，下次争取做对</span>
+                  <span><span className="text-blue-300 font-medium">{tl.practiceStep4Label}</span>{tl.practiceStep4Desc}</span>
                 </li>
               </ol>
               <p className="text-xs text-zinc-500 mt-2">
-                💡 这个过程重复几万次，AI 就慢慢学会了！
+                {tl.practiceHint}
               </p>
             </div>
           </div>
 
           {/* 学习设置 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">调整学习方式</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">{tl.settingsTitle}</h3>
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-zinc-400">📚 每次看几道题</label>
-                  <span className="text-xs font-bold text-emerald-400">{config.batchSize} 道</span>
+                  <label className="text-xs text-zinc-400">{tl.batchSizeLabel}</label>
+                  <span className="text-xs font-bold text-emerald-400">{tl.batchSizeValue.replace('{count}', String(config.batchSize))}</span>
                 </div>
                 <input
                   type="range"
@@ -256,13 +259,13 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   disabled={isTraining}
                   className="w-full h-1.5 rounded-lg appearance-none bg-zinc-600 cursor-pointer disabled:opacity-50"
                 />
-                <p className="text-xs text-zinc-600 mt-1">一次看太多会消化不良，太少则学得慢</p>
+                <p className="text-xs text-zinc-600 mt-1">{tl.batchSizeHint}</p>
               </div>
 
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-zinc-400">🏃 改正的幅度</label>
-                  <span className="text-xs font-bold text-blue-400">{config.learningRate > 0.001 ? '大步走' : config.learningRate > 0.0001 ? '中等' : '小碎步'}</span>
+                  <label className="text-xs text-zinc-400">{tl.lrLabel}</label>
+                  <span className="text-xs font-bold text-blue-400">{config.learningRate > 0.001 ? tl.lrBig : config.learningRate > 0.0001 ? tl.lrMedium : tl.lrSmall}</span>
                 </div>
                 <input
                   type="range"
@@ -274,13 +277,13 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   disabled={isTraining}
                   className="w-full h-1.5 rounded-lg appearance-none bg-zinc-600 cursor-pointer disabled:opacity-50"
                 />
-                <p className="text-xs text-zinc-600 mt-1">步子太大容易摔，太小则进步慢</p>
+                <p className="text-xs text-zinc-600 mt-1">{tl.lrHint}</p>
               </div>
 
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-zinc-400">🔄 复习几遍</label>
-                  <span className="text-xs font-bold text-purple-400">{config.epochs} 遍</span>
+                  <label className="text-xs text-zinc-400">{tl.epochsLabel}</label>
+                  <span className="text-xs font-bold text-purple-400">{tl.epochsValue.replace('{count}', String(config.epochs))}</span>
                 </div>
                 <input
                   type="range"
@@ -292,7 +295,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   disabled={isTraining}
                   className="w-full h-1.5 rounded-lg appearance-none bg-zinc-600 cursor-pointer disabled:opacity-50"
                 />
-                <p className="text-xs text-zinc-600 mt-1">好记性不如烂笔头，多练几遍记得牢</p>
+                <p className="text-xs text-zinc-600 mt-1">{tl.epochsHint}</p>
               </div>
             </div>
           </div>
@@ -301,24 +304,24 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <TrendingDown className="w-4 h-4 text-amber-400" />
-              Loss（错误率）是什么？
+              {tl.lossTitle}
             </h3>
             <div className="space-y-3 text-sm text-zinc-400">
               <p>
-                <span className="text-amber-400 font-medium">Loss</span> 就是 AI 的「错误程度」：
+                <span className="text-amber-400 font-medium">Loss</span> {tl.lossIntro}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
-                  <div className="text-2xl font-bold text-red-400">5.8</div>
-                  <div className="text-xs text-zinc-500">刚开始：错得很离谱</div>
+                  <div className="text-2xl font-bold text-red-400">{tl.lossStartValue}</div>
+                  <div className="text-xs text-zinc-500">{tl.lossStartLabel}</div>
                 </div>
                 <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
-                  <div className="text-2xl font-bold text-emerald-400">0.02</div>
-                  <div className="text-xs text-zinc-500">训练后：几乎不出错</div>
+                  <div className="text-2xl font-bold text-emerald-400">{tl.lossEndValue}</div>
+                  <div className="text-xs text-zinc-500">{tl.lossEndLabel}</div>
                 </div>
               </div>
               <p className="text-xs text-zinc-500">
-                💡 Loss 越低越好！我们的目标就是让这个数字尽可能小
+                {tl.lossHint}
               </p>
             </div>
           </div>
@@ -328,7 +331,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
         <div className="space-y-6">
           {/* 训练控制 */}
           <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-4">训练控制</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-4">{tl.controlTitle}</h3>
 
             {/* 控制按钮 */}
             <div className="flex gap-2 mb-4">
@@ -338,7 +341,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-500/30 transition-colors"
                 >
                   <Play className="w-4 h-4" />
-                  {currentStep > 0 ? '继续' : '开始训练'}
+                  {currentStep > 0 ? tl.resumeButton : tl.startButton}
                 </button>
               ) : (
                 <button
@@ -346,7 +349,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 text-sm font-medium hover:bg-amber-500/30 transition-colors"
                 >
                   <Pause className="w-4 h-4" />
-                  暂停
+                  {tl.pauseButton}
                 </button>
               )}
 
@@ -356,7 +359,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/30 disabled:opacity-50 transition-colors"
               >
                 <Square className="w-4 h-4" />
-                停止
+                {tl.stopButton}
               </button>
 
               <button
@@ -364,14 +367,14 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 transition-colors"
               >
                 <RotateCcw className="w-4 h-4" />
-                重置
+                {tl.resetButton}
               </button>
             </div>
 
             {/* 进度条 */}
             <div className="mb-4">
               <div className="flex justify-between text-xs text-zinc-500 mb-1">
-                <span>Epoch {currentEpoch}/{config.epochs} | Step {stepInEpoch}/100</span>
+                <span>{tl.progressLabel.replace('{epoch}', String(currentEpoch)).replace('{totalEpochs}', String(config.epochs)).replace('{step}', String(stepInEpoch))}</span>
                 <span>{progress.toFixed(1)}%</span>
               </div>
               <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
@@ -386,7 +389,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-zinc-900">
                 <div className="text-2xl font-bold text-blue-400">{currentLoss.toFixed(4)}</div>
-                <div className="text-xs text-zinc-500">当前错误率</div>
+                <div className="text-xs text-zinc-500">{tl.currentLossLabel}</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900">
                 <div className="text-2xl font-bold text-emerald-400">
@@ -394,7 +397,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                     ? ((1 - currentLoss / lossHistory[0]) * 100).toFixed(1)
                     : 0}%
                 </div>
-                <div className="text-xs text-zinc-500">进步了多少</div>
+                <div className="text-xs text-zinc-500">{tl.progressPercentLabel}</div>
               </div>
             </div>
           </div>
@@ -403,14 +406,14 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <TrendingDown className="w-4 h-4 text-blue-400" />
-              错误率变化（越低越好）
+              {tl.chartTitle}
             </h3>
             <div className="bg-zinc-950 rounded-lg p-2">
               {lossHistory.length > 1 ? (
                 renderLossChart()
               ) : (
                 <div className="h-[150px] flex items-center justify-center text-sm text-zinc-600">
-                  点击「开始训练」查看 AI 的进步过程 📈
+                  {tl.chartEmpty}
                 </div>
               )}
             </div>
@@ -418,18 +421,18 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
 
           {/* 训练记录 */}
           <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">📋 学习记录</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">{tl.logsTitle}</h3>
             <div className="space-y-1 max-h-40 overflow-y-auto text-xs">
               {logs.length > 0 ? (
                 logs.map((log, i) => (
                   <div key={i} className="text-zinc-400 p-1.5 rounded bg-zinc-800">
-                    第 <span className="text-blue-400 font-bold">{log.epoch}</span> 遍 |
-                    {' '}做到第 <span className="text-purple-400">{log.step}</span> 题 |
-                    {' '}错误率 <span className="text-emerald-400 font-bold">{log.loss.toFixed(4)}</span>
+                    {tl.logEpochPrefix}<span className="text-blue-400 font-bold">{log.epoch}</span>{tl.logEpochSuffix}
+                    {tl.logStepPrefix}<span className="text-purple-400">{log.step}</span>{tl.logStepSuffix}
+                    {tl.logLossPrefix}<span className="text-emerald-400 font-bold">{log.loss.toFixed(4)}</span>
                   </div>
                 ))
               ) : (
-                <div className="text-zinc-600 text-center py-4">等待开始训练…</div>
+                <div className="text-zinc-600 text-center py-4">{tl.logsEmpty}</div>
               )}
             </div>
           </div>
@@ -440,19 +443,10 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
       <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {tl.termsTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'Training Loop', zh: '训练循环', desc: '反复"做题-改正"的过程，直到模型学会' },
-            { en: 'Epoch', zh: '轮次', desc: '完整遍历一次所有训练数据叫一个 epoch' },
-            { en: 'Batch', zh: '批次', desc: '每次训练时同时处理的样本数量，不是一个个学而是一批批学' },
-            { en: 'Loss', zh: '损失', desc: '衡量模型预测与正确答案差距的指标，越小越好' },
-            { en: 'Learning Rate', zh: '学习率', desc: '每次调整参数的幅度，太大会震荡，太小学得慢' },
-            { en: 'Gradient', zh: '梯度', desc: '指示参数应该往哪个方向调整的"指南针"' },
-            { en: 'Backpropagation', zh: '反向传播', desc: '从输出层往回计算梯度的算法，找出每个参数的责任' },
-            { en: 'Optimizer', zh: '优化器', desc: '根据梯度更新参数的策略，常用 Adam、SGD 等' },
-          ].map((term) => (
+          {tl.terms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
@@ -472,13 +466,13 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-zinc-700 text-zinc-400 font-medium hover:bg-zinc-600 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {tl.backButton}
         </button>
         <button
           onClick={onComplete}
           className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors"
         >
-          下一步: 推理测试
+          {tl.nextButton}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

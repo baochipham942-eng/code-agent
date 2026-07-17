@@ -5,6 +5,8 @@
 
 import React, { useState } from 'react';
 import { Database, Type, Boxes, RotateCcw, MessageSquare, Check, Sparkles, Cpu } from 'lucide-react';
+import { useI18n } from '../../../../hooks/useI18n';
+import type { Translations } from '../../../../i18n/zh';
 import { DataPreparation } from './stages/DataPreparation';
 import { TokenizerStage } from './stages/TokenizerStage';
 import { ModelArchitecture } from './stages/ModelArchitecture';
@@ -27,50 +29,20 @@ interface StageConfig {
   learningPoint: string;
 }
 
-const stages: StageConfig[] = [
-  {
-    id: 'data',
-    title: '给 AI 听对话',
-    shortTitle: '听',
-    icon: <Database className="w-4 h-4" />,
-    description: '准备大量"你说、我说"的对话，让 AI 有东西可学',
-    learningPoint: '就像小孩要先听大人说话，AI 也要先"听"大量对话才能学会',
-  },
-  {
-    id: 'tokenizer',
-    title: '教 AI 认字',
-    shortTitle: '认字',
-    icon: <Type className="w-4 h-4" />,
-    description: '把文字拆成一个个小单位，让电脑能够处理',
-    learningPoint: '电脑只认识数字，所以要把每个字/词变成数字',
-  },
-  {
-    id: 'architecture',
-    title: 'AI 的大脑',
-    shortTitle: '大脑',
-    icon: <Boxes className="w-4 h-4" />,
-    description: '了解 AI 是怎么"思考"的，它的脑子里有什么',
-    learningPoint: 'AI 大脑的核心能力：能同时关注句子里的多个词，理解它们的关系',
-  },
-  {
-    id: 'training',
-    title: '反复练习',
-    shortTitle: '练习',
-    icon: <RotateCcw className="w-4 h-4" />,
-    description: '让 AI 一遍遍地猜下一个字，猜错了就改进',
-    learningPoint: '训练就像做题：做错了看答案，记住正确答案，下次争取做对',
-  },
-  {
-    id: 'inference',
-    title: '让 AI 说话',
-    shortTitle: '说话',
-    icon: <MessageSquare className="w-4 h-4" />,
-    description: '训练完成！和你亲手训练的 AI 聊天看看',
-    learningPoint: 'AI 说话时会一个字一个字地往外"蹦"，每个字都是它猜的最可能的下一个字',
-  },
-];
+function buildStages(t: Translations): StageConfig[] {
+  const s = t.labGpt1.gpt1Lab.stages;
+  return [
+    { id: 'data', ...s.data, icon: <Database className="w-4 h-4" /> },
+    { id: 'tokenizer', ...s.tokenizer, icon: <Type className="w-4 h-4" /> },
+    { id: 'architecture', ...s.architecture, icon: <Boxes className="w-4 h-4" /> },
+    { id: 'training', ...s.training, icon: <RotateCcw className="w-4 h-4" /> },
+    { id: 'inference', ...s.inference, icon: <MessageSquare className="w-4 h-4" /> },
+  ];
+}
 
 export const GPT1Lab: React.FC = () => {
+  const { t } = useI18n();
+  const stages = buildStages(t);
   const [mode, setMode] = useState<LabMode>('simulation');
   const [currentStage, setCurrentStage] = useState<Stage>('data');
   const [completedStages, setCompletedStages] = useState<Set<Stage>>(new Set());
@@ -132,7 +104,7 @@ export const GPT1Lab: React.FC = () => {
                 }`}
               >
                 <Sparkles className="w-4 h-4" />
-                模拟学习
+                {t.labGpt1.gpt1Lab.modeSimulation}
               </button>
               <button
                 onClick={() => setMode('real')}
@@ -143,7 +115,7 @@ export const GPT1Lab: React.FC = () => {
                 }`}
               >
                 <Cpu className="w-4 h-4" />
-                真实训练
+                {t.labGpt1.gpt1Lab.modeReal}
               </button>
             </div>
           </div>
@@ -151,9 +123,9 @@ export const GPT1Lab: React.FC = () => {
           {/* Mode Description */}
           <div className="text-xs text-zinc-500">
             {mode === 'simulation' ? (
-              <span>📚 可视化演示，帮助理解原理</span>
+              <span>{t.labGpt1.gpt1Lab.modeSimulationDesc}</span>
             ) : (
-              <span>🔬 下载项目，执行真实训练</span>
+              <span>{t.labGpt1.gpt1Lab.modeRealDesc}</span>
             )}
           </div>
         </div>
@@ -231,7 +203,8 @@ export const GPT1Lab: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-zinc-200">
-                    阶段 {currentStageIndex + 1}: {currentStageConfig.title}
+                    {t.labGpt1.gpt1Lab.stagePrefix.replace('{index}', String(currentStageIndex + 1))}
+                    {currentStageConfig.title}
                   </h2>
                   <p className="text-sm text-zinc-500">{currentStageConfig.description}</p>
                 </div>
@@ -249,7 +222,7 @@ export const GPT1Lab: React.FC = () => {
             <div className="max-w-4xl mx-auto flex items-center gap-2">
               <span className="text-amber-400">💡</span>
               <span className="text-sm text-zinc-400">
-                <span className="text-zinc-400 font-medium">学习要点：</span>
+                <span className="text-zinc-400 font-medium">{t.labGpt1.gpt1Lab.learningPointLabel}</span>
                 {currentStageConfig.learningPoint}
               </span>
             </div>

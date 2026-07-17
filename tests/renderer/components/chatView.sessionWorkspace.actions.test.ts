@@ -13,6 +13,9 @@ const appState = {
   pendingPermissionRequest: null as any,
   pendingPermissionSessionId: null as string | null,
   queuedPermissionRequests: {} as Record<string, any[]>,
+  language: 'zh' as const,
+  setLanguage: vi.fn(),
+  cloudUIStrings: undefined,
 };
 
 const sessionState = {

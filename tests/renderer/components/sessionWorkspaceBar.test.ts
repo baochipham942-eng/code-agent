@@ -7,6 +7,9 @@ const appState = {
   setWorkingDirectory: vi.fn(),
   setShowEvalCenter: vi.fn(),
   openDevServerLauncher: vi.fn(),
+  language: 'zh' as const,
+  setLanguage: vi.fn(),
+  cloudUIStrings: undefined,
 };
 
 const sessionState = {

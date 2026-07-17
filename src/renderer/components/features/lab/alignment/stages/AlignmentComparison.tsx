@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Bot,
 } from 'lucide-react';
+import { useI18n } from '../../../../../hooks/useI18n';
 
 interface AlignmentComparisonProps {
   onBack: () => void;
@@ -66,6 +67,9 @@ const comparisonExamples = [
 ];
 
 export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack }) => {
+  const { t } = useI18n();
+  const s = t.labAlignment.comparison;
+  const common = t.labAlignment.common;
   const [selectedExample, setSelectedExample] = useState(0);
   const example = comparisonExamples[selectedExample];
 
@@ -76,10 +80,9 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
         <div className="flex items-start gap-3">
           <Layers className="w-5 h-5 text-pink-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">🎉 看看 AI 的进步！</h3>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">{s.introTitle}</h3>
             <p className="text-sm text-zinc-400">
-              同样一个问题，不同阶段的 AI 回答有什么不同？
-              从「只会说话」到「会好好回答」，看看 AI 是怎么一步步变聪明的！
+              {s.introText}
             </p>
           </div>
         </div>
@@ -106,7 +109,7 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
       <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
         <div className="flex items-center gap-2 mb-2">
           <MessageSquare className="w-4 h-4 text-blue-400" />
-          <span className="text-sm text-blue-400">用户说：</span>
+          <span className="text-sm text-blue-400">{common.userSaidLabel}</span>
         </div>
         <p className="text-base text-zinc-200">{example.prompt}</p>
       </div>
@@ -118,9 +121,9 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="text-lg">📚</div>
-              <span className="text-sm font-medium text-zinc-400">刚读完书的 AI</span>
+              <span className="text-sm font-medium text-zinc-400">{s.stageCards.base.label}</span>
             </div>
-            <span className="text-xs px-2 py-0.5 rounded bg-zinc-700 text-zinc-500">第一阶段</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-zinc-700 text-zinc-500">{s.stageCards.base.badge}</span>
           </div>
           <div className="bg-zinc-950/50 p-3 rounded-lg mb-3 min-h-[120px]">
             <p className="text-sm text-zinc-500 whitespace-pre-wrap">{example.responses.base}</p>
@@ -136,9 +139,9 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="text-lg">📝</div>
-              <span className="text-sm font-medium text-purple-400">学了回答方式的 AI</span>
+              <span className="text-sm font-medium text-purple-400">{s.stageCards.sft.label}</span>
             </div>
-            <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400">第二阶段</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400">{s.stageCards.sft.badge}</span>
           </div>
           <div className="bg-zinc-950/50 p-3 rounded-lg mb-3 min-h-[120px]">
             <p className="text-sm text-purple-300/80 whitespace-pre-wrap">{example.responses.sft}</p>
@@ -154,9 +157,9 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="text-lg">✨</div>
-              <span className="text-sm font-medium text-emerald-400">学会「好回答」的 AI</span>
+              <span className="text-sm font-medium text-emerald-400">{s.stageCards.rlhf.label}</span>
             </div>
-            <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">第三阶段</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">{s.stageCards.rlhf.badge}</span>
           </div>
           <div className="bg-zinc-950/50 p-3 rounded-lg mb-3 min-h-[120px]">
             <p className="text-sm text-emerald-300/80 whitespace-pre-wrap">{example.responses.rlhf}</p>
@@ -170,65 +173,65 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
 
       {/* Evolution Flow */}
       <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
-        <h4 className="text-sm font-medium text-zinc-400 mb-4 text-center">🌱 AI 的成长之路</h4>
+        <h4 className="text-sm font-medium text-zinc-400 mb-4 text-center">{s.evolutionTitle}</h4>
         <div className="flex items-center justify-center gap-2">
           <div className="text-center flex-1 max-w-[140px]">
             <div className="w-16 h-16 mx-auto rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center mb-2">
               <span className="text-2xl">📚</span>
             </div>
-            <div className="text-sm text-zinc-400 font-medium">读书</div>
-            <div className="text-xs text-zinc-600">会说话了</div>
+            <div className="text-sm text-zinc-400 font-medium">{s.evolutionSteps.read.label}</div>
+            <div className="text-xs text-zinc-600">{s.evolutionSteps.read.desc}</div>
           </div>
           <ArrowRight className="w-6 h-6 text-zinc-600 flex-shrink-0" />
           <div className="text-center flex-1 max-w-[140px]">
             <div className="w-16 h-16 mx-auto rounded-full bg-purple-500/10 border border-purple-500/30 flex items-center justify-center mb-2">
               <span className="text-2xl">📝</span>
             </div>
-            <div className="text-sm text-purple-400 font-medium">学回答</div>
-            <div className="text-xs text-zinc-600">知道格式了</div>
+            <div className="text-sm text-purple-400 font-medium">{s.evolutionSteps.learnAnswer.label}</div>
+            <div className="text-xs text-zinc-600">{s.evolutionSteps.learnAnswer.desc}</div>
           </div>
           <ArrowRight className="w-6 h-6 text-zinc-600 flex-shrink-0" />
           <div className="text-center flex-1 max-w-[140px]">
             <div className="w-16 h-16 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-2">
               <span className="text-2xl">⭐</span>
             </div>
-            <div className="text-sm text-amber-400 font-medium">学打分</div>
-            <div className="text-xs text-zinc-600">知道好坏了</div>
+            <div className="text-sm text-amber-400 font-medium">{s.evolutionSteps.learnScore.label}</div>
+            <div className="text-xs text-zinc-600">{s.evolutionSteps.learnScore.desc}</div>
           </div>
           <ArrowRight className="w-6 h-6 text-zinc-600 flex-shrink-0" />
           <div className="text-center flex-1 max-w-[140px]">
             <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-2">
               <span className="text-2xl">✨</span>
             </div>
-            <div className="text-sm text-emerald-400 font-medium">练习进步</div>
-            <div className="text-xs text-zinc-600">越来越好！</div>
+            <div className="text-sm text-emerald-400 font-medium">{s.evolutionSteps.practice.label}</div>
+            <div className="text-xs text-zinc-600">{s.evolutionSteps.practice.desc}</div>
           </div>
         </div>
       </div>
 
       {/* Summary */}
       <div className="bg-pink-500/5 rounded-lg border border-pink-500/20 p-4">
-        <h4 className="text-sm font-medium text-pink-400 mb-3">📌 今天学到了什么？</h4>
+        <h4 className="text-sm font-medium text-pink-400 mb-3">{s.summarySectionTitle}</h4>
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="p-3 bg-zinc-800 rounded-lg text-center">
             <div className="text-2xl mb-1">🎓</div>
-            <div className="text-xs text-zinc-400">SFT：教 AI 按格式回答</div>
+            <div className="text-xs text-zinc-400">{s.summaryCards.sft}</div>
           </div>
           <div className="p-3 bg-zinc-800 rounded-lg text-center">
             <div className="text-2xl mb-1">⚖️</div>
-            <div className="text-xs text-zinc-400">奖励模型：教 AI 分辨好坏</div>
+            <div className="text-xs text-zinc-400">{s.summaryCards.reward}</div>
           </div>
           <div className="p-3 bg-zinc-800 rounded-lg text-center">
             <div className="text-2xl mb-1">🚀</div>
-            <div className="text-xs text-zinc-400">PPO：让 AI 越来越好</div>
+            <div className="text-xs text-zinc-400">{s.summaryCards.ppo}</div>
           </div>
         </div>
         <div className="p-3 rounded-lg bg-pink-500/10 border border-pink-500/20">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-pink-400" />
             <p className="text-sm text-zinc-400">
-              <strong className="text-pink-400">「对齐」</strong>不是让 AI 更聪明，
-              而是让它学会<strong className="text-emerald-400">怎样把能力用在帮助人上</strong>！
+              <strong className="text-pink-400">{s.alignmentWord}</strong>{s.finalText1}
+              <strong className="text-emerald-400">{s.finalHighlight}</strong>{s.finalText2}
             </p>
           </div>
         </div>
@@ -238,22 +241,15 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
       <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
         <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
-          本阶段专有名词
+          {common.glossaryTitle}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[
-            { en: 'RLHF', zh: '人类反馈强化学习', desc: 'Reinforcement Learning from Human Feedback，完整的对齐训练流程' },
-            { en: 'Alignment', zh: '对齐', desc: '让 AI 的行为符合人类期望和价值观' },
-            { en: 'Helpful', zh: '有帮助', desc: '回答能真正解决用户的问题' },
-            { en: 'Harmless', zh: '无害', desc: '回答不会造成伤害或误导' },
-            { en: 'Honest', zh: '诚实', desc: '回答真实可靠，不确定时会承认' },
-            { en: 'Base Model', zh: '基础模型', desc: '只经过预训练，还未对齐的原始模型' },
-          ].map((term) => (
+          {s.glossaryTerms.map((term) => (
             <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
                 <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-400">{term.zh}</span>
+                <span className="text-sm text-zinc-400">{term.meaning}</span>
               </div>
               <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
@@ -268,11 +264,11 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
           className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
-          上一步
+          {common.backButton}
         </button>
         <div className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-pink-500/20 to-emerald-500/20 text-pink-400 rounded-lg border border-pink-500/30">
           <CheckCircle2 className="w-4 h-4" />
-          <span className="font-medium">恭喜你完成了 RLHF 学习！🎉</span>
+          <span className="font-medium">{s.completionMessage}</span>
         </div>
       </div>
     </div>

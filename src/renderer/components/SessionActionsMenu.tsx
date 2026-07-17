@@ -30,8 +30,11 @@ import { copyPathToClipboard, openExternalLink } from '../utils/platform';
 import ipcService from '../services/ipcService';
 import { IconButton } from './primitives';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
+import { useI18n } from '../hooks/useI18n';
 
 export const SessionActionsMenu: React.FC = () => {
+  const { t } = useI18n();
+  const sam = t.sessionReplay.sessionActionsMenu;
   const [open, setOpen] = useState(false);
   const [replayDialog, setReplayDialog] = useState<{
     sessionId: string;
@@ -129,7 +132,7 @@ export const SessionActionsMenu: React.FC = () => {
     try {
       await window.domainAPI?.invoke(IPC_DOMAINS.AGENT, 'resume', { sessionId: currentSessionId });
     } catch (error) {
-      showToast('error', `恢复执行失败：${error instanceof Error ? error.message : String(error)}`);
+      showToast('error', sam.resumeFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
     }
   }, [currentSessionId, close, showToast]);
 
@@ -158,9 +161,9 @@ export const SessionActionsMenu: React.FC = () => {
       anchor.download = response.data.suggestedFileName || `session-${currentSessionId}.md`;
       anchor.click();
       URL.revokeObjectURL(url);
-      showToast('success', 'Markdown 已导出');
+      showToast('success', sam.exportMarkdownDone);
     } catch (error) {
-      showToast('error', `导出 Markdown 失败：${error instanceof Error ? error.message : String(error)}`);
+      showToast('error', sam.exportMarkdownFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
     }
   }, [currentSessionId, close, showToast]);
 
@@ -178,14 +181,14 @@ export const SessionActionsMenu: React.FC = () => {
       }
       setAppWorkingDirectory(response.data || sessionWorkingDirectory);
     } catch (error) {
-      showToast('error', `恢复工作区失败：${error instanceof Error ? error.message : String(error)}`);
+      showToast('error', sam.reopenWorkspaceFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
     }
   }, [sessionWorkingDirectory, setAppWorkingDirectory, close, showToast]);
 
   const handleOpenReplay = useCallback(async () => {
     if (!currentSessionId || !currentSession) return;
     if (!canOpenReplay) {
-      showToast('warning', 'Replay 目前仅管理员可用');
+      showToast('warning', sam.replayAdminOnlyToast);
       return;
     }
 
@@ -193,16 +196,16 @@ export const SessionActionsMenu: React.FC = () => {
     try {
       const replay = await ipcService.invoke(IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA, currentSessionId) as StructuredReplay | null;
       if (!replay) {
-        showToast('warning', '当前会话还没有可用 Replay 数据');
+        showToast('warning', sam.replayNoData);
         return;
       }
       setReplayDialog({
         sessionId: currentSessionId,
-        sessionTitle: currentSession.title || '未命名会话',
+        sessionTitle: currentSession.title || sam.untitledSession,
         replay,
       });
     } catch (error) {
-      showToast('error', `打开 Replay 失败：${error instanceof Error ? error.message : String(error)}`);
+      showToast('error', sam.replayOpenFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
     }
   }, [canOpenReplay, close, currentSession, currentSessionId, showToast]);
 
@@ -242,7 +245,7 @@ export const SessionActionsMenu: React.FC = () => {
   if (canResume) {
     items.push({
       key: 'resume',
-      label: '恢复执行',
+      label: sam.resumeLabel,
       icon: <RotateCcw className="h-3.5 w-3.5" />,
       onClick: handleResume,
     });
@@ -250,7 +253,7 @@ export const SessionActionsMenu: React.FC = () => {
   if (canMoveToBackground) {
     items.push({
       key: 'bg',
-      label: '移到后台',
+      label: sam.moveToBackgroundLabel,
       icon: <TimerReset className="h-3.5 w-3.5" />,
       onClick: handleMoveToBackground,
     });
@@ -263,27 +266,27 @@ export const SessionActionsMenu: React.FC = () => {
   });
   items.push({
     key: 'replay',
-    label: canOpenReplay ? '打开 Replay' : 'Replay 仅管理员可用',
+    label: canOpenReplay ? sam.replayLabel : sam.replayAdminOnlyLabel,
     icon: <Eye className="h-3.5 w-3.5" />,
     disabled: !canOpenReplay,
     onClick: () => { void handleOpenReplay(); },
   });
   items.push({
     key: 'audit',
-    label: '打开 Replay/Audit',
+    label: sam.replayAuditLabel,
     icon: <ClipboardList className="h-3.5 w-3.5" />,
     onClick: () => { close(); openWorkbenchTab('audit'); },
   });
   items.push({
     key: 'export',
-    label: '导出 Markdown',
+    label: sam.exportMarkdownLabel,
     icon: <Download className="h-3.5 w-3.5" />,
     onClick: handleExportMarkdown,
   });
   if (showReopenWorkspace) {
     items.push({
       key: 'reopen',
-      label: '恢复工作区',
+      label: sam.reopenWorkspaceLabel,
       icon: <FolderOpen className="h-3.5 w-3.5" />,
       onClick: handleReopenWorkspace,
     });
@@ -295,7 +298,7 @@ export const SessionActionsMenu: React.FC = () => {
     <div ref={wrapperRef} className="relative">
       <IconButton
         icon={<MoreHorizontal className="w-4 h-4" />}
-        aria-label="会话动作"
+        aria-label={sam.menuAria}
         onClick={() => setOpen((v) => !v)}
         variant="ghost"
         size="md"

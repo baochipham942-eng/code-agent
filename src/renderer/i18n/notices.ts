@@ -8,10 +8,14 @@ export const noticesZh = {
   notices: {
     tokenWarning: {
       overflow: '溢出 → {model}',
-      ctx: '上下文 {pct}%',
+      ctx: '对话记忆已用 {pct}%',
     },
     update: {
       downloadFailed: '下载失败',
+      // 按错误类分流的人话文案（ForceUpdateModal 下载失败展示层）；
+      // 分不出类别时仍用上面的 downloadFailed 通用兜底 + 原文进 tooltip。
+      downloadErrorNetwork: '网络不稳，检查网络后重试',
+      downloadErrorDisk: '磁盘空间不足或没有写入权限，清理后重试',
       openInstallerFailed: '打开安装包失败',
       unknownError: '发生未知错误，请稍后重试',
       newVersion: '新版本',
@@ -75,10 +79,12 @@ export const noticesEn: typeof noticesZh = {
   notices: {
     tokenWarning: {
       overflow: 'overflow → {model}',
-      ctx: 'ctx {pct}%',
+      ctx: 'Memory {pct}% used',
     },
     update: {
       downloadFailed: 'Download failed',
+      downloadErrorNetwork: 'Your network is unstable. Check your connection and try again.',
+      downloadErrorDisk: 'Not enough disk space or missing write permission. Clean up and try again.',
       openInstallerFailed: 'Failed to open the installer',
       unknownError: 'An unknown error occurred, please try again later',
       newVersion: 'New version',

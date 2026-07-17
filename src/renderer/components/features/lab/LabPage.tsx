@@ -6,6 +6,8 @@
 import React, { useState } from 'react';
 import { FlaskConical, Sparkles, Lock, ChevronRight } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
+import { useI18n } from '../../../hooks/useI18n';
+import type { Translations } from '../../../i18n/zh';
 import { GPT1Lab } from './gpt1/GPT1Lab';
 import { NanoGPTLab } from './nanogpt/NanoGPTLab';
 import { AlignmentLab } from './alignment/AlignmentLab';
@@ -29,64 +31,52 @@ interface LabCard {
   iconBg: string;
 }
 
-const labCards: LabCard[] = [
-  {
-    id: 'gpt1',
-    title: '教 AI 学说话',
-    subtitle: '从零开始，亲手训练一个会聊天的 AI',
-    description: '就像教小孩说话一样：先给它听对话、教它认字、建立语言能力、反复练习，最后它就能自己说话了。',
-    level: '入门级',
-    levelStars: 1,
-    params: '约 1100 万个"脑细胞"',
-    status: 'available',
-    gradient: 'from-emerald-500/20 to-teal-500/20',
-    iconBg: 'bg-emerald-500/20',
-  },
-  {
-    id: 'nanogpt',
-    title: '让 AI 读更多书',
-    subtitle: '训练一个能写莎士比亚风格文章的 AI',
-    description: '如果说第一个实验是教 AI 说日常对话，这个实验就是让它读大量书籍，学会更复杂的写作风格。',
-    level: '进阶级',
-    levelStars: 2,
-    params: '约 1000 万~1.2 亿个"脑细胞"',
-    status: 'available',
-    gradient: 'from-blue-500/20 to-indigo-500/20',
-    iconBg: 'bg-blue-500/20',
-  },
-  {
-    id: 'alignment',
-    title: '让 AI 学会听话',
-    subtitle: '教 AI 按照人类的要求来回答',
-    description: 'AI 学会说话后，还要学会"听指令"。这个实验教你如何让 AI 更好地理解和执行人类的要求。',
-    level: '高级',
-    levelStars: 3,
-    params: '在已训练模型上调整',
-    status: 'available',
-    gradient: 'from-purple-500/20 to-pink-500/20',
-    iconBg: 'bg-purple-500/20',
-  },
-  {
-    id: 'llamafactory',
-    title: '让 AI 更专业',
-    subtitle: '训练一个领域专家 AI',
-    description: '微调就像培养专才：牺牲一点通用能力，换取在特定领域的专业表现。学习 SFT、DPO 等主流技术。',
-    level: '高级',
-    levelStars: 3,
-    params: '概念演示模式',
-    status: 'available',
-    gradient: 'from-orange-500/20 to-amber-500/20',
-    iconBg: 'bg-orange-500/20',
-  },
-];
+function buildLabCards(t: Translations): LabCard[] {
+  return [
+    {
+      id: 'gpt1',
+      ...t.lab.cards.gpt1,
+      levelStars: 1,
+      status: 'available',
+      gradient: 'from-emerald-500/20 to-teal-500/20',
+      iconBg: 'bg-emerald-500/20',
+    },
+    {
+      id: 'nanogpt',
+      ...t.lab.cards.nanogpt,
+      levelStars: 2,
+      status: 'available',
+      gradient: 'from-blue-500/20 to-indigo-500/20',
+      iconBg: 'bg-blue-500/20',
+    },
+    {
+      id: 'alignment',
+      ...t.lab.cards.alignment,
+      levelStars: 3,
+      status: 'available',
+      gradient: 'from-purple-500/20 to-pink-500/20',
+      iconBg: 'bg-purple-500/20',
+    },
+    {
+      id: 'llamafactory',
+      ...t.lab.cards.llamafactory,
+      levelStars: 3,
+      status: 'available',
+      gradient: 'from-orange-500/20 to-amber-500/20',
+      iconBg: 'bg-orange-500/20',
+    },
+  ];
+}
 
 export const LabPage: React.FC = () => {
   const { setShowLab } = useAppStore();
+  const { t } = useI18n();
   const [currentLab, setCurrentLab] = useState<LabType>('home');
+  const labCards = buildLabCards(t);
   const currentLabCard = labCards.find((card) => card.id === currentLab);
-  const currentLabTitle = currentLab === 'home' ? '实验室' : currentLabCard?.title ?? '实验室';
+  const currentLabTitle = currentLab === 'home' ? t.lab.title : currentLabCard?.title ?? t.lab.title;
   const currentLabDescription = currentLab === 'home'
-    ? '模型训练学习平台入口'
+    ? t.lab.subtitle
     : currentLabCard?.subtitle;
 
   // 渲染主页卡片选择
@@ -97,9 +87,9 @@ export const LabPage: React.FC = () => {
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 mb-4">
           <FlaskConical className="w-8 h-8 text-emerald-400" />
         </div>
-        <h1 className="text-2xl font-bold text-zinc-200 mb-2">AI 学习实验室</h1>
+        <h1 className="text-2xl font-bold text-zinc-200 mb-2">{t.lab.heroTitle}</h1>
         <p className="text-zinc-400 max-w-xl mx-auto">
-          不需要任何编程基础，通过动手实验，亲眼看看 AI 是怎么一步步学会"说话"的
+          {t.lab.heroSubtitle}
         </p>
       </div>
 
@@ -109,6 +99,8 @@ export const LabPage: React.FC = () => {
           <LabCardComponent
             key={`${card.id}-${index}`}
             card={card}
+            comingSoonLabel={t.lab.comingSoon}
+            startLearningLabel={t.lab.startLearning}
             onClick={() => {
               if (card.status === 'available') {
                 setCurrentLab(card.id);
@@ -120,26 +112,26 @@ export const LabPage: React.FC = () => {
 
       {/* Learning Path */}
       <div className="mt-12 max-w-3xl mx-auto">
-        <h2 className="text-lg font-semibold text-zinc-200 mb-4 text-center">推荐学习顺序</h2>
+        <h2 className="text-lg font-semibold text-zinc-200 mb-4 text-center">{t.lab.recommendedPath}</h2>
         <div className="flex items-center justify-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-            <span className="text-emerald-400 text-sm font-medium">① 学说话</span>
+            <span className="text-emerald-400 text-sm font-medium">{t.lab.pathSteps[0]}</span>
           </div>
           <ChevronRight className="w-4 h-4 text-zinc-600" />
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700">
-            <span className="text-zinc-500 text-sm">② 读更多书</span>
+            <span className="text-zinc-500 text-sm">{t.lab.pathSteps[1]}</span>
           </div>
           <ChevronRight className="w-4 h-4 text-zinc-600" />
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700">
-            <span className="text-zinc-500 text-sm">③ 学会听话</span>
+            <span className="text-zinc-500 text-sm">{t.lab.pathSteps[2]}</span>
           </div>
           <ChevronRight className="w-4 h-4 text-zinc-600" />
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 border border-zinc-700">
-            <span className="text-zinc-500 text-sm">④ 微调进阶</span>
+            <span className="text-zinc-500 text-sm">{t.lab.pathSteps[3]}</span>
           </div>
         </div>
         <p className="text-xs text-zinc-500 mt-3 text-center">
-          建议从第一个实验开始，每个实验大约需要 15-30 分钟
+          {t.lab.pathHint}
         </p>
       </div>
     </div>
@@ -152,7 +144,7 @@ export const LabPage: React.FC = () => {
         title={currentLabTitle}
         description={currentLabDescription}
         onClose={() => setShowLab(false)}
-        closeLabel="关闭 实验室"
+        closeLabel={t.lab.closeLabel}
       />
 
       {/* Content */}
@@ -168,8 +160,10 @@ export const LabPage: React.FC = () => {
 // 实验卡片组件
 const LabCardComponent: React.FC<{
   card: LabCard;
+  comingSoonLabel: string;
+  startLearningLabel: string;
   onClick: () => void;
-}> = ({ card, onClick }) => {
+}> = ({ card, comingSoonLabel, startLearningLabel, onClick }) => {
   const isAvailable = card.status === 'available';
   const isComingSoon = card.status === 'coming_soon';
   const isLocked = card.status === 'locked';
@@ -188,7 +182,7 @@ const LabCardComponent: React.FC<{
       {/* Status Badge */}
       {isComingSoon && (
         <div className="absolute top-4 right-4 px-2 py-1 rounded-full bg-amber-500/20 border border-amber-500/30">
-          <span className="text-xs text-amber-400">即将开放</span>
+          <span className="text-xs text-amber-400">{comingSoonLabel}</span>
         </div>
       )}
       {isLocked && (
@@ -229,7 +223,7 @@ const LabCardComponent: React.FC<{
       {isAvailable && (
         <div className="mt-4 pt-4 border-t border-zinc-700">
           <span className="text-sm text-emerald-400 flex items-center gap-1">
-            开始学习 <ChevronRight className="w-4 h-4" />
+            {startLearningLabel} <ChevronRight className="w-4 h-4" />
           </span>
         </div>
       )}

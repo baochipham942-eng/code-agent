@@ -18,7 +18,7 @@ describe('TranscriptHistoryService', () => {
       {
         messageId: 'msg-1',
         sessionId: 'sess-1',
-        kind: 'user_text',
+        kind: 'user_text' as const,
         toolName: null,
         snippet: '爸明确说轨迹库为权威',
         timestamp: 1778664000000,

@@ -8,8 +8,8 @@ import type {
   CanUseToolFn,
   Logger,
   PlanModeController,
-  AgentEvent,
 } from '../../../../../src/host/protocol/tools';
+import type { AgentEvent } from '../../../../../src/host/protocol/events';
 import {
   exitPlanModeModule,
   PLAN_CONFIRMATION_TYPE,
@@ -123,7 +123,7 @@ describe('exitPlanModeModule (native)', () => {
     });
 
     it('emits plan_mode_exited AgentEvent with plan', async () => {
-      const emit = vi.fn<[AgentEvent], void>();
+      const emit = vi.fn<(event: AgentEvent) => void>();
       const ctx = makeCtx({ emit });
       await run({ plan: SAMPLE_PLAN }, ctx);
       expect(emit).toHaveBeenCalledTimes(1);

@@ -245,7 +245,8 @@ describe('ExternalModificationDetector', () => {
       cleanup();
 
       expect(callbackCalled).toBe(true);
-      expect(callbackResult?.modified).toBe(true);
+      // 类型标注在 await 边界后被 TS 收窄成 never（closure 里重新赋值不影响外层 CFA），显式还原声明类型
+      expect((callbackResult as ModificationCheckResult | null)?.modified).toBe(true);
     });
 
     it('should stop watching when cleanup called', async () => {

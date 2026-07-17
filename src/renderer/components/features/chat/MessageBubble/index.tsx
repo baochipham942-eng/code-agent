@@ -15,6 +15,7 @@ import { SkillStatusMessage, isSkillStatusContent } from './SkillStatusMessage';
 import { GoalNoticeMessage } from './GoalNoticeMessage';
 import { isGoalNoticeContent } from '../goalNotice';
 import { useMessageActionStore } from '../../../../stores/messageActionStore';
+import { useI18n } from '../../../../hooks/useI18n';
 
 const COMPACTION_SOURCE_LABELS: Partial<Record<NonNullable<CompactionBlock['source']>, string>> = {
   manual_current: 'manual current',
@@ -96,6 +97,7 @@ const CompactionDetailList: React.FC<{
 
 // CompactionBlock 渲染组件（折叠摘要卡片）
 const CompactionBlockDisplay: React.FC<{ message: MessageBubbleProps['message'] }> = ({ message }) => {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const compaction = message.compaction;
 
@@ -123,15 +125,22 @@ const CompactionBlockDisplay: React.FC<{ message: MessageBubbleProps['message'] 
         <Archive className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
         <span className="min-w-0 flex-1">
           <span className="block text-xs font-medium text-amber-300">
-            已压缩 {compaction.compactedMessageCount} 条消息，节省 {compaction.compactedTokenCount.toLocaleString()} tokens
+            {t.chat.compactionSummary.replace('{count}', String(compaction.compactedMessageCount))}
           </span>
-          {(source || providerModel || warnings.length > 0 || manifestCounts) && (
-            <span className="mt-1 flex flex-wrap gap-1.5">
-              {source && <CompactionMetaPill label="source" value={source} />}
-              {providerModel && <CompactionMetaPill label="model" value={providerModel} />}
-              {warnings.length > 0 && <CompactionMetaPill label="warnings" value={String(warnings.length)} />}
-              {manifestCounts && <CompactionMetaPill label="survivors" value={manifestCounts} />}
-            </span>
+          {expanded && (
+            <>
+              <span className="mt-0.5 block text-[11px] text-amber-300/80">
+                {t.chat.compactionTokensSaved.replace('{count}', compaction.compactedTokenCount.toLocaleString())}
+              </span>
+              {(source || providerModel || warnings.length > 0 || manifestCounts) && (
+                <span className="mt-1 flex flex-wrap gap-1.5">
+                  {source && <CompactionMetaPill label="source" value={source} />}
+                  {providerModel && <CompactionMetaPill label="model" value={providerModel} />}
+                  {warnings.length > 0 && <CompactionMetaPill label="warnings" value={String(warnings.length)} />}
+                  {manifestCounts && <CompactionMetaPill label="survivors" value={manifestCounts} />}
+                </span>
+              )}
+            </>
           )}
         </span>
         {expanded ? (

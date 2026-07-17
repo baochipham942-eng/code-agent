@@ -14,6 +14,7 @@ import { useAgentRegistryStore } from '../../stores/agentRegistryStore';
 import { useAppStore } from '../../stores/appStore';
 import { isPanelVisibleAgent, type AgentListEntry, type AgentSource } from '@shared/contract/agentRegistry';
 import { useI18n } from '../../hooks/useI18n';
+import { Z_LAYERS } from '../../styles/zLayers';
 
 const SOURCE_META: Record<AgentSource, { label: string; icon: React.ReactNode; badge: string }> = {
   builtin: {
@@ -202,7 +203,7 @@ export function AgentSwitcher() {
           position: 'fixed',
           left: menuPos.left,
           bottom: menuPos.bottom,
-          zIndex: 9999,
+          zIndex: Z_LAYERS.statusPopover,
         }}
       >
         <div className="px-2 py-1.5 border-b border-zinc-700/50">

@@ -1,6 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { IconButton, Modal } from '../../primitives';
+import { Z_LAYERS } from '../../../styles/zLayers';
 import type {
   EvidenceControlSummaryProjection,
   ReplayBlock,
@@ -500,7 +501,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
       title={sessionTitle}
       size="md"
       className="!w-[80vw] !max-w-[1100px]"
-      zIndex={10000}
+      zIndex={Z_LAYERS.criticalOverlay}
       header={
         <>
           <div className="min-w-0 flex-1">

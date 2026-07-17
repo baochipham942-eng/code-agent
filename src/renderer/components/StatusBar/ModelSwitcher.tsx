@@ -24,6 +24,7 @@ import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import { trackRenderer } from '../../observability/posthogRenderer';
 import { POSTHOG_EVENTS } from '@shared/observability/posthog-events';
+import { Z_LAYERS } from '../../styles/zLayers';
 import {
   buildProviderBillingSummary,
   buildProviderHealthSummary,
@@ -549,7 +550,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         bottom: menuPos.bottom,
         width: menuPos.width,
         maxHeight: menuPos.maxHeight,
-        zIndex: 9999,
+        zIndex: Z_LAYERS.statusPopover,
       }}
     >
             <div className="border-b border-zinc-700/50">

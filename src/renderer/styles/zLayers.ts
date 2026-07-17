@@ -1,6 +1,8 @@
 // ============================================================================
 // 全屏浮层 z-index 阶梯：fixed/absolute 顶层浮层（modal/drawer/toast/floater）
-// 统一从这里取值，别再散落 z-[9999] 这类任意值 class。
+// 统一从这里取值，别再散落 Tailwind 任意值 z-index class（check-design-system.mjs
+// 的 bare-z-index 规则按字面正则匹配代码模式，连注释里的示例数字都会命中——
+// 这行本身改过一次措辞，别再往这写具体的 z-[数字] 例子）。
 //
 // 用 style={{ zIndex }} 而不是 Tailwind 任意值 class（`z-[${Z.toast}]`）——
 // Tailwind JIT 只扫源码里的静态字符串，运行时拼出来的类名扫不到会静默不生效。

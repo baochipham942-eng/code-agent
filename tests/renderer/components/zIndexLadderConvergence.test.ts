@@ -6,6 +6,11 @@
 // 套路），不走 Tailwind JIT 静态扫描——JIT 扫不到运行时拼出来的类名。
 // 清单只覆盖本批收口过的文件，不扫全仓（组件内部局部层级 z-10/20/30/40/50
 // 不归这道门管，那是另一类问题）。同套路照抄 emojiIconConvergence.test.ts。
+//
+// 「残留 z-[数字] 计数=0」不在这里重复断言——scripts/check-design-system.mjs
+// 的 bare-z-index 规则 + design-system-zindex-allowlist.json 双向核对已经
+// 全仓覆盖这条不变量（且比这里的正则更全，还管 CSS 文件），本文件只管两件
+// 它盖不住的事：阶梯序有没有倒挂、六文件是不是真的接了 Z_LAYERS。
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
@@ -25,30 +30,11 @@ const SCOPED_FILES = [
   'components/features/sidebar/SidebarProjectDrawer.tsx',
 ];
 
-const ARBITRARY_Z_PATTERN = /z-\[\d+\]/g;
-
-function scanArbitraryZSites(): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const rel of SCOPED_FILES) {
-    const abs = path.join(RENDERER_DIR, rel);
-    const content = fs.readFileSync(abs, 'utf-8');
-    const matches = content.match(ARBITRARY_Z_PATTERN);
-    if (matches && matches.length > 0) counts.set(rel, matches.length);
-  }
-  return counts;
-}
-
 describe('z-index 阶梯收敛棘轮（全屏浮层六文件清单，只增不减）', () => {
   it('清单内文件都仍存在（防清单腐烂：文件改名/删除需同步清单）', () => {
     for (const rel of SCOPED_FILES) {
       expect(fs.existsSync(path.join(RENDERER_DIR, rel)), `${rel} 不存在（改名/删除需同步清单）`).toBe(true);
     }
-  });
-
-  it('零残留 Tailwind 任意值 z-[数字]——一律用 Z_LAYERS + style zIndex', () => {
-    const counts = scanArbitraryZSites();
-    const offenders = [...counts.entries()].map(([file, n]) => `${file}: ${n} 处`);
-    expect(offenders, `发现残留任意值 z-index，请改用 Z_LAYERS：\n${offenders.join('\n')}`).toEqual([]);
   });
 
   it('六文件都接入了 Z_LAYERS（防换回硬编码数字 style={{ zIndex: 9999 }}）', () => {

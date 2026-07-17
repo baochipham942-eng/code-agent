@@ -2,6 +2,11 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 
 const reactState = vi.hoisted(() => ({

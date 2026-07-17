@@ -38,14 +38,14 @@ export interface SessionReplaySummaryDialogProps {
   onClose: () => void;
 }
 
-function formatDuration(ms: number | undefined): string {
-  if (!ms || ms <= 0) return '未知';
+function formatDuration(ms: number | undefined, { dialog: d }: SessionReplayLabels): string {
+  if (!ms || ms <= 0) return d.unknown;
   if (ms < 1000) return `${Math.round(ms)} ms`;
   const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds} 秒`;
+  if (seconds < 60) return `${seconds} ${d.unitSecond}`;
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
-  return remainder > 0 ? `${minutes} 分 ${remainder} 秒` : `${minutes} 分`;
+  return remainder > 0 ? `${minutes} ${d.unitMinute} ${remainder} ${d.unitSecond}` : `${minutes} ${d.unitMinute}`;
 }
 
 function formatTimestamp(timestamp: number | undefined): string | null {
@@ -195,28 +195,29 @@ function shouldRenderBlockDetail(label: string, detail: string): boolean {
   return normalizedDetail.length > 0 && normalizedLabel !== normalizedDetail;
 }
 
-function formatWorkflowStatus(snapshot: ScriptRunSnapshot): string {
+function formatWorkflowStatus(snapshot: ScriptRunSnapshot, { dialog: d }: SessionReplayLabels): string {
   switch (snapshot.status) {
     case 'running':
-      return snapshot.currentPhase ? `执行中：${snapshot.currentPhase}` : '执行中';
+      return snapshot.currentPhase ? d.workflowRunningPhase.replace('{phase}', snapshot.currentPhase) : d.running;
     case 'completed':
-      return '已完成';
+      return d.completed;
     case 'failed':
-      return snapshot.error ? `失败：${truncateContent(snapshot.error, 48)}` : '失败';
+      return snapshot.error ? d.failedPrefix.replace('{message}', truncateContent(snapshot.error, 48)) : d.failed;
     case 'cancelled':
-      return '已取消';
+      return d.cancelled;
     default:
-      return '待开始';
+      return d.pending;
   }
 }
 
-function formatWorkflowRunMeta(snapshot: ScriptRunSnapshot): string {
-  const items = [
+function formatWorkflowRunMeta(snapshot: ScriptRunSnapshot, labels: SessionReplayLabels): string {
+  const started = formatTimestamp(snapshot.startedAt);
+  const finished = formatTimestamp(snapshot.finishedAt);
+  return [
     `run ${snapshot.runId}`,
-    formatTimestamp(snapshot.startedAt) ? `开始 ${formatTimestamp(snapshot.startedAt)}` : null,
-    formatTimestamp(snapshot.finishedAt) ? `结束 ${formatTimestamp(snapshot.finishedAt)}` : null,
-  ].filter(Boolean);
-  return items.join(' · ');
+    started ? labels.dialog.metaStarted.replace('{time}', started) : null,
+    finished ? labels.dialog.metaFinished.replace('{time}', finished) : null,
+  ].filter(Boolean).join(' · ');
 }
 
 function formatWorkflowAgentSummary(snapshot: ScriptRunSnapshot): string {
@@ -228,40 +229,41 @@ function formatWorkflowAgentSummary(snapshot: ScriptRunSnapshot): string {
   return items.length > 0 ? items.join(' · ') : `${snapshot.agents.length} agents`;
 }
 
-function formatTaskStatus(task: Task): string {
+function formatTaskStatus(task: Task, { dialog: d }: SessionReplayLabels): string {
   switch (task.status) {
     case 'queued':
-      return '排队中';
+      return d.taskQueued;
     case 'running':
-      return '执行中';
+      return d.running;
     case 'waiting_input':
-      return '等待输入';
+      return d.taskWaitingInput;
     case 'stalled':
-      return task.progress?.label ? `启动变慢：${task.progress.label}` : '启动变慢';
+      return task.progress?.label ? d.taskStalledLabel.replace('{label}', task.progress.label) : d.taskStalled;
     case 'completed':
-      return '已完成';
+      return d.completed;
     case 'failed':
-      return task.failure?.message ? `失败：${truncateContent(task.failure.message, 48)}` : '失败';
+      return task.failure?.message ? d.failedPrefix.replace('{message}', truncateContent(task.failure.message, 48)) : d.failed;
     case 'cancelled':
-      return '已取消';
+      return d.cancelled;
     case 'paused':
-      return '已暂停';
+      return d.taskPaused;
     case 'expired':
-      return '已过期';
+      return d.taskExpired;
     case 'orphaned':
-      return '运行进程已丢失';
+      return d.taskOrphaned;
     default:
       return task.status;
   }
 }
 
-function formatBackgroundTaskMeta(task: Task): string {
-  const items = [
+function formatBackgroundTaskMeta(task: Task, labels: SessionReplayLabels): string {
+  const started = formatTimestamp(task.startedAt);
+  const updated = formatTimestamp(task.updatedAt);
+  return [
     `task ${task.id}`,
-    formatTimestamp(task.startedAt) ? `开始 ${formatTimestamp(task.startedAt)}` : null,
-    formatTimestamp(task.updatedAt) ? `更新 ${formatTimestamp(task.updatedAt)}` : null,
-  ].filter(Boolean);
-  return items.join(' · ');
+    started ? labels.dialog.metaStarted.replace('{time}', started) : null,
+    updated ? labels.dialog.metaUpdated.replace('{time}', updated) : null,
+  ].filter(Boolean).join(' · ');
 }
 
 function formatTaskOutputRef(ref: TaskOutputRef): string {
@@ -272,18 +274,18 @@ function formatTaskOutputRef(ref: TaskOutputRef): string {
     : `${label}`;
 }
 
-function formatWorkflowAgentStatus(agent: ScriptRunAgentSnapshot): string {
+function formatWorkflowAgentStatus(agent: ScriptRunAgentSnapshot, { dialog: d }: SessionReplayLabels): string {
   switch (agent.status) {
     case 'running':
-      return '执行中';
+      return d.running;
     case 'done':
-      return '完成';
+      return d.agentDone;
     case 'error':
-      return '失败';
+      return d.failed;
     case 'queued':
-      return '排队';
+      return d.agentQueued;
     case 'skipped':
-      return '跳过';
+      return d.agentSkipped;
     default:
       return agent.status;
   }
@@ -320,39 +322,40 @@ function formatTaskEventDetail(event: TaskEvent): string {
   return new Date(event.timestamp).toLocaleTimeString();
 }
 
-function formatBlockLabel(block: ReplayBlock): string {
+function formatBlockLabel(block: ReplayBlock, { dialog: d }: SessionReplayLabels): string {
   if (block.type === 'tool_call' && block.toolCall) {
-    return block.toolCall.success ? `工具 ${block.toolCall.name}` : `工具失败 ${block.toolCall.name}`;
+    return (block.toolCall.success ? d.blockToolSuccess : d.blockToolFailed).replace('{name}', block.toolCall.name);
   }
   if (block.type === 'model_call' && block.modelDecision) {
     const model = block.modelDecision.resolvedModel || block.modelDecision.model;
-    return model ? `模型 ${model}` : '模型调用';
+    return model ? d.blockModel.replace('{model}', model) : d.blockModelCall;
   }
-  if (block.type === 'tool_result') return '工具结果';
-  if (block.type === 'context_event') return '上下文';
-  if (block.type === 'event') return '事件';
-  if (block.type === 'thinking') return '思考';
-  if (block.type === 'user') return '用户';
-  if (block.type === 'error') return '错误';
-  return '回复';
+  if (block.type === 'tool_result') return d.blockToolResult;
+  if (block.type === 'context_event') return d.blockContext;
+  if (block.type === 'event') return d.blockEvent;
+  if (block.type === 'thinking') return d.blockThinking;
+  if (block.type === 'user') return d.blockUser;
+  if (block.type === 'error') return d.blockError;
+  return d.blockReply;
 }
 
-function formatBlockDetail(block: ReplayBlock): string {
+function formatBlockDetail(block: ReplayBlock, labels: SessionReplayLabels): string {
+  const d = labels.dialog;
   if (block.type === 'tool_call' && block.toolCall) {
-    const duration = formatDuration(block.toolCall.duration);
-    const outcome = block.toolCall.successKnown === false ? '结果未知' : block.toolCall.success ? '成功' : '失败';
+    const duration = formatDuration(block.toolCall.duration, labels);
+    const outcome = block.toolCall.successKnown === false ? d.outcomeUnknown : block.toolCall.success ? d.outcomeSuccess : d.failed;
     return `${outcome} · ${duration}`;
   }
   if (block.type === 'model_call' && block.modelDecision) {
     const tokens = block.modelDecision.inputTokens + block.modelDecision.outputTokens;
-    const latency = formatDuration(block.modelDecision.latencyMs);
+    const latency = formatDuration(block.modelDecision.latencyMs, labels);
     return `${tokens} tokens · ${latency}`;
   }
   if (block.type === 'event') {
     // 去重修复（label 收敛为「事件」）后 summary 必须落在 detail 里，
     // 不能被 durationMs 短路吞掉（Codex 审计 R1）。
     const summary = normalizeBlockText(block.event?.summary || block.content);
-    const duration = block.event?.durationMs ? formatDuration(block.event.durationMs) : '';
+    const duration = block.event?.durationMs ? formatDuration(block.event.durationMs, labels) : '';
     if (summary && duration) return `${summary} · ${duration}`;
     return summary || duration;
   }
@@ -394,6 +397,7 @@ function formatEvidenceLabel(item: SessionReplayEvidence): string {
 
 function renderEvidenceChip(
   item: SessionReplayEvidence,
+  labels: SessionReplayLabels,
   onOpenEvidence?: (evidence: SessionReplayEvidence) => void | Promise<void>,
 ): React.ReactElement {
   const label = formatEvidenceLabel(item);
@@ -410,7 +414,7 @@ function renderEvidenceChip(
       key={item.id}
       type="button"
       title={item.title}
-      aria-label={`打开证据 ${label}`}
+      aria-label={labels.dialog.openEvidenceAria.replace('{label}', label)}
       onClick={(event) => {
         event.preventDefault();
         void onOpenEvidence(item);
@@ -508,7 +512,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
             variant="default"
             size="sm"
             icon={<X className="h-4 w-4" />}
-            aria-label="关闭 Replay 摘要"
+            aria-label={labels.dialog.closeAria}
             onClick={onClose}
           />
         </>
@@ -593,7 +597,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
         </div>
         <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
           <dt className="text-zinc-500">{labels.duration}</dt>
-          <dd className="mt-1 font-medium text-zinc-200">{formatDuration(replay.summary.totalDurationMs)}</dd>
+          <dd className="mt-1 font-medium text-zinc-200">{formatDuration(replay.summary.totalDurationMs, labels)}</dd>
         </div>
         <div className="rounded-md border border-zinc-800 bg-zinc-900/60 p-2">
           <dt className="text-zinc-500">
@@ -656,7 +660,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
               <div className="rounded-md border border-zinc-700 bg-zinc-900/60 p-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">聚焦证据</div>
+                    <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">{labels.dialog.focusedEvidence}</div>
                     <div className="mt-0.5 truncate text-xs font-medium text-zinc-200">
                       {focusedWorkflowRun
                         ? focusedWorkflowRun.goal
@@ -666,9 +670,9 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     </div>
                     <div className="mt-0.5 truncate text-[10px] text-zinc-500">
                       {focusedWorkflowRun
-                        ? `${formatWorkflowStatus(focusedWorkflowRun)} · ${formatWorkflowRunMeta(focusedWorkflowRun)}`
+                        ? `${formatWorkflowStatus(focusedWorkflowRun, labels)} · ${formatWorkflowRunMeta(focusedWorkflowRun, labels)}`
                         : focusedBackgroundTask
-                          ? `${formatTaskStatus(focusedBackgroundTask)} · ${formatBackgroundTaskMeta(focusedBackgroundTask)}`
+                          ? `${formatTaskStatus(focusedBackgroundTask, labels)} · ${formatBackgroundTaskMeta(focusedBackgroundTask, labels)}`
                           : ''}
                     </div>
                   </div>
@@ -677,25 +681,25 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     onClick={() => setFocusedReplayOwner(null)}
                     className="shrink-0 rounded border border-zinc-700 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:border-zinc-600 hover:bg-zinc-800 hover:text-zinc-200"
                   >
-                    退出聚焦
+                    {labels.dialog.exitFocus}
                   </button>
                 </div>
                 {focusedEvidence.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-1" aria-label="聚焦证据列表">
-                    {focusedEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
+                  <div className="mt-2 flex flex-wrap gap-1" aria-label={labels.dialog.focusedEvidenceListAria}>
+                    {focusedEvidence.map((item) => renderEvidenceChip(item, labels, onOpenEvidence))}
                   </div>
                 ) : (
                   <div className="mt-2 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1 text-[10px] text-zinc-500">
-                    这个执行现场暂未关联 replay/trace 证据
+                    {labels.dialog.noFocusedEvidence}
                   </div>
                 )}
                 {focusedWorkflowRun && focusedWorkflowRun.phases.length > 0 && (
                   <div className="mt-2 truncate text-[10px] text-zinc-500">
-                    Phases：{focusedWorkflowRun.phases.slice(0, 6).join(' · ')}
+                    Phases: {focusedWorkflowRun.phases.slice(0, 6).join(' · ')}
                   </div>
                 )}
                 {focusedWorkflowRun && focusedWorkflowRun.agents.length > 0 && (
-                  <div className="mt-2 grid gap-1" aria-label="聚焦 workflow agents">
+                  <div className="mt-2 grid gap-1" aria-label={labels.dialog.focusedWorkflowAgentsAria}>
                     <div className="text-[10px] font-medium text-zinc-400">
                       Agents · {formatWorkflowAgentSummary(focusedWorkflowRun)}
                     </div>
@@ -710,7 +714,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                             <span className="min-w-0 truncate font-medium text-zinc-300">
                               {agent.label || 'workflow agent'}
                             </span>
-                            <span className="shrink-0 text-zinc-500">{formatWorkflowAgentStatus(agent)}</span>
+                            <span className="shrink-0 text-zinc-500">{formatWorkflowAgentStatus(agent, labels)}</span>
                           </div>
                           <div className="mt-0.5 truncate text-zinc-500">{formatWorkflowAgentDetail(agent)}</div>
                           {body && <div className="mt-0.5 truncate text-zinc-400">{body}</div>}
@@ -719,7 +723,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     })}
                     {focusedWorkflowRun.agents.length > 6 && (
                       <div className="px-1 text-[10px] text-zinc-600">
-                        另有 {focusedWorkflowRun.agents.length - 6} 个 workflow agent
+                        {labels.dialog.moreWorkflowAgents.replace('{count}', String(focusedWorkflowRun.agents.length - 6))}
                       </div>
                     )}
                   </div>
@@ -737,7 +741,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                   </div>
                 )}
                 {focusedBackgroundTask && focusedBackgroundTask.outputRefs.length > 0 && (
-                  <div className="mt-2" aria-label="聚焦 background outputs">
+                  <div className="mt-2" aria-label={labels.dialog.focusedBackgroundOutputsAria}>
                     <div className="mb-1 text-[10px] font-medium text-zinc-400">Outputs</div>
                     <div className="flex flex-wrap gap-1">
                       {focusedBackgroundTask.outputRefs.slice(0, 6).map((ref) => (
@@ -751,14 +755,14 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       ))}
                       {focusedBackgroundTask.outputRefs.length > 6 && (
                         <span className="rounded border border-zinc-800 bg-zinc-950/60 px-1.5 py-0.5 text-[10px] text-zinc-600">
-                          另有 {focusedBackgroundTask.outputRefs.length - 6} 个 output
+                          {labels.dialog.moreOutputs.replace('{count}', String(focusedBackgroundTask.outputRefs.length - 6))}
                         </span>
                       )}
                     </div>
                   </div>
                 )}
                 {focusedBackgroundTask && focusedBackgroundTask.events.length > 0 && (
-                  <div className="mt-2 grid gap-1" aria-label="聚焦 background events">
+                  <div className="mt-2 grid gap-1" aria-label={labels.dialog.focusedBackgroundEventsAria}>
                     <div className="text-[10px] font-medium text-zinc-400">Events</div>
                     {focusedBackgroundTask.events.slice(-5).map((event) => (
                       <div
@@ -778,7 +782,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     ))}
                     {focusedBackgroundTask.events.length > 5 && (
                       <div className="px-1 text-[10px] text-zinc-600">
-                        另有 {focusedBackgroundTask.events.length - 5} 个 task event
+                        {labels.dialog.moreTaskEvents.replace('{count}', String(focusedBackgroundTask.events.length - 5))}
                       </div>
                     )}
                   </div>
@@ -804,37 +808,37 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                         {snapshot.goal ? `Workflow: ${snapshot.goal}` : `Workflow ${snapshot.runId}`}
                       </div>
                       <div className="mt-0.5 truncate text-[10px] text-violet-200/60">
-                        {formatWorkflowStatus(snapshot)}
+                        {formatWorkflowStatus(snapshot, labels)}
                       </div>
                       <div className="mt-0.5 truncate text-[10px] text-violet-200/45">
-                        {formatWorkflowRunMeta(snapshot)}
+                        {formatWorkflowRunMeta(snapshot, labels)}
                       </div>
                     </div>
                     <div className="shrink-0 text-right text-[10px] text-violet-200/60">
                       <div>{formatWorkflowAgentSummary(snapshot)}</div>
-                      {snapshot.durationMs !== undefined && <div>{formatDuration(snapshot.durationMs)}</div>}
+                      {snapshot.durationMs !== undefined && <div>{formatDuration(snapshot.durationMs, labels)}</div>}
                       <button
                         type="button"
                         aria-pressed={focused ? 'true' : 'false'}
-                        aria-label={`聚焦 workflow ${snapshot.runId}`}
+                        aria-label={labels.dialog.focusWorkflowAria.replace('{id}', snapshot.runId)}
                         onClick={(event) => {
                           event.stopPropagation();
                           setFocusedReplayOwner(focused ? null : owner);
                         }}
                         className="mt-1 rounded border border-violet-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-violet-200/70 transition-colors hover:border-violet-400/40 hover:bg-violet-500/10 hover:text-violet-100"
                       >
-                        {focused ? '已聚焦' : '聚焦'}
+                        {focused ? labels.dialog.focused : labels.dialog.focus}
                       </button>
                     </div>
                   </div>
                   {snapshot.phases.length > 0 && (
                     <div className="mt-1 truncate text-[10px] text-zinc-500">
-                      Phases：{snapshot.phases.slice(0, 4).join(' · ')}
+                      Phases: {snapshot.phases.slice(0, 4).join(' · ')}
                     </div>
                   )}
                   {runEvidence.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1" aria-label={`Workflow ${snapshot.runId} 证据`}>
-                      {runEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
+                    <div className="mt-2 flex flex-wrap gap-1" aria-label={labels.dialog.workflowEvidenceAria.replace('{id}', snapshot.runId)}>
+                      {runEvidence.map((item) => renderEvidenceChip(item, labels, onOpenEvidence))}
                     </div>
                   )}
                   {snapshot.agents.length > 0 && (
@@ -850,7 +854,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                               <span className="min-w-0 truncate font-medium text-violet-100">
                                 {agent.label || 'workflow agent'}
                               </span>
-                              <span className="shrink-0 text-violet-200/60">{formatWorkflowAgentStatus(agent)}</span>
+                              <span className="shrink-0 text-violet-200/60">{formatWorkflowAgentStatus(agent, labels)}</span>
                             </div>
                             <div className="mt-0.5 truncate text-zinc-500">{formatWorkflowAgentDetail(agent)}</div>
                             {body && <div className="mt-0.5 truncate text-zinc-400">{body}</div>}
@@ -859,7 +863,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       })}
                       {snapshot.agents.length > 4 && (
                         <div className="px-1 text-[10px] text-zinc-600">
-                          另有 {snapshot.agents.length - 4} 个 workflow agent
+                          {labels.dialog.moreWorkflowAgents.replace('{count}', String(snapshot.agents.length - 4))}
                         </div>
                       )}
                     </div>
@@ -880,7 +884,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
               );
             })}
             {hiddenWorkflowRunCount > 0 && (
-              <div className="px-1 text-[10px] text-zinc-600">另有 {hiddenWorkflowRunCount} 个 workflow run</div>
+              <div className="px-1 text-[10px] text-zinc-600">{labels.dialog.moreWorkflowRuns.replace('{count}', String(hiddenWorkflowRunCount))}</div>
             )}
 
             {visibleBackgroundTasks.map((task) => {
@@ -899,25 +903,25 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="truncate font-medium text-cyan-200">{task.title}</div>
-                      <div className="mt-0.5 truncate text-[10px] text-cyan-200/60">{formatTaskStatus(task)}</div>
+                      <div className="mt-0.5 truncate text-[10px] text-cyan-200/60">{formatTaskStatus(task, labels)}</div>
                       <div className="mt-0.5 truncate text-[10px] text-cyan-200/45">
-                        {formatBackgroundTaskMeta(task)}
+                        {formatBackgroundTaskMeta(task, labels)}
                       </div>
                     </div>
                     <div className="shrink-0 text-right text-[10px] text-cyan-200/60">
                       <div>{task.source}</div>
-                      {task.durationMs !== undefined && <div>{formatDuration(task.durationMs)}</div>}
+                      {task.durationMs !== undefined && <div>{formatDuration(task.durationMs, labels)}</div>}
                       <button
                         type="button"
                         aria-pressed={focused ? 'true' : 'false'}
-                        aria-label={`聚焦 background task ${task.id}`}
+                        aria-label={labels.dialog.focusBackgroundTaskAria.replace('{id}', task.id)}
                         onClick={(event) => {
                           event.stopPropagation();
                           setFocusedReplayOwner(focused ? null : owner);
                         }}
                         className="mt-1 rounded border border-cyan-500/20 bg-zinc-950/30 px-1.5 py-0.5 text-[10px] text-cyan-200/70 transition-colors hover:border-cyan-400/40 hover:bg-cyan-500/10 hover:text-cyan-100"
                       >
-                        {focused ? '已聚焦' : '聚焦'}
+                        {focused ? labels.dialog.focused : labels.dialog.focus}
                       </button>
                     </div>
                   </div>
@@ -935,8 +939,8 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                     </div>
                   )}
                   {taskEvidence.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1" aria-label={`Background task ${task.id} 证据`}>
-                      {taskEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
+                    <div className="mt-2 flex flex-wrap gap-1" aria-label={labels.dialog.backgroundEvidenceAria.replace('{id}', task.id)}>
+                      {taskEvidence.map((item) => renderEvidenceChip(item, labels, onOpenEvidence))}
                     </div>
                   )}
                   {task.events.length > 0 && (
@@ -963,17 +967,17 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
               );
             })}
             {hiddenBackgroundTaskCount > 0 && (
-              <div className="px-1 text-[10px] text-zinc-600">另有 {hiddenBackgroundTaskCount} 个 background task</div>
+              <div className="px-1 text-[10px] text-zinc-600">{labels.dialog.moreBackgroundTasks.replace('{count}', String(hiddenBackgroundTaskCount))}</div>
             )}
 
             {visibleEvidence.length > 0 && (
               <div>
-                <div className="mb-1 text-[10px] font-medium text-zinc-500">其他证据</div>
-                <div className="flex flex-wrap gap-1" aria-label="其他证据">
-                  {visibleEvidence.map((item) => renderEvidenceChip(item, onOpenEvidence))}
+                <div className="mb-1 text-[10px] font-medium text-zinc-500">{labels.dialog.otherEvidence}</div>
+                <div className="flex flex-wrap gap-1" aria-label={labels.dialog.otherEvidence}>
+                  {visibleEvidence.map((item) => renderEvidenceChip(item, labels, onOpenEvidence))}
                   {hiddenEvidenceCount > 0 && (
                     <span className="rounded border border-zinc-800 bg-zinc-950/60 px-1.5 py-0.5 text-[10px] text-zinc-600">
-                      另有 {hiddenEvidenceCount} 个 evidence
+                      {labels.dialog.moreEvidence.replace('{count}', String(hiddenEvidenceCount))}
                     </span>
                   )}
                 </div>
@@ -986,7 +990,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-950/60 p-2">
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="text-xs font-medium text-zinc-300">{labels.timeline}</div>
-          {hiddenTurnCount > 0 && <div className="text-[10px] text-zinc-600">另有 {hiddenTurnCount} 轮未展示</div>}
+          {hiddenTurnCount > 0 && <div className="text-[10px] text-zinc-600">{labels.dialog.moreTurnsHidden.replace('{count}', String(hiddenTurnCount))}</div>}
         </div>
         {visibleTurns.length === 0 ? (
           <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-2 text-xs text-zinc-500">
@@ -998,19 +1002,19 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
               <div key={turn.turnNumber} className="rounded-md border border-zinc-800 bg-zinc-900/35 p-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-xs font-medium text-zinc-200">第 {turn.turnNumber} 轮</div>
+                    <div className="text-xs font-medium text-zinc-200">{labels.dialog.turnNumber.replace('{n}', String(turn.turnNumber))}</div>
                     <div className="mt-0.5 truncate text-[10px] text-zinc-600">{getTurnSummary(turn)}</div>
                   </div>
                   <div className="shrink-0 text-right text-[10px] text-zinc-600">
-                    <div>{formatDuration(turn.durationMs)}</div>
+                    <div>{formatDuration(turn.durationMs, labels)}</div>
                     <div>{turn.inputTokens + turn.outputTokens} tokens</div>
                   </div>
                 </div>
                 {turn.blocks.length > 0 && (
                   <div className="mt-2 grid gap-1">
                     {turn.blocks.slice(0, 6).map((block, index) => {
-                      const label = formatBlockLabel(block);
-                      const detail = formatBlockDetail(block);
+                      const label = formatBlockLabel(block, labels);
+                      const detail = formatBlockDetail(block, labels);
                       return (
                         <div
                           key={`${turn.turnNumber}:${block.type}:${block.timestamp}:${index}`}
@@ -1027,7 +1031,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                       );
                     })}
                     {turn.blocks.length > 6 && (
-                      <div className="px-2 text-[10px] text-zinc-600">另有 {turn.blocks.length - 6} 个 block</div>
+                      <div className="px-2 text-[10px] text-zinc-600">{labels.dialog.moreBlocks.replace('{count}', String(turn.blocks.length - 6))}</div>
                     )}
                   </div>
                 )}

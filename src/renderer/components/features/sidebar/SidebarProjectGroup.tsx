@@ -21,6 +21,7 @@ import { SidebarProjectDrawer, type SidebarProjectDrawerSession } from './Sideba
 import { SidebarSessionItem, type SidebarSessionItemSharedProps } from './SidebarSessionItem';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 import type { SidebarSessionActions } from './useSidebarSessionActions';
+import { useI18n } from '../../../hooks/useI18n';
 
 /** 单个分组默认最多平铺多少条会话，超出折叠成「展开全部」。同工作空间历史过多时避免长列表淹没侧栏。 */
 const SESSION_ROW_CAP = 5;
@@ -83,6 +84,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   buildProjectDrawerSessions,
   sessionItemProps,
 }) => {
+  const { t } = useI18n();
+  const p = t.sidebarProject;
   const {
     backgroundTaskMap,
     sessionRuntimes,
@@ -127,7 +130,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     workspacePaths: group.paths,
   });
   const title = group.isUncategorized
-    ? '纯对话，不继承项目上下文'
+    ? p.plainChatTitle
     : `${summary.displayName}${group.paths.length > 0 ? ` · ${group.paths.join(' · ')}` : ''}`;
   const detailsExpanded = Boolean(expandedProjectDetails[group.key]);
   const drawerOpen = projectDrawerKey === group.key;
@@ -164,8 +167,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           <span
             data-testid="sidebar-group-unfinished"
             className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-amber-400/90 px-1 text-[10px] font-medium tabular-nums text-zinc-900"
-            title={`${summary.unfinishedCount} 个未完成`}
-            aria-label={`${summary.unfinishedCount} 个未完成`}
+            title={p.unfinishedCount.replace('{count}', String(summary.unfinishedCount))}
+            aria-label={p.unfinishedCount.replace('{count}', String(summary.unfinishedCount))}
           >
             {summary.unfinishedCount}
           </span>
@@ -180,8 +183,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         {!group.isUncategorized && (
           <button
             type="button"
-            aria-label={`打开 ${summary.displayName} 项目控制台`}
-            title={`打开 ${summary.displayName} 项目控制台`}
+            aria-label={p.openConsole.replace('{name}', summary.displayName)}
+            title={p.openConsole.replace('{name}', summary.displayName)}
             aria-pressed={drawerOpen ? 'true' : 'false'}
             onClick={() => {
               setProjectDrawerKey(group.key);
@@ -194,8 +197,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         {!group.isUncategorized && (
           <button
             type="button"
-            aria-label={detailsExpanded ? `收起 ${summary.displayName} 项目详情` : `展开 ${summary.displayName} 项目详情`}
-            title={detailsExpanded ? `收起 ${summary.displayName} 项目详情` : `展开 ${summary.displayName} 项目详情`}
+            aria-label={(detailsExpanded ? p.collapseDetails : p.expandDetails).replace('{name}', summary.displayName)}
+            title={(detailsExpanded ? p.collapseDetails : p.expandDetails).replace('{name}', summary.displayName)}
             onClick={() => {
               setExpandedProjectDetails((previous) => ({
                 ...previous,
@@ -210,8 +213,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         {!group.isUncategorized && (
           <button
             type="button"
-            aria-label={`打开 ${summary.displayName} 产物与资产`}
-            title={`打开 ${summary.displayName} 产物与资产`}
+            aria-label={p.openAssets.replace('{name}', summary.displayName)}
+            title={p.openAssets.replace('{name}', summary.displayName)}
             onClick={handleOpenWorkspaceAssets}
             className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
           >
@@ -221,8 +224,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         {!group.isUncategorized && (
           <button
             type="button"
-            aria-label={`在 ${summary.displayName} 新建会话`}
-            title={`在 ${summary.displayName} 新建会话`}
+            aria-label={p.newSessionIn.replace('{name}', summary.displayName)}
+            title={p.newSessionIn.replace('{name}', summary.displayName)}
             onClick={(e) => handleNewWorkspaceChat(e, group.key, group.path)}
             disabled={isCreatingSession || (creatingWorkspaceKey !== null && creatingWorkspaceKey !== group.key)}
             className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden disabled:opacity-50"
@@ -305,7 +308,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             data-sidebar-group-rows={group.key}
           >
             {group.sessions.length === 0 ? (
-              <div className="px-3 py-1 text-xs text-zinc-600">暂无对话</div>
+              <div className="px-3 py-1 text-xs text-zinc-600">{p.noSessions}</div>
             ) : (
               <>
                 {visibleSessions.map((session, index) => (
@@ -328,7 +331,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
                     onClick={() => setShowAllRows((value) => !value)}
                     className="w-full px-3 py-1 text-left text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 focus:outline-hidden"
                   >
-                    {showAllRows ? '收起' : `展开全部 ${group.sessions.length} 条`}
+                    {showAllRows ? p.collapse : p.expandAll.replace('{count}', String(group.sessions.length))}
                   </button>
                 )}
               </>

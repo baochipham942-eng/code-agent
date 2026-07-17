@@ -7,6 +7,7 @@ import {
 } from '@shared/contract/workbenchPreset';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { ToastType } from '../../../stores/uiStore';
+import type { Translations } from '../../../i18n';
 import { createLogger } from '../../../utils/logger';
 import { copyPathToClipboard } from '../../../utils/platform';
 import { getDisplaySessionTitle } from '../../../utils/sessionPresentation';
@@ -21,10 +22,10 @@ const logger = createLogger('Sidebar');
 
 const SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS = 12_000;
 
-function rejectAfter<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+function rejectAfter<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label}超时`)), timeoutMs);
+    timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
   });
   return Promise.race([promise, timeout]).finally(() => {
     if (timer) clearTimeout(timer);
@@ -52,6 +53,7 @@ export interface SessionContextMenuDeps {
   saveExportToDownloads: (fileName: string, content: string) => Promise<void>;
   showToast: (type: ToastType, message: string, duration?: number) => string;
   openRuntimeLogsFolder: () => Promise<boolean>;
+  t: Translations;
 }
 
 /**
@@ -82,14 +84,16 @@ export function buildSessionContextMenuItems(
     saveExportToDownloads,
     showToast,
     openRuntimeLogsFolder,
+    t,
   } = deps;
+  const menu = t.sessionMenu;
 
   const isPinned = pinnedSessionIds.has(session.id);
   const isArchived = !!session.isArchived;
   const reusableWorkbenchDirectory = getReusableWorkbenchDirectory(session);
   const reusableWorkbench = canReuseSessionWorkbench(session);
   const recentPresetItems: ContextMenuItem[] = savedWorkbenchPresets.slice(0, 3).map((preset: WorkbenchPreset) => ({
-    label: `应用 Preset: ${formatPresetMenuLabel(preset.name)}`,
+    label: menu.applyPreset.replace('{name}', formatPresetMenuLabel(preset.name)),
     icon: '🧩',
     onClick: async () => {
       try {
@@ -113,7 +117,7 @@ export function buildSessionContextMenuItems(
     },
   }));
   const recentRecipeItems: ContextMenuItem[] = savedWorkbenchRecipes.slice(0, 3).map((recipe: WorkbenchRecipe) => ({
-    label: `应用 Recipe: ${formatPresetMenuLabel(recipe.name)}`,
+    label: menu.applyRecipe.replace('{name}', formatPresetMenuLabel(recipe.name)),
     icon: '🧪',
     onClick: async () => {
       try {
@@ -140,12 +144,12 @@ export function buildSessionContextMenuItems(
 
   return [
     {
-      label: isPinned ? '取消置顶' : '置顶',
+      label: isPinned ? menu.unpin : menu.pin,
       icon: '📌',
       onClick: () => togglePin(session.id),
     },
     {
-      label: '重命名',
+      label: menu.rename,
       icon: '✏️',
       onClick: () => {
         setRenamingId(session.id);
@@ -153,7 +157,7 @@ export function buildSessionContextMenuItems(
       },
     },
     {
-      label: '复制会话 ID',
+      label: menu.copySessionId,
       icon: '🆔',
       onClick: async () => {
         try {
@@ -167,7 +171,7 @@ export function buildSessionContextMenuItems(
       },
     },
     {
-      label: canOpenSessionReplay ? '打开 Replay' : 'Replay 仅管理员可用',
+      label: canOpenSessionReplay ? menu.openReplay : menu.replayAdminOnly,
       icon: '↩',
       disabled: !canOpenSessionReplay,
       onClick: async () => {
@@ -175,7 +179,7 @@ export function buildSessionContextMenuItems(
       },
     },
     {
-      label: isArchived ? '取消归档' : '归档',
+      label: isArchived ? menu.unarchive : menu.archive,
       icon: '📦',
       onClick: () => {
         if (isArchived) {
@@ -186,7 +190,7 @@ export function buildSessionContextMenuItems(
       },
     },
     {
-      label: '删除',
+      label: menu.delete,
       icon: '🗑',
       onClick: () => softDelete([session.id]),
       danger: true,
@@ -194,7 +198,7 @@ export function buildSessionContextMenuItems(
     ...(reusableWorkbench
       ? [
           {
-            label: '在当前会话复用工作台',
+            label: menu.reuseWorkbench,
             icon: '🧰',
             onClick: async () => {
               try {
@@ -217,13 +221,13 @@ export function buildSessionContextMenuItems(
             },
           },
           {
-            label: '保存工作台为 Preset',
+            label: menu.savePreset,
             icon: '💾',
             onClick: () => {
               const fallbackName = getDefaultWorkbenchPresetName(session);
               const promptedName =
                 typeof window !== 'undefined' && typeof window.prompt === 'function'
-                  ? window.prompt('Preset 名称', fallbackName)
+                  ? window.prompt(menu.presetNamePrompt, fallbackName)
                   : fallbackName;
               if (promptedName === null) {
                 return;
@@ -239,7 +243,7 @@ export function buildSessionContextMenuItems(
     ...recentPresetItems,
     ...recentRecipeItems,
     {
-      label: '导出 Markdown',
+      label: menu.exportMarkdown,
       icon: '📝',
       onClick: async () => {
         try {
@@ -257,12 +261,12 @@ export function buildSessionContextMenuItems(
           );
         } catch (error) {
           logger.error('Failed to export session markdown', error);
-          showToast('error', `导出 Markdown 失败：${error instanceof Error ? error.message : String(error)}`);
+          showToast('error', menu.exportMarkdownFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
         }
       },
     },
     {
-      label: '导出会话日志',
+      label: menu.exportSessionLog,
       icon: '🧾',
       onClick: async () => {
         try {
@@ -273,7 +277,7 @@ export function buildSessionContextMenuItems(
               { sessionId: session.id },
             ) ?? Promise.resolve(undefined),
             SESSION_DIAGNOSTICS_EXPORT_TIMEOUT_MS,
-            '导出会话日志',
+            menu.exportSessionLogTimeout,
           );
           if (!response?.success || !response.data?.content) {
             throw new Error(response?.error?.message || 'Failed to export session diagnostics');
@@ -285,10 +289,13 @@ export function buildSessionContextMenuItems(
         } catch (error) {
           logger.error('Failed to export session diagnostics', error);
           const openedLogs = await openRuntimeLogsFolder();
-          const recoveryHint = openedLogs
-            ? '已打开日志目录，请发送当天 code-agent 日志。'
-            : '请发送 ~/.code-agent/logs 里的当天 code-agent 日志。';
-          showToast('error', `导出会话日志失败：${error instanceof Error ? error.message : String(error)}。${recoveryHint}`);
+          const recoveryHint = openedLogs ? menu.logsFolderOpenedHint : menu.logsFolderManualHint;
+          showToast(
+            'error',
+            menu.exportSessionLogFailed
+              .replace('{message}', error instanceof Error ? error.message : String(error))
+              .replace('{hint}', recoveryHint),
+          );
         }
       },
     },

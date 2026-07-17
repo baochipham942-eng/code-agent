@@ -1,8 +1,11 @@
 // ============================================================================
 // 表面色 token 收敛棘轮：chat 域 + TitleBar 已清扫完的文件里，禁止再出现手搓
-// white-alpha（`bg-white/[0.06]` 或 `border-white/10` 两种写法），一律用已注册
-// 的六 token：surface-faint/surface-subtle/surface-hover + border-faint/
-// border-muted/border-hover（tailwind.config.js + styles/themes/*.css）。
+// white-alpha（`bg-white/[0.06]` / `border-white/10` / `ring-white/[0.06]`
+// 三种 utility 形态），一律用已注册的六 token：surface-faint/surface-subtle/
+// surface-hover + border-faint/border-muted/border-hover（tailwind.config.js
+// 里六 token 都注册在 colors 下，ring-* 同样可用；styles/themes/*.css 定义
+// 具体值）。按 utility 形态枚举（bg|border|ring）而不是按文件名枚举，新增
+// 形态（如未来出现 divide-white/shadow-white）需要同步扩这里的正则。
 // 清单只覆盖本批清扫过的文件——不扫全仓，别的组件/域不归这道门管。
 // 白名单登记 3 处刻意保留的字面量（映射后档位跳档明显，宁可少动）。
 // 同套路照抄 settingsToggleConvergence.test.ts（PR #430）。
@@ -49,7 +52,7 @@ function grepWhiteAlphaSites(): Map<string, number> {
     const abs = path.join(RENDERER_DIR, rel);
     let out = '';
     try {
-      out = execFileSync('grep', ['-noE', '(bg|border)-white/(\\[0\\.[0-9]+\\]|[0-9]+\\b)', abs], {
+      out = execFileSync('grep', ['-noE', '(bg|border|ring)-white/(\\[0\\.[0-9]+\\]|[0-9]+\\b)', abs], {
         encoding: 'utf-8',
       });
     } catch (err) {

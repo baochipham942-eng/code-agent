@@ -48,7 +48,6 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         },
       ],
       environment: {
-        generation: 'agent',
         model: 'gpt-test',
         provider: 'mock',
         workingDirectory: '/tmp/project',
@@ -483,7 +482,7 @@ describe('ExperimentAdapter canonical harness persistence', () => {
         { ...base, testId: 'pass-a', description: 'a', status: 'passed', score: 1 },
         { ...base, testId: 'skip-b', description: 'b', status: 'skipped', score: 0 },
       ],
-      environment: { generation: 'agent', model: 'm', provider: 'mock', workingDirectory: '/tmp' },
+      environment: { model: 'm', provider: 'mock', workingDirectory: '/tmp' },
       performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
       gitCommit: 'f2',
     };

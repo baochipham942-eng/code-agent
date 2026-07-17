@@ -11,6 +11,7 @@ import { isTauriMode } from '../../../utils/platform';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useKeybindingsSettings } from '../../../hooks/useKeybindingsSettings';
 import { listenTauriEvent } from '../../../services/tauriPluginFacade';
+import { Z_LAYERS } from '../../../styles/zLayers';
 
 export const MemoFloater: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -105,7 +106,7 @@ export const MemoFloater: React.FC = () => {
   if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[20vh]">
+    <div className="fixed inset-0 flex items-start justify-center pt-[20vh]" style={{ zIndex: Z_LAYERS.memoFloater }}>
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"

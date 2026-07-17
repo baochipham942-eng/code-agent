@@ -5,6 +5,7 @@
 import React from 'react';
 import { Check, X, Info, AlertTriangle } from 'lucide-react';
 import { useToastStore, type ToastType } from '../hooks/useToast';
+import { Z_LAYERS } from '../styles/zLayers';
 
 const ICON_MAP: Record<ToastType, React.ReactNode> = {
   success: <Check className="h-3.5 w-3.5" />,
@@ -26,7 +27,7 @@ export const ToastContainer: React.FC = () => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm">
+    <div className="fixed top-4 right-4 flex flex-col gap-2 max-w-sm" style={{ zIndex: Z_LAYERS.toast }}>
       {toasts.map((t) => (
         <div
           key={t.id}

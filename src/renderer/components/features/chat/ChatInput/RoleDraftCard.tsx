@@ -10,6 +10,7 @@ import { UserPlus, Check, X, Loader2, ChevronDown, ChevronRight } from 'lucide-r
 import ipcService from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
 
 export interface RoleDraftSummary {
   id: string;
@@ -62,13 +63,15 @@ interface RoleDraftCardProps {
 }
 
 export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved, onDismiss }) => {
+  const { t } = useI18n();
+  const r = t.roleDraft;
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [definitions, setDefinitions] = useState<Record<string, string>>({});
 
   const handleConfirm = async (draftId: string) => {
     const isEdit = Boolean(drafts.find((d) => d.id === draftId)?.editingRoleId);
-    const verb = isEdit ? '修改' : '创建';
+    const verb = isEdit ? r.verbEdit : r.verbCreate;
     setBusyId(draftId);
     try {
       const result = await ipcService.invokeDomain<{ success?: boolean; roleId?: string }>(
@@ -78,13 +81,13 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
       );
       if (result?.success) {
         onResolved(draftId);
-        toast.success(`角色「${result.roleId ?? ''}」已${verb}`);
+        toast.success(`${r.updatedToastPrefix}${result.roleId ?? ''}${r.updatedToastSuffix}${verb}`);
       } else {
-        toast.error(`角色${verb}失败`);
+        toast.error(`${r.actionFailedPrefix}${verb}${r.actionFailedSuffix}`);
       }
     } catch (error) {
       // 安全闸拦截 / 重名等会走到这里，把后端原因透出
-      toast.error(error instanceof Error ? error.message : `角色${verb}失败`);
+      toast.error(error instanceof Error ? error.message : `${r.actionFailedPrefix}${verb}${r.actionFailedSuffix}`);
     } finally {
       setBusyId(null);
     }
@@ -95,9 +98,9 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
     try {
       await ipcService.invokeDomain(IPC_DOMAINS.ROLES, 'rejectDraft', { draftId });
       onResolved(draftId);
-      toast.info('已放弃角色草稿');
+      toast.info(r.discardedToast);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '草稿处理失败');
+      toast.error(error instanceof Error ? error.message : r.processFailedToast);
     } finally {
       setBusyId(null);
     }
@@ -117,12 +120,12 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
           'listDrafts',
         );
         const found = list?.find((d) => d.id === draftId);
-        setDefinitions((prev) => ({ ...prev, [draftId]: found?.systemPrompt ?? '（无法读取定义）' }));
+        setDefinitions((prev) => ({ ...prev, [draftId]: found?.systemPrompt ?? r.definitionUnavailable }));
       } catch {
-        setDefinitions((prev) => ({ ...prev, [draftId]: '（无法读取定义）' }));
+        setDefinitions((prev) => ({ ...prev, [draftId]: r.definitionUnavailable }));
       }
     }
-  }, [expandedId, definitions]);
+  }, [expandedId, definitions, r.definitionUnavailable]);
 
   if (drafts.length === 0) return null;
 
@@ -132,14 +135,14 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
         <UserPlus className="w-4 h-4 text-emerald-400 flex-shrink-0" />
         <span className="text-xs text-emerald-300 flex-1">
           {drafts.some((d) => d.editingRoleId)
-            ? '角色改动待确认：确认后才会更新角色定义（不动已有记忆与履历）'
-            : '新角色待确认：确认后才会创建（写入角色定义 + 角色记忆目录）'}
+            ? r.pendingEditBanner
+            : r.pendingCreateBanner}
         </span>
         <button
           type="button"
           onClick={onDismiss}
           className="p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
-          title="稍后处理"
+          title={r.laterTitle}
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -147,7 +150,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
 
       {drafts.map((draft) => {
         const expanded = expandedId === draft.id;
-        const toolsLine = draft.tools.length > 0 ? draft.tools.join('、') : '默认全集';
+        const toolsLine = draft.tools.length > 0 ? draft.tools.join('、') : r.defaultToolsFallback;
         const isEdit = Boolean(draft.editingRoleId);
         return (
           <div key={draft.id} className="py-1">
@@ -156,7 +159,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
                 <div className="flex items-center gap-1.5">
                   {isEdit && (
                     <span className="px-1.5 py-px text-[10px] rounded bg-amber-500/20 text-amber-300 flex-shrink-0">
-                      修改
+                      {r.editBadge}
                     </span>
                   )}
                   <span className="text-xs font-medium text-emerald-100 truncate" title={draft.roleId}>
@@ -175,7 +178,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
                 )}
                 {/* 权限面：确认前必须让用户看清这角色拿到哪些能力（设计 §8 安全） */}
                 <div className="text-[11px] text-emerald-200/50 truncate" title={toolsLine}>
-                  能力：{toolsLine}
+                  {r.capabilityPrefix}{toolsLine}
                 </div>
               </div>
 
@@ -186,7 +189,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
                 className="flex items-center gap-1 px-2 py-1 text-xs bg-emerald-500/20 text-emerald-300 rounded hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
               >
                 {busyId === draft.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                {isEdit ? '确认修改' : '确认创建'}
+                {isEdit ? r.confirmEdit : r.confirmCreate}
               </button>
 
               <button
@@ -195,7 +198,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
                 disabled={busyId !== null}
                 className="px-2 py-1 text-xs text-zinc-400 rounded hover:text-zinc-200 hover:bg-zinc-700/50 transition-colors disabled:opacity-50"
               >
-                放弃
+                {r.discard}
               </button>
             </div>
 
@@ -205,11 +208,11 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
               className="flex items-center gap-0.5 mt-0.5 text-[11px] text-emerald-300/70 hover:text-emerald-200 transition-colors"
             >
               {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-              查看完整定义
+              {r.viewFullDefinition}
             </button>
             {expanded && (
               <pre className="mt-1 p-2 text-[11px] text-emerald-100/80 bg-black/20 rounded max-h-48 overflow-auto whitespace-pre-wrap break-words">
-                {definitions[draft.id] ?? '加载中…'}
+                {definitions[draft.id] ?? r.loadingDefinition}
               </pre>
             )}
           </div>

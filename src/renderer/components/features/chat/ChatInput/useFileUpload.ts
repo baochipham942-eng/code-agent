@@ -59,7 +59,7 @@ export function useFileUpload() {
 
     // PDF 大文件只传路径，不受 MAX_FILE_SIZE 限制
     if (category === 'pdf' && filePath) {
-      const { text, pageCount } = await extractPdfText(filePath);
+      const { text, pageCount } = await extractPdfText(t, filePath);
       return {
         id, type: 'file', category: 'pdf', name: displayName, size: file.size,
         mimeType: 'application/pdf', data: text, pageCount, path: filePath,

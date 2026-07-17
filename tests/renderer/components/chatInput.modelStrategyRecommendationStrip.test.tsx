@@ -3,6 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { ModelStrategyRecommendationStrip } from '../../../src/renderer/components/features/chat/ChatInput/ModelStrategyRecommendationStrip';
 import { buildModelStrategyRecommendation } from '../../../src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation';
+import { zh } from '../../../src/renderer/i18n/zh';
+
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh: zhTranslations } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zhTranslations, language: 'zh' }) };
+});
 
 function collectButtonElements(node: React.ReactNode): Array<React.ReactElement<{ onClick?: () => void; children?: React.ReactNode }>> {
   const buttons: Array<React.ReactElement<{ onClick?: () => void; children?: React.ReactNode }>> = [];
@@ -74,7 +80,7 @@ describe('ModelStrategyRecommendationStrip', () => {
   });
 
   it('renders a native-engine action for generated external attachment warnings', () => {
-    const recommendation = buildModelStrategyRecommendation({
+    const recommendation = buildModelStrategyRecommendation(zh, {
       inputValue: '看一下这张截图',
       hasImageAttachments: true,
       engineKind: 'claude_code',

@@ -6,6 +6,7 @@
 // ============================================================================
 
 import type { ReactNode } from 'react';
+import { zh } from '../../../../i18n/zh';
 
 export type SlashCommandDisplayGroupId =
   | 'session'
@@ -52,19 +53,7 @@ const SLASH_COMMAND_GROUP_ORDER: SlashCommandDisplayGroupId[] = [
   'system',
 ];
 
-const SLASH_COMMAND_GROUP_META: Record<SlashCommandDisplayGroupId, Omit<SlashCommandGroup, 'id' | 'commands'>> = {
-  session: { label: '会话', description: '创建、清理、归档和恢复会话' },
-  agent: { label: 'Agent 与编排', description: '选择 Agent、创建角色、设定目标和工作流' },
-  tools: { label: '工具与能力', description: 'Skills、MCP、Connectors、Plugins 等能力面' },
-  prompt_file: { label: '自定义命令', description: '用户、项目和插件安装的文件式 prompt command' },
-  prompt_mcp: { label: 'MCP Prompts', description: '来自 MCP server 的 prompt 命令' },
-  mode: { label: '模式与权限', description: '交互模式、推理强度和权限模式' },
-  model: { label: '模型', description: '查看或切换模型配置' },
-  context: { label: '上下文', description: '查看和管理上下文窗口' },
-  status: { label: '状态与诊断', description: '状态、成本、Hooks、权限和诊断信息' },
-  ui: { label: '界面', description: '打开设置、工作区、DAG 和侧边栏' },
-  system: { label: '系统', description: '帮助、配置和系统命令' },
-};
+const SLASH_COMMAND_GROUP_META: Record<SlashCommandDisplayGroupId, Omit<SlashCommandGroup, 'id' | 'commands'>> = zh.slashCommandGroups;
 
 export function buildSlashCommandGroups<T extends SlashCommandDisplayItem>(commands: T[]): Array<SlashCommandGroup<T>> {
   const grouped = new Map<SlashCommandDisplayGroupId, T[]>();

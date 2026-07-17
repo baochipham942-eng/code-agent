@@ -1,4 +1,5 @@
 import type { MentionRoutingAgent } from './agentMentionRouting';
+import { zh, type Translations } from '../../../../i18n/zh';
 
 export interface ParsedNeoTagInvocation {
   userText: string;
@@ -13,8 +14,13 @@ export interface ParsedNeoTagInvocation {
 export const NEO_TAG_MENTION_AGENT: MentionRoutingAgent & { role: string } = {
   id: '__neo_tag__',
   name: 'Neo',
-  role: '工作卡',
+  role: zh.neoMentionRouting.workCardRole,
 };
+
+/** 按当前语言重写 NEO_TAG_MENTION_AGENT 的展示态 role（id/name 保持稳定）。 */
+export function localizeNeoTagMentionAgent(t: Translations): MentionRoutingAgent & { role: string } {
+  return { ...NEO_TAG_MENTION_AGENT, role: t.neoMentionRouting.workCardRole };
+}
 
 /**
  * 建议展示 Neo 候选的时机：
@@ -43,6 +49,7 @@ export interface NeoTopicMentionSource {
 /** @neo 下拉的「续接既有 topic」候选：最近活跃前 5，已结束的不进（ADR-035 D1）。 */
 export function buildNeoTopicMentionCandidates(
   topics: NeoTopicMentionSource[],
+  t: Translations = zh,
 ): Array<MentionRoutingAgent & { role: string }> {
   return topics
     .filter((topic) => !CLOSED_TOPIC_STATUSES.has(topic.status))
@@ -51,7 +58,7 @@ export function buildNeoTopicMentionCandidates(
     .map((topic) => ({
       id: `${NEO_TOPIC_MENTION_PREFIX}${topic.workCardId}`,
       name: 'Neo',
-      role: `续接 · ${topic.title.length > 24 ? `${topic.title.slice(0, 23)}…` : topic.title}`,
+      role: `${t.neoMentionRouting.continuationRolePrefix}${topic.title.length > 24 ? `${topic.title.slice(0, 23)}…` : topic.title}`,
     }));
 }
 

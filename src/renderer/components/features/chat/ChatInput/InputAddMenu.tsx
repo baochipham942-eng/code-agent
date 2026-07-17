@@ -7,6 +7,7 @@ import { Plus, Image as ImageIcon, SlashSquare, Brain } from 'lucide-react';
 import { useModeStore } from '../../../../stores/modeStore';
 import type { InteractionMode } from '../../../../../shared/contract/agent';
 import type { SessionMemoryMode } from '../../../../../shared/contract';
+import { useI18n } from '../../../../hooks/useI18n';
 
 interface Props {
   onSlashCommand: () => void;
@@ -17,11 +18,13 @@ interface Props {
   memoryToggleDisabled?: boolean;
 }
 
-const MODE_OPTIONS: Array<{ value: InteractionMode; label: string; color: string; hint: string }> = [
-  { value: 'code', label: '◆Code', color: 'text-emerald-400', hint: '全权执行：调用工具、修改文件、运行命令' },
-  { value: 'plan', label: '◆Plan', color: 'text-purple-400', hint: '只规划：列计划但不动手' },
-  { value: 'ask', label: '◆Ask', color: 'text-cyan-400', hint: '只问答：纯文字回复，不调工具' },
-];
+function buildModeOptions(hints: { code: string; plan: string; ask: string }): Array<{ value: InteractionMode; label: string; color: string; hint: string }> {
+  return [
+    { value: 'code', label: '◆Code', color: 'text-emerald-400', hint: hints.code },
+    { value: 'plan', label: '◆Plan', color: 'text-purple-400', hint: hints.plan },
+    { value: 'ask', label: '◆Ask', color: 'text-cyan-400', hint: hints.ask },
+  ];
+}
 
 export const InputAddMenu: React.FC<Props> = ({
   onSlashCommand,
@@ -30,6 +33,7 @@ export const InputAddMenu: React.FC<Props> = ({
   onToggleMemory,
   memoryToggleDisabled,
 }) => {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -37,6 +41,7 @@ export const InputAddMenu: React.FC<Props> = ({
 
   const interactionMode = useModeStore((s) => s.interactionMode);
   const setInteractionMode = useModeStore((s) => s.setInteractionMode);
+  const modeOptions = buildModeOptions(t.inputAddMenu.modeHints);
 
   useEffect(() => {
     if (!open) return;
@@ -56,9 +61,9 @@ export const InputAddMenu: React.FC<Props> = ({
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label="更多输入选项"
+        aria-label={t.inputAddMenu.moreOptionsAria}
         aria-expanded={open}
-        title="更多（命令 / 上传 / 模式）"
+        title={t.inputAddMenu.moreOptionsTitle}
         className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors"
       >
         <Plus className="w-4 h-4" />
@@ -89,7 +94,7 @@ export const InputAddMenu: React.FC<Props> = ({
             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left"
           >
             <ImageIcon className="w-3.5 h-3.5 text-zinc-400" />
-            <span>上传图片或文件</span>
+            <span>{t.inputAddMenu.uploadLabel}</span>
           </button>
           <button
             type="button"
@@ -100,7 +105,7 @@ export const InputAddMenu: React.FC<Props> = ({
             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left"
           >
             <SlashSquare className="w-3.5 h-3.5 text-zinc-400" />
-            <span>/ 命令面板</span>
+            <span>{t.inputAddMenu.slashPanelLabel}</span>
             <span className="ml-auto text-[10px] text-zinc-500 font-mono">/</span>
           </button>
 
@@ -113,20 +118,20 @@ export const InputAddMenu: React.FC<Props> = ({
               setOpen(false);
             }}
             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left disabled:cursor-not-allowed disabled:opacity-40"
-            title={memoryMode === 'off' ? '本会话记忆已关闭，点击开启' : '本会话记忆已开启，点击关闭'}
+            title={memoryMode === 'off' ? t.inputAddMenu.memoryOffTitle : t.inputAddMenu.memoryOnTitle}
           >
             <Brain className={`w-3.5 h-3.5 ${memoryMode === 'off' ? 'text-zinc-500' : 'text-emerald-300'}`} />
-            <span>本会话记忆</span>
+            <span>{t.inputAddMenu.memoryLabel}</span>
             <span className={`ml-auto text-[10px] ${memoryMode === 'off' ? 'text-zinc-500' : 'text-emerald-300'}`}>
-              {memoryMode === 'off' ? '已关闭' : '已开启'}
+              {memoryMode === 'off' ? t.inputAddMenu.memoryOffStatus : t.inputAddMenu.memoryOnStatus}
             </span>
           </button>
 
           {/* 交互模式：3 chip 横排，显示当前选中并直接切换 */}
           <div className="border-t border-zinc-700/60 mt-1 pt-1.5 px-2 pb-1.5">
-            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1 px-1">交互模式</div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1 px-1">{t.inputAddMenu.interactionModeHeader}</div>
             <div className="grid grid-cols-3 gap-1">
-              {MODE_OPTIONS.map((opt) => (
+              {modeOptions.map((opt) => (
                 <button
                   key={opt.value}
                   type="button"

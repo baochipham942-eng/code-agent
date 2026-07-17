@@ -6,6 +6,7 @@ import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
 import { chatInputZh } from './chatInput';
+import { chatInputModelStrategyZh } from './chatInputModelStrategy';
 import { sidebarZh } from './sidebar';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
@@ -646,6 +647,8 @@ export const zh = {
     // WorkingFolder
     inputDirPlaceholder: '输入工作目录路径',
     confirm: '确定',
+    selectDirectoryTitle: '选择工作目录',
+    nextMessageWillUse: '下一条消息将使用：{path}',
     // Connectors
     status: '状态',
     toolCount: '工具数',
@@ -846,6 +849,7 @@ export const zh = {
 
   ...chatTranscriptZh,
   ...chatInputZh,
+  ...chatInputModelStrategyZh,
   ...sidebarZh,
   ...previewWorkspaceZh,
   ...modalPrimitivesZh,

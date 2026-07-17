@@ -7,6 +7,7 @@ import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
 import { chatInputEn } from './chatInput';
+import { chatInputModelStrategyEn } from './chatInputModelStrategy';
 import { sidebarEn } from './sidebar';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
@@ -658,6 +659,8 @@ export const en: Translations = {
     // WorkingFolder
     inputDirPlaceholder: 'Enter workspace path',
     confirm: 'OK',
+    selectDirectoryTitle: 'Select working directory',
+    nextMessageWillUse: 'Next message will use: {path}',
     // Connectors
     status: 'Status',
     toolCount: 'Tools',
@@ -858,6 +861,7 @@ export const en: Translations = {
   // Chat-flow Mermaid diagram card (pan/zoom + annotate-to-edit)
   ...chatTranscriptEn,
   ...chatInputEn,
+  ...chatInputModelStrategyEn,
   ...sidebarEn,
   ...previewWorkspaceEn,
   ...modalPrimitivesEn,

@@ -126,7 +126,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     description: string,
     options: { handoffPrompt?: string } = {},
   ): Promise<boolean> => {
-    toast.info('正在解析定时任务…');
+    const cs = t.chatInputSubmit;
+    toast.info(cs.scheduleParsingToast);
     try {
       const draft = await cronClient.generateFromPrompt(description);
       const input = draft as unknown as CreateCronJobInput;
@@ -150,7 +151,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           originalDescription: description,
           ...(handoffPrompt ? {
             handoffPrompt,
-            nextStage: { prompt: handoffPrompt, title: '唤醒后继续' },
+            nextStage: { prompt: handoffPrompt, title: cs.resumeAfterWakeTitle },
           } : {}),
         },
       });
@@ -163,20 +164,20 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           sourceSessionId: currentSessionId,
           sourceRefId: job.id,
           status: job.enabled ? 'active' : 'paused',
-          title: job.name || '未命名自动化',
+          title: job.name || cs.unnamedAutomation,
           cadenceLabel: formatCronScheduleLabel(job.schedule),
           nextRunAt: job.nextRunAt,
           handoffPrompt,
-          nextStage: handoffPrompt ? { prompt: handoffPrompt, title: '唤醒后继续' } : undefined,
+          nextStage: handoffPrompt ? { prompt: handoffPrompt, title: cs.resumeAfterWakeTitle } : undefined,
         }));
       }
-      toast.success(`已创建定时任务「${job.name || '未命名'}」，可在「定时任务」面板查看`);
+      toast.success(`${cs.scheduleCreatedToastPrefix}${job.name || cs.unnamedSchedule}${cs.scheduleCreatedToastSuffix}`);
       return true;
     } catch (err) {
-      toast.error(`创建定时任务失败：${err instanceof Error ? err.message : '未知错误'}`);
+      toast.error(cs.scheduleCreateFailedPrefix + (err instanceof Error ? err.message : t.chatInput.unknownError));
       return false;
     }
-  }, [currentSessionId]);
+  }, [currentSessionId, t]);
 
   const startGoalRun = useCallback(async (
     parsed: ParsedGoalCommand,
@@ -242,12 +243,12 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       try {
         const result = await invoke(IPC_CHANNELS.CONTEXT_COMPACT_CURRENT, currentSessionId ?? undefined, compactCommand.focusText);
         if (result?.success) {
-          toast.success('已压缩当前会话上下文');
+          toast.success(t.chatInputSubmit.contextCompactedToast);
         } else if (result?.reason) {
-          toast.warning(`上下文压缩未执行：${result.reason}`);
+          toast.warning(t.chatInputSubmit.contextCompactNotExecutedPrefix + result.reason);
         }
       } catch (err) {
-        toast.error(`上下文压缩失败：${err instanceof Error ? err.message : '未知错误'}`);
+        toast.error(t.chatInputSubmit.contextCompactFailedPrefix + (err instanceof Error ? err.message : t.chatInput.unknownError));
       }
       return;
     }
@@ -273,12 +274,12 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     if (isLoopCommand(trimmedValue)) {
       const parsed = parseLoopCommand(trimmedValue);
       if (!parsed?.prompt) {
-        toast.warning('用法：/loop [间隔] <要反复做的事> [--until "<停止条件>"]，例如 /loop 30s 查部署状态，好了告诉我');
+        toast.warning(t.chatInputSubmit.loopUsageWarning);
         inputAreaRef.current?.focus();
         return;
       }
       if (!currentSessionId) {
-        toast.warning('请先打开一个会话再启动循环');
+        toast.warning(t.chatInputSubmit.loopNeedSessionWarning);
         inputAreaRef.current?.focus();
         return;
       }
@@ -302,19 +303,19 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           sourceSessionId: currentSessionId,
           sourceRefId: state.id,
           status: 'running',
-          title: `循环 · ${parsed.prompt.replace(/\s+/g, ' ').trim().slice(0, 40) || '未命名任务'}`,
+          title: `${t.chatInputSubmit.loopTitlePrefix}${parsed.prompt.replace(/\s+/g, ' ').trim().slice(0, 40) || t.chatInputSubmit.loopUnnamedTask}`,
           cadenceLabel: formatLoopIntervalLabel(parsed.intervalMs),
           nextRunAt: state.nextRunAt,
           handoffPrompt: parsed.handoffPrompt,
-          nextStage: parsed.handoffPrompt ? { prompt: parsed.handoffPrompt, title: '循环完成后继续' } : undefined,
+          nextStage: parsed.handoffPrompt ? { prompt: parsed.handoffPrompt, title: t.chatInputSubmit.loopCompletedContinueTitle } : undefined,
         }));
         toast.success(
           parsed.intervalMs
-            ? `循环已启动（每 ${Math.round(parsed.intervalMs / 1000)}s 一轮）`
-            : '循环已启动（自定步调）',
+            ? t.chatInputSubmit.loopStartedIntervalToast.replace('{s}', String(Math.round(parsed.intervalMs / 1000)))
+            : t.chatInputSubmit.loopStartedSelfPacedToast,
         );
       } catch (err) {
-        toast.error(`启动循环失败：${err instanceof Error ? err.message : '未知错误'}`);
+        toast.error(t.chatInputSubmit.loopStartFailedPrefix + (err instanceof Error ? err.message : t.chatInput.unknownError));
       }
       return;
     }
@@ -329,7 +330,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         openGoalConfirm(rawParsed?.goal ?? '');
         return;
       }
-      const parsed = normalizeGoalCommand(rawParsed);
+      const parsed = normalizeGoalCommand(rawParsed, t);
       await startGoalRun(parsed, trimmedValue);
       return;
     }

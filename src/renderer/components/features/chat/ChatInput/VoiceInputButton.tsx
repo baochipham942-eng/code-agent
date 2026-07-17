@@ -8,6 +8,7 @@ import { AlertCircle, Loader2, Mic, RotateCcw, X } from 'lucide-react';
 import { DEFAULT_SPEECH_INPUT_SETTINGS, type SpeechTranscribeResult } from '@shared/contract';
 import { useVoiceInput } from '../../../../hooks/useVoiceInput';
 import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
+import { useI18n } from '../../../../hooks/useI18n';
 
 export interface VoiceInputButtonProps {
   /** 转写完成回调 */
@@ -69,6 +70,8 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
   onTranscript,
   disabled = false,
 }) => {
+  const { t } = useI18n();
+  const v = t.voiceInputButton;
   const {
     status,
     duration,
@@ -116,11 +119,11 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
   }
 
   const getTitle = () => {
-    if (error) return `错误: ${error}`;
-    if (isTranscribing) return '正在识别…';
-    if (isRecording && silenceWarning) return '未检测到明显语音，请检查麦克风输入';
-    if (isRecording) return `录音中 ${formatDuration(duration)}，点击停止`;
-    return '开始语音输入，首次使用会请求麦克风';
+    if (error) return `${v.errorTitlePrefix}${error}`;
+    if (isTranscribing) return v.transcribingTitle;
+    if (isRecording && silenceWarning) return v.silenceWarningTitle;
+    if (isRecording) return `${v.recordingTitlePrefix}${formatDuration(duration)}${v.recordingTitleSuffix}`;
+    return v.idleTitle;
   };
 
   return (
@@ -130,7 +133,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
         onClick={toggle}
         disabled={disabled || isTranscribing}
         title={getTitle()}
-        aria-label={isRecording ? '停止录音并转写' : '开始语音输入，首次使用会请求麦克风'}
+        aria-label={isRecording ? v.stopRecordingAria : v.idleTitle}
         className={`relative flex-shrink-0 w-9 h-9 overflow-hidden rounded-xl flex items-center justify-center transition-all duration-300 ${
           isRecording
             ? silenceWarning
@@ -168,9 +171,9 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
             <div className="min-w-0 flex-1">
               <p className="break-words text-xs leading-5 text-zinc-200">{error}</p>
               <p className="mt-1 text-2xs text-zinc-500">
-                {effectiveSettings.mode === 'local-first' ? '本地优先' : effectiveSettings.mode === 'local-only' ? '仅本地' : '仅云端'}
+                {effectiveSettings.mode === 'local-first' ? v.modeLocalFirst : effectiveSettings.mode === 'local-only' ? v.modeLocalOnly : v.modeCloudOnly}
                 {' · '}
-                {effectiveSettings.language === 'auto' ? '自动语言' : effectiveSettings.language}
+                {effectiveSettings.language === 'auto' ? v.autoLanguage : effectiveSettings.language}
               </p>
             </div>
           </div>
@@ -181,7 +184,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
                 onClick={() => void openNativeDesktopSystemSettings('microphone')}
                 className="inline-flex h-7 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-200 hover:bg-zinc-700"
               >
-                打开设置
+                {v.openSettingsButton}
               </button>
             )}
             {canRetry && (
@@ -191,7 +194,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
                 className="inline-flex h-7 items-center gap-1 rounded-md bg-zinc-800 px-2 text-xs text-zinc-200 hover:bg-zinc-700"
               >
                 <RotateCcw className="h-3 w-3" />
-                重试
+                {v.retryButton}
               </button>
             )}
             <button
@@ -200,7 +203,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
               className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
             >
               <X className="h-3 w-3" />
-              关闭
+              {v.closeButton}
             </button>
           </div>
         </div>

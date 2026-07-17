@@ -177,6 +177,44 @@ describe('MCPClient OAuth connection errors', () => {
     expect(firstTransport.close).toHaveBeenCalled();
   });
 
+  it('discards a callback whose server identity does not match and never calls finishAuth', async () => {
+    const firstTransport = {
+      close: vi.fn().mockResolvedValue(undefined),
+      finishAuth: vi.fn().mockResolvedValue(undefined),
+    };
+    const client = new MCPClient();
+    const reconnectSpy = vi.spyOn(client, 'reconnect');
+    const config = {
+      name: 'oauth-http',
+      type: 'http-streamable' as const,
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+      auth: 'oauth' as const,
+    };
+    client.addServer(config);
+
+    coordinatorMocks.coordinator.getFlowForServerIdentity.mockReturnValue({ flowId: 'flow-1' });
+    coordinatorMocks.coordinator.waitForCallback.mockResolvedValue({
+      flowId: 'flow-1',
+      serverName: 'oauth-http',
+      serverIdentity: 'oauth-http:totally-different-digest',
+      state: 'state-1',
+      code: 'callback-code',
+    });
+    transportMocks.createTransport.mockReturnValue({ transport: firstTransport, connectTimeout: 100 });
+    transportMocks.createMCPSDKClient.mockReturnValue(mockSdkClient());
+    transportMocks.connectWithTimeout.mockRejectedValue(new UnauthorizedError('login required'));
+    transportMocks.retryTransientRemoteMCPConnection.mockImplementation(async (attempt) => attempt(1));
+
+    await expect(client.connect(config)).rejects.toBeInstanceOf(UnauthorizedError);
+
+    await vi.waitFor(() => {
+      expect(firstTransport.close).toHaveBeenCalled();
+    });
+    expect(firstTransport.finishAuth).not.toHaveBeenCalled();
+    expect(reconnectSpy).not.toHaveBeenCalled();
+  });
+
   it('keeps the server in error state and does not reconnect when callback wait rejects', async () => {
     const firstTransport = {
       close: vi.fn().mockResolvedValue(undefined),

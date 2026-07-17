@@ -14,7 +14,7 @@ const svc = vi.hoisted(() => ({
     listAudioSegments: vi.fn(() => []),
   },
   browser: {
-    getSessionState: vi.fn(() => ({ running: false, mode: 'headless', activeTab: null })),
+    getSessionState: vi.fn(() => ({ running: false, mode: 'headless', activeTab: null as { id: string } | null })),
     ensureSession: vi.fn(async () => ({ running: true })),
     close: vi.fn(async () => {}),
     navigate: vi.fn(async () => {}),
@@ -24,14 +24,14 @@ const svc = vi.hoisted(() => ({
   relay: {
     ensureStarted: vi.fn(async () => ({ running: true })),
     stop: vi.fn(async () => ({ running: false })),
-    getState: vi.fn(() => ({ running: true, extensionPath: '/ext' })),
+    getState: vi.fn(() => ({ running: true, extensionPath: '/ext' as string | null })),
     listTabs: vi.fn(async () => [{ id: 't1' }]),
     createTab: vi.fn(async () => ({ id: 't2' })),
   },
   audioStatus: { capturing: true, soxAvailable: true, asrEngine: 'whisper' } as Record<string, unknown>,
-  startAudio: vi.fn(async () => {}),
+  startAudio: vi.fn(async (..._a: unknown[]) => {}),
   stopAudio: vi.fn(),
-  openPath: vi.fn(async () => {}),
+  openPath: vi.fn(async (..._a: unknown[]) => {}),
 }));
 
 vi.mock('../../../src/host/services/desktop/nativeDesktopService', () => ({ getNativeDesktopService: () => svc.native }));

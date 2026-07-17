@@ -118,7 +118,7 @@ function makeSettings(): AppSettings {
       currentUsage: 5,
       alertThreshold: 0.8,
     },
-  } as AppSettings;
+  } as unknown as AppSettings;
 }
 
 describe('settings.ipc access control', () => {

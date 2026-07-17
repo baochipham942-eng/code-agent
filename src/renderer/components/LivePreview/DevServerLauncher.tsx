@@ -18,6 +18,7 @@ import { useAppStore } from '../../stores/appStore';
 import { Button, Modal } from '../primitives';
 import { invokeDomain } from '../../services/ipcService';
 import { pickNativeDirectory } from '../../services/tauriPluginFacade';
+import { Z_LAYERS } from '../../styles/zLayers';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { isTauriMode, isWebMode } from '../../utils/platform';
 import type {
@@ -188,7 +189,7 @@ export const DevServerLauncher: React.FC = () => {
       onClose={handleCancel}
       title="启动 Dev Server"
       size="xl"
-      zIndex={80}
+      zIndex={Z_LAYERS.devServerModal}
       headerIcon={<Play className="h-4 w-4 text-emerald-400" />}
       footer={
         <>

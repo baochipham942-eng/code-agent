@@ -8,6 +8,7 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/contract';
 import { Modal, ModalHeader } from './primitives/Modal';
 import { createLogger } from '../utils/logger';
+import { Z_LAYERS } from '../styles/zLayers';
 import ipcService from '../services/ipcService';
 import { useI18n } from '../hooks/useI18n';
 import type { Translations } from '../i18n';
@@ -216,7 +217,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
       closeOnBackdropClick={false}
       closeOnEsc={false}
       showCloseButton={false}
-      zIndex={100}
+      zIndex={Z_LAYERS.forceUpdateModal}
       className="border-rose-500/30"
       headerBgClass="bg-rose-500/5"
       header={

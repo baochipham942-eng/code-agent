@@ -6,6 +6,7 @@ import React, { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { BUTTON_PRIMARY_CLASS } from './Button';
+import { Z_LAYERS } from '../../styles/zLayers';
 
 const focusableSelector =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
@@ -62,7 +63,7 @@ export interface ModalProps {
   className?: string;
   /** Modal content */
   children: React.ReactNode;
-  /** Z-index level (default: 50) */
+  /** Z-index level (default: Z_LAYERS.modal) */
   zIndex?: number;
 }
 
@@ -80,7 +81,7 @@ export const Modal: React.FC<ModalProps> = ({
   headerIcon,
   className = '',
   children,
-  zIndex = 50,
+  zIndex = Z_LAYERS.modal,
 }) => {
   const { t } = useI18n();
   const modalRef = useRef<HTMLDivElement>(null);

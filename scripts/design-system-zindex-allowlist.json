@@ -1,4 +1,1 @@
-[
-  { "file": "components/StatusBar/AgentSwitcher.tsx", "value": 9999, "reason": "createPortal 弹层，需盖过所有 fixed 容器" },
-  { "file": "components/StatusBar/ModelSwitcher.tsx", "value": 9999, "reason": "createPortal 弹层，需盖过所有 fixed 容器" }
-]
+[]

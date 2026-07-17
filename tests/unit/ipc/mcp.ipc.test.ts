@@ -259,6 +259,37 @@ describe('mcp.ipc settings add helpers', () => {
     expect(JSON.stringify(response.data)).not.toContain(tokenValue);
   });
 
+  it('reports hasOAuthTokens false for an OAuth server without stored tokens', async () => {
+    mcpClientMock.getServerIdentity.mockReturnValue('notion:abc123digest');
+    mcpClientMock.getServerStates.mockReturnValue([
+      {
+        config: {
+          name: 'notion',
+          type: 'http-streamable',
+          serverUrl: 'https://mcp.notion.com/mcp',
+          enabled: true,
+          auth: 'oauth',
+        },
+        status: 'error',
+        toolCount: 0,
+        resourceCount: 0,
+      },
+    ]);
+
+    const response = await invokeMcpAction('getServerStates') as {
+      success: boolean;
+      data: unknown;
+    };
+
+    expect(response.success).toBe(true);
+    expect(response.data).toEqual([
+      expect.objectContaining({
+        authMode: 'oauth',
+        hasOAuthTokens: false,
+      }),
+    ]);
+  });
+
   it('signs out OAuth servers by deleting all OAuth credential kinds, cancelling flow, and disconnecting', async () => {
     const serverIdentity = 'notion:abc123digest';
     for (const kind of ['tokens', 'client-info', 'code-verifier', 'discovery']) {

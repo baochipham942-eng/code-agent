@@ -27,6 +27,9 @@ import { TraceNodeRenderer } from '../../../src/renderer/components/features/cha
 function makeLaunchRequest(overrides: Partial<SwarmLaunchRequest> = {}): SwarmLaunchRequest {
   return {
     id: 'launch-1',
+    sessionId: 'session-1',
+    runId: 'run-1',
+    treeId: 'tree-1',
     status: 'pending',
     requestedAt: 200,
     summary: '准备启动 3 个 agent',

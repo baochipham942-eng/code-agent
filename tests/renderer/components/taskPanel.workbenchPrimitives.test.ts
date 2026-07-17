@@ -26,6 +26,7 @@ describe('TaskPanel WorkbenchPrimitives', () => {
             id: 'mail',
             label: 'Mail',
             count: 2,
+            lastUsed: 0,
             topActions: [],
           },
           summary: 'send · draft',
@@ -56,6 +57,8 @@ describe('TaskPanel WorkbenchPrimitives', () => {
             source: 'library',
             mounted: false,
             installState: 'available',
+            selected: false,
+            invoked: false,
           },
           locale: 'zh',
           onOpenDetails: () => undefined,
@@ -75,12 +78,14 @@ describe('TaskPanel WorkbenchPrimitives', () => {
       React.createElement('div', null,
         React.createElement(WorkbenchPill, {
           tone: 'connector',
-        }, 'Connector mail'),
+          children: 'Connector mail',
+        }),
         React.createElement(WorkbenchSelectablePill, {
           tone: 'skill',
           selected: true,
           dimmed: true,
-        }, 'review-skill'),
+          children: 'review-skill',
+        }),
       ),
     );
 

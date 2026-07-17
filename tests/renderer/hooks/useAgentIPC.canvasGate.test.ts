@@ -91,9 +91,9 @@ describe('withCanvasSnapshotContext per-session gate', () => {
     // currentSession = B, B 设计激活；但画布属主是 A，节点是 A 的。
     useSessionStore.setState({
       currentSessionId: 's_B',
-      designActiveSessions: new Set(['s_A', 's_B']),
     });
     useDesignCanvasStore.setState({
+      designActiveSessions: new Set(['s_A', 's_B']),
       nodes: [makeNode('a_node')],
       connectors: [],
       shapes: [],

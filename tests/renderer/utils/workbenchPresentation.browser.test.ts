@@ -29,7 +29,7 @@ describe('browser workbench presentation', () => {
         },
         mode: 'headless' as const,
         sessionId: 'session-main',
-        profileMode: 'isolated',
+        profileMode: 'isolated' as const,
         profileId: 'profile-preview',
         profileDir: '/Users/linchen/Library/Application Support/code-agent/private-profile-preview',
         artifactDir: '/Users/linchen/Downloads/ai/code-agent/.workbench/artifacts/run-42',
@@ -80,7 +80,7 @@ describe('browser workbench presentation', () => {
         provider: 'system-chrome-cdp' as const,
         requestedProvider: 'auto' as const,
         sessionId: 'session-preview',
-        profileMode: 'isolated',
+        profileMode: 'isolated' as const,
         profileId: 'profile-preview',
         artifactDirSummary: '.../run-42',
         lease: {

@@ -18,11 +18,13 @@ import {
 } from '../../../src/renderer/components/features/cron/types';
 
 function shellJob(unit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks'): CronJobDefinition {
+  // 'weeks' 已从 TimeUnit 移除（CronService 拒收），此处特意构造历史存量数据的形状
+  // 来验证兼容路径，与生产侧 `(job.schedule.unit as string) === 'weeks'` 的判法一致。
   return {
     id: `job-${unit}`,
     name: 'Interval job',
     scheduleType: 'every',
-    schedule: { type: 'every', interval: 3, unit },
+    schedule: { type: 'every', interval: 3, unit } as CronJobDefinition['schedule'],
     action: { type: 'shell', command: 'echo ok' },
     enabled: true,
     createdAt: 0,
@@ -53,7 +55,8 @@ describe('cron weeks unsupported in renderer', () => {
     draft.name = 'Bad weeks job';
     draft.scheduleType = 'every';
     draft.everyInterval = '3';
-    draft.everyUnit = 'weeks';
+    // 同上：模拟历史存量草稿里残留的 'weeks'，验证提交前的拒收路径。
+    draft.everyUnit = 'weeks' as unknown as typeof draft.everyUnit;
     draft.shellCommand = 'echo ok';
 
     expect(() => buildCronJobInput(draft)).toThrow(/周间隔不受支持/);

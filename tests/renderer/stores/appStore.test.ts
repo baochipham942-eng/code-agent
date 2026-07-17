@@ -10,7 +10,6 @@ describe('appStore', () => {
     useAppStore.setState({
       selectedSwarmAgentId: null,
       showAgentTeamPanel: false,
-      showTaskPanel: true,
       taskPanelTab: 'monitor',
       showSettings: false,
       settingsInitialTab: null,

@@ -104,6 +104,8 @@ describe('sessionStore Agent Engine metadata', () => {
         timestamp: 1,
         isFinal: false,
         streamStatus: 'incomplete',
+        stableForExecution: false,
+        incompleteToolCallIds: [],
       },
     });
 

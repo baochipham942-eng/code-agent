@@ -371,7 +371,7 @@ describe('runWorkbenchProjection', () => {
       runId: 'turn-1',
       runStatus: 'running',
       todos: [
-        { content: '梳理任务面板现状', status: 'completed' },
+        { content: '梳理任务面板现状', activeForm: '梳理任务面板现状', status: 'completed' },
         { content: '改造任务面板展示', activeForm: '改造任务面板展示', status: 'in_progress' },
       ],
     });
@@ -391,9 +391,9 @@ describe('runWorkbenchProjection', () => {
       runId: 'turn-1',
       runStatus: 'running',
       todos: [
-        { content: '任务目标：验证任务面板复杂任务展示', status: 'completed' },
+        { content: '任务目标：验证任务面板复杂任务展示', activeForm: '任务目标：验证任务面板复杂任务展示', status: 'completed' },
         { content: '检查多个子任务', activeForm: '检查多个子任务', status: 'in_progress' },
-        { content: '验证完成态', status: 'pending' },
+        { content: '验证完成态', activeForm: '验证完成态', status: 'pending' },
       ],
     });
 
@@ -409,9 +409,9 @@ describe('runWorkbenchProjection', () => {
       runId: 'turn-1',
       runStatus: 'completed',
       todos: [
-        { content: '任务目标：验证任务面板复杂任务展示', status: 'completed' },
-        { content: '检查多个子任务', status: 'completed' },
-        { content: '验证完成态', status: 'completed' },
+        { content: '任务目标：验证任务面板复杂任务展示', activeForm: '任务目标：验证任务面板复杂任务展示', status: 'completed' },
+        { content: '检查多个子任务', activeForm: '检查多个子任务', status: 'completed' },
+        { content: '验证完成态', activeForm: '验证完成态', status: 'completed' },
       ],
     });
 
@@ -614,6 +614,7 @@ describe('runWorkbenchProjection', () => {
       runId: 'turn-1',
       runStatus: 'using_tools',
       taskProgress: {
+        turnId: 'turn-1',
         phase: 'tool_running',
         tool: 'MemoryWrite',
         step: 'Writing memory',

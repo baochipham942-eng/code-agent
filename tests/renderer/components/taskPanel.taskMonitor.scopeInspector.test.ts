@@ -2,6 +2,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WorkbenchCapabilityRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
 
 const appState = {
   workingDirectory: '/repo/app',
@@ -50,9 +51,11 @@ const currentTurnScopeState = {
       mounted: false,
       installState: 'available',
       description: 'Draft release notes',
-      source: 'community',
+      source: 'library',
       libraryId: 'community',
       available: false,
+      turnReadiness: 'needs_config',
+      autoAllowed: false,
       blocked: true,
       visibleInWorkbench: true,
       health: 'inactive',
@@ -68,7 +71,7 @@ const currentTurnScopeState = {
         severity: 'warning',
       },
     },
-  ],
+  ] as WorkbenchCapabilityRegistryItem[],
   blockedCapabilities: [
     {
       kind: 'skill',
@@ -79,9 +82,11 @@ const currentTurnScopeState = {
       mounted: false,
       installState: 'available',
       description: 'Draft release notes',
-      source: 'community',
+      source: 'library',
       libraryId: 'community',
       available: false,
+      turnReadiness: 'needs_config',
+      autoAllowed: false,
       blocked: true,
       visibleInWorkbench: true,
       health: 'inactive',
@@ -97,7 +102,7 @@ const currentTurnScopeState = {
         severity: 'warning',
       },
     },
-  ],
+  ] as WorkbenchCapabilityRegistryItem[],
   scope: {
     mode: 'manual',
     selected: [
@@ -405,9 +410,11 @@ describe('TaskMonitor scope inspector slice', () => {
       mounted: false,
       installState: 'available',
       description: 'Draft release notes',
-      source: 'community',
+      source: 'library',
       libraryId: 'community',
       available: false,
+      turnReadiness: 'needs_config',
+      autoAllowed: false,
       blocked: true,
       visibleInWorkbench: true,
       health: 'inactive',
@@ -788,9 +795,11 @@ describe('TaskMonitor scope inspector slice', () => {
         mounted: true,
         installState: 'mounted',
         description: 'Draft release notes',
-        source: 'community',
+        source: 'library',
         libraryId: 'community',
         available: true,
+        turnReadiness: 'ready',
+        autoAllowed: true,
         blocked: false,
         visibleInWorkbench: true,
         health: 'healthy',

@@ -434,7 +434,7 @@ describe('SessionReplaySummaryDialog', () => {
             sessionId: 'session-empty',
             replayKey: 'session-empty',
           },
-          dataSource: 'transcript',
+          dataSource: 'transcript_fallback',
           turns: [],
           summary: {
             totalTurns: 0,

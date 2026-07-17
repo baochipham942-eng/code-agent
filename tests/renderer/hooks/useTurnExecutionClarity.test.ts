@@ -311,6 +311,8 @@ describe('buildTurnExecutionClarityProjection', () => {
         {
           id: 'launch-1',
           sessionId: 'session-2',
+          runId: 'run-1',
+          treeId: 'tree-1',
           status: 'approved',
           requestedAt: 230,
           resolvedAt: 235,
@@ -702,6 +704,8 @@ describe('buildTurnExecutionClarityProjection', () => {
         {
           id: 'launch-other-session',
           sessionId: 'session-2',
+          runId: 'run-other-session',
+          treeId: 'tree-other-session',
           status: 'approved',
           requestedAt: 230,
           resolvedAt: 235,

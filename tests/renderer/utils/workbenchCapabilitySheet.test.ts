@@ -24,6 +24,8 @@ describe('workbenchCapabilitySheet helpers', () => {
           source: 'library',
           libraryId: 'core',
           available: true,
+          turnReadiness: 'ready',
+          autoAllowed: true,
           blocked: false,
           visibleInWorkbench: true,
           health: 'healthy',

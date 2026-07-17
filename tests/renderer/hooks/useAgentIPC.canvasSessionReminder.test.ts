@@ -93,9 +93,14 @@ describe('applyDesignCanvasSessionToContent', () => {
   it('returns content unchanged when canvas owner is another session (cross-session guard)', () => {
     useSessionStore.setState({
       currentSessionId: 's_B',
-      designActiveSessions: new Set(['s_A', 's_B']),
     });
-    useDesignCanvasStore.setState({ nodes: [makeNode('a')], connectors: [], shapes: [], ownerSessionId: 's_A' });
+    useDesignCanvasStore.setState({
+      designActiveSessions: new Set(['s_A', 's_B']),
+      nodes: [makeNode('a')],
+      connectors: [],
+      shapes: [],
+      ownerSessionId: 's_A',
+    });
 
     const result = applyDesignCanvasSessionToContent('hello', 's_B');
 

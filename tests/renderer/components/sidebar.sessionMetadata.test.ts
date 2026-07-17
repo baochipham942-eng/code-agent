@@ -1,6 +1,7 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { AuthUser } from '../../../src/shared/contract';
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -130,7 +131,7 @@ const appState = {
 };
 
 const authState = {
-  user: null,
+  user: null as AuthUser | null,
   isAuthenticated: false,
   setShowAuthModal: vi.fn(),
   signOut: vi.fn(async () => {}),
@@ -236,14 +237,14 @@ describe('Sidebar session metadata', () => {
 
   it('exposes the status filter entry (icon dropdown) for admins', () => {
     // 状态筛选已从一整排 tab 收成「新会话」右侧的一个筛选图标 + 下拉（仅管理员）。
-    authState.user = { isAdmin: true };
+    authState.user = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
     expect(html).toContain('按状态筛选会话'); // 筛选图标按钮 aria-label
   });
 
   it('surfaces the active trajectory pending-review filter for admins', () => {
-    authState.user = { isAdmin: true };
+    authState.user = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
     sessionUiState.sessionStatusFilter = 'review';
     sessionUiState.trajectoryReviewFilter = 'pending';
 

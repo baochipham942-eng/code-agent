@@ -108,7 +108,7 @@ function buildReplay(): StructuredReplay {
     ],
     summary: {
       totalTurns: 1,
-      toolDistribution: { Search: 1 },
+      toolDistribution: { Read: 0, Edit: 0, Write: 0, Bash: 0, Search: 1, Web: 0, Agent: 0, Skill: 0, Other: 0 },
       thinkingRatio: 0,
       selfRepairChains: 0,
       totalDurationMs: 2500,

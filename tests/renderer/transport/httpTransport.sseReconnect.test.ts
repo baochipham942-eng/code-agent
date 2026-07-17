@@ -103,7 +103,7 @@ function installFakeEventSource(): {
 
 function resetFakeWindow(): void {
   // window 已经在 import 阶段被 stub 好，这里只清理 token。
-  (globalThis as Record<string, { __CODE_AGENT_TOKEN__?: string }>).window.__CODE_AGENT_TOKEN__ = undefined;
+  ((globalThis as Record<string, unknown>).window as { __CODE_AGENT_TOKEN__?: string }).__CODE_AGENT_TOKEN__ = undefined;
 }
 
 // ---------------------------------------------------------------------------

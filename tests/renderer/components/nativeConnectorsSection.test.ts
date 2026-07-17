@@ -183,6 +183,7 @@ describe('NativeConnectorItems', () => {
     const rows = buildNativeConnectorRows(inventory, statuses);
     const html = renderToStaticMarkup(React.createElement(NativeConnectorItems, {
       rows,
+      locale: 'zh-CN',
       busyKey: null,
       onToggle: vi.fn(),
       onLifecycleAction: vi.fn(),
@@ -204,6 +205,7 @@ describe('NativeConnectorItems', () => {
     const [row] = buildNativeConnectorRows([inventory[0]], statuses);
     const html = renderToStaticMarkup(React.createElement(NativeConnectorItems, {
       rows: [row],
+      locale: 'zh-CN',
       busyKey: 'calendar:probe',
       onToggle: vi.fn(),
       onLifecycleAction: vi.fn(),
@@ -217,6 +219,7 @@ describe('NativeConnectorItems', () => {
     const rows = buildNativeConnectorRows([inventory[1]], []);
     const html = renderToStaticMarkup(React.createElement(NativeConnectorItems, {
       rows,
+      locale: 'zh-CN',
       busyKey: null,
       onToggle: vi.fn(),
       onLifecycleAction: vi.fn(),
@@ -233,6 +236,7 @@ describe('RuntimeConnectorItems', () => {
     const rows = buildRuntimeConnectorRows(inventory, statuses);
     const html = renderToStaticMarkup(React.createElement(RuntimeConnectorItems, {
       rows,
+      locale: 'zh-CN',
       busyKey: null,
       onLifecycleAction: vi.fn(),
     }));
@@ -254,6 +258,7 @@ describe('RuntimeConnectorItems', () => {
     const rows = buildRuntimeConnectorRows(inventory, statuses);
     const html = renderToStaticMarkup(React.createElement(RuntimeConnectorItems, {
       rows,
+      locale: 'zh-CN',
       busyKey: null,
       onLifecycleAction: vi.fn(),
     }));
@@ -266,6 +271,7 @@ describe('RuntimeConnectorItems', () => {
     const [row] = buildRuntimeConnectorRows(inventory, statuses);
     const html = renderToStaticMarkup(React.createElement(RuntimeConnectorItems, {
       rows: [row],
+      locale: 'zh-CN',
       busyKey: 'browser-workbench:retry',
       onLifecycleAction: vi.fn(),
     }));

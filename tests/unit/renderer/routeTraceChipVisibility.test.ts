@@ -44,7 +44,21 @@ describe('shouldRenderModelDecisionChip', () => {
   it('shows the chip when an external engine failed', () => {
     expect(shouldRenderModelDecisionChip(decision({
       reason: 'user-selected',
-      externalEngine: { failure: { category: 'cli', reason: 'boom' } },
-    } as Partial<ModelDecisionEventData>))).toBe(true);
+      externalEngine: {
+        kind: 'codex_cli',
+        label: 'Codex CLI',
+        installState: 'installed',
+        runtimeState: 'error',
+        executable: true,
+        capabilities: [],
+        failure: {
+          category: 'missing_cli',
+          reason: 'boom',
+          message: 'boom',
+          suggestion: 'retry later',
+          retryable: true,
+        },
+      },
+    }))).toBe(true);
   });
 });

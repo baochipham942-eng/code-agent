@@ -24,6 +24,7 @@ function makeGroup(sessions: SessionWithMeta[]): WorkspaceGroup {
     key: '/repo/code-agent',
     name: 'code-agent',
     path: '/repo/code-agent',
+    paths: ['/repo/code-agent'],
     isUncategorized: false,
     projectId: 'proj-code-agent',
     sessions,
@@ -83,6 +84,7 @@ describe('buildSidebarProjectSummary', () => {
       group: {
         key: '__chats__',
         name: '对话',
+        paths: [],
         isUncategorized: true,
         sessions: [makeSession({ id: 'blank' })],
         latestActivityAt: 1,

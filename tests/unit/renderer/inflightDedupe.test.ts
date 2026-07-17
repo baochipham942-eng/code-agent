@@ -14,7 +14,7 @@ function deferred<T>() {
 describe('createInflightDedupe', () => {
   it('collapses concurrent identical calls into a single underlying invocation', async () => {
     const d = deferred<string>();
-    const fn = vi.fn(() => d.promise);
+    const fn = vi.fn((_key: string) => d.promise);
     const wrapped = createInflightDedupe(fn, (k: string) => k);
 
     const p1 = wrapped('settings:get');
@@ -48,7 +48,7 @@ describe('createInflightDedupe', () => {
 
   it('clears the in-flight entry on rejection so the next call retries', async () => {
     const fn = vi
-      .fn<[], Promise<string>>()
+      .fn<() => Promise<string>>()
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValueOnce('ok');
     const wrapped = createInflightDedupe(fn, () => 'k');

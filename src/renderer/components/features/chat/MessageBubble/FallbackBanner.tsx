@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { parseModelFallbackNotice } from '../fallbackNotice';
 import type { ModelFallbackStrategy, ModelFallbackToolPolicy, ModelFallbackTraceStep, ModelProviderIdentity } from '@shared/contract/modelDecision';
 
@@ -112,7 +112,8 @@ function renderIdentityLine(fromIdentity: ModelProviderIdentity | undefined, toI
   );
 }
 
-export const FallbackBanner: React.FC<{ content: string }> = ({ content }) => {
+export const FallbackBanner: React.FC<{ content: string; defaultExpanded?: boolean }> = ({ content, defaultExpanded = false }) => {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const notice = parseModelFallbackNotice(content);
   if (!notice) return null;
   const tried = notice.tried?.filter((step) => step.status === 'tried') ?? [];
@@ -121,31 +122,47 @@ export const FallbackBanner: React.FC<{ content: string }> = ({ content }) => {
   const skipped = notice.skipped ?? [];
 
   return (
-    <div className="my-1 flex min-w-0 items-start gap-2 rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-sm">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-      <div className="min-w-0">
-        <div className="text-xs font-medium text-amber-200">模型已降级</div>
-        {notice.strategy && (
-          <div className="mt-1">
-            <span className="rounded border border-amber-400/20 bg-amber-400/10 px-1.5 py-0.5 text-[10px] leading-none text-amber-100">
-              {STRATEGY_LABELS[notice.strategy]}
-            </span>
+    <div className="my-1 min-w-0 rounded-md border border-amber-500/25 bg-amber-500/[0.06] text-sm">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left"
+      >
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium text-amber-200">模型已降级</div>
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-zinc-400">
+            <span className="max-w-full truncate font-mono text-zinc-300">{notice.from}</span>
+            <span className="text-zinc-600">-&gt;</span>
+            <span className="max-w-full truncate font-mono text-zinc-300">{notice.to}</span>
+            <span className="text-zinc-600">·</span>
+            <span className="min-w-0 truncate text-amber-200/80">{notice.reason}</span>
           </div>
-        )}
-        <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-zinc-400">
-          <span className="max-w-full truncate font-mono text-zinc-300">{notice.from}</span>
-          <span className="text-zinc-600">-&gt;</span>
-          <span className="max-w-full truncate font-mono text-zinc-300">{notice.to}</span>
-          <span className="text-zinc-600">·</span>
-          <span className="min-w-0 truncate text-amber-200/80">{notice.reason}</span>
         </div>
-        {renderIdentityLine(notice.fromIdentity, notice.toIdentity)}
-        {renderStepGroup('已尝试', tried)}
-        {renderStepGroup('已跳过', skipped)}
-        {renderStepGroup('已选用', selected)}
-        {renderStepGroup('已耗尽', exhausted)}
-        {renderToolPolicy(notice.toolPolicy)}
-      </div>
+        {expanded ? (
+          <ChevronDown className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+        ) : (
+          <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+        )}
+      </button>
+      {expanded && (
+        <div className="min-w-0 px-3 pb-2">
+          {notice.strategy && (
+            <div className="mt-1">
+              <span className="rounded border border-amber-400/20 bg-amber-400/10 px-1.5 py-0.5 text-[10px] leading-none text-amber-100">
+                {STRATEGY_LABELS[notice.strategy]}
+              </span>
+            </div>
+          )}
+          {renderIdentityLine(notice.fromIdentity, notice.toIdentity)}
+          {renderStepGroup('已尝试', tried)}
+          {renderStepGroup('已跳过', skipped)}
+          {renderStepGroup('已选用', selected)}
+          {renderStepGroup('已耗尽', exhausted)}
+          {renderToolPolicy(notice.toolPolicy)}
+        </div>
+      )}
     </div>
   );
 };

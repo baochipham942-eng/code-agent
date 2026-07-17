@@ -1,8 +1,9 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
+import { TaskDashboardSummary, getRunUiStatusLabel } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -46,6 +47,34 @@ describe('TaskDashboardSummary 运行中空态（UI 审计 #8）', () => {
       expect(html, status).toContain('规划任务');
       expect(html, status).not.toContain('暂无任务');
     }
+  });
+
+  // RunUiStatus 徽章此前直出裸英文枚举值（'using_tools'/'waiting_approval' 等）。
+  // 现在走 getRunUiStatusLabel，回归钉子：不同状态渲染人话文案，不再是枚举字面量。
+  it('运行状态徽章显示人话文案，不是裸英文枚举值', () => {
+    const cases: Array<[string, string]> = [
+      ['using_tools', '使用工具中'],
+      ['waiting_approval', '等待确认'],
+      ['verifying', '核实中'],
+      ['planning', '进行中'],
+      ['running', '进行中'],
+    ];
+    for (const [status, expectedLabel] of cases) {
+      const html = renderToStaticMarkup(
+        React.createElement(TaskDashboardSummary, {
+          tasks: [],
+          run: makeRun(status, '规划任务'),
+        }),
+      );
+      expect(html, status).toContain(expectedLabel);
+      expect(html, status).not.toMatch(new RegExp(`>${status}<`));
+    }
+  });
+
+  // 未知 RunUiStatus 值不该静默吞成「运行中」——兜底显示原值（同 A-7 惯例）。
+  it('getRunUiStatusLabel 对未知状态值兜底显示原值，不是 statusRunning', () => {
+    expect(getRunUiStatusLabel('exotic_status' as never, zh)).toBe('exotic_status');
+    expect(getRunUiStatusLabel('running', zh)).toBe(zh.taskStatusPanels.runWorkbench.statusRunning);
   });
 
   it('live 空态显示当前工具名', () => {

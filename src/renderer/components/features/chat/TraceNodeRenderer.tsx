@@ -749,10 +749,10 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
                     <span className="text-zinc-200">{HOOK_EVENT_LABELS[item.event] || item.event}</span>
                     {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
                     <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>
-                      {item.action === 'block' ? 'blocked' : 'allow'}
+                      {item.action === 'block' ? '阻止' : '放行'}
                     </WorkbenchPill>
-                    {item.modified && <WorkbenchPill tone="info">modified</WorkbenchPill>}
-                    {hasError && <WorkbenchPill tone="info">error {item.errorCount}</WorkbenchPill>}
+                    {item.modified && <WorkbenchPill tone="info">改写输入</WorkbenchPill>}
+                    {hasError && <WorkbenchPill tone="info">{item.errorCount} 个错误</WorkbenchPill>}
                     <span className="text-zinc-600">{item.hookCount} hooks · {item.durationMs}ms</span>
                   </div>
                   {item.message && (

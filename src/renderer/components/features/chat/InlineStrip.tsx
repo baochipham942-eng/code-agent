@@ -5,6 +5,7 @@
 import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
+import { useI18n } from '../../../hooks/useI18n';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -13,6 +14,7 @@ function formatTokens(n: number): string {
 }
 
 export const InlineStrip: React.FC = () => {
+  const { t } = useI18n();
   const status = useContextCompactionStore((s) => s.status);
   const result = useContextCompactionStore((s) => s.result);
   const error = useContextCompactionStore((s) => s.error);
@@ -27,7 +29,7 @@ export const InlineStrip: React.FC = () => {
       ? error || '压缩失败'
       : result?.totalSavedTokens && result.totalSavedTokens > 0
         ? `已释放 ${formatTokens(result.totalSavedTokens)}`
-        : `已压缩 ${result?.compressionCount ?? 1} 次`;
+        : t.chat.compactionCountBadge.replace('{count}', String(result?.compressionCount ?? 1));
 
   return (
     <div className="relative mx-auto max-w-3xl px-4 py-1.5 animate-fade-in">

@@ -8,7 +8,7 @@ export const noticesZh = {
   notices: {
     tokenWarning: {
       overflow: '溢出 → {model}',
-      ctx: '上下文 {pct}%',
+      ctx: '对话记忆已用 {pct}%',
     },
     update: {
       downloadFailed: '下载失败',
@@ -79,7 +79,7 @@ export const noticesEn: typeof noticesZh = {
   notices: {
     tokenWarning: {
       overflow: 'overflow → {model}',
-      ctx: 'ctx {pct}%',
+      ctx: 'Memory {pct}% used',
     },
     update: {
       downloadFailed: 'Download failed',

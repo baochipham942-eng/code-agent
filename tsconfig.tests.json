@@ -18,7 +18,9 @@
     "node_modules",
     "dist",
     "release",
-    // 故意写坏语法的样例工程（TS1005 会让 tsc 提前中止后续检查，读数变假）。见 swarm-ci.yml 门注。
-    "tests/e2e/claude-e2e/fixtures/bug-syntax-error"
+    // agent-benchmark 的 eval 样例工程（bug-syntax-error/bug-type-error/monorepo-base/express-api…）——
+    // 这些是**被测 agent 操作的目标代码库**，不是 code-agent 自己的测试，本就不该进类型门；其中
+    // bug-* 系列还是故意写坏的（bug-syntax-error 的 TS1005 会让 tsc 提前中止读数变假）。整目录排除。
+    "tests/e2e/claude-e2e/fixtures"
   ]
 }

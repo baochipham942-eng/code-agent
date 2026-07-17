@@ -239,11 +239,13 @@ function parseArchiveInspection(content: string): ArchiveInspection | null {
 }
 
 function ArchivePreview({ content }: { content: string }) {
+  const { t } = useI18n();
+  const pv = t.previewWorkspace.preview;
   const inspection = parseArchiveInspection(content);
   if (!inspection) {
     return (
       <div className="flex h-full items-center justify-center bg-zinc-950 p-6 text-sm text-zinc-500">
-        Archive inspection is unavailable.
+        {pv.archiveUnavailable}
       </div>
     );
   }
@@ -253,18 +255,18 @@ function ArchivePreview({ content }: { content: string }) {
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
         <span className="inline-flex items-center gap-1 rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-zinc-200">
           <Archive className="h-3.5 w-3.5" />
-          ZIP archive
+          {pv.zipArchive}
         </span>
-        <span>{inspection.entryCount} entries</span>
-        {inspection.truncated && <span>showing first {inspection.shownCount}</span>}
+        <span>{pv.entries.replace('{count}', String(inspection.entryCount))}</span>
+        {inspection.truncated && <span>{pv.showingFirst.replace('{count}', String(inspection.shownCount))}</span>}
       </div>
       <div className="overflow-hidden rounded-lg border border-white/[0.08]">
         <table className="w-full text-left text-xs">
           <thead className="bg-zinc-900 text-[10px] uppercase text-zinc-500">
             <tr>
-              <th className="px-3 py-2 font-medium">Name</th>
-              <th className="w-24 px-3 py-2 font-medium">Type</th>
-              <th className="w-24 px-3 py-2 font-medium">Ext</th>
+              <th className="px-3 py-2 font-medium">{pv.colName}</th>
+              <th className="w-24 px-3 py-2 font-medium">{pv.colType}</th>
+              <th className="w-24 px-3 py-2 font-medium">{pv.colExt}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.06]">
@@ -278,7 +280,7 @@ function ArchivePreview({ content }: { content: string }) {
                     <span className="truncate font-mono">{entry.name}</span>
                   </div>
                 </td>
-                <td className="px-3 py-2 text-zinc-500">{entry.isDirectory ? 'Folder' : 'File'}</td>
+                <td className="px-3 py-2 text-zinc-500">{entry.isDirectory ? pv.entryFolder : pv.entryFile}</td>
                 <td className="px-3 py-2 text-zinc-500">{entry.extension || '-'}</td>
               </tr>
             ))}
@@ -313,6 +315,7 @@ function parsePresentationPagePreview(content: string): PresentationPagePreviewR
 
 function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtifact }) {
   const { t } = useI18n();
+  const pv = t.previewWorkspace.preview;
   const screenshots = artifact.screenshots;
   const [selected, setSelected] = useState(0);
   const active = screenshots[Math.min(selected, screenshots.length - 1)];
@@ -321,12 +324,12 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
         <span className="inline-flex items-center gap-1 rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-zinc-200">
           <Presentation className="h-3.5 w-3.5" />
-          {t.previewWorkspace.preview.pptPreview}
+          {pv.pptPreview}
         </span>
-        <span>{artifact.slidesCount || screenshots.length} slides</span>
+        <span>{pv.slides.replace('{count}', String(artifact.slidesCount || screenshots.length))}</span>
       </div>
       <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-950">
-        <img src={resolveFileUrl(active)} alt={`Slide ${selected + 1}`} className="w-full bg-zinc-950 object-contain" />
+        <img src={resolveFileUrl(active)} alt={pv.slideN.replace('{n}', String(selected + 1))} className="w-full bg-zinc-950 object-contain" />
       </div>
       {screenshots.length > 1 && (
         <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
@@ -335,15 +338,15 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
               key={shot}
               type="button"
               onClick={() => setSelected(index)}
-              title={`Slide ${index + 1}`}
+              title={pv.slideN.replace('{n}', String(index + 1))}
               className={`overflow-hidden rounded-md border transition-colors ${
                 index === selected
                   ? 'border-cyan-400 bg-cyan-500/10'
                   : 'border-white/[0.08] bg-white/[0.025] hover:border-white/[0.16]'
               }`}
             >
-              <img src={resolveFileUrl(shot)} alt={`Slide ${index + 1}`} className="aspect-video w-full object-cover" />
-              <div className="px-2 py-1 text-left text-[10px] text-zinc-400">Slide {index + 1}</div>
+              <img src={resolveFileUrl(shot)} alt={pv.slideN.replace('{n}', String(index + 1))} className="aspect-video w-full object-cover" />
+              <div className="px-2 py-1 text-left text-[10px] text-zinc-400">{pv.slideN.replace('{n}', String(index + 1))}</div>
             </button>
           ))}
         </div>
@@ -353,6 +356,8 @@ function DesignPptScreenshots({ artifact }: { artifact: DesignPptScreenshotArtif
 }
 
 export function PresentationPreview({ content }: { content: string }) {
+  const { t } = useI18n();
+  const pv = t.previewWorkspace.preview;
   const pagePreview = parsePresentationPagePreview(content);
   if (pagePreview) {
     return (
@@ -373,7 +378,7 @@ export function PresentationPreview({ content }: { content: string }) {
   if (!inspection) {
     return (
       <div className="flex h-full items-center justify-center bg-zinc-950 p-6 text-sm text-zinc-500">
-        Presentation inspection is unavailable.
+        {pv.presentationUnavailable}
       </div>
     );
   }
@@ -383,10 +388,10 @@ export function PresentationPreview({ content }: { content: string }) {
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
         <span className="inline-flex items-center gap-1 rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-zinc-200">
           <Presentation className="h-3.5 w-3.5" />
-          PPTX outline
+          {pv.pptxOutline}
         </span>
-        <span>{inspection.slideCount} slides</span>
-        {inspection.truncated && <span>showing first {inspection.shownCount}</span>}
+        <span>{pv.slides.replace('{count}', String(inspection.slideCount))}</span>
+        {inspection.truncated && <span>{pv.showingFirst.replace('{count}', String(inspection.shownCount))}</span>}
       </div>
       <div className="space-y-2">
         {inspection.slides.map((slide) => (
@@ -394,7 +399,7 @@ export function PresentationPreview({ content }: { content: string }) {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-xs font-medium text-zinc-100">
-                  Slide {slide.index}
+                  {pv.slideN.replace('{n}', String(slide.index))}
                   {slide.title ? ` · ${slide.title}` : ''}
                 </div>
                 <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-600">{slide.name}</div>
@@ -409,7 +414,7 @@ export function PresentationPreview({ content }: { content: string }) {
                 ))}
               </ul>
             ) : (
-              <div className="mt-2 text-xs text-zinc-600">No readable text on this slide.</div>
+              <div className="mt-2 text-xs text-zinc-600">{pv.noSlideText}</div>
             )}
           </div>
         ))}
@@ -906,7 +911,7 @@ export const PreviewPanel: React.FC = () => {
             ref={iframeRef}
             srcDoc={previewHtml ?? content}
             className="w-full h-full border-0"
-            title="HTML Preview"
+            title={pv.htmlPreviewTitle}
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"
             allow="fullscreen; gamepad; autoplay"
             allowFullScreen

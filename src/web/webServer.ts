@@ -24,8 +24,6 @@ import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'child_process';
-import express from 'express';
-import type { Request, Response } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../host/ipc';
 import { createLogger } from '../host/services/infra/logger';
 import { loadShellEnvironment } from '../host/services/infra/shellEnvironment';
@@ -298,34 +296,20 @@ export function startWebCapabilityBootstrap(
 // ============================================================================
 
 import { broadcastSSE, sseClients } from './helpers/sse';
-import { formatError } from './helpers/utils';
 import {
   dbAvailable,
-  getPersistenceHealth,
   setDbAvailable,
 } from './helpers/sessionCache';
-import { handleTempUpload, handleScreenshot, cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
+import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 
 // Middleware
 import {
   SERVER_AUTH_TOKEN,
-  authMiddleware,
-  corsMiddleware,
-  rateLimitMiddleware,
   writeDevAuthToken,
 } from './middleware/auth';
 
-// Route modules
-import { createHealthRouter } from './routes/health';
-import { createSettingsRouter } from './routes/settings';
-import { createExtractRouter } from './routes/extract';
-import { createDomainRouter } from './routes/domain';
-import { createShellRouter } from './routes/shell';
-import { createStaticRouter } from './routes/static';
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
-import { resolveRendererServeDecision } from '../host/services/renderer/rendererBundleCache';
 import { getAppVersion } from '../host/platform';
-import { createAgentRouter } from './routes/agent';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
 import type { PendingLocalToolCall } from './routes/agent';
 import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
@@ -336,15 +320,8 @@ import {
   type DurableRunApplicationRuntime,
 } from '../host/app/initializeDurableRun';
 import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
-import type { SupabaseAgentBinding } from './routes/agentRouteTypes';
-import { createSessionsRouter } from './routes/sessions';
-import type { SupabaseSessionBinding } from './routes/sessions';
-import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
-import { createBackgroundRouter } from './routes/background';
-import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
-
-type WebSupabaseBinding = SupabaseAgentBinding & SupabaseSessionBinding;
+import { createApp } from './app';
 
 // Re-export broadcastSSE for backward compatibility
 export { broadcastSSE };
@@ -360,6 +337,16 @@ let durableRunRuntime: DurableRunApplicationRuntime | undefined;
 let durableRunRolloutPolicy = resolveDurableRunRollout({});
 let durableRunRolloutReady = false;
 let webMcpInitialized = false;
+
+// createApp() 的 durable run 状态注入：函数形式保证 app.ts 读到的始终是最新值
+// （durableRunRolloutPolicy/Ready/durableRunRuntime 会在 initializeServices() 里异步更新）。
+function getDurableRunRollout(): { policy: typeof durableRunRolloutPolicy; ready: boolean } {
+  return { policy: durableRunRolloutPolicy, ready: durableRunRolloutReady };
+}
+
+function getDurableRunReadService() {
+  return durableRunRuntime?.readService;
+}
 
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 const pendingLocalToolCalls = new Map<string, PendingLocalToolCall>();
@@ -1032,140 +1019,6 @@ function registerHandlers(): void {
 }
 
 // ============================================================================
-// Express 应用
-// ============================================================================
-
-function createApp(): express.Express {
-  const app = express();
-
-  // CORS — restrict to known origins
-  app.use(corsMiddleware);
-
-  // Rate limiting
-  app.use('/api', rateLimitMiddleware);
-
-  // Auth — Bearer token required for all /api/* except /api/health
-  app.use('/api', authMiddleware);
-
-  // JSON body parser
-  app.use(express.json({ limit: '50mb', strict: false }));
-
-  // ── Health & SSE (extracted to routes/health.ts) ────────────────────
-  app.use('/api', createHealthRouter({
-    handlers,
-    getPersistenceHealth,
-    getRendererServeDecision: () => resolveRendererServeDecision(
-      resolveCodeAgentDataDir(),
-      path.resolve(__dirname, '..', 'renderer'),
-      process.env,
-      { currentShellVersion: getAppVersion() },
-    ),
-  }));
-
-  // ── File upload ─────────────────────────────────────────────────────
-  app.post('/api/upload/temp', async (req: Request, res: Response) => {
-    try {
-      await handleTempUpload(req, res);
-    } catch (error) {
-      logger.error('Temporary upload failed', error);
-      const message = formatError(error);
-      const status = message.includes('50MB limit')
-        ? 413
-        : (message === 'Missing file field' || message === 'Upload aborted' ? 400 : 500);
-      res.status(status).json({ error: message });
-    }
-  });
-
-  // ── Screenshot proxy ────────────────────────────────────────────────
-  app.get('/api/screenshot', handleScreenshot);
-
-  // ── Dev routes (workspace/file, dev/exec-tool, dev/smoke/office) ────
-  app.use('/api', createDevRouter({ pendingDevPermissions, runRegistry, logger }));
-
-  // ── Shared helpers for agent & session routes ──────────────────────
-
-  /**
-   * 获取 SessionManager（仅在 DB 可用时）
-   */
-  async function tryGetSessionManager() {
-    if (!dbAvailable) return null;
-    try {
-      const { getSessionManager } = await import('../host/services/infra/sessionManager');
-      return getSessionManager();
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * 获取 Supabase client + user_id（用于 Web 模式云端持久化）
-   */
-  async function getSupabaseForSession(): Promise<WebSupabaseBinding | null> {
-    try {
-      const { getSupabase, isSupabaseInitialized } = await import('../host/services/infra/supabaseService');
-      if (!isSupabaseInitialized()) return null;
-      const { getAuthService } = await import('../host/services/auth/authService');
-      const user = getAuthService().getCurrentUser();
-      if (!user?.id) return null;
-      return {
-        supabase: getSupabase() as unknown as WebSupabaseBinding['supabase'],
-        userId: user.id,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  // ── Agent routes (extracted to routes/agent.ts) ─────────────────────
-  app.use('/api', createAgentRouter({
-    runRegistry,
-    pendingLocalToolCalls,
-    logger,
-    tryGetSessionManager,
-    getSupabaseForSession,
-    getDurableRunRollout: () => ({
-      policy: durableRunRolloutPolicy,
-      ready: durableRunRolloutReady,
-    }),
-    getDurableRunReadService: () => durableRunRuntime?.readService,
-  }));
-
-  app.use('/api', createBackgroundRouter({ logger }));
-  app.use('/api', createAdminReviewQueueRouter({ logger }));
-
-  // ── Session routes (extracted to routes/sessions.ts) ────────────────
-  app.use('/api', createSessionsRouter({
-    logger,
-    tryGetSessionManager,
-    getSupabaseForSession,
-    getDurableRunReadService: () => durableRunRuntime?.readService,
-  }));
-
-  // ── Settings (extracted to routes/settings.ts) ─────────────────────
-  app.use('/api', createSettingsRouter({ handlers }));
-
-  // ── Extract & Speech (extracted to routes/extract.ts) ───────────────
-  app.use('/api', createExtractRouter({ handlers }));
-
-  // ── Domain & Fallback (extracted to routes/domain.ts) ───────────────
-  app.use('/api', createDomainRouter({ handlers, logger }));
-
-  // ── Shell capabilities (renderer hot-update ABI contract) ───────────
-  app.use('/api', createShellRouter({ getAppVersion }));
-
-  // ── Static & SPA (extracted to routes/static.ts) ───────────────────
-  // 传 dataDir → 运行时解析 serve 目录：云端 active bundle 健康则 serve 热更前端，
-  // 否则回包内基线（builtinDir 由 static.ts 按 __dirname 解析）。
-  app.use(createStaticRouter({
-    serverAuthToken: SERVER_AUTH_TOKEN,
-    dataDir: resolveCodeAgentDataDir(),
-    currentShellVersion: getAppVersion(),
-  }));
-
-  return app;
-}
-
-// ============================================================================
 // Port cleanup
 // ============================================================================
 
@@ -1218,7 +1071,17 @@ async function main(): Promise<void> {
   // 3. 启动 HTTP 服务
   console.log('[3/3] Starting HTTP server...');
 
-  const app = createApp();
+  const app = createApp({
+    handlers,
+    logger,
+    runRegistry,
+    pendingLocalToolCalls,
+    pendingDevPermissions,
+    resolveCodeAgentDataDir,
+    getAppVersion,
+    getDurableRunRollout,
+    getDurableRunReadService,
+  });
 
   const server = http.createServer(app);
 

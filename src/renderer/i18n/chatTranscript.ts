@@ -202,6 +202,14 @@ systemError: {
   fallbackDetail: '可以重试一次，或换个说法再试试。',
   viewDetails: '查看详情',
   hideDetails: '收起',
+},
+
+// 实时预览诊断条（LivePreviewFrame）——frameError 原文 + CSP snippet 折叠在
+// systemError 的查看详情/收起键后面，这里只放固定的人话摘要+建议。
+livePreview: {
+  loadFailedSummary: '预览没加载出来',
+  loadFailedSuggestion: '试试刷新页面，或让 agent 重新生成一次预览。',
+  cspLabel: '生效 CSP',
 }
 };
 
@@ -404,5 +412,14 @@ systemError: {
   fallbackDetail: 'Try again, or rephrase your request.',
   viewDetails: 'View details',
   hideDetails: 'Hide',
+},
+
+// Live preview diagnostic strip (LivePreviewFrame) — frameError text + CSP
+// snippet collapse behind systemError's view/hide keys; this only holds the
+// fixed human summary + suggestion.
+livePreview: {
+  loadFailedSummary: "The preview didn't load",
+  loadFailedSuggestion: 'Try refreshing the page, or ask the agent to regenerate the preview.',
+  cspLabel: 'Effective CSP',
 }
 };

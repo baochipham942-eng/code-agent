@@ -6,6 +6,9 @@ import { tmpdir } from 'os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { createAgentRouter } from '../../../src/web/routes/agent';
+import type { Message } from '../../../src/shared/contract';
+import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
+import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
   setDbAvailable,
 } from '../../../src/web/helpers/sessionCache';
@@ -150,7 +153,7 @@ let server: http.Server | undefined;
 let baseUrl = '';
 const runRegistry = new RunRegistry();
 const testRunKernel = {
-  createRun: vi.fn(async (input: { runId: string; sessionId: string; engine: unknown; now: number; initialEngineCursor?: unknown; initialPendingOperations?: unknown[] }) => {
+  createRun: vi.fn(async (input: { runId: string; sessionId: string; engine: RunEngineRef; now: number; initialEngineCursor?: unknown; initialPendingOperations?: PendingOperation[] }) => {
     const owner = { ownerId: 'test', processInstanceId: 'test-process', epoch: 1, leaseExpiresAt: input.now + 60_000 };
     return {
       owner,
@@ -183,15 +186,22 @@ const testRunKernel = {
       },
     };
   }),
-  heartbeat: vi.fn(async (_runId: string, owner: { leaseExpiresAt: number }) => owner),
-  checkpoint: vi.fn(async (input: { engineCursor?: unknown }) => ({
-    checkpoint: {},
+  heartbeat: vi.fn(async (_runId: string, owner: RunOwnerLease) => owner),
+  checkpoint: vi.fn(async (input: DurableCheckpointInput): Promise<RunCheckpoint> => ({
+    runId: input.runId,
+    checkpointSeq: 1,
+    attempt: input.attempt,
+    eventSeq: input.events.length,
+    status: input.status,
     cursor: { nextEventSeq: 2, checkpointSeq: 1, engineCursor: input.engineCursor },
+    state: input.state,
+    checksum: 'test-checksum',
+    createdAt: input.now,
   })),
   terminal: vi.fn(async () => ({} as never)),
   release: vi.fn(async () => true),
   recoverOnStartup: vi.fn(async () => []),
-  prepareOperation: vi.fn((input: { runId: string; operationId: string; attempt: number; kind: 'external_engine'; now: number }) => ({
+  prepareOperation: vi.fn((input: PrepareOperationInput) => ({
     runId: input.runId,
     operationId: input.operationId,
     attempt: input.attempt,
@@ -220,6 +230,9 @@ async function startAgentApi(deps: {
 } = {}) {
   const app = express();
   app.use(express.json());
+  // Each test scenario mocks only the AgentSessionManagerLike/SupabaseAgentBinding
+  // methods it exercises, not the full interface — assert to the real deps
+  // shape at the router boundary rather than widening every call site's mock.
   app.use('/api', createAgentRouter({
     runRegistry,
     pendingLocalToolCalls: new Map(),
@@ -229,7 +242,7 @@ async function startAgentApi(deps: {
       ?? deps.tryGetSessionManager
       ?? (async () => null),
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
-  }));
+  } as Parameters<typeof createAgentRouter>[0]));
 
   server = await new Promise<http.Server>((resolve) => {
     const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
@@ -1356,7 +1369,7 @@ describe('createAgentRouter', () => {
       update: vi.fn(() => ({ eq: sessionEq })),
     };
     const messagesTable = {
-      insert: vi.fn(async () => ({ error: null })),
+      insert: vi.fn(async (_message: Record<string, unknown>) => ({ error: null })),
     };
     const from = vi.fn((table: string) => table === 'sessions' ? sessionsTable : messagesTable);
     mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: Record<string, unknown> }) => void) => ({
@@ -1919,7 +1932,8 @@ describe('createAgentRouter', () => {
     await response.text();
 
     // 自动模式：override 的 provider/model 只是占位，不当显式模型用（走默认模型）
-    const cliAgentArgs = vi.mocked(createCLIAgent).mock.calls[0][0];
+    expect(vi.mocked(createCLIAgent).mock.calls.length).toBeGreaterThan(0);
+    const cliAgentArgs = vi.mocked(createCLIAgent).mock.calls[0]![0]!;
     expect(cliAgentArgs.model).toBeUndefined();
     expect(cliAgentArgs.provider).toBeUndefined();
 

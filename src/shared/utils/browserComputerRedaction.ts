@@ -23,6 +23,8 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "authToken",
   "cookie",
   "cookies",
+  "cookieRows",
+  "cookieSeeds",
   "encrypted_value",
   "encryptedValue",
   "keychainPassword",
@@ -36,9 +38,17 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "rawHtml",
   "screenshotBase64",
   "screenshotData",
+  "seeds",
   "sessionStorage",
   "storageState",
   "userDataDir",
+]);
+/** Object keys that hold cookie plaintext / ciphertext when present on cookie-like records. */
+const COOKIE_VALUE_FIELD_KEYS = new Set([
+  "value",
+  "encrypted_value",
+  "encryptedValue",
+  "cookieValue",
 ]);
 const OMIT = Symbol("omit-browser-computer-metadata");
 
@@ -819,6 +829,67 @@ function sanitizeEvidenceRef(value: EvidenceRef): EvidenceRef {
   };
 }
 
+/**
+ * Looks like a Playwright/Chromium cookie seed: name + value and/or domain.
+ * Used to redact nested `value` fields without blanking unrelated form field maps.
+ */
+function looksLikeCookieRecord(value: Record<string, unknown>): boolean {
+  const hasName = typeof value.name === "string" && value.name.length > 0;
+  const hasDomain =
+    (typeof value.domain === "string" && value.domain.length > 0)
+    || (typeof value.host === "string" && value.host.length > 0);
+  const hasValueField = [...COOKIE_VALUE_FIELD_KEYS].some((field) => field in value);
+  return hasValueField && (hasName || hasDomain);
+}
+
+function redactCookieValueFieldsInRecord(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!looksLikeCookieRecord(value)) {
+    return value;
+  }
+  const next: Record<string, unknown> = { ...value };
+  for (const field of COOKIE_VALUE_FIELD_KEYS) {
+    if (field in next) {
+      next[field] = "[redacted]";
+    }
+  }
+  return next;
+}
+
+/**
+ * Defense-in-depth for session export / tool summaries: strip cookie plaintext
+ * from JSON-ish strings even when producers mis-emit seeds or storageState.
+ */
+export function redactBrowserCookiePayloadsInText(value: string): string {
+  let redacted = value;
+  // Explicit secret field names (always scrub when quoted JSON-style).
+  redacted = redacted.replace(
+    /("(?:encrypted_?value|cookieValue|keychainPassword|keyMaterial|authToken)"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
+    '$1"[redacted]"',
+  );
+  // Cookie seed object: "name":"...","value":"SECRET"
+  redacted = redacted.replace(
+    /("name"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"value"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
+    '$1"[redacted]"',
+  );
+  // Cookie seed object: "value":"SECRET","domain":"..."
+  redacted = redacted.replace(
+    /("value"\s*:\s*)"(?:\\.|[^"\\])*"(\s*,\s*"(?:domain|host|path|expires|httpOnly|secure|sameSite)")/gi,
+    '$1"[redacted]"$2',
+  );
+  // storageState.cookies[] style: "domain":"...","name":"...","value":"SECRET"
+  redacted = redacted.replace(
+    /("(?:domain|host)"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"name"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"value"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
+    '$1"[redacted]"',
+  );
+  redacted = redacted.replace(
+    /("name"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"(?:domain|host)"\s*:\s*"(?:\\.|[^"\\])*"\s*,\s*"value"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
+    '$1"[redacted]"',
+  );
+  return redacted;
+}
+
 function sanitizeBrowserComputerMetadataValue(
   toolName: string,
   args: Record<string, unknown>,
@@ -861,10 +932,14 @@ function sanitizeBrowserComputerMetadataValue(
       args,
       value,
     );
+    const cookieRedacted =
+      typeof payloadRedacted === "string"
+        ? redactBrowserCookiePayloadsInText(payloadRedacted)
+        : payloadRedacted;
     if (key && /url|href|uri/i.test(key)) {
-      return summarizeBrowserComputerUrl(String(payloadRedacted));
+      return summarizeBrowserComputerUrl(String(cookieRedacted));
     }
-    return payloadRedacted;
+    return cookieRedacted;
   }
   if (Array.isArray(value)) {
     return value
@@ -872,8 +947,9 @@ function sanitizeBrowserComputerMetadataValue(
       .filter((item) => item !== OMIT);
   }
   if (isRecord(value)) {
+    const cookieSafe = redactCookieValueFieldsInRecord(value);
     const entries: Array<[string, unknown]> = [];
-    for (const [entryKey, item] of Object.entries(value)) {
+    for (const [entryKey, item] of Object.entries(cookieSafe)) {
       const sanitized = sanitizeBrowserComputerMetadataValue(
         toolName,
         args,
@@ -926,10 +1002,18 @@ export function sanitizeBrowserComputerToolResult<
     safeArgs,
     result.error,
   );
+  const safeOutput =
+    typeof output === "string"
+      ? redactBrowserCookiePayloadsInText(output)
+      : output;
+  const safeError =
+    typeof error === "string"
+      ? redactBrowserCookiePayloadsInText(error)
+      : error;
   return {
     ...result,
-    output: typeof output === "string" ? output : result.output,
-    error: typeof error === "string" ? error : result.error,
+    output: typeof safeOutput === "string" ? safeOutput : result.output,
+    error: typeof safeError === "string" ? safeError : result.error,
     metadata: sanitizeBrowserComputerMetadata(
       toolName,
       safeArgs,
@@ -993,12 +1077,20 @@ export function redactBrowserComputerInputPayloadsInValue(
   value: unknown,
 ): unknown {
   const payloads = collectBrowserComputerInputPayloads(toolName, args);
+  const applyCookieText =
+    isBrowserComputerToolName(toolName) && typeof value === "string"
+      ? (text: string) => redactBrowserCookiePayloadsInText(text)
+      : (text: string) => text;
+
   if (payloads.length === 0) {
+    if (typeof value === "string" && isBrowserComputerToolName(toolName)) {
+      return applyCookieText(value);
+    }
     return value;
   }
 
   if (typeof value === "string") {
-    return redactPayloadsInString(value, payloads);
+    return applyCookieText(redactPayloadsInString(value, payloads));
   }
   if (Array.isArray(value)) {
     return value.map((item) =>

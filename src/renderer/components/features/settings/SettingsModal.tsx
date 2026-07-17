@@ -449,7 +449,7 @@ export const SettingsModal: React.FC = () => {
               </div>
               <IconButton
                 icon={<X className="h-5 w-5" />}
-                aria-label="Close settings"
+                aria-label={t.common.close}
                 onClick={handleClose}
                 variant="ghost"
                 size="lg"

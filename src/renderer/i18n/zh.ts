@@ -10,6 +10,7 @@ import { sidebarZh } from './sidebar';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
 import { taskStatusPanelsZh } from './taskStatusPanels';
+import { noticesZh } from './notices';
 
 export const zh = {
   // Common
@@ -849,6 +850,7 @@ export const zh = {
   ...previewWorkspaceZh,
   ...modalPrimitivesZh,
   ...taskStatusPanelsZh,
+  ...noticesZh,
 
   // 聊天流 Mermaid 图卡片（缩放/平移 + 标注即编辑）
   mermaid: {

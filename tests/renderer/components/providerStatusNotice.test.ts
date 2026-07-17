@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatProviderFallbackToast } from '../../../src/renderer/components/ProviderStatusNotice';
 import type { ProviderFallbackEvent } from '../../../src/shared/ipc';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 describe('ProviderStatusNotice', () => {
   it('formats provider fallback as model strategy recovery when strategy is present', () => {
@@ -12,7 +13,7 @@ describe('ProviderStatusNotice', () => {
       strategy: 'adaptive-provider-fallback',
     };
 
-    expect(formatProviderFallbackToast(event)).toBe(
+    expect(formatProviderFallbackToast(event, zh)).toBe(
       '自动策略恢复：moonshot/kimi-k2.5 服务不可用，已切换到 deepseek/deepseek-v4-flash 继续任务',
     );
   });
@@ -25,7 +26,7 @@ describe('ProviderStatusNotice', () => {
       category: 'provider_unavailable',
     };
 
-    expect(formatProviderFallbackToast(event)).toBe(
+    expect(formatProviderFallbackToast(event, zh)).toBe(
       'moonshot/kimi-k2.5 服务不可用，已自动切换到 deepseek/deepseek-v4-flash 继续任务',
     );
   });
@@ -39,7 +40,7 @@ describe('ProviderStatusNotice', () => {
       strategy: 'adaptive-main-task-recovery',
     };
 
-    expect(formatProviderFallbackToast(event)).toBe(
+    expect(formatProviderFallbackToast(event, zh)).toBe(
       '回到主任务模型：zhipu/glm-4.7-flash 触发限流，已回到 moonshot/kimi-k2.5 继续任务',
     );
   });

@@ -22,6 +22,7 @@ import { Button } from '../../../primitives';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
 
 const DEFAULT_INVITE_CODES_TEXT = zh.settings.invites;
@@ -35,11 +36,12 @@ interface InviteCodeDraft {
 function formatDate(
   value?: string,
   emptyLabel = DEFAULT_INVITE_CODES_TEXT.noLimit,
+  locale: string = localeForLanguage('zh'),
 ): string {
   if (!value) return emptyLabel;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return emptyLabel;
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -96,7 +98,7 @@ function matchesQuery(invite: AdminInviteCodeItem, query: string): boolean {
 }
 
 export const InviteCodesSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const inviteText = t.settings.invites;
   const [inviteCodes, setInviteCodes] = useState<AdminInviteCodeItem[]>([]);
   const [drafts, setDrafts] = useState<Record<string, InviteCodeDraft>>({});
@@ -404,15 +406,15 @@ export const InviteCodesSettings: React.FC = () => {
                           onChange={(event) => updateDraft(invite.id, { expiresAt: event.target.value })}
                           className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-200 focus:border-zinc-600 focus:outline-hidden"
                         />
-                        <div className="mt-1 text-[11px] text-zinc-500">{formatDate(invite.expiresAt, inviteText.noLimit)}</div>
+                        <div className="mt-1 text-[11px] text-zinc-500">{formatDate(invite.expiresAt, inviteText.noLimit, localeForLanguage(language))}</div>
                       </td>
                       <td className="px-3 py-3">
-                        <div className="text-zinc-400">{formatDate(invite.createdAt, inviteText.noLimit)}</div>
+                        <div className="text-zinc-400">{formatDate(invite.createdAt, inviteText.noLimit, localeForLanguage(language))}</div>
                         <div className="mt-1 truncate text-[11px] text-zinc-500" title={invite.createdByEmail}>
                           {invite.createdByEmail || '-'}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-zinc-400">{formatDate(invite.lastUsedAt, inviteText.noLimit)}</td>
+                      <td className="px-3 py-3 text-zinc-400">{formatDate(invite.lastUsedAt, inviteText.noLimit, localeForLanguage(language))}</td>
                       <td className="px-3 py-3">
                         <div className="flex justify-end gap-1.5">
                           <Button

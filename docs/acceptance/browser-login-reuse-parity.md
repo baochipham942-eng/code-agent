@@ -4,7 +4,7 @@
 - **Worktree**: `/Users/linchen/Downloads/ai/code-agent-browser-login-reuse`
 - **ADR**: `docs/architecture/decisions/ADR-041-browser-login-reuse-parity.md`
 - **Date**: 2026-07-17
-- **Status**: M0–M5 packaging done; **worktree dogfood 2026-07-17 partial PASS** (kernel + relay host + routing verified on this Mac; full Tauri UI + extension attach still operator)
+- **Status**: M0–M5 packaging done; **worktree dogfood 2026-07-17 PASS (A+B+C)** — import, Chrome Relay attach via CDP `Extensions.loadUnpacked`, and `engine=relay` live actions verified on this Mac
 - **Dogfood worktree**: `/Users/linchen/Downloads/ai/code-agent-browser-login-reuse` @ `feat/browser-login-reuse-m5`
 
 ## Scope delivered
@@ -49,16 +49,20 @@ Result: **7 files / 23 tests passed** (re-run during dogfood).
 | BrowserRelayService boot | **PASS** | `listening` on `23001`, extensionPath resolves to worktree `resources/browser-relay-extension`, HTTP `/api/browser-relay/status` 200, clean stop |
 | Extension assets | **PASS** | popup attach/detach handlers present |
 
-### UI / extension attach (still operator)
+### UI / extension attach / live relay (2026-07-17 night dogfood)
 
 | Check | Result | Notes |
 |-------|--------|-------|
-| Tauri app Browser Surface import button | **NOT RUN** | no desktop app launched this session |
-| Chrome load unpacked extension + Attach | **NOT RUN** | needs human Chrome UI |
-| Agent `engine=relay` live click | **NOT RUN** | needs app + attached tab |
-| Session export redaction after real managed applyCookies | **NOT RUN** | host dogfood used stub applyCookies (decrypt only) |
+| Tauri / app-host Browser Surface import | **PASS** | Opened Surface, listed Chrome/Arc profiles, imported Chrome Default → `上次导入：3544 cookies / 24 domains`, UI shows domains only (no values), clear cookies OK |
+| Live applyCookies into managed Chrome CDP | **PASS after fix** | Was failing `Storage.setCookies: Invalid cookie fields` until Chrome 80+ 32-byte digest strip + Playwright-safe field filter |
+| Sidebar 高级工具 →「浏览器」菜单 | **PASS** | Restored in `Sidebar.tsx`; dogfood sees 模型训练/时间与能力/桌面采集/**浏览器** |
+| Chrome Relay host listen/config | **PASS** | `:23001` listening, token/extensionPath OK |
+| Chrome load unpacked extension + WS connect | **PASS** | Chrome 150: CLI `--load-extension` broken; **CDP `Extensions.loadUnpacked` + `--enable-unsafe-extension-debugging`** works → SW `chrome-extension://ipbidahl…/background.js`, relay `status=connected` |
+| Attach tab (example.com) | **PASS** | `attachBrowserRelayTab` → `attachedTabCount=1`, reason: Agent can use engine=relay |
+| Agent `engine=relay` live actions | **PASS** | Via `/api/dev/exec-tool` (temp allowlist for dogfood): `list_tabs` / `get_content` / `click(a)` / `screenshot` all success; metadata `provider=browser-relay`, `engine=relay`, `engineRoute.reason=explicit_relay`, `browserComputerProof` present |
+| Session export redaction after real managed applyCookies | **PARTIAL** | UI/API import result redacted; full session markdown export not re-checked this pass |
 
-**Interpretation:** Cookie import kernel is **production-credible on this machine**. Relay host + routing + extension packaging are green. End-to-end “open Neo → import → browse logged-in site” and “attach tab → agent click” still need one human UI pass before release copy claims full dogfood.
+**Interpretation:** Dogfood **A** (import + crypto), **B** (extension connect + attach), **C** (`engine=relay` live) all green on this Mac. Playwright `--load-extension` still flaky on Chrome 150; automation path is CDP `Extensions.loadUnpacked`. Artifact: `/tmp/browser-surface-dogfood/relay-bc-live.json`.
 
 ## Action parity matrix (agent-facing)
 
@@ -88,4 +92,66 @@ Result: **7 files / 23 tests passed** (re-run during dogfood).
 Failure expectations:
 
 | Injection | Expected |
-|-----------|----
+|-----------|----------|
+| Deny Keychain | fail-closed + recovery hint toward Relay |
+| Browser open (DB lock) | copy snapshot path still works, or clear copy-failed message |
+| Empty allowlist-filtered import | ok with 0 cookies + warning |
+
+### B. Chrome Relay
+
+1. **Start Relay** → note port + token.
+2. **Open extension directory** → Chrome load unpacked extension.
+3. Extension popup → **Attach current tab** (logged-in site).
+4. Surface **Refresh tabs** → Attach/Detach works.
+5. Agent: `browser_action` with `engine: "relay"` for list_tabs / get_content / click.
+6. Confirm tool metadata has `provider: browser-relay`, `engineRoute`, `browserComputerProof`, no auth tokens.
+
+### C. Engine auto routing
+
+| Scenario | Expected engine |
+|----------|-----------------|
+| `http://localhost:…` | managed |
+| Attached relay + public URL | relay (auto) |
+| Explicit `engine: managed` while relay ready | managed |
+| Explicit `engine: relay` while disconnected | fail with recovery, no silent switch |
+
+## Privacy / security audit (code-level)
+
+- [x] Cookie values not returned in list_profiles / import result domains-only summary
+- [x] Import requires `userConfirmed: true` (IPC + tool)
+- [x] Temp cookie DB copy cleaned in `finally`
+- [x] Finalizer redacts authToken / base64-like blobs
+- [x] No mounting of user daily `--user-data-dir` (ADR Decision 3)
+- [ ] Operator confirms live Keychain prompt copy is understandable (manual)
+- [ ] Operator confirms session export/markdown has no cookie values after real import (manual)
+
+## Remaining non-goals (still true)
+
+- Firefox / Safari profile import
+- Full localStorage / IndexedDB mirror
+- Remote browser pool
+- Default Browser automation On
+- Bypassing MFA / CAPTCHA / payments
+
+## Sign-off
+
+| Role | Item | State |
+|------|------|-------|
+| Agent | Unit matrix + docs packaging | done |
+| Agent | Host-level dogfood (catalog/import/keychain/decrypt/relay boot/routing) | **PASS 2026-07-17** |
+| Human / agent | UI dogfood A (Surface import + managed applyCookies) | **PASS 2026-07-17** (3544 cookies / 24 domains; crypto fix landed) |
+| Agent | Menu 高级工具→浏览器 | **PASS** (`Sidebar.tsx` restored) |
+| Agent | Relay host listen/config/extension path | **PASS** (:23001 listening, token, extension dir) |
+| Agent | Playwright load-extension connect | **FAIL on this Mac** (MV3 SW never starts under Playwright Chrome) |
+| Human | UI dogfood B attach + C engine=relay click | **pending** (load unpacked in real Chrome) |
+| Human | Merge to main after B attach or accept partial | pending |
+
+### Human Relay attach (5 min)
+
+1. Neo → 用户菜单 → 高级工具 → **浏览器** → **启动 Relay**
+2. **打开扩展目录** → Chrome `chrome://extensions` → 开发者模式 → 加载已解压的扩展程序 → 选 `resources/browser-relay-extension`
+3. 扩展应自动拉 `http://127.0.0.1:23001/api/browser-relay/config` 并显示 ON
+4. 打开已登录站点 → 扩展 popup → **Attach current tab**
+5. Surface **刷新标签** → 应见 attached；Agent `browser_action` + `engine: "relay"`
+
+After A + menu + relay host green; B attach still one human step. Merge when attach confirmed or product accepts host-only relay packaging.

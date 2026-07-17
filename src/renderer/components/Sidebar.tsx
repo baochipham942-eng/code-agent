@@ -31,6 +31,7 @@ import {
   Clock3,
   CalendarDays,
   Monitor,
+  Globe,
   MousePointerClick,
   ScrollText,
   Activity,
@@ -103,6 +104,8 @@ export const Sidebar: React.FC = () => {
     setShowTimeCapabilityCenter,
     showDesktopPanel,
     setShowDesktopPanel,
+    showBrowserSurfacePanel,
+    setShowBrowserSurfacePanel,
     showActivityPanel,
     setShowActivityPanel,
     showKnowledgeMemoryPanel,
@@ -194,7 +197,9 @@ export const Sidebar: React.FC = () => {
   const [creatingWorkspaceKey, setCreatingWorkspaceKey] = useState<string | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const isCreatingSession = creatingSessionMode !== null;
-  const hasActiveAdvancedTool = Boolean(showLab || showTimeCapabilityCenter || showDesktopPanel);
+  const hasActiveAdvancedTool = Boolean(
+    showLab || showTimeCapabilityCenter || showDesktopPanel || showBrowserSurfacePanel,
+  );
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
   const currentSessionProjectId = useMemo(() => {
     const session = sessions.find((item) => item.id === currentSessionId);
@@ -964,6 +969,18 @@ export const Sidebar: React.FC = () => {
                         <Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />
                       }
                       label="桌面采集"
+                    />
+                    <AccountMenuItem
+                      onClick={() => {
+                        setShowBrowserSurfacePanel(true);
+                        setShowUserMenu(false);
+                      }}
+                      icon={
+                        <Globe
+                          className={`w-4 h-4 ${showBrowserSurfacePanel ? 'text-sky-400' : 'text-sky-400/80'}`}
+                        />
+                      }
+                      label="浏览器"
                     />
                   </div>
                 )}

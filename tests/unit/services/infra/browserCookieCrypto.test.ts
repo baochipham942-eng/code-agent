@@ -9,10 +9,14 @@ import {
 } from '../../../../src/host/services/infra/browser/browserCookieCrypto';
 
 function encryptV10(password: string, plaintext: string): Buffer {
+  return encryptV10Raw(password, Buffer.from(plaintext, 'utf8'));
+}
+
+function encryptV10Raw(password: string, plaintext: Buffer): Buffer {
   const key = deriveChromiumSafeStorageKey(password);
   const iv = Buffer.alloc(16, ' ');
   const cipher = createCipheriv('aes-128-cbc', key, iv);
-  const encrypted = Buffer.concat([cipher.update(Buffer.from(plaintext, 'utf8')), cipher.final()]);
+  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   return Buffer.concat([Buffer.from('v10'), encrypted]);
 }
 
@@ -33,6 +37,20 @@ describe('browserCookieCrypto (ADR-041)', () => {
     });
     expect(result.version).toBe('v10');
     expect(result.value).toBe('session-secret-value');
+  });
+
+  it('strips Chrome 80+ 32-byte digest prefix after v10 decrypt', () => {
+    const password = 'test-password';
+    // Real Chrome 80+ stores SHA-256(32) || cookie_value after AES decrypt.
+    const digest = Buffer.alloc(32, 0xab);
+    const payload = Buffer.concat([digest, Buffer.from('yes', 'utf8')]);
+    const encrypted = encryptV10Raw(password, payload);
+    const key = deriveChromiumSafeStorageKey(password);
+    const result = decryptChromiumCookieValue({
+      encryptedValue: encrypted,
+      key,
+    });
+    expect(result.value).toBe('yes');
   });
 
   it('returns plaintext when encrypted_value is empty', () => {

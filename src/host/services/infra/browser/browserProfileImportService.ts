@@ -18,9 +18,15 @@ import {
   decryptChromiumCookieValue,
   deriveChromiumSafeStorageKey,
   domainMatchesAllowlist,
+  isPlaywrightSafeCookieValue,
   mapChromiumSameSite,
   readMacOsKeychainPassword,
 } from './browserCookieCrypto';
+
+function isPlaywrightSafeCookieName(name: string): boolean {
+  // RFC 6265 cookie-name token; reject empty / control / separators.
+  return name.length > 0 && !/[\x00-\x1f\x7f\s;,]/.test(name);
+}
 import {
   findBrowserProfile,
   getBrowserProfileSourceDefinition,
@@ -366,6 +372,21 @@ export async function importBrowserProfileCookies(
         skippedCookieCount += 1;
         continue;
       }
+      // CDP/Playwright reject binary garbage (failed decrypt / unstripped hash prefix).
+      // Import kernel already strips Chrome 80+ 32-byte digests; still skip unsafe values.
+      if (!isPlaywrightSafeCookieValue(value) || !isPlaywrightSafeCookieName(name)) {
+        skippedCookieCount += 1;
+        continue;
+      }
+
+      const secure = row.is_secure === true || row.is_secure === 1;
+      let sameSite = mapChromiumSameSite(
+        typeof row.samesite === 'number' ? row.samesite : null,
+      );
+      // CDP: SameSite=None requires Secure.
+      if (sameSite === 'None' && !secure) {
+        sameSite = 'Lax';
+      }
 
       seeds.push({
         name,
@@ -374,10 +395,8 @@ export async function importBrowserProfileCookies(
         path: typeof row.path === 'string' && row.path ? row.path : '/',
         expires,
         httpOnly: row.is_httponly === true || row.is_httponly === 1,
-        secure: row.is_secure === true || row.is_secure === 1,
-        sameSite: mapChromiumSameSite(
-          typeof row.samesite === 'number' ? row.samesite : null,
-        ),
+        secure,
+        sameSite,
       });
       importedDomains.push(domain);
     }

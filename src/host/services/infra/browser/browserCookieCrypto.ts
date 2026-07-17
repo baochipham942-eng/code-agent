@@ -143,7 +143,7 @@ export function decryptChromiumCookieValue(args: {
     const decipher = createDecipheriv('aes-128-cbc', args.key, AES_IV);
     const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     return {
-      value: decrypted.toString('utf8'),
+      value: chromiumDecryptedBytesToCookieValue(decrypted),
       version: prefix as 'v10' | 'v11',
     };
   } catch (error) {
@@ -154,7 +154,7 @@ export function decryptChromiumCookieValue(args: {
       const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
       const unpadded = stripPkcs7Padding(decrypted);
       return {
-        value: unpadded.toString('utf8'),
+        value: chromiumDecryptedBytesToCookieValue(unpadded),
         version: prefix as 'v10' | 'v11',
       };
     } catch (fallbackError) {
@@ -165,6 +165,56 @@ export function decryptChromiumCookieValue(args: {
       );
     }
   }
+}
+
+/**
+ * Chrome 80+ prefixes decrypted cookie bytes with a 32-byte SHA-256 digest.
+ * Older fixtures (and our unit encrypt helper) omit that prefix. Prefer the
+ * stripped payload when it is the cleaner UTF-8 cookie value.
+ */
+export function chromiumDecryptedBytesToCookieValue(decrypted: Buffer): string {
+  if (decrypted.length <= 32) {
+    return decrypted.toString('utf8');
+  }
+  const full = decrypted.toString('utf8');
+  const strippedBuf = decrypted.subarray(32);
+  const stripped = strippedBuf.toString('utf8');
+  // Chrome 80+: 32-byte digest prefix. Prefer stripped when full is unsafe/binary but remainder is clean.
+  if (isPlaywrightSafeCookieValue(stripped) && !isPlaywrightSafeCookieValue(full)) {
+    return stripped;
+  }
+  const fullReplacements = (full.match(/\uFFFD/g) || []).length;
+  if (fullReplacements > 0 && isPlaywrightSafeCookieValue(stripped)) {
+    return stripped;
+  }
+  // Prefer stripped when prefix is high-entropy binary and remainder is usable cookie text.
+  const prefix = decrypted.subarray(0, 32);
+  let prefixHigh = 0;
+  for (let i = 0; i < prefix.length; i += 1) {
+    if (prefix[i] >= 0x80 || prefix[i] < 0x20) {
+      prefixHigh += 1;
+    }
+  }
+  if (prefixHigh >= 8 && isPlaywrightSafeCookieValue(stripped)) {
+    return stripped;
+  }
+  return full;
+}
+
+/** Playwright/CDP rejects binary or malformed cookie fields. */
+export function isPlaywrightSafeCookieValue(value: string): boolean {
+  if (!value || value.includes('\u0000')) {
+    return false;
+  }
+  // Reject values dominated by C0 controls (failed decrypt without hash strip).
+  let controls = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code < 0x09 || (code > 0x0d && code < 0x20) || code === 0x7f) {
+      controls += 1;
+    }
+  }
+  return controls === 0;
 }
 
 /** Chrome/WebKit expires_utc is microseconds since 1601-01-01 UTC. Playwright wants seconds since Unix epoch, or -1. */

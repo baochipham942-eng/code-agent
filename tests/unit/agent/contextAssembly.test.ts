@@ -14,6 +14,7 @@ import type { Message } from '../../../src/shared/contract';
 import {
   CompressionPipeline,
   setCompressionPipelineOverride,
+  type PipelineConfig,
 } from '../../../src/host/context/compressionPipeline';
 import { CompressionState } from '../../../src/host/context/compressionState';
 import {
@@ -956,7 +957,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const assembly = new ContextAssembly(ctx as never);
     const modelMessages = await assembly.buildModelMessages();
 
-    const systemPrompt = modelMessages[0].content;
+    const systemPrompt = modelMessages[0].content as string;
     // 能力发现块保住了
     expect(systemPrompt).toContain('<deferred-tools>');
     expect(systemPrompt).toContain('browser: 浏览器操作工具组');
@@ -1009,7 +1010,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     // 前缀稳定改造后 GAP-023 的排序保证变成结构性的：能力发现块（deferred tools）
     // 留在 system 稳定前缀，锦上添花块（session metadata / memory hint）在历史末尾
     // 的 transient 尾巴里——前者必然先于后者被模型看到。
-    const systemPrompt = modelMessages[0].content;
+    const systemPrompt = modelMessages[0].content as string;
     const orderTail = modelMessages[modelMessages.length - 1];
     expect(systemPrompt.indexOf('<deferred-tools>')).toBeGreaterThan(-1);
     expect(orderTail.transient).toBe(true);
@@ -1085,7 +1086,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(modelMessages[0].content).not.toContain('generative ui prompt');
     expect(modelMessages[0].content).not.toContain('question form prompt');
     expect(modelMessages[0].content).not.toContain('<deferred-tools>');
-    expect(estimateTokens(modelMessages[0].content)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
+    expect(estimateTokens(modelMessages[0].content as string)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
     expect(buildSessionMetadataBlock).not.toHaveBeenCalled();
     expect(loadMemoryIndex).not.toHaveBeenCalled();
     expect(getRepoMap).not.toHaveBeenCalled();
@@ -1116,7 +1117,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(modelMessages[0].content).toContain('ENV_MARKER');
     expect(ctx.stats.pendingRuntimeDiagnostics).not.toContain(expect.stringContaining('跳过 artifact task brief'));
     expect(ctx.stats.pendingRuntimeDiagnostics).not.toContain(expect.stringContaining('保留必需 game artifact contract'));
-    expect(estimateTokens(modelMessages[0].content)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
+    expect(estimateTokens(modelMessages[0].content as string)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
   });
 
   it('prioritizes artifact repair context over optional prompt blocks', async () => {
@@ -1679,7 +1680,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const messages: Message[] = [
       buildMessage('user-1', 'user', '继续优化 repo code performance，记得看 previous context'),
     ];
-    const evaluate = vi.fn(async (transcript: unknown[], state: CompressionState) => ({
+    const evaluate = vi.fn(async (transcript: unknown[], state: CompressionState, _config: PipelineConfig) => ({
       apiView: transcript,
       totalTokens: 100,
       layersTriggered: [],

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
+import type { AgentEvent } from '../../../src/shared/contract/agent';
 import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
@@ -43,6 +44,17 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
   },
 }));
 
+// 只列 toolStrategy 诊断实际读取的字段（name/description/inputSchema +
+// 后面用例追加的 source/mcpServer），不是完整 ToolDefinition（那还要求
+// requiresPermission/permissionLevel 等这里用不到的字段）。
+type MockToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  source?: string;
+  mcpServer?: string;
+};
+
 const { mockToolDefinitions } = vi.hoisted(() => ({
   mockToolDefinitions: [
     { name: 'Read', description: 'read file', inputSchema: {} },
@@ -51,7 +63,7 @@ const { mockToolDefinitions } = vi.hoisted(() => ({
     { name: 'Append', description: 'append file', inputSchema: {} },
     { name: 'Bash', description: 'run command', inputSchema: {} },
     { name: 'Task', description: 'delegate task', inputSchema: {} },
-  ],
+  ] as MockToolDefinition[],
 }));
 
 vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
@@ -175,7 +187,7 @@ describe('contextAssembly inference artifact retry', () => {
 
     await inference(ctx);
 
-    const [sentMessages] = ctx.runtime.modelRouter.inference.mock.calls[0];
+    const [sentMessages] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     const last = sentMessages[sentMessages.length - 1];
     expect(last.role).toBe('system');
     expect(last.content).toContain('wrap up now');
@@ -412,18 +424,24 @@ describe('contextAssembly inference artifact retry', () => {
         adaptive: true,
       },
     });
-    ctx.runtime.modelRouter.detectRequiredCapabilities.mockReturnValue(['vision']);
-    ctx.runtime.modelRouter.getFallbackConfig.mockReturnValue({
+    vi.mocked(ctx.runtime.modelRouter.detectRequiredCapabilities).mockReturnValue(['vision']);
+    vi.mocked(ctx.runtime.modelRouter.getFallbackConfig).mockReturnValue({
       provider: 'zhipu',
       model: 'glm-4.5v',
       apiKey: 'fallback-key',
       maxTokens: 2048,
     });
-    ctx.runtime.modelRouter.getModelInfo.mockImplementation((provider: string) => {
+    vi.mocked(ctx.runtime.modelRouter.getModelInfo).mockImplementation((provider: string, modelId: string) => {
       if (provider === 'zhipu') {
-        return { supportsVision: true, supportsTool: false, capabilities: ['vision'] };
+        return {
+          id: modelId, name: modelId, maxTokens: 4096, supportsStreaming: true,
+          supportsVision: true, supportsTool: false, capabilities: ['vision'],
+        };
       }
-      return { supportsVision: false, supportsTool: true, capabilities: [] };
+      return {
+        id: modelId, name: modelId, maxTokens: 4096, supportsStreaming: true,
+        supportsVision: false, supportsTool: true, capabilities: [],
+      };
     });
     ctx.runtime.modelRouter.inference = vi.fn().mockResolvedValue({
       type: 'text',
@@ -437,8 +455,8 @@ describe('contextAssembly inference artifact retry', () => {
 
     const response = await inference(ctx);
 
-    const fallbackEvents = ctx.runtime.onEvent.mock.calls
-      .map(([event]: [{ type: string; data?: Record<string, unknown> }]) => event)
+    const fallbackEvents = vi.mocked(ctx.runtime.onEvent).mock.calls
+      .map(([event]: [AgentEvent]) => event)
       .filter((event) => event.type === 'model_fallback');
     expect(fallbackEvents).toHaveLength(1);
     const fallbackEvent = fallbackEvents[fallbackEvents.length - 1];
@@ -462,7 +480,7 @@ describe('contextAssembly inference artifact retry', () => {
         disabledToolNames: ['Append', 'Bash', 'Edit', 'Read', 'Task', 'Write'],
       },
     });
-    const [, effectiveTools] = ctx.runtime.modelRouter.inference.mock.calls[0];
+    const [, effectiveTools] = vi.mocked(ctx.runtime.modelRouter.inference).mock.calls[0];
     expect(effectiveTools).toEqual([]);
     expect(response).toMatchObject({
       actualProvider: 'zhipu',

@@ -89,6 +89,11 @@ import { aggregateTeamResults } from '../../../src/host/agent/resultAggregator';
 
 function makeFakeContext() {
   return {
+    // 注意：executionContext 不在这里整体 as never——测试里多处要
+    // `{ ...makeFakeContext().executionContext, ... }` 展开覆盖字段，
+    // 源头是 never 会导致 spread 报 TS2698。改成在真正传给
+    // coordinator.initialize() 的调用点按需 as never（mock 只补了子集字段，
+    // 达不到真实 SubagentExecutionContext 的完整形状）。
     executionContext: {
       sessionId: 'test-session',
       cwd: '/tmp',
@@ -98,7 +103,7 @@ function makeFakeContext() {
       events: { emit: vi.fn() },
       abortSignal: new AbortController().signal,
       currentToolCallId: 'call-1',
-    } as never,
+    },
     subagentExecutor: {
       execute: executorState.executeMock,
     },

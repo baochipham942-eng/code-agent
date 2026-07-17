@@ -13,7 +13,7 @@ import {
 import { getModelScaffoldTier } from '../../../../src/shared/constants/models';
 import { SCAFFOLD_PROFILE } from '../../../../src/shared/constants/agent';
 import { shouldThink } from '../../../../src/host/agent/runtime/contextAssembly/modeInjection';
-import type { ContextAssemblyCtx } from '../../../../src/host/agent/runtime/contextAssembly/inference';
+import type { ContextAssemblyCtx } from '../../../../src/host/agent/runtime/contextAssembly';
 import { TurnState } from '../../../../src/host/agent/runtime/turnState';
 
 afterEach(() => {

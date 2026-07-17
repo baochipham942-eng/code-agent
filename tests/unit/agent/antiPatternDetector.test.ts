@@ -67,45 +67,45 @@ describe('detectFailedToolCallPattern', () => {
       const result = detector.detectFailedToolCallPattern('Ran: ls -la');
       expect(result).not.toBeNull();
       expect(result!.toolName).toBe('bash');
-      expect(JSON.parse(result!.args).command).toBe('ls -la');
+      expect(JSON.parse(result!.args!).command).toBe('ls -la');
     });
 
     it('should match python script execution', () => {
       const result = detector.detectFailedToolCallPattern('Ran: python3 /tmp/script.py');
       expect(result).not.toBeNull();
       expect(result!.toolName).toBe('bash');
-      expect(JSON.parse(result!.args).command).toBe('python3 /tmp/script.py');
+      expect(JSON.parse(result!.args!).command).toBe('python3 /tmp/script.py');
     });
 
     it('should match git commands', () => {
       const result = detector.detectFailedToolCallPattern('Ran: git status');
       expect(result).not.toBeNull();
-      expect(JSON.parse(result!.args).command).toBe('git status');
+      expect(JSON.parse(result!.args!).command).toBe('git status');
     });
 
     it('should match echo with balanced quotes', () => {
       const result = detector.detectFailedToolCallPattern('Ran: echo "hello world"');
       expect(result).not.toBeNull();
       // Trailing quote cleanup may strip closing quote; verify detection works
-      expect(JSON.parse(result!.args).command).toContain('echo');
+      expect(JSON.parse(result!.args!).command).toContain('echo');
     });
 
     it('should match npm/node commands', () => {
       const result = detector.detectFailedToolCallPattern('Ran: npm run build');
       expect(result).not.toBeNull();
-      expect(JSON.parse(result!.args).command).toBe('npm run build');
+      expect(JSON.parse(result!.args!).command).toBe('npm run build');
     });
 
     it('should match piped commands', () => {
       const result = detector.detectFailedToolCallPattern('Ran: cat file.txt | grep pattern');
       expect(result).not.toBeNull();
-      expect(JSON.parse(result!.args).command).toBe('cat file.txt | grep pattern');
+      expect(JSON.parse(result!.args!).command).toBe('cat file.txt | grep pattern');
     });
 
     it('should match "bash" alone as valid command', () => {
       const result = detector.detectFailedToolCallPattern('Ran: bash');
       expect(result).not.toBeNull();
-      expect(JSON.parse(result!.args).command).toBe('bash');
+      expect(JSON.parse(result!.args!).command).toBe('bash');
     });
 
     it('should match commands with balanced single and double quotes', () => {
@@ -256,7 +256,7 @@ EOF`;
       const result = detector.detectFailedToolCallPattern(content);
       expect(result).not.toBeNull();
       expect(result!.toolName).toBe('bash');
-      const cmd = JSON.parse(result!.args).command;
+      const cmd = JSON.parse(result!.args!).command;
       expect(cmd).toContain('python3 <<');
       expect(cmd).toContain('import pandas');
       expect(cmd).toContain('EOF');
@@ -283,7 +283,7 @@ print("test")
 EOF</invoke>`;
       const result = detector.detectFailedToolCallPattern(content);
       expect(result).not.toBeNull();
-      const cmd = JSON.parse(result!.args).command;
+      const cmd = JSON.parse(result!.args!).command;
       // Closing line should be cleaned to just "EOF"
       expect(cmd.trim().endsWith('EOF')).toBe(true);
     });
@@ -295,7 +295,7 @@ EOF</invoke>`;
     it('should truncate CJK explanatory text after command', () => {
       const result = detector.detectFailedToolCallPattern('Ran: python3 script.py  数据已成功保存');
       expect(result).not.toBeNull();
-      const cmd = JSON.parse(result!.args).command;
+      const cmd = JSON.parse(result!.args!).command;
       expect(cmd).toBe('python3 script.py');
       expect(cmd).not.toContain('数据');
     });
@@ -304,7 +304,7 @@ EOF</invoke>`;
       // Single space before CJK should not trigger truncation (needs 2+ spaces)
       const result = detector.detectFailedToolCallPattern('Ran: echo 你好');
       expect(result).not.toBeNull();
-      const cmd = JSON.parse(result!.args).command;
+      const cmd = JSON.parse(result!.args!).command;
       expect(cmd).toContain('你好');
     });
   });

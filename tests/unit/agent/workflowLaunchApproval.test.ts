@@ -125,7 +125,7 @@ describe('WorkflowLaunchApprovalGate', () => {
   // ── Codex Round1 MED#1：resolver/timer 生命周期 ──
   it('resolver 在 deliver 之前注册：同步 deliver 里 reject 能被即时兑现（非超时）', async () => {
     const deliver = vi.fn();
-    let gate;
+    let gate: WorkflowLaunchApprovalGate;
     deliver.mockImplementation((e) => {
       if (e.type === 'requested') gate.reject('wf-1', 'sync no');
     });

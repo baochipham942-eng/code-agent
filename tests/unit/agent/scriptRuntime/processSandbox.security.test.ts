@@ -10,6 +10,7 @@ import {
   createNestedWorkflowIdentity,
   type NestedWorkflowMetadata,
 } from '../../../../src/host/agent/scriptRuntime';
+import type { AgentCallPayload } from '../../../../src/host/agent/scriptRuntime/types';
 
 function run(script: string, signal = new AbortController().signal) {
   return runScriptInSandbox({
@@ -179,7 +180,7 @@ describe('process-level orchestration sandbox', () => {
         nestedGraph: identity,
         onRpc: async (request) => {
           if (request.metadata) metadata.push(request.metadata);
-          return { id: request.id, ok: true, result: request.kind === 'agent' ? request.payload.prompt : null };
+          return { id: request.id, ok: true, result: request.kind === 'agent' ? (request.payload as AgentCallPayload).prompt : null };
         },
       });
       expect(outcome).toMatchObject({ ok: true, result: { p: ['a', 'b'], q: ['s2:s1:1', 's2:s1:2'] } });

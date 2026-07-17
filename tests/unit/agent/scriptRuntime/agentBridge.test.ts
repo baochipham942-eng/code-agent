@@ -172,8 +172,8 @@ describe('runAgentCall token budget', () => {
 describe('runAgentCall 进度事件 enrich（P3a 进度树）', () => {
   type EmittedEvent = { type: string; data?: Record<string, unknown> };
   const emittedOfType = (ctx: ScriptRunContext, type: string): EmittedEvent | undefined =>
-    (ctx.emit as ReturnType<typeof vi.fn>).mock.calls
-      .map(([e]: [EmittedEvent]) => e)
+    vi.mocked(ctx.emit).mock.calls
+      .map(([e]) => e as unknown as EmittedEvent)
       .find((e) => e.type === type);
 
   it('agent:start 携带 phase 与 promptPreview（供进度树分组 + 显示在做什么）', async () => {
@@ -283,9 +283,11 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
     ctx.writeGuard.inFlight = 1; // 模拟已有一个写 agent 在跑
     executeMock.mockResolvedValue({ success: true, output: 'ok' });
     await runAgentCall({ prompt: 'p', options: { tools: 'edit' } }, ctx);
-    const warned = (ctx.emit as ReturnType<typeof vi.fn>).mock.calls.some(
-      ([e]: [{ type: string; data?: { message?: string } }]) =>
-        e.type === 'run:log' && /多个写 agent|串行执行|互相覆盖/.test(e.data?.message ?? ''),
+    const warned = vi.mocked(ctx.emit).mock.calls.some(
+      ([e]) => {
+        const event = e as unknown as { type: string; data?: { message?: string } };
+        return event.type === 'run:log' && /多个写 agent|串行执行|互相覆盖/.test(event.data?.message ?? '');
+      },
     );
     expect(warned).toBe(false);
     expect(ctx.writeGuard.warned).toBe(false);
@@ -343,8 +345,8 @@ describe('runAgentCall 工具分档 + 并行写护栏', () => {
 describe('runAgentCall resumable 缓存（P4-C）', () => {
   type Rec = { callIndex: number; contentHash: string; result: unknown; tokensUsed: number };
   const eventOfType = (ctx: ScriptRunContext, type: string) =>
-    (ctx.emit as ReturnType<typeof vi.fn>).mock.calls
-      .map(([e]: [{ type: string; data?: Record<string, unknown> }]) => e)
+    vi.mocked(ctx.emit).mock.calls
+      .map(([e]) => e as unknown as { type: string; data?: Record<string, unknown> })
       .find((e) => e.type === type);
 
   it('records a successful live call via recordCall (callIndex + contentHash + tokens)', async () => {

@@ -34,7 +34,7 @@ describe('PlanApprovalGate run scope', () => {
     const agentA = createScopedSwarmAgentId(SCOPE_A, 'agent_reviewer_0');
     const agentB = createScopedSwarmAgentId(SCOPE_B, 'agent_reviewer_0');
     const events: SwarmEvent[] = [];
-    getEventBus().subscribe<SwarmEvent>('swarm', (event) => events.push(event.data));
+    getEventBus().subscribe<SwarmEvent>('swarm', (event) => { events.push(event.data); });
 
     const pendingA = gate.submitForApproval({
       scope: SCOPE_A,

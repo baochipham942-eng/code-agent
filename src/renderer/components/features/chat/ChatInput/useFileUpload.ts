@@ -16,6 +16,7 @@ import { useUIStore } from '../../../../stores/uiStore';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import { buildArchiveManifest, buildPresentationSummary } from './attachmentSummaries';
+import { useI18n } from '../../../../hooks/useI18n';
 
 const logger = createLogger('useFileUpload');
 
@@ -39,6 +40,7 @@ function readFileAsDataUrl(file: File): Promise<string | null> {
  * 处理单个文件和文件夹的上传逻辑
  */
 export function useFileUpload() {
+  const { t } = useI18n();
   const showToast = useUIStore((state) => state.showToast);
 
   // 处理单个文件
@@ -67,7 +69,7 @@ export function useFileUpload() {
     // 非 PDF 文件超限时 toast 提示
     if (file.size > MAX_FILE_SIZE) {
       logger.warn('File is too large (max 10MB)', { fileName: file.name, size: file.size });
-      showToast('warning', `文件 "${file.name}" 太大（${formatFileSize(file.size)}），最大支持 10MB`);
+      showToast('warning', t.chatInput.uploadFileTooLarge.replace('{name}', file.name).replace('{size}', formatFileSize(file.size)));
       return null;
     }
 
@@ -91,7 +93,7 @@ export function useFileUpload() {
       } catch (e) {
         logger.warn('Docx extraction failed', { error: e });
       }
-      showToast('error', `文件 "${file.name}" 处理失败：无法解析 Word 文档。请确认文件未损坏后重试`);
+      showToast('error', t.chatInput.uploadDocxFailed.replace('{name}', file.name));
       return null;
     }
 
@@ -114,14 +116,14 @@ export function useFileUpload() {
         };
       }
       logger.warn('Excel extraction failed, falling back to binary warning');
-      showToast('error', `文件 "${file.name}" 处理失败：无法解析 Excel 文件。请确认文件未损坏后重试`);
+      showToast('error', t.chatInput.uploadXlsxFailed.replace('{name}', file.name));
       return null;
     }
 
     if (category === 'presentation') {
       const data = await readFileAsDataUrl(file);
       if (!data) {
-        showToast('error', `文件 "${file.name}" 读取失败：无法读取演示文稿内容。请检查文件是否损坏或重新选择`);
+        showToast('error', t.chatInput.uploadPptFailed.replace('{name}', file.name));
         return null;
       }
 
@@ -138,7 +140,7 @@ export function useFileUpload() {
     if (category === 'archive') {
       const data = await readFileAsDataUrl(file);
       if (!data) {
-        showToast('error', `文件 "${file.name}" 读取失败：无法读取压缩包内容。请检查文件是否损坏或重新选择`);
+        showToast('error', t.chatInput.uploadArchiveFailed.replace('{name}', file.name));
         return null;
       }
 
@@ -152,7 +154,7 @@ export function useFileUpload() {
 
     if (category === 'document') {
       logger.warn('Unsupported Office document type', { fileName: file.name, mimeType: file.type });
-      showToast('warning', `文件 "${file.name}" 格式暂不支持。请转换为 DOCX 或 PDF 后重试`);
+      showToast('warning', t.chatInput.uploadUnsupported.replace('{name}', file.name));
       return null;
     }
 
@@ -167,7 +169,7 @@ export function useFileUpload() {
           });
         };
         reader.onerror = () => {
-          showToast('error', `文件 "${file.name}" 读取失败：无法读取图片内容。请检查文件是否损坏或重新选择`);
+          showToast('error', t.chatInput.uploadImageFailed.replace('{name}', file.name));
           resolve(null);
         };
         reader.readAsDataURL(file);
@@ -186,8 +188,8 @@ export function useFileUpload() {
           });
         };
         reader.onerror = () => {
-          const kind = category === 'audio' ? '音频' : '视频';
-          showToast('error', `文件 "${file.name}" 读取失败：无法读取${kind}内容。请检查文件是否损坏或重新选择`);
+          const kind = category === 'audio' ? t.chatInput.mediaKindAudio : t.chatInput.mediaKindVideo;
+          showToast('error', t.chatInput.uploadMediaFailed.replace('{name}', file.name).replace('{kind}', kind));
           resolve(null);
         };
         reader.readAsDataURL(file);
@@ -204,7 +206,7 @@ export function useFileUpload() {
         });
       };
       reader.onerror = () => {
-        showToast('error', `文件 "${file.name}" 读取失败：无法读取文本文件内容。请检查文件是否损坏或重新选择`);
+        showToast('error', t.chatInput.uploadTextFailed.replace('{name}', file.name));
         resolve(null);
       };
       reader.readAsText(file);
@@ -218,8 +220,8 @@ export function useFileUpload() {
   ): Promise<MessageAttachment | null> => {
     const files = await readDirectoryEntry(dirEntry, folderName);
     if (files.length === 0) {
-      logger.warn('文件夹中没有可处理的文件', { folderName });
-      showToast('warning', `文件夹 "${folderName}" 中没有可处理的文件。请选择包含可读文件的文件夹`);
+      logger.warn('no processable files in folder', { folderName });
+      showToast('warning', t.chatInput.uploadEmptyFolder.replace('{name}', folderName));
       return null;
     }
 
@@ -258,12 +260,12 @@ export function useFileUpload() {
         const content = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target?.result as string);
-          reader.onerror = () => reject(new Error('读取失败'));
+          reader.onerror = () => reject(new Error('read failed'));
           reader.readAsText(file);
         });
         fileContents.push({ path: relativePath, content, size: file.size });
       } catch {
-        logger.warn('无法读取文件', { path: relativePath });
+        logger.warn('failed to read file', { path: relativePath });
       }
     }
 
@@ -273,7 +275,7 @@ export function useFileUpload() {
       .slice(0, 5)
       .map(([ext, count]) => `${ext}(${count})`)
       .join(', ');
-    const summary = `${files.length} 个文件${files.length > MAX_FOLDER_FILES ? ` (仅处理前 ${MAX_FOLDER_FILES} 个)` : ''}: ${typeStats}`;
+    const summary = `${t.chatInput.folderSummaryCount.replace('{count}', String(files.length))}${files.length > MAX_FOLDER_FILES ? t.chatInput.folderSummaryTruncated.replace('{max}', String(MAX_FOLDER_FILES)) : ''}: ${typeStats}`;
 
     return {
       id, type: 'file', category: 'folder', name: folderName, size: totalSize,

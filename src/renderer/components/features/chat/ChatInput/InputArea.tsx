@@ -5,6 +5,7 @@
 import React, { useRef, useLayoutEffect, useImperativeHandle, forwardRef } from 'react';
 import { UI } from '@shared/constants';
 import { useModeStore } from '../../../../stores/modeStore';
+import { useI18n } from '../../../../hooks/useI18n';
 
 // 图片 MIME 类型
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -262,17 +263,18 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
     ].join(',');
 
     const interactionMode = useModeStore((s) => s.interactionMode);
+    const { t } = useI18n();
 
     // 根据交互模式决定 placeholder 文案和颜色；续轮统一精炼
     const placeholderConfig = {
-      code: { text: '描述你想解决的问题…', colorClass: 'placeholder-zinc-500' },
-      plan: { text: '描述你的需求，我只出方案不动代码…', colorClass: 'placeholder-amber-500/50' },
-      ask: { text: '问我任何问题…', colorClass: 'placeholder-emerald-500/50' },
+      code: { text: t.chatInput.placeholderCode, colorClass: 'placeholder-zinc-500' },
+      plan: { text: t.chatInput.placeholderPlan, colorClass: 'placeholder-amber-500/50' },
+      ask: { text: t.chatInput.placeholderAsk, colorClass: 'placeholder-emerald-500/50' },
     };
     const baseConfig = placeholderConfig[interactionMode] ?? placeholderConfig.code;
     // 续轮用中性 placeholder：之前的 "@ 标记 agent" 提示在普通对话里造成困惑
-    // （爸反馈："出现 @agent 的提示不合适"），只有 swarm session 才适合提示
-    const placeholderText = hasMessages ? '继续描述…' : baseConfig.text;
+    // （产品负责人反馈："出现 @agent 的提示不合适"），只有 swarm session 才适合提示
+    const placeholderText = hasMessages ? t.chatInput.placeholderContinue : baseConfig.text;
     const placeholderColor = baseConfig.colorClass;
 
     return (
@@ -292,7 +294,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           ref={textareaRef}
           data-chat-input
           data-testid="chat-composer-textarea"
-          aria-label="发送消息"
+          aria-label={t.chatInput.sendAria}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
@@ -305,7 +307,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           onPaste={handlePaste}
           onFocus={() => onFocusChange(true)}
           onBlur={() => onFocusChange(false)}
-          placeholder={placeholder ?? (hasAttachments ? '添加描述…' : placeholderText)}
+          placeholder={placeholder ?? (hasAttachments ? t.chatInput.placeholderWithAttachments : placeholderText)}
           disabled={disabled}
           rows={1}
           className={`chat-composer-textarea w-full bg-transparent px-4 pt-4 pb-10 text-sm text-zinc-200 ${placeholderColor} resize-none focus:outline-hidden focus-visible:outline-none focus-visible:ring-0 disabled:opacity-50 max-h-[200px] leading-relaxed`}

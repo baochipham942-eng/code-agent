@@ -195,7 +195,7 @@ describe('ToolStepGroup 三态折叠预览（ADR-043 T2）', () => {
     }
   });
 
-  it('⑧b 全展开态不截断：同样的 20 行输出，早期行仍完整可见', () => {
+  it('⑧b 全展开态也走 LiveToolOutput 全局尾截断（遗留刀1）：早期行不见，末尾行仍在', () => {
     const stdoutLines = Array.from({ length: 20 }, (_, i) => `line${i + 1}`);
     render(
       <ToolStepGroup
@@ -205,8 +205,14 @@ describe('ToolStepGroup 三态折叠预览（ADR-043 T2）', () => {
       />,
     );
     expect(document.body.innerHTML).toContain(EXPANDED_MARKER);
-    expect(document.body.innerHTML).toMatch(/line1(?!\d)/);
-    expect(document.body.innerHTML).toMatch(/line20\b/);
+    // 尾 5 行（line16~line20）应该在
+    for (let i = 16; i <= 20; i += 1) {
+      expect(document.body.innerHTML).toMatch(new RegExp(`line${i}\\b`));
+    }
+    // 早期行（line1~line15）应该被截掉，不再出现在 DOM 里
+    for (let i = 1; i <= 15; i += 1) {
+      expect(document.body.innerHTML).not.toMatch(new RegExp(`line${i}(?!\\d)`));
+    }
   });
 
   it('⑨ 中间档运行中途出现需介入失败（rerender）→ 立刻切到全展开，不停留在中间档', () => {

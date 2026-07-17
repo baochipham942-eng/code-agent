@@ -45,7 +45,8 @@ export function computeBashPreviewLines(
   const allLines = cleaned.split('\n').map(foldProgressFrame);
 
   if (isPending) {
-    return { displayLines: allLines.slice(-BASH_PREVIEW_LINES_PENDING), omittedCount: 0 };
+    const displayLines = allLines.slice(-BASH_PREVIEW_LINES_PENDING);
+    return { displayLines, omittedCount: Math.max(0, allLines.length - displayLines.length) };
   }
 
   if (allLines.length <= BASH_PREVIEW_LINES_COMPLETED) {

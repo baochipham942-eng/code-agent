@@ -145,8 +145,9 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const ariaExpanded = tier === 'expanded';
 
   // 中间档专用：实时输出截尾 5 行（ADR-043 决策 4，复用 bashOutputPreview 里
-  // isPending=true 的现成尾部截断，不新造截断逻辑）。全展开态用原始 runningToolCall，
-  // 不受影响——那是用户主动要看全量。
+  // isPending=true 的现成尾部截断，不新造截断逻辑）。全展开态用原始 runningToolCall——
+  // 这里不重复截断，但 LiveToolOutput 自身现在也做同一套尾截断（遗留刀1），
+  // 所以两层截断在全展开态下是等效的，不是"不受影响/无上限"。
   const truncatedRunningToolCall = useMemo<ToolCall | null>(() => {
     if (tier !== 'truncated' || !runningToolCall) return null;
     return { ...runningToolCall, liveOutput: tailTruncateLiveOutput(runningToolCall.liveOutput) };

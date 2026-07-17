@@ -36,10 +36,16 @@ describe('computeBashPreviewLines — completed long output', () => {
 });
 
 describe('computeBashPreviewLines — pending', () => {
-  it('shows only the last few lines for a streaming feel', () => {
+  it('shows only the last few lines for a streaming feel and reports the omitted count', () => {
     const { displayLines, omittedCount } = computeBashPreviewLines(lines(30), true);
-    expect(omittedCount).toBe(0);
+    expect(omittedCount).toBe(25);
     expect(displayLines).toEqual(['line26', 'line27', 'line28', 'line29', 'line30']);
+  });
+
+  it('reports zero omitted when within the pending budget', () => {
+    const { displayLines, omittedCount } = computeBashPreviewLines(lines(3), true);
+    expect(omittedCount).toBe(0);
+    expect(displayLines).toEqual(['line1', 'line2', 'line3']);
   });
 });
 

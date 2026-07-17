@@ -270,7 +270,7 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({
             <button
               type="button"
               onClick={onStop}
-              className="px-3 py-1.5 text-xs bg-zinc-600 text-zinc-400 rounded-md hover:bg-zinc-600 transition-colors"
+              className="px-3 py-1.5 text-xs bg-zinc-600 text-zinc-400 rounded-md hover:bg-zinc-500 transition-colors"
             >
               停止研究
             </button>

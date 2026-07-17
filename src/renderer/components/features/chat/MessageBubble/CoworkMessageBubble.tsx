@@ -68,7 +68,7 @@ export const CoworkMessageBubble: React.FC<CoworkMessageBubbleProps> = ({ messag
           {/* Summary bar - always visible */}
           <button
             onClick={() => setShowToolDetails(!showToolDetails)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700/20 hover:bg-zinc-800 transition-colors group"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700/20 hover:bg-zinc-700 transition-colors group"
           >
             {/* Expand/collapse icon */}
             {showToolDetails ? (

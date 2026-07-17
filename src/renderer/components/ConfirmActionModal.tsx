@@ -7,6 +7,7 @@ import { AlertTriangle, Info, AlertCircle } from 'lucide-react';
 import type { ConfirmActionRequest } from '@shared/ipc';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Modal, ModalFooter } from './primitives/Modal';
+import { BUTTON_PRIMARY_CLASS, BUTTON_DANGER_CLASS } from './primitives/Button';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 
@@ -22,7 +23,7 @@ const typeConfig = {
     icon: <AlertTriangle className="w-6 h-6" />,
     iconBg: 'bg-red-500/10',
     iconColor: 'text-red-400',
-    confirmBg: 'bg-red-600 hover:bg-red-500',
+    confirmBg: BUTTON_DANGER_CLASS,
     headerBg: 'bg-red-500/10',
   },
   warning: {
@@ -36,7 +37,7 @@ const typeConfig = {
     icon: <Info className="w-6 h-6" />,
     iconBg: 'bg-blue-500/10',
     iconColor: 'text-blue-400',
-    confirmBg: 'bg-blue-600 hover:bg-blue-500',
+    confirmBg: BUTTON_PRIMARY_CLASS,
     headerBg: 'bg-blue-500/10',
   },
 };

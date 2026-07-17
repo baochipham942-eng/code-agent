@@ -421,14 +421,12 @@ export function RevisionPanel({
   return (
     <div className="space-y-2 rounded-lg border border-white/[0.08] bg-black/20 p-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
+        <div
+          className="flex min-w-0 items-center gap-2"
+          title={selected.revision?.sha256 || undefined}
+        >
           <GitCompare className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
           <div className="truncate text-xs font-medium text-zinc-200">{p.versions}</div>
-          {selected.revision?.sha256 && (
-            <div className="truncate font-mono text-[10px] text-zinc-600">
-              {selected.revision.sha256.slice(0, 12)}
-            </div>
-          )}
         </div>
         {selected.file?.path && (
           <button

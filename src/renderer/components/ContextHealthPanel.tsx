@@ -82,6 +82,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
   const [isExpanded, setIsExpanded] = useState(!collapsed);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [showBySource, setShowBySource] = useState(true);
+  const [showDroppedBlocks, setShowDroppedBlocks] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     skills: true,
     mcp: true,
@@ -276,18 +277,30 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           {(health.droppedPromptBlocks?.length ?? 0) > 0 && (
             <div className="flex items-start gap-2 p-2 bg-orange-500/20 rounded-md">
               <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-              <div className="text-xs text-orange-300 space-y-1">
-                <div>{ch.droppedBlocks}</div>
-                <div className="flex flex-wrap gap-1">
-                  {health.droppedPromptBlocks?.map((block) => (
-                    <span
-                      key={block}
-                      className="px-1.5 py-0.5 bg-orange-500/20 rounded font-mono text-orange-200"
-                    >
-                      {block}
-                    </span>
-                  ))}
+              <div className="min-w-0 flex-1 text-xs text-orange-300 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span>{ch.droppedBlocks} {health.droppedPromptBlocks?.length}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDroppedBlocks((value) => !value)}
+                    aria-expanded={showDroppedBlocks}
+                    className="shrink-0 text-orange-300/70 hover:text-orange-200 transition-colors"
+                  >
+                    {showDroppedBlocks ? t.systemError.hideDetails : t.systemError.viewDetails}
+                  </button>
                 </div>
+                {showDroppedBlocks && (
+                  <div className="flex flex-wrap gap-1">
+                    {health.droppedPromptBlocks?.map((block) => (
+                      <span
+                        key={block}
+                        className="px-1.5 py-0.5 bg-orange-500/20 rounded font-mono text-orange-200"
+                      >
+                        {block}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

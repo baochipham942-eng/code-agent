@@ -3,6 +3,7 @@ import type { PermissionRequest, UserQuestionRequest } from '../../../src/shared
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import {
   hasNeedsInputForSession,
+  hasDurableWaitingForSession,
   hasPendingPermissionForSession,
   hasPendingUserQuestionForSession,
   hasQueuedPermissionForSession,
@@ -150,6 +151,41 @@ describe('sessionNeedsInput', () => {
     expect(
       hasNeedsInputForSession('session-target', {
         pendingUserQuestionsBySessionId: pending,
+      }),
+    ).toBe(false);
+  });
+
+  it('detects durable raw waiting for the owning session and clears when the source disappears', () => {
+    const waiting = new Set(['session-target']);
+
+    expect(hasDurableWaitingForSession('session-target', waiting)).toBe(true);
+    expect(hasDurableWaitingForSession('session-other', waiting)).toBe(false);
+
+    waiting.delete('session-target');
+    expect(hasDurableWaitingForSession('session-target', waiting)).toBe(false);
+  });
+
+  it('ORs durable raw waiting as an isolated fifth source', () => {
+    expect(
+      hasNeedsInputForSession('session-target', {
+        permissionState: {
+          pendingPermissionRequest: permission('perm-other'),
+          pendingPermissionSessionId: 'session-other',
+          queuedPermissionRequests: {
+            'session-other': [permission('perm-queued-other')],
+          },
+        },
+        backgroundTasks: [task({ id: 'task-other', sessionId: 'session-other', status: 'waiting_input' })],
+        pendingUserQuestionsBySessionId: new Map([
+          ['session-other', [question('question-other', 'session-other')]],
+        ]),
+        durableWaitingInputSessionIds: new Set(['session-target']),
+      }),
+    ).toBe(true);
+
+    expect(
+      hasNeedsInputForSession('session-target', {
+        durableWaitingInputSessionIds: new Set(['session-other']),
       }),
     ).toBe(false);
   });

@@ -1,6 +1,8 @@
  
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
+import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
+import { resolveDurableRunRollout } from '../../../src/host/app/durableRunRollout';
 import type { SessionStatus } from '../../../src/host/task';
 import { getSessionManager } from '../../../src/host/services';
 import { getDatabase } from '../../../src/host/services/core/databaseService';
@@ -41,6 +43,38 @@ function createServiceWithConfig(taskManager: unknown, configService: unknown, c
   );
 }
 
+function createServiceWithDurableReadService(
+  taskManager: unknown,
+  durableRunReadService: DurableRunReadService,
+  currentSessionId = 'session-1',
+): AgentAppServiceImpl {
+  return new AgentAppServiceImpl(
+    () => taskManager as never,
+    () => null,
+    () => currentSessionId,
+    vi.fn(),
+    undefined,
+    durableRunReadService,
+  );
+}
+
+function durableEnvelope(status: 'waiting' | 'running' | 'completed', sessionId = 'session-1') {
+  return {
+    schemaVersion: 1 as const,
+    runId: `run-${status}`,
+    sessionId,
+    engine: { kind: 'native' as const },
+    status,
+    attempt: 1,
+    cursor: { nextEventSeq: 2, checkpointSeq: 1 },
+    ...(status === 'completed'
+      ? { terminal: { status, eventSeq: 1, at: 2 } }
+      : {}),
+    createdAt: 1,
+    updatedAt: 2,
+  };
+}
+
 describe('AgentAppService lifecycle routing', () => {
   let orchestrator: {
     cancel: ReturnType<typeof vi.fn>;
@@ -49,6 +83,7 @@ describe('AgentAppService lifecycle routing', () => {
   };
 	  let sessionManager: {
 	    getSession: ReturnType<typeof vi.fn>;
+	    listSessions: ReturnType<typeof vi.fn>;
 	    createSession: ReturnType<typeof vi.fn>;
 	    setCurrentSession: ReturnType<typeof vi.fn>;
 	    updateSession: ReturnType<typeof vi.fn>;
@@ -81,6 +116,7 @@ describe('AgentAppService lifecycle routing', () => {
     };
 	    sessionManager = {
 	      getSession: vi.fn().mockResolvedValue({ id: 'session-1', workingDirectory: '/old/project' }),
+	      listSessions: vi.fn().mockResolvedValue([]),
 	      createSession: vi.fn(async (options) => ({
 	        id: 'created-session',
 	        title: options.title,
@@ -151,6 +187,109 @@ describe('AgentAppService lifecycle routing', () => {
       workingDirectory: '/current/project',
     }));
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/current/project');
+  });
+
+  it('annotates listed durable waiting sessions without changing the running projection', async () => {
+    sessionManager.listSessions.mockResolvedValue([
+      {
+        id: 'session-waiting',
+        title: 'Waiting',
+        status: 'idle',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+        createdAt: 1,
+        updatedAt: 10,
+      },
+      {
+        id: 'session-running',
+        title: 'Running',
+        status: 'running',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+        createdAt: 1,
+        updatedAt: 11,
+      },
+      {
+        id: 'session-terminal',
+        title: 'Terminal',
+        status: 'running',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+        createdAt: 1,
+        updatedAt: 12,
+      },
+    ]);
+    const reader = {
+      getLatestBySession: vi.fn(async (sessionId: string) => ({
+        'session-waiting': durableEnvelope('waiting', 'session-waiting'),
+        'session-running': durableEnvelope('running', 'session-running'),
+        'session-terminal': durableEnvelope('completed', 'session-terminal'),
+      })[sessionId] ?? null),
+    };
+    const service = createServiceWithDurableReadService(
+      taskManager,
+      new DurableRunReadService(
+        resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }),
+        reader,
+      ),
+    );
+
+    const sessions = await service.listSessions();
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        id: 'session-waiting',
+        status: 'running',
+        durableWaitingInput: true,
+      }),
+      expect.objectContaining({
+        id: 'session-running',
+        status: 'running',
+      }),
+      expect.objectContaining({
+        id: 'session-terminal',
+        status: 'idle',
+      }),
+    ]);
+    expect(sessions[1]).not.toHaveProperty('durableWaitingInput');
+    expect(sessions[2]).not.toHaveProperty('durableWaitingInput');
+  });
+
+  it('leaves listed sessions unchanged when durable rollout is not preferred or the durable row is missing', async () => {
+    sessionManager.listSessions.mockResolvedValue([
+      {
+        id: 'session-legacy',
+        title: 'Legacy',
+        status: 'running',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+        createdAt: 1,
+        updatedAt: 10,
+      },
+    ]);
+    const legacyReader = { getLatestBySession: vi.fn(async () => durableEnvelope('waiting', 'session-legacy')) };
+    const legacyService = createServiceWithDurableReadService(
+      taskManager,
+      new DurableRunReadService(
+        resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'legacy' }),
+        legacyReader,
+      ),
+    );
+
+    await expect(legacyService.listSessions()).resolves.toEqual([
+      expect.not.objectContaining({ durableWaitingInput: true }),
+    ]);
+    expect(legacyReader.getLatestBySession).not.toHaveBeenCalled();
+
+    const missingReader = { getLatestBySession: vi.fn(async () => null) };
+    const missingService = createServiceWithDurableReadService(
+      taskManager,
+      new DurableRunReadService(
+        resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }),
+        missingReader,
+      ),
+    );
+
+    await expect(missingService.listSessions()).resolves.toEqual([
+      expect.not.objectContaining({ durableWaitingInput: true }),
+    ]);
+    expect(missingReader.getLatestBySession).toHaveBeenCalledWith('session-legacy');
   });
 
   it('routes chat send through TaskManager with run options and workbench metadata', async () => {

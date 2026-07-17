@@ -110,6 +110,11 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [durableBackgroundTasks, workflowRuns],
   );
 
+  const durableWaitingInputSessionIds = useMemo(
+    () => new Set(sessions.filter((session) => session.durableWaitingInput === true).map((session) => session.id)),
+    [sessions],
+  );
+
   const hasNeedsInputForSession = useCallback(
     (sessionId: string) =>
       deriveHasNeedsInputForSession(sessionId, {
@@ -120,8 +125,10 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
         },
         backgroundTasks: durableBackgroundTasks,
         pendingUserQuestionsBySessionId,
+        durableWaitingInputSessionIds,
       }),
     [
+      durableWaitingInputSessionIds,
       durableBackgroundTasks,
       pendingPermissionRequest,
       pendingPermissionSessionId,

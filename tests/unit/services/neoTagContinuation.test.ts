@@ -14,7 +14,10 @@ import {
   NeoWorkCardService,
   NeoWorkCardServiceError,
 } from '../../../src/host/services/project/neoWorkCardService';
-import { continueAndRunNeoWorkCard } from '../../../src/host/services/project/neoTagRuntimeService';
+import {
+  continueAndRunNeoWorkCard,
+  type NeoTagTaskManager,
+} from '../../../src/host/services/project/neoTagRuntimeService';
 
 const sessionsById = new Map<string, { workingDirectory?: string; messages: Message[] }>();
 
@@ -69,7 +72,7 @@ function draft(): CreateNeoWorkCardDraftInput {
 
 function stubTaskManager() {
   return {
-    startTask: vi.fn(async () => {}),
+    startTask: vi.fn<NeoTagTaskManager['startTask']>(async () => {}),
     getSessionState: vi.fn(() => ({ status: 'idle' })),
   };
 }

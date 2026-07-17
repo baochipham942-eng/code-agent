@@ -4,6 +4,7 @@
  */
 import type { ToolContext, ToolExecutionResult } from '../types';
 import type { BrowserActionEngine } from '../../../shared/contract/desktop';
+import type { ConversationExecutionIntent } from '../../../shared/contract/conversationEnvelope';
 import { browserRelayService } from '../../services/infra/browserRelayService';
 import { executeRelayBrowserAction } from '../../services/infra/browser/relayActionFacade';
 import { resolveBrowserActionEngine } from './browserEngineRouter';
@@ -21,7 +22,7 @@ export async function maybeDispatchRelayBrowserAction(args: {
   action: string;
   params: Record<string, unknown>;
   url?: string;
-  executionIntent?: string | null;
+  executionIntent?: ConversationExecutionIntent | null;
   context?: ToolContext;
 }): Promise<ToolExecutionResult | null> {
   const requestedEngine = (
@@ -33,7 +34,8 @@ export async function maybeDispatchRelayBrowserAction(args: {
     targetUrl: args.url,
     relay: browserRelayService.getState(),
     managedAvailable: true,
-    intent: args.executionIntent === 'browser_login_reuse' ? 'login_reuse' : undefined,
+    // 本轮绑定 Desktop Browser workbench = 复用用户自己浏览器的登录态
+    intent: args.executionIntent?.browserSessionMode === 'desktop' ? 'login_reuse' : undefined,
   });
 
   if (

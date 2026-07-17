@@ -42,7 +42,8 @@ describe('CLISessionManager.addMessageToSession', () => {
       content: '最新内容',
       timestamp: 456,
       thinking: '最新思考',
-      metadata: { source: 'web-store' },
+      // source 是 Message 顶层字段而非 metadata 的子字段（MessageMetadata 无 source）
+      source: 'automation',
     };
     const updateMessage = vi.fn();
     Object.assign(manager as unknown as Record<string, unknown>, {

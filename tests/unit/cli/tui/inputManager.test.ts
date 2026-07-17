@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import { InputManager } from '../../../../src/cli/tui/inputManager';
+import type { InputSubmitHandler, InputCancelHandler } from '../../../../src/cli/tui/inputManager';
 import type { TUIScreen } from '../../../../src/cli/tui/screen';
 
 type FakeStdin = EventEmitter & {
@@ -50,16 +51,16 @@ describe('InputManager', () => {
   let stdin: FakeStdin;
   let screen: ReturnType<typeof createMockScreen>;
   let input: InputManager;
-  let onSubmit: ReturnType<typeof vi.fn>;
-  let onCancel: ReturnType<typeof vi.fn>;
+  let onSubmit: ReturnType<typeof vi.fn<InputSubmitHandler>>;
+  let onCancel: ReturnType<typeof vi.fn<InputCancelHandler>>;
 
   beforeEach(() => {
     originalStdin = process.stdin;
     stdin = installFakeStdin(true);
     screen = createMockScreen();
     input = new InputManager(screen);
-    onSubmit = vi.fn();
-    onCancel = vi.fn();
+    onSubmit = vi.fn<InputSubmitHandler>();
+    onCancel = vi.fn<InputCancelHandler>();
   });
 
   afterEach(() => {

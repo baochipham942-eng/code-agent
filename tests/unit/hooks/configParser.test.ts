@@ -268,6 +268,8 @@ describe('Hook Config Parser', () => {
         matcher: /bash/,
         hooks: [],
         source: 'project',
+        parallel: false,
+        hookType: 'decision',
       };
 
       expect(hookMatchesTool(config, 'bash')).toBe(true);
@@ -280,6 +282,8 @@ describe('Hook Config Parser', () => {
         matcher: /bash|edit_file|write_file/,
         hooks: [],
         source: 'project',
+        parallel: false,
+        hookType: 'decision',
       };
 
       expect(hookMatchesTool(config, 'bash')).toBe(true);
@@ -293,6 +297,8 @@ describe('Hook Config Parser', () => {
         matcher: null,
         hooks: [],
         source: 'project',
+        parallel: false,
+        hookType: 'decision',
       };
 
       expect(hookMatchesTool(config, 'bash')).toBe(true);
@@ -306,6 +312,8 @@ describe('Hook Config Parser', () => {
         matcher: /.*_file/,
         hooks: [],
         source: 'project',
+        parallel: false,
+        hookType: 'decision',
       };
 
       expect(hookMatchesTool(config, 'edit_file')).toBe(true);

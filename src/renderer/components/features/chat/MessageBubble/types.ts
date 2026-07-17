@@ -2,25 +2,10 @@
 // MessageBubble Types
 // ============================================================================
 
-import type { Message, ToolCall, MessageAttachment, AttachmentCategory } from '@shared/contract';
+import type { ToolCall, MessageAttachment } from '@shared/contract';
 import type { SessionMediaContext } from '@shared/utils/sessionMediaAssets';
 
 // Props types
-export interface MessageBubbleProps {
-  message: Message;
-}
-
-export interface UserMessageProps {
-  message: Message;
-  onEdit?: (messageId: string, newContent: string) => void;
-}
-
-export interface AssistantMessageProps {
-  message: Message;
-  onRegenerate?: (messageId: string) => void;
-  onForkFromHere?: (messageId: string) => void;
-}
-
 export interface MessageContentProps {
   content: string;
   isUser?: boolean;

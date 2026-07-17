@@ -14,6 +14,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
@@ -268,6 +269,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   activeMatchIndex = 0,
   onRewindUserPrompt,
 }) => {
+  const { t } = useI18n();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerElementRef = useRef<HTMLElement | null>(null);
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
@@ -844,10 +846,10 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     if (!hasOlderMessages) return null;
     return (
       <div className="flex justify-center py-3 text-zinc-500 text-sm">
-        {isLoadingOlder ? '加载更早的消息…' : '↑ 滚动加载更多'}
+        {isLoadingOlder ? t.traceView.loadingOlder : t.traceView.scrollToLoadMore}
       </div>
     );
-  }, [hasOlderMessages, isLoadingOlder]);
+  }, [hasOlderMessages, isLoadingOlder, t]);
 
   // Footer: permission card (plan moved to PinnedTodoBar above the input)
   const Footer = useCallback(() => (
@@ -863,7 +865,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         ref={virtuosoRef}
         role="log"
         aria-live="polite"
-        aria-label="对话消息"
+        aria-label={t.traceView.conversationLog}
         className="h-full min-h-0 pt-3 pb-0 overflow-x-hidden"
         scrollerRef={handleScrollerRef}
         data={projection.turns}
@@ -893,7 +895,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         <button
           type="button"
           onClick={handleJumpToBottom}
-          aria-label="回到底部"
+          aria-label={t.traceView.jumpToBottom}
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center w-9 h-9 rounded-full bg-zinc-800/80 hover:bg-zinc-700/90 border border-zinc-600/50 text-zinc-200 shadow-lg backdrop-blur-sm transition-colors animate-fade-in"
         >
           <ArrowDown className="w-4 h-4" />

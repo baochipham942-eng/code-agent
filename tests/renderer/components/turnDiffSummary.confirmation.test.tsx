@@ -14,6 +14,10 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: { error: toastError },
 }));
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
 
 import { TurnDiffSummary } from '../../../src/renderer/components/features/chat/MessageBubble/TurnDiffSummary';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -57,7 +61,7 @@ describe('TurnDiffSummary undo confirmation', () => {
     invoke.mockResolvedValueOnce({ success: true, filesRestored: 1 });
     render(<TurnDiffSummary turn={turn} />);
 
-    const undo = await screen.findByRole('button', { name: 'Undo' });
+    const undo = await screen.findByRole('button', { name: '撤销' });
     await waitFor(() => expect(undo.getAttribute('disabled')).toBeNull());
     fireEvent.click(undo);
 
@@ -82,7 +86,7 @@ describe('TurnDiffSummary undo confirmation', () => {
     invoke.mockResolvedValueOnce({ success: false, filesRestored: 0, error: 'disk busy' });
     render(<TurnDiffSummary turn={turn} />);
 
-    const undo = await screen.findByRole('button', { name: 'Undo' });
+    const undo = await screen.findByRole('button', { name: '撤销' });
     await waitFor(() => expect(undo.getAttribute('disabled')).toBeNull());
     fireEvent.click(undo);
     fireEvent.click(screen.getByRole('button', { name: /撤销变更/ }));

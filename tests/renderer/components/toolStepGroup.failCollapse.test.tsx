@@ -7,6 +7,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import type { TraceNode } from '../../../src/shared/contract/trace';
 
+// renderToStaticMarkup 下 zustand 的 useSyncExternalStore 会走 server snapshot，直接 mock useI18n
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
+
 // ToolDetails 依赖 appStore 的两个 selector，mock 掉即可（同 toolDetailsHighlight.test.tsx）。
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector: (state: unknown) => unknown) =>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolCall } from '../../../src/shared/contract';
 import { getToolStatusLabel } from '../../../src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/statusLabels';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 function makeWriteCall(overrides: Partial<ToolCall> = {}): ToolCall {
   return {
@@ -27,7 +28,7 @@ describe('ToolCallDisplay status labels', () => {
         },
       }),
       'error',
-    );
+      zh,    );
 
     expect(label).toBe('已写入，验收失败');
   });
@@ -42,7 +43,7 @@ describe('ToolCallDisplay status labels', () => {
         },
       }),
       'error',
-    );
+      zh,    );
 
     expect(label).toBe('写入失败');
   });

@@ -75,8 +75,20 @@ describe('buildWorkbenchCapabilities', () => {
           toolCount: 12,
           resourceCount: 3,
         },
+        {
+          config: {
+            name: 'notion',
+            type: 'http-streamable',
+            enabled: true,
+          },
+          status: 'connected',
+          toolCount: 2,
+          resourceCount: 1,
+          authMode: 'oauth',
+          hasOAuthTokens: true,
+        },
       ],
-      selectedMcpServerIds: ['github', 'slack'],
+      selectedMcpServerIds: ['github', 'notion', 'slack'],
     });
 
     expect(capabilities.skills).toEqual([
@@ -148,6 +160,22 @@ describe('buildWorkbenchCapabilities', () => {
         toolCount: 12,
         resourceCount: 3,
         error: undefined,
+        authMode: undefined,
+        hasOAuthTokens: undefined,
+      },
+      {
+        kind: 'mcp',
+        id: 'notion',
+        label: 'notion',
+        selected: true,
+        status: 'connected',
+        enabled: true,
+        transport: 'http-streamable',
+        toolCount: 2,
+        resourceCount: 1,
+        error: undefined,
+        authMode: 'oauth',
+        hasOAuthTokens: true,
       },
       {
         kind: 'mcp',
@@ -160,6 +188,8 @@ describe('buildWorkbenchCapabilities', () => {
         toolCount: 0,
         resourceCount: 0,
         error: undefined,
+        authMode: undefined,
+        hasOAuthTokens: undefined,
       },
     ]);
   });

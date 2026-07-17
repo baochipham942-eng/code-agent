@@ -199,6 +199,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'reconnectServer',
     'refreshFromCloud',
     'setServerEnabled',
+    'signOutServer',
   ],
   [IPC_DOMAINS.MEMORY]: [
     'memoryAudit',

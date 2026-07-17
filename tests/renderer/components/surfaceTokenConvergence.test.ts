@@ -21,7 +21,7 @@ const RENDERER_DIR = path.resolve(__dirname, '../../../src/renderer');
 /** 本批清扫过的文件（相对 src/renderer）——门只管这些，不扫全域 */
 const SCOPED_FILES = [
   'components/features/chat/RouteTraceChip.tsx',
-  'components/features/chat/MessageBubble/AssistantMessage.tsx',
+  // AssistantMessage.tsx 原在此清单（#450 清扫过）——#452 判死整删，按防腐烂规则同步移除
   'components/features/chat/MessageBubble/DeliverableCardList.tsx',
   'components/features/chat/MessageBubble/messageContentParts.tsx',
   'components/features/chat/MessageBubble/MediaAssetControls.tsx',

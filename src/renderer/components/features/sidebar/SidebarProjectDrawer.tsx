@@ -23,6 +23,7 @@ import type {
   SidebarProjectSummary,
 } from '../../../utils/sidebarProjectSummary';
 import type { ProjectStatus } from '@shared/contract/project';
+import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Language, Translations } from '../../../i18n';
 import { localeForLanguage } from '../../../utils/i18nTime';
@@ -206,7 +207,7 @@ export const SidebarProjectDrawer: React.FC<SidebarProjectDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[9998] flex justify-end bg-black/45" role="dialog" aria-modal="true" aria-label={p.consoleAria.replace('{title}', title)}>
+    <div className="fixed inset-0 flex justify-end bg-black/45" style={{ zIndex: Z_LAYERS.drawer }} role="dialog" aria-modal="true" aria-label={p.consoleAria.replace('{title}', title)}>
       <button /* ds-allow:button: 抽屉背景遮罩点击关闭，绝对铺满透明按钮，primitive 变体会渲染可见样式 */
         type="button"
         aria-label={p.closeBackdropAria}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAppStore } from '@renderer/stores/appStore';
+import { Z_LAYERS } from '@renderer/styles/zLayers';
 
 export const VoicePasteIndicator: React.FC = () => {
   const voicePasteStatus = useAppStore((s) => s.voicePasteStatus);
@@ -7,7 +8,7 @@ export const VoicePasteIndicator: React.FC = () => {
   if (voicePasteStatus === 'idle') return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] flex items-center gap-2 rounded-full bg-gray-900/90 px-4 py-2 text-white shadow-lg backdrop-blur-sm">
+    <div className="fixed bottom-4 right-4 flex items-center gap-2 rounded-full bg-gray-900/90 px-4 py-2 text-white shadow-lg backdrop-blur-sm" style={{ zIndex: Z_LAYERS.voiceStatus }}>
       {voicePasteStatus === 'recording' && (
         <>
           <span className="relative flex h-3 w-3">

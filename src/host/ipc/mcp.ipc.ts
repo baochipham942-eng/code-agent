@@ -141,11 +141,25 @@ export function normalizeMcpSettingsServerConfig(input: unknown): MCPServerConfi
     );
     validateHttpUrl(serverUrl);
     const headers = optionalStringMap(config.headers, 'headers');
+    const auth = typeof config.auth === 'string' ? config.auth.trim() : undefined;
+    if (auth && (type !== 'http' || auth !== 'oauth')) {
+      throw new Error("auth must be 'oauth' for http MCP servers");
+    }
+    if (type === 'sse') {
+      const serverConfig = {
+        name,
+        type: 'sse' as const,
+        serverUrl,
+        enabled: false,
+      };
+      return headers ? { ...serverConfig, headers } : serverConfig;
+    }
     const serverConfig = {
       name,
-      type: type === 'sse' ? 'sse' as const : 'http-streamable' as const,
+      type: 'http-streamable' as const,
       serverUrl,
       enabled: false,
+      ...(auth === 'oauth' ? { auth: 'oauth' as const } : {}),
     };
     return headers ? { ...serverConfig, headers } : serverConfig;
   }

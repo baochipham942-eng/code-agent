@@ -14,6 +14,7 @@
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { ListChangedHandlers } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
@@ -34,7 +35,7 @@ import type {
   MCPServerState,
   InProcessMCPServerInterface,
 } from './types';
-import { isStdioConfig, isInProcessConfig, CUA_DRIVER_SERVER_NAME } from './types';
+import { isStdioConfig, isInProcessConfig, isHttpStreamableConfig, CUA_DRIVER_SERVER_NAME } from './types';
 import { buildCuaAgentCursorCapabilityForToolCall } from './cuaAgentCursor';
 import { CUA_READONLY_TOOLS, gateCuaToolCall } from './cuaSessionLock';
 import { gateCuaBudget } from './cuaTrajectoryBudget';
@@ -59,6 +60,7 @@ import { MCPToolRegistry } from './mcpToolRegistry';
 import { McpSdkTaskProtocol } from './mcpTaskProtocol';
 import type { McpTaskCapability, McpTaskProtocol } from './mcpDurableTask';
 import { registerElicitationHandler } from './mcpElicitation';
+import { createOAuthProviderForServer } from './mcpOAuthProvider';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
   DEFAULT_MCP_SERVERS as _DEFAULT_MCP_SERVERS,
@@ -88,6 +90,15 @@ export { isInProcessConfig } from './types';
 
 const logger = createLogger('MCPClient');
 const CUA_SEARCH_KEYWORDS = new Set(['computer', 'desktop', 'screen', 'cursor', 'cua', 'driver']);
+const OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX = 'oauth-authorization-required';
+
+function formatMcpConnectionError(error: unknown): string {
+  if (error instanceof UnauthorizedError) {
+    const message = error.message || 'authorization required';
+    return `${OAUTH_AUTHORIZATION_REQUIRED_ERROR_PREFIX}: ${message}`;
+  }
+  return error instanceof Error ? error.message : 'Unknown error';
+}
 
 export interface MCPToolCallOptions {
   timeoutMs?: number;
@@ -358,7 +369,7 @@ export class MCPClient extends EventEmitter {
         const state = this.serverStates.get(config.name);
         if (state) {
           state.status = 'error';
-          state.error = error instanceof Error ? error.message : 'Unknown error';
+          state.error = formatMcpConnectionError(error);
         }
       }
     };
@@ -411,8 +422,15 @@ export class MCPClient extends EventEmitter {
         // Prefer the native fetch path. If it hits a transient network failure,
         // rebuild once through the configured proxy instead of forcing every MCP
         // endpoint through a proxy that may not preserve streaming semantics.
+        const serverIdentity = isHttpStreamableConfig(config) && config.auth === 'oauth'
+          ? this.getServerIdentity(config.name)
+          : undefined;
+        const authProvider = isHttpStreamableConfig(config) && config.auth === 'oauth' && serverIdentity
+          ? createOAuthProviderForServer(config, serverIdentity)
+          : undefined;
         const { transport, connectTimeout } = createTransport(config, {
           useProxy: attemptNumber > 1,
+          ...(authProvider ? { authProvider } : {}),
         });
         const client = createMCPSDKClient(this.buildListChangedHandlers(config.name));
 
@@ -462,7 +480,7 @@ export class MCPClient extends EventEmitter {
 
       if (state) {
         state.status = 'error';
-        state.error = error instanceof Error ? error.message : 'Unknown error';
+        state.error = formatMcpConnectionError(error);
       }
       throw error;
     }

@@ -135,6 +135,8 @@ describe('mcpAddServerModule (native)', () => {
       expect(mcpAddServerModule.schema.inputSchema.required).toEqual(['name', 'type']);
       const typeProp = (mcpAddServerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>).type;
       expect(typeProp.enum).toEqual(['http-streamable', 'http', 'sse', 'stdio']);
+      const authProp = (mcpAddServerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>).auth;
+      expect(authProp.enum).toEqual(['oauth']);
     });
   });
 
@@ -223,6 +225,35 @@ describe('mcpAddServerModule (native)', () => {
       if (!result.ok) {
         expect(result.code).toBe('INVALID_ARGS');
         expect(result.error).toContain('Invalid URL format');
+      }
+    });
+
+    it('rejects invalid auth values and SSE oauth auth', async () => {
+      const client = makeMockClient();
+      getMCPClientMock.mockReturnValue(client);
+
+      const badHttp = await run({
+        name: 'foo',
+        type: 'http-streamable',
+        serverUrl: 'https://x.com/mcp',
+        auth: 'bearer',
+      });
+      expect(badHttp.ok).toBe(false);
+      if (!badHttp.ok) {
+        expect(badHttp.code).toBe('INVALID_ARGS');
+        expect(badHttp.error).toContain("auth must be 'oauth'");
+      }
+
+      const badSse = await run({
+        name: 'bar',
+        type: 'sse',
+        serverUrl: 'https://x.com/sse',
+        auth: 'oauth',
+      });
+      expect(badSse.ok).toBe(false);
+      if (!badSse.ok) {
+        expect(badSse.code).toBe('INVALID_ARGS');
+        expect(badSse.error).toContain("auth must be 'oauth'");
       }
     });
 
@@ -391,6 +422,31 @@ describe('mcpAddServerModule (native)', () => {
         type: 'http-streamable',
         serverUrl: 'https://mcp.example.com/mcp',
         headers: { Authorization: 'Bearer token' },
+        enabled: true,
+      }));
+    });
+
+    it('persists oauth auth on HTTP Streamable configs', async () => {
+      const client = makeMockClient({
+        getServerState: vi.fn()
+          .mockReturnValueOnce(undefined)
+          .mockReturnValueOnce({ status: 'connected', toolCount: 0 }),
+      });
+      getMCPClientMock.mockReturnValue(client);
+
+      const result = await run({
+        name: 'oauth_server',
+        type: 'http-streamable',
+        serverUrl: 'https://mcp.example.com/mcp',
+        auth: 'oauth',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(client.addServer).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'oauth_server',
+        type: 'http-streamable',
+        serverUrl: 'https://mcp.example.com/mcp',
+        auth: 'oauth',
         enabled: true,
       }));
     });

@@ -97,6 +97,37 @@ describe('mcp.ipc settings add helpers', () => {
     });
   });
 
+  it('passes through oauth auth for http server drafts', () => {
+    expect(normalizeMcpSettingsServerConfig({
+      name: 'remote_docs',
+      type: 'http',
+      url: 'https://example.com/mcp',
+      auth: 'oauth',
+    })).toEqual({
+      name: 'remote_docs',
+      type: 'http-streamable',
+      serverUrl: 'https://example.com/mcp',
+      auth: 'oauth',
+      enabled: false,
+    });
+  });
+
+  it('rejects invalid auth values for settings MCP drafts', () => {
+    expect(() => normalizeMcpSettingsServerConfig({
+      name: 'remote_docs',
+      type: 'http',
+      url: 'https://example.com/mcp',
+      auth: 'bearer',
+    })).toThrow("auth must be 'oauth'");
+
+    expect(() => normalizeMcpSettingsServerConfig({
+      name: 'legacy_sse',
+      type: 'sse',
+      url: 'https://example.com/sse',
+      auth: 'oauth',
+    })).toThrow("auth must be 'oauth'");
+  });
+
   it('rejects blocked stdio commands and non-http urls', () => {
     expect(() => normalizeMcpSettingsServerConfig({
       name: 'bad_cmd',

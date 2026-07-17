@@ -8,8 +8,10 @@ import type {
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { getSecureStorage, type SecureStorageService } from '../services/core/secureStorage';
+import type { MCPHttpStreamableServerConfig } from './types';
 
 const PRODUCT_CLIENT_NAME = 'Agent Neo';
+const OAUTH_COORDINATOR_NOT_WIRED_MESSAGE = 'MCP OAuth coordinator not wired yet';
 
 type McpOAuthStorageKind = 'tokens' | 'client-info' | 'code-verifier' | 'discovery';
 type McpOAuthStorageKey = `mcp-oauth:${string}:${McpOAuthStorageKind}`;
@@ -137,4 +139,23 @@ export class McpOAuthProvider implements OAuthClientProvider {
   private writeJson(kind: McpOAuthStorageKind, value: unknown): void {
     this.secureStorage.set(this.keyFor(kind), JSON.stringify(value));
   }
+}
+
+export function createOAuthProviderForServer(
+  config: MCPHttpStreamableServerConfig,
+  serverIdentity: string,
+): McpOAuthProvider {
+  return new McpOAuthProvider({
+    serverIdentity,
+    serverName: config.name,
+    redirectUrl: () => {
+      throw new Error(OAUTH_COORDINATOR_NOT_WIRED_MESSAGE);
+    },
+    state: () => {
+      throw new Error(OAUTH_COORDINATOR_NOT_WIRED_MESSAGE);
+    },
+    onRedirectToAuthorization: () => {
+      throw new Error(OAUTH_COORDINATOR_NOT_WIRED_MESSAGE);
+    },
+  });
 }

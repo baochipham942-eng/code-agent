@@ -122,4 +122,88 @@ describe('mcpTransport remote connection retry', () => {
       },
     );
   });
+
+  it('passes authProvider only to HTTP streamable transport when configured', () => {
+    const authProvider = { tokens: vi.fn() };
+
+    createTransport({
+      name: 'oauth-http',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+      auth: 'oauth',
+    }, { authProvider: authProvider as never });
+
+    expect(transportMocks.streamableHTTPClientTransport).toHaveBeenCalledTimes(1);
+    expect(transportMocks.streamableHTTPClientTransport).toHaveBeenCalledWith(
+      new URL('https://mcp.example.com/mcp'),
+      {
+        requestInit: {},
+        authProvider,
+      },
+    );
+  });
+
+  it('does not include authProvider when no authProvider option is passed', () => {
+    createTransport({
+      name: 'plain-http',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+    });
+
+    expect(transportMocks.streamableHTTPClientTransport).toHaveBeenCalledTimes(1);
+    expect(transportMocks.streamableHTTPClientTransport).toHaveBeenCalledWith(
+      new URL('https://mcp.example.com/mcp'),
+      {
+        requestInit: {},
+      },
+    );
+  });
+
+  it('does not pass authProvider to SSE transport even when the option is present', () => {
+    const authProvider = { tokens: vi.fn() };
+
+    createTransport({
+      name: 'sse-no-oauth',
+      type: 'sse',
+      serverUrl: 'https://mcp.example.com/sse',
+      enabled: true,
+    }, { authProvider: authProvider as never });
+
+    expect(transportMocks.sseClientTransport).toHaveBeenCalledTimes(1);
+    expect(transportMocks.sseClientTransport).toHaveBeenCalledWith(
+      new URL('https://mcp.example.com/sse'),
+      {
+        eventSourceInit: {},
+      },
+    );
+  });
+
+  it('removes configured Authorization headers when OAuth provider is injected', () => {
+    const authProvider = { tokens: vi.fn() };
+
+    createTransport({
+      name: 'oauth-http-with-headers',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.example.com/mcp',
+      enabled: true,
+      auth: 'oauth',
+      headers: {
+        Authorization: 'Bearer static-token',
+        'X-Trace': 'trace-id',
+        authorization: 'Bearer lower-token',
+      },
+    }, { authProvider: authProvider as never });
+
+    expect(transportMocks.streamableHTTPClientTransport).toHaveBeenCalledWith(
+      new URL('https://mcp.example.com/mcp'),
+      {
+        requestInit: {
+          headers: { 'X-Trace': 'trace-id' },
+        },
+        authProvider,
+      },
+    );
+  });
 });

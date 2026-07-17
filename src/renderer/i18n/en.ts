@@ -11,6 +11,7 @@ import { sidebarEn } from './sidebar';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
 import { taskStatusPanelsEn } from './taskStatusPanels';
+import { noticesEn } from './notices';
 
 export const en: Translations = {
   // Common
@@ -861,6 +862,7 @@ export const en: Translations = {
   ...previewWorkspaceEn,
   ...modalPrimitivesEn,
   ...taskStatusPanelsEn,
+  ...noticesEn,
 
   mermaid: {
     zoomIn: 'Zoom in',

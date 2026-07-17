@@ -66,11 +66,13 @@ function brandToForm(brand: BrandContract): BrandFormState {
   };
 }
 
+const READ_FILE_FAILED = 'read-file-failed';
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('读取文件失败'));
+    reader.onerror = () => reject(new Error(READ_FILE_FAILED));
     reader.readAsDataURL(file);
   });
 }
@@ -481,7 +483,7 @@ export const BrandManager: React.FC<BrandManagerProps> = ({ isOpen, onClose, onA
           doNotCopy: [...draft.doNotCopy],
         }));
       } catch (e) {
-        setError(e instanceof Error ? e.message : s.extractFailed);
+        setError(e instanceof Error && e.message !== READ_FILE_FAILED ? e.message : s.extractFailed);
       } finally {
         setExtracting(false);
       }

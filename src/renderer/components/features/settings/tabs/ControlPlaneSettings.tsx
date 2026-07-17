@@ -15,6 +15,7 @@ import { Button } from '../../../primitives';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
 
 type ControlPlaneText = typeof zh.settings.controlPlane;
@@ -26,11 +27,11 @@ const OUTCOME_CLASSES: Record<AdminControlPlaneAuditEventItem['outcome'], string
   error: 'border-red-500/30 bg-red-500/10 text-red-300',
 };
 
-function formatDate(value?: string): string {
+function formatDate(value?: string, locale: string = localeForLanguage('zh')): string {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -81,7 +82,7 @@ const SummaryTile: React.FC<{
 );
 
 export const ControlPlaneSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const controlText = t.settings.controlPlane;
   const [events, setEvents] = useState<AdminControlPlaneAuditEventItem[]>([]);
   const [summary, setSummary] = useState<AdminControlPlaneRolloutSummaryItem[]>([]);
@@ -201,7 +202,7 @@ export const ControlPlaneSettings: React.FC = () => {
               <tbody className="divide-y divide-zinc-800 bg-zinc-950/40 text-zinc-300">
                 {events.map((event) => (
                   <tr key={event.id} className="hover:bg-zinc-900/60">
-                    <td className="whitespace-nowrap px-3 py-3 text-zinc-400">{formatDate(event.createdAt)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-zinc-400">{formatDate(event.createdAt, localeForLanguage(language))}</td>
                     <td className="whitespace-nowrap px-3 py-3 font-medium text-zinc-100">
                       {controlText.artifactLabels[event.artifactKind]}
                     </td>

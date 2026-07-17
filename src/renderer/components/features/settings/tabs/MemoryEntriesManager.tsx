@@ -26,6 +26,7 @@ import { SettingsSection } from '../SettingsLayout';
 import { isWebMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
+import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
 
 type EntryStatusFilter = MemoryEntryStatus | 'all';
@@ -91,12 +92,13 @@ export function formatMemoryEntryUpdatedAt(
   timestamp: number,
   now = Date.now(),
   labels: MemorySettingsText['relativeDate'] = zh.settings.memory.relativeDate,
+  locale: string = localeForLanguage('zh'),
 ): string {
   const diffDays = Math.floor((now - timestamp) / (1000 * 60 * 60 * 24));
   if (diffDays <= 0) return labels.today;
   if (diffDays === 1) return labels.yesterday;
   if (diffDays < 7) return `${diffDays}${labels.daysAgoSuffix}`;
-  return new Date(timestamp).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  return new Date(timestamp).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 export function buildMemoryEntryRows({
@@ -108,6 +110,7 @@ export function buildMemoryEntryRows({
   sourceFilter,
   now = Date.now(),
   labels = zh.settings.memory,
+  locale = localeForLanguage('zh'),
 }: {
   entries: MemoryEntry[];
   selectedEntryId: string | null;
@@ -117,6 +120,7 @@ export function buildMemoryEntryRows({
   sourceFilter: EntrySourceFilter;
   now?: number;
   labels?: MemorySettingsText;
+  locale?: string;
 }): MemoryEntryManagerRow[] {
   const query = searchQuery.trim().toLowerCase();
   return entries
@@ -137,7 +141,7 @@ export function buildMemoryEntryRows({
       statusLabel: getMemoryEntryStatusLabel(entry.status, labels.entries.statusLabels),
       kindLabel: getMemoryEntryKindLabel(entry.kind, labels.entries.kindLabels),
       sourceLabel: getMemoryEntrySourceLabel(entry.source.sourceOfTruth, labels.sourceLabels),
-      updatedAtLabel: formatMemoryEntryUpdatedAt(entry.updatedAt, now, labels.relativeDate),
+      updatedAtLabel: formatMemoryEntryUpdatedAt(entry.updatedAt, now, labels.relativeDate, locale),
       selected: entry.id === selectedEntryId,
     }));
 }
@@ -179,7 +183,7 @@ function createDraft(entry: MemoryEntry): MemoryEntryDraft {
 }
 
 export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<void> }> = ({ onChanged }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const memoryText = t.settings.memory;
   const [result, setResult] = useState<MemoryEntryListResult | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
@@ -206,8 +210,9 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       kindFilter,
       sourceFilter,
       labels: memoryText,
+      locale: localeForLanguage(language),
     }),
-    [entries, kindFilter, memoryText, searchQuery, selectedEntry?.id, sourceFilter, statusFilter],
+    [entries, kindFilter, language, memoryText, searchQuery, selectedEntry?.id, sourceFilter, statusFilter],
   );
 
   const loadEntries = async () => {

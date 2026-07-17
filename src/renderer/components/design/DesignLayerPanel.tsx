@@ -9,11 +9,11 @@ import { formatCny } from '@shared/media/imageCost';
 import { useI18n } from '../../hooks/useI18n';
 import type { Translations } from '../../i18n';
 
-export function layerDisplayName(node: CanvasNode, unnamed = '未命名节点'): string {
+export function layerDisplayName(node: CanvasNode, unnamed: string): string {
   return node.label || node.prompt || unnamed;
 }
 
-export function layerKindLabel(node: CanvasNode, labels: { image: string; video: string } = { image: '图片', video: '视频' }): string {
+export function layerKindLabel(node: CanvasNode, labels: { image: string; video: string }): string {
   return isVideoNode(node) ? labels.video : labels.image;
 }
 

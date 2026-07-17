@@ -60,6 +60,11 @@ const MIGRATED: string[] = [
   'TaskPanel/Orchestration.tsx',
   'TaskPanel/RunWorkbenchCards.tsx',
   'TaskPanel/ApprovalSyncCard.tsx',
+  'UpdateNotification.tsx',
+  'ForceUpdateModal.tsx',
+  'TokenWarning.tsx',
+  'BudgetAlertNotice.tsx',
+  'ProviderStatusNotice.tsx',
 ];
 
 const HAN_RE = /[一-鿿]/;

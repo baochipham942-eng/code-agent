@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../hooks/useI18n';
 
 interface TokenWarningProps {
   usagePercent: number;
@@ -8,6 +9,8 @@ interface TokenWarningProps {
 }
 
 export function TokenWarning({ usagePercent, currentLayer, isCompressing, fallbackModel }: TokenWarningProps) {
+  const { t } = useI18n();
+  const n = t.notices.tokenWarning;
   // Normal (< 60%): green
   // Warning (60-85%): yellow
   // Compressing: yellow pulse + layer name
@@ -16,7 +19,7 @@ export function TokenWarning({ usagePercent, currentLayer, isCompressing, fallba
   if (fallbackModel) {
     return (
       <span className="text-red-400 animate-pulse text-xs">
-        ⚠ overflow → {fallbackModel}
+        ⚠ {n.overflow.replace('{model}', fallbackModel)}
       </span>
     );
   }
@@ -34,5 +37,5 @@ export function TokenWarning({ usagePercent, currentLayer, isCompressing, fallba
     : usagePercent >= 0.60 ? 'text-yellow-400'
     : 'text-green-400';
 
-  return <span className={`${color} text-xs`}>ctx {pct}%</span>;
+  return <span className={`${color} text-xs`}>{n.ctx.replace('{pct}', String(pct))}</span>;
 }

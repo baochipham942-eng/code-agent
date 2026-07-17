@@ -71,7 +71,7 @@ describe('createExtractRouter', () => {
     const excelJsonHandler = vi.fn(async (_event, filePath) => ({ rows: [{ file: path.basename(String(filePath)) }] }));
     const docxHtmlHandler = vi.fn(async (_event, filePath) => ({ html: `<p>${path.basename(String(filePath))}</p>` }));
 
-    await startExtractApi(new Map([
+    await startExtractApi(new Map<string, WebRouteHandler>([
       ['extract-pdf-text', pdfHandler],
       ['extract-excel-json', excelJsonHandler],
       ['extract-docx-html', docxHtmlHandler],

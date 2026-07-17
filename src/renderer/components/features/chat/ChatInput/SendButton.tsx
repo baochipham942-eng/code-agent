@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { ArrowUp, Square, Loader2 } from 'lucide-react';
+import { useI18n } from '../../../../hooks/useI18n';
 
 export interface SendButtonProps {
   /** 是否禁用 */
@@ -41,6 +42,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   onStop,
   label,
 }) => {
+  const { t } = useI18n();
   const baseIconButtonClass = 'flex-shrink-0 h-9 w-9 rounded-xl grid place-items-center transition-all duration-200 focus-visible:outline-hidden';
 
   // 运行中输入接入中：显示旋转加载图标
@@ -50,7 +52,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         type="button"
         disabled
         className={`${baseIconButtonClass} bg-white/[0.08] text-zinc-200 cursor-wait`}
-        aria-label="正在处理运行中输入"
+        aria-label={t.chatInput.processingRuntimeInputAria}
       >
         <Loader2 className="h-4 w-4 animate-spin" />
       </button>
@@ -64,8 +66,8 @@ export const SendButton: React.FC<SendButtonProps> = ({
         type={type}
         onClick={onClick}
         className={`${baseIconButtonClass} bg-zinc-100 text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_10px_24px_rgba(0,0,0,0.28)] hover:bg-white active:scale-95`}
-        aria-label="排队到下一轮"
-        title="排队到下一轮"
+        aria-label={t.chatInput.queueNextTurnAria}
+        title={t.chatInput.queueNextTurnAria}
       >
         <ArrowUp className="h-4 w-4 stroke-[2.4]" />
       </button>
@@ -79,7 +81,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         type="button"
         onClick={onStop}
         className={`${baseIconButtonClass} bg-zinc-700/90 text-zinc-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-zinc-600 active:scale-95`}
-        aria-label="停止"
+        aria-label={t.chatInput.stopAria}
       >
         <Square className="h-3.5 w-3.5 fill-current stroke-[2.2]" />
       </button>
@@ -118,7 +120,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
           ? 'bg-zinc-100 text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_10px_24px_rgba(0,0,0,0.28)] hover:bg-white active:scale-95'
           : 'bg-zinc-800/80 text-zinc-500 ring-1 ring-white/[0.04] opacity-70'
       }`}
-      aria-label="发送消息"
+      aria-label={t.chatInput.sendAria}
     >
       <ArrowUp className="h-4 w-4 stroke-[2.4]" />
     </button>

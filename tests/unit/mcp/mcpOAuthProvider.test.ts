@@ -16,7 +16,8 @@ vi.mock('../../../src/host/services/core/secureStorage', () => ({
   getSecureStorage: () => secureStorageState,
 }));
 
-import { McpOAuthProvider } from '../../../src/host/mcp/mcpOAuthProvider';
+import { McpOAuthProvider, createOAuthProviderForServer } from '../../../src/host/mcp/mcpOAuthProvider';
+import type { McpOAuthCoordinator } from '../../../src/host/mcp/mcpOAuthCoordinator';
 
 function createProvider(
   serverIdentity: string,
@@ -144,5 +145,42 @@ describe('McpOAuthProvider', () => {
 
     expect(onRedirectToAuthorization).toHaveBeenCalledTimes(1);
     expect(onRedirectToAuthorization).toHaveBeenCalledWith(authorizationUrl);
+  });
+
+  it('redirectUrl never throws before a flow exists (SDK reads it at auth() entry)', async () => {
+    const flow = {
+      flowId: 'flow-1',
+      serverName: 'notion',
+      serverIdentity: 'notion:abc123digest',
+      state: 'state-xyz',
+      redirectUrl: 'http://127.0.0.1:54321/callback',
+    };
+    let began = false;
+    const coordinator = {
+      beginFlow: vi.fn(async () => {
+        began = true;
+        return flow;
+      }),
+      getFlowForServerIdentity: vi.fn(() => (began ? flow : undefined)),
+      getRedirectUrl: vi.fn(() => {
+        throw new Error('MCP OAuth flow is not active');
+      }),
+      handleAuthorizationRedirect: vi.fn(async () => {}),
+    } as unknown as McpOAuthCoordinator;
+
+    const provider = createOAuthProviderForServer(
+      { name: 'notion', type: 'http-streamable', serverUrl: 'https://mcp.notion.com/mcp', enabled: true, auth: 'oauth' },
+      'notion:abc123digest',
+      coordinator,
+    );
+
+    // flow 未起:必须返回真值占位,绝不 throw
+    const before = provider.redirectUrl;
+    expect(typeof before).toBe('string');
+    expect(before.length).toBeGreaterThan(0);
+
+    // state() 触发 ensureFlow 后:返回真实回调地址
+    await expect(provider.state()).resolves.toBe('state-xyz');
+    expect(provider.redirectUrl).toBe('http://127.0.0.1:54321/callback');
   });
 });

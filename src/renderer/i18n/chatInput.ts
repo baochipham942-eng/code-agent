@@ -249,7 +249,7 @@ export const chatInputZh = {
     configProvider: '  提供商: {provider}\n',
     configSessionId: '  会话 ID: {sid}',
     configNoSession: '未创建',
-    registryCommandFailedPrefix: '执行失败：',
+    registryCommandFailedPrefix: ' 执行失败：',
   },
   chatInputSubmit: {
     scheduleParsingToast: '正在解析定时任务…',

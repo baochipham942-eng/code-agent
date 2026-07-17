@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 import type { StreamRecoverySnapshot } from '../../../src/shared/contract/session';
+import { zh } from '../../../src/renderer/i18n/zh';
 import {
   buildStreamingUiState,
   hasCancelledRunMarker,
@@ -39,6 +40,7 @@ function makeSnapshot(overrides: Partial<StreamRecoverySnapshot> = {}): StreamRe
 describe('streamingStatePresentation', () => {
   it('shows drafting for the active streaming turn', () => {
     const state = buildStreamingUiState({
+      t: zh,
       turn: makeTurn(),
       isActiveTurn: true,
       sessionStatus: 'running',
@@ -64,6 +66,7 @@ describe('streamingStatePresentation', () => {
     });
 
     const usingTools = buildStreamingUiState({
+      t: zh,
       turn,
       isActiveTurn: true,
       sessionStatus: 'running',
@@ -74,6 +77,7 @@ describe('streamingStatePresentation', () => {
     expect(shouldShowStreamingState(usingTools)).toBe(false);
 
     const waitingTool = buildStreamingUiState({
+      t: zh,
       turn,
       isActiveTurn: true,
       sessionStatus: 'running',
@@ -86,6 +90,7 @@ describe('streamingStatePresentation', () => {
 
   it('prioritizes cancelling cleanup over active streaming', () => {
     const state = buildStreamingUiState({
+      t: zh,
       turn: makeTurn(),
       isActiveTurn: true,
       sessionStatus: 'cancelling',
@@ -98,11 +103,13 @@ describe('streamingStatePresentation', () => {
 
   it('marks paused and incomplete snapshots as resumable', () => {
     const paused = buildStreamingUiState({
+      t: zh,
       turn: makeTurn({ status: 'completed' }),
       isActiveTurn: false,
       sessionStatus: 'paused',
     });
     const snapshotted = buildStreamingUiState({
+      t: zh,
       turn: makeTurn({ status: 'completed' }),
       isActiveTurn: false,
       streamSnapshot: makeSnapshot(),
@@ -116,6 +123,7 @@ describe('streamingStatePresentation', () => {
 
   it('does not show completed states as streaming banners', () => {
     const state = buildStreamingUiState({
+      t: zh,
       turn: makeTurn({ status: 'completed' }),
       isActiveTurn: false,
       sessionStatus: 'idle',
@@ -146,6 +154,7 @@ describe('streamingStatePresentation', () => {
       ],
     });
     const state = buildStreamingUiState({
+      t: zh,
       turn,
       isActiveTurn: false,
       sessionStatus: 'idle',
@@ -159,6 +168,7 @@ describe('streamingStatePresentation', () => {
 
   it('surfaces stale processing without replaying an old stream', () => {
     const state = buildStreamingUiState({
+      t: zh,
       turn: makeTurn({ startTime: 1_000 }),
       isActiveTurn: false,
       isSessionProcessing: true,

@@ -21,6 +21,9 @@
 //   2026-07-18 B1：tsconfig.tests.json 开 allowImportingTsExtensions，消 82 处 TS5097（配置类，
 //               非 bug）——本地 1228→1146，基线 1229→1147。
 //   2026-07-18 B-ipc/hooks/cli：清 135 处（tests/unit/ipc+hooks+cli 全清）——本地 1146→1011，基线 1147→1012。
+//   2026-07-18 B-unit/agent(#471,清181全清) + B-services/tools(#472,清195全清) 两批合 main 未各自收基线；
+//               本 tighten PR 统一收：本地 1011→635，基线 1012→636。剩余大头=renderer(122)/telemetry(87)/
+//               scripts(~75)/misc + tests/unit/web(39,暂缓 wt-seam)。
 //
 // 自检 guard 有意 fail loud（[[gate-must-report-own-blindspot]]）：引擎二进制/配置失效、
 // 配置匹配 0 个文件（TS18003）、tsc 被 kill —— 任一发生都说明门失去测量能力，此时静默通过
@@ -34,7 +37,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const BASELINE_MAX = 1012;
+const BASELINE_MAX = 636;
 const MAX_FINDINGS_TO_PRINT = 40;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

@@ -18,7 +18,8 @@
 //       发起单 agent goal run → 终态 met/aborted 回填履历
 // ============================================================================
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { access, appendFile, mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { constants, createWriteStream } from 'fs';
 import http from 'http';
@@ -39,7 +40,7 @@ const CADENCE_JOB_TAG = 'role-cadence';
 // 基础设施（与 role-proactivity-e2e.ts 一致）
 // ----------------------------------------------------------------------------
 
-type StartedServer = { baseUrl: string; token: string; child: ChildProcessWithoutNullStreams; output: () => string };
+type StartedServer = { baseUrl: string; token: string; child: ChildProcessByStdio<null, Readable, Readable>; output: () => string };
 interface E2EEnv { fakeHome: string; dataDir: string; workspace: string }
 
 async function ensureBuiltWebServer(): Promise<void> {

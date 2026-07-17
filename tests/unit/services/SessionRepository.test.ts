@@ -543,9 +543,9 @@ describe('SessionRepository', () => {
     it('should query todos by sessionId', () => {
       // Override prepare to return mock todo rows
       mockDb.prepare = vi.fn((sql: string) => ({
-        run: vi.fn(() => ({ changes: 1 })),
-        get: vi.fn(() => undefined),
-        all: vi.fn(() => {
+        run: vi.fn((...params: unknown[]) => ({ changes: 1 })),
+        get: vi.fn((...params: unknown[]) => undefined),
+        all: vi.fn((...params: unknown[]) => {
           if (sql.includes('SELECT content, status, active_form FROM todos')) {
             return [
               { content: 'Todo 1', status: 'pending', active_form: 'checkbox' },
@@ -554,7 +554,7 @@ describe('SessionRepository', () => {
           }
           return [];
         }),
-      }));
+      })) as typeof mockDb.prepare;
       repo = new SessionRepository(mockDb as any);
 
       const todos = repo.getTodos('test-session');

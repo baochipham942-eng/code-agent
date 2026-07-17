@@ -2,11 +2,8 @@ import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  collectBrowserRuntimeDiagnostics,
-  formatBrowserRuntimeDiagnostics,
-  resolvePlaywrightCacheDir,
-} from '../../scripts/verify-browser-runtime.mjs';
+// @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
+import { collectBrowserRuntimeDiagnostics, formatBrowserRuntimeDiagnostics, resolvePlaywrightCacheDir } from '../../scripts/verify-browser-runtime.mjs';
 
 const tempRoots: string[] = [];
 

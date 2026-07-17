@@ -21,6 +21,7 @@ import { runCheckpointWriterAgent } from '../../src/host/agent/checkpointWriterA
 import { createTask, updateTask } from '../../src/host/services/planning/taskStore';
 import { tryInsertCheckpointRebuildBoundary } from '../../src/host/context/checkpoint';
 import { CompressionState } from '../../src/host/context/compressionState';
+import { ContextHealthState } from '../../src/host/agent/runtime/contextHealthState';
 
 // ---------------------------------------------------------------------------
 // env 加载（~/.code-agent/.env，不覆盖已有值）
@@ -153,10 +154,10 @@ function buildConversation(): Message[] {
 }
 
 function seedTaskStore(): void {
-  const t1 = createTask(SESSION_ID, { subject: 'checkpoint writer 子代理化返工 (C-H1/H2)' });
-  const t11 = createTask(SESSION_ID, { subject: '移植 checkpoint-writer prompt 并接 taskStore', parentTaskId: t1.id });
-  const t12 = createTask(SESSION_ID, { subject: '真实触发产出 11 段 checkpoint 证据', parentTaskId: t1.id });
-  const t2 = createTask(SESSION_ID, { subject: '中断续作运行证据' });
+  const t1 = createTask(SESSION_ID, { subject: 'checkpoint writer 子代理化返工 (C-H1/H2)', description: 'checkpoint writer 从直接 Edit 改为子代理产出 + runner 校验后原子写入' });
+  const t11 = createTask(SESSION_ID, { subject: '移植 checkpoint-writer prompt 并接 taskStore', description: '把 writer prompt 迁移到子代理并接入 taskStore', parentTaskId: t1.id });
+  const t12 = createTask(SESSION_ID, { subject: '真实触发产出 11 段 checkpoint 证据', description: '真实跑一轮 writer，产出完整 11 段 checkpoint 证据', parentTaskId: t1.id });
+  const t2 = createTask(SESSION_ID, { subject: '中断续作运行证据', description: '验证中断后续作能正确恢复到重建边界' });
   updateTask(SESSION_ID, t11.id, { status: 'completed' });
   updateTask(SESSION_ID, t12.id, { status: 'in_progress' });
   void t2;
@@ -236,7 +237,7 @@ async function main(): Promise<void> {
     messages: resumedMessages,
     onEvent: () => {},
     persistMessage: async () => {},
-    compressionState: new CompressionState(),
+    contextHealth: new ContextHealthState({ compressionState: new CompressionState(), persistentSystemContext: [] }),
     checkpointRootDir: ROOT_DIR,
   };
   const boundary = await tryInsertCheckpointRebuildBoundary(runtime);

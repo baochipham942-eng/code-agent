@@ -30,8 +30,7 @@ export const ABGUI02: TestCase = {
   validations: [
     {
       type: 'output-contains',
-      contains: ['Hacker News', 'HN', '标题', '文章', 'points', '评论'],
-      matchMode: 'any',
+      containsAny: ['Hacker News', 'HN', '标题', '文章', 'points', '评论'],
       message: '应包含 Hacker News 文章信息',
     },
   ],

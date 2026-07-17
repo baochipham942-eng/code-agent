@@ -215,7 +215,9 @@ async function collectPhase(page: Awaited<ReturnType<Browser['newPage']>>, start
   if (!phase) {
     throw new Error('Code highlight harness did not publish phase data.');
   }
-  return phase;
+  // Harness-side metrics field is a concrete StreamingPerformanceSnapshot; report-side type
+  // widens it to an opaque JSON blob.
+  return phase as unknown as CodeHighlightPhase;
 }
 
 async function expandFixture(page: Awaited<ReturnType<Browser['newPage']>>, fixture: 'expand-1000' | 'expand-5000'): Promise<CodeHighlightPhase> {
@@ -314,7 +316,9 @@ async function main(): Promise<void> {
         expandLines: [1_000, 5_000],
       },
       initial: {
-        ...initialRaw,
+        // Harness-side metrics field is a concrete StreamingPerformanceSnapshot; report-side
+        // type widens it to an opaque JSON blob.
+        ...(initialRaw as unknown as CodeHighlightPhase),
         ...summarizeLongTasks(initialRaw.longTasks ?? []),
       },
       expand1000: {

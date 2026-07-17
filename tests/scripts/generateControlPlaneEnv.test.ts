@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+// @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
 import { generateControlPlaneEnvBundle } from '../../scripts/generate-control-plane-env.mjs';
 
 describe('control-plane env bundle generator', () => {
@@ -16,9 +17,9 @@ describe('control-plane env bundle generator', () => {
     });
 
     expect(result.targetDir).toBe(outDir);
-    expect(result.files.map((file) => file.replace(`${outDir}/`, ''))).toContain('private.pem');
-    expect(result.files.map((file) => file.replace(`${outDir}/`, ''))).toContain('control-plane-key-id.txt');
-    expect(result.files.map((file) => file.replace(`${outDir}/`, ''))).toContain('control-plane-ttl-seconds.txt');
+    expect(result.files.map((file: string) => file.replace(`${outDir}/`, ''))).toContain('private.pem');
+    expect(result.files.map((file: string) => file.replace(`${outDir}/`, ''))).toContain('control-plane-key-id.txt');
+    expect(result.files.map((file: string) => file.replace(`${outDir}/`, ''))).toContain('control-plane-ttl-seconds.txt');
     expect(readFileSync(join(outDir, 'private.pem'), 'utf8')).toContain('BEGIN PRIVATE KEY');
     expect(readFileSync(join(outDir, 'public.pem'), 'utf8')).toContain('BEGIN PUBLIC KEY');
     expect(readFileSync(join(outDir, 'control-plane-key-id.txt'), 'utf8')).toBe('test-key\n');

@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import {
-  classifyDesktopShellDiagnostics,
-} from '../../scripts/desktop-shell-diagnostics.mjs';
-import {
-  verifyPackagedDesktopShellEvidence,
-} from '../../scripts/desktop-shell-packaged-smoke.mjs';
+// @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
+import { classifyDesktopShellDiagnostics } from '../../scripts/desktop-shell-diagnostics.mjs';
+// @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
+import { verifyPackagedDesktopShellEvidence } from '../../scripts/desktop-shell-packaged-smoke.mjs';
 
 function rendererServe(overrides: Record<string, unknown> = {}) {
   return {
@@ -196,7 +194,7 @@ describe('desktop shell diagnostics classification', () => {
     });
 
     const classification = classifyDesktopShellDiagnostics(diagnostics);
-    const codes = classification.issues.map((issue) => issue.code);
+    const codes = classification.issues.map((issue: { code: string }) => issue.code);
 
     expect(classification.status).toBe('failed');
     expect(codes).toEqual(expect.arrayContaining([
@@ -213,7 +211,7 @@ describe('desktop shell diagnostics classification', () => {
       'desktop_shell_renderer_fallback',
       'desktop_shell_runtime_asset_missing',
     ]) {
-      expect(classification.issues.find((issue) => issue.code === code)?.action).toBeTruthy();
+      expect(classification.issues.find((issue: { code: string }) => issue.code === code)?.action).toBeTruthy();
     }
   });
 

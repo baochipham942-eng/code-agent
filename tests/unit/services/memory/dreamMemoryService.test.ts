@@ -207,12 +207,8 @@ describe('runDreamMemoryConsolidation — audit fixes A-M2/A-L1', () => {
     });
 
     expect(memoryIO.writeEntry).toHaveBeenCalledTimes(1);
-    const written = memoryIO.writeEntry.mock.calls[0][1] ?? memoryIO.writeEntry.mock.calls[0][0];
-    const entry = (written && typeof written === 'object' && 'confidence' in (written as object))
-      ? written as { confidence: number }
-      : memoryIO.writeEntry.mock.calls[0].find(
-          (arg: unknown) => arg && typeof arg === 'object' && 'confidence' in (arg as object),
-        ) as { confidence: number };
+    // writeEntry(entry: MemoryEntry) 是单参数接口，calls[0][0] 即写入的 entry 本身
+    const entry = memoryIO.writeEntry.mock.calls[0][0];
     expect(entry.confidence).toBeLessThanOrEqual(1);
     expect(entry.confidence).toBeGreaterThanOrEqual(0);
   });

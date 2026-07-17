@@ -69,13 +69,10 @@ function makeToolContext(): ToolContext {
     requestPermission: async () => true,
     executionIntent: {
       browserSessionMode: 'managed',
-      browserProvider: SYSTEM_CHROME_CDP_PROVIDER,
       preferBrowserSession: true,
       allowBrowserAutomation: true,
       browserSessionSnapshot: {
         ready: true,
-        provider: SYSTEM_CHROME_CDP_PROVIDER,
-        mode,
       },
     },
   };
@@ -242,7 +239,7 @@ async function main(): Promise<void> {
 
 function getProvider(args: ReturnType<typeof parseArgs>): string {
   const value = args.options.provider;
-  if (value === undefined || value === true) {
+  if (value === undefined || typeof value === 'boolean') {
     return SYSTEM_CHROME_CDP_PROVIDER;
   }
   return Array.isArray(value) ? value[value.length - 1] : value;

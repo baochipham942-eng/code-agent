@@ -16,9 +16,11 @@ import { buildNeoTagPromptLayer } from '../../../src/host/services/project/neoTa
 import {
   createAndRunNeoWorkCard,
   launchApprovedNeoWorkCard,
+  type NeoTagTaskManager,
 } from '../../../src/host/services/project/neoTagRuntimeService';
 import type { NeoWorkCardService } from '../../../src/host/services/project/neoWorkCardService';
 import type { CreateNeoWorkCardDraftInput } from '../../../src/shared/contract/tag';
+import type { AppSettings } from '../../../src/shared/contract/settings';
 
 const sessionMessages: Message[] = [];
 let sessionWorkingDirectory = '/repo/project';
@@ -136,7 +138,7 @@ describe('Neo Tag runtime helpers', () => {
             claude: { baseUrl: 'https://claude.example', maxTokens: 12000 },
           },
         },
-      })),
+      } as unknown as AppSettings)),
     };
 
     expect(resolveNeoTagModelIntent({
@@ -246,6 +248,8 @@ describe('Neo Tag runtime helpers', () => {
         approvedRevision: rev,
         revisions: [rev],
         approvals: [],
+        resultReviews: [],
+        memoryCandidates: [],
         deltas,
       })),
       setStatus: vi.fn((_workCardId: string, status: NeoWorkCard['status']) => {
@@ -334,6 +338,8 @@ describe('Neo Tag runtime helpers', () => {
         approvedRevision: rev,
         revisions: [rev],
         approvals: [],
+        resultReviews: [],
+        memoryCandidates: [],
         deltas,
       })),
       setStatus: vi.fn(() => card),
@@ -391,6 +397,8 @@ describe('Neo Tag runtime helpers', () => {
         approvedRevision: rev,
         revisions: [rev],
         approvals: [],
+        resultReviews: [],
+        memoryCandidates: [],
         deltas,
       })),
       setStatus: vi.fn(() => card),
@@ -400,7 +408,7 @@ describe('Neo Tag runtime helpers', () => {
         return delta;
       }),
     } as unknown as NeoWorkCardService;
-    const startTask = vi.fn(async () => {});
+    const startTask = vi.fn<NeoTagTaskManager['startTask']>(async () => {});
     const taskManager = { startTask, getSessionState: vi.fn(() => ({ status: 'idle' })) };
 
     await launchApprovedNeoWorkCard({ workCardId: card.id, taskManager, service, now: () => 100 });
@@ -688,6 +696,8 @@ describe('Neo Tag runtime helpers', () => {
         approvedRevision: rev,
         revisions: [rev],
         approvals: [],
+        resultReviews: [],
+        memoryCandidates: [],
         deltas,
       })),
       setStatus: vi.fn((_workCardId: string, status: NeoWorkCard['status']) => {
@@ -744,6 +754,8 @@ describe('Neo Tag runtime helpers', () => {
         approvedRevision: rev,
         revisions: [rev],
         approvals: [],
+        resultReviews: [],
+        memoryCandidates: [],
         deltas,
       })),
       setStatus: vi.fn((_workCardId: string, status: NeoWorkCard['status']) => {

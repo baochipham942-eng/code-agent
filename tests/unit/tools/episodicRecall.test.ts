@@ -30,7 +30,7 @@ function makeCtx() {
       error: vi.fn(),
     },
     emit: vi.fn(),
-  } as unknown as Parameters<ReturnType<typeof episodicRecallModule.createHandler>['execute']>[1];
+  } as unknown as Parameters<Awaited<ReturnType<typeof episodicRecallModule.createHandler>>['execute']>[1];
 }
 
 const canUseTool = vi.fn().mockResolvedValue({ allow: true });

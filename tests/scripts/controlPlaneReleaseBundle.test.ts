@@ -2,10 +2,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  buildCanonicalContentHash,
-  buildControlPlaneReleaseBundle,
-} from '../../scripts/control-plane-release-bundle.mjs';
+// @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
+import { buildCanonicalContentHash, buildControlPlaneReleaseBundle } from '../../scripts/control-plane-release-bundle.mjs';
 
 function writeJson(file: string, value: unknown) {
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);

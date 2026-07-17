@@ -1,19 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../../../src/host/tools/types';
+import type {
+  ComputerSurfaceActionResult,
+  ComputerSurfaceAuthorization,
+  getComputerSurface,
+} from '../../../../src/host/services/desktop/computerSurface';
+
+type RecordActionResultArgs = Parameters<ReturnType<typeof getComputerSurface>['recordAction']>[1];
+import type {
+  ComputerSurfaceSnapshot,
+  ComputerSurfaceState,
+  WorkbenchActionTrace,
+} from '../../../../src/shared/contract/desktop';
 
 const surfaceMocks = vi.hoisted(() => {
   const state = {
     allow: false,
     sensitive: false,
   };
-  const surfaceState = {
+  const surfaceState: ComputerSurfaceState = {
     id: 'default-computer-surface',
-    mode: 'foreground_fallback' as const,
+    mode: 'foreground_fallback',
     platform: 'darwin',
     ready: true,
     background: false,
     requiresForeground: true,
-    approvalScope: 'session_app' as const,
+    approvalScope: 'session_app',
     safetyNote: 'Computer Surface 会作用于当前前台 app/window；没有后台隔离。',
     targetApp: 'Safari',
     approvedApps: [],
@@ -21,9 +33,9 @@ const surfaceMocks = vi.hoisted(() => {
     lastAction: null,
     lastSnapshot: null,
   };
-  const trace = {
+  const trace: WorkbenchActionTrace = {
     id: 'computer-trace-1',
-    targetKind: 'computer' as const,
+    targetKind: 'computer',
     toolName: 'computer_use',
     action: 'click',
     mode: 'foreground_fallback',
@@ -31,20 +43,20 @@ const surfaceMocks = vi.hoisted(() => {
   };
 
   const surface = {
-    authorizeAction: vi.fn(async () => ({
+    authorizeAction: vi.fn(async (): Promise<ComputerSurfaceAuthorization> => ({
       allowed: state.allow,
       reason: state.allow ? undefined : 'Computer Use for Safari was not approved.',
       state: surfaceState,
       trace,
       sensitive: state.sensitive,
     })),
-    observe: vi.fn(async () => ({
+    observe: vi.fn(async (): Promise<ComputerSurfaceSnapshot> => ({
       capturedAtMs: 1,
       appName: 'Safari',
       windowTitle: 'Example Page',
       screenshotPath: '/tmp/surface.png',
     })),
-    executeBackgroundAction: vi.fn(async () => ({
+    executeBackgroundAction: vi.fn(async (): Promise<ComputerSurfaceActionResult> => ({
       success: true,
       output: 'Background click completed: Finder',
       metadata: {
@@ -55,7 +67,7 @@ const surfaceMocks = vi.hoisted(() => {
         targetAxPath: '1.2',
       },
     })),
-    executeBackgroundCgEventAction: vi.fn(async () => ({
+    executeBackgroundCgEventAction: vi.fn(async (): Promise<ComputerSurfaceActionResult> => ({
       success: true,
       output: 'Background CGEvent click completed: Preview · pid=1234 windowId=42 · windowRef=cgwin:1234:42:abcdef123456 · bounds=100,200 640x480 · windowLocal=(50, 60) · screen=(150, 260) · active=no · usedWindowLocation=yes · eventNumbers=101,102 · button=left clickCount=1',
       metadata: {
@@ -102,7 +114,7 @@ const surfaceMocks = vi.hoisted(() => {
         },
       },
     })),
-    listBackgroundCgEventWindows: vi.fn(async () => ({
+    listBackgroundCgEventWindows: vi.fn(async (): Promise<ComputerSurfaceActionResult> => ({
       success: true,
       output: 'Found 1 background CGEvent windows for Preview:\nPreview "Document" · pid=1234 · windowId=42 · bounds=100,200 640x480',
       metadata: {
@@ -202,7 +214,7 @@ const surfaceMocks = vi.hoisted(() => {
         cgEventSuitable: true,
       },
     })),
-    recordAction: vi.fn(async (inputTrace: typeof trace, result: { success: boolean; error?: string | null }) => ({
+    recordAction: vi.fn(async (inputTrace: typeof trace, result: RecordActionResultArgs) => ({
       ...inputTrace,
       completedAtMs: 2,
       success: result.success,

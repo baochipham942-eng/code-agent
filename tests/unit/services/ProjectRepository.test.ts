@@ -203,7 +203,9 @@ describe('buildProjectArtifacts（跨 session 产物聚合）', () => {
           {
             id: 'tool-image',
             name: 'image_generate',
+            arguments: {},
             result: {
+              toolCallId: 'tool-image',
               success: true,
               metadata: {
                 artifact: {

@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ModelProviderSettings } from '../../../src/shared/contract/settings';
 
 const settingsState = vi.hoisted(() => ({
   settings: {
     models: {
       defaultProvider: 'xiaomi',
       providers: {
-        xiaomi: { enabled: true, model: 'mimo-v2.5-pro' },
-        claude: { enabled: true },
+        xiaomi: { enabled: true, model: 'mimo-v2.5-pro' } as ModelProviderSettings,
+        claude: { enabled: true } as ModelProviderSettings,
       },
       routing: {
         code: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },

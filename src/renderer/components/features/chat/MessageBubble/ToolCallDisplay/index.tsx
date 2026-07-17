@@ -23,6 +23,8 @@ import {
   type ToolPermissionView,
 } from '../../../../../utils/toolExecutionPresentation';
 import { computeBashPreviewLines } from './bashOutputPreview';
+import { useI18n } from '../../../../../hooks/useI18n';
+import type { Translations } from '../../../../../i18n';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -428,16 +430,17 @@ function getPermissionRiskLabel(permission: ToolPermissionView): string | null {
   }
 }
 
-function getVisibleRecoveryHint(toolCall: ToolCall, status: ToolStatus): string | null {
+function getVisibleRecoveryHint(toolCall: ToolCall, status: ToolStatus, t: Translations): string | null {
   if (status === 'pending') return null;
   if (status === 'success' && !toolCall.result?.outputPath) return null;
-  return getToolRecoveryHint(toolCall, status);
+  return getToolRecoveryHint(toolCall, status, t);
 }
 
 const ToolExecutionMetaRow: React.FC<{ toolCall: ToolCall; status: ToolStatus; quietError?: boolean }> = ({ toolCall, status, quietError }) => {
+  const { t } = useI18n();
   const permission = getToolPermissionView(toolCall.name);
   const permissionLabel = getPermissionRiskLabel(permission);
-  const recoveryHint = getVisibleRecoveryHint(toolCall, status);
+  const recoveryHint = getVisibleRecoveryHint(toolCall, status, t);
 
   if (!permissionLabel && !recoveryHint) {
     return null;

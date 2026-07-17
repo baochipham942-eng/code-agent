@@ -244,6 +244,16 @@ toolErrors: {
   },
 },
 
+// 工具恢复提示（ToolCallDisplay 的 getToolRecoveryHint，仅失败/中断/已产出场景展示）
+toolRecoveryHint: {
+  pending: '等待结果',
+  interrupted: '可重新运行',
+  errorWithOutcome: '可重试：{outcome}',
+  errorGeneric: '可以重试或换个工具',
+  outputRecorded: '产物已记录',
+  resultRecorded: '结果已记录',
+},
+
 // 实时预览诊断条（LivePreviewFrame）——frameError 原文 + CSP snippet 折叠在
 // systemError 的查看详情/收起键后面，这里只放固定的人话摘要+建议。
 livePreview: {
@@ -493,6 +503,17 @@ toolErrors: {
   autoLoaded: {
     summary: 'Tool was auto-loaded and is retrying with the correct arguments',
   },
+},
+
+// Tool recovery hint (ToolCallDisplay's getToolRecoveryHint, shown only for
+// failed/interrupted/output-produced states)
+toolRecoveryHint: {
+  pending: 'Waiting for result',
+  interrupted: 'Can be re-run',
+  errorWithOutcome: 'Retry: {outcome}',
+  errorGeneric: 'Retry, or try another tool',
+  outputRecorded: 'Output recorded',
+  resultRecorded: 'Result recorded',
 },
 
 // Live preview diagnostic strip (LivePreviewFrame) — frameError text + CSP

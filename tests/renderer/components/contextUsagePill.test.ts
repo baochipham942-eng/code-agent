@@ -10,6 +10,10 @@ const pillMocks = vi.hoisted(() => ({
       maxTokens: 100000,
       warningLevel: 'warning',
     },
+    // useI18n() 无 selector 整取 store，这几个字段得在。
+    language: 'zh' as const,
+    setLanguage: vi.fn(),
+    cloudUIStrings: undefined,
   },
   invoke: vi.fn(),
   refreshContextHealth: vi.fn(),

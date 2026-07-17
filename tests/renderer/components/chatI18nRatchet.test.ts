@@ -14,6 +14,7 @@ const COMPONENTS_DIR = path.join(RENDERER_DIR, 'components');
 /** 已完成 i18n 迁移的文件（相对 components 目录）。只增不减。 */
 const MIGRATED: string[] = [
   'ChatView.tsx',
+  'CommandPalette.tsx',
   'features/chat/TurnBasedTraceView.tsx',
   'features/chat/ChatSearchBar.tsx',
   'features/chat/ToolStepGroup.tsx',

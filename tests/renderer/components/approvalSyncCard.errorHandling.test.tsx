@@ -5,6 +5,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { PermissionRequest } from '../../../src/shared/contract';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+});
+
 const state = vi.hoisted(() => ({
   request: null as PermissionRequest | null,
   sessionId: null as string | null,

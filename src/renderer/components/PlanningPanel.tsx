@@ -22,6 +22,7 @@ import type {
   TaskPhaseStatus,
 } from '@shared/contract';
 import { EmptyState } from './primitives';
+import { useI18n } from '../hooks/useI18n';
 
 interface PlanningPanelProps {
   plan: TaskPlan | null;
@@ -152,20 +153,22 @@ const PhaseItem: React.FC<{ phase: TaskPhase; defaultExpanded?: boolean }> = ({
 
 // Main component
 export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _onRefresh }) => {
+  const { t } = useI18n();
+  const p = t.taskStatusPanels.planning;
   if (!plan) {
     return (
       <div className="w-80 border-l border-zinc-700 bg-zinc-900 flex flex-col">
         <div className="p-3 border-b border-zinc-700">
           <div className="flex items-center gap-2">
             <Target className="w-4 h-4 text-purple-400" />
-            <span className="text-sm font-medium text-zinc-200">Task Plan</span>
+            <span className="text-sm font-medium text-zinc-200">{p.taskPlan}</span>
           </div>
         </div>
         <EmptyState
           variant="plain"
           icon={FileText}
-          title="No active plan"
-          text="Use todo_write with persist=true to create a plan"
+          title={p.noActivePlan}
+          text={p.noActivePlanHint}
         />
       </div>
     );
@@ -210,7 +213,7 @@ export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _
         {metadata.blockedSteps > 0 && (
           <div className="mt-2 flex items-center gap-1 text-xs text-red-400">
             <XCircle className="w-3 h-3" />
-            <span>{metadata.blockedSteps} blocked</span>
+            <span>{p.blockedCount.replace('{count}', String(metadata.blockedSteps))}</span>
           </div>
         )}
       </div>
@@ -228,7 +231,7 @@ export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _
 
       {/* Footer with timestamp */}
       <div className="p-2 border-t border-zinc-700 text-xs text-zinc-500 text-center">
-        Updated {new Date(plan.updatedAt).toLocaleTimeString()}
+        {p.updated.replace('{time}', new Date(plan.updatedAt).toLocaleTimeString())}
       </div>
     </div>
   );

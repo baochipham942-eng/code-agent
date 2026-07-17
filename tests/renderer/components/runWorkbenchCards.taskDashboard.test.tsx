@@ -4,20 +4,25 @@ import { describe, expect, it, vi } from 'vitest';
 import { TaskDashboardSummary } from '../../../src/renderer/components/TaskPanel/RunWorkbenchCards';
 import type { TaskRecord } from '../../../src/renderer/types/runWorkbench';
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({
-    language: 'zh',
-    t: {
-      taskPanel: {
-        taskDependencySummaryWaiting: '等待 {count} 个任务',
-        taskDependencySummaryUnlocking: '解锁 {count} 个任务',
-        taskDependencySummarySeparator: '，',
-        taskDependencyWaiting: '等待 {tasks}',
-        taskDependencyUnlocks: '解锁 {tasks}',
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return {
+    useI18n: () => ({
+      language: 'zh',
+      t: {
+        ...zh,
+        taskPanel: {
+          ...zh.taskPanel,
+          taskDependencySummaryWaiting: '等待 {count} 个任务',
+          taskDependencySummaryUnlocking: '解锁 {count} 个任务',
+          taskDependencySummarySeparator: '，',
+          taskDependencyWaiting: '等待 {tasks}',
+          taskDependencyUnlocks: '解锁 {tasks}',
+        },
       },
-    },
-  }),
-}));
+    }),
+  };
+});
 
 function makeRun(status: string, phase = '执行中', activeToolName?: string) {
   return {

@@ -30,6 +30,7 @@ import {
   type TaskRailStepView,
 } from '../../utils/taskRailPresentation';
 import { useI18n } from '../../hooks/useI18n';
+import type { Translations } from '../../i18n';
 
 function runStatusClass(status: RunUiStatus): string {
   switch (status) {
@@ -136,26 +137,28 @@ function getTaskStatusClass(status: TaskRecord['status']): string {
   }
 }
 
-function getTaskStatusLabel(status: TaskRecord['status']): string {
+function getTaskStatusLabel(status: TaskRecord['status'], t: Translations): string {
+  const rw = t.taskStatusPanels.runWorkbench;
   switch (status) {
     case 'in_progress':
-      return '进行中';
+      return rw.statusRunning;
     case 'completed':
-      return '完成';
+      return rw.statusCompleted;
     case 'blocked':
-      return '阻塞';
+      return rw.statusBlocked;
     case 'cancelled':
-      return '已取消';
+      return rw.statusCancelled;
     default:
-      return '待开始';
+      return rw.statusPending;
   }
 }
 
-const TASK_SCOPE_LABEL: Record<TaskRecord['scope'], string> = {
-  session: '会话',
-  global: '后台',
-  scheduled: '定时',
-};
+function getTaskScopeLabel(scope: TaskRecord['scope'], t: Translations): string {
+  const rw = t.taskStatusPanels.runWorkbench;
+  if (scope === 'global') return rw.scopeBackground;
+  if (scope === 'scheduled') return rw.scopeSchedule;
+  return rw.scopeSession;
+}
 
 function formatTemplate(template: string, values: Record<string, string | number>): string {
   return Object.entries(values).reduce(
@@ -200,6 +203,8 @@ const LIVE_RUN_STATUSES: ReadonlySet<RunUiStatus> = new Set([
 ]);
 
 export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?: RunUiState | null }) => {
+  const { t } = useI18n();
+  const rw = t.taskStatusPanels.runWorkbench;
   if (tasks.length === 0) {
     if (run && LIVE_RUN_STATUSES.has(run.status)) {
       return (
@@ -218,7 +223,7 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
         </div>
       );
     }
-    return <EmptyState variant="inline" text="暂无任务" />;
+    return <EmptyState variant="inline" text={rw.noTasks} />;
   }
 
   const sessionTask = tasks.find((task) => task.scope === 'session') || null;
@@ -230,7 +235,7 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
         <TaskRecordRow task={sessionTask} run={run} primary />
       ) : (
         <div className="rounded-md border border-white/[0.05] bg-white/[0.015] px-2.5 py-2 text-[11px] text-zinc-600">
-          当前对话暂无任务
+          {rw.noTasksInConversation}
         </div>
       )}
 
@@ -239,9 +244,9 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span
               className="text-[10px] tracking-wide text-zinc-500"
-              title="来自其他对话、后台运行或定时任务"
+              title={rw.otherTasksHint}
             >
-              后台任务
+              {rw.backgroundTasks}
             </span>
             <span className="text-[10px] text-zinc-600">{backgroundTasks.length}</span>
           </div>
@@ -257,7 +262,8 @@ export const TaskDashboardSummary = ({ tasks, run }: { tasks: TaskRecord[]; run?
 };
 
 export const SubagentRunRows = ({ subagents }: { subagents: SubagentRunView[] }) => {
-  if (subagents.length === 0) return <EmptyState variant="inline" text="暂无子代理" />;
+  const { t } = useI18n();
+  if (subagents.length === 0) return <EmptyState variant="inline" text={t.taskStatusPanels.runWorkbench.noSubagents} />;
 
   return (
     <div className="space-y-1.5">
@@ -299,11 +305,12 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
   const { t } = useI18n();
   const rail = deriveTaskRailView(task, run);
   const dependencySummary = dependencySummaryLabel(rail.dependencySummary, t);
+  const rw = t.taskStatusPanels.runWorkbench;
   const detailLabel = task.status === 'blocked'
-    ? '原因'
+    ? rw.reason
     : task.status === 'completed'
-      ? '结果'
-      : '当前动作';
+      ? rw.result
+      : rw.currentAction;
 
   return (
     <div
@@ -315,13 +322,13 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
         <TaskChecklistHeader rail={rail} />
       ) : (
         <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wide text-zinc-500">{TASK_SCOPE_LABEL[task.scope]}</span>
+          <span className="text-[10px] uppercase tracking-wide text-zinc-500">{getTaskScopeLabel(task.scope, t)}</span>
           <span
             className={`text-[10px] ${getTaskStatusClass(rail.status)}`}
             data-testid="task-record-status"
             data-task-status={rail.status}
           >
-            {getTaskStatusLabel(rail.status)}
+            {getTaskStatusLabel(rail.status, t)}
           </span>
           <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{rail.title}</span>
         </div>
@@ -356,24 +363,29 @@ const TaskRecordRow = ({ task, run, primary = false }: { task: TaskRecord; run?:
   );
 };
 
-const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailView> }) => (
+const TaskChecklistHeader = ({ rail }: { rail: ReturnType<typeof deriveTaskRailView> }) => {
+  const { t } = useI18n();
+  return (
   <div className="flex min-w-0 items-center gap-2">
     <ListChecks className="h-4 w-4 flex-shrink-0 text-zinc-300" />
     <span
       className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-zinc-100"
       title={rail.title}
     >
-      已完成 {rail.completed} 个任务（共 {rail.taskCount} 个任务）
+      {t.taskStatusPanels.runWorkbench.completedTasks
+        .replace('{completed}', String(rail.completed))
+        .replace('{total}', String(rail.taskCount))}
     </span>
     <span
       className="sr-only"
       data-testid="task-record-status"
       data-task-status={rail.status}
     >
-      {getTaskStatusLabel(rail.status)}
+      {getTaskStatusLabel(rail.status, t)}
     </span>
   </div>
-);
+  );
+};
 
 function outputRefTone(type: TaskRecordOutputRef['type']): string {
   if (type === 'log') return 'border-sky-500/20 bg-sky-500/10 text-sky-300';
@@ -382,17 +394,20 @@ function outputRefTone(type: TaskRecordOutputRef['type']): string {
   return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
 }
 
-function outputRefBadgeLabel(type: TaskRecordOutputRef['type']): string {
-  if (type === 'log') return '日志';
-  if (type === 'text') return '输出';
-  if (type === 'report') return '报告';
+function outputRefBadgeLabel(type: TaskRecordOutputRef['type'], t: Translations): string {
+  const rw = t.taskStatusPanels.runWorkbench;
+  if (type === 'log') return rw.log;
+  if (type === 'text') return rw.output;
+  if (type === 'report') return rw.report;
   if (type === 'trace') return 'Trace';
   if (type === 'replay') return 'Replay';
-  if (type === 'url') return '链接';
-  return '产物';
+  if (type === 'url') return rw.link;
+  return rw.artifact;
 }
 
-const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => (
+const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => {
+  const { t } = useI18n();
+  return (
   <div className="mt-1.5 space-y-1" data-testid="task-output-refs">
     {refs.map((ref) => (
       <div
@@ -401,7 +416,7 @@ const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => (
         title={ref.pathOrUrl || ref.label}
       >
         <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] ${outputRefTone(ref.type)}`}>
-          {outputRefBadgeLabel(ref.type)}
+          {outputRefBadgeLabel(ref.type, t)}
         </span>
         <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-300">{ref.label}</span>
         {ref.pathOrUrl && (
@@ -410,7 +425,8 @@ const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => (
       </div>
     ))}
   </div>
-);
+  );
+};
 
 const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; muted?: boolean }) => {
   const { t, language } = useI18n();
@@ -433,7 +449,7 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
       data-testid="task-rail-step"
       data-task-status={step.status}
     >
-      <span className="flex h-4 w-4 items-center justify-center" title={getTaskStatusLabel(step.status)}>
+      <span className="flex h-4 w-4 items-center justify-center" title={getTaskStatusLabel(step.status, t)}>
         {step.status === 'completed' ? (
           <CheckCircle2 className="h-4 w-4 fill-zinc-200 text-zinc-950" />
         ) : step.status === 'in_progress' ? (
@@ -479,7 +495,8 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
 };
 
 export const RunTimeline = ({ decisions }: { decisions: LoopDecisionView[] }) => {
-  if (decisions.length === 0) return <EmptyState variant="inline" text="暂无运行事件" />;
+  const { t } = useI18n();
+  if (decisions.length === 0) return <EmptyState variant="inline" text={t.taskStatusPanels.runWorkbench.noRunEvents} />;
 
   return (
     <div className="space-y-1.5">
@@ -513,7 +530,8 @@ function sourceTone(source: ToolCapabilityView['source']): 'skill' | 'connector'
 }
 
 export const ToolDiscoverySummary = ({ tools }: { tools: ToolCapabilityView[] }) => {
-  if (tools.length === 0) return <EmptyState variant="inline" text="本轮还没有工具活动" />;
+  const { t } = useI18n();
+  if (tools.length === 0) return <EmptyState variant="inline" text={t.taskStatusPanels.runWorkbench.noToolActivity} />;
 
   return (
     <div className="space-y-1.5">
@@ -555,7 +573,8 @@ interface MemoryActivitySummaryProps {
 }
 
 export const MemoryActivitySummary = ({ activities, onOpenActivity }: MemoryActivitySummaryProps) => {
-  if (activities.length === 0) return <EmptyState variant="inline" text="本轮还没有记忆活动" />;
+  const { t } = useI18n();
+  if (activities.length === 0) return <EmptyState variant="inline" text={t.taskStatusPanels.runWorkbench.noMemoryActivity} />;
 
   return (
     <div className="space-y-1.5">
@@ -597,7 +616,7 @@ export const MemoryActivitySummary = ({ activities, onOpenActivity }: MemoryActi
             data-testid="memory-activity-row"
             onClick={() => onOpenActivity(activity)}
             className={className}
-            title="打开记忆详情"
+            title={t.taskStatusPanels.runWorkbench.openMemoryDetails}
           >
             {content}
           </button>

@@ -8,6 +8,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
 import { Button, Modal } from './primitives';
 import { ConfirmDialog } from './composites/ConfirmDialog';
+import { useI18n } from '../hooks/useI18n';
 
 interface Checkpoint {
   id: string;
@@ -28,6 +29,8 @@ interface RewindPanelProps {
 }
 
 export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => {
+  const { t } = useI18n();
+  const r = t.taskStatusPanels.rewind;
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewFile[]>([]);
@@ -73,7 +76,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
       if (result?.success) {
         onClose();
       } else {
-        setRewindError(result?.error || 'Rewind failed. Please try again.');
+        setRewindError(result?.error || r.rewindFailedRetry);
       }
     } catch (error) {
       setRewindError(error instanceof Error ? error.message : String(error));
@@ -87,31 +90,31 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Rewind to Checkpoint"
+      title={r.title}
       size="lg"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button
             variant="primary"
             onClick={() => setIsConfirmOpen(true)}
             disabled={!selectedMessageId || isRewinding}
           >
-            {isRewinding ? 'Rewinding...' : 'Rewind'}
+            {isRewinding ? r.rewinding : r.rewind}
           </Button>
         </>
       }
     >
       {rewindError && (
         <div role="alert" className="mb-3 rounded-lg border border-red-700/50 bg-red-950/30 px-3 py-2 text-sm text-red-200">
-          Rewind failed: {rewindError}
+          {r.rewindFailedPrefix.replace('{message}', rewindError)}
         </div>
       )}
       {/* Checkpoint list */}
       {checkpoints.length === 0 ? (
-        <p className="text-zinc-500 text-center py-8 text-sm">No checkpoints available</p>
+        <p className="text-zinc-500 text-center py-8 text-sm">{r.noCheckpoints}</p>
       ) : (
         <div className="space-y-1.5">
           {checkpoints.map(cp => (
@@ -134,14 +137,14 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-zinc-200">
-                  {cp.description || `Checkpoint ${cp.id.slice(0, 8)}`}
+                  {cp.description || r.checkpointFallback.replace('{id}', cp.id.slice(0, 8))}
                 </span>
                 <span className="text-xs text-zinc-500">
                   {new Date(cp.timestamp).toLocaleTimeString()}
                 </span>
               </div>
               <span className="text-xs text-zinc-500 mt-1 block">
-                {cp.fileCount} file{cp.fileCount !== 1 ? 's' : ''}
+                {r.fileCount.replace('{count}', String(cp.fileCount))}
               </span>
             </button>
           ))}
@@ -151,7 +154,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
       {/* Preview section */}
       {preview.length > 0 && (
         <div className="mt-3 pt-3 border-t border-zinc-700">
-          <p className="text-xs text-zinc-500 mb-1.5">Files affected:</p>
+          <p className="text-xs text-zinc-500 mb-1.5">{r.filesAffected}</p>
           <div className="space-y-0.5 max-h-[120px] overflow-y-auto">
             {preview.map((f, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
@@ -171,11 +174,11 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
     </Modal>
     <ConfirmDialog
       isOpen={isConfirmOpen}
-      title="Rewind workspace files?"
-      message="Your workspace files will be replaced with the selected checkpoint. Current changes may be lost."
+      title={r.confirmTitle}
+      message={r.confirmMessage}
       variant="danger"
-      confirmText="Rewind now"
-      cancelText="Cancel rewind"
+      confirmText={r.confirmAction}
+      cancelText={r.cancelRewind}
       onCancel={() => setIsConfirmOpen(false)}
       onConfirm={() => {
         setIsConfirmOpen(false);

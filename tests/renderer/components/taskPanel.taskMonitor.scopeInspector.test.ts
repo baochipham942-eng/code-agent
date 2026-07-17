@@ -232,10 +232,15 @@ const handoffState = {
   updateStatus: vi.fn(),
 };
 
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  return {
   useI18n: () => ({
+    language: 'zh',
     t: {
+      ...zh,
       taskPanel: {
+        ...zh.taskPanel,
         progress: '进度',
         workIn: '工作于 {folderName}',
         sectionTodos: '待办',
@@ -277,7 +282,8 @@ vi.mock('../../../src/renderer/hooks/useI18n', () => ({
       },
     },
   }),
-}));
+  };
+});
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector?: (state: typeof sessionState) => unknown) => (

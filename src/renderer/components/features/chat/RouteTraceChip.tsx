@@ -174,7 +174,7 @@ function getToneClass(reason: ModelDecisionReason): string {
   if (reason === 'fallback-availability') {
     return 'border-amber-500/25 bg-amber-500/[0.08] text-amber-200';
   }
-  return 'border-white/[0.08] bg-white/[0.03] text-zinc-400';
+  return 'border-border-muted bg-surface-subtle text-zinc-400';
 }
 
 function formatModel(provider: string, model: string): string {
@@ -420,7 +420,7 @@ export const RouteTraceChip: React.FC<{ decision: ModelDecisionEventData; defaul
     <div className="max-w-full min-w-0">
       <button
         type="button"
-        className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] leading-none transition-colors hover:border-white/20 ${getToneClass(decision.reason)}`}
+        className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] leading-none transition-colors hover:border-border-hover ${getToneClass(decision.reason)}`}
         title={summary}
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
@@ -439,7 +439,7 @@ export const RouteTraceChip: React.FC<{ decision: ModelDecisionEventData; defaul
       </button>
       {expanded && (
         <div
-          className="mt-1 max-w-xl rounded-md border border-white/[0.08] bg-zinc-950/70 px-2.5 py-2 text-[11px] leading-relaxed text-zinc-300"
+          className="mt-1 max-w-xl rounded-md border border-border-muted bg-zinc-950/70 px-2.5 py-2 text-[11px] leading-relaxed text-zinc-300"
           data-testid="route-trace-details"
         >
           <div className="mb-1 text-zinc-200">{summary}</div>

@@ -106,11 +106,11 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
   return (
     <div className="px-4 shrink-0">
       <div className="mb-2 max-w-3xl mx-auto">
-        <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-sm overflow-hidden">
+        <div className="rounded-xl border border-border-muted bg-surface-subtle backdrop-blur-sm overflow-hidden">
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
-            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.04] transition-colors text-left"
+            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-hover transition-colors text-left"
             aria-expanded={expanded}
             title={expanded ? '折叠文件列表' : '查看本会话所有改动'}
           >
@@ -135,7 +135,7 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
             </span>
           </button>
           {expanded && (
-            <ul className="px-3 pb-2 pt-1 space-y-0.5 border-t border-white/[0.06]">
+            <ul className="px-3 pb-2 pt-1 space-y-0.5 border-t border-border-muted">
               {fileChanges.map((fc) => {
                 const fileName = fc.filePath.split('/').pop() || fc.filePath;
                 const dirPath = fc.filePath.slice(

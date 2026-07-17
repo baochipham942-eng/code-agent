@@ -268,7 +268,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
           </>
         );
         const secondaryActions = card.secondaryActions?.filter((action) => !action.disabled) ?? [];
-        const cardChrome = 'rounded-md border border-white/[0.06] bg-white/[0.018] transition-colors';
+        const cardChrome = 'rounded-md border border-border-muted bg-surface-subtle transition-colors';
 
         return (
           <div
@@ -293,7 +293,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
                       key={secondaryActionKey(action)}
                       type="button"
                       onClick={() => void runSecondaryAction(action)}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded text-zinc-500 hover:bg-surface-hover hover:text-zinc-200"
                       title={action.reason || action.label}
                       aria-label={`${action.label}: ${card.title}`}
                     >

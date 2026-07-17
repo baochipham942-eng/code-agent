@@ -236,7 +236,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message, onR
             }}
           >
             {showReasoning && (
-              <div className="mt-1.5 rounded-md border border-white/[0.04] bg-black/10 px-3 py-2">
+              <div className="mt-1.5 rounded-md border border-border-faint bg-black/10 px-3 py-2">
                 <p className="text-xs text-zinc-500 leading-5 whitespace-pre-line font-mono">
                   {reasoningContent}
                 </p>

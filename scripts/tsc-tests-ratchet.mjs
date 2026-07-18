@@ -32,6 +32,9 @@
 //   2026-07-18 wave3（renderer #479 清122 / tests/unit/web #478 清39）+ 本 tighten3：本地 266→105，基线 267→106。
 //               机械可修的类型错已全部清完。剩余 105 = telemetry.test.ts(87,死测) + 7 个 CLI 脚本(18,缺模块)，
 //               两者都是决策阻塞（重写/删 vs 重建），不是型别修复能带的活——保留在基线里当已知债，等拍板后再降。
+//   2026-07-18 收官：telemetry.test.ts 按真实 API 重写(#482,-87,28 真断言 mutation 验过)；7 个死 CLI 脚本
+//               删除(-18,挂靠 0419ff26e 主动删掉的 over-engineered evaluation 子系统,漏删的孤儿壳)+清 package.json
+//               6 条 script。**tests/scripts tsc 错清零,基线 106→0。全域绿。**
 //
 // 自检 guard 有意 fail loud（[[gate-must-report-own-blindspot]]）：引擎二进制/配置失效、
 // 配置匹配 0 个文件（TS18003）、tsc 被 kill —— 任一发生都说明门失去测量能力，此时静默通过
@@ -45,7 +48,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const BASELINE_MAX = 106;
+const BASELINE_MAX = 0;
 const MAX_FINDINGS_TO_PRINT = 40;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

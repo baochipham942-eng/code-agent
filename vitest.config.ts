@@ -26,7 +26,6 @@ export default defineConfig({
     exclude: [
       '**/node_modules/**',
       '**/graphStore.test.ts', // Kuzu 原生模块需要单独运行
-      '**/telemetry.test.ts', // API 签名不匹配（classifyIntent 接收 string 非 object），需重写
       '**/e2e/claude-e2e/fixtures/**', // legacy manual harness fixtures, not root unit/e2e suite
       // smoke 测试会真实操作桌面（open -a Calculator / osascript / 真 chromium 启动），
       // 混在默认全量跑会导致 Dock 图标乱跳、计算器弹出。需要显式指定文件路径单独跑：

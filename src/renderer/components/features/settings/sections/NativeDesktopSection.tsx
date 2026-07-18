@@ -3,7 +3,7 @@
 // 左侧 24 小时时间轴（有活动的小时显示卡片）+ 右侧详情
 // ============================================================================
 
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import {
   Play,
   Square,
@@ -20,7 +20,6 @@ import {
   Volume2,
   Eye,
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import {
   getNativeDesktopCollectorStatus,
   listRecentNativeDesktopEvents,
@@ -53,6 +52,8 @@ import {
   type NativeDesktopSectionProps,
 } from './nativeDesktopActivityModel';
 import { useI18n } from '../../../../hooks/useI18n';
+
+const MarkdownCore = lazy(() => import('../../chat/MessageBubble/MarkdownCore'));
 
 type NativeDesktopText = ReturnType<typeof useI18n>['t']['settings']['nativeDesktop'];
 
@@ -418,7 +419,9 @@ const AppGroupCard: React.FC<{
             {/* AI analysis — markdown with auto-paragraph for legacy text */}
             {bestAnalysis && (
               <div className="text-[13px] text-zinc-400 leading-relaxed prose prose-invert prose-sm max-w-none prose-p:my-1.5 prose-ul:my-1 prose-li:my-0.5 prose-strong:text-zinc-300">
-                <ReactMarkdown>{formatAnalysisText(bestAnalysis)}</ReactMarkdown>
+                <Suspense fallback={<div className="whitespace-pre-wrap break-words">{formatAnalysisText(bestAnalysis)}</div>}>
+                  <MarkdownCore content={formatAnalysisText(bestAnalysis)} gfm={false} />
+                </Suspense>
               </div>
             )}
 
@@ -627,7 +630,9 @@ const HourDetailPanel: React.FC<{
                       {ev.windowTitle && <span className="text-zinc-600 truncate max-w-[200px]">{ev.windowTitle}</span>}
                     </div>
                     <div className="text-[12px] text-zinc-400 leading-relaxed prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-0.5 prose-li:my-0 prose-strong:text-zinc-300">
-                      <ReactMarkdown>{formatAnalysisText(ev.analyzeText)}</ReactMarkdown>
+                      <Suspense fallback={<div className="whitespace-pre-wrap break-words">{formatAnalysisText(ev.analyzeText)}</div>}>
+                        <MarkdownCore content={formatAnalysisText(ev.analyzeText)} gfm={false} />
+                      </Suspense>
                     </div>
                   </div>
                 ))}

@@ -1,148 +1,17 @@
-import { useState, useCallback, memo, useMemo } from 'react';
+import { useState, useCallback, memo, useMemo, lazy, Suspense } from 'react';
 import { BarChart3, Copy, Check } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
-import {
-  ResponsiveContainer,
-  BarChart, Bar,
-  LineChart, Line,
-  AreaChart, Area,
-  PieChart, Pie, Cell,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  ScatterChart, Scatter,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-} from 'recharts';
 import { UI } from '@shared/constants';
-import {
-  parseChartSpecSource,
-  type ChartSpec,
-} from '@shared/chartSpec';
+import { parseChartSpecSource } from '@shared/chartSpec';
 export { isChartSpecSource } from '@shared/chartSpec';
 
-const DEFAULT_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#f97316',
-];
+// recharts(~444KB)按需动态加载,只在真正渲染 chart 代码块时才下载,移出首屏关键路径。
+const LazyChartRenderer = lazy(() => import('./ChartRenderer'));
 
-const darkTooltipStyle = {
-  contentStyle: {
-    backgroundColor: '#27272a',
-    border: '1px solid #3f3f46',
-    borderRadius: '0.5rem',
-    color: '#e4e4e7',
-    fontSize: '0.75rem',
-  },
-  itemStyle: { color: '#a1a1aa' },
-  cursor: { fill: 'rgba(255, 255, 255, 0.06)' },
-};
-
-const axisStyle = { fontSize: 11, fill: '#a1a1aa' };
-
-const ChartRenderer = memo(function ChartRenderer({ spec }: { spec: ChartSpec }) {
-  const { type, xKey = 'name', series = [], data } = spec;
-
-  if (type === 'pie') {
-    return (
-      <ResponsiveContainer width="100%" height={300}>
-        <PieChart>
-          <Pie
-            data={data}
-            dataKey="value"
-            nameKey="name"
-            cx="50%"
-            cy="50%"
-            outerRadius={100}
-            label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-          >
-            {data.map((entry, i) => (
-              <Cell key={i} fill={(entry as Record<string, string>).color || DEFAULT_COLORS[i % DEFAULT_COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip {...darkTooltipStyle} />
-          <Legend wrapperStyle={{ fontSize: '0.75rem', color: '#a1a1aa' }} />
-        </PieChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  if (type === 'radar') {
-    return (
-      <ResponsiveContainer width="100%" height={300}>
-        <RadarChart data={data}>
-          <PolarGrid stroke="#3f3f46" />
-          <PolarAngleAxis dataKey={xKey} tick={axisStyle} />
-          <PolarRadiusAxis tick={axisStyle} />
-          {series.map((s, i) => (
-            <Radar
-              key={s.key}
-              name={s.name || s.key}
-              dataKey={s.key}
-              stroke={s.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length]}
-              fill={s.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length]}
-              fillOpacity={0.3}
-            />
-          ))}
-          <Tooltip {...darkTooltipStyle} />
-          <Legend wrapperStyle={{ fontSize: '0.75rem', color: '#a1a1aa' }} />
-        </RadarChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  if (type === 'scatter') {
-    return (
-      <ResponsiveContainer width="100%" height={300}>
-        <ScatterChart>
-          <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
-          <XAxis dataKey={xKey} tick={axisStyle} stroke="#3f3f46" />
-          <YAxis tick={axisStyle} stroke="#3f3f46" />
-          {series.map((s, i) => (
-            <Scatter
-              key={s.key}
-              name={s.name || s.key}
-              data={data}
-              fill={s.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length]}
-            />
-          ))}
-          <Tooltip {...darkTooltipStyle} />
-          <Legend wrapperStyle={{ fontSize: '0.75rem', color: '#a1a1aa' }} />
-        </ScatterChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  const ChartComponent = type === 'line' ? LineChart : type === 'area' ? AreaChart : BarChart;
-  const SeriesComponent = type === 'line' ? Line : type === 'area' ? Area : Bar;
-
-  if (series.length === 0) {
-    return (
-      <div className="flex h-[220px] items-center justify-center rounded-lg border border-dashed border-zinc-700 bg-zinc-950/40 px-4 text-center text-xs leading-relaxed text-zinc-500">
-        No numeric data series found.
-      </div>
-    );
-  }
-
-  return (
-    <ResponsiveContainer width="100%" height={300}>
-      <ChartComponent data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
-        <XAxis dataKey={xKey} tick={axisStyle} stroke="#3f3f46" />
-        <YAxis tick={axisStyle} stroke="#3f3f46" />
-        <Tooltip {...darkTooltipStyle} />
-        <Legend wrapperStyle={{ fontSize: '0.75rem', color: '#a1a1aa' }} />
-        {series.map((s, i) => {
-          const color = s.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length];
-          const commonProps = {
-            key: s.key,
-            dataKey: s.key,
-            name: s.name || s.key,
-            ...(type === 'area' ? { fill: color, fillOpacity: 0.3, stroke: color } : { fill: color, stroke: color }),
-          };
-          return <SeriesComponent {...commonProps} />;
-        })}
-      </ChartComponent>
-    </ResponsiveContainer>
-  );
-});
+// 加载中的骨架:固定高度与 ChartRenderer 内 ResponsiveContainer 一致,避免图表就绪后布局跳变。
+function ChartSkeleton() {
+  return <div className="h-[300px] animate-pulse rounded-lg bg-zinc-800/40" />;
+}
 
 export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: string }) {
   const [copied, setCopied] = useState(false);
@@ -187,7 +56,9 @@ export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: st
         </button>
       </div>
       <div className="p-4 select-none">
-        <ChartRenderer spec={parsedSpec} />
+        <Suspense fallback={<ChartSkeleton />}>
+          <LazyChartRenderer spec={parsedSpec} />
+        </Suspense>
       </div>
     </div>
   );

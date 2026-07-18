@@ -1,6 +1,6 @@
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { renderToStaticMarkupAsync } from './renderToStaticMarkupAsync';
 
 vi.mock('../../../src/renderer/components/features/chat/GenerativeUI/GenerativeUIHost', () => ({
   GenerativeUIHost: ({ rawSpec, sourceOrdinal }: { rawSpec: string; sourceOrdinal: number }) => (
@@ -16,7 +16,11 @@ const { MessageContent } = await import(
 );
 
 describe('MessageContent neo_ui source ordinals', () => {
-  it('uses filtered Markdown offsets after removing a think prefix', () => {
+  // GenerativeUIHost 是 react-markdown 树内的 `code` 组件 override，markdown 改为
+  // React.lazy(MarkdownCore) 懒加载后同步的 renderToStaticMarkup 只会吐 Suspense fallback、
+  // 看不到 GenerativeUIHost。改用 renderToStaticMarkupAsync 等 Suspense resolve 后再取
+  // markup，断言语义（ordinal 归属）与迁移前完全一致。
+  it('uses filtered Markdown offsets after removing a think prefix', async () => {
     const thinkPrefix = `<think>${'hidden reasoning '.repeat(40)}</think>`;
     const content = `${thinkPrefix}
 \`\`\`neo_ui
@@ -27,7 +31,7 @@ Visible separator
 {"fallback":"second host"}
 \`\`\``;
 
-    const html = renderToStaticMarkup(
+    const html = await renderToStaticMarkupAsync(
       <MessageContent content={content} isUser={false} messageId="assistant-1" />,
     );
 

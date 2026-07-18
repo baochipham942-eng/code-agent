@@ -2,10 +2,8 @@
 // ToolDetails - Expandable details area showing arguments and results
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { Play, Copy, Check, RotateCcw } from 'lucide-react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { ToolCall } from '@shared/contract';
 import {
   buildToolResultMediaAssets,
@@ -35,6 +33,9 @@ import {
   FileResultDisplay,
   VideoResultDisplay,
 } from './ToolResultMediaDisplays';
+
+// Prism 语法高亮(~react-syntax-highlighter)按需动态加载,只在真的渲染 JSON 高亮时才下载。
+const LazyPrismCodeBlock = lazy(() => import('../PrismCodeBlock'));
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -69,17 +70,27 @@ const JSON_HIGHLIGHT_STYLE: React.CSSProperties = {
 };
 
 function JsonHighlight({ code, error }: { code: string; error?: boolean }) {
+  const borderClass = error ? 'border-red-500/20' : 'border-gray-800/50';
   return (
-    <SyntaxHighlighter
-      language="json"
-      style={oneDark}
-      customStyle={JSON_HIGHLIGHT_STYLE}
-      codeTagProps={{ style: { fontSize: '0.75rem', background: 'transparent' } }}
-      wrapLongLines
-      className={`scrollbar-hidden border ${error ? 'border-red-500/20' : 'border-gray-800/50'}`}
+    <Suspense
+      fallback={
+        <pre
+          className={`scrollbar-hidden whitespace-pre-wrap break-words rounded-md border ${borderClass}`}
+          style={JSON_HIGHLIGHT_STYLE}
+        >
+          {code}
+        </pre>
+      }
     >
-      {code}
-    </SyntaxHighlighter>
+      <LazyPrismCodeBlock
+        language="json"
+        customStyle={JSON_HIGHLIGHT_STYLE}
+        codeTagProps={{ style: { fontSize: '0.75rem', background: 'transparent' } }}
+        wrapLongLines
+        className={`scrollbar-hidden border ${borderClass}`}
+        code={code}
+      />
+    </Suspense>
   );
 }
 

@@ -283,8 +283,10 @@ describe('reconcilePermissionQueue', () => {
     state.pendingPermissionSessionId = null;
     reconcile();
 
-    expect(state.pendingPermissionRequest).toBe(global);
-    expect(state.pendingPermissionRequest?.id).toBe('global');
+    const readPending = (): PermissionRequest | null => state.pendingPermissionRequest;
+    const promotedGlobal = readPending();
+    expect(promotedGlobal).toBe(global);
+    expect(promotedGlobal?.id).toBe('global');
     expect(state.pendingPermissionSessionId).toBeNull();
     expect(state.queuedPermissionRequests).toEqual({});
   });

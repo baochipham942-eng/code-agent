@@ -1,3 +1,4 @@
+import { statSync } from 'fs';
 import type {
   Task,
   TaskFailure,
@@ -19,14 +20,37 @@ import { buildBackgroundTaskRecoveryPlan } from './backgroundTaskRecoveryPlan';
 
 type ShellLikeStatus = 'running' | 'completed' | 'failed';
 
-function mapShellStatus(status: ShellLikeStatus): TaskStatus {
-  if (status === 'completed') return 'completed';
+const EMPTY_OUTPUT_MESSAGE = 'Process completed with exit code 0 but produced no output.';
+
+function getOutputFileSize(outputFile?: string): number | undefined {
+  if (!outputFile) return undefined;
+  try {
+    return statSync(outputFile).size;
+  } catch {
+    return undefined;
+  }
+}
+
+function isEmptyOutputFile(outputFile?: string): boolean {
+  const size = getOutputFileSize(outputFile);
+  return size === undefined || size === 0;
+}
+
+function mapShellStatus(status: ShellLikeStatus, outputFile?: string): TaskStatus {
+  if (status === 'completed') return isEmptyOutputFile(outputFile) ? 'failed' : 'completed';
   if (status === 'failed') return 'failed';
   return 'running';
 }
 
-function buildFailure(status: ShellLikeStatus, exitCode?: number): TaskFailure | undefined {
-  if (status !== 'failed') return undefined;
+function buildFailure(
+  sourceStatus: ShellLikeStatus,
+  mappedStatus: TaskStatus,
+  exitCode?: number,
+): TaskFailure | undefined {
+  if (mappedStatus !== 'failed') return undefined;
+  if (sourceStatus === 'completed') {
+    return { message: EMPTY_OUTPUT_MESSAGE, exitCode, category: 'empty_output' };
+  }
   return {
     message: exitCode != null
       ? `Process exited with code ${exitCode}`
@@ -132,7 +156,7 @@ export function syncShellTaskSnapshotToLedger(
   task: TaskInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
 ): void {
-  const status = mapShellStatus(task.status);
+  const status = mapShellStatus(task.status, task.outputFile);
   const taskId = `shell:${task.taskId}`;
   const previous = ledger.getTask(taskId);
   const recoveryStatus = status === 'running' ? 'running-live' : status;
@@ -152,7 +176,7 @@ export function syncShellTaskSnapshotToLedger(
     startedAt: task.startTime,
     completedAt: task.endTime,
     durationMs: task.duration,
-    failure: buildFailure(task.status, task.exitCode),
+    failure: buildFailure(task.status, status, task.exitCode),
     metadata: {
       createdBy: 'neo',
       originalTaskId: task.taskId,
@@ -209,7 +233,7 @@ export function syncPtySessionSnapshotToLedger(
   session: PtySessionInfo,
   ledger: BackgroundTaskLedger = getBackgroundTaskLedger(),
 ): void {
-  const status = mapShellStatus(session.status);
+  const status = mapShellStatus(session.status, session.outputFile);
   const taskId = `pty:${session.sessionId}`;
   const command = [session.command, ...session.args].filter(Boolean).join(' ');
   const previous = ledger.getTask(taskId);
@@ -230,7 +254,7 @@ export function syncPtySessionSnapshotToLedger(
     startedAt: session.startTime,
     completedAt: session.endTime,
     durationMs: session.duration,
-    failure: buildFailure(session.status, session.exitCode),
+    failure: buildFailure(session.status, status, session.exitCode),
     metadata: {
       createdBy: 'neo',
       originalSessionId: session.sessionId,

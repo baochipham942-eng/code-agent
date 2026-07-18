@@ -143,60 +143,146 @@ describe('backgroundTaskSnapshotAdapters', () => {
     expect(ledger.drainNotifications('session-1')).toEqual([]);
   });
 
-  it('installs lifecycle event adapters once and updates ledger from shell events', () => {
+  it('maps completed shell and pty snapshots with empty output to failed', async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'background-empty-output-'));
+    try {
+      const emptyShellLog = path.join(tempDir, 'empty-shell.log');
+      const emptyPtyLog = path.join(tempDir, 'empty-pty.log');
+      const nonEmptyShellLog = path.join(tempDir, 'non-empty-shell.log');
+      await writeFile(emptyShellLog, '', 'utf8');
+      await writeFile(emptyPtyLog, '', 'utf8');
+      await writeFile(nonEmptyShellLog, 'completed\n', 'utf8');
+
+      mocks.getAllBackgroundTasks.mockReturnValue([
+        {
+          taskId: 'empty-shell',
+          status: 'completed',
+          command: 'true',
+          cwd: '/repo',
+          startTime: 1_000,
+          endTime: 1_100,
+          duration: 100,
+          exitCode: 0,
+          outputFile: emptyShellLog,
+        },
+        {
+          taskId: 'non-empty-shell',
+          status: 'completed',
+          command: 'printf completed',
+          cwd: '/repo',
+          startTime: 2_000,
+          endTime: 2_100,
+          duration: 100,
+          exitCode: 0,
+          outputFile: nonEmptyShellLog,
+        },
+      ]);
+      mocks.getAllPtySessions.mockReturnValue([
+        {
+          sessionId: 'empty-pty',
+          status: 'completed',
+          command: 'true',
+          args: [],
+          cwd: '/repo',
+          startTime: 3_000,
+          endTime: 3_100,
+          duration: 100,
+          exitCode: 0,
+          outputFile: emptyPtyLog,
+          cols: 120,
+          rows: 30,
+        },
+      ]);
+
+      const ledger = new BackgroundTaskLedger();
+      syncBackgroundTaskSnapshotsToLedger(ledger);
+
+      expect(ledger.getTask('shell:empty-shell')).toMatchObject({
+        status: 'failed',
+        failure: {
+          message: 'Process completed with exit code 0 but produced no output.',
+          exitCode: 0,
+          category: 'empty_output',
+        },
+      });
+      expect(ledger.getTask('pty:empty-pty')).toMatchObject({
+        status: 'failed',
+        failure: {
+          message: 'Process completed with exit code 0 but produced no output.',
+          exitCode: 0,
+          category: 'empty_output',
+        },
+      });
+      expect(ledger.getTask('shell:non-empty-shell')).toMatchObject({
+        status: 'completed',
+        failure: undefined,
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('installs lifecycle event adapters once and updates ledger from shell events', async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'background-lifecycle-'));
+    const outputFile = path.join(tempDir, 'event-shell.log');
+    await writeFile(outputFile, 'build complete\n', 'utf8');
     const ledger = new BackgroundTaskLedger();
     const detach = installBackgroundTaskEventAdapters(ledger);
-    installBackgroundTaskEventAdapters(ledger);
+    try {
+      installBackgroundTaskEventAdapters(ledger);
 
-    expect(mocks.onBackgroundTaskLifecycleEvent).toHaveBeenCalledTimes(1);
-    expect(mocks.onPtySessionLifecycleEvent).toHaveBeenCalledTimes(1);
+      expect(mocks.onBackgroundTaskLifecycleEvent).toHaveBeenCalledTimes(1);
+      expect(mocks.onPtySessionLifecycleEvent).toHaveBeenCalledTimes(1);
 
-    const shellListener = mocks.onBackgroundTaskLifecycleEvent.mock.calls[0][0];
-    shellListener({
-      type: 'started',
-      task: {
-        taskId: 'event-shell',
-        status: 'running',
-        command: 'npm run build',
-        cwd: '/repo',
-        sessionId: 'session-event',
-        toolCallId: 'tool-event',
-        startTime: 4_000,
-        duration: 0,
-        outputFile: '/tmp/event-shell.log',
-      },
-    });
-    shellListener({
-      type: 'completed',
-      task: {
-        taskId: 'event-shell',
+      const shellListener = mocks.onBackgroundTaskLifecycleEvent.mock.calls[0][0];
+      shellListener({
+        type: 'started',
+        task: {
+          taskId: 'event-shell',
+          status: 'running',
+          command: 'npm run build',
+          cwd: '/repo',
+          sessionId: 'session-event',
+          toolCallId: 'tool-event',
+          startTime: 4_000,
+          duration: 0,
+          outputFile,
+        },
+      });
+      shellListener({
+        type: 'completed',
+        task: {
+          taskId: 'event-shell',
+          status: 'completed',
+          command: 'npm run build',
+          cwd: '/repo',
+          sessionId: 'session-event',
+          toolCallId: 'tool-event',
+          startTime: 4_000,
+          endTime: 5_500,
+          duration: 1_500,
+          exitCode: 0,
+          outputFile,
+        },
+      });
+
+      expect(ledger.getTask('shell:event-shell')).toMatchObject({
         status: 'completed',
-        command: 'npm run build',
-        cwd: '/repo',
         sessionId: 'session-event',
         toolCallId: 'tool-event',
-        startTime: 4_000,
-        endTime: 5_500,
-        duration: 1_500,
-        exitCode: 0,
-        outputFile: '/tmp/event-shell.log',
-      },
-    });
+        completedAt: 5_500,
+      });
+      expect(ledger.drainNotifications('session-event')).toEqual([
+        expect.objectContaining({
+          id: 'shell:event-shell:terminal:completed',
+          type: 'task_completed',
+        }),
+      ]);
 
-    expect(ledger.getTask('shell:event-shell')).toMatchObject({
-      status: 'completed',
-      sessionId: 'session-event',
-      toolCallId: 'tool-event',
-      completedAt: 5_500,
-    });
-    expect(ledger.drainNotifications('session-event')).toEqual([
-      expect.objectContaining({
-        id: 'shell:event-shell:terminal:completed',
-        type: 'task_completed',
-      }),
-    ]);
-
-    detach();
+    } finally {
+      detach();
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('reloads persisted running shell tasks with explicit recovery status', async () => {

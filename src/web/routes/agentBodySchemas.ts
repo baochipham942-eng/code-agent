@@ -41,6 +41,8 @@ export const AgentRunBodySchema = z.object({
   goal: GoalBodySchema.optional(),
 }).passthrough();
 
+export type AgentRunBody = z.infer<typeof AgentRunBodySchema>;
+
 export const AgentCancelBodySchema = z.object({
   runId: z.string().optional(),
   sessionId: z.string().optional(),

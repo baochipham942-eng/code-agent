@@ -37,6 +37,7 @@ import {
 import {
   AgentRunBodySchema,
   AgentToolResultBodySchema,
+  type AgentRunBody,
 } from './agentBodySchemas';
 import { registerAgentLifecycleControlRoutes } from './agentLifecycleControls';
 import { upgradeLegacyAnchor } from '../../host/tools/artifacts/artifactLocatorHost';
@@ -67,6 +68,12 @@ import {
   resolveAgentDurableActivation,
 } from './agentDurableRouteLifecycle';
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
+import { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
+import { getDatabase } from '../../host/services/core/databaseService';
+import {
+  createWebQueuedInputDrain,
+  releaseThenTriggerWebQueuedInputDrain,
+} from './webQueuedInputDrain';
 
 export type { PendingLocalToolCall } from './agentBridgeToolDispatch';
 
@@ -168,15 +175,42 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     },
   });
 
-  // ── Agent Run (SSE streaming) ──────────────────────────────────────
-  router.post('/run', async (req: Request, res: Response) => {
-    const parsedBody = AgentRunBodySchema.safeParse(req.body);
-    if (!parsedBody.success) {
-      res.status(400).json({ error: 'Missing prompt' });
-      return;
-    }
+  const queuedInputDrain = createWebQueuedInputDrain({
+    getRepository: () => {
+      const db = getDatabase().getDb();
+      if (!db) {
+        throw new Error('Queued input database is unavailable');
+      }
+      return new QueuedInputRepository(db);
+    },
+    runEnvelope: async (envelope, response) => {
+      const parsedBody = AgentRunBodySchema.safeParse({
+        prompt: envelope.content,
+        sessionId: envelope.sessionId,
+        clientMessageId: envelope.clientMessageId,
+        attachments: envelope.attachments,
+        context: envelope.context,
+        goal: envelope.options?.goal,
+      });
+      if (!parsedBody.success) {
+        throw new Error('Persisted queued input envelope is invalid');
+      }
+      await runAgentTurn(parsedBody.data, response, { connectedClient: false });
+    },
+    emitAgentEvent: (sessionId, event) => {
+      broadcastSSE('agent:event', { ...event, sessionId });
+    },
+    logger,
+  });
 
-    const body = parsedBody.data;
+  // ── Agent Run (SSE streaming) ──────────────────────────────────────
+  async function runAgentTurn(
+    body: AgentRunBody,
+    res: Response,
+    transport:
+      | { connectedClient: true; requestToken: string }
+      | { connectedClient: false },
+  ): Promise<void> {
     const { prompt, project, sessionDir, model, provider } = body;
     const clientMessageId = body.clientMessageId?.trim()
       ? body.clientMessageId.trim()
@@ -189,13 +223,23 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
     const sessionId = body.sessionId?.trim() || `web-session-${randomUUID()}`;
-    const durableActivation = resolveAgentDurableActivation(deps, res);
+    const durableActivation = transport.connectedClient
+      ? resolveAgentDurableActivation(deps, res)
+      : (() => {
+        const rollout = deps.getDurableRunRollout?.();
+        if (rollout?.policy.durableActivation && !rollout.ready) {
+          throw new Error('Durable Run persistence is unavailable');
+        }
+        return rollout?.policy.durableActivation ?? true;
+      })();
     if (durableActivation === null) return;
-    let preflightDisconnected = res.destroyed;
+    let preflightDisconnected = transport.connectedClient && res.destroyed;
     const markPreflightDisconnected = (): void => {
       preflightDisconnected = true;
     };
-    res.once('close', markPreflightDisconnected);
+    if (transport.connectedClient) {
+      res.once('close', markPreflightDisconnected);
+    }
 
     // Preflight must finish before writeHead so a same-session race can be
     // rejected with an HTTP 409 instead of a misleading 200 SSE stream.
@@ -226,15 +270,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         resolvedProject = await ensureDefaultWebWorkingDirectory();
         logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
       } catch (error) {
-        res.status(500).json({ error: formatError(error), code: 'RUN_WORKSPACE_UNAVAILABLE' });
-        return;
+        if (transport.connectedClient) {
+          res.status(500).json({ error: formatError(error), code: 'RUN_WORKSPACE_UNAVAILABLE' });
+          return;
+        }
+        throw error;
       }
     }
 
     const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
 
     // per-token 并发上限（WP3-4，fail-closed）：必须在 writeHead 之前拒。
-    const releaseSseSlot = agentRunSseLimiter.tryAcquire(extractRequestToken(req));
+    const releaseSseSlot = transport.connectedClient
+      ? agentRunSseLimiter.tryAcquire(transport.requestToken)
+      : () => {};
     if (!releaseSseSlot) {
       res.status(429).json({ error: 'Too many concurrent runs for this token', code: 'TOO_MANY_CONNECTIONS' });
       return;
@@ -261,21 +310,27 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     } catch (error) {
       releaseSseSlot();
       if (error instanceof RunSessionConflictError) {
-        res.status(409).json({
-          error: error.message,
-          code: error.code,
-          sessionId,
-          activeRunId: error.existingRunId,
-        });
+        if (transport.connectedClient) {
+          res.status(409).json({
+            error: error.message,
+            code: error.code,
+            sessionId,
+            activeRunId: error.existingRunId,
+          });
+          return;
+        }
+        throw error;
+      }
+      if (transport.connectedClient && !preflightDisconnected && !res.destroyed) {
+        res.status(500).json({ error: formatError(error), code: 'RUN_REGISTRATION_FAILED' });
         return;
       }
-      if (!preflightDisconnected && !res.destroyed) {
-        res.status(500).json({ error: formatError(error), code: 'RUN_REGISTRATION_FAILED' });
-      }
-      return;
+      throw error;
     }
 
-    res.once('close', releaseSseSlot);
+    if (transport.connectedClient) {
+      res.once('close', releaseSseSlot);
+    }
     if (preflightDisconnected || res.destroyed) {
       if (runHandle) {
         await cancelDisconnectedAgentRouteRun({ runRegistry, runHandle, sessionId, durableActivation });
@@ -286,11 +341,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
 
     // SSE response
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    });
+    if (transport.connectedClient) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      });
+    }
 
     const taskId = `task-${Date.now()}`;
     const runController = new AgentRunController({
@@ -302,8 +359,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       tryGetSessionManager,
     });
 
-    res.once('close', runController.cancelForDisconnect);
-    res.off('close', markPreflightDisconnected);
+    if (transport.connectedClient) {
+      res.once('close', runController.cancelForDisconnect);
+      res.off('close', markPreflightDisconnected);
+    }
     if (preflightDisconnected || res.destroyed) {
       runController.cancelForDisconnect();
     }
@@ -790,10 +849,19 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           },
         });
       }
+      if (!transport.connectedClient) {
+        throw error;
+      }
     } finally {
       runController.markSettled();
-      res.off('close', runController.cancelForDisconnect);
-      await durableRunLifecycle.release();
+      if (transport.connectedClient) {
+        res.off('close', runController.cancelForDisconnect);
+      }
+      await releaseThenTriggerWebQueuedInputDrain({
+        release: () => durableRunLifecycle.release(),
+        sessionId,
+        triggerDrain: queuedInputDrain.handleReleasedSession,
+      });
       runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
@@ -804,6 +872,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       runController.endResponseIfOpen();
       releaseSseSlot(); // 并发槽位释放兜底（与 res 'close' 双保险，release 幂等）
     }
+  }
+
+  router.post('/run', async (req: Request, res: Response) => {
+    const parsedBody = AgentRunBodySchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      res.status(400).json({ error: 'Missing prompt' });
+      return;
+    }
+    await runAgentTurn(parsedBody.data, res, {
+      connectedClient: true,
+      requestToken: extractRequestToken(req),
+    });
   });
 
   registerAgentCancelRoute(router, runRegistry, deps.getDurableRunReadService);

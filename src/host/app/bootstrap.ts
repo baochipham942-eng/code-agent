@@ -31,7 +31,9 @@ import { resolveDurableRunRollout } from './durableRunRollout';
 import { initializeCoreServices as initCoreServicesImpl } from './initCoreServices';
 import { initializeBackgroundInfra } from './initBackgroundServices';
 import { createAgentRuntime } from './createAgentRuntime';
+import { registerDesktopQueuedInputDrain } from './desktopQueuedInputDrain';
 import { initializeSession, initializePlanningService } from './restoreSession';
+import { QueuedInputRepository } from '../services/core/repositories/QueuedInputRepository';
 
 const logger = createLogger('Bootstrap');
 
@@ -165,7 +167,7 @@ export async function initializeBackgroundServices(): Promise<void> {
     mode: durableRunRuntime.policy.mode,
     results: durableRunRuntime.recoveryResults,
   });
-  appService = new AgentAppServiceImpl(
+  const nextAppService = new AgentAppServiceImpl(
     () => getTaskManager(),
     () => configService,
     () => getTaskManager().getCurrentSessionId(),
@@ -173,6 +175,17 @@ export async function initializeBackgroundServices(): Promise<void> {
     durableRunRuntime.policy.durableActivation ? applicationRunRegistry : undefined,
     durableRunRuntime.readService,
   );
+  appService = nextAppService;
+
+  const queuedInputDb = getDatabase().getDb();
+  if (!queuedInputDb) {
+    throw new Error('Database is not initialized for desktop queued input drain');
+  }
+  registerDesktopQueuedInputDrain({
+    taskManager: getTaskManager(),
+    appService: nextAppService,
+    repository: new QueuedInputRepository(queuedInputDb),
+  });
 
   // Phase 4a: Session restoration (uses TaskManager to manage orchestrator)
   logger.info('Initializing session...');

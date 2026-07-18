@@ -639,6 +639,14 @@ export class TaskManager extends EventEmitter {
 
       // 处理队列中的下一个任务
       this.processQueue();
+
+      // Error is observable as its own state transition, but the session is
+      // reusable only after the task slot has been released. Publish that
+      // settled idle transition here so host-owned follow-up work cannot race
+      // the failed turn's finally cleanup.
+      if (this.sessionStates.get(sessionId)?.status === 'error') {
+        this.updateSessionState(sessionId, { status: 'idle' });
+      }
     }
   }
 

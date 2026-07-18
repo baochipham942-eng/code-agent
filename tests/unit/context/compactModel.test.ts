@@ -32,7 +32,7 @@ const compactModelMocks = vi.hoisted(() => {
         },
       },
     } as Partial<AppSettings> as AppSettings,
-    inference: vi.fn(async () => ({ type: 'text', content: '压缩摘要', finishReason: 'stop' })),
+    inference: vi.fn(async (): Promise<{ type: string; content: string; finishReason: string; truncated?: boolean }> => ({ type: 'text', content: '压缩摘要', finishReason: 'stop' })),
     getFallbackConfig: vi.fn(() => null as ModelConfig | null),
     getApiKey: vi.fn((provider: string) => state.apiKeys[provider]),
   };
@@ -126,6 +126,26 @@ describe('compactModelSummarize', () => {
         apiKey: 'moonshot-key',
       })
     );
+  });
+
+  it('propagates the provider truncated signal in summary metadata', async () => {
+    compactModelMocks.fallbackConfig = {
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+      maxTokens: 2048,
+    };
+    compactModelMocks.apiKeys = { moonshot: 'moonshot-key' };
+    compactModelMocks.inference.mockResolvedValue({
+      type: 'text',
+      content: '被截断的压缩摘要',
+      finishReason: 'length',
+      truncated: true,
+    });
+
+    const result = await compactModelSummarizeWithMetadata('请压缩这段上下文', 500);
+
+    expect(result.summary).toBe('被截断的压缩摘要');
+    expect(result.metadata.truncated).toBe(true);
   });
 
   it('falls back to the main model when the compact fallback has no key', async () => {

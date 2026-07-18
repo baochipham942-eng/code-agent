@@ -16,7 +16,7 @@ const compactionServiceMocks = vi.hoisted(() => ({
     'npm test failed with AssertionError.',
     '',
     '## Errors And Resolutions',
-    'AssertionError: expected true',
+    'Unresolved error: AssertionError: expected true',
     '',
     '## User Preferences And Constraints',
     'Keep scope small.',
@@ -47,6 +47,12 @@ vi.mock('../../../src/host/context/compactModel', () => ({
 vi.mock('../../../src/host/tools/dataFingerprint', () => ({
   dataFingerprintStore: {
     toSummary: vi.fn(() => 'Data fingerprint: sheet columns are stable.'),
+  },
+}));
+
+vi.mock('../../../src/host/tools/fileReadTracker', () => ({
+  fileReadTracker: {
+    getRecentFiles: vi.fn(() => []),
   },
 }));
 
@@ -86,6 +92,7 @@ describe('compactionService', () => {
       sessionId: 'session-1',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm4',
       preserveRecentCount: 1,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
     });
@@ -96,6 +103,118 @@ describe('compactionService', () => {
     expect(plan?.manifest.filePaths).toContain('/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts');
     expect(plan?.manifest.todos.some((item) => item.text.includes('TODO'))).toBe(true);
     expect(plan?.manifest.errors.some((item) => item.text.includes('AssertionError'))).toBe(true);
+  });
+
+  it('preserves the latest user instruction even when more than ten messages follow it', () => {
+    const currentUserMessage = message('current-user', 'user', 'Implement the requested boundary fix exactly.');
+    const messages: Message[] = [
+      message('history-1', 'system', 'historical system context'),
+      message('history-2', 'assistant', 'historical assistant context'),
+      currentUserMessage,
+      ...Array.from({ length: 11 }, (_, index) =>
+        message(`tail-${index + 1}`, index % 2 === 0 ? 'assistant' : 'tool', `tail message ${index + 1}`),
+      ),
+    ];
+
+    const plan = createCompactionPlan({
+      sessionId: 'session-latest-user',
+      source: 'auto_threshold',
+      messages,
+    });
+
+    expect(plan).not.toBeNull();
+    expect(plan?.compactedMessages.map((item) => item.id)).toEqual(['history-1', 'history-2']);
+    expect(plan?.preservedMessages.map((item) => item.id)).toContain(currentUserMessage.id);
+    expect(plan?.compactedMessages.map((item) => item.id)).not.toContain(currentUserMessage.id);
+  });
+
+  it('moves a tool call and its result to the preserved side when the default boundary splits them', () => {
+    const messages: Message[] = Array.from({ length: 14 }, (_, index) =>
+      message(`m${index + 1}`, 'assistant', `message ${index + 1}`),
+    );
+    messages[3] = {
+      ...message('m4', 'assistant', 'calling tool'),
+      toolCalls: [{ id: 'call-at-boundary', name: 'read_file', arguments: { path: '/tmp/example' } }],
+    };
+    messages[4] = {
+      ...message('m5', 'tool', 'tool result'),
+      toolResults: [{ toolCallId: 'call-at-boundary', success: true, output: 'ok' }],
+    };
+
+    const plan = createCompactionPlan({
+      sessionId: 'session-tool-pair',
+      source: 'auto_threshold',
+      messages,
+    });
+
+    expect(plan).not.toBeNull();
+    expect(plan?.compactedMessages.map((item) => item.id)).toEqual(['m1', 'm2', 'm3']);
+    expect(plan?.preservedMessages.slice(0, 2).map((item) => item.id)).toEqual(['m4', 'm5']);
+  });
+
+  it('keeps an unclosed tool call in the preserved messages', () => {
+    const messages: Message[] = Array.from({ length: 14 }, (_, index) =>
+      message(`m${index + 1}`, 'assistant', `message ${index + 1}`),
+    );
+    messages[3] = {
+      ...message('m4', 'assistant', 'calling a tool that has not returned'),
+      toolCalls: [{ id: 'dangling-call', name: 'read_file', arguments: { path: '/tmp/example' } }],
+    };
+
+    const plan = createCompactionPlan({
+      sessionId: 'session-dangling-tool-call',
+      source: 'auto_threshold',
+      messages,
+    });
+
+    expect(plan).not.toBeNull();
+    expect(plan?.compactedMessages.map((item) => item.id)).toEqual(['m1', 'm2', 'm3']);
+    expect(plan?.preservedMessages[0]?.id).toBe('m4');
+  });
+
+  it('reports too_few_messages when fewer than three messages are available', async () => {
+    const messages = [
+      message('m1', 'user', 'current request'),
+      message('m2', 'assistant', 'current response'),
+    ];
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-too-few-messages',
+      source: 'manual_current',
+      messages,
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      reason: 'too_few_messages',
+    });
+  });
+
+  it('reports and audits no_safe_compaction_span when safety rules leave fewer than two messages', async () => {
+    const messages = [
+      message('m1', 'system', 'historical context'),
+      message('m2', 'user', 'current request must remain intact'),
+      message('m3', 'assistant', 'current response'),
+    ];
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-no-safe-span',
+      source: 'manual_current',
+      messages,
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      reason: 'no_safe_compaction_span',
+    });
+    expect(compactionServiceMocks.recordAudit).toHaveBeenCalledWith({
+      result: expect.objectContaining({
+        success: false,
+        reason: 'no_safe_compaction_span',
+      }),
+      usagePercent: undefined,
+      createdAt: undefined,
+    });
   });
 
   it('adds a focus block after the survivor manifest and before the compacted transcript', async () => {
@@ -110,6 +229,7 @@ describe('compactionService', () => {
       sessionId: 'session-focus',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm4',
       preserveRecentCount: 1,
       focusText: '保留 /compact 命令修复大纲',
     });
@@ -138,6 +258,7 @@ describe('compactionService', () => {
       sessionId: 'session-no-focus',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm4',
       preserveRecentCount: 1,
     });
     const noFocusPrompt = compactionServiceMocks.summarizeWithMetadata.mock.calls[0][0] as string;
@@ -147,6 +268,7 @@ describe('compactionService', () => {
       sessionId: 'session-no-focus',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm4',
       preserveRecentCount: 1,
       focusText: '   ',
     });
@@ -176,6 +298,7 @@ describe('compactionService', () => {
       sessionId: 'session-focus-repair',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm3',
       preserveRecentCount: 1,
       focusText: '只关注死掉的 /compact 命令',
     });
@@ -188,6 +311,16 @@ describe('compactionService', () => {
   });
 
   it('shares file survivor mode metadata and warns the summary model about stale file records', async () => {
+    const survivorSummary = compactionServiceMocks.summary
+      .replaceAll(
+        '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts',
+        '/Users/linchen/Downloads/ai/code-agent/src/host/context/survivorManifest.ts',
+      )
+      .replace('TODO: wire service into IPC.', 'TODO: keep survivor details.');
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary: survivorSummary,
+      metadata: compactionServiceMocks.summaryModel,
+    });
     const messages: Message[] = [
       {
         id: 'm1',
@@ -220,6 +353,7 @@ describe('compactionService', () => {
       sessionId: 'session-files',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm4',
       preserveRecentCount: 1,
     });
 
@@ -249,6 +383,7 @@ describe('compactionService', () => {
       sessionId: 'session-1',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm4',
       preserveRecentCount: 1,
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
     });
@@ -331,7 +466,7 @@ describe('compactionService', () => {
     const messages: Message[] = Array.from({ length: 90 }, (_, index) =>
       message(
         `m${index + 1}`,
-        index % 2 === 0 ? 'user' : 'assistant',
+        'assistant',
         `historical message ${index + 1} ${'long context '.repeat(260)}`,
       ),
     );
@@ -379,6 +514,7 @@ describe('compactionService', () => {
       sessionId: 'session-archive',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm4',
       preserveRecentCount: 1,
       archivedToolResults,
     });
@@ -413,6 +549,7 @@ describe('compactionService', () => {
       sessionId: 'session-hooks',
       source: 'auto_threshold',
       messages,
+      anchorMessageId: 'm4',
       preserveRecentCount: 1,
       hookManager,
     });
@@ -455,6 +592,7 @@ describe('compactionService', () => {
       sessionId: 'session-1',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm4',
       preserveRecentCount: 1,
       modelConfig: { provider: 'moonshot', model: 'kimi-k2.5' },
     });
@@ -470,7 +608,7 @@ describe('compactionService', () => {
     });
   });
 
-  it('prepends the deterministic manifest when the model summary misses required survivors', async () => {
+  it('fails closed when the repaired summary still misses required survivors', async () => {
     compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
       summary: 'Tiny summary without required survivors.',
       metadata: compactionServiceMocks.summaryModel,
@@ -485,13 +623,64 @@ describe('compactionService', () => {
       sessionId: 'session-1',
       source: 'manual_current',
       messages,
+      anchorMessageId: 'm3',
       preserveRecentCount: 1,
     });
 
-    expect(result.success).toBe(true);
-    expect(result.summary).toContain('# Deterministic Survivor Manifest');
-    expect(result.summary).toContain('/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts');
-    expect(result.warnings).toContain('Summary missed survivor manifest items; deterministic manifest was prepended.');
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('invalid_summary_projection');
+    expect(result.validation?.ok).toBe(false);
+    expect(result.block).toBeUndefined();
+    expect(result.summaryMessage).toBeUndefined();
+    expect(result.newMessages).toBeUndefined();
+    expect(result.warnings).toContain('Summary admission failed after repair; compaction was rejected.');
+    expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    {
+      name: 'provider-truncated',
+      summary: 'A compact handoff summary.',
+      metadata: { ...compactionServiceMocks.summaryModel, truncated: true },
+      field: 'truncated' as const,
+    },
+    {
+      name: 'whitespace-only',
+      summary: ' \n\t ',
+      metadata: compactionServiceMocks.summaryModel,
+      field: 'emptyOrWhitespace' as const,
+    },
+    {
+      name: 'over-budget',
+      summary: 'oversized summary '.repeat(1200),
+      metadata: compactionServiceMocks.summaryModel,
+      field: 'overBudget' as const,
+    },
+  ])('rejects a $name summary before it can enter a CompactionBlock', async ({ summary, metadata, field }) => {
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({ summary, metadata });
+    const messages = [
+      message('m1', 'assistant', 'Historical analysis. '.repeat(120)),
+      message('m2', 'assistant', 'Historical implementation notes. '.repeat(120)),
+      message('m3', 'user', 'Keep this current request.'),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+    const originalMessages = messages.map(item => ({ ...item }));
+
+    const result = await compactMessagesWithSummary({
+      sessionId: `session-invalid-${field}`,
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 2,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('invalid_summary_projection');
+    expect(result.validation).toMatchObject({ ok: false, [field]: true });
+    expect(result.block).toBeUndefined();
+    expect(result.summaryMessage).toBeUndefined();
+    expect(result.newMessages).toBeUndefined();
+    expect(result.plan.messages).toBe(messages);
+    expect(result.plan.messages).toEqual(originalMessages);
     expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(2);
   });
 });

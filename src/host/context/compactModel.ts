@@ -30,6 +30,7 @@ export interface CompactModelSummaryMetadata {
   model: string;
   useMainModel: boolean;
   fallbackReason?: CompactModelFallbackReason;
+  truncated?: boolean;
 }
 
 export interface CompactModelSummaryResult {
@@ -100,7 +101,7 @@ async function requestSummary(
   finalPrompt: string,
   maxTokens: number,
   useMainModel: boolean
-): Promise<string> {
+): Promise<{ content: string; truncated?: boolean }> {
   logger.debug('Generating summary', {
     provider: config.provider,
     model: config.model,
@@ -122,7 +123,10 @@ async function requestSummary(
     logger.debug('Summary generated', {
       responseLength: response.content.length,
     });
-    return response.content;
+    return {
+      content: response.content,
+      ...(response.truncated !== undefined ? { truncated: response.truncated } : {}),
+    };
   }
 
   throw new Error('Empty response from compact model');
@@ -259,14 +263,18 @@ function resolveMainSummaryModel(): ResolvedSummaryModel | null {
   };
 }
 
-function toSummaryResult(summary: string, resolution: ResolvedSummaryModel): CompactModelSummaryResult {
+function toSummaryResult(
+  response: { content: string; truncated?: boolean },
+  resolution: ResolvedSummaryModel,
+): CompactModelSummaryResult {
   return {
-    summary,
+    summary: response.content,
     metadata: {
       provider: resolution.config.provider,
       model: resolution.config.model,
       useMainModel: resolution.useMainModel,
       fallbackReason: resolution.fallbackReason,
+      ...(response.truncated !== undefined ? { truncated: response.truncated } : {}),
     },
   };
 }

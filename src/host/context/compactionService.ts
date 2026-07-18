@@ -248,22 +248,47 @@ function splitMessages(
   anchorMessageId: string | undefined,
   preserveRecentCount: number,
 ): { anchorMessageId?: string; compactedMessages: Message[]; preservedMessages: Message[] } {
-  if (anchorMessageId) {
-    const index = messages.findIndex((message) => message.id === anchorMessageId);
-    if (index > 0) {
-      return {
-        anchorMessageId,
-        compactedMessages: messages.slice(0, index),
-        preservedMessages: messages.slice(index),
-      };
+  const explicitAnchorIndex = anchorMessageId
+    ? messages.findIndex((message) => message.id === anchorMessageId)
+    : -1;
+  const hasExplicitAnchor = explicitAnchorIndex > 0;
+  let boundary: number;
+
+  if (hasExplicitAnchor) {
+    boundary = explicitAnchorIndex;
+  } else {
+    const preservedCount = Math.min(
+      preserveRecentCount,
+      Math.max(1, messages.length - 2),
+    );
+    boundary = Math.max(1, messages.length - preservedCount);
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === 'user') {
+        boundary = Math.min(boundary, index);
+        break;
+      }
     }
   }
 
-  const preservedCount = Math.min(
-    preserveRecentCount,
-    Math.max(1, messages.length - 2),
-  );
-  const boundary = Math.max(1, messages.length - preservedCount);
+  const toolCallIndexes = new Map<string, number>();
+  const toolResultIndexes = new Map<string, number>();
+  messages.forEach((message, index) => {
+    message.toolCalls?.forEach((call) => toolCallIndexes.set(call.id, index));
+    message.toolResults?.forEach((result) => toolResultIndexes.set(result.toolCallId, index));
+  });
+
+  // Walk calls from newest to oldest so every boundary reduction is visible to
+  // earlier call/result pairs in the same pass.
+  const toolCalls = Array.from(toolCallIndexes.entries());
+  for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
+    const [toolCallId, callIndex] = toolCalls[index];
+    const resultIndex = toolResultIndexes.get(toolCallId);
+    if (resultIndex === undefined || (callIndex < boundary && boundary <= resultIndex)) {
+      boundary = Math.min(boundary, callIndex);
+    }
+  }
+
   return {
     anchorMessageId: messages[boundary]?.id,
     compactedMessages: messages.slice(0, boundary),
@@ -460,7 +485,11 @@ export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
   let summary = summaryResult.summary;
   let summaryModel = summaryResult.metadata;
   let callCostTokens = estimateTokens(prompt) + estimateTokens(summary);
-  let validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest));
+  let validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest), {
+    truncated: summaryResult.metadata.truncated,
+    tokenCount: estimateTokens(summary),
+    maxSummaryTokens: SUMMARY_MAX_TOKENS,
+  });
   const warnings = [...validation.warnings];
 
   if (!validation.ok) {
@@ -470,18 +499,16 @@ export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
     summary = summaryResult.summary;
     summaryModel = summaryResult.metadata;
     callCostTokens += estimateTokens(repairPrompt) + estimateTokens(summary);
-    validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest));
+    validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest), {
+      truncated: summaryResult.metadata.truncated,
+      tokenCount: estimateTokens(summary),
+      maxSummaryTokens: SUMMARY_MAX_TOKENS,
+    });
     warnings.push(...validation.warnings);
   }
 
   if (!validation.ok) {
-    warnings.push('Summary missed survivor manifest items; deterministic manifest was prepended.');
-    summary = [
-      '# Deterministic Survivor Manifest',
-      renderSurvivorManifestForPrompt(plan.manifest),
-      '',
-      summary,
-    ].join('\n');
+    warnings.push('Summary admission failed after repair; compaction was rejected.');
   }
 
   return { summary, validation, summaryModel, warnings, callCostTokens };
@@ -492,21 +519,32 @@ export async function compactMessagesWithSummary(
 ): Promise<CompactionServiceResult> {
   const plan = createCompactionPlan(options);
   if (!plan) {
+    const preserveRecentCount = Math.max(
+      0,
+      options.preserveRecentCount ?? DEFAULT_PRESERVE_RECENT_COUNT,
+    );
+    let reason = 'too_few_messages';
+    if (options.messages.length >= 3) {
+      const split = splitMessages(options.messages, options.anchorMessageId, preserveRecentCount);
+      if (split.compactedMessages.length < 2) {
+        reason = 'no_safe_compaction_span';
+      }
+    }
     const beforeTokens = countMessageTokens(options.messages);
     const result: CompactionServiceResult = {
       success: false,
-      reason: 'too_few_messages',
+      reason,
       plan: {
         sessionId: options.sessionId,
         source: options.source,
-        preserveRecentCount: options.preserveRecentCount ?? DEFAULT_PRESERVE_RECENT_COUNT,
+        preserveRecentCount,
         messages: options.messages,
         compactedMessages: [],
         preservedMessages: options.messages,
         manifest: buildSurvivorManifest(options.messages, {
           sessionId: options.sessionId,
           source: options.source,
-          preserveRecentCount: options.preserveRecentCount ?? DEFAULT_PRESERVE_RECENT_COUNT,
+          preserveRecentCount,
           archivedToolResults: options.archivedToolResults,
         }),
         contentToSummarize: '',
@@ -567,6 +605,24 @@ export async function compactMessagesWithSummary(
   const summaryResult = await summarizeCompactionPlan(planWithHooks);
   const { summary, validation, summaryModel } = summaryResult;
   const warnings = [...hookResult.warnings, ...summaryResult.warnings];
+
+  if (!validation.ok) {
+    const result: CompactionServiceResult = {
+      success: false,
+      reason: 'invalid_summary_projection',
+      plan: planWithHooks,
+      summary,
+      beforeTokens,
+      afterTokens: beforeTokens,
+      savedTokens: 0,
+      validation,
+      summaryModel,
+      warnings,
+    };
+    recordAudit(result, options);
+    return result;
+  }
+
   const compactedAt = options.now ?? Date.now();
   const firstPreservedTimestamp = planWithHooks.preservedMessages[0]?.timestamp;
   const summaryMessageTimestamp = typeof firstPreservedTimestamp === 'number'

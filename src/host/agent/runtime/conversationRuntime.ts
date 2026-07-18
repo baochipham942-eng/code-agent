@@ -1083,16 +1083,17 @@ export class ConversationRuntime {
     logger.info('[AgentLoop] Interrupt requested with new message');
   }
 
-  steer(
+  async steer(
     newMessage: string,
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
-  ): void {
+  ): Promise<void> {
     this.ctx.control.abortInference();
-    this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata);
+    const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata);
     this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
+    await persisted;
   }
 
   wasInterrupted(): boolean {

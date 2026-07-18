@@ -172,6 +172,8 @@ interface OrchestratorInternals {
     resolution: { agent: { id: string; name: string }; score: number; reason: string } | null;
     requestedAgentId?: string;
   }>;
+  agentLoop: { steer: ReturnType<typeof vi.fn> } | null;
+  pendingSteerMessages: unknown[];
   pendingPermissions: Map<string, { resolve: (r: string) => void }>;
 }
 function internals(o: AgentOrchestrator): OrchestratorInternals {
@@ -253,6 +255,23 @@ describe('AgentOrchestrator', () => {
   describe('取消任务', () => {
     it('cancel 在没有活动任务时不应抛错', async () => {
       await expect(orchestrator.cancel()).resolves.not.toThrow();
+    });
+  });
+
+  describe('调整方向', () => {
+    it('传播 steer 持久化错误，并在失败后复位 interrupt 状态', async () => {
+      const steer = vi.fn()
+        .mockRejectedValueOnce(new Error('disk full'))
+        .mockResolvedValue(undefined);
+      internals(orchestrator).agentLoop = { steer };
+
+      await expect(orchestrator.interruptAndContinue('first direction')).rejects.toThrow('disk full');
+      expect(mockOnEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt_complete' }));
+
+      await expect(orchestrator.interruptAndContinue('second direction')).resolves.toBeUndefined();
+      expect(steer).toHaveBeenCalledTimes(2);
+      expect(internals(orchestrator).pendingSteerMessages).toHaveLength(0);
+      expect(mockOnEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt_complete' }));
     });
   });
 

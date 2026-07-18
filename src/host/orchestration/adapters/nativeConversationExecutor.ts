@@ -1,6 +1,9 @@
 import type { ConversationRuntime } from '../../agent/runtime/conversationRuntime';
+import { createLogger } from '../../services/infra/logger';
 import type { GraphExecutorContext, GraphExecutorPort } from '../graphExecutorPort';
 import type { GraphJsonValue, GraphNode, GraphNodeResult } from '../graphTypes';
+
+const logger = createLogger('NativeConversationExecutor');
 
 export interface NativeConversationGraphInput { message: string }
 type NativeRuntime = Pick<ConversationRuntime, 'run' | 'cancel' | 'pause' | 'resume' | 'steer'>;
@@ -46,7 +49,11 @@ export class NativeConversationExecutor implements GraphExecutorPort {
 
   pause(runId: string, nodeId: string): void { this.active.get(`${runId}:${nodeId}`)?.pause(); }
   resume(runId: string, nodeId: string): void { this.active.get(`${runId}:${nodeId}`)?.resume(); }
-  steer(runId: string, nodeId: string, message: string): void { this.active.get(`${runId}:${nodeId}`)?.steer(message); }
+  steer(runId: string, nodeId: string, message: string): void {
+    void Promise.resolve(this.active.get(`${runId}:${nodeId}`)?.steer(message)).catch((err) => {
+      logger.error('[NativeConversationExecutor] steer persist failed', err);
+    });
+  }
 
   private key(context: GraphExecutorContext, node: GraphNode): string { return `${context.runId}:${node.nodeId}`; }
 }

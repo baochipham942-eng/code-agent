@@ -136,6 +136,7 @@ export * from './desktopShell';
 
 // Conversation envelope types (chat-native workbench context)
 export * from './conversationEnvelope';
+export * from './queuedInput';
 export * from './workbenchTools';
 
 // Decision Trace types (Security decision chain transparency)

@@ -56,25 +56,7 @@ export { resolveDirectRouting } from './agent/useAgentIPC';
 const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 150;
 const logger = createLogger('useAgent');
 
-// 跨过 renderer terminal event 到 host 真正释放 run owner 的已知竞态窗口。
-const MAX_QUEUED_RESEND_ATTEMPTS = 3;
 const QUEUED_RESEND_RETRY_DELAY_MS = 500;
-
-export function resolveQueuedRuntimeInputFailure(
-  queued: QueuedRuntimeInput,
-  maxAttempts: number,
-): { queued: QueuedRuntimeInput; exhausted: boolean } {
-  const retryCount = (queued.retryCount ?? 0) + 1;
-  const exhausted = retryCount > maxAttempts;
-  return {
-    queued: {
-      ...queued,
-      retryCount,
-      sendFailed: exhausted || undefined,
-    },
-    exhausted,
-  };
-}
 
 export function requeueAtFront(
   queue: QueuedRuntimeInput[],
@@ -141,6 +123,7 @@ export const useAgent = () => {
   const streamingFlushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const queuedRuntimeInputsRef = useRef<QueuedRuntimeInput[]>([]);
   const queuedRuntimeInputSendInFlightRef = useRef<Set<string>>(new Set());
+  const queuedRuntimeInputHydrationSuppressedIdsRef = useRef<Set<string>>(new Set());
   const queuedRuntimeInputRetryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [queuedRuntimeInputs, setQueuedRuntimeInputsSnapshot] = useState<QueuedRuntimeInput[]>([]);
 
@@ -208,16 +191,18 @@ export const useAgent = () => {
           throw new Error(response.error.message);
         }
 
-        const hydrated = response.data.map<QueuedRuntimeInput>((input) => ({
-          id: input.id,
-          sessionId: input.sessionId,
-          envelope: input.envelope,
-          content: input.envelope.content,
-          mode: getRuntimeInputMode(input.envelope.context),
-          attachmentsCount: input.envelope.attachments?.length || 0,
-          createdAt: input.createdAt,
-          retryCount: input.retryCount,
-        }));
+        const hydrated = response.data
+          .filter((input) => !queuedRuntimeInputHydrationSuppressedIdsRef.current.has(input.id))
+          .map<QueuedRuntimeInput>((input) => ({
+            id: input.id,
+            sessionId: input.sessionId,
+            envelope: input.envelope,
+            content: input.envelope.content,
+            mode: getRuntimeInputMode(input.envelope.context),
+            attachmentsCount: input.envelope.attachments?.length || 0,
+            createdAt: input.createdAt,
+            retryCount: input.retryCount,
+          }));
         const hydratedIds = new Set(hydrated.map((input) => input.id));
         setQueuedRuntimeInputs((current) => [
           ...hydrated,
@@ -410,29 +395,82 @@ export const useAgent = () => {
     if (!queued || queuedRuntimeInputSendInFlightRef.current.has(id)) return;
 
     queuedRuntimeInputSendInFlightRef.current.add(id);
-    setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
     try {
-      await sendMessage(queued.envelope, { silentFailure: true });
-    } catch (error) {
-      const { queued: retried, exhausted } = resolveQueuedRuntimeInputFailure(
-        queued,
-        MAX_QUEUED_RESEND_ATTEMPTS,
-      );
-      if (exhausted) {
-        addMessage({
-          id: generateMessageId(),
-          role: 'assistant',
-          content: getAgentSendFailureMessage(error),
-          timestamp: Date.now(),
-        });
-        setQueuedRuntimeInputs((current) => requeueAtFront(current, retried));
-      } else {
-        const timer = setTimeout(() => {
-          queuedRuntimeInputRetryTimersRef.current.delete(id);
-          setQueuedRuntimeInputs((current) => requeueAtFront(current, retried));
-        }, QUEUED_RESEND_RETRY_DELAY_MS);
-        queuedRuntimeInputRetryTimersRef.current.set(id, timer);
+      const markResponse = await typedInvokeDomain(QueuedInputSchemas.MARK_SENDING, {
+        action: 'markSending',
+        payload: { id },
+      });
+      if (!markResponse.success) {
+        logger.error(
+          'Failed to mark queued runtime input as sending',
+          new Error(markResponse.error.message),
+          { id },
+        );
+        return;
       }
+      if (!markResponse.data.marked) return;
+
+      queuedRuntimeInputHydrationSuppressedIdsRef.current.add(id);
+      setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+
+      try {
+        await sendMessage(queued.envelope, { silentFailure: true });
+      } catch (sendError) {
+        const failureResponse = await typedInvokeDomain(QueuedInputSchemas.REPORT_SEND_OUTCOME, {
+          action: 'reportSendOutcome',
+          payload: { id, outcome: 'failure' },
+        });
+        if (!failureResponse.success) {
+          logger.error(
+            'Failed to report queued runtime input send failure',
+            new Error(failureResponse.error.message),
+            { id },
+          );
+          return;
+        }
+
+        const settled = {
+          ...queued,
+          retryCount: failureResponse.data.retryCount,
+        };
+        if (failureResponse.data.status === 'queued') {
+          const timer = setTimeout(() => {
+            queuedRuntimeInputRetryTimersRef.current.delete(id);
+            queuedRuntimeInputHydrationSuppressedIdsRef.current.delete(id);
+            setQueuedRuntimeInputs((current) => requeueAtFront(current, settled));
+          }, QUEUED_RESEND_RETRY_DELAY_MS);
+          queuedRuntimeInputRetryTimersRef.current.set(id, timer);
+          return;
+        }
+
+        if (failureResponse.data.status === 'failed') {
+          queuedRuntimeInputHydrationSuppressedIdsRef.current.delete(id);
+          const failed = { ...settled, sendFailed: true };
+          addMessage({
+            id: generateMessageId(),
+            role: 'assistant',
+            content: getAgentSendFailureMessage(sendError),
+            timestamp: Date.now(),
+          });
+          setQueuedRuntimeInputs((current) => requeueAtFront(current, failed));
+        }
+        return;
+      }
+
+      const successResponse = await typedInvokeDomain(QueuedInputSchemas.REPORT_SEND_OUTCOME, {
+        action: 'reportSendOutcome',
+        payload: { id, outcome: 'success' },
+      });
+      queuedRuntimeInputHydrationSuppressedIdsRef.current.delete(id);
+      if (!successResponse.success) {
+        logger.error(
+          'Failed to report queued runtime input send success',
+          new Error(successResponse.error.message),
+          { id },
+        );
+      }
+    } catch (error) {
+      logger.error('Failed to drain queued runtime input', error, { id });
     } finally {
       queuedRuntimeInputSendInFlightRef.current.delete(id);
     }

@@ -27,6 +27,7 @@ import {
   type GlobalHotkeyRegistrationResult,
 } from '../services/nativeCommandFacade';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
+import { claimApprovalResponse, releaseApprovalResponse } from '../utils/approvalResponseGuard';
 
 const logger = createLogger('KeyboardShortcuts');
 
@@ -193,6 +194,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     setShowFileExplorer,
     openWorkspacePreview,
     pendingPermissionRequest,
+    pendingPermissionSessionId,
     setPendingPermissionRequest,
   } = useAppStore();
   const { keybindings, platform } = useKeybindingsSettings();
@@ -252,7 +254,24 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
         case 'session.stop':
           if (!enableCancel) return false;
           if (pendingPermissionRequest) {
-            setPendingPermissionRequest(null);
+            const request = pendingPermissionRequest;
+            const requestSessionId = pendingPermissionSessionId;
+            if (!claimApprovalResponse(request.id)) return true;
+
+            try {
+              if (!ipcService.isAvailable()) throw new Error('IPC unavailable');
+              await ipcService.invoke(
+                IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+                request.id,
+                'deny',
+                request.sessionId,
+              );
+              setPendingPermissionRequest(null);
+            } catch (error) {
+              releaseApprovalResponse(request.id);
+              setPendingPermissionRequest(request, requestSessionId);
+              logger.warn('Failed to deny permission request from shortcut', { error });
+            }
             return true;
           }
           if (useAppStore.getState().showSettings) {
@@ -487,6 +506,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       setShowFileExplorer,
       openWorkspacePreview,
       pendingPermissionRequest,
+      pendingPermissionSessionId,
       setPendingPermissionRequest,
     ]
   );

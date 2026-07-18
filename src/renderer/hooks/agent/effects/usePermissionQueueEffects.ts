@@ -22,6 +22,7 @@ export interface PermissionQueueStateDeps {
 }
 
 export interface PermissionQueueEventDeps {
+  clearPermissionRequestsForSession: (sessionId: string) => void;
   debug: (message: string, context: Record<string, unknown>) => void;
   enqueuePermissionRequest: AgentEffectsProps['enqueuePermissionRequest'];
   getCurrentSessionId: () => string | null;
@@ -67,8 +68,8 @@ export function reconcilePermissionQueue({
     const nextCurrentRequest = currentSessionId
       ? shiftQueuedPermissionRequest(currentSessionId)
       : null;
-    const nextGlobalRequest = shiftQueuedPermissionRequest(GLOBAL_PERMISSION_REQUEST_SESSION_ID);
-    const nextRequest = nextCurrentRequest || nextGlobalRequest;
+    const nextRequest = nextCurrentRequest
+      || shiftQueuedPermissionRequest(GLOBAL_PERMISSION_REQUEST_SESSION_ID);
 
     if (nextRequest) {
       setPendingPermissionRequest(nextRequest, nextCurrentRequest ? currentSessionId : null);
@@ -85,6 +86,9 @@ export function applyPermissionQueueEvent(
     case 'agent_cancelled':
     case 'error':
     case 'stream_end':
+      if (event.sessionId) {
+        deps.clearPermissionRequestsForSession(event.sessionId);
+      }
       return;
 
     case 'permission_request': {
@@ -162,6 +166,8 @@ export const usePermissionQueueEffects = ({
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
       applyPermissionQueueEvent(event, {
+        clearPermissionRequestsForSession: (sessionId) =>
+          useAppStore.getState().clearPermissionRequestsForSession(sessionId),
         debug: (message, context) => logger.debug(message, context),
         enqueuePermissionRequest,
         getCurrentSessionId: () => useSessionStore.getState().currentSessionId,

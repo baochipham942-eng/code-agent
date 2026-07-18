@@ -465,6 +465,12 @@ export interface QueuedRuntimeInput {
   mode: RuntimeInputMode;
   attachmentsCount: number;
   createdAt: number;
+  retryCount?: number;
+  sendFailed?: boolean;
+}
+
+export interface SendMessageOptions {
+  silentFailure?: boolean;
 }
 
 export function resolveDirectRouting(
@@ -624,7 +630,7 @@ export function useAgentIPC({
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
   // 运行中继续发送时，排队到当前回复结束后作为下一轮用户消息发送
   const sendMessage = useCallback(
-    async (envelope: ConversationEnvelope) => {
+    async (envelope: ConversationEnvelope, options?: SendMessageOptions) => {
       const { content, attachments, context } = envelope;
       logger.debug('sendMessage called', { contentPreview: content.substring(0, 50), sessionId: currentSessionId });
 
@@ -639,7 +645,7 @@ export function useAgentIPC({
       if (useSessionStore.getState().getPendingSessionCreate()) {
         logger.info('sendMessage - awaiting in-flight session create before bind');
       }
-      let effectiveSessionId = await resolveEffectiveSessionIdForSend({
+      const effectiveSessionId = await resolveEffectiveSessionIdForSend({
         envelopeSessionId: envelope.sessionId,
         getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
         getPendingSessionCreate: () => useSessionStore.getState().getPendingSessionCreate(),
@@ -910,6 +916,9 @@ export function useAgentIPC({
       // 2. 工具调用后的新响应会创建新消息，而不是追加到旧消息
 
       // 按会话设置处理状态（允许多会话并发）
+      const previousTaskState = effectiveSessionId
+        ? useTaskStore.getState().sessionStates[effectiveSessionId]
+        : undefined;
       setSessionProcessing(effectiveSessionId!, true);
       useTaskStore.getState().updateSessionState(effectiveSessionId!, {
         status: 'running',
@@ -938,6 +947,17 @@ export function useAgentIPC({
         logger.debug('invoke returned');
       } catch (error) {
         logger.error('Agent error', error);
+        if (options?.silentFailure === true) {
+          if (effectiveSessionId) {
+            setSessionProcessing(effectiveSessionId, false);
+            // 恢复发送前的终态，避免本次乐观 running 状态阻塞队列层的下一次重试。
+            useTaskStore.getState().updateSessionState(
+              effectiveSessionId,
+              previousTaskState ?? { status: 'idle' },
+            );
+          }
+          throw error;
+        }
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),

@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import type { Message } from '@shared/contract';
+import { generateMessageId } from '@shared/utils/id';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
@@ -32,7 +33,12 @@ import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from 
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import { useAgentDerived } from './agent/useAgentDerived';
 import { useAgentEffects } from './agent/useAgentEffects';
-import { isRuntimeBusyStatus, useAgentIPC, type QueuedRuntimeInput } from './agent/useAgentIPC';
+import {
+  getAgentSendFailureMessage,
+  isRuntimeBusyStatus,
+  useAgentIPC,
+  type QueuedRuntimeInput,
+} from './agent/useAgentIPC';
 import { useAgentState } from './agent/useAgentState';
 import { applyToolCallArgumentDelta } from '../utils/toolCallStreaming';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
@@ -43,6 +49,33 @@ export { resolveDirectRouting } from './agent/useAgentIPC';
 // 越小 → 文字到达越连续（更平滑）；markdown 重渲染另有 96ms 节流兜底，
 // 故这里压到 150ms 主要让纯文本流不再「半秒蹦一坨」，又不至于过度重渲染。
 const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 150;
+
+// 跨过 renderer terminal event 到 host 真正释放 run owner 的已知竞态窗口。
+const MAX_QUEUED_RESEND_ATTEMPTS = 3;
+const QUEUED_RESEND_RETRY_DELAY_MS = 500;
+
+export function resolveQueuedRuntimeInputFailure(
+  queued: QueuedRuntimeInput,
+  maxAttempts: number,
+): { queued: QueuedRuntimeInput; exhausted: boolean } {
+  const retryCount = (queued.retryCount ?? 0) + 1;
+  const exhausted = retryCount > maxAttempts;
+  return {
+    queued: {
+      ...queued,
+      retryCount,
+      sendFailed: exhausted || undefined,
+    },
+    exhausted,
+  };
+}
+
+export function requeueAtFront(
+  queue: QueuedRuntimeInput[],
+  item: QueuedRuntimeInput,
+): QueuedRuntimeInput[] {
+  return [item, ...queue.filter((existing) => existing.id !== item.id)];
+}
 
 function buildStreamingDeltaChanges(
   message: Message,
@@ -102,6 +135,7 @@ export const useAgent = () => {
   const streamingFlushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const queuedRuntimeInputsRef = useRef<QueuedRuntimeInput[]>([]);
   const queuedRuntimeInputSendInFlightRef = useRef<Set<string>>(new Set());
+  const queuedRuntimeInputRetryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [queuedRuntimeInputs, setQueuedRuntimeInputsSnapshot] = useState<QueuedRuntimeInput[]>([]);
 
   const setQueuedRuntimeInputs = useCallback((
@@ -208,6 +242,15 @@ export const useAgent = () => {
     };
   }, [flushStreamingMessages]);
 
+  useEffect(() => {
+    return () => {
+      for (const timer of queuedRuntimeInputRetryTimersRef.current.values()) {
+        clearTimeout(timer);
+      }
+      queuedRuntimeInputRetryTimersRef.current.clear();
+    };
+  }, []);
+
   const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
     for (const update of updates) {
       const currentMessages = useSessionStore.getState().messages;
@@ -291,11 +334,31 @@ export const useAgent = () => {
     queuedRuntimeInputSendInFlightRef.current.add(id);
     setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
     try {
-      await sendMessage(queued.envelope);
+      await sendMessage(queued.envelope, { silentFailure: true });
+    } catch (error) {
+      const { queued: retried, exhausted } = resolveQueuedRuntimeInputFailure(
+        queued,
+        MAX_QUEUED_RESEND_ATTEMPTS,
+      );
+      if (exhausted) {
+        addMessage({
+          id: generateMessageId(),
+          role: 'assistant',
+          content: getAgentSendFailureMessage(error),
+          timestamp: Date.now(),
+        });
+        setQueuedRuntimeInputs((current) => requeueAtFront(current, retried));
+      } else {
+        const timer = setTimeout(() => {
+          queuedRuntimeInputRetryTimersRef.current.delete(id);
+          setQueuedRuntimeInputs((current) => requeueAtFront(current, retried));
+        }, QUEUED_RESEND_RETRY_DELAY_MS);
+        queuedRuntimeInputRetryTimersRef.current.set(id, timer);
+      }
     } finally {
       queuedRuntimeInputSendInFlightRef.current.delete(id);
     }
-  }, [sendMessage, setQueuedRuntimeInputs]);
+  }, [addMessage, sendMessage, setQueuedRuntimeInputs]);
 
   useEffect(() => {
     if (
@@ -306,7 +369,9 @@ export const useAgent = () => {
     ) {
       return;
     }
-    const nextQueued = queuedRuntimeInputs.find((item) => item.sessionId === currentSessionId);
+    const nextQueued = queuedRuntimeInputs.find((item) => (
+      item.sessionId === currentSessionId && !item.sendFailed
+    ));
     if (!nextQueued) return;
     void sendQueuedRuntimeInput(nextQueued.id);
   }, [currentSessionId, currentSessionTaskStatus, isProcessing, queuedRuntimeInputs, sendQueuedRuntimeInput]);

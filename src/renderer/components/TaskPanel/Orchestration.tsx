@@ -2,7 +2,7 @@
 // Orchestration - Multi-agent orchestration visualization for TaskPanel
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   Ban,
@@ -27,7 +27,10 @@ import { useSwarmStore } from '../../stores/swarmStore';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import ipcService from '../../services/ipcService';
-import SwarmDependencyMap from './SwarmDependencyMap';
+// 懒加载：SwarmDependencyMap → DAGViewer → @xyflow(vendor-reactflow ~163KB) 是首屏
+// modulepreload 里 @xyflow 的唯一 eager 引用链。仅在有 activeLaunchRequest（swarm 拓扑
+// 实际展开）时才拉取，切断首屏体积。
+const SwarmDependencyMap = lazy(() => import('./SwarmDependencyMap'));
 import { ContextInterventionPanel } from './ContextInterventionPanel';
 import { ContextProvenancePanel } from './ContextProvenancePanel';
 import { LaunchRequestCard } from '../features/swarm/LaunchRequestCard';
@@ -420,15 +423,17 @@ export const Orchestration: React.FC = () => {
 
       {activeLaunchRequest && (
         <Section title={o.dependencyTopology} defaultExpanded>
-          <SwarmDependencyMap
-            launchRequest={activeLaunchRequest}
-            agents={agents}
-            phase={executionPhase}
-            parallelPeak={statistics.parallelPeak}
-            lastEventAt={lastEventAt}
-            selectedAgentId={selectedContextAgentId}
-            onAgentSelect={setSelectedContextAgentId}
-          />
+          <Suspense fallback={<div className="px-2 py-4 text-xs text-zinc-500">{o.dependencyTopology}…</div>}>
+            <SwarmDependencyMap
+              launchRequest={activeLaunchRequest}
+              agents={agents}
+              phase={executionPhase}
+              parallelPeak={statistics.parallelPeak}
+              lastEventAt={lastEventAt}
+              selectedAgentId={selectedContextAgentId}
+              onAgentSelect={setSelectedContextAgentId}
+            />
+          </Suspense>
         </Section>
       )}
 

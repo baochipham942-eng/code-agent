@@ -23,6 +23,7 @@ import {
 } from '@shared/contract/designHandoff';
 import { directionTokens } from '@/design/direction-tokens';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { QueuedInputSchemas } from '@shared/ipc/schemas';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
@@ -36,6 +37,7 @@ import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../sto
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
 import { toast } from '../../hooks/useToast';
 import ipcService from '../../services/ipcService';
+import { typedInvokeDomain } from '../../services/typedInvoke';
 
 const logger = createLogger('useAgent');
 
@@ -875,25 +877,49 @@ export function useAgentIPC({
                 delivery: 'queued_next_turn',
               },
             };
-        enqueueRuntimeInput({
-          id: queuedMessageId,
+        const queuedEnvelope: ConversationEnvelope = {
+          ...envelope,
+          // 设计会话冷启动引导不在这里 prepend：排队项稍后由 sendQueuedRuntimeInput 重新走
+          // sendMessage(queued.envelope)，会在 auto 路径对 envelope.content 注入引导（避免双重 prepend）。
+          content: envelope.content,
+          attachments,
+          context: queuedContext,
+          clientMessageId: queuedMessageId,
           sessionId: effectiveSessionId!,
-          envelope: {
-            ...envelope,
-            // 设计会话冷启动引导不在这里 prepend：排队项稍后由 sendQueuedRuntimeInput 重新走
-            // sendMessage(queued.envelope)，会在 auto 路径对 envelope.content 注入引导（避免双重 prepend）。
-            content: envelope.content,
-            attachments,
-            context: queuedContext,
-            clientMessageId: queuedMessageId,
-            sessionId: effectiveSessionId!,
-          },
-          content,
-          mode: runtimeInputMode,
-          attachmentsCount: attachments?.length || 0,
-          createdAt: Date.now(),
-        });
-        toast.info(getRuntimeInputQueuedMessage(runtimeInputMode));
+        };
+        try {
+          const enqueueResponse = await typedInvokeDomain(QueuedInputSchemas.ENQUEUE, {
+            action: 'enqueue',
+            payload: {
+              id: queuedMessageId,
+              sessionId: effectiveSessionId!,
+              envelope: queuedEnvelope,
+            },
+          });
+          if (!enqueueResponse.success) {
+            throw new Error(enqueueResponse.error.message);
+          }
+          const persisted = enqueueResponse.data;
+          enqueueRuntimeInput({
+            id: persisted.id,
+            sessionId: persisted.sessionId,
+            envelope: persisted.envelope,
+            content: persisted.envelope.content,
+            mode: getRuntimeInputMode(persisted.envelope.context),
+            attachmentsCount: persisted.envelope.attachments?.length || 0,
+            createdAt: persisted.createdAt,
+            retryCount: persisted.retryCount,
+          });
+          toast.info(getRuntimeInputQueuedMessage(runtimeInputMode));
+        } catch (error) {
+          logger.error('Queued input enqueue failed', error);
+          addMessage({
+            id: generateMessageId(),
+            role: 'assistant',
+            content: getAgentSendFailureMessage(error),
+            timestamp: Date.now(),
+          });
+        }
         return;
       }
 

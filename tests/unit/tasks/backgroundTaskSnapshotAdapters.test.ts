@@ -204,6 +204,7 @@ describe('backgroundTaskSnapshotAdapters', () => {
           exitCode: 0,
           category: 'empty_output',
         },
+        outputRefs: [expect.objectContaining({ size: 0 })],
       });
       expect(ledger.getTask('pty:empty-pty')).toMatchObject({
         status: 'failed',
@@ -212,10 +213,12 @@ describe('backgroundTaskSnapshotAdapters', () => {
           exitCode: 0,
           category: 'empty_output',
         },
+        outputRefs: [expect.objectContaining({ size: 0 })],
       });
       expect(ledger.getTask('shell:non-empty-shell')).toMatchObject({
         status: 'completed',
         failure: undefined,
+        outputRefs: [expect.objectContaining({ size: 10 })],
       });
     } finally {
       await rm(tempDir, { recursive: true, force: true });

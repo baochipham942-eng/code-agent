@@ -210,6 +210,7 @@ export function syncShellTaskSnapshotToLedger(
     type: 'log',
     label: 'Shell log',
     path: task.outputFile,
+    size: getOutputFileSize(task.outputFile),
     createdAt: task.startTime,
     metadata: {
       originalTaskId: task.taskId,
@@ -290,6 +291,7 @@ export function syncPtySessionSnapshotToLedger(
     type: 'log',
     label: 'PTY log',
     path: session.outputFile,
+    size: getOutputFileSize(session.outputFile),
     createdAt: session.startTime,
     metadata: {
       originalSessionId: session.sessionId,

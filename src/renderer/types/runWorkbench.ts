@@ -81,6 +81,7 @@ export interface TaskRecordOutputRef {
   type: string;
   label: string;
   pathOrUrl?: string;
+  size?: number;
 }
 
 export interface SubagentRunView {

@@ -985,8 +985,7 @@ API View (model actually sees)
 | **GuardFabric** | `src/host/permissions/guardFabric.ts` | 多源竞争（Rules + Mode + Hooks + Classifier + UserConfigSource），deny > ask > allow，first-valid-wins |
 | **拓扑感知** | guardFabric 内置 | main/async_agent/teammate/coordinator 各有不同裁决（async_agent+bash→deny） |
 | **Subagent 权限继承** | `src/host/agent/childContext.ts` + `src/host/permissions/userConfigSource.ts` | 默认 `strict-inherit`；tools 交集、deny 并集、mode 取严；用户 deny/ask/allow 级联 |
-| **事件三通道** | `src/host/events/internalEventStore.ts` + `controlStream.ts` | Internal（持久化 JSONL）+ Control（实时推送）+ Mailbox（agent 协调） |
-| **EventReplay** | `src/host/events/eventReplay.ts` | 从 InternalEventStore 回放事件，支持 agentId/时间范围过滤 |
+| **事件基础设施** | `src/host/services/eventing/bus.ts` + `internalStore.ts` | EventBus 负责运行时派发，InternalEventStore 负责持久化事件存储；agent 协调独立走 Mailbox |
 | **Worker Epoch** | `src/host/session/workerEpoch.ts` | 生成代围栏防止并发写入，`guardedWrite()` 校验 epoch 一致性 |
 | **Rematerialization** | `src/host/session/workerEpoch.ts` | 从快照投影恢复（非 transcript 逐条回放），`checkResumeConsistency()` 一致性检查 |
 

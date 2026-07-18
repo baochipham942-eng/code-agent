@@ -1746,6 +1746,96 @@ async fn check_for_update(app: tauri::AppHandle) -> Result<TauriUpdateInfo, Stri
     }
 }
 
+/// 真实数据目录，镜像 webServerBootstrap.cjs 的 resolveCompileCacheDir：
+/// 显式 CODE_AGENT_DATA_DIR（dev/test 通道）优先，否则 HOME/.code-agent。restart 后真启动
+/// 的 cache/DB 都在这里。
+fn real_data_dir() -> Option<PathBuf> {
+    if let Some(dir) = env::var_os("CODE_AGENT_DATA_DIR") {
+        Some(PathBuf::from(dir))
+    } else {
+        let home = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE"))?;
+        Some(PathBuf::from(home).join(".code-agent"))
+    }
+}
+
+/// C1：更新落盘后、restart 前预热新 bundle 的 V8 compile cache。
+/// 用隔离临时数据目录跑 warmup（DB/migration 等副作用落临时目录，绝不碰仍在运行的旧进程的
+/// 活库），但把 compile cache 写到真实位置 → restart 后首启命中直接 warm（省 ~2.9s 冷编译）。
+/// **best-effort + 超时兜底**：spawn 失败/超时/新 bundle 未就位一律吞掉，绝不阻塞 app.restart()；
+/// 最坏退化为今日的冷首启。
+fn warm_compile_cache_before_restart(app: &tauri::AppHandle) {
+    // 观测 warmup 全程 ~2-4s；20s 给 5x 余量兜慢机，同时把「卡住拖慢 restart」的最坏惩罚封顶。
+    const WARMUP_TIMEOUT: Duration = Duration::from_secs(20);
+    let Some(real_data) = real_data_dir() else {
+        return;
+    };
+    let real_cache_dir = real_data.join("cache").join("v8-compile-cache");
+    let real_db = real_data.join("code-agent.db");
+    let Ok((script_path, working_dir)) = resolve_server_script(app) else {
+        return;
+    };
+    let resource_dir = app.path().resource_dir().ok().map(strip_verbatim_prefix);
+    let node_binary = resolve_node_binary(&working_dir, resource_dir.as_deref());
+
+    // 隔离临时数据目录：warmup 的副作用（真库快照 + 全量 migration）落这里，用完删除。
+    let temp_dir = env::temp_dir().join(format!("agentneo-compile-warmup-{}", std::process::id()));
+    if std::fs::create_dir_all(&temp_dir).is_err() {
+        return;
+    }
+
+    let mut command = Command::new(&node_binary);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+        .arg(&script_path)
+        .current_dir(&working_dir)
+        .envs(env::vars())
+        .env("CODE_AGENT_COMPILE_WARMUP", "1")
+        .env("CODE_AGENT_DATA_DIR", &temp_dir)
+        .env("CODE_AGENT_COMPILE_CACHE_DIR", &real_cache_dir)
+        .env("CODE_AGENT_E2E", "1")
+        .env("CODE_AGENT_RENDERER_HOT_UPDATE", "false")
+        .env("NODE_ENV", web_server_node_env())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // 喂真库只读快照，让 warmup 跑真实会话查询路径（V8 才编译那些函数；空库预热几乎无效）。
+    if real_db.exists() {
+        command.env("CODE_AGENT_WARMUP_SEED_DB", &real_db);
+    }
+    for (key, value) in web_server_runtime_env(&working_dir, resource_dir.as_deref()) {
+        command.env(key, value.as_os_str());
+    }
+
+    let started = Instant::now();
+    if let Ok(mut child) = command.spawn() {
+        let deadline = started + WARMUP_TIMEOUT;
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
+                Err(_) => break,
+            }
+        }
+        eprintln!(
+            "[updater] compile-cache warmup finished in {:?}",
+            started.elapsed()
+        );
+    }
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_updater::UpdaterExt;
@@ -1790,6 +1880,10 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
     install_result.map_err(|e| format!("Failed to install update: {e}"))?;
+
+    // C1：restart 前预热新 bundle 的 compile cache，让更新后首启直接 warm（best-effort，
+    // 失败/超时不阻塞 restart）。此时新 .app 已落盘，resolve_server_script 指向新 bundle。
+    warm_compile_cache_before_restart(&app);
 
     // Restart the app after update.
     app.restart()

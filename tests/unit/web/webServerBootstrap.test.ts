@@ -27,6 +27,17 @@ describe('webServer compile cache bootstrap', () => {
       .toBe('/Users/test/.code-agent/cache/v8-compile-cache');
   });
 
+  it('honors CODE_AGENT_COMPILE_CACHE_DIR override, decoupled from data dir', () => {
+    // compile-warmup（C1）：副作用落临时 data dir，但 cache 写真实位置。
+    expect(resolveCompileCacheDir(
+      {
+        CODE_AGENT_DATA_DIR: '/tmp/agentneo-warmup-123',
+        CODE_AGENT_COMPILE_CACHE_DIR: '/Users/test/.code-agent/cache/v8-compile-cache',
+      },
+      '/Users/test',
+    )).toBe('/Users/test/.code-agent/cache/v8-compile-cache');
+  });
+
   it('degrades without blocking startup when compile cache is unavailable', () => {
     const enable = vi.fn(() => {
       throw new Error('unsupported');

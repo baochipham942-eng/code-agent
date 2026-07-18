@@ -7,6 +7,11 @@ const path = require('node:path');
 const WEB_SERVER_PAYLOAD = 'webServer.bundle.cjs';
 
 function resolveCompileCacheDir(env = process.env, homeDir = homedir()) {
+  // 显式覆写：compile-warmup（C1）用隔离临时数据目录跑副作用，但要把 cache 写到
+  // 真实 <data>/cache/v8-compile-cache，供 restart 后真启动命中。故 cache 目录与
+  // 数据目录解耦——override 优先。
+  const overrideCacheDir = env.CODE_AGENT_COMPILE_CACHE_DIR?.trim();
+  if (overrideCacheDir) return path.resolve(overrideCacheDir);
   const configuredDataDir = env.CODE_AGENT_DATA_DIR?.trim();
   const dataDir = configuredDataDir
     ? path.resolve(configuredDataDir)

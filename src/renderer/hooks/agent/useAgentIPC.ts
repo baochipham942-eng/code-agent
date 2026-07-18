@@ -916,7 +916,9 @@ export function useAgentIPC({
       // 2. 工具调用后的新响应会创建新消息，而不是追加到旧消息
 
       // 按会话设置处理状态（允许多会话并发）
-      const previousTaskState = useTaskStore.getState().sessionStates[effectiveSessionId!];
+      const previousTaskState = effectiveSessionId
+        ? useTaskStore.getState().sessionStates[effectiveSessionId]
+        : undefined;
       setSessionProcessing(effectiveSessionId!, true);
       useTaskStore.getState().updateSessionState(effectiveSessionId!, {
         status: 'running',
@@ -946,12 +948,14 @@ export function useAgentIPC({
       } catch (error) {
         logger.error('Agent error', error);
         if (options?.silentFailure === true) {
-          setSessionProcessing(effectiveSessionId!, false);
-          // 恢复发送前的终态，避免本次乐观 running 状态阻塞队列层的下一次重试。
-          useTaskStore.getState().updateSessionState(
-            effectiveSessionId!,
-            previousTaskState ?? { status: 'idle' },
-          );
+          if (effectiveSessionId) {
+            setSessionProcessing(effectiveSessionId, false);
+            // 恢复发送前的终态，避免本次乐观 running 状态阻塞队列层的下一次重试。
+            useTaskStore.getState().updateSessionState(
+              effectiveSessionId,
+              previousTaskState ?? { status: 'idle' },
+            );
+          }
           throw error;
         }
         // 错误时创建一条错误消息

@@ -3,7 +3,18 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { PermissionRequest } from '../../../src/shared/contract';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+
+function permissionRequest(id: string): PermissionRequest {
+  return {
+    id,
+    type: 'command',
+    tool: 'shell',
+    details: { command: `echo ${id}` },
+    timestamp: 100,
+  };
+}
 
 describe('appStore', () => {
   beforeEach(() => {
@@ -19,6 +30,9 @@ describe('appStore', () => {
       optionalUpdateInfo: null,
       showOptionalUpdateModal: false,
       goalRuns: {},
+      pendingPermissionRequest: null,
+      pendingPermissionSessionId: null,
+      queuedPermissionRequests: {},
     });
   });
 
@@ -169,5 +183,54 @@ describe('appStore', () => {
     useAppStore.getState().setShowOptionalUpdateModal(true);
 
     expect(useAppStore.getState().showOptionalUpdateModal).toBe(true);
+  });
+
+  it('clears pending and queued permissions only for the requested session', () => {
+    const pending = permissionRequest('current-pending');
+    const currentQueued = permissionRequest('current-queued');
+    const foreign = permissionRequest('foreign');
+    const global = permissionRequest('global');
+    useAppStore.setState({
+      pendingPermissionRequest: pending,
+      pendingPermissionSessionId: 'session-current',
+      queuedPermissionRequests: {
+        'session-current': [currentQueued],
+        'session-foreign': [foreign],
+        global: [global],
+      },
+    });
+
+    useAppStore.getState().clearPermissionRequestsForSession('session-current');
+
+    expect(useAppStore.getState()).toMatchObject({
+      pendingPermissionRequest: null,
+      pendingPermissionSessionId: null,
+      queuedPermissionRequests: {
+        'session-foreign': [foreign],
+        global: [global],
+      },
+    });
+  });
+
+  it('clears global permission state only for the global pseudo session', () => {
+    const globalPending = permissionRequest('global-pending');
+    const globalQueued = permissionRequest('global-queued');
+    const foreign = permissionRequest('foreign');
+    useAppStore.setState({
+      pendingPermissionRequest: globalPending,
+      pendingPermissionSessionId: null,
+      queuedPermissionRequests: {
+        global: [globalQueued],
+        'session-foreign': [foreign],
+      },
+    });
+
+    useAppStore.getState().clearPermissionRequestsForSession('global');
+
+    expect(useAppStore.getState()).toMatchObject({
+      pendingPermissionRequest: null,
+      pendingPermissionSessionId: null,
+      queuedPermissionRequests: { 'session-foreign': [foreign] },
+    });
   });
 });

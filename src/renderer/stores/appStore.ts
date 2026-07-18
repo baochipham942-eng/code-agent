@@ -134,6 +134,7 @@ export interface SettingsCapabilityFocus {
 }
 
 const PREVIEW_PREFIX = 'preview:';
+const GLOBAL_PERMISSION_REQUEST_SESSION_ID = 'global';
 const isPreviewWorkbenchId = (id: WorkbenchTabId): id is `preview:${string}` =>
   id.startsWith(PREVIEW_PREFIX);
 const previewPathOf = (id: `preview:${string}`): string => id.slice(PREVIEW_PREFIX.length);
@@ -365,6 +366,7 @@ interface AppState {
     options?: { front?: boolean }
   ) => void;
   shiftQueuedPermissionRequest: (sessionId: string) => PermissionRequest | null;
+  clearPermissionRequestsForSession: (sessionId: string) => void;
   setSessionTaskProgress: (sessionId: string, progress: TaskProgressData | null) => void;
   setSessionTaskComplete: (sessionId: string, complete: TaskCompleteData | null) => void;
 
@@ -1071,6 +1073,29 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     return nextRequest;
   },
+
+  clearPermissionRequestsForSession: (sessionId) =>
+    set((state) => {
+      const nextQueues = { ...state.queuedPermissionRequests };
+      delete nextQueues[sessionId];
+
+      const shouldClearPending = state.pendingPermissionSessionId === sessionId
+        || (
+          sessionId === GLOBAL_PERMISSION_REQUEST_SESSION_ID
+          && state.pendingPermissionRequest !== null
+          && state.pendingPermissionSessionId === null
+        );
+
+      return {
+        queuedPermissionRequests: nextQueues,
+        ...(shouldClearPending
+          ? {
+            pendingPermissionRequest: null,
+            pendingPermissionSessionId: null,
+          }
+          : {}),
+      };
+    }),
 
   setSessionTaskProgress: (sessionId, progress) =>
     set((state) => ({

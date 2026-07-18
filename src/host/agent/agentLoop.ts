@@ -357,13 +357,13 @@ export class AgentLoop {
     this.conversationRuntime.interrupt(newMessage);
   }
 
-  steer(
+  async steer(
     newMessage: string,
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
-  ): void {
-    this.conversationRuntime.steer(newMessage, clientMessageId, attachments, metadata);
+  ): Promise<void> {
+    await this.conversationRuntime.steer(newMessage, clientMessageId, attachments, metadata);
   }
 
   wasInterrupted(): boolean {

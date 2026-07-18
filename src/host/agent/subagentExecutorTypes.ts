@@ -171,6 +171,8 @@ export interface SubagentExecutionContext {
   spawnGuardId?: string;
   /** Optional external message queue drain, used by parallel executor inboxes. */
   messageDrain?: () => AgentMessage[] | Promise<AgentMessage[]>;
+  /** Ack callback — call after messageDrain() results have been durably confirmed injected into context. Only meaningful when messageDrain is durable-backed. */
+  ackMessageDrain?: () => void | Promise<void>;
   /** External task agent ID (e.g. DAG task ID) for context observability */
   executionAgentId?: string;
   /** Parent context for child context inheritance */

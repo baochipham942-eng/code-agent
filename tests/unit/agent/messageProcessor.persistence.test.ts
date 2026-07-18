@@ -147,6 +147,54 @@ describe('MessageProcessor persistence', () => {
     expect(sessionManagerState.addMessageToSession).toHaveBeenCalledWith('runtime-session-1', ctx.messages[0]);
   });
 
+  it('keeps the injected steer message in memory when persistence fails', async () => {
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+    sessionManagerState.addMessageToSession.mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(processor.injectSteerMessage('msg')).rejects.toThrow('disk full');
+
+    expect(ctx.messages).toEqual([{
+      id: 'steer-message-1',
+      role: 'user',
+      content: 'msg',
+      timestamp: expect.any(Number),
+    }]);
+  });
+
+  it('waits for steer message persistence before resolving', async () => {
+    let resolvePersistence!: () => void;
+    const persistence = new Promise<void>((resolve) => {
+      resolvePersistence = resolve;
+    });
+    sessionManagerState.addMessageToSession.mockReturnValueOnce(persistence);
+    const ctx = {
+      stats: RunStatsState.forTest(),
+      contextHealth: ContextHealthState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
+
+    const result = processor.injectSteerMessage('msg');
+    let settled = false;
+    void result.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+
+    resolvePersistence();
+    await expect(result).resolves.toBeUndefined();
+    expect(settled).toBe(true);
+  });
+
   it('marks denied-tool stop messages as meta when the run history is hidden', async () => {
     const persistedMessages: unknown[] = [];
     const ctx = {

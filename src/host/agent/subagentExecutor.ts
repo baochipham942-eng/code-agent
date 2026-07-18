@@ -584,6 +584,9 @@ export class SubagentExecutor {
           if (injected > 0) {
             emitContextSnapshot();
           }
+          if (externalMessages.length > 0) {
+            await context.ackMessageDrain?.();
+          }
         }
 
         // Check budget before each iteration

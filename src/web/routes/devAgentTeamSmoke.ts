@@ -146,7 +146,7 @@ async function runMessageSmoke(sessionId: string): Promise<SmokeScenarioSummary 
     { id: agentId, role: 'scout', task: 'wait for a queued parent message', tools: [] },
   ]);
   await waitUntil(() => coordinator.canReceiveMessage(agentId));
-  const sent = coordinator.sendMessage(agentId, deliveredMessage);
+  const sent = await coordinator.sendMessage(agentId, deliveredMessage);
   const result = await run;
   const task = getTask(result, agentId);
   if (!sent || !task.success || !task.output.includes(deliveredMessage)) {

@@ -976,7 +976,7 @@ API View (model actually sees)
 | **子 Agent 上下文重建** | `src/host/agent/childContext.ts` | `buildChildContext()` 从父上下文派生完整子运行时（prompt/tools/permissions/hooks/memory） |
 | **Agent Registry** | `src/host/agent/agentRegistry.ts` | 用户/项目 `.code-agent/agents/*.md` 与 builtin agent 合并；project > user > builtin；spawn、Task、CLI、@mention、StatusBar 共用 |
 | **AgentTask 状态机** | `src/host/agent/agentTask.ts` | 7 态生命周期（pending→registered→running→stopped→resumed→failed→cancelled）+ transcript 持久化 |
-| **Mailbox 协调** | `src/host/agent/mailboxBridge.ts` + `agentBus.ts` | worker↔leader 协调协议（permission_request/response、task_dispatch、status_report） |
+| **Agent Team durable mailbox** | `src/host/agent/agentTeamDurableTypes.ts` + `agentTeamDurableAdapter.ts` + `parallelAgentCoordinator.ts` | 按 session/run/tree 隔离的耐久 pending-message 队列，承载 parent/user→单个 child 的定向 steering；消息注入后经 ack 才消费并从 checkpoint 删除 |
 
 ### M3: 权限矩阵 + 事件分层 + 连续性协议
 
@@ -985,7 +985,7 @@ API View (model actually sees)
 | **GuardFabric** | `src/host/permissions/guardFabric.ts` | 多源竞争（Rules + Mode + Hooks + Classifier + UserConfigSource），deny > ask > allow，first-valid-wins |
 | **拓扑感知** | guardFabric 内置 | main/async_agent/teammate/coordinator 各有不同裁决（async_agent+bash→deny） |
 | **Subagent 权限继承** | `src/host/agent/childContext.ts` + `src/host/permissions/userConfigSource.ts` | 默认 `strict-inherit`；tools 交集、deny 并集、mode 取严；用户 deny/ask/allow 级联 |
-| **事件基础设施** | `src/host/services/eventing/bus.ts` + `internalStore.ts` | EventBus 负责运行时派发，InternalEventStore 负责持久化事件存储；agent 协调独立走 Mailbox |
+| **事件基础设施** | `src/host/services/eventing/bus.ts` + `internalStore.ts` | EventBus 负责运行时派发，InternalEventStore 负责持久化事件存储 |
 | **Worker Epoch** | `src/host/session/workerEpoch.ts` | 生成代围栏防止并发写入，`guardedWrite()` 校验 epoch 一致性 |
 | **Rematerialization** | `src/host/session/workerEpoch.ts` | 从快照投影恢复（非 transcript 逐条回放），`checkResumeConsistency()` 一致性检查 |
 

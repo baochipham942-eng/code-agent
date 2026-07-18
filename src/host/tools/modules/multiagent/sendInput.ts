@@ -63,7 +63,7 @@ export async function executeSendInput(
     const coordinator = target.scope
       ? getParallelAgentCoordinatorRegistry().get(target.scope)
       : getParallelAgentCoordinator();
-    const sentToParallelAgent = coordinator?.sendMessage(agentId, message) ?? false;
+    const sentToParallelAgent = await coordinator?.sendMessage(agentId, message) ?? false;
     if (sentToParallelAgent) {
       onProgress?.({ stage: 'completing', percent: 100 });
       return withMultiagentMeta({

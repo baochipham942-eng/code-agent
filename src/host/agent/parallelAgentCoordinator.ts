@@ -480,6 +480,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
           spawnGuardId: task.id,
           abortSignal: taskAbortController.signal,
           messageDrain: () => this.drainMessages(task.id),
+          ackMessageDrain: () => this.ackDrainedMessages(task.id),
           onContextSnapshot: (snapshot) => { void onProgress?.(snapshot); },
           hooks: executionContext.hooks,
         },
@@ -794,7 +795,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
     return this.taskDefinitions.has(taskId) && !this.completedTasks.has(taskId);
   }
 
-  sendMessage(taskId: string, message: string): boolean {
+  async sendMessage(taskId: string, message: string): Promise<boolean> {
     if (!this.canReceiveMessage(taskId)) {
       return false;
     }
@@ -805,20 +806,15 @@ export class ParallelAgentCoordinator extends EventEmitter {
     }
 
     if (this.durableController) {
-      void this.durableController.enqueueMessage(taskId, message, 'user').then((persisted) => {
-        queue.push({
-          id: persisted.id,
-          seq: persisted.seq,
-          type: 'text',
-          from: persisted.from,
-          payload: persisted.body,
-          timestamp: persisted.createdAt,
-        });
+      try {
+        const persisted = await this.durableController.enqueueMessage(taskId, message, 'user');
+        queue.push({ id: persisted.id, seq: persisted.seq, type: 'text', from: persisted.from, payload: persisted.body, timestamp: persisted.createdAt });
         logger.info(`[${taskId}] Durable parallel message queued (seq: ${persisted.seq}, queue size: ${queue.length})`);
-      }).catch((error) => {
+        return true;
+      } catch (error) {
         logger.error(`[${taskId}] Durable parallel message rejected`, { error });
-      });
-      return true;
+        return false;
+      }
     }
 
     queue.push(createTextMessage('user', message));
@@ -830,11 +826,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
     const queue = this.messageQueues.get(taskId);
     if (!queue || queue.length === 0) return [];
     const messages = [...queue];
-    if (this.durableController) {
-      await this.durableController.consumeMessages(taskId);
-    }
     queue.length = 0;
     return messages;
+  }
+
+  private async ackDrainedMessages(taskId: string): Promise<void> {
+    await this.durableController?.consumeMessages(taskId);
   }
 
   /**

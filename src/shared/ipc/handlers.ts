@@ -3,8 +3,12 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
+import type { SkillDraftOrigin } from '../contract/agent';
+import type { ParsedSkill } from '../contract/agentSkill';
 import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, MCPOAuthConsentRequest, MCPOAuthConsentResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
 import type { ServiceApiKey } from '../contract/configService';
+import type { DownloadResult, LocalSkillLibrary, SessionSkillMount, SkillCatalogPayload, SkillRecommendation, SkillRepository, UpdateResult } from '../contract/skillRepository';
+import type { SkillRegistryListItem } from '../contract/skillRegistry';
 
 import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
 
@@ -18,7 +22,7 @@ import type { ManagedBrowserSessionState } from '../contract/desktop';
 
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import type { ScriptRunEvent, WorkflowLaunchEvent } from '../contract/scriptRun';
-import { DAG_CHANNELS } from './channels';
+import { DAG_CHANNELS, SKILL_CHANNELS } from './channels';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult } from '../contract/telemetry';
 
@@ -228,6 +232,97 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CONTEXT_HEALTH_GET]: (sessionId?: string) => Promise<ContextHealthState>;
   [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET]: () => Promise<ContextCompressionChannelState>;
   [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_SET]: (patch: ContextCompressionConfigPatch) => Promise<ContextCompressionChannelState>;
+
+  // Skills
+  [SKILL_CHANNELS.REPO_LIST]: () => Promise<LocalSkillLibrary[]>;
+  [SKILL_CHANNELS.REPO_DOWNLOAD]: (repo: SkillRepository) => Promise<DownloadResult>;
+  [SKILL_CHANNELS.REPO_UPDATE]: (repoId: string) => Promise<UpdateResult>;
+  [SKILL_CHANNELS.REPO_REMOVE]: (repoId: string) => Promise<void>;
+  [SKILL_CHANNELS.REPO_ADD_CUSTOM]: (url: string, name?: string) => Promise<DownloadResult>;
+  [SKILL_CHANNELS.REGISTRY_LIST]: () => Promise<{ items: SkillRegistryListItem[]; error?: string }>;
+  [SKILL_CHANNELS.REGISTRY_INSTALL]: (name: string) => Promise<{ success: boolean; error?: string }>;
+  [SKILL_CHANNELS.SKILL_LIST]: () => Promise<Array<ParsedSkill & {
+    globalEnabled: boolean;
+    projectOverride: boolean | null;
+    enabled: boolean;
+  }>>;
+  [SKILL_CHANNELS.SKILL_ENABLE]: (skillName: string) => Promise<void>;
+  [SKILL_CHANNELS.SKILL_DISABLE]: (skillName: string) => Promise<void>;
+  [SKILL_CHANNELS.SKILL_PROJECT_SET]: (skillName: string, enabled: boolean) => Promise<void>;
+  [SKILL_CHANNELS.SKILL_PROJECT_CLEAR]: (skillName: string) => Promise<void>;
+  [SKILL_CHANNELS.SESSION_MOUNT]: (sessionId: string, skillName: string, libraryId: string) => Promise<boolean>;
+  [SKILL_CHANNELS.SESSION_UNMOUNT]: (sessionId: string, skillName: string) => Promise<boolean>;
+  [SKILL_CHANNELS.SESSION_LIST]: (sessionId: string) => Promise<SessionSkillMount[]>;
+  [SKILL_CHANNELS.SESSION_RECOMMEND]: (sessionId: string, userInput?: string) => Promise<SkillRecommendation[]>;
+  [SKILL_CHANNELS.RECOMMENDED_REPOS]: () => Promise<SkillRepository[]>;
+  [SKILL_CHANNELS.CATALOG]: () => Promise<SkillCatalogPayload>;
+  [SKILL_CHANNELS.SKILLSMP_SEARCH]: (query: string, limit?: number) => Promise<{
+    success: boolean;
+    data?: Array<{
+      id: string;
+      name: string;
+      description: string;
+      author: string;
+      githubUrl: string;
+      skillUrl: string;
+      stars: number;
+      updatedAt: number;
+    }>;
+    total?: number;
+    error?: { code: string; message: string };
+  }>;
+  [SKILL_CHANNELS.COMBO_START]: (sessionId: string) => Promise<{ success: boolean }>;
+  [SKILL_CHANNELS.COMBO_STOP]: (sessionId: string) => Promise<{ success: boolean }>;
+  [SKILL_CHANNELS.COMBO_MARK_TURN]: (sessionId: string, userMessage: string) => Promise<{ success: boolean }>;
+  [SKILL_CHANNELS.COMBO_CHECK_SUGGESTION]: (sessionId: string) => Promise<{
+    sessionId: string;
+    suggestedName: string;
+    suggestedDescription: string;
+    turnCount: number;
+    stepCount: number;
+    toolNames: string[];
+  } | null>;
+  [SKILL_CHANNELS.COMBO_SAVE]: (sessionId: string, name: string, description: string, workingDirectory?: string) => Promise<{
+    success: boolean;
+    skillPath?: string;
+    error?: string;
+  }>;
+  [SKILL_CHANNELS.COMBO_GET_RECORDING]: (sessionId: string) => Promise<{
+    sessionId: string;
+    turns: Array<{
+      userMessage: string;
+      steps: Array<{
+        toolCallId: string;
+        toolName: string;
+        args: Record<string, unknown>;
+        success: boolean;
+        outputPreview: string;
+        duration: number;
+        timestamp: number;
+      }>;
+      timestamp: number;
+    }>;
+    startedAt: number;
+    toolNames: string[];
+  } | null>;
+  [SKILL_CHANNELS.DRAFT_LIST]: () => Promise<Array<{
+    id: string;
+    name: string;
+    description: string;
+    patternKey: string;
+    toolSequence: string[];
+    occurrences: number;
+    origin: SkillDraftOrigin;
+    sessionId: string;
+    createdAt: number;
+    status: 'pending';
+  }>>;
+  [SKILL_CHANNELS.DRAFT_CONFIRM]: (draftId: string, workingDirectory?: string) => Promise<{
+    success: boolean;
+    skillPath?: string;
+    error?: string;
+  }>;
+  [SKILL_CHANNELS.DRAFT_REJECT]: (draftId: string) => Promise<{ success: boolean; error?: string }>;
 
   // Session status (multi-session parallel support)
   [IPC_CHANNELS.SESSION_STATUS_GET]: (sessionId: string) => Promise<SessionRuntimeSummary | null>;

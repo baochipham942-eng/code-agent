@@ -124,8 +124,13 @@ export const useAgent = () => {
   const queuedRuntimeInputsRef = useRef<QueuedRuntimeInput[]>([]);
   const queuedRuntimeInputSendInFlightRef = useRef<Set<string>>(new Set());
   const queuedRuntimeInputHydrationSuppressedIdsRef = useRef<Set<string>>(new Set());
+  const queuedRuntimeInputHydrationVersionRef = useRef(0);
   const queuedRuntimeInputRetryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [queuedRuntimeInputs, setQueuedRuntimeInputsSnapshot] = useState<QueuedRuntimeInput[]>([]);
+  const previousQueuedRuntimeInputBusyStateRef = useRef({
+    sessionId: currentSessionId,
+    isBusy: isRuntimeBusyStatus(currentSessionTaskStatus),
+  });
 
   const setQueuedRuntimeInputs = useCallback((
     updater: QueuedRuntimeInput[] | ((current: QueuedRuntimeInput[]) => QueuedRuntimeInput[]),
@@ -173,54 +178,90 @@ export const useAgent = () => {
     }
   }, [setQueuedRuntimeInputs]);
 
+  const hydrateQueuedRuntimeInputs = useCallback(async (sessionId: string) => {
+    const hydrationVersion = queuedRuntimeInputHydrationVersionRef.current + 1;
+    queuedRuntimeInputHydrationVersionRef.current = hydrationVersion;
+    const idsAtQueryStart = new Set(
+      queuedRuntimeInputsRef.current
+        .filter((input) => input.sessionId === sessionId && !input.sendFailed)
+        .map((input) => input.id),
+    );
+
+    try {
+      const response = await typedInvokeDomain(QueuedInputSchemas.LIST, {
+        action: 'list',
+        payload: { sessionId, status: 'queued' },
+      });
+      if (
+        hydrationVersion !== queuedRuntimeInputHydrationVersionRef.current
+        || useSessionStore.getState().currentSessionId !== sessionId
+      ) {
+        return;
+      }
+      if (!response.success) {
+        throw new Error(response.error.message);
+      }
+
+      const hydrated = response.data
+        .filter((input) => !queuedRuntimeInputHydrationSuppressedIdsRef.current.has(input.id))
+        .map<QueuedRuntimeInput>((input) => ({
+          id: input.id,
+          sessionId: input.sessionId,
+          envelope: input.envelope,
+          content: input.envelope.content,
+          mode: getRuntimeInputMode(input.envelope.context),
+          attachmentsCount: input.envelope.attachments?.length || 0,
+          createdAt: input.createdAt,
+          retryCount: input.retryCount,
+        }));
+      const hydratedIds = new Set(hydrated.map((input) => input.id));
+      setQueuedRuntimeInputs((current) => [
+        ...hydrated,
+        ...current.filter((input) => (
+          input.sessionId === sessionId
+          && !hydratedIds.has(input.id)
+          && (input.sendFailed || !idsAtQueryStart.has(input.id))
+        )),
+      ]);
+    } catch (error) {
+      if (
+        hydrationVersion === queuedRuntimeInputHydrationVersionRef.current
+        && useSessionStore.getState().currentSessionId === sessionId
+      ) {
+        logger.error('Failed to hydrate queued runtime inputs', error, { sessionId });
+      }
+    }
+  }, [setQueuedRuntimeInputs]);
+
   useEffect(() => {
     setQueuedRuntimeInputs([]);
-    if (!currentSessionId) return;
+    if (!currentSessionId) {
+      queuedRuntimeInputHydrationVersionRef.current += 1;
+      return;
+    }
 
-    const sessionId = currentSessionId;
-    let cancelled = false;
+    void hydrateQueuedRuntimeInputs(currentSessionId);
+  }, [currentSessionId, hydrateQueuedRuntimeInputs, setQueuedRuntimeInputs]);
 
-    void (async () => {
-      try {
-        const response = await typedInvokeDomain(QueuedInputSchemas.LIST, {
-          action: 'list',
-          payload: { sessionId, status: 'queued' },
-        });
-        if (cancelled || useSessionStore.getState().currentSessionId !== sessionId) return;
-        if (!response.success) {
-          throw new Error(response.error.message);
-        }
-
-        const hydrated = response.data
-          .filter((input) => !queuedRuntimeInputHydrationSuppressedIdsRef.current.has(input.id))
-          .map<QueuedRuntimeInput>((input) => ({
-            id: input.id,
-            sessionId: input.sessionId,
-            envelope: input.envelope,
-            content: input.envelope.content,
-            mode: getRuntimeInputMode(input.envelope.context),
-            attachmentsCount: input.envelope.attachments?.length || 0,
-            createdAt: input.createdAt,
-            retryCount: input.retryCount,
-          }));
-        const hydratedIds = new Set(hydrated.map((input) => input.id));
-        setQueuedRuntimeInputs((current) => [
-          ...hydrated,
-          ...current.filter((input) => (
-            input.sessionId === sessionId && !hydratedIds.has(input.id)
-          )),
-        ]);
-      } catch (error) {
-        if (!cancelled) {
-          logger.error('Failed to hydrate queued runtime inputs', error, { sessionId });
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
+  useEffect(() => {
+    const isBusy = isRuntimeBusyStatus(currentSessionTaskStatus);
+    const previous = previousQueuedRuntimeInputBusyStateRef.current;
+    previousQueuedRuntimeInputBusyStateRef.current = {
+      sessionId: currentSessionId,
+      isBusy,
     };
-  }, [currentSessionId, setQueuedRuntimeInputs]);
+
+    if (
+      !currentSessionId
+      || !isBusy
+      || previous.sessionId !== currentSessionId
+      || previous.isBusy
+    ) {
+      return;
+    }
+
+    void hydrateQueuedRuntimeInputs(currentSessionId);
+  }, [currentSessionId, currentSessionTaskStatus, hydrateQueuedRuntimeInputs]);
 
   const clearStreamingFlushTimer = useCallback((messageId: string) => {
     const timer = streamingFlushTimersRef.current.get(messageId);
@@ -475,22 +516,6 @@ export const useAgent = () => {
       queuedRuntimeInputSendInFlightRef.current.delete(id);
     }
   }, [addMessage, sendMessage, setQueuedRuntimeInputs]);
-
-  useEffect(() => {
-    if (
-      isProcessing
-      || !currentSessionId
-      || isRuntimeBusyStatus(currentSessionTaskStatus)
-      || currentSessionTaskStatus === 'cancelling'
-    ) {
-      return;
-    }
-    const nextQueued = queuedRuntimeInputs.find((item) => (
-      item.sessionId === currentSessionId && !item.sendFailed
-    ));
-    if (!nextQueued) return;
-    void sendQueuedRuntimeInput(nextQueued.id);
-  }, [currentSessionId, currentSessionTaskStatus, isProcessing, queuedRuntimeInputs, sendQueuedRuntimeInput]);
 
   const dismissResearchDetected = useCallback(() => {
     setResearchDetected(null);

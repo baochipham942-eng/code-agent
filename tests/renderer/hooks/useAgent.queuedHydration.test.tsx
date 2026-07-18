@@ -169,4 +169,41 @@ describe('useAgent queued input hydration', () => {
       },
     );
   });
+
+  it.each(['running', 'paused', 'queued'] as const)(
+    'reconciles the local queue when the current session transitions into %s',
+    async (status) => {
+      const hostDrained = queuedInput(`host-drained-${status}`, 'session-a');
+      typedInvokeDomainMock
+        .mockResolvedValueOnce({ success: true, data: [hostDrained] })
+        .mockResolvedValueOnce({ success: true, data: [] });
+      useTaskStore.setState({
+        sessionStates: { 'session-a': { status: 'idle' } },
+      });
+
+      const hook = renderHook(() => useAgent());
+      await waitFor(() => {
+        expect(hook.result.current.queuedRuntimeInputs.map((input) => input.id))
+          .toEqual([hostDrained.id]);
+      });
+
+      act(() => {
+        useTaskStore.setState({
+          sessionStates: { 'session-a': { status } },
+        });
+      });
+
+      await waitFor(() => {
+        expect(typedInvokeDomainMock).toHaveBeenCalledTimes(2);
+        expect(hook.result.current.queuedRuntimeInputs).toEqual([]);
+      });
+      expect(typedInvokeDomainMock).toHaveBeenLastCalledWith(
+        QueuedInputSchemas.LIST,
+        {
+          action: 'list',
+          payload: { sessionId: 'session-a', status: 'queued' },
+        },
+      );
+    },
+  );
 });

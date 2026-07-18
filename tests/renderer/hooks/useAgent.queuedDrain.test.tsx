@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueuedInput } from '../../../src/shared/contract/queuedInput';
@@ -151,6 +153,39 @@ describe('useAgent queued input drain', () => {
     expect(sendMessageMock).not.toHaveBeenCalled();
     expect(hook.result.current.queuedRuntimeInputs.map((input) => input.id))
       .toEqual(['queued-a']);
+  });
+
+  it('does not automatically send queued input when the task becomes idle', async () => {
+    mockDrainHost();
+    const hook = await renderHydrated();
+
+    await act(async () => {
+      useAppStore.setState({
+        isProcessing: false,
+        processingSessionIds: new Set(),
+      });
+      useTaskStore.setState({
+        sessionStates: { 'session-a': { status: 'idle' } },
+      });
+      await Promise.resolve();
+    });
+
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(typedInvokeDomainMock).not.toHaveBeenCalledWith(
+      QueuedInputSchemas.MARK_SENDING,
+      expect.anything(),
+    );
+    expect(hook.result.current.queuedRuntimeInputs.map((input) => input.id))
+      .toEqual(['queued-a']);
+  });
+
+  it('has no renderer-owned call path that automatically sends queued input', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/hooks/useAgent.ts'),
+      'utf8',
+    );
+
+    expect(source).not.toMatch(/\bsendQueuedRuntimeInput\s*\(/);
   });
 
   it('requeues after 500ms with the retryCount returned by the host', async () => {

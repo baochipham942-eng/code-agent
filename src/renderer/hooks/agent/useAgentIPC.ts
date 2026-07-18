@@ -899,7 +899,7 @@ export function useAgentIPC({
 
       // Add user message with UUID
       const userMessage: Message = {
-        id: generateMessageId(),
+        id: envelope.clientMessageId ?? generateMessageId(),
         role: 'user',
         content,
         timestamp: Date.now(),

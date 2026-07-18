@@ -89,4 +89,23 @@ describe('useAgentIPC sendMessage silentFailure', () => {
       error: 'Error: session already running',
     });
   });
+
+  it('preserves a queued envelope clientMessageId in the host payload', async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+    const hook = renderSendHook();
+
+    await act(async () => {
+      await hook.result.current.sendMessage({
+        ...envelope,
+        clientMessageId: 'queued-message-id',
+      });
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'agent:send-message',
+      expect.objectContaining({
+        clientMessageId: 'queued-message-id',
+      }),
+    );
+  });
 });

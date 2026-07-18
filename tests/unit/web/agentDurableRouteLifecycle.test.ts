@@ -195,6 +195,40 @@ describe('Agent durable route run lifecycle', () => {
     expect(mocks.unregister).toHaveBeenCalledWith('run-1', runHandle);
   });
 
+  it('records a disconnected Native failure as cancelled with a run_cancelled event', async () => {
+    const { runRegistry, mocks, runHandle } = createRunRegistry();
+    const lifecycle = createLifecycle({ runRegistry });
+
+    await lifecycle.start();
+    await lifecycle.markFailure({ disconnected: true, message: 'client disconnected' });
+
+    expect(mocks.terminalDurable).toHaveBeenCalledWith('run-1', expect.objectContaining({
+      status: 'cancelled',
+      reason: 'client disconnected',
+      event: expect.objectContaining({
+        type: 'run_cancelled',
+        payload: { message: 'client disconnected' },
+      }),
+    }), runHandle);
+  });
+
+  it('records a connected Native failure as failed with a run_failed event', async () => {
+    const { runRegistry, mocks, runHandle } = createRunRegistry();
+    const lifecycle = createLifecycle({ runRegistry });
+
+    await lifecycle.start();
+    await lifecycle.markFailure({ disconnected: false, message: 'native failed' });
+
+    expect(mocks.terminalDurable).toHaveBeenCalledWith('run-1', expect.objectContaining({
+      status: 'failed',
+      reason: 'native failed',
+      event: expect.objectContaining({
+        type: 'run_failed',
+        payload: { message: 'native failed' },
+      }),
+    }), runHandle);
+  });
+
   it('releases an unterminated durable run once instead of unregistering it', async () => {
     const { runRegistry, mocks, runHandle } = createRunRegistry();
     const lifecycle = createLifecycle({ runRegistry });

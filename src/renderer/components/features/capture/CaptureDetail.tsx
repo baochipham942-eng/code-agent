@@ -2,10 +2,12 @@
 // CaptureDetail - 采集内容详情视图
 // ============================================================================
 
-import React from 'react';
-import ReactMarkdown from 'react-markdown';
+import React, { Suspense, lazy } from 'react';
 import { X, Globe, ExternalLink, Clock, Tag } from 'lucide-react';
 import type { CaptureItem } from '@shared/contract/capture';
+
+// 懒加载 markdown（react-markdown + remark/rehype 链），避免进首屏 modulepreload。
+const MarkdownCore = lazy(() => import('../chat/MessageBubble/MarkdownCore'));
 
 interface CaptureDetailProps {
   item: CaptureItem;
@@ -55,7 +57,9 @@ export const CaptureDetail: React.FC<CaptureDetailProps> = ({ item, onClose }) =
       {/* 内容 */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
         <div className="prose prose-invert prose-sm max-w-none">
-          <ReactMarkdown>{item.content}</ReactMarkdown>
+          <Suspense fallback={<div className="whitespace-pre-wrap break-words">{item.content}</div>}>
+            <MarkdownCore content={item.content} />
+          </Suspense>
         </div>
       </div>
     </div>

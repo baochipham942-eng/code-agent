@@ -51,6 +51,29 @@ import {
 
 const logger = createLogger('WebServer');
 
+// ── Boot timing instrumentation ─────────────────────────────────────
+// 结构化启动分段耗时。每段边界打点，listen 时输出一张 delta 表，用于对账
+// 「体感慢的大头在页外」这一诊断（对应 renderer 的 boot:* mark）。
+// 关：CODE_AGENT_BOOT_TIMING=0。
+const bootMarks: Array<{ label: string; t: number }> = [];
+function bootMark(label: string): void {
+  if (process.env.CODE_AGENT_BOOT_TIMING === '0') return;
+  bootMarks.push({ label, t: performance.now() });
+}
+function dumpBootTiming(): void {
+  if (bootMarks.length < 2) return;
+  const t0 = bootMarks[0].t;
+  const segments = bootMarks.map((m, i) => ({
+    seg: m.label,
+    at_ms: +(m.t - t0).toFixed(1),
+    delta_ms: i === 0 ? 0 : +(m.t - bootMarks[i - 1].t).toFixed(1),
+  }));
+  logger.info('[boot-timing] webServer startup segments', {
+    total_ms: +(bootMarks[bootMarks.length - 1].t - t0).toFixed(1),
+    segments,
+  });
+}
+
 // 崩溃上报尽早初始化（无 SENTRY_DSN 时为 no-op）
 initSentryNode();
 // 脏标记检测上次会话是否异常退出
@@ -361,6 +384,7 @@ const pendingDevPermissions = new Map<string, PendingDevPermissionRequest>();
  * 直接使用 main 服务（与 IPC handler 内部 import 一致）
  */
 async function initializeServices(): Promise<void> {
+  bootMark('init:start');
   // 设置环境
   process.env.CODE_AGENT_CLI_MODE = 'true';
   process.env.CODE_AGENT_WEB_MODE = 'true';
@@ -403,6 +427,7 @@ async function initializeServices(): Promise<void> {
   const { initConfigService } = await import('../host/services/core/configService');
   const configService = initConfigService();
   await configService.initialize().then(() => logger.info('ConfigService initialized'));
+  bootMark('configService');
 
   // Initialize before exposing runtime preparation; SSE does not require mainWindow.
   (await import('../host/app/updateServiceBootstrap')).ensureUpdateServiceInitialized(configService, (event) => broadcastSSE('update:event', event));
@@ -428,6 +453,7 @@ async function initializeServices(): Promise<void> {
   } catch (error) {
     logger.warn('Supabase initialization failed (will retry on auth action):', (error as Error).message);
   }
+  bootMark('supabase+connectors+update');
 
   // 3. 初始化 AuthService（依赖 Supabase，恢复登录态）
   // Playwright E2E 不验证真实登录态；跳过 AuthService 可隔离本机缓存用户和外部网络。
@@ -457,6 +483,7 @@ async function initializeServices(): Promise<void> {
       logger.warn('AuthService not available:', (error as Error).message);
     }
   }
+  bootMark('auth');
 
   // 4. 初始化 Database（main 模块的单例，SessionManager 等依赖）
   durableRunRolloutPolicy = resolveDurableRunRollout();
@@ -480,6 +507,7 @@ async function initializeServices(): Promise<void> {
       logger.warn('Database not available (using in-memory sessions):', String(error));
     }
   }
+  bootMark('database');
 
   // 5. Fleet telemetry 回传：登录起、登出停（auth-gated，metadata-only）
   // 上传器此前只在 Electron main 路径（initBackgroundServices.ts）启动，而所有发行版实际跑的
@@ -526,10 +554,12 @@ async function initializeServices(): Promise<void> {
   }
 
   // Memory service removed — Light Memory (file-based) is used instead
+  bootMark('telemetry-wiring');
 
   // Skills and MCP are useful immediately after launch, but remote connections
   // must not sit in front of /api/health or Tauri's first window navigation.
   const capabilityBootstrap = startWebCapabilityBootstrap(configService);
+  bootMark('capability-bootstrap-kickoff'); // 非阻塞：应≈0ms
   if (databaseForDurableRun) {
     void capabilityBootstrap.then(async () => {
       durableRunRuntime = await initializeDurableRun({
@@ -577,6 +607,7 @@ async function initializeServices(): Promise<void> {
   } catch (error) {
     logger.warn('Failed to bind contextHealthService window:', (error as Error).message);
   }
+  bootMark('probe+contextHealth');
 
   // 6. 预设角色安装 + Agent Registry 初始化。
   // Registry 此前只在 Electron main 路径（initBackgroundServices.ts）初始化，而所有发行版
@@ -596,6 +627,7 @@ async function initializeServices(): Promise<void> {
   } catch (error) {
     logger.warn('Agent registry init failed (non-blocking):', (error as Error).message);
   }
+  bootMark('agent-registry');
 
   // 7. Cron 服务 + 角色主动性 cadence 同步。
   // 与步骤 6 同类的 web/main 路径分离修复：发行版跑的是 webServer，cron 调度器和
@@ -610,6 +642,7 @@ async function initializeServices(): Promise<void> {
   } catch (error) {
     logger.warn('Cron / role cadence init failed (non-blocking):', (error as Error).message);
   }
+  bootMark('cron+cadence');
 
   // 8. Log Bridge + P3-A 只读任务状态 provider。
   // 与步骤 5/6/7 同类的 web/main 路径分离修复：logBridge.start() + provider 注册此前只在
@@ -641,6 +674,7 @@ async function initializeServices(): Promise<void> {
   } catch (error) {
     logger.warn('LogBridge / task status provider init failed (non-blocking):', (error as Error).message);
   }
+  bootMark('logbridge');
 
   // 9. 补 web 路径：初始化 TaskManager 单例（onAgentEvent/configService 注入）。
   // main 路径在 bootstrap → createAgentRuntime 里做，webServer 此前从未做 —— 又一处
@@ -654,6 +688,7 @@ async function initializeServices(): Promise<void> {
   } catch (error) {
     logger.warn('createAgentRuntime init failed (web, non-blocking):', (error as Error).message);
   }
+  bootMark('agent-runtime');
 
   logger.info('Backend services initialized');
 }
@@ -1048,6 +1083,7 @@ async function killPortHolder(port: number): Promise<void> {
 // ============================================================================
 
 async function main(): Promise<void> {
+  bootMark('main:start');
   const port = parseInt(process.env.WEB_PORT || String(WEB_SERVER_DEFAULTS.PORT), 10);
   const host = process.env.WEB_HOST || WEB_SERVER_DEFAULTS.HOST;
 
@@ -1059,6 +1095,7 @@ async function main(): Promise<void> {
   // 启动前先清理：用户强杀 Tauri 主进程后，旧 webServer 可能残留占住端口。
   // 这一步必须早于服务初始化，否则新壳进程 healthcheck 会先撞到旧 boot token。
   await killPortHolder(port);
+  bootMark('killPortHolder');
 
   // 1. 初始化后端服务
   console.log('[1/3] Initializing backend services...');
@@ -1067,6 +1104,7 @@ async function main(): Promise<void> {
   // 2. 注册 IPC handler
   console.log('[2/3] Registering IPC handlers...');
   registerHandlers();
+  bootMark('registerHandlers');
 
   // 3. 启动 HTTP 服务
   console.log('[3/3] Starting HTTP server...');
@@ -1095,6 +1133,8 @@ async function main(): Promise<void> {
   });
 
   server.listen(port, host, () => {
+    bootMark('listen');
+    dumpBootTiming();
     // Write token to .dev-token for Vite dev server to read
     writeDevAuthToken(SERVER_AUTH_TOKEN);
 

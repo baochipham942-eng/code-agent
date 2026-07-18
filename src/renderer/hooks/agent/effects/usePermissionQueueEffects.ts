@@ -12,6 +12,26 @@ const GLOBAL_PERMISSION_REQUEST_SESSION_ID = 'global';
 
 type AgentEvent = { type: string; data?: unknown; sessionId?: string };
 
+export interface PermissionQueueStateDeps {
+  currentSessionId: string | null;
+  pendingPermissionRequest: PermissionRequest | null;
+  pendingPermissionSessionId: string | null;
+  enqueuePermissionRequest: AgentEffectsProps['enqueuePermissionRequest'];
+  setPendingPermissionRequest: AgentEffectsProps['setPendingPermissionRequest'];
+  shiftQueuedPermissionRequest: AgentEffectsProps['shiftQueuedPermissionRequest'];
+}
+
+export interface PermissionQueueEventDeps {
+  debug: (message: string, context: Record<string, unknown>) => void;
+  enqueuePermissionRequest: AgentEffectsProps['enqueuePermissionRequest'];
+  getCurrentSessionId: () => string | null;
+  getPendingPermissionRequest: () => PermissionRequest | null;
+  markSessionUnread: (sessionId: string) => void;
+  now: () => number;
+  setLastEventAt: (timestamp: number) => void;
+  setPendingPermissionRequest: AgentEffectsProps['setPendingPermissionRequest'];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -21,6 +41,90 @@ function normalizePermissionRequest(data: unknown): PermissionRequest | null {
     return null;
   }
   return data as unknown as PermissionRequest;
+}
+
+export function reconcilePermissionQueue({
+  currentSessionId,
+  pendingPermissionRequest,
+  pendingPermissionSessionId,
+  enqueuePermissionRequest,
+  setPendingPermissionRequest,
+  shiftQueuedPermissionRequest,
+}: PermissionQueueStateDeps): void {
+  if (
+    pendingPermissionRequest &&
+    pendingPermissionSessionId &&
+    pendingPermissionSessionId !== GLOBAL_PERMISSION_REQUEST_SESSION_ID &&
+    currentSessionId &&
+    pendingPermissionSessionId !== currentSessionId
+  ) {
+    enqueuePermissionRequest(pendingPermissionSessionId, pendingPermissionRequest, { front: true });
+    setPendingPermissionRequest(null);
+    return;
+  }
+
+  if (!pendingPermissionRequest) {
+    const nextCurrentRequest = currentSessionId
+      ? shiftQueuedPermissionRequest(currentSessionId)
+      : null;
+    const nextGlobalRequest = shiftQueuedPermissionRequest(GLOBAL_PERMISSION_REQUEST_SESSION_ID);
+    const nextRequest = nextCurrentRequest || nextGlobalRequest;
+
+    if (nextRequest) {
+      setPendingPermissionRequest(nextRequest, nextCurrentRequest ? currentSessionId : null);
+    }
+  }
+}
+
+export function applyPermissionQueueEvent(
+  event: AgentEvent,
+  deps: PermissionQueueEventDeps,
+): void {
+  switch (event.type) {
+    case 'agent_complete':
+    case 'agent_cancelled':
+    case 'error':
+    case 'stream_end':
+      return;
+
+    case 'permission_request': {
+      deps.setLastEventAt(deps.now());
+      deps.debug('Received event', { type: event.type, sessionId: event.sessionId });
+      deps.debug('Permission request received', { data: event.data });
+      const permissionRequest = normalizePermissionRequest(event.data);
+      if (!permissionRequest) {
+        break;
+      }
+
+      const currentSessionId = deps.getCurrentSessionId();
+      const eventSessionId = event.sessionId || currentSessionId || null;
+      const isCurrentSessionEvent = !eventSessionId || eventSessionId === currentSessionId;
+      const rawPermissionSessionId = event.sessionId;
+      const isGlobalPermissionRequest =
+        !rawPermissionSessionId ||
+        rawPermissionSessionId === GLOBAL_PERMISSION_REQUEST_SESSION_ID;
+
+      if (isGlobalPermissionRequest) {
+        if (!deps.getPendingPermissionRequest()) {
+          deps.setPendingPermissionRequest(permissionRequest, null);
+        } else {
+          deps.enqueuePermissionRequest(
+            GLOBAL_PERMISSION_REQUEST_SESSION_ID,
+            permissionRequest
+          );
+        }
+        break;
+      }
+
+      if (isCurrentSessionEvent && !deps.getPendingPermissionRequest()) {
+        deps.setPendingPermissionRequest(permissionRequest, rawPermissionSessionId);
+      } else {
+        deps.enqueuePermissionRequest(rawPermissionSessionId, permissionRequest);
+        deps.markSessionUnread(rawPermissionSessionId);
+      }
+      break;
+    }
+  }
 }
 
 export const usePermissionQueueEffects = ({
@@ -38,29 +142,14 @@ export const usePermissionQueueEffects = ({
   setSessionTaskComplete,
 }: AgentEffectsProps) => {
   useEffect(() => {
-    if (
-      pendingPermissionRequest &&
-      pendingPermissionSessionId &&
-      pendingPermissionSessionId !== GLOBAL_PERMISSION_REQUEST_SESSION_ID &&
-      currentSessionId &&
-      pendingPermissionSessionId !== currentSessionId
-    ) {
-      enqueuePermissionRequest(pendingPermissionSessionId, pendingPermissionRequest, { front: true });
-      setPendingPermissionRequest(null);
-      return;
-    }
-
-    if (!pendingPermissionRequest) {
-      const nextCurrentRequest = currentSessionId
-        ? shiftQueuedPermissionRequest(currentSessionId)
-        : null;
-      const nextGlobalRequest = shiftQueuedPermissionRequest(GLOBAL_PERMISSION_REQUEST_SESSION_ID);
-      const nextRequest = nextCurrentRequest || nextGlobalRequest;
-
-      if (nextRequest) {
-        setPendingPermissionRequest(nextRequest, nextCurrentRequest ? currentSessionId : null);
-      }
-    }
+    reconcilePermissionQueue({
+      currentSessionId,
+      pendingPermissionRequest,
+      pendingPermissionSessionId,
+      enqueuePermissionRequest,
+      setPendingPermissionRequest,
+      shiftQueuedPermissionRequest,
+    });
   }, [
     currentSessionId,
     pendingPermissionRequest,
@@ -72,51 +161,18 @@ export const usePermissionQueueEffects = ({
 
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
-      switch (event.type) {
-        case 'agent_complete':
-        case 'agent_cancelled':
-        case 'error':
-        case 'stream_end':
-          return;
-
-        case 'permission_request': {
-          lastEventAtRef.current = Date.now();
-          logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
-          logger.debug('Permission request received', { data: event.data });
-          const permissionRequest = normalizePermissionRequest(event.data);
-          if (!permissionRequest) {
-            break;
-          }
-
-          const currentSessionId = useSessionStore.getState().currentSessionId;
-          const eventSessionId = event.sessionId || currentSessionId || null;
-          const isCurrentSessionEvent = !eventSessionId || eventSessionId === currentSessionId;
-          const rawPermissionSessionId = event.sessionId;
-          const isGlobalPermissionRequest =
-            !rawPermissionSessionId ||
-            rawPermissionSessionId === GLOBAL_PERMISSION_REQUEST_SESSION_ID;
-
-          if (isGlobalPermissionRequest) {
-            if (!useAppStore.getState().pendingPermissionRequest) {
-              setPendingPermissionRequest(permissionRequest, null);
-            } else {
-              enqueuePermissionRequest(
-                GLOBAL_PERMISSION_REQUEST_SESSION_ID,
-                permissionRequest
-              );
-            }
-            break;
-          }
-
-          if (isCurrentSessionEvent && !useAppStore.getState().pendingPermissionRequest) {
-            setPendingPermissionRequest(permissionRequest, rawPermissionSessionId);
-          } else {
-            enqueuePermissionRequest(rawPermissionSessionId, permissionRequest);
-            useSessionStore.getState().markSessionUnread(rawPermissionSessionId);
-          }
-          break;
-        }
-      }
+      applyPermissionQueueEvent(event, {
+        debug: (message, context) => logger.debug(message, context),
+        enqueuePermissionRequest,
+        getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
+        getPendingPermissionRequest: () => useAppStore.getState().pendingPermissionRequest,
+        markSessionUnread: (sessionId) => useSessionStore.getState().markSessionUnread(sessionId),
+        now: Date.now,
+        setLastEventAt: (timestamp) => {
+          lastEventAtRef.current = timestamp;
+        },
+        setPendingPermissionRequest,
+      });
     });
 
     return () => {

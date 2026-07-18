@@ -1094,7 +1094,11 @@ async function main(): Promise<void> {
 
   // 启动前先清理：用户强杀 Tauri 主进程后，旧 webServer 可能残留占住端口。
   // 这一步必须早于服务初始化，否则新壳进程 healthcheck 会先撞到旧 boot token。
-  await killPortHolder(port);
+  // 被 Tauri spawn 时（有 boot token）壳已在 spawn 前 clear_stale_web_server_port
+  // 清过端口（release 路径；debug 仅在无 server 运行时才 spawn），此处 lsof 纯冗余，跳过省 ~35ms。
+  if (!process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
+    await killPortHolder(port);
+  }
   bootMark('killPortHolder');
 
   // 1. 初始化后端服务

@@ -439,9 +439,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           emitEvent: (event) => runController.emitAgentEvent(event),
           durableLifecycle: externalDurableLifecycle,
         });
-        await durableRunLifecycle.markSuccess({ result });
+        const authoritativeStatus = await durableRunLifecycle.markSuccess({ result });
         runController.flush();
-        await runController.updateSessionStatus(result.status === 'failed' ? 'error' : 'completed');
+        await runController.updateSessionStatus(
+          authoritativeStatus === 'completed'
+            ? 'completed'
+            : authoritativeStatus === 'cancelled' ? 'interrupted' : 'error',
+        );
         return;
       }
 

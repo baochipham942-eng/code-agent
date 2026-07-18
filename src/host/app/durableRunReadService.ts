@@ -115,6 +115,9 @@ export function mapLegacyRunView(
 export function mapDurableRunToSessionStatus(status: DurableRunView['status']): SessionStatus {
   if (status === 'paused') return 'paused';
   if (status === 'created' || status === 'running' || status === 'waiting' || status === 'recovering') return 'running';
+  if (status === 'failed') return 'error';
+  if (status === 'completed') return 'completed';
+  if (status === 'cancelled') return 'interrupted';
   return 'idle';
 }
 

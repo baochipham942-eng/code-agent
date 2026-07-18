@@ -183,7 +183,7 @@ describe('ExternalEngineDurableLifecycle', () => {
       engine: 'codex_cli',
       status: 'completed',
       exitCode: 0,
-    }, true)).resolves.toBeUndefined();
+    }, true)).resolves.toBe('completed');
 
     expect(mocks.checkpoint).toHaveBeenCalledTimes(2);
     expect(mocks.terminal).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
@@ -211,7 +211,7 @@ describe('ExternalEngineDurableLifecycle', () => {
       engine: 'claude_code',
       status: 'completed',
       exitCode: 0,
-    }, true)).resolves.toBeUndefined();
+    }, true)).resolves.toBe('completed');
 
     expect(mocks.checkpoint).toHaveBeenCalledTimes(2);
     expect(mocks.terminal).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
@@ -223,7 +223,11 @@ describe('ExternalEngineDurableLifecycle', () => {
     registry.configureDurableKernel(mocks.kernel);
     const lifecycle = await ExternalEngineDurableLifecycle.start({ registry, engine: 'codex_cli', sessionId: 'session-honest', workspace: '/tmp', cwd: '/tmp' });
     await lifecycle.attachProcess(fakeChild(), { binary: '/bin/codex', commandSummary: 'codex exec <prompt:redacted>', permissionProfile: 'read_only' });
-    await lifecycle.finish({ runId: lifecycle.runId, sessionId: lifecycle.sessionId, engine: 'codex_cli', status: 'completed', exitCode: 0 }, false);
+    const firstStatus = await lifecycle.finish({ runId: lifecycle.runId, sessionId: lifecycle.sessionId, engine: 'codex_cli', status: 'completed', exitCode: 0 }, false);
+    const repeatedStatus = await lifecycle.finish({ runId: lifecycle.runId, sessionId: lifecycle.sessionId, engine: 'codex_cli', status: 'completed', outputText: 'late evidence', exitCode: 0 }, true);
+    expect(firstStatus).toBe('failed');
+    expect(repeatedStatus).toBe('failed');
+    expect(mocks.terminal).toHaveBeenCalledOnce();
     expect(mocks.terminal).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', reason: 'external_process_exited_without_terminal_evidence' }));
   });
 
@@ -253,7 +257,7 @@ describe('ExternalEngineDurableLifecycle', () => {
     registry.configureDurableKernel(mocks.kernel);
     const lifecycle = await ExternalEngineDurableLifecycle.start({ registry, engine: 'mimo_code', sessionId: 'session-trace', workspace: '/tmp', cwd: '/tmp' });
     await expect(lifecycle.attachProcess(fakeChild(), { binary: '/bin/mimo', commandSummary: 'mimo run <prompt:redacted>', permissionProfile: 'read_only' })).resolves.toBeUndefined();
-    await expect(lifecycle.finish({ runId: lifecycle.runId, sessionId: lifecycle.sessionId, engine: 'mimo_code', status: 'completed', outputText: 'done', exitCode: 0 }, true)).resolves.toBeUndefined();
+    await expect(lifecycle.finish({ runId: lifecycle.runId, sessionId: lifecycle.sessionId, engine: 'mimo_code', status: 'completed', outputText: 'done', exitCode: 0 }, true)).resolves.toBe('completed');
   });
 });
 

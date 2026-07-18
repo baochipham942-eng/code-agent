@@ -2058,6 +2058,62 @@ describe('createAgentRouter', () => {
     );
   });
 
+  it('uses the durable terminal outcome for the external session and SSE status when completed lacks evidence', async () => {
+    await closeServer();
+
+    const updateSession = vi.fn(async () => undefined);
+    const getSession = vi.fn(async () => ({
+      id: 'session-codex-empty',
+      title: 'Codex empty response',
+      type: 'chat',
+      workingDirectory: '/tmp/codex-workspace',
+      engine: {
+        kind: 'codex_cli',
+        cwd: '/tmp/codex-workspace',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+      },
+    }));
+
+    agentEngineMocks.codexRun.mockImplementationOnce(async (request) => ({
+      runId: 'codex-run-empty',
+      sessionId: request.sessionId,
+      engine: 'codex_cli',
+      status: 'completed',
+      outputText: '',
+      exitCode: 0,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({ getSession, updateSession }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'return no text',
+        sessionId: 'session-codex-empty',
+        context: { workingDirectory: '/tmp/codex-workspace' },
+      }),
+    });
+    await response.text();
+
+    expect(response.ok).toBe(true);
+    expect(testRunKernel.terminal).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'failed',
+      reason: 'external_process_exited_without_terminal_evidence',
+    }));
+    expect(updateSession).toHaveBeenLastCalledWith(
+      'session-codex-empty',
+      expect.objectContaining({ status: 'error' }),
+    );
+    expect(mockBroadcastSSE).toHaveBeenCalledWith('session:updated', {
+      sessionId: 'session-codex-empty',
+      updates: { status: 'error', updatedAt: expect.any(Number) },
+    });
+  });
+
   it('外部引擎会话 + 显式 agent 选择 → 发降级 routing_resolved（引擎路径不支持 agent 选择，不再静默）', async () => {
     await closeServer();
 

@@ -69,6 +69,8 @@ export interface ExternalEngineRecoveryLaunchContext {
   model?: string;
 }
 
+export type ExternalEngineTerminalStatus = 'completed' | 'failed' | 'cancelled';
+
 export class ExternalEngineDurableLifecycle {
   readonly runId: string;
   readonly attempt: number;
@@ -84,6 +86,8 @@ export class ExternalEngineDurableLifecycle {
   private metadata?: ExternalProcessMetadata;
   private checkpointQueue: Promise<void> = Promise.resolve();
   private terminal = false;
+  private terminalStatus?: ExternalEngineTerminalStatus;
+  private finishPromise?: Promise<ExternalEngineTerminalStatus>;
   private externalSpanId?: string;
 
   private constructor(
@@ -221,14 +225,29 @@ export class ExternalEngineDurableLifecycle {
     void this.enqueueCheckpoint('external_session_identified');
   }
 
-  async finish(result: AgentEngineRunResult, terminalEvidence: boolean): Promise<void> {
-    if (this.terminal) return;
+  async finish(result: AgentEngineRunResult, terminalEvidence: boolean): Promise<ExternalEngineTerminalStatus> {
+    if (this.terminalStatus) return this.terminalStatus;
+    if (this.finishPromise) return this.finishPromise;
     const cancellation = this.handle.cancellationRequested || result.status === 'cancelled';
     const honestStatus = cancellation
       ? 'cancelled'
       : result.status === 'completed' && terminalEvidence
         ? 'completed'
         : 'failed';
+    this.finishPromise = this.terminalize(result, terminalEvidence, honestStatus);
+    try {
+      return await this.finishPromise;
+    } catch (error) {
+      this.finishPromise = undefined;
+      throw error;
+    }
+  }
+
+  private async terminalize(
+    result: AgentEngineRunResult,
+    terminalEvidence: boolean,
+    honestStatus: ExternalEngineTerminalStatus,
+  ): Promise<ExternalEngineTerminalStatus> {
     this.operation = {
       ...this.operation,
       status: honestStatus === 'completed' ? 'succeeded' : honestStatus === 'cancelled' ? 'abandoned' : 'failed',
@@ -255,7 +274,9 @@ export class ExternalEngineDurableLifecycle {
       },
     }, this.handle);
     this.endExternalSpan(honestStatus);
+    this.terminalStatus = honestStatus;
     this.terminal = true;
+    return honestStatus;
   }
 
   async release(): Promise<void> {

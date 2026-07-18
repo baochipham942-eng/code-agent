@@ -345,6 +345,42 @@ describe('createSessionsRouter', () => {
     }));
   });
 
+  it.each([
+    ['failed', 'error'],
+    ['completed', 'completed'],
+    ['cancelled', 'interrupted'],
+  ] as const)('projects durable %s to %s in both session lists and restored sessions', async (durableStatus, sessionStatus) => {
+    const sessionId = `session-${durableStatus}`;
+    const session = {
+      id: sessionId,
+      title: `Durable ${durableStatus}`,
+      status: 'idle',
+      createdAt: 1,
+      updatedAt: 2,
+      messageCount: 0,
+    };
+    const listSessions = vi.fn(async () => [session]);
+    const restoreSession = vi.fn(async () => ({ ...session, messages: [] }));
+
+    await startSessionsApi({
+      tryGetSessionManager: async () => ({ listSessions, restoreSession }),
+      getDurableRunReadService: () => durableReadServiceFor({
+        [sessionId]: durableEnvelope(durableStatus, sessionId),
+      }),
+    });
+
+    const listed = await fetchJson('/api/sessions');
+    expect(listed.body.data).toEqual([
+      expect.objectContaining({ id: sessionId, status: sessionStatus }),
+    ]);
+
+    const restored = await fetchJson(`/api/sessions/${sessionId}`);
+    expect(restored.body.data).toEqual(expect.objectContaining({
+      id: sessionId,
+      status: sessionStatus,
+    }));
+  });
+
   it('lists in-memory sessions sorted by recency and filters archived sessions by default', async () => {
     inMemorySessions.set('old', {
       id: 'old',

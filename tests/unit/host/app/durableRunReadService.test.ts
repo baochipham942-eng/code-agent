@@ -76,6 +76,24 @@ describe('DurableRunReadService migrated consumers', () => {
       status: terminal.status,
       engine: terminal.engine,
       terminal: true,
-    })).toEqual({ status: 'idle' });
+    })).toEqual({ status: 'completed' });
+  });
+
+  it.each([
+    ['failed', 'error'],
+    ['completed', 'completed'],
+    ['cancelled', 'interrupted'],
+  ] as const)('projects durable %s to session %s for list and recovery payloads', (durableStatus, sessionStatus) => {
+    for (const consumer of ['session_replay', 'native_status'] as const) {
+      expect(projectDurableRunToSessionPayload({
+        source: 'durable',
+        consumer,
+        runId: envelope.runId,
+        sessionId: envelope.sessionId,
+        status: durableStatus,
+        engine: envelope.engine,
+        terminal: true,
+      })).toEqual({ status: sessionStatus });
+    }
   });
 });

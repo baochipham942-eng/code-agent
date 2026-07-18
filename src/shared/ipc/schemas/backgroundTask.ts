@@ -119,7 +119,6 @@ export const TaskSchema: z.ZodType<Task> = z.object({
   durationMs: z.number().optional(),
   progress: TaskProgressSchema.optional(),
   failure: TaskFailureSchema.optional(),
-  unread: z.boolean().optional(),
   metadata: TaskMetadataSchema.optional(),
   events: z.array(TaskEventSchema),
   outputRefs: z.array(TaskOutputRefSchema),

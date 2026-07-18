@@ -1134,12 +1134,12 @@ export class MessageProcessor {
   /**
    * Inject steer message into conversation history.
    */
-  injectSteerMessage(
+  async injectSteerMessage(
     newMessage: string,
     clientMessageId?: string,
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
-  ): void {
+  ): Promise<void> {
     const steerMessage: Message = {
       id: clientMessageId ?? generateMessageId(),
       role: 'user',
@@ -1150,11 +1150,14 @@ export class MessageProcessor {
     };
     this.ctx.messages.push(steerMessage);
 
-    if (process.env.CODE_AGENT_CLI_MODE !== 'true') {
-      const sessionManager = getSessionManager();
-      sessionManager.addMessageToSession(this.ctx.sessionId, steerMessage).catch((err: unknown) => {
-        logger.error('[AgentLoop] Failed to persist steer message:', err);
-      });
+    if (process.env.CODE_AGENT_CLI_MODE === 'true') return;
+
+    const sessionManager = getSessionManager();
+    try {
+      await sessionManager.addMessageToSession(this.ctx.sessionId, steerMessage);
+    } catch (err: unknown) {
+      logger.error('[AgentLoop] Failed to persist steer message:', err);
+      throw err;
     }
   }
 

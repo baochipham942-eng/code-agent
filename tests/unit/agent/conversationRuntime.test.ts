@@ -699,6 +699,18 @@ describe('ConversationRuntime', () => {
         undefined,
       );
     });
+
+    it('propagates persistence failure after applying synchronous live steer state', async () => {
+      const controller = new AbortController();
+      ctx.control.setInferenceAbortController(controller);
+      (runtime as any).messageProcessor.injectSteerMessage.mockRejectedValueOnce(new Error('disk full'));
+
+      const result = runtime.steer('new direction');
+
+      expect(controller.signal.aborted).toBe(true);
+      expect(ctx.turn.needsReinference).toBe(true);
+      await expect(result).rejects.toThrow('disk full');
+    });
   });
 
   // ==========================================================================

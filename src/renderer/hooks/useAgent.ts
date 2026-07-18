@@ -25,16 +25,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import type { Message } from '@shared/contract';
+import { QueuedInputSchemas } from '@shared/ipc/schemas';
 import { generateMessageId } from '@shared/utils/id';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
+import { typedInvokeDomain } from '../services/typedInvoke';
+import { createLogger } from '../utils/logger';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import { useAgentDerived } from './agent/useAgentDerived';
 import { useAgentEffects } from './agent/useAgentEffects';
 import {
   getAgentSendFailureMessage,
+  getRuntimeInputMode,
   isRuntimeBusyStatus,
   useAgentIPC,
   type QueuedRuntimeInput,
@@ -49,6 +53,7 @@ export { resolveDirectRouting } from './agent/useAgentIPC';
 // 越小 → 文字到达越连续（更平滑）；markdown 重渲染另有 96ms 节流兜底，
 // 故这里压到 150ms 主要让纯文本流不再「半秒蹦一坨」，又不至于过度重渲染。
 const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 150;
+const logger = createLogger('useAgent');
 
 // 跨过 renderer terminal event 到 host 真正释放 run owner 的已知竞态窗口。
 const MAX_QUEUED_RESEND_ATTEMPTS = 3;
@@ -158,6 +163,53 @@ export const useAgent = () => {
   const cancelQueuedRuntimeInput = useCallback((id: string) => {
     setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
   }, [setQueuedRuntimeInputs]);
+
+  useEffect(() => {
+    setQueuedRuntimeInputs([]);
+    if (!currentSessionId) return;
+
+    const sessionId = currentSessionId;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await typedInvokeDomain(QueuedInputSchemas.LIST, {
+          action: 'list',
+          payload: { sessionId, status: 'queued' },
+        });
+        if (cancelled || useSessionStore.getState().currentSessionId !== sessionId) return;
+        if (!response.success) {
+          throw new Error(response.error.message);
+        }
+
+        const hydrated = response.data.map<QueuedRuntimeInput>((input) => ({
+          id: input.id,
+          sessionId: input.sessionId,
+          envelope: input.envelope,
+          content: input.envelope.content,
+          mode: getRuntimeInputMode(input.envelope.context),
+          attachmentsCount: input.envelope.attachments?.length || 0,
+          createdAt: input.createdAt,
+          retryCount: input.retryCount,
+        }));
+        const hydratedIds = new Set(hydrated.map((input) => input.id));
+        setQueuedRuntimeInputs((current) => [
+          ...hydrated,
+          ...current.filter((input) => (
+            input.sessionId === sessionId && !hydratedIds.has(input.id)
+          )),
+        ]);
+      } catch (error) {
+        if (!cancelled) {
+          logger.error('Failed to hydrate queued runtime inputs', error, { sessionId });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSessionId, setQueuedRuntimeInputs]);
 
   const clearStreamingFlushTimer = useCallback((messageId: string) => {
     const timer = streamingFlushTimersRef.current.get(messageId);

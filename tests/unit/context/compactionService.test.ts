@@ -172,6 +172,51 @@ describe('compactionService', () => {
     expect(plan?.preservedMessages[0]?.id).toBe('m4');
   });
 
+  it('reports too_few_messages when fewer than three messages are available', async () => {
+    const messages = [
+      message('m1', 'user', 'current request'),
+      message('m2', 'assistant', 'current response'),
+    ];
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-too-few-messages',
+      source: 'manual_current',
+      messages,
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      reason: 'too_few_messages',
+    });
+  });
+
+  it('reports and audits no_safe_compaction_span when safety rules leave fewer than two messages', async () => {
+    const messages = [
+      message('m1', 'system', 'historical context'),
+      message('m2', 'user', 'current request must remain intact'),
+      message('m3', 'assistant', 'current response'),
+    ];
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-no-safe-span',
+      source: 'manual_current',
+      messages,
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      reason: 'no_safe_compaction_span',
+    });
+    expect(compactionServiceMocks.recordAudit).toHaveBeenCalledWith({
+      result: expect.objectContaining({
+        success: false,
+        reason: 'no_safe_compaction_span',
+      }),
+      usagePercent: undefined,
+      createdAt: undefined,
+    });
+  });
+
   it('adds a focus block after the survivor manifest and before the compacted transcript', async () => {
     const messages = [
       message('m1', 'user', 'Discuss renderer /compact command behavior. '.repeat(80)),

@@ -519,21 +519,32 @@ export async function compactMessagesWithSummary(
 ): Promise<CompactionServiceResult> {
   const plan = createCompactionPlan(options);
   if (!plan) {
+    const preserveRecentCount = Math.max(
+      0,
+      options.preserveRecentCount ?? DEFAULT_PRESERVE_RECENT_COUNT,
+    );
+    let reason = 'too_few_messages';
+    if (options.messages.length >= 3) {
+      const split = splitMessages(options.messages, options.anchorMessageId, preserveRecentCount);
+      if (split.compactedMessages.length < 2) {
+        reason = 'no_safe_compaction_span';
+      }
+    }
     const beforeTokens = countMessageTokens(options.messages);
     const result: CompactionServiceResult = {
       success: false,
-      reason: 'too_few_messages',
+      reason,
       plan: {
         sessionId: options.sessionId,
         source: options.source,
-        preserveRecentCount: options.preserveRecentCount ?? DEFAULT_PRESERVE_RECENT_COUNT,
+        preserveRecentCount,
         messages: options.messages,
         compactedMessages: [],
         preservedMessages: options.messages,
         manifest: buildSurvivorManifest(options.messages, {
           sessionId: options.sessionId,
           source: options.source,
-          preserveRecentCount: options.preserveRecentCount ?? DEFAULT_PRESERVE_RECENT_COUNT,
+          preserveRecentCount,
           archivedToolResults: options.archivedToolResults,
         }),
         contentToSummarize: '',

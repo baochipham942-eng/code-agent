@@ -5,19 +5,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { load as loadYaml } from 'js-yaml';
-import {
-  PopplerReleaseGateError,
-  assertCrossPlatformComponentParity,
-  buildReadyPopplerLock,
-  detectPopplerPlatform,
-  selectLicenseEvidenceFiles,
-  sha256File,
-  validatePopplerLock,
-  validatePopplerManifest,
-  validatePopplerSourceManifest,
-  verifyPopplerSourceCoverage,
-  verifySidecarDirectory,
-} from '../../scripts/lib/poppler-sidecar-release.mjs';
+// @ts-expect-error —— 纯 JS 释放门脚本，无类型声明
+import { PopplerReleaseGateError, assertCrossPlatformComponentParity, buildReadyPopplerLock, detectPopplerPlatform, selectLicenseEvidenceFiles, sha256File, validatePopplerLock, validatePopplerManifest, validatePopplerSourceManifest, verifyPopplerSourceCoverage, verifySidecarDirectory } from '../../scripts/lib/poppler-sidecar-release.mjs';
 
 const tempRoots: string[] = [];
 const digest = 'a'.repeat(64);
@@ -86,6 +75,7 @@ function manifest(sidecarDir: string) {
     component: relativePath.startsWith('bin/') ? 'poppler' : 'distribution-compliance',
     componentVersion: '26.07.0',
     kind: 'data',
+    arch: undefined as string | undefined, // mach-o 候选按 runner arch 回填，见下方 matrix lockstep 用例
   }));
   return {
     schemaVersion: 1,
@@ -427,8 +417,8 @@ execSync(\`"\${pdftoppm}" -jpeg "\${pdfPath}"\`);
 
     const selected = selectLicenseEvidenceFiles(candidates);
 
-    expect(selected.map((file) => path.basename(file))).toEqual(['COPYING', 'LICENSE']);
-    expect(selected.every((file) => fs.statSync(file).size > 0)).toBe(true);
+    expect(selected.map((file: string) => path.basename(file))).toEqual(['COPYING', 'LICENSE']);
+    expect(selected.every((file: string) => fs.statSync(file).size > 0)).toBe(true);
     // 空占位必须被丢掉：它进清单就会撞上 bytes 正整数断言，整条 promotion 挂死。
     expect(selected).not.toContain(candidates[2]);
   });
@@ -465,7 +455,9 @@ execSync(\`"\${pdftoppm}" -jpeg "\${pdfPath}"\`);
     // validatePopplerManifest 里钉死了它认哪个标签。只改一边，候选会一律判非原生——
     // 而且要等 6 分钟真编译完才在最后一步炸（2026-07-15 真踩过）。这条把两边绑死。
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-    const workflow = loadYaml(fs.readFileSync(path.join(repoRoot, '.github/workflows/build-poppler-sidecar.yml'), 'utf8'));
+    const workflow = loadYaml(fs.readFileSync(path.join(repoRoot, '.github/workflows/build-poppler-sidecar.yml'), 'utf8')) as {
+      jobs: { build: { strategy: { matrix: { include: { platform: string; runner: string; uname_arch: string }[] } } } };
+    };
     const matrix = workflow.jobs.build.strategy.matrix.include;
     expect(matrix.map((entry) => entry.platform)).toEqual(['darwin-arm64', 'darwin-x64']);
 

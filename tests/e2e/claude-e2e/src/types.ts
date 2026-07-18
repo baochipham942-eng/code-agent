@@ -18,6 +18,7 @@ export type Category =
   | 'git'
   | 'config'
   | 'multi-file'
+  | 'multi-agent'
   | 'edge-cases';
 
 /** 验证类型 */

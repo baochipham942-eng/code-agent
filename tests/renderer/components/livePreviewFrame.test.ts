@@ -29,7 +29,7 @@ describe('LivePreviewFrame bridge trust checks', () => {
 
     expect(isTrustedLivePreviewBridgeEvent({
       data: bridgeReady,
-      source: {},
+      source: {} as MessageEventSource,
       origin: 'http://localhost:5173',
     }, iframeWindow, 'http://localhost:5173')).toBe(false);
 

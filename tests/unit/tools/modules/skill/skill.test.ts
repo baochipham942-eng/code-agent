@@ -9,6 +9,7 @@ import type {
   Logger,
 } from '../../../../../src/host/protocol/tools';
 import type { ParsedSkill } from '../../../../../src/shared/contract/agentSkill';
+import type { recordSkillUsage } from '../../../../../src/host/services/skills/skillUsageTracker';
 
 // -----------------------------------------------------------------------------
 // Mock skill registry (getSkillDiscoveryService) + sibling helpers
@@ -43,9 +44,9 @@ vi.mock('../../../../../src/host/services/skills/skillLoader', () => ({
   loadSkillContent: (skill: ParsedSkill) => loadSkillContentMock(skill),
 }));
 
-const recordSkillUsageMock = vi.fn(() => {});
+const recordSkillUsageMock = vi.fn<typeof recordSkillUsage>(async () => {});
 vi.mock('../../../../../src/host/services/skills/skillUsageTracker', () => ({
-  recordSkillUsage: (...args: unknown[]) => recordSkillUsageMock(...args),
+  recordSkillUsage: (...args: Parameters<typeof recordSkillUsage>) => recordSkillUsageMock(...args),
 }));
 
 const renderSkillContentMock = vi.fn(

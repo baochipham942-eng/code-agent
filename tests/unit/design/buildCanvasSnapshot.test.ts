@@ -4,7 +4,9 @@ import { buildCanvasSnapshot } from '../../../src/renderer/components/design/bui
 import type { CanvasNode } from '../../../src/renderer/components/design/designCanvasTypes';
 import { CANVAS_SNAPSHOT_MAX_NODES } from '../../../src/shared/contract/canvasProposal';
 
-const node = (id: string, over: Partial<CanvasNode> = {}): CanvasNode => ({ id, src: `a/${id}.png`, x: 1, y: 2, width: 100, height: 200, createdAt: 1, ...over });
+// over 可能带 kind: 'video' + durationSec 把节点变成另一支判别联合分支，Partial<CanvasNode> 在
+// 联合类型上按分支分发，spread 后 tsc 追不出"两支合一定满足其一"，这里按 fixture 惯例断言。
+const node = (id: string, over: Partial<CanvasNode> = {}): CanvasNode => ({ id, src: `a/${id}.png`, x: 1, y: 2, width: 100, height: 200, createdAt: 1, ...over } as CanvasNode);
 
 describe('buildCanvasSnapshot', () => {
   it('label 取 label || prompt；video kind 透传', () => {

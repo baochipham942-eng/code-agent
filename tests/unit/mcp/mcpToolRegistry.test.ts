@@ -124,7 +124,7 @@ describe('MCPToolRegistry permission metadata', () => {
         serverName: 'cua-driver',
         name: 'click',
         description: 'raw click',
-        inputSchema: { type: 'object', properties: {} },
+        inputSchema: { type: 'object' as const, properties: {} },
       };
       registry.tools = [rawClick];
       registry.refreshServerTools('cua-driver', [{
@@ -273,7 +273,9 @@ describe('MCPToolRegistry permission metadata', () => {
       server: { toolsCall: true, list: true, cancel: true },
       toolTaskSupport: 'optional',
     });
-    expect(registry.getToolDefinitions()[0]?.metadata).toMatchObject({
+    // getToolDefinitions() 的公开返回类型是 ToolDefinition[]，但实现内部按 ToolDefinition & { metadata? }
+    // 挂了运行时字段（见 mcpToolRegistry.ts getToolDefinitions），public 类型没暴露，测试侧窄化访问。
+    expect((registry.getToolDefinitions()[0] as { metadata?: unknown } | undefined)?.metadata).toMatchObject({
       annotations: { readOnlyHint: true, idempotentHint: true },
       execution: { taskSupport: 'optional' },
     });
@@ -455,7 +457,7 @@ describe('MCPToolRegistry permission metadata', () => {
   it('propagates W3C trace context without prompt, token, or raw arguments in metadata', async () => {
     const registry = new MCPToolRegistry();
     const client = {
-      callTool: vi.fn(async () => ({ content: [{ type: 'text', text: 'ok' }], isError: false })),
+      callTool: vi.fn(async (_params: unknown) => ({ content: [{ type: 'text', text: 'ok' }], isError: false })),
     };
     const traceContext = createRunTraceContext({
       runId: 'run-mcp', sessionId: 'session-mcp', attempt: 1, ownerEpoch: 1,

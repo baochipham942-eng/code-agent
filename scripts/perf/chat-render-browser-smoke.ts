@@ -258,7 +258,8 @@ async function main(): Promise<void> {
         longTaskTotalMs,
         longTaskMaxMs,
         rendered: raw.rendered,
-        metrics: raw.metrics,
+        // StreamingPerformanceSnapshot is a concrete shape; this report field is an opaque JSON blob.
+        metrics: raw.metrics as unknown as Record<string, unknown>,
         longTasks,
       },
     };

@@ -61,8 +61,19 @@ import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
+// 测试 fixture 用的深度可选类型：RuntimeContext 的多个字段本身是复杂类/接口
+// （NudgeManager、TelemetryAdapter、ModelConfig...），测试里只 mock 用到的那几个
+// 方法/字段。标准 Partial<T> 只在顶层可选、嵌套字段仍要求完整形状，会导致这类
+// 局部 mock 类型报错；DeepPartial 逐层可选并去掉 readonly，贴合这里"部分 mock +
+// 内部强转 RuntimeContext"的既有测试写法。
+type DeepPartial<T> = T extends (infer U)[]
+  ? DeepPartial<U>[]
+  : T extends object
+    ? { -readonly [P in keyof T]?: DeepPartial<T[P]> }
+    : T;
+
 function createProcessor(
-  ctx: Partial<RuntimeContext>,
+  ctx: DeepPartial<RuntimeContext>,
   contextAssembly: Partial<ContextAssembly> = {},
   runFinalizer: Partial<RunFinalizer> = {},
   toolEngine: Partial<ToolExecutionEngine> = {},
@@ -102,7 +113,7 @@ describe('MessageProcessor persistence', () => {
       sessionId: 'runtime-session-1',
       messages: [],
     };
-    const processor = createProcessor(ctx);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
 
     processor.injectSteerMessage('continue with care');
 
@@ -123,7 +134,7 @@ describe('MessageProcessor persistence', () => {
       sessionId: 'runtime-session-1',
       messages: [],
     };
-    const processor = createProcessor(ctx);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>);
 
     processor.injectSteerMessage('continue with care', 'client-message-1');
 
@@ -156,7 +167,7 @@ describe('MessageProcessor persistence', () => {
         persistedMessages.push(message);
       }),
     };
-    const processor = createProcessor(ctx, contextAssembly);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly);
 
     const action = await processor.handleToolResponse(
       {
@@ -225,7 +236,7 @@ describe('MessageProcessor persistence', () => {
         return [{ toolCallId: 'tool-1', success: true, output: 'late result' }];
       }),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -278,7 +289,7 @@ describe('MessageProcessor persistence', () => {
     const runFinalizer = {
       emitTaskProgress: vi.fn(),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer);
 
     const action = await processor.handleTextResponse(
       {
@@ -346,7 +357,7 @@ describe('MessageProcessor persistence', () => {
     const runFinalizer = {
       emitTaskProgress: vi.fn(),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer);
 
     const action = await processor.handleTextResponse(
       {
@@ -429,7 +440,7 @@ describe('MessageProcessor persistence', () => {
         { toolCallId: 'tool-1', success: true, output: 'ok' },
       ]),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -490,7 +501,7 @@ describe('MessageProcessor persistence', () => {
         { toolCallId: 'tool-1', success: true, output: 'ok' },
       ]),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -575,7 +586,7 @@ describe('MessageProcessor persistence', () => {
       }),
     };
     const endSpan = vi.fn();
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -626,14 +637,15 @@ describe('MessageProcessor persistence', () => {
       artifact: ArtifactState.forTest(),
       sessionId: 'runtime-session-1',
       messages: [{ id: 'user-1', role: 'user', content: '分析一下 Alma 的流式输出', timestamp: Date.now() }],
-      control: ControlState.forTest({ isCancelled: false } as never),
+      // 原来这里有两个 `control:` 键（对象字面量重复键，TS1117）；JS 运行时只有后一个生效
+      // （isCancelled: false 的第一个是死代码），删除重复键、只保留一直实际生效的这个，不改变既有运行时行为。
+      control: ControlState.forTest({ forceFinalResponseReason: '连续只读操作达到硬阈值，最后一次工具为 Bash', forceFinalResponsePrompt: '<force-final-response reason="read-loop-hard-limit">Produce final answer.</force-final-response>' } as never),
       modelConfig: { provider: 'xiaomi', model: 'mimo-v2.5-pro', maxTokens: 16384 },
       contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
       MAX_CONSECUTIVE_TRUNCATIONS: 3,
       hookManager: undefined,
       planningService: undefined,
       turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', researchModeActive: false, toolsUsedInTurn: ['Glob', 'Bash', 'Bash'], isSimpleTaskMode: false } as never),
-      control: ControlState.forTest({ forceFinalResponseReason: '连续只读操作达到硬阈值，最后一次工具为 Bash', forceFinalResponsePrompt: '<force-final-response reason="read-loop-hard-limit">Produce final answer.</force-final-response>' } as never),
       stats: RunStatsState.forTest({ totalToolCallCount: 3 } as never),
       nudgeManager: {
         runNudgeChecks: vi.fn(() => true),
@@ -658,7 +670,7 @@ describe('MessageProcessor persistence', () => {
       tryParseTodosFromResponse: vi.fn(),
     };
     const endSpan = vi.fn();
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer);
 
     const action = await processor.handleTextResponse(
       {
@@ -775,7 +787,7 @@ describe('MessageProcessor persistence', () => {
         },
       ]),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -858,7 +870,7 @@ describe('MessageProcessor persistence', () => {
         },
       ]),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -935,7 +947,7 @@ describe('MessageProcessor persistence', () => {
         },
       ]),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -1004,7 +1016,7 @@ describe('MessageProcessor persistence', () => {
         { toolCallId: 'tool-1', success: true, output: 'ok' },
       ]),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -1030,8 +1042,9 @@ describe('MessageProcessor persistence', () => {
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('Your previous tool call requested unavailable tools: Read.'),
     );
-    expect(ctx.artifact.repairGuard.noProgressTurns).toBe(1);
-    expect(ctx.artifact.repairGuard.lastBlockedTool).toBe('Read');
+    // repairGuard 已被上面触发的 repair 流程写入，非 undefined
+    expect(ctx.artifact.repairGuard!.noProgressTurns).toBe(1);
+    expect(ctx.artifact.repairGuard!.lastBlockedTool).toBe('Read');
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
     expect(ctx.messages).toHaveLength(2);
     expect(ctx.messages[0]).toMatchObject({
@@ -1121,7 +1134,7 @@ describe('MessageProcessor persistence', () => {
         { toolCallId: 'tool-1', success: true, output: 'ok' },
       ]),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -1218,7 +1231,7 @@ describe('MessageProcessor persistence', () => {
         { toolCallId: 'tool-1', success: true, output: 'changed' },
       ]),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -1295,7 +1308,7 @@ describe('MessageProcessor persistence', () => {
         { toolCallId: 'tool-1', success: true, output: 'ok' },
       ]),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -1314,7 +1327,7 @@ describe('MessageProcessor persistence', () => {
     // Route A: an unavailable-tool turn bumps noProgressTurns, but the
     // hard stop only fires once it reaches ARTIFACT_REPAIR_MAX_ATTEMPTS (4).
     expect(action).toBe('continue');
-    expect(ctx.artifact.repairGuard.noProgressTurns).toBe(2);
+    expect(ctx.artifact.repairGuard!.noProgressTurns).toBe(2);
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledTimes(2);
@@ -1387,7 +1400,7 @@ describe('MessageProcessor persistence', () => {
     const toolEngine = {
       executeToolsWithHooks: vi.fn(async () => []),
     };
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer, toolEngine);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
 
     const action = await processor.handleToolResponse(
       {
@@ -1406,7 +1419,7 @@ describe('MessageProcessor persistence', () => {
     // noProgressTurns 3 -> 4 reaches ARTIFACT_REPAIR_MAX_ATTEMPTS, so the
     // turn is force-stopped instead of re-inferred.
     expect(action).toBe('break');
-    expect(ctx.artifact.repairGuard.noProgressTurns).toBe(4);
+    expect(ctx.artifact.repairGuard!.noProgressTurns).toBe(4);
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(ctx.onEvent).toHaveBeenCalledWith(
       expect.objectContaining({

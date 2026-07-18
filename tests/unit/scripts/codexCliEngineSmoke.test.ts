@@ -30,7 +30,7 @@ describe('codex CLI engine smoke', () => {
   });
 
   it('documents the live gate without requiring Claude subscription auth', () => {
-    const contract = buildCodexCliEngineSmokeContract({ model: null });
+    const contract = buildCodexCliEngineSmokeContract({ model: undefined });
 
     expect(contract).toMatchObject({
       requestMode: 'codex-exec',

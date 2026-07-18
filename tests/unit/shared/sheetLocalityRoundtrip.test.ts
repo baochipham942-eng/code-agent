@@ -160,7 +160,7 @@ describe('表格定点反馈：从 UI 坐标出发改到源文件', () => {
 
     const locator = await upgradeLegacyAnchor(anchor);
     expect(locator).not.toBeNull();
-    const operations = [{ action: 'set_cell', sheet: sheet.name, cell: anchor.cell, value: '四月' }];
+    const operations = [{ action: 'set_cell' as const, sheet: sheet.name, cell: anchor.cell, value: '四月' }];
     const block = await getArtifactLocatorPreflightBlock(
       locatorContext(locator!),
       { name: 'DocEdit', arguments: { file_path: filePath, operations } },

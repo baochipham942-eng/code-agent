@@ -1,6 +1,7 @@
 #!/usr/bin/env npx tsx
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { access, mkdtemp, rm } from 'fs/promises';
 import { constants } from 'fs';
 import http from 'http';
@@ -15,7 +16,7 @@ type ApiFailure = {
 type StartedServer = {
   baseUrl: string;
   token: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   output: () => string;
 };
 
@@ -185,8 +186,9 @@ async function stopServer(server: StartedServer): Promise<void> {
 }
 
 function readError(payload: ApiFailure | WrappedResponse<unknown>): string | undefined {
-  if ('error' in payload && typeof payload.error === 'string') return payload.error;
-  return payload.error?.message;
+  const error = 'error' in payload ? payload.error : undefined;
+  if (typeof error === 'string') return error;
+  return error?.message;
 }
 
 async function requestJson<T>(

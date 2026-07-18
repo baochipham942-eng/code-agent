@@ -125,12 +125,15 @@ async function startSessionsApi(deps: {
 }) {
   const app = express();
   app.use(express.json());
+  // Each test scenario mocks only the SessionManagerLike/SupabaseSessionBinding
+  // methods it exercises, not the full interface — assert to the real deps
+  // shape at the router boundary rather than widening every call site's mock.
   app.use('/api', createSessionsRouter({
     logger,
     tryGetSessionManager: deps.tryGetSessionManager,
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
     getDurableRunReadService: deps.getDurableRunReadService,
-  }));
+  } as Parameters<typeof createSessionsRouter>[0]));
 
   server = await new Promise<http.Server>((resolve) => {
     const nextServer = app.listen(0, '127.0.0.1', () => resolve(nextServer));
@@ -375,8 +378,8 @@ describe('createSessionsRouter', () => {
     const includeArchived = await fetchJson('/api/sessions?includeArchived=true');
 
     expect(activeOnly.body.success).toBe(true);
-    expect((activeOnly.body.data as unknown[]).map((session: any) => session.id)).toEqual(['new', 'old']);
-    expect((includeArchived.body.data as unknown[]).map((session: any) => session.id)).toEqual(['archived', 'new', 'old']);
+    expect((activeOnly.body.data as unknown as Array<{ id: string }>).map((session) => session.id)).toEqual(['new', 'old']);
+    expect((includeArchived.body.data as unknown as Array<{ id: string }>).map((session) => session.id)).toEqual(['archived', 'new', 'old']);
   });
 
   it('passes workingDirectory through to SessionManager when creating a session', async () => {
@@ -404,7 +407,7 @@ describe('createSessionsRouter', () => {
     });
 
     expect(body.success).toBe(true);
-    expect(body.data.workingDirectory).toBe('/Users/linchen/Downloads/ai/code-agent');
+    expect(body.data?.workingDirectory).toBe('/Users/linchen/Downloads/ai/code-agent');
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Workbench',
       workingDirectory: '/Users/linchen/Downloads/ai/code-agent',
@@ -424,9 +427,9 @@ describe('createSessionsRouter', () => {
     });
 
     expect(body.success).toBe(true);
-    expect(body.data.title).toBe('Memory fallback');
-    expect(body.data.workingDirectory).toBe('/tmp/void-harbor');
-    expect(inMemorySessions.get(body.data.id)?.workingDirectory).toBe('/tmp/void-harbor');
+    expect(body.data?.title).toBe('Memory fallback');
+    expect(body.data?.workingDirectory).toBe('/tmp/void-harbor');
+    expect(inMemorySessions.get(body.data?.id ?? '')?.workingDirectory).toBe('/tmp/void-harbor');
   });
 
   it('rejects malformed create-session bodies before calling dependencies', async () => {
@@ -565,7 +568,10 @@ describe('createSessionsRouter', () => {
       }],
       metadata: {
         turnQuality: {
+          memory: { mode: 'off', blocks: [] },
+          strategy: { provider: 'deepseek', model: 'deepseek-chat' },
           capabilities: { agentId: 'explore', agentName: 'Explorer' },
+          score: { score: 0, max: 0, grade: 'good', breakdown: [] },
         },
       },
     }]);

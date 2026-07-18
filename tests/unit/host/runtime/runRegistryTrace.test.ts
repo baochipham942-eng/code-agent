@@ -84,7 +84,7 @@ describe('RunRegistry attempt trace ownership', () => {
     await expect(registry.terminalDurable(staleHandle.context.runId, {
       now: 12_000,
       status: 'completed',
-      event: { type: 'run_completed', recordedAt: 12_000 },
+      event: { type: 'run_completed', payload: {}, recordedAt: 12_000 },
     }, staleHandle)).rejects.toThrow(/stale handle/);
     expect(terminal).not.toHaveBeenCalled();
     expect(getTelemetryService().getActiveSpans().some((span) => span.spanId === recovered.spanId)).toBe(true);

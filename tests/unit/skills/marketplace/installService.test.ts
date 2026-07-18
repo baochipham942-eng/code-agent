@@ -140,7 +140,7 @@ describe('marketplace install service trust defaults', () => {
           headers: { 'content-type': 'application/json' },
         });
       }
-      return new Response(zip, {
+      return new Response(new Uint8Array(zip), {
         status: 200,
         headers: { 'content-length': String(zip.byteLength) },
       });
@@ -417,7 +417,7 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
   }
 
   function mockCodeload(zip: Buffer): void {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(zip, {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array(zip), {
       status: 200,
       headers: { 'content-length': String(zip.byteLength) },
     })));

@@ -5,7 +5,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     // vitest globals（describe/it/expect 等）——vitest.config 里 globals:true，测试文件不 import 也能用。
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
+    // tests/scripts 里大量 import 带显式 .ts 后缀（这些文件由 vitest/tsx 运行，天然支持 .ts import）。
+    // noEmit 下开启此项匹配真实运行方式，消掉 82 处 TS5097（非 bug，是检查器配置与运行时不一致）。
+    "allowImportingTsExtensions": true
   },
   // src/** 也纳入：不是为了检查 src（根门已管，恒 0），而是让 src 里的 ambient 全局声明
   // （如 window.domainAPI 的 .d.ts 增强）随之加载。否则测试 import 的 src 文件会丢失这些
@@ -15,7 +18,9 @@
     "node_modules",
     "dist",
     "release",
-    // 故意写坏语法的样例工程（TS1005 会让 tsc 提前中止后续检查，读数变假）。见 swarm-ci.yml 门注。
-    "tests/e2e/claude-e2e/fixtures/bug-syntax-error"
+    // agent-benchmark 的 eval 样例工程（bug-syntax-error/bug-type-error/monorepo-base/express-api…）——
+    // 这些是**被测 agent 操作的目标代码库**，不是 code-agent 自己的测试，本就不该进类型门；其中
+    // bug-* 系列还是故意写坏的（bug-syntax-error 的 TS1005 会让 tsc 提前中止读数变假）。整目录排除。
+    "tests/e2e/claude-e2e/fixtures"
   ]
 }

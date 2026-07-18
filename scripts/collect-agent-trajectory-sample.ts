@@ -216,7 +216,6 @@ async function main(): Promise<void> {
 
     const agent = new testing.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
-      generation: 'agent-trajectory-collection-sample',
       modelConfig: {
         provider: 'openai',
         model: 'e2e-local-agent-model',

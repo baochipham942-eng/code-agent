@@ -216,7 +216,7 @@ describe('useAgentHalo', () => {
 
   it('finishes hidden when the owner terminates while show is pending', async () => {
     const view = renderHook(() => useAgentHalo());
-    const pendingShow = deferred<void>();
+    const pendingShow = deferred<undefined>();
     invokeNative.mockImplementationOnce(() => pendingShow.promise);
 
     await emit(cuaToolResult());
@@ -225,7 +225,7 @@ describe('useAgentHalo', () => {
     await emit({ type: 'stream_end', data: null, sessionId: 'session-owner' });
     expect(invokeNative).toHaveBeenCalledWith('hideAgentHalo');
 
-    pendingShow.resolve();
+    pendingShow.resolve(undefined);
     await act(async () => {
       await pendingShow.promise;
       await Promise.resolve();
@@ -237,14 +237,14 @@ describe('useAgentHalo', () => {
 
   it('finishes hidden when unmounted while show is pending', async () => {
     const view = renderHook(() => useAgentHalo());
-    const pendingShow = deferred<void>();
+    const pendingShow = deferred<undefined>();
     invokeNative.mockImplementationOnce(() => pendingShow.promise);
 
     await emit(cuaToolResult());
     view.unmount();
     expect(invokeNative).toHaveBeenCalledWith('hideAgentHalo');
 
-    pendingShow.resolve();
+    pendingShow.resolve(undefined);
     await act(async () => {
       await pendingShow.promise;
       await Promise.resolve();

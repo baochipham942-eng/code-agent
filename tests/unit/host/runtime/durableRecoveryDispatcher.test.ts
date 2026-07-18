@@ -56,10 +56,13 @@ function operation(runId: string, operationId: string, providerOperationId?: str
   };
 }
 
-function engineHandler(engineKind: RunEngineRef['kind'], recover = vi.fn(async () => ({
-  status: 'recovered' as const,
-  reason: 'ok',
-}))): DurableEngineRecoveryHandler {
+function engineHandler(
+  engineKind: RunEngineRef['kind'],
+  recover: DurableEngineRecoveryHandler['recover'] = vi.fn(async () => ({
+    status: 'recovered' as const,
+    reason: 'ok',
+  })),
+): DurableEngineRecoveryHandler {
   return { name: engineKind, engineKind, recover };
 }
 

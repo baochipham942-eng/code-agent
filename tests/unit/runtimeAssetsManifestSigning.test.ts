@@ -8,6 +8,7 @@ import type { ControlPlaneEnvelope } from '../../src/shared/contract/controlPlan
 import {
   getRuntimeAssetUpdateInfoFromManifest,
   UpdateService,
+  type PrepareRuntimeAssetsResult,
   type UpdateInfo,
 } from '../../src/host/services/cloud/updateService';
 import type { RuntimeAssetsManifest } from '../../src/host/runtime/runtimeAssetInstaller';
@@ -109,7 +110,9 @@ function makeUpdateService(remote: {
   archivePath: string;
   manifestSha256: string;
 }) {
-  const service = Object.create(UpdateService.prototype) as UpdateService & {
+  // 不与 UpdateService 做交叉类型：以下成员在类里全是 private，交叉一个同名的公开
+  // 声明会让 tsc 判定整个交叉类型不可满足（塌成 never）。只声明测试要摸的成员形状。
+  const service = Object.create(UpdateService.prototype) as {
     cachedUpdateInfo: UpdateInfo;
     isDownloading: boolean;
     httpGet: (url: string) => Promise<string>;
@@ -117,6 +120,7 @@ function makeUpdateService(remote: {
     resolveRuntimeAssetsUpdateInfo: (
       metadata: { manifestUrl?: string; manifestSha256?: string },
     ) => Promise<UpdateInfo['runtimeAssets']>;
+    prepareRuntimeAssets: (runtimeBaseDir?: string, assetIds?: readonly string[]) => Promise<PrepareRuntimeAssetsResult>;
   };
   service.cachedUpdateInfo = {
     hasUpdate: false,

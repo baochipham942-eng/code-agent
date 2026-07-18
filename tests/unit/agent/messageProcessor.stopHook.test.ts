@@ -53,8 +53,17 @@ import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';
 
+// 见 messageProcessor.persistence.test.ts 同名类型的注释：RuntimeContext 的多个
+// 嵌套字段（NudgeManager、TelemetryAdapter...）这里只 mock 了用到的那几个方法，
+// 标准 Partial<T> 不做深层可选，会导致这类局部 mock 类型报错。
+type DeepPartial<T> = T extends (infer U)[]
+  ? DeepPartial<U>[]
+  : T extends object
+    ? { -readonly [P in keyof T]?: DeepPartial<T[P]> }
+    : T;
+
 function createProcessor(
-  ctx: Partial<RuntimeContext>,
+  ctx: DeepPartial<RuntimeContext>,
   contextAssembly: Partial<ContextAssembly> = {},
   runFinalizer: Partial<RunFinalizer> = {},
   toolEngine: Partial<ToolExecutionEngine> = {},
@@ -75,14 +84,16 @@ function buildCtx(overrides: Record<string, unknown> = {}) {
     sessionId: 'runtime-session-1',
     messages: [{ id: 'user-1', role: 'user', content: '帮我修这个 bug', timestamp: Date.now() }],
     artifact: ArtifactState.forTest(),
-    control: ControlState.forTest({ isCancelled: false } as never),
     modelConfig: { provider: 'zhipu', model: 'glm-5', maxTokens: 16384 },
     contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
     planningService: undefined,
     turn: TurnState.forTest({ effortLevel: 'medium', currentTurnId: 'turn-1', currentIterationSpanId: 'iteration-1', researchModeActive: false, toolsUsedInTurn: [], isSimpleTaskMode: false } as never),
     turnQualityState: {},
-    control: ControlState.forTest({  } as never),
+    // 注：原来这里还有一个更早的 `control:` 键（{ isCancelled: false }，对象字面量
+    // 重复键 TS1117），JS 运行时只有后面这个生效（ControlState 默认 isCancelled
+    // 就是 false），故删掉死代码，不改变既有行为。
+    control: ControlState.forTest({} as never),
     stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
     nudgeManager: {
       runNudgeChecks: vi.fn(() => false),
@@ -138,7 +149,7 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
     }));
     const ctx = buildCtx({ hookManager: { triggerStop } });
     const contextAssembly = buildContextAssembly(ctx);
-    const processor = createProcessor(ctx, contextAssembly, buildRunFinalizer());
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, buildRunFinalizer());
 
     const action = await processor.handleTextResponse(
       completeTextResponse,
@@ -167,7 +178,7 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
     const ctx = buildCtx({ hookManager: { triggerStop } });
     const contextAssembly = buildContextAssembly(ctx);
     const runFinalizer = buildRunFinalizer();
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer);
     processor.guardStateForTest.userStopHookBlockCount = STOP_HOOK.USER_MAX_RETRIES;
 
     const action = await processor.handleTextResponse(
@@ -206,7 +217,7 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
     const ctx = buildCtx({ hookManager: { triggerStop } });
     const contextAssembly = buildContextAssembly(ctx);
     const runFinalizer = buildRunFinalizer();
-    const processor = createProcessor(ctx, contextAssembly, runFinalizer);
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer);
 
     const action = await processor.handleTextResponse(
       completeTextResponse,
@@ -228,7 +239,7 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
     const triggerStop = vi.fn();
     const ctx = buildCtx({ hookManager: { triggerStop } });
     const contextAssembly = buildContextAssembly(ctx);
-    const processor = createProcessor(ctx, contextAssembly, buildRunFinalizer());
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, buildRunFinalizer());
 
     const action = await processor.handleTextResponse(
       completeTextResponse,

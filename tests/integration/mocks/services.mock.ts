@@ -160,7 +160,7 @@ export function createMockSessionManager() {
 
   return {
     initialize: vi.fn().mockResolvedValue(undefined),
-    createSession: vi.fn((config: Record<string, unknown>) => {
+    createSession: vi.fn((config: { title?: string } & Record<string, unknown>) => {
       const id = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
       const session = {
         id,

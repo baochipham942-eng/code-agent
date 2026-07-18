@@ -70,6 +70,9 @@ const richMessage: Message = {
   ],
   metadata: {
     turnQuality: {
+      memory: { mode: 'off', blocks: [] },
+      strategy: { provider: 'zhipu', model: 'glm-5' },
+      score: { score: 100, max: 100, grade: 'excellent', breakdown: [] },
       capabilities: {
         agentId: 'default',
         agentName: 'Default',

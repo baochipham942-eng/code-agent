@@ -12,7 +12,7 @@ const TASK = {
 
 describe('McpSdkTaskProtocol trace propagation', () => {
   it('propagates traceparent/tracestate to create/get/result/cancel without sensitive material', async () => {
-    const request = vi.fn(async (value: { method: string }) =>
+    const request = vi.fn(async (value: { method: string; params: Record<string, unknown> }) =>
       value.method === 'tools/call' ? { task: TASK }
         : value.method === 'tasks/result' ? { content: [{ type: 'text', text: 'done' }] }
           : TASK);

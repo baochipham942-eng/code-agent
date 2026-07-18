@@ -141,14 +141,14 @@ function validateXiaomiLiveToolCalling(response: unknown): {
 
 export function buildModelStrategyAcceptanceSummary(args: {
   packageScripts: Record<string, string>;
-  env?: Pick<NodeJS.ProcessEnv, 'XIAOMI_API_KEY'>;
-  localEnvPresence?: Pick<NodeJS.ProcessEnv, 'XIAOMI_API_KEY'>;
+  env?: { XIAOMI_API_KEY?: string };
+  localEnvPresence?: { XIAOMI_API_KEY?: string };
   codexCliSmokeResult?: unknown;
   xiaomiLiveResponse?: unknown;
   inAppBrowserModelStrategyOk?: boolean;
 }): ModelStrategyAcceptanceSummary {
-  const claudeContract = buildClaudeSubscriptionSmokeContract({ model: null });
-  const codexContract = buildCodexCliEngineSmokeContract({ model: null });
+  const claudeContract = buildClaudeSubscriptionSmokeContract({ model: undefined });
+  const codexContract = buildCodexCliEngineSmokeContract({ model: undefined });
   const codexLive = validateCodexCliLiveSmokeResult(args.codexCliSmokeResult);
   const codexCommand = [
     'CODE_AGENT_CODEX_CLI_SMOKE=1',
@@ -417,7 +417,7 @@ async function readJsonIfPresent(filePath: string | undefined): Promise<unknown 
   return JSON.parse(await fs.readFile(filePath, 'utf8')) as unknown;
 }
 
-async function readLocalEnvPresence(): Promise<Pick<NodeJS.ProcessEnv, 'XIAOMI_API_KEY'>> {
+async function readLocalEnvPresence(): Promise<{ XIAOMI_API_KEY?: string }> {
   const envPath = path.join(os.homedir(), '.code-agent', '.env');
   try {
     const text = await fs.readFile(envPath, 'utf8');

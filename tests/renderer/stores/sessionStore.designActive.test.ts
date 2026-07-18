@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
-import type { Session } from '../../../src/shared/contract';
 
 describe('designCanvasStore per-session design-active flag', () => {
   beforeEach(() => {
@@ -37,8 +36,8 @@ describe('designCanvasStore per-session design-active flag', () => {
 describe('sessionStore design-active + canvas owner cleanup on delete/archive', () => {
   const mockDomainInvoke = vi.fn();
 
-  function makeSession(id: string): Session {
-    return { id, title: id, createdAt: 0, updatedAt: 0, messageCount: 0 } as unknown as Session;
+  function makeSession(id: string): SessionWithMeta {
+    return { id, title: id, createdAt: 0, updatedAt: 0, messageCount: 0, turnCount: 0 } as unknown as SessionWithMeta;
   }
 
   beforeEach(() => {

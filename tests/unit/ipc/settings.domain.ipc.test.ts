@@ -31,9 +31,9 @@ const env = vi.hoisted(() => ({
     getTokenUsageSummary: vi.fn(() => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 })),
   },
   syncBudget: vi.fn(),
-  saveIcon: vi.fn(async () => ({ icon: 'saved' })),
-  resolveIcon: vi.fn(async () => 'resolved'),
-  runtimeConfigured: vi.fn(() => false),
+  saveIcon: vi.fn(async (..._a: unknown[]) => ({ icon: 'saved' })),
+  resolveIcon: vi.fn(async (..._a: unknown[]) => 'resolved'),
+  runtimeConfigured: vi.fn((..._a: unknown[]) => false),
 }));
 
 vi.mock('../../../src/host/ipc/adminGuard', () => ({
@@ -136,7 +136,11 @@ describe('get + 脱敏', () => {
     env.isAdmin = false;
     env.config.getSettings.mockReturnValue(rich);
     const data = (await callSettings('get')).data as Record<string, never>;
-    const providers = (data as never as typeof rich).models.providers;
+    // sanitizeSettingsForUser 会在原字段基础上写入 apiKeyConfigured（rich 字面量本身没声明该字段）
+    const providers = (data as never as typeof rich).models.providers as {
+      openai: typeof rich.models.providers.openai & { apiKeyConfigured?: boolean };
+      kimi: typeof rich.models.providers.kimi & { apiKeyConfigured?: boolean };
+    };
     expect(providers.openai.apiKey).toBeUndefined();
     expect(providers.openai.apiKeyConfigured).toBe(true); // 有过 key → configured
     expect(providers.kimi.apiKeyConfigured).toBe(true); // managedByCloud → configured
@@ -169,7 +173,7 @@ describe('Local provider discovery snapshot', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings;
 
     const next = applyLocalProviderDiscoverySnapshot(settings, {
       success: false,
@@ -205,7 +209,7 @@ describe('Local provider discovery snapshot', () => {
           },
         },
       },
-    } as AppSettings;
+    } as unknown as AppSettings;
 
     const next = applyLocalProviderDiscoverySnapshot(settings, {
       success: true,

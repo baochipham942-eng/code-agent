@@ -5,11 +5,12 @@
 // 录音→onstop→转写成功失败 / 太短 / retry / toggle / clearError / 设置事件更新。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import type { SpeechTranscribeResult } from '../../../src/shared/contract/speech';
 
 const ipc = vi.hoisted(() => ({
   isAvailable: vi.fn(() => true),
-  invokeDomain: vi.fn(async () => ({ speech: {} })),
-  transcribeSpeech: vi.fn(async () => ({ success: true, text: '你好世界' })),
+  invokeDomain: vi.fn(async (..._args: unknown[]) => ({ speech: {} })),
+  transcribeSpeech: vi.fn(async (..._args: unknown[]): Promise<SpeechTranscribeResult | null> => ({ success: true, text: '你好世界' })),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
@@ -100,7 +101,7 @@ afterEach(() => {
 });
 
 // 完整录音 → 停止 → 转写 的驱动器
-async function recordAndStop(view: { result: { current: { start: () => Promise<void> } } }, elapsedMs = 2000) {
+async function recordAndStop(view: { result: { current: { start: () => void } } }, elapsedMs = 2000) {
   await act(async () => {
     await view.result.current.start();
   });

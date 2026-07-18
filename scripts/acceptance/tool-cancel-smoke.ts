@@ -1,6 +1,7 @@
 #!/usr/bin/env npx tsx
 
-import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { execFileSync, spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { access, mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { constants } from 'fs';
 import http from 'http';
@@ -40,7 +41,7 @@ type CancellableToolState = {
 type StartedServer = {
   baseUrl: string;
   token: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   output: () => string;
 };
 

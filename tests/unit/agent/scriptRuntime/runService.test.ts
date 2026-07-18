@@ -17,7 +17,11 @@ vi.mock('node:child_process', async (importOriginal) => {
     ...actual,
     spawn: (...args: Parameters<typeof actual.spawn>) => {
       const child = actual.spawn(...args);
-      processSandboxHarness.spawned.push(child);
+      // processSandbox 用固定的 stdio: 'pipe' 调 spawn，实际总是拿到非空
+      // stdin/stdout/stderr（即 ChildProcessWithoutNullStreams 形状）；
+      // 但按 Parameters<typeof actual.spawn> 泛型转发参数时 TS 解析到的重载
+      // 只给出泛化的 ChildProcess，这里按已知运行时形状断言。
+      processSandboxHarness.spawned.push(child as import('node:child_process').ChildProcessWithoutNullStreams);
       return child;
     },
   };

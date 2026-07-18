@@ -293,7 +293,7 @@ describe('swarmStore', () => {
       for (let i = 0; i < 45; i += 1) {
         store.handleEvent(
           evt('swarm:agent:message', {
-            message: { from: 'a1', to: 'a2', content: `m${i}`, messageType: 'coordination' },
+            message: { id: `msg-${i}`, from: 'a1', to: 'a2', content: `m${i}`, messageType: 'coordination' },
           }, 1000 + i),
         );
       }
@@ -388,13 +388,13 @@ describe('swarmStore', () => {
       store.handleEvent(
         evt('swarm:user:message', {
           agentId: 'a1',
-          message: { from: 'user', to: 'a1', content: 'same session' },
+          message: { id: 'msg-same-session', from: 'user', to: 'a1', content: 'same session' },
         }, 1010, 'session-1', 'run-1'),
       );
       store.handleEvent(
         evt('swarm:user:message', {
           agentId: 'b1',
-          message: { from: 'user', to: 'b1', content: 'other session' },
+          message: { id: 'msg-other-session', from: 'user', to: 'b1', content: 'other session' },
         }, 1020, 'session-2', 'run-2'),
       );
 
@@ -525,7 +525,7 @@ describe('swarmStore', () => {
       }, 1010, 'session-1', 'run-1'));
       store.handleEvent(evt('swarm:user:message', {
         agentId: 'a1',
-        message: { from: 'user', to: 'a1', content: 'check old run' },
+        message: { id: 'msg-check-old-run', from: 'user', to: 'a1', content: 'check old run' },
       }, 1020, 'session-1', 'run-1'));
       store.handleEvent(evt('swarm:agent:completed', {
         agentState: agent('a1', {

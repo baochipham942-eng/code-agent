@@ -7,7 +7,9 @@ import type { Server } from 'http';
 import { FeishuChannel } from '../../../src/host/channels/feishu/feishuChannel';
 import type { ChannelAttachment, ChannelMessage } from '../../../src/shared/contract/channel';
 
-type FeishuChannelHarness = FeishuChannel & {
+// 不与 FeishuChannel 做交叉类型：handleMessageEvent/webhookServer/client 在类里是 private，
+// 交叉一个同名的公开声明会让 tsc 判定整个交叉类型不可满足（塌成 never）。
+type FeishuChannelHarness = {
   handleMessageEvent(event: unknown): Promise<void>;
   webhookServer?: Server | null;
   client?: { domain?: string } | null;

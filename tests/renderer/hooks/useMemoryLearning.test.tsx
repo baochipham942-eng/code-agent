@@ -7,7 +7,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 const showToast = vi.fn();
 const ipc = vi.hoisted(() => ({
   isAvailable: vi.fn(() => true),
-  invoke: vi.fn(async () => {}),
+  invoke: vi.fn(async (..._args: unknown[]) => {}),
   handlers: {} as Record<string, (e: unknown) => void>,
   unsub: vi.fn(),
 }));

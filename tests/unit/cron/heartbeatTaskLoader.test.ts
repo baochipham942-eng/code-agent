@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -62,9 +62,14 @@ describe('isWithinActiveHours', () => {
 
 describe('HeartbeatTaskLoader.loadFromFile', () => {
   let workingDirectory: string;
+  // CronServiceLike (host/cron/heartbeatTaskLoader.ts) is module-private, so we
+  // can't import it; declare the same shape here with real Mock<> call
+  // signatures instead of the untyped ReturnType<typeof vi.fn> (which resolves
+  // to the fully generic Mock<Constructable | Procedure> and doesn't satisfy
+  // the interface's specific 3-arg/1-arg methods).
   let cronService: {
-    scheduleCron: ReturnType<typeof vi.fn>;
-    deleteJob: ReturnType<typeof vi.fn>;
+    scheduleCron: Mock<(cron: string, action: unknown, options: { name: string }) => Promise<{ id: string }>>;
+    deleteJob: Mock<(jobId: string) => Promise<boolean>>;
   };
 
   const writeHeartbeat = (content: string) => {

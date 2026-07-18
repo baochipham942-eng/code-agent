@@ -42,7 +42,7 @@ const settings = {
     },
     taskStrategy: strategy,
   },
-} as AppSettings;
+} as unknown as AppSettings; // 面板只读 settings.models，其余 AppSettings 顶层字段本用例不需要
 
 describe('TaskStrategySettingsPanel', () => {
   it('renders auto-switch toggle and the three task profiles (auto mode)', () => {

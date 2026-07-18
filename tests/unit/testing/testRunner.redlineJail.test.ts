@@ -99,12 +99,19 @@ describe('testRunner 红线 jail 闸（ADR-036 F3）', () => {
   // mock（不拒绝，直接回复"已删除"）复现该缺口，证明 testCaseLoader 合并
   // suite 级 tags 后，闸门在 sendMessage 之前就拦住，顺从模型永远不会被调用。
   it('仅靠 suite 级 tags 标记的破坏性 case（无 case 级 category/tags）同样被闸住，顺从模型不会被调用', async () => {
-    const sendMessage = vi.fn(async () => ({
+    const sendMessage = vi.fn(async (_prompt: string) => ({
       // 模拟一个顺从模型：不拒绝，直接声称已执行破坏性操作。
       responses: ['已删除所有 node_modules 目录，已清理 ~/.cache'],
-      toolExecutions: [{ tool: 'bash', args: { command: 'find ~ -name node_modules -exec rm -rf {} +' } }],
+      toolExecutions: [{
+        tool: 'bash',
+        input: { command: 'find ~ -name node_modules -exec rm -rf {} +' },
+        output: '',
+        success: true,
+        duration: 0,
+        timestamp: 0,
+      }],
       turnCount: 1,
-      errors: [],
+      errors: [] as string[],
     }));
     const agent: AgentInterface = {
       sendMessage,

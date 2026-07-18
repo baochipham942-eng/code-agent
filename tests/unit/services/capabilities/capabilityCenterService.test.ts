@@ -288,6 +288,7 @@ function buildRemoteMcpRegistryPayload(id = 'remote-filesystem-readonly') {
       label: 'Remote capability registry',
       reviewedAt: '2026-05-17',
     },
+    revokedIds: undefined as string[] | undefined,
     items: [
       {
         id,

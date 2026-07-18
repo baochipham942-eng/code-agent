@@ -15,6 +15,8 @@ const exec = (tool: string): ToolExecutionRecord => ({
   input: {},
   output: '',
   success: true,
+  duration: 0,
+  timestamp: 0,
 });
 
 /** dogfood-marketing-ppt 的口径：该用例无附件、主题通用，先查/先问都是拖延 */

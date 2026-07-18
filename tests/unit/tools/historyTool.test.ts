@@ -27,7 +27,7 @@ function makeCtx() {
     abortSignal: { aborted: false } as AbortSignal,
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     emit: vi.fn(),
-  } as unknown as Parameters<ReturnType<typeof historyModule.createHandler>['execute']>[1];
+  } as unknown as Parameters<Awaited<ReturnType<typeof historyModule.createHandler>>['execute']>[1];
 }
 
 const canUseTool = vi.fn();
@@ -44,14 +44,14 @@ describe('History tool', () => {
   // ---- validation -----------------------------------------------------------
 
   it('rejects unknown action', async () => {
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute({ action: 'noop' }, makeCtx(), canUseTool);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
   });
 
   it('search requires a query of at least 3 chars', async () => {
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const missing = await handler.execute({ action: 'search' }, makeCtx(), canUseTool);
     expect(missing.ok).toBe(false);
     const short = await handler.execute({ action: 'search', query: 'ab' }, makeCtx(), canUseTool);
@@ -60,14 +60,14 @@ describe('History tool', () => {
   });
 
   it('around requires messageId', async () => {
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute({ action: 'around' }, makeCtx(), canUseTool);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
   });
 
   it('rejects invalid kind values', async () => {
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute(
       { action: 'search', query: 'deployment', kinds: ['user_text', 'bogus'] },
       makeCtx(),
@@ -81,7 +81,7 @@ describe('History tool', () => {
 
   it('honors permission denial', async () => {
     canUseTool.mockResolvedValue({ allow: false, reason: 'nope' });
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute({ action: 'search', query: 'deployment' }, makeCtx(), canUseTool);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('PERMISSION_DENIED');
@@ -89,7 +89,7 @@ describe('History tool', () => {
 
   it('fails gracefully when database is not ready', async () => {
     mockDb.isReady = false;
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute({ action: 'search', query: 'deployment' }, makeCtx(), canUseTool);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('DB_NOT_READY');
@@ -99,7 +99,7 @@ describe('History tool', () => {
 
   it('passes filters through to the repository search', async () => {
     mockSearch.mockReturnValue([]);
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     await handler.execute(
       {
         action: 'search',
@@ -135,7 +135,7 @@ describe('History tool', () => {
         timestamp: 1700000000000,
       },
     ]);
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute({ action: 'search', query: 'flaky test' }, makeCtx(), canUseTool);
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -153,7 +153,7 @@ describe('History tool', () => {
 
   it('search returns ok with empty hits and a hint when nothing matches', async () => {
     mockSearch.mockReturnValue([]);
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute({ action: 'search', query: 'nothing here' }, makeCtx(), canUseTool);
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -193,7 +193,7 @@ describe('History tool', () => {
         },
       ],
     });
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute({ action: 'around', message_id: 'm2' }, makeCtx(), canUseTool);
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -212,7 +212,7 @@ describe('History tool', () => {
 
   it('around clamps before/after to the max window', async () => {
     mockAround.mockReturnValue({ sessionId: 's', messages: [] });
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     await handler.execute({ action: 'around', message_id: 'm1', before: 500, after: 500 }, makeCtx(), canUseTool);
     const [, opts] = mockAround.mock.calls[0];
     expect(opts.before).toBeLessThanOrEqual(20);
@@ -221,7 +221,7 @@ describe('History tool', () => {
 
   it('around reports unknown anchor as a normal (ok=false) error', async () => {
     mockAround.mockReturnValue(null);
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute({ action: 'around', message_id: 'ghost' }, makeCtx(), canUseTool);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('NOT_FOUND');
@@ -237,7 +237,7 @@ describe('History tool', () => {
         },
       ],
     });
-    const handler = historyModule.createHandler();
+    const handler = await historyModule.createHandler();
     const result = await handler.execute({ action: 'around', message_id: 'm1' }, makeCtx(), canUseTool);
     expect(result.ok).toBe(true);
     if (result.ok) {

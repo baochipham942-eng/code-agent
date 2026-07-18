@@ -47,7 +47,7 @@ function npmCommand(): string {
 
 function getProvider(args: ReturnType<typeof parseArgs>): string {
   const value = args.options.provider;
-  if (value === undefined || value === true) {
+  if (value === undefined || typeof value === 'boolean') {
     return 'system-chrome-cdp';
   }
   return Array.isArray(value) ? value[value.length - 1] : value;

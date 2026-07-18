@@ -43,7 +43,7 @@ function makeTool(name: string): Tool {
     inputSchema: { type: 'object', properties: {} },
     requiresPermission: false,
     permissionLevel: 'read',
-    execute: async () => ({ output: 'ok' }),
+    execute: async () => ({ success: true, output: 'ok' }),
   };
 }
 
@@ -52,7 +52,7 @@ function makeToolModule(name: string): ToolModule {
     name,
     description: 'test module',
     inputSchema: { type: 'object' as const, properties: {} },
-    category: 'file' as const,
+    category: 'fs' as const,
     permissionLevel: 'read' as const,
   };
   return {

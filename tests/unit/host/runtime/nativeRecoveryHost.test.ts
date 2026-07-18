@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { NativeRecoveryHost, type NativeRecoveryHostPorts } from '../../../../src/host/runtime/nativeRecoveryHost';
+import { NativeRecoveryHost, type NativeRecoveryDescriptor, type NativeRecoveryHostPorts } from '../../../../src/host/runtime/nativeRecoveryHost';
 import type { RunRehydrationPlan } from '../../../../src/host/runtime/durableRunStores';
 import type { PendingOperation } from '../../../../src/shared/contract/durableRun';
 import type { RunRegistry } from '../../../../src/host/runtime/runRegistry';
@@ -38,7 +38,7 @@ function operation(overrides: Partial<PendingOperation> = {}): PendingOperation 
 function fixture(overrides: Partial<NativeRecoveryHostPorts> = {}) {
   const registry = { checkpointDurable: vi.fn(), terminalDurable: vi.fn() } as unknown as RunRegistry;
   const ports: NativeRecoveryHostPorts = {
-    resolveWorkspace: vi.fn(async () => ({ ok: true, root: '/repo', cwd: '/repo', fingerprint: 'fp' })),
+    resolveWorkspace: vi.fn(async (_descriptor: NativeRecoveryDescriptor) => ({ ok: true as const, root: '/repo', cwd: '/repo', fingerprint: 'fp' })),
     model: {
       dispatchPrepared: vi.fn(async () => ({ resultRef: 'model:prepared' })),
       queryResult: vi.fn(async () => ({ resultRef: 'model:queried' })),
@@ -46,7 +46,7 @@ function fixture(overrides: Partial<NativeRecoveryHostPorts> = {}) {
       retrySafe: vi.fn(async () => ({ resultRef: 'model:retried' })),
     },
     tool: { queryResult: vi.fn(async () => ({ resultRef: 'tool:queried' })) },
-    approval: { read: vi.fn(async () => 'pending') },
+    approval: { read: vi.fn(async (_approvalId: string) => 'pending' as const) },
     ...overrides,
   };
   return { registry, ports, handler: new NativeRecoveryHost(registry, ports).createHandler() };

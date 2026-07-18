@@ -180,11 +180,10 @@ export const M07: TestCase = {
   ],
 
   expectedBehavior: {
-    agentDispatched: true,
-    agentTypes: ['coder', 'code-explore', 'architect'],
-    toolsUsed: ['Read', 'Write', 'Edit', 'Glob', 'Grep'],
+    directExecution: false,
+    expectedAgents: ['coder', 'code-explore', 'architect'],
+    requiredTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep'],
     toolCallRange: { min: 25, max: 120 },
-    noBlindEdit: true,
   },
 
   tags: ['multi-file', 'realtime', 'websocket', 'collaboration', 'ot', 'L6'],

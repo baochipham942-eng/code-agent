@@ -14,8 +14,8 @@ describe('shell capabilities', () => {
     });
     const supported = new Set(getShellCapabilityIds());
     const missing = detected
-      .filter((capability) => !supported.has(capability.id))
-      .map((capability) => `${capability.id} (${capability.file})`);
+      .filter((capability: { id: string; file: string }) => !supported.has(capability.id))
+      .map((capability: { id: string; file: string }) => `${capability.id} (${capability.file})`);
 
     expect(missing).toEqual([]);
   });

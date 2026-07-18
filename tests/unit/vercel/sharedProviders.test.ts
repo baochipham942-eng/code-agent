@@ -15,7 +15,7 @@ function createKeyPair(): string {
   return privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 }
 
-function makeResponse(): ControlPlaneResponseLike & { statusCode: number; body: unknown } {
+function makeResponse(): ControlPlaneResponseLike & { statusCode: number; body: unknown; headers: Record<string, string> } {
   return {
     statusCode: 200,
     headers: {} as Record<string, string>,
@@ -31,7 +31,7 @@ function makeResponse(): ControlPlaneResponseLike & { statusCode: number; body: 
       this.body = value;
     },
     end() {},
-  } as ControlPlaneResponseLike & { statusCode: number; body: unknown };
+  } as ControlPlaneResponseLike & { statusCode: number; body: unknown; headers: Record<string, string> };
 }
 
 interface SharedProviderFixture {

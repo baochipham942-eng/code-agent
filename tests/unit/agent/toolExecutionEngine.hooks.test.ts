@@ -279,7 +279,6 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     hookMessageBuffer: {} as never,
     messageHistoryCompressor: {} as never,
     autoCompressor: {} as never,
-    contextHealth: ContextHealthState.forTest({ compressionState: {} as never } as never),
     compressionPipeline: {} as never,
     telemetryAdapter,
     turnTrace: {
@@ -298,18 +297,24 @@ function makeRuntimeContext(overrides: Partial<RuntimeContext> = {}): RuntimeCon
     enableHooks: true,
     maxStopHookRetries: 0,
     maxToolCallRetries: 0,
-    control: ControlState.forTest({ isCancelled: false, isInterrupted: false, abortController: null, runAbortController: null, savedMessages: null, externalDataCallCount: 0, preApprovedTools: new Set() } as never),
     enableToolDeferredLoading: false,
+    maxMode: false,
+    maxModeCandidates: 1,
     maxStructuredOutputRetries: 0,
     stepByStepMode: false,
     turnQualityState: {},
     goalEvidenceState: { bounces: 0 },
-    control: ControlState.forTest({  } as never),
+    // 注：这里原来还有一个更早的 `control:` 键（isCancelled/isInterrupted/... 全量
+    // 种子）和一个更早的 `contextHealth:` 键（compressionState 种子），都是对象字面量
+    // 重复键（TS1117）。JS 运行时只有后一个生效，故删掉两处死代码，不改变既有行为。
+    control: ControlState.forTest({} as never),
     consecutiveErrors: 0,
     stats: RunStatsState.forTest({ traceId: 'trace-1', totalInputTokens: 0, totalOutputTokens: 0, runStartTime: Date.now(), totalTokensUsed: 0, totalToolCallCount: 0 } as never),
     MAX_CONSECUTIVE_TRUNCATIONS: 3,
+    MAX_CONSECUTIVE_COMPACTS: 3,
     contextHealth: ContextHealthState.forTest({ persistentSystemContext: [] } as never),
     artifact: ArtifactState.forTest(),
+    enableDeliveryCritic: false,
     ...overrides,
   };
 }
@@ -1310,7 +1315,10 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     await writeFile(targetFile, oldText, 'utf-8');
 
     const toolExecutor = {
-      execute: vi.fn(async (): Promise<ToolResult> => ({
+      // execute 保留真实的 3 参签名（toolName, params, options）——测试后面要靠
+      // mock.calls[0]?.[1] 取出实际传入的 params 断言，函数只声明零参会让 mock.calls
+      // 的元组类型缩成 []，取不到第二个参数。
+      execute: vi.fn(async (_toolName: string, _params: Record<string, unknown>, _options: unknown): Promise<ToolResult> => ({
         toolCallId: '',
         success: true,
         output: 'edit ok',
@@ -2517,7 +2525,10 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(ctx.turn.needsReinference).toBe(true);
     // Route A: the edit-anchor failure is still detected and surfaced, it just no
     // longer escalates guard counters or flips into a "targeted edit" mode.
-    expect(result.metadata?.artifactRepairGuard?.editAnchorFailure).toBe(true);
+    // metadata 是 Record<string, unknown>，editAnchorFailure 是 toolResultLifecycle.ts
+    // 写入的实现细节字段，未建模到公共类型里，这里按已知运行时形状断言取值。
+    const repairGuardMeta = result.metadata?.artifactRepairGuard as { editAnchorFailure?: boolean } | undefined;
+    expect(repairGuardMeta?.editAnchorFailure).toBe(true);
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-edit-anchor-failed>'),
     );
@@ -2967,7 +2978,10 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('repeats the same target-file patch');
-    expect(result.metadata?.artifactRepairGuard?.repeatedFailedPatch).toBe(true);
+    // metadata 是 Record<string, unknown>，repeatedFailedPatch 是实现细节字段，
+    // 按已知运行时形状断言取值（见上面 editAnchorFailure 同类处理）。
+    const repairGuardMeta = result.metadata?.artifactRepairGuard as { repeatedFailedPatch?: boolean } | undefined;
+    expect(repairGuardMeta?.repeatedFailedPatch).toBe(true);
     expect(ctx.turn.needsReinference).toBe(true);
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });

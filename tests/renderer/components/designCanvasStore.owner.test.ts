@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useDesignCanvasStore, persistDesignCanvas } from '../../../src/renderer/components/design/designCanvasStore';
 import type { CanvasNode } from '../../../src/renderer/components/design/designCanvasTypes';
 
+// designCanvasStore 的 DesignCanvasState 未导出，借 persistDesignCanvas 的参数类型引用它。
+type DesignCanvasState = Parameters<typeof persistDesignCanvas>[0];
+
 // H1.a：画布 store 加 ownerSessionId（属主会话）+ claim/clear 两个 action。
 // 属主隔离是跨会话泄漏防线，认领不匹配会话时重置画布为空再换属主。
 
@@ -105,11 +108,12 @@ describe('designCanvasStore 属主会话隔离', () => {
   // 同会话回来 claim 命中 no-op 保画布，避免 owner=null 走重置分支孤儿化画布。
   // partialize 抽成具名纯函数 persistDesignCanvas（store 的 persist 选项即引用它）。
   it('persist partialize 同时含 runDir 与 ownerSessionId', () => {
-    expect(persistDesignCanvas({ runDir: '/run/x', ownerSessionId: 's9' })).toEqual({
+    // partialize 只挑 runDir/ownerSessionId，测的是"挑对了没"，不需要构造完整 40+ 字段的 state。
+    expect(persistDesignCanvas({ runDir: '/run/x', ownerSessionId: 's9' } as DesignCanvasState)).toEqual({
       runDir: '/run/x',
       ownerSessionId: 's9',
     });
-    expect(persistDesignCanvas({ runDir: null, ownerSessionId: null })).toEqual({
+    expect(persistDesignCanvas({ runDir: null, ownerSessionId: null } as DesignCanvasState)).toEqual({
       runDir: null,
       ownerSessionId: null,
     });

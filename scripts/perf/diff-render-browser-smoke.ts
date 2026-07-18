@@ -324,12 +324,14 @@ async function main(): Promise<void> {
         summaryFiles: 3,
         summaryLinesPerFile: 1_000,
       },
+      // Harness-side metrics field is a concrete StreamingPerformanceSnapshot; report-side
+      // type widens it to an opaque JSON blob.
       initial: {
-        ...initialRaw,
+        ...(initialRaw as unknown as DiffRenderPhase),
         ...summarizeLongTasks(initialRaw.longTasks ?? []),
       },
       summaryExpansion: {
-        ...expansionRaw,
+        ...(expansionRaw as unknown as DiffRenderPhase),
         expandedFiles: Math.min(3, buttonCount),
         ...summarizeLongTasks(expansionRaw.longTasks ?? []),
       },

@@ -85,7 +85,7 @@ describe('ToolStepGroup — 探索性失败默认折叠，需介入的失败默�
           id: 'call-x',
           name: 'Bash',
           arguments: {},
-          result: { success: false, error: 'command failed with exit code 1' },
+          result: { toolCallId: 'call-x', success: false, error: 'command failed with exit code 1' },
         },
       }),
     );

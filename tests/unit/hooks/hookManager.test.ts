@@ -53,7 +53,7 @@ describe('HookManager', () => {
     it('should accept custom merge strategy', () => {
       manager = new HookManager({
         workingDirectory: '/tmp',
-        mergeStrategy: 'override',
+        mergeStrategy: 'replace',
       });
       expect(manager).toBeDefined();
     });
@@ -192,7 +192,7 @@ describe('HookManager Trigger Methods', () => {
     it('should accept messages and tool executions', async () => {
       const result = await manager.triggerSessionEnd(
         'session-1',
-        [{ role: 'user', content: 'test' }],
+        [{ id: 'msg-1', role: 'user', content: 'test', timestamp: Date.now() }],
         [{ name: 'bash', input: 'echo', success: true, timestamp: Date.now() }]
       );
       expect(result.shouldProceed).toBe(true);

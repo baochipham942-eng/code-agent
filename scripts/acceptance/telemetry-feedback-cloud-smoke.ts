@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -107,7 +108,7 @@ function prepareTempDataDir(): string {
   return dataDir;
 }
 
-function startAppHost(port: number, dataDir: string): { child: ChildProcessWithoutNullStreams; output: () => string } {
+function startAppHost(port: number, dataDir: string): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
   let logs = '';
   const child = spawn('node', ['dist/web/webServer.cjs'], {
     cwd: process.cwd(),
@@ -134,7 +135,7 @@ function startAppHost(port: number, dataDir: string): { child: ChildProcessWitho
   return { child, output: () => logs };
 }
 
-async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
+async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
   if (child.killed || child.exitCode !== null) return;
 
   await new Promise<void>((resolve) => {
@@ -156,7 +157,7 @@ async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void>
 
 async function waitForHealth(
   baseUrl: string,
-  server: ChildProcessWithoutNullStreams,
+  server: ChildProcessByStdio<null, Readable, Readable>,
   output: () => string,
 ): Promise<void> {
   const start = Date.now();

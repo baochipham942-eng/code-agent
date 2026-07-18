@@ -166,7 +166,6 @@ async function main(): Promise<void> {
 
     const agent = new testing.StandaloneAgentAdapter({
       workingDirectory: workspaceDir,
-      generation: 'e2e-agent-trajectory-fresh-sample',
       modelConfig: {
         provider: 'openai',
         model: 'e2e-local-agent-model',
@@ -255,6 +254,8 @@ async function main(): Promise<void> {
       dataDir,
       liveDataDir: true,
       keepTmp: true,
+      // Smoke test operates on a throwaway mkdtemp dir, not the real production data dir; no backup needed.
+      backupLiveDb: false,
       apply: true,
       manifestPath: reviewedManifestPath,
       reviewer: 'acceptance-smoke',

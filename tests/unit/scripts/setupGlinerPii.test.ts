@@ -7,7 +7,6 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error — 纯 ESM 脚本无类型声明
 import { venvPythonPath, uvBinaryName, buildEnvContent } from '../../../scripts/pii/setup-gliner-pii.mjs';
 
 describe('setup-gliner-pii platform helpers', () => {

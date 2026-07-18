@@ -23,7 +23,8 @@
 // ============================================================================
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'stream';
 import { access, mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { constants, createWriteStream } from 'fs';
 import http from 'http';
@@ -66,7 +67,7 @@ interface E2EEnv {
 
 type StartedServer = {
   baseUrl: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   output: () => string;
 };
 

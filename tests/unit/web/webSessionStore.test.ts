@@ -20,7 +20,7 @@ import {
 
 function createDatabaseStub() {
   return {
-    getSession: vi.fn(() => null),
+    getSession: vi.fn<() => { id: string; title: string } | null>(() => null),
     createSessionWithId: vi.fn(),
     updateSession: vi.fn(),
     addMessage: vi.fn(),

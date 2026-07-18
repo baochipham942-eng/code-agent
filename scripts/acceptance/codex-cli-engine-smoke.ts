@@ -469,7 +469,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  validateLiveGate({ manualCodex: hasFlag(parsed, 'manual-codex'), env: process.env });
+  validateLiveGate({
+    manualCodex: hasFlag(parsed, 'manual-codex'),
+    env: { CODE_AGENT_CODEX_CLI_SMOKE: process.env.CODE_AGENT_CODEX_CLI_SMOKE },
+  });
 
   const outputLastMessagePath = path.join(
     os.tmpdir(),

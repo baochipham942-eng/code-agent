@@ -14,70 +14,70 @@ import path from 'path';
 // ----------------------------------------------------------------------------
 
 export interface MockElectronApp {
-  getPath: ReturnType<typeof vi.fn>;
-  getName: ReturnType<typeof vi.fn>;
-  getVersion: ReturnType<typeof vi.fn>;
+  getPath: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  getName: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  getVersion: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
   isPackaged: boolean;
-  quit: ReturnType<typeof vi.fn>;
-  on: ReturnType<typeof vi.fn>;
-  whenReady: ReturnType<typeof vi.fn>;
+  quit: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  on: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  whenReady: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
 }
 
 export interface MockBrowserWindow {
-  loadURL: ReturnType<typeof vi.fn>;
-  loadFile: ReturnType<typeof vi.fn>;
+  loadURL: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  loadFile: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
   webContents: {
-    send: ReturnType<typeof vi.fn>;
-    on: ReturnType<typeof vi.fn>;
-    openDevTools: ReturnType<typeof vi.fn>;
+    send: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+    on: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+    openDevTools: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
   };
-  on: ReturnType<typeof vi.fn>;
-  show: ReturnType<typeof vi.fn>;
-  hide: ReturnType<typeof vi.fn>;
-  close: ReturnType<typeof vi.fn>;
-  destroy: ReturnType<typeof vi.fn>;
-  isDestroyed: ReturnType<typeof vi.fn>;
-  focus: ReturnType<typeof vi.fn>;
-  setTitle: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  show: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  hide: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  close: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  destroy: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  isDestroyed: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  focus: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  setTitle: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
 }
 
 export interface MockDialog {
-  showOpenDialog: ReturnType<typeof vi.fn>;
-  showSaveDialog: ReturnType<typeof vi.fn>;
-  showMessageBox: ReturnType<typeof vi.fn>;
-  showErrorBox: ReturnType<typeof vi.fn>;
+  showOpenDialog: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  showSaveDialog: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  showMessageBox: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  showErrorBox: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
 }
 
 export interface MockShell {
-  openExternal: ReturnType<typeof vi.fn>;
-  openPath: ReturnType<typeof vi.fn>;
-  showItemInFolder: ReturnType<typeof vi.fn>;
-  trashItem: ReturnType<typeof vi.fn>;
+  openExternal: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  openPath: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  showItemInFolder: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  trashItem: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
 }
 
 export interface MockClipboard {
-  readText: ReturnType<typeof vi.fn>;
-  writeText: ReturnType<typeof vi.fn>;
-  readImage: ReturnType<typeof vi.fn>;
-  writeImage: ReturnType<typeof vi.fn>;
-  clear: ReturnType<typeof vi.fn>;
+  readText: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  writeText: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  readImage: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  writeImage: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  clear: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
 }
 
 export interface MockIpcMain {
-  handle: ReturnType<typeof vi.fn>;
-  handleOnce: ReturnType<typeof vi.fn>;
-  on: ReturnType<typeof vi.fn>;
-  once: ReturnType<typeof vi.fn>;
-  removeHandler: ReturnType<typeof vi.fn>;
-  removeListener: ReturnType<typeof vi.fn>;
+  handle: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  handleOnce: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  on: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  once: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  removeHandler: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  removeListener: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
 }
 
 export interface MockIpcRenderer {
-  invoke: ReturnType<typeof vi.fn>;
-  send: ReturnType<typeof vi.fn>;
-  on: ReturnType<typeof vi.fn>;
-  once: ReturnType<typeof vi.fn>;
-  removeListener: ReturnType<typeof vi.fn>;
+  invoke: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  send: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  on: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  once: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
+  removeListener: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
 }
 
 // ----------------------------------------------------------------------------
@@ -241,7 +241,7 @@ export function createMockIpcRenderer(): MockIpcRenderer {
 
 export interface MockElectron {
   app: MockElectronApp;
-  AppWindow: ReturnType<typeof vi.fn>;
+  AppWindow: ReturnType<typeof vi.fn<(...args: any[]) => any>>;
   dialog: MockDialog;
   shell: MockShell;
   clipboard: MockClipboard;

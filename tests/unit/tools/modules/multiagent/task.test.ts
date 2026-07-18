@@ -342,7 +342,7 @@ describe('Task happy / failure', () => {
         artifact: expect.objectContaining({ kind: 'text', sourceTool: 'Task' }),
         artifacts: [expect.objectContaining({ kind: 'text', sourceTool: 'Task' })],
       });
-      expect(result.meta.artifact).toMatchObject({
+      expect(result.meta?.artifact).toMatchObject({
         metadata: expect.objectContaining({
           tool: 'Task',
           action: 'task',

@@ -606,7 +606,7 @@ async function runCompareCommand(
   const candidate = await loadCompareConfig(candidatePath);
   const resolvedProvider = opts.provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
   const resolvedModel = opts.model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
-  const baseline = {
+  const baseline: CompareConfiguration = {
     name: 'baseline',
     model: resolvedModel,
     provider: resolvedProvider,

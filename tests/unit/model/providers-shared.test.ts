@@ -160,7 +160,7 @@ describe('convertToOpenAIMessages', () => {
     expect(result[0].role).toBe('assistant');
     expect(result[0].content).toBe('Let me search');
     expect(result[0].tool_calls).toHaveLength(1);
-    expect(result[0].tool_calls[0]).toEqual({
+    expect(result[0].tool_calls![0]).toEqual({
       id: 'tc_1',
       type: 'function',
       function: { name: 'web_search', arguments: '{"query":"vitest"}' },
@@ -198,8 +198,8 @@ describe('convertToOpenAIMessages', () => {
     expect(result).toHaveLength(1);
     expect(result[0].role).toBe('user');
     expect(result[0].content).toHaveLength(2);
-    expect(result[0].content[0]).toEqual({ type: 'text', text: 'What is in this image?' });
-    expect(result[0].content[1]).toEqual({
+    expect(result[0].content![0]).toEqual({ type: 'text', text: 'What is in this image?' });
+    expect(result[0].content![1]).toEqual({
       type: 'image_url',
       image_url: { url: 'data:image/png;base64,iVBORw0KGgoAAAANS' },
     });

@@ -193,7 +193,7 @@ describe('provider-reported saved-token smoke helpers', () => {
 
     expect(() => validateProviderReportedSavedTokensLiveGate({
       manualProvider: true,
-      env: {},
+      env: { CODE_AGENT_PROVIDER_SAVED_TOKENS_SMOKE: undefined },
     })).toThrow(/CODE_AGENT_PROVIDER_SAVED_TOKENS_SMOKE=1/);
 
     expect(() => validateProviderReportedSavedTokensLiveGate({

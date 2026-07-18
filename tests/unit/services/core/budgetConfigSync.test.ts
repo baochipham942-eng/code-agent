@@ -2,6 +2,7 @@ import { mkdtemp } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ConfigService } from '../../../../src/host/services/core/configService';
 
 const secureStorageMock = {
   getSettingsFromKeychain: vi.fn(async () => null),
@@ -36,7 +37,7 @@ async function loadModules(dataDir: string) {
 
 // 复现 settings.ipc.ts setBudgetConfig handler 的核心序列：持久化 + 同步运行时单例。
 async function applyBudgetUpdate(
-  configService: { setBudgetConfig: (c: unknown) => Promise<void>; getBudgetConfig: () => unknown },
+  configService: Pick<ConfigService, 'setBudgetConfig' | 'getBudgetConfig'>,
   budgetModule: { syncBudgetServiceFromConfig: (c: never) => void; getBudgetService: () => { getConfig: () => { maxBudget: number; enabled: boolean } } },
   budget: Record<string, unknown>,
 ): Promise<void> {

@@ -80,14 +80,14 @@ describe('SubagentPipeline', () => {
   // --------------------------------------------------------------------------
   describe('Context Creation', () => {
     it('should create context with AgentDefinition', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'test-agent',
         name: 'Test Agent',
         description: 'A test agent',
         prompt: 'You are a test agent',
         tools: ['read_file', 'glob'],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test/project');
 
@@ -131,7 +131,9 @@ describe('SubagentPipeline', () => {
 
       const context = pipeline.createContext(dynamicConfig, '/test/dir');
 
-      expect(context.permissionConfig.name).toBe('development');
+      // Mocked getPresetConfig() (above) returns a 'name' field that the real
+      // PermissionConfig type doesn't declare; cast to check the mock's output.
+      expect((context.permissionConfig as PermissionConfig & { name: string }).name).toBe('development');
     });
   });
 
@@ -140,18 +142,16 @@ describe('SubagentPipeline', () => {
   // --------------------------------------------------------------------------
   describe('Permission Inheritance', () => {
     it('should merge permissions with parent (take stricter)', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'child-agent',
         name: 'Child Agent',
         description: 'A child agent',
         prompt: 'Child',
         tools: ['read_file', 'write_file'],
         permissionPreset: 'development', // write: true
-      };
+      } as AgentDefinition;
 
       const parentPermissionConfig: PermissionConfig = {
-        name: 'readonly',
-        description: 'Readonly parent',
         autoApprove: {
           read: true,
           write: false, // Parent disallows write
@@ -175,18 +175,16 @@ describe('SubagentPipeline', () => {
     });
 
     it('should merge blocked commands from both parent and child', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'child-agent',
         name: 'Child',
         description: 'Child',
         prompt: 'Child',
         tools: [],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const parentConfig: PermissionConfig = {
-        name: 'parent',
-        description: 'Parent',
         autoApprove: { read: true, write: true, execute: true, network: true },
         confirmDangerousCommands: false,
         trustProjectDirectory: true,
@@ -204,18 +202,16 @@ describe('SubagentPipeline', () => {
     });
 
     it('should intersect trusted directories', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'child-agent',
         name: 'Child',
         description: 'Child',
         prompt: 'Child',
         tools: [],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const parentConfig: PermissionConfig = {
-        name: 'parent',
-        description: 'Parent',
         autoApprove: { read: true, write: true, execute: true, network: true },
         confirmDangerousCommands: false,
         trustProjectDirectory: true,
@@ -239,7 +235,7 @@ describe('SubagentPipeline', () => {
   // --------------------------------------------------------------------------
   describe('Budget Inheritance', () => {
     it('should constrain child budget to parent remaining budget', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'expensive-agent',
         name: 'Expensive Agent',
         description: 'Expensive',
@@ -247,7 +243,7 @@ describe('SubagentPipeline', () => {
         tools: [],
         permissionPreset: 'development',
         maxBudget: 100, // Child wants $100
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test', undefined, {
         parentRemainingBudget: 5, // Parent only has $5 left
@@ -279,7 +275,7 @@ describe('SubagentPipeline', () => {
     });
 
     it('should set budget to parent remaining if child has no budget', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'no-budget-agent',
         name: 'No Budget Agent',
         description: 'No budget set',
@@ -287,7 +283,7 @@ describe('SubagentPipeline', () => {
         tools: [],
         permissionPreset: 'development',
         // No maxBudget set
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test', undefined, {
         parentRemainingBudget: 3,
@@ -325,6 +321,8 @@ describe('SubagentPipeline', () => {
         inputTokens: 1_000_000,
         outputTokens: 1_500_000,
         model: 'test-model',
+        provider: 'test-provider',
+        timestamp: Date.now(),
       });
 
       const child = pipeline.createContext(childConfig, '/test', parent.agentId, {
@@ -336,6 +334,8 @@ describe('SubagentPipeline', () => {
         inputTokens: 500_000,
         outputTokens: 500_000,
         model: 'test-model',
+        provider: 'test-provider',
+        timestamp: Date.now(),
       });
 
       const grandchild = pipeline.createContext(grandchildConfig, '/test', child.agentId, {
@@ -351,14 +351,14 @@ describe('SubagentPipeline', () => {
   // --------------------------------------------------------------------------
   describe('Tool Inheritance', () => {
     it('should intersect child tools with parent allowed tools', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'tool-agent',
         name: 'Tool Agent',
         description: 'Tool agent',
         prompt: 'Tools',
         tools: ['read_file', 'write_file', 'bash', 'glob'], // Child wants these
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test', undefined, {
         parentAllowedTools: ['read_file', 'glob', 'grep'], // Parent only allows these
@@ -373,14 +373,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('should keep all child tools if no parent restriction', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'tool-agent',
         name: 'Tool Agent',
         description: 'Tool agent',
         prompt: 'Tools',
         tools: ['read_file', 'write_file', 'bash'],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
 
@@ -418,14 +418,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('should allow read operations', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'readonly-agent',
         name: 'Readonly',
         description: 'Readonly',
         prompt: 'Readonly',
         tools: ['read_file'],
         permissionPreset: 'readonly',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
 
@@ -441,14 +441,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('allows nested delegation tools while keeping ordinary no-path execute denied', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'strict-agent',
         name: 'Strict',
         description: 'Strict',
         prompt: 'Strict',
         tools: ['Task', 'spawn_agent', 'AgentSpawn', 'bash'],
         permissionPreset: 'strict',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
 
@@ -468,14 +468,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('should warn on dangerous commands', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'dev-agent',
         name: 'Dev',
         description: 'Dev',
         prompt: 'Dev',
         tools: ['bash'],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
 
@@ -497,7 +497,7 @@ describe('SubagentPipeline', () => {
   // --------------------------------------------------------------------------
   describe('Budget Checking', () => {
     it('should allow when budget is available', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'budget-agent',
         name: 'Budget Agent',
         description: 'Budget',
@@ -505,7 +505,7 @@ describe('SubagentPipeline', () => {
         tools: [],
         permissionPreset: 'development',
         maxBudget: 10,
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
 
@@ -515,7 +515,7 @@ describe('SubagentPipeline', () => {
     });
 
     it('should track subagent cost', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'cost-agent',
         name: 'Cost Agent',
         description: 'Cost',
@@ -523,7 +523,7 @@ describe('SubagentPipeline', () => {
         tools: [],
         permissionPreset: 'development',
         maxBudget: 1,
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
 
@@ -532,6 +532,8 @@ describe('SubagentPipeline', () => {
         inputTokens: 1000,
         outputTokens: 500,
         model: 'test-model',
+        provider: 'test-provider',
+        timestamp: Date.now(),
       });
 
       const status = pipeline.getBudgetStatus(context);
@@ -546,14 +548,14 @@ describe('SubagentPipeline', () => {
   // --------------------------------------------------------------------------
   describe('Audit Logging', () => {
     it('should log spawn events', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'audit-agent',
         name: 'Audit Agent',
         description: 'Audit',
         prompt: 'Audit',
         tools: [],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       pipeline.createContext(agentDef, '/test');
 
@@ -565,14 +567,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('should log tool executions', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'tool-audit',
         name: 'Tool Audit',
         description: 'Audit',
         prompt: 'Audit',
         tools: ['read_file'],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
       pipeline.recordToolUsage(context, 'read_file');
@@ -585,14 +587,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('should log completion events', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'complete-agent',
         name: 'Complete Agent',
         description: 'Complete',
         prompt: 'Complete',
         tools: [],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
       pipeline.completeContext(context.agentId, true);
@@ -604,14 +606,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('should log error events', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'error-agent',
         name: 'Error Agent',
         description: 'Error',
         prompt: 'Error',
         tools: [],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
       pipeline.completeContext(context.agentId, false, 'Test error');
@@ -626,14 +628,14 @@ describe('SubagentPipeline', () => {
     it('should get recent audit entries', () => {
       // Create multiple agents
       for (let i = 0; i < 5; i++) {
-        const agentDef: AgentDefinition = {
+        const agentDef = {
           id: `agent-${i}`,
           name: `Agent ${i}`,
           description: 'Test',
           prompt: 'Test',
           tools: [],
           permissionPreset: 'development',
-        };
+        } as AgentDefinition;
         pipeline.createContext(agentDef, '/test');
       }
 
@@ -643,14 +645,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('should clear audit log', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'clear-agent',
         name: 'Clear Agent',
         description: 'Clear',
         prompt: 'Clear',
         tools: [],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       pipeline.createContext(agentDef, '/test');
       expect(pipeline.getAuditLog().length).toBeGreaterThan(0);
@@ -665,7 +667,7 @@ describe('SubagentPipeline', () => {
   // --------------------------------------------------------------------------
   describe('Pre-execution Check', () => {
     it('should combine budget and permission checks', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'precheck-agent',
         name: 'Precheck Agent',
         description: 'Precheck',
@@ -673,7 +675,7 @@ describe('SubagentPipeline', () => {
         tools: ['read_file'],
         permissionPreset: 'development',
         maxBudget: 10,
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
 
@@ -694,14 +696,14 @@ describe('SubagentPipeline', () => {
   // --------------------------------------------------------------------------
   describe('Statistics', () => {
     it('should track active agents', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'stats-agent',
         name: 'Stats Agent',
         description: 'Stats',
         prompt: 'Stats',
         tools: [],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       pipeline.createContext(agentDef, '/test');
       pipeline.createContext(agentDef, '/test2');
@@ -712,14 +714,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('should track tool usage counts', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'tool-stats',
         name: 'Tool Stats',
         description: 'Stats',
         prompt: 'Stats',
         tools: ['read_file', 'glob'],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
       pipeline.recordToolUsage(context, 'read_file');
@@ -733,14 +735,14 @@ describe('SubagentPipeline', () => {
     });
 
     it('should track error count', () => {
-      const agentDef: AgentDefinition = {
+      const agentDef = {
         id: 'error-stats',
         name: 'Error Stats',
         description: 'Stats',
         prompt: 'Stats',
         tools: [],
         permissionPreset: 'development',
-      };
+      } as AgentDefinition;
 
       const ctx1 = pipeline.createContext(agentDef, '/test');
       const ctx2 = pipeline.createContext(agentDef, '/test2');

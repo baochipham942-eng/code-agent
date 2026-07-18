@@ -11,7 +11,8 @@
 // vitest pass ≠ 真实 webServer serve 正确（feedback_vitest_pass_does_not_imply_ui_mounted），
 // 故本 smoke 走真实 .cjs 路径。设 CODE_AGENT_RENDERER_HOT_UPDATE=false 关后台拉取避免联网。
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { access, mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { constants } from 'fs';
 import http from 'http';
@@ -25,7 +26,7 @@ const CLOUD_MARKER = 'CLOUD-E2E-MARKER';
 type StartedServer = {
   baseUrl: string;
   token: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   output: () => string;
 };
 

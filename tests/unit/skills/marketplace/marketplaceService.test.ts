@@ -48,7 +48,7 @@ describe('marketplace service registry normalization', () => {
       JSON.stringify({ name: 'pinned-market', plugins: [] }),
     );
     const archive = await zip.generateAsync({ type: 'nodebuffer' });
-    const fetchMock = vi.fn(async () => new Response(archive, { status: 200 }));
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array(archive), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(addMarketplace(`github:owner/repo@${commit}`)).resolves.toEqual({

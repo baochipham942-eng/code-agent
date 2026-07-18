@@ -238,6 +238,8 @@ describe('skillInvocationResolver', () => {
       matchKind: 'slash',
       args: '',
       confidence: 1,
+      aliases: [],
+      reason: 'explicit slash command',
     }, '/tmp/work');
 
     expect(context.block).toContain('Skill source: builtin inline skill');
@@ -261,6 +263,8 @@ describe('skillInvocationResolver', () => {
       matchKind: 'slash',
       args: '',
       confidence: 1,
+      aliases: [],
+      reason: 'explicit slash command',
     }, '/tmp/work');
 
     expect(context.contextModifier.preApprovedTools).toBeUndefined();
@@ -286,6 +290,8 @@ describe('skillInvocationResolver', () => {
       matchKind: 'slash',
       args: '研究员',
       confidence: 1,
+      aliases: [],
+      reason: 'explicit slash command',
     }, '/tmp/work');
     expect(context.contextModifier.toolBoundary?.strict).toBe(true);
     expect(context.contextModifier.toolBoundary?.allowedTools).toEqual(['propose_role', 'read_file']);
@@ -307,6 +313,8 @@ describe('skillInvocationResolver', () => {
       matchKind: 'slash',
       args: '',
       confidence: 1,
+      aliases: [],
+      reason: 'explicit slash command',
     }, '/tmp/work');
     expect(context.contextModifier.toolBoundary?.strict).toBe(false);
   });

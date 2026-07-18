@@ -39,7 +39,7 @@ describe('goal UI 文案 i18n（zh/en 对齐，不再硬编码）', () => {
     };
     const running = renderToStaticMarkup(
       <GoalStatusBarView
-        run={{ ...baseRun, status: 'running', lastGate: { gate: 1, status: 'running' } } as GoalRunState}
+        run={{ ...baseRun, status: 'running', gates: [], lastGate: { gate: 1, pass: false } } as GoalRunState}
         onTogglePause={() => {}}
       />,
     );
@@ -47,7 +47,7 @@ describe('goal UI 文案 i18n（zh/en 对齐，不再硬编码）', () => {
     expect(running).toContain(zh.goalStatusBar.verifying);
 
     const paused = renderToStaticMarkup(
-      <GoalStatusBarView run={{ ...baseRun, status: 'paused' } as GoalRunState} onTogglePause={() => {}} />,
+      <GoalStatusBarView run={{ ...baseRun, status: 'paused', gates: [] } as GoalRunState} onTogglePause={() => {}} />,
     );
     expect(paused).toContain(zh.goalStatusBar.pausedPrefix);
   });

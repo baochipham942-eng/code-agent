@@ -16,7 +16,7 @@ const TAVILY_KEY = 'tvly-store-search-secret';
 const TAVILY_POOL_KEY_A = 'tvly-store-search-pool-a';
 const TAVILY_POOL_KEY_B = 'tvly-store-search-pool-b';
 
-function makeResponse(): ControlPlaneResponseLike & { statusCode: number; body: unknown } {
+function makeResponse(): ControlPlaneResponseLike & { statusCode: number; body: unknown; headers: Record<string, string> } {
   return {
     statusCode: 200,
     headers: {} as Record<string, string>,
@@ -32,7 +32,7 @@ function makeResponse(): ControlPlaneResponseLike & { statusCode: number; body: 
       this.body = value;
     },
     end() {},
-  } as ControlPlaneResponseLike & { statusCode: number; body: unknown };
+  } as ControlPlaneResponseLike & { statusCode: number; body: unknown; headers: Record<string, string> };
 }
 
 afterEach(() => {

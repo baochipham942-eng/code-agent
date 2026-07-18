@@ -17,7 +17,7 @@ vi.mock('../../../src/renderer/components/design/DesignCanvas', () => ({
 }));
 
 // ---- mock 持久化模块：拦 loadCanvasDoc 断言被调，并返回一个空 doc ----------
-const loadCanvasDoc = vi.fn(async () => ({}));
+const loadCanvasDoc = vi.fn(async (..._args: unknown[]) => ({}));
 vi.mock('../../../src/renderer/components/design/designCanvasPersistence', () => ({
   loadCanvasDoc: (...args: unknown[]) => loadCanvasDoc(...args),
 }));

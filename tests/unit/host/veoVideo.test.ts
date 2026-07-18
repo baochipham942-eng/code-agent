@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { veoRequest, isGoogleApiUrl } = vi.hoisted(() => ({ veoRequest: vi.fn(), isGoogleApiUrl: vi.fn(() => true) }));
 vi.mock('../../../src/host/services/media/veoFetch', () => ({ veoRequest, isGoogleApiUrl }));
-const { getGeminiApiKey } = vi.hoisted(() => ({ getGeminiApiKey: vi.fn(() => 'k') }));
+const { getGeminiApiKey } = vi.hoisted(() => ({ getGeminiApiKey: vi.fn((): string | undefined => 'k') }));
 vi.mock('../../../src/host/services/media/imageGenerationService', async (orig) => ({
   ...(await orig<typeof import('../../../src/host/services/media/imageGenerationService')>()),
   getGeminiApiKey,

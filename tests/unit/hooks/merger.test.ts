@@ -32,6 +32,8 @@ describe('Hook Merger', () => {
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'hook.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
       ];
 
@@ -50,12 +52,16 @@ describe('Hook Merger', () => {
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'global.sh' }],
           source: 'global',
+          parallel: false,
+          hookType: 'decision',
         },
         {
           event: 'PreToolUse',
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'project.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
       ];
 
@@ -76,12 +82,16 @@ describe('Hook Merger', () => {
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'global.sh' }],
           source: 'global',
+          parallel: false,
+          hookType: 'decision',
         },
         {
           event: 'PreToolUse',
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'project.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
       ];
 
@@ -99,12 +109,16 @@ describe('Hook Merger', () => {
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'global.sh' }],
           source: 'global',
+          parallel: false,
+          hookType: 'decision',
         },
         {
           event: 'PreToolUse',
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'project.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
       ];
 
@@ -123,12 +137,16 @@ describe('Hook Merger', () => {
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'bash-hook.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
         {
           event: 'PreToolUse',
           matcher: /edit_file/,
           hooks: [{ type: 'command', command: 'edit-hook.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
       ];
 
@@ -144,12 +162,16 @@ describe('Hook Merger', () => {
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'pre.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
         {
           event: 'PostToolUse',
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'post.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
       ];
 
@@ -167,12 +189,16 @@ describe('Hook Merger', () => {
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'same.sh' }],
           source: 'global',
+          parallel: false,
+          hookType: 'decision',
         },
         {
           event: 'PreToolUse',
           matcher: /bash/,
           hooks: [{ type: 'command', command: 'same.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
       ];
 
@@ -194,12 +220,16 @@ describe('Hook Merger', () => {
           matcher: null,
           hooks: [{ type: 'command', command: 'all.sh' }],
           source: 'global',
+          parallel: false,
+          hookType: 'decision',
         },
         {
           event: 'PreToolUse',
           matcher: null,
           hooks: [{ type: 'command', command: 'project-all.sh' }],
           source: 'project',
+          parallel: false,
+          hookType: 'decision',
         },
       ];
 
@@ -216,10 +246,10 @@ describe('Hook Merger', () => {
   // --------------------------------------------------------------------------
   describe('getHooksForEvent', () => {
     const hooks: MergedHookConfig[] = [
-      { event: 'PreToolUse', matcher: /bash/, hooks: [], sources: ['project'] },
-      { event: 'PreToolUse', matcher: /edit/, hooks: [], sources: ['project'] },
-      { event: 'PostToolUse', matcher: /bash/, hooks: [], sources: ['project'] },
-      { event: 'SessionStart', matcher: null, hooks: [], sources: ['global'] },
+      { event: 'PreToolUse', matcher: /bash/, hooks: [], sources: ['project'], parallel: false, hookType: 'decision' },
+      { event: 'PreToolUse', matcher: /edit/, hooks: [], sources: ['project'], parallel: false, hookType: 'decision' },
+      { event: 'PostToolUse', matcher: /bash/, hooks: [], sources: ['project'], parallel: false, hookType: 'decision' },
+      { event: 'SessionStart', matcher: null, hooks: [], sources: ['global'], parallel: false, hookType: 'decision' },
     ];
 
     it('should filter by event type', () => {
@@ -238,10 +268,10 @@ describe('Hook Merger', () => {
   // --------------------------------------------------------------------------
   describe('getHooksForTool', () => {
     const hooks: MergedHookConfig[] = [
-      { event: 'PreToolUse', matcher: /bash/, hooks: [{ type: 'command', command: 'bash.sh' }], sources: ['project'] },
-      { event: 'PreToolUse', matcher: /edit_file/, hooks: [{ type: 'command', command: 'edit.sh' }], sources: ['project'] },
-      { event: 'PreToolUse', matcher: null, hooks: [{ type: 'command', command: 'all.sh' }], sources: ['global'] },
-      { event: 'PostToolUse', matcher: /bash/, hooks: [{ type: 'command', command: 'post-bash.sh' }], sources: ['project'] },
+      { event: 'PreToolUse', matcher: /bash/, hooks: [{ type: 'command', command: 'bash.sh' }], sources: ['project'], parallel: false, hookType: 'decision' },
+      { event: 'PreToolUse', matcher: /edit_file/, hooks: [{ type: 'command', command: 'edit.sh' }], sources: ['project'], parallel: false, hookType: 'decision' },
+      { event: 'PreToolUse', matcher: null, hooks: [{ type: 'command', command: 'all.sh' }], sources: ['global'], parallel: false, hookType: 'decision' },
+      { event: 'PostToolUse', matcher: /bash/, hooks: [{ type: 'command', command: 'post-bash.sh' }], sources: ['project'], parallel: false, hookType: 'decision' },
     ];
 
     it('should filter by event and matching tool', () => {
@@ -266,8 +296,8 @@ describe('Hook Merger', () => {
   // --------------------------------------------------------------------------
   describe('hasHooksForEvent', () => {
     const hooks: MergedHookConfig[] = [
-      { event: 'PreToolUse', matcher: null, hooks: [], sources: ['project'] },
-      { event: 'SessionStart', matcher: null, hooks: [], sources: ['global'] },
+      { event: 'PreToolUse', matcher: null, hooks: [], sources: ['project'], parallel: false, hookType: 'decision' },
+      { event: 'SessionStart', matcher: null, hooks: [], sources: ['global'], parallel: false, hookType: 'decision' },
     ];
 
     it('should return true for configured events', () => {

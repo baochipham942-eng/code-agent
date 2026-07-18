@@ -348,6 +348,7 @@ describe('evidenceControlSummary', () => {
         traceId: 'trace-session-1',
         traceSource: 'session_replay',
         source: 'session_replay',
+        sessionId: 'session-1',
         replayKey: 'session-1',
       },
       traceSource: 'session_replay',

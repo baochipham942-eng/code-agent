@@ -24,7 +24,7 @@ const parentMessages = [
 
 describe('runReadOnlySideChat', () => {
   it('spawns a read-only subagent (no tools) inheriting parent context and returns its answer', async () => {
-    const execute = vi.fn(async () => fakeResult('今天是周四'));
+    const execute = vi.fn(async (_request: SubagentExecutionRequest) => fakeResult('今天是周四'));
 
     const answer = await runReadOnlySideChat(
       { executor: { execute }, baseContext, parentMessages },
@@ -45,7 +45,7 @@ describe('runReadOnlySideChat', () => {
   });
 
   it('passes through the explicit execution context', async () => {
-    const execute = vi.fn(async () => fakeResult('ok'));
+    const execute = vi.fn(async (_request: SubagentExecutionRequest) => fakeResult('ok'));
     await runReadOnlySideChat({ executor: { execute }, baseContext, parentMessages }, 'q');
     const { context: ctx } = execute.mock.calls[0][0] as SubagentExecutionRequest;
     expect(ctx.modelConfig).toBe(baseContext.modelConfig);
@@ -53,7 +53,7 @@ describe('runReadOnlySideChat', () => {
   });
 
   it('works with no parent messages (empty context) and returns empty string when no output', async () => {
-    const execute = vi.fn(async () => ({ ...fakeResult(''), output: '' }));
+    const execute = vi.fn(async (_request: SubagentExecutionRequest) => ({ ...fakeResult(''), output: '' }));
     const answer = await runReadOnlySideChat(
       { executor: { execute }, baseContext, parentMessages: [] },
       'hi',

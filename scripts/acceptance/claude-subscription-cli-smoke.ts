@@ -675,7 +675,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  validateClaudeSubscriptionSmokeGate({ manualClaude, env: process.env });
+  validateClaudeSubscriptionSmokeGate({
+    manualClaude,
+    env: { CODE_AGENT_CLAUDE_CLI_SMOKE: process.env.CODE_AGENT_CLAUDE_CLI_SMOKE },
+  });
 
   const run = await runProcess({
     binary: config.binary,

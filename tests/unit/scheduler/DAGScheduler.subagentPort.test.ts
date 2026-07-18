@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DAGScheduler } from '../../../src/host/scheduler/DAGScheduler';
 import { TaskDAG } from '../../../src/host/scheduler/TaskDAG';
+import type { SubagentExecutionRequest } from '../../../src/host/agent/subagentExecutorTypes';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -29,7 +30,7 @@ describe('DAGScheduler subagent executor port', () => {
       scheduleInterval: 1,
       defaultTimeout: 5000,
     });
-    const execute = vi.fn(async () => ({
+    const execute = vi.fn(async (_request: SubagentExecutionRequest) => ({
       success: true,
       output: 'agent output',
       toolsUsed: ['Read'],
@@ -72,7 +73,7 @@ describe('DAGScheduler subagent executor port', () => {
       scheduleInterval: 1,
       defaultTimeout: 5000,
     });
-    const execute = vi.fn(async () => ({
+    const execute = vi.fn(async (_request: SubagentExecutionRequest) => ({
       success: true,
       output: 'agent output',
       toolsUsed: [],

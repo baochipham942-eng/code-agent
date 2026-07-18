@@ -35,7 +35,9 @@ describe('BoundedDedupeSet', () => {
 
 // ---- feishu：message_id 幂等（handleMessageEvent 收口，覆盖三条入站路径）----
 
-type FeishuHarness = FeishuChannel & {
+// 不与 FeishuChannel 做交叉类型：这些成员在类里是 private，交叉一个同名的公开声明
+// 会让 tsc 判定整个交叉类型不可满足（塌成 never）。只声明测试要摸的私有成员形状即可。
+type FeishuHarness = {
   handleMessageEvent(event: unknown): Promise<void>;
   webhookServer?: Server | null;
 };
@@ -127,7 +129,8 @@ describe('feishu 入站 message_id 幂等', () => {
 
 // ---- telegram：update_id 幂等（对称应用）----
 
-type TelegramHarness = TelegramChannel & {
+// 同上：不与 TelegramChannel 交叉，handleTextMessage 是 private。
+type TelegramHarness = {
   handleTextMessage(ctx: unknown): Promise<void>;
 };
 

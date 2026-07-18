@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 import type { ScriptRunSpec, ScriptRunState } from '../../../../../src/host/agent/scriptRuntime';
 import type { ScriptRunHostDeps } from '../../../../../src/host/agent/scriptRuntime';
+import { ORCHESTRATION_CAPABILITIES } from '../../../../../src/host/agent/scriptRuntime/capabilityManifest';
 
 // ── mock 运行时 facade 的 startRun：捕获 spec/deps，返回可控终态 ──────────────
 const startRunMock = vi.fn();
@@ -71,7 +72,7 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 
 function completedState(over: Partial<ScriptRunState> = {}): ScriptRunState {
-  return { runId: 'x', status: 'completed', scriptHash: 'h', startedAt: 0, agentCallCount: 3, tokensSpent: 0, phases: ['p'], result: { ok: 1 }, ...over };
+  return { runId: 'x', status: 'completed', scriptHash: 'h', startedAt: 0, agentCallCount: 3, tokensSpent: 0, cacheHits: 0, phases: ['p'], result: { ok: 1 }, ...over };
 }
 
 async function run(args: Record<string, unknown>, ctx: ToolContext = makeCtx(), canUseTool: CanUseToolFn = allowAll, onProgress?: (p: { stage: string; percent?: number }) => void) {
@@ -179,7 +180,7 @@ describe('workflow tool', () => {
     const ctx = makeCtx({ subagent: { messages: [{ role: 'user', content: 'secret history' }] } } as Partial<ToolContext>);
     await run({ script: 'return 1' }, ctx);
     const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
-    const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: new AbortController().signal });
+    const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: new AbortController().signal, capabilities: ORCHESTRATION_CAPABILITIES });
     expect(sub.messages).toBeUndefined();
     expect(sub.agentId).toBe('a1');
   });
@@ -352,7 +353,7 @@ describe('workflow tool', () => {
     const ctx = makeCtx({ currentToolCallId: 'parent-call-1' });
     await run({ script: 'return 1' }, ctx);
     const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
-    const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: new AbortController().signal });
+    const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: new AbortController().signal, capabilities: ORCHESTRATION_CAPABILITIES });
     expect(sub.currentToolCallId).toBeUndefined();
   });
 
@@ -362,7 +363,7 @@ describe('workflow tool', () => {
     const childCtrl = new AbortController();
     await run({ script: 'return 1' }, makeCtx({ abortSignal: parentCtrl.signal }));
     const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
-    const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: childCtrl.signal });
+    const sub = deps.deriveSubagentContext({ agentId: 'a1', modelConfig: { ...BASE_MODEL }, signal: childCtrl.signal, capabilities: ORCHESTRATION_CAPABILITIES });
     expect(sub.abortSignal).toBe(childCtrl.signal);
   });
 

@@ -19,7 +19,8 @@
 //   4. 角色面板能看到记忆和履历，删除记忆后实例不再引用
 // ============================================================================
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
 import { constants, createWriteStream, readFileSync } from 'fs';
 import * as crypto from 'crypto';
@@ -83,7 +84,7 @@ const ANALYST = '数据分析师';
 type StartedServer = {
   baseUrl: string;
   token: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   output: () => string;
 };
 

@@ -22,6 +22,8 @@ function task(id: string, subject: string, status: SessionTask['status']): Sessi
   return {
     id,
     subject,
+    description: subject,
+    activeForm: subject,
     status,
     priority: 'normal',
     blocks: [],
@@ -29,7 +31,7 @@ function task(id: string, subject: string, status: SessionTask['status']): Sessi
     metadata: {},
     createdAt: 1,
     updatedAt: 1,
-  } as SessionTask;
+  };
 }
 
 const TASKS = [

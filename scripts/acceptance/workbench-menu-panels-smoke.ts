@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, type ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'node:stream';
 import { existsSync } from 'fs';
 import type { Page } from 'playwright';
 import {
@@ -187,7 +188,7 @@ async function ensureBuild(skipBuild: boolean): Promise<void> {
   await runCommand(npmCommand(), ['run', 'build:renderer'], 'build:renderer');
 }
 
-function startAppHost(port: number): { child: ChildProcessWithoutNullStreams; output: () => string } {
+function startAppHost(port: number): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
   let logs = '';
   const child = spawn('node', ['dist/web/webServer.cjs'], {
     cwd: process.cwd(),
@@ -213,7 +214,7 @@ function startAppHost(port: number): { child: ChildProcessWithoutNullStreams; ou
   return { child, output: () => logs };
 }
 
-async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
+async function stopProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
   if (child.exitCode !== null) return;
 
   await new Promise<void>((resolve) => {
@@ -233,7 +234,7 @@ async function stopProcess(child: ChildProcessWithoutNullStreams): Promise<void>
   });
 }
 
-async function waitForHealth(baseUrl: string, server: ChildProcessWithoutNullStreams, output: () => string): Promise<void> {
+async function waitForHealth(baseUrl: string, server: ChildProcessByStdio<null, Readable, Readable>, output: () => string): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < 30_000) {
     if (server.exitCode !== null) {

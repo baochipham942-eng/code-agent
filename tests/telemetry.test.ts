@@ -2,298 +2,189 @@
 // Unit Tests for Telemetry Module - Intent Classifier
 // ============================================================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { classifyIntent, evaluateOutcome, IntentType } from '../src/host/telemetry/intentClassifier';
+import { describe, it, expect } from 'vitest';
+import { classifyIntent, evaluateOutcome } from '../src/host/telemetry/intentClassifier';
+import type { QualitySignals } from '../src/shared/contract/telemetry';
 
 // ============================================================================
 // Test Suite: classifyIntent
 // ============================================================================
 
 describe('classifyIntent', () => {
-  describe('File Operations', () => {
-    it('should classify read file intent with high confidence', () => {
-      const result = classifyIntent({
-        userPrompt: '读取 package.json 文件',
-        toolCalls: [{ name: 'read_file', arguments: { file_path: 'package.json' } }],
-        toolResults: [{ success: true, output: '{ "name": "test" }' }],
-      });
+  describe('short-conversation fast path', () => {
+    it('classifies a short greeting as conversation with high confidence, bypassing rule scoring', () => {
+      const result = classifyIntent('你好');
 
-      expect(result.intent).toBe(IntentType.READ_FILE);
-      expect(result.confidence).toBeGreaterThan(0.8);
+      expect(result.primary).toBe('conversation');
+      expect(result.confidence).toBe(0.9);
       expect(result.method).toBe('rule');
+      expect(result.keywords).toEqual(['你好']);
     });
 
-    it('should classify write file intent correctly', () => {
-      const result = classifyIntent({
-        userPrompt: '创建一个新的文件 hello.js',
-        toolCalls: [{ name: 'write_file', arguments: { file_path: 'hello.js' } }],
-        toolResults: [{ success: true }],
-      });
+    it('does not take the fast path once tools were used, even for a short prompt', () => {
+      const result = classifyIntent('你好', ['Read']);
 
-      expect(result.intent).toBe(IntentType.WRITE_FILE);
-    });
-
-    it('should classify edit file intent', () => {
-      const result = classifyIntent({
-        userPrompt: '修改 index.ts 中的导出',
-        toolCalls: [{ name: 'edit_file', arguments: { file_path: 'index.ts' } }],
-        toolResults: [{ success: true }],
-      });
-
-      expect(result.intent).toBe(IntentType.EDIT_FILE);
-    });
-
-    it('should detect file operation from tool calls alone', () => {
-      const result = classifyIntent({
-        userPrompt: '帮我处理这个文件',
-        toolCalls: [{ name: 'delete_file', arguments: { file_path: 'old.js' } }],
-        toolResults: [{ success: true }],
-      });
-
-      expect(result.intent).toBe(IntentType.DELETE_FILE);
+      // Falls through to rule scoring instead of the hardcoded 0.9 greeting confidence
+      expect(result.confidence).not.toBe(0.9);
     });
   });
 
-  describe('Search Operations', () => {
-    it('should classify code search intent', () => {
-      const result = classifyIntent({
-        userPrompt: '搜索所有包含 "console.log" 的文件',
-        toolCalls: [{ name: 'grep', arguments: { pattern: 'console.log' } }],
-        toolResults: [{ success: true, output: 'Found 10 matches' }],
-      });
+  describe('single-keyword rule matches', () => {
+    it('classifies code_generation from an implementation verb', () => {
+      const result = classifyIntent('帮我实现一个新功能');
 
-      expect(result.intent).toBe(IntentType.CODE_SEARCH);
+      expect(result.primary).toBe('code_generation');
+      expect(result.keywords).toContain('实现');
     });
 
-    it('should classify file search intent', () => {
-      const result = classifyIntent({
-        userPrompt: '找出所有的 TypeScript 文件',
-        toolCalls: [{ name: 'glob', arguments: { pattern: '**/*.ts' } }],
-        toolResults: [{ success: true, output: ['file1.ts', 'file2.ts'] }],
-      });
+    it('classifies bug_fix and accumulates score across multiple matched keywords', () => {
+      const result = classifyIntent('这段代码有 bug，需要修复');
 
-      expect(result.intent).toBe(IntentType.FILE_SEARCH);
+      expect(result.primary).toBe('bug_fix');
+      expect(result.keywords).toEqual(expect.arrayContaining(['修复', 'bug']));
     });
 
-    it('should classify web search intent', () => {
-      const result = classifyIntent({
-        userPrompt: '搜索最新的 React 文档',
-        toolCalls: [{ name: 'web_search', arguments: { query: 'React documentation' } }],
-        toolResults: [{ success: true }],
-      });
+    it('classifies code_review', () => {
+      const result = classifyIntent('审查这段代码');
 
-      expect(result.intent).toBe(IntentType.WEB_SEARCH);
-    });
-  });
-
-  describe('Code Operations', () => {
-    it('should classify refactor intent', () => {
-      const result = classifyIntent({
-        userPrompt: '重构这个函数，提高可读性',
-        toolCalls: [{ name: 'edit_file', arguments: { file_path: 'utils.ts' } }],
-        toolResults: [{ success: true }],
-      });
-
-      expect(result.intent).toBe(IntentType.REFACTOR);
+      expect(result.primary).toBe('code_review');
+      expect(result.keywords).toContain('审查');
     });
 
-    it('should classify debug intent', () => {
-      const result = classifyIntent({
-        userPrompt: '修复这个 bug',
-        toolCalls: [{ name: 'read_file', arguments: { file_path: 'bug.js' } }],
-        toolResults: [{ success: false, error: 'Syntax error' }],
-      });
+    it('classifies explanation', () => {
+      const result = classifyIntent('这个函数不工作，为什么');
 
-      expect(result.intent).toBe(IntentType.DEBUG);
+      expect(result.primary).toBe('explanation');
+      expect(result.keywords).toContain('为什么');
     });
 
-    it('should classify test generation intent', () => {
-      const result = classifyIntent({
-        userPrompt: '为这个模块写单元测试',
-        toolCalls: [{ name: 'write_file', arguments: { file_path: 'tests/module.test.ts' } }],
-        toolResults: [{ success: true }],
-      });
+    it('classifies search', () => {
+      const result = classifyIntent('查找这个函数的定义');
 
-      expect(result.intent).toBe(IntentType.TEST_GEN);
+      expect(result.primary).toBe('search');
+      expect(result.keywords).toContain('查找');
+    });
+
+    it('classifies documentation from overlapping keywords', () => {
+      const result = classifyIntent('补充这部分的注释说明');
+
+      expect(result.primary).toBe('documentation');
+      expect(result.keywords).toEqual(expect.arrayContaining(['注释', '说明']));
+    });
+
+    it('classifies configuration', () => {
+      const result = classifyIntent('安装依赖并配置环境变量');
+
+      expect(result.primary).toBe('configuration');
+      expect(result.keywords).toEqual(expect.arrayContaining(['配置', '安装']));
+    });
+
+    it('classifies planning', () => {
+      const result = classifyIntent('设计系统架构');
+
+      expect(result.primary).toBe('planning');
+      expect(result.keywords).toEqual(expect.arrayContaining(['设计', '架构']));
     });
   });
 
-  describe('Documentation Operations', () => {
-    it('should classify documentation intent', () => {
-      const result = classifyIntent({
-        userPrompt: '为这个 API 添加文档注释',
-        toolCalls: [{ name: 'edit_file', arguments: { file_path: 'api.ts' } }],
-        toolResults: [{ success: true }],
-      });
+  describe('cross-category keyword overlap', () => {
+    it('picks research over planning when "方案" is shared but research also matches "调研"', () => {
+      const result = classifyIntent('帮我调研一下这个方案');
 
-      expect(result.intent).toBe(IntentType.DOCUMENTATION);
-    });
-
-    it('should classify README generation intent', () => {
-      const result = classifyIntent({
-        userPrompt: '生成项目 README',
-        toolCalls: [{ name: 'write_file', arguments: { file_path: 'README.md' } }],
-        toolResults: [{ success: true }],
-      });
-
-      expect(result.intent).toBe(IntentType.DOCUMENTATION);
+      expect(result.primary).toBe('research');
+      expect(result.secondary).toBe('planning');
     });
   });
 
-  describe('Shell Operations', () => {
-    it('should classify shell execution intent', () => {
-      const result = classifyIntent({
-        userPrompt: '运行 npm install',
-        toolCalls: [{ name: 'bash', arguments: { command: 'npm install' } }],
-        toolResults: [{ success: true, output: 'installed 50 packages' }],
-      });
+  describe('tool heuristics', () => {
+    it('classifies from a tool alone when no keyword in the prompt matches any rule', () => {
+      // Deliberately keyword-free (verified against every INTENT_RULES keyword list)
+      // so the only signal is the Write tool heuristic bonus.
+      const result = classifyIntent('The quick brown fox jumps over the lazy dog', ['Write']);
 
-      expect(result.intent).toBe(IntentType.SHELL_EXEC);
+      expect(result.primary).toBe('code_generation');
+      expect(result.keywords).toEqual(['[tool:Write]']);
     });
 
-    it('should classify git operations', () => {
-      const result = classifyIntent({
-        userPrompt: '提交代码',
-        toolCalls: [{ name: 'bash', arguments: { command: 'git commit -m "fix bug"' } }],
-        toolResults: [{ success: true }],
-      });
+    it('stacks a matched keyword with its rule tool heuristic, and surfaces the runner-up as secondary', () => {
+      // '重构' only scores refactoring; Edit is a tool heuristic for BOTH refactoring and
+      // bug_fix, so bug_fix enters the score map purely off the tool bonus.
+      const result = classifyIntent('重构这个模块', ['Edit']);
 
-      expect(result.intent).toBe(IntentType.SHELL_EXEC);
-    });
-  });
-
-  describe('Edge Cases and Complex Scenarios', () => {
-    it('should handle empty input gracefully', () => {
-      const result = classifyIntent({
-        userPrompt: '',
-        toolCalls: [],
-        toolResults: [],
-      });
-
-      expect(result.intent).toBe(IntentType.GENERAL_QUERY);
-      expect(result.confidence).toBeLessThan(0.5);
+      expect(result.primary).toBe('refactoring');
+      expect(result.keywords).toEqual(expect.arrayContaining(['重构', '[tool:Edit]']));
+      expect(result.secondary).toBe('bug_fix');
     });
 
-    it('should handle missing tool calls', () => {
-      const result = classifyIntent({
-        userPrompt: '帮我看看这个文件',
-        toolCalls: [],
-        toolResults: [],
-      });
+    it('classifies file_operation from a keyword plus its Bash tool bonus, testing loses out on tool bonus alone', () => {
+      const result = classifyIntent('删除这个旧文件', ['Bash']);
 
-      expect(result.intent).toBe(IntentType.READ_FILE);
-      expect(result.confidence).toBeGreaterThan(0);
-    });
-
-    it('should handle failed tool calls', () => {
-      const result = classifyIntent({
-        userPrompt: '读取配置文件',
-        toolCalls: [{ name: 'read_file', arguments: { file_path: 'config.json' } }],
-        toolResults: [{ success: false, error: 'File not found' }],
-      });
-
-      expect(result.intent).toBe(IntentType.READ_FILE);
-    });
-
-    it('should classify complex multi-tool scenarios', () => {
-      const result = classifyIntent({
-        userPrompt: '搜索 bug 并修复',
-        toolCalls: [
-          { name: 'grep', arguments: { pattern: 'bug' } },
-          { name: 'read_file', arguments: { file_path: 'buggy.js' } },
-          { name: 'edit_file', arguments: { file_path: 'buggy.js' } },
-        ],
-        toolResults: [
-          { success: true, output: 'Found in buggy.js' },
-          { success: true, output: 'code content' },
-          { success: true },
-        ],
-      });
-
-      expect([IntentType.DEBUG, IntentType.REFACTOR]).toContain(result.intent);
-    });
-
-    it('should handle low confidence scenarios', () => {
-      const result = classifyIntent({
-        userPrompt: '你好',
-        toolCalls: [],
-        toolResults: [],
-      });
-
-      expect(result.confidence).toBeLessThan(0.3);
-    });
-
-    it('should classify unknown tools as general query', () => {
-      const result = classifyIntent({
-        userPrompt: '执行自定义操作',
-        toolCalls: [{ name: 'custom_tool', arguments: {} }],
-        toolResults: [{ success: true }],
-      });
-
-      expect(result.intent).toBe(IntentType.GENERAL_QUERY);
-    });
-
-    it('should prioritize successful tool calls for classification', () => {
-      const result = classifyIntent({
-        userPrompt: '检查文件状态',
-        toolCalls: [
-          { name: 'bash', arguments: { command: 'ls -la' } },
-          { name: 'read_file', arguments: { file_path: 'test.ts' } },
-        ],
-        toolResults: [
-          { success: false, error: 'Permission denied' },
-          { success: true, output: 'file content' },
-        ],
-      });
-
-      expect(result.intent).toBe(IntentType.READ_FILE);
-    });
-
-    it('should handle concurrent tool calls', () => {
-      const result = classifyIntent({
-        userPrompt: '同时搜索和列出文件',
-        toolCalls: [
-          { name: 'grep', arguments: { pattern: 'import' } },
-          { name: 'glob', arguments: { pattern: '*.ts' } },
-        ],
-        toolResults: [
-          { success: true, output: 'matches' },
-          { success: true, output: ['file.ts'] },
-        ],
-      });
-
-      expect([IntentType.CODE_SEARCH, IntentType.FILE_SEARCH]).toContain(result.intent);
+      expect(result.primary).toBe('file_operation');
+      expect(result.secondary).toBe('testing');
     });
   });
 
-  describe('Signal Extraction', () => {
-    it('should extract signals from tool calls', () => {
-      const result = classifyIntent({
-        userPrompt: '读取文件',
-        toolCalls: [{ name: 'read_file', arguments: { file_path: 'test.js' } }],
-        toolResults: [{ success: true }],
-      });
+  describe('multi-tool bonus', () => {
+    it('boosts multi_step_task when more than 3 tools spanning more than 2 distinct types were used', () => {
+      const result = classifyIntent('首先执行第一步，然后执行第二步骤', ['Grep', 'Glob', 'WebSearch', 'Task']);
 
-      expect(result.signals).toBeDefined();
-      expect(Object.keys(result.signals).length).toBeGreaterThan(0);
+      expect(result.primary).toBe('multi_step_task');
+      expect(result.keywords).toEqual(expect.arrayContaining(['首先', '然后', '步骤', '[multi-tool]']));
     });
 
-    it('should track tool success rate', () => {
-      const result = classifyIntent({
-        userPrompt: '多次尝试',
-        toolCalls: [
-          { name: 'read_file', arguments: { file_path: 'a.js' } },
-          { name: 'read_file', arguments: { file_path: 'b.js' } },
-          { name: 'read_file', arguments: { file_path: 'c.js' } },
-        ],
-        toolResults: [
-          { success: true },
-          { success: false, error: 'not found' },
-          { success: true },
-        ],
-      });
+    it('does not apply the multi-tool bonus for 3 or fewer tools', () => {
+      const result = classifyIntent('首先做第一步', ['Grep', 'Glob', 'Task']);
 
-      expect(result.signals).toBeDefined();
+      expect(result.keywords).not.toContain('[multi-tool]');
+    });
+
+    it('does not apply the multi-tool bonus when tools repeat the same type', () => {
+      const result = classifyIntent('首先做第一步', ['Bash', 'Bash', 'Bash', 'Bash']);
+
+      expect(result.keywords).not.toContain('[multi-tool]');
+    });
+  });
+
+  describe('URL fallback', () => {
+    it('classifies a bare URL prompt as research via the URL-in-prompt bonus', () => {
+      const result = classifyIntent('https://example.com/article 这个东西');
+
+      expect(result.primary).toBe('research');
+      expect(result.keywords).toContain('[url-in-prompt]');
+    });
+  });
+
+  describe('unknown / empty input', () => {
+    it('returns unknown with low fixed confidence when nothing matches', () => {
+      const result = classifyIntent('zzzzz xxxxx yyyyy');
+
+      expect(result.primary).toBe('unknown');
+      expect(result.confidence).toBe(0.3);
+      expect(result.keywords).toEqual([]);
+      expect(result.secondary).toBeUndefined();
+    });
+
+    it('returns unknown for an empty prompt', () => {
+      const result = classifyIntent('');
+
+      expect(result.primary).toBe('unknown');
+      expect(result.confidence).toBe(0.3);
+    });
+  });
+
+  describe('confidence bounds', () => {
+    it('always returns confidence within [0, 0.95]', () => {
+      const prompts: Array<[string, string[]]> = [
+        ['帮我实现一个新功能', []],
+        ['这段代码有 bug，需要修复', []],
+        ['zzzzz xxxxx yyyyy', []],
+        ['你好', []],
+      ];
+      for (const [prompt, tools] of prompts) {
+        const result = classifyIntent(prompt, tools);
+        expect(result.confidence).toBeGreaterThanOrEqual(0);
+        expect(result.confidence).toBeLessThanOrEqual(0.95);
+      }
     });
   });
 });
@@ -302,214 +193,77 @@ describe('classifyIntent', () => {
 // Test Suite: evaluateOutcome
 // ============================================================================
 
+function signals(overrides: Partial<QualitySignals>): QualitySignals {
+  return {
+    toolSuccessRate: 1,
+    toolCallCount: 1,
+    retryCount: 0,
+    errorCount: 0,
+    errorRecovered: 0,
+    compactionTriggered: false,
+    circuitBreakerTripped: false,
+    nudgesInjected: 0,
+    ...overrides,
+  };
+}
+
 describe('evaluateOutcome', () => {
-  it('should evaluate successful file read outcome', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.READ_FILE,
-      toolCalls: [{ name: 'read_file', arguments: { file_path: 'test.js' } }],
-      toolResults: [{ success: true, output: 'file content' }],
-    });
+  it('returns unknown when no tools were called (pure conversation)', () => {
+    const s = signals({ toolCallCount: 0, toolSuccessRate: 0 });
+    const result = evaluateOutcome(s);
 
-    expect(result.success).toBe(true);
-    expect(result.matchedIntent).toBe(IntentType.READ_FILE);
+    expect(result.status).toBe('unknown');
+    expect(result.confidence).toBe(0.5);
+    expect(result.method).toBe('rule');
+    expect(result.signals).toBe(s);
   });
 
-  it('should evaluate failed operation outcome', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.READ_FILE,
-      toolCalls: [{ name: 'read_file', arguments: { file_path: 'missing.js' } }],
-      toolResults: [{ success: false, error: 'File not found' }],
-    });
+  it('returns failure when the circuit breaker tripped, even with a perfect success rate', () => {
+    const s = signals({ toolCallCount: 3, toolSuccessRate: 1, errorCount: 0, circuitBreakerTripped: true });
+    const result = evaluateOutcome(s);
 
-    expect(result.success).toBe(false);
+    expect(result.status).toBe('failure');
+    expect(result.confidence).toBe(0.9);
   });
 
-  it('should detect intent mismatch', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.READ_FILE,
-      toolCalls: [{ name: 'bash', arguments: { command: 'ls' } }],
-      toolResults: [{ success: true, output: 'files listed' }],
-    });
+  it('returns success when all tools succeeded with zero errors', () => {
+    const s = signals({ toolCallCount: 2, toolSuccessRate: 1, errorCount: 0 });
+    const result = evaluateOutcome(s);
 
-    expect(result.matchedIntent).not.toBe(IntentType.READ_FILE);
-    expect(result.matchedIntent).toBe(IntentType.SHELL_EXEC);
+    expect(result.status).toBe('success');
+    expect(result.confidence).toBe(0.85);
   });
 
-  it('should provide confidence score for outcome', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.WRITE_FILE,
-      toolCalls: [
-        { name: 'write_file', arguments: { file_path: 'test.js' } },
-        { name: 'read_file', arguments: { file_path: 'test.js' } },
-      ],
-      toolResults: [
-        { success: true },
-        { success: true, output: 'verified content' },
-      ],
-    });
+  it('does not return success if the success rate is 1 but errors were still recorded', () => {
+    // Exercises the `errorCount === 0` guard specifically: a naive rewrite
+    // that only checked toolSuccessRate === 1 would misclassify this as success.
+    const s = signals({ toolCallCount: 3, toolSuccessRate: 1, errorCount: 1 });
+    const result = evaluateOutcome(s);
 
-    expect(result.confidence).toBeGreaterThan(0.5);
+    expect(result.status).toBe('partial');
+    expect(result.confidence).toBe(0.7);
   });
 
-  it('should handle partial success scenarios', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.CODE_SEARCH,
-      toolCalls: [
-        { name: 'grep', arguments: { pattern: 'pattern1' } },
-        { name: 'grep', arguments: { pattern: 'pattern2' } },
-      ],
-      toolResults: [
-        { success: true, output: 'found 5 matches' },
-        { success: false, error: 'no matches' },
-      ],
-    });
+  it('returns partial when the success rate is at or above 0.5 but below 1', () => {
+    const s = signals({ toolCallCount: 4, toolSuccessRate: 0.5, errorCount: 2 });
+    const result = evaluateOutcome(s);
 
-    expect(result.success).toBe(false); // Not all operations succeeded
+    expect(result.status).toBe('partial');
+    expect(result.confidence).toBe(0.7);
   });
 
-  it('should track outcome metrics', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.DEBUG,
-      toolCalls: [{ name: 'bash', arguments: { command: 'npm test' } }],
-      toolResults: [{ success: true, output: 'All tests passed' }],
-    });
+  it('returns failure when the success rate drops below 0.5', () => {
+    const s = signals({ toolCallCount: 5, toolSuccessRate: 0.2, errorCount: 4 });
+    const result = evaluateOutcome(s);
 
-    expect(result.metrics).toBeDefined();
-    expect(result.metrics.toolCallCount).toBe(1);
-    expect(result.metrics.successCount).toBe(1);
+    expect(result.status).toBe('failure');
+    expect(result.confidence).toBe(0.75);
   });
 
-  it('should classify outcome type', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.REFACTOR,
-      toolCalls: [{ name: 'edit_file', arguments: { file_path: 'code.ts' } }],
-      toolResults: [{ success: true }],
-    });
+  it('echoes the input signals back unchanged on every branch', () => {
+    const s = signals({ toolCallCount: 2, toolSuccessRate: 1, errorCount: 0, retryCount: 3, nudgesInjected: 2 });
+    const result = evaluateOutcome(s);
 
-    expect(result.outcomeType).toBeDefined();
-    expect(['SUCCESS', 'FAILURE', 'PARTIAL', 'MISMATCH']).toContain(result.outcomeType);
-  });
-
-  it('should provide suggestions for failed operations', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.WRITE_FILE,
-      toolCalls: [{ name: 'write_file', arguments: { file_path: '/readonly/file.js' } }],
-      toolResults: [{ success: false, error: 'Permission denied' }],
-    });
-
-    if (result.suggestions) {
-      expect(result.suggestions.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('should validate tool result completeness', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.READ_FILE,
-      toolCalls: [{ name: 'read_file', arguments: { file_path: 'test.js' } }],
-      toolResults: [{ success: true }], // Missing output
-    });
-
-    expect(result.metrics).toBeDefined();
-    expect(result.metrics.completeResultCount).toBe(0);
-  });
-
-  it('should handle no tool results', () => {
-    const result = evaluateOutcome({
-      intent: IntentType.GENERAL_QUERY,
-      toolCalls: [],
-      toolResults: [],
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.outcomeType).toBe('FAILURE');
-  });
-});
-
-// ============================================================================
-// Test Suite: Intent Type Constants
-// ============================================================================
-
-describe('IntentType', () => {
-  it('should have all required intent types defined', () => {
-    const expectedTypes = [
-      'READ_FILE',
-      'WRITE_FILE',
-      'EDIT_FILE',
-      'DELETE_FILE',
-      'CODE_SEARCH',
-      'FILE_SEARCH',
-      'WEB_SEARCH',
-      'REFACTOR',
-      'DEBUG',
-      'TEST_GEN',
-      'DOCUMENTATION',
-      'SHELL_EXEC',
-      'GENERAL_QUERY',
-    ];
-
-    expectedTypes.forEach(type => {
-      expect(IntentType).toHaveProperty(type);
-    });
-  });
-
-  it('should have unique intent type values', () => {
-    const values = Object.values(IntentType);
-    const uniqueValues = new Set(values);
-    expect(values.length).toBe(uniqueValues.size);
-  });
-});
-
-// ============================================================================
-// Test Suite: Integration Tests
-// ============================================================================
-
-describe('Intent Classifier Integration', () => {
-  it('should classify and evaluate complete file read workflow', () => {
-    const classification = classifyIntent({
-      userPrompt: '读取 package.json 文件',
-      toolCalls: [{ name: 'read_file', arguments: { file_path: 'package.json' } }],
-      toolResults: [{ success: true, output: '{ "version": "1.0.0" }' }],
-    });
-
-    expect(classification.intent).toBe(IntentType.READ_FILE);
-
-    const outcome = evaluateOutcome({
-      intent: classification.intent,
-      toolCalls: [{ name: 'read_file', arguments: { file_path: 'package.json' } }],
-      toolResults: [{ success: true, output: '{ "version": "1.0.0" }' }],
-    });
-
-    expect(outcome.success).toBe(true);
-    expect(outcome.matchedIntent).toBe(IntentType.READ_FILE);
-  });
-
-  it('should handle code search and refactor workflow', () => {
-    const classification = classifyIntent({
-      userPrompt: '搜索并重构旧的代码',
-      toolCalls: [
-        { name: 'grep', arguments: { pattern: 'var ' } },
-        { name: 'edit_file', arguments: { file_path: 'old.js' } },
-      ],
-      toolResults: [
-        { success: true, output: 'Found 10 matches' },
-        { success: true },
-      ],
-    });
-
-    expect([IntentType.REFACTOR, IntentType.CODE_SEARCH]).toContain(classification.intent);
-
-    const outcome = evaluateOutcome({
-      intent: classification.intent,
-      toolCalls: [
-        { name: 'grep', arguments: { pattern: 'var ' } },
-        { name: 'edit_file', arguments: { file_path: 'old.js' } },
-      ],
-      toolResults: [
-        { success: true, output: 'Found 10 matches' },
-        { success: true },
-      ],
-    });
-
-    expect(outcome.success).toBe(true);
+    expect(result.signals).toEqual(s);
   });
 });

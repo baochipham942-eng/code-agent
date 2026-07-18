@@ -197,12 +197,21 @@ export function applyToolExecutionEvent(
             });
             deps.updateMessage(targetMessage.id, { toolCalls: updatedToolCalls });
           } else {
-            const streamingIndex = targetMessage.toolCalls.findIndex(
-              (tc: ToolCall) => tc._streaming && tc.name === event.data.name
+            const stableIdIndex = targetMessage.toolCalls.findIndex(
+              (tc: ToolCall) => tc.id === event.data.id
             );
-            if (streamingIndex >= 0) {
+            const sameNameStreamingIndices = event.data.parentToolUseId
+              ? []
+              : targetMessage.toolCalls.flatMap((tc: ToolCall, idx: number) =>
+                tc._streaming && tc.name === event.data.name ? [idx] : []
+              );
+            const fallbackIndex = sameNameStreamingIndices.length === 1
+              ? sameNameStreamingIndices[0]
+              : -1;
+            const matchedIndex = stableIdIndex >= 0 ? stableIdIndex : fallbackIndex;
+            if (matchedIndex >= 0) {
               const updatedToolCalls = targetMessage.toolCalls.map((tc: ToolCall, idx: number) => {
-                if (idx === streamingIndex) {
+                if (idx === matchedIndex) {
                   return { ...tc, id: event.data.id, _streaming: false };
                 }
                 return tc;

@@ -231,18 +231,84 @@ describe('applyToolExecutionEvent', () => {
     });
   });
 
-  it('falls back to the first same-name streaming call or appends a first concrete call', () => {
-    const fallbackHarness = createHarness({
-      messages: [
-        assistantMessage('turn-current', [
-          {
-            id: 'pending-browser',
-            name: 'browser_action',
-            arguments: { action: 'click' },
-            _streaming: true,
-          },
-        ]),
-      ],
+  it('does not bind a nested same-name start without an index to main-turn placeholders', () => {
+    const firstCall: ToolCall = {
+      id: 'pending-browser-1',
+      name: 'browser_action',
+      arguments: { action: 'click', selector: '#first' },
+      _streaming: true,
+    };
+    const secondCall: ToolCall = {
+      id: 'pending-browser-2',
+      name: 'browser_action',
+      arguments: { action: 'click', selector: '#second' },
+      _streaming: true,
+    };
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-current', [firstCall, secondCall])],
+    });
+
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_start',
+        data: {
+          id: 'nested-browser',
+          name: 'browser_action',
+          arguments: { action: 'click', selector: '#nested' },
+          parentToolUseId: 'parent-agent-tool',
+        },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+
+    expect(state.messages[0].toolCalls).toEqual([firstCall, secondCall]);
+  });
+
+  it('reconciles an unindexed start with the existing call that has the same stable id', () => {
+    const firstCall: ToolCall = {
+      id: 'pending-browser',
+      name: 'browser_action',
+      arguments: { action: 'click', selector: '#first' },
+      _streaming: true,
+    };
+    const stableCall: ToolCall = {
+      id: 'stable-browser',
+      name: 'browser_action',
+      arguments: { action: 'click', selector: '#stable' },
+      _streaming: true,
+    };
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-current', [firstCall, stableCall])],
+    });
+
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_start',
+        data: {
+          id: 'stable-browser',
+          name: 'browser_action',
+          arguments: { action: 'click', selector: '#from-start' },
+        },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+
+    expect(state.messages[0].toolCalls).toEqual([
+      firstCall,
+      { ...stableCall, _streaming: false },
+    ]);
+  });
+
+  it('binds an unindexed start to the unique same-name streaming placeholder', () => {
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-current', [{
+        id: 'pending-browser',
+        name: 'browser_action',
+        arguments: { action: 'click' },
+        _streaming: true,
+      }])],
     });
 
     applyToolExecutionEvent(
@@ -256,21 +322,55 @@ describe('applyToolExecutionEvent', () => {
         },
         sessionId: 'session-current',
       },
-      fallbackHarness.deps,
+      deps,
     );
 
-    expect(fallbackHarness.state.messages[0].toolCalls).toEqual([
-      {
-        id: 'fallback-real',
-        name: 'browser_action',
-        arguments: { action: 'click' },
-        _streaming: false,
-      },
-    ]);
+    expect(state.messages[0].toolCalls).toEqual([{
+      id: 'fallback-real',
+      name: 'browser_action',
+      arguments: { action: 'click' },
+      _streaming: false,
+    }]);
+  });
 
-    const firstCallHarness = createHarness({
+  it('does not bind an ambiguous unindexed start to same-name streaming placeholders', () => {
+    const firstCall: ToolCall = {
+      id: 'pending-browser-1',
+      name: 'browser_action',
+      arguments: { action: 'click', selector: '#first' },
+      _streaming: true,
+    };
+    const secondCall: ToolCall = {
+      id: 'pending-browser-2',
+      name: 'browser_action',
+      arguments: { action: 'click', selector: '#second' },
+      _streaming: true,
+    };
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-current', [firstCall, secondCall])],
+    });
+
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_start',
+        data: {
+          id: 'ambiguous-browser',
+          name: 'browser_action',
+          arguments: { action: 'click' },
+        },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+
+    expect(state.messages[0].toolCalls).toEqual([firstCall, secondCall]);
+  });
+
+  it('appends a first concrete call when the assistant turn has no toolCalls', () => {
+    const { deps, state } = createHarness({
       messages: [assistantMessage('turn-current')],
     });
+
     applyToolExecutionEvent(
       {
         type: 'tool_call_start',
@@ -282,17 +382,15 @@ describe('applyToolExecutionEvent', () => {
         },
         sessionId: 'session-current',
       },
-      firstCallHarness.deps,
+      deps,
     );
 
-    expect(firstCallHarness.state.messages[0].toolCalls).toEqual([
-      {
-        id: 'first-real',
-        name: 'Read',
-        arguments: { file_path: 'one.txt' },
-        turnId: 'turn-current',
-      },
-    ]);
+    expect(state.messages[0].toolCalls).toEqual([{
+      id: 'first-real',
+      name: 'Read',
+      arguments: { file_path: 'one.txt' },
+      turnId: 'turn-current',
+    }]);
   });
 
   it('attaches a matched result, emits its capability gap and pointer, and clears matching status', () => {

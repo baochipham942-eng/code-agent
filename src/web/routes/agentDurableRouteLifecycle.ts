@@ -98,7 +98,11 @@ class AgentDurableRouteRunLifecycle {
           now: Date.now(),
           status: input.disconnected ? 'cancelled' : 'failed',
           reason: input.message,
-          event: { type: 'run_failed', payload: { message: input.message }, recordedAt: Date.now() },
+          event: {
+            type: input.disconnected ? 'run_cancelled' : 'run_failed',
+            payload: { message: input.message },
+            recordedAt: Date.now(),
+          },
         }, this.runHandle);
         this.terminal = true;
       } catch (error) {

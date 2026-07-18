@@ -81,3 +81,76 @@ describe('NativeRecoveryHost production recovery', () => {
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
 });
+
+describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', () => {
+  function goalPlan(pending: PendingOperation): RunRehydrationPlan {
+    const base = plan(pending);
+    const checkpoint = base.checkpoint!;
+    return {
+      ...base,
+      checkpoint: { ...checkpoint, state: { ...(checkpoint.state as object), isGoalRun: true } },
+    };
+  }
+
+  function checkpointArg(registry: RunRegistry) {
+    const mock = registry.checkpointDurable as unknown as ReturnType<typeof vi.fn>;
+    return mock.mock.calls[0][1] as {
+      status: string;
+      events: Array<{ type: string; payload: unknown }>;
+    };
+  }
+
+  it('refuses to auto-complete: routes to review, never terminates completed, no single-op replay', async () => {
+    const { handler, ports, registry } = fixture();
+    await expect(handler.recover(goalPlan(operation({ status: 'prepared' })), 10))
+      .resolves.toMatchObject({ status: 'requires_review', reason: 'goal_run_interrupted_requires_review' });
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
+    expect(registry.checkpointDurable).toHaveBeenCalledOnce();
+    // The single pending operation must NOT be replayed — the goal loop owns completion.
+    expect(ports.model.dispatchPrepared).not.toHaveBeenCalled();
+  });
+
+  it('emits goal_complete aborted/interrupted on a non-terminal (waiting) checkpoint', async () => {
+    const { handler, registry } = fixture();
+    await handler.recover(goalPlan(operation({ status: 'prepared' })), 10);
+    const checkpoint = checkpointArg(registry);
+    expect(checkpoint.status).toBe('waiting');
+    expect(checkpoint.events).toContainEqual(expect.objectContaining({
+      type: 'goal_complete',
+      payload: { status: 'aborted', reason: 'interrupted' },
+    }));
+  });
+
+  it('refuses to auto-complete even for a confirmed side-effect tool result', async () => {
+    const { handler, ports, registry } = fixture();
+    const pending = operation({ kind: 'tool_call', sideEffect: true, providerOperationId: 'tool-ledger' });
+    await expect(handler.recover(goalPlan(pending), 10))
+      .resolves.toMatchObject({ status: 'requires_review', reason: 'goal_run_interrupted_requires_review' });
+    expect(ports.tool.queryResult).not.toHaveBeenCalled();
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
+  });
+
+  it('fails closed (not completed) when no continuation executor is available', async () => {
+    const { handler, registry } = fixture({ continuationExecutor: 'unavailable' });
+    await expect(handler.recover(goalPlan(operation({ status: 'prepared' })), 10))
+      .resolves.toMatchObject({ status: 'failed', reason: 'goal_run_interrupted_requires_review' });
+    const terminal = (registry.terminalDurable as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(terminal.status).toBe('failed');
+    expect(terminal.event).toMatchObject({ type: 'goal_complete', payload: { status: 'aborted', reason: 'interrupted' } });
+  });
+
+  it('non-goal descriptor still auto-completes (behavior unchanged)', async () => {
+    const { handler, registry } = fixture();
+    await expect(handler.recover(plan(operation({ status: 'prepared' })), 10))
+      .resolves.toMatchObject({ status: 'recovered' });
+    expect(registry.terminalDurable).toHaveBeenCalledOnce();
+  });
+
+  it('legacy checkpoint without isGoalRun field is treated as non-goal (back-compat)', async () => {
+    const { handler, registry } = fixture();
+    const legacy = plan(operation({ status: 'prepared' }));
+    expect('isGoalRun' in (legacy.checkpoint!.state as object)).toBe(false);
+    await expect(handler.recover(legacy, 10)).resolves.toMatchObject({ status: 'recovered' });
+    expect(registry.terminalDurable).toHaveBeenCalledOnce();
+  });
+});

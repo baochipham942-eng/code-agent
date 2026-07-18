@@ -28,6 +28,7 @@ export async function checkpointNativeModel(
     logicalOperationId: ctx.runtime.turn.currentTurnId,
     phase,
     status,
+    isGoalRun: ctx.runtime.goalMode != null,
     ...(status === 'succeeded' ? {
       resultRef: `model-result:${createHash('sha256')
         .update(`${runId}:${ctx.runtime.turn.currentTurnId}:${config.provider}:${config.model}`)

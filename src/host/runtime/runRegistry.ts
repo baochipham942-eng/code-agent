@@ -236,6 +236,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     phase: NativeRecoveryDescriptor['phase'];
     status: PendingOperation['status'];
     resultRef?: string;
+    isGoalRun?: boolean;
     now?: number;
   }): Promise<void> {
     const now = input.now ?? Date.now();
@@ -282,6 +283,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       operationId,
       phase: input.phase,
       checkpointSequence: envelope.cursor.checkpointSeq + 1,
+      ...(input.isGoalRun ? { isGoalRun: true } : {}),
     };
     await this.checkpointDurable(input.runId, {
       now,

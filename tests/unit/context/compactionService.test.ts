@@ -16,7 +16,7 @@ const compactionServiceMocks = vi.hoisted(() => ({
     'npm test failed with AssertionError.',
     '',
     '## Errors And Resolutions',
-    'AssertionError: expected true',
+    'Unresolved error: AssertionError: expected true',
     '',
     '## User Preferences And Constraints',
     'Keep scope small.',
@@ -47,6 +47,12 @@ vi.mock('../../../src/host/context/compactModel', () => ({
 vi.mock('../../../src/host/tools/dataFingerprint', () => ({
   dataFingerprintStore: {
     toSummary: vi.fn(() => 'Data fingerprint: sheet columns are stable.'),
+  },
+}));
+
+vi.mock('../../../src/host/tools/fileReadTracker', () => ({
+  fileReadTracker: {
+    getRecentFiles: vi.fn(() => []),
   },
 }));
 
@@ -260,6 +266,16 @@ describe('compactionService', () => {
   });
 
   it('shares file survivor mode metadata and warns the summary model about stale file records', async () => {
+    const survivorSummary = compactionServiceMocks.summary
+      .replaceAll(
+        '/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts',
+        '/Users/linchen/Downloads/ai/code-agent/src/host/context/survivorManifest.ts',
+      )
+      .replace('TODO: wire service into IPC.', 'TODO: keep survivor details.');
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary: survivorSummary,
+      metadata: compactionServiceMocks.summaryModel,
+    });
     const messages: Message[] = [
       {
         id: 'm1',
@@ -547,7 +563,7 @@ describe('compactionService', () => {
     });
   });
 
-  it('prepends the deterministic manifest when the model summary misses required survivors', async () => {
+  it('fails closed when the repaired summary still misses required survivors', async () => {
     compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
       summary: 'Tiny summary without required survivors.',
       metadata: compactionServiceMocks.summaryModel,
@@ -566,10 +582,60 @@ describe('compactionService', () => {
       preserveRecentCount: 1,
     });
 
-    expect(result.success).toBe(true);
-    expect(result.summary).toContain('# Deterministic Survivor Manifest');
-    expect(result.summary).toContain('/Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts');
-    expect(result.warnings).toContain('Summary missed survivor manifest items; deterministic manifest was prepended.');
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('invalid_summary_projection');
+    expect(result.validation?.ok).toBe(false);
+    expect(result.block).toBeUndefined();
+    expect(result.summaryMessage).toBeUndefined();
+    expect(result.newMessages).toBeUndefined();
+    expect(result.warnings).toContain('Summary admission failed after repair; compaction was rejected.');
+    expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    {
+      name: 'provider-truncated',
+      summary: 'A compact handoff summary.',
+      metadata: { ...compactionServiceMocks.summaryModel, truncated: true },
+      field: 'truncated' as const,
+    },
+    {
+      name: 'whitespace-only',
+      summary: ' \n\t ',
+      metadata: compactionServiceMocks.summaryModel,
+      field: 'emptyOrWhitespace' as const,
+    },
+    {
+      name: 'over-budget',
+      summary: 'oversized summary '.repeat(1200),
+      metadata: compactionServiceMocks.summaryModel,
+      field: 'overBudget' as const,
+    },
+  ])('rejects a $name summary before it can enter a CompactionBlock', async ({ summary, metadata, field }) => {
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({ summary, metadata });
+    const messages = [
+      message('m1', 'assistant', 'Historical analysis. '.repeat(120)),
+      message('m2', 'assistant', 'Historical implementation notes. '.repeat(120)),
+      message('m3', 'user', 'Keep this current request.'),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+    const originalMessages = messages.map(item => ({ ...item }));
+
+    const result = await compactMessagesWithSummary({
+      sessionId: `session-invalid-${field}`,
+      source: 'manual_current',
+      messages,
+      preserveRecentCount: 2,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('invalid_summary_projection');
+    expect(result.validation).toMatchObject({ ok: false, [field]: true });
+    expect(result.block).toBeUndefined();
+    expect(result.summaryMessage).toBeUndefined();
+    expect(result.newMessages).toBeUndefined();
+    expect(result.plan.messages).toBe(messages);
+    expect(result.plan.messages).toEqual(originalMessages);
     expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(2);
   });
 });

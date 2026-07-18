@@ -7,6 +7,7 @@ import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
+import { compactModelSummarizeWithMetadata } from '../../../src/host/context/compactModel';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -2005,6 +2006,14 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       systemPrompt: '',
       hookManager: undefined,
     };
+
+    // The pending read_file tool call's /tmp/pending path lands in the survivor
+    // manifest; the admission gate now rejects any summary that omits a manifest
+    // file path, so this fixture's summary must cover it explicitly.
+    vi.mocked(compactModelSummarizeWithMetadata).mockResolvedValueOnce({
+      summary: 'summary covering /tmp/pending',
+      metadata: { provider: 'mock', model: 'test-model', useMainModel: false },
+    });
 
     const assembly = new ContextAssembly(ctx as never);
     await assembly.checkAndAutoCompress();

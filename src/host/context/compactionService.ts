@@ -485,7 +485,11 @@ export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
   let summary = summaryResult.summary;
   let summaryModel = summaryResult.metadata;
   let callCostTokens = estimateTokens(prompt) + estimateTokens(summary);
-  let validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest));
+  let validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest), {
+    truncated: summaryResult.metadata.truncated,
+    tokenCount: estimateTokens(summary),
+    maxSummaryTokens: SUMMARY_MAX_TOKENS,
+  });
   const warnings = [...validation.warnings];
 
   if (!validation.ok) {
@@ -495,18 +499,16 @@ export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
     summary = summaryResult.summary;
     summaryModel = summaryResult.metadata;
     callCostTokens += estimateTokens(repairPrompt) + estimateTokens(summary);
-    validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest));
+    validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest), {
+      truncated: summaryResult.metadata.truncated,
+      tokenCount: estimateTokens(summary),
+      maxSummaryTokens: SUMMARY_MAX_TOKENS,
+    });
     warnings.push(...validation.warnings);
   }
 
   if (!validation.ok) {
-    warnings.push('Summary missed survivor manifest items; deterministic manifest was prepended.');
-    summary = [
-      '# Deterministic Survivor Manifest',
-      renderSurvivorManifestForPrompt(plan.manifest),
-      '',
-      summary,
-    ].join('\n');
+    warnings.push('Summary admission failed after repair; compaction was rejected.');
   }
 
   return { summary, validation, summaryModel, warnings, callCostTokens };
@@ -592,6 +594,24 @@ export async function compactMessagesWithSummary(
   const summaryResult = await summarizeCompactionPlan(planWithHooks);
   const { summary, validation, summaryModel } = summaryResult;
   const warnings = [...hookResult.warnings, ...summaryResult.warnings];
+
+  if (!validation.ok) {
+    const result: CompactionServiceResult = {
+      success: false,
+      reason: 'invalid_summary_projection',
+      plan: planWithHooks,
+      summary,
+      beforeTokens,
+      afterTokens: beforeTokens,
+      savedTokens: 0,
+      validation,
+      summaryModel,
+      warnings,
+    };
+    recordAudit(result, options);
+    return result;
+  }
+
   const compactedAt = options.now ?? Date.now();
   const firstPreservedTimestamp = planWithHooks.preservedMessages[0]?.timestamp;
   const summaryMessageTimestamp = typeof firstPreservedTimestamp === 'number'

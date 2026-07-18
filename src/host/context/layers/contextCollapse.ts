@@ -129,6 +129,9 @@ export async function applyContextCollapse(
       spanMessages.map((m) => ({ role: m.role, content: m.content })),
     );
 
+    if (summary.trim().length === 0) continue;
+    if (estimateTokens(summary) > maxSummaryTokens) continue;
+
     state.applyCommit({
       layer: 'contextCollapse',
       operation: 'collapse',

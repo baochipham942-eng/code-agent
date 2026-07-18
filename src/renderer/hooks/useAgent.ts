@@ -33,6 +33,7 @@ import { useTaskStore } from '../stores/taskStore';
 import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
 import { typedInvokeDomain } from '../services/typedInvoke';
 import { createLogger } from '../utils/logger';
+import { toast } from './useToast';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import { useAgentDerived } from './agent/useAgentDerived';
 import { useAgentEffects } from './agent/useAgentEffects';
@@ -160,8 +161,33 @@ export const useAgent = () => {
     ]);
   }, [setQueuedRuntimeInputs]);
 
-  const cancelQueuedRuntimeInput = useCallback((id: string) => {
-    setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+  const cancelQueuedRuntimeInput = useCallback(async (id: string) => {
+    const queued = queuedRuntimeInputsRef.current.find((item) => item.id === id);
+    if (!queued) return;
+
+    if (queued.sendFailed) {
+      setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+      return;
+    }
+
+    try {
+      const response = await typedInvokeDomain(QueuedInputSchemas.RETRACT, {
+        action: 'retract',
+        payload: { id },
+      });
+      if (!response.success) {
+        toast.error(`撤回排队消息失败：${response.error.message}`);
+        return;
+      }
+      if (!response.data.retracted) {
+        toast.info('这条消息已经开始发送，无法撤回。');
+        return;
+      }
+      setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+    } catch (error) {
+      logger.error('Failed to retract queued runtime input', error, { id });
+      toast.error(`撤回排队消息失败：${error instanceof Error ? error.message : String(error)}`);
+    }
   }, [setQueuedRuntimeInputs]);
 
   useEffect(() => {

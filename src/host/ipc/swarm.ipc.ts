@@ -218,9 +218,10 @@ export function registerSwarmHandlers(
         return services.spawnGuard.get?.(agentId, ref)?.status === 'running';
       });
       const sessionMessage = buildPersistedUserMessage(payload, scope, validatedTargetIds);
-      const delivered =
-        coordinator.sendMessage(payload.agentId, payload.message) ||
-        Boolean(services.spawnGuard.sendMessage?.(payload.agentId, payload.message, ref));
+      let delivered = await coordinator.sendMessage(payload.agentId, payload.message);
+      if (!delivered) {
+        delivered = Boolean(services.spawnGuard.sendMessage?.(payload.agentId, payload.message, ref));
+      }
 
       if (!delivered) {
         return {

@@ -56,6 +56,12 @@ function createHarness(overrides: Partial<PermissionQueueState> = {}) {
   };
 
   const deps: PermissionQueueEventDeps = {
+    clearPermissionRequestsForSession: (sessionId) => {
+      if (state.pendingPermissionSessionId === sessionId) {
+        setPendingPermissionRequest(null);
+      }
+      delete state.queuedPermissionRequests[sessionId];
+    },
     debug: () => {},
     enqueuePermissionRequest,
     getCurrentSessionId: () => state.currentSessionId,
@@ -160,30 +166,66 @@ describe('applyPermissionQueueEvent', () => {
     expect(state.unreadSessionIds).toEqual([]);
   });
 
-  it('leaves permission state untouched for completion, cancellation, error, and stream end', () => {
-    const pending = permissionRequest('active');
-    const queued = permissionRequest('queued');
-    const { deps, state } = createHarness({
-      currentSessionId: 'session-current',
-      lastEventAt: 41,
-      pendingPermissionRequest: pending,
-      pendingPermissionSessionId: 'session-current',
-      queuedPermissionRequests: { 'session-current': [queued] },
-    });
+  it.each(['agent_complete', 'agent_cancelled', 'error', 'stream_end'])(
+    'clears only the terminal session permission state for %s',
+    (type) => {
+      const pending = permissionRequest('active');
+      const queued = permissionRequest('queued');
+      const foreign = permissionRequest('foreign');
+      const global = permissionRequest('global');
+      const { deps, state } = createHarness({
+        currentSessionId: 'session-current',
+        lastEventAt: 41,
+        pendingPermissionRequest: pending,
+        pendingPermissionSessionId: 'session-current',
+        queuedPermissionRequests: {
+          'session-current': [queued],
+          'session-foreign': [foreign],
+          global: [global],
+        },
+      });
 
-    for (const type of ['agent_complete', 'agent_cancelled', 'error', 'stream_end']) {
       applyPermissionQueueEvent({ type, data: null, sessionId: 'session-current' }, deps);
-    }
 
-    expect(state).toEqual({
-      currentSessionId: 'session-current',
-      lastEventAt: 41,
-      pendingPermissionRequest: pending,
-      pendingPermissionSessionId: 'session-current',
-      queuedPermissionRequests: { 'session-current': [queued] },
-      unreadSessionIds: [],
-    });
-  });
+      expect(state).toEqual({
+        currentSessionId: 'session-current',
+        lastEventAt: 41,
+        pendingPermissionRequest: null,
+        pendingPermissionSessionId: null,
+        queuedPermissionRequests: {
+          'session-foreign': [foreign],
+          global: [global],
+        },
+        unreadSessionIds: [],
+      });
+    },
+  );
+
+  it.each(['agent_complete', 'agent_cancelled', 'error', 'stream_end'])(
+    'leaves permission state untouched for %s without a session id',
+    (type) => {
+      const pending = permissionRequest('active');
+      const queued = permissionRequest('queued');
+      const { deps, state } = createHarness({
+        currentSessionId: 'session-current',
+        lastEventAt: 41,
+        pendingPermissionRequest: pending,
+        pendingPermissionSessionId: 'session-current',
+        queuedPermissionRequests: { 'session-current': [queued] },
+      });
+
+      applyPermissionQueueEvent({ type, data: null }, deps);
+
+      expect(state).toEqual({
+        currentSessionId: 'session-current',
+        lastEventAt: 41,
+        pendingPermissionRequest: pending,
+        pendingPermissionSessionId: 'session-current',
+        queuedPermissionRequests: { 'session-current': [queued] },
+        unreadSessionIds: [],
+      });
+    },
+  );
 });
 
 describe('reconcilePermissionQueue', () => {
@@ -220,7 +262,7 @@ describe('reconcilePermissionQueue', () => {
     expect(state.queuedPermissionRequests).toEqual({});
   });
 
-  it('promotes the current-session request while also shifting the global queue', () => {
+  it('promotes the current-session request before preserving and later promoting the global request', () => {
     const current = permissionRequest('current');
     const global = permissionRequest('global');
     const { reconcile, state } = createHarness({
@@ -235,6 +277,15 @@ describe('reconcilePermissionQueue', () => {
 
     expect(state.pendingPermissionRequest).toBe(current);
     expect(state.pendingPermissionSessionId).toBe('session-current');
+    expect(state.queuedPermissionRequests).toEqual({ global: [global] });
+
+    state.pendingPermissionRequest = null;
+    state.pendingPermissionSessionId = null;
+    reconcile();
+
+    expect(state.pendingPermissionRequest).toBe(global);
+    expect(state.pendingPermissionRequest?.id).toBe('global');
+    expect(state.pendingPermissionSessionId).toBeNull();
     expect(state.queuedPermissionRequests).toEqual({});
   });
 });

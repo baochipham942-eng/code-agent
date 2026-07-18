@@ -56,6 +56,7 @@ describe('buildLedgerTaskRecords', () => {
             type: 'log',
             label: 'Claude Code log',
             path: '/tmp/code-agent/run-2.log',
+            size: 0,
             createdAt: 120,
           },
           {
@@ -114,6 +115,7 @@ describe('buildLedgerTaskRecords', () => {
           type: 'log',
           label: 'Claude Code log',
           pathOrUrl: '/tmp/code-agent/run-2.log',
+          size: 0,
         },
         {
           type: 'text',

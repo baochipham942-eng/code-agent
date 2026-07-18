@@ -447,7 +447,14 @@ const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => {
           {outputRefBadgeLabel(ref.type, t)}
         </span>
         <span className="min-w-0 flex-1 truncate text-[10px] text-zinc-300">{ref.label}</span>
-        {ref.pathOrUrl && (
+        {ref.type === 'log' && ref.size === 0 ? (
+          <span
+            className="flex-shrink-0 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300"
+            data-testid="task-output-ref-empty"
+          >
+            {t.taskStatusPanels.runWorkbench.noOutput}
+          </span>
+        ) : ref.pathOrUrl && (
           <span className="min-w-0 flex-[1.5] truncate text-[10px] text-zinc-600">{ref.pathOrUrl}</span>
         )}
       </div>

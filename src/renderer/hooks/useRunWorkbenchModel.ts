@@ -227,6 +227,7 @@ function buildTaskOutputRefs(task: Task): TaskRecordOutputRef[] {
         type: ref.type,
         label: ref.label || fallbackLabel,
         pathOrUrl,
+        size: ref.size,
       };
     })
     .filter((ref) => ref.label || ref.pathOrUrl);

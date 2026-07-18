@@ -112,7 +112,6 @@ export interface Task {
   durationMs?: number;
   progress?: TaskProgress;
   failure?: TaskFailure;
-  unread?: boolean;
   metadata?: TaskMetadata;
   events: TaskEvent[];
   outputRefs: TaskOutputRef[];
@@ -138,7 +137,6 @@ export interface UpsertTaskInput {
   durationMs?: number;
   progress?: TaskProgress;
   failure?: TaskFailure;
-  unread?: boolean;
   metadata?: TaskMetadata;
 }
 

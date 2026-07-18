@@ -165,4 +165,61 @@ describe('TaskDashboardSummary background outputs', () => {
     expect(html).toContain('Claude Code final message');
     expect(html).toContain('/tmp/code-agent/run-1.last.md');
   });
+
+  it('marks only zero-byte log refs as having no output', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TaskDashboardSummary, {
+        run: null,
+        tasks: [
+          {
+            id: 'background:empty-log',
+            scope: 'global',
+            title: 'Empty log',
+            status: 'completed',
+            steps: [{ title: '已完成', status: 'completed' }],
+            outputRefs: [{
+              id: 'empty-log',
+              type: 'log',
+              label: 'Empty log',
+              pathOrUrl: '/tmp/empty.log',
+              size: 0,
+            }],
+          },
+          {
+            id: 'background:non-empty-log',
+            scope: 'global',
+            title: 'Non-empty log',
+            status: 'completed',
+            steps: [{ title: '已完成', status: 'completed' }],
+            outputRefs: [{
+              id: 'non-empty-log',
+              type: 'log',
+              label: 'Non-empty log',
+              pathOrUrl: '/tmp/non-empty.log',
+              size: 12,
+            }],
+          },
+          {
+            id: 'background:legacy-log',
+            scope: 'global',
+            title: 'Legacy log',
+            status: 'completed',
+            steps: [{ title: '已完成', status: 'completed' }],
+            outputRefs: [{
+              id: 'legacy-log',
+              type: 'log',
+              label: 'Legacy log',
+              pathOrUrl: '/tmp/legacy.log',
+            }],
+          },
+        ],
+      }),
+    );
+
+    expect(html.match(/data-testid="task-output-ref-empty"/g)).toHaveLength(1);
+    expect(html).toContain('无输出');
+    expect(html).not.toContain('>/tmp/empty.log</span>');
+    expect(html).toContain('>/tmp/non-empty.log</span>');
+    expect(html).toContain('>/tmp/legacy.log</span>');
+  });
 });

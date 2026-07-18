@@ -69,7 +69,6 @@ export class BackgroundTaskLedger {
       durationMs: input.durationMs ?? existing?.durationMs,
       progress: cloneProgress(input.progress ?? existing?.progress),
       failure: cloneFailure(input.failure ?? existing?.failure),
-      unread: input.unread ?? existing?.unread,
       metadata: cloneMetadata(input.metadata ?? existing?.metadata),
       events: existing?.events.map(cloneTaskEvent) ?? [],
       outputRefs: existing?.outputRefs.map(cloneOutputRef) ?? [],

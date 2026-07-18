@@ -49,7 +49,6 @@ export function recordExternalEngineFailure(
       status: 'failed',
       updatedAt: now,
       completedAt: now,
-      unread: true,
       failure: {
         message: input.message,
         reason: input.context.stage,

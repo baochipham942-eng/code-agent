@@ -29,12 +29,16 @@ export interface QueuedInputRecord {
   updatedAt: number;
 }
 
-export interface EnqueueQueuedInputInput {
+interface EnqueueQueuedInputBase {
   id: string;
   sessionId: string;
-  envelope: unknown;
   now?: number;
 }
+
+export type EnqueueQueuedInputInput = EnqueueQueuedInputBase & (
+  | { envelope: unknown; envelopeJson?: never }
+  | { envelopeJson: string; envelope?: never }
+);
 
 function rowToRecord(row: SQLiteRow): QueuedInputRecord {
   return {
@@ -53,10 +57,14 @@ export class QueuedInputRepository {
 
   enqueue(input: EnqueueQueuedInputInput): void {
     let envelopeJson: string;
-    try {
-      envelopeJson = JSON.stringify(input.envelope ?? null);
-    } catch {
-      envelopeJson = 'null';
+    if (typeof input.envelopeJson === 'string') {
+      envelopeJson = input.envelopeJson;
+    } else {
+      try {
+        envelopeJson = JSON.stringify(input.envelope ?? null);
+      } catch {
+        envelopeJson = 'null';
+      }
     }
 
     const now = input.now ?? Date.now();

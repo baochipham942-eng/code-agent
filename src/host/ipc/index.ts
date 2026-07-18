@@ -42,6 +42,7 @@ import { registerCheckpointHandlers } from './checkpoint.ipc';
 import { registerLSPHandlers } from './lsp.ipc';
 import { registerBackgroundHandlers } from './background.ipc';
 import { registerBackgroundTaskLedgerHandlers } from './backgroundTaskLedger.ipc';
+import { registerQueuedInputHandlers } from './queuedInput.ipc';
 import { registerDiffHandlers } from './diff.ipc';
 import { registerSwarmHandlers } from './swarm.ipc';
 // 模块加载即自装 workflow EventBus → renderer 专用 bridge（P3a 进度树）；
@@ -201,6 +202,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   // Background task handlers (后台任务)
   registerBackgroundHandlers(getMainWindow);
   registerBackgroundTaskLedgerHandlers(ipcMain);
+  registerQueuedInputHandlers(ipcMain);
 
   // Diff handlers (变更追踪)
   registerDiffHandlers();

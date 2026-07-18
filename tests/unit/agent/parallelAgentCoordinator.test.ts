@@ -73,6 +73,12 @@ import {
   AgentFailureCode,
 } from '../../../src/shared/contract/agentFailure';
 import {
+  AGENT_TEAM_CHECKPOINT_SCHEMA_VERSION,
+  type AgentTeamCheckpointState,
+  type AgentTeamDurableController,
+  type AgentTeamMailboxMessage,
+} from '../../../src/host/agent/agentTeamDurableTypes';
+import {
   initParallelAgentCoordinator,
   ParallelAgentCoordinator,
   ParallelAgentCoordinatorRegistry,
@@ -120,6 +126,69 @@ function makeTask(
     task: `task description for ${id}`,
     tools: ['Read'],
     ...overrides,
+  };
+}
+
+function makeFakeDurableController(scope: SwarmRunScope): AgentTeamDurableController {
+  const persistedMessages: AgentTeamMailboxMessage[] = [];
+  const state: AgentTeamCheckpointState = {
+    schemaVersion: AGENT_TEAM_CHECKPOINT_SCHEMA_VERSION,
+    kind: 'agent_team',
+    teamId: `team:${scope.runId}`,
+    treeId: scope.treeId,
+    scope,
+    parentRunId: 'parent-run',
+    taskGraph: [],
+    mailbox: {
+      nextSeq: 1,
+      committedCursor: 0,
+      pending: [],
+      consumedMessageIds: [],
+    },
+    findings: {},
+    decisions: {},
+    errors: [],
+    completedNodeResultRefs: {},
+    runningChildRefs: [],
+    pendingApprovalRefs: [],
+    worktreeRefs: {},
+    artifactRefs: {},
+    cancelled: false,
+    updatedAt: 1,
+  };
+
+  return {
+    scope,
+    ownerEpoch: 1,
+    getState: () => state,
+    checkpoint: vi.fn(async () => undefined),
+    markApprovalWaiting: vi.fn(async () => undefined),
+    resolveApproval: vi.fn(async () => undefined),
+    markNodeDispatched: vi.fn(async () => undefined),
+    markNodeTerminal: vi.fn(async () => undefined),
+    enqueueMessage: vi.fn(async (agentId, body, from = 'user', type = 'text', now = Date.now()) => {
+      const persisted: AgentTeamMailboxMessage = {
+        id: `message-${persistedMessages.length + 1}`,
+        seq: persistedMessages.length + 1,
+        treeId: scope.treeId,
+        agentId,
+        from,
+        type,
+        body,
+        createdAt: now,
+      };
+      persistedMessages.push(persisted);
+      return persisted;
+    }),
+    consumeMessages: vi.fn(async (agentId) => {
+      const consumed = persistedMessages.filter((message) => message.agentId === agentId);
+      for (const message of consumed) {
+        persistedMessages.splice(persistedMessages.indexOf(message), 1);
+      }
+      return consumed;
+    }),
+    cancel: vi.fn(async () => undefined),
+    terminal: vi.fn(async () => undefined),
   };
 }
 
@@ -656,8 +725,125 @@ describe('ParallelAgentCoordinator', () => {
       const run = coordinator.executeParallel([makeTask('a', { role: 'coder' })]);
       await vi.waitFor(() => expect(drainMessages).toBeTypeOf('function'));
 
-      expect(coordinator.sendMessage('a', 'hello from user')).toBe(true);
+      await expect(coordinator.sendMessage('a', 'hello from user')).resolves.toBe(true);
       expect((await drainMessages?.())?.map((message) => message.payload)).toEqual(['hello from user']);
+
+      release();
+      await run;
+    });
+
+    it('durable enqueue failure reports false and leaves the executor inbox empty', async () => {
+      const scope: SwarmRunScope = {
+        sessionId: 'durable-enqueue-session',
+        runId: 'durable-enqueue-run',
+        treeId: 'durable-enqueue-tree',
+      };
+      const durableController = makeFakeDurableController(scope);
+      const agentId = createScopedSwarmAgentId(scope, 'agent-coder');
+      vi.mocked(durableController.enqueueMessage).mockRejectedValueOnce(new Error('checkpoint failed'));
+      coordinator = new ParallelAgentCoordinator({
+        maxParallelTasks: 1,
+        taskTimeout: 5000,
+        aggregateResults: false,
+      }, scope);
+      coordinator.initialize({
+        ...makeFakeContext(),
+        executionContext: {
+          ...makeFakeContext().executionContext,
+          sessionId: scope.sessionId,
+          swarmRunScope: scope,
+        } as never,
+        scope,
+        durableController,
+      });
+
+      let release!: () => void;
+      let drainMessages: (() => Promise<Array<{ payload: string }>>) | undefined;
+      executorState.executeMock.mockImplementation(
+        async (request: { context: { messageDrain?: () => Promise<Array<{ payload: string }>> } }) => {
+          drainMessages = request.context.messageDrain;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return {
+            success: true,
+            output: 'ok',
+            iterations: 1,
+            toolsUsed: [],
+            cost: 0,
+          };
+        },
+      );
+
+      const run = coordinator.executeParallel([makeTask(agentId, { role: 'coder' })]);
+      await vi.waitFor(() => expect(drainMessages).toBeTypeOf('function'));
+
+      await expect(coordinator.sendMessage(agentId, 'unpersisted message')).resolves.toBe(false);
+      expect(await drainMessages?.()).toEqual([]);
+
+      release();
+      await run;
+    });
+
+    it('durable messages are consumed only after the drained batch is acknowledged', async () => {
+      const scope: SwarmRunScope = {
+        sessionId: 'durable-ack-session',
+        runId: 'durable-ack-run',
+        treeId: 'durable-ack-tree',
+      };
+      const durableController = makeFakeDurableController(scope);
+      const agentId = createScopedSwarmAgentId(scope, 'agent-coder');
+      coordinator = new ParallelAgentCoordinator({
+        maxParallelTasks: 1,
+        taskTimeout: 5000,
+        aggregateResults: false,
+      }, scope);
+      coordinator.initialize({
+        ...makeFakeContext(),
+        executionContext: {
+          ...makeFakeContext().executionContext,
+          sessionId: scope.sessionId,
+          swarmRunScope: scope,
+        } as never,
+        scope,
+        durableController,
+      });
+
+      let release!: () => void;
+      let drainMessages: (() => Promise<Array<{ payload: string }>>) | undefined;
+      let ackMessageDrain: (() => void | Promise<void>) | undefined;
+      executorState.executeMock.mockImplementation(
+        async (request: {
+          context: {
+            messageDrain?: () => Promise<Array<{ payload: string }>>;
+            ackMessageDrain?: () => void | Promise<void>;
+          };
+        }) => {
+          drainMessages = request.context.messageDrain;
+          ackMessageDrain = request.context.ackMessageDrain;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return {
+            success: true,
+            output: 'ok',
+            iterations: 1,
+            toolsUsed: [],
+            cost: 0,
+          };
+        },
+      );
+
+      const run = coordinator.executeParallel([makeTask(agentId, { role: 'coder' })]);
+      await vi.waitFor(() => expect(ackMessageDrain).toBeTypeOf('function'));
+
+      await expect(coordinator.sendMessage(agentId, 'durable message')).resolves.toBe(true);
+      expect((await drainMessages?.())?.map((message) => message.payload)).toEqual(['durable message']);
+      expect(durableController.consumeMessages).not.toHaveBeenCalled();
+
+      await ackMessageDrain?.();
+      expect(durableController.consumeMessages).toHaveBeenCalledTimes(1);
+      expect(durableController.consumeMessages).toHaveBeenCalledWith(agentId);
 
       release();
       await run;

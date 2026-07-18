@@ -11,10 +11,19 @@ export type CompactionSummaryManifestItem = CompactionSurvivorItem;
 
 export interface CompactionSummaryValidation {
   ok: boolean;
+  emptyOrWhitespace: boolean;
+  truncated: boolean;
+  overBudget: boolean;
   missingPaths: string[];
   missingErrors: string[];
   missingOpenWork: string[];
   warnings: string[];
+}
+
+export interface CompactionSummaryValidationOptions {
+  truncated?: boolean;
+  tokenCount?: number;
+  maxSummaryTokens?: number;
 }
 
 const NEEDS_RE_READ_PATTERN =
@@ -60,12 +69,30 @@ function unresolvedErrors(manifest: CompactionSummaryManifest): CompactionSurviv
 
 export function validateCompactionSummary(
   summary: string,
-  manifest: CompactionSummaryManifest
+  manifest: CompactionSummaryManifest,
+  options?: CompactionSummaryValidationOptions,
 ): CompactionSummaryValidation {
+  const emptyOrWhitespace = summary.trim().length === 0;
+  const truncated = options?.truncated === true;
+  const overBudget = options?.tokenCount !== undefined
+    && options.maxSummaryTokens !== undefined
+    && options.tokenCount > options.maxSummaryTokens;
   const missingPaths: string[] = [];
   const missingErrors: string[] = [];
   const missingOpenWork: string[] = [];
   const warnings: string[] = [];
+
+  if (emptyOrWhitespace) {
+    warnings.push('Summary is empty or contains only whitespace.');
+  }
+  if (truncated) {
+    warnings.push('Summary was truncated by the model provider.');
+  }
+  if (overBudget) {
+    warnings.push(
+      `Summary exceeds the configured token budget (${options.tokenCount} > ${options.maxSummaryTokens}).`,
+    );
+  }
 
   for (const file of manifest.files ?? []) {
     if (!file.path) continue;
@@ -92,7 +119,15 @@ export function validateCompactionSummary(
   }
 
   return {
-    ok: missingPaths.length === 0 && missingErrors.length === 0 && missingOpenWork.length === 0,
+    ok: !emptyOrWhitespace
+      && !truncated
+      && !overBudget
+      && missingPaths.length === 0
+      && missingErrors.length === 0
+      && missingOpenWork.length === 0,
+    emptyOrWhitespace,
+    truncated,
+    overBudget,
     missingPaths,
     missingErrors,
     missingOpenWork,
@@ -108,6 +143,18 @@ export function buildSummaryRepairInstruction(validation: CompactionSummaryValid
   const sections: string[] = [
     'Repair the compaction summary by adding the survivor manifest items that were missed.',
   ];
+
+  if (validation.emptyOrWhitespace) {
+    sections.push('The previous summary was empty or whitespace. Return a non-empty handoff summary.');
+  }
+
+  if (validation.truncated) {
+    sections.push('The previous summary was truncated. Rewrite it as a complete handoff summary.');
+  }
+
+  if (validation.overBudget) {
+    sections.push('The previous summary exceeded the token budget. Rewrite it more concisely.');
+  }
 
   if (validation.missingPaths.length > 0) {
     sections.push([

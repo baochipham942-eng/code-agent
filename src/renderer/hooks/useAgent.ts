@@ -25,14 +25,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import type { Message } from '@shared/contract';
+import { QueuedInputSchemas } from '@shared/ipc/schemas';
+import { generateMessageId } from '@shared/utils/id';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from '../stores/streamingMessageAccumulatorStore';
+import { typedInvokeDomain } from '../services/typedInvoke';
+import { createLogger } from '../utils/logger';
+import { toast } from './useToast';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import { useAgentDerived } from './agent/useAgentDerived';
 import { useAgentEffects } from './agent/useAgentEffects';
-import { isRuntimeBusyStatus, useAgentIPC, type QueuedRuntimeInput } from './agent/useAgentIPC';
+import {
+  getAgentSendFailureMessage,
+  getRuntimeInputMode,
+  isRuntimeBusyStatus,
+  useAgentIPC,
+  type QueuedRuntimeInput,
+} from './agent/useAgentIPC';
 import { useAgentState } from './agent/useAgentState';
 import { applyToolCallArgumentDelta } from '../utils/toolCallStreaming';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
@@ -43,6 +54,16 @@ export { resolveDirectRouting } from './agent/useAgentIPC';
 // 越小 → 文字到达越连续（更平滑）；markdown 重渲染另有 96ms 节流兜底，
 // 故这里压到 150ms 主要让纯文本流不再「半秒蹦一坨」，又不至于过度重渲染。
 const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 150;
+const logger = createLogger('useAgent');
+
+const QUEUED_RESEND_RETRY_DELAY_MS = 500;
+
+export function requeueAtFront(
+  queue: QueuedRuntimeInput[],
+  item: QueuedRuntimeInput,
+): QueuedRuntimeInput[] {
+  return [item, ...queue.filter((existing) => existing.id !== item.id)];
+}
 
 function buildStreamingDeltaChanges(
   message: Message,
@@ -102,6 +123,8 @@ export const useAgent = () => {
   const streamingFlushTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const queuedRuntimeInputsRef = useRef<QueuedRuntimeInput[]>([]);
   const queuedRuntimeInputSendInFlightRef = useRef<Set<string>>(new Set());
+  const queuedRuntimeInputHydrationSuppressedIdsRef = useRef<Set<string>>(new Set());
+  const queuedRuntimeInputRetryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [queuedRuntimeInputs, setQueuedRuntimeInputsSnapshot] = useState<QueuedRuntimeInput[]>([]);
 
   const setQueuedRuntimeInputs = useCallback((
@@ -121,9 +144,83 @@ export const useAgent = () => {
     ]);
   }, [setQueuedRuntimeInputs]);
 
-  const cancelQueuedRuntimeInput = useCallback((id: string) => {
-    setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+  const cancelQueuedRuntimeInput = useCallback(async (id: string) => {
+    const queued = queuedRuntimeInputsRef.current.find((item) => item.id === id);
+    if (!queued) return;
+
+    if (queued.sendFailed) {
+      setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+      return;
+    }
+
+    try {
+      const response = await typedInvokeDomain(QueuedInputSchemas.RETRACT, {
+        action: 'retract',
+        payload: { id },
+      });
+      if (!response.success) {
+        toast.error(`撤回排队消息失败：${response.error.message}`);
+        return;
+      }
+      if (!response.data.retracted) {
+        toast.info('这条消息已经开始发送，无法撤回。');
+        return;
+      }
+      setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+    } catch (error) {
+      logger.error('Failed to retract queued runtime input', error, { id });
+      toast.error(`撤回排队消息失败：${error instanceof Error ? error.message : String(error)}`);
+    }
   }, [setQueuedRuntimeInputs]);
+
+  useEffect(() => {
+    setQueuedRuntimeInputs([]);
+    if (!currentSessionId) return;
+
+    const sessionId = currentSessionId;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await typedInvokeDomain(QueuedInputSchemas.LIST, {
+          action: 'list',
+          payload: { sessionId, status: 'queued' },
+        });
+        if (cancelled || useSessionStore.getState().currentSessionId !== sessionId) return;
+        if (!response.success) {
+          throw new Error(response.error.message);
+        }
+
+        const hydrated = response.data
+          .filter((input) => !queuedRuntimeInputHydrationSuppressedIdsRef.current.has(input.id))
+          .map<QueuedRuntimeInput>((input) => ({
+            id: input.id,
+            sessionId: input.sessionId,
+            envelope: input.envelope,
+            content: input.envelope.content,
+            mode: getRuntimeInputMode(input.envelope.context),
+            attachmentsCount: input.envelope.attachments?.length || 0,
+            createdAt: input.createdAt,
+            retryCount: input.retryCount,
+          }));
+        const hydratedIds = new Set(hydrated.map((input) => input.id));
+        setQueuedRuntimeInputs((current) => [
+          ...hydrated,
+          ...current.filter((input) => (
+            input.sessionId === sessionId && !hydratedIds.has(input.id)
+          )),
+        ]);
+      } catch (error) {
+        if (!cancelled) {
+          logger.error('Failed to hydrate queued runtime inputs', error, { sessionId });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSessionId, setQueuedRuntimeInputs]);
 
   const clearStreamingFlushTimer = useCallback((messageId: string) => {
     const timer = streamingFlushTimersRef.current.get(messageId);
@@ -208,6 +305,15 @@ export const useAgent = () => {
     };
   }, [flushStreamingMessages]);
 
+  useEffect(() => {
+    return () => {
+      for (const timer of queuedRuntimeInputRetryTimersRef.current.values()) {
+        clearTimeout(timer);
+      }
+      queuedRuntimeInputRetryTimersRef.current.clear();
+    };
+  }, []);
+
   const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
     for (const update of updates) {
       const currentMessages = useSessionStore.getState().messages;
@@ -289,13 +395,86 @@ export const useAgent = () => {
     if (!queued || queuedRuntimeInputSendInFlightRef.current.has(id)) return;
 
     queuedRuntimeInputSendInFlightRef.current.add(id);
-    setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
     try {
-      await sendMessage(queued.envelope);
+      const markResponse = await typedInvokeDomain(QueuedInputSchemas.MARK_SENDING, {
+        action: 'markSending',
+        payload: { id },
+      });
+      if (!markResponse.success) {
+        logger.error(
+          'Failed to mark queued runtime input as sending',
+          new Error(markResponse.error.message),
+          { id },
+        );
+        return;
+      }
+      if (!markResponse.data.marked) return;
+
+      queuedRuntimeInputHydrationSuppressedIdsRef.current.add(id);
+      setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+
+      try {
+        await sendMessage(queued.envelope, { silentFailure: true });
+      } catch (sendError) {
+        const failureResponse = await typedInvokeDomain(QueuedInputSchemas.REPORT_SEND_OUTCOME, {
+          action: 'reportSendOutcome',
+          payload: { id, outcome: 'failure' },
+        });
+        if (!failureResponse.success) {
+          logger.error(
+            'Failed to report queued runtime input send failure',
+            new Error(failureResponse.error.message),
+            { id },
+          );
+          return;
+        }
+
+        const settled = {
+          ...queued,
+          retryCount: failureResponse.data.retryCount,
+        };
+        if (failureResponse.data.status === 'queued') {
+          const timer = setTimeout(() => {
+            queuedRuntimeInputRetryTimersRef.current.delete(id);
+            queuedRuntimeInputHydrationSuppressedIdsRef.current.delete(id);
+            setQueuedRuntimeInputs((current) => requeueAtFront(current, settled));
+          }, QUEUED_RESEND_RETRY_DELAY_MS);
+          queuedRuntimeInputRetryTimersRef.current.set(id, timer);
+          return;
+        }
+
+        if (failureResponse.data.status === 'failed') {
+          queuedRuntimeInputHydrationSuppressedIdsRef.current.delete(id);
+          const failed = { ...settled, sendFailed: true };
+          addMessage({
+            id: generateMessageId(),
+            role: 'assistant',
+            content: getAgentSendFailureMessage(sendError),
+            timestamp: Date.now(),
+          });
+          setQueuedRuntimeInputs((current) => requeueAtFront(current, failed));
+        }
+        return;
+      }
+
+      const successResponse = await typedInvokeDomain(QueuedInputSchemas.REPORT_SEND_OUTCOME, {
+        action: 'reportSendOutcome',
+        payload: { id, outcome: 'success' },
+      });
+      queuedRuntimeInputHydrationSuppressedIdsRef.current.delete(id);
+      if (!successResponse.success) {
+        logger.error(
+          'Failed to report queued runtime input send success',
+          new Error(successResponse.error.message),
+          { id },
+        );
+      }
+    } catch (error) {
+      logger.error('Failed to drain queued runtime input', error, { id });
     } finally {
       queuedRuntimeInputSendInFlightRef.current.delete(id);
     }
-  }, [sendMessage, setQueuedRuntimeInputs]);
+  }, [addMessage, sendMessage, setQueuedRuntimeInputs]);
 
   useEffect(() => {
     if (
@@ -306,7 +485,9 @@ export const useAgent = () => {
     ) {
       return;
     }
-    const nextQueued = queuedRuntimeInputs.find((item) => item.sessionId === currentSessionId);
+    const nextQueued = queuedRuntimeInputs.find((item) => (
+      item.sessionId === currentSessionId && !item.sendFailed
+    ));
     if (!nextQueued) return;
     void sendQueuedRuntimeInput(nextQueued.id);
   }, [currentSessionId, currentSessionTaskStatus, isProcessing, queuedRuntimeInputs, sendQueuedRuntimeInput]);

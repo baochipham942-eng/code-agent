@@ -23,6 +23,7 @@ import {
 } from '@shared/contract/designHandoff';
 import { directionTokens } from '@/design/direction-tokens';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { QueuedInputSchemas } from '@shared/ipc/schemas';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
@@ -36,6 +37,7 @@ import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../sto
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
 import { toast } from '../../hooks/useToast';
 import ipcService from '../../services/ipcService';
+import { typedInvokeDomain } from '../../services/typedInvoke';
 
 const logger = createLogger('useAgent');
 
@@ -465,6 +467,12 @@ export interface QueuedRuntimeInput {
   mode: RuntimeInputMode;
   attachmentsCount: number;
   createdAt: number;
+  retryCount?: number;
+  sendFailed?: boolean;
+}
+
+export interface SendMessageOptions {
+  silentFailure?: boolean;
 }
 
 export function resolveDirectRouting(
@@ -624,7 +632,7 @@ export function useAgentIPC({
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
   // 运行中继续发送时，排队到当前回复结束后作为下一轮用户消息发送
   const sendMessage = useCallback(
-    async (envelope: ConversationEnvelope) => {
+    async (envelope: ConversationEnvelope, options?: SendMessageOptions) => {
       const { content, attachments, context } = envelope;
       logger.debug('sendMessage called', { contentPreview: content.substring(0, 50), sessionId: currentSessionId });
 
@@ -639,7 +647,7 @@ export function useAgentIPC({
       if (useSessionStore.getState().getPendingSessionCreate()) {
         logger.info('sendMessage - awaiting in-flight session create before bind');
       }
-      let effectiveSessionId = await resolveEffectiveSessionIdForSend({
+      const effectiveSessionId = await resolveEffectiveSessionIdForSend({
         envelopeSessionId: envelope.sessionId,
         getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
         getPendingSessionCreate: () => useSessionStore.getState().getPendingSessionCreate(),
@@ -869,31 +877,55 @@ export function useAgentIPC({
                 delivery: 'queued_next_turn',
               },
             };
-        enqueueRuntimeInput({
-          id: queuedMessageId,
+        const queuedEnvelope: ConversationEnvelope = {
+          ...envelope,
+          // 设计会话冷启动引导不在这里 prepend：排队项稍后由 sendQueuedRuntimeInput 重新走
+          // sendMessage(queued.envelope)，会在 auto 路径对 envelope.content 注入引导（避免双重 prepend）。
+          content: envelope.content,
+          attachments,
+          context: queuedContext,
+          clientMessageId: queuedMessageId,
           sessionId: effectiveSessionId!,
-          envelope: {
-            ...envelope,
-            // 设计会话冷启动引导不在这里 prepend：排队项稍后由 sendQueuedRuntimeInput 重新走
-            // sendMessage(queued.envelope)，会在 auto 路径对 envelope.content 注入引导（避免双重 prepend）。
-            content: envelope.content,
-            attachments,
-            context: queuedContext,
-            clientMessageId: queuedMessageId,
-            sessionId: effectiveSessionId!,
-          },
-          content,
-          mode: runtimeInputMode,
-          attachmentsCount: attachments?.length || 0,
-          createdAt: Date.now(),
-        });
-        toast.info(getRuntimeInputQueuedMessage(runtimeInputMode));
+        };
+        try {
+          const enqueueResponse = await typedInvokeDomain(QueuedInputSchemas.ENQUEUE, {
+            action: 'enqueue',
+            payload: {
+              id: queuedMessageId,
+              sessionId: effectiveSessionId!,
+              envelope: queuedEnvelope,
+            },
+          });
+          if (!enqueueResponse.success) {
+            throw new Error(enqueueResponse.error.message);
+          }
+          const persisted = enqueueResponse.data;
+          enqueueRuntimeInput({
+            id: persisted.id,
+            sessionId: persisted.sessionId,
+            envelope: persisted.envelope,
+            content: persisted.envelope.content,
+            mode: getRuntimeInputMode(persisted.envelope.context),
+            attachmentsCount: persisted.envelope.attachments?.length || 0,
+            createdAt: persisted.createdAt,
+            retryCount: persisted.retryCount,
+          });
+          toast.info(getRuntimeInputQueuedMessage(runtimeInputMode));
+        } catch (error) {
+          logger.error('Queued input enqueue failed', error);
+          addMessage({
+            id: generateMessageId(),
+            role: 'assistant',
+            content: getAgentSendFailureMessage(error),
+            timestamp: Date.now(),
+          });
+        }
         return;
       }
 
       // Add user message with UUID
       const userMessage: Message = {
-        id: generateMessageId(),
+        id: envelope.clientMessageId ?? generateMessageId(),
         role: 'user',
         content,
         timestamp: Date.now(),
@@ -910,6 +942,9 @@ export function useAgentIPC({
       // 2. 工具调用后的新响应会创建新消息，而不是追加到旧消息
 
       // 按会话设置处理状态（允许多会话并发）
+      const previousTaskState = effectiveSessionId
+        ? useTaskStore.getState().sessionStates[effectiveSessionId]
+        : undefined;
       setSessionProcessing(effectiveSessionId!, true);
       useTaskStore.getState().updateSessionState(effectiveSessionId!, {
         status: 'running',
@@ -938,6 +973,17 @@ export function useAgentIPC({
         logger.debug('invoke returned');
       } catch (error) {
         logger.error('Agent error', error);
+        if (options?.silentFailure === true) {
+          if (effectiveSessionId) {
+            setSessionProcessing(effectiveSessionId, false);
+            // 恢复发送前的终态，避免本次乐观 running 状态阻塞队列层的下一次重试。
+            useTaskStore.getState().updateSessionState(
+              effectiveSessionId,
+              previousTaskState ?? { status: 'idle' },
+            );
+          }
+          throw error;
+        }
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),

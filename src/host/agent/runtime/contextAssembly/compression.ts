@@ -100,7 +100,7 @@ async function persistCompactionTranscriptMarker(
 async function commitCompactionBlock(
   ctx: ContextAssemblyCtx,
   block: NonNullable<Awaited<ReturnType<typeof compactMessagesWithSummary>>['block']>,
-  preserveCount: number,
+  _preserveCount: number,
   options: {
     currentTokens?: number;
     compactionStartTime?: number;
@@ -185,10 +185,11 @@ async function commitCompactionBlock(
 
   // Layer 2: only compact the runtime model context. The durable transcript stays
   // append-only below, otherwise old user prompts disappear from session replay.
-  const boundary = ctx.runtime.messages.length - preserveCount;
+  const boundary = block.compactedMessageCount;
   if (boundary > 0) {
+    const preservedCount = ctx.runtime.messages.length - boundary;
     ctx.runtime.messages.splice(0, boundary, compactionMessage);
-    logger.info(`[AgentLoop] Layer 2: spliced ${boundary} old messages, kept ${preserveCount} recent + 1 compaction`);
+    logger.info(`[AgentLoop] Layer 2: spliced ${boundary} old messages, kept ${preservedCount} recent + 1 compaction`);
   } else {
     // 消息太少，仅追加
     ctx.runtime.messages.push(compactionMessage);

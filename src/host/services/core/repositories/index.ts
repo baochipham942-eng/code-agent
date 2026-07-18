@@ -27,6 +27,12 @@ export {
   type InsertPendingApprovalInput,
   type ResolvePendingApprovalInput,
 } from './PendingApprovalRepository';
+export {
+  QueuedInputRepository,
+  type EnqueueQueuedInputInput,
+  type QueuedInputRecord,
+  type QueuedInputStatus,
+} from './QueuedInputRepository';
 export { GenerativeUIRepository } from './GenerativeUIRepository';
 export {
   PermissionDecisionRepository,

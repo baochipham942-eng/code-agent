@@ -23,5 +23,7 @@ export type {
 
 export { BackgroundTaskSchemas } from './backgroundTask';
 export type { BackgroundTaskRequest } from './backgroundTask';
+export { QueuedInputSchemas, QueuedInputSchema } from './queuedInput';
+export type { QueuedInputRequest } from './queuedInput';
 export { AdminSchemas } from './admin';
 export type { AdminRequest } from './admin';

@@ -95,6 +95,9 @@ function compactionResult() {
     savedTokens: 780,
     validation: {
       ok: false,
+      emptyOrWhitespace: false,
+      truncated: false,
+      overBudget: false,
       missingPaths: ['/Users/linchen/Downloads/ai/code-agent/src/host/context/compactionService.ts'],
       missingErrors: ['Unresolved error: AssertionError: expected warnings to include basename coverage.'],
       missingOpenWork: ['Open work: TODO: preserve validation warnings.'],

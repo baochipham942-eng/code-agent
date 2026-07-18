@@ -7,6 +7,7 @@ import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
+import { compactModelSummarizeWithMetadata } from '../../../src/host/context/compactModel';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1960,14 +1961,20 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
 
   it('records hard compaction into compressionState as autocompact', async () => {
     const sessionId = `session-autocompact-${Date.now()}`;
+    const messages = Array.from({ length: 8 }, (_, i) => buildMessage(
+      `m${i}`,
+      i === 6 ? 'user' : 'assistant',
+      `message ${i} ${'hard compaction transcript '.repeat(250)}`,
+    ));
+    messages[4].toolCalls = [{
+      id: 'pending-call-at-compaction-boundary',
+      name: 'read_file',
+      arguments: { path: '/tmp/pending' },
+    }];
     const ctx = {
       sessionId,
       agentId: undefined,
-      messages: Array.from({ length: 6 }, (_, i) => buildMessage(
-        `m${i}`,
-        i === 0 ? 'user' : 'assistant',
-        `message ${i} ${'hard compaction transcript '.repeat(250)}`,
-      )),
+      messages,
       hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
       onEvent: vi.fn(),
       modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
@@ -2000,6 +2007,14 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       hookManager: undefined,
     };
 
+    // The pending read_file tool call's /tmp/pending path lands in the survivor
+    // manifest; the admission gate now rejects any summary that omits a manifest
+    // file path, so this fixture's summary must cover it explicitly.
+    vi.mocked(compactModelSummarizeWithMetadata).mockResolvedValueOnce({
+      summary: 'summary covering /tmp/pending',
+      metadata: { provider: 'mock', model: 'test-model', useMainModel: false },
+    });
+
     const assembly = new ContextAssembly(ctx as never);
     await assembly.checkAndAutoCompress();
 
@@ -2029,14 +2044,14 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     expect(compactionMsg!.content).not.toMatch(/节省.*tokens/);
     // 结构化字段 compaction.content 是真 source of truth — 上面已有 stringContaining('summary')。
 
-    // A.3 invariant: 压缩后 messages 数组应为 [compactionMessage, ...lastN原消息]，
-    // 且 preserveCount=2 + compaction=1 → 总长 3。
-    // 边界识别按 message ID 而非位置（避免 fork/replay 时错位）。
-    expect(ctx.messages).toHaveLength(3);
+    // A.3 invariant: commit 必须复用 plan 的 compactedMessageCount。这里数量窗口原本
+    // 会压 6 条，但 m4 的工具调用尚未闭合，安全 plan 只压 m0-m3；commit 不能二次按
+    // preserveCount=2 重算后把 m4/m5 一起删掉。
+    expect(compactionMsg?.compaction?.compactedMessageCount).toBe(4);
+    expect(ctx.messages).toHaveLength(5);
     expect(ctx.messages[0].compaction, 'compaction message must be at index 0').toBeDefined();
     expect(ctx.messages[0].role).toBe('system');
-    expect(ctx.messages[1].id).toBe('m4');
-    expect(ctx.messages[2].id).toBe('m5');
+    expect(ctx.messages.slice(1).map((message: Message) => message.id)).toEqual(['m4', 'm5', 'm6', 'm7']);
   });
 
   it('prefers checkpoint rebuild boundary over pure summary compaction when a checkpoint exists', async () => {
@@ -2540,7 +2555,7 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       sessionId,
       agentId: undefined,
       messages: Array.from({ length: 8 }, (_, i) =>
-        buildMessage(`stuck-${i}`, i === 0 ? 'user' : 'assistant', 'stuck transcript '.repeat(200))),
+        buildMessage(`stuck-${i}`, i === 5 ? 'user' : 'assistant', 'stuck transcript '.repeat(200))),
       hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
       onEvent: vi.fn(),
       modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },

@@ -30,6 +30,9 @@ describe('validateCompactionSummary', () => {
 
     expect(validateCompactionSummary(summary, sharedManifest)).toEqual({
       ok: true,
+      emptyOrWhitespace: false,
+      truncated: false,
+      overBudget: false,
       missingPaths: [],
       missingErrors: [],
       missingOpenWork: [],
@@ -90,12 +93,53 @@ describe('validateCompactionSummary', () => {
       'Path tests/unit/context/autoCompressor.test.ts was covered only by basename with needs re-read instruction.',
     ]);
   });
+
+  it('rejects an empty or whitespace-only summary', () => {
+    const result = validateCompactionSummary(' \n\t ', { files: [], errors: [], openWork: [] });
+
+    expect(result.ok).toBe(false);
+    expect(result.emptyOrWhitespace).toBe(true);
+    expect(result.truncated).toBe(false);
+    expect(result.overBudget).toBe(false);
+    expect(result.warnings).toContain('Summary is empty or contains only whitespace.');
+  });
+
+  it('rejects a provider-truncated summary', () => {
+    const result = validateCompactionSummary(
+      'A complete-looking summary.',
+      { files: [], errors: [], openWork: [] },
+      { truncated: true },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.emptyOrWhitespace).toBe(false);
+    expect(result.truncated).toBe(true);
+    expect(result.overBudget).toBe(false);
+    expect(result.warnings).toContain('Summary was truncated by the model provider.');
+  });
+
+  it('rejects a summary over the configured token budget', () => {
+    const result = validateCompactionSummary(
+      'A summary that exceeded its admission budget.',
+      { files: [], errors: [], openWork: [] },
+      { tokenCount: 201, maxSummaryTokens: 200 },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.emptyOrWhitespace).toBe(false);
+    expect(result.truncated).toBe(false);
+    expect(result.overBudget).toBe(true);
+    expect(result.warnings).toContain('Summary exceeds the configured token budget (201 > 200).');
+  });
 });
 
 describe('buildSummaryRepairInstruction', () => {
   it('includes missing paths, unresolved errors, and open work', () => {
     const instruction = buildSummaryRepairInstruction({
       ok: false,
+      emptyOrWhitespace: false,
+      truncated: false,
+      overBudget: false,
       missingPaths: ['src/host/context/autoCompressor.ts'],
       missingErrors: ['Vitest failure: autoCompressor retry test is still failing'],
       missingOpenWork: ['Todo: wire validator into the retry prompt later'],

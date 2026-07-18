@@ -69,6 +69,7 @@ L3 — 未实现（Codex MCP P2 crossVerify 是 L3 雏形）
 | 能力 | 当前状态 | 关键文件 / 测试 |
 |------|----------|----------------|
 | parallel executor inbox | `send_input` 先写 SpawnGuard agent queue；找不到时会退到 `ParallelAgentCoordinator` 的 task inbox，executor 迭代前可 drain | `src/host/agent/multiagentTools/sendInput.ts`、`tests/unit/agent/sendInput.test.ts` |
+| teammate UI/history projection | `TeammateService` 仅维护 Workbench UI/history 与 plan-review 使用的内存 inbox/outbox 投影，历史上限 1000 条；不耐久，也不是消息交付 authority，真实 child 消息会先经 coordinator/SpawnGuard 交付，再由 `onUserMessage()` 留存投影 | `src/host/agent/teammate/teammateService.ts`、`src/host/agent/parallelAgentCoordinator.ts` |
 | dependsOn gate | 下游只在所有依赖成功后启动；上游失败时下游标 `blocked`，不再继续跑 | `parallelAgentCoordinator.ts`、`tests/unit/agent/parallelAgentCoordinator.test.ts` |
 | aggregation shape | 成功、失败、blocked、cancelled agent 都进入结果结构；`successRate` 按总任务数计算 | `src/host/agent/resultAggregator.ts`、`tests/unit/agent/resultAggregator.test.ts` |
 | run-level cancel | `abortAllRunning()` 会中止 running task，并把 pending task 标 cancelled；`swarm:cancel-run` 同时取消 plan/launch approval、SpawnGuard 和 parallel coordinator | `parallelAgentCoordinator.ts`、`src/host/ipc/swarm.ipc.ts` |

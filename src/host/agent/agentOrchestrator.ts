@@ -373,31 +373,33 @@ export class AgentOrchestrator {
     } as AgentEvent & { sessionId?: string });
 
     if (this.agentLoop) {
-      this.agentLoop.steer(
-        effectiveMessage,
-        clientMessageId,
-        attachments as MessageAttachment[] | undefined,
-        messageMetadata,
-      );
-
-      while (this.pendingSteerMessages.length > 0) {
-        const queued = this.pendingSteerMessages.shift()!;
-        this.agentLoop.steer(
-          queued.content,
-          queued.clientMessageId,
-          queued.attachments,
-          queued.messageMetadata,
+      try {
+        await this.agentLoop.steer(
+          effectiveMessage,
+          clientMessageId,
+          attachments as MessageAttachment[] | undefined,
+          messageMetadata,
         );
-        logger.info('[AgentOrchestrator] Processed queued steer message');
+
+        while (this.pendingSteerMessages.length > 0) {
+          const queued = this.pendingSteerMessages.shift()!;
+          await this.agentLoop.steer(
+            queued.content,
+            queued.clientMessageId,
+            queued.attachments,
+            queued.messageMetadata,
+          );
+          logger.info('[AgentOrchestrator] Processed queued steer message');
+        }
+
+        this.onEvent({
+          type: 'interrupt_complete',
+          data: { message: '已调整方向', newUserMessage: newMessage },
+          sessionId,
+        } as AgentEvent & { sessionId?: string });
+      } finally {
+        this.isInterrupting = false;
       }
-
-      this.onEvent({
-        type: 'interrupt_complete',
-        data: { message: '已调整方向', newUserMessage: newMessage },
-        sessionId,
-      } as AgentEvent & { sessionId?: string });
-
-      this.isInterrupting = false;
       return;
     }
 

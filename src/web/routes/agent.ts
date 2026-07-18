@@ -63,12 +63,8 @@ import {
 import {
   type AgentDurableRouteDeps,
   cancelDisconnectedAgentRouteRun,
-  finishExternalAgentRouteRun,
-  releaseAgentRouteRun,
+  createAgentDurableRouteRunLifecycle,
   resolveAgentDurableActivation,
-  startAgentRouteRun,
-  terminalAgentRouteRunFailure,
-  terminalAgentRouteRunSuccess,
 } from './agentDurableRouteLifecycle';
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 
@@ -246,17 +242,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     let runContext: RunContext | undefined;
     let runHandle: RunHandle | undefined;
-    let externalDurableLifecycle: Awaited<ReturnType<typeof startAgentRouteRun>>['externalLifecycle'];
-    let nativeRunTerminal = false;
+    const durableRunLifecycle = createAgentDurableRouteRunLifecycle({
+      runRegistry,
+      sessionId,
+      workspace: resolvedProject,
+      durableActivation,
+      externalEngine: isExternalAgentEngine(selectedEngine.kind) ? selectedEngine.kind : undefined,
+      logger,
+    });
+    let externalDurableLifecycle: Awaited<ReturnType<typeof durableRunLifecycle.start>>['externalLifecycle'];
     let runCorrelationId: string;
     try {
-      const started = await startAgentRouteRun({
-        runRegistry,
-        sessionId,
-        workspace: resolvedProject,
-        durableActivation,
-        externalEngine: isExternalAgentEngine(selectedEngine.kind) ? selectedEngine.kind : undefined,
-      });
+      const started = await durableRunLifecycle.start();
       runHandle = started.runHandle;
       externalDurableLifecycle = started.externalLifecycle;
       runContext = runHandle.context;
@@ -442,7 +439,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           emitEvent: (event) => runController.emitAgentEvent(event),
           durableLifecycle: externalDurableLifecycle,
         });
-        nativeRunTerminal = await finishExternalAgentRouteRun(externalDurableLifecycle, result);
+        await durableRunLifecycle.markSuccess({ result });
         runController.flush();
         await runController.updateSessionStatus(result.status === 'failed' ? 'error' : 'completed');
         return;
@@ -761,9 +758,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           : 'completed';
       await runController.updateSessionStatus(finalStatus);
 
-      nativeRunTerminal = await terminalAgentRouteRunSuccess({
-        runRegistry, runHandle, sessionId, finalStatus, durableActivation,
-      });
+      await durableRunLifecycle.markSuccess({ finalStatus });
 
       // session:updated 和 session:list-updated 已按运行状态广播
 
@@ -779,16 +774,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }, logger);
       }
       await runController.updateSessionStatus('error');
-      nativeRunTerminal = await terminalAgentRouteRunFailure({
-        runRegistry,
-        runHandle,
-        externalLifecycle: externalDurableLifecycle,
-        terminal: nativeRunTerminal,
-        durableActivation,
+      await durableRunLifecycle.markFailure({
         disconnected: runController.disconnected,
-        sessionId,
         message,
-        logger,
       });
       if (!runController.disconnected) {
         runController.emitAgentEvent({
@@ -801,9 +789,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     } finally {
       runController.markSettled();
       res.off('close', runController.cancelForDisconnect);
-      await releaseAgentRouteRun({
-        runRegistry, runHandle, terminal: nativeRunTerminal, durableActivation,
-      });
+      await durableRunLifecycle.release();
       runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {

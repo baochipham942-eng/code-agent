@@ -14,6 +14,156 @@ export interface AgentDurableRouteDeps {
   getDurableRunReadService?: () => DurableRunReadService | undefined;
 }
 
+interface AgentDurableRouteRunLifecycleDeps {
+  runRegistry: RunRegistry;
+  sessionId: string;
+  workspace: string;
+  durableActivation: boolean;
+  externalEngine?: ExternalAgentEngineKind;
+  logger: WebRouteLogger;
+}
+
+type AgentDurableRouteRunSuccess =
+  | { result: AgentEngineRunResult }
+  | { finalStatus: SessionStatus };
+
+class AgentDurableRouteRunLifecycle {
+  private runHandle?: RunHandle;
+  private externalLifecycle?: ExternalEngineDurableLifecycle;
+  private startPromise?: Promise<{
+    runHandle: RunHandle;
+    externalLifecycle?: ExternalEngineDurableLifecycle;
+  }>;
+  private terminal = false;
+  private releasePromise?: Promise<void>;
+
+  constructor(private readonly deps: AgentDurableRouteRunLifecycleDeps) {}
+
+  start(): Promise<{
+    runHandle: RunHandle;
+    externalLifecycle?: ExternalEngineDurableLifecycle;
+  }> {
+    this.startPromise ??= this.startRun();
+    return this.startPromise;
+  }
+
+  async markSuccess(input: AgentDurableRouteRunSuccess): Promise<void> {
+    if (this.terminal) return;
+    if ('result' in input) {
+      if (this.externalLifecycle) {
+        await this.externalLifecycle.finish(
+          input.result,
+          input.result.status !== 'completed' || Boolean(input.result.outputText?.trim()),
+        );
+      }
+      this.terminal = true;
+      return;
+    }
+    if (this.deps.durableActivation && this.runHandle) {
+      const finalStatus = input.finalStatus;
+      await this.deps.runRegistry.terminalDurable(this.runHandle.context.runId, {
+        now: Date.now(),
+        status: finalStatus === 'completed'
+          ? 'completed'
+          : finalStatus === 'interrupted' ? 'cancelled' : 'failed',
+        reason: finalStatus,
+        event: {
+          type: `run_${finalStatus}`,
+          payload: { sessionId: this.deps.sessionId },
+          recordedAt: Date.now(),
+        },
+      }, this.runHandle);
+    }
+    this.terminal = true;
+  }
+
+  async markFailure(input: { disconnected: boolean; message: string }): Promise<void> {
+    if (this.externalLifecycle && !this.terminal) {
+      try {
+        await this.externalLifecycle.finish({
+          runId: this.externalLifecycle.runId,
+          sessionId: this.deps.sessionId,
+          engine: this.externalLifecycle.engine,
+          status: input.disconnected ? 'cancelled' : 'failed',
+          error: input.message,
+        }, true);
+        this.terminal = true;
+      } catch (error) {
+        this.deps.logger.error('External Durable Run terminal commit failed:', error);
+      }
+    }
+    if (this.runHandle && !this.terminal && this.deps.durableActivation) {
+      try {
+        await this.deps.runRegistry.terminalDurable(this.runHandle.context.runId, {
+          now: Date.now(),
+          status: input.disconnected ? 'cancelled' : 'failed',
+          reason: input.message,
+          event: { type: 'run_failed', payload: { message: input.message }, recordedAt: Date.now() },
+        }, this.runHandle);
+        this.terminal = true;
+      } catch (error) {
+        this.deps.logger.error('Durable Run terminal commit failed:', error);
+      }
+    }
+  }
+
+  release(): Promise<void> {
+    this.releasePromise ??= this.releaseRun();
+    return this.releasePromise;
+  }
+
+  private async startRun(): Promise<{
+    runHandle: RunHandle;
+    externalLifecycle?: ExternalEngineDurableLifecycle;
+  }> {
+    if (this.deps.externalEngine) {
+      this.externalLifecycle = this.deps.durableActivation
+        ? await ExternalEngineDurableLifecycle.start({
+          registry: this.deps.runRegistry,
+          engine: this.deps.externalEngine,
+          sessionId: this.deps.sessionId,
+          workspace: this.deps.workspace,
+          cwd: this.deps.workspace,
+        })
+        : undefined;
+      this.runHandle = this.externalLifecycle?.handle
+        ?? this.deps.runRegistry.start({
+          sessionId: this.deps.sessionId,
+          workspace: this.deps.workspace,
+        });
+    } else {
+      this.runHandle = this.deps.durableActivation
+        ? await this.deps.runRegistry.startDurable({
+          sessionId: this.deps.sessionId,
+          workspace: this.deps.workspace,
+        })
+        : this.deps.runRegistry.start({
+          sessionId: this.deps.sessionId,
+          workspace: this.deps.workspace,
+        });
+    }
+    return {
+      runHandle: this.runHandle,
+      externalLifecycle: this.externalLifecycle,
+    };
+  }
+
+  private async releaseRun(): Promise<void> {
+    if (!this.runHandle) return;
+    if (!this.terminal && this.deps.durableActivation) {
+      await this.deps.runRegistry.releaseDurable(this.runHandle.context.runId, this.runHandle);
+    } else {
+      this.deps.runRegistry.unregister(this.runHandle.context.runId, this.runHandle);
+    }
+  }
+}
+
+export function createAgentDurableRouteRunLifecycle(
+  deps: AgentDurableRouteRunLifecycleDeps,
+): AgentDurableRouteRunLifecycle {
+  return new AgentDurableRouteRunLifecycle(deps);
+}
+
 export function resolveAgentDurableActivation(
   deps: AgentDurableRouteDeps,
   res: Response,
@@ -28,39 +178,6 @@ export function resolveAgentDurableActivation(
     return null;
   }
   return rollout?.policy.durableActivation ?? true;
-}
-
-export async function startAgentRouteRun(input: {
-  runRegistry: RunRegistry;
-  sessionId: string;
-  workspace: string;
-  durableActivation: boolean;
-  externalEngine?: ExternalAgentEngineKind;
-}): Promise<{
-  runHandle: RunHandle;
-  externalLifecycle?: ExternalEngineDurableLifecycle;
-}> {
-  if (input.externalEngine) {
-    const externalLifecycle = input.durableActivation
-      ? await ExternalEngineDurableLifecycle.start({
-        registry: input.runRegistry,
-        engine: input.externalEngine,
-        sessionId: input.sessionId,
-        workspace: input.workspace,
-        cwd: input.workspace,
-      })
-      : undefined;
-    return {
-      runHandle: externalLifecycle?.handle
-        ?? input.runRegistry.start({ sessionId: input.sessionId, workspace: input.workspace }),
-      externalLifecycle,
-    };
-  }
-  return {
-    runHandle: input.durableActivation
-      ? await input.runRegistry.startDurable({ sessionId: input.sessionId, workspace: input.workspace })
-      : input.runRegistry.start({ sessionId: input.sessionId, workspace: input.workspace }),
-  };
 }
 
 export async function cancelDisconnectedAgentRouteRun(input: {
@@ -80,94 +197,6 @@ export async function cancelDisconnectedAgentRouteRun(input: {
     reason: 'client_disconnected_before_stream',
     event: { type: 'run_cancelled', payload: { sessionId: input.sessionId }, recordedAt: Date.now() },
   }, input.runHandle);
-}
-
-export async function finishExternalAgentRouteRun(
-  lifecycle: ExternalEngineDurableLifecycle | undefined,
-  result: AgentEngineRunResult,
-): Promise<boolean> {
-  if (!lifecycle) return true;
-  await lifecycle.finish(result, result.status !== 'completed' || Boolean(result.outputText?.trim()));
-  return true;
-}
-
-export async function terminalAgentRouteRunSuccess(input: {
-  runRegistry: RunRegistry;
-  runHandle: RunHandle;
-  sessionId: string;
-  finalStatus: SessionStatus;
-  durableActivation: boolean;
-}): Promise<boolean> {
-  if (!input.durableActivation) return true;
-  await input.runRegistry.terminalDurable(input.runHandle.context.runId, {
-    now: Date.now(),
-    status: input.finalStatus === 'completed'
-      ? 'completed'
-      : input.finalStatus === 'interrupted' ? 'cancelled' : 'failed',
-    reason: input.finalStatus,
-    event: {
-      type: `run_${input.finalStatus}`,
-      payload: { sessionId: input.sessionId },
-      recordedAt: Date.now(),
-    },
-  }, input.runHandle);
-  return true;
-}
-
-export async function terminalAgentRouteRunFailure(input: {
-  runRegistry: RunRegistry;
-  runHandle?: RunHandle;
-  externalLifecycle?: ExternalEngineDurableLifecycle;
-  terminal: boolean;
-  durableActivation: boolean;
-  disconnected: boolean;
-  sessionId: string;
-  message: string;
-  logger: WebRouteLogger;
-}): Promise<boolean> {
-  let terminal = input.terminal;
-  if (input.externalLifecycle && !terminal) {
-    try {
-      await input.externalLifecycle.finish({
-        runId: input.externalLifecycle.runId,
-        sessionId: input.sessionId,
-        engine: input.externalLifecycle.engine,
-        status: input.disconnected ? 'cancelled' : 'failed',
-        error: input.message,
-      }, true);
-      terminal = true;
-    } catch (error) {
-      input.logger.error('External Durable Run terminal commit failed:', error);
-    }
-  }
-  if (input.runHandle && !terminal && input.durableActivation) {
-    try {
-      await input.runRegistry.terminalDurable(input.runHandle.context.runId, {
-        now: Date.now(),
-        status: input.disconnected ? 'cancelled' : 'failed',
-        reason: input.message,
-        event: { type: 'run_failed', payload: { message: input.message }, recordedAt: Date.now() },
-      }, input.runHandle);
-      terminal = true;
-    } catch (error) {
-      input.logger.error('Durable Run terminal commit failed:', error);
-    }
-  }
-  return terminal;
-}
-
-export async function releaseAgentRouteRun(input: {
-  runRegistry: RunRegistry;
-  runHandle?: RunHandle;
-  terminal: boolean;
-  durableActivation: boolean;
-}): Promise<void> {
-  if (!input.runHandle) return;
-  if (!input.terminal && input.durableActivation) {
-    await input.runRegistry.releaseDurable(input.runHandle.context.runId, input.runHandle);
-  } else {
-    input.runRegistry.unregister(input.runHandle.context.runId, input.runHandle);
-  }
 }
 
 export async function isDurableTerminalNativeControl(input: {

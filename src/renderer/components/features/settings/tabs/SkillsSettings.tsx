@@ -22,7 +22,7 @@ import { createLogger } from '../../../../utils/logger';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
-import ipcService from '../../../../services/ipcService';
+import { invokeSkillIPC } from '../../../../services/invokeSkillIPC';
 import { SkillsInstalledTab } from './SkillsInstalledTab';
 import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab';
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
@@ -40,33 +40,9 @@ export {
 // Types
 // ============================================================================
 
-interface SkillsMPSearchResponse {
-  success: boolean;
-  data?: SkillsMPSearchResult[];
-  total?: number;
-  error?: {
-    code: string;
-    message: string;
-  };
-}
-
 type SkillsViewTab = 'installed' | 'discover';
 
 const logger = createLogger('SkillsSettings');
-
-// Helper to invoke skill IPC channels (type-safe channels not yet registered)
-const invokeSkillIPC = async <T = unknown>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
-  try {
-    const invoke = ipcService.invoke as unknown as (
-      ipcChannel: string,
-      ...ipcArgs: unknown[]
-    ) => Promise<T>;
-    return await invoke(channel, ...args);
-  } catch (err) {
-    logger.error(`IPC invoke failed for ${channel}`, err);
-    return undefined;
-  }
-};
 
 // ============================================================================
 // Main Component
@@ -112,10 +88,10 @@ export const SkillsSettings: React.FC = () => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const libs = await invokeSkillIPC<LocalSkillLibrary[]>(SKILL_CHANNELS.REPO_LIST);
-      const skills = await invokeSkillIPC<InstalledSkill[]>(SKILL_CHANNELS.SKILL_LIST);
-      const repos = await invokeSkillIPC<SkillRepository[]>(SKILL_CHANNELS.RECOMMENDED_REPOS);
-      const remoteCatalog = await invokeSkillIPC<SkillCatalogPayload>(SKILL_CHANNELS.CATALOG);
+      const libs = await invokeSkillIPC(SKILL_CHANNELS.REPO_LIST);
+      const skills = await invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST);
+      const repos = await invokeSkillIPC(SKILL_CHANNELS.RECOMMENDED_REPOS);
+      const remoteCatalog = await invokeSkillIPC(SKILL_CHANNELS.CATALOG);
       setLibraries(libs || []);
       setDiscoveredSkills(skills || []);
       if (remoteCatalog) {
@@ -125,7 +101,7 @@ export const SkillsSettings: React.FC = () => {
       const installedIds = new Set((libs || []).map((l) => l.repoId));
       setRecommendedRepos((repos || []).filter((r) => !installedIds.has(r.id)));
       // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
-      const registry = await invokeSkillIPC<{ items: SkillRegistryListItem[]; error?: string }>(
+      const registry = await invokeSkillIPC(
         SKILL_CHANNELS.REGISTRY_LIST
       );
       setRegistryItems(registry?.items || []);
@@ -205,7 +181,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(`registry-${item.entry.name}`);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
+      const result = await invokeSkillIPC(
         SKILL_CHANNELS.REGISTRY_INSTALL,
         item.entry.name
       );
@@ -231,7 +207,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(repo.id);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
+      const result = await invokeSkillIPC(
         SKILL_CHANNELS.REPO_DOWNLOAD,
         repo
       );
@@ -272,7 +248,7 @@ export const SkillsSettings: React.FC = () => {
           failures.push(repoId);
           continue;
         }
-        const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
+        const result = await invokeSkillIPC(
           SKILL_CHANNELS.REPO_DOWNLOAD,
           repo
         );
@@ -300,7 +276,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(repoId);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC<{ success: boolean; hasUpdates?: boolean; error?: string }>(
+      const result = await invokeSkillIPC(
         SKILL_CHANNELS.REPO_UPDATE,
         repoId
       );
@@ -327,16 +303,12 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading(`remove-${repoId}`);
     setMessage(null);
     try {
-      const result = await invokeSkillIPC<{ success?: boolean; error?: string }>(
+      await invokeSkillIPC(
         SKILL_CHANNELS.REPO_REMOVE,
         repoId
       );
-      if (result?.success !== false) {
-        setMessage({ type: 'success', text: skillsText.removeSuccess });
-        await loadData();
-      } else {
-        setMessage({ type: 'error', text: result?.error || skillsText.removeFailed });
-      }
+      setMessage({ type: 'success', text: skillsText.removeSuccess });
+      await loadData();
     } catch (err) {
       logger.error('Failed to remove repo', err);
       setMessage({ type: 'error', text: skillsText.removeFailed });
@@ -358,7 +330,7 @@ export const SkillsSettings: React.FC = () => {
     setActionLoading('custom');
     setMessage(null);
     try {
-      const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
+      const result = await invokeSkillIPC(
         SKILL_CHANNELS.REPO_ADD_CUSTOM,
         url
       );
@@ -388,7 +360,7 @@ export const SkillsSettings: React.FC = () => {
     setSearchResults([]);
 
     try {
-      const result = await invokeSkillIPC<SkillsMPSearchResponse>(
+      const result = await invokeSkillIPC(
         SKILL_CHANNELS.SKILLSMP_SEARCH,
         query,
         10
@@ -437,7 +409,7 @@ export const SkillsSettings: React.FC = () => {
     setMessage(null);
 
     try {
-      const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
+      const result = await invokeSkillIPC(
         SKILL_CHANNELS.REPO_ADD_CUSTOM,
         repoUrl
       );

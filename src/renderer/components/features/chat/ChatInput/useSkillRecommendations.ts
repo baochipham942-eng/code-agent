@@ -6,14 +6,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
-import type { SkillRecommendation } from '@shared/contract/skillRepository';
-import ipcService from '../../../../services/ipcService';
+import { invokeSkillIPC } from '../../../../services/invokeSkillIPC';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
-import { createLogger } from '../../../../utils/logger';
 import type { SkillRecommendationView } from './CapabilitySuggestionStrip';
-
-const logger = createLogger('useSkillRecommendations');
 
 /** 输入防抖时长 */
 const RECOMMEND_DEBOUNCE_MS = 500;
@@ -22,19 +18,6 @@ const MIN_INPUT_LENGTH = 4;
 /** 最多展示的推荐数 */
 // 降噪：一次只推最相关的 2 个，避免输入区塞一排技能（旧值 4 实测观感杂乱、黑话多）
 const MAX_RECOMMENDATIONS = 2;
-
-const invokeSkillIPC = async <T = unknown>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
-  try {
-    const invoke = ipcService.invoke as unknown as (
-      ipcChannel: string,
-      ...ipcArgs: unknown[]
-    ) => Promise<T>;
-    return await invoke(channel, ...args);
-  } catch (err) {
-    logger.warn(`IPC invoke failed for ${channel}`, { error: err });
-    return undefined;
-  }
-};
 
 /** 输入是否应该触发推荐（跳过命令、@ 提及、过短输入） */
 export function shouldFetchRecommendations(input: string): boolean {
@@ -67,7 +50,7 @@ export function useSkillRecommendations(
     }
 
     const timer = setTimeout(async () => {
-      const recs = await invokeSkillIPC<SkillRecommendation[]>(
+      const recs = await invokeSkillIPC(
         SKILL_CHANNELS.SESSION_RECOMMEND,
         currentSessionId,
         inputValue.trim()
@@ -85,7 +68,7 @@ export function useSkillRecommendations(
   ) => {
     const targetSessionId = sessionIdOverride ?? currentSessionId;
     if (!targetSessionId) return false;
-    const mounted = await invokeSkillIPC<boolean>(
+    const mounted = await invokeSkillIPC(
       SKILL_CHANNELS.SESSION_MOUNT,
       targetSessionId,
       recommendation.skillName,
@@ -110,7 +93,7 @@ export function useSkillRecommendations(
     if (!targetSessionId) return false;
     setInstallingSkillName(recommendation.skillName);
     try {
-      const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
+      const result = await invokeSkillIPC(
         SKILL_CHANNELS.REGISTRY_INSTALL,
         recommendation.skillName
       );
@@ -120,7 +103,7 @@ export function useSkillRecommendations(
       }
 
       // 安装完成后挂载到当前会话，用户无需再去设置页操作
-      const mounted = await invokeSkillIPC<boolean>(
+      const mounted = await invokeSkillIPC(
         SKILL_CHANNELS.SESSION_MOUNT,
         targetSessionId,
         recommendation.skillName,

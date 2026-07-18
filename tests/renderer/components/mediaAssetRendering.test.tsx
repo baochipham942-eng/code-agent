@@ -1,6 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { renderToStaticMarkupAsync } from './renderToStaticMarkupAsync';
 import { TurnCard } from '../../../src/renderer/components/features/chat/TurnCard';
 import { AttachmentDisplay } from '../../../src/renderer/components/features/chat/MessageBubble/AttachmentPreview';
 import { FileArtifactCard } from '../../../src/renderer/components/features/chat/MessageBubble/FileArtifactCard';
@@ -15,8 +16,12 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { LARGE_INLINE_MEDIA_BYTES } from '../../../src/shared/utils/sessionMediaAssets';
 
 describe('media asset rendering', () => {
-  it('renders markdown images with media lightbox/action affordances', () => {
-    const html = renderToStaticMarkup(
+  // markdown 图片渲染发生在 react-markdown 树内部，MarkdownRenderer 改为
+  // React.lazy(MarkdownCore) 懒加载后 renderToStaticMarkup 是同步 API、等不到 Suspense
+  // resolve（只会吐 fallback），改用 renderToStaticMarkupAsync 等 Suspense 全部 resolve
+  // 后再取字符串，断言语义不变。
+  it('renders markdown images with media lightbox/action affordances', async () => {
+    const html = await renderToStaticMarkupAsync(
       <MessageContent
         content="![diagram](/repo/assets/diagram.png)"
         isUser={false}

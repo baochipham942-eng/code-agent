@@ -4,9 +4,6 @@
 
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save, FolderOpen, Presentation } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
@@ -23,6 +20,7 @@ import type { PresentationPagePreviewResult } from '@shared/contract';
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
 const LivePreviewFrame = lazy(() => import('./LivePreview/LivePreviewFrame'));
+const MarkdownCore = lazy(() => import('./features/chat/MessageBubble/MarkdownCore'));
 
 const logger = createLogger('PreviewPanel');
 
@@ -115,7 +113,7 @@ export function shouldFlashOnDiskLoad(
   prev: LoadedSnapshot | null,
   next: { tabId: string; savedContent: string },
 ): boolean {
-  if (!prev || prev.tabId !== next.tabId) return false;
+  if (prev?.tabId !== next.tabId) return false;
   if (next.savedContent === prev.savedContent) return false;
   if (next.savedContent === prev.content) return false;
   return true;
@@ -933,9 +931,9 @@ export const PreviewPanel: React.FC = () => {
         ) : isMarkdown ? (
           <div className="h-full overflow-y-auto px-6 py-4">
             <article className="prose prose-invert prose-sm max-w-none prose-pre:bg-zinc-950 prose-pre:border prose-pre:border-zinc-800">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                {content}
-              </ReactMarkdown>
+              <Suspense fallback={<div className="whitespace-pre-wrap break-words">{content}</div>}>
+                <MarkdownCore content={content} gfm breaks />
+              </Suspense>
             </article>
           </div>
         ) : isCsv && csvDelimiter ? (

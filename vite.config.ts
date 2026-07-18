@@ -108,15 +108,13 @@ export default defineConfig({
         // vite 8 的 Rolldown 要求 manualChunks 为函数；保持只拆这 6 个 vendor
         // （不泛拆 node_modules），产出 chunk 与原对象式一致，规避 §80 的 TDZ 坑。
         manualChunks: (id: string) => {
-          if (/[\\/]node_modules[\\/](katex|remark-math|rehype-katex)[\\/]/.test(id)) return 'vendor-katex';
-          if (/[\\/]node_modules[\\/]recharts[\\/]/.test(id)) return 'vendor-charts';
           if (/[\\/]node_modules[\\/]zustand[\\/]/.test(id)) return 'vendor-zustand';
           if (/[\\/]node_modules[\\/]lucide-react[\\/]/.test(id)) return 'vendor-lucide';
-          if (/[\\/]node_modules[\\/](react-markdown|remark-gfm)[\\/]/.test(id)) return 'vendor-markdown';
           if (/[\\/]node_modules[\\/]@xyflow[\\/]react[\\/]/.test(id)) return 'vendor-reactflow';
-          // mermaid(~2.7MB)刻意不在此固定 vendor chunk:它已改为 messageContentParts
-          // 里按需动态 import,交给 Vite 自动产出 async chunk,避免被 modulepreload
-          // 进首屏(固定成 vendor-* 会被预载,等于没懒加载)。
+          // mermaid(~2.7MB)、katex/remark 家族、recharts、react-markdown/remark-gfm
+          // 刻意不在此固定 vendor chunk:它们都已改为渲染点按需动态 import,交给
+          // Vite 自动产出 async chunk,避免被 modulepreload 进首屏
+          // (固定成 vendor-* 会被预载,等于没懒加载——mermaid 判例,2026-07-18 扩展)。
           return undefined;
         },
       },

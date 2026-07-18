@@ -43,7 +43,10 @@ use pip::{pip_frame, pip_hide, pip_show};
 const PROD_WEB_PORT: u16 = 8180;
 const DEV_WEB_PORT: u16 = 8181;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
-const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
+/// healthcheck 轮询间隔。webServer 就绪窗口实测 0.8s(warm)~3.7s(cold)，健康端点在
+/// listen 之前一律 connection-refused（近乎零成本），故用 100ms 均匀覆盖整个窗口：
+/// 把「就绪→壳侦测到」的量子化损耗从最坏 ~500ms 压到 ~100ms，每次启动都受益。
+const HEALTH_INTERVAL: Duration = Duration::from_millis(100);
 /// 首帧就绪信号(renderer-ready)的兜底超时：renderer 正常会在导航后 ~2.5s 完成首次
 /// commit 并发信号,壳侧收到才显示窗口(消除启动闪烁)。万一信号丢失,超时后无论如何
 /// 显示,避免窗口永久隐藏。实测 renderer 首帧 ~2.5s,故兜底设 5s(既覆盖慢机、又远小于

@@ -1082,7 +1082,34 @@ async function killPortHolder(port: number): Promise<void> {
 // Main
 // ============================================================================
 
+/**
+ * Compile-cache 预热模式（C1 spike，CODE_AGENT_COMPILE_WARMUP=1）。
+ * 跑完 initializeServices（触发 cold 热点模块 config/database/agent 的 V8 编译，写进
+ * <dataDir>/cache/v8-compile-cache），flush cache 后立即退出——不 listen、不留服务。
+ * 目的：在更新落盘后、用户可见启动前把编译成本预付，让下次真启动命中缓存直接 warm。
+ * ⚠️ 会跑 initializeServices 的真实副作用（config 读取 / DB 打开 + 幂等 migration）；
+ *    完整落地需收窄为无副作用 compile-only 路径（见侦察报告 §6 C1）。本 spike 仅验证钩子成立。
+ */
+async function runCompileWarmup(): Promise<never> {
+  bootMark('main:start');
+  logger.info('[compile-warmup] warming V8 compile cache (no listen)...');
+  await initializeServices();
+  try {
+    const nodeModule = await import('node:module');
+    (nodeModule as { flushCompileCache?: () => void }).flushCompileCache?.();
+  } catch {
+    // 老 node 无 flushCompileCache：exit hook 兜底 flush。
+  }
+  dumpBootTiming();
+  logger.info('[compile-warmup] done, exiting');
+  process.exit(0);
+}
+
 async function main(): Promise<void> {
+  if (process.env.CODE_AGENT_COMPILE_WARMUP === '1') {
+    await runCompileWarmup();
+    return;
+  }
   bootMark('main:start');
   const port = parseInt(process.env.WEB_PORT || String(WEB_SERVER_DEFAULTS.PORT), 10);
   const host = process.env.WEB_HOST || WEB_SERVER_DEFAULTS.HOST;

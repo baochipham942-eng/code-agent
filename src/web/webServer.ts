@@ -1083,16 +1083,60 @@ async function killPortHolder(port: number): Promise<void> {
 // ============================================================================
 
 /**
- * Compile-cache 预热模式（C1 spike，CODE_AGENT_COMPILE_WARMUP=1）。
- * 跑完 initializeServices（触发 cold 热点模块 config/database/agent 的 V8 编译，写进
- * <dataDir>/cache/v8-compile-cache），flush cache 后立即退出——不 listen、不留服务。
- * 目的：在更新落盘后、用户可见启动前把编译成本预付，让下次真启动命中缓存直接 warm。
- * ⚠️ 会跑 initializeServices 的真实副作用（config 读取 / DB 打开 + 幂等 migration）；
- *    完整落地需收窄为无副作用 compile-only 路径（见侦察报告 §6 C1）。本 spike 仅验证钩子成立。
+ * compile-warmup：把真库一致性快照（SQLite online backup）拷进本进程的临时 data dir，
+ * 让 warmup 在**真实数据**上跑会话加载/查询路径。关键：V8 按执行惰性编译函数体，compile
+ * cache 只存实际跑过的函数——空库不触发会话查询路径（实测省不到 5%），必须喂真实数据才有效。
+ * 真库以只读打开做 backup，与旧进程并发安全（WAL）；快照落临时目录，真库绝不被 migration 碰。
+ * best-effort：拷贝失败退化为空库 warmup（仍安全，只是编译覆盖不全）。
+ */
+async function seedWarmupDatabase(): Promise<void> {
+  const seedSrc = process.env.CODE_AGENT_WARMUP_SEED_DB?.trim();
+  if (!seedSrc) return;
+  if (!fs.existsSync(seedSrc)) {
+    logger.warn('[compile-warmup] seed DB not found, warming on empty DB:', seedSrc);
+    return;
+  }
+  try {
+    const dataDir = resolveCodeAgentDataDir();
+    fs.mkdirSync(dataDir, { recursive: true });
+    const dest = path.join(dataDir, 'code-agent.db');
+    const { loadBetterSqlite3 } = await import('../host/services/core/database/nativeLoader');
+    const Database = loadBetterSqlite3(__dirname, logger);
+    if (!Database) {
+      logger.warn('[compile-warmup] better-sqlite3 unavailable, warming on empty DB');
+      return;
+    }
+    const src = new Database(seedSrc, { readonly: true });
+    try {
+      await src.backup(dest);
+    } finally {
+      src.close();
+    }
+    logger.info('[compile-warmup] seeded real DB snapshot for representative warmup');
+  } catch (error) {
+    logger.warn('[compile-warmup] DB seed failed (warming on empty DB):', (error as Error).message);
+  }
+}
+
+/**
+ * Compile-cache 预热模式（C1，CODE_AGENT_COMPILE_WARMUP=1）。
+ * seed 真库快照 → 跑 initializeServices（在真实数据上触发会话查询等函数的 V8 编译）→ flush
+ * cache → 立即退出：不 listen、不留服务。目的：更新落盘后、用户可见启动前预付编译成本，
+ * 让 restart 后真启动命中 cache 直接 warm。
+ *
+ * 副作用隔离（调用方负责，见 src-tauri warm_compile_cache_before_restart）：
+ *   - CODE_AGENT_DATA_DIR=<临时目录> → DB seed/migration 等副作用落临时目录，绝不碰真实库
+ *     （关键：新版本的 migration 不能跑在仍在运行的旧进程的活库上）。
+ *   - CODE_AGENT_WARMUP_SEED_DB=<真实 db> → 只读快照进临时目录，喂真实数据路径。
+ *   - CODE_AGENT_COMPILE_CACHE_DIR=<真实 data>/cache/v8-compile-cache → cache 写真实位置。
+ *   - 本函数再强制 E2E，跳过 AuthService/telemetry 的网络副作用。
  */
 async function runCompileWarmup(): Promise<never> {
+  // 强制跳过 auth/telemetry 网络副作用（initializeServices 内已有 CODE_AGENT_E2E 门）。
+  process.env.CODE_AGENT_E2E = '1';
   bootMark('main:start');
   logger.info('[compile-warmup] warming V8 compile cache (no listen)...');
+  await seedWarmupDatabase();
   await initializeServices();
   try {
     const nodeModule = await import('node:module');

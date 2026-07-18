@@ -248,22 +248,47 @@ function splitMessages(
   anchorMessageId: string | undefined,
   preserveRecentCount: number,
 ): { anchorMessageId?: string; compactedMessages: Message[]; preservedMessages: Message[] } {
-  if (anchorMessageId) {
-    const index = messages.findIndex((message) => message.id === anchorMessageId);
-    if (index > 0) {
-      return {
-        anchorMessageId,
-        compactedMessages: messages.slice(0, index),
-        preservedMessages: messages.slice(index),
-      };
+  const explicitAnchorIndex = anchorMessageId
+    ? messages.findIndex((message) => message.id === anchorMessageId)
+    : -1;
+  const hasExplicitAnchor = explicitAnchorIndex > 0;
+  let boundary: number;
+
+  if (hasExplicitAnchor) {
+    boundary = explicitAnchorIndex;
+  } else {
+    const preservedCount = Math.min(
+      preserveRecentCount,
+      Math.max(1, messages.length - 2),
+    );
+    boundary = Math.max(1, messages.length - preservedCount);
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === 'user') {
+        boundary = Math.min(boundary, index);
+        break;
+      }
     }
   }
 
-  const preservedCount = Math.min(
-    preserveRecentCount,
-    Math.max(1, messages.length - 2),
-  );
-  const boundary = Math.max(1, messages.length - preservedCount);
+  const toolCallIndexes = new Map<string, number>();
+  const toolResultIndexes = new Map<string, number>();
+  messages.forEach((message, index) => {
+    message.toolCalls?.forEach((call) => toolCallIndexes.set(call.id, index));
+    message.toolResults?.forEach((result) => toolResultIndexes.set(result.toolCallId, index));
+  });
+
+  // Walk calls from newest to oldest so every boundary reduction is visible to
+  // earlier call/result pairs in the same pass.
+  const toolCalls = Array.from(toolCallIndexes.entries());
+  for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
+    const [toolCallId, callIndex] = toolCalls[index];
+    const resultIndex = toolResultIndexes.get(toolCallId);
+    if (resultIndex === undefined || (callIndex < boundary && boundary <= resultIndex)) {
+      boundary = Math.min(boundary, callIndex);
+    }
+  }
+
   return {
     anchorMessageId: messages[boundary]?.id,
     compactedMessages: messages.slice(0, boundary),

@@ -41,9 +41,9 @@ function message(id: string, role: Message['role'], content: string): Message {
 /** originalTokens 大：长历史，压缩净节省远超阈值 */
 function longMessages(): Message[] {
   return [
-    message('m1', 'user', 'Analyze the data pipeline. '.repeat(400)),
+    message('m1', 'system', 'Historical system context. '.repeat(400)),
     message('m2', 'assistant', 'Here is the detailed analysis of everything. '.repeat(400)),
-    message('m3', 'assistant', 'More long-form intermediate output follows here. '.repeat(400)),
+    message('m3', 'user', 'Analyze the current data pipeline.'),
     message('m4', 'assistant', 'recent answer'),
   ];
 }
@@ -51,9 +51,9 @@ function longMessages(): Message[] {
 /** originalTokens 小：压缩注定不划算 */
 function shortMessages(): Message[] {
   return [
-    message('m1', 'user', 'hi'),
+    message('m1', 'system', 'hi'),
     message('m2', 'assistant', 'hello'),
-    message('m3', 'assistant', 'short note'),
+    message('m3', 'user', 'short current request'),
     message('m4', 'assistant', 'recent answer'),
   ];
 }

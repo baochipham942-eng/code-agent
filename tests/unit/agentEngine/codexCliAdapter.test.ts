@@ -287,6 +287,29 @@ describe('CodexCliAdapter.run', () => {
     );
   });
 
+  it('treats exit 0 with only non-text events as an empty-response failure', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'thread.started', thread_id: 'codex-thread' }),
+      JSON.stringify({ type: 'item.completed', item: { type: 'tool_call', name: 'Read' } }),
+    ], 0));
+
+    const result = await new CodexCliAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    expect(result).toMatchObject({
+      engine: 'codex_cli',
+      status: 'failed',
+      exitCode: 0,
+    });
+    expect(result.error).toContain('empty response');
+  });
+
   it('rejects cwd outside workspace before spawning Codex CLI', async () => {
     const outsideCwd = path.join(tempDir, 'outside');
     await fs.mkdir(outsideCwd, { recursive: true });

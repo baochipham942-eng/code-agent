@@ -107,15 +107,15 @@ describe('Agent durable route run lifecycle', () => {
       runId: 'run-1',
       sessionId: 'session-1',
       engine: 'codex_cli',
-      finish: vi.fn(async () => undefined),
+      finish: vi.fn(async () => 'failed' as const),
     } as unknown as ExternalEngineDurableLifecycle;
     vi.spyOn(ExternalEngineDurableLifecycle, 'start').mockResolvedValue(externalLifecycle);
     const lifecycle = createLifecycle({ runRegistry, externalEngine: 'codex_cli' });
     const result = externalResult({ outputText: '   ' });
 
     await expect(lifecycle.start()).resolves.toMatchObject({ runHandle, externalLifecycle });
-    await lifecycle.markSuccess({ result });
-    await lifecycle.markSuccess({ result });
+    await expect(lifecycle.markSuccess({ result })).resolves.toBe('failed');
+    await expect(lifecycle.markSuccess({ result })).resolves.toBe('failed');
     await lifecycle.release();
 
     expect(ExternalEngineDurableLifecycle.start).toHaveBeenCalledWith({

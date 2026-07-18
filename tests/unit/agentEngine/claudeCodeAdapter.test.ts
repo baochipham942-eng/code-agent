@@ -466,6 +466,32 @@ describe('ClaudeCodeAdapter.run', () => {
     );
   });
 
+  it('treats exit 0 with only system and tool events as an empty-response failure', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'claude-session' }),
+      JSON.stringify({
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'x.ts' } }] },
+      }),
+    ], 0));
+
+    const result = await new ClaudeCodeAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    expect(result).toMatchObject({
+      engine: 'claude_code',
+      status: 'failed',
+      exitCode: 0,
+    });
+    expect(result.error).toContain('empty response');
+  });
+
   it('uses Claude stream-json error text as the failure reason when stderr is empty', async () => {
     mocks.spawn.mockImplementation(() => createMockChild([
       JSON.stringify({ type: 'system', subtype: 'init', session_id: 'claude-session' }),

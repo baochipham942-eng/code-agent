@@ -31,6 +31,7 @@ import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from '
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
 
 const logger = createLogger('CodexCliAdapter');
+const EMPTY_RESPONSE_MESSAGE = 'Codex CLI returned an empty response.';
 
 export interface CodexCliRunRequest extends AgentEngineRunRequest {
   workspaceRoot: string;
@@ -325,7 +326,8 @@ export class CodexCliAdapter {
     if (request.resumeLaunch && !observedExternalSessionId && !resumeIdentityError) {
       resumeIdentityError = 'Codex resume did not confirm the external session identity';
     }
-    const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0);
+    const emptyResponse = !finalText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
+    const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0 || emptyResponse);
 
     ledger.addOutputRef({
       taskId,
@@ -345,7 +347,12 @@ export class CodexCliAdapter {
     }
 
     if (failed) {
-      const message = timeoutMessage || spawnErrorMessage || resumeIdentityError || stderrText.trim() || `Codex CLI exited with code ${exitCode}`;
+      const message = timeoutMessage
+        || spawnErrorMessage
+        || resumeIdentityError
+        || (emptyResponse ? EMPTY_RESPONSE_MESSAGE : '')
+        || stderrText.trim()
+        || `Codex CLI exited with code ${exitCode}`;
       const failureDiagnostics = classifyAgentEngineFailure({
         engine: 'codex_cli',
         message,

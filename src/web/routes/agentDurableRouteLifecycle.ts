@@ -6,7 +6,10 @@ import type { DurableRunReadService } from '../../host/app/durableRunReadService
 import type { DurableRunRolloutPolicy } from '../../host/app/durableRunRollout';
 import type { RunHandle } from '../../host/runtime/runContext';
 import type { RunRegistry } from '../../host/runtime/runRegistry';
-import { ExternalEngineDurableLifecycle } from '../../host/services/agentEngine';
+import {
+  ExternalEngineDurableLifecycle,
+  type ExternalEngineTerminalStatus,
+} from '../../host/services/agentEngine';
 import type { WebRouteLogger } from './routeTypes';
 
 export interface AgentDurableRouteDeps {
@@ -35,6 +38,7 @@ class AgentDurableRouteRunLifecycle {
     externalLifecycle?: ExternalEngineDurableLifecycle;
   }>;
   private terminal = false;
+  private terminalStatus?: ExternalEngineTerminalStatus;
   private releasePromise?: Promise<void>;
 
   constructor(private readonly deps: AgentDurableRouteRunLifecycleDeps) {}
@@ -47,25 +51,26 @@ class AgentDurableRouteRunLifecycle {
     return this.startPromise;
   }
 
-  async markSuccess(input: AgentDurableRouteRunSuccess): Promise<void> {
-    if (this.terminal) return;
+  async markSuccess(input: AgentDurableRouteRunSuccess): Promise<ExternalEngineTerminalStatus> {
+    if (this.terminalStatus) return this.terminalStatus;
     if ('result' in input) {
-      if (this.externalLifecycle) {
-        await this.externalLifecycle.finish(
+      this.terminalStatus = this.externalLifecycle
+        ? await this.externalLifecycle.finish(
           input.result,
           input.result.status !== 'completed' || Boolean(input.result.outputText?.trim()),
-        );
-      }
+        )
+        : input.result.status === 'cancelled' ? 'cancelled' : input.result.status === 'failed' ? 'failed' : 'completed';
       this.terminal = true;
-      return;
+      return this.terminalStatus;
     }
+    const finalStatus = input.finalStatus;
+    const durableStatus: ExternalEngineTerminalStatus = finalStatus === 'completed'
+      ? 'completed'
+      : finalStatus === 'interrupted' ? 'cancelled' : 'failed';
     if (this.deps.durableActivation && this.runHandle) {
-      const finalStatus = input.finalStatus;
       await this.deps.runRegistry.terminalDurable(this.runHandle.context.runId, {
         now: Date.now(),
-        status: finalStatus === 'completed'
-          ? 'completed'
-          : finalStatus === 'interrupted' ? 'cancelled' : 'failed',
+        status: durableStatus,
         reason: finalStatus,
         event: {
           type: `run_${finalStatus}`,
@@ -74,7 +79,9 @@ class AgentDurableRouteRunLifecycle {
         },
       }, this.runHandle);
     }
+    this.terminalStatus = durableStatus;
     this.terminal = true;
+    return durableStatus;
   }
 
   async markFailure(input: { disconnected: boolean; message: string }): Promise<void> {
@@ -87,6 +94,7 @@ class AgentDurableRouteRunLifecycle {
           status: input.disconnected ? 'cancelled' : 'failed',
           error: input.message,
         }, true);
+        this.terminalStatus = input.disconnected ? 'cancelled' : 'failed';
         this.terminal = true;
       } catch (error) {
         this.deps.logger.error('External Durable Run terminal commit failed:', error);
@@ -104,6 +112,7 @@ class AgentDurableRouteRunLifecycle {
             recordedAt: Date.now(),
           },
         }, this.runHandle);
+        this.terminalStatus = input.disconnected ? 'cancelled' : 'failed';
         this.terminal = true;
       } catch (error) {
         this.deps.logger.error('Durable Run terminal commit failed:', error);

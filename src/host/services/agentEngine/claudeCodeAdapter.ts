@@ -32,6 +32,7 @@ import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from '
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
 
 const logger = createLogger('ClaudeCodeAdapter');
+const EMPTY_RESPONSE_MESSAGE = 'Claude Code returned an empty response.';
 
 export interface ClaudeCodeRunRequest extends AgentEngineRunRequest {
   workspaceRoot: string;
@@ -347,7 +348,8 @@ export class ClaudeCodeAdapter {
     if (request.resumeLaunch && !externalSessionId && !resumeIdentityError) {
       resumeIdentityError = 'Claude resume did not confirm the external session identity';
     }
-    const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0);
+    const emptyResponse = !finalText && !cliErrorText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
+    const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0 || emptyResponse);
 
     ledger.addOutputRef({
       taskId,
@@ -383,6 +385,7 @@ export class ClaudeCodeAdapter {
         || spawnErrorMessage
         || resumeIdentityError
         || cliErrorText
+        || (emptyResponse ? EMPTY_RESPONSE_MESSAGE : '')
         || stderrText.trim()
         || finalText
         || `Claude Code exited with code ${exitCode}`;

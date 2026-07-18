@@ -58,7 +58,7 @@ function createServiceWithDurableReadService(
   );
 }
 
-function durableEnvelope(status: 'waiting' | 'running' | 'completed', sessionId = 'session-1') {
+function durableEnvelope(status: 'waiting' | 'running' | 'completed' | 'failed' | 'cancelled', sessionId = 'session-1') {
   return {
     schemaVersion: 1 as const,
     runId: `run-${status}`,
@@ -67,7 +67,7 @@ function durableEnvelope(status: 'waiting' | 'running' | 'completed', sessionId 
     status,
     attempt: 1,
     cursor: { nextEventSeq: 2, checkpointSeq: 1 },
-    ...(status === 'completed'
+    ...(status === 'completed' || status === 'failed' || status === 'cancelled'
       ? { terminal: { status, eventSeq: 1, at: 2 } }
       : {}),
     createdAt: 1,
@@ -208,19 +208,37 @@ describe('AgentAppService lifecycle routing', () => {
         updatedAt: 11,
       },
       {
-        id: 'session-terminal',
-        title: 'Terminal',
+        id: 'session-completed',
+        title: 'Completed',
         status: 'running',
         modelConfig: { provider: 'openai', model: 'gpt-5' },
         createdAt: 1,
         updatedAt: 12,
+      },
+      {
+        id: 'session-failed',
+        title: 'Failed',
+        status: 'running',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+        createdAt: 1,
+        updatedAt: 13,
+      },
+      {
+        id: 'session-cancelled',
+        title: 'Cancelled',
+        status: 'running',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+        createdAt: 1,
+        updatedAt: 14,
       },
     ]);
     const reader = {
       getLatestBySession: vi.fn(async (sessionId: string) => ({
         'session-waiting': durableEnvelope('waiting', 'session-waiting'),
         'session-running': durableEnvelope('running', 'session-running'),
-        'session-terminal': durableEnvelope('completed', 'session-terminal'),
+        'session-completed': durableEnvelope('completed', 'session-completed'),
+        'session-failed': durableEnvelope('failed', 'session-failed'),
+        'session-cancelled': durableEnvelope('cancelled', 'session-cancelled'),
       })[sessionId] ?? null),
     };
     const service = createServiceWithDurableReadService(
@@ -244,12 +262,22 @@ describe('AgentAppService lifecycle routing', () => {
         status: 'running',
       }),
       expect.objectContaining({
-        id: 'session-terminal',
-        status: 'idle',
+        id: 'session-completed',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        id: 'session-failed',
+        status: 'error',
+      }),
+      expect.objectContaining({
+        id: 'session-cancelled',
+        status: 'interrupted',
       }),
     ]);
     expect(sessions[1]).not.toHaveProperty('durableWaitingInput');
     expect(sessions[2]).not.toHaveProperty('durableWaitingInput');
+    expect(sessions[3]).not.toHaveProperty('durableWaitingInput');
+    expect(sessions[4]).not.toHaveProperty('durableWaitingInput');
   });
 
   it('leaves listed sessions unchanged when durable rollout is not preferred or the durable row is missing', async () => {

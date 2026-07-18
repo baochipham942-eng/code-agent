@@ -9,6 +9,7 @@ import type { Message } from '../../../shared/contract';
 export class ControlState {
   private _isCancelled = false;
   private _isInterrupted = false;
+  private _isSettled = false;
   /** per-inference controller：inference 层建/清，conversationRuntime 只触发 abort */
   private _abortController: AbortController | null = null;
   /** per-run controller：conversationRuntime 建/清，下游只读 .signal 透传 */
@@ -21,6 +22,7 @@ export class ControlState {
 
   get isCancelled(): boolean { return this._isCancelled; }
   get isInterrupted(): boolean { return this._isInterrupted; }
+  get isSettled(): boolean { return this._isSettled; }
   get abortController(): AbortController | null { return this._abortController; }
   get runAbortController(): AbortController | null { return this._runAbortController; }
   get savedMessages(): Message[] | null { return this._savedMessages; }
@@ -35,6 +37,10 @@ export class ControlState {
 
   markInterrupted(): void {
     this._isInterrupted = true;
+  }
+
+  markSettled(): void {
+    this._isSettled = true;
   }
 
   /** 触发当前推理中断（controller 槽位不动，由 inference 层自清） */
@@ -96,6 +102,7 @@ export class ControlState {
   static forTest(seed?: {
     isCancelled?: boolean;
     isInterrupted?: boolean;
+    isSettled?: boolean;
     abortController?: AbortController | null;
     runAbortController?: AbortController | null;
     savedMessages?: Message[] | null;
@@ -108,6 +115,7 @@ export class ControlState {
     if (!seed) return state;
     if (seed.isCancelled !== undefined) state._isCancelled = seed.isCancelled;
     if (seed.isInterrupted !== undefined) state._isInterrupted = seed.isInterrupted;
+    if (seed.isSettled !== undefined) state._isSettled = seed.isSettled;
     if (seed.abortController !== undefined) state._abortController = seed.abortController;
     if (seed.runAbortController !== undefined) state._runAbortController = seed.runAbortController;
     if (seed.savedMessages !== undefined) state._savedMessages = seed.savedMessages;

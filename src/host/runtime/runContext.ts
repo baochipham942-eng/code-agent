@@ -24,6 +24,15 @@ export interface CreateRunContextInput {
 
 export type RunCancelReason = 'user' | 'session-switch';
 
+export class SteerUnsupportedError extends Error {
+  readonly code = 'STEER_UNSUPPORTED';
+
+  constructor(runId: string) {
+    super(`Run ${runId} does not support steer`);
+    this.name = 'SteerUnsupportedError';
+  }
+}
+
 export interface RunControlTarget {
   cancel(reason?: RunCancelReason): void | Promise<void>;
   pause?(): void | Promise<void>;
@@ -208,7 +217,7 @@ class AttachedRunHandle implements RunHandle {
   ): Promise<void> {
     const target = this.requireAttachedTarget('steer');
     if (typeof target.steer !== 'function') {
-      throw new Error(`Run ${this.context.runId} does not support steer`);
+      throw new SteerUnsupportedError(this.context.runId);
     }
     await target.steer(newMessage, clientMessageId, attachments, metadata);
   }

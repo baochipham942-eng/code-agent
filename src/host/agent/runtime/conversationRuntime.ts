@@ -82,6 +82,15 @@ const logger = createLogger('AgentLoop');
 // Re-export types for backward compatibility
 export type { AgentLoopConfig };
 
+export class SteerRejectedError extends Error {
+  readonly code = 'RUN_SETTLED';
+
+  constructor() {
+    super('Run has already settled (past its last inference); steer must be queued for the next turn instead');
+    this.name = 'SteerRejectedError';
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Agent Loop
 // ----------------------------------------------------------------------------
@@ -660,6 +669,7 @@ export class ConversationRuntime {
       runError = error;
       await persistFailedRunContinuationContext(this.contextAssembly, userMessage, iterations, error);
     } finally {
+      this.ctx.control.markSettled();
       // forced-final 是 per-run 语义：正常路径由 handleTextResponse 在产出最终
       // 文本后清理，但空输出/异常/cancel 等退出路径会绕过它——若不在此兜底清理，
       // flag 泄漏到下一次用户输入会让 inference 持续禁用全部工具（codex audit R2）。
@@ -1089,6 +1099,9 @@ export class ConversationRuntime {
     attachments?: MessageAttachment[],
     metadata?: MessageMetadata,
   ): Promise<void> {
+    if (this.ctx.control.isSettled) {
+      throw new SteerRejectedError();
+    }
     this.ctx.control.abortInference();
     const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata);
     this.ctx.turn.requestReinference();

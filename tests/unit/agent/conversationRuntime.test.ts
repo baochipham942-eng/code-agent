@@ -355,7 +355,10 @@ vi.mock('../../../src/host/services/skills/skillInvocationResolver', () => ({
 // Import after mocks
 // --------------------------------------------------------------------------
 
-import { ConversationRuntime } from '../../../src/host/agent/runtime/conversationRuntime';
+import {
+  ConversationRuntime,
+  SteerRejectedError,
+} from '../../../src/host/agent/runtime/conversationRuntime';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { StructuredOutputConfig } from '../../../src/host/agent/structuredOutput';
 import { GoalModeController } from '../../../src/host/agent/goalModeController';
@@ -687,6 +690,22 @@ describe('ConversationRuntime', () => {
 
       expect(controller.signal.aborted).toBe(true);
       expect(ctx.turn.needsReinference).toBe(true);
+    });
+
+    it('rejects steer after settlement without aborting or requesting reinference', async () => {
+      const abortInference = vi.spyOn(ctx.control, 'abortInference');
+      ctx.control.markSettled();
+
+      const result = runtime.steer('late direction');
+
+      await expect(result).rejects.toMatchObject({
+        name: 'SteerRejectedError',
+        code: 'RUN_SETTLED',
+      });
+      await expect(result).rejects.toBeInstanceOf(SteerRejectedError);
+      expect(abortInference).not.toHaveBeenCalled();
+      expect(ctx.turn.needsReinference).toBe(false);
+      expect((runtime as any).messageProcessor.injectSteerMessage).not.toHaveBeenCalled();
     });
 
     it('passes the renderer optimistic message id to the steer injector', () => {
@@ -1100,10 +1119,14 @@ describe('ConversationRuntime', () => {
         type: 'text',
         content: 'Done!',
       });
+      modules.runFinalizer.finalizeRun.mockImplementationOnce(async () => {
+        expect(ctx.control.isSettled).toBe(true);
+      });
 
       await runtime.run('hello');
 
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalled();
+      expect(ctx.control.isSettled).toBe(true);
       expect(ctx.goalTracker.initialize).toHaveBeenCalledWith('hello');
     });
 

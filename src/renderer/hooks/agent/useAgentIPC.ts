@@ -600,7 +600,7 @@ function toWorkbenchMetadata(
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
-function toMessageMetadata(
+export function toMessageMetadata(
   context?: ConversationEnvelopeContext,
   directTargets: DirectRoutingTarget[] = [],
   missingTargetIds: string[] = [],

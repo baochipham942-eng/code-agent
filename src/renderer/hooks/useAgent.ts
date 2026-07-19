@@ -540,6 +540,7 @@ export const useAgent = () => {
     queuedRuntimeInputs: currentSessionId
       ? queuedRuntimeInputs.filter((item) => item.sessionId === currentSessionId)
       : [],
+    hydrateQueuedRuntimeInputs,
     cancelQueuedRuntimeInput,
     sendQueuedRuntimeInput,
   };

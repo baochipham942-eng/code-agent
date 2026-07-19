@@ -699,6 +699,113 @@ describe('createAgentRouter', () => {
     ]);
   });
 
+  it('keeps a mid-turn steer persisted when disconnect cancellation settles the active run', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const persistedMessages: Message[] = [];
+    let signalSteerPersistenceStarted: (() => void) | undefined;
+    const steerPersistenceStarted = new Promise<void>((resolve) => {
+      signalSteerPersistenceStarted = resolve;
+    });
+    let releaseSteerPersistence: (() => void) | undefined;
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      if (message.id === 'steer-user') {
+        signalSteerPersistenceStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseSteerPersistence = resolve;
+        });
+      }
+      const existing = persistedMessages.findIndex((candidate) => candidate.id === message.id);
+      if (existing >= 0) persistedMessages[existing] = message;
+      else persistedMessages.push(message);
+    });
+    const getMessages = vi.fn(async () => [...persistedMessages]);
+
+    let settleActiveRun: (() => void) | undefined;
+    const cancelActiveRun = vi.fn();
+    mockCreateAgentLoop.mockImplementationOnce(
+      (_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
+        run: vi.fn(() => new Promise<void>((resolve) => {
+          settleActiveRun = resolve;
+        })),
+        cancel: cancelActiveRun.mockImplementation(() => {
+          onEvent({ type: 'agent_cancelled', data: null });
+          settleActiveRun?.();
+        }),
+        steer: vi.fn(async (
+          content: string,
+          clientMessageId?: string,
+          attachments?: Message['attachments'],
+          metadata?: Message['metadata'],
+        ) => {
+          await addMessageToSession('session-steer-cancel', {
+            id: clientMessageId ?? 'generated-steer-id',
+            role: 'user',
+            content,
+            timestamp: 3,
+            attachments,
+            metadata,
+          });
+        }),
+      }),
+    );
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        addMessageToSession,
+        getMessages,
+        getSession: vi.fn(async () => ({
+          id: 'session-steer-cancel',
+          title: 'Existing',
+          workingDirectory: '/tmp/steer-cancel',
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const controller = new AbortController();
+    const runResponse = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '执行长任务',
+        sessionId: 'session-steer-cancel',
+        clientMessageId: 'active-user',
+      }),
+      signal: controller.signal,
+    });
+    expect(runResponse.ok).toBe(true);
+    await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1), 3000);
+
+    const steerResponsePromise = fetch(`${baseUrl}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: '改成蓝色主题',
+        sessionId: 'session-steer-cancel',
+        clientMessageId: 'steer-user',
+      }),
+    });
+    await steerPersistenceStarted;
+
+    controller.abort();
+    await waitForAssertion(() => expect(cancelActiveRun).toHaveBeenCalledWith('user'), 3000);
+    releaseSteerPersistence?.();
+
+    const steerResponse = await steerResponsePromise;
+    expect(steerResponse.ok).toBe(true);
+    await expect(steerResponse.json()).resolves.toEqual({
+      success: true,
+      data: { outcome: 'steered' },
+    });
+    expect(persistedMessages).toContainEqual(expect.objectContaining({
+      id: 'steer-user',
+      role: 'user',
+      content: '改成蓝色主题',
+    }));
+  });
+
   describe('S2 Native Run lifecycle isolation', () => {
     function createPendingLoop() {
       let release: (() => void) | undefined;

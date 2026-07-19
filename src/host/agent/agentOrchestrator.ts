@@ -47,6 +47,7 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { getPredefinedAgent } from './agentDefinition';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { buildRoutingToolDenylist } from './routingToolPolicy';
+import { queuePendingSteerMessagesOrWarn } from '../runtime/steerQueueFence';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -294,6 +295,11 @@ export class AgentOrchestrator {
     }
   }
 
+  private queuePendingSteer(pending: PendingSteerMessage[], sessionId: string | null, logContext: string): void {
+    const asQueueable = pending.map(({ messageMetadata, ...m }) => ({ ...m, metadata: messageMetadata }));
+    queuePendingSteerMessagesOrWarn(sessionId, asQueueable, logContext, logger);
+  }
+
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
     logger.info('Cancel requested', { reason });
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
@@ -303,6 +309,7 @@ export class AgentOrchestrator {
     this.drainPendingPermissions('deny');
 
     this.isInterrupting = false;
+    this.queuePendingSteer(this.pendingSteerMessages, sessionId, 'during cancel');
     this.pendingSteerMessages = [];
 
     if (this.agentLoop) {
@@ -420,8 +427,9 @@ export class AgentOrchestrator {
 
     this.isInterrupting = false;
 
-    const allMessages = [newMessage, ...this.pendingSteerMessages.splice(0).map((queued) => queued.content)];
-    await this.sendMessage(allMessages[allMessages.length - 1], attachments, options, messageMetadata);
+    const pending = this.pendingSteerMessages.splice(0);
+    await this.sendMessage(newMessage, attachments, options, messageMetadata, clientMessageId);
+    this.queuePendingSteer(pending, sessionId, 'after interrupt');
   }
 
   isProcessing(): boolean {

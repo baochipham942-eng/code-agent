@@ -7,6 +7,8 @@ import type {
 import { generateMessageId } from '../../shared/utils/id';
 import { SteerRejectedError } from '../agent/runtime/conversationRuntime';
 import { SteerUnsupportedError } from './runContext';
+import { getDatabase } from '../services/core/databaseService';
+import { QueuedInputRepository } from '../services/core/repositories/QueuedInputRepository';
 
 export function workbenchMetadataToEnvelopeContext(
   workbench?: WorkbenchMessageMetadata,
@@ -188,4 +190,32 @@ export function queuePendingSteerMessages(
     });
     return queued.id;
   });
+}
+
+/**
+ * Convenience wrapper for callers (desktop cancel()/interruptAndContinue()) that must never throw or
+ * block: resolves its own repository (DB not initialized degrades to a logged drop, same as a missing
+ * session or a failed enqueue) instead of pushing that plumbing onto every call site.
+ */
+export function queuePendingSteerMessagesOrWarn(
+  sessionId: string | null,
+  pending: PendingSteerLikeMessage[],
+  logContext: string,
+  log: { warn: (message: string, ...args: unknown[]) => void; error: (message: string, ...args: unknown[]) => void },
+): void {
+  if (pending.length === 0) return;
+  if (!sessionId) {
+    log.warn(`[SteerQueueFence] Dropping pending steer messages ${logContext} because no session is available`);
+    return;
+  }
+  const db = getDatabase().getDb();
+  if (!db) {
+    log.warn(`[SteerQueueFence] Dropping pending steer messages ${logContext} because the database is not initialized`);
+    return;
+  }
+  try {
+    queuePendingSteerMessages(sessionId, pending, new QueuedInputRepository(db));
+  } catch (error) {
+    log.error(`[SteerQueueFence] Failed to queue pending steer messages ${logContext}`, error);
+  }
 }

@@ -4,6 +4,9 @@ import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
+import type BetterSqlite3 from 'better-sqlite3';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { createAgentRouter } from '../../../src/web/routes/agent';
 import type { Message } from '../../../src/shared/contract';
@@ -221,6 +224,7 @@ const testRunKernel = {
 };
 const originalCodeAgentDataDir = process.env.CODE_AGENT_DATA_DIR;
 let tempDataDir: string | undefined;
+let queuedInputTestDb: BetterSqlite3.Database | undefined;
 
 const logger = {
   info: vi.fn(),
@@ -331,6 +335,7 @@ describe('createAgentRouter', () => {
       title: 'Existing',
     });
     mockDb.getMessages.mockReturnValue([]);
+    mockDb.getDb.mockReturnValue({});
     let releaseRun: (() => void) | null = null;
     mockRun.mockImplementation(() => new Promise<void>((resolve) => {
       releaseRun = resolve;
@@ -352,6 +357,8 @@ describe('createAgentRouter', () => {
       await rm(tempDataDir, { recursive: true, force: true });
       tempDataDir = undefined;
     }
+    queuedInputTestDb?.close();
+    queuedInputTestDb = undefined;
     if (originalCodeAgentDataDir === undefined) {
       delete process.env.CODE_AGENT_DATA_DIR;
     } else {
@@ -557,6 +564,246 @@ describe('createAgentRouter', () => {
     await waitForAssertion(() => {
       expect(mockCancel).toHaveBeenCalledWith('user');
     });
+  });
+
+  it('persists both messages when disconnect cancellation releases the session and drains its queued turn', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    queuedInputTestDb = new Database(':memory:');
+    queuedInputTestDb.exec(`
+      CREATE TABLE queued_inputs (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        envelope_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_queued_inputs_session
+        ON queued_inputs (session_id, status, created_at);
+    `);
+    mockDb.getDb.mockReturnValue(queuedInputTestDb as never);
+
+    const persistedMessages: Message[] = [
+      { id: 'prior-user', role: 'user', content: '先执行长任务', timestamp: 1 },
+      { id: 'prior-assistant', role: 'assistant', content: '开始执行', timestamp: 2 },
+    ];
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      const existing = persistedMessages.findIndex((candidate) => candidate.id === message.id);
+      if (existing >= 0) persistedMessages[existing] = message;
+      else persistedMessages.push(message);
+    });
+    const getMessages = vi.fn(async () => [...persistedMessages]);
+
+    let settleCancelledRun: (() => void) | undefined;
+    const cancelPriorRun = vi.fn(() => {
+      settleCancelledRun?.();
+    });
+    const queueAfterSettlement = vi.fn().mockRejectedValue(new SteerRejectedError());
+    mockCreateAgentLoop
+      .mockImplementationOnce((_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
+        run: vi.fn(() => new Promise<void>((resolve) => {
+          settleCancelledRun = () => {
+            onEvent({ type: 'agent_cancelled', data: null });
+            resolve();
+          };
+        })),
+        cancel: cancelPriorRun,
+        steer: queueAfterSettlement,
+      }))
+      .mockImplementationOnce((_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
+        run: vi.fn(async () => {
+          onEvent({
+            type: 'message',
+            data: {
+              id: 'drained-loop-assistant',
+              role: 'assistant',
+              content: '排队轮次已完成',
+              timestamp: 4,
+            },
+          });
+        }),
+        cancel: vi.fn(),
+      }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        addMessageToSession,
+        getMessages,
+        getSession: vi.fn(async () => ({
+          id: 'session-disconnect-drain-persist',
+          title: 'Existing',
+          workingDirectory: '/tmp/disconnect-drain-persist',
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const controller = new AbortController();
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '正在运行且随后断连',
+        sessionId: 'session-disconnect-drain-persist',
+        clientMessageId: 'active-user',
+      }),
+      signal: controller.signal,
+    });
+    expect(response.ok).toBe(true);
+    await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1), 3000);
+
+    mockQueuedInputEnqueue.mockImplementationOnce((input) => {
+      queuedInputTestDb!.prepare(`
+        INSERT INTO queued_inputs (
+          id, session_id, envelope_json, status, retry_count, created_at, updated_at
+        ) VALUES (?, ?, ?, 'queued', 0, ?, ?)
+      `).run(
+        input.id,
+        input.sessionId,
+        'envelope' in input ? JSON.stringify(input.envelope) : input.envelopeJson,
+        input.now ?? 10,
+        input.now ?? 10,
+      );
+    });
+    const queued = await fetch(`${baseUrl}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: '运行排队轮次',
+        sessionId: 'session-disconnect-drain-persist',
+        clientMessageId: 'drained-user',
+      }),
+    });
+    expect(queued.ok).toBe(true);
+    await expect(queued.json()).resolves.toEqual({
+      success: true,
+      data: { outcome: 'queued', queuedInputId: 'drained-user' },
+    });
+
+    controller.abort();
+    await waitForAssertion(() => expect(cancelPriorRun).toHaveBeenCalledWith('user'), 3000);
+    await vi.waitFor(() => {
+      expect(new QueuedInputRepository(queuedInputTestDb!).getById('drained-user')).toMatchObject({
+        status: 'consumed',
+      });
+    }, { timeout: 3000 });
+
+    const drainedTurn = persistedMessages.filter((message) =>
+      message.id === 'drained-user' || message.content === '排队轮次已完成');
+    expect(drainedTurn).toEqual([
+      expect.objectContaining({ id: 'drained-user', role: 'user', content: '运行排队轮次' }),
+      expect.objectContaining({ role: 'assistant', content: '排队轮次已完成' }),
+    ]);
+  });
+
+  it('keeps a mid-turn steer persisted when disconnect cancellation settles the active run', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const persistedMessages: Message[] = [];
+    let signalSteerPersistenceStarted: (() => void) | undefined;
+    const steerPersistenceStarted = new Promise<void>((resolve) => {
+      signalSteerPersistenceStarted = resolve;
+    });
+    let releaseSteerPersistence: (() => void) | undefined;
+    const addMessageToSession = vi.fn(async (_sessionId: string, message: Message) => {
+      if (message.id === 'steer-user') {
+        signalSteerPersistenceStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseSteerPersistence = resolve;
+        });
+      }
+      const existing = persistedMessages.findIndex((candidate) => candidate.id === message.id);
+      if (existing >= 0) persistedMessages[existing] = message;
+      else persistedMessages.push(message);
+    });
+    const getMessages = vi.fn(async () => [...persistedMessages]);
+
+    let settleActiveRun: (() => void) | undefined;
+    const cancelActiveRun = vi.fn();
+    mockCreateAgentLoop.mockImplementationOnce(
+      (_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
+        run: vi.fn(() => new Promise<void>((resolve) => {
+          settleActiveRun = resolve;
+        })),
+        cancel: cancelActiveRun.mockImplementation(() => {
+          onEvent({ type: 'agent_cancelled', data: null });
+          settleActiveRun?.();
+        }),
+        steer: vi.fn(async (
+          content: string,
+          clientMessageId?: string,
+          attachments?: Message['attachments'],
+          metadata?: Message['metadata'],
+        ) => {
+          await addMessageToSession('session-steer-cancel', {
+            id: clientMessageId ?? 'generated-steer-id',
+            role: 'user',
+            content,
+            timestamp: 3,
+            attachments,
+            metadata,
+          });
+        }),
+      }),
+    );
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        addMessageToSession,
+        getMessages,
+        getSession: vi.fn(async () => ({
+          id: 'session-steer-cancel',
+          title: 'Existing',
+          workingDirectory: '/tmp/steer-cancel',
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const controller = new AbortController();
+    const runResponse = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '执行长任务',
+        sessionId: 'session-steer-cancel',
+        clientMessageId: 'active-user',
+      }),
+      signal: controller.signal,
+    });
+    expect(runResponse.ok).toBe(true);
+    await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1), 3000);
+
+    const steerResponsePromise = fetch(`${baseUrl}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: '改成蓝色主题',
+        sessionId: 'session-steer-cancel',
+        clientMessageId: 'steer-user',
+      }),
+    });
+    await steerPersistenceStarted;
+
+    controller.abort();
+    await waitForAssertion(() => expect(cancelActiveRun).toHaveBeenCalledWith('user'), 3000);
+    releaseSteerPersistence?.();
+
+    const steerResponse = await steerResponsePromise;
+    expect(steerResponse.ok).toBe(true);
+    await expect(steerResponse.json()).resolves.toEqual({
+      success: true,
+      data: { outcome: 'steered' },
+    });
+    expect(persistedMessages).toContainEqual(expect.objectContaining({
+      id: 'steer-user',
+      role: 'user',
+      content: '改成蓝色主题',
+    }));
   });
 
   describe('S2 Native Run lifecycle isolation', () => {

@@ -62,6 +62,8 @@ import type { Translations } from '../i18n';
 import { localeForLanguage } from '../utils/i18nTime';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
+import { formatChannelSessionSource } from './features/chat/chatViewSessionSource';
+import { submitSteerEnvelope } from './features/chat/chatViewSteer';
 import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
 import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProjectionOverlay';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
@@ -86,28 +88,13 @@ import {
   X,
 } from 'lucide-react';
 
-function formatChannelSessionSource(session: ReturnType<typeof useSessionStore.getState>['sessions'][number] | undefined): string | null {
-  if (session?.origin?.kind !== 'channel') return null;
-  const metadata = session.origin.metadata || {};
-  const channelType = typeof metadata.channelType === 'string'
-    ? metadata.channelType
-    : typeof metadata.channelId === 'string'
-      ? metadata.channelId
-      : 'channel';
-  const platform = channelType === 'feishu'
-    ? 'Feishu'
-    : channelType === 'lark'
-      ? 'Lark'
-      : channelType === 'telegram'
-        ? 'Telegram'
-        : channelType;
-  const accountName = typeof metadata.accountName === 'string' ? metadata.accountName : undefined;
-  const chatName = typeof metadata.chatName === 'string'
-    ? metadata.chatName
-    : typeof metadata.chatId === 'string'
-      ? metadata.chatId
-      : session.origin.name;
-  return [platform, accountName, chatName].filter(Boolean).join(' · ');
+export async function handleQueuedSteerOutcome(
+  currentSessionId: string | null,
+  hydrateQueuedRuntimeInputs: (sessionId: string) => Promise<void>,
+  queuedToastMessage: string,
+): Promise<void> {
+  toast.info(queuedToastMessage);
+  if (currentSessionId) await hydrateQueuedRuntimeInputs(currentSessionId);
 }
 
 export const ChatView: React.FC = () => {
@@ -144,6 +131,7 @@ export const ChatView: React.FC = () => {
     dismissResearchDetected,
     isInterrupting,
     queuedRuntimeInputs,
+    hydrateQueuedRuntimeInputs,
     cancelQueuedRuntimeInput,
     sendQueuedRuntimeInput,
   } = useAgent();
@@ -617,6 +605,18 @@ export const ChatView: React.FC = () => {
     sendMessage,
   ]);
 
+  const handleSteerEnvelope = useCallback((envelope: ConversationEnvelope) => (
+    submitSteerEnvelope(
+      envelope,
+      currentSessionId,
+      () => handleQueuedSteerOutcome(
+        currentSessionId,
+        hydrateQueuedRuntimeInputs,
+        t.chatInput.runtimeInputQueuedAfterAdjustment,
+      ),
+    )
+  ), [currentSessionId, hydrateQueuedRuntimeInputs, t]);
+
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     return handleSendEnvelope(buildEnvelope(content, attachments));
   }, [buildEnvelope, handleSendEnvelope]);
@@ -841,6 +841,7 @@ export const ChatView: React.FC = () => {
           <ChatInput
             ref={chatInputRef}
             onSend={handleSendEnvelope}
+            onSteer={handleSteerEnvelope}
             disabled={effectiveIsProcessing || isCreatingSession}
             isProcessing={effectiveIsProcessing}
             isInterrupting={isInterrupting}

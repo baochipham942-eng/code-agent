@@ -8,6 +8,7 @@ import type {
   ConversationVoiceInputMetadata,
   RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
+import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import { toast } from '../../../../hooks/useToast';
@@ -64,6 +65,7 @@ export interface UseChatInputSubmitParams {
   disabled?: boolean;
   isUploading: boolean;
   onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
+  onSteer?: (envelope: ConversationEnvelope) => Promise<SteerOrQueueOutcome | undefined>;
   agentEntries: Parameters<typeof parseAgentSlashCommand>[1];
   buildEnvelope: BuildEnvelope;
   openAgentCommand: () => void;
@@ -104,6 +106,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     disabled,
     isUploading,
     onSend,
+    onSteer,
     agentEntries,
     buildEnvelope,
     openAgentCommand,
@@ -228,7 +231,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
   // P3-18: ! prefix executes shell command directly
-  const handleSubmit = async (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean }) => {
     e?.preventDefault();
     const trimmedValue = value.trim();
     let contentToSend = trimmedValue;
@@ -456,7 +459,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         }
       } else {
         try {
-          const sent = await onSend(nextEnvelope);
+          const sent = opts?.steer && isProcessing && onSteer
+            ? (await onSteer(nextEnvelope)) !== undefined
+            : await onSend(nextEnvelope);
           if (!shouldClearComposerAfterSend(sent)) {
             restoreDraft();
             inputAreaRef.current?.focus();

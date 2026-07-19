@@ -26,6 +26,7 @@ export class AgentRunEventCollector {
 
   private consecutiveToolFailures = 0;
   private lastPartType: AgentRunContentPart['type'] | null = null;
+  private assistantTextFromLoopMessage = false;
 
   constructor(private readonly deps: AgentRunEventCollectorDeps) {}
 
@@ -81,6 +82,10 @@ export class AgentRunEventCollector {
   }
 
   private appendText(text: string): void {
+    if (this.assistantTextFromLoopMessage) {
+      this.assistantText = '';
+      this.assistantTextFromLoopMessage = false;
+    }
     if (this.lastPartType !== 'text') {
       this.contentParts.push({ type: 'text', text: '' });
       this.lastPartType = 'text';
@@ -92,6 +97,10 @@ export class AgentRunEventCollector {
 
   private recordLoopMessage(message: Message): void {
     if (message.role !== 'assistant') return;
+    if (message.content && (!this.assistantText || this.assistantTextFromLoopMessage)) {
+      this.assistantText = message.content;
+      this.assistantTextFromLoopMessage = true;
+    }
     if (message.id) {
       this.lastLoopAssistantMessageId = message.id;
     }

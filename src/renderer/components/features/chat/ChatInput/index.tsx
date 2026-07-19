@@ -14,6 +14,7 @@ import type {
   ConversationVoiceInputMetadata,
   RuntimeInputMode,
 } from '@shared/contract/conversationEnvelope';
+import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { UI } from '@shared/constants';
 import { IPC_DOMAINS } from '@shared/ipc';
 
@@ -89,6 +90,7 @@ import { AgentChip } from './AgentChip';
 
 export interface ChatInputProps {
   onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
+  onSteer?: (envelope: ConversationEnvelope) => Promise<SteerOrQueueOutcome | undefined>;
   disabled?: boolean;
   /** 是否正在处理（用于显示停止按钮） */
   isProcessing?: boolean;
@@ -118,12 +120,29 @@ export interface ChatInputHandle {
   focus: () => void;
 }
 
+export const RuntimeInputShortcutHint: React.FC<{ isProcessing: boolean }> = ({ isProcessing }) => {
+  const { t } = useI18n();
+  if (!isProcessing) return null;
+
+  return (
+    <div
+      data-testid="runtime-input-shortcut-hint"
+      className="px-4 pb-2 -mt-1 text-right text-[11px] text-zinc-500"
+    >
+      {typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0
+        ? t.chatInput.runtimeInputShortcutHintMac
+        : t.chatInput.runtimeInputShortcutHintWin}
+    </div>
+  );
+};
+
 // ============================================================================
 // 主组件
 // ============================================================================
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   onSend,
+  onSteer,
   disabled,
   isProcessing,
   isInterrupting,
@@ -519,6 +538,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     disabled,
     isUploading,
     onSend,
+    onSteer,
     agentEntries,
     buildEnvelope,
     openAgentCommand,
@@ -791,7 +811,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             ref={inputAreaRef}
             value={value}
             onChange={handleValueChange}
-            onSubmit={handleSubmit}
+            onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
             onFileSelect={handleFileSelect}
             onImagePaste={handleImagePaste}
             disabled={disabled && !isProcessing}
@@ -805,6 +825,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onHistoryReset={resetInputHistoryIndex}
             onAutocompleteKeyDown={handleAutocompleteKeyDown}
           />
+          <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} />
           {queuedRuntimeInputs.length > 0 && (
             <div className="px-4 pb-2 -mt-1 space-y-1.5">
               {queuedRuntimeInputs.map((item) => (

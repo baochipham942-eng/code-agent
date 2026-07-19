@@ -41,7 +41,7 @@ export interface InputAreaProps {
   /** 值变化回调 */
   onChange: (value: string) => void;
   /** 提交回调 */
-  onSubmit: () => void;
+  onSubmit: (opts?: { steer?: boolean }) => void;
   /** 文件选择回调 */
   onFileSelect: (files: FileList) => void;
   /** 图片粘贴回调 */
@@ -144,7 +144,11 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       // 三重检查: isComposing (标准) + compositionEnd ref (兼容搜狗/百度) + keyCode 229 (IME 标准信号)
       if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isComposingRef.current && e.nativeEvent.keyCode !== 229) {
         e.preventDefault();
-        onSubmit();
+        if (e.altKey) {
+          onSubmit({ steer: true });
+        } else {
+          onSubmit();
+        }
         return;
       }
 

@@ -12,6 +12,7 @@ import {
   createRunContext,
   createRunHandle,
   resolveCanonicalRunPath,
+  SteerUnsupportedError,
 } from '../../../../src/host/runtime/runContext';
 import { RunRegistry, RunSessionConflictError } from '../../../../src/host/runtime/runRegistry';
 
@@ -80,6 +81,23 @@ describe('RunContext', () => {
 });
 
 describe('RunHandle', () => {
+  it('rejects steer with a typed error when the attached target does not support it', async () => {
+    const handle = createRunHandle(createRunContext({
+      runId: 'run-no-steer',
+      sessionId: 'session-no-steer',
+      workspace: '/tmp/native-run-workspace',
+    }));
+    await handle.attach({ cancel: vi.fn() });
+
+    const result = handle.steer('new direction');
+
+    await expect(result).rejects.toBeInstanceOf(SteerUnsupportedError);
+    await expect(result).rejects.toMatchObject({
+      name: 'SteerUnsupportedError',
+      code: 'STEER_UNSUPPORTED',
+    });
+  });
+
   it('remembers cancellation before attach and re-delivers on subsequent cancel requests', async () => {
     const handle = createRunHandle(createRunContext({
       runId: 'run-1',

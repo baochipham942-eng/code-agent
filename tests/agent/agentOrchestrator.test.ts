@@ -113,6 +113,12 @@ const configServiceMocks = vi.hoisted(() => {
   };
 });
 
+const queuedInputMocks = vi.hoisted(() => ({
+  db: {},
+  enqueue: vi.fn(),
+  getDb: vi.fn(),
+}));
+
 // Mock electron app before importing AgentOrchestrator
 vi.mock('electron', () => ({
   app: {
@@ -138,6 +144,16 @@ vi.mock('../../src/host/mcp/logCollector.js', () => logCollectorMocks);
 vi.mock('../../src/host/services/core/configService', () => configServiceMocks);
 vi.mock('../../src/host/services/core/configService.js', () => configServiceMocks);
 
+vi.mock('../../src/host/services/core/databaseService', () => ({
+  getDatabase: vi.fn(() => ({ getDb: queuedInputMocks.getDb })),
+}));
+
+vi.mock('../../src/host/services/core/repositories/QueuedInputRepository', () => ({
+  QueuedInputRepository: class {
+    enqueue = queuedInputMocks.enqueue;
+  },
+}));
+
 // Mock browser service at the actual infra layer used by ToolExecutor imports.
 vi.mock('../../src/host/services/infra/browserService.js', () => ({
   browserService: browserMocks.service,
@@ -161,8 +177,10 @@ vi.mock('../../src/host/services/cloud/cloudConfigService', () => ({
 }));
 
 import { AgentOrchestrator } from '../../src/host/agent/agentOrchestrator';
+import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
 import type { ConfigService } from '../../src/host/services/core/configService';
-import type { AgentEvent, Message } from '../../src/shared/contract';
+import type { AgentEvent, Message, MessageAttachment } from '../../src/shared/contract';
+import type { AgentRunOptions } from '../../src/host/research/types';
 
 // 部分目标是 private 方法 / 内部状态，特征测试经类型逃逸访问（测试专用）
 interface OrchestratorInternals {
@@ -171,8 +189,9 @@ interface OrchestratorInternals {
   resolveTurnRouting(content: string, sessionId?: string, agentOverrideId?: string): Promise<{
     resolution: { agent: { id: string; name: string }; score: number; reason: string } | null;
     requestedAgentId?: string;
-  }>;
+  }>; 
   agentLoop: { steer: ReturnType<typeof vi.fn> } | null;
+  isInterrupting: boolean;
   pendingSteerMessages: unknown[];
   pendingPermissions: Map<string, { resolve: (r: string) => void }>;
 }
@@ -181,6 +200,17 @@ function internals(o: AgentOrchestrator): OrchestratorInternals {
 }
 function makeMessage(id: string, role: Message['role'], content: string): Message {
   return { id, role, content, timestamp: 0 };
+}
+function makeAttachment(id: string, name: string): MessageAttachment {
+  return {
+    id,
+    type: 'file',
+    category: 'document',
+    name,
+    size: 10,
+    mimeType: 'text/plain',
+    data: `${name} data`,
+  };
 }
 
 describe('AgentOrchestrator', () => {
@@ -206,6 +236,7 @@ describe('AgentOrchestrator', () => {
     } as unknown as ConfigService;
 
     mockOnEvent = vi.fn();
+    queuedInputMocks.getDb.mockReturnValue(queuedInputMocks.db);
 
     orchestrator = new AgentOrchestrator({
       configService: mockConfigService,
@@ -256,9 +287,95 @@ describe('AgentOrchestrator', () => {
     it('cancel 在没有活动任务时不应抛错', async () => {
       await expect(orchestrator.cancel()).resolves.not.toThrow();
     });
+
+    it('cancel 将 interrupt 窗口内的 pending steer 分别写入 durable queue', async () => {
+      const firstAttachments = [makeAttachment('attachment-one', 'one.txt')];
+      const secondAttachments = [makeAttachment('attachment-two', 'two.txt')];
+
+      internals(orchestrator).isInterrupting = true;
+      await orchestrator.interruptAndContinue(
+        'first pending direction',
+        firstAttachments,
+        undefined,
+        { workbench: { workingDirectory: '/workspace/one' } },
+        'pending-one-id',
+      );
+      await orchestrator.interruptAndContinue(
+        'second pending direction',
+        secondAttachments,
+        undefined,
+        { workbench: { selectedSkillIds: ['skill-two'] } },
+        'pending-two-id',
+      );
+
+      await orchestrator.cancel();
+
+      expect(queuedInputMocks.enqueue.mock.calls.map(([input]) => input)).toEqual([
+        {
+          id: 'pending-one-id',
+          sessionId: 'test-session-id',
+          envelope: {
+            content: 'first pending direction',
+            clientMessageId: 'pending-one-id',
+            sessionId: 'test-session-id',
+            attachments: firstAttachments,
+            context: { workingDirectory: '/workspace/one' },
+          },
+          now: undefined,
+        },
+        {
+          id: 'pending-two-id',
+          sessionId: 'test-session-id',
+          envelope: {
+            content: 'second pending direction',
+            clientMessageId: 'pending-two-id',
+            sessionId: 'test-session-id',
+            attachments: secondAttachments,
+            context: { selectedSkillIds: ['skill-two'] },
+          },
+          now: undefined,
+        },
+      ]);
+      expect(internals(orchestrator).pendingSteerMessages).toHaveLength(0);
+    });
   });
 
   describe('调整方向', () => {
+    it('live steer 成功时返回 steered outcome', async () => {
+      const steer = vi.fn().mockResolvedValue(undefined);
+      internals(orchestrator).agentLoop = { steer };
+
+      await expect(orchestrator.interruptAndContinue('new direction')).resolves.toEqual({
+        outcome: 'steered',
+      });
+      expect(queuedInputMocks.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('live steer 在 run settled 后降级写入 durable queue 并返回 queued outcome', async () => {
+      const steer = vi.fn().mockRejectedValue(new SteerRejectedError());
+      internals(orchestrator).agentLoop = { steer };
+
+      await expect(orchestrator.interruptAndContinue(
+        'continue next turn',
+        undefined,
+        undefined,
+        { workbench: { workingDirectory: '/workspace/late' } },
+        'late-steer-id',
+      )).resolves.toEqual({ outcome: 'queued', queuedInputId: 'late-steer-id' });
+      expect(queuedInputMocks.enqueue).toHaveBeenCalledWith({
+        id: 'late-steer-id',
+        sessionId: 'test-session-id',
+        envelope: {
+          content: 'continue next turn',
+          clientMessageId: 'late-steer-id',
+          sessionId: 'test-session-id',
+          attachments: undefined,
+          context: { workingDirectory: '/workspace/late' },
+        },
+        now: undefined,
+      });
+    });
+
     it('传播 steer 持久化错误，并在失败后复位 interrupt 状态', async () => {
       const steer = vi.fn()
         .mockRejectedValueOnce(new Error('disk full'))
@@ -268,10 +385,80 @@ describe('AgentOrchestrator', () => {
       await expect(orchestrator.interruptAndContinue('first direction')).rejects.toThrow('disk full');
       expect(mockOnEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt_complete' }));
 
-      await expect(orchestrator.interruptAndContinue('second direction')).resolves.toBeUndefined();
+      await expect(orchestrator.interruptAndContinue('second direction')).resolves.toEqual({ outcome: 'steered' });
       expect(steer).toHaveBeenCalledTimes(2);
       expect(internals(orchestrator).pendingSteerMessages).toHaveLength(0);
       expect(mockOnEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt_complete' }));
+    });
+
+    it('无 agentLoop 时发送当前消息自身并分别持久化 pending steer', async () => {
+      const firstAttachments = [makeAttachment('attachment-one', 'one.txt')];
+      const secondAttachments = [makeAttachment('attachment-two', 'two.txt')];
+      const currentAttachments = [makeAttachment('attachment-current', 'current.txt')];
+      const currentOptions: AgentRunOptions = { mode: 'normal' };
+      const currentMetadata = { workbench: { workingDirectory: '/workspace/current' } };
+
+      internals(orchestrator).isInterrupting = true;
+      await orchestrator.interruptAndContinue(
+        'first pending direction',
+        firstAttachments,
+        undefined,
+        { workbench: { workingDirectory: '/workspace/one' } },
+        'pending-one-id',
+      );
+      await orchestrator.interruptAndContinue(
+        'second pending direction',
+        secondAttachments,
+        undefined,
+        { workbench: { selectedSkillIds: ['skill-two'] } },
+        'pending-two-id',
+      );
+      internals(orchestrator).isInterrupting = false;
+      const sendMessage = vi.spyOn(orchestrator, 'sendMessage').mockResolvedValue(undefined);
+
+      await orchestrator.interruptAndContinue(
+        'current direction',
+        currentAttachments,
+        currentOptions,
+        currentMetadata,
+        'current-message-id',
+      );
+
+      expect(sendMessage).toHaveBeenCalledOnce();
+      expect(sendMessage).toHaveBeenCalledWith(
+        'current direction',
+        currentAttachments,
+        currentOptions,
+        currentMetadata,
+        'current-message-id',
+      );
+      expect(queuedInputMocks.enqueue.mock.calls.map(([input]) => input)).toEqual([
+        {
+          id: 'pending-one-id',
+          sessionId: 'test-session-id',
+          envelope: {
+            content: 'first pending direction',
+            clientMessageId: 'pending-one-id',
+            sessionId: 'test-session-id',
+            attachments: firstAttachments,
+            context: { workingDirectory: '/workspace/one' },
+          },
+          now: undefined,
+        },
+        {
+          id: 'pending-two-id',
+          sessionId: 'test-session-id',
+          envelope: {
+            content: 'second pending direction',
+            clientMessageId: 'pending-two-id',
+            sessionId: 'test-session-id',
+            attachments: secondAttachments,
+            context: { selectedSkillIds: ['skill-two'] },
+          },
+          now: undefined,
+        },
+      ]);
+      expect(internals(orchestrator).pendingSteerMessages).toHaveLength(0);
     });
   });
 

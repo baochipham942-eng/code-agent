@@ -68,6 +68,7 @@ import {
   resolveAgentDurableActivation,
 } from './agentDurableRouteLifecycle';
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
+import { steerOrQueue } from '../../host/runtime/steerQueueFence';
 import { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
 import { getDatabase } from '../../host/services/core/databaseService';
 import {
@@ -942,18 +943,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     });
 
     try {
-      await Promise.resolve(activeLoop.steer(
+      const outcome = await steerOrQueue(activeLoop, {
+        sessionId: targetSessionId,
         content,
         clientMessageId,
         attachments,
-        toWorkbenchMetadata(context),
-      ));
+        metadata: toWorkbenchMetadata(context),
+        context,
+      });
       broadcastSSE('agent:event', {
         type: 'interrupt_complete',
         data: { message: '已调整方向', newUserMessage: content, runId: targetRunId },
         sessionId: targetSessionId,
       });
-      res.json({ success: true, data: null });
+      res.json({ success: true, data: outcome });
     } catch (error) {
       logger.error(`[AgentRouter] Failed to interrupt active run for ${targetSessionId}:`, error);
       res.status(500).json({

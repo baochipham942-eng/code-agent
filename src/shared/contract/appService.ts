@@ -144,6 +144,10 @@ export interface PromptRewindResult {
   filesDeleted: number;
 }
 
+export type SteerOrQueueOutcome =
+  | { outcome: 'steered' }
+  | { outcome: 'queued'; queuedInputId: string };
+
 /**
  * AgentApplicationService — IPC handler 的唯一业务依赖
  *
@@ -157,7 +161,7 @@ export interface AgentApplicationService {
   sendMessage(envelope: ConversationEnvelope): Promise<void>;
   cancel(sessionId?: string): Promise<void>;
   handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): void;
-  interruptAndContinue(envelope: ConversationEnvelope): Promise<void>;
+  interruptAndContinue(envelope: ConversationEnvelope): Promise<SteerOrQueueOutcome>;
 
   // === Workspace ===
   getWorkingDirectory(): string | undefined;

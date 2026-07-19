@@ -29,6 +29,7 @@ import {
 } from '../permissions/modes';
 import { broadcastToRenderer } from '../platform';
 import { getAdminAccessIpcError } from './adminGuard';
+import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -99,10 +100,10 @@ interface InterruptPayload {
 async function handleInterrupt(
   getAppService: () => AgentApplicationService | null,
   payload: string | AgentMessageRequest | InterruptPayload | ConversationEnvelope
-): Promise<void> {
+): Promise<SteerOrQueueOutcome> {
   const appService = getAppService();
   if (!appService) throw new Error('Agent not initialized');
-  await appService.interruptAndContinue(normalizeEnvelope(payload));
+  return appService.interruptAndContinue(normalizeEnvelope(payload));
 }
 
 function normalizePermissionMode(value: unknown): PermissionMode | null {
@@ -136,9 +137,10 @@ export function registerAgentHandlers(
         case 'permissionResponse':
           await handlePermissionResponse(getAppService, payload as AgentPermissionResponseRequest);
           return { success: true, data: null };
-        case 'interrupt':
-          await handleInterrupt(getAppService, payload as string | InterruptPayload | ConversationEnvelope);
-          return { success: true, data: null };
+        case 'interrupt': {
+          const outcome = await handleInterrupt(getAppService, payload as string | InterruptPayload | ConversationEnvelope);
+          return { success: true, data: outcome };
+        }
         case 'setEffortLevel': {
           const appService = getAppService();
           if (!appService) throw new Error('Agent not initialized');

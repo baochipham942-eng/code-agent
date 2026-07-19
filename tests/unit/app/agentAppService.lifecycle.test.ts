@@ -140,7 +140,7 @@ describe('AgentAppService lifecycle routing', () => {
     taskManager = {
       getSessionState: vi.fn(),
       startTask: vi.fn().mockResolvedValue(undefined),
-      interruptAndContinue: vi.fn().mockResolvedValue(undefined),
+      interruptAndContinue: vi.fn().mockResolvedValue({ outcome: 'steered' }),
       cleanup: vi.fn(),
       cancelTask: vi.fn().mockResolvedValue(undefined),
       getOrCreateCurrentOrchestrator: vi.fn(() => orchestrator),
@@ -389,9 +389,11 @@ describe('AgentAppService lifecycle routing', () => {
   });
 
   it('routes interrupt-and-continue through TaskManager to keep the run owner consistent', async () => {
+    const expectedOutcome = { outcome: 'queued', queuedInputId: 'queued-input-1' } as const;
+    taskManager.interruptAndContinue.mockResolvedValueOnce(expectedOutcome);
     const service = createService(taskManager);
 
-    await service.interruptAndContinue({
+    const outcome = await service.interruptAndContinue({
       sessionId: 'session-1',
       content: 'steer',
       clientMessageId: 'client-msg-1',
@@ -419,6 +421,7 @@ describe('AgentAppService lifecycle routing', () => {
       }),
       'client-msg-1',
     );
+    expect(outcome).toBe(expectedOutcome);
   });
 
   it('backfills empty session working directory with the runtime effective value on first run', async () => {

@@ -47,6 +47,7 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { getPredefinedAgent } from './agentDefinition';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { buildRoutingToolDenylist } from './routingToolPolicy';
+import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -294,6 +295,11 @@ export class AgentOrchestrator {
     }
   }
 
+  private queuePendingSteer(pending: PendingSteerMessage[], sessionId: string | null, logContext: string): void {
+    const asQueueable = pending.map(({ messageMetadata, ...m }) => ({ ...m, metadata: messageMetadata }));
+    queuePendingSteerMessagesOrWarn(sessionId, asQueueable, logContext, logger);
+  }
+
   async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
     logger.info('Cancel requested', { reason });
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
@@ -303,6 +309,7 @@ export class AgentOrchestrator {
     this.drainPendingPermissions('deny');
 
     this.isInterrupting = false;
+    this.queuePendingSteer(this.pendingSteerMessages, sessionId, 'during cancel');
     this.pendingSteerMessages = [];
 
     if (this.agentLoop) {
@@ -347,7 +354,7 @@ export class AgentOrchestrator {
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
-  ): Promise<void> {
+  ): Promise<SteerOrQueueOutcome> {
     logger.info('Interrupt and continue requested');
     const sessionManager = getSessionManager();
     const sessionId = this.sessionId ?? sessionManager.getCurrentSessionId();
@@ -361,7 +368,7 @@ export class AgentOrchestrator {
         attachments: attachments as MessageAttachment[] | undefined,
         messageMetadata,
       });
-      return;
+      return { outcome: 'steered' };
     }
 
     this.isInterrupting = true;
@@ -374,21 +381,15 @@ export class AgentOrchestrator {
 
     if (this.agentLoop) {
       try {
-        await this.agentLoop.steer(
-          effectiveMessage,
-          clientMessageId,
-          attachments as MessageAttachment[] | undefined,
-          messageMetadata,
-        );
+        const outcome = await steerOrQueue(this.agentLoop, {
+          sessionId, content: effectiveMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata,
+        });
 
         while (this.pendingSteerMessages.length > 0) {
           const queued = this.pendingSteerMessages.shift()!;
-          await this.agentLoop.steer(
-            queued.content,
-            queued.clientMessageId,
-            queued.attachments,
-            queued.messageMetadata,
-          );
+          await steerOrQueue(this.agentLoop, {
+            sessionId, content: queued.content, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata,
+          });
           logger.info('[AgentOrchestrator] Processed queued steer message');
         }
 
@@ -397,10 +398,10 @@ export class AgentOrchestrator {
           data: { message: '已调整方向', newUserMessage: newMessage },
           sessionId,
         } as AgentEvent & { sessionId?: string });
+        return outcome;
       } finally {
         this.isInterrupting = false;
       }
-      return;
     }
 
     if (this.deepResearchMode) {
@@ -420,8 +421,10 @@ export class AgentOrchestrator {
 
     this.isInterrupting = false;
 
-    const allMessages = [newMessage, ...this.pendingSteerMessages.splice(0).map((queued) => queued.content)];
-    await this.sendMessage(allMessages[allMessages.length - 1], attachments, options, messageMetadata);
+    const pending = this.pendingSteerMessages.splice(0);
+    await this.sendMessage(newMessage, attachments, options, messageMetadata, clientMessageId);
+    this.queuePendingSteer(pending, sessionId, 'after interrupt');
+    return { outcome: 'steered' };
   }
 
   isProcessing(): boolean {

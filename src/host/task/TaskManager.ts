@@ -15,6 +15,7 @@ import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { DAG_CHANNELS } from '../../shared/ipc/channels';
 import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
+import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
@@ -247,13 +248,13 @@ export class TaskManager extends EventEmitter {
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
-  ): Promise<void> {
+  ): Promise<SteerOrQueueOutcome> {
     const state = this.getSessionState(sessionId);
 
     if (state.status === 'queued') {
       await this.cancelTask(sessionId);
       await this.startTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
-      return;
+      return { outcome: 'steered' };
     }
 
     if (state.status === 'running' || state.status === 'paused' || state.status === 'cancelling') {
@@ -262,20 +263,20 @@ export class TaskManager extends EventEmitter {
         logger.warn(`No orchestrator found for session ${sessionId}; starting a fresh task for interrupt`);
         this.cleanupSession(sessionId);
         await this.startTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
-        return;
+        return { outcome: 'steered' };
       }
 
-      await wrapper.orchestrator.interruptAndContinue(
+      return wrapper.orchestrator.interruptAndContinue(
         message,
         attachments,
         options,
         messageMetadata,
         clientMessageId,
       );
-      return;
     }
 
     await this.startTask(sessionId, message, attachments, options, messageMetadata, clientMessageId);
+    return { outcome: 'steered' };
   }
 
   /**

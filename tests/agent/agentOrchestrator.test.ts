@@ -177,6 +177,7 @@ vi.mock('../../src/host/services/cloud/cloudConfigService', () => ({
 }));
 
 import { AgentOrchestrator } from '../../src/host/agent/agentOrchestrator';
+import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
 import type { ConfigService } from '../../src/host/services/core/configService';
 import type { AgentEvent, Message, MessageAttachment } from '../../src/shared/contract';
 import type { AgentRunOptions } from '../../src/host/research/types';
@@ -340,6 +341,41 @@ describe('AgentOrchestrator', () => {
   });
 
   describe('调整方向', () => {
+    it('live steer 成功时返回 steered outcome', async () => {
+      const steer = vi.fn().mockResolvedValue(undefined);
+      internals(orchestrator).agentLoop = { steer };
+
+      await expect(orchestrator.interruptAndContinue('new direction')).resolves.toEqual({
+        outcome: 'steered',
+      });
+      expect(queuedInputMocks.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('live steer 在 run settled 后降级写入 durable queue 并返回 queued outcome', async () => {
+      const steer = vi.fn().mockRejectedValue(new SteerRejectedError());
+      internals(orchestrator).agentLoop = { steer };
+
+      await expect(orchestrator.interruptAndContinue(
+        'continue next turn',
+        undefined,
+        undefined,
+        { workbench: { workingDirectory: '/workspace/late' } },
+        'late-steer-id',
+      )).resolves.toEqual({ outcome: 'queued', queuedInputId: 'late-steer-id' });
+      expect(queuedInputMocks.enqueue).toHaveBeenCalledWith({
+        id: 'late-steer-id',
+        sessionId: 'test-session-id',
+        envelope: {
+          content: 'continue next turn',
+          clientMessageId: 'late-steer-id',
+          sessionId: 'test-session-id',
+          attachments: undefined,
+          context: { workingDirectory: '/workspace/late' },
+        },
+        now: undefined,
+      });
+    });
+
     it('传播 steer 持久化错误，并在失败后复位 interrupt 状态', async () => {
       const steer = vi.fn()
         .mockRejectedValueOnce(new Error('disk full'))
@@ -349,7 +385,7 @@ describe('AgentOrchestrator', () => {
       await expect(orchestrator.interruptAndContinue('first direction')).rejects.toThrow('disk full');
       expect(mockOnEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt_complete' }));
 
-      await expect(orchestrator.interruptAndContinue('second direction')).resolves.toBeUndefined();
+      await expect(orchestrator.interruptAndContinue('second direction')).resolves.toEqual({ outcome: 'steered' });
       expect(steer).toHaveBeenCalledTimes(2);
       expect(internals(orchestrator).pendingSteerMessages).toHaveLength(0);
       expect(mockOnEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt_complete' }));

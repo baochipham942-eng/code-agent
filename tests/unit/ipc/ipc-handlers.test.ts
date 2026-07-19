@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 // ============================================================================
 // IPC Handlers Unit Tests
 // 测试 IPC handler 的输入验证、返回格式、错误处理
@@ -184,6 +184,25 @@ describe('IPC Handlers', () => {
 
       expect(response.success).toBe(true);
       expect(mockAppService.sendMessage).toHaveBeenCalledWith({ content: 'test message' });
+    });
+
+    it('returns the interrupt steer-or-queue outcome in response data', async () => {
+      const expectedOutcome = { outcome: 'queued', queuedInputId: 'q1' } as const;
+      const mockAppService = {
+        interruptAndContinue: vi.fn().mockResolvedValue(expectedOutcome),
+      };
+      registerAgentHandlers(ipc.mock, () => mockAppService as any);
+
+      const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, {
+        action: 'interrupt',
+        payload: { content: 'continue later', sessionId: 'session-1' },
+      } satisfies IPCRequest);
+
+      expect(response).toEqual({ success: true, data: expectedOutcome });
+      expect(mockAppService.interruptAndContinue).toHaveBeenCalledWith({
+        content: 'continue later',
+        sessionId: 'session-1',
+      });
     });
 
     it('returns the read-only Agent Tree snapshot without requiring the app service', async () => {

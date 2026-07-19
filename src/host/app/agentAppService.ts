@@ -34,6 +34,7 @@ import { getFileCheckpointService } from '../services/checkpoint';
 import { applyPromptCommandExpansion } from '../services/commands/promptCommandService';
 import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
 import type { AgentRunOptions } from '../research/types';
+import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
@@ -587,7 +588,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     orchestrator.handlePermissionResponse(requestId, response);
   }
 
-  async interruptAndContinue(envelope: ConversationEnvelope): Promise<void> {
+  async interruptAndContinue(envelope: ConversationEnvelope): Promise<SteerOrQueueOutcome> {
     const tm = this.getTaskManager();
     const resolvedSessionId = this.resolveSessionId(envelope.sessionId);
     if (!resolvedSessionId) throw new Error('No active session');
@@ -612,7 +613,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
-    await tm.interruptAndContinue(
+    return tm.interruptAndContinue(
       resolvedSessionId,
       envelope.content,
       envelope.attachments,

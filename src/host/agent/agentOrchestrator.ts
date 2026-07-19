@@ -47,7 +47,7 @@ import { getComboRecorder } from '../services/skills/comboRecorder';
 import { getPredefinedAgent } from './agentDefinition';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { buildRoutingToolDenylist } from './routingToolPolicy';
-import { queuePendingSteerMessagesOrWarn } from '../runtime/steerQueueFence';
+import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -354,7 +354,7 @@ export class AgentOrchestrator {
     options?: AgentRunOptions,
     messageMetadata?: MessageMetadata,
     clientMessageId?: string,
-  ): Promise<void> {
+  ): Promise<SteerOrQueueOutcome> {
     logger.info('Interrupt and continue requested');
     const sessionManager = getSessionManager();
     const sessionId = this.sessionId ?? sessionManager.getCurrentSessionId();
@@ -368,7 +368,7 @@ export class AgentOrchestrator {
         attachments: attachments as MessageAttachment[] | undefined,
         messageMetadata,
       });
-      return;
+      return { outcome: 'steered' };
     }
 
     this.isInterrupting = true;
@@ -381,21 +381,15 @@ export class AgentOrchestrator {
 
     if (this.agentLoop) {
       try {
-        await this.agentLoop.steer(
-          effectiveMessage,
-          clientMessageId,
-          attachments as MessageAttachment[] | undefined,
-          messageMetadata,
-        );
+        const outcome = await steerOrQueue(this.agentLoop, {
+          sessionId, content: effectiveMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata,
+        });
 
         while (this.pendingSteerMessages.length > 0) {
           const queued = this.pendingSteerMessages.shift()!;
-          await this.agentLoop.steer(
-            queued.content,
-            queued.clientMessageId,
-            queued.attachments,
-            queued.messageMetadata,
-          );
+          await steerOrQueue(this.agentLoop, {
+            sessionId, content: queued.content, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata,
+          });
           logger.info('[AgentOrchestrator] Processed queued steer message');
         }
 
@@ -404,10 +398,10 @@ export class AgentOrchestrator {
           data: { message: '已调整方向', newUserMessage: newMessage },
           sessionId,
         } as AgentEvent & { sessionId?: string });
+        return outcome;
       } finally {
         this.isInterrupting = false;
       }
-      return;
     }
 
     if (this.deepResearchMode) {
@@ -430,6 +424,7 @@ export class AgentOrchestrator {
     const pending = this.pendingSteerMessages.splice(0);
     await this.sendMessage(newMessage, attachments, options, messageMetadata, clientMessageId);
     this.queuePendingSteer(pending, sessionId, 'after interrupt');
+    return { outcome: 'steered' };
   }
 
   isProcessing(): boolean {

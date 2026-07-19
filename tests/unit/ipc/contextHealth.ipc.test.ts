@@ -134,7 +134,7 @@ function makeAppService(sessionId: string, messages: Message[], modelOverride?: 
     sendMessage: async () => {},
     cancel: async () => {},
     handlePermissionResponse: () => {},
-    interruptAndContinue: async () => {},
+    interruptAndContinue: async () => ({ outcome: 'steered' }),
     getWorkingDirectory: () => undefined,
     setWorkingDirectory: () => {},
     createSession: async () => { throw new Error('not implemented'); },

@@ -4,6 +4,7 @@ import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
+import type { SteerOrQueueOutcome } from '../../shared/contract/appService';
 import { generateMessageId } from '../../shared/utils/id';
 import { SteerRejectedError } from '../agent/runtime/conversationRuntime';
 import { SteerUnsupportedError } from './runContext';
@@ -90,7 +91,7 @@ export interface SteerQueueFenceRepository {
 }
 
 export interface SteerOrQueueInput {
-  sessionId: string;
+  sessionId: string | null;
   content: string;
   clientMessageId?: string;
   attachments?: MessageAttachment[];
@@ -102,9 +103,7 @@ export interface SteerOrQueueInput {
   context?: ConversationEnvelopeContext;
 }
 
-export type SteerOrQueueOutcome =
-  | { outcome: 'steered' }
-  | { outcome: 'queued'; queuedInputId: string };
+export type { SteerOrQueueOutcome } from '../../shared/contract/appService';
 
 interface QueuedSteerEnvelopeInput {
   sessionId: string;
@@ -140,7 +139,7 @@ function buildQueuedSteerEnvelope(
 export async function steerOrQueue(
   target: SteerAttemptTarget,
   input: SteerOrQueueInput,
-  repository: SteerQueueFenceRepository,
+  repository?: SteerQueueFenceRepository,
   options?: { generateId?: () => string; now?: () => number },
 ): Promise<SteerOrQueueOutcome> {
   try {
@@ -155,16 +154,25 @@ export async function steerOrQueue(
     if (!(error instanceof SteerRejectedError || error instanceof SteerUnsupportedError)) {
       throw error;
     }
+    const sessionId = input.sessionId;
+    if (!sessionId) throw error;
 
-    const queued = buildQueuedSteerEnvelope(input, options);
-    repository.enqueue({
+    const queued = buildQueuedSteerEnvelope({ ...input, sessionId }, options);
+    const queueRepository = repository ?? resolveQueuedInputRepository();
+    queueRepository.enqueue({
       id: queued.id,
-      sessionId: input.sessionId,
+      sessionId,
       envelope: queued.envelope,
       now: options?.now?.(),
     });
     return { outcome: 'queued', queuedInputId: queued.id };
   }
+}
+
+function resolveQueuedInputRepository(): SteerQueueFenceRepository {
+  const db = getDatabase().getDb();
+  if (!db) throw new Error('Cannot queue steer input because the database is not initialized');
+  return new QueuedInputRepository(db);
 }
 
 export interface PendingSteerLikeMessage {
@@ -208,13 +216,15 @@ export function queuePendingSteerMessagesOrWarn(
     log.warn(`[SteerQueueFence] Dropping pending steer messages ${logContext} because no session is available`);
     return;
   }
-  const db = getDatabase().getDb();
-  if (!db) {
+  let repository: SteerQueueFenceRepository;
+  try {
+    repository = resolveQueuedInputRepository();
+  } catch {
     log.warn(`[SteerQueueFence] Dropping pending steer messages ${logContext} because the database is not initialized`);
     return;
   }
   try {
-    queuePendingSteerMessages(sessionId, pending, new QueuedInputRepository(db));
+    queuePendingSteerMessages(sessionId, pending, repository);
   } catch (error) {
     log.error(`[SteerQueueFence] Failed to queue pending steer messages ${logContext}`, error);
   }

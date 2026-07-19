@@ -348,7 +348,8 @@ describe('TaskManager message event persistence', () => {
     orchestratorMocks.sendMessage.mockImplementation(() => new Promise<void>((resolve) => {
       resolveSendMessage = resolve;
     }));
-    orchestratorMocks.interruptAndContinue.mockResolvedValue(undefined);
+    const expectedOutcome = { outcome: 'queued', queuedInputId: 'queued-input-x' } as const;
+    orchestratorMocks.interruptAndContinue.mockResolvedValue(expectedOutcome);
 
     const runPromise = manager.startTask('session-interrupt', 'long task');
     await vi.waitFor(() => {
@@ -357,7 +358,7 @@ describe('TaskManager message event persistence', () => {
 
     const options = { executionIntent: { allowBrowserAutomation: false } } as never;
     const metadata = { workbench: { executionIntent: { allowBrowserAutomation: false } } } as never;
-    await manager.interruptAndContinue(
+    const outcome = await manager.interruptAndContinue(
       'session-interrupt',
       'new instruction',
       [],
@@ -373,6 +374,7 @@ describe('TaskManager message event persistence', () => {
       metadata,
       'client-msg-1',
     );
+    expect(outcome).toBe(expectedOutcome);
     expect(manager.getSessionState('session-interrupt').status).toBe('running');
 
     resolveSendMessage?.();
@@ -387,7 +389,7 @@ describe('TaskManager message event persistence', () => {
     });
     (manager as any).updateSessionState('session-orphan', { status: 'running' });
 
-    await manager.interruptAndContinue('session-orphan', 'fresh task');
+    const outcome = await manager.interruptAndContinue('session-orphan', 'fresh task');
 
     expect(orchestratorMocks.sendMessage).toHaveBeenCalledWith(
       'fresh task',
@@ -396,6 +398,29 @@ describe('TaskManager message event persistence', () => {
       undefined,
       undefined,
     );
+    expect(outcome).toEqual({ outcome: 'steered' });
     expect(manager.getSessionState('session-orphan').status).toBe('idle');
+  });
+
+  it('returns steered after replacing a queued task with a fresh task', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+    (manager as any).updateSessionState('session-queued', { status: 'queued' });
+    vi.spyOn(manager, 'cancelTask').mockResolvedValue(undefined);
+    vi.spyOn(manager, 'startTask').mockResolvedValue(undefined);
+
+    await expect(manager.interruptAndContinue('session-queued', 'replacement')).resolves.toEqual({
+      outcome: 'steered',
+    });
+  });
+
+  it('returns steered after starting an interrupt request from idle', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({ configService: {} as never, onAgentEvent: vi.fn() });
+    vi.spyOn(manager, 'startTask').mockResolvedValue(undefined);
+
+    await expect(manager.interruptAndContinue('session-idle', 'fresh task')).resolves.toEqual({
+      outcome: 'steered',
+    });
   });
 });

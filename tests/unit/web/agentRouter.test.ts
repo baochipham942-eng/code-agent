@@ -18,6 +18,8 @@ import {
   sessionMessagesProjection as sessionMessages,
 } from '../../../src/web/helpers/webSessionStore';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
+import { SteerRejectedError } from '../../../src/host/agent/runtime/conversationRuntime';
+import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
 
 const mockRun = vi.fn();
 const mockCancel = vi.fn();
@@ -36,6 +38,7 @@ const agentEngineMocks = vi.hoisted(() => ({
   enqueueReviewSession: vi.fn(),
 }));
 const mockDb = vi.hoisted(() => ({
+  getDb: vi.fn(() => ({})),
   getSession: vi.fn(() => ({
     id: 'session-existing',
     title: 'Existing',
@@ -46,6 +49,8 @@ const mockDb = vi.hoisted(() => ({
   updateMessage: vi.fn(),
   getMessages: vi.fn(() => []),
 }));
+const mockQueuedInputEnqueue = vi.spyOn(QueuedInputRepository.prototype, 'enqueue')
+  .mockImplementation(() => undefined);
 
 vi.mock('../../../src/cli/adapter', () => ({
   createCLIAgent: vi.fn(async () => ({
@@ -1584,7 +1589,7 @@ describe('createAgentRouter', () => {
     const body = await response.json();
 
     expect(response.ok).toBe(true);
-    expect(body).toEqual({ success: true, data: null });
+    expect(body).toEqual({ success: true, data: { outcome: 'steered' } });
     expect(mockSteer).toHaveBeenCalledWith(
       '补一句',
       'client-msg-1',
@@ -1596,6 +1601,92 @@ describe('createAgentRouter', () => {
         },
       },
     );
+    expect(mockBroadcastSSE.mock.calls.map(([, event]) => event.type)).toEqual([
+      'interrupt_start',
+      'interrupt_complete',
+    ]);
+  });
+
+  it('queues a late /api/interrupt with its raw web context and completes the interrupt', async () => {
+    const handle = runRegistry.start({
+      runId: 'run-late-steer',
+      sessionId: 'session-late-steer',
+      workspace: process.cwd(),
+    });
+    const lateSteer = vi.fn().mockRejectedValue(new SteerRejectedError());
+    await handle.attach({ cancel: mockCancel, steer: lateSteer });
+    const attachments = [{ name: 'late-note.txt' }];
+    const context = {
+      workingDirectory: '/tmp/raw-web-project',
+      selectedAgent: { id: 'agent-raw', name: 'Raw Context Agent' },
+      voiceInput: { inputSource: 'voice', language: 'zh-CN', transcriptChars: 8 },
+      runtimeInput: { mode: 'supplement', delivery: 'in_flight' },
+    };
+
+    const response = await fetch(`${baseUrl}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: 'settled 后继续',
+        sessionId: 'session-late-steer',
+        clientMessageId: 'late-web-message-id',
+        attachments,
+        context,
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.ok).toBe(true);
+    expect(body).toEqual({
+      success: true,
+      data: { outcome: 'queued', queuedInputId: 'late-web-message-id' },
+    });
+    expect(mockQueuedInputEnqueue).toHaveBeenCalledWith({
+      id: 'late-web-message-id',
+      sessionId: 'session-late-steer',
+      envelope: {
+        content: 'settled 后继续',
+        clientMessageId: 'late-web-message-id',
+        sessionId: 'session-late-steer',
+        attachments,
+        context,
+      },
+      now: undefined,
+    });
+    expect(mockBroadcastSSE.mock.calls.map(([, event]) => event.type)).toEqual([
+      'interrupt_start',
+      'interrupt_complete',
+    ]);
+  });
+
+  it('keeps genuine /api/interrupt failures on the INTERRUPT_FAILED path', async () => {
+    const handle = runRegistry.start({
+      runId: 'run-broken-steer',
+      sessionId: 'session-broken-steer',
+      workspace: process.cwd(),
+    });
+    const brokenSteer = vi.fn().mockRejectedValue(new Error('unexpected steer failure'));
+    await handle.attach({ cancel: mockCancel, steer: brokenSteer });
+
+    const response = await fetch(`${baseUrl}/api/interrupt`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: '触发真实错误',
+        sessionId: 'session-broken-steer',
+      }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toMatchObject({
+      success: false,
+      error: {
+        code: 'INTERRUPT_FAILED',
+        message: 'unexpected steer failure',
+      },
+    });
+    expect(mockQueuedInputEnqueue).not.toHaveBeenCalled();
   });
 
   it('rejects /api/interrupt when there is no active loop for the session', async () => {

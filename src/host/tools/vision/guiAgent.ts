@@ -111,7 +111,7 @@ class MacOSOperator {
       }
       if (box) {
         // 解析 "[x1,y1,x2,y2]" 格式，取中心点
-        const nums = box.replace(/[\[\]]/g, '').split(',').map(Number);
+        const nums = box.replace(/[[\]]/g, '').split(',').map(Number);
         if (nums.length >= 2) {
           const cx = nums.length >= 4 ? (nums[0] + nums[2]) / 2 : nums[0];
           const cy = nums.length >= 4 ? (nums[1] + nums[3]) / 2 : nums[1];

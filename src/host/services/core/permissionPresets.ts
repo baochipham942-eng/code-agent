@@ -194,7 +194,7 @@ export function isCommandBlocked(command: string, blockedCommands: string[]): bo
  */
 export function isDangerousCommand(command: string): boolean {
   const dangerousPatterns = [
-    /\brm\s+(-[rf]+\s+)*[\/~]/i, // rm with paths
+    /\brm\s+(-[rf]+\s+)*[/~]/i, // rm with paths
     /\bsudo\b/i,
     /\bchmod\s+.*777/i,
     /\bchown\s+-R/i,

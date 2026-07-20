@@ -32,7 +32,7 @@ function repairJsonForArguments(str: string): Record<string, unknown> | null {
   if (!str?.trim()) return null;
 
   let repaired = str.trim();
-  repaired = repaired.replace(/^[^{\[]*/, '');
+  repaired = repaired.replace(/^[^{[]*/, '');
   repaired = repaired.replace(/[^}\]]*$/, '');
 
   if (!repaired.startsWith('{') && !repaired.startsWith('[')) {

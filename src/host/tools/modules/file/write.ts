@@ -153,7 +153,7 @@ function checkCodeCompleteness(content: string, filePath: string): CompletenessC
     const trimmedEnd = content.trimEnd();
     const lastChars = trimmedEnd.slice(-20);
 
-    if (/[,+\-*\/&|=<>!?:]$/.test(trimmedEnd) && !trimmedEnd.endsWith('*/')) {
+    if (/[,+\-*/&|=<>!?:]$/.test(trimmedEnd) && !trimmedEnd.endsWith('*/')) {
       issues.push(`代码可能在表达式中间被截断 (以 "${lastChars.slice(-5)}" 结尾)`);
     }
     if (/function\s+\w+\s*\([^)]*$/.test(trimmedEnd)) {

@@ -313,7 +313,7 @@ export async function executeReadXlsx(
           'sheet_name = sys.argv[3] if len(sys.argv) > 3 else None',
           'df = pd.read_excel(file_path, sheet_name=sheet_name)',
           'print(f"ROWS:{len(df)}")',
-          'print(f"COLS:{\",\".join(str(c) for c in df.columns.tolist())}")',
+          'print(f"COLS:{",".join(str(c) for c in df.columns.tolist())}")',
           'print("---DATA---")',
           'print(df.head(max_rows).to_csv(index=False))',
         ].join('\n');

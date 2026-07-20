@@ -846,7 +846,7 @@ export class NudgeManager {
 
     // Pattern 1: Numbered list — "1. xxx  2. xxx" (inline or newline-separated)
     // Split by numbered prefix to handle both inline and multi-line formats
-    const numberedParts = userPrompt.split(/(?:^|\s)(\d+)\s*[.)\、）]\s*/);
+    const numberedParts = userPrompt.split(/(?:^|\s)(\d+)\s*[.)、）]\s*/);
     // numberedParts: [prefix, "1", content1, "2", content2, ...]
     let m: RegExpExecArray | null;
     for (let i = 1; i < numberedParts.length; i += 2) {

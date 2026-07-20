@@ -54,11 +54,11 @@ const PATTERNS = {
   /** CJK characters (Chinese, Japanese, Korean) */
   CJK: /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/g,
   /** Code indicators */
-  CODE: /^(import|export|const|let|var|function|class|interface|type|def|async|await|return|if|else|for|while|switch|case|try|catch|throw|new|this|self|public|private|protected|static|readonly|abstract|extends|implements|=>|===|!==|&&|\|\|)\b|[{}\[\]();:,.<>]/gm,
+  CODE: /^(import|export|const|let|var|function|class|interface|type|def|async|await|return|if|else|for|while|switch|case|try|catch|throw|new|this|self|public|private|protected|static|readonly|abstract|extends|implements|=>|===|!==|&&|\|\|)\b|[{}[\]();:,.<>]/gm,
   /** Markdown indicators */
   MARKDOWN: /^#{1,6}\s|^\s*[-*+]\s|^\s*\d+\.\s|```|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|!\[.*\]\(.*\)|\[.*\]\(.*\)/gm,
   /** JSON indicators */
-  JSON: /^\s*[{\["]|":\s*[{\["0-9tfn]|^\s*}|^\s*]/gm,
+  JSON: /^\s*[{["]|":\s*[{["0-9tfn]|^\s*}|^\s*]/gm,
   /** Special characters that often become single tokens */
   SPECIAL_CHARS: /[{}[\]().,;:!?<>@#$%^&*+=|\\/"'`~]/g,
 };

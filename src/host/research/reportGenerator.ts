@@ -289,7 +289,7 @@ ${REPORT_STYLE_PROMPTS[style]}
     const sources: Array<{ title: string; url: string; snippet?: string }> = [];
 
     // 匹配 Markdown 链接格式 [title](url)
-    const markdownLinkPattern = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
+    const markdownLinkPattern = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
     let match;
     while ((match = markdownLinkPattern.exec(content)) !== null) {
       sources.push({
@@ -299,7 +299,7 @@ ${REPORT_STYLE_PROMPTS[style]}
     }
 
     // 匹配纯 URL
-    const urlPattern = /(?<!\()(https?:\/\/[^\s\)\]\>\"\']+)/g;
+    const urlPattern = /(?<!\()(https?:\/\/[^\s)\]>"']+)/g;
     while ((match = urlPattern.exec(content)) !== null) {
       const url = match[1];
       // 检查是否已在 sources 中

@@ -694,7 +694,7 @@ ${sourceSummaries}
    * 从文本中提取 URL
    */
   private extractUrls(text: string): string[] {
-    const urlPattern = /https?:\/\/[^\s\)\]\>\"\']+/g;
+    const urlPattern = /https?:\/\/[^\s)\]>"']+/g;
     const matches = text.match(urlPattern) ?? [];
     const uniqueUrls = [...new Set(matches)];
     return uniqueUrls.filter(url => {

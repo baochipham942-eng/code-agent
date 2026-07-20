@@ -122,6 +122,69 @@ describe('browserProfileImportService (ADR-041)', () => {
     expect(copied[0]).toBe('/tmp/fake-profile/Network/Cookies');
   });
 
+  it('rejects control, whitespace, and separator characters in cookie names', async () => {
+    const cookieNames = [
+      'normal_name-123',
+      'null\x00name',
+      'unit\x1fname',
+      'delete\x7fname',
+      'white space',
+      'semi;colon',
+      'comma,name',
+    ];
+    const applyCookies = vi.fn(async () => null);
+
+    const result = await importBrowserProfileCookies(
+      {
+        source: 'chrome',
+        profileId: 'Default',
+        userConfirmed: true,
+      },
+      {
+        platform: 'darwin',
+        findProfile: () => ({
+          source: 'chrome',
+          appName: 'Google Chrome',
+          profileId: 'Default',
+          profileName: 'Person 1',
+          profileDir: '/tmp/fake-profile',
+          cookieDbPath: '/tmp/fake-profile/Network/Cookies',
+          available: true,
+        }),
+        getSource: () => ({
+          source: 'chrome',
+          appName: 'Google Chrome',
+          userDataSubpath: 'Google/Chrome',
+          keychainService: 'Chrome Safe Storage',
+          keychainAccount: 'Chrome',
+        }),
+        readKeychainPassword: async () => 'password',
+        copyCookieDbSnapshot: () => undefined,
+        readCookieRows: async () => cookieNames.map((name) => ({
+          host_key: '.example.com',
+          name,
+          value: 'cookie-value',
+          encrypted_value: null,
+          path: '/',
+          expires_utc: 0,
+          is_secure: 1,
+          is_httponly: 1,
+          samesite: 1,
+        })),
+        applyCookies,
+        cleanupPaths: () => undefined,
+        mkdtemp: () => '/tmp/neo-cookie-import-test-names',
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.importedCookieCount).toBe(1);
+    expect(result.skippedCookieCount).toBe(6);
+    expect(applyCookies).toHaveBeenCalledWith([
+      expect.objectContaining({ name: 'normal_name-123' }),
+    ]);
+  });
+
   it('fail-closes when a cookie cannot be decrypted', async () => {
     const result = await importBrowserProfileCookies(
       {

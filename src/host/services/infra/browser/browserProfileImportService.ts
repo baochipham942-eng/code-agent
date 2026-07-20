@@ -25,6 +25,7 @@ import {
 
 function isPlaywrightSafeCookieName(name: string): boolean {
   // RFC 6265 cookie-name token; reject empty / control / separators.
+  // eslint-disable-next-line no-control-regex -- Cookie-name validation intentionally matches control characters.
   return name.length > 0 && !/[\x00-\x1f\x7f\s;,]/.test(name);
 }
 import {

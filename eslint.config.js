@@ -22,6 +22,23 @@ export default tseslint.config(
     ],
   },
   {
+    // CommonJS web bootstrap runs directly in Node; keep this environment override file-scoped.
+    files: ['src/web/webServerBootstrap.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        __dirname: 'readonly',
+        module: 'readonly',
+        process: 'readonly',
+        require: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      '@typescript-eslint/no-var-requires': 'off',
+    },
+  },
+  {
     files: ['src/**/*.ts', 'src/**/*.tsx'],
     languageOptions: {
       parserOptions: {

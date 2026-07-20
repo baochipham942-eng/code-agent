@@ -352,6 +352,17 @@ export class CLISessionManager {
   }
 
   /**
+   * 本管理器当前能否真正持久化。
+   *
+   * 打包态 webServer 里 CLI DB 可能永远初始化失败（如 better-sqlite3 依赖链缺
+   * 'bindings'，2026-07-20 真机取证）——此时消费方（webSessionStore）必须回退到
+   * infra 直写而不是把消息交给一个只会静默丢弃的后端。
+   */
+  async isPersistent(): Promise<boolean> {
+    return this.ensureDbReady();
+  }
+
+  /**
    * 获取最近消息
    */
   async getRecentMessages(sessionId: string, count: number): Promise<Message[]> {

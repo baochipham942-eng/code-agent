@@ -123,6 +123,8 @@ interface WebCLISessionManagerLike {
     message: Message,
     options?: SessionCreateOptions & { setCurrent?: boolean },
   ): Promise<void>;
+  /** 后端能否真正持久化；缺省视为可持久化（向后兼容） */
+  isPersistent?(): Promise<boolean>;
 }
 
 interface InfraSessionCacheInvalidator {
@@ -231,6 +233,30 @@ async function persistMessageToDb(
       throw error;
     }
     db.updateMessage(message.id, message, sessionId);
+  }
+}
+
+/**
+ * 只把「真正能持久化」的 session manager 交给写路径。
+ *
+ * 打包态 webServer 里 CLI SM 的 DB 可能永远初始化失败（better-sqlite3 依赖链缺
+ * 'bindings'，2026-07-20 真机取证）——若照旧选它，消息会被静默丢弃（派发轮
+ * assistant 蒸发 P0 的最内层根因）。此时视为无 SM，落回 infra 直写路径。
+ * 不实现 isPersistent 的实现（测试桩/其他适配器）保持旧语义视为可持久化。
+ */
+async function resolvePersistentSessionManager(
+  sessionManager: WebCLISessionManagerLike | null,
+  logger: WebRouteLogger,
+): Promise<WebCLISessionManagerLike | null> {
+  if (!sessionManager) return null;
+  if (!sessionManager.isPersistent) return sessionManager;
+  try {
+    if (await sessionManager.isPersistent()) return sessionManager;
+    logger.warn('[AgentRouter] CLI session manager cannot persist; falling back to direct DB writes');
+    return null;
+  } catch (error) {
+    logger.warn('[AgentRouter] CLI session manager persistence probe failed; falling back to direct DB writes:', error);
+    return null;
   }
 }
 
@@ -412,7 +438,10 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
       }
 
       try {
-        const sm = await deps.tryGetSessionManager();
+        const sm = await resolvePersistentSessionManager(
+          await deps.tryGetSessionManager(),
+          deps.logger,
+        );
         const cliSessionManager = hasCliSessionLifecycle(sm) ? sm : null;
         const sessionExists = cliSessionManager
           ? await prepareCliSessionForWrite(cliSessionManager, input.sessionId, input.title)
@@ -471,7 +500,10 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         let sm: WebCLISessionManagerLike | null = null;
         let persistenceSucceeded = false;
         try {
-          sm = await deps.tryGetSessionManager();
+          sm = await resolvePersistentSessionManager(
+            await deps.tryGetSessionManager(),
+            deps.logger,
+          );
           const cliSessionManager = hasCliSessionLifecycle(sm) ? sm : null;
           const sessionExists = cliSessionManager
             ? await prepareCliSessionForWrite(cliSessionManager, sessionId, title)

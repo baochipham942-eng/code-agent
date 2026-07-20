@@ -215,6 +215,53 @@ describe('WebSessionStore CLI SessionManager backend', () => {
     ]);
   });
 
+  it('CLI SM 无法持久化时回退 infra 直写，user+assistant 均落库（打包态 bindings 缺失 P0 复现）', async () => {
+    const sessionId = 'session-broken-cli-sm';
+    // 模拟打包态：CLI DB 句柄存在但 initialize 永远失败（better-sqlite3 依赖链缺 bindings）
+    const brokenSessionManager = new CLISessionManager();
+    Object.assign(brokenSessionManager as unknown as Record<string, unknown>, {
+      _dbChecked: true,
+      _db: {
+        isInitialized: false,
+        initialize: vi.fn(async () => {
+          throw new Error("Cannot find module 'bindings' (simulated packaged env)");
+        }),
+      },
+    });
+
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => brokenSessionManager,
+      tryGetInfraSessionManager: async () => infraSessionManager,
+      logger,
+      getDatabase: vi.fn(async () => coreDb),
+    });
+
+    expect(await store.prePersistUserMessage({
+      sessionId,
+      title: '回退直写',
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+      message: {
+        id: 'user-fallback',
+        role: 'user',
+        content: '排队测试消息',
+        timestamp: 1_700_000_000_100,
+      },
+    })).toBe(true);
+
+    await store.commitTurn({
+      ...createCommitInput(sessionId),
+      userMessagePrePersistedDb: true,
+      historyLength: 1,
+    });
+
+    const persisted = coreDb.getMessages(sessionId);
+    const roles = persisted.map((message) => message.role);
+    expect(roles).toContain('user');
+    expect(roles).toContain('assistant');
+    const assistant = persisted.find((message) => message.role === 'assistant');
+    expect(assistant?.content).toContain('已读取。');
+  });
+
   it('infra SM 不可用时不影响 CLI 提交，并记录 debug 降级信息', async () => {
     const sessionId = 'session-no-infra-sm';
     const store = createWebSessionStore({

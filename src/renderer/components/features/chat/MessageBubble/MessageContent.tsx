@@ -12,7 +12,6 @@ import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcesso
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
 import { ChartBlock, isChartSpecSource } from './ChartBlock';
-import { LinkPreviewCard, isRawUrlLink } from './LinkPreviewCard';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { GenerativeUIHost } from '../GenerativeUI/GenerativeUIHost';
 import { neoUIOrdinalAtOffset } from '../GenerativeUI/sourceOrdinal';

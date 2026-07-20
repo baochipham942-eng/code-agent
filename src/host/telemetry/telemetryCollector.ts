@@ -16,7 +16,6 @@ import { buildDiagnosticBundle, sanitizeDiagnosticBundle } from './diagnosticBun
 import { classifyIntent, evaluateOutcome } from './intentClassifier';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, DiagnosticTriggerReason } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
-import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import { INCOMPLETE_TOOL_RESULT_MARKER } from '../../shared/contract/agentTrajectory';
 import { redactCredentialText } from '../../shared/security/secretPatterns';
 import { sanitizeBrowserComputerToolResult } from '../../shared/utils/browserComputerRedaction';

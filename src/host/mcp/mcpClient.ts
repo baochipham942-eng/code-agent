@@ -112,8 +112,8 @@ export interface MCPToolCallOptions {
   sessionId?: string;
   /** Internal capability: only the stateful CUA facade may invoke raw driver tools. */
   cuaStatefulFacade?: boolean;
+  cuaLockScope?: string; // Surface Session owner for input lock and trajectory budget.
 }
-
 function isAbortError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
@@ -957,7 +957,7 @@ export class MCPClient extends EventEmitter {
     // cua-driver：跨会话互斥（上游无锁，两个会话同时操作桌面会抢鼠标键盘）
     // + 轨迹预算软停（操控动作超限后拒绝并提示收尾）。只读观察类两者都放行。
     if (serverName === CUA_DRIVER_SERVER_NAME) {
-      const cuaSessionId = sessionId ?? `pid:${process.pid}`;
+      const cuaSessionId = typeof options === 'number' ? `pid:${process.pid}` : options.cuaLockScope?.trim() || sessionId || `pid:${process.pid}`;
       const blocked = await gateCuaToolCall(toolName, cuaSessionId);
       if (blocked) {
         void recordCuaFailure(toolName, cuaSessionId, blocked);

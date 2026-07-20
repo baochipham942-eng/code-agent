@@ -73,4 +73,45 @@ describe('ToolExecutor executionIntent propagation', () => {
       }),
     );
   });
+
+  it('adds the Surface event projection after tool-result artifact processing', async () => {
+    resolverState.execute.mockResolvedValueOnce({
+      success: true,
+      output: 'delivery uncertain',
+      metadata: {
+        surfaceSessionId: 'surface-browser-1',
+        surfaceActionResultV1: { overall: 'ambiguous' },
+        browserComputerProof: { evidenceRefs: [{ id: 'proof-browser-1' }] },
+        artifact: { artifactId: 'artifact-browser-1' },
+      },
+    });
+    const executor = new ToolExecutor({
+      requestPermission: async () => true,
+      workingDirectory: '/tmp/workbench',
+    });
+
+    const result = await executor.execute(
+      'browser_action',
+      { action: 'click', selector: '#submit' },
+      {
+        runId: 'run-surface-1',
+        sessionId: 'conversation-surface-1',
+        agentId: 'agent-surface-1',
+        currentToolCallId: 'tool-call-surface-1',
+      },
+    );
+
+    expect(result.metadata).toMatchObject({
+      surfaceProjectionMode: 'compatibility',
+      surfaceExecutionEventV1: {
+        eventId: 'surface-tool:tool-call-surface-1',
+        sessionId: 'surface-browser-1',
+        runId: 'run-surface-1',
+        agentId: 'agent-surface-1',
+        status: 'ambiguous',
+        evidenceRefs: ['proof-browser-1'],
+        artifactRefs: ['artifact-browser-1'],
+      },
+    });
+  });
 });

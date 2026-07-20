@@ -153,3 +153,5 @@ export * from './promptStack';
 // Agent History types (completed agent run records)
 export * from './agentHistory';
 export * from './durableRun';
+export * from './surfaceExecution';
+export * from './browserRelay';

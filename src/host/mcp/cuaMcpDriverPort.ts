@@ -23,6 +23,7 @@ export class CuaMcpDriverPort implements CuaDriverPort {
       args,
       {
         sessionId: context.sessionId,
+        cuaLockScope: context.surfaceSessionId,
         abortSignal: context.abortSignal,
         cuaStatefulFacade: true,
       },

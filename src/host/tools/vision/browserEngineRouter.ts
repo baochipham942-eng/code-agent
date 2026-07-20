@@ -18,6 +18,11 @@ export interface BrowserEngineRouteInput {
     ManagedBrowserExternalBridgeState,
     'status' | 'attachedTabCount' | 'enabled'
   > | null;
+  /**
+   * True only when the current Surface owner holds a live Relay tab lease.
+   * Extension connection and attached-tab counts are transport state, not authorization.
+   */
+  relayLeaseReady?: boolean;
   managedAvailable?: boolean;
 }
 
@@ -60,8 +65,7 @@ export function resolveBrowserActionEngine(
 ): BrowserEngineRouteDecision {
   const requested: BrowserActionEngine = input.requestedEngine || 'auto';
   const relayConnected = input.relay?.status === 'connected';
-  const attachedCount = input.relay?.attachedTabCount || 0;
-  const relayReady = relayConnected && attachedCount > 0;
+  const relayReady = relayConnected && input.relayLeaseReady === true;
   const managedAvailable = input.managedAvailable !== false;
   const available: BrowserActionEngine[] = ['auto'];
   if (managedAvailable) available.push('managed');
@@ -97,13 +101,13 @@ export function resolveBrowserActionEngine(
         requestedEngine: requested,
         reason: 'explicit_relay_unavailable',
         recovery: recovery({
-          code: relayConnected ? 'relay_no_attached_tab' : 'relay_not_connected',
+          code: relayConnected ? 'BROWSER_TAB_BORROW_REQUIRED' : 'relay_not_connected',
           requestedEngine: requested,
           selectedEngine: null,
-          recommendedAction: relayConnected ? 'attach_browser_tab' : 'start_browser_relay',
+          recommendedAction: relayConnected ? 'borrow_browser_tab' : 'start_browser_relay',
           availableEngines: available,
           reason: relayConnected
-            ? 'Browser relay is connected but no tab is attached.'
+            ? 'Browser relay is connected but this owner has no valid tab lease.'
             : 'Browser relay extension is not connected.',
         }),
       };
@@ -136,25 +140,29 @@ export function resolveBrowserActionEngine(
     };
   }
 
-  if (input.intent === 'login_reuse' || relayReady) {
+  if (input.intent === 'login_reuse') {
     if (relayReady) {
       return {
         selectedEngine: 'relay',
         requestedEngine: requested,
-        reason: input.intent === 'login_reuse' ? 'auto_login_reuse_relay' : 'auto_relay_ready',
+        reason: 'auto_login_reuse_relay',
       };
     }
     return {
       selectedEngine: 'managed',
       requestedEngine: requested,
-      reason: 'auto_login_reuse_fallback_managed',
+      reason: 'auto_login_reuse_managed_recovery',
       recovery: recovery({
-        code: 'prefer_relay_for_login',
+        code: relayConnected ? 'BROWSER_TAB_BORROW_REQUIRED' : 'relay_not_connected',
         requestedEngine: requested,
         selectedEngine: 'managed',
-        recommendedAction: 'start_browser_relay_or_import_cookies',
+        recommendedAction: relayConnected
+          ? 'borrow_browser_tab_or_import_cookies'
+          : 'start_browser_relay_or_import_cookies',
         availableEngines: available,
-        reason: 'Login reuse prefers an attached Chrome tab or profile cookie import.',
+        reason: relayConnected
+          ? 'Login reuse requires a valid owner-scoped Relay tab lease or profile cookie import.'
+          : 'Login reuse requires a connected Relay extension or profile cookie import.',
       }),
     };
   }

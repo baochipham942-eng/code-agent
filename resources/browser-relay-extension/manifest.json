@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Agent Neo Browser Relay",
-  "version": "0.1.0",
-  "description": "Connect Chrome tabs to Agent Neo through a local, token-protected relay.",
+  "version": "0.2.0",
+  "description": "Grant Agent Neo time-bound, origin-scoped leases for explicitly approved Chrome tabs.",
   "permissions": ["debugger", "tabs", "activeTab", "storage", "alarms"],
   "host_permissions": ["<all_urls>", "http://127.0.0.1/*", "http://localhost/*"],
   "background": {

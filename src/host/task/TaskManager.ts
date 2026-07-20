@@ -18,6 +18,7 @@ import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
 import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 import { getModelSessionState } from '../session/modelSessionState';
+import type { RunRegistry } from '../runtime/runRegistry';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
@@ -141,6 +142,7 @@ export class TaskManager extends EventEmitter {
   private configService: ConfigService | null = null;
   private planningService: PlanningService | undefined;
   private onAgentEvent: ((sessionId: string, event: AgentEvent) => void) | null = null;
+  private runRegistry: RunRegistry | undefined;
 
   // 当前活跃会话 ID（用于 getAgentOrchestrator 兼容层）
   private currentSessionId: string | null = null;
@@ -172,10 +174,12 @@ export class TaskManager extends EventEmitter {
   initialize(deps: {
     configService: ConfigService;
     planningService?: PlanningService;
+    runRegistry?: RunRegistry;
     onAgentEvent: (sessionId: string, event: AgentEvent) => void;
   }): void {
     this.configService = deps.configService;
     this.planningService = deps.planningService;
+    this.runRegistry = deps.runRegistry;
     this.onAgentEvent = deps.onAgentEvent;
     logger.info('TaskManager dependencies initialized');
   }
@@ -789,6 +793,7 @@ export class TaskManager extends EventEmitter {
       const orchestrator = new AgentOrchestrator({
         configService: this.configService!,
         planningService: this.planningService,
+        runRegistry: this.runRegistry,
         onEvent: async (event: AgentEvent) => this.handleAgentEvent(sessionId, event),
         getHomeDir: () => app.getPath('home'),
         broadcastDAGEvent: (event) => {

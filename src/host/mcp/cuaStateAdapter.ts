@@ -28,6 +28,12 @@ export interface CuaDriverCallResult {
 
 export interface CuaDriverCallContext {
   sessionId: string;
+  /** Surface Session owner. Required for owner-safe mutations. */
+  surfaceSessionId?: string;
+  /** Native Run owner. Missing values are normalized only for legacy callers. */
+  runId?: string;
+  /** Explicit Surface isolation owner. Legacy callers are read/compatibility only. */
+  agentId?: string;
   toolCallId: string;
   abortSignal?: AbortSignal;
 }
@@ -69,6 +75,16 @@ export interface CuaStatefulExecutionResult {
   imageDataUrl?: string;
 }
 
+export interface CuaStateOwnershipMetadata {
+  sessionId: string;
+  surfaceSessionId: string;
+  runId: string;
+  agentId: string;
+  stateId: string;
+  providerGeneration: string;
+  providerSnapshotId: string;
+}
+
 interface StoredElement {
   view: ComputerUseElementViewV1;
   providerToken: string;
@@ -77,6 +93,9 @@ interface StoredElement {
 
 interface StoredState {
   sessionId: string;
+  surfaceSessionId: string;
+  runId: string;
+  agentId: string;
   view: ComputerUseStateViewV1;
   providerGeneration: string;
   providerSnapshotId: string;
@@ -217,8 +236,35 @@ function isStaleTokenError(message: string): boolean {
   return /stale|snapshot.*supersed|element_token.*invalid/i.test(message);
 }
 
+function normalizedRunId(context: CuaDriverCallContext): string {
+  return context.runId?.trim() || `legacy:${context.sessionId}`;
+}
+
+function normalizedAgentId(context: CuaDriverCallContext): string {
+  return context.agentId?.trim() || 'main';
+}
+
+function normalizedSurfaceSessionId(context: CuaDriverCallContext): string {
+  return context.surfaceSessionId?.trim()
+    || `legacy-surface:${context.sessionId}:${normalizedRunId(context)}:${normalizedAgentId(context)}`;
+}
+
+function ownerKey(
+  context: Pick<CuaDriverCallContext, 'sessionId' | 'surfaceSessionId' | 'runId' | 'agentId'>,
+): string {
+  return JSON.stringify([
+    context.sessionId,
+    context.surfaceSessionId?.trim()
+      || `legacy-surface:${context.sessionId}:${context.runId?.trim() || `legacy:${context.sessionId}`}:${context.agentId?.trim() || 'main'}`,
+    context.runId?.trim() || `legacy:${context.sessionId}`,
+    context.agentId?.trim() || 'main',
+  ]);
+}
+
 export class CuaStateAdapter {
-  private readonly statesBySession = new Map<string, Map<string, StoredState>>();
+  private readonly statesByOwner = new Map<string, Map<string, StoredState>>();
+  private readonly rootsByOwner = new Map<string, Map<string, ComputerUseRootRefV1>>();
+  private readonly startedOwners = new Set<string>();
   private readonly hostRevisions = new Map<string, number>();
 
   constructor(
@@ -231,7 +277,7 @@ export class CuaStateAdapter {
     request: CuaStatefulComputerUseRequest,
     context: CuaDriverCallContext,
   ): Promise<CuaStatefulExecutionResult> {
-    this.pruneExpired(context.sessionId);
+    this.pruneExpired(context);
     if (request.operation === 'list_roots') {
       const roots = await this.listRoots(request.onScreenOnly ?? false, context);
       return { response: { version: 1, operation: 'list_roots', roots } };
@@ -246,6 +292,63 @@ export class CuaStateAdapter {
     return this.act(request, context);
   }
 
+  async startSurfaceSession(context: CuaDriverCallContext): Promise<void> {
+    if (!context.surfaceSessionId?.trim() || !context.runId?.trim() || !context.agentId?.trim()) {
+      throw new CuaStateInputError('cua-driver Surface session requires explicit session, run, and agent owner');
+    }
+    const key = ownerKey(context);
+    if (this.startedOwners.has(key)) return;
+    const result = await this.driver.call('start_session', {}, context);
+    if (!result.success) {
+      throw new Error(result.error ?? result.output ?? 'cua-driver start_session failed');
+    }
+    this.startedOwners.add(key);
+  }
+
+  async endSurfaceSession(context: CuaDriverCallContext): Promise<void> {
+    const key = ownerKey(context);
+    if (!this.startedOwners.has(key)) {
+      this.purgeOwner(context);
+      return;
+    }
+    let failure: Error | undefined;
+    try {
+      const result = await this.driver.call('end_session', {}, context);
+      if (!result.success) {
+        failure = new Error(result.error ?? result.output ?? 'cua-driver end_session failed');
+      }
+    } catch (error) {
+      failure = error instanceof Error ? error : new Error(String(error));
+    } finally {
+      this.startedOwners.delete(key);
+      this.purgeOwner(context);
+    }
+    if (failure) throw failure;
+  }
+
+  purgeOwner(context: CuaDriverCallContext): void {
+    const key = ownerKey(context);
+    this.statesByOwner.delete(key);
+    this.rootsByOwner.delete(key);
+  }
+
+  getStateOwnership(
+    stateId: string,
+    context: CuaDriverCallContext,
+  ): CuaStateOwnershipMetadata | null {
+    const state = this.statesByOwner.get(ownerKey(context))?.get(stateId);
+    if (!state) return null;
+    return {
+      sessionId: state.sessionId,
+      surfaceSessionId: state.surfaceSessionId,
+      runId: state.runId,
+      agentId: state.agentId,
+      stateId: state.view.stateId,
+      providerGeneration: state.providerGeneration,
+      providerSnapshotId: state.providerSnapshotId,
+    };
+  }
+
   private async listRoots(
     onScreenOnly: boolean,
     context: CuaDriverCallContext,
@@ -256,7 +359,10 @@ export class CuaStateAdapter {
     }
     const structured = result.structured ?? parseJsonObject(result.output);
     const windows = structured && Array.isArray(structured.windows) ? structured.windows : [];
-    return windows.map(parseRoot).filter((root): root is ComputerUseRootRefV1 => Boolean(root));
+    const roots = windows.map(parseRoot).filter((root): root is ComputerUseRootRefV1 => Boolean(root));
+    const byRoot = new Map(roots.map((root) => [rootKey(root), root]));
+    this.rootsByOwner.set(ownerKey(context), byRoot);
+    return roots;
   }
 
   private async observeRoot(
@@ -268,6 +374,7 @@ export class CuaStateAdapter {
       throw new CuaStateInputError('observe.target.pid and windowId must be integers');
     }
     const targetKey = rootKey({ pid, windowId });
+    const root = await this.resolveRoot({ pid, windowId }, context);
     const generationBefore = this.driver.getGeneration();
     const revisionBefore = this.hostRevisions.get(targetKey) ?? 0;
     const result = await this.driver.call('get_window_state', {
@@ -297,7 +404,6 @@ export class CuaStateAdapter {
 
     const observedAtMs = this.now();
     const stateId = `cua_${this.createId()}`;
-    const root: ComputerUseRootRefV1 = { provider: 'cua-driver', pid, windowId };
     const rawElements = Array.isArray(structured.elements) ? structured.elements : [];
     const indexToRef = new Map<number, string>();
     rawElements.forEach((raw, position) => {
@@ -361,6 +467,9 @@ export class CuaStateAdapter {
     };
     const state: StoredState = {
       sessionId: context.sessionId,
+      surfaceSessionId: normalizedSurfaceSessionId(context),
+      runId: normalizedRunId(context),
+      agentId: normalizedAgentId(context),
       view,
       providerGeneration: generationAfter,
       providerSnapshotId: snapshotId,
@@ -368,7 +477,7 @@ export class CuaStateAdapter {
       ...(result.screenshot ? { screenshot: result.screenshot } : {}),
       consumed: false,
     };
-    this.supersedeRootStates(context.sessionId, root, stateId);
+    this.supersedeRootStates(context, root, stateId);
     this.rememberState(state);
     return { state };
   }
@@ -378,7 +487,7 @@ export class CuaStateAdapter {
     context: CuaDriverCallContext,
   ): Promise<CuaStatefulExecutionResult> {
     const evidenceRef = `cua-evidence:${this.createId()}`;
-    const state = this.statesBySession.get(context.sessionId)?.get(request.stateId);
+    const state = this.statesByOwner.get(ownerKey(context))?.get(request.stateId);
     if (!state) {
       return this.actionResponse(stateError(
         request.stateId,
@@ -389,6 +498,15 @@ export class CuaStateAdapter {
     }
     const invalid = this.validateStateForAction(state);
     if (invalid) return this.actionResponse(stateError(request.stateId, invalid.kind, invalid.message, evidenceRef));
+    const targetInvalid = await this.validateCurrentRoot(state, context);
+    if (targetInvalid) {
+      return this.actionResponse(stateError(
+        request.stateId,
+        targetInvalid.kind,
+        targetInvalid.message,
+        evidenceRef,
+      ));
+    }
     if (request.expect && !expectationFieldsAreValid(request.expect)) {
       return this.actionResponse(stateError(
         request.stateId,
@@ -580,6 +698,32 @@ export class CuaStateAdapter {
     return null;
   }
 
+  private async validateCurrentRoot(
+    state: StoredState,
+    context: CuaDriverCallContext,
+  ): Promise<{ kind: ComputerUseStateErrorKindV1; message: string } | null> {
+    let roots: ComputerUseRootRefV1[];
+    try {
+      roots = await this.listRoots(false, context);
+    } catch (error) {
+      return {
+        kind: 'provider_error',
+        message: `window identity preflight failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    const current = roots.find((root) => rootKey(root) === rootKey(state.view.root));
+    if (!current) {
+      return { kind: 'target_missing', message: 'the observed app/window no longer exists' };
+    }
+    if (!current.appName?.trim() || current.appName !== state.view.root.appName) {
+      return { kind: 'state_conflict', message: 'the window id now belongs to a different application' };
+    }
+    if (current.isOnScreen === false || current.onCurrentSpace === false) {
+      return { kind: 'state_conflict', message: 'the observed window is no longer on the active visible surface' };
+    }
+    return null;
+  }
+
   private buildActionArgs(
     mutation: ComputerUseMutationV1,
     state: StoredState,
@@ -744,6 +888,22 @@ export class CuaStateAdapter {
     return true;
   }
 
+  private async resolveRoot(
+    target: { pid: number; windowId: number },
+    context: CuaDriverCallContext,
+  ): Promise<ComputerUseRootRefV1> {
+    const key = rootKey(target);
+    let root = this.rootsByOwner.get(ownerKey(context))?.get(key);
+    if (!root) {
+      await this.listRoots(false, context);
+      root = this.rootsByOwner.get(ownerKey(context))?.get(key);
+    }
+    if (!root?.appName?.trim()) {
+      throw new CuaStateInputError('observe target is missing app identity; list roots and select a current window');
+    }
+    return root;
+  }
+
   private async patchIsStableAt(
     before: StoredState,
     after: StoredState,
@@ -777,10 +937,11 @@ export class CuaStateAdapter {
   }
 
   private rememberState(state: StoredState): void {
-    let sessionStates = this.statesBySession.get(state.sessionId);
+    const key = ownerKey(state);
+    let sessionStates = this.statesByOwner.get(key);
     if (!sessionStates) {
       sessionStates = new Map();
-      this.statesBySession.set(state.sessionId, sessionStates);
+      this.statesByOwner.set(key, sessionStates);
     }
     sessionStates.set(state.view.stateId, state);
     while (sessionStates.size > MAX_STATES_PER_SESSION) {
@@ -791,11 +952,11 @@ export class CuaStateAdapter {
   }
 
   private supersedeRootStates(
-    sessionId: string,
+    context: CuaDriverCallContext,
     root: ComputerUseRootRefV1,
     exceptStateId: string,
   ): void {
-    const states = this.statesBySession.get(sessionId);
+    const states = this.statesByOwner.get(ownerKey(context));
     if (!states) return;
     const key = rootKey(root);
     for (const state of states.values()) {
@@ -805,13 +966,14 @@ export class CuaStateAdapter {
     }
   }
 
-  private pruneExpired(sessionId: string): void {
-    const states = this.statesBySession.get(sessionId);
+  private pruneExpired(context: CuaDriverCallContext): void {
+    const key = ownerKey(context);
+    const states = this.statesByOwner.get(key);
     if (!states) return;
     const now = this.now();
     for (const [stateId, state] of states) {
       if (now > state.view.expiresAtMs) states.delete(stateId);
     }
-    if (states.size === 0) this.statesBySession.delete(sessionId);
+    if (states.size === 0) this.statesByOwner.delete(key);
   }
 }

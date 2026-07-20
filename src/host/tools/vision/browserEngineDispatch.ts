@@ -7,6 +7,7 @@ import type { BrowserActionEngine } from '../../../shared/contract/desktop';
 import type { ConversationExecutionIntent } from '../../../shared/contract/conversationEnvelope';
 import { browserRelayService } from '../../services/infra/browserRelayService';
 import { executeRelayBrowserAction } from '../../services/infra/browser/relayActionFacade';
+import { getRelayBrowserProviderAdapter } from '../../services/surfaceExecution/RelayBrowserProviderAdapter';
 import { resolveBrowserActionEngine } from './browserEngineRouter';
 import { finalizeBrowserActionResult } from './browserActionFinalize';
 
@@ -28,6 +29,18 @@ export async function maybeDispatchRelayBrowserAction(args: {
   const requestedEngine = (
     typeof args.params.engine === 'string' ? args.params.engine : 'auto'
   ) as BrowserActionEngine;
+  const relayIdentity = args.context?.sessionId
+    && args.context.runId
+    && args.context.agentId
+    ? {
+        conversationId: args.context.sessionId,
+        runId: args.context.runId,
+        agentId: args.context.agentId,
+      }
+    : null;
+  const relayLeaseReady = relayIdentity
+    ? getRelayBrowserProviderAdapter().hasReadyLease(relayIdentity)
+    : false;
 
   const route = resolveBrowserActionEngine({
     requestedEngine,
@@ -36,6 +49,7 @@ export async function maybeDispatchRelayBrowserAction(args: {
     managedAvailable: true,
     // 本轮绑定 Desktop Browser workbench = 复用用户自己浏览器的登录态
     intent: args.executionIntent?.browserSessionMode === 'desktop' ? 'login_reuse' : undefined,
+    relayLeaseReady,
   });
 
   if (
@@ -43,6 +57,29 @@ export async function maybeDispatchRelayBrowserAction(args: {
     && (requestedEngine === 'relay' || requestedEngine === 'managed')
     && route.recovery.selectedEngine === null
   ) {
+    if (requestedEngine === 'relay' && args.action === 'launch') {
+      const result = await executeRelayBrowserAction({
+        action: args.action,
+        relayDomainScopes: Array.isArray(args.params.relayDomainScopes)
+          ? args.params.relayDomainScopes.filter((value): value is string => typeof value === 'string')
+          : undefined,
+        relayActionScopes: Array.isArray(args.params.relayActionScopes)
+          ? args.params.relayActionScopes.filter((value): value is string => typeof value === 'string')
+          : undefined,
+        relayLeaseTtlMs: typeof args.params.relayLeaseTtlMs === 'number'
+          ? args.params.relayLeaseTtlMs
+          : undefined,
+      }, args.context);
+      return finalizeBrowserActionResult({
+        result,
+        action: args.action,
+        params: args.params,
+        context: args.context,
+        provider: 'browser-relay',
+        engineRoute: route,
+        recovery: result.success ? null : route.recovery,
+      });
+    }
     return finalizeBrowserActionResult({
       result: {
         success: false,
@@ -77,16 +114,24 @@ export async function maybeDispatchRelayBrowserAction(args: {
       ? args.params.direction
       : undefined,
     amount: typeof args.params.amount === 'number' ? args.params.amount : undefined,
-    tabId: typeof args.params.tabId === 'string' || typeof args.params.tabId === 'number'
-      ? args.params.tabId
-      : undefined,
     fullPage: args.params.fullPage === true,
     formData: args.params.formData && typeof args.params.formData === 'object'
       ? args.params.formData as Record<string, string>
       : undefined,
     width: typeof args.params.width === 'number' ? args.params.width : undefined,
     height: typeof args.params.height === 'number' ? args.params.height : undefined,
-  });
+    timeout: typeof args.params.timeout === 'number' ? args.params.timeout : undefined,
+    targetRef: args.params.targetRef,
+    relayDomainScopes: Array.isArray(args.params.relayDomainScopes)
+      ? args.params.relayDomainScopes.filter((value): value is string => typeof value === 'string')
+      : undefined,
+    relayActionScopes: Array.isArray(args.params.relayActionScopes)
+      ? args.params.relayActionScopes.filter((value): value is string => typeof value === 'string')
+      : undefined,
+    relayLeaseTtlMs: typeof args.params.relayLeaseTtlMs === 'number'
+      ? args.params.relayLeaseTtlMs
+      : undefined,
+  }, args.context);
 
   const recovery = result.success
     ? null

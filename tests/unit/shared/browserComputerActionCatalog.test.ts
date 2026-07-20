@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getBrowserComputerActionCatalogEntry,
   getBrowserComputerActionCatalogForArgs,
+  getStrictBrowserComputerActionCatalogEntry,
   isBrowserScopedComputerUseAction,
 } from '../../../src/shared/utils/browserComputerActionCatalog';
 
@@ -102,5 +103,17 @@ describe('browser/computer action catalog', () => {
       toolName: 'computer_use',
       arguments: { operation: 'act', stateId: 'state-1' },
     })).toMatchObject({ risk: 'desktop_input', evidenceKind: 'action_trace' });
+  });
+
+  it('provides a strict lookup for Host enforcement without changing legacy preview fallback', () => {
+    expect(getStrictBrowserComputerActionCatalogEntry('browser_action', 'navigate', {
+      action: 'navigate',
+    })?.action).toBe('navigate');
+    expect(getStrictBrowserComputerActionCatalogEntry('browser_action', 'unknown_action', {
+      action: 'unknown_action',
+    })).toBeNull();
+    expect(getBrowserComputerActionCatalogEntry('browser_action', 'unknown_action', {
+      action: 'unknown_action',
+    })?.risk).toBe('browser_action');
   });
 });

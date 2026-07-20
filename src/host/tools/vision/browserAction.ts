@@ -146,7 +146,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
       tabId: {
         type: 'string',
-        description: 'Target tab ID (optional, uses active tab)',
+        description: 'Managed Browser tab reference. Relay never accepts native tab IDs.',
       },
       timeout: {
         type: 'number',
@@ -193,6 +193,20 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         enum: ['auto', 'managed', 'relay'],
         description:
           'ADR-041 browser engine. auto (default) routes by isolation/login intent; managed uses Neo isolated browser; relay drives an attached real Chrome tab. Explicit managed/relay never silently switches engines.',
+      },
+      relayDomainScopes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Exact HTTP(S) origins or hostnames the user may approve for a time-bounded Relay tab lease.',
+      },
+      relayActionScopes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Explicit browser actions the user may approve for the Relay tab lease; wildcards are rejected.',
+      },
+      relayLeaseTtlMs: {
+        type: 'number',
+        description: 'Requested Relay lease lifetime in milliseconds, capped at 30 minutes.',
       },
       source: {
         type: 'string',

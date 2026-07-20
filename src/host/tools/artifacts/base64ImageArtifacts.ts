@@ -156,7 +156,7 @@ export async function persistBase64ImageMetadata(
   result: ToolExecutionResult,
   options: PersistBase64ImageOptions,
 ): Promise<ToolExecutionResult> {
-  if (!result.success || !result.metadata) {
+  if (!result.metadata) {
     return result;
   }
 
@@ -209,11 +209,14 @@ export async function persistBase64ImageMetadata(
       },
     };
   } catch (error) {
+    const metadataWithoutBase64 = removePersistedBase64Fields(result.metadata, payload.key);
     return {
       ...result,
       metadata: {
-        ...result.metadata,
+        ...metadataWithoutBase64,
         imageBase64Persisted: false,
+        imageBase64Omitted: true,
+        imageEvidenceStatus: 'blocked',
         imageBase64PersistError: error instanceof Error ? error.message : String(error),
       },
     };

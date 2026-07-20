@@ -23,6 +23,7 @@ import { getToolResolver } from '../tools/dispatch/toolResolver';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
+import { attachSurfaceExecutionResultProjection } from '../services/surfaceExecution/surfaceExecutionResultProjection';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
 import { type PermissionMode } from '../permissions/modes';
@@ -936,15 +937,26 @@ export class ToolExecutor {
         workingDirectory: this.workspaceRoot,
         sessionId: effectiveSessionId,
       });
+      const resultWithSurfaceProjection = attachSurfaceExecutionResultProjection({
+        toolName: executionToolName,
+        arguments: params,
+        result: resultWithArtifacts,
+        conversationId: effectiveSessionId,
+        runId: effectiveRunId,
+        agentId: options.agentId,
+        toolCallId: options.currentToolCallId || executionId,
+        startedAt: startTime,
+        completedAt: Date.now(),
+      });
       const result = writeIsolationMetadata
         ? {
-          ...resultWithArtifacts,
+          ...resultWithSurfaceProjection,
           metadata: {
-            ...(resultWithArtifacts.metadata ?? {}),
+            ...(resultWithSurfaceProjection.metadata ?? {}),
             writeIsolation: writeIsolationMetadata,
           },
         }
-        : resultWithArtifacts;
+        : resultWithSurfaceProjection;
       const duration = Date.now() - startTime;
 
       logger.debug('Tool result', { toolName: executionToolName, success: result.success, error: result.error });

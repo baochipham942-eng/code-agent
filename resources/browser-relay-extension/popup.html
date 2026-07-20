@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <style>
-      body { width: 280px; margin: 0; padding: 12px; font: 13px system-ui, sans-serif; color: #e5e7eb; background: #18181b; }
+      body { width: 320px; margin: 0; padding: 12px; font: 13px system-ui, sans-serif; color: #e5e7eb; background: #18181b; }
       .row { display: flex; justify-content: space-between; gap: 12px; margin: 8px 0; }
       .label { color: #a1a1aa; }
-      .value { color: #f4f4f5; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+      .value { color: #f4f4f5; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
       button { width: 100%; margin-top: 8px; border: 1px solid #3f3f46; border-radius: 6px; background: #27272a; color: #f4f4f5; padding: 7px; cursor: pointer; }
       button:hover { background: #3f3f46; }
       button.primary { background: #2563eb; border-color: #1d4ed8; }
@@ -14,30 +14,44 @@
       button.danger { color: #fecaca; border-color: #7f1d1d; }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
       a { color: #7dd3fc; text-decoration: none; }
-      .hint { margin-top: 10px; color: #a1a1aa; font-size: 11px; line-height: 1.4; }
-      .tab { margin-top: 8px; padding: 8px; border: 1px solid #3f3f46; border-radius: 6px; background: #09090b; }
+      .hint, #message { margin-top: 10px; color: #a1a1aa; font-size: 11px; line-height: 1.4; }
+      .card { margin-top: 8px; padding: 8px; border: 1px solid #3f3f46; border-radius: 6px; background: #09090b; }
+      .pending { border-color: #1d4ed8; }
       .tab-title { font-size: 12px; color: #fafafa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .tab-url { margin-top: 4px; font-size: 11px; color: #a1a1aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      [hidden] { display: none !important; }
     </style>
   </head>
   <body>
     <div class="row"><span class="label">Status</span><span id="status" class="value">...</span></div>
     <div class="row"><span class="label">Port</span><span id="port" class="value">...</span></div>
-    <div class="row"><span class="label">Attached</span><span id="attached" class="value">0</span></div>
+    <div class="row"><span class="label">Active leases</span><span id="leased" class="value">0</span></div>
 
-    <div class="tab">
+    <div class="card">
       <div class="label">Current tab</div>
       <div id="tabTitle" class="tab-title">—</div>
       <div id="tabUrl" class="tab-url">—</div>
-      <div class="row" style="margin-bottom:0"><span class="label">Attached here</span><span id="tabAttached" class="value">no</span></div>
+      <div class="row" style="margin-bottom:0"><span class="label">Lease</span><span id="tabLease" class="value">not leased</span></div>
+      <button id="returnLease" class="danger">Return this leased tab</button>
     </div>
 
-    <button id="attach" class="primary">Attach current tab</button>
-    <button id="detach" class="danger">Detach current tab</button>
+    <div id="pendingCard" class="card pending" hidden>
+      <div class="label">Pending lease request</div>
+      <div class="row"><span class="label">Origin</span><span id="pendingOrigin" class="value">—</span></div>
+      <div class="row"><span class="label">Actions</span><span id="pendingActions" class="value">—</span></div>
+      <div class="row"><span class="label">Agent</span><span id="pendingAgent" class="value">—</span></div>
+      <div class="row"><span class="label">Session</span><span id="pendingSession" class="value">—</span></div>
+      <div class="row"><span class="label">Expires</span><span id="pendingExpiry" class="value">—</span></div>
+      <button id="approve" class="primary">Approve current tab</button>
+      <button id="deny" class="danger">Deny request</button>
+    </div>
+    <div id="noPending" class="hint">No lease request is waiting for approval.</div>
+
     <button id="reconnect">Reconnect</button>
     <p><a href="options.html" target="_blank">Options</a></p>
+    <div id="message"></div>
     <div class="hint">
-      Agent Neo only controls tabs you explicitly attach. Chrome may show a debugger banner while attached.
+      Approval moves only the current tab into a Surface Session Agent Window. The relay validates owner, origin, actions, and expiry before every operation, then returns the tab to its original placement.
     </div>
     <script src="popup.js"></script>
   </body>

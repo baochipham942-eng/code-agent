@@ -10,6 +10,7 @@ import type { SessionTask, TodoItem } from './planning';
 import type { FileDiff } from './diff';
 import type { EvidenceRef } from './evidence';
 import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackStrategy, ModelFallbackToolPolicy, ModelFallbackTraceStep, ModelProviderIdentity, ModelToolStrategyDiagnostics } from './modelDecision';
+import type { SurfaceExecutionEventV1 } from './surfaceExecution';
 
 // Adaptive Thinking: 思考深度级别
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra_code';
@@ -351,6 +352,7 @@ export interface BackgroundTaskLedgerChangedData {
 
 export type AgentEvent =
   | { type: 'message'; data: Message }
+  | { type: 'surface_execution'; data: SurfaceExecutionEventV1 }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
   | { type: 'tool_call_end'; data: ToolResult & { parentToolUseId?: string } }
   | { type: 'permission_request'; data: PermissionRequest }

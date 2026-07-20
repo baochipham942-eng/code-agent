@@ -47,6 +47,7 @@ describe('protocolAdapter — buildProtocolContext', () => {
     });
     expect(ctx.sessionId).toBe('sess-1');
     expect(ctx.workingDir).toBe('/tmp/workdir');
+    expect(ctx.agentId).toBeUndefined();
     expect(ctx.abortSignal).toBeInstanceOf(AbortSignal);
     expect(ctx.fileCache).toBeDefined();
     expect(typeof ctx.emit).toBe('function');
@@ -118,6 +119,7 @@ describe('protocolAdapter — buildProtocolContext', () => {
 
     expect(ctx.modelCallback).toBe(fakeModelCallback);
     expect(ctx.currentToolCallId).toBe('call_123');
+    expect(ctx.agentId).toBe('agent_a');
     expect(ctx.toolScope).toEqual({
       allowedSkillIds: ['review-skill'],
       allowedMcpServerIds: ['github'],
@@ -131,6 +133,48 @@ describe('protocolAdapter — buildProtocolContext', () => {
     expect(ctx.subagent?.messages).toEqual([{ role: 'user', content: 'hi' }]);
     expect(ctx.subagent?.todos).toHaveLength(1);
     expect(ctx.subagent?.attachments).toHaveLength(1);
+  });
+
+  it('空白 legacy agentId 不伪装成明确 owner，subagent 快照保持旧值', () => {
+    const ctx = buildProtocolContext({
+      workingDirectory: '/tmp',
+      legacyCtx: {
+        workingDirectory: '/tmp',
+        requestPermission: async () => true,
+        agentId: '   ',
+      } as unknown as LegacyToolContext,
+    });
+
+    expect(ctx.agentId).toBeUndefined();
+    expect(ctx.subagent?.agentId).toBe('   ');
+  });
+
+  it('protocol ctx -> legacy ctx 优先 direct agentId，并兼容旧 subagent fallback', () => {
+    const base = buildProtocolContext({
+      workingDirectory: '/tmp',
+      legacyCtx: makeLegacyCtx('/tmp'),
+    });
+
+    const direct = buildLegacyCtxFromProtocol({
+      ...base,
+      agentId: 'agent_direct',
+      subagent: { ...base.subagent, agentId: 'agent_snapshot' },
+    });
+    expect(direct.agentId).toBe('agent_direct');
+
+    const legacySnapshot = buildLegacyCtxFromProtocol({
+      ...base,
+      agentId: undefined,
+      subagent: { ...base.subagent, agentId: 'agent_snapshot' },
+    });
+    expect(legacySnapshot.agentId).toBe('agent_snapshot');
+
+    const ownerless = buildLegacyCtxFromProtocol({
+      ...base,
+      agentId: undefined,
+      subagent: undefined,
+    });
+    expect(ownerless.agentId).toBeUndefined();
   });
 
   it('protocol ctx -> legacy ctx keeps toolScope for wrapper tools', () => {

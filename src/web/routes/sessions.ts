@@ -81,8 +81,8 @@ interface SessionsRouterDeps {
 
 type DurableRestoredSessionPayload = Session & { messages: Message[]; durableWaitingInput?: true };
 
-function stripDurableWaitingInput<T extends { durableWaitingInput?: true }>(session: T): Omit<T, 'durableWaitingInput'> {
-  const { durableWaitingInput: _durableWaitingInput, ...rest } = session;
+function stripDurableWaitingApprovalMarker<T extends { durableWaitingInput?: true }>(session: T): Omit<T, 'durableWaitingInput'> {
+  const { durableWaitingInput: _durableWaitingApproval, ...rest } = session;
   return rest;
 }
 
@@ -90,7 +90,7 @@ async function withDurableSessionReplayPayload<T extends Session>(
   session: T,
   readService: DurableRunReadService | undefined,
 ): Promise<T & { durableWaitingInput?: true }> {
-  const base = stripDurableWaitingInput(session as T & { durableWaitingInput?: true });
+  const base = stripDurableWaitingApprovalMarker(session as T & { durableWaitingInput?: true });
   if (!readService) {
     return base as T;
   }

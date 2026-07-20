@@ -110,7 +110,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [durableBackgroundTasks, workflowRuns],
   );
 
-  const durableWaitingInputSessionIds = useMemo(
+  const durableWaitingApprovalSessionIds = useMemo(
     () => new Set(sessions.filter((session) => session.durableWaitingInput === true).map((session) => session.id)),
     [sessions],
   );
@@ -125,10 +125,10 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
         },
         backgroundTasks: durableBackgroundTasks,
         pendingUserQuestionsBySessionId,
-        durableWaitingInputSessionIds,
+        durableWaitingApprovalSessionIds,
       }),
     [
-      durableWaitingInputSessionIds,
+      durableWaitingApprovalSessionIds,
       durableBackgroundTasks,
       pendingPermissionRequest,
       pendingPermissionSessionId,

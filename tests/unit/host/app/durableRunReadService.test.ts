@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   DurableRunReadService,
-  hasDurableWaitingInputRun,
+  hasDurableWaitingApprovalRun,
   projectDurableRunToSessionPayload,
 } from '../../../../src/host/app/durableRunReadService';
 import { resolveDurableRunRollout } from '../../../../src/host/app/durableRunRollout';
@@ -34,20 +34,20 @@ describe('DurableRunReadService migrated consumers', () => {
     await expect(failing.readNativeStatus('session', () => ({ status: 'running' }))).rejects.toThrow('db failed');
   });
 
-  it('derives durable waiting input only from raw durable waiting while keeping the session projection running', async () => {
+  it('derives durable waiting approval only from raw durable waiting while keeping the session projection running', async () => {
     const waiting = { ...envelope, status: 'waiting' as const, terminal: undefined };
     const reader = { getLatestBySession: vi.fn(async () => waiting) };
     const service = new DurableRunReadService(resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }), reader);
 
     const view = await service.readSessionReplay('session', () => ({ status: 'idle' }));
-    expect(hasDurableWaitingInputRun(view)).toBe(true);
+    expect(hasDurableWaitingApprovalRun(view)).toBe(true);
     expect(projectDurableRunToSessionPayload(view)).toEqual({
       status: 'running',
       durableWaitingInput: true,
     });
   });
 
-  it('does not derive durable waiting input for running or terminal durable rows', async () => {
+  it('does not derive durable waiting approval for running or terminal durable rows', async () => {
     const running = {
       ...envelope,
       status: 'running' as const,

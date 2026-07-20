@@ -160,7 +160,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (!this.durableRunReadService) {
       return session;
     }
-    const { durableWaitingInput: _durableWaitingInput, ...base } = session;
+    const { durableWaitingInput: _durableWaitingApproval, ...base } = session;
     const run = await this.durableRunReadService.readSessionReplay(session.id, () => ({
       status: session.status === 'running' || session.status === 'paused' ? session.status : 'idle',
       updatedAt: session.updatedAt,

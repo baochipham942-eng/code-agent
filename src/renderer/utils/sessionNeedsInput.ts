@@ -12,7 +12,7 @@ export interface SessionNeedsInputSources {
   permissionState?: SessionPermissionNeedsInputState;
   backgroundTasks?: readonly Task[];
   pendingUserQuestionsBySessionId?: Map<string, readonly UserQuestionRequest[]> | null;
-  durableWaitingInputSessionIds?: ReadonlySet<string> | null;
+  durableWaitingApprovalSessionIds?: ReadonlySet<string> | null;
 }
 
 export function hasPendingPermissionForSession(
@@ -46,11 +46,11 @@ export function hasPendingUserQuestionForSession(
   return (pendingUserQuestionsBySessionId?.get(sessionId)?.length ?? 0) > 0;
 }
 
-export function hasDurableWaitingForSession(
+export function hasDurableWaitingApprovalForSession(
   sessionId: string,
-  durableWaitingInputSessionIds?: ReadonlySet<string> | null,
+  durableWaitingApprovalSessionIds?: ReadonlySet<string> | null,
 ): boolean {
-  return durableWaitingInputSessionIds?.has(sessionId) ?? false;
+  return durableWaitingApprovalSessionIds?.has(sessionId) ?? false;
 }
 
 export function hasNeedsInputForSession(
@@ -62,6 +62,6 @@ export function hasNeedsInputForSession(
     hasQueuedPermissionForSession(sessionId, sources.permissionState) ||
     hasWaitingInputBackgroundTaskForSession(sessionId, sources.backgroundTasks) ||
     hasPendingUserQuestionForSession(sessionId, sources.pendingUserQuestionsBySessionId) ||
-    hasDurableWaitingForSession(sessionId, sources.durableWaitingInputSessionIds)
+    hasDurableWaitingApprovalForSession(sessionId, sources.durableWaitingApprovalSessionIds)
   );
 }

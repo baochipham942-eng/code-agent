@@ -121,7 +121,7 @@ export function mapDurableRunToSessionStatus(status: DurableRunView['status']): 
   return 'idle';
 }
 
-export function hasDurableWaitingInputRun(view: DurableRunView): boolean {
+export function hasDurableWaitingApprovalRun(view: DurableRunView): boolean {
   return view.source === 'durable' && view.status === 'waiting';
 }
 
@@ -131,6 +131,6 @@ export function projectDurableRunToSessionPayload(view: DurableRunView): {
 } {
   return {
     status: mapDurableRunToSessionStatus(view.status),
-    ...(hasDurableWaitingInputRun(view) ? { durableWaitingInput: true as const } : {}),
+    ...(hasDurableWaitingApprovalRun(view) ? { durableWaitingInput: true as const } : {}),
   };
 }

@@ -256,3 +256,21 @@ external ports. The real consumer round-trip proves
 `productionReadPreferenceWiring`, so the rollout default is
 `durable_preferred`. The operational contract is documented in
 [S9 acceptance and rollback](durable-run-s9-acceptance-and-rollback.md).
+
+## Production terminal projection (2026-07-18)
+
+`DurableRunReadService` is the shared read boundary for Native status/control, Agent Team/Auto Agent, Dynamic Workflow, external engines, and session replay. When the rollout source is durable, its envelope is authoritative:
+
+| Durable status | Session projection |
+| --- | --- |
+| `created / running / waiting / recovering` | `running` |
+| `paused` | `paused` |
+| `completed` | `completed` |
+| `failed` | `error` |
+| `cancelled` | `interrupted` |
+
+`waiting` additionally projects `durableWaitingInput=true`. A durable terminal view blocks later native control attempts even if the process-local `RunRegistry` no longer has a live handle.
+
+The Web agent route owns one `AgentDurableRouteRunLifecycle` per request. It creates the run before SSE headers, keeps terminal state private, and makes terminal/release idempotent. Pre-stream and mid-stream client disconnects both commit `run_cancelled`; the public event name cannot diverge from the durable terminal type.
+
+External adapters cannot promote process exit into success. `ExternalEngineDurableLifecycle.finish()` commits `completed` only when the normalized adapter result is completed and carries parsed terminal evidence. Exit code zero with empty final output is `failed`; cancellation wins over a late result. The resulting durable projection is then mapped back to session status, so adapter result, run envelope, `/api/sessions`, and renderer cannot report conflicting terminal states.

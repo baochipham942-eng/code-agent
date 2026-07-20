@@ -48,7 +48,7 @@ import {
   type ConfigServiceForBootstrap,
   type WebCapabilityBootstrapOptions,
 } from './webCapabilityBootstrap';
-import { maybeRunQueuedInputStartupSweep as runQueuedInputStartupSweepIfReady } from './queuedInputStartupSweep';
+import { createQueuedInputStartupSweepGate } from './queuedInputStartupSweep';
 
 const logger = createLogger('WebServer');
 
@@ -359,17 +359,15 @@ onRendererPush((channel, data) => {
 const runRegistry = getApplicationRunRegistry();
 let durableRunRuntime: DurableRunApplicationRuntime | undefined;
 let durableRunRolloutPolicy = resolveDurableRunRollout({});
-let durableRunRolloutReady = false, queuedInputStartupSweepTrigger: (() => void) | null = null, queuedInputStartupSweepDone = false;
-
-function maybeRunQueuedInputStartupSweep(): void {
-  const state = { ready: durableRunRolloutReady, trigger: queuedInputStartupSweepTrigger, done: queuedInputStartupSweepDone };
-  runQueuedInputStartupSweepIfReady(state); queuedInputStartupSweepDone = state.done;
-}
+let durableRunRolloutReady = false;
+const queuedInputStartupSweep = createQueuedInputStartupSweepGate();
 let webMcpInitialized = false;
 
 // createApp() 的 durable run 状态注入：函数形式保证 app.ts 读到的始终是最新值
 // （durableRunRolloutPolicy/Ready/durableRunRuntime 会在 initializeServices() 里异步更新）。
-function getDurableRunRollout(): { policy: typeof durableRunRolloutPolicy; ready: boolean } { return { policy: durableRunRolloutPolicy, ready: durableRunRolloutReady }; }
+function getDurableRunRollout(): { policy: typeof durableRunRolloutPolicy; ready: boolean } {
+  return { policy: durableRunRolloutPolicy, ready: durableRunRolloutReady };
+}
 
 function getDurableRunReadService() {
   return durableRunRuntime?.readService;
@@ -580,7 +578,8 @@ async function initializeServices(): Promise<void> {
         onDelayedError: (recoveryError) => logger.error('Durable Run delayed recovery failed:', recoveryError),
       });
       durableRunRolloutReady = true;
-      maybeRunQueuedInputStartupSweep();
+      queuedInputStartupSweep.setReady(true);
+      queuedInputStartupSweep.maybeRun();
       logger.info('Durable rollout initialized', {
         mode: durableRunRuntime.policy.mode,
         results: durableRunRuntime.recoveryResults,
@@ -1199,9 +1198,9 @@ async function main(): Promise<void> {
     getAppVersion,
     getDurableRunRollout,
     getDurableRunReadService,
-    registerQueuedInputStartupSweep: (runStartupSweep) => { queuedInputStartupSweepTrigger = runStartupSweep; },
+    registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
   });
-  maybeRunQueuedInputStartupSweep();
+  queuedInputStartupSweep.maybeRun();
 
   const server = http.createServer(app);
 

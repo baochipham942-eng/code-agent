@@ -81,6 +81,7 @@ export async function loadSkill(skillDir: string): Promise<SkillManifest> {
   } catch (err) {
     throw new Error(
       `Skill manifest not found at ${manifestPath}: ${(err as Error).message}`,
+      { cause: err },
     );
   }
   const parsed = parseFrontmatter(raw);
@@ -114,6 +115,7 @@ export async function loadAllSkills(skillsRoot: string): Promise<SkillManifest[]
   } catch (err) {
     throw new Error(
       `Skills root not readable at ${skillsRoot}: ${(err as Error).message}`,
+      { cause: err },
     );
   }
   const manifests: SkillManifest[] = [];
@@ -207,7 +209,7 @@ function parseFrontmatter(raw: string): ParsedFrontmatter | null {
   try {
     parsed = yaml.load(yamlText);
   } catch (err) {
-    throw new Error(`Invalid YAML frontmatter: ${(err as Error).message}`);
+    throw new Error(`Invalid YAML frontmatter: ${(err as Error).message}`, { cause: err });
   }
   if (typeof parsed !== 'object' || parsed === null) {
     throw new Error('Frontmatter YAML must parse to an object');

@@ -16,7 +16,10 @@ export function parseJson(stdout: string): unknown {
   try {
     return JSON.parse(text);
   } catch (error) {
-    throw new Error(`Background CGEvent helper returned invalid JSON: ${error instanceof Error ? error.message : 'unknown parse error'}`);
+    throw new Error(
+      `Background CGEvent helper returned invalid JSON: ${error instanceof Error ? error.message : 'unknown parse error'}`,
+      { cause: error },
+    );
   }
 }
 

@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import { promises as fsp } from 'fs';
 import os from 'os';
+import yaml from 'js-yaml';
 
 import {
   extractSection,
@@ -11,6 +12,20 @@ import {
 
 const FIXTURE_ROOT = path.resolve(__dirname, '../../../../../tests/fixtures/skills');
 const SAMPLE_DIR = path.join(FIXTURE_ROOT, 'sample');
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+async function captureError(promise: Promise<unknown>): Promise<Error> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(Error);
+    return error as Error;
+  }
+  throw new Error('Expected promise to reject');
+}
 
 describe('loadSkill', () => {
   it('parses frontmatter + body for the sample fixture', async () => {
@@ -26,8 +41,12 @@ describe('loadSkill', () => {
 
   it('throws when the SKILL.md is missing', async () => {
     const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'skill-loader-'));
+    const originalError = new Error('manifest read failed');
+    vi.spyOn(fsp, 'readFile').mockRejectedValueOnce(originalError);
     try {
-      await expect(loadSkill(tmp)).rejects.toThrow(/Skill manifest not found/);
+      const error = await captureError(loadSkill(tmp));
+      expect(error.message).toMatch(/Skill manifest not found/);
+      expect(error.cause).toBe(originalError);
     } finally {
       await fsp.rm(tmp, { recursive: true, force: true });
     }
@@ -55,9 +74,38 @@ describe('loadSkill', () => {
       await fsp.rm(tmp, { recursive: true, force: true });
     }
   });
+
+  it('preserves the YAML parser error as the cause', async () => {
+    const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'skill-loader-'));
+    const originalError = new Error('yaml parser failed');
+    vi.spyOn(yaml, 'load').mockImplementationOnce(() => {
+      throw originalError;
+    });
+    try {
+      await fsp.writeFile(
+        path.join(tmp, 'SKILL.md'),
+        '---\nname: bad\ndescription: bad\nartifact_kind: game\n---\n',
+      );
+      const error = await captureError(loadSkill(tmp));
+      expect(error.message).toContain('Invalid YAML frontmatter');
+      expect(error.cause).toBe(originalError);
+    } finally {
+      await fsp.rm(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('loadAllSkills', () => {
+  it('preserves the directory read error as the cause', async () => {
+    const originalError = new Error('skills root read failed');
+    vi.spyOn(fsp, 'readdir').mockRejectedValueOnce(originalError);
+
+    const error = await captureError(loadAllSkills('/missing-skills-root'));
+
+    expect(error.message).toContain('Skills root not readable');
+    expect(error.cause).toBe(originalError);
+  });
+
   it('finds the sample skill and skips _template / non-skill subdirs', async () => {
     const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'skill-loader-all-'));
     try {

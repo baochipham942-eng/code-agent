@@ -252,11 +252,20 @@ function parseJsonCandidate(candidate: string): Record<string, unknown> {
       if (isRecord(parsed)) {
         return parsed;
       }
-      throw new Error('Parsed JSON is not an object');
+      throw new Error('Parsed JSON is not an object', { cause: strictError });
     } catch (looseError) {
       const strictMessage = strictError instanceof Error ? strictError.message : String(strictError);
       const looseMessage = looseError instanceof Error ? looseError.message : String(looseError);
-      throw new Error(`strict parse failed: ${strictMessage}; loose parse failed: ${looseMessage}`);
+      if (looseError instanceof Error && looseError.cause === undefined) {
+        Object.defineProperty(looseError, 'cause', {
+          value: strictError,
+          configurable: true,
+        });
+      }
+      throw new Error(
+        `strict parse failed: ${strictMessage}; loose parse failed: ${looseMessage}`,
+        { cause: looseError },
+      );
     }
   }
 }
@@ -446,13 +455,13 @@ export class TaskOrchestrator {
     }
 
     let result: Record<string, unknown> | null = null;
-    const parseErrors: string[] = [];
+    const parseErrors: unknown[] = [];
     for (const candidate of candidates) {
       try {
         result = parseJsonCandidate(candidate);
         break;
       } catch (error) {
-        parseErrors.push(error instanceof Error ? error.message : String(error));
+        parseErrors.push(error);
       }
     }
 
@@ -461,9 +470,19 @@ export class TaskOrchestrator {
         candidateCount: candidates.length,
         candidatePreviews: candidates.slice(0, 3).map((candidate) => truncateForLog(candidate, 180)),
         responsePreview: truncateForLog(response),
-        parseErrors: parseErrors.slice(-3),
+        parseErrors: parseErrors.slice(-3).map((error) => (
+          error instanceof Error ? error.message : String(error)
+        )),
       });
-      throw new Error(`Unable to parse JSON judgment from response (${candidates.length} candidates)`);
+      throw new Error(
+        `Unable to parse JSON judgment from response (${candidates.length} candidates)`,
+        {
+          cause: new AggregateError(
+            parseErrors,
+            'All JSON judgment candidates failed to parse',
+          ),
+        },
+      );
     }
 
     // 验证并设置默认值

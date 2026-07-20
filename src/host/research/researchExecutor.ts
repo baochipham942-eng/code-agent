@@ -666,7 +666,7 @@ ${previousResults}
       return response.content ?? '分析结果为空';
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new Error(`分析失败: ${errorMessage}`);
+      throw new Error(`分析失败: ${errorMessage}`, { cause: error });
     }
   }
 

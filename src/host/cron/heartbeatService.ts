@@ -368,7 +368,7 @@ export class HeartbeatService {
     const { config, status } = active;
     const startTime = Date.now();
 
-    let success = false;
+    let success: boolean;
     let output: string | undefined;
     let error: string | undefined;
 
@@ -455,7 +455,7 @@ export class HeartbeatService {
           if (check.expectedExitCode !== undefined && error.code === check.expectedExitCode) {
             return { success: true, output: error.stdout || '' };
           }
-          throw new Error(error.message || 'Command failed');
+          throw new Error(error.message || 'Command failed', { cause: err });
         }
       }
 

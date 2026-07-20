@@ -148,21 +148,6 @@ export class TaskListManager {
   }
 
   // --------------------------------------------------------------------------
-  // Task Claiming (for optimistic concurrency in Swarm)
-  // --------------------------------------------------------------------------
-
-  /**
-   * 释放一个任务认领（恢复为 pending）
-   */
-  releaseTask(taskId: string, agentId: string): boolean {
-    const task = this.tasks.get(taskId);
-    if (task?.assignee !== agentId) return false;
-    this.updateTask(taskId, { assignee: undefined, status: 'pending' });
-    logger.debug(`[TaskList] Task ${taskId} released by ${agentId}`);
-    return true;
-  }
-
-  // --------------------------------------------------------------------------
   // State & Settings
   // --------------------------------------------------------------------------
 

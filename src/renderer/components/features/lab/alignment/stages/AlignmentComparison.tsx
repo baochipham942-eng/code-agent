@@ -12,7 +12,6 @@ import {
   ArrowRight,
   Sparkles,
   MessageSquare,
-  Bot,
 } from 'lucide-react';
 import { useI18n } from '../../../../../hooks/useI18n';
 

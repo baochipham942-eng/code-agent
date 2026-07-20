@@ -451,7 +451,7 @@ export class CloudConfigService {
         CLOUD_CONFIG_ACCESS_TOKEN_TIMEOUT_MS,
         'Cloud config access token timeout',
       );
-    } catch (error) {
+    } catch {
       logger.debug('Cloud config access token not ready; fetching public config', {
         timeoutMs: CLOUD_CONFIG_ACCESS_TOKEN_TIMEOUT_MS,
       });

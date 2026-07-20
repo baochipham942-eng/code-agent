@@ -300,7 +300,7 @@ export class AgentBus extends EventEmitter {
     const correlationId = this.generateId('req');
 
     // 创建请求消息
-    const message = await this.publish(from, channel, payload, {
+    await this.publish(from, channel, payload, {
       type: 'request',
       correlationId,
     });
@@ -687,7 +687,7 @@ export class AgentBus extends EventEmitter {
     }
 
     // 取消所有待处理请求
-    for (const [id, pending] of this.pendingRequests) {
+    for (const pending of this.pendingRequests.values()) {
       clearTimeout(pending.timeout);
       pending.reject(new Error('AgentBus disposed'));
     }

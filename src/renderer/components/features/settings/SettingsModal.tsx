@@ -48,7 +48,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { isDesktopShellMode, isTauriMode } from '../../../utils/platform';
-import { canAccessFeature, createAccessSubject, type AccessSubject } from '../../../utils/accessControl';
+import { createAccessSubject, type AccessSubject } from '../../../utils/accessControl';
 import { SettingsSearch } from './SettingsSearch';
 import { FullScreenPage } from '../shared/FullScreenPage';
 import {

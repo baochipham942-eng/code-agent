@@ -46,7 +46,7 @@ import type { NeoTagEvent } from '../contract/tag';
 
 import { IPC_CHANNELS } from './legacy-channels';
 
-import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, SessionAnalysisResult, TestReportListItem, TestRunReport, EvalAnnotationPayload, AxialCodingEntryIpc, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest, AgentTrajectoryQualitySummariesRequest, AgentTrajectoryCollectionUpdateRequest } from './types';
+import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest, AgentTrajectoryQualitySummariesRequest, AgentTrajectoryCollectionUpdateRequest } from './types';
 import type { AdminReviewQueueItem } from '../contract/productClosure';
 import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTrajectory';
 

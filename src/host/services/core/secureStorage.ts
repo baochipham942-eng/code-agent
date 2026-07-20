@@ -5,7 +5,7 @@
 // ============================================================================
 
 import crypto from 'crypto';
-import { app, safeStorage } from '../../platform';
+import { app } from '../../platform';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';

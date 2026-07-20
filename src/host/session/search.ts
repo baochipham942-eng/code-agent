@@ -226,7 +226,7 @@ function findMatches(
 
         matches.push(matchInfo);
       }
-    } catch (e) {
+    } catch {
       // Invalid regex, fall back to simple search
       logger.warn('Invalid regex pattern, falling back to simple search', { query });
       return findMatches(content, query, { ...options, useRegex: false });

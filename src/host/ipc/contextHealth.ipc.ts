@@ -562,7 +562,6 @@ async function compactSession(
  * 注册上下文健康度相关的 IPC handlers
  */
 export function registerContextHealthHandlers(deps: ContextHealthDependencies): void {
-  const contextHealthService = getContextHealthService();
   applyCompressionConfig(getPersistedCompressionConfig());
 
   ipcHost.handle(IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET, async () => {

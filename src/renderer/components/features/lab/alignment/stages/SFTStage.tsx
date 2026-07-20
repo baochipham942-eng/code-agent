@@ -7,11 +7,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   ChevronRight,
   FileText,
-  Code,
   Play,
   Pause,
   RotateCcw,
-  MessageSquare,
   User,
   Bot,
 } from 'lucide-react';
@@ -64,7 +62,6 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
   const [isTraining, setIsTraining] = useState(false);
   const [trainingStep, setTrainingStep] = useState(0);
   const [learnedCount, setLearnedCount] = useState(0);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 模拟训练

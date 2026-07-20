@@ -100,12 +100,9 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       onImagePaste,
       disabled = false,
       hasAttachments = false,
-      isFocused,
       onFocusChange,
-      actionButtons,
       placeholder,
       hasMessages = false,
-      sendButton,
       onHistoryPrev,
       onHistoryNext,
       onHistoryReset,
@@ -215,11 +212,6 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
         }
       }
       // 非图片内容，让默认粘贴行为继续
-    };
-
-    // 点击附件按钮
-    const handleAttachClick = () => {
-      fileInputRef.current?.click();
     };
 
     // 文件选择

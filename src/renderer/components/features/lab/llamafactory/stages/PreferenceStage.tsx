@@ -63,7 +63,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
   const [userChoice, setUserChoice] = useState<'chosen' | 'rejected' | null>(null);
   const [showComparison, setShowComparison] = useState(false);
 
-  const getColorClasses = (color: string, isActive: boolean) => {
+  const getColorClasses = (color: string, _isActive: boolean) => {
     const colors: Record<string, { bg: string; border: string; text: string; ring: string }> = {
       purple: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400', ring: 'ring-purple-500/30' },
       blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400', ring: 'ring-blue-500/30' },

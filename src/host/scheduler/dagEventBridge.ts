@@ -16,7 +16,7 @@ import type {
   TaskNodeData,
   DAGInitEventData,
 } from '../../shared/contract/dagVisualization';
-import type { DAGEvent, DAGEventType, DAGStatistics, DAGTask } from '../../shared/contract/taskDAG';
+import type { DAGEvent, DAGEventType, DAGStatistics } from '../../shared/contract/taskDAG';
 import { getDAGScheduler } from './DAGScheduler';
 import { TaskDAG } from './TaskDAG';
 import { createLogger } from '../services/infra/logger';

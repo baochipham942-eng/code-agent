@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import type { TaskPlan, TaskPhase, TaskStep } from './types';
+import type { TaskPlan } from './types';
 
 const logger = createLogger('ExecutionMonitor');
 

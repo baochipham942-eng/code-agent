@@ -266,7 +266,7 @@ export type EventBridge = (event: AgentEvent) => void;
  * @param config - 配置（不包含 orchestrator）
  * @returns bridge 函数和 iterator
  */
-export function createAgentIteratorWithBridge(config?: {
+export function createAgentIteratorWithBridge(_config?: {
   message?: string;
 }): {
   bridge: EventBridge;

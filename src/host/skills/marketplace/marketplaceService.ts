@@ -15,7 +15,6 @@ import type {
   MarketplaceSource,
   MarketplaceManifest,
   KnownMarketplacesConfig,
-  KnownMarketplaceEntry,
   PluginEntry,
   PluginEntryKind,
 } from './types';

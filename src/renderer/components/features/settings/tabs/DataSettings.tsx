@@ -8,7 +8,6 @@ import {
   AlertCircle,
   AlertTriangle,
   Archive,
-  ArrowUpRight,
   Bug,
   CheckCircle,
   Clock,
@@ -26,7 +25,6 @@ import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
-import { useAppStore } from '../../../../stores/appStore';
 import { useAuthStore } from '../../../../stores/authStore';
 import ipcService from '../../../../services/ipcService';
 import type { PersistenceHealth } from '@shared/contract';
@@ -286,7 +284,6 @@ function formatLastEventAt(
 export const DataSettings: React.FC = () => {
   const { t } = useI18n();
   const dataText = t.settings.data;
-  const setShowSettings = useAppStore((s) => s.setShowSettings);
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const [stats, setStats] = useState<DataStats | null>(null);
   const [snapshotStats, setSnapshotStats] = useState<SnapshotStats | null>(null);

@@ -9,30 +9,25 @@
 // ============================================================================
 
 import type {
-  ModelConfig,
   Message,
-  ToolCall,
-  ToolResult,
   AgentEvent,
   AgentTaskPhase,
 } from '../../../shared/contract';
 import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
 import { appendConversationSummary, isLoopAutomationSummaryText } from '../../lightMemory/recentConversations';
 import { judgeConversation } from '../../lightMemory/conversationJudge';
-import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
+import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
 import { trackNode } from '../../observability/posthogNode';
 import { silence } from '../../utils/errorHandling';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
+import { getContextWindow } from '../../../shared/constants';
 
 // Import refactored modules
 import type {
   AgentLoopConfig,
-  ModelResponse,
-  ModelMessage,
 } from '../../agent/loopTypes';
 import { getIncompleteTasks } from '../../services/planning/taskStore';
 import {
@@ -44,7 +39,6 @@ import {
   getSessionTodos,
   setSessionTodos,
   syncTodosToSessionTasks,
-  clearSessionTodos,
 } from '../../agent/todoParser';
 import { getDatabase } from '../../services/core/databaseService';
 import type { RuntimeContext } from './runtimeContext';

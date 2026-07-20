@@ -7,9 +7,6 @@
 
 import { encode } from 'gpt-tokenizer';
 import type { Message as SharedMessage } from '@shared/contract/message';
-import { createLogger } from '../services/infra/logger';
-
-const logger = createLogger('TokenEstimator');
 
 // LRU cache for token counts (avoids re-encoding identical content)
 const TOKEN_CACHE_MAX = 200;

@@ -2,7 +2,6 @@ import type { DAGTask, TaskStatus } from '../../../shared/contract/taskDAG';
 import { TaskDAG } from '../../scheduler/TaskDAG';
 import type {
   GraphSchedulerApplyResult,
-  GraphSchedulerNodeState,
   GraphSchedulerPort,
   GraphSchedulerSnapshot,
 } from '../graphSchedulerPort';

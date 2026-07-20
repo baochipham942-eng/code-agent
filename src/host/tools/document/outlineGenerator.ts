@@ -327,21 +327,6 @@ const TOPIC_TEMPLATES: TopicTemplate[] = [
 // ============================================================================
 
 /**
- * 生成副标题
- */
-function generateSubtitle(topic: string, category: string): string {
-  const subtitles: Record<string, string[]> = {
-    product: ['深度解析与实践指南', '功能特性与应用场景', '核心能力全景解读'],
-    technical: ['原理剖析与最佳实践', '从入门到精通', '技术架构与实现详解'],
-    business: ['市场洞察与战略建议', '数据驱动的深度分析', '机遇与挑战并存'],
-    general: ['全面解读与深度分析', '核心要点与关键洞察', '系统性梳理与总结'],
-  };
-
-  const options = subtitles[category] || subtitles.general;
-  return options[Math.floor(Math.random() * options.length)];
-}
-
-/**
  * 获取所有需要搜索的查询词
  */
 export function getSearchQueries(outline: Outline): string[] {

@@ -88,7 +88,6 @@ export function parseMermaid(code: string): MermaidGraph {
       /(\w+)\s*(-{2,3})\s*(\w+)/,
     ];
 
-    let matched = false;
     for (const pattern of edgePatterns) {
       const m = line.match(pattern);
       if (m) {
@@ -108,7 +107,6 @@ export function parseMermaid(code: string): MermaidGraph {
         if (!nodes.has(from)) nodes.set(from, { id: from, text: from, shape: 'roundRect' });
         if (!nodes.has(to)) nodes.set(to, { id: to, text: to, shape: 'roundRect' });
 
-        matched = true;
         break;
       }
     }

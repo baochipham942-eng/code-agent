@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { IpcMain, AppWindow } from '../platform';
-import { app, dialog } from '../platform';
+import { dialog } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { IPC_CHANNELS } from '../../shared/ipc/legacy-channels';
 import { handleSaveTextToDownloads, handleSaveBinaryToDownloads } from './workspaceSaveExport';

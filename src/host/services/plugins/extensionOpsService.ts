@@ -10,7 +10,6 @@ import type {
   ExtensionInfo,
   ExtensionType,
   ExtensionStatus,
-  ExtensionSource,
 } from '../../../shared/contract/extension';
 import type { ValidationResult } from '../../plugins/pluginValidator';
 import { createLogger } from '../infra/logger';

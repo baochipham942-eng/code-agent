@@ -2,7 +2,7 @@
 // Log Masker - Masks sensitive information in logs and output
 // ============================================================================
 
-import { getSensitiveDetector, maskSensitiveData, type SensitiveMatch } from './sensitiveDetector';
+import { getSensitiveDetector, maskSensitiveData } from './sensitiveDetector';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('LogMasker');

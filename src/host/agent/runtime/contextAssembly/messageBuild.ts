@@ -60,7 +60,7 @@ import { recordTurnMemoryBlock } from '../turnQuality';
 import { classifyIntent } from '../../../routing/intentClassifier';
 import { createHash } from 'crypto';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
-import { logger, MAX_SYSTEM_PROMPT_TOKENS } from './shared';
+import { logger } from './shared';
 import { persistRuntimeState } from '../runtimeStatePersistence';
 import { appendNativeGenerativeUIPromptBlocks } from './nativeGenerativeUIPrompt';
 import { getPluginRegistry } from '../../../plugins/pluginRegistry';

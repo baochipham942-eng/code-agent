@@ -7,7 +7,6 @@ import { createLogger } from '../../services/infra/logger';
 import { generateMessageId } from '../../../shared/utils/id';
 import type {
   TaskItemIpc,
-  TaskItemStatusIpc,
   TaskListStateIpc,
   TaskListEventIpc,
 } from '../../../shared/ipc';

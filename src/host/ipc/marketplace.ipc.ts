@@ -342,7 +342,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
         const installed = await listInstalledPlugins();
         const results: InstalledPlugin[] = [];
 
-        for (const [key, record] of Object.entries(installed)) {
+        for (const record of Object.values(installed)) {
           // Filter by scope if specified
           if (scope && scope !== 'all' && record.scope !== scope) {
             continue;

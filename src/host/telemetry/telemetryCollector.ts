@@ -20,9 +20,6 @@ import { redactCredentialText } from '../../shared/security/secretPatterns';
 import { sanitizeBrowserComputerToolResult } from '../../shared/utils/browserComputerRedaction';
 import {
   classifyError,
-  isRecord,
-  asString,
-  asNumber,
   extractComputerSurfaceFields,
   sanitizeToolArgsForTelemetry,
   parseSerializedArguments,
@@ -30,8 +27,6 @@ import {
   extractEventData,
   type SessionConfig,
   type PendingToolCall,
-  type DetachedToolCallInput,
-  type DetachedTimelineEventInput,
   type DetachedTurnInput,
   type DetachedTurnBuffer,
 } from './telemetryCollectorInternal';

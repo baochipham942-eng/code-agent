@@ -6,7 +6,7 @@ import https from 'https';
 import http from 'http';
 import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/contract';
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, Provider } from '../types';
-import { convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
+import { convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
 import { openAISSEStream } from './sseStream';
 import { electronFetch, parseOpenAIResponse, safeJsonStringify } from './shared';
 import { withTransientRetry } from './retryStrategy';

@@ -219,7 +219,7 @@ export const chatCommand = new Command('chat')
               terminalOutput.info(`历史消息: ${history.length} 条`);
             }
           }
-        } catch (error) {
+        } catch {
           if (!isJsonMode) {
             terminalOutput.warning('无法恢复最近会话');
           }
@@ -703,7 +703,7 @@ async function handleCommand(
           }
           console.log('');
         }
-      } catch (error) {
+      } catch {
         terminalOutput.error('无法获取会话列表');
       }
       return false;
@@ -724,7 +724,7 @@ async function handleCommand(
   更新时间: ${new Date(session.updatedAt).toLocaleString()}
 `);
           }
-        } catch (error) {
+        } catch {
           terminalOutput.info(`会话 ID: ${sessionId}`);
         }
       } else {

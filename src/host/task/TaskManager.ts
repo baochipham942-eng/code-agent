@@ -6,7 +6,7 @@
 import { EventEmitter } from 'events';
 import { app, AppWindow } from '../platform';
 import type { AgentEvent, Message, MessageMetadata, MessageSnapshotData, ToolCall } from '../../shared/contract';
-import { AgentOrchestrator, type AgentOrchestratorConfig } from '../agent/agentOrchestrator';
+import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
 import type { ConfigService } from '../services/core/configService';
 import type { PlanningService } from '../planning';

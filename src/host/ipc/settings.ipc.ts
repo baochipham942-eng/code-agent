@@ -774,7 +774,7 @@ export function registerSettingsHandlers(
       });
 
       return { sheets, sheetCount: workbook.SheetNames.length };
-    } catch (error) {
+    } catch {
       return { sheets: [], sheetCount: 0 };
     }
   });
@@ -813,7 +813,7 @@ export function registerSettingsHandlers(
       const wordCount = rawText.split(/\s+/).filter(Boolean).length;
 
       return { html, paragraphs, text: rawText, wordCount };
-    } catch (error) {
+    } catch {
       return { html: '', paragraphs: [], text: '', wordCount: 0 };
     }
   });

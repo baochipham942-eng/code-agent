@@ -99,7 +99,7 @@ export async function loadAllTestSuites(dir: string): Promise<TestSuite[]> {
         }
       }
     }
-  } catch (error) {
+  } catch {
     // Directory doesn't exist
     console.warn(`Test case directory not found: ${dir}`);
   }

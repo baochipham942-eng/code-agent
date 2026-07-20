@@ -5,7 +5,6 @@
 import type {
   SessionTask,
   SessionTaskStatus,
-  SessionTaskPriority,
   CreateTaskInput,
   UpdateTaskInput,
   SessionTaskEvent,

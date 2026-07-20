@@ -6,11 +6,6 @@ import {
   CodeAgentError,
   ErrorCode,
   ErrorSeverity,
-  ToolError,
-  FileSystemError,
-  ModelError,
-  HookError,
-  type SerializedError,
 } from './types';
 import { createLogger } from '../services/infra/logger';
 

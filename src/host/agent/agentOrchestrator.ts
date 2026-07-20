@@ -58,10 +58,9 @@ import {
 import {
   resolveModelConfig,
   resolveRunModelConfig,
-  getDefaultModelByProvider,
   getPermissionLevel,
 } from './orchestrator/modelConfigResolver';
-import { runDeepResearch, checkAndRunSemanticResearch } from './orchestrator/researchRunner';
+import { runDeepResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
 import { setSessionTodos, syncTodosToSessionTasks } from './todoParser';
 import { resolveNeoTagModelIntent } from '../services/project/neoTagModelIntentResolver';

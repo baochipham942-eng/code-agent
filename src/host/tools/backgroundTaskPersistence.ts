@@ -150,7 +150,6 @@ export async function loadTask(taskId: string): Promise<BackgroundTask | null> {
       return null;
     }
   } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error);
     if ((error as Record<string, unknown>).code === 'ENOENT') {
       return null;
     }
@@ -244,7 +243,6 @@ export async function readTaskOutput(
 
     return content;
   } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error);
     if ((error as Record<string, unknown>).code === 'ENOENT') {
       return '';
     }

@@ -23,9 +23,6 @@ export function CitationList({
 }: CitationListProps) {
   if (citations.length === 0) return null;
 
-  // 按类型分组
-  const grouped = groupBy(citations, (c) => c.type);
-
   return (
     <div className={`flex flex-wrap gap-1.5 ${className}`}>
       {citations.map((citation) => (
@@ -139,18 +136,4 @@ export function CitationSummary({
       )}
     </div>
   );
-}
-
-// ----------------------------------------------------------------------------
-// Helpers
-// ----------------------------------------------------------------------------
-
-function groupBy<T>(arr: T[], fn: (item: T) => string): Record<string, T[]> {
-  const result: Record<string, T[]> = {};
-  for (const item of arr) {
-    const key = fn(item);
-    if (!result[key]) result[key] = [];
-    result[key].push(item);
-  }
-  return result;
 }

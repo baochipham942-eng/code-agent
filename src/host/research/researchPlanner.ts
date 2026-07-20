@@ -206,7 +206,7 @@ export class ResearchPlanner {
 
     try {
       return JSON.parse(jsonStr);
-    } catch (e) {
+    } catch {
       // 尝试修复常见的 JSON 问题
       try {
         // 移除可能的尾部逗号

@@ -19,7 +19,6 @@ import type { ProxyMode, ModelEntrySettings } from '../../../shared/contract/set
 import type { SharedProviderConfig, SharedProviderKeyConfig, SharedServiceKeyConfig } from '../cloud/builtinConfig';
 import { isDynamicCustomProviderId } from '../../../shared/modelRuntime';
 import {
-  DEFAULT_MODEL,
   MODEL_API_ENDPOINTS,
 } from '../../../shared/constants';
 import { DEFAULT_SETTINGS } from './configDefaults';

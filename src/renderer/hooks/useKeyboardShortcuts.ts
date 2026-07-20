@@ -24,7 +24,6 @@ import { useKeybindingsSettings } from './useKeybindingsSettings';
 import {
   invokeNativeCommandAction,
   isNativeCommandRuntimeAvailable,
-  type GlobalHotkeyRegistrationResult,
 } from '../services/nativeCommandFacade';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { claimApprovalResponse, releaseApprovalResponse } from '../utils/approvalResponseGuard';

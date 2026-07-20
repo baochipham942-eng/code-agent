@@ -235,7 +235,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
     if (!this.executionContext) {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
-    const executionContext = this.executionContext;
     const startTime = Date.now();
     if (this.executionContext.abortSignal.aborted) {
       this.cancelled = true;

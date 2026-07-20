@@ -4,29 +4,21 @@
 // ============================================================================
 
 import type {
-  ModelConfig,
-  Message,
   MessageAttachment,
   MessageMetadata,
-  ToolCall,
-  ToolResult,
-  AgentEvent,
-  AgentTaskPhase,
 } from '../../shared/contract';
-import type { StructuredOutputConfig, StructuredOutputResult } from './structuredOutput';
-import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
+import type { StructuredOutputConfig } from './structuredOutput';
+import { ModelRouter } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { generateMessageId } from '../../shared/utils/id';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
-import { HookManager, createHookManager } from '../hooks';
-import { DEFAULT_MODELS, MAX_MODE, MODEL_MAX_TOKENS, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
+import { HookManager } from '../hooks';
+import { MAX_MODE } from '../../shared/constants';
 
 // Import refactored modules
 import type {
   AgentLoopConfig,
-  ModelResponse,
-  ModelMessage,
 } from './loopTypes';
 import { CircuitBreaker } from './toolExecution/circuitBreaker';
 import type { PromptProfile } from '../prompts/profiles';
@@ -36,13 +28,10 @@ import { GoalModeController } from './goalModeController';
 import { resolveScaffoldProfileForModel } from './runtime/scaffoldProfile';
 import { NudgeManager } from './nudgeManager';
 import {
-  compressToolResult,
   HookMessageBuffer,
-  estimateModelMessageTokens,
   MessageHistoryCompressor,
-  estimateTokens,
 } from '../context/tokenOptimizer';
-import { AutoContextCompressor, getAutoCompressor } from '../context/autoCompressor';
+import { getAutoCompressor } from '../context/autoCompressor';
 import { CompressionState } from '../context/compressionState';
 import { CompressionPipeline } from '../context/compressionPipeline';
 

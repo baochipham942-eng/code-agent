@@ -380,7 +380,7 @@ export class AutoPlanner {
   private createPlanFromTemplate(
     userMessage: string,
     template: PlanTemplate,
-    config: PlanningConfig
+    _config: PlanningConfig
   ): TaskPlan {
     const planId = `plan-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
     const now = Date.now();

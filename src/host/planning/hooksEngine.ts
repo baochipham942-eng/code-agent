@@ -31,7 +31,6 @@ import type {
 } from './hooks/types';
 import { DEFAULT_DUAL_CHANNEL_CONFIG } from './hooks/types';
 import {
-  observerHooks,
   getObserversForPoint,
   resetObserverState,
   getActionCount,

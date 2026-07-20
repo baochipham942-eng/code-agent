@@ -70,7 +70,6 @@ export function hasSessionDeliverySignals(
 
 export function buildSessionRecoveryHints(
   session: SessionWithMeta,
-  options: SessionRecoveryHintOptions = {},
 ): SessionRecoveryHint[] {
   const hints: SessionRecoveryHint[] = [];
   const workspaceLabel = formatWorkspaceLabel(session);

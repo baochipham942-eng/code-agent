@@ -4,7 +4,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { Server, Terminal, Globe, Code, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
-import { Modal, ModalFooter, Button, Input } from '../../primitives';
+import { Modal, ModalFooter, Input } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
 
 // ============================================================================

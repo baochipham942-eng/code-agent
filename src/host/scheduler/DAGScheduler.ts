@@ -7,7 +7,6 @@ import { EventEmitter } from 'events';
 import type {
   DAGTask,
   TaskOutput,
-  TaskFailure,
   TaskExecutionContext,
   DAGEventType,
   DAGEvent,

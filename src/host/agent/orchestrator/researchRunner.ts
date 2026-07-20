@@ -86,7 +86,7 @@ export async function checkAndRunSemanticResearch(
   modelConfig: ModelConfig,
   deps: ResearchRunnerDeps,
   userSettings: Partial<ResearchUserSettings>,
-  sessionId?: string
+  _sessionId?: string
 ): Promise<boolean> {
   const modelRouter = new ModelRouter();
 

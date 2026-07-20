@@ -10,7 +10,7 @@
 // 是纯函数，可以并行执行。
 // ============================================================================
 
-import type { SlideData, ThemeConfig, SlideImage, ChartMode, ChartSlotData } from './types';
+import type { SlideData, SlideImage, ChartMode, ChartSlotData } from './types';
 import { selectMasterAndLayout } from './layouts';
 import { createLogger } from '../../../services/infra/logger';
 

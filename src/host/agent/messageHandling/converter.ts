@@ -4,7 +4,6 @@
 
 import type {
   ArchiveManifest,
-  Message,
   MessageAttachment,
   PresentationSummary,
   ToolCall,

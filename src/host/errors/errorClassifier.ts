@@ -4,10 +4,7 @@
 // 将错误分类为更细粒度的类型，便于针对性恢复
 // ============================================================================
 
-import { createLogger } from '../services/infra/logger';
 import { ErrorCode } from './types';
-
-const logger = createLogger('ErrorClassifier');
 
 /**
  * 详细错误类型枚举

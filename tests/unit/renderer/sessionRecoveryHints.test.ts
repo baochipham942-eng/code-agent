@@ -90,11 +90,11 @@ describe('buildSessionRecoveryHints', () => {
   it('no longer emits a Replay hint (Replay has its own button)', () => {
     expect(buildSessionRecoveryHints(makeSession({
       workbenchSnapshot: { summary: 'Workflow', labels: [], recentToolNames: [] },
-    }), { hasReplay: true })).toEqual([]);
+    }))).toEqual([]);
 
     expect(buildSessionRecoveryHints(makeSession({
       workbenchSnapshot: { summary: 'Workflow', labels: [], recentToolNames: [] },
-    }), { hasReplay: true, canOpenReplay: false })).toEqual([]);
+    }))).toEqual([]);
   });
 
   it('reuses delivery signals for sidebar filtering and row hints', () => {

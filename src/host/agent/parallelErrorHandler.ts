@@ -7,7 +7,6 @@ import {
   ErrorClassifier,
   getErrorClassifier,
   type ErrorClassification,
-  DetailedErrorType,
 } from '../errors/errorClassifier';
 
 

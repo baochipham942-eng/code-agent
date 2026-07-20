@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Server, Check, X } from 'lucide-react';
+import { Server, Check } from 'lucide-react';
 import type { MCPElicitationRequest, MCPElicitationResponse, ElicitationFieldSchema } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Modal, ModalFooter } from './primitives/Modal';

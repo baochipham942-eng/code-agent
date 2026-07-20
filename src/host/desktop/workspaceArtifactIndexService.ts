@@ -242,17 +242,6 @@ function prioritizeMailboxes(mailboxes: MailboxItem[]): MailboxItem[] {
   });
 }
 
-function buildVectorText(snapshot: ArtifactSnapshot): string {
-  switch (snapshot.sourceKind) {
-    case 'mail':
-      return `Mail subject: ${snapshot.title}\n${snapshot.content}`;
-    case 'calendar':
-      return `Calendar event: ${snapshot.title}\n${snapshot.content}`;
-    case 'reminders':
-      return `Reminder: ${snapshot.title}\n${snapshot.content}`;
-  }
-}
-
 function artifactMemoryFromRecord(memory: MemoryRecord): {
   artifactKey: string;
   sourceKind: ArtifactSourceKind;

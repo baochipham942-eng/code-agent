@@ -99,7 +99,7 @@ export function analyzeDataForPresentation(
 /**
  * Convert a data insight into a slide
  */
-function insightToSlide(insight: DataInsight, data: DataSourceResult): SlideData | null {
+function insightToSlide(insight: DataInsight, _data: DataSourceResult): SlideData | null {
   switch (insight.type) {
     case 'summary':
       // Summary is already covered in the overview slide

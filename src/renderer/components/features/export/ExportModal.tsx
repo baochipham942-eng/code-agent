@@ -96,7 +96,6 @@ export function exportToJson(title: string, messages: Message[]): string {
 export const ExportModal: React.FC<ExportModalProps> = ({
   isOpen,
   onClose,
-  sessionId,
   sessionTitle,
   messages,
 }) => {

@@ -525,7 +525,6 @@ export function resolveDirectRouting(
 function toWorkbenchMetadata(
   context?: ConversationEnvelopeContext,
   directTargets: DirectRoutingTarget[] = [],
-  missingTargetIds: string[] = [],
 ): WorkbenchMessageMetadata | undefined {
   if (!context) return undefined;
 
@@ -603,9 +602,8 @@ function toWorkbenchMetadata(
 export function toMessageMetadata(
   context?: ConversationEnvelopeContext,
   directTargets: DirectRoutingTarget[] = [],
-  missingTargetIds: string[] = [],
 ): MessageMetadata | undefined {
-  const workbench = toWorkbenchMetadata(context, directTargets, missingTargetIds);
+  const workbench = toWorkbenchMetadata(context, directTargets);
   return workbench ? { workbench } : undefined;
 }
 
@@ -728,7 +726,7 @@ export function useAgentIPC({
           role: 'user',
           content,
           timestamp: Date.now(),
-          metadata: toMessageMetadata(contextWithDesignContext, directRouting.targets, directRouting.missingTargetIds),
+          metadata: toMessageMetadata(contextWithDesignContext, directRouting.targets),
         };
         addDirectMessage(userMessage);
 

@@ -16,6 +16,8 @@ import { getDatabase } from '../services/core/databaseService';
 import { DAG_CHANNELS } from '../../shared/ipc/channels';
 import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
 import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
+import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
+import { getModelSessionState } from '../session/modelSessionState';
 
 const logger = createLogger('TaskManager');
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
@@ -128,6 +130,7 @@ export class TaskManager extends EventEmitter {
   private config: TaskManagerConfig;
   private semaphore: Semaphore;
   private activeOrchestrators: Map<string, OrchestratorWrapper> = new Map();
+  private activeModelSpecs = new Map<string, ConversationModelSpec>();
   private sessionStates: Map<string, SessionState> = new Map();
   private waitingQueue: string[] = [];
   private queueTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
@@ -418,6 +421,11 @@ export class TaskManager extends EventEmitter {
     return new Map(this.sessionStates);
   }
 
+  getActiveModelSpec(sessionId: string): ConversationModelSpec | undefined {
+    const modelSpec = this.activeModelSpecs.get(sessionId);
+    return modelSpec ? { ...modelSpec } : undefined;
+  }
+
   /**
    * 获取等待队列
    */
@@ -601,6 +609,16 @@ export class TaskManager extends EventEmitter {
   ): Promise<void> {
     logger.info(`Executing task for session ${sessionId}`);
 
+    const requestedModelSpec = options?.modelSpec;
+    const sessionOverride = getModelSessionState().getOverride(sessionId);
+    const activeModelSpec = requestedModelSpec
+      ?? (sessionOverride && sessionOverride.adaptive !== true
+        ? { provider: sessionOverride.provider, model: sessionOverride.model }
+        : undefined);
+    if (activeModelSpec) {
+      this.activeModelSpecs.set(sessionId, activeModelSpec);
+    }
+
     // 更新状态
     this.updateSessionState(sessionId, {
       status: 'running',
@@ -635,6 +653,7 @@ export class TaskManager extends EventEmitter {
       });
       this.emitEvent('task_error', sessionId, { error });
     } finally {
+      this.activeModelSpecs.delete(sessionId);
       // 释放信号量
       this.semaphore.release();
 
@@ -994,6 +1013,7 @@ export class TaskManager extends EventEmitter {
 
     // 清理 turn state，防止内存泄漏
     this.turnStateBySession.delete(sessionId);
+    this.activeModelSpecs.delete(sessionId);
 
     // 更新状态
     this.updateSessionState(sessionId, { status: 'idle' });

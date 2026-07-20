@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
 import type { QueuedInput } from '../../../src/shared/contract/queuedInput';
+import type { ConversationModelSpec } from '../../../src/shared/contract/conversationEnvelope';
 import { QUEUED_INPUT_RETRY } from '../../../src/shared/constants/queuedInput';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import type { WebRouteHandler } from '../../../src/web/routes/routeTypes';
@@ -42,15 +43,19 @@ function createSchema(db: BetterSqlite3.Database): void {
 describe('queued input IPC', () => {
   const handlers = new Map<string, WebRouteHandler>();
   let db: BetterSqlite3.Database;
+  let currentModelSpec: ConversationModelSpec | undefined;
 
   beforeEach(() => {
     db = new Database(':memory:');
     createSchema(db);
     databaseState.db = db;
     handlers.clear();
+    currentModelSpec = undefined;
     registerQueuedInputHandlers({
       handle: (channel: string, handler: WebRouteHandler) => handlers.set(channel, handler),
-    } as never);
+    } as never, {
+      resolveModelSpec: () => currentModelSpec,
+    });
   });
 
   afterEach(() => {
@@ -90,6 +95,37 @@ describe('queued input IPC', () => {
       retryCount: 0,
     });
     expect(typeof (response.data as QueuedInput).envelope).toBe('object');
+  });
+
+  it('enqueue 在 host 侧把活跃 run 的显式模型写入 envelope', async () => {
+    currentModelSpec = { provider: 'xiaomi', model: 'mimo-v2.5-pro' };
+
+    const response = await enqueue('input-model-stamped', {
+      content: 'keep the active model',
+      options: {
+        mode: 'normal',
+        modelSpec: { provider: 'untrusted', model: 'renderer-value' },
+      },
+    });
+
+    expect(response.success).toBe(true);
+    expect((response.data as QueuedInput).envelope.options).toEqual({
+      mode: 'normal',
+      modelSpec: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+    });
+  });
+
+  it('enqueue 在纯默认模型会话不固化 modelSpec', async () => {
+    const response = await enqueue('input-default-model', {
+      content: 'follow future defaults',
+      options: {
+        mode: 'normal',
+        modelSpec: { provider: 'untrusted', model: 'renderer-value' },
+      },
+    });
+
+    expect(response.success).toBe(true);
+    expect((response.data as QueuedInput).envelope.options).toEqual({ mode: 'normal' });
   });
 
   it('重复 enqueue 同一 id 时不覆盖已有记录', async () => {

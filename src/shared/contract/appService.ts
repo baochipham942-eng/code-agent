@@ -14,6 +14,7 @@ import type { ModelProvider } from './model';
 import type {
   ConversationEnvelope,
   ConversationExecutionIntent,
+  ConversationModelSpec,
   RuntimeInputIntent,
   WorkbenchToolScope,
 } from './conversationEnvelope';
@@ -63,6 +64,8 @@ export interface AppServiceRunOptions {
   toolScope?: WorkbenchToolScope;
   executionIntent?: ConversationExecutionIntent;
   runtimeInput?: RuntimeInputIntent;
+  /** 排队输入在 host 侧捕获的显式模型；旧 envelope 缺省时仍走会话/全局解析。 */
+  modelSpec?: ConversationModelSpec;
   /** /goal 自治模式：存在则本轮激活 goal 模式 */
   goal?: GoalRunInput;
   [key: string]: unknown;

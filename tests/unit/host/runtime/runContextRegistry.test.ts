@@ -176,6 +176,27 @@ describe('RunHandle', () => {
 });
 
 describe('RunRegistry', () => {
+  it('tracks the active run model spec and clears it with run ownership', () => {
+    const registry = new RunRegistry();
+    const handle = registry.start({
+      runId: 'run-model-spec',
+      sessionId: 'session-model-spec',
+      workspace: '/tmp/native-run-workspace',
+    });
+
+    registry.setModelSpec(handle.context.runId, {
+      provider: 'xiaomi',
+      model: 'mimo-v2.5-pro',
+    });
+
+    expect(registry.getModelSpecBySessionId('session-model-spec')).toEqual({
+      provider: 'xiaomi',
+      model: 'mimo-v2.5-pro',
+    });
+    registry.unregister(handle.context.runId, handle);
+    expect(registry.getModelSpecBySessionId('session-model-spec')).toBeUndefined();
+  });
+
   it('fails closed when a session tries to start a second active run', () => {
     const registry = new RunRegistry();
     registry.start({

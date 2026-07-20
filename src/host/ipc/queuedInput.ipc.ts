@@ -1,7 +1,10 @@
 import type { IpcMain } from '../platform';
 import type { IPCResponse } from '../../shared/ipc';
 import { QueuedInputSchemas } from '../../shared/ipc/schemas';
-import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
+import type {
+  ConversationEnvelope,
+  ConversationModelSpec,
+} from '../../shared/contract/conversationEnvelope';
 import type { QueuedInput } from '../../shared/contract/queuedInput';
 import { QUEUED_INPUT_RETRY } from '../../shared/constants/queuedInput';
 import { defineHandler } from '../platform/ipcRegistry';
@@ -41,7 +44,26 @@ function invalidState(message: string) {
   };
 }
 
-export function registerQueuedInputHandlers(ipcMain: IpcMain): void {
+export interface QueuedInputHandlerDependencies {
+  resolveModelSpec?: (sessionId: string) => ConversationModelSpec | undefined;
+}
+
+function stampModelSpec(
+  envelope: ConversationEnvelope,
+  modelSpec: ConversationModelSpec | undefined,
+): ConversationEnvelope {
+  const { modelSpec: _untrustedModelSpec, ...otherOptions } = envelope.options ?? {};
+  const options = modelSpec ? { ...otherOptions, modelSpec } : otherOptions;
+  return {
+    ...envelope,
+    ...(Object.keys(options).length > 0 ? { options } : { options: undefined }),
+  };
+}
+
+export function registerQueuedInputHandlers(
+  ipcMain: IpcMain,
+  deps: QueuedInputHandlerDependencies = {},
+): void {
   defineHandler(QueuedInputSchemas.REQUEST, async (_event, request) => {
     const { action, payload } = request;
 
@@ -49,7 +71,11 @@ export function registerQueuedInputHandlers(ipcMain: IpcMain): void {
       switch (action) {
         case 'enqueue': {
           const repository = getRepository();
-          const envelopeJson = JSON.stringify(payload.envelope);
+          const envelope = stampModelSpec(
+            payload.envelope,
+            deps.resolveModelSpec?.(payload.sessionId),
+          );
+          const envelopeJson = JSON.stringify(envelope);
           repository.enqueue({
             id: payload.id,
             sessionId: payload.sessionId,

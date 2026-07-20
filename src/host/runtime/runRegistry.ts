@@ -40,6 +40,7 @@ import {
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { NativeRecoveryDescriptor } from './nativeRecoveryHost';
+import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 
 const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
 
@@ -76,6 +77,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   private readonly heartbeatTimers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly durableEnvelopes = new Map<string, RunEnvelope>();
   private readonly durableCheckpointStates = new Map<string, unknown>();
+  private readonly modelSpecsByRunId = new Map<string, ConversationModelSpec>();
   private kernel: RunKernelAdapter | null = null;
 
   configureDurableKernel(kernel: RunKernelAdapter): void {
@@ -585,6 +587,19 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     return runId ? this.handlesByRunId.get(runId) : undefined;
   }
 
+  setModelSpec(runId: string, modelSpec: ConversationModelSpec): void {
+    if (!this.handlesByRunId.has(runId)) {
+      throw new Error(`Cannot set model spec for unregistered run: ${runId}`);
+    }
+    this.modelSpecsByRunId.set(runId, { ...modelSpec });
+  }
+
+  getModelSpecBySessionId(sessionId: string): ConversationModelSpec | undefined {
+    const runId = this.runIdBySessionId.get(sessionId);
+    const modelSpec = runId ? this.modelSpecsByRunId.get(runId) : undefined;
+    return modelSpec ? { ...modelSpec } : undefined;
+  }
+
   resolve(selector: RunSelector): RunHandle | undefined {
     const runId = selector.runId?.trim();
     const sessionId = selector.sessionId?.trim();
@@ -614,6 +629,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
       return false;
     }
     this.handlesByRunId.delete(runId);
+    this.modelSpecsByRunId.delete(runId);
     if (this.runIdBySessionId.get(handle.context.sessionId) === runId) {
       this.runIdBySessionId.delete(handle.context.sessionId);
     }
@@ -628,6 +644,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     }
     this.handlesByRunId.clear();
     this.runIdBySessionId.clear();
+    this.modelSpecsByRunId.clear();
     this.durableOwners.clear();
     this.durableEnvelopes.clear();
     this.durableCheckpointStates.clear();

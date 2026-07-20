@@ -189,7 +189,7 @@ interface OrchestratorInternals {
   resolveTurnRouting(content: string, sessionId?: string, agentOverrideId?: string): Promise<{
     resolution: { agent: { id: string; name: string }; score: number; reason: string } | null;
     requestedAgentId?: string;
-  }>; 
+  }>;
   agentLoop: { steer: ReturnType<typeof vi.fn> } | null;
   isInterrupting: boolean;
   pendingSteerMessages: unknown[];

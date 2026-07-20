@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import type { MessageAttachment, MessageMetadata, Session, SessionStatus } from '../../shared/contract';
 import type { ModelProvider } from '../../shared/contract/model';
 import type {
+  ConversationEnvelope,
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
@@ -77,6 +78,23 @@ import {
 } from './webQueuedInputDrain';
 
 export type { PendingLocalToolCall } from './agentBridgeToolDispatch';
+
+export function buildQueuedAgentRunBody(envelope: ConversationEnvelope): AgentRunBody {
+  const parsedBody = AgentRunBodySchema.safeParse({
+    prompt: envelope.content,
+    sessionId: envelope.sessionId,
+    clientMessageId: envelope.clientMessageId,
+    attachments: envelope.attachments,
+    context: envelope.context,
+    goal: envelope.options?.goal,
+    model: envelope.options?.modelSpec?.model,
+    provider: envelope.options?.modelSpec?.provider,
+  });
+  if (!parsedBody.success) {
+    throw new Error('Persisted queued input envelope is invalid');
+  }
+  return parsedBody.data;
+}
 
 interface AgentRouterDeps extends AgentDurableRouteDeps {
   runRegistry: RunRegistry;
@@ -185,18 +203,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       return new QueuedInputRepository(db);
     },
     runEnvelope: async (envelope, response) => {
-      const parsedBody = AgentRunBodySchema.safeParse({
-        prompt: envelope.content,
-        sessionId: envelope.sessionId,
-        clientMessageId: envelope.clientMessageId,
-        attachments: envelope.attachments,
-        context: envelope.context,
-        goal: envelope.options?.goal,
-      });
-      if (!parsedBody.success) {
-        throw new Error('Persisted queued input envelope is invalid');
-      }
-      await runAgentTurn(parsedBody.data, response, { connectedClient: false });
+      await runAgentTurn(buildQueuedAgentRunBody(envelope), response, { connectedClient: false });
     },
     emitAgentEvent: (sessionId, event) => {
       broadcastSSE('agent:event', { ...event, sessionId });
@@ -408,6 +415,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           effectiveProvider = override.provider;
           effectiveModel = override.model;
         }
+      }
+      if (effectiveModel && effectiveProvider && runContext) {
+        runRegistry.setModelSpec(runContext.runId, {
+          provider: effectiveProvider,
+          model: effectiveModel,
+        });
       }
 
       const { createCLIAgent } = await import('../../cli/adapter');

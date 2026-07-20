@@ -1,13 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   resolveModelConfig,
+  resolveRunModelConfig,
   getDefaultModelByProvider,
   getPermissionLevel,
 } from '../../../../src/host/agent/orchestrator/modelConfigResolver';
 import type { ConfigService } from '../../../../src/host/services/core/configService';
 import type { PermissionRequest } from '../../../../src/shared/contract';
+import { getModelSessionState, resetModelSessionState } from '../../../../src/host/session/modelSessionState';
 
 describe('modelConfigResolver', () => {
+  afterEach(() => resetModelSessionState());
+
   describe('getPermissionLevel', () => {
     it.each([
       ['file_read', 'read'],
@@ -72,6 +76,38 @@ describe('modelConfigResolver', () => {
       expect(cfg.apiKey).toBeUndefined();
       expect(cfg.model).toBe('deepseek-chat');
       expect(cfg.temperature).toBe(0.7);
+    });
+  });
+
+  describe('resolveRunModelConfig', () => {
+    it('queued modelSpec wins over a changed session override', () => {
+      getModelSessionState().setOverride('session-queued-model', {
+        provider: 'longcat',
+        model: 'LongCat-Flash-Chat',
+      });
+      const configService = { getApiKey: vi.fn(() => 'sk-test') } as unknown as ConfigService;
+      const settings = {
+        models: {
+          defaultProvider: 'deepseek',
+          providers: {
+            deepseek: { model: 'deepseek-chat' },
+            xiaomi: { model: 'mimo-v2.5-pro' },
+          },
+        },
+      } as unknown as ReturnType<ConfigService['getSettings']>;
+
+      const config = resolveRunModelConfig(
+        configService,
+        settings,
+        'session-queued-model',
+        { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      );
+
+      expect(config).toMatchObject({
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        adaptive: false,
+      });
     });
   });
 });

@@ -53,7 +53,9 @@ class ProviderHealthMonitor {
   }
 
   /** Call after each failed request */
-  recordFailure(provider: string): void {
+  recordFailure(provider: string, options?: { cancelled?: boolean }): void {
+    // 用户主动取消不是 provider 故障，不参与健康统计，也不记作成功。
+    if (options?.cancelled === true) return;
     const state = this.getOrCreate(provider);
     state.events.push({ time: Date.now(), success: false });
     state.consecutiveErrors++;

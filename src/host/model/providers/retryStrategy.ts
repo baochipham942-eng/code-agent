@@ -99,6 +99,26 @@ export function isTransientError(msg: string, errCode?: string): boolean {
   return false;
 }
 
+/** 判断失败是否为明确的用户取消，避免把业务错误误判为取消。 */
+export function isCancellationError(err: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted === true) return true;
+
+  if (err && typeof err === 'object') {
+    if ((err as { name?: unknown }).name === 'AbortError') return true;
+    if ((err as NodeJS.ErrnoException).code === 'ABORT_ERR') return true;
+  }
+
+  let message: string | undefined;
+  if (err instanceof Error) {
+    message = err.message;
+  } else if (typeof err === 'string') {
+    message = err;
+  } else if (err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string') {
+    message = (err as { message: string }).message;
+  }
+  return message === 'canceled' || message === 'aborted';
+}
+
 /**
  * 判断错误是否为"致命"（账号/余额/内容策略等持久性错误）
  * 用于上层（如 TestRunner）在批量执行场景下做 circuit breaker，
@@ -260,12 +280,16 @@ export async function withTransientRetry<T>(
         // 可中断 sleep（codex audit R1）：abort 时立即醒来，不等满 retry-after
         await abortableSleep(delay, signal);
         if (signal?.aborted) {
-          healthMonitor.recordFailure(providerName);
+          healthMonitor.recordFailure(providerName, {
+            cancelled: isCancellationError(err, signal),
+          });
           throw err;
         }
         continue;
       }
-      healthMonitor.recordFailure(providerName);
+      healthMonitor.recordFailure(providerName, {
+        cancelled: isCancellationError(err, signal),
+      });
       throw err;
     }
   }

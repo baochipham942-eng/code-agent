@@ -49,7 +49,12 @@ import { MODEL_API_ENDPOINTS, PROVIDER_TIMEOUT, SSE_FIRST_BYTE_TIMEOUT, SSE_INAC
 import { createLogger } from '../../services/infra/logger';
 import { PROVIDER_REGISTRY } from '../providerRegistry';
 import { resolveProviderBaseUrl, resolveProviderApiKey } from '../providers/providerResolution';
-import { withTransientRetry, isTransientError, abortableSleep } from '../providers/retryStrategy';
+import {
+  withTransientRetry,
+  isTransientError,
+  isCancellationError,
+  abortableSleep,
+} from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { getProviderLimiter } from '../concurrencyLimiter';
 import { convertToolsToOpenAI, getHttpsAgent, wrapTransientSystemReminder } from '../providers/shared';
@@ -1081,7 +1086,7 @@ async function streamViaAiSdk(params: {
         await abortableSleep(STREAM_RETRY_BASE_DELAY_MS * (attempt + 1), signal);
         if (!signal?.aborted) continue;
       }
-      healthMonitor.recordFailure(config.provider);
+      healthMonitor.recordFailure(config.provider, { cancelled: isCancellationError(err, signal) });
       if (!signal?.aborted) {
         onStream({ type: 'error', error: summarizeModelErrorForUser(msg), ...(code ? { errorCode: code } : {}) });
       }

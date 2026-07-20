@@ -426,5 +426,5 @@ export function modelHasCapability(
     return modelIdLooksSearchCapable(modelId);
   }
   const features = MODEL_FEATURES[modelId];
-  return features !== undefined && features.includes(cap);
+  return features?.includes(cap) ?? false;
 }

@@ -487,7 +487,7 @@ async function generateDesignVideoOnce(
   // 桥接视频模型（多模态桥接 Spec 1）：`provider:model` id（唯一含冒号的来源）→ openai-compat 视频引擎，
   // 端点取自源聊天 provider 的 baseUrl+key（key 在 host 内解析，不出 host）。内置 videoModelById id
   // （wan2.7-t2v 等）与 custom id 均不含冒号，故此判定不误伤；必须在内置/custom 解析之前拦下。
-  if (payload.model && payload.model.includes(':')) {
+  if (payload.model?.includes(':')) {
     // host 侧能力闸（终审 M1）：deriveBridgedVisualModels 只派生 gen-capable 模型，天然挡住
     // 聊天桥接 id。含冒号但不在派生视频表 → 显式抛错，不 fall through 到 custom/内置，杜绝
     // 拿 key 打错端点的付费调用。

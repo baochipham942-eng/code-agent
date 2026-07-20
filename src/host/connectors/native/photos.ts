@@ -241,7 +241,7 @@ async function exportPhotos(payload: Record<string, unknown>): Promise<ExportRes
   const files: string[] = [];
   const entries = fs.readdirSync(exportDir, { withFileTypes: true, recursive: true });
   for (const entry of entries as unknown as Array<{ name: string; isFile: () => boolean; parentPath?: string }>) {
-    if (entry.isFile && entry.isFile()) {
+    if (entry.isFile?.()) {
       const parent = (entry as { parentPath?: string }).parentPath ?? exportDir;
       files.push(path.join(parent, entry.name));
     }

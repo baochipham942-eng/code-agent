@@ -617,7 +617,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           beforeTimestamp: oldestTimestamp,
           limit: 30,
         });
-        if (result && result.messages && result.messages.length > 0) {
+        if ((result?.messages?.length ?? 0) > 0) {
           const olderMessages = result.messages as Message[];
           const hasMore = result.hasMore;
           set(state => ({

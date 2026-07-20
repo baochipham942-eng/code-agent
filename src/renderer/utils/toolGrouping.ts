@@ -167,7 +167,7 @@ export function sanitizeThinkingForDisplay(text: string | undefined): string | u
       previousWasBlank = false;
       continue;
     }
-    if (previousNormalized && previousNormalized.startsWith(`${normalized} `)) {
+    if (previousNormalized?.startsWith(`${normalized} `)) {
       previousWasBlank = false;
       continue;
     }

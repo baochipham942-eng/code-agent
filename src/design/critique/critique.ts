@@ -27,7 +27,7 @@ function extractJsonBlock(raw: string): string {
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed;
 
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced && fenced[1]) {
+  if (fenced?.[1]) {
     const inner = fenced[1].trim();
     if (inner.startsWith('{') && inner.endsWith('}')) return inner;
   }

@@ -69,7 +69,7 @@ export class CLISessionManager {
    */
   private isDatabaseAvailable(): boolean {
     const db = this.getDb();
-    return db !== null && db.isInitialized;
+    return db?.isInitialized ?? false;
   }
 
   /**

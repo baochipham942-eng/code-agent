@@ -24,7 +24,7 @@ export function resolveMusicModelEndpoint(
   model: string,
   settings: AppSettings | null,
 ): { baseUrl: string; apiKey: string; modelName: string } {
-  if (model && model.includes(':')) {
+  if (model?.includes(':')) {
     const entry = deriveBridgedVisualModels(settings).find(
       (m) => m.id === model && m.mediaType === 'music',
     );

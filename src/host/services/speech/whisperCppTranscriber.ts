@@ -126,7 +126,7 @@ export function parseWhisperOutput(stdout: string, format: string): string {
   for (const line of lines) {
     const trimmed = line.trim();
     const match = trimmed.match(/^\[[\d:.]+\s*-->\s*[\d:.]+\]\s*(.*)$/);
-    if (match && match[1]) {
+    if (match?.[1]) {
       textLines.push(match[1].trim());
     } else if (trimmed && !trimmed.startsWith('[')) {
       textLines.push(trimmed);

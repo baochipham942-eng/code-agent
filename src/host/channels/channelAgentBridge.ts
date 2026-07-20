@@ -347,7 +347,7 @@ export class ChannelAgentBridge {
 
       // 只查找新增的消息中的 assistant 回复（找最后一条有内容的，跳过工具调用消息）
       const newMessages = messagesAfter.slice(messageCountBefore);
-      const assistantMessages = newMessages.filter(m => m.role === 'assistant' && m.content && m.content.trim());
+      const assistantMessages = newMessages.filter(m => m.role === 'assistant' && m.content?.trim());
       const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
 
       if (lastAssistantMessage) {

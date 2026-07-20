@@ -380,7 +380,7 @@ export function isKnownSafeCommand(command: string, shell: ShellKind = defaultSh
 
     // 条件安全
     const checker = CONDITIONALLY_SAFE[program];
-    if (checker && checker(args)) continue;
+    if (checker?.(args)) continue;
 
     // 未知命令 — 不安全
     return false;

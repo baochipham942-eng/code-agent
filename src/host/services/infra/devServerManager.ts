@@ -355,7 +355,7 @@ function buildSpawnCommand(pm: PackageManager): { command: string; args: string[
 function matchUrl(line: string): string | null {
   for (const pattern of URL_PATTERNS) {
     const m = line.match(pattern);
-    if (m && m[1]) {
+    if (m?.[1]) {
       // 去掉末尾 / 保持与 LiveScore validateLivePreviewDevServerUrl 一致
       return m[1].replace(/\/+$/, '');
     }

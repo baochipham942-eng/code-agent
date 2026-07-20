@@ -146,7 +146,7 @@ export class McpOAuthCoordinator {
   private async createFlow(input: BeginMcpOAuthFlowInput): Promise<McpOAuthFlow> {
     const flowId = randomBytes(FLOW_ID_BYTES).toString('hex');
     const state = randomBytes(STATE_BYTES).toString('base64url');
-    let record: FlowRecord | undefined;
+    const recordRef: { current?: FlowRecord } = {};
     let resolve!: (result: McpOAuthCallbackResult) => void;
     let reject!: (error: Error) => void;
     const callbackPromise = new Promise<McpOAuthCallbackResult>((res, rej) => {
@@ -156,6 +156,7 @@ export class McpOAuthCoordinator {
     callbackPromise.catch(() => {});
 
     const { server, redirectUrl } = await this.createLoopbackServer((req, res) => {
+      const record = recordRef.current;
       if (!record) {
         this.sendText(res, 503, 'OAuth flow is not ready');
         return;
@@ -164,13 +165,14 @@ export class McpOAuthCoordinator {
     });
 
     const timeout = setTimeout(() => {
+      const record = recordRef.current;
       if (record) {
         this.failFlow(record, new Error('MCP OAuth flow timed out'));
       }
     }, this.timeoutMs);
     timeout.unref?.();
 
-    record = {
+    const record: FlowRecord = {
       flowId,
       serverName: input.serverName,
       serverIdentity: input.serverIdentity,
@@ -185,6 +187,7 @@ export class McpOAuthCoordinator {
       reject,
       callbackPromise,
     };
+    recordRef.current = record;
     this.flowsById.set(flowId, record);
     this.flowsByIdentity.set(input.serverIdentity, record);
     return this.snapshot(record);

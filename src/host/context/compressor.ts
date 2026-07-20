@@ -382,13 +382,14 @@ export class ContextCompressor {
           case 'ai_summary':
             // AI summary requires async, return truncate as fallback
             return compressWithTruncate(text, targetTokens);
-          case 'hybrid':
+          case 'hybrid': {
             // Try code_extract first, then truncate if needed
             const codeResult = compressWithCodeExtract(text, targetTokens);
             if (codeResult.compressedTokens <= targetTokens) {
               return codeResult;
             }
             return compressWithTruncate(codeResult.content, targetTokens);
+          }
         }
       }
     }

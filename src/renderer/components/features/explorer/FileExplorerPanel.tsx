@@ -354,13 +354,11 @@ const FileTreeNode: React.FC<{
       )}
 
       {/* Children */}
-      {file.isDirectory && isExpanded && children && (
-        children
-          .filter(c => !HIDDEN_NAMES.has(c.name))
-          .map((child) => (
-            <FileTreeNode key={child.path} file={child} depth={depth + 1} />
-          ))
-      )}
+      {file.isDirectory && isExpanded && children
+        ?.filter(c => !HIDDEN_NAMES.has(c.name))
+        .map((child) => (
+          <FileTreeNode key={child.path} file={child} depth={depth + 1} />
+        ))}
     </>
   );
 };

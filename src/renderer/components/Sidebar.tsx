@@ -299,7 +299,7 @@ export const Sidebar: React.FC = () => {
   }, []);
 
   const {
-    backgroundTaskMap,
+    backgroundSessionMap,
     replayEvidenceBySessionId,
     hasNeedsInputForSession,
     currentProjectSearchSessionIds,
@@ -526,9 +526,9 @@ export const Sidebar: React.FC = () => {
     (groupSessions: SessionWithMeta[]): SidebarProjectDrawerSession[] =>
       groupSessions.map((session) => {
         const sessionRuntime = sessionRuntimes.get(session.id);
-        const backgroundTask = backgroundTaskMap.get(session.id);
+        const backgroundSession = backgroundSessionMap.get(session.id);
         const status = getSessionStatusPresentation({
-          backgroundTask,
+          backgroundSession,
           runtime: sessionRuntime,
           taskState: sessionStates[session.id],
           messageCount: session.messageCount,
@@ -539,7 +539,7 @@ export const Sidebar: React.FC = () => {
         const latestActivityAt = Math.max(
           session.updatedAt || 0,
           sessionRuntime?.lastActivityAt || 0,
-          backgroundTask?.backgroundedAt || 0,
+          backgroundSession?.backgroundedAt || 0,
         );
         const replayEvidenceCount = replayEvidenceBySessionId.get(session.id)?.length ?? 0;
         const pendingReviewCount = (reviewItemsBySessionId[session.id] ?? []).filter(
@@ -571,7 +571,7 @@ export const Sidebar: React.FC = () => {
         };
       }),
     [
-      backgroundTaskMap,
+      backgroundSessionMap,
       currentSessionId,
       hasNeedsInputForSession,
       replayEvidenceBySessionId,
@@ -590,7 +590,7 @@ export const Sidebar: React.FC = () => {
     pinnedSessionIds,
     renamingId,
     sessionRuntimes,
-    backgroundTaskMap,
+    backgroundSessionMap,
     sessionStates,
     hasNeedsInputForSession,
     searchQuery,

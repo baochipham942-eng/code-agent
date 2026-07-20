@@ -42,7 +42,7 @@ export interface SidebarSessionItemProps {
   pinnedSessionIds: Set<string>;
   renamingId: string | null;
   sessionRuntimes: Map<string, SessionRuntimeSummary>;
-  backgroundTaskMap: SidebarDerivedSessions['backgroundTaskMap'];
+  backgroundSessionMap: SidebarDerivedSessions['backgroundSessionMap'];
   sessionStates: Record<string, SessionState>;
   hasNeedsInputForSession: SidebarDerivedSessions['hasNeedsInputForSession'];
   searchQuery: string;
@@ -86,7 +86,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   pinnedSessionIds,
   renamingId,
   sessionRuntimes,
-  backgroundTaskMap,
+  backgroundSessionMap,
   sessionStates,
   hasNeedsInputForSession,
   searchQuery,
@@ -114,11 +114,11 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const isPinned = pinnedSessionIds.has(session.id);
   const isRenaming = renamingId === session.id;
   const sessionRuntime = sessionRuntimes.get(session.id);
-  const backgroundTask = backgroundTaskMap.get(session.id);
+  const backgroundSession = backgroundSessionMap.get(session.id);
   // 空会话（0 轮 / 0 消息）没有可回放内容，hover 也不挂 Replay 入口。
   const sessionHasActivity = (session.turnCount ?? 0) > 0 || (session.messageCount ?? 0) > 0;
   const status = getSessionStatusPresentation({
-    backgroundTask,
+    backgroundSession,
     runtime: sessionRuntime,
     taskState: sessionStates[session.id],
     messageCount: session.messageCount,
@@ -131,7 +131,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const latestActivityAt = Math.max(
     session.updatedAt || 0,
     sessionRuntime?.lastActivityAt || 0,
-    backgroundTask?.backgroundedAt || 0,
+    backgroundSession?.backgroundedAt || 0,
   );
   const messageSearchHitGroup = searchQuery.trim() ? messageSearchHitsBySessionId[session.id] : undefined;
   const lastActiveLabel = formatRelativeTime(t, latestActivityAt);

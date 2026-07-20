@@ -27,7 +27,7 @@ const sessionState = {
   sessionRuntimes: new Map([
     ['session-1', { sessionId: 'session-1', status: 'paused', activeAgentCount: 0, contextHealth: null, lastActivityAt: Date.now() - 3_000 }],
   ]),
-  backgroundTasks: [],
+  backgroundSessions: [],
   moveToBackground: vi.fn(async () => true),
 };
 

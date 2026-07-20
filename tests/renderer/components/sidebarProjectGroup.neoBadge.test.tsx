@@ -91,7 +91,7 @@ function sharedSessionProps(): SidebarSessionItemSharedProps {
     pinnedSessionIds: new Set(),
     renamingId: null,
     sessionRuntimes: new Map(),
-    backgroundTaskMap: new Map(),
+    backgroundSessionMap: new Map(),
     sessionStates: {},
     hasNeedsInputForSession: () => false,
     searchQuery: '',

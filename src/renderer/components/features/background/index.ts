@@ -2,4 +2,4 @@
 // Background Components - 后台任务组件导出
 // ============================================================================
 
-export { BackgroundTaskPanel } from './BackgroundTaskPanel';
+export { BackgroundSessionPanel } from './BackgroundSessionPanel';

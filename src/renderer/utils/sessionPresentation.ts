@@ -1,7 +1,7 @@
 import type { SessionStatus } from '@shared/contract/session';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import type { SessionRuntimeSummary } from '@shared/ipc';
-import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
+import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { stripAppshotBlocks } from '@shared/contract/appshot';
 import type { SessionWithMeta } from '../stores/sessionStore';
 import type { SessionStatusFilter } from '../stores/sessionUIStore';
@@ -86,7 +86,7 @@ export function getDisplaySessionTitle(title?: string | null): string {
  * Classify a session's status for sidebar display.
  *
  * Three priority tiers:
- * - P1 action signals (pending approval / backgroundTask / runtime / taskState):
+ * - P1 action signals (pending approval / backgroundSession / runtime / taskState):
  *   win first, these reflect whether the user needs to look at the session now.
  * - P2 DB-persisted sessionStatus: survives restart; when the process is gone
  *   but the database remembers 'running'/'completed'/'error', trust it.
@@ -95,7 +95,7 @@ export function getDisplaySessionTitle(title?: string | null): string {
  *   needing attention.
  */
 export function getSessionStatusPresentation(args: {
-  backgroundTask?: BackgroundTaskInfo;
+  backgroundSession?: BackgroundSessionInfo;
   runtime?: SessionRuntimeSummary;
   taskState?: TaskSessionState | null;
   messageCount?: number;
@@ -105,7 +105,7 @@ export function getSessionStatusPresentation(args: {
   hasNeedsInput?: boolean;
 }): SessionStatusPresentation {
   const {
-    backgroundTask,
+    backgroundSession,
     runtime,
     taskState,
     messageCount,
@@ -116,13 +116,13 @@ export function getSessionStatusPresentation(args: {
   } = args;
 
   // P1: Actionable live signals
-  if (backgroundTask?.status === 'failed' || taskState?.status === 'error') {
+  if (backgroundSession?.status === 'failed' || taskState?.status === 'error') {
     return PRESENTATION.error;
   }
   if (hasNeedsInput || hasPendingApproval) {
     return PRESENTATION.approval;
   }
-  if (backgroundTask?.status === 'running') {
+  if (backgroundSession?.status === 'running') {
     return PRESENTATION.background;
   }
   if (runtime?.status === 'paused') {
@@ -165,7 +165,7 @@ export function getSessionStatusPresentation(args: {
     return PRESENTATION.done;
   }
 
-  const hasNoInMemoryRuntime = !runtime && !taskState && !backgroundTask;
+  const hasNoInMemoryRuntime = !runtime && !taskState && !backgroundSession;
   if (hasNoInMemoryRuntime) {
     return PRESENTATION.idle;
   }

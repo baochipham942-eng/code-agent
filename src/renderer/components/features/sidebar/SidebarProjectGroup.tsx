@@ -87,7 +87,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   const { t } = useI18n();
   const p = t.sidebarProject;
   const {
-    backgroundTaskMap,
+    backgroundSessionMap,
     sessionRuntimes,
     sessionStates,
     hasNeedsInputForSession,
@@ -100,7 +100,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
   const summary = buildSidebarProjectSummary({
     group,
-    backgroundTaskMap,
+    backgroundSessionMap,
     sessionRuntimes,
     sessionStates,
     hasNeedsInputForSession,

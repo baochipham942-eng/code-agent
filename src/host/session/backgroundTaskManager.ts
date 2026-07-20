@@ -6,7 +6,7 @@ import { EventEmitter } from 'events';
 import { AppWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager, notificationService } from '../services';
-import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
+import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
 
 const logger = createLogger('BackgroundTaskManager');
 
@@ -19,7 +19,7 @@ const logger = createLogger('BackgroundTaskManager');
  * - 后台任务完成时发送系统通知
  */
 class BackgroundTaskManager extends EventEmitter {
-  private backgroundTasks: Map<string, BackgroundTaskInfo> = new Map();
+  private backgroundSessions: Map<string, BackgroundSessionInfo> = new Map();
   private mainWindow: AppWindow | null = null;
 
   /**
@@ -43,12 +43,12 @@ class BackgroundTaskManager extends EventEmitter {
     }
 
     // 检查是否已在后台
-    if (this.backgroundTasks.has(sessionId)) {
+    if (this.backgroundSessions.has(sessionId)) {
       logger.debug('Session already in background', { sessionId });
       return true;
     }
 
-    const taskInfo: BackgroundTaskInfo = {
+    const sessionInfo: BackgroundSessionInfo = {
       sessionId,
       title: session.title || '未命名会话',
       startedAt: Date.now(),
@@ -56,13 +56,13 @@ class BackgroundTaskManager extends EventEmitter {
       status: 'running',
     };
 
-    this.backgroundTasks.set(sessionId, taskInfo);
+    this.backgroundSessions.set(sessionId, sessionInfo);
 
-    logger.info('Session moved to background', { sessionId, title: taskInfo.title });
+    logger.info('Session moved to background', { sessionId, title: sessionInfo.title });
 
     this.emitUpdate({
       type: 'added',
-      task: taskInfo,
+      task: sessionInfo,
     });
 
     return true;
@@ -71,15 +71,15 @@ class BackgroundTaskManager extends EventEmitter {
   /**
    * 将后台会话恢复到前台
    */
-  moveToForeground(sessionId: string): BackgroundTaskInfo | null {
-    const task = this.backgroundTasks.get(sessionId);
+  moveToForeground(sessionId: string): BackgroundSessionInfo | null {
+    const task = this.backgroundSessions.get(sessionId);
 
     if (!task) {
       logger.debug('Session not in background', { sessionId });
       return null;
     }
 
-    this.backgroundTasks.delete(sessionId);
+    this.backgroundSessions.delete(sessionId);
 
     logger.info('Session moved to foreground', { sessionId });
 
@@ -95,7 +95,7 @@ class BackgroundTaskManager extends EventEmitter {
    * 更新后台任务进度
    */
   updateProgress(sessionId: string, progress: number): void {
-    const task = this.backgroundTasks.get(sessionId);
+    const task = this.backgroundSessions.get(sessionId);
     if (!task) return;
 
     task.progress = Math.min(100, Math.max(0, progress));
@@ -110,7 +110,7 @@ class BackgroundTaskManager extends EventEmitter {
    * 标记后台任务完成
    */
   async markCompleted(sessionId: string, message?: string): Promise<void> {
-    const task = this.backgroundTasks.get(sessionId);
+    const task = this.backgroundSessions.get(sessionId);
     if (!task) return;
 
     task.status = 'completed';
@@ -135,7 +135,7 @@ class BackgroundTaskManager extends EventEmitter {
 
     // 3 秒后自动从后台列表移除
     setTimeout(() => {
-      this.backgroundTasks.delete(sessionId);
+      this.backgroundSessions.delete(sessionId);
       this.emitUpdate({
         type: 'removed',
         task,
@@ -147,7 +147,7 @@ class BackgroundTaskManager extends EventEmitter {
    * 标记后台任务失败
    */
   markFailed(sessionId: string, error?: string): void {
-    const task = this.backgroundTasks.get(sessionId);
+    const task = this.backgroundSessions.get(sessionId);
     if (!task) return;
 
     task.status = 'failed';
@@ -174,21 +174,21 @@ class BackgroundTaskManager extends EventEmitter {
    * 检查会话是否在后台运行
    */
   isInBackground(sessionId: string): boolean {
-    return this.backgroundTasks.has(sessionId);
+    return this.backgroundSessions.has(sessionId);
   }
 
   /**
    * 获取所有后台任务
    */
-  getAllTasks(): BackgroundTaskInfo[] {
-    return Array.from(this.backgroundTasks.values());
+  getAllTasks(): BackgroundSessionInfo[] {
+    return Array.from(this.backgroundSessions.values());
   }
 
   /**
    * 获取后台任务数量
    */
   getTaskCount(): number {
-    return this.backgroundTasks.size;
+    return this.backgroundSessions.size;
   }
 
   /**

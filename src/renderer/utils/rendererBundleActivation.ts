@@ -5,7 +5,7 @@ export interface RendererBundleReloadBlockInput {
   processingSessionCount: number;
   isProcessing: boolean;
   activeTaskCount?: number;
-  backgroundTaskCount?: number;
+  backgroundSessionCount?: number;
 }
 
 export interface RendererBundleAutoReloadInput extends RendererBundleReloadBlockInput {
@@ -67,8 +67,8 @@ export function getRendererBundleReloadBlockedReason(input: RendererBundleReload
   if (input.runningSessionCount > 0) {
     return `有 ${input.runningSessionCount} 个会话正在运行，完成后再刷新`;
   }
-  if (input.backgroundTaskCount && input.backgroundTaskCount > 0) {
-    return `有 ${input.backgroundTaskCount} 个后台任务正在运行，完成后再刷新`;
+  if (input.backgroundSessionCount && input.backgroundSessionCount > 0) {
+    return `有 ${input.backgroundSessionCount} 个后台任务正在运行，完成后再刷新`;
   }
   if (
     input.activeTaskCount && input.activeTaskCount > 0 ||

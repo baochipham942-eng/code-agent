@@ -32,7 +32,7 @@ import { ProjectCollaborationPage, ProjectCollaborationPanel } from './component
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
-import { BackgroundTaskPanel } from './components/features/background';
+import { BackgroundSessionPanel } from './components/features/background';
 import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
@@ -1039,7 +1039,7 @@ export const App: React.FC = () => {
       <MemoFloater />
 
       {/* Background Task Panel - 后台任务浮动面板 */}
-      <BackgroundTaskPanel />
+      <BackgroundSessionPanel />
 
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && (

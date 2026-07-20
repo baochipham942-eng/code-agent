@@ -6,7 +6,7 @@ import { ipcHost, AppWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { BACKGROUND_CHANNELS } from '../../shared/ipc/channels';
-import type { BackgroundTaskInfo } from '../../shared/contract/sessionState';
+import type { BackgroundSessionInfo } from '../../shared/contract/sessionState';
 
 const logger = createLogger('Background-IPC');
 
@@ -34,7 +34,7 @@ export function registerBackgroundHandlers(getMainWindow: () => AppWindow | null
   // 将会话恢复到前台
   ipcHost.handle(
     BACKGROUND_CHANNELS.MOVE_TO_FOREGROUND,
-    async (_event, sessionId: string): Promise<BackgroundTaskInfo | null> => {
+    async (_event, sessionId: string): Promise<BackgroundSessionInfo | null> => {
       logger.info('Moving session to foreground', { sessionId });
       return manager.moveToForeground(sessionId);
     }
@@ -43,7 +43,7 @@ export function registerBackgroundHandlers(getMainWindow: () => AppWindow | null
   // 获取所有后台任务
   ipcHost.handle(
     BACKGROUND_CHANNELS.GET_TASKS,
-    async (): Promise<BackgroundTaskInfo[]> => {
+    async (): Promise<BackgroundSessionInfo[]> => {
       return manager.getAllTasks();
     }
   );

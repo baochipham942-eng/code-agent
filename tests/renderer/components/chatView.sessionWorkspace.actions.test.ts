@@ -22,7 +22,7 @@ const sessionState = {
   currentSessionId: 'session-1',
   sessions: [] as any[],
   sessionRuntimes: new Map<string, any>(),
-  backgroundTasks: [] as any[],
+  backgroundSessions: [] as any[],
   pendingUserQuestionsBySessionId: new Map<string, any[]>(),
   moveToBackground: vi.fn(async () => true),
 };
@@ -117,7 +117,7 @@ describe('SessionActionsMenu session-state rendering', () => {
     sessionState.sessionRuntimes = new Map([
       ['session-1', { sessionId: 'session-1', status: 'paused', activeAgentCount: 0, contextHealth: null, lastActivityAt: Date.now() - 3_000 }],
     ]);
-    sessionState.backgroundTasks = [];
+    sessionState.backgroundSessions = [];
     sessionState.pendingUserQuestionsBySessionId = new Map();
     taskState.sessionStates = {
       'session-1': { status: 'idle' },

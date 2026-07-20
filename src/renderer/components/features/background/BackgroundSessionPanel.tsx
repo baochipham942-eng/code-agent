@@ -1,15 +1,12 @@
 // ============================================================================
-// Background Task Panel - 后台任务浮动面板
+// Background Session Panel - 后台任务浮动面板
 // ============================================================================
 
 import React from 'react';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { Play, CheckCircle, XCircle, Loader2, X } from 'lucide-react';
-import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
+import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 
-/**
- * 格式化持续时间
- */
 function formatDuration(startedAt: number): string {
   const seconds = Math.floor((Date.now() - startedAt) / 1000);
   if (seconds < 60) return `${seconds}秒`;
@@ -19,18 +16,15 @@ function formatDuration(startedAt: number): string {
   return `${hours}小时${minutes % 60}分钟`;
 }
 
-/**
- * 单个后台任务项
- */
-const BackgroundTaskItem: React.FC<{
-  task: BackgroundTaskInfo;
+const BackgroundSessionItem: React.FC<{
+  session: BackgroundSessionInfo;
   onForeground: () => void;
-}> = ({ task, onForeground }) => {
+}> = ({ session, onForeground }) => {
   const statusIcon = {
     running: <Loader2 className="w-4 h-4 animate-spin text-blue-400" />,
     completed: <CheckCircle className="w-4 h-4 text-green-400" />,
     failed: <XCircle className="w-4 h-4 text-red-400" />,
-  }[task.status];
+  }[session.status];
 
   return (
     <button
@@ -40,18 +34,18 @@ const BackgroundTaskItem: React.FC<{
       {statusIcon}
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-zinc-200 truncate">
-          {task.title}
+          {session.title}
         </div>
         <div className="text-xs text-zinc-400">
-          {task.status === 'running' && formatDuration(task.startedAt)}
-          {task.status === 'completed' && (task.completionMessage || '已完成')}
-          {task.status === 'failed' && (task.completionMessage || '执行失败')}
+          {session.status === 'running' && formatDuration(session.startedAt)}
+          {session.status === 'completed' && (session.completionMessage || '已完成')}
+          {session.status === 'failed' && (session.completionMessage || '执行失败')}
         </div>
-        {task.progress !== undefined && task.status === 'running' && (
+        {session.progress !== undefined && session.status === 'running' && (
           <div className="mt-1 h-1 bg-zinc-600 rounded-full overflow-hidden">
             <div
               className="h-full bg-blue-500 transition-all duration-300"
-              style={{ width: `${task.progress}%` }}
+              style={{ width: `${session.progress}%` }}
             />
           </div>
         )}
@@ -61,20 +55,14 @@ const BackgroundTaskItem: React.FC<{
   );
 };
 
-/**
- * 后台任务浮动面板
- * 显示在右下角，展示所有后台运行的任务
- */
-export const BackgroundTaskPanel: React.FC = () => {
-  const { backgroundTasks, moveToForeground } = useSessionStore();
+export const BackgroundSessionPanel: React.FC = () => {
+  const { backgroundSessions, moveToForeground } = useSessionStore();
   const [isMinimized, setIsMinimized] = React.useState(false);
 
-  // 没有后台任务时不显示
-  if (backgroundTasks.length === 0) {
+  if (backgroundSessions.length === 0) {
     return null;
   }
 
-  // 最小化时只显示数量
   if (isMinimized) {
     return (
       <button
@@ -83,7 +71,7 @@ export const BackgroundTaskPanel: React.FC = () => {
       >
         <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
         <span className="text-sm text-zinc-200">
-          {backgroundTasks.length} 个后台任务
+          {backgroundSessions.length} 个后台任务
         </span>
       </button>
     );
@@ -91,7 +79,6 @@ export const BackgroundTaskPanel: React.FC = () => {
 
   return (
     <div className="fixed bottom-4 right-4 w-80 bg-zinc-900 backdrop-blur-sm border border-zinc-700 rounded-xl shadow-2xl z-50">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
         <h3 className="text-sm font-medium text-zinc-200">后台任务</h3>
         <button
@@ -102,18 +89,16 @@ export const BackgroundTaskPanel: React.FC = () => {
         </button>
       </div>
 
-      {/* Task List */}
       <div className="p-2 space-y-2 max-h-80 overflow-y-auto">
-        {backgroundTasks.map((task) => (
-          <BackgroundTaskItem
-            key={task.sessionId}
-            task={task}
-            onForeground={() => moveToForeground(task.sessionId)}
+        {backgroundSessions.map((session) => (
+          <BackgroundSessionItem
+            key={session.sessionId}
+            session={session}
+            onForeground={() => moveToForeground(session.sessionId)}
           />
         ))}
       </div>
 
-      {/* Footer hint */}
       <div className="px-4 py-2 border-t border-zinc-700">
         <p className="text-xs text-zinc-500">点击任务切换到前台</p>
       </div>
@@ -121,4 +106,4 @@ export const BackgroundTaskPanel: React.FC = () => {
   );
 };
 
-export default BackgroundTaskPanel;
+export default BackgroundSessionPanel;

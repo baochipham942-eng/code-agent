@@ -109,7 +109,7 @@ const sessionState = {
   unarchiveSession: vi.fn(async () => {}),
   unreadSessionIds: new Set<string>(),
   sessionRuntimes: new Map(),
-  backgroundTasks: [] as any[],
+  backgroundSessions: [] as any[],
   renameSession: vi.fn(async () => {}),
 };
 

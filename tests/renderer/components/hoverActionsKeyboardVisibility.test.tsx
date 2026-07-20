@@ -81,7 +81,7 @@ describe('hover actions remain visible to keyboard users', () => {
           pinnedSessionIds: new Set<string>(),
           renamingId: null,
           sessionRuntimes: new Map(),
-          backgroundTaskMap: new Map(),
+          backgroundSessionMap: new Map(),
           sessionStates: {},
           hasPendingApprovalForSession: () => false,
           hasNeedsInputForSession: () => false,

@@ -5,7 +5,7 @@ import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore'
 describe('sessionPresentation', () => {
   it('explains background sessions before generic running state', () => {
     const status = getSessionStatusPresentation({
-      backgroundTask: {
+      backgroundSession: {
         sessionId: 'session-1',
         title: '后台任务',
         startedAt: Date.now() - 1_000,

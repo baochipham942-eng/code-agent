@@ -31,7 +31,7 @@ interface RendererBundleAutoReloadRuntimeState {
   processingSessionCount: number;
   isProcessing: boolean;
   activeTaskCount: number;
-  backgroundTaskCount: number;
+  backgroundSessionCount: number;
 }
 
 function countActiveTaskStates(sessionStates: Record<string, SessionState>): number {
@@ -52,7 +52,7 @@ export function useRendererBundleAutoReload(options: RendererBundleAutoReloadOpt
   } = options;
 
   const runningSessionCount = useSessionStore((state) => state.runningSessionIds.size);
-  const backgroundTaskCount = useSessionStore((state) => state.backgroundTasks.length);
+  const backgroundSessionCount = useSessionStore((state) => state.backgroundSessions.length);
   const processingSessionCount = useAppStore((state) => state.processingSessionIds.size);
   const isProcessing = useAppStore((state) => state.isProcessing);
   const activeTaskCount = useTaskStore((state) => countActiveTaskStates(state.sessionStates));
@@ -62,7 +62,7 @@ export function useRendererBundleAutoReload(options: RendererBundleAutoReloadOpt
     processingSessionCount: 0,
     isProcessing: false,
     activeTaskCount: 0,
-    backgroundTaskCount: 0,
+    backgroundSessionCount: 0,
   });
   const lastInteractionAtRef = useRef(Date.now());
   const reloadedRef = useRef(false);
@@ -76,7 +76,7 @@ export function useRendererBundleAutoReload(options: RendererBundleAutoReloadOpt
     processingSessionCount,
     isProcessing,
     activeTaskCount,
-    backgroundTaskCount,
+    backgroundSessionCount,
   };
   reloadRef.current = options.reload ?? (() => window.location.reload());
   nowRef.current = options.now ?? (() => Date.now());

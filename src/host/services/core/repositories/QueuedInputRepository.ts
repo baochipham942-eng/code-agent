@@ -97,6 +97,20 @@ export class QueuedInputRepository {
     return (rows as SQLiteRow[]).map(rowToRecord);
   }
 
+  listSessionsWithQueuedInputs(): string[] {
+    // sending 孤儿行本阶段不恢复，避免进程重启后重复派发。
+    const rows = this.db
+      .prepare(
+        `SELECT session_id, MIN(created_at) AS first_created
+         FROM queued_inputs
+         WHERE status = 'queued'
+         GROUP BY session_id
+         ORDER BY first_created ASC`,
+      )
+      .all() as { session_id: string }[];
+    return rows.map((row) => row.session_id);
+  }
+
   markSending(id: string, now?: number): boolean {
     const result = this.db
       .prepare(

@@ -93,6 +93,30 @@ describe('QueuedInputRepository', () => {
     expect(repo.listBySession('session-b').map((record) => record.id)).toEqual(['b-middle']);
   });
 
+  it('listSessionsWithQueuedInputs 只返回有 queued 行的 session，去重并按最早排队时间排序', () => {
+    repo.enqueue({ id: 'later-first', sessionId: 'session-later', envelope: {}, now: 300 });
+    repo.enqueue({ id: 'earlier-second', sessionId: 'session-earlier', envelope: {}, now: 200 });
+    repo.enqueue({ id: 'earlier-first', sessionId: 'session-earlier', envelope: {}, now: 100 });
+
+    expect(repo.listSessionsWithQueuedInputs()).toEqual(['session-earlier', 'session-later']);
+  });
+
+  it('listSessionsWithQueuedInputs 不含 consumed、retracted、failed 和 sending 行', () => {
+    repo.enqueue({ id: 'queued', sessionId: 'session-queued', envelope: {}, now: 100 });
+    repo.enqueue({ id: 'consumed', sessionId: 'session-consumed', envelope: {}, now: 110 });
+    repo.enqueue({ id: 'retracted', sessionId: 'session-retracted', envelope: {}, now: 120 });
+    repo.enqueue({ id: 'failed', sessionId: 'session-failed', envelope: {}, now: 130 });
+    repo.enqueue({ id: 'sending', sessionId: 'session-sending', envelope: {}, now: 140 });
+
+    expect(repo.markSending('consumed')).toBe(true);
+    expect(repo.markConsumed('consumed')).toBe(true);
+    expect(repo.retract('retracted')).toBe(true);
+    expect(repo.markFailed('failed')).toBe(true);
+    expect(repo.markSending('sending')).toBe(true);
+
+    expect(repo.listSessionsWithQueuedInputs()).toEqual(['session-queued']);
+  });
+
   it('markSending 只能从 queued 出发，重复调用不改变状态和 updated_at', () => {
     repo.enqueue({ id: 'input-1', sessionId: 'session-1', envelope: {}, now: 100 });
 

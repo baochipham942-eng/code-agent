@@ -61,4 +61,76 @@ describe('CLISessionManager.addMessageToSession', () => {
 
     expect(updateMessage).toHaveBeenCalledWith('message-duplicate', message);
   });
+
+  it('DB 句柄存在但未初始化时自愈初始化后持久化（打包态 webServer 派发轮 assistant 蒸发 P0 复现）', async () => {
+    const manager = new CLISessionManager();
+    const message: Message = {
+      id: 'message-selfinit',
+      role: 'assistant',
+      content: '派发轮回复',
+      timestamp: 789,
+    };
+
+    const addMessage = vi.fn();
+    const fakeDb = {
+      isInitialized: false,
+      initialize: vi.fn(async () => {
+        fakeDb.isInitialized = true;
+      }),
+      addMessage,
+    };
+    Object.assign(manager as unknown as Record<string, unknown>, {
+      _dbChecked: true,
+      _db: fakeDb,
+    });
+
+    await manager.addMessageToSession('session-selfinit', message);
+
+    expect(fakeDb.initialize).toHaveBeenCalledTimes(1);
+    expect(addMessage).toHaveBeenCalledWith('session-selfinit', message);
+  });
+
+  it('自愈初始化失败时不抛出且不写库（内存模式兜底）', async () => {
+    const manager = new CLISessionManager();
+    const addMessage = vi.fn();
+    const fakeDb = {
+      isInitialized: false,
+      initialize: vi.fn(async () => {
+        throw new Error('disk unavailable');
+      }),
+      addMessage,
+    };
+    Object.assign(manager as unknown as Record<string, unknown>, {
+      _dbChecked: true,
+      _db: fakeDb,
+    });
+
+    await expect(manager.addMessageToSession('session-initfail', {
+      id: 'message-initfail',
+      role: 'assistant',
+      content: 'x',
+      timestamp: 1,
+    })).resolves.toBeUndefined();
+
+    expect(addMessage).not.toHaveBeenCalled();
+  });
+
+  it('getMessages 在未初始化句柄上同样自愈（loopPersistedAssistant 判定依赖）', async () => {
+    const manager = new CLISessionManager();
+    const stored: Message[] = [{ id: 'm1', role: 'assistant', content: 'ok', timestamp: 2 }];
+    const fakeDb = {
+      isInitialized: false,
+      initialize: vi.fn(async () => {
+        fakeDb.isInitialized = true;
+      }),
+      getMessages: vi.fn(() => stored),
+    };
+    Object.assign(manager as unknown as Record<string, unknown>, {
+      _dbChecked: true,
+      _db: fakeDb,
+    });
+
+    await expect(manager.getMessages('session-read')).resolves.toEqual(stored);
+    expect(fakeDb.initialize).toHaveBeenCalledTimes(1);
+  });
 });

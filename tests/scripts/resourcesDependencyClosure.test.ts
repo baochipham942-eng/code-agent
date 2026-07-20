@@ -1,21 +1,33 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const tauriConfigPath = join(repoRoot, 'src-tauri/tauri.conf.json');
-const tauriConfigDir = dirname(tauriConfigPath);
+const requireFromTest = createRequire(import.meta.url);
 
 type TauriResources = string[] | Record<string, string | null>;
 
 type PackageLocation = {
   name: string;
-  relativeRoot: string;
 };
 
 type PackageManifest = {
   dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+};
+
+type PackageResolver = (packageName: string, anchorDir: string) => string | null;
+
+type DependencyClosureEnvironment = {
+  resolvePackage: PackageResolver;
+  readManifest: (packageRoot: string) => PackageManifest;
+};
+
+type DependencyClosureResult = {
+  skipped: string[];
 };
 
 const dependencyExemptions = new Map<string, string>([
@@ -55,17 +67,40 @@ function findPackageLocations(resourcePath: string): PackageLocation[] {
     if (scoped && !secondNameSegment) continue;
 
     const name = scoped ? `${firstNameSegment}/${secondNameSegment}` : firstNameSegment;
-    const packageEnd = index + (scoped ? 3 : 2);
-    locations.push({
-      name,
-      relativeRoot: segments.slice(0, packageEnd).join('/'),
-    });
+    locations.push({ name });
   }
 
   return locations;
 }
 
-function collectPackagedPackages(resources: TauriResources): {
+function isWithinRepo(candidatePath: string): boolean {
+  const relativePath = relative(repoRoot, candidatePath);
+  return relativePath === ''
+    || (!isAbsolute(relativePath) && relativePath !== '..' && !relativePath.startsWith(`..${sep}`));
+}
+
+function resolveInstalledPackage(packageName: string, anchorDir: string): string | null {
+  try {
+    const manifestPath = requireFromTest.resolve(`${packageName}/package.json`, {
+      paths: [anchorDir],
+    });
+    return isWithinRepo(manifestPath) ? dirname(manifestPath) : null;
+  } catch {
+    return null;
+  }
+}
+
+const defaultEnvironment: DependencyClosureEnvironment = {
+  resolvePackage: resolveInstalledPackage,
+  readManifest: (packageRoot) => (
+    JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as PackageManifest
+  ),
+};
+
+function collectPackagedPackages(
+  resources: TauriResources,
+  resolvePackage: PackageResolver,
+): {
   names: Set<string>;
   roots: Map<string, string>;
 } {
@@ -74,11 +109,13 @@ function collectPackagedPackages(resources: TauriResources): {
 
   for (const [source, target] of resourceEntries(resources)) {
     for (const location of findPackageLocations(target)) names.add(location.name);
+    let anchorDir = repoRoot;
     for (const location of findPackageLocations(source)) {
       names.add(location.name);
-      const packageRoot = resolve(tauriConfigDir, location.relativeRoot);
-      if (!roots.has(location.name) && existsSync(join(packageRoot, 'package.json'))) {
+      const packageRoot = resolvePackage(location.name, anchorDir);
+      if (packageRoot) {
         roots.set(location.name, packageRoot);
+        anchorDir = packageRoot;
       }
     }
   }
@@ -86,24 +123,12 @@ function collectPackagedPackages(resources: TauriResources): {
   return { names, roots };
 }
 
-function resolveInstalledDependency(parentRoot: string, dependency: string): string | null {
-  let searchRoot = parentRoot;
-
-  while (searchRoot.startsWith(repoRoot)) {
-    const candidate = join(searchRoot, 'node_modules', dependency);
-    if (existsSync(join(candidate, 'package.json'))) return candidate;
-    if (searchRoot === repoRoot) break;
-    searchRoot = dirname(searchRoot);
-  }
-
-  return null;
-}
-
 function assertResourcesDependencyClosure(
   resources: TauriResources,
   exemptions = dependencyExemptions,
-): void {
-  const packaged = collectPackagedPackages(resources);
+  environment = defaultEnvironment,
+): DependencyClosureResult {
+  const packaged = collectPackagedPackages(resources, environment.resolvePackage);
   if (packaged.names.size === 0) {
     throw new Error(
       'Tauri resources dependency gate parsed 0 node_modules packages; the resources anchor or parser is broken.',
@@ -114,12 +139,46 @@ function assertResourcesDependencyClosure(
   const missingManifests = new Set<string>();
   const usedExemptions = new Set<string>();
   const visitedRoots = new Set<string>();
+  const optionalOwners = new Map<string, string>();
+  const skipped = new Set<string>();
+  const manifestCache = new Map<string, PackageManifest>();
+
+  const readManifest = (packageRoot: string): PackageManifest => {
+    const cached = manifestCache.get(packageRoot);
+    if (cached) return cached;
+    const manifest = environment.readManifest(packageRoot);
+    manifestCache.set(packageRoot, manifest);
+    return manifest;
+  };
+
+  const registerOptionalDependencies = (owner: string, manifest: PackageManifest): void => {
+    for (const dependency of Object.keys(manifest.optionalDependencies ?? {}).sort()) {
+      if (!optionalOwners.has(dependency)) optionalOwners.set(dependency, owner);
+    }
+  };
+
+  for (const name of [...packaged.names].sort()) {
+    const root = packaged.roots.get(name);
+    if (root) registerOptionalDependencies(name, readManifest(root));
+  }
+
+  const recordUnresolvedManifest = (name: string, reason: string): void => {
+    const optionalOwner = optionalOwners.get(name);
+    if (optionalOwner) {
+      skipped.add(
+        `${name} (optional dependency of ${optionalOwner}; not installed on this machine/platform)`,
+      );
+      return;
+    }
+    missingManifests.add(`${name} (${reason})`);
+  };
+
   const queue = [...packaged.names]
     .sort()
     .flatMap((name) => {
       const root = packaged.roots.get(name);
       if (root) return [{ name, root }];
-      missingManifests.add(`${name} (packaged resource has no readable package.json)`);
+      recordUnresolvedManifest(name, 'packaged resource has no readable package.json');
       return [];
     });
 
@@ -129,7 +188,8 @@ function assertResourcesDependencyClosure(
     if (visitedRoots.has(manifestPath)) continue;
     visitedRoots.add(manifestPath);
 
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as PackageManifest;
+    const manifest = readManifest(current.root);
+    registerOptionalDependencies(current.name, manifest);
     for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
       if (exemptions.has(dependency)) {
         usedExemptions.add(dependency);
@@ -140,11 +200,11 @@ function assertResourcesDependencyClosure(
         missingEdges.add(`${dependency} (dependency of ${current.name})`);
       }
 
-      const dependencyRoot = resolveInstalledDependency(current.root, dependency);
+      const dependencyRoot = environment.resolvePackage(dependency, current.root);
       if (dependencyRoot) {
         queue.push({ name: dependency, root: dependencyRoot });
       } else {
-        missingManifests.add(`${dependency} (dependency of ${current.name})`);
+        recordUnresolvedManifest(dependency, `dependency of ${current.name}`);
       }
     }
   }
@@ -173,6 +233,14 @@ function assertResourcesDependencyClosure(
   if (failures.length > 0) {
     throw new Error(`Tauri resources npm dependency closure failed.\n\n${failures.join('\n\n')}`);
   }
+
+  const skippedEntries = [...skipped].sort();
+  if (skippedEntries.length > 0) {
+    console.log(
+      `Skipped unavailable optional dependencies:\n${skippedEntries.map((entry) => `- ${entry}`).join('\n')}`,
+    );
+  }
+  return { skipped: skippedEntries };
 }
 
 describe('Tauri resources npm dependency closure', () => {
@@ -189,6 +257,30 @@ describe('Tauri resources npm dependency closure', () => {
     expect(() => assertResourcesDependencyClosure(readTauriResources(), exemptionsWithZombie)).toThrowError(
       /Stale dependency exemptions[\s\S]*unused-installer: 测试僵尸豁免/,
     );
+  });
+
+  it('skips a packaged optional dependency that is unavailable on the current platform', () => {
+    const parentRoot = '/synthetic/node_modules/example-parent';
+    const result = assertResourcesDependencyClosure(
+      {
+        '../node_modules/example-parent': 'node_modules/example-parent',
+        '../node_modules/@platform/missing': 'node_modules/@platform/missing',
+      },
+      new Map(),
+      {
+        resolvePackage: (packageName) => (
+          packageName === 'example-parent' ? parentRoot : null
+        ),
+        readManifest: (packageRoot) => {
+          if (packageRoot !== parentRoot) throw new Error(`Unexpected package root: ${packageRoot}`);
+          return { optionalDependencies: { '@platform/missing': '1.0.0' } };
+        },
+      },
+    );
+
+    expect(result.skipped).toEqual([
+      '@platform/missing (optional dependency of example-parent; not installed on this machine/platform)',
+    ]);
   });
 
   it('packages the complete transitive runtime dependency closure', () => {

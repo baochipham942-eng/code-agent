@@ -1,14 +1,19 @@
 import type React from 'react';
+import { useState } from 'react';
+import { BackgroundTaskSchemas } from '@shared/ipc/schemas';
 import { getLongTaskStatusLabel } from '@shared/contract/productClosure';
 import {
   AlertTriangle,
   ArrowUpRight,
   Brain,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Circle,
   ListChecks,
   Loader2,
   Radio,
+  RefreshCw,
   XCircle,
 } from 'lucide-react';
 import { EmptyState } from '../primitives';
@@ -31,6 +36,7 @@ import {
 } from '../../utils/taskRailPresentation';
 import { useI18n } from '../../hooks/useI18n';
 import type { Translations } from '../../i18n';
+import { typedInvokeDomain } from '../../services/typedInvoke';
 
 function runStatusClass(status: RunUiStatus): string {
   switch (status) {
@@ -434,15 +440,61 @@ function outputRefBadgeLabel(type: TaskRecordOutputRef['type'], t: Translations)
 }
 
 const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => {
-  const { t } = useI18n();
   return (
   <div className="mt-1.5 space-y-1" data-testid="task-output-refs">
     {refs.map((ref) => (
-      <div
-        key={ref.id}
-        className="flex min-w-0 items-center gap-2 rounded border border-white/[0.04] bg-white/[0.015] px-2 py-1"
-        title={ref.pathOrUrl || ref.label}
-      >
+      <TaskOutputRefRow key={ref.id} outputRef={ref} />
+    ))}
+  </div>
+  );
+};
+
+type LogReadState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'loaded'; content: string; truncated: boolean; size: number }
+  | { status: 'error' };
+
+const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }) => {
+  const { t } = useI18n();
+  const rw = t.taskStatusPanels.runWorkbench;
+  const [expanded, setExpanded] = useState(false);
+  const [logState, setLogState] = useState<LogReadState>({ status: 'idle' });
+  const canReadLog = ref.type === 'log' && Boolean(ref.taskId);
+
+  const loadLog = async (): Promise<void> => {
+    if (!ref.taskId) return;
+    setLogState({ status: 'loading' });
+    try {
+      const response = await typedInvokeDomain(BackgroundTaskSchemas.READ_TASK_LOG, {
+        action: 'readTaskLog',
+        payload: { taskId: ref.taskId, refId: ref.id },
+      });
+      if (!response.success) {
+        setLogState({ status: 'error' });
+        return;
+      }
+      setLogState({ status: 'loaded', ...response.data });
+    } catch {
+      setLogState({ status: 'error' });
+    }
+  };
+
+  const toggleLog = (): void => {
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    setExpanded(true);
+    if (logState.status === 'idle') void loadLog();
+  };
+
+  return (
+    <div
+      className="min-w-0 rounded border border-white/[0.04] bg-white/[0.015] px-2 py-1"
+      title={ref.pathOrUrl || ref.label}
+    >
+      <div className="flex min-w-0 items-center gap-2">
         <span className={`flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] ${outputRefTone(ref.type)}`}>
           {outputRefBadgeLabel(ref.type, t)}
         </span>
@@ -452,14 +504,56 @@ const TaskOutputRefRows = ({ refs }: { refs: TaskRecordOutputRef[] }) => {
             className="flex-shrink-0 rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300"
             data-testid="task-output-ref-empty"
           >
-            {t.taskStatusPanels.runWorkbench.noOutput}
+            {rw.noOutput}
           </span>
         ) : ref.pathOrUrl && (
           <span className="min-w-0 flex-[1.5] truncate text-[10px] text-zinc-600">{ref.pathOrUrl}</span>
         )}
+        {canReadLog && (
+          <button
+            type="button"
+            className="flex flex-shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[10px] text-sky-300 hover:bg-sky-500/10"
+            aria-expanded={expanded}
+            onClick={toggleLog}
+          >
+            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {expanded ? rw.hideLog : rw.viewLog}
+          </button>
+        )}
       </div>
-    ))}
-  </div>
+
+      {canReadLog && expanded && (
+        <div className="mt-1.5 border-t border-white/[0.05] pt-1.5" data-testid="task-log-viewer">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[9px] text-zinc-600">
+              {logState.status === 'loaded' && logState.truncated ? rw.logTruncated : ''}
+            </span>
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded px-1 py-0.5 text-[9px] text-zinc-400 hover:bg-white/[0.05] disabled:opacity-50"
+              disabled={logState.status === 'loading'}
+              onClick={() => void loadLog()}
+            >
+              <RefreshCw className={`h-2.5 w-2.5 ${logState.status === 'loading' ? 'animate-spin' : ''}`} />
+              {rw.refreshLog}
+            </button>
+          </div>
+          {logState.status === 'loading' && (
+            <div className="text-[10px] text-zinc-500">{rw.loadingLog}</div>
+          )}
+          {logState.status === 'error' && (
+            <div className="text-[10px] text-red-300" role="alert">{rw.logLoadFailed}</div>
+          )}
+          {logState.status === 'loaded' && (logState.content.length === 0 ? (
+            <div className="text-[10px] text-amber-300">{rw.noOutput}</div>
+          ) : (
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-black/20 p-2 font-mono text-[10px] text-zinc-300">
+              {logState.content}
+            </pre>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 

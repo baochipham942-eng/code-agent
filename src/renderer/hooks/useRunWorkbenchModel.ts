@@ -224,6 +224,7 @@ function buildTaskOutputRefs(task: Task): TaskRecordOutputRef[] {
       const fallbackLabel = lastPathSegment(pathOrUrl) || outputRefTypeLabel(ref.type);
       return {
         id: ref.id,
+        taskId: task.id,
         type: ref.type,
         label: ref.label || fallbackLabel,
         pathOrUrl,

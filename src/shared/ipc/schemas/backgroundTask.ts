@@ -4,6 +4,7 @@ import type {
   TaskEvent,
   TaskFailure,
   TaskNotification,
+  TaskLogReadResult,
   TaskOutputRef,
   TaskProgress,
 } from '../../contract/backgroundTask';
@@ -142,6 +143,15 @@ const GetTaskRequestSchema = z.object({
   requestId: z.string().optional(),
 });
 
+const ReadTaskLogRequestSchema = z.object({
+  action: z.literal('readTaskLog'),
+  payload: z.object({
+    taskId: z.string().min(1),
+    refId: z.string().min(1),
+  }).strict(),
+  requestId: z.string().optional(),
+});
+
 const DrainNotificationsRequestSchema = z.object({
   action: z.literal('drainNotifications'),
   payload: z.object({ sessionId: z.string() }),
@@ -157,18 +167,26 @@ const MarkNotificationDeliveredRequestSchema = z.object({
 const BackgroundTaskRequestSchema = z.discriminatedUnion('action', [
   ListTasksRequestSchema,
   GetTaskRequestSchema,
+  ReadTaskLogRequestSchema,
   DrainNotificationsRequestSchema,
   MarkNotificationDeliveredRequestSchema,
 ]);
 
 const ListTasksResponseSchema = IPCResponseSchema(z.array(TaskSchema));
 const GetTaskResponseSchema = IPCResponseSchema(TaskSchema.nullable());
+const TaskLogReadResultSchema: z.ZodType<TaskLogReadResult> = z.object({
+  content: z.string(),
+  truncated: z.boolean(),
+  size: z.number().nonnegative(),
+});
+const ReadTaskLogResponseSchema = IPCResponseSchema(TaskLogReadResultSchema);
 const DrainNotificationsResponseSchema = IPCResponseSchema(z.array(TaskNotificationSchema));
 const MarkNotificationDeliveredResponseSchema = IPCResponseSchema(TaskNotificationSchema.nullable());
 
 const BackgroundTaskResponseSchema = z.union([
   ListTasksResponseSchema,
   GetTaskResponseSchema,
+  ReadTaskLogResponseSchema,
   DrainNotificationsResponseSchema,
   MarkNotificationDeliveredResponseSchema,
 ]);
@@ -188,6 +206,11 @@ export const BackgroundTaskSchemas = {
     channel: IPC_DOMAINS.BACKGROUND_TASKS,
     payload: GetTaskRequestSchema,
     response: GetTaskResponseSchema,
+  }),
+  READ_TASK_LOG: channelSchema({
+    channel: IPC_DOMAINS.BACKGROUND_TASKS,
+    payload: ReadTaskLogRequestSchema,
+    response: ReadTaskLogResponseSchema,
   }),
   DRAIN_NOTIFICATIONS: channelSchema({
     channel: IPC_DOMAINS.BACKGROUND_TASKS,

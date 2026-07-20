@@ -54,7 +54,7 @@ export const SessionActionsMenu: React.FC = () => {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const sessions = useSessionStore((s) => s.sessions);
   const sessionRuntimes = useSessionStore((s) => s.sessionRuntimes);
-  const backgroundTasks = useSessionStore((s) => s.backgroundTasks);
+  const backgroundSessions = useSessionStore((s) => s.backgroundSessions);
   const pendingUserQuestionsBySessionId = useSessionStore((s) => s.pendingUserQuestionsBySessionId);
   const moveToBackground = useSessionStore((s) => s.moveToBackground);
 
@@ -86,7 +86,7 @@ export const SessionActionsMenu: React.FC = () => {
 
   const close = useCallback(() => setOpen(false), []);
 
-  const currentBackgroundTask = backgroundTasks.find((t) => t.sessionId === currentSessionId) || undefined;
+  const currentBackgroundSession = backgroundSessions.find((session) => session.sessionId === currentSessionId) || undefined;
   const currentSessionRuntime = currentSessionId ? sessionRuntimes.get(currentSessionId) : undefined;
   const currentSessionState = currentSessionId ? sessionStates[currentSessionId] : null;
   const durableWaitingInputSessionIds = useMemo(
@@ -107,7 +107,7 @@ export const SessionActionsMenu: React.FC = () => {
     }),
   );
   const currentSessionStatus = getSessionStatusPresentation({
-    backgroundTask: currentBackgroundTask,
+    backgroundSession: currentBackgroundSession,
     runtime: currentSessionRuntime,
     taskState: currentSessionState,
     messageCount: currentSession?.messageCount,

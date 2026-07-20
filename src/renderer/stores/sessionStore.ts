@@ -7,7 +7,7 @@ import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspac
 import type { ContextHealthState } from '@shared/contract/contextHealth';
 import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { useStatusStore } from './statusStore';
-import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
+import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
 import { sessionsSignature } from '../utils/sessionListSignature';
 import { hydrateToolCallResults } from '../utils/messageHydration';
@@ -194,7 +194,7 @@ interface SessionState {
   unreadSessionIds: Set<string>;
   runningSessionIds: Set<string>;
   sessionRuntimes: Map<string, SessionRuntimeSummary>;
-  backgroundTasks: BackgroundTaskInfo[];
+  backgroundSessions: BackgroundSessionInfo[];
   hasOlderMessages: boolean;
   isLoadingOlder: boolean;
   pendingUserQuestionsBySessionId: Map<string, UserQuestionRequest[]>;
@@ -258,7 +258,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     unreadSessionIds: new Set<string>(),
     runningSessionIds: new Set<string>(),
     sessionRuntimes: new Map<string, SessionRuntimeSummary>(),
-    backgroundTasks: [],
+    backgroundSessions: [],
     hasOlderMessages: false,
     isLoadingOlder: false,
     pendingUserQuestionsBySessionId: new Map<string, UserQuestionRequest[]>(),
@@ -836,15 +836,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     updateBackgroundTask: (event: BackgroundTaskUpdateEvent) => {
-      const { backgroundTasks } = get();
+      const { backgroundSessions } = get();
 
       switch (event.type) {
         case 'added':
-          set({ backgroundTasks: [...backgroundTasks, event.task] });
+          set({ backgroundSessions: [...backgroundSessions, event.task] });
           break;
         case 'removed':
           set({
-            backgroundTasks: backgroundTasks.filter(
+            backgroundSessions: backgroundSessions.filter(
               (t) => t.sessionId !== event.task.sessionId
             ),
           });
@@ -853,7 +853,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         case 'completed':
         case 'failed':
           set({
-            backgroundTasks: backgroundTasks.map((t) =>
+            backgroundSessions: backgroundSessions.map((t) =>
               t.sessionId === event.task.sessionId ? event.task : t
             ),
           });
@@ -862,7 +862,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     getBackgroundTaskCount: () => {
-      return get().backgroundTasks.length;
+      return get().backgroundSessions.length;
     },
 
     renameSession: async (id: string, title: string) => {
@@ -971,7 +971,7 @@ function clearSessionStateForAuthChange(): void {
     unreadSessionIds: new Set<string>(),
     runningSessionIds: new Set<string>(),
     sessionRuntimes: new Map<string, SessionRuntimeSummary>(),
-    backgroundTasks: [],
+    backgroundSessions: [],
     hasOlderMessages: false,
     isLoadingOlder: false,
     pendingUserQuestionsBySessionId: new Map<string, UserQuestionRequest[]>(),
@@ -1069,9 +1069,9 @@ export async function initializeSessionStore(): Promise<void> {
   });
 
   try {
-    const tasks = await ipcService.invoke(IPC_CHANNELS.BACKGROUND_GET_TASKS);
-    if (tasks && tasks.length > 0) {
-      useSessionStore.setState({ backgroundTasks: tasks });
+    const backgroundSessions = await ipcService.invoke(IPC_CHANNELS.BACKGROUND_GET_TASKS);
+    if (backgroundSessions && backgroundSessions.length > 0) {
+      useSessionStore.setState({ backgroundSessions });
     }
   } catch {
     // ignore

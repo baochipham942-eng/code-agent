@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getAllBackgroundTasks: vi.fn(),
@@ -22,6 +22,8 @@ vi.mock('../../../src/host/tools/modules/shell/backgroundTaskSources', () => ({
 import Database from 'better-sqlite3';
 import { BackgroundTaskLedger } from '../../../src/host/task/backgroundTaskLedger';
 import { SqliteBackgroundTaskStore } from '../../../src/host/task/backgroundTaskStore';
+import type { BackgroundTaskLedgerChangedData } from '../../../src/shared/contract/agent';
+import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import {
   installBackgroundTaskEventAdapters,
   syncBackgroundTaskSnapshotsToLedger,
@@ -35,6 +37,40 @@ describe('backgroundTaskSnapshotAdapters', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
+  });
+
+  afterEach(() => {
+    shutdownEventBus();
+  });
+
+  it('does not publish invalidations during pull-driven snapshot reconciliation', () => {
+    mocks.getAllBackgroundTasks.mockReturnValue([{
+      taskId: 'quiet-shell',
+      status: 'running',
+      command: 'npm run dev',
+      cwd: '/repo',
+      sessionId: 'session-quiet',
+      startTime: 1_000,
+      duration: 9_000,
+      outputFile: '/tmp/quiet-shell.log',
+    }]);
+    mocks.getAllPtySessions.mockReturnValue([]);
+    const invalidations: BackgroundTaskLedgerChangedData[] = [];
+    getEventBus().subscribe<BackgroundTaskLedgerChangedData>(
+      'agent:background_task_ledger_changed',
+      (event) => {
+        invalidations.push(event.data);
+      },
+    );
+    const ledger = new BackgroundTaskLedger();
+
+    ledger.runQuiet(() => {
+      syncBackgroundTaskSnapshotsToLedger(ledger);
+      syncBackgroundTaskSnapshotsToLedger(ledger);
+    });
+
+    expect(ledger.getTask('shell:quiet-shell')).toMatchObject({ status: 'running' });
+    expect(invalidations).toEqual([]);
   });
 
   it('maps shell and pty snapshots into ledger tasks with stable log refs', () => {
@@ -230,6 +266,13 @@ describe('backgroundTaskSnapshotAdapters', () => {
     const outputFile = path.join(tempDir, 'event-shell.log');
     await writeFile(outputFile, 'build complete\n', 'utf8');
     const ledger = new BackgroundTaskLedger();
+    const invalidations: BackgroundTaskLedgerChangedData[] = [];
+    getEventBus().subscribe<BackgroundTaskLedgerChangedData>(
+      'agent:background_task_ledger_changed',
+      (event) => {
+        invalidations.push(event.data);
+      },
+    );
     const detach = installBackgroundTaskEventAdapters(ledger);
     try {
       installBackgroundTaskEventAdapters(ledger);
@@ -281,6 +324,10 @@ describe('backgroundTaskSnapshotAdapters', () => {
           type: 'task_completed',
         }),
       ]);
+      expect(invalidations).toContainEqual({
+        taskId: 'shell:event-shell',
+        sessionId: 'session-event',
+      });
 
     } finally {
       detach();

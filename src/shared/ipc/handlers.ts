@@ -37,7 +37,7 @@ import type { ExtensionInfo, ExtensionValidationResult } from '../contract/exten
 
 import type { HandoffProposal, ListHandoffProposalsInput, UpdateHandoffProposalStatusInput } from '../contract/handoff';
 
-import type { SessionRuntimeSummary, SessionStatusUpdateEvent, BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '../contract/sessionState';
+import type { SessionRuntimeSummary, SessionStatusUpdateEvent, BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '../contract/sessionState';
 
 import type { SwarmEvent } from '../contract/swarm';
 import type { SwarmRunListItem, SwarmRunDetail } from '../contract/swarmTrace';
@@ -398,8 +398,8 @@ export interface IpcInvokeHandlers {
 
   // Background (后台任务)
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;
-  [IPC_CHANNELS.BACKGROUND_MOVE_TO_FOREGROUND]: (sessionId: string) => Promise<BackgroundTaskInfo | null>;
-  [IPC_CHANNELS.BACKGROUND_GET_TASKS]: () => Promise<BackgroundTaskInfo[]>;
+  [IPC_CHANNELS.BACKGROUND_MOVE_TO_FOREGROUND]: (sessionId: string) => Promise<BackgroundSessionInfo | null>;
+  [IPC_CHANNELS.BACKGROUND_GET_TASKS]: () => Promise<BackgroundSessionInfo[]>;
   [IPC_CHANNELS.BACKGROUND_GET_COUNT]: () => Promise<number>;
 
   // Swarm (Agent Teams)

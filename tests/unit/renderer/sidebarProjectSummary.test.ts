@@ -43,7 +43,7 @@ describe('buildSidebarProjectSummary', () => {
 
     const summary = buildSidebarProjectSummary({
       group: makeGroup(sessions),
-      backgroundTaskMap: new Map(),
+      backgroundSessionMap: new Map(),
       sessionRuntimes: new Map(),
       sessionStates: {},
       hasNeedsInputForSession: (sessionId) => sessionId === 'approval',
@@ -89,7 +89,7 @@ describe('buildSidebarProjectSummary', () => {
         sessions: [makeSession({ id: 'blank' })],
         latestActivityAt: 1,
       },
-      backgroundTaskMap: new Map(),
+      backgroundSessionMap: new Map(),
       sessionRuntimes: new Map(),
       sessionStates: {},
       hasNeedsInputForSession: () => false,

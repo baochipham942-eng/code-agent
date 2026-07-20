@@ -54,7 +54,7 @@ describe('sessionStore context health refresh', () => {
       unreadSessionIds: new Set<string>(),
       runningSessionIds: new Set<string>(),
       sessionRuntimes: new Map(),
-      backgroundTasks: [],
+      backgroundSessions: [],
       hasOlderMessages: false,
       isLoadingOlder: false,
       sessionDesignBriefs: new Map(),

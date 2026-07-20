@@ -59,7 +59,7 @@ export interface SessionStatusUpdateEvent {
 /**
  * 后台任务信息
  */
-export interface BackgroundTaskInfo {
+export interface BackgroundSessionInfo {
   /** 会话 ID */
   sessionId: string;
   /** 会话标题 */
@@ -81,7 +81,7 @@ export interface BackgroundTaskInfo {
  */
 export interface BackgroundTaskUpdateEvent {
   type: 'added' | 'removed' | 'updated' | 'completed' | 'failed';
-  task: BackgroundTaskInfo;
+  task: BackgroundSessionInfo;
 }
 
 // ----------------------------------------------------------------------------

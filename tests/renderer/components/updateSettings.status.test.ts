@@ -738,7 +738,7 @@ describe('UpdateSettings status visibility', () => {
       runningSessionCount: 0,
       processingSessionCount: 0,
       isProcessing: false,
-      backgroundTaskCount: 1,
+      backgroundSessionCount: 1,
     })).toBe('有 1 个后台任务正在运行，完成后再刷新');
     expect(getRendererBundleReloadBlockedReason({
       runningSessionCount: 0,

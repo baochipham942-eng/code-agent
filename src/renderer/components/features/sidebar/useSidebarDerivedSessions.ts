@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentTrajectorySessionQualitySummary } from '@shared/contract/agentTrajectory';
 import type { AdminReviewQueueItem } from '@shared/contract/productClosure';
-import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
+import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import type { CrossSessionSearchResults, SessionReviewItemsRequest } from '@shared/ipc/types';
 import { useSessionStore, type SessionWithMeta } from '../../../stores/sessionStore';
 import { useSessionUIStore, type TrajectoryReviewFilter } from '../../../stores/sessionUIStore';
@@ -53,7 +53,7 @@ export interface UseSidebarDerivedSessionsParams {
 }
 
 export interface SidebarDerivedSessions {
-  backgroundTaskMap: Map<string, BackgroundTaskInfo>;
+  backgroundSessionMap: Map<string, BackgroundSessionInfo>;
   replayEvidenceBySessionId: ReturnType<typeof buildSessionReplayEvidenceMap>;
   hasNeedsInputForSession: (sessionId: string) => boolean;
   hasPendingApprovalForSession: (sessionId: string) => boolean;
@@ -86,7 +86,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   const sessions = useSessionStore((state) => state.sessions);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const sessionRuntimes = useSessionStore((state) => state.sessionRuntimes);
-  const backgroundTasks = useSessionStore((state) => state.backgroundTasks);
+  const backgroundSessions = useSessionStore((state) => state.backgroundSessions);
   const pendingUserQuestionsBySessionId = useSessionStore((state) => state.pendingUserQuestionsBySessionId);
   const durableBackgroundTasks = useBackgroundTaskStore((state) => state.tasks);
   const workflowRuns = useWorkflowStore((state) => state.runs);
@@ -100,9 +100,9 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
   const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
 
-  const backgroundTaskMap = useMemo(
-    () => new Map(backgroundTasks.map((task) => [task.sessionId, task])),
-    [backgroundTasks],
+  const backgroundSessionMap = useMemo(
+    () => new Map(backgroundSessions.map((session) => [session.sessionId, session])),
+    [backgroundSessions],
   );
 
   const replayEvidenceBySessionId = useMemo(
@@ -224,7 +224,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     const q = searchQuery.trim().toLowerCase();
     return sessions.filter((session) => {
       const status = getSessionStatusPresentation({
-        backgroundTask: backgroundTaskMap.get(session.id),
+        backgroundSession: backgroundSessionMap.get(session.id),
         runtime: sessionRuntimes.get(session.id),
         taskState: sessionStates[session.id],
         messageCount: session.messageCount,
@@ -265,7 +265,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       }).includes(q);
     });
   }, [
-    backgroundTaskMap,
+    backgroundSessionMap,
     hasNeedsInputForSession,
     allowedSearchSessionIds,
     hasActiveTrajectoryFilter,
@@ -361,7 +361,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
           group.sessions,
           (session) =>
             getSessionStatusPresentation({
-              backgroundTask: backgroundTaskMap.get(session.id),
+              backgroundSession: backgroundSessionMap.get(session.id),
               runtime: sessionRuntimes.get(session.id),
               taskState: sessionStates[session.id],
               messageCount: session.messageCount,
@@ -373,11 +373,11 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
             Math.max(
               session.updatedAt || 0,
               sessionRuntimes.get(session.id)?.lastActivityAt || 0,
-              backgroundTaskMap.get(session.id)?.backgroundedAt || 0,
+              backgroundSessionMap.get(session.id)?.backgroundedAt || 0,
             ),
         ),
       })),
-    [backgroundTaskMap, filteredSessions, hasNeedsInputForSession, sessionRuntimes, sessionStates],
+    [backgroundSessionMap, filteredSessions, hasNeedsInputForSession, sessionRuntimes, sessionStates],
   );
   const visibleProjectIds = useMemo(
     () =>
@@ -507,7 +507,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
   }, [canOpenSessionReplay, visibleSessionIdsKey]);
 
   return {
-    backgroundTaskMap,
+    backgroundSessionMap,
     replayEvidenceBySessionId,
     hasNeedsInputForSession,
     hasPendingApprovalForSession,

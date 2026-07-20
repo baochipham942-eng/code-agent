@@ -78,6 +78,7 @@ export interface TaskRecord {
 
 export interface TaskRecordOutputRef {
   id: string;
+  taskId?: string;
   type: string;
   label: string;
   pathOrUrl?: string;

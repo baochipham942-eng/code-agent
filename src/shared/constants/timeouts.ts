@@ -325,6 +325,10 @@ export const RENDERER_POLLING = {
   LOOP_BASE: 2_000,
   /** 后台任务（listTasks + drainNotifications）轮询基础间隔 */
   BACKGROUND_TASK_BASE: 3_000,
+  /** native bridge 收到后台任务失效推送后的兜底轮询间隔 */
+  BACKGROUND_TASK_FALLBACK: 30_000,
+  /** 后台任务失效推送去抖窗口 */
+  BACKGROUND_TASK_INVALIDATION_DEBOUNCE: 200,
   /** 任务状态同步轮询基础间隔 */
   TASK_SYNC_BASE: 5_000,
   /** 本地桥接健康检查轮询基础间隔 */

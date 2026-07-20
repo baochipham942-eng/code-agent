@@ -92,6 +92,12 @@ export interface TaskNotification {
   metadata?: TaskMetadata;
 }
 
+export interface TaskLogReadResult {
+  content: string;
+  truncated: boolean;
+  size: number;
+}
+
 export interface Task {
   id: string;
   kind?: string;

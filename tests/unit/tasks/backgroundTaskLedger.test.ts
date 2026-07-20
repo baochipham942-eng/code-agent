@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { BackgroundTaskLedger } from '../../../src/host/task/backgroundTaskLedger';
+import type { BackgroundTaskLedgerChangedData } from '../../../src/shared/contract/agent';
+import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 
 function createClock(start = 1_000): [() => number, (value: number) => void] {
   let current = start;
@@ -11,7 +13,41 @@ function createClock(start = 1_000): [() => number, (value: number) => void] {
   ];
 }
 
+afterEach(() => {
+  shutdownEventBus();
+});
+
 describe('BackgroundTaskLedger', () => {
+  it('publishes lightweight invalidations when tasks and notifications change', () => {
+    const invalidations: BackgroundTaskLedgerChangedData[] = [];
+    getEventBus().subscribe<BackgroundTaskLedgerChangedData>(
+      'agent:background_task_ledger_changed',
+      (event) => {
+        invalidations.push(event.data);
+      },
+    );
+    const ledger = new BackgroundTaskLedger();
+
+    ledger.upsertTask({
+      id: 'task-push',
+      sessionId: 'session-push',
+      source: 'shell',
+      title: 'Push task',
+      status: 'completed',
+    });
+    ledger.queueNotification({
+      id: 'notification-push',
+      taskId: 'task-push',
+      type: 'task_completed',
+      message: 'Push task completed',
+    });
+
+    expect(invalidations).toEqual([
+      { taskId: 'task-push', sessionId: 'session-push' },
+      { taskId: 'task-push', sessionId: 'session-push' },
+    ]);
+  });
+
   it('upserts tasks and filters by session, status, and source', () => {
     const [now, setNow] = createClock();
     const ledger = new BackgroundTaskLedger({ now });

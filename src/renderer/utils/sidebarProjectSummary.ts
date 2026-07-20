@@ -1,4 +1,4 @@
-import type { BackgroundTaskInfo } from '@shared/contract/sessionState';
+import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import type { AdminReviewQueueItem } from '@shared/contract/productClosure';
 import type { ProjectArtifact, ProjectGoalStatus, ProjectStatus } from '@shared/contract/project';
 import type { SessionRuntimeSummary } from '@shared/ipc';
@@ -64,7 +64,7 @@ export interface SidebarProjectSummary {
 
 export interface BuildSidebarProjectSummaryArgs {
   group: WorkspaceGroup;
-  backgroundTaskMap: Map<string, BackgroundTaskInfo>;
+  backgroundSessionMap: Map<string, BackgroundSessionInfo>;
   sessionRuntimes: Map<string, SessionRuntimeSummary>;
   sessionStates: Record<string, TaskSessionState | undefined>;
   hasNeedsInputForSession?: (sessionId: string) => boolean;
@@ -75,7 +75,7 @@ export interface BuildSidebarProjectSummaryArgs {
 
 export function buildSidebarProjectSummary({
   group,
-  backgroundTaskMap,
+  backgroundSessionMap,
   sessionRuntimes,
   sessionStates,
   hasNeedsInputForSession,
@@ -91,10 +91,10 @@ export function buildSidebarProjectSummary({
   let latestActivityAt = group.latestActivityAt || 0;
 
   for (const session of group.sessions) {
-    const backgroundTask = backgroundTaskMap.get(session.id);
+    const backgroundSession = backgroundSessionMap.get(session.id);
     const runtime = sessionRuntimes.get(session.id);
     const status = getSessionStatusPresentation({
-      backgroundTask,
+      backgroundSession,
       runtime,
       taskState: sessionStates[session.id],
       messageCount: session.messageCount,
@@ -118,7 +118,7 @@ export function buildSidebarProjectSummary({
       latestActivityAt,
       session.updatedAt || 0,
       runtime?.lastActivityAt || 0,
-      backgroundTask?.backgroundedAt || 0,
+      backgroundSession?.backgroundedAt || 0,
     );
   }
 

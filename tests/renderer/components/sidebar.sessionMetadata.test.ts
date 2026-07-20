@@ -74,7 +74,7 @@ const sessionState = {
   unarchiveSession: vi.fn(async () => {}),
   unreadSessionIds: new Set<string>(),
   sessionRuntimes: new Map(),
-  backgroundTasks: [
+  backgroundSessions: [
     {
       sessionId: 'session-1',
       title: 'Session Native Workspace',

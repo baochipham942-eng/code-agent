@@ -19,7 +19,7 @@ describe('getSessionStatusPresentation', () => {
     it('backgroundTask running → background (even if DB says idle)', () => {
       expect(
         getSessionStatusPresentation({
-          backgroundTask: { status: 'running' } as any,
+          backgroundSession: { status: 'running' } as any,
           sessionStatus: 'idle',
         }).kind,
       ).toBe('background');
@@ -165,7 +165,7 @@ describe('getSessionStatusPresentation', () => {
       expect(
         getSessionStatusPresentation({
           // No in-memory state
-          backgroundTask: undefined,
+          backgroundSession: undefined,
           runtime: undefined,
           taskState: null,
           // DB remembers

@@ -14,6 +14,8 @@ import type {
   UpsertTaskInput,
 } from '../../shared/contract/backgroundTask';
 import { isTerminalTaskStatus } from '../../shared/contract/backgroundTask';
+import type { BackgroundTaskLedgerChangedData } from '../../shared/contract/agent';
+import { getEventBus } from '../services/eventing/bus';
 import type { BackgroundTaskStore } from './backgroundTaskStore';
 
 type IdKind = 'task-event' | 'task-output' | 'task-notification';
@@ -32,6 +34,7 @@ export class BackgroundTaskLedger {
   private readonly notifications = new Map<string, TaskNotification>();
   private readonly notificationOrder: string[] = [];
   private sequence = 0;
+  private quietDepth = 0;
   private store?: BackgroundTaskStore;
 
   constructor(private readonly options: BackgroundTaskLedgerOptions = {}) {
@@ -40,6 +43,15 @@ export class BackgroundTaskLedger {
 
   setStore(store: BackgroundTaskStore | null): void {
     this.store = store ?? undefined;
+  }
+
+  runQuiet<T>(fn: () => T): T {
+    this.quietDepth += 1;
+    try {
+      return fn();
+    } finally {
+      this.quietDepth -= 1;
+    }
   }
 
   upsertTask(input: UpsertTaskInput): Task {
@@ -76,6 +88,7 @@ export class BackgroundTaskLedger {
 
     this.tasks.set(next.id, next);
     this.persistIfTerminal(next);
+    this.publishChanged(next.id, next.sessionId);
     return cloneTask(next);
   }
 
@@ -112,6 +125,7 @@ export class BackgroundTaskLedger {
 
     this.tasks.set(task.id, next);
     this.persistEvent(next, event);
+    this.publishChanged(next.id, next.sessionId);
     return cloneTaskEvent(event);
   }
 
@@ -148,6 +162,7 @@ export class BackgroundTaskLedger {
 
     this.tasks.set(task.id, next);
     this.persistIfTerminal(next);
+    this.publishChanged(next.id, next.sessionId);
     return cloneOutputRef(outputRef);
   }
 
@@ -179,6 +194,7 @@ export class BackgroundTaskLedger {
     this.notifications.set(notification.id, notification);
     this.notificationOrder.push(notification.id);
     this.store?.queueNotification(cloneNotification(notification));
+    this.publishChanged(notification.taskId, notification.sessionId);
     return cloneNotification(notification);
   }
 
@@ -288,6 +304,15 @@ export class BackgroundTaskLedger {
     if (typeof value !== 'string' || value.trim().length === 0) {
       throw new Error(`${label} is required`);
     }
+  }
+
+  private publishChanged(taskId: string, sessionId?: string): void {
+    if (this.quietDepth > 0) return;
+    const data: BackgroundTaskLedgerChangedData = {
+      taskId,
+      ...(sessionId ? { sessionId } : {}),
+    };
+    getEventBus().publish('agent', 'background_task_ledger_changed', data, { sessionId });
   }
 
   private persistIfTerminal(task: Task): void {

@@ -28,7 +28,7 @@ const sessionState = {
   sessionRuntimes: new Map([
     ['session-1', { sessionId: 'session-1', status: 'paused', activeAgentCount: 0, lastActivityAt: Date.now() }],
   ]),
-  backgroundTasks: [],
+  backgroundSessions: [],
   moveToBackground: vi.fn(),
 };
 const taskState = { sessionStates: { 'session-1': { status: 'idle' } } };

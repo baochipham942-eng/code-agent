@@ -343,6 +343,12 @@ export interface ArtifactLocatorTelemetryEventData {
   reason: string;
 }
 
+/** Background task ledger changed; consumers should refresh from the ledger. */
+export interface BackgroundTaskLedgerChangedData {
+  taskId: string;
+  sessionId?: string;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
@@ -429,6 +435,7 @@ export type AgentEvent =
   // 长时任务进度追踪（P0 新增）
   | { type: 'task_progress'; data: TaskProgressData & { parentToolUseId?: string } }
   | { type: 'task_complete'; data: TaskCompleteData & { parentToolUseId?: string } }
+  | { type: 'background_task_ledger_changed'; data: BackgroundTaskLedgerChangedData }
   // Memory 学习事件
   | { type: 'memory_learned'; data: MemoryLearnedData }
   // GAP-005: Skill 蒸馏草稿待确认事件（session 结束学习产出，弹用户确认）

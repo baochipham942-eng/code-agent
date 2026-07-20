@@ -129,3 +129,9 @@ export const RESOURCE_MANAGEMENT = {
   /** 优雅关闭超时（5秒） */
   GRACEFUL_SHUTDOWN_TIMEOUT: 5_000,
 } as const;
+
+/** 后台任务日志按需读取限制。 */
+export const BACKGROUND_TASK_LOG = {
+  /** TaskPanel 单次只读取日志尾部 64 KiB。 */
+  TAIL_MAX_BYTES: 64 * 1024,
+} as const;

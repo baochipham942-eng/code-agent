@@ -26,7 +26,7 @@ const ALLOWLIST: Record<string, number> = {
   'components/MCPElicitationModal.tsx': 1,
   'components/UserQuestionModal.tsx': 1,
   // 下载进度条填充色
-  'components/features/background/BackgroundTaskPanel.tsx': 1,
+  'components/features/background/BackgroundSessionPanel.tsx': 1,
   // 分类调色板数组（用户活动分类打点色），非 UI 按钮
   'components/features/settings/sections/nativeDesktopActivityModel.ts': 1,
   // tab 选中态高亮 + 运行状态指示点，不是主操作按钮（已复核，见回报）

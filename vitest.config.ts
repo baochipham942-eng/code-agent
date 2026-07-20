@@ -21,6 +21,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
+    globalSetup: ['./tests/globalSetup.ts'],
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'src/design/**/*.test.ts'],
     // 排除需要特殊处理的原生模块测试
     exclude: [

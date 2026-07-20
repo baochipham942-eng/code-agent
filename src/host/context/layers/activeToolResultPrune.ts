@@ -26,6 +26,36 @@ export interface ActiveToolResultPruneConfig {
 /** 占位符固定标识前缀：识别已处理过的消息，防止对自己产出的占位符二次归档 */
 export const ACTIVE_PRUNE_PLACEHOLDER_MARKER = '[TOOL_RESULT_ARCHIVED]';
 
+type ToolResultMessage = {
+  id: string;
+  role: string;
+  toolCallId?: string;
+};
+
+/**
+ * Tool results after the latest assistant message have not been observed by the
+ * model yet. With no assistant message, conservatively treat every result as
+ * fresh. The same boundary is shared by L0 and L1 so neither layer destroys a
+ * result before its first model-visible turn.
+ */
+export function getFreshToolResultMessageIds(messages: ToolResultMessage[]): Set<string> {
+  const lastAssistantIndex = messages.reduce(
+    (acc, msg, index) => (msg.role === 'assistant' ? index : acc),
+    -1,
+  );
+  const freshMessageIds = new Set<string>();
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    const isToolResult = message.role === 'tool' || message.toolCallId !== undefined;
+    if (isToolResult && (lastAssistantIndex === -1 || index > lastAssistantIndex)) {
+      freshMessageIds.add(message.id);
+    }
+  }
+
+  return freshMessageIds;
+}
+
 /**
  * 构造确定性占位符：只依赖 toolName/originalTokens/archiveRef/preview，
  * 不含时间戳或随机数，同输入必产同字节。
@@ -68,24 +98,15 @@ export function applyActiveToolResultPrune(
   const alreadyPruned = state.getSnapshot().budgetedResults;
   let prunedCount = 0;
 
-  // 当前步豁免：最后一条 assistant 消息之后的 tool result 是模型刚请求、还没看过
-  // 的结果——本轮先让它走 L1 的 2000-token head+tail 摘要，下一步出现新 assistant
-  // 后才收归 L0（单轮编辑流不会被逼多一次 Read 回读）。整个数组没有 assistant
-  // （还没进入过对话轮次）时保守豁免全部。
-  // 已知 cosmetic（审计 R2-3，评估后不修）：豁免的结果若在同轮被 L1 spill 归档，
-  // ledger 归因记为 tool-result-budget 且下一步 L0 因 SPILL_NOTICE_MARKER 跳过，
-  // 归因永远留在 L1——按层统计时 L1 会略高估。归因反映的是实际执行层（活确实是
-  // L1 干的），真修需要跨层重归因/改 ledger 语义，成本远超收益。
-  const lastAssistantIndex = messages.reduce(
-    (acc, msg, i) => (msg.role === 'assistant' ? i : acc),
-    -1,
-  );
+  // 当前步豁免：模型先看到 fresh result 的完整原文；下一条 assistant 出现后，
+  // 结果不再 fresh，超大正文才由本层归档并替换为可取回的 archive pointer。
+  const freshMessageIds = getFreshToolResultMessageIds(messages);
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
     const isToolResult = msg.role === 'tool' || msg.toolCallId !== undefined;
     if (!isToolResult) continue;
-    if (lastAssistantIndex === -1 || i > lastAssistantIndex) continue;
+    if (freshMessageIds.has(msg.id)) continue;
     if (config.protectedMessageIds?.has(msg.id)) continue;
     // 已带落盘提示（其他截断点已归档过）或已是本层占位符，跳过防二次处理
     if (msg.content.includes(SPILL_NOTICE_MARKER)) continue;

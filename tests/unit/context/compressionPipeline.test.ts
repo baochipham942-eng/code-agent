@@ -63,6 +63,7 @@ describe('CompressionPipeline', () => {
       const transcript: ProjectableMessage[] = [
         makeMsg('u1', 'user', 'Run tool'),
         makeMsg('t1', 'tool', bigContent),
+        makeMsg('a1', 'assistant', 'Result consumed'),
       ];
 
       await pipeline.evaluate(transcript, state, BASE_CONFIG);

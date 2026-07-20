@@ -4,9 +4,9 @@
 // NOTE on fixtures: L0 only prunes tool results the model has already moved
 // past — i.e. results at or before the LAST assistant message in the array.
 // A tool result with no later assistant message is the current step's
-// freshly-returned result (model hasn't seen it yet) and is exempt, falling
-// through to L1's lossy head+tail truncation instead. Fixtures below append
-// a trailing assistant message wherever pruning is expected to happen.
+// freshly-returned result (model hasn't seen it yet) and is protected from
+// both L0 archival and L1 lossy truncation. Fixtures below append a trailing
+// assistant message wherever pruning is expected to happen.
 // ============================================================================
 
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
@@ -551,7 +551,7 @@ describe('CompressionPipeline integration with activeToolResultPrune', () => {
     expect(transcript[0].content).not.toContain('...[truncated]...');
   });
 
-  it("exempts the current step's freshly-returned tool result (no assistant after it yet), even when configured and enabled (回修 #1·MED)", async () => {
+  it('preserves a fresh oversized result in full, then archives it after the model consumes it', async () => {
     const bigContent = makeText(5000);
     const transcript: ProjectableMessage[] = [
       makeMsg('a0', 'assistant', 'calling tool'),
@@ -569,11 +569,31 @@ describe('CompressionPipeline integration with activeToolResultPrune', () => {
 
     expect(result.layersTriggered).not.toContain('active-prune');
     expect(transcript[1].content).not.toContain(ACTIVE_PRUNE_PLACEHOLDER_MARKER);
-    // 仍然落到 L1 有损截断兜底（不是完全不处理，只是这一步先给 head+tail 摘要）
-    expect(transcript[1].content).toContain('...[truncated]...');
+    expect(transcript[1].content).toBe(bigContent);
+    expect(state.getSnapshot().budgetedResults.has('t1')).toBe(false);
+
+    // Runtime rebuilds the projection from the full transcript on each turn.
+    // Once an assistant message follows the result, L0 archives the full body
+    // and replaces it with a bounded, recoverable pointer before L1 runs.
+    transcript.push(makeMsg('a1', 'assistant', 'result consumed'));
+    const consumedResult = await pipeline.evaluate(transcript, state, {
+      ...BASE_CONFIG,
+      activeToolResultPrune: {
+        enabled: true,
+        maxTokensPerResult: 4096,
+        spillSessionId: 'sess-pipeline-current-step',
+      },
+    });
+    const archiveRef = state.getSnapshot().budgetedResults.get('t1')?.archiveRef;
+
+    expect(consumedResult.layersTriggered).toContain('active-prune');
+    expect(transcript[1].content).toContain(ACTIVE_PRUNE_PLACEHOLDER_MARKER);
+    expect(archiveRef).toBeDefined();
+    expect(transcript[1].content).toContain(archiveRef?.filePath);
+    expect(fs.readFileSync(archiveRef!.filePath, 'utf8')).toBe(bigContent);
   });
 
-  it('leaves results between the L1 and L0 thresholds to L1 lossy truncation', async () => {
+  it('still truncates a consumed result between the L1 and L0 thresholds', async () => {
     // ~2500 tokens: over L1's 2000-token budget but under L0's 4096 threshold
     const midContent = makeText(2500);
     const transcript: ProjectableMessage[] = [

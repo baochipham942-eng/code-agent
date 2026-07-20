@@ -152,6 +152,35 @@ describe('compactionService', () => {
     expect(plan?.preservedMessages.slice(0, 2).map((item) => item.id)).toEqual(['m4', 'm5']);
   });
 
+  it('applies the tool call/result clamp to an explicit manual anchor', () => {
+    const messages: Message[] = [
+      message('m1', 'system', 'historical context'),
+      message('m2', 'assistant', 'historical answer'),
+      {
+        ...message('m3', 'assistant', 'calling tool'),
+        toolCalls: [{ id: 'call-at-anchor', name: 'read_file', arguments: { path: '/tmp/example' } }],
+      },
+      {
+        ...message('m4', 'tool', 'tool result'),
+        toolResults: [{ toolCallId: 'call-at-anchor', success: true, output: 'ok' }],
+      },
+      message('m5', 'assistant', 'recent answer'),
+    ];
+
+    const plan = createCompactionPlan({
+      sessionId: 'session-explicit-tool-pair',
+      source: 'manual_current',
+      messages,
+      anchorMessageId: 'm4',
+      preserveRecentCount: 1,
+    });
+
+    expect(plan).not.toBeNull();
+    expect(plan?.compactedMessages.map((item) => item.id)).toEqual(['m1', 'm2']);
+    expect(plan?.preservedMessages.map((item) => item.id)).toEqual(['m3', 'm4', 'm5']);
+    expect(plan?.anchorMessageId).toBe('m3');
+  });
+
   it('keeps an unclosed tool call in the preserved messages', () => {
     const messages: Message[] = Array.from({ length: 14 }, (_, index) =>
       message(`m${index + 1}`, 'assistant', `message ${index + 1}`),

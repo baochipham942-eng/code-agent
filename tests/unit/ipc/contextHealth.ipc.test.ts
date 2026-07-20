@@ -364,6 +364,35 @@ describe('resolveContextHealthForSession', () => {
     expect(compactMocks.compactModelSummarizeWithMetadata.mock.calls[0][0]).not.toContain('User Focus For This Compaction:');
   });
 
+  it('rejects compact-current when preserving the latest user leaves no safe span', async () => {
+    const sessionId = 'session-compact-current-no-safe-span';
+    const messages: Message[] = [
+      { id: 'm1', role: 'system', content: 'historical context', timestamp: 1 },
+      { id: 'm2', role: 'user', content: 'current request must remain intact', timestamp: 2 },
+      { id: 'm3', role: 'assistant', content: 'current response', timestamp: 3 },
+    ];
+    const appService = makeAppService(sessionId, messages, DEFAULT_MODEL);
+
+    registerContextHealthHandlers({
+      getAppService: () => appService,
+      getTaskManager: () => null,
+      getSystemPromptForSession: () => '',
+    });
+
+    const handler = compactMocks.handlers.get('context:compact-current');
+    expect(handler).toBeDefined();
+
+    const result = await handler!({}, sessionId) as CompactResult;
+
+    expect(result).toMatchObject({
+      success: false,
+      reason: 'no_safe_compaction_span',
+      savedTokens: 0,
+    });
+    expect(compactMocks.compactModelSummarizeWithMetadata).not.toHaveBeenCalled();
+    expect(compactMocks.sessionManager.replaceMessages).not.toHaveBeenCalled();
+  });
+
   it('passes optional current compact focus text through IPC into the summary prompt', async () => {
     const sessionId = 'session-compact-current-focus';
     const messages: Message[] = Array.from({ length: 14 }, (_, index) => ({

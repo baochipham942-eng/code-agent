@@ -3,7 +3,7 @@ import type { PermissionRequest, UserQuestionRequest } from '../../../src/shared
 import type { Task } from '../../../src/shared/contract/backgroundTask';
 import {
   hasNeedsInputForSession,
-  hasDurableWaitingForSession,
+  hasDurableWaitingApprovalForSession,
   hasPendingPermissionForSession,
   hasPendingUserQuestionForSession,
   hasQueuedPermissionForSession,
@@ -155,17 +155,17 @@ describe('sessionNeedsInput', () => {
     ).toBe(false);
   });
 
-  it('detects durable raw waiting for the owning session and clears when the source disappears', () => {
+  it('detects durable waiting approval for the owning session and clears when the source disappears', () => {
     const waiting = new Set(['session-target']);
 
-    expect(hasDurableWaitingForSession('session-target', waiting)).toBe(true);
-    expect(hasDurableWaitingForSession('session-other', waiting)).toBe(false);
+    expect(hasDurableWaitingApprovalForSession('session-target', waiting)).toBe(true);
+    expect(hasDurableWaitingApprovalForSession('session-other', waiting)).toBe(false);
 
     waiting.delete('session-target');
-    expect(hasDurableWaitingForSession('session-target', waiting)).toBe(false);
+    expect(hasDurableWaitingApprovalForSession('session-target', waiting)).toBe(false);
   });
 
-  it('ORs durable raw waiting as an isolated fifth source', () => {
+  it('ORs durable waiting approval as an isolated fifth source', () => {
     expect(
       hasNeedsInputForSession('session-target', {
         permissionState: {
@@ -179,13 +179,13 @@ describe('sessionNeedsInput', () => {
         pendingUserQuestionsBySessionId: new Map([
           ['session-other', [question('question-other', 'session-other')]],
         ]),
-        durableWaitingInputSessionIds: new Set(['session-target']),
+        durableWaitingApprovalSessionIds: new Set(['session-target']),
       }),
     ).toBe(true);
 
     expect(
       hasNeedsInputForSession('session-target', {
-        durableWaitingInputSessionIds: new Set(['session-other']),
+        durableWaitingApprovalSessionIds: new Set(['session-other']),
       }),
     ).toBe(false);
   });

@@ -89,7 +89,7 @@ export const SessionActionsMenu: React.FC = () => {
   const currentBackgroundSession = backgroundSessions.find((session) => session.sessionId === currentSessionId) || undefined;
   const currentSessionRuntime = currentSessionId ? sessionRuntimes.get(currentSessionId) : undefined;
   const currentSessionState = currentSessionId ? sessionStates[currentSessionId] : null;
-  const durableWaitingInputSessionIds = useMemo(
+  const durableWaitingApprovalSessionIds = useMemo(
     () => new Set(sessions.filter((session) => session.durableWaitingInput === true).map((session) => session.id)),
     [sessions],
   );
@@ -103,7 +103,7 @@ export const SessionActionsMenu: React.FC = () => {
       },
       backgroundTasks: durableBackgroundTasks,
       pendingUserQuestionsBySessionId,
-      durableWaitingInputSessionIds,
+      durableWaitingApprovalSessionIds,
     }),
   );
   const currentSessionStatus = getSessionStatusPresentation({

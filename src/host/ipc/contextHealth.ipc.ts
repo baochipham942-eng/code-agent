@@ -246,7 +246,16 @@ function resolveCompactAnchorMessageId(
     preserveRecentCount,
     Math.max(1, messages.length - 2),
   );
-  const anchorIndex = Math.max(1, messages.length - preservedCount);
+  let anchorIndex = Math.max(1, messages.length - preservedCount);
+  // compact-current generates an anchor automatically. Treat it as an upper
+  // bound so the active user instruction always stays on the preserved side;
+  // compactionService applies the tool call/result protocol clamp afterwards.
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === 'user') {
+      anchorIndex = Math.min(anchorIndex, index);
+      break;
+    }
+  }
   return messages[anchorIndex]?.id ?? null;
 }
 

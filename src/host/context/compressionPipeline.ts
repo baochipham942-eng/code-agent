@@ -14,7 +14,11 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { CompressionState } from './compressionState';
 import { ProjectionEngine, type ProjectableMessage } from './projectionEngine';
 import { estimateTokens } from './tokenEstimator';
-import { applyActiveToolResultPrune, type ActiveToolResultPruneConfig } from './layers/activeToolResultPrune';
+import {
+  applyActiveToolResultPrune,
+  getFreshToolResultMessageIds,
+  type ActiveToolResultPruneConfig,
+} from './layers/activeToolResultPrune';
 import { applyToolResultBudget } from './layers/toolResultBudget';
 import { applySnip } from './layers/snip';
 import { applyMicrocompact } from './layers/microcompact';
@@ -136,6 +140,10 @@ export class CompressionPipeline {
         }
       }
     }
+    const toolResultBudgetProtectedMessageIds = new Set(protectedMessageIds);
+    for (const messageId of getFreshToolResultMessageIds(transcript)) {
+      toolResultBudgetProtectedMessageIds.add(messageId);
+    }
 
     // -------------------------------------------------------------------------
     // L0: Active tool result prune — runs before L1, only if enabled.
@@ -157,7 +165,7 @@ export class CompressionPipeline {
     // -------------------------------------------------------------------------
     applyToolResultBudget(transcript, state, {
       maxTokensPerResult: config.toolResultBudget ?? 2000,
-      protectedMessageIds,
+      protectedMessageIds: toolResultBudgetProtectedMessageIds,
       spillSessionId: config.spillSessionId,
     });
     layersTriggered.push('tool-result-budget');

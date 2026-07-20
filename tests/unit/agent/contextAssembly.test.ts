@@ -232,14 +232,7 @@ vi.mock('../../../src/shared/constants', () => ({
   },
   // L0 active prune（P1 批）：messageBuild 接线读取，mock 不同步会让整个压缩管线静默 fallback
   ACTIVE_TOOL_RESULT_PRUNE: { ENABLED: true, MAX_TOKENS_PER_RESULT: 4096 },
-  // tokenOptimizer 依赖（pre-existing 缺失：GAP-009 引入 TOOL_RESULT_SPILL 后 mock 未同步，导致整个 suite 加载失败）
-  OBSERVATION_MASKING: {
-    PRESERVE_RECENT_COUNT: 10,
-    MIN_TOKEN_THRESHOLD: 100,
-    PLACEHOLDER_SUCCESS: '[output cleared - tool was executed successfully]',
-    PLACEHOLDER_ERROR: '[output cleared - tool returned error]',
-    PLACEHOLDER_FILE_READ: '[File content omitted from history to save context.]',
-  },
+  // tokenOptimizer 依赖（GAP-009）
   TOOL_RESULT_SPILL: {
     TMP_DIR: 'tmp',
     SUBDIR: 'tool-results',
@@ -1933,15 +1926,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
       autoCompressor: {
         shouldTriggerByTokens,
-        compactToBlock: vi.fn().mockResolvedValue({
-          block: {
-            type: 'compaction',
-            content: 'compressed image summary',
-            timestamp: Date.now(),
-            compactedMessageCount: 1,
-            compactedTokenCount: 765,
-          },
-        }),
         getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 1 }),
         shouldWrapUp: vi.fn().mockReturnValue(false),
         getCompactionCount: vi.fn().mockReturnValue(1),
@@ -1988,15 +1972,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(true),
-        compactToBlock: vi.fn().mockResolvedValue({
-          block: {
-            type: 'compaction',
-            content: 'compressed summary',
-            timestamp: Date.now(),
-            compactedMessageCount: 4,
-            compactedTokenCount: 123,
-          },
-        }),
         getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 2 }),
         shouldWrapUp: vi.fn().mockReturnValue(false),
         getCompactionCount: vi.fn().mockReturnValue(1),
@@ -2296,9 +2271,8 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     }
   });
 
-  it('uses unified compaction service for percentage fallback instead of legacy autoCompressor', async () => {
+  it('uses unified compaction service for percentage fallback', async () => {
     const sessionId = `session-fallback-${Date.now()}`;
-    const checkAndCompress = vi.fn().mockRejectedValue(new Error('legacy checkAndCompress should not be called'));
     const messages = Array.from({ length: 8 }, (_, i) =>
       buildMessage(
         `fallback-${i}`,
@@ -2333,7 +2307,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(false),
-        checkAndCompress,
         getConfig: vi.fn().mockReturnValue({
           enabled: true,
           warningThreshold: 0.75,
@@ -2350,7 +2323,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     const assembly = new ContextAssembly(ctx as never);
     await assembly.checkAndAutoCompress();
 
-    expect(checkAndCompress).not.toHaveBeenCalled();
     expect(ctx.autoCompressor.recordCompaction).toHaveBeenCalledWith(expect.any(Number), 'ai_summary');
     expect(ctx.contextHealth.compressionState.getCommitLog()).toEqual(
       expect.arrayContaining([
@@ -2392,7 +2364,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
 
   it('does not run percentage fallback compaction below the warning budget', async () => {
     const sessionId = `session-fallback-skip-${Date.now()}`;
-    const checkAndCompress = vi.fn();
     const compactModelMessages = Array.from({ length: 8 }, (_, i) =>
       buildMessage(`fallback-skip-${i}`, 'assistant', 'long transcript content '.repeat(250))
     );
@@ -2423,7 +2394,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
       contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
       autoCompressor: {
         shouldTriggerByTokens: vi.fn().mockReturnValue(false),
-        checkAndCompress,
         getConfig: vi.fn().mockReturnValue({
           enabled: true,
           warningThreshold: 0.75,
@@ -2440,7 +2410,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     const assembly = new ContextAssembly(ctx as never);
     await assembly.checkAndAutoCompress();
 
-    expect(checkAndCompress).not.toHaveBeenCalled();
     expect(ctx.autoCompressor.recordCompaction).not.toHaveBeenCalled();
     expect(serviceMocks.sessionManager.replaceMessages).not.toHaveBeenCalled();
     expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'context_compressed' }));

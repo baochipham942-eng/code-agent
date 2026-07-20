@@ -3,17 +3,11 @@
 // (P2-full / G11 / G12)
 // ============================================================================
 //
-// Background: code-agent had two uncoordinated compression entry points —
-// CompressionPipeline (non-destructive projection, runs in messageBuild) and
-// the AutoContextCompressor path (destructive history rewrite, runs in
-// checkAndAutoCompress). They never shared a decision. In particular the
-// Pipeline's `autocompact-needed` signal (projected usage ≥ 85%) was reported
-// but never fed into the compaction trigger (G12).
-//
-// This module does NOT merge the two implementations — per the gap-analysis
-// convergence they stay as separate strategies. It unifies the *decision*:
-// one assessContextPressure() that all callers consult, so the trigger logic
-// lives in one place and the Pipeline signal actually participates.
+// CompressionPipeline owns the non-destructive projection in messageBuild.
+// This controller combines its `autocompact-needed` signal with absolute and
+// percentage thresholds, then routes execution to CompactionService through
+// checkAndAutoCompress. One assessContextPressure() call keeps trigger logic
+// in one place.
 // ============================================================================
 
 export type PressureTrigger =

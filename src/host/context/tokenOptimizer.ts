@@ -10,7 +10,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import { estimateTokens, IMAGE_TOKEN_ESTIMATE } from './tokenEstimator';
-import { OBSERVATION_MASKING, TOOL_RESULT_SPILL } from '../../shared/constants';
+import { TOOL_RESULT_SPILL } from '../../shared/constants';
 import { ContextCompressor } from './compressor';
 
 const logger = createLogger('TokenOptimizer');
@@ -208,16 +208,6 @@ export interface HookMessageEntry {
   category: string;
   timestamp: number;
   count: number;
-}
-
-interface ToolMessageResult {
-  success?: boolean;
-  error?: string;
-  output?: string;
-}
-
-function isToolMessageResult(value: unknown): value is ToolMessageResult {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -536,7 +526,7 @@ export function estimateModelMessageTokens(
 }
 
 // ----------------------------------------------------------------------------
-// Message History Compression
+// Message History Shape and Pressure
 // ----------------------------------------------------------------------------
 
 export interface CompressedMessage {
@@ -552,187 +542,13 @@ export interface CompressedMessage {
   toolCallIds?: string[];
 }
 
-export interface MessageHistoryCompressionConfig {
-  /** Token threshold to trigger compression (default: 8000) */
-  threshold?: number;
-  /** Target token count after compression (default: 4000) */
-  targetTokens?: number;
-  /** Number of recent messages to preserve uncompressed (default: 6) */
-  preserveRecentCount?: number;
-  /** Whether to always preserve user messages (default: true) */
-  preserveUserMessages?: boolean;
-}
-
-const DEFAULT_HISTORY_COMPRESSION_CONFIG: Required<MessageHistoryCompressionConfig> = {
-  threshold: 8000,
-  targetTokens: 4000,
-  preserveRecentCount: 6,
-  preserveUserMessages: true,
-};
-
 /**
- * Compress message history when it exceeds token threshold.
- * Preserves recent messages and compresses older ones.
- *
- * Strategy:
- * 1. Keep recent N messages intact (preserveRecentCount)
- * 2. Summarize tool results in older messages
- * 3. Truncate long assistant messages
- * 4. Optionally preserve all user messages
- */
-export function compressMessageHistory(
-  messages: CompressedMessage[],
-  config: MessageHistoryCompressionConfig = {}
-): { messages: CompressedMessage[]; compressed: boolean; savedTokens: number } {
-  const cfg = { ...DEFAULT_HISTORY_COMPRESSION_CONFIG, ...config };
-
-  // Calculate current token usage
-  const totalTokens = messages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
-
-  if (totalTokens <= cfg.threshold) {
-    return { messages, compressed: false, savedTokens: 0 };
-  }
-
-  logger.debug(`Message history compression triggered: ${totalTokens} tokens > ${cfg.threshold} threshold`);
-
-  // Split into recent (preserved) and older (compressible) messages
-  const recentMessages = messages.slice(-cfg.preserveRecentCount);
-  const olderMessages = messages.slice(0, -cfg.preserveRecentCount);
-
-  if (olderMessages.length === 0) {
-    // Not enough messages to compress
-    return { messages, compressed: false, savedTokens: 0 };
-  }
-
-  const compressedOlder: CompressedMessage[] = [];
-
-  for (const msg of olderMessages) {
-    const msgTokens = estimateTokens(msg.content);
-
-    // Preserve user messages if configured
-    if (cfg.preserveUserMessages && msg.role === 'user') {
-      compressedOlder.push(msg);
-      continue;
-    }
-
-    // Compress tool messages (usually large outputs)
-    if (msg.role === 'tool') {
-      const compressed = compressToolMessage(msg.content);
-      compressedOlder.push({
-        ...msg,
-        id: msg.id, // Preserve original ID for index-safe mapping
-        content: compressed,
-        compressed: true,
-      });
-      continue;
-    }
-
-    // Compress long assistant messages
-    if (msg.role === 'assistant' && msgTokens > 500) {
-      const compressed = compressAssistantMessage(msg.content);
-      compressedOlder.push({
-        ...msg,
-        id: msg.id, // Preserve original ID for index-safe mapping
-        content: compressed,
-        compressed: true,
-      });
-      continue;
-    }
-
-    // Keep short messages intact
-    compressedOlder.push(msg);
-  }
-
-  const result = [...compressedOlder, ...recentMessages];
-  const newTotalTokens = result.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
-  const savedTokens = totalTokens - newTotalTokens;
-
-  logger.info(`Message history compressed: ${totalTokens}→${newTotalTokens} tokens (saved ${savedTokens})`);
-
-  return {
-    messages: result,
-    compressed: true,
-    savedTokens,
-  };
-}
-
-/**
- * Compress tool result message content
- */
-function compressToolMessage(content: string): string {
-  try {
-    // Try to parse as JSON (tool results are often JSON)
-    const parsed: unknown = JSON.parse(content);
-
-    if (Array.isArray(parsed)) {
-      // Compress array of tool results
-      const summaries = parsed.map((result) => {
-        if (!isToolMessageResult(result)) return '[Success]';
-        if (result.success === false) {
-          return `[Error: ${result.error || 'Unknown error'}]`;
-        }
-        if (result.output) {
-          // Truncate long outputs
-          const outputPreview = result.output.substring(0, 200);
-          return `[Success: ${outputPreview}${result.output.length > 200 ? '...' : ''}]`;
-        }
-        return '[Success]';
-      });
-      return `(tool_output_summary: ${summaries.join(', ')})`;
-    }
-
-    // Single result
-    if (isToolMessageResult(parsed) && parsed.output) {
-      const preview = parsed.output.substring(0, 200);
-      return `(tool_output_summary: ${preview}${parsed.output.length > 200 ? '...' : ''})`;
-    }
-
-    return `(tool_output_summary: ${content.substring(0, 100)}...)`;
-  } catch {
-    // Not JSON, just truncate
-    return `[Tool output: ${content.substring(0, 200)}...]`;
-  }
-}
-
-/**
- * Compress long assistant message content
- */
-function compressAssistantMessage(content: string): string {
-  // Extract key parts: first paragraph + any code blocks (truncated)
-  const lines = content.split('\n');
-  const result: string[] = [];
-  let tokenCount = 0;
-  const maxTokens = 300;
-
-  for (const line of lines) {
-    const lineTokens = estimateTokens(line);
-    if (tokenCount + lineTokens > maxTokens) {
-      result.push('...[truncated]');
-      break;
-    }
-    result.push(line);
-    tokenCount += lineTokens;
-  }
-
-  return result.join('\n');
-}
-
-/**
- * Message History Compressor class for stateful compression
- * Tracks compression state across multiple calls
+ * Tracks the proactive context-pressure threshold used by message assembly.
+ * Compression execution belongs to the unified compression architecture.
  */
 export class MessageHistoryCompressor {
-  private config: Required<MessageHistoryCompressionConfig>;
-  private lastCompressionTime: number = 0;
-  private compressionCount: number = 0;
-  private totalSavedTokens: number = 0;
-
   /** Threshold ratio for proactive compression (default: 75%) */
   private proactiveCompressionThreshold = 0.75;
-
-  constructor(config: MessageHistoryCompressionConfig = {}) {
-    this.config = { ...DEFAULT_HISTORY_COMPRESSION_CONFIG, ...config };
-  }
 
   /**
    * Check if proactive compression should be triggered
@@ -754,58 +570,6 @@ export class MessageHistoryCompressor {
   setProactiveThreshold(threshold: number): void {
     this.proactiveCompressionThreshold = Math.max(0.5, Math.min(0.95, threshold));
   }
-
-  /**
-   * Compress messages if needed
-   * Returns compressed messages and stats
-   */
-  compress(messages: CompressedMessage[]): {
-    messages: CompressedMessage[];
-    wasCompressed: boolean;
-    stats: { savedTokens: number; compressionCount: number; totalSavedTokens: number };
-  } {
-    const result = compressMessageHistory(messages, this.config);
-
-    if (result.compressed) {
-      this.compressionCount++;
-      this.totalSavedTokens += result.savedTokens;
-      this.lastCompressionTime = Date.now();
-    }
-
-    return {
-      messages: result.messages,
-      wasCompressed: result.compressed,
-      stats: {
-        savedTokens: result.savedTokens,
-        compressionCount: this.compressionCount,
-        totalSavedTokens: this.totalSavedTokens,
-      },
-    };
-  }
-
-  /**
-   * Get compression statistics
-   */
-  getStats(): {
-    compressionCount: number;
-    totalSavedTokens: number;
-    lastCompressionTime: number;
-  } {
-    return {
-      compressionCount: this.compressionCount,
-      totalSavedTokens: this.totalSavedTokens,
-      lastCompressionTime: this.lastCompressionTime,
-    };
-  }
-
-  /**
-   * Reset statistics
-   */
-  reset(): void {
-    this.compressionCount = 0;
-    this.totalSavedTokens = 0;
-    this.lastCompressionTime = 0;
-  }
 }
 
 // ----------------------------------------------------------------------------
@@ -814,82 +578,3 @@ export class MessageHistoryCompressor {
 
 export { estimateTokens, analyzeContent } from './tokenEstimator';
 export { ContextCompressor } from './compressor';
-
-// ============================================================================
-// Observation Masking — L1 分层压缩
-// 借鉴 JetBrains Junie 方案：用占位符替换旧 tool result，保留 tool call 可见
-// ============================================================================
-
-export interface ObservationMaskConfig {
-  preserveRecentCount: number;
-  minTokenThreshold: number;
-  /** Message indices to protect from masking (e.g., last Read result per active file) */
-  protectedIndices?: Set<number>;
-}
-
-export interface ObservationMaskResult {
-  messages: CompressedMessage[];
-  maskedCount: number;
-  savedTokens: number;
-}
-
-/**
- * Observation Masking: 用占位符替换旧的 tool result，保留 tool call 骨架
- * 避免"再搜索循环"——agent 能看到自己做过什么操作，不会重复执行
- */
-export function observationMask(
-  messages: CompressedMessage[],
-  config?: Partial<ObservationMaskConfig>
-): ObservationMaskResult {
-  const preserveRecent = config?.preserveRecentCount ?? OBSERVATION_MASKING.PRESERVE_RECENT_COUNT;
-  const minThreshold = config?.minTokenThreshold ?? OBSERVATION_MASKING.MIN_TOKEN_THRESHOLD;
-  const protectedIndices = config?.protectedIndices;
-
-  const recentBoundary = messages.length - preserveRecent;
-  let maskedCount = 0;
-  let savedTokens = 0;
-
-  const result = messages.map((msg, index) => {
-    // 跳过最近的消息
-    if (index >= recentBoundary) return msg;
-
-    // 跳过受保护的消息（活跃文件的最后一次 Read 结果）
-    if (protectedIndices?.has(index)) return msg;
-
-    // 只处理 tool role 的消息
-    if (msg.role !== 'tool') return msg;
-
-    // 跳过已经 mask/cleared 的消息（包括之前 observation masking 处理过的）
-    if (!msg.content || msg.content.includes('[output cleared') || msg.content === '[cleared]' || msg.content.startsWith('[Observation masked')) return msg;
-
-    // 跳过内容很短的消息
-    const tokens = estimateTokens(msg.content);
-    if (tokens < minThreshold) return msg;
-
-    // 判断是成功还是错误
-    const isError = /error|Error|ERROR|exception|Exception|failed|Failed|FAILED/.test(msg.content);
-
-    // 检测是否为文件读取结果（Read 工具输出以行号格式 "N→" 开头）
-    let placeholder: string = isError
-      ? OBSERVATION_MASKING.PLACEHOLDER_ERROR
-      : OBSERVATION_MASKING.PLACEHOLDER_SUCCESS;
-
-    if (!isError) {
-      try {
-        const parsed = JSON.parse(msg.content) as Array<{ output?: string }>;
-        if (Array.isArray(parsed) && parsed.some(r => r.output && /^\s*\d+→/.test(r.output))) {
-          placeholder = OBSERVATION_MASKING.PLACEHOLDER_FILE_READ;
-        }
-      } catch {
-        // 非 JSON 格式，使用默认 placeholder
-      }
-    }
-
-    maskedCount++;
-    savedTokens += tokens - estimateTokens(placeholder);
-
-    return { ...msg, content: placeholder };
-  });
-
-  return { messages: result, maskedCount, savedTokens };
-}

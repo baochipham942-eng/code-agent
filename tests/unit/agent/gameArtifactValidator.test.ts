@@ -1318,6 +1318,74 @@ describe('validateGameArtifact', () => {
     expect(result.runtimeSmoke?.checks.some((check) => check.includes('passed reachability step'))).toBe(true);
   });
 
+  it('compares integer and decimal string expectations against numeric snapshot values', async () => {
+    const filePath = await writeTempHtml(`
+      <!doctype html>
+      <html>
+      <body>
+        <canvas id="game"></canvas>
+        <script>
+          const state = { score: 0, ratio: 0 };
+          window.__GAME_META__ = {
+            domain: 'game',
+            subtype: 'arcade',
+            controls: { score: 'ArrowRight', ratio: 'Space' },
+            levels: [{ id: 0 }],
+            progressPlan: [
+              { input: 'ArrowRight', frames: 1, metric: 'score', expect: '42' },
+              { input: 'Space', frames: 1, metric: 'ratio', expect: '3.14' }
+            ],
+            qualityPlan: { actorReadable: true, mechanics: ['score', 'ratio'] }
+          };
+          window.__GAME_TEST__ = {
+            start() { this.reset(); },
+            reset() {
+              state.score = 0;
+              state.ratio = 0;
+              return this.snapshot();
+            },
+            snapshot() { return { score: state.score, ratio: state.ratio }; },
+            step(input = {}) {
+              if (input.ArrowRight || input.score) state.score = 42;
+              if (input.Space || input.ratio) state.ratio = 3.14;
+              return this.snapshot();
+            },
+            runSmokeTest() {
+              this.reset();
+              this.step({ ArrowRight: true });
+              this.step({ Space: true });
+              return {
+                passed: typeof state.score === 'number' && state.score === 42
+                  && typeof state.ratio === 'number' && state.ratio === 3.14,
+                checks: ['numeric snapshot values match declared expectations'],
+                failures: [],
+                coverage: {
+                  mechanics: ['score', 'ratio'],
+                  rewards: [],
+                  risks: [],
+                  stateChanges: ['score', 'ratio'],
+                  levelsPassed: [0],
+                  totalLevels: 1,
+                  allLevelsReachable: true
+                }
+              };
+            }
+          };
+        </script>
+      </body>
+      </html>
+    `, 'numeric-string-expectations.html');
+
+    const result = await validateGameArtifact(filePath, { runRuntimeSmoke: true, runtimeSmokeTimeoutMs: 5000 });
+
+    expect(result.passed).toBe(true);
+    expect(result.runtimeSmoke?.failures).toEqual([]);
+    expect(result.runtimeSmoke?.checks).toEqual(expect.arrayContaining([
+      expect.stringContaining('passed reachability step 1 for score'),
+      expect.stringContaining('passed reachability step 2 for ratio'),
+    ]));
+  });
+
   it('reports reset(levelOrScenario) authored unit failures for string authored ids', async () => {
     const filePath = await writeTempHtml(`
       <!doctype html>

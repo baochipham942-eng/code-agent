@@ -371,7 +371,7 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
             if (!trimmed) return JSON.stringify(beforeValue) !== JSON.stringify(afterValue);
             if (trimmed === 'true') return afterValue === true;
             if (trimmed === 'false') return afterValue === false;
-            if (/^-?d+(?:.d+)?$/.test(trimmed)) return typeof afterValue === 'number' && afterValue === Number(trimmed);
+            if (/^-?\\d+(?:\\.\\d+)?$/.test(trimmed)) return typeof afterValue === 'number' && afterValue === Number(trimmed);
             return afterValue === trimmed;
           }
           return JSON.stringify(beforeValue) !== JSON.stringify(afterValue);

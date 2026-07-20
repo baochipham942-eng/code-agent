@@ -31,8 +31,8 @@ function getLedger(): BackgroundTaskLedger {
   return ledger;
 }
 
-function syncSnapshots(): void {
-  syncBackgroundTaskSnapshotsToLedger(getLedger());
+function syncSnapshots(ledger: BackgroundTaskLedger): void {
+  ledger.runQuiet(() => syncBackgroundTaskSnapshotsToLedger(ledger));
 }
 
 export function registerBackgroundTaskLedgerHandlers(ipcMain: IpcMain): void {
@@ -45,13 +45,13 @@ export function registerBackgroundTaskLedgerHandlers(ipcMain: IpcMain): void {
     try {
       switch (action) {
         case 'listTasks': {
-          syncSnapshots();
+          syncSnapshots(ledger);
           const filter = payload || {};
           return { success: true, data: ledger.listTasks(filter) } satisfies IPCResponse;
         }
 
         case 'getTask': {
-          syncSnapshots();
+          syncSnapshots(ledger);
           return { success: true, data: ledger.getTask(payload.taskId) } satisfies IPCResponse;
         }
 

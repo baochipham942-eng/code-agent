@@ -4,6 +4,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { streamText, generateText } from 'ai';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
+import { getProviderHealthMonitor } from '../../../src/host/model/providerHealthMonitor';
 import type { StreamChunk, StreamCallback } from '../../../src/host/model/types';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 
@@ -15,11 +16,6 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 vi.mock('../../../src/host/model/providers/providerResolution', () => ({
   resolveProviderBaseUrl: () => 'https://test.local/v1',
   resolveProviderApiKey: () => 'test-key',
-}));
-
-// provider 健康监控是 app 级单例：桩掉，只验证调用不报错。
-vi.mock('../../../src/host/model/providerHealthMonitor', () => ({
-  getProviderHealthMonitor: () => ({ recordSuccess: vi.fn(), recordFailure: vi.fn() }),
 }));
 
 // 只桩掉 streamText / generateText，保留 tool()/jsonSchema 等真实实现（buildTools 依赖）。
@@ -215,6 +211,26 @@ describe('inferenceViaAiSdk —— 流式映射', () => {
 });
 
 describe('inferenceViaAiSdk —— emittedOutput 闸门重试', () => {
+  it('signal 已 abort 的流式失败不影响健康度', async () => {
+    const provider = 'ai-sdk-stream-aborted-health-test';
+    const controller = new AbortController();
+    controller.abort();
+    vi.mocked(streamText).mockReturnValueOnce(fakeStream([
+      { type: 'error', error: new Error('ordinary failure') },
+    ]));
+    const col = makeCollector();
+
+    await expect(inferenceViaAiSdk(
+      [{ role: 'user', content: 'x' }],
+      [],
+      { ...CONFIG, provider } as ModelConfig,
+      col.onStream,
+      controller.signal,
+    )).rejects.toThrow('ordinary failure');
+
+    expect(getProviderHealthMonitor().getHealth(provider)).toBeNull();
+  });
+
   it('首字节前瞬态错误（ECONNRESET）：重试一次后成功，无重复 emit', async () => {
     vi.mocked(streamText)
       .mockReturnValueOnce(fakeStream([{ type: 'error', error: new Error('ECONNRESET') }]))

@@ -6,10 +6,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   abortableSleep,
   extractRetryAfterMs,
+  isCancellationError,
   isFallbackEligible,
   isTransientError,
   withTransientRetry,
 } from '../../../src/host/model/providers/retryStrategy';
+import { getProviderHealthMonitor } from '../../../src/host/model/providerHealthMonitor';
 
 // Mock logger to suppress console output during tests
 vi.mock('../../../src/host/model/providers/shared', () => ({
@@ -152,6 +154,31 @@ describe('Retry Strategy', () => {
     });
   });
 
+  describe('isCancellationError', () => {
+    it('识别明确的取消形状', () => {
+      const abortError = new Error('request stopped');
+      abortError.name = 'AbortError';
+      const codeError = new Error('request stopped') as NodeJS.ErrnoException;
+      codeError.code = 'ABORT_ERR';
+
+      expect(isCancellationError(abortError)).toBe(true);
+      expect(isCancellationError(codeError)).toBe(true);
+      expect(isCancellationError(new Error('canceled'))).toBe(true);
+      expect(isCancellationError({ message: 'aborted' })).toBe(true);
+    });
+
+    it('signal 已 abort 时识别为取消', () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      expect(isCancellationError(new Error('ordinary failure'), controller.signal)).toBe(true);
+    });
+
+    it('不把包含 cancel 字样的业务错误误判为取消', () => {
+      expect(isCancellationError(new Error('user cancelled the previous request'))).toBe(false);
+    });
+  });
+
   // --------------------------------------------------------------------------
   // isFallbackEligible
   // --------------------------------------------------------------------------
@@ -254,6 +281,7 @@ describe('Retry Strategy', () => {
     it('should not retry when signal is aborted', async () => {
       const controller = new AbortController();
       controller.abort();
+      const providerName = 'retry-already-aborted-health-test';
 
       const fn = vi.fn()
         .mockRejectedValueOnce(new Error('ECONNRESET'))
@@ -261,7 +289,7 @@ describe('Retry Strategy', () => {
 
       await expect(
         withTransientRetry(fn, {
-          providerName: 'test',
+          providerName,
           maxRetries: 2,
           baseDelay: 1,
           signal: controller.signal,
@@ -269,6 +297,35 @@ describe('Retry Strategy', () => {
       ).rejects.toThrow('ECONNRESET');
 
       expect(fn).toHaveBeenCalledTimes(1);
+      expect(getProviderHealthMonitor().getHealth(providerName)).toBeNull();
+    });
+
+    it('普通失败仍然照常记入健康度', async () => {
+      const providerName = 'retry-ordinary-failure-health-test';
+      const fn = vi.fn().mockRejectedValue(new Error('401 Unauthorized'));
+
+      await expect(withTransientRetry(fn, { providerName, maxRetries: 0 })).rejects.toThrow('401 Unauthorized');
+
+      expect(getProviderHealthMonitor().getHealth(providerName)).toMatchObject({
+        status: 'unavailable',
+        errorRate: 1,
+        consecutiveErrors: 1,
+      });
+    });
+
+    it('包含 cancel 字样的业务错误仍然照常记入健康度', async () => {
+      const providerName = 'retry-cancel-word-business-error-health-test';
+      const fn = vi.fn().mockRejectedValue(new Error('user cancelled the previous request'));
+
+      await expect(withTransientRetry(fn, { providerName, maxRetries: 0 })).rejects.toThrow(
+        'user cancelled the previous request',
+      );
+
+      expect(getProviderHealthMonitor().getHealth(providerName)).toMatchObject({
+        status: 'unavailable',
+        errorRate: 1,
+        consecutiveErrors: 1,
+      });
     });
 
     it('should retry with transient error code', async () => {
@@ -345,6 +402,24 @@ describe('Retry Strategy', () => {
         onRetry: (info) => delays.push(info.delay),
       });
       expect(delays).toEqual([37]);
+    });
+
+    it('退避等待期间 signal abort 时不影响健康度', async () => {
+      const controller = new AbortController();
+      const providerName = 'retry-backoff-aborted-health-test';
+      const err = new Error('429 rate limited') as Error & { retryAfterMs?: number };
+      err.retryAfterMs = 60_000;
+      const fn = vi.fn().mockRejectedValue(err);
+
+      await expect(withTransientRetry(fn, {
+        providerName,
+        maxRetries: 2,
+        signal: controller.signal,
+        onRetry: () => controller.abort(),
+      })).rejects.toThrow('429 rate limited');
+
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(getProviderHealthMonitor().getHealth(providerName)).toBeNull();
     });
   });
 

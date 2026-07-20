@@ -59,19 +59,28 @@ vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
   },
 }));
 
-import { registerDesktopQueuedInputDrain } from '../../../src/host/app/desktopQueuedInputDrain';
+import {
+  registerDesktopQueuedInputDrain,
+  type DesktopQueuedInputDrainHandle,
+} from '../../../src/host/app/desktopQueuedInputDrain';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
 import { TaskManager } from '../../../src/host/task/TaskManager';
 
 class TestTaskManager extends EventEmitter {
   readonly agentEvents: Array<{ sessionId: string; event: AgentEvent }> = [];
+  private readonly sessionStatuses = new Map<string, string>();
 
   transition(sessionId: string, status: string): void {
+    this.sessionStatuses.set(sessionId, status);
     this.emit('state_change', {
       type: 'state_change',
       sessionId,
       data: { status },
     });
+  }
+
+  getSessionState(sessionId: string): { status: string } {
+    return { status: this.sessionStatuses.get(sessionId) ?? 'idle' };
   }
 
   emitAgentEventForSession(sessionId: string, event: AgentEvent): void {
@@ -110,12 +119,14 @@ describe('desktop queued input drain', () => {
     taskManager: TestTaskManager | TaskManager,
     appService: { sendMessage: (envelope: ConversationEnvelope) => Promise<void> },
     repository: QueuedInputRepository,
-  ): void {
-    unregisterCallbacks.push(registerDesktopQueuedInputDrain({
+  ): DesktopQueuedInputDrainHandle {
+    const handle = registerDesktopQueuedInputDrain({
       taskManager,
       appService,
       repository,
-    }));
+    });
+    unregisterCallbacks.push(handle.dispose);
+    return handle;
   }
 
   function createRealTaskManager(): TaskManager {
@@ -238,6 +249,37 @@ describe('desktop queued input drain', () => {
 
     await vi.waitFor(() => expect(repository.getById('queued-once')?.status).toBe('consumed'));
     expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('startup sweep 只派发 idle session，重复调用不会重复派发', async () => {
+    const repository = createRepository();
+    repository.enqueue({
+      id: 'queued-idle',
+      sessionId: 'session-idle',
+      envelope: { content: 'dispatch after restart' },
+      now: 1,
+    });
+    repository.enqueue({
+      id: 'queued-busy',
+      sessionId: 'session-busy',
+      envelope: { content: 'wait for active run' },
+      now: 2,
+    });
+    const manager = new TestTaskManager();
+    manager.transition('session-busy', 'running');
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    const handle = register(manager, { sendMessage }, repository);
+
+    handle.runStartupSweep();
+    handle.runStartupSweep();
+
+    await vi.waitFor(() => expect(repository.getById('queued-idle')?.status).toBe('consumed'));
+    expect(repository.getById('queued-busy')?.status).toBe('queued');
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      clientMessageId: 'queued-idle',
+      sessionId: 'session-idle',
+    }));
   });
 
   it('requeues through the shared retry ceiling, then marks failed and emits a user-visible error', async () => {

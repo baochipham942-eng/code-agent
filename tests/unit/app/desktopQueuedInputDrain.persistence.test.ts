@@ -344,7 +344,7 @@ describe('desktop queued input drain persistence', () => {
       taskManager: manager,
       appService,
       repository,
-    });
+    }).dispose;
 
     const cancelledRun = manager.startTask(sessionId, 'cancel this desktop run');
     await Promise.race([

@@ -11,6 +11,7 @@ const logger = createLogger('DesktopQueuedInputDrain');
 interface DesktopDrainTaskManager {
   on(event: 'state_change', listener: (event: TaskManagerEvent) => void): unknown;
   off(event: 'state_change', listener: (event: TaskManagerEvent) => void): unknown;
+  getSessionState(sessionId: string): { status: string };
   emitAgentEventForSession(
     sessionId: string,
     event: AgentEvent,
@@ -26,7 +27,14 @@ type DesktopDrainRepository = Pick<
   | 'markConsumed'
   | 'requeueAfterFailure'
   | 'markFailed'
+  | 'listSessionsWithQueuedInputs'
 >;
+
+export interface DesktopQueuedInputDrainHandle {
+  dispose: () => void;
+  /** 启动期扫描：把重启后仍卡在 queued 的 session 派发出去。只应调用一次，重复调用是幂等的。 */
+  runStartupSweep: () => void;
+}
 
 export interface DesktopQueuedInputDrainDependencies {
   taskManager: DesktopDrainTaskManager;
@@ -42,10 +50,11 @@ export function registerDesktopQueuedInputDrain({
   taskManager,
   appService,
   repository,
-}: DesktopQueuedInputDrainDependencies): () => void {
+}: DesktopQueuedInputDrainDependencies): DesktopQueuedInputDrainHandle {
   const activeSessions = new Set<string>();
   const pendingIdleSessions = new Set<string>();
   const lastStatusBySession = new Map<string, string>();
+  let startupSweepDone = false;
 
   const scheduleDrain = (sessionId: string): void => {
     activeSessions.add(sessionId);
@@ -146,7 +155,22 @@ export function registerDesktopQueuedInputDrain({
   };
 
   taskManager.on('state_change', onStateChange);
-  return () => {
-    taskManager.off('state_change', onStateChange);
+  return {
+    dispose: () => {
+      taskManager.off('state_change', onStateChange);
+    },
+    runStartupSweep: () => {
+      if (startupSweepDone) {
+        return;
+      }
+      startupSweepDone = true;
+
+      for (const sessionId of repository.listSessionsWithQueuedInputs()) {
+        if (taskManager.getSessionState(sessionId).status !== 'idle') {
+          continue;
+        }
+        scheduleDrain(sessionId);
+      }
+    },
   };
 }

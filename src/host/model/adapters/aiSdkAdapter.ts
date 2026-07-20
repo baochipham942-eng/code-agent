@@ -128,7 +128,7 @@ function requestBodyForAxios(body: BodyInit | null | undefined): unknown {
 }
 
 function toUint8Readable(readable: Readable): Readable {
-  return readable.pipe(new Transform({
+  const transform = new Transform({
     transform(chunk: unknown, _encoding, callback) {
       if (typeof chunk === 'string') {
         callback(null, Buffer.from(chunk));
@@ -140,7 +140,14 @@ function toUint8Readable(readable: Readable): Readable {
         callback(null, Buffer.from(String(chunk)));
       }
     },
-  }));
+  });
+  readable.once('error', (err: Error) => transform.destroy(err));
+  readable.once('close', () => {
+    if (!readable.readableEnded) {
+      transform.destroy(new Error('AI SDK response stream closed prematurely'));
+    }
+  });
+  return readable.pipe(transform);
 }
 
 function responseBodyForFetch(data: unknown, status: number): BodyInit | null {

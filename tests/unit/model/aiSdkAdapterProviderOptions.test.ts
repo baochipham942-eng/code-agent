@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
-import { generateText } from 'ai';
+import { generateText, streamText } from 'ai';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import type { ModelConfig, ToolDefinition } from '../../../src/shared/contract';
 
@@ -61,6 +61,35 @@ vi.mock('ai', async (importActual) => {
 
 function providerModel(kind: string, options: unknown) {
   return (modelId: string) => ({ kind, modelId, options });
+}
+
+function prematurelyClosedStream(chunk: string): Readable {
+  let emitted = false;
+  return new Readable({
+    read() {
+      if (emitted) return;
+      emitted = true;
+      this.push(chunk);
+      queueMicrotask(() => this.destroy());
+    },
+  });
+}
+
+async function settleWithin<T>(promise: Promise<T>, onTimeout?: () => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          onTimeout?.();
+          reject(new Error('stream did not settle within 250ms'));
+        }, 250);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function runNonStreaming(config: ModelConfig) {
@@ -168,6 +197,66 @@ describe('inferenceViaAiSdk provider options', () => {
     expect(response.headers.get('x-provider')).toBe('ok');
     expect(response.body).not.toBeNull();
     await expect(response.text()).resolves.toBe('{"ok":true}');
+  });
+
+  it('custom fetch 在源流未 end 就 close 时终结 Web response body', async () => {
+    vi.mocked(axios).mockResolvedValueOnce({
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'text/event-stream' },
+      data: prematurelyClosedStream('partial'),
+    });
+
+    await runNonStreaming({
+      provider: 'qwen',
+      model: 'qwen3-coder-plus',
+      temperature: 0.4,
+    } as ModelConfig);
+
+    const fetch = providerMocks.createOpenAICompatible.mock.calls[0][0].fetch as typeof globalThis.fetch;
+    const response = await fetch('https://relay.example/v1/chat/completions');
+
+    await expect(settleWithin(response.text())).rejects.toThrow('AI SDK response stream closed prematurely');
+  });
+
+  it('inferenceViaAiSdk 流式路径在源流中途 close 时有限时间内 reject', async () => {
+    vi.mocked(axios).mockResolvedValueOnce({
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'text/event-stream' },
+      data: prematurelyClosedStream('partial'),
+    });
+    vi.mocked(streamText).mockImplementation((options) => {
+      const model = options.model as unknown as { options: { fetch: typeof globalThis.fetch } };
+      return {
+        fullStream: (async function* () {
+          const response = await model.options.fetch('https://relay.example/v1/chat/completions', {
+            signal: options.abortSignal,
+          });
+          const reader = response.body?.getReader();
+          if (!reader) throw new Error('missing response body');
+          options.abortSignal?.addEventListener('abort', () => { void reader.cancel(); }, { once: true });
+          while (true) {
+            const part = await reader.read();
+            if (part.done) return;
+            yield { type: 'text-delta', id: 'text', text: new TextDecoder().decode(part.value) };
+          }
+        })(),
+      } as unknown as ReturnType<typeof streamText>;
+    });
+    const controller = new AbortController();
+
+    const inference = inferenceViaAiSdk(
+      [{ role: 'user', content: 'hello' }],
+      [],
+      { provider: 'qwen', model: 'qwen3-coder-plus', temperature: 0.4 } as ModelConfig,
+      vi.fn(),
+      controller.signal,
+      { disableProviderTransientRetry: true },
+    );
+
+    await expect(settleWithin(inference, () => controller.abort()))
+      .rejects.toThrow('AI SDK response stream closed prematurely');
   });
 
   it('caller reasoningEffort reaches the final Xiaomi request body before dispatch', async () => {

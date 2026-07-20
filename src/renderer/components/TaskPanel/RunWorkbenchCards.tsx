@@ -510,7 +510,7 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
           <span className="min-w-0 flex-[1.5] truncate text-[10px] text-zinc-600">{ref.pathOrUrl}</span>
         )}
         {canReadLog && (
-          <button
+          <button /* ds-allow:button: 日志展开/收起超小尺寸文本按钮（px-1 py-0.5 text-[10px]），primitive 最小 sm 仍更大 */
             type="button"
             className="flex flex-shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[10px] text-sky-300 hover:bg-sky-500/10"
             aria-expanded={expanded}
@@ -528,7 +528,7 @@ const TaskOutputRefRow = ({ outputRef: ref }: { outputRef: TaskRecordOutputRef }
             <span className="text-[9px] text-zinc-600">
               {logState.status === 'loaded' && logState.truncated ? rw.logTruncated : ''}
             </span>
-            <button
+            <button /* ds-allow:button: 日志刷新超小尺寸文本按钮（px-1 py-0.5 text-[9px]），primitive 最小 sm 仍更大 */
               type="button"
               className="flex items-center gap-1 rounded px-1 py-0.5 text-[9px] text-zinc-400 hover:bg-white/[0.05] disabled:opacity-50"
               disabled={logState.status === 'loading'}

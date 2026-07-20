@@ -145,7 +145,7 @@ export async function ensureProjectMemoryDirs(workspacePath: string): Promise<vo
 export async function linkProjectIdToMeta(workspacePath: string, projectId: string): Promise<void> {
   await ensureProjectMemoryDirs(workspacePath);
   const metaPath = getProjectMetaPath(workspacePath);
-  let meta: Record<string, unknown> = {};
+  let meta: Record<string, unknown>;
   try {
     meta = JSON.parse(await fs.readFile(metaPath, 'utf-8')) as Record<string, unknown>;
   } catch {
@@ -240,7 +240,7 @@ export async function deleteScopedMemory(target: ScopedMemoryTarget, filename: s
 /** 列出某层全部记忆（UI / write gate 去重用） */
 export async function listScopedMemories(target: ScopedMemoryTarget): Promise<RoleMemoryFile[]> {
   const dirs = resolveScopeDirs(target.scope, target.roleId, target.workspacePath);
-  let filenames: string[] = [];
+  let filenames: string[];
   try {
     filenames = (await fs.readdir(dirs.memoriesDir)).filter((f) => f.endsWith('.md'));
   } catch {
@@ -427,7 +427,7 @@ async function exists(filePath: string): Promise<boolean> {
 
 /** 索引格式与全局 Light Memory INDEX.md 一致：- [filename](filename) — description */
 async function updateScopedIndex(indexPath: string, filename: string, description: string): Promise<void> {
-  let lines: string[] = [];
+  let lines: string[];
   try {
     lines = (await fs.readFile(indexPath, 'utf-8')).split('\n');
   } catch {

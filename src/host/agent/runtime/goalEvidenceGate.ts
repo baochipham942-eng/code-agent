@@ -105,7 +105,7 @@ export function runGoalEvidenceGate(
     const absolutePath = isAbsolute(filePath)
       ? filePath
       : resolve(ctx.workingDirectory || process.cwd(), filePath);
-    let exists = false;
+    let exists: boolean;
     try {
       exists = statSync(absolutePath).isFile();
     } catch {

@@ -544,7 +544,7 @@ export class SpeechTranscriptionService {
     }
     const tempDir = keepAudioOnFailure ? getSpeechRetentionDir() : os.tmpdir();
     const tempFile = path.join(tempDir, `speech_${Date.now()}_${Math.random().toString(36).slice(2)}${getAudioExtension(mimeType)}`);
-    let shouldKeepTempFile = false;
+    let shouldKeepTempFile: boolean | undefined;
 
     try {
       fs.writeFileSync(tempFile, buffer);

@@ -360,7 +360,7 @@ async function executeDelete(filename: string, ctx: ToolContext): Promise<ToolRe
 // ---------------------------------------------------------------------------
 async function updateIndex(filename: string, description: string): Promise<void> {
   const indexPath = getMemoryIndexPath();
-  let lines: string[] = [];
+  let lines: string[];
 
   try {
     const existing = await fs.readFile(indexPath, 'utf-8');

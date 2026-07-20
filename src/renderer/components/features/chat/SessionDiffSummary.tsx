@@ -49,7 +49,7 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
         if (!filePath) continue;
 
         let oldText = '';
-        let newText = '';
+        let newText: string;
         let isNewFile = false;
 
         if (tc.name === 'Edit' || tc.name === 'edit_file') {

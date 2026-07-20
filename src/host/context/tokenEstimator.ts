@@ -121,8 +121,8 @@ export function analyzeContent(text: string): ContentAnalysis {
   const markdownMatches = text.match(PATTERNS.MARKDOWN) || [];
   const jsonMatches = text.match(PATTERNS.JSON) || [];
 
-  let primaryType: ContentAnalysis['primaryType'] = 'english';
-  let confidence = 0.5;
+  let primaryType: ContentAnalysis['primaryType'];
+  let confidence: number;
 
   if (cjkRatio > 0.3) {
     primaryType = 'cjk';

@@ -51,8 +51,7 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
   } = params;
 
   let iterations = 0;
-  let lastSlideCode: string | null = null;
-  let lastError: string | null = null;
+  let lastSlideCode: string | null;
   const prompts: Array<{ kind: string; prompt: string }> = [];
 
   // ── Phase 1: 生成 slide 代码 ──
@@ -100,7 +99,7 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
   if (!execResult.success && execResult.error) {
     // L1: 将错误注入 prompt，LLM 修复
     logger.debug('Design mode L1: attempting error fix');
-    lastError = execResult.error;
+    const lastError = execResult.error;
 
     const fixPrompt = buildErrorFixPrompt(lastSlideCode, lastError);
     prompts.push({ kind: 'error_fix', prompt: fixPrompt });

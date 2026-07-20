@@ -205,7 +205,7 @@ export class FeasibilityChecker {
     precondition: Precondition
   ): Promise<FeasibilityCheck> {
     let passed = false;
-    let message = '';
+    let message: string;
 
     try {
       switch (precondition.type) {

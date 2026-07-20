@@ -10,7 +10,7 @@ export function resolveBridgedEndpoint(sourceProvider: string, settings: AppSett
   const rawBase = cfg?.baseUrl?.trim();
   if (!rawBase) throw new Error(`桥接模型源 provider ${sourceProvider} 未配置 baseUrl`);
   const baseUrl = assertSafeCustomBaseUrl(rawBase);
-  let apiKey = '';
+  let apiKey: string;
   try { apiKey = getSecureStorage().getApiKey(sourceProvider) || ''; } catch { apiKey = ''; }
   if (!apiKey) throw new Error(`桥接模型源 provider ${sourceProvider} 未配置 API Key，请在设置中补填。`);
   return { baseUrl, apiKey };

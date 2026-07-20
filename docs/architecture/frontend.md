@@ -410,15 +410,24 @@ stores/
 ## useAgent Hook 事件处理
 
 ```typescript
-// hooks/useAgent.ts — 监听 IPC 事件: agent:event
+// hooks/agent/effects/* — 监听 IPC 事件: agent:event
 
-case 'turn_start':     // 创建新的 assistant 消息
-case 'stream_chunk':   // 流式追加文本到当前 turn
-case 'tool_call_start':// 工具状态 → running
-case 'tool_call_end':  // 通过 toolCallId 匹配，更新 result
-case 'permission_request': // 显示内联 PermissionCard
-case 'agent_complete':     // 解锁输入
+useConversationStreamEffects(); // turn / stream / terminal
+usePermissionQueueEffects();    // session/global 审批队列
+useTaskProgressEffects();       // task progress / complete
+useToolExecutionEffects();      // tool start/delta/end/progress
 ```
+
+2026-07-18 起，permission、task progress、tool execution 三组 effect 把事件判定抽成纯函数核心，React hook 只保留 IPC 订阅和 store 依赖注入。这个边界用于锁住并发 session、晚到 terminal 和同名工具调用等容易被闭包时序掩盖的问题。
+
+| 事件域 | 稳定身份与投影规则 | 失败边界 |
+|--------|-------------------|----------|
+| Permission | queue key 是 sessionId；无 sessionId/`global` 的请求进入独立 global 队列。当前 session 优先，但不得提前 shift 丢弃 global 项 | terminal 只清该 session；Esc 必须发 `AGENT_PERMISSION_RESPONSE=deny`，发送失败恢复卡片 |
+| Task progress | 先按 event session scope 过滤，再更新对应 session 的 progress/complete 投影 | foreign session 的晚到事件不能覆盖当前会话 |
+| Tool start/delta/end | `toolCallId` 是结果写回与 progress/timeout 清理的主键；stream placeholder 只有在“唯一、同名、未完成”时允许受限 fallback | 多个同名调用不得按名称或最近卡片猜测；无 id 匹配只记诊断 |
+| Terminal | `agent_complete / agent_cancelled / error / stream_end` 按 session 收敛临时状态 | 无 sessionId 的 terminal 不做跨 session 清理 |
+
+`appStore` 只保存待展示审批和队列投影，Host 仍拥有审批事实。renderer 清卡不等于拒绝；任何用户拒绝动作必须回到 Host IPC，避免服务端等待超时。
 
 ---
 

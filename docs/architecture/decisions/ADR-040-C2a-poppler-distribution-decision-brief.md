@@ -1,9 +1,9 @@
 # ADR-040 C2a：Poppler 随包分发决策记录
 
-- **状态**：方案 A 已批准；发版等待双架构不可变制品 promotion
+- **状态**：方案 A 已批准；双架构不可变制品已 promotion，lock 为 `ready`
 - **证据日期**：2026-07-15
-- **适用基线**：`c2774c2730d5ba7385809ad24935530bd4080286`；CI 接线修复另见本分支提交 `b01140175aa64d9630f86e79ab661adaae7be881`
-- **当前候选**：`codex/adr040-p1-integration` @ `9519532e866fe004a7d877d128fe2fa3bb011f41` 已推远端，尚未建 PR / 合入默认分支
+- **原始决策基线**：`c2774c2730d5ba7385809ad24935530bd4080286`
+- **当前事实基线**：`origin/main@6e4f8653a`；实现与硬门见 #385/#392，ready lock 与 CI path gate 见 #393
 - **发布身份**：公开材料统一使用 `Agent Neo project`，不得包含项目维护者或内部审核人员的姓名、个人邮箱、本机路径或主机名。
 
 ## 产品判断
@@ -110,12 +110,15 @@ release-assets/
 
 不推荐。只要 Agent Neo 发布方仍向用户提供该二进制，分发义务没有消失；同时引入首次使用下载失败、离线不可用、版本与 source bundle 错配的新风险。
 
-## 当前 stop-ship 项
+## Promotion 结果与剩余发版证据
 
-1. **workflow 注册**：`build-poppler-sidecar.yml` 是 feature branch 新增 workflow，尚未进入默认分支；GitHub 首次手动 dispatch 返回 workflow-not-found，因此当前没有可验收的真实 run id。
-2. **不可变托管**：arm64/x64 的 manifest、sidecar archive、complete-source bundle 尚未上传到稳定 HTTPS 地址并回填 lock。
-3. **x64 原生证据**：必须由 `macos-15-intel` promotion run 产出，manifest 记录 run id、源码 SHA、`x86_64` 和 `rosettaTranslated=false`。
-4. **完整合规包**：每个实际组件的精确源码归档、formula、install receipt、许可证全文和二进制来源映射必须由构建脚本生成并校验。
-5. **正式 DMG**：同源 unsigned UDZO A/B 已完成，Poppler 的实测压缩增量是 3.65 MiB；正式签名、公证和安装版验证仍需在 ready lock 后运行。
+2026-07-15，promotion run `29412794021` 在 `macos-15` 与 `macos-15-intel` 两个原生 runner 上完成，产物发布到项目控制的不可变 OSS 前缀 `poppler-sidecar/26.07.0/`，`config/poppler-sidecar.lock.json` 已切为 `ready`。
 
-以上任一项未完成，`release:poppler:verify` 和正式 tag workflow 都必须失败。不得用 `--skip-gates`、Rosetta、本机残留 Homebrew Cellar 或只上传 NOTICE 的方式放行。
+已关闭的 Poppler stop-ship 条件：
+
+1. arm64/x64 manifest、sidecar archive 和 complete-source bundle 均有稳定 HTTPS URL、SHA-256 与 bytes 锁定值。
+2. 两架构传递依赖版本 18/18 一致；源码与实际二进制组件 17/17 对应，两个架构的文件数和许可证数分别为 102/102、78/78。
+3. x64 证据来自 `macos-15-intel` 原生 runner，非 Rosetta；promotion verify 从公开 URL 真下载并通过 formal gate。
+4. Poppler lock、workflow、脚本与共享 release library 已进入 CI path filter，修改这些事实源会触发 55 条 release gate 断言。
+
+Poppler promotion stop-ship 已解除。正式版本仍需按通用 release 流程完成签名、公证、DMG 和安装版验证；这些门不能用 `--skip-gates`、Rosetta、本机残留 Homebrew Cellar 或只上传 NOTICE 绕过。未来任何 lock、formula、组件版本或托管地址变化，都必须重新 promotion，不能沿用本次 ready 结论。

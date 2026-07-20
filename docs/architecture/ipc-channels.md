@@ -17,6 +17,23 @@ Code Agent 使用类型安全的 IPC 通道进行 Electron 主进程和渲染进
 
 当前只有部分 domain / legacy channel 已迁移，未迁移通道仍走 `window.domainAPI.invoke` 或 legacy `ipcService.invoke`。
 
+### 共享 invoke 类型合同
+
+`src/shared/ipc/handlers.ts` 的 `IpcInvokeHandlers` 是已纳管 renderer invoke 的参数/返回值合同，`src/shared/ipc/channels.ts` 提供通道字面量集合。它补足编译期调用约束，但不替代 Host 侧的运行时 payload 校验。
+
+2026-07-18 起，Skill 域 28 个通道全部进入该映射。renderer 的 Skills 设置页、推荐入口和 session mount/unmount 统一调用：
+
+```typescript
+invokeSkillIPC<K extends SkillChannel>(
+  channel: K,
+  ...args: Parameters<IpcInvokeHandlers[K]>
+): Promise<Awaited<ReturnType<IpcInvokeHandlers[K]>> | undefined>
+```
+
+调用失败返回 `undefined` 并记 renderer warning；业务调用方必须显式处理“无响应”，不能把它当成功。新增或修改 Skill 通道时，channel constant、Host handler、`IpcInvokeHandlers` 和 renderer facade 必须同批变更。
+
+`src/shared/ipc/protocol.ts` 只保留仍有消费方的 `IPCResponse` 与 `createErrorResponse()`。它不再维护一份与各 domain `switch(action)` 平行的 Action union；真实 action 合同应留在 domain handler、共享 invoke map 或 zod schema 中，避免两份声明漂移。
+
 ## 协议格式
 
 ### 请求格式 (IPCRequest)
@@ -319,14 +336,17 @@ src/host/ipc/
 ├── skill.ipc.ts       # Skill 草稿确认队列（GAP-005）
 └── data.ipc.ts        # Data 通道
 
-src/shared/
-└── ipc.ts             # 类型定义
+src/shared/ipc/
+├── channels.ts        # 通道常量与字面量 union
+├── handlers.ts        # IpcInvokeHandlers 参数/返回值合同
+├── protocol.ts        # IPCResponse / createErrorResponse
+└── schemas/           # 已迁移通道的运行时 zod schema
 ```
 
 ---
 
 ## 注意事项
 
-1. **类型安全**: 所有通道都有 TypeScript 类型定义
+1. **类型安全**: 纳入 `IpcInvokeHandlers` 的通道由 TypeScript 约束；其余 legacy/domain action 仍需逐步迁移，不能宣称全覆盖
 2. **错误处理**: 使用统一的 IPCResponse 格式
 3. **向后兼容**: 旧版 Legacy API 仍可用，但标记为 @deprecated

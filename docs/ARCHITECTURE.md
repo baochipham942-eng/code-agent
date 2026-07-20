@@ -1,5 +1,6 @@
 # Agent Neo / Code Agent - 架构设计文档
 
+> 版本: 9.29 (9.28 + 2026-07-12~18 Durable Run 生产切换、Web/External 终态单一事实源、renderer 权限与工具事件投影、Skill IPC 类型合同、事件假 seam 清理、桌面启动分段与更新后 compile-cache 预热；详见 runtime safety as-built spec 与 ADR-037)
 > 版本: 9.28 (9.27 + 2026-06-26 Neo Tools evidence/control 收口：统一 EvidenceRef、goal verification card、Browser/Computer durable proof、Agent Pointer 可见化、background/subagent recovery plan、agent tree/worktree read-only review；当前合同已折入本文对应能力域与 ADR-029)
 > 版本: 9.27 (9.26 + 2026-06-22 设计 tab 4 媒介重规划 + 厚版演示稿全链路：引擎从 agent 工具抽 service、SlideData[] 单一真源、大纲编辑器/逐页预览/就地改字、4 增强〔品牌色注入 OKLCH→sRGB / AI 大纲 / LibreOffice 像素预览 / AI 配图模型可选〕，PR #260；详见 design-mode.md §15)
 > 版本: 9.26 (9.25 + 2026-06-16~17 迭代治理与账本收口：permission/tool execution append-only ledger、Swarm ledger 真理源 + reconcile/backfill、console/a11y/stale-dist 静态门、设计系统契约 + ratchet gate、预算告警、工具失败 action、Bash 输出头尾预览、auto-compaction stuck guard)
@@ -9,7 +10,7 @@
 > 版本: 9.22 (9.21 + 2026-06-10~11 Windows (win32-x64) 移植与发版链折入：P0 安全/路径地基（权限路径旁路修复 + commandSafety 平台规则包）+ NSIS unsigned 打包链 + 天翼云真机打通（5 个实现期 bug）+ release.yml 独立 build-windows job（三平台 latest.json，windows 失败降级 mac-only，预发布 tag 空跑全绿）+ 全入口设备感知下载/更新（修资产选择两处真 bug）+ ConnectorRegistry 平台过滤 + PII 安装链 Node 化)
 > 版本: 9.21 (9.20 + 2026-06-09 Computer Use 底座迁移 argus → trycua/cua-driver（ADR-021：stdio MCP 接入 + 桌面走 cua/浏览器走 Playwright 分流 + 重签名内嵌 Agent Neo Computer Use.app + cua 工具人话文案/真实 app 图标差异化渲染 + Accessibility 必需/录屏可选）)
 > 版本: 9.20 (9.19 + 2026-06-08 经验沉淀重做（ADR-020：废弃 telemetry n-gram，统一 LLM 反思路 + 命名禁用清单）、Telemetry 可诊断性 P1+P2+P3（版本指纹 + 本地全量诊断旁表/诊断包/脱敏/失败 session 上报 + Langfuse 默认开 opt-out）、卸载/权限三层修复（safety 措辞 + rm 分级松绑 + 挂起权限死锁）、06-07 下午 provider/session/vision 稳定性收尾)
-> 日期: 2026-06-26
+> 日期: 2026-07-18
 > 作者: Lin Chen
 
 本文档是 Agent Neo（代码仓库仍名为 Code Agent）的**架构索引入口**。详细设计已拆分为模块化文档，本文提供导航、快速参考和版本演进概要。
@@ -25,8 +26,13 @@
 | [仓库导览](./architecture/repo-map.md) | 第一次浏览仓库时先看：根目录、运行面、能力体系、评测目录怎么分 |
 | [系统概览](./architecture/overview.md) | 整体架构图、技术栈、分层设计 |
 | [Agent 核心](./architecture/agent-core.md) | AgentLoop、运行时状态机、run-level abort、TaskManager-owned chat send、ContextAssembly |
+| [Durable Run Kernel](./architecture/durable-run-kernel.md) | 跨 Native/Team/Workflow/External 的 run identity、owner epoch、原子 checkpoint/terminal 与生产读取合同 |
+| [Durable Runtime Integration](./architecture/durable-runtime-integration.md) | 启动恢复 dispatcher、各 engine handler、read preference、fail-closed readiness 与回滚边界 |
+| [External Engine Durable Lifecycle](./architecture/external-engine-durable-lifecycle.md) | Codex/Claude/MiMo/Kimi 外部进程 checkpoint、恢复能力矩阵、终态证据和 trace 规则 |
 | [工具系统](./architecture/tool-system.md) | ToolRegistry、ToolExecutor、Core/Deferred、MCP dynamic tools、权限合同 |
 | [前端架构](./architecture/frontend.md) | React 组件、Zustand 状态、useAgent Hook |
+| [IPC 通道](./architecture/ipc-channels.md) | domain handler、共享 invoke 类型合同、zod 迁移边界与 renderer 调用规范 |
+| [Desktop Shell](./architecture/desktop-shell.md) | Tauri 壳、bundled Node/webServer、启动就绪、更新后预热、资源预检与诊断合同 |
 | [数据存储](./architecture/data-storage.md) | SQLite、Supabase、session runtime state、telemetry/replay、SecureStorage |
 | [云端/同步历史架构](./architecture/cloud-architecture.md) | 历史 cloud task / orchestrator 设计归档；当前保留配置、更新、feature flag、cloud proxy 等服务 |
 | [多 Agent 编排](./architecture/multiagent-system.md) | Agent Team 并行执行、parallel inbox、dependsOn gate、run-level cancel、SpawnGuard |
@@ -47,6 +53,7 @@
 
 | Spec | 覆盖 |
 |------|------|
+| [Neo Runtime Safety as-built](./plans/2026-07-11-neo-runtime-safety-as-built-spec.md) | 7 月 4~18 日 as-built：Durable Run 终态事实源、Agent Team/External 恢复、权限队列、renderer 工具卡身份、Skill IPC 类型合同与桌面启动就绪边界 |
 | Neo Tools Evidence Control and Agent Pointer | 6 月 26 日 as-built：统一 `EvidenceRef`、goal verification card、CI log ingest、Browser/Computer durable proof timeline、Neo virtual pointer、session evidence control summary、background/subagent recovery plan、Browser launch helper split |
 | Iteration Governance / Ledger / Budget / Design System | 6 月 16~17 日 as-built：权限决策和工具执行 append-only ledger、Swarm ledger 真理源、reconcile scan 和 opt-in backfill、console/a11y/stale-dist 静态门、设计系统契约与 ratchet gate、预算告警、失败工具 action、Bash 输出头尾预览和 auto-compaction 卡死护栏 |
 | Session Surface / Settings IA / Eval Gates | 6 月 13~15 日 as-built：能力证据硬门、judge 校准、TurnQuality / ReplayAudit、任务模型策略、模型决策可解释、语音输入、快捷键、目标合同 composer、媒体资产、设置页分组导航/搜索/权限、隐私/通道通知边界、Skills/MCP/Plugins 可见管理、项目/会话组织 |
@@ -94,10 +101,13 @@
 | 036 | 评测判分可信度收口 + 红线 case 执行闸 | accepted |
 | 037 | Durable Run Kernel（run 身份/所有权/恢复语义） | accepted |
 | 038 | RuntimeContext 拆袋（共享可变袋分批收敛为切片状态） | accepted |
+| 039 | Artifact repair 无进展逃生门统一语义 | accepted |
 | 040 | Artifact Locator 契约（预览定点与编辑目标统一对账） | accepted |
+| 041 | 浏览器登录态复用双通道与 `browser_action` 双引擎对标 | accepted |
 | 042 | 远程 MCP OAuth 浏览器授权（SDK OAuthClientProvider 接线） | accepted |
+| 043 | 组级工具步骤三态折叠预览 | accepted |
 
-> **ADR-040 执行状态（2026-07-15）**：P1 Word / PPT locator、共享 picker 与 telemetry 已在 `codex/adr040-p1-integration@9519532e8` 形成并推送候选，尚未经 `ship` 合入 `main`。Poppler 双架构不可变分发代码门已落地，但 lock 仍为 `pending-promotion`，真实 arm64 / `macos-15-intel` promotion、HTTPS 托管、正式签名公证与安装版验证未完成，当前仍 stop-ship。
+> **ADR-040 执行状态（2026-07-18）**：Word / PPT / Excel locator、共享 picker、generated-PPT resolver 与隐私安全 telemetry 已随 #377/#385 合入 `main`。Poppler `26.07.0` 双原生架构候选由 run `29412794021` 产出并发布到项目控制的不可变 OSS 前缀，`config/poppler-sidecar.lock.json` 已为 `ready`，Poppler promotion stop-ship 已解除；正式版本仍需走常规签名、公证、DMG 与安装版验收。
 
 ---
 
@@ -116,7 +126,7 @@
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端存储 | Supabase + pgvector |
 | AI 模型 | 小米 MiMo v2.5 Pro（默认）/ GPT-5.5 / DeepSeek V4 / Kimi K2.6 / 智谱 / 火山引擎 / Local-Ollama 多 provider 目录（14+ provider），本地 API Key 优先；显式模型只在 `adaptive=true` 时允许跨 provider fallback |
-| Agent Engine | Native Agent Neo / Codex CLI / Claude Code，签名模型目录、session engine metadata、read-only 外部执行和 task ledger 回带 |
+| Agent Engine | Native Agent Neo / Codex CLI / Claude Code / MiMo-Code / Kimi Code，签名模型目录、session engine metadata、read-only 外部执行、Durable Run 终态与 task ledger 回带 |
 | 本地桥接 | packages/bridge (localhost:9527) |
 | 代码编辑 | CodeMirror 6 (Preview 代码/Markdown 编辑模式) |
 
@@ -164,6 +174,29 @@ code-agent/
 > **工具合并**: 31 个独立延迟工具合并为统一工具（Process, MCPUnified, TaskManager 等），使用 action 参数分发。详见 ADR-006。
 >
 > **文档编辑统一**: DocEdit 统一入口，富文档为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
+
+### 2026-07-12 ~ 07-18 Durable 执行、客户端事件与启动路径收口
+
+这一轮把运行终态、客户端投影和桌面启动从多处“各自看起来正确”收敛为可追溯合同。长期边界是 durable store 决定运行事实，renderer 只按稳定身份投影，IPC 和事件层只保留真实消费路径，启动优化不能削弱 readiness 与回滚。
+
+| 模块 | 当前闭环 | 关键文件 / 入口 |
+|------|---------|----------------|
+| Durable Run 生产事实源 | 六表 kernel、owner epoch、attempt、event/checkpoint sequence 与 terminal projection 已接 Native、Agent Team、Dynamic Workflow、External CLI、MCP long task；`durable_preferred` 为生产默认读策略 | `src/host/runtime/durableRunKernel.ts`、`durableRunStores.ts`、`src/host/app/durableRunReadService.ts`、`docs/architecture/durable-run-kernel.md` |
+| Web route 生命周期 | `/api/agent` 在 SSE headers 前创建 run；`AgentDurableRouteRunLifecycle` 私有持有 start/terminal/release，重复调用幂等；pre-stream 和 mid-stream 断连统一提交 `run_cancelled` | `src/web/routes/agent.ts`、`agentDurableRouteLifecycle.ts`、对应 unit tests |
+| External 终态诚实性 | Codex/Claude 只有解析到最终正文/结果才能完成；exit 0 + 空输出提交 `failed`；cancellation 优先于晚到结果；MiMo/Kimi 无法证明恢复时进入 `requires_review` | `src/host/services/agentEngine/externalEngineDurableLifecycle.ts`、`codexCliAdapter.ts`、`claudeCodeAdapter.ts`、`docs/architecture/external-engine-durable-lifecycle.md` |
+| Renderer 权限与工具事件 | permission/task/tool effects 抽为可测事件投影；权限队列按 session/global 分桶，terminal 只清对应 session，Esc 发送 deny；工具结果用 `toolCallId` 精确绑定，同名卡不猜测 | `usePermissionQueueEffects.ts`、`useTaskProgressEffects.ts`、`useToolExecutionEffects.ts`、`appStore.ts`、`useKeyboardShortcuts.ts` |
+| IPC / eventing 真边界 | Skill 域 28 通道纳入 `IpcInvokeHandlers`，renderer 走 `invokeSkillIPC`；共享 `protocol.ts` 不再冒充 action 真相源；事件层只保留 `EventBus + InternalEventStore + Mailbox` | `src/shared/ipc/handlers.ts`、`src/renderer/services/invokeSkillIPC.ts`、`src/host/services/eventing/{bus,internalStore}.ts`、`docs/architecture/ipc-channels.md` |
+| 桌面启动与首屏 | webServer/renderer/shell 分段打点；release 路径端口清理去重，首屏非必需重库 lazy load；应用内更新在 restart 前用隔离 data dir + 真库快照 best-effort 预热新 bundle compile cache | `src/web/webServerBootstrap.cjs`、`src/web/webServer.ts`、`src-tauri/src/main.rs`、renderer `boot:*` marks、`docs/architecture/desktop-shell.md` |
+| 类型与结构门 | 生产 `src/**` 和 `tests/** + scripts/**` 都由 TypeScript 7 native preview 做类型检查，tests/scripts 存量基线已从 1229 降到 0；门自检二进制、配置和零输入，禁止假绿 | `package.json`、`tsconfig.tests.json`、`scripts/tsc-tests-ratchet.mjs`、repository structure/knip/design-system gates |
+
+**架构边界**：
+
+- Durable terminal 是运行事实，session status、SSE、renderer 和外部 adapter 都只能投影它，不能各自再造一个成功/失败判断。
+- renderer 允许用唯一同名 streaming placeholder 做受限兼容匹配；稳定 `toolCallId` 一旦存在，禁止按工具名回退。
+- `/api/health` 只表示 shell 可以导航。远程 capability 和 durable recovery 在后台继续，durable handler 未 ready 时 agent route 必须返回 503。
+- compile-cache warmup 是更新体验优化，失败只退化为冷启动；它不能修改活库、阻塞 restart 或替代真实签名包验收。
+
+详细产品合同见 [Neo Runtime Safety as-built](./plans/2026-07-11-neo-runtime-safety-as-built-spec.md)。
 
 ### 2026-06-16 ~ 06-17 迭代治理、事件账本、预算和设计系统契约
 

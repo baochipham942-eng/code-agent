@@ -24,6 +24,18 @@ Tauri Rust shell
 
 `dist/web/webServer.cjs` is a ~1.2KB launcher, not the application bundle: it enables the Node V8 compile cache (`<data dir>/cache/v8-compile-cache`) and then requires `dist/web/webServer.bundle.cjs` (the real ~20MB payload). Both files ship as Tauri resources; the shell's spawn path and boot stages are unchanged. Compile-cache failures degrade silently — the payload still loads without cache.
 
+For an in-app update, the new bundle is already on disk before `app.restart()`. The shell uses that window to best-effort warm the new bundle's compile cache:
+
+1. create an isolated temporary data directory so migration/config side effects never touch the live database;
+2. seed the temporary database through SQLite online backup from the real database when available, so lazy code paths see representative data;
+3. write only V8 cache entries to the real `<data dir>/cache/v8-compile-cache` through `CODE_AGENT_COMPILE_CACHE_DIR`;
+4. disable network-bearing bootstrap with the E2E profile;
+5. stop waiting after 20 seconds and continue restart on every failure path.
+
+This optimization covers the application-managed update path only. A clean install, manual app replacement, deleted cache, or unsupported platform may still cold-start. Warmup success is never a readiness signal and never blocks restart.
+
+Boot performance evidence is split across three clocks: webServer logs structured `[boot-timing]` segments, renderer records `boot:*` Performance Marks, and the shell keeps the coarse boot stages below. Release startup skips the webServer-side stale-port `lsof` because the Tauri shell already cleared and bound the expected boot token; standalone webServer startup retains its own cleanup.
+
 The Rust shell writes `desktop-shell-boot-latest.json` under the app log directory. The write is best-effort. If the file cannot be written, the app continues booting and the diagnostics IPC falls back to live checks where possible.
 
 `/api/health` is shell readiness, not proof that every remote capability is connected. Fresh-profile startup must not wait for Cloud config, remote skill repositories, or MCP handshakes before the HTTP listener and first window navigation. Those capabilities initialize in the background; connection failures are warnings and leave the affected capability unavailable without taking down the builtin renderer. Durable recovery waits for capability bootstrap and remains fail-closed until its handlers are ready.

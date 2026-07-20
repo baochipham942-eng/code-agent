@@ -71,4 +71,8 @@ The unified dispatcher routes `codex_cli` and `claude_code` only after `buildExt
 
 Process exit is transport evidence only. A completed Durable Run requires parsed terminal evidence such as a final result/message. Exit code zero without that evidence is committed as failed. Cancellation wins over a late process result.
 
+The Codex and Claude adapters therefore return `failed` when the process reports success but the accumulated final output is empty. The Web route passes the same evidence bit into `ExternalEngineDurableLifecycle.finish()` and uses the returned durable terminal status for session projection; it does not independently reinterpret adapter status. Repeated finish calls return the previously committed terminal status.
+
+Client disconnect is a cancellation terminal. Both the route lifecycle and the pre-stream cancellation helper emit `run_cancelled`; there is no separate `run_disconnected` durable event. `DurableRunReadService` maps the final envelope back to session state (`completed`, `error`, or `interrupted`), making the durable projection the single terminal truth exposed by session status and replay readers.
+
 Every attempt retains the deterministic logical trace id derived from `runId` and receives a new attempt span. The external process creates an `external_engine` child span. Normalized stdout events, model usage, and bounded tool summaries are span events. Trace/export failures are swallowed at the diagnostic boundary and cannot change the engine result or owner state.

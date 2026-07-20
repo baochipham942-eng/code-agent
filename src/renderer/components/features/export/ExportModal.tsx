@@ -5,7 +5,6 @@
 
 import React, { useState, useCallback } from 'react';
 import { X, Download, FileText, FileJson, Check, Copy } from 'lucide-react';
-import { IPC_CHANNELS } from '@shared/ipc';
 import type { Message } from '@shared/contract';
 import { Button, IconButton, Modal } from '../../primitives';
 import { createLogger } from '../../../utils/logger';

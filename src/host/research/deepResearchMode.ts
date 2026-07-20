@@ -17,7 +17,6 @@ import type { ToolExecutor } from '../tools/toolExecutor';
 import { ResearchPlanner } from './researchPlanner';
 import { ResearchExecutor } from './researchExecutor';
 import { ReportGenerator } from './reportGenerator';
-import { UrlCompressor } from './urlCompressor';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('DeepResearchMode');

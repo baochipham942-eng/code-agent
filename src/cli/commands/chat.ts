@@ -20,7 +20,6 @@ import {
   getProviderInfo,
   normalizeProviderId,
 } from '../../shared/constants';
-import type { ModelProvider } from '../../shared/contract';
 import { getPRLinkService } from '../../host/services/github/prLinkService';
 import { initializeCommands, getCommandRegistry } from '../../shared/commands';
 import type { CommandContext, CommandOutput } from '../../shared/commands';

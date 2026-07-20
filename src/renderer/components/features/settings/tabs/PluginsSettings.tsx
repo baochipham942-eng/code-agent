@@ -39,7 +39,6 @@ import type {
 } from '@shared/contract/marketplace';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useI18n } from '../../../../hooks/useI18n';
-import { zh } from '../../../../i18n/zh';
 import ipcService from '../../../../services/ipcService';
 import { Button, EmptyState } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';

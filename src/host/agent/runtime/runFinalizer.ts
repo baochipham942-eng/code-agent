@@ -16,26 +16,16 @@ import type {
   AgentEvent,
   AgentTaskPhase,
 } from '../../../shared/contract';
-import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
-import type { ToolExecutor } from '../../tools/toolExecutor';
-import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
-import type { PlanningService } from '../../planning';
 import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
 import { appendConversationSummary, isLoopAutomationSummaryText } from '../../lightMemory/recentConversations';
 import { judgeConversation } from '../../lightMemory/conversationJudge';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
-import { generateMessageId } from '../../../shared/utils/id';
-import { classifyIntent } from '../../routing/intentClassifier';
-import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
-import { getMaxIterations } from '../../services/cloud/featureFlagService';
 import { createLogger } from '../../services/infra/logger';
 import { trackNode } from '../../observability/posthogNode';
 import { silence } from '../../utils/errorHandling';
-import { HookManager, createHookManager } from '../../hooks';
 import type { BudgetEventData } from '../../../shared/contract';
 import { getContextHealthService } from '../../context/contextHealthService';
-import { getSystemPromptCache } from '../../telemetry/systemPromptCache';
 import { DEFAULT_MODELS, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../../shared/constants';
 
 // Import refactored modules
@@ -44,26 +34,6 @@ import type {
   ModelResponse,
   ModelMessage,
 } from '../../agent/loopTypes';
-import { isParallelSafeTool, classifyToolCalls } from '../../agent/toolExecution/parallelStrategy';
-import { CircuitBreaker } from '../../agent/toolExecution/circuitBreaker';
-import { classifyExecutionPhase } from '../../tools/executionPhase';
-import {
-  formatToolCallForHistory,
-  sanitizeToolResultsForHistory,
-  buildMultimodalContent,
-  stripImagesFromMessages,
-  extractUserRequestText,
-} from '../../agent/messageHandling/converter';
-import {
-  injectWorkingDirectoryContext,
-  buildEnhancedSystemPrompt,
-  buildRuntimeModeBlock,
-} from '../../agent/messageHandling/contextBuilder';
-import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../prompts/builder';
-import { AntiPatternDetector } from '../../agent/antiPattern/detector';
-import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
-import { GoalTracker } from '../../agent/goalTracker';
-import { getSessionRecoveryService } from '../../agent/sessionRecovery';
 import { getIncompleteTasks } from '../../services/planning/taskStore';
 import {
   parseTodos,
@@ -77,23 +47,6 @@ import {
   clearSessionTodos,
 } from '../../agent/todoParser';
 import { getDatabase } from '../../services/core/databaseService';
-import { fileReadTracker } from '../../tools/fileReadTracker';
-import { dataFingerprintStore } from '../../tools/dataFingerprint';
-import { MAX_PARALLEL_TOOLS } from '../../agent/loopTypes';
-import {
-  compressToolResult,
-  HookMessageBuffer,
-  estimateModelMessageTokens,
-  MessageHistoryCompressor,
-  estimateTokens,
-} from '../../context/tokenOptimizer';
-import { AutoContextCompressor, getAutoCompressor } from '../../context/autoCompressor';
-import { getInputSanitizer } from '../../security/inputSanitizer';
-import { getDiffTracker } from '../../services/diff/diffTracker';
-import { getCitationService } from '../../services/citation/citationService';
-import { existsSync, readdirSync, readFileSync } from 'fs';
-import { join, basename } from 'path';
-import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { LearningPipeline } from './learningPipeline';
 import type { MessageWriterPort } from './runtimePorts';
@@ -107,7 +60,6 @@ import {
   buildCompletionSummaryRecord,
   persistCompletionSummaryRecord,
 } from '../../session/completionSummaryService';
-
 
 const logger = createLogger('AgentLoop');
 

@@ -14,23 +14,12 @@ import type {
   AgentTaskPhase,
 } from '../../shared/contract';
 import type { StructuredOutputConfig, StructuredOutputResult } from './structuredOutput';
-import { parseStructuredOutput, generateFormatCorrectionPrompt } from './structuredOutput';
-import type { ToolExecutor } from '../tools/toolExecutor';
-import { getToolSearchService } from '../services/toolSearch';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
-import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../services';
-import { logCollector } from '../mcp/logCollector.js';
 import { generateMessageId } from '../../shared/utils/id';
-import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
-import { classifyIntent } from '../routing/intentClassifier';
-import { getTaskOrchestrator } from '../planning/taskOrchestrator';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
 import { HookManager, createHookManager } from '../hooks';
-import type { BudgetEventData } from '../../shared/contract';
-import { getContextHealthService } from '../context/contextHealthService';
-import { getSystemPromptCache } from '../telemetry/systemPromptCache';
 import { DEFAULT_MODELS, MAX_MODE, MODEL_MAX_TOKENS, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
 
 // Import refactored modules
@@ -39,43 +28,13 @@ import type {
   ModelResponse,
   ModelMessage,
 } from './loopTypes';
-import { isParallelSafeTool, classifyToolCalls } from './toolExecution/parallelStrategy';
 import { CircuitBreaker } from './toolExecution/circuitBreaker';
-import { classifyExecutionPhase } from '../tools/executionPhase';
-import {
-  formatToolCallForHistory,
-  sanitizeToolResultsForHistory,
-  buildMultimodalContent,
-  stripImagesFromMessages,
-  extractUserRequestText,
-} from './messageHandling/converter';
-import {
-  injectWorkingDirectoryContext,
-  buildEnhancedSystemPrompt,
-  buildRuntimeModeBlock,
-} from './messageHandling/contextBuilder';
-import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../prompts/builder';
 import type { PromptProfile } from '../prompts/profiles';
 import { AntiPatternDetector } from './antiPattern/detector';
-import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
 import { GoalModeController } from './goalModeController';
 import { resolveScaffoldProfileForModel } from './runtime/scaffoldProfile';
 import { NudgeManager } from './nudgeManager';
-import { getSessionRecoveryService } from './sessionRecovery';
-import { getIncompleteTasks } from '../services/planning/taskStore';
-import {
-  parseTodos,
-  mergeTodos,
-  advanceTodoStatus,
-  completeCurrentAndAdvance,
-  getSessionTodos,
-  setSessionTodos,
-  clearSessionTodos,
-} from './todoParser';
-import { fileReadTracker } from '../tools/fileReadTracker';
-import { dataFingerprintStore } from '../tools/dataFingerprint';
-import { MAX_PARALLEL_TOOLS } from './loopTypes';
 import {
   compressToolResult,
   HookMessageBuffer,
@@ -86,15 +45,6 @@ import {
 import { AutoContextCompressor, getAutoCompressor } from '../context/autoCompressor';
 import { CompressionState } from '../context/compressionState';
 import { CompressionPipeline } from '../context/compressionPipeline';
-
-import { getInputSanitizer } from '../security/inputSanitizer';
-import { getDiffTracker } from '../services/diff/diffTracker';
-import { getCitationService } from '../services/citation/citationService';
-import { existsSync, readdirSync, readFileSync } from 'fs';
-import { join, basename } from 'path';
-import { createHash } from 'crypto';
-
-import { analyzeTask } from './hybrid/taskRouter';
 
 const logger = createLogger('AgentLoop');
 

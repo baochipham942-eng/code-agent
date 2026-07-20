@@ -16,7 +16,6 @@ import { createLogger } from '../../services/infra/logger';
 import { atomicWriteFile } from '../../tools/utils/atomicWrite';
 import { getTeamsDir } from '../../config/configPaths';
 import type { SessionTask } from '../../../shared/contract/planning';
-import type { RegisteredAgent } from './types';
 
 const logger = createLogger('TeamPersistence');
 

@@ -5,10 +5,8 @@
 // 目标：<2000 tokens（对标 Claude Code 269 tokens 核心 + 工具描述）
 // ============================================================================
 
-import { IDENTITY_PROMPT } from './identity';
 import { getSoul } from './soulLoader';
 import { TOOLS_PROMPT } from './base';
-import { GENERATIVE_UI_PROMPT } from './generativeUI';
 import { QUESTION_FORM_PROMPT } from './questionForm';
 import {
   ARTIFACT_TASK_BRIEF_PROMPT,

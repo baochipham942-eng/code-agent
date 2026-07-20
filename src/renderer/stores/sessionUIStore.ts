@@ -6,7 +6,6 @@ import type {
 } from '@shared/contract/agentTrajectory';
 import { useSessionStore, type SessionFilter } from './sessionStore';
 import { createLogger } from '../utils/logger';
-import ipcService from '../services/ipcService';
 
 const logger = createLogger('SessionUIStore');
 

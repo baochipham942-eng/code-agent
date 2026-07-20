@@ -18,7 +18,6 @@ import type {
   PluginConstantsNamespace,
   PluginRegisterToolModuleOptions,
 } from './types';
-import type { HookEvent } from '../protocol/events';
 import type { ModelProvider } from '../../shared/contract';
 import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
 import { createPluginStorage, initPluginStorageTable } from './pluginStorage';

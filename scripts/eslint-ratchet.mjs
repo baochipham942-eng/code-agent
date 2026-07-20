@@ -3,7 +3,7 @@
 // eslint-ratchet — ESLint error / warning 双基线棘轮门
 // ============================================================================
 //
-// 当前存量（2026-07-20 实测）：31 errors + 1868 warnings。
+// 当前存量（2026-07-20 实测）：30 errors + 1868 warnings。
 // 两条基线彼此独立、只能下降：任一计数超基线都阻塞 CI；清理后把对应常量
 // 调小到新的实测值，禁止为放行新增问题而抬高基线。
 //
@@ -17,7 +17,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const BASELINE_ERROR_MAX = 31;
+const BASELINE_ERROR_MAX = 30;
 const BASELINE_WARNING_MAX = 1868;
 const MAX_FINDINGS_TO_PRINT = 50;
 

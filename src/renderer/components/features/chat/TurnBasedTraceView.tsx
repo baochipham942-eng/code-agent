@@ -357,8 +357,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     prependAnchorRestoreCancelRef.current = null;
     const pending = pendingPrependAnchorRestoreRef.current;
     if (
-      !pending
-      || pending.sessionId !== projection.sessionId
+      pending?.sessionId !== projection.sessionId
       || pending.firstItemIndex !== firstItemIndex
     ) {
       pendingPrependAnchorRestoreRef.current = null;

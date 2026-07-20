@@ -308,7 +308,7 @@ export class PlanApprovalGate {
     this.pendingResolvers.clear();
     for (const [planId, resolver] of entries) {
       const plan = this.pendingPlans.get(planId);
-      if (plan && plan.status === 'pending') {
+      if (plan?.status === 'pending') {
         plan.status = 'rejected';
         plan.feedback = feedback;
         plan.resolvedAt = now;
@@ -578,7 +578,7 @@ export class PlanApprovalGate {
         const rejectFeedback = `Auto-rejected after timeout (${this.approvalTimeoutMs}ms, risk: ${riskLevel}). Coordinator did not respond; destructive plans require explicit approval.`;
         logger.warn(`Plan ${planId} approval timed out after ${this.approvalTimeoutMs}ms, auto-rejecting (risk: ${riskLevel})`);
         const now = Date.now();
-        if (plan && plan.status === 'pending') {
+        if (plan?.status === 'pending') {
           plan.status = 'rejected';
           plan.feedback = rejectFeedback;
           plan.resolvedAt = now;

@@ -216,7 +216,7 @@ export function locatorFromLegacyAnchor(
   resolvedPresentationTarget: PresentationPackageIndexEntry | null,
 ): ArtifactLocatorV1 | null {
   if (anchor.kind === 'ppt') {
-    if (!resolvedPresentationTarget || resolvedPresentationTarget.displayIndex !== anchor.slideIndex) return null;
+    if (resolvedPresentationTarget?.displayIndex !== anchor.slideIndex) return null;
     return {
       version: 1,
       artifact: { kind: 'presentation', filePath: anchor.filePath, revision },

@@ -245,7 +245,7 @@ export function getWorkflowJournalRepository(): WorkflowJournalRepository | null
   const db = dbService.getDb();
   if (!db) return null;
   // DB 实例可能在重启后变化：实例不同则重建 repo。
-  if (!cached || cached.db !== db) {
+  if (cached?.db !== db) {
     cached = { db, repo: new WorkflowJournalRepository(db) };
   }
   return cached.repo;

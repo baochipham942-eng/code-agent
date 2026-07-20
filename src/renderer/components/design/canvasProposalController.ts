@@ -133,6 +133,6 @@ export async function rejectProposal(
   await deps.respond({
     requestId: proposal.requestId,
     verdict: 'reject',
-    ...(feedback && feedback.trim() ? { feedback: feedback.trim() } : {}),
+    ...(feedback?.trim() ? { feedback: feedback.trim() } : {}),
   });
 }

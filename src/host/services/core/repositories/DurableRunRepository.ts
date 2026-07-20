@@ -107,7 +107,7 @@ export class DurableRunRepository implements DurableRunStores {
   async create(envelope: RunEnvelope, attempt: RunAttempt): Promise<void> {
     assertRunEnvelope(envelope);
     const owner = envelope.owner;
-    if (!owner || attempt.ownerEpoch !== owner.epoch || attempt.attempt !== envelope.attempt) {
+    if (attempt.ownerEpoch !== owner?.epoch || attempt.attempt !== envelope.attempt) {
       throw new Error('Initial durable run attempt must match its owner lease');
     }
     this.db.transaction(() => {
@@ -207,7 +207,7 @@ export class DurableRunRepository implements DurableRunStores {
 
   async transition(input: RunTransition): Promise<RunEnvelope | null> {
     const envelope = await this.get(input.runId);
-    if (!envelope || envelope.status !== input.expectedStatus || envelope.owner?.epoch !== input.expectedOwnerEpoch) return null;
+    if (envelope?.status !== input.expectedStatus || envelope.owner?.epoch !== input.expectedOwnerEpoch) return null;
     if (!canTransitionRunStatus(envelope.status, input.nextStatus)) throw new Error(`Invalid run transition ${envelope.status} -> ${input.nextStatus}`);
     const next = { ...envelope, status: input.nextStatus, updatedAt: input.updatedAt };
     const result = this.db.prepare(`UPDATE durable_runs SET status = ?, envelope_json = ?, updated_at = ?

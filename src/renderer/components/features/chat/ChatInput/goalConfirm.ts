@@ -11,7 +11,7 @@ import type { ParsedGoalCommand } from './parseGoalCommand';
 
 /** 显式合同字段任一存在 → 直接启动，不走确认卡 */
 export function shouldOpenGoalConfirm(parsed: ParsedGoalCommand | null | undefined): boolean {
-  if (!parsed || !parsed.goal?.trim()) return true;
+  if (!parsed?.goal?.trim()) return true;
   const hasExplicitContract =
     parsed.verify !== undefined
     || parsed.review !== undefined

@@ -80,7 +80,7 @@ export function applyTweak(location: TweakLocation, mutation: ClassMutation): Tw
   const attr = opening.attributes?.find(
     (a) => a.type === 'JSXAttribute' && a.name?.name === 'className',
   );
-  if (!attr || !attr.value) {
+  if (!attr?.value) {
     // 没有 className —— append 一个新的（用 mutation 计算第一个 class）
     return appendClassNameAttr(source, opening, mutation, location.file);
   }
@@ -123,7 +123,7 @@ function findJSXOpeningElement(node: ASTNode, line: number, column: number): JSX
   // 但有的环境 bridge 拿到的可能是 JSXElement.loc，所以两个都试
   if (node.type === 'JSXOpeningElement') {
     const loc = (node as ASTNode & { loc?: { start: { line: number; column: number } } }).loc;
-    if (loc && loc.start.line === line && loc.start.column === column) {
+    if (loc?.start.line === line && loc.start.column === column) {
       return node as unknown as JSXOpeningLike;
     }
   }

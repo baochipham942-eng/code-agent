@@ -56,7 +56,7 @@ export async function executePlanReview(
   const candidate = ctx.swarmRunScope
     ? gate.getPendingPlans(ctx.swarmRunScope).find((plan) => plan.id === planId)
     : gate.getPlan(planId);
-  const plan = candidate && candidate.scope && (
+  const plan = candidate?.scope && (
     ctx.swarmRunScope
       ? getSwarmRunScopeKey(candidate.scope) === getSwarmRunScopeKey(ctx.swarmRunScope)
       : candidate.scope.sessionId === ctx.sessionId

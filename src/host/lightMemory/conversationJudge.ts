@@ -123,7 +123,7 @@ function parseJudgment(raw: string): ConversationJudgment | null {
 function buildConversationSnippet(userMessages: string[], lastAssistant?: string): string {
   const recent = userMessages.slice(-SESSION_JUDGE.RECENT_USER_TURNS);
   const lines = recent.map((msg, i) => `用户消息${i + 1}：${msg.trim()}`);
-  if (lastAssistant && lastAssistant.trim()) {
+  if (lastAssistant?.trim()) {
     lines.push(`助手最后回复：${truncate(lastAssistant, 300)}`);
   }
   return lines.join('\n');

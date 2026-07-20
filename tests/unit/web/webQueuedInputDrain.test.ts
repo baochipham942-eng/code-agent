@@ -51,9 +51,11 @@ describe('web queued input drain', () => {
     repository: QueuedInputRepository;
     runEnvelope: (envelope: ConversationEnvelope, response: Response) => Promise<void>;
     agentEvents?: Array<{ sessionId: string; event: AgentEvent }>;
+    hasActiveRun?: (sessionId: string) => boolean;
   }): WebQueuedInputDrain {
     return createWebQueuedInputDrain({
       getRepository: () => input.repository,
+      hasActiveRun: input.hasActiveRun ?? (() => false),
       runEnvelope: input.runEnvelope,
       emitAgentEvent: (sessionId, event) => input.agentEvents?.push({ sessionId, event }),
       logger,
@@ -129,6 +131,39 @@ describe('web queued input drain', () => {
       clientMessageId: 'queued-offline',
       sessionId: 'session-offline',
     })]);
+  });
+
+  it('startup sweep 只派发无活跃 run 的 session，重复调用不会重复派发', async () => {
+    const repository = createRepository();
+    repository.enqueue({
+      id: 'queued-idle',
+      sessionId: 'session-idle',
+      envelope: { content: 'dispatch after restart' },
+      now: 1,
+    });
+    repository.enqueue({
+      id: 'queued-active',
+      sessionId: 'session-active',
+      envelope: { content: 'wait for active run' },
+      now: 2,
+    });
+    const runEnvelope = vi.fn().mockResolvedValue(undefined);
+    const drain = createDrain({
+      repository,
+      runEnvelope,
+      hasActiveRun: (sessionId) => sessionId === 'session-active',
+    });
+
+    drain.runStartupSweep();
+    drain.runStartupSweep();
+
+    await vi.waitFor(() => expect(repository.getById('queued-idle')?.status).toBe('consumed'));
+    expect(repository.getById('queued-active')?.status).toBe('queued');
+    expect(runEnvelope).toHaveBeenCalledTimes(1);
+    expect(runEnvelope).toHaveBeenCalledWith(expect.objectContaining({
+      clientMessageId: 'queued-idle',
+      sessionId: 'session-idle',
+    }), expect.anything());
   });
 
   it('requeues through the shared retry ceiling, then marks failed and broadcasts an error', async () => {

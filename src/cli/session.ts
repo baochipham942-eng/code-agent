@@ -72,6 +72,27 @@ export class CLISessionManager {
     return db !== null && db.isInitialized;
   }
 
+  /**
+   * 确保数据库就绪（自愈初始化）。
+   *
+   * 打包态 webServer 里本管理器可能在 CLIDatabaseService.initialize() 从未被调用的
+   * 上下文中使用——此前 isDatabaseAvailable() 恒 false，所有消息读写被**静默旁路**
+   * （无错无日志，drain 派发轮的 assistant 回复因此人间蒸发，2026-07-20 真机取证）。
+   * initialize() 幂等（内部复用 _initPromise），这里按需触发并等待；只有真正的
+   * 初始化失败才告警——getDb() 为 null 的纯内存模式（CLI 无库）仍是合法静默路径。
+   */
+  private async ensureDbReady(): Promise<boolean> {
+    const db = this.getDb();
+    if (!db) return false;
+    if (db.isInitialized) return true;
+    try {
+      await db.initialize();
+    } catch (error) {
+      console.warn('[SessionManager] Database self-init failed; persistence skipped:', (error as Error).message);
+    }
+    return db.isInitialized;
+  }
+
   private isDuplicateMessageError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('UNIQUE constraint failed: messages.id');
@@ -114,7 +135,7 @@ export class CLISessionManager {
     };
 
     // 数据库可用时持久化，否则只存内存
-    if (this.isDatabaseAvailable()) {
+    if (await this.ensureDbReady()) {
       try {
         this.getDb()!.createSession(session);
       } catch (error) {
@@ -134,7 +155,7 @@ export class CLISessionManager {
     }
 
     // 数据库不可用时返回 null
-    if (!this.isDatabaseAvailable()) {
+    if (!(await this.ensureDbReady())) {
       return null;
     }
 
@@ -162,7 +183,7 @@ export class CLISessionManager {
    * 列出所有会话
    */
   async listSessions(limit: number = 50, offset: number = 0): Promise<StoredSession[]> {
-    if (!this.isDatabaseAvailable()) {
+    if (!(await this.ensureDbReady())) {
       return [];
     }
     return this.getDb()!.listSessions(limit, offset);
@@ -172,7 +193,7 @@ export class CLISessionManager {
    * 更新会话
    */
   async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
-    if (this.isDatabaseAvailable()) {
+    if (await this.ensureDbReady()) {
       try {
         this.getDb()!.updateSession(sessionId, updates);
       } catch (error) {
@@ -191,7 +212,7 @@ export class CLISessionManager {
    * 删除会话
    */
   async deleteSession(sessionId: string): Promise<void> {
-    if (this.isDatabaseAvailable()) {
+    if (await this.ensureDbReady()) {
       try {
         this.getDb()!.deleteSession(sessionId);
       } catch (error) {
@@ -286,7 +307,7 @@ export class CLISessionManager {
     }
 
     // 数据库可用时持久化
-    if (this.isDatabaseAvailable()) {
+    if (await this.ensureDbReady()) {
       const db = this.getDb();
       if (db) {
         try {
@@ -324,7 +345,7 @@ export class CLISessionManager {
    * 获取会话消息
    */
   async getMessages(sessionId: string, limit?: number): Promise<Message[]> {
-    if (!this.isDatabaseAvailable()) {
+    if (!(await this.ensureDbReady())) {
       return [];
     }
     return this.getDb()!.getMessages(sessionId, limit);
@@ -334,7 +355,7 @@ export class CLISessionManager {
    * 获取最近消息
    */
   async getRecentMessages(sessionId: string, count: number): Promise<Message[]> {
-    if (!this.isDatabaseAvailable()) {
+    if (!(await this.ensureDbReady())) {
       return [];
     }
     return this.getDb()!.getRecentMessages(sessionId, count);
@@ -350,7 +371,7 @@ export class CLISessionManager {
   async saveTodos(todos: TodoItem[]): Promise<void> {
     if (!this.currentSessionId) return;
 
-    if (this.isDatabaseAvailable()) {
+    if (await this.ensureDbReady()) {
       try {
         this.getDb()!.saveTodos(this.currentSessionId, todos);
       } catch (error) {
@@ -369,7 +390,7 @@ export class CLISessionManager {
    * 获取待办事项
    */
   async getTodos(sessionId: string): Promise<TodoItem[]> {
-    if (!this.isDatabaseAvailable()) {
+    if (!(await this.ensureDbReady())) {
       return [];
     }
     return this.getDb()!.getTodos(sessionId);

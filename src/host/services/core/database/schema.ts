@@ -1,7 +1,7 @@
  
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyTelemetrySchema } from './schemaTelemetry';
-import { tableExists, safeAlter, type Logger } from './schemaHelpers';
+import { safeAlter, type Logger } from './schemaHelpers';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
 

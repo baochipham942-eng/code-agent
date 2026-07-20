@@ -7,7 +7,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
-import type { TaskPlan, TaskStep, TaskPhase } from './types';
+import type { TaskPlan, TaskStep } from './types';
 
 const logger = createLogger('FeasibilityChecker');
 
@@ -381,7 +381,7 @@ export class FeasibilityChecker {
    */
   private generateSuggestions(
     blockers: FeasibilityCheck[],
-    warnings: FeasibilityCheck[]
+    _warnings: FeasibilityCheck[]
   ): string[] {
     const suggestions: string[] = [];
 

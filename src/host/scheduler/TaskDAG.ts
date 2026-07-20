@@ -6,11 +6,8 @@
 import { EventEmitter } from 'events';
 import type {
   DAGTask,
-  DAGTaskType,
   TaskStatus,
   TaskPriority,
-  TaskConfig,
-  TaskMetadata,
   TaskOutput,
   TaskFailure,
   TaskDAGDefinition,
@@ -28,7 +25,6 @@ import {
   createDefaultMetadata,
   isTaskTerminal,
   getPriorityValue,
-  getNextTaskStatus,
 } from '../../shared/contract/taskDAG';
 import { createLogger } from '../services/infra/logger';
 import {

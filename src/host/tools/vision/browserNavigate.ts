@@ -222,7 +222,7 @@ async function executeLinuxBrowserAction(
 async function executeWindowsBrowserAction(
   action: BrowserAction,
   url?: string,
-  browser?: string
+  _browser?: string
 ): Promise<ToolExecutionResult> {
   switch (action) {
     case 'open':

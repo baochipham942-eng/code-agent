@@ -3,7 +3,7 @@
 // Use AI to evaluate hooks with dynamic prompts
 // ============================================================================
 
-import type { HookExecutionResult, AnyHookContext, HookActionResult } from '../protocol/events';
+import type { HookExecutionResult, AnyHookContext } from '../protocol/events';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
 

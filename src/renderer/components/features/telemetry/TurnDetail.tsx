@@ -49,7 +49,7 @@ const CollapsibleSection: React.FC<{
   );
 };
 
-export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCalls, events }) => {
+export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCalls }) => {
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [systemPromptLoading, setSystemPromptLoading] = useState(false);
 

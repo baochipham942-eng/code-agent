@@ -7,7 +7,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   ChevronRight,
   ChevronLeft,
-  Download,
   Play,
   Pause,
   RotateCcw,

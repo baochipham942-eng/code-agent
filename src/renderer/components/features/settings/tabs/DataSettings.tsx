@@ -8,7 +8,6 @@ import {
   AlertCircle,
   AlertTriangle,
   Archive,
-  ArrowUpRight,
   Bug,
   CheckCircle,
   Clock,

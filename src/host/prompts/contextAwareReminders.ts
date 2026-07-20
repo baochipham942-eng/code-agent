@@ -185,7 +185,7 @@ export const CONTEXT_RULES: ContextRule[] = [
     condition: (ctx) =>
       ctx.taskFeatures.isComplexTask === false &&
       ctx.taskFeatures.dimensions.length === 0,
-    effect: (reminderId, score, ctx) => {
+    effect: (reminderId, score, _ctx) => {
       if (reminderId === 'MUST_DELEGATE') {
         // 简单任务不需要强制委派
         return { newScore: score * 0.3 };

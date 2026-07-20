@@ -10,12 +10,9 @@ import { CRON_GUARDRAILS, DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/
 import type {
   CronJobDefinition,
   CronJobExecution,
-  CronJobStatus,
   CronScheduleType,
-  CronScheduleConfig,
   CronJobAction,
   CronServiceStats,
-  TimeUnit,
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import type { Disposable } from '../services/serviceRegistry';
@@ -69,12 +66,6 @@ interface ActiveJob {
   cronInstance?: Cron;
   nextRun?: Date;
 }
-
-interface JobExecutionContext {
-  execution: CronJobExecution;
-  startTime: number;
-}
-
 
 // ============================================================================
 // CronService

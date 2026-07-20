@@ -3,16 +3,14 @@
 // 用通俗方式介绍「教 AI 分辨好坏」
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   ChevronRight,
   ChevronLeft,
   ThumbsUp,
   ThumbsDown,
-  Scale,
   Trophy,
   Sparkles,
-  BarChart3,
 } from 'lucide-react';
 import { useI18n } from '../../../../../hooks/useI18n';
 

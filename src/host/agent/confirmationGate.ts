@@ -8,7 +8,6 @@
 import * as Diff from 'diff';
 import { createLogger } from '../services/infra/logger';
 import type {
-  ConfirmationPolicy,
   ConfirmationPreview,
   ConfirmationContext,
   ToolConfirmationConfig,

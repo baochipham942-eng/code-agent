@@ -32,9 +32,6 @@ import type {
   InstalledPlugin,
   MarketplaceInfo,
   MarketplacePluginEntry,
-  MarketplaceResult,
-  MarketplaceSource,
-  PluginInstallResult,
   PluginScope,
 } from '@shared/contract/marketplace';
 import { useAuthStore } from '../../../../stores/authStore';
@@ -49,13 +46,9 @@ export * from './PluginsSettings.helpers';
 import {
   type PluginsSettingsText,
   type PluginCompletenessRow,
-  type PluginRuntimeReadiness,
-  type PluginVisibilityItem,
-  PLUGIN_COMPLETENESS_ROWS,
   getPluginSpec,
   getPluginTrustSummary,
   getPluginRuntimeReadiness,
-  isPluginRuntimeVisible,
   getPluginRuntimeLabel,
   getPluginRuntimeTone,
   getPluginRuntimeReason,

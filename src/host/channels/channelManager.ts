@@ -18,7 +18,6 @@ import type {
   ChannelAccountStatus,
   ChannelInboxItem,
   ChannelMessage,
-  ChannelEvent,
   ChannelOutboxDraft,
   SendMessageResult,
   RetryChannelMediaAttachmentRequest,

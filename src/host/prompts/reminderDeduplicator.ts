@@ -27,7 +27,7 @@ export interface DeduplicatedReminder {
  */
 export function deduplicateReminders(
   reminders: Array<{ reminder: ReminderDefinition; score: number }>,
-  context: ReminderContext
+  _context: ReminderContext
 ): DeduplicatedReminder[] {
   const result: DeduplicatedReminder[] = [];
   const selectedGroups = new Set<string>();

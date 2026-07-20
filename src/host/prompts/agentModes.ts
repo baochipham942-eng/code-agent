@@ -5,7 +5,7 @@
 // 让指挥家（主 Agent）自己决定如何处理任务
 // ============================================================================
 
-import { detectTaskFeatures, type TaskFeatures } from './systemReminders';
+import { detectTaskFeatures } from './systemReminders';
 
 /**
  * 代理模式类型

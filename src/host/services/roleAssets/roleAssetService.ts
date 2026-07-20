@@ -24,7 +24,6 @@ import {
   getRoleMemoryIndexPath,
   getRoleHistoryPath,
   getRolesRootDir,
-  getProjectDir,
   getProjectMemoriesDir,
   getProjectMemoryIndexPath,
   getProjectMetaPath,

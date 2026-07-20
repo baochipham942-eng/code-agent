@@ -6,10 +6,9 @@
 import type {
   CoworkContract,
   CoworkAgentRole,
-  CoworkExecutionRules,
   CoworkTemplateId,
 } from '../../shared/contract/cowork';
-import { COWORK_TEMPLATES, getCoworkTemplate } from '../../shared/contract/cowork';
+import { getCoworkTemplate } from '../../shared/contract/cowork';
 import { getPredefinedAgent } from '../agent/agentDefinition';
 import { createLogger } from '../services/infra/logger';
 

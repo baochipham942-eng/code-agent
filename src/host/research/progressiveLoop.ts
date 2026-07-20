@@ -10,7 +10,6 @@ import type {
   ExtractedFact,
   IdentifiedGap,
   StoppingAnalysis,
-  StoppingReasonType,
   DataSourceType,
   EnhancedResearchProgress,
 } from './types';
@@ -450,7 +449,7 @@ ${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')
           content: content.slice(0, 3000), // 截断
           fetchedAt: Date.now(),
         };
-      } catch (error) {
+      } catch {
         logger.debug('Fetch failed:', url);
         return null;
       }

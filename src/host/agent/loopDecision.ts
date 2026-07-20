@@ -65,10 +65,6 @@ function noOp(action: LoopAction, reason: string, params?: Record<string, unknow
   return { action, reason, execution: 'none', ...(params ? { params } : {}) };
 }
 
-function runtime(action: LoopAction, reason: string, params?: Record<string, unknown>): LoopDecision {
-  return { action, reason, execution: 'runtime', ...(params ? { params } : {}) };
-}
-
 function advisory(action: LoopAction, reason: string, params?: Record<string, unknown>): LoopDecision {
   return { action, reason, execution: 'advisory', ...(params ? { params } : {}) };
 }

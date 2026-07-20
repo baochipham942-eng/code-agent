@@ -53,7 +53,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
   const [selectedStep, setSelectedStep] = useState<string | null>(null);
   const [expandedDecision, setExpandedDecision] = useState<'can' | 'cannot' | null>(null);
 
-  const getColorClasses = (color: string, isActive: boolean) => {
+  const getColorClasses = (color: string, _isActive: boolean) => {
     const colors: Record<string, { bg: string; border: string; text: string }> = {
       zinc: { bg: 'bg-zinc-600/20', border: 'border-zinc-600/30', text: 'text-zinc-400' },
       blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },

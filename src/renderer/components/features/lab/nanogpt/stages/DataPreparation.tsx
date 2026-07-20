@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { ChevronRight, FileText, Database, BookOpen, Play, Check } from 'lucide-react';
+import { ChevronRight, BookOpen, Play, Check } from 'lucide-react';
 import { useI18n } from '../../../../../hooks/useI18n';
 
 interface DataPreparationProps {

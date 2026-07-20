@@ -137,7 +137,7 @@ export async function runAutoAgentMode(
     });
     try {
       await Promise.all(taskItems.map(t => taskListManager.waitForApproval(t.id)));
-    } catch (error) {
+    } catch {
       logger.info('[TaskList] Approval rejected or reset');
       onEvent({ type: 'agent_complete', data: null });
       return;

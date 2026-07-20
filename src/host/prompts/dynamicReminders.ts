@@ -7,13 +7,11 @@
 
 import {
   REMINDER_DEFINITIONS,
-  type ReminderDefinition,
   type ReminderContext,
   type ReminderPriority,
 } from './reminderRegistry';
 import {
   deduplicateReminders,
-  mergeSelectedReminders,
   getDeduplicationStats,
 } from './reminderDeduplicator';
 import { applyContextRules, getActiveRules } from './contextAwareReminders';
@@ -25,7 +23,6 @@ import {
 import {
   TokenBudgetManager,
   selectRemindersWithinBudget,
-  getTokenBudgetManager,
   DEFAULT_BUDGET_CONFIG,
 } from '../context/reminderBudget';
 import { detectTaskFeatures, type TaskFeatures } from './systemReminders';

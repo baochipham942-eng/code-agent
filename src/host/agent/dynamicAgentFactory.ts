@@ -3,11 +3,10 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { getAgentRegistry, type AgentDefinition } from './types';
+import { getAgentRegistry } from './types';
 import type {
   AgentRequirements,
   AgentTaskType,
-  ExecutionStrategy,
 } from './agentRequirementsAnalyzer';
 
 const logger = createLogger('DynamicAgentFactory');

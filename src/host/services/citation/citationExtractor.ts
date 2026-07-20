@@ -242,7 +242,7 @@ function extractDocumentCitations(
 }
 
 // memory_search → 记忆引用
-function extractMemoryCitations(toolCallId: string, output: string): Citation[] {
+function extractMemoryCitations(toolCallId: string, _output: string): Citation[] {
   // 提取记忆搜索结果
   return [{
     id: nextCitationId(),

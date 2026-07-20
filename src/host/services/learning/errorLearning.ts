@@ -474,7 +474,7 @@ export class ErrorLearningService {
   /**
    * 根据类别生成常见原因
    */
-  private generateCauses(category: ErrorCategory, keywords: string[]): string[] {
+  private generateCauses(category: ErrorCategory, _keywords: string[]): string[] {
     const baseCauses: Record<ErrorCategory, string[]> = {
       file_operation: ['文件路径不存在', '没有文件访问权限', '文件被其他进程占用'],
       network: ['网络连接超时', 'API 服务不可用', 'DNS 解析失败'],

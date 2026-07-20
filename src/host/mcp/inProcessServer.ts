@@ -10,11 +10,8 @@ import type {
   MCPResource,
   MCPPrompt,
   InProcessMCPServerInterface,
-  ToolHandler,
   ToolRegistration,
-  ResourceHandler,
   ResourceRegistration,
-  PromptHandler,
   PromptRegistration,
 } from './types';
 

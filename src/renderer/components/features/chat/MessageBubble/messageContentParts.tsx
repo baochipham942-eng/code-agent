@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useCallback, memo, useRef, useEffect, lazy, Suspense } from 'react';
-import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, Eye, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, ClipboardCopy, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
 import { loadMermaid } from './mermaidLoader';
 import { UI } from '@shared/constants';
 import type { Components } from 'react-markdown';
@@ -267,7 +267,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: str
     setView((v) => ({ ...v, x: drag.originX + dx, y: drag.originY + dy }));
   }, []);
 
-  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  const handlePointerUp = useCallback((_e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     dragRef.current = null;
     if (!drag || drag.moved) return;

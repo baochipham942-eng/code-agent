@@ -3,7 +3,6 @@
 // ============================================================================
 
 import type {
-  ChannelId,
   ChannelType,
   ChannelMeta,
   ChannelMessage,
@@ -11,7 +10,6 @@ import type {
   ChannelAccountStatus,
   SendMessageOptions,
   SendMessageResult,
-  ChannelEvent,
 } from '../../shared/contract/channel';
 import { EventEmitter } from 'events';
 

@@ -215,7 +215,7 @@ export class AgentRequirementsAnalyzer {
    */
   async analyze(
     userMessage: string,
-    workingDirectory?: string
+    _workingDirectory?: string
   ): Promise<AgentRequirements> {
     logger.debug('Analyzing task requirements', { messageLength: userMessage.length });
 
@@ -489,7 +489,7 @@ export class AgentRequirementsAnalyzer {
    */
   private calculateConfidence(
     analysis: TaskAnalysis,
-    taskType: AgentTaskType
+    _taskType: AgentTaskType
   ): number {
     let confidence = 0.5;
 

@@ -18,7 +18,6 @@ import {
   parseGitHubUrl,
   checkForUpdates,
   updateRepository as gitUpdateRepository,
-  readRepoMeta,
   readRepoMetaAsync,
 } from './gitDownloader';
 import { parseSkillMd, hasSkillMd } from './skillParser';
@@ -482,7 +481,7 @@ class SkillRepositoryService implements Disposable {
         repositoryCount: this.config.repositories.length,
         disabledSkillCount: this.config.disabledSkills.length,
       });
-    } catch (error) {
+    } catch {
       // 配置文件不存在或无效，使用默认值
       logger.debug('Config file not found or invalid, using defaults');
     }

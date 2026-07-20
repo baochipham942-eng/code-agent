@@ -6,7 +6,7 @@
 import { SYSTEM_PROMPT } from '../../prompts/builder';
 import { setTrustedRemotePromptFragments } from '../../prompts/remoteFragments';
 import { createLogger } from '../infra/logger';
-import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
+import { CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
 import {
   getControlPlanePublicKeysFromEnv,
   isControlPlaneEnvelope,

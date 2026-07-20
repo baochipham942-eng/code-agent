@@ -27,7 +27,6 @@ import {
   ARTIFACT_UNUSABLE_RESPONSE_PATTERN,
   PERSISTENT_PROVIDER_ERROR_PATTERN,
   classifyProviderFallbackReason,
-  extractMessageText,
   formatFallbackReason,
   getFallbackChainForRequest,
   hasArtifactFileWriteRequiredMarker,

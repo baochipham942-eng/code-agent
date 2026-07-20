@@ -25,7 +25,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, SwarmTraceRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';

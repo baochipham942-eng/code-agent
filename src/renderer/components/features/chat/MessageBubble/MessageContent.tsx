@@ -109,7 +109,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   const components: Components = useMemo(
     () => ({
       // Code blocks and inline code
-      code({ node, className, children, ...props }) {
+      code({ node, className, children }) {
         // Check if this is a code block (has a parent pre element)
         // react-markdown wraps code blocks in <pre><code>
         const isCodeBlock = node?.position?.start.line !== node?.position?.end.line ||

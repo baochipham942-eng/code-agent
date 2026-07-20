@@ -10,10 +10,8 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Cpu,
   Zap,
   ArrowRight,
-  RefreshCw,
 } from 'lucide-react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import type { Translations } from '../../../../../i18n/zh';

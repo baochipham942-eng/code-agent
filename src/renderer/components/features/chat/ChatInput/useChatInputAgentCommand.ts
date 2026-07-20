@@ -7,7 +7,6 @@ import {
 } from './agentMentionRouting';
 import {
   buildNeoTopicMentionCandidates,
-  localizeNeoTagMentionAgent,
   NEO_TAG_MENTION_AGENT,
   NEO_TOPIC_MENTION_PREFIX,
 } from './neoMentionRouting';

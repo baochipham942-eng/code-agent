@@ -286,7 +286,7 @@ export class GUIAgent {
       `;
       try {
         await execAsync(`osascript -e '${script}'`);
-      } catch (error) {
+      } catch {
         // 备用方案：使用 cliclick（如果已安装）
         try {
           await execAsync(`cliclick c:${x},${y}`);

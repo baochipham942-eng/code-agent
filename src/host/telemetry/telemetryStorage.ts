@@ -12,7 +12,6 @@ import type Database from 'better-sqlite3';
 import type { RendererBundleStatus } from '../../shared/contract/update';
 import {
   parseTelemetryJson,
-  parseTelemetryTimestamp,
   guardTelemetryText,
   prepareRawPayload,
   guardTelemetryJsonText,

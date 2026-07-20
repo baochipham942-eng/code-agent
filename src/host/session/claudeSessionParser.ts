@@ -20,7 +20,6 @@
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import os from 'os';
 import readline from 'readline';
 
 // ============================================================================
@@ -139,14 +138,6 @@ export interface SFTExample {
 // ============================================================================
 // Path Utilities
 // ============================================================================
-
-/**
- * Get the Claude Code projects root directory.
- * Defaults to ~/.claude/projects/
- */
-function getClaudeProjectsRoot(): string {
-  return path.join(os.homedir(), '.claude', 'projects');
-}
 
 /**
  * Decode a Claude Code encoded project path.

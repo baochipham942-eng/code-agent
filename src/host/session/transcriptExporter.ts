@@ -13,13 +13,10 @@ import {
   MarkdownExporter,
   ExportOptions,
   ExportResult,
-  exportSessionToMarkdown,
 } from './exportMarkdown';
 import {
-  SessionLocalCache,
   CachedSession,
   CachedMessage,
-  getDefaultCache,
 } from './localCache';
 import { guardSensitiveText, guardSensitiveTextAsync } from '../security/sensitiveDataGuard';
 

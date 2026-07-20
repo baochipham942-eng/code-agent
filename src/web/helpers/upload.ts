@@ -24,7 +24,7 @@ export function cleanupUploadDirs(): void {
     for (const entry of fs.readdirSync(UPLOAD_ROOT_DIR)) {
       fs.rmSync(path.join(UPLOAD_ROOT_DIR, entry), { recursive: true, force: true });
     }
-  } catch (error) {
+  } catch {
     // Swallow — caller can log if needed
   }
 }

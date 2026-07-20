@@ -12,8 +12,6 @@ import type {
   PluginStorage,
   PluginHookRegistration,
   RegisteredPluginHook,
-  PluginHookContext,
-  PluginHookResult,
   PluginApiKeyProvider,
   PluginConstantsNamespace,
   PluginRegisterToolModuleOptions,

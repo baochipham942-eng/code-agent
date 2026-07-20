@@ -50,7 +50,7 @@ interface ModeState {
 
 export const useModeStore = create<ModeState>()(
   persist(
-    (set, get) => ({
+    (set, _get) => ({
       // Default to cowork mode (only mode)
       mode: 'cowork',
 

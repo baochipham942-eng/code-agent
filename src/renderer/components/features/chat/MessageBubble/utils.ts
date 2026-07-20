@@ -2,7 +2,7 @@
 // MessageBubble Utilities
 // ============================================================================
 
-import type { MarkdownBlockData, LanguageConfig, AttachmentIconConfig } from './types';
+import type { MarkdownBlockData, LanguageConfig } from './types';
 
 // Format timestamp to readable time
 export function formatTime(timestamp: number): string {

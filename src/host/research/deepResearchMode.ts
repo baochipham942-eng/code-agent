@@ -287,7 +287,7 @@ export class DeepResearchMode {
   private emitResearchComplete(
     success: boolean,
     report?: ResearchReport,
-    plan?: ResearchPlan
+    _plan?: ResearchPlan
   ): void {
     this.onEvent({
       type: 'research_complete',

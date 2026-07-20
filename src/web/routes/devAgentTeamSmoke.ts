@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Response } from 'express';
 import type { ModelConfig, ToolDefinition } from '../../shared/contract';
-import type { AgentTask, AgentTaskResult, ParallelExecutionResult } from '../../host/agent/parallelAgentCoordinator';
+import type { AgentTaskResult, ParallelExecutionResult } from '../../host/agent/parallelAgentCoordinator';
 import { getSwarmServices } from '../../host/agent/swarmServices';
 import type { ToolResolver } from '../../host/tools/dispatch/toolResolver';
 import type { SubagentExecutionContext } from '../../host/agent/subagentExecutorTypes';

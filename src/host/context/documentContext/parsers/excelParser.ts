@@ -65,7 +65,7 @@ export class ExcelParser implements DocumentParser {
 
         workbook.eachSheet((worksheet, sheetId) => {
           const rows: string[] = [];
-          worksheet.eachRow((row, rowNumber) => {
+          worksheet.eachRow((row, _rowNumber) => {
             const values = (row.values as unknown[])?.slice(1) || []; // exceljs row.values[0] 是空的
             rows.push(values.map(v => String(v ?? '')).join('\t'));
           });

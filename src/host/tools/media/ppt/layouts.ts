@@ -954,7 +954,7 @@ function fillCards3FromSchema(slide: PptxGenJS.Slide, content: Cards3Content, th
   });
 }
 
-function fillListFromSchema(slide: PptxGenJS.Slide, content: ListContent | HighlightContent, theme: ThemeConfig) {
+function fillListFromSchema(slide: PptxGenJS.Slide, content: ListContent | HighlightContent, _theme: ThemeConfig) {
   const points = content.points || [];
   const bulletText = points.map(p => `  ${normalizeCJKSpacing(p)}`).join('\n');
   slide.addText(bulletText, { placeholder: 'body' });
@@ -1085,7 +1085,7 @@ function fillComparisonFromSchema(slide: PptxGenJS.Slide, content: ComparisonCon
   });
 }
 
-function fillQuoteFromSchema(slide: PptxGenJS.Slide, content: QuoteContent, theme: ThemeConfig) {
+function fillQuoteFromSchema(slide: PptxGenJS.Slide, content: QuoteContent, _theme: ThemeConfig) {
   slide.addText(normalizeCJKSpacing(content.quote), { placeholder: 'slideTitle' });
   if (content.attribution) {
     slide.addText(normalizeCJKSpacing(content.attribution), { placeholder: 'body' });

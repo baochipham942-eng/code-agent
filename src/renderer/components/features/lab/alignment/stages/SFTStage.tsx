@@ -7,11 +7,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   ChevronRight,
   FileText,
-  Code,
   Play,
   Pause,
   RotateCcw,
-  MessageSquare,
   User,
   Bot,
 } from 'lucide-react';

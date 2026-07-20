@@ -209,7 +209,7 @@ class AgentLoop {
 | Tool result recovery | auto-loaded retry 和已恢复失败不参与“工具报错”判定；真实失败有复制错误和从此重试 action，复用 session fork 路径 | `src/renderer/utils/toolExecutionPresentation.ts` |
 | Bash result trust | Bash 长输出展示层保留头尾和最终进度帧；Bash metadata 里非 0 `exitCode` 会让 UI 标出“判定可能不可靠”，即使工具 result 被标成 success | `ToolCallDisplay/bashOutputPreview.ts`、`statusLabels.ts` |
 | Compaction stuck guard | auto-compaction 成功插入 summary block 后重新估算 raw tokens；若连续多次仍超过绝对 token 或 warning ratio 阈值，则暂停 `_autoCompactPaused`，并注入 `<context-window-too-small>` 提示模型收窄范围 | `src/host/agent/runtime/contextAssembly/compression.ts` |
-| AutoCompressor characterization | 旧 `AutoContextCompressor` 的策略选择、激进截断、代码块保留、compaction 计数和 wrap-up 判断有特征测试，后续改动先守住当前边界 | `tests/unit/context/autoCompressor.test.ts` |
+| AutoCompressor runtime state | `AutoContextCompressor` 只保留压力配置、token threshold、compaction 统计和 wrap-up；测试覆盖这组仍被生产消费的状态接口 | `tests/unit/context/autoCompressor.test.ts` |
 
 边界：
 
@@ -614,7 +614,7 @@ GAP-009 的"落盘后截断"进一步升级为**可寻址归档 + 按需回水**
 
 `ContextPressureController` 的决策优先级是 Pipeline 85% 信号、绝对 token 阈值、百分比 warning。执行 summary compaction 时，`CompactionService` 先解析 safe span：默认边界把 latest user instruction 留在 preserved side；默认或显式边界都不能拆开工具调用与结果，未闭合 tool call 同样保留。`compact-current` 自动生成的显式 anchor 先在 IPC 层钳到 latest user，再交给服务层的工具协议边界。安全规则最终留下少于 2 条可压消息时显式返回 `no_safe_compaction_span`；通过检查后才构建 survivor manifest，运行 hooks、summary、audit 和 validation，最后提交 compaction block。
 
-旧 `AutoContextCompressor.checkAndCompress()` 仍保留在 `src/host/context/autoCompressor.ts`，但生产代码没有调用该入口；线上只复用这个对象的配置、token threshold、统计和 wrap-up 能力，实际 summary 路径走 `ContextPressureController + CompactionService`。是否删除旧三层实现会影响兼容测试和公共类型，需单独 ADR 决策，本轮不改代码。
+旧 `AutoContextCompressor.checkAndCompress()` 三层入口及其独占 helper 已删除；`AutoContextCompressor` 只保留生产链路仍消费的配置、token threshold、统计和 wrap-up 状态。压缩执行统一走 `CompressionPipeline + ContextPressureController + CompactionService`，决策见 [ADR-045](./decisions/ADR-045-context-compression-single-architecture.md)。
 
 ### Survivor manifest
 

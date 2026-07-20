@@ -1018,7 +1018,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
         });
         if (autocompactNeeded) {
           logger.warn(
-            '[ContextAssembly] Pipeline reports autocompact-needed (usage ≥ 85%) — this path does not auto-execute L5; context stays hot until the AutoContextCompressor path triggers',
+            '[ContextAssembly] Pipeline reports autocompact-needed (usage ≥ 85%); ContextPressureController will route the compaction decision',
             { totalTokens: pipelineResult.totalTokens },
           );
         }

@@ -106,6 +106,7 @@
 | 041 | 浏览器登录态复用双通道与 `browser_action` 双引擎对标 | accepted |
 | 042 | 远程 MCP OAuth 浏览器授权（SDK OAuthClientProvider 接线） | accepted |
 | 043 | 组级工具步骤三态折叠预览 | accepted |
+| 045 | 上下文压缩单一架构：删除旧三层 `checkAndCompress` 入口 | accepted |
 
 > **ADR-040 执行状态（2026-07-18）**：Word / PPT / Excel locator、共享 picker、generated-PPT resolver 与隐私安全 telemetry 已随 #377/#385 合入 `main`。Poppler `26.07.0` 双原生架构候选由 run `29412794021` 产出并发布到项目控制的不可变 OSS 前缀，`config/poppler-sidecar.lock.json` 已为 `ready`，Poppler promotion stop-ship 已解除；正式版本仍需走常规签名、公证、DMG 与安装版验收。
 

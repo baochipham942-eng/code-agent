@@ -31,7 +31,7 @@ import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/contract';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getSystemPromptCache } from '../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MAX_MODE, MODEL_MAX_TOKENS, getContextWindow, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
+import { DEFAULT_MODELS, MAX_MODE, MODEL_MAX_TOKENS, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
 
 // Import refactored modules
 import type {
@@ -142,8 +142,6 @@ export class AgentLoop {
   private promptProfile: PromptProfile = 'interactive';
 
   constructor(config: AgentLoopConfig) {
-    const contextWindow = getContextWindow(config.modelConfig.model);
-    const lightCompressionThreshold = Math.max(8000, Math.round(contextWindow * 0.50));
     // B7：按模型能力档解析脚手架厚度（flag 关 / 未标注模型 = standard = 现状行为）
     const scaffoldProfile = resolveScaffoldProfileForModel(config.modelConfig.model);
     if (scaffoldProfile.tier !== 'standard') {
@@ -206,12 +204,7 @@ export class AgentLoop {
       historyVisibility: config.historyVisibility,
       deniedToolNames: config.deniedToolNames,
       hookMessageBuffer: new HookMessageBuffer(),
-      messageHistoryCompressor: new MessageHistoryCompressor({
-        threshold: lightCompressionThreshold,
-        targetTokens: Math.round(lightCompressionThreshold * 0.5),
-        preserveRecentCount: 6,
-        preserveUserMessages: true,
-      }),
+      messageHistoryCompressor: new MessageHistoryCompressor(),
       autoCompressor: getAutoCompressor(),
       compressionPipeline: new CompressionPipeline(),
       telemetryAdapter: config.telemetryAdapter

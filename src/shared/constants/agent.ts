@@ -95,15 +95,6 @@ export const AGENT_TIMEOUTS = {
   PARALLEL_TASK: 120_000,
 } as const;
 
-/** Observation Masking 常量 */
-export const OBSERVATION_MASKING = {
-  PRESERVE_RECENT_COUNT: 10,
-  MIN_TOKEN_THRESHOLD: 100,
-  PLACEHOLDER_SUCCESS: '[output cleared - tool was executed successfully]',
-  PLACEHOLDER_ERROR: '[output cleared - tool returned error]',
-  PLACEHOLDER_FILE_READ: '[File content omitted from history to save context. You have already received this file content earlier in this conversation. Do NOT re-read this file unless you have specific reason to believe it changed externally — rely on your prior understanding to proceed.]',
-} as const;
-
 /**
  * L0 Active Tool Result Prune 常量。
  * 压缩管线里跑在 L1 tool-result-budget 之前：超预算结果整体换成确定性占位符

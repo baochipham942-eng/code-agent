@@ -241,7 +241,7 @@ function extractExplicitReferences(message: string): ExplicitReference[] {
   }
 
   // URL
-  const urls = message.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi);
+  const urls = message.match(/https?:\/\/[^\s<>"{}|\\^`[\]]+/gi);
   if (urls) {
     urls.forEach(url => {
       references.push({ type: 'url', content: url });
@@ -249,7 +249,7 @@ function extractExplicitReferences(message: string): ExplicitReference[] {
   }
 
   // 文件路径 (Unix/Windows)
-  const filePaths = message.match(/(?:\/[\w\-\.]+)+\.\w+|[A-Z]:\\(?:[\w\-\.]+\\)*[\w\-\.]+\.\w+/g);
+  const filePaths = message.match(/(?:\/[\w\-.]+)+\.\w+|[A-Z]:\\(?:[\w\-.]+\\)*[\w\-.]+\.\w+/g);
   if (filePaths) {
     filePaths.forEach(path => {
       references.push({ type: 'file_path', content: path });
@@ -702,7 +702,7 @@ export class IntentClassifier {
   private analyzeMessageStructure(message: string): IntentClassification {
     const length = message.length;
     const hasMultipleQuestions = (message.match(/[？?]/g) || []).length > 1;
-    const hasListMarkers = /[•\-\d+\.\)]\s/.test(message);
+    const hasListMarkers = /[•\-\d+.)]\s/.test(message);
 
     // 多问题或列表 -> 多面分析
     if (hasMultipleQuestions || (hasListMarkers && length > 100)) {

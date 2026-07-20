@@ -13,7 +13,7 @@ const logger = createLogger('SkillInvocationResolver');
 const NAME_PATTERN = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 const DIRECT_SLASH_PATTERN = /^\s*\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?\s*$/i;
 const URL_LIKE_SLASH_PATTERN = /https?:\/\/|\b[\w.-]+\.[a-z]{2,}\//i;
-const ALIAS_SPLIT_PATTERN = /[,，、;；|\/\n]/;
+const ALIAS_SPLIT_PATTERN = /[,，、;；|/\n]/;
 const CJK_PATTERN = /[\u3400-\u9fff]/;
 const DESCRIPTION_TRIGGER_PATTERNS = [
   /(?:当用户(?:明确)?(?:提到|说|要求|需要|询问|问到)|用户(?:提到|说到)|适用于|用于)([^。.\n]+)/gi,

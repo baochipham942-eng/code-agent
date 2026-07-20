@@ -253,7 +253,7 @@ Features:
       // Skip translation when query language already matches target language
       const queryText = (params.query as string) || '';
       const hasChinese = /[\u4e00-\u9fff]/.test(queryText);
-      const isAllEnglish = /^[a-zA-Z0-9\s\-_.,;:!?'"()\[\]{}<>@#$%^&*+=|/\\~`]+$/.test(queryText);
+      const isAllEnglish = /^[a-zA-Z0-9\s\-_.,;:!?'"()[\]{}<>@#$%^&*+=|/\\~`]+$/.test(queryText);
       const skipTranslation =
         (language === 'zh' && hasChinese) ||
         (language === 'en' && isAllEnglish);

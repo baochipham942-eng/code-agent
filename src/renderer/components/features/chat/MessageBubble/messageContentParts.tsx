@@ -825,7 +825,7 @@ const isFilePath = (text: string): boolean => {
 
   // Single filename with known extension (e.g., 01-slide-cover.png, report.pdf)
   // Must look like a filename: no spaces, has a dot+ext
-  if (segments.length === 1 && /^[\w][\w.\-]*\.\w+$/.test(pathWithoutLine)) {
+  if (segments.length === 1 && /^[\w][\w.-]*\.\w+$/.test(pathWithoutLine)) {
     return true;
   }
 

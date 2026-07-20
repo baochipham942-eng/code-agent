@@ -50,7 +50,7 @@ export function truncateToolOutput(output: string, maxLength = 1000): string {
 
 export function isDangerousCommand(command: string): boolean {
   const dangerousPatterns = [
-    /rm\s+(-r|-rf|-f)?\s*[\/~]/,
+    /rm\s+(-r|-rf|-f)?\s*[/~]/,
     /rm\s+-rf?\s+\*/,
     />\s*\/dev\/sd/,
     /mkfs/,
@@ -78,7 +78,7 @@ export function toolMatchesPatternSet(
   }
 
   for (const pattern of patterns) {
-    const match = pattern.match(/^([A-Za-z][A-Za-z0-9_.:-]*)\(([A-Za-z0-9._\/@+-]+):\*\)$/);
+    const match = pattern.match(/^([A-Za-z][A-Za-z0-9_.:-]*)\(([A-Za-z0-9._/@+-]+):\*\)$/);
     if (!match) continue;
 
     const [, patternTool, prefix] = match;

@@ -369,7 +369,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           };
 
         // Interactions
-        case 'click':
+        case 'click': {
           if (targetRef) {
             const resolved = await browserService.clickTargetRef(targetRef, tabId);
             return {
@@ -396,6 +396,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
               },
             },
           };
+        }
 
         case 'click_text': {
           if (!text) {
@@ -423,7 +424,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           };
         }
 
-        case 'type':
+        case 'type': {
           if (text === undefined && !secretRef) {
             return { success: false, error: 'text or secretRef required for type' };
           }
@@ -463,6 +464,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
               },
             },
           };
+        }
 
         case 'press_key':
           if (!key) {

@@ -670,7 +670,7 @@ async function handleCommand(
       terminalOutput.success('Session cleared');
       return false;
 
-    case 'history':
+    case 'history': {
       const history = agent.getHistory();
       if (history.length === 0) {
         terminalOutput.info('暂无对话历史');
@@ -686,6 +686,7 @@ async function handleCommand(
         console.log('');
       }
       return false;
+    }
 
     case 'sessions':
       try {
@@ -707,7 +708,7 @@ async function handleCommand(
       }
       return false;
 
-    case 'session':
+    case 'session': {
       const sessionId = agent.getSessionId();
       if (sessionId) {
         try {
@@ -730,6 +731,7 @@ async function handleCommand(
         terminalOutput.info('尚未创建会话');
       }
       return false;
+    }
 
     case 'restore':
       if (args.length === 0) {
@@ -746,7 +748,7 @@ async function handleCommand(
       }
       return false;
 
-    case 'config':
+    case 'config': {
       const config = agent.getConfig();
       console.log(`
 当前配置:
@@ -757,6 +759,7 @@ async function handleCommand(
   会话 ID: ${agent.getSessionId() || '未创建'}
 `);
       return false;
+    }
 
     case 'vim':
     case 'vi': {

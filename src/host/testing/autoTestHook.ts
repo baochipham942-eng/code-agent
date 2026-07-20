@@ -120,7 +120,7 @@ export async function runAutoTests(
         case 'case_start':
           console.log(`  ▶️ Running: ${event.testId}`);
           break;
-        case 'case_end':
+        case 'case_end': {
           const icon = event.result.status === 'passed' ? '✅' :
                        event.result.status === 'failed' ? '❌' : '⏭️';
           console.log(`  ${icon} ${event.result.testId} (${event.result.duration}ms)`);
@@ -128,6 +128,7 @@ export async function runAutoTests(
             console.log(`     └─ ${event.result.failureReason}`);
           }
           break;
+        }
         case 'suite_end':
           console.log(generateConsoleReport(event.summary));
           break;

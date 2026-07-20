@@ -41,6 +41,7 @@ let fileSinkEnabled = true;
 let logDir = '';
 let logStream: fs.WriteStream | null = null;
 let logStreamDate = '';
+let fileSinkPathReported = false;
 
 /** 初始化日志目录并清理旧文件（best-effort） */
 function initFileSink(): void {
@@ -94,6 +95,10 @@ function getLogStream(): fs.WriteStream | null {
   try {
     const filePath = path.join(logDir, `code-agent-${today}.log`);
     logStream = fs.createWriteStream(filePath, { flags: 'a' });
+    if (!fileSinkPathReported) {
+      fileSinkPathReported = true;
+      console.error(`[Logger] file sink → ${filePath}`);
+    }
     logStream.on('error', () => {
       // Silently ignore write errors — best-effort logging
       logStream = null;

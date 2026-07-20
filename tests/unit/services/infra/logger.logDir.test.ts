@@ -29,6 +29,7 @@ describe('logger file sink log directory', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (originalLogDir === undefined) delete process.env.CODE_AGENT_LOG_DIR;
     else process.env.CODE_AGENT_LOG_DIR = originalLogDir;
     if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
@@ -38,14 +39,20 @@ describe('logger file sink log directory', () => {
   });
 
   it('uses CODE_AGENT_LOG_DIR for local runtime logs', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { createLogger, getCurrentLogFilePath } = await import('../../../../src/host/services/infra/logger');
     const logger = createLogger('LoggerLogDirTest');
     const logFile = getCurrentLogFilePath();
 
     logger.info('log-dir-override-smoke');
+    logger.info('second-log-entry');
     await logger.dispose();
 
     expect(logFile.startsWith(process.env.CODE_AGENT_LOG_DIR!)).toBe(true);
+    const sinkPathReports = consoleError.mock.calls.filter(
+      ([message]) => message === `[Logger] file sink → ${logFile}`,
+    );
+    expect(sinkPathReports).toHaveLength(1);
     const content = await waitForLogFile(logFile);
     expect(content).toContain('LoggerLogDirTest');
     expect(content).toContain('log-dir-override-smoke');

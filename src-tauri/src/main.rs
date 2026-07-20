@@ -53,7 +53,6 @@ const HEALTH_INTERVAL: Duration = Duration::from_millis(100);
 /// 原 10s,信号丢失时最坏也就 ~6s 出窗口而非 11s)。
 const RENDERER_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_CLOUD_API_URL: &str = "https://agentneo.vercel.app";
-const LOG_DIR_ENV: &str = "CODE_AGENT_LOG_DIR";
 const BUNDLED_RUNTIME_ROOT_ENV: &str = "AGENT_NEO_BUNDLED_RUNTIME_ROOT";
 const RESOURCE_DIR_ENV: &str = "AGENT_NEO_RESOURCE_DIR";
 const BOOT_DIAGNOSTICS_PATH_ENV: &str = "AGENT_NEO_TAURI_BOOT_DIAGNOSTICS_FILE";
@@ -1209,9 +1208,6 @@ fn spawn_web_server_recording(
 
     for (key, value) in web_server_runtime_env(&working_dir, resource_dir.as_deref()) {
         command.env(key, value.as_os_str());
-    }
-    if let Some(log_dir) = web_server_log_dir(app) {
-        command.env(LOG_DIR_ENV, log_dir.as_os_str());
     }
     if let Some(boot_path) = boot_diagnostics_path(app) {
         command.env(BOOT_DIAGNOSTICS_PATH_ENV, boot_path.as_os_str());

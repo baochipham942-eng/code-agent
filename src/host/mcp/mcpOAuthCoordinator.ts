@@ -102,7 +102,7 @@ export class McpOAuthCoordinator {
     const flow = input.flowId
       ? this.flowsById.get(input.flowId)
       : this.flowsByIdentity.get(input.serverIdentity);
-    if (!flow || flow.serverIdentity !== input.serverIdentity) {
+    if (flow?.serverIdentity !== input.serverIdentity) {
       throw new Error(`MCP OAuth flow is not active for ${input.serverIdentity}`);
     }
 

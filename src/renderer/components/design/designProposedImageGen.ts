@@ -20,7 +20,7 @@ import { loadImageDims, nextVariantNodeId } from './useDesignCanvasGeneration';
 export function resolveProposedImageModel(opModel: string | undefined, formModel: string): string {
   if (opModel) {
     const m = imageModelById(opModel);
-    if (m && m.caps.includes('t2i')) return opModel;
+    if (m?.caps.includes('t2i')) return opModel;
   }
   return formModel;
 }

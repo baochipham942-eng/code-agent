@@ -81,7 +81,7 @@ export async function executeProposeVideoOps(
   // 解析视频模型（红线：agent 不得引入非法模型）：指定 model 仅当它存在且支持该 mode 才用；
   // 否则回退该 mode 下首个内置模型。无可用模型 → 报错（不静默走错模型）。
   const requested = typeof args.model === 'string' ? videoModelById(args.model) : undefined;
-  const resolved = requested && requested.caps.includes(mode) ? requested : videoModelsWithCap(mode)[0];
+  const resolved = requested?.caps.includes(mode) ? requested : videoModelsWithCap(mode)[0];
   if (!resolved) {
     return { ok: false, error: `no available video model for mode ${mode}`, code: 'DOMAIN_ERROR' };
   }

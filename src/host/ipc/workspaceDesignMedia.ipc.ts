@@ -104,7 +104,7 @@ async function generateDesignImageOnce(
   // 桥接模型（多模态桥接 Spec 1）：`provider:model` id（唯一含冒号的来源）→ 复用 openai-compat，
   // 端点取自源聊天 provider 的 baseUrl+key（key 在 host 内解析，不出 host）。内置/custom id 不含
   // 冒号，故此判定不误伤它们；必须在 custom/内置注册表查询之前拦下（二者都查不到桥接 id）。
-  if (payload.model && payload.model.includes(':')) {
+  if (payload.model?.includes(':')) {
     // host 侧能力闸（终审 M1）：deriveBridgedVisualModels 只派生 gen-capable 模型，天然挡住
     // 聊天桥接 id（chat-model 不在派生表）。含冒号但不在派生表/媒介不符 → 显式抛错，不 fall
     // through 到 custom/内置（冒号 id 不可能是它们），杜绝拿 key 打错端点的付费调用。

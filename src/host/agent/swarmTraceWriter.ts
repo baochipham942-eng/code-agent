@@ -481,7 +481,7 @@ export class SwarmTraceWriter {
   private getRunForEvent(event: SwarmEvent): RunState | undefined {
     if (!this.hasValidScope(event)) return undefined;
     const run = this.runs.get(this.getRunKey(event));
-    if (!run || run.treeId !== event.treeId) return undefined;
+    if (run?.treeId !== event.treeId) return undefined;
     return run;
   }
 

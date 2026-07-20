@@ -28,7 +28,7 @@ import { ROLE_ASSETS } from '../../../shared/constants';
  * 角色 ID = agent 注册 id（agents/<id>.md 的 frontmatter name），允许中文。
  */
 export function isSafeRoleId(roleId: string): boolean {
-  if (!roleId || !roleId.trim()) return false;
+  if (!roleId?.trim()) return false;
   if (roleId !== path.basename(roleId)) return false;
   if (roleId === '.' || roleId === '..') return false;
   // 禁止路径分隔符和 null 字节

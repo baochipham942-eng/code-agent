@@ -163,7 +163,7 @@ export async function enqueueRoleDraft(input: {
     logger.warn('Role draft rejected: invalid roleId', { roleId: input.roleId });
     return { draft: null, reason: `角色名非法（不能含 / \\ 等路径字符）："${input.roleId}"` };
   }
-  if (!input.systemPrompt || !input.systemPrompt.trim()) {
+  if (!input.systemPrompt?.trim()) {
     return { draft: null, reason: '缺少系统提示词（systemPrompt）' };
   }
 

@@ -57,7 +57,7 @@ function extractFrontmatter(content: string): { summary: string; endIndex: numbe
   }
 
   const endMatch = content.slice(3).match(/\n---\s*(\n|$)/);
-  if (!endMatch || endMatch.index === undefined) {
+  if (endMatch?.index === undefined) {
     return null;
   }
 

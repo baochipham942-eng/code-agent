@@ -22,7 +22,7 @@ export interface ExplicitAgentOverride {
 export function resolveExplicitAgentOverride(
   agentId: string | null | undefined,
 ): ExplicitAgentOverride | null {
-  if (!agentId || !agentId.trim()) return null;
+  if (!agentId?.trim()) return null;
   try {
     const agent = getPredefinedAgent(agentId.trim());
     return {

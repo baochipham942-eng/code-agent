@@ -213,7 +213,7 @@ export function getIncompleteToolCallIds(snapshot: Pick<StreamSnapshot, 'toolCal
 
 function writeOwnedSnapshot(snapshot: StreamSnapshot, identity: StreamSnapshotIdentity): boolean {
   const owner = readOwner(identity);
-  if (!owner || owner.runId !== identity.runId.trim()) {
+  if (owner?.runId !== identity.runId.trim()) {
     logger.debug('Ignored stream snapshot from stale run owner', {
       sessionId: identity.sessionId,
       runId: identity.runId,

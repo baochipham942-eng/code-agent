@@ -204,7 +204,7 @@ export class SwarmLaunchApprovalGate {
     this.pendingResolvers.clear();
     for (const [requestId, resolver] of entries) {
       const request = this.requests.get(requestId);
-      if (request && request.status === 'pending') {
+      if (request?.status === 'pending') {
         request.status = 'rejected';
         request.feedback = feedback;
         request.resolvedAt = now;
@@ -248,7 +248,7 @@ export class SwarmLaunchApprovalGate {
 
     for (const [requestId, resolver] of Array.from(this.pendingResolvers.entries())) {
       const request = this.requests.get(requestId);
-      if (!request || request.sessionId !== scope.sessionId || request.runId !== scope.runId) continue;
+      if (request?.sessionId !== scope.sessionId || request.runId !== scope.runId) continue;
 
       this.pendingResolvers.delete(requestId);
       request.status = 'rejected';
@@ -276,7 +276,7 @@ export class SwarmLaunchApprovalGate {
 
     for (const [requestId, resolver] of Array.from(this.pendingResolvers.entries())) {
       const request = this.requests.get(requestId);
-      if (!request || request.sessionId !== sessionId) continue;
+      if (request?.sessionId !== sessionId) continue;
 
       this.pendingResolvers.delete(requestId);
       request.status = 'rejected';

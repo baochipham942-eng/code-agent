@@ -202,7 +202,7 @@ export async function readProviderIconAssetManifest(baseDir?: string): Promise<P
     const assets: Record<string, ProviderIconAssetManifestEntry> = {};
     for (const [icon, entry] of Object.entries(parsed.assets)) {
       const normalized = parseManifestEntry(entry);
-      if (normalized && normalized.icon === icon) {
+      if (normalized?.icon === icon) {
         assets[icon] = normalized;
       }
     }

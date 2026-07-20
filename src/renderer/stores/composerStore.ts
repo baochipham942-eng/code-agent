@@ -36,7 +36,7 @@ function readActiveLivePreviewSelection(): SelectedElementInfo | null {
   const activeId = appState.activePreviewTabId;
   if (!activeId) return null;
   const tab = appState.previewTabs.find((t) => t.id === activeId);
-  if (!tab || tab.kind !== 'liveDev' || !tab.selectedElement) return null;
+  if (tab?.kind !== 'liveDev' || !tab.selectedElement) return null;
   return toEnvelopeSelection(tab.selectedElement);
 }
 

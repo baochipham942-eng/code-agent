@@ -120,7 +120,7 @@ export function buildDAGVisualizationState(dag: TaskDAG): DAGVisualizationState 
       const sourceId = criticalPath[i];
       const targetId = criticalPath[i + 1];
       const edge = edges.find(e => e.source === sourceId && e.target === targetId);
-      if (edge && edge.data) {
+      if (edge?.data) {
         edge.data.isCriticalPath = true;
       }
     }

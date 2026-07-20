@@ -66,7 +66,7 @@ const renderStepGroup = (label: string, steps: ModelFallbackTraceStep[]) => {
 };
 
 function renderToolPolicy(policy: ModelFallbackToolPolicy | undefined) {
-  if (!policy || policy.status !== 'disabled' || policy.originalToolCount <= policy.effectiveToolCount) return null;
+  if (policy?.status !== 'disabled' || policy.originalToolCount <= policy.effectiveToolCount) return null;
   const names = policy.disabledToolNames ?? [];
   const preview = names.slice(0, 4).join(', ');
   const suffix = names.length > 4 ? ` +${names.length - 4}` : '';

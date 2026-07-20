@@ -88,7 +88,6 @@ const AgentCard: React.FC<{
         agentId: agent.id,
       });
     } catch (err) {
-      // eslint-disable-next-line no-console -- user-initiated cancel; surfacing via UI toast is follow-up
       console.warn('[SwarmMonitor] swarm:cancel-agent failed', err);
     }
   };

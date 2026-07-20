@@ -156,7 +156,7 @@ function resolveImportPath(importPath: string, fromFile: string, rootDir: string
   if (!importPath.startsWith('.')) return null;
 
   const fromDir = path.dirname(path.join(rootDir, fromFile));
-  let resolved = path.resolve(fromDir, importPath);
+  const resolved = path.resolve(fromDir, importPath);
 
   // 尝试补全扩展名
   const extensions = ['.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js'];

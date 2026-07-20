@@ -466,7 +466,10 @@ export class LabService implements Disposable {
         generationTime,
       };
     } catch (error) {
-      throw new Error(error instanceof Error ? error.message : String(error));
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(String(error), { cause: error });
     }
   }
 

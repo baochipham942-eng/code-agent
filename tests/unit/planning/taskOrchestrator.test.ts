@@ -137,6 +137,37 @@ describe('TaskOrchestrator JSON parsing', () => {
     expect(loggerMocks.error).not.toHaveBeenCalled();
   });
 
+  it('preserves strict and fallback parser errors in the cause chain', () => {
+    const strictError = new SyntaxError('strict parser failed');
+    const looseError = new SyntaxError('fallback parser failed');
+    vi.spyOn(JSON, 'parse')
+      .mockImplementationOnce(() => {
+        throw strictError;
+      })
+      .mockImplementationOnce(() => {
+        throw looseError;
+      });
+
+    const orchestrator = createOrchestrator() as unknown as {
+      parseResponse(response: string): unknown;
+    };
+
+    let thrown: unknown;
+    try {
+      orchestrator.parseResponse('{ invalid: json }');
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    const candidateFailures = (thrown as Error).cause;
+    expect(candidateFailures).toBeInstanceOf(AggregateError);
+    const candidateError = (candidateFailures as AggregateError).errors[0] as Error;
+    expect(candidateError).toBeInstanceOf(Error);
+    expect(candidateError.cause).toBe(looseError);
+    expect(looseError.cause).toBe(strictError);
+  });
+
   it('isolates user formatting instructions inside the task payload', async () => {
     mockModelResponse('{"shouldParallel":false,"reason":"单一任务","criticalPathLength":2,"parallelDimensions":1,"confidence":0.93}');
 

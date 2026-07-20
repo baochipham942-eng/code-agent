@@ -17,14 +17,17 @@ const QueuedInputStatusSchema = z.enum([
   'failed',
 ]);
 
-const ConversationEnvelopeSchema = z.custom<ConversationEnvelope>(
-  (value) => (
-    typeof value === 'object'
-    && value !== null
-    && typeof (value as { content?: unknown }).content === 'string'
-  ),
-  { message: 'Expected a ConversationEnvelope with string content' },
-);
+const ConversationModelSpecSchema = z.object({
+  provider: z.string().min(1),
+  model: z.string().min(1),
+});
+
+const ConversationEnvelopeSchema = z.object({
+  content: z.string(),
+  options: z.object({
+    modelSpec: ConversationModelSpecSchema.optional(),
+  }).passthrough().optional(),
+}).passthrough().transform((value) => value as ConversationEnvelope);
 
 export const QueuedInputSchema: z.ZodType<QueuedInput> = z.object({
   id: z.string(),

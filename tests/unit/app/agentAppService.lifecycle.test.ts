@@ -347,7 +347,10 @@ describe('AgentAppService lifecycle routing', () => {
         selectedSkillIds: ['docx'],
         turnCapabilityScopeMode: 'manual',
       },
-      options: { researchMode: false },
+      options: {
+        researchMode: false,
+        modelSpec: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      },
     } as any);
 
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/tmp/project');
@@ -361,6 +364,7 @@ describe('AgentAppService lifecycle routing', () => {
       [{ name: 'a.txt' }],
       expect.objectContaining({
         researchMode: false,
+        modelSpec: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
         toolScope: expect.objectContaining({ allowedSkillIds: ['docx'] }),
       }),
       expect.objectContaining({

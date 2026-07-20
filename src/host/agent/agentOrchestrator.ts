@@ -33,7 +33,6 @@ import { generateMessageId, generatePermissionRequestId } from '../../shared/uti
 import { buildGoalSeedTodos } from '../../shared/utils/goalTodos';
 import { createLogger } from '../services/infra/logger';
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
-import { getModelSessionState } from '../session/modelSessionState';
 import { getRoutingService } from '../routing';
 import type { RoutingContext, RoutingResolution } from '../../shared/contract/agentRouting';
 import { getTelemetryCollector } from '../telemetry';
@@ -56,7 +55,12 @@ import {
   mapAutoAgentStatusToDAGStatus,
   buildDAGStatusEvent,
 } from './orchestrator/dagManager';
-import { resolveModelConfig, getDefaultModelByProvider, getPermissionLevel } from './orchestrator/modelConfigResolver';
+import {
+  resolveModelConfig,
+  resolveRunModelConfig,
+  getDefaultModelByProvider,
+  getPermissionLevel,
+} from './orchestrator/modelConfigResolver';
 import { runDeepResearch, checkAndRunSemanticResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
 import { setSessionTodos, syncTodosToSessionTasks } from './todoParser';
@@ -206,32 +210,14 @@ export class AgentOrchestrator {
       logger.error('Failed to save user message:', error);
     }
 
-    // Get model config (with E4 session override support)
-    let modelConfig = this.getModelConfig(settings);
+    // 排队恢复的显式模型优先于 E4 会话 override；旧 envelope 仍沿用原解析链。
+    let modelConfig = resolveRunModelConfig(
+      this.configService,
+      settings,
+      sessionId,
+      options?.modelSpec,
+    );
     if (sessionId) {
-      const modelState = getModelSessionState();
-      const override = modelState.getOverride(sessionId);
-      if (override) {
-        if (override.adaptive === true) {
-          // 用户选了"自动" → 保持默认 provider/model，只打开 adaptiveRouter
-          modelConfig = { ...modelConfig, adaptive: true };
-          logger.info('[模型选择] session 选了"自动"，使用默认模型 + adaptiveRouter');
-        } else {
-          const apiKey = this.configService.getApiKey(override.provider);
-          const providerSettings = settings.models?.providers?.[override.provider];
-          modelConfig = {
-            ...modelConfig,
-            provider: override.provider,
-            model: override.model,
-            apiKey: apiKey || modelConfig.apiKey,
-            baseUrl: providerSettings?.baseUrl || modelConfig.baseUrl,
-            temperature: override.temperature ?? modelConfig.temperature,
-            maxTokens: override.maxTokens ?? modelConfig.maxTokens,
-            adaptive: false,
-          };
-          logger.info(`[模型选择] 使用 session override: provider=${override.provider}, model=${override.model}`);
-        }
-      }
       this.updateContextHealthSnapshot(sessionId, modelConfig.model);
     }
 

@@ -3,7 +3,9 @@
 // ============================================================================
 
 import type { ModelConfig, ModelProvider, PermissionRequest } from '../../../shared/contract';
+import type { ConversationModelSpec } from '../../../shared/contract/conversationEnvelope';
 import type { ConfigService } from '../../services/core/configService';
+import { getModelSessionState } from '../../session/modelSessionState';
 import {
   DEFAULT_MODELS,
   DEFAULT_PROVIDER,
@@ -53,6 +55,48 @@ export function resolveModelConfig(
     temperature: 0.7,
     maxTokens,
   };
+}
+
+export function resolveRunModelConfig(
+  configService: ConfigService,
+  settings: ReturnType<ConfigService['getSettings']>,
+  sessionId: string | null,
+  explicitModelSpec?: ConversationModelSpec,
+): ModelConfig {
+  let modelConfig = resolveModelConfig(configService, settings);
+  if (explicitModelSpec) {
+    const provider = explicitModelSpec.provider as ModelProvider;
+    const providerSettings = settings.models?.providers?.[provider];
+    return {
+      ...modelConfig,
+      provider,
+      model: explicitModelSpec.model,
+      apiKey: configService.getApiKey(provider) || modelConfig.apiKey,
+      baseUrl: providerSettings?.baseUrl || modelConfig.baseUrl,
+      adaptive: false,
+    };
+  }
+
+  const override = sessionId ? getModelSessionState().getOverride(sessionId) : null;
+  if (override?.adaptive === true) {
+    logger.info('[模型选择] session 选了"自动"，使用默认模型 + adaptiveRouter');
+    return { ...modelConfig, adaptive: true };
+  }
+  if (override) {
+    const providerSettings = settings.models?.providers?.[override.provider];
+    modelConfig = {
+      ...modelConfig,
+      provider: override.provider,
+      model: override.model,
+      apiKey: configService.getApiKey(override.provider) || modelConfig.apiKey,
+      baseUrl: providerSettings?.baseUrl || modelConfig.baseUrl,
+      temperature: override.temperature ?? modelConfig.temperature,
+      maxTokens: override.maxTokens ?? modelConfig.maxTokens,
+      adaptive: false,
+    };
+    logger.info(`[模型选择] 使用 session override: provider=${override.provider}, model=${override.model}`);
+  }
+  return modelConfig;
 }
 
 /**

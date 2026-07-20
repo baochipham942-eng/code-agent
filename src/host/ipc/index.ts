@@ -78,6 +78,7 @@ import { registerPiiHandlers } from './pii.ipc';
 import { registerAlmaRegistryHandlers } from './almaRegistry.ipc';
 import { registerGenerativeUIHandlers } from './generativeUI.ipc';
 import { registerFolderTrustHandlers } from './folderTrust.ipc';
+import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
 /**
  * IPC handler 注册所需的依赖
@@ -202,7 +203,20 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   // Background task handlers (后台任务)
   registerBackgroundHandlers(getMainWindow);
   registerBackgroundTaskLedgerHandlers(ipcMain);
-  registerQueuedInputHandlers(ipcMain);
+  registerQueuedInputHandlers(ipcMain, {
+    resolveModelSpec: (sessionId) => {
+      const activeRunModelSpec = getApplicationRunRegistry().getModelSpecBySessionId(sessionId);
+      if (activeRunModelSpec) return activeRunModelSpec;
+
+      const activeTaskModelSpec = getTaskManager()?.getActiveModelSpec(sessionId);
+      if (activeTaskModelSpec) return activeTaskModelSpec;
+
+      const override = getAppService()?.getModelOverride(sessionId);
+      return override && override.adaptive !== true
+        ? { provider: override.provider, model: override.model }
+        : undefined;
+    },
+  });
 
   // Diff handlers (变更追踪)
   registerDiffHandlers();

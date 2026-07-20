@@ -115,6 +115,32 @@ describe('WebSessionStore', () => {
     expect(sessionMessages.get('session-cold')).toEqual(history);
   });
 
+  it('loadSessionHistoryForRun falls back to infra when CLI SessionManager is not persistent', async () => {
+    const cliGetMessages = vi.fn(async () => [] as Message[]);
+    const isPersistent = vi.fn(async () => false);
+    const infraGetMessages = vi.fn(async () => [
+      { id: 'infra-user', role: 'user', content: '上一轮', timestamp: 1 },
+      { id: 'infra-assistant', role: 'assistant', content: '回答', timestamp: 2 },
+    ] as Message[]);
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => ({
+        getMessages: cliGetMessages,
+        isPersistent,
+      }),
+      tryGetInfraSessionManager: async () => ({ getMessages: infraGetMessages }),
+      logger,
+      getDatabase: vi.fn(),
+    });
+
+    const history = await store.loadSessionHistoryForRun('session-infra-fallback');
+
+    expect(isPersistent).toHaveBeenCalledTimes(1);
+    expect(cliGetMessages).not.toHaveBeenCalled();
+    expect(infraGetMessages).toHaveBeenCalledWith('session-infra-fallback');
+    expect(history.map((message) => message.id)).toEqual(['infra-user', 'infra-assistant']);
+    expect(sessionMessages.get('session-infra-fallback')).toEqual(history);
+  });
+
   it('prePersistUserMessage updates a duplicate id through the direct DB fallback', async () => {
     setDbAvailable(true);
     const db = createDatabaseStub();

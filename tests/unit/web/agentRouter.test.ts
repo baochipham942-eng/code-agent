@@ -8,7 +8,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 import { createCLIAgent } from '../../../src/cli/adapter';
-import { createAgentRouter } from '../../../src/web/routes/agent';
+import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
 import type { Message } from '../../../src/shared/contract';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
 import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
@@ -309,6 +309,21 @@ function parseSSEData(raw: string, eventName: string): Record<string, unknown> |
 }
 
 describe('createAgentRouter', () => {
+  it('restores queued modelSpec into the explicit web run body', () => {
+    expect(buildQueuedAgentRunBody({
+      content: 'queued follow-up',
+      sessionId: 'session-model-restore',
+      options: {
+        modelSpec: { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+      },
+    })).toMatchObject({
+      prompt: 'queued follow-up',
+      sessionId: 'session-model-restore',
+      provider: 'xiaomi',
+      model: 'mimo-v2.5-pro',
+    });
+  });
+
   beforeEach(async () => {
     vi.clearAllMocks();
     runRegistry.clear();

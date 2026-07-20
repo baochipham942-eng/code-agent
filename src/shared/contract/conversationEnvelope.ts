@@ -14,6 +14,11 @@ export type RuntimeInputMode = 'supplement' | 'redirect';
 export type RuntimeInputDelivery = 'in_flight' | 'queued_next_turn';
 export type TurnCapabilityScopeMode = 'auto' | 'manual';
 
+export interface ConversationModelSpec {
+  provider: string;
+  model: string;
+}
+
 export interface BrowserSessionIntentPreview {
   url?: string | null;
   title?: string | null;

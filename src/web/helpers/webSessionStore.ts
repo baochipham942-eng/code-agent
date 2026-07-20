@@ -127,14 +127,15 @@ interface WebCLISessionManagerLike {
   isPersistent?(): Promise<boolean>;
 }
 
-interface InfraSessionCacheInvalidator {
+interface InfraSessionManagerLike {
+  getMessages?(sessionId: string, limit?: number): Promise<Message[]>;
   invalidateSessionCache?(sessionId: string): void;
 }
 
 interface WebSessionStoreDeps {
   // webServer 生产注入的是 src/cli/bootstrap.getSessionManager() 返回的共享单例。
   tryGetSessionManager: () => Promise<WebCLISessionManagerLike | null>;
-  tryGetInfraSessionManager?: () => Promise<InfraSessionCacheInvalidator | null>;
+  tryGetInfraSessionManager?: () => Promise<InfraSessionManagerLike | null>;
   logger: WebRouteLogger;
   // 仅保留给 CLI SM 不可用时的既有兼容降级；生产正常路径不经过 core writer。
   getDatabase: () => DatabaseService | Promise<DatabaseService>;
@@ -408,7 +409,13 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
       }
 
       try {
-        const sm = await deps.tryGetSessionManager();
+        const cliSessionManager = await resolvePersistentSessionManager(
+          await deps.tryGetSessionManager(),
+          deps.logger,
+        );
+        const sm = cliSessionManager?.getMessages
+          ? cliSessionManager
+          : await deps.tryGetInfraSessionManager?.();
         if (!sm?.getMessages) {
           return [];
         }

@@ -195,7 +195,7 @@ function processNode(
     if (tag === 'li') {
       // Collect only direct text children (not nested lists)
       const directText: string[] = [];
-      $node.contents().each((__, child) => {
+      $node.contents().each((_index, child) => {
         if (child.type === 'text') {
           const t = $(child).text().trim();
           if (t) directText.push(t);
@@ -212,7 +212,7 @@ function processNode(
         lines.push('- ' + directText.join(' '));
       }
       // Recurse into nested lists
-      $node.children('ul, ol').each((__, nested) => {
+      $node.children('ul, ol').each((_index, nested) => {
         processNode($(nested), $, lines, baseUrl);
       });
       return;
@@ -245,7 +245,7 @@ function processNode(
       if (inlineText) lines.push(inlineText);
       // Also recurse for any block-level children inside div/section
       if (tag === 'div' || tag === 'section') {
-        $node.children('div, p, section, ul, ol, table, pre, blockquote, h1, h2, h3, h4, h5, h6').each((__, child) => {
+        $node.children('div, p, section, ul, ol, table, pre, blockquote, h1, h2, h3, h4, h5, h6').each((_index, child) => {
           const childLines: string[] = [];
           processNode($(child), $, childLines, baseUrl);
           lines.push(...childLines);
@@ -275,7 +275,7 @@ function processNode(
       lines.push('');
       $node.find('tr').each((_, tr) => {
         const cells: string[] = [];
-        $(tr).find('th, td').each((__, cell) => {
+        $(tr).find('th, td').each((_index, cell) => {
           cells.push($(cell).text().trim());
         });
         if (cells.length > 0) lines.push(cells.join(' | '));

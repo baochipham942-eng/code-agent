@@ -656,17 +656,17 @@ export function registerSettingsHandlers(
    * 但 `!ref` 常被文件虚标（几行数据声明到几百行），所以尾部空行要裁掉：只裁尾巴。
    */
   const sheetRowsWithRealNumbers = (
-    XLSX: typeof import('xlsx'),
+    xlsx: typeof import('xlsx'),
     sheet: import('xlsx').WorkSheet,
     options: { raw?: boolean } = {},
   ): { rows: unknown[][]; rangeStart: SheetRangeStart } => {
     // sheet_to_json 会把 used range 左上角归一成数组 [0][0]；真实起点必须从同一份
     // !ref 解一次后随结果向下传，不能让 text / preview 各自猜 A1。
     const decodedStart = sheet['!ref']
-      ? XLSX.utils.decode_range(sheet['!ref']).s
+      ? xlsx.utils.decode_range(sheet['!ref']).s
       : { r: 0, c: 0 };
     const rangeStart = { row: decodedStart.r, column: decodedStart.c };
-    const json: unknown[][] = XLSX.utils.sheet_to_json(sheet, {
+    const json: unknown[][] = xlsx.utils.sheet_to_json(sheet, {
       header: 1,
       blankrows: true,
       ...options,
@@ -688,14 +688,14 @@ export function registerSettingsHandlers(
    * 转义也全部归 XLSX，不用手搓 CSV quoting。
    */
   const rowsToNumberedCsv = (
-    XLSX: typeof import('xlsx'),
+    xlsx: typeof import('xlsx'),
     trimmed: unknown[][],
     rangeStart: SheetRangeStart,
   ): string => {
     const numbered = trimmed
       .map((row, index) => [resolveSheetCoordinate(index, 0, rangeStart).row, ...(row || [])])
       .filter((row) => !isBlankRow(row.slice(1)));
-    return XLSX.utils.sheet_to_csv(XLSX.utils.aoa_to_sheet(numbered));
+    return xlsx.utils.sheet_to_csv(xlsx.utils.aoa_to_sheet(numbered));
   };
 
   // Excel 文件解析

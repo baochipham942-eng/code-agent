@@ -80,6 +80,24 @@ export default tseslint.config(
           format: ['camelCase'],
           leadingUnderscore: 'allow',
         },
+        // React/JSX component functions are referenced as PascalCase tags.
+        {
+          selector: 'function',
+          filter: {
+            regex: '^[A-Z][A-Za-z0-9]*$',
+            match: true,
+          },
+          format: ['PascalCase'],
+        },
+        // Exported test seams use an intentional dunder contract across test files.
+        {
+          selector: 'function',
+          filter: {
+            regex: '^__(?:get|reset|set)[A-Z][A-Za-z0-9]*(?:ForTest|ForTests)$',
+            match: true,
+          },
+          format: null,
+        },
         // 变量可以是 camelCase 或 UPPER_CASE
         {
           selector: 'variable',
@@ -91,6 +109,15 @@ export default tseslint.config(
           selector: 'parameter',
           format: ['camelCase'],
           leadingUnderscore: 'allow',
+        },
+        // Destructured React icon components must stay uppercase to render as JSX tags.
+        {
+          selector: 'parameter',
+          filter: {
+            regex: '^Icon$',
+            match: true,
+          },
+          format: ['PascalCase'],
         },
         // 类型使用 PascalCase
         {
@@ -107,6 +134,66 @@ export default tseslint.config(
           selector: 'property',
           format: ['camelCase', 'snake_case', 'UPPER_CASE', 'PascalCase'],
           leadingUnderscore: 'allow',
+        },
+        // Quoted type keys model external storage, ARIA, frontmatter, and dataset contracts.
+        {
+          selector: 'typeProperty',
+          modifiers: ['requiresQuotes'],
+          format: null,
+        },
+        // Dunder type keys are browser globals, dev/test hooks, or serialized envelope sentinels.
+        {
+          selector: 'typeProperty',
+          filter: {
+            regex: '^__[A-Za-z][A-Za-z0-9_]*$',
+            match: true,
+          },
+          format: null,
+        },
+        // Channel emitter method names are wire-level event identifiers.
+        {
+          selector: 'typeMethod',
+          filter: {
+            regex: '^(?:status_change|account_status_change|accounts_changed|inbox_changed)$',
+            match: true,
+          },
+          format: null,
+        },
+        // These dunder methods are explicit browser-window bridge contracts.
+        {
+          selector: 'typeMethod',
+          filter: {
+            regex: '^__(?:openLivePreview|startDevServer|stopDevServer|openDevServerLauncher)$',
+            match: true,
+          },
+          format: null,
+        },
+        // Feishu SDK handlers are keyed by dotted event names from the SDK contract.
+        {
+          selector: 'objectLiteralMethod',
+          filter: {
+            regex: '^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9_]*)+$',
+            match: true,
+          },
+          format: null,
+        },
+        // Prompt-hook placeholders are public $UPPER_CASE template tokens.
+        {
+          selector: 'objectLiteralMethod',
+          filter: {
+            regex: '^\\$[A-Z][A-Z_]*$',
+            match: true,
+          },
+          format: null,
+        },
+        // These local bindings deliberately mirror snake_case MCP/tool protocol fields.
+        {
+          selector: 'variable',
+          filter: {
+            regex: '^(?:action_(?:inputs|type)|chart_(?:mode|position|title|type)|data_source|dry_run|file_path|input_path|macro_(?:args|name)|max_rows|new_text|normalize_density|old_text|output_path|page_size|set_upstream|sheet_name|slide_index|slides_count|stat_only|template_path)$',
+            match: true,
+          },
+          format: null,
         },
         // 对象字面量 key 是数据/协议值，不套用本地标识符命名格式
         {

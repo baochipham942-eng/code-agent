@@ -65,7 +65,7 @@ function defaultIntent(op: CanvasProposalOp, text: string): string {
 
 function describeOp(
   op: CanvasProposalOp,
-  L: OpLabels,
+  labels: OpLabels,
   formImageModel: string,
   paidBadge: string,
   s: ReturnType<typeof useI18n>['t']['design'],
@@ -75,23 +75,23 @@ function describeOp(
   let paid = false;
   switch (op.kind) {
     case 'moveNode':
-      text = `${L.move} · ${op.nodeId}`;
+      text = `${labels.move} · ${op.nodeId}`;
       break;
     case 'addConnector':
-      text = `${L.connect} ${op.fromNodeId} → ${op.toNodeId}${op.label ? ` "${op.label}"` : ''}`;
+      text = `${labels.connect} ${op.fromNodeId} → ${op.toNodeId}${op.label ? ` "${op.label}"` : ''}`;
       break;
     case 'addShape':
-      text = `${L.shape} · ${op.shape.kind}`;
+      text = `${labels.shape} · ${op.shape.kind}`;
       break;
     case 'renameNode':
-      text = `${L.rename} "${op.label}"`;
+      text = `${labels.rename} "${op.label}"`;
       break;
     case 'discardNode':
-      text = `${L.discard} · ${op.nodeId}`;
+      text = `${labels.discard} · ${op.nodeId}`;
       danger = true;
       break;
     case 'generateImage':
-      text = `${L.generate} · "${op.prompt.slice(0, 40)}" · ${paidBadge} ${formatCny(genOpCostCny(op, formImageModel))}`;
+      text = `${labels.generate} · "${op.prompt.slice(0, 40)}" · ${paidBadge} ${formatCny(genOpCostCny(op, formImageModel))}`;
       paid = true;
       break;
   }

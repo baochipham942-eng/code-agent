@@ -101,7 +101,7 @@ export class TaskComplexityAnalyzer {
 
     // 计算复杂度
     let complexity: TaskComplexity = 'simple';
-    let confidence = 0.6;
+    let confidence: number;
 
     // 优先检测审计/审查类任务
     if (isAuditTask) {

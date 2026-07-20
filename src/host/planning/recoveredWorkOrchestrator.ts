@@ -206,15 +206,15 @@ async function ensureWorkspaceRecoveryPhase(
 }> {
   const note = buildWorkspaceRecoveryNote(query, items);
   const stepContent = buildWorkspaceReviewStepContent(query);
-  let plan = planningService.plan.getCurrentPlan() ?? await planningService.plan.read();
-  let phase = findPhaseByTitle(plan, WORKSPACE_RECOVERY_PHASE_TITLE);
+  const plan = planningService.plan.getCurrentPlan() ?? await planningService.plan.read();
+  const phase = findPhaseByTitle(plan, WORKSPACE_RECOVERY_PHASE_TITLE);
   let createdWorkspacePhase = false;
   let createdWorkspaceReviewStep = false;
   let updatedWorkspaceNotes = false;
 
   if (!plan) {
     await planningService.initialize();
-    const createdPlan = await planningService.plan.create({
+    await planningService.plan.create({
       title: DESKTOP_RECOVERY_PLAN_TITLE,
       objective: WORKSPACE_RECOVERY_OBJECTIVE,
       phases: [{
@@ -225,8 +225,6 @@ async function ensureWorkspaceRecoveryPhase(
         steps: [buildWorkspaceRecoveryPlanStep(query, items)],
       }],
     });
-    plan = createdPlan;
-    phase = findPhaseByTitle(plan, WORKSPACE_RECOVERY_PHASE_TITLE);
     createdWorkspacePhase = true;
     createdWorkspaceReviewStep = true;
     updatedWorkspaceNotes = true;
@@ -238,7 +236,7 @@ async function ensureWorkspaceRecoveryPhase(
   }
 
   if (!phase) {
-    phase = await planningService.plan.addPhase({
+    await planningService.plan.addPhase({
       title: WORKSPACE_RECOVERY_PHASE_TITLE,
       notes: note,
       steps: [buildWorkspaceRecoveryPlanStep(query, items)],

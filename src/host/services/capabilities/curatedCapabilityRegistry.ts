@@ -868,7 +868,7 @@ export function parseCapabilityRegistryPayload(
 }
 
 async function readCuratedRegistryDir(dir: string): Promise<CuratedRegistryReadResult> {
-  let entries: string[] = [];
+  let entries: string[];
   try {
     entries = await fs.readdir(dir);
   } catch (error) {

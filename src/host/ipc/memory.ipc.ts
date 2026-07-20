@@ -449,7 +449,7 @@ async function handleMemoryAudit(payload: MemoryAuditRequest): Promise<{
   let databaseMemories: StoredMemoryRecord[] = [];
   let seedCandidates: StoredMemoryRecord[] = [];
   let inboxDecisions: KnowledgeInboxDecisionRecord[] = [];
-  let memoryEntries: MemoryEntry[] = [];
+  let memoryEntries: MemoryEntry[];
 
   try {
     const db = getDatabase();

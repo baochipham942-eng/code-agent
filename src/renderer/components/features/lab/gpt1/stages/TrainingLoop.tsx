@@ -25,7 +25,6 @@ interface TrainingLog {
 // 模拟训练的 Loss 下降曲线
 const generateLossCurve = (epochs: number): number[] => {
   const losses: number[] = [];
-  let loss = 5.85; // 初始 loss
   const stepsPerEpoch = 100;
 
   for (let e = 0; e < epochs; e++) {
@@ -33,7 +32,7 @@ const generateLossCurve = (epochs: number): number[] => {
       // 模拟 loss 下降，加入随机波动
       const progress = (e * stepsPerEpoch + s) / (epochs * stepsPerEpoch);
       const targetLoss = 5.85 * Math.exp(-4 * progress) + 0.018;
-      loss = targetLoss + (Math.random() - 0.5) * 0.1 * (1 - progress);
+      const loss = targetLoss + (Math.random() - 0.5) * 0.1 * (1 - progress);
       losses.push(Math.max(0.01, loss));
     }
   }

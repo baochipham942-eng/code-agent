@@ -105,7 +105,7 @@ async function handleList(): Promise<RolePanelEntry[]> {
 
 async function handleDetail(roleId: string): Promise<RolePanelDetail> {
   const definitionPath = path.join(getAgentsMdDir().user, `${roleId}.md`);
-  let definition: string | null = null;
+  let definition: string | null;
   try {
     definition = await fs.readFile(definitionPath, 'utf-8');
   } catch {

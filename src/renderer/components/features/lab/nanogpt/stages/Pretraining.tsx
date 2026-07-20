@@ -46,7 +46,7 @@ const generateTrainingData = (step: number): { loss: number; valLoss: number; lr
   const valLoss = loss + 0.1 + Math.random() * 0.05;
 
   // 学习率 warmup + cosine decay
-  let lr = defaultConfig.learningRate;
+  let lr: number;
   if (step < defaultConfig.warmupIters) {
     lr = (step / defaultConfig.warmupIters) * defaultConfig.learningRate;
   } else {

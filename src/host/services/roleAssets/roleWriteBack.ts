@@ -355,7 +355,7 @@ ${entry.content}
 
   // INDEX.md 维护（与 memoryWrite.ts updateIndex 同一格式）
   const indexPath = getMemoryIndexPath();
-  let lines: string[] = [];
+  let lines: string[];
   try {
     lines = (await fs.readFile(indexPath, 'utf-8')).split('\n');
   } catch {

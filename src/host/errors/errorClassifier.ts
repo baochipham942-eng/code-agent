@@ -386,8 +386,8 @@ export class ErrorClassifier {
 
     for (const pattern of this.patterns) {
       for (const p of pattern.patterns) {
-        let matched = false;
-        let confidence = 0;
+        let matched: boolean;
+        let confidence: number;
 
         if (typeof p === 'string') {
           matched = normalizedMessage.includes(p.toLowerCase());

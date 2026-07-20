@@ -260,28 +260,11 @@ async function extractTarGzCustom(
 
     // Handle pax extended headers (type 'x' or 'g')
     let actualName = name;
-    let actualSize = size;
+    const actualSize = size;
 
     if (typeFlag === 'x' || typeFlag === 'g') {
-      // This is a pax extended header, parse it
-      const paxData = decompressed.subarray(
-        offset + 512,
-        offset + 512 + Math.ceil(size / 512) * 512
-      );
-      const paxContent = paxData.subarray(0, size).toString('utf8');
-
-      // Parse pax fields
-      const pathMatch = paxContent.match(/\d+ path=(.+)\n/);
-      if (pathMatch) {
-        actualName = pathMatch[1];
-      }
-
-      const sizeMatch = paxContent.match(/\d+ size=(\d+)\n/);
-      if (sizeMatch) {
-        actualSize = parseInt(sizeMatch[1], 10);
-      }
-
-      // Skip to next entry
+      // The fallback extractor skips the metadata entry and processes the next
+      // tar header as-is, matching the existing behavior of this parser.
       offset += 512 + Math.ceil(size / 512) * 512;
       continue;
     }

@@ -699,7 +699,7 @@ export async function buildContextViewFromSession(
   const healthService = getContextHealthService();
   const contextHealth = healthService.get(resolvedSessionId) || createEmptyHealthState();
 
-  let sessionMessages: Message[] = [];
+  let sessionMessages: Message[];
   try {
     sessionMessages = (await appService?.getMessages(resolvedSessionId)) || [];
   } catch (error) {

@@ -141,8 +141,6 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
   const [selectedMethod, setSelectedMethod] = useState<string>('lora');
   const [selectedModel, setSelectedModel] = useState(0); // 7B
   const [selectedRank, setSelectedRank] = useState(2); // rank=32
-  const [showAnimation, setShowAnimation] = useState(false);
-
   const currentModel = modelSizes[selectedModel];
   const currentRank = loraRanks[selectedRank];
 

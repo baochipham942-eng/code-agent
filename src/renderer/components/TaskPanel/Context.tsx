@@ -57,7 +57,6 @@ export const Context: React.FC = () => {
     // Check tool calls (show unique tools used with details)
     if (message.toolCalls) {
       for (const toolCall of message.toolCalls) {
-        const key = `tool-${toolCall.name}-${contextItems.length}`;
         if (!seenItems.has(`tool-${toolCall.name}`)) {
           seenItems.add(`tool-${toolCall.name}`);
           contextItems.push({

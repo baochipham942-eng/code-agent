@@ -214,11 +214,6 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       // 非图片内容，让默认粘贴行为继续
     };
 
-    // 点击附件按钮
-    const handleAttachClick = () => {
-      fileInputRef.current?.click();
-    };
-
     // 文件选择
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {

@@ -55,7 +55,6 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const setSelectedId = useAppStore((state) => state.setSelectedWorkspacePreviewId);
   const setWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const sessions = useSessionStore((state) => state.sessions);
   const presets = useWorkbenchPresetStore((state) => state.presets);
   const recipes = useWorkbenchPresetStore((state) => state.recipes);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
@@ -87,10 +86,6 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const selected = useMemo(() => (
     items.find((item) => item.id === selectedId) || items[0] || null
   ), [items, selectedId]);
-  const currentSessionTitle = useMemo(() => {
-    if (!currentSessionId) return undefined;
-    return sessions.find((session) => session.id === currentSessionId)?.title;
-  }, [currentSessionId, sessions]);
   useEffect(() => {
     if (!selected && selectedId) {
       setSelectedId(null);

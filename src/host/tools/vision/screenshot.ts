@@ -177,15 +177,6 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
         let command: string;
 
         if (target === 'window' && windowName) {
-          // Capture specific window by name
-          // First, get window ID using AppleScript
-          const getWindowIdScript = `
-            tell application "System Events"
-              set frontApp to first application process whose frontmost is true
-              set windowId to id of first window of frontApp
-              return windowId
-            end tell
-          `;
           command = `screencapture -l$(osascript -e 'tell app "${windowName}" to id of window 1') "${outputPath}"`;
         } else if (region) {
           // Capture specific region

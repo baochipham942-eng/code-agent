@@ -171,7 +171,7 @@ async function resolvePluginSpec(pluginInput: string): Promise<{
     rootDir: string;
   }> = [];
 
-  for (const [marketplaceName, marketplaceEntry] of Object.entries(config)) {
+  for (const marketplaceName of Object.keys(config)) {
     try {
       const info = await getMarketplaceInfo(marketplaceName);
       const found = info.manifest.plugins.find(p => p.name === plugin);

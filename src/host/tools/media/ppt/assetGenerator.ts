@@ -4,12 +4,9 @@
 // 从 ResearchContext 提取图表数据，协调图片生成
 // ============================================================================
 
-import { createLogger } from '../../../services/infra/logger';
 import type { ResearchContext, SlideAssets, ChartSlotData } from './types';
 import type { StructuredSlide, ChartContent } from './slideSchemas';
 import { CHART_SCALE_MAX_RATIO, CHART_MIN_DATA_POINTS, CHART_MAX_ITEMS } from './constants';
-
-const logger = createLogger('AssetGenerator');
 
 // ============================================================================
 // Chart Data from Research

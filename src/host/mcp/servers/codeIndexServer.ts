@@ -7,11 +7,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
 import { InProcessMCPServer } from '../inProcessServer';
-import { createLogger } from '../../services/infra/logger';
 import type { ToolResult } from '../../../shared/contract';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
-
-const logger = createLogger('CodeIndexServer');
 
 // 索引统计信息
 interface IndexStats {

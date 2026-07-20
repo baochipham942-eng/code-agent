@@ -30,7 +30,6 @@ import {
   MIMO_CODE_READ_ONLY_PERMISSION,
 } from '../../../shared/constants';
 import { getSessionManager } from '../infra/sessionManager';
-import { createLogger } from '../infra/logger';
 import { getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
@@ -40,8 +39,6 @@ import { buildAgentEngineModelDecision } from './agentEngineModelDecision';
 import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './agentEngineFailureDiagnostics';
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
-
-const logger = createLogger('MimoCliAdapter');
 
 // 容错：OpenAI 兼容后端偶发流式完成（exit 0）但空响应。与 Kimi 对称，按 empty response
 // 归一成可识别失败，不让它静默落到「completed without text output」兜底文案。

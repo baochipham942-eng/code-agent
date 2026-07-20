@@ -96,7 +96,6 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
   const [isTraining, setIsTraining] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [lossHistory, setLossHistory] = useState<number[]>([2.5]);
-  const [currentLR, setCurrentLR] = useState(2e-5);
   const [scenario, setScenario] = useState<'normal' | 'overfit'>('normal');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);

@@ -119,7 +119,7 @@ export const ContextUsageIndicator: React.FC<ContextUsageIndicatorProps> = ({
   className = '',
 }) => {
   // 计算百分比和配置
-  const { percentage, displayPercentage, circumference, dashOffset, config, colors } = useMemo(() => {
+  const { displayPercentage, circumference, dashOffset, config, colors } = useMemo(() => {
     const pct = total > 0 ? Math.min(used / total, 1) : 0;
     const cfg = SIZE_CONFIG[size];
     const radius = (cfg.width - cfg.strokeWidth) / 2;
@@ -127,7 +127,6 @@ export const ContextUsageIndicator: React.FC<ContextUsageIndicatorProps> = ({
     const offset = circ * (1 - pct);
 
     return {
-      percentage: pct,
       displayPercentage: Math.round(pct * 100),
       circumference: circ,
       dashOffset: offset,

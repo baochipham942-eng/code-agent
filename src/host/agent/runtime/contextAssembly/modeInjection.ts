@@ -1,5 +1,5 @@
 // ContextAssembly - Research, planning, and adaptive thinking injections.
-import type { Message, ToolCall, ToolResult } from '../../../../shared/contract';
+import type { ToolCall, ToolResult } from '../../../../shared/contract';
 import { getToolSearchService } from '../../../services/toolSearch';
 import { CONFIG_DIR_NEW } from '../../../config/configPaths';
 import { homedir } from 'os';
@@ -163,16 +163,6 @@ export async function maybeInjectThinking(
   try {
     const thinkingPrompt = ctx.generateThinkingPrompt(toolCalls, toolResults);
     ctx.injectSystemMessage(thinkingPrompt);
-
-    // 记录思考注入
-    const thinkingMessage: Message = {
-      id: ctx.generateId(),
-      role: 'system',
-      content: thinkingPrompt,
-      timestamp: Date.now(),
-      thinking: thinkingPrompt,
-      isMeta: true, // 不渲染到 UI，但发送给模型
-    };
 
     // 发送思考事件到 UI（可折叠显示）
     ctx.runtime.onEvent({

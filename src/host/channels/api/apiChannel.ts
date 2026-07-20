@@ -165,7 +165,7 @@ export class ApiChannel extends BaseChannelPlugin {
 
   async destroy(): Promise<void> {
     // 清理所有待处理请求
-    for (const [requestId, pending] of this.pendingRequests) {
+    for (const pending of this.pendingRequests.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error('Channel destroyed'));
     }

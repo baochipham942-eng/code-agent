@@ -13,7 +13,6 @@ import type {
 import { gameSubtypeRegistry } from '../registry';
 import { extractByPath } from '../verbs';
 
-const BREAKOUT_ALIASES = ['breakout', 'arkanoid'] as const;
 const REQUIRED_POWERUPS = ['wide', 'multi', 'slow', 'through', 'life'] as const;
 const REQUIRED_SCENARIOS = [
   'paddleMove',

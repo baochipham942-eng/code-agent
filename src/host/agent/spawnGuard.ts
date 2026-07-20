@@ -720,7 +720,7 @@ class SpawnGuard {
   cancelAll(reason: string = 'app_shutdown'): number {
     this.rejectQueuedWaiters(() => true, reason);
     let cancelled = 0;
-    for (const [id, agent] of this.agents) {
+    for (const agent of this.agents.values()) {
       if (isLiveRunningStatus(agent.status)) {
         this.cancelAgent(agent, reason);
         cancelled += 1;

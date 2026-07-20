@@ -6,10 +6,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { createLogger } from '../services/infra/logger';
 import type { TaskPlan, TaskStep } from './types';
-
-const logger = createLogger('FeasibilityChecker');
 
 /**
  * 前置条件类型

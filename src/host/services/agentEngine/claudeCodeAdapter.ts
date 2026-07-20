@@ -19,7 +19,6 @@ import type {
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { generateMessageId } from '../../../shared/utils/id';
 import { getSessionManager } from '../infra/sessionManager';
-import { createLogger } from '../infra/logger';
 import { getShellEnvironmentValue, getShellPath } from '../infra/shellEnvironment';
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { getAgentEngineRegistry } from './agentEngineRegistry';
@@ -31,7 +30,6 @@ import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCap
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
 
-const logger = createLogger('ClaudeCodeAdapter');
 const EMPTY_RESPONSE_MESSAGE = 'Claude Code returned an empty response.';
 
 export interface ClaudeCodeRunRequest extends AgentEngineRunRequest {

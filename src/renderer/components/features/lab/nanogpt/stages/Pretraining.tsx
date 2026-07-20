@@ -60,7 +60,7 @@ const generateTrainingData = (step: number): { loss: number; valLoss: number; lr
 export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) => {
   const { t } = useI18n();
   const pt = t.labNanogpt.pretraining;
-  const [config, setConfig] = useState<TrainingConfig>(defaultConfig);
+  const config = defaultConfig;
   const [isTraining, setIsTraining] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [lossHistory, setLossHistory] = useState<{ step: number; loss: number; valLoss: number }[]>([]);

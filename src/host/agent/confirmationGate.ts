@@ -6,15 +6,12 @@
 // 复用现有 requestPermission 回调，扩展 PermissionRequest 类型。
 
 import * as Diff from 'diff';
-import { createLogger } from '../services/infra/logger';
 import type {
   ConfirmationPreview,
   ConfirmationContext,
   ToolConfirmationConfig,
 } from '../../shared/contract/confirmation';
 import { isBashToolName } from '../tools/toolNames';
-
-const logger = createLogger('ConfirmationGate');
 
 // 危险工具列表
 const DANGEROUS_TOOLS = new Set([

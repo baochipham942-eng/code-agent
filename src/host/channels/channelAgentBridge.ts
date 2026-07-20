@@ -8,7 +8,7 @@ import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import { getChannelManager } from './channelManager';
 import type { ChannelMessage, ChannelAttachment, ChannelContext, ChannelSender } from '../../shared/contract/channel';
-import type { AttachmentCategory, MessageAttachment, Message, AgentEvent, ModelConfig, MessageMetadata } from '../../shared/contract';
+import type { AttachmentCategory, MessageAttachment, AgentEvent, ModelConfig, MessageMetadata } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { logCollector } from '../mcp/logCollector';
 import { v4 as uuidv4 } from 'uuid';
@@ -309,22 +309,6 @@ export class ChannelAgentBridge {
   ): Promise<void> {
     // 收集响应
     let fullResponse = '';
-    const originalOnEvent = (orchestrator as unknown as { onEvent: (event: AgentEvent) => void }).onEvent;
-
-    // 临时替换事件处理器以收集响应
-    const collectResponse = (event: AgentEvent) => {
-      if (event.type === 'message' && event.data) {
-        const msg = event.data as Message;
-        if (msg.role === 'assistant') {
-          fullResponse = msg.content;
-        }
-      }
-    };
-
-    // 暂时监听响应（这是一个简化实现，实际可能需要更复杂的处理）
-    // 由于 AgentOrchestrator 不直接支持这种模式，我们需要使用事件系统
-    // 这里使用一个简化的方案：直接调用 sendMessage 并等待完成
-
     try {
       await this.startTyping(responseCallback);
       // 记录发送前的消息数量，用于识别新的回复

@@ -12,10 +12,12 @@ type WebQueuedInputDrainRepository = Pick<
   | 'markConsumed'
   | 'requeueAfterFailure'
   | 'markFailed'
+  | 'listSessionsWithQueuedInputs'
 >;
 
 interface WebQueuedInputDrainDependencies {
   getRepository: () => WebQueuedInputDrainRepository;
+  hasActiveRun: (sessionId: string) => boolean;
   runEnvelope: (envelope: ConversationEnvelope, response: Response) => Promise<void>;
   emitAgentEvent: (sessionId: string, event: AgentEvent) => void;
   logger: WebRouteLogger;
@@ -23,6 +25,7 @@ interface WebQueuedInputDrainDependencies {
 
 export interface WebQueuedInputDrain {
   handleReleasedSession(sessionId: string): void;
+  runStartupSweep(): void;
 }
 
 function errorMessage(error: unknown): string {
@@ -62,12 +65,14 @@ export async function releaseThenTriggerWebQueuedInputDrain(input: {
 
 export function createWebQueuedInputDrain({
   getRepository,
+  hasActiveRun,
   runEnvelope,
   emitAgentEvent,
   logger,
 }: WebQueuedInputDrainDependencies): WebQueuedInputDrain {
   const activeSessions = new Set<string>();
   const pendingReleasedSessions = new Set<string>();
+  let startupSweepDone = false;
 
   const settleRunFailure = (
     repository: WebQueuedInputDrainRepository,
@@ -160,6 +165,19 @@ export function createWebQueuedInputDrain({
         return;
       }
       scheduleDrain(sessionId);
+    },
+    runStartupSweep(): void {
+      if (startupSweepDone) {
+        return;
+      }
+      startupSweepDone = true;
+
+      for (const sessionId of getRepository().listSessionsWithQueuedInputs()) {
+        if (hasActiveRun(sessionId)) {
+          continue;
+        }
+        scheduleDrain(sessionId);
+      }
     },
   };
 }

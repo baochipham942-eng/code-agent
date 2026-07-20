@@ -181,11 +181,12 @@ export async function initializeBackgroundServices(): Promise<void> {
   if (!queuedInputDb) {
     throw new Error('Database is not initialized for desktop queued input drain');
   }
-  registerDesktopQueuedInputDrain({
+  const queuedInputDrain = registerDesktopQueuedInputDrain({
     taskManager: getTaskManager(),
     appService: nextAppService,
     repository: new QueuedInputRepository(queuedInputDb),
   });
+  queuedInputDrain.runStartupSweep();
 
   // Phase 4a: Session restoration (uses TaskManager to manage orchestrator)
   logger.info('Initializing session...');

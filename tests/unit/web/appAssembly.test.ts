@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, type CreateAppDeps } from '../../../src/web/app';
 import {
   getApplicationRunRegistry,
@@ -151,6 +151,18 @@ describe('web app assembly (createApp)', () => {
   it('registers the full expected route table in mount order', () => {
     const app = createApp(buildDeps('/tmp/seam-assembly-route-table'));
     expect(collectRoutes(getStack(app))).toEqual(EXPECTED_ROUTES);
+  });
+
+  it('把 queued input 启动扫描触发口透传给调用方', () => {
+    const registerQueuedInputStartupSweep = vi.fn();
+
+    createApp({
+      ...buildDeps('/tmp/seam-assembly-startup-sweep'),
+      registerQueuedInputStartupSweep,
+    });
+
+    expect(registerQueuedInputStartupSweep).toHaveBeenCalledOnce();
+    expect(registerQueuedInputStartupSweep).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('mounts cors -> rate limit -> auth -> json parser before any router/route', () => {

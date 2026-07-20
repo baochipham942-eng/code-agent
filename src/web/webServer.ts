@@ -48,6 +48,7 @@ import {
   type ConfigServiceForBootstrap,
   type WebCapabilityBootstrapOptions,
 } from './webCapabilityBootstrap';
+import { createQueuedInputStartupSweepGate } from './queuedInputStartupSweep';
 
 const logger = createLogger('WebServer');
 
@@ -359,6 +360,7 @@ const runRegistry = getApplicationRunRegistry();
 let durableRunRuntime: DurableRunApplicationRuntime | undefined;
 let durableRunRolloutPolicy = resolveDurableRunRollout({});
 let durableRunRolloutReady = false;
+const queuedInputStartupSweep = createQueuedInputStartupSweepGate();
 let webMcpInitialized = false;
 
 // createApp() 的 durable run 状态注入：函数形式保证 app.ts 读到的始终是最新值
@@ -576,6 +578,8 @@ async function initializeServices(): Promise<void> {
         onDelayedError: (recoveryError) => logger.error('Durable Run delayed recovery failed:', recoveryError),
       });
       durableRunRolloutReady = true;
+      queuedInputStartupSweep.setReady(true);
+      queuedInputStartupSweep.maybeRun();
       logger.info('Durable rollout initialized', {
         mode: durableRunRuntime.policy.mode,
         results: durableRunRuntime.recoveryResults,
@@ -1194,7 +1198,9 @@ async function main(): Promise<void> {
     getAppVersion,
     getDurableRunRollout,
     getDurableRunReadService,
+    registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
   });
+  queuedInputStartupSweep.maybeRun();
 
   const server = http.createServer(app);
 

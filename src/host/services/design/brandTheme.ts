@@ -21,12 +21,12 @@ export function oklchToRgb(input: string): Rgb | null {
   const b = C * Math.sin(h);
 
   // OKLab → LMS（立方根空间逆变换）
-  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
-  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
-  const s_ = L - 0.0894841775 * a - 1.291485548 * b;
-  const lc = l_ * l_ * l_;
-  const mc = m_ * m_ * m_;
-  const sc = s_ * s_ * s_;
+  const lPrime = L + 0.3963377774 * a + 0.2158037573 * b;
+  const mPrime = L - 0.1055613458 * a - 0.0638541728 * b;
+  const sPrime = L - 0.0894841775 * a - 1.291485548 * b;
+  const lc = lPrime * lPrime * lPrime;
+  const mc = mPrime * mPrime * mPrime;
+  const sc = sPrime * sPrime * sPrime;
 
   // LMS → 线性 sRGB
   const lr = 4.0767416621 * lc - 3.3077115913 * mc + 0.2309699292 * sc;

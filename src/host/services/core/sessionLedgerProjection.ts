@@ -59,7 +59,7 @@ function truncate(text: string, max = SUMMARY_MAX): string {
 
 /** 内部带插入序的 entry，用于确定性 tie-break。 */
 interface SeqEntry extends LedgerEntry {
-  __seq: number;
+  insertionOrder: number;
 }
 
 /**
@@ -86,7 +86,7 @@ function collectLane<T>(
       if (!mapped) continue;
       const arr = Array.isArray(mapped) ? mapped : [mapped];
       for (const e of arr) {
-        sink.push({ ...e, __seq: sink.length });
+        sink.push({ ...e, insertionOrder: sink.length });
         laneCounts[lane] += 1;
       }
     }
@@ -209,9 +209,9 @@ export function buildSessionLedger(
   );
 
   // ── 确定性排序：按 at 升序，同刻按插入序（泳道输入序）稳定 tie-break ──
-  sink.sort((a, b) => (a.at - b.at) || (a.__seq - b.__seq));
+  sink.sort((a, b) => (a.at - b.at) || (a.insertionOrder - b.insertionOrder));
 
-  const entries: LedgerEntry[] = sink.map(({ __seq, ...e }) => e);
+  const entries: LedgerEntry[] = sink.map(({ insertionOrder: _insertionOrder, ...entry }) => entry);
 
   let cost: SessionLedgerCost;
   try {

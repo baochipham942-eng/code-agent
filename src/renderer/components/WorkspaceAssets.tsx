@@ -69,7 +69,6 @@ function recipeSummary(recipe: WorkbenchRecipe, t: Translations): string {
   return parts.join(' · ');
 }
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
 export function AssetTabButton({
   active,
   label,
@@ -97,7 +96,6 @@ export function AssetTabButton({
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
 export function AssetToolbarButton({
   label,
   icon,
@@ -141,7 +139,6 @@ export function AssetToolbarButton({
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
 export function AssetDrawerPanel({
   title,
   subtitle,
@@ -182,7 +179,6 @@ export function AssetDrawerPanel({
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
 export function PromptAppLibrary({
   presets,
   recipes,

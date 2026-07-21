@@ -405,6 +405,11 @@ export async function runSurfaceExecutionReplayImportChild(input: {
         sessions: [],
         updatedAt: Date.now(),
       }),
+      frames: {
+        resolve: async () => {
+          throw new Error('Archive replay attempted to resolve a live runtime frame');
+        },
+      },
       controlConversation: async (): Promise<SurfaceSessionControlResultV1> => {
         runtimeMutationCalls += 1;
         throw new Error('Archive replay attempted a runtime mutation');

@@ -124,8 +124,9 @@ function replayFromProjection(source: SurfaceExecutionExportProjectionV1): Struc
     traceIdentity: {
       sessionId: 'imported-session',
       traceId: 'trace-imported-session',
-      rootRunId: null,
-      parentRunId: null,
+      traceSource: 'session_replay',
+      source: 'session_replay',
+      replayKey: 'imported-session',
     },
     traceSource: 'session_replay',
     dataSource: 'transcript_fallback',

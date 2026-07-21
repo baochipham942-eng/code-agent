@@ -1295,6 +1295,7 @@ function artifactIssues(
     const prefix = `${requirement.recordPath}[${index}]`;
     if (!fact.declaredPath
       || !fact.expectedSha256?.match(/^[a-f0-9]{64}$/)
+      || typeof fact.expectedBytes !== 'number'
       || !Number.isInteger(fact.expectedBytes)
       || fact.expectedBytes <= 0) {
       missing = true;

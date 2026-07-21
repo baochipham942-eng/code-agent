@@ -281,9 +281,10 @@ async function verifyProtocolMismatchBlocked(port: number): Promise<{
   ]);
   if (!connectionRejected) socket.terminate();
   assert(connectionRejected, 'Relay mismatch probe connection was not closed by the Host');
-  assert(state.lastError?.includes('protocol version mismatch'),
-    `Relay mismatch probe returned an unexpected error: ${state.lastError || 'none'}`);
-  return { connectionRejected: true, lastError: state.lastError };
+  const lastError = state.lastError;
+  assert(typeof lastError === 'string' && lastError.includes('protocol version mismatch'),
+    `Relay mismatch probe returned an unexpected error: ${lastError || 'none'}`);
+  return { connectionRejected: true, lastError };
 }
 
 function closeServer(server: Server): Promise<void> {
@@ -1476,13 +1477,18 @@ async function main(): Promise<void> {
       entries?: Array<{ cursor?: number; source?: string; text?: string; url?: string }>;
       nextCursor?: number;
     } | undefined;
-    assert(Number.isSafeInteger(logCursor?.nextCursor), 'Relay logs did not project a stable cursor');
+    const logEntries = logCursor?.entries;
+    const logNextCursor = logCursor?.nextCursor;
     assert(
-      logCursor?.entries?.some((entry) => entry.source === 'console'),
+      typeof logNextCursor === 'number' && Number.isSafeInteger(logNextCursor),
+      'Relay logs did not project a stable cursor',
+    );
+    assert(
+      logEntries?.some((entry) => entry.source === 'console'),
       'Relay logs did not project console metadata',
     );
     assert(
-      logCursor?.entries?.some((entry) => (
+      logEntries?.some((entry) => (
         entry.source === 'network'
         && entry.text === 'request POST'
         && entry.url === `${fixture.origin}/network-proof`
@@ -1799,9 +1805,9 @@ async function main(): Promise<void> {
         },
       ],
       logEvidence: {
-        nextCursor: logCursor.nextCursor,
-        sources: Array.from(new Set((logCursor.entries || []).map((entry) => entry.source))),
-        networkUrls: (logCursor.entries || [])
+        nextCursor: logNextCursor,
+        sources: Array.from(new Set((logEntries || []).map((entry) => entry.source))),
+        networkUrls: (logEntries || [])
           .filter((entry) => entry.source === 'network')
           .map((entry) => entry.url),
       },

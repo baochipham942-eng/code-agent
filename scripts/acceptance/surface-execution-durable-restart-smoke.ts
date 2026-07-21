@@ -394,6 +394,11 @@ async function recoverPhase(
         sessions: [],
         updatedAt: Date.now(),
       }),
+      frames: {
+        resolve: async () => {
+          throw new Error('Persisted recovery attempted to resolve a live runtime frame.');
+        },
+      },
       controlConversation: async () => { throw new Error('Persisted continuation bypassed the projection gate.'); },
       subscribeEvents: () => () => undefined,
     },

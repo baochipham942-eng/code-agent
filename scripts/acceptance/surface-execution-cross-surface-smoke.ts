@@ -306,7 +306,10 @@ function parseComputerResponse(
   result: ComputerToolResult<string>,
   label: string,
 ): StatefulResponse {
-  assert(result.ok, `${label} failed: ${result.code || 'unknown'} ${result.error || ''}`.trim());
+  assert(
+    result.ok,
+    `${label} failed: ${result.ok ? '' : `${result.code || 'unknown'} ${result.error || ''}`}`.trim(),
+  );
   try {
     return JSON.parse(result.output) as StatefulResponse;
   } catch {

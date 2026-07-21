@@ -313,6 +313,12 @@ function createHarness(initialSession: Record<string, unknown> = {}) {
   };
 }
 
+function requireDebuggerSendCommandImplementation(harness: ReturnType<typeof createHarness>) {
+  const implementation = harness.chrome.debugger.sendCommand.getMockImplementation();
+  if (!implementation) throw new Error('Debugger sendCommand mock implementation is not installed');
+  return implementation;
+}
+
 const owner = {
   surfaceSessionId: 'surface-session-1',
   conversationId: 'conversation-1',
@@ -658,7 +664,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const harness = createHarness();
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket);
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let releaseMetrics: (() => void) | undefined;
@@ -670,7 +676,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (method === 'Page.getLayoutMetrics') {
         notifyMetricsStarted?.();
         await metricsGate;
@@ -717,7 +723,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const harness = createHarness();
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket);
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let releaseOuterHtml: (() => void) | undefined;
@@ -729,7 +735,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (method !== 'DOM.getOuterHTML') return result;
       notifyOuterHtmlStarted?.();
       await outerHtmlGate;
@@ -781,7 +787,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const harness = createHarness();
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket);
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let releaseOuterHtml: (() => void) | undefined;
@@ -793,7 +799,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (method !== 'DOM.getOuterHTML') return result;
       notifyOuterHtmlStarted?.();
       await outerHtmlGate;
@@ -840,7 +846,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket);
     const targetRef = await firstDomTargetRef(harness, socket, leaseId, 'cross-origin-held-mutation');
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let releaseFocus: (() => void) | undefined;
@@ -852,7 +858,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (method === 'DOM.focus') {
         notifyFocusStarted?.();
         await focusGate;
@@ -901,7 +907,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket);
     const targetRef = await firstDomTargetRef(harness, socket, leaseId, 'cross-origin-held-drag');
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let releasePressed: (() => void) | undefined;
@@ -913,7 +919,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') {
         notifyPressed?.();
         await pressedGate;
@@ -1189,7 +1195,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const harness = createHarness();
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket);
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let releasePausedClick: (() => void) | undefined;
@@ -1201,7 +1207,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') {
         harness.debuggerOnEvent.emit(
           { tabId: 7 } as never,
@@ -1327,7 +1333,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket);
     const targetRef = await firstDomTargetRef(harness, socket, leaseId, 'mousedown-dialog');
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let releasePressed: (() => void) | undefined;
@@ -1339,7 +1345,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') {
         harness.debuggerOnEvent.emit(
           { tabId: 7 } as never,
@@ -1402,7 +1408,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const harness = createHarness();
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket);
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let handleCalls = 0;
@@ -1420,11 +1426,11 @@ describe('Browser Relay extension protocol v2 worker', () => {
       params: Record<string, unknown>,
     ) => {
       if (method !== 'Page.handleJavaScriptDialog') {
-        return await originalSendCommand?.(target, method, params);
+        return await originalSendCommand(target, method, params);
       }
       handleCalls += 1;
       if (handleCalls === 1) {
-        const result = await originalSendCommand?.(target, method, params);
+        const result = await originalSendCommand(target, method, params);
         harness.debuggerOnEvent.emit(
           { tabId: 7 } as never,
           'Page.javascriptDialogOpening' as never,
@@ -1436,7 +1442,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       }
       notifySecondStarted?.();
       await secondHandleGate;
-      return await originalSendCommand?.(target, method, params);
+      return await originalSendCommand(target, method, params);
     });
 
     harness.debuggerOnEvent.emit(
@@ -1587,7 +1593,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       message.id === 'drag-delivery-dom'
     )));
     const targetRef = (snapshot.result as { elements: Array<{ ref: string }> }).elements[0];
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
     let inputDeliveryCount = 0;
     harness.chrome.debugger.sendCommand.mockImplementation(async (
@@ -1595,7 +1601,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (method === 'Input.dispatchMouseEvent') {
         inputDeliveryCount += 1;
         if (inputDeliveryCount === 3) throw new Error('Chrome rejected a partially delivered drag');
@@ -1857,7 +1863,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket);
     const targetRef = await firstDomTargetRef(harness, socket, leaseId, 'popup-return');
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let releaseInput: (() => void) | undefined;
@@ -1870,7 +1876,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (!heldInput && method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') {
         heldInput = true;
         notifyInputStarted?.();
@@ -1924,7 +1930,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
     const socket = await connectHarness(harness);
     const leaseId = await approveLease(harness, socket, 100);
     const targetRef = await firstDomTargetRef(harness, socket, leaseId, 'expiry-return');
-    const originalSendCommand = harness.chrome.debugger.sendCommand.getMockImplementation();
+    const originalSendCommand = requireDebuggerSendCommandImplementation(harness);
     expect(originalSendCommand).toBeTypeOf('function');
 
     let releaseInput: (() => void) | undefined;
@@ -1937,7 +1943,7 @@ describe('Browser Relay extension protocol v2 worker', () => {
       method: string,
       params: Record<string, unknown>,
     ) => {
-      const result = await originalSendCommand?.(target, method, params);
+      const result = await originalSendCommand(target, method, params);
       if (!heldInput && method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') {
         heldInput = true;
         notifyInputStarted?.();

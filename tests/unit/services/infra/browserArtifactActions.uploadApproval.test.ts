@@ -2,13 +2,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Locator } from 'playwright';
 import { uploadBrowserFile } from '../../../../src/host/services/infra/browser/browserArtifactActions';
 import { inspectBrowserUploadFile } from '../../../../src/host/services/infra/browser/browserUploadApprovalRegistry';
 
 const temporaryDirectories: string[] = [];
 
 function harness() {
-  const setInputFiles = vi.fn(async () => undefined);
+  type SetInputFilesInput = Parameters<Locator['setInputFiles']>[0];
+  const setInputFiles = vi.fn(async (_files: SetInputFilesInput) => undefined);
   const locator = {
     first: () => locator,
     evaluate: vi.fn(async () => true),

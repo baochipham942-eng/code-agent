@@ -660,16 +660,23 @@ async function installIsolatedFolderTrustSafetyRoute(page: Page): Promise<void> 
 
 async function installPipRuntime(page: Page, screenshotDataUrl: string): Promise<void> {
   await page.evaluate((dataUrl) => {
-    type PipTestWindow = Window & {
+    type PipTestWindow = {
       __TAURI_INTERNALS__?: {
-        invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+        invoke: <T = unknown>(
+          command: string,
+          args?: Record<string, unknown>,
+          options?: TauriInvokeOptions,
+        ) => Promise<T>;
       };
       __conversationPipCalls?: PipCommandRecord[];
     };
-    const target = window as PipTestWindow;
+    const target = window as unknown as PipTestWindow;
     target.__conversationPipCalls = [];
     target.__TAURI_INTERNALS__ = {
-      invoke: async (command, args) => {
+      invoke: async <T = unknown>(
+        command: string,
+        args?: Record<string, unknown>,
+      ): Promise<T> => {
         const calls = target.__conversationPipCalls || [];
         if (command === 'pip_controls') {
           const controls = args?.controls as { state?: unknown; availableControls?: unknown } | undefined;
@@ -689,8 +696,8 @@ async function installPipRuntime(page: Page, screenshotDataUrl: string): Promise
           calls.push({ command });
         }
         target.__conversationPipCalls = calls;
-        if (command === 'appshots_read_image_data_url') return dataUrl;
-        return null;
+        if (command === 'appshots_read_image_data_url') return dataUrl as T;
+        return null as T;
       },
     };
   }, screenshotDataUrl);

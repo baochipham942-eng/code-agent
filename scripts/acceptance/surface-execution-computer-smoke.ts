@@ -945,7 +945,7 @@ async function main(): Promise<void> {
   let runStarted = false;
   let runEnded = false;
   let serverAdded = false;
-  let status: AcceptanceStatus;
+  let status: AcceptanceStatus = 'failed';
   let failure: string | null = null;
 
   try {

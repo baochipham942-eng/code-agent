@@ -83,6 +83,15 @@ describe('LibraryService', () => {
     expect(() => service.importFile({ sourcePath: path.join(tmpDir, 'nope.txt') }, 1000)).toThrow();
   });
 
+  it('addItem 无 contentHash 时按同项目同路径去重（重复归档幂等）', () => {
+    const first = service.addItem({ projectId: 'proj_1', title: 'PRD.md', kind: 'artifact', pathOrUri: '/ws/PRD.md' }, 1000);
+    const again = service.addItem({ projectId: 'proj_1', title: 'PRD-again', kind: 'artifact', pathOrUri: '/ws/PRD.md' }, 2000);
+    const otherProject = service.addItem({ projectId: 'proj_2', title: 'PRD.md', kind: 'artifact', pathOrUri: '/ws/PRD.md' }, 3000);
+
+    expect(again.id).toBe(first.id);
+    expect(otherProject.id).not.toBe(first.id);
+  });
+
   it('addItem 归档产物：contentHash 命中时返回已有条目', () => {
     const first = service.addItem({
       projectId: 'proj_1',

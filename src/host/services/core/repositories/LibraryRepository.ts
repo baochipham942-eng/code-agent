@@ -148,6 +148,14 @@ export class LibraryRepository {
     return result.changes > 0;
   }
 
+  findByPath(projectId: string | null, pathOrUri: string): LibraryItem | undefined {
+    const row = (projectId === null
+      ? this.db.prepare('SELECT * FROM library_items WHERE project_id IS NULL AND path_or_uri = ?').get(pathOrUri)
+      : this.db.prepare('SELECT * FROM library_items WHERE project_id = ? AND path_or_uri = ?').get(projectId, pathOrUri)
+    ) as SQLiteRow | undefined;
+    return row ? rowToLibraryItem(row) : undefined;
+  }
+
   findByContentHash(projectId: string | null, contentHash: string): LibraryItem | undefined {
     const row = (projectId === null
       ? this.db.prepare('SELECT * FROM library_items WHERE project_id IS NULL AND content_hash = ?').get(contentHash)

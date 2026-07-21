@@ -47,6 +47,14 @@ export class LibraryService {
         return existing;
       }
     }
+    // 无内容哈希的登记（如产物归档）按同项目同路径去重，重复归档幂等
+    if (!request.contentHash) {
+      const existing = this.repo.findByPath(projectId, request.pathOrUri);
+      if (existing) {
+        logger.info('Library item deduped by path', { id: existing.id, title: existing.title });
+        return existing;
+      }
+    }
 
     const item: LibraryItem = {
       id: `lib_${now}_${crypto.randomUUID().split('-')[0]}`,

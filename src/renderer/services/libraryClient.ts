@@ -9,6 +9,7 @@
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
   LibraryItem,
+  LibraryItemCreateRequest,
   LibraryListOptions,
   SessionContextPin,
 } from '@shared/contract/library';
@@ -21,6 +22,10 @@ export interface LibraryImportResult {
 
 export async function listLibraryItems(options?: LibraryListOptions): Promise<LibraryItem[]> {
   return ipcService.invokeDomain<LibraryItem[]>(IPC_DOMAINS.LIBRARY, 'list', options ?? {});
+}
+
+export async function addLibraryItem(request: LibraryItemCreateRequest): Promise<LibraryItem> {
+  return ipcService.invokeDomain<LibraryItem>(IPC_DOMAINS.LIBRARY, 'addItem', request);
 }
 
 export async function importLibraryFiles(args: {

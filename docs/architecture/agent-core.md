@@ -333,6 +333,21 @@ slash seed (/create-role 或 /edit-role <roleId>)
 
 `strictToolset` 不改变普通 skill 的软边界语义。未声明 strict 的 skill 仍按 GAP-001：边界外工具可见，但调用时进入审批。
 
+#### 跨轮 sticky 恢复与退出（2026-07-21，PR #532）
+
+草稿未确认前用户还没结束会话，下一轮 inference 前 `resolveStickyStrictSkillInvocation()`（`conversationRuntimeStickySkill.ts`）要判断是否恢复 create-role/edit-role 的 strict 工具集。此前的实现只看"历史里出现过 slash 种子"，种子存在过就无条件恢复——草稿晾着不确认时，用户提任何无关请求（比如让模型去整理一份复盘报告）都会被继续锁在 5 个工具里，模型只能对用户说"当前环境受限"。
+
+现在恢复必须同时满足两个条件：
+
+1. **流程仍在进行**：本会话在 `roleDraftQueue` 里存在按 `sessionId` 过滤的 pending 草稿（确认阶段），或者虽无草稿但 slash 种子仍在最近 `INTERVIEW_WINDOW_TURNS`（3）条 user 消息内（访谈阶段）；
+2. **未显式退出**：种子之后的历史里没有出现过 `exit_role_flow` 工具调用。
+
+任一条件不满足就不恢复，模型在当前轮拿到全量工具集。
+
+新增的 `exit_role_flow` 工具（strict 白名单内，`src/host/tools/modules/roleAuthoring/exitRoleFlow.ts`）是模型的显式退出口：调用成功后 `ToolExecutionEngine` 立即清除 `turn.skillToolBoundary` 并 `clearActiveSkill()`，同一轮即可恢复全量工具继续处理用户的请求；未确认的草稿仍留在确认卡上不受影响。跨轮不再恢复由上面的条件 2 兜底（历史里扫到过这次调用）。
+
+strict 边界激活的每一轮，`buildStrictToolsetNotice()`（`src/host/tools/skillBoundaryScope.ts`）会向模型注入原因说明：当前处于哪个 skill、收窄后还剩哪些工具、这是流程设计而非权限或环境故障、以及怎么退出（建/改角色 = 调 `exit_role_flow`；没有退出工具的 strict skill，例如 dream/distill = 建议完成当前流程或新开会话）。`messageProcessorUnavailableTools` 的 admission-repair 拦截消息同步带上同一段原因，避免模型只能对用户编"环境受限"这种模糊解释。
+
 ---
 
 ## 2026-04-27 运行时加固状态

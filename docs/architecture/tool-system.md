@@ -188,6 +188,8 @@ FOR EACH toolCall:
 
 关键文件：`src/host/tools/modules/skill/skill.ts`、`src/host/tools/toolExecutor.ts`、`src/host/services/skills/skillInvocationResolver.ts`、`src/shared/contract/agentSkill.ts`。细节见 [极客时间差距修复 spec](../specs/2026-06-02-geektime-gap-remediation.md)。
 
+`strictToolset` 是比 GAP-001 软边界更硬的收缩（把模型可见工具直接砍到 allowedTools，边界外工具不可见而非待审批），仅 create-role/edit-role 等 opt-in skill 使用。硬收缩激活时 `buildStrictToolsetNotice()`（`skillBoundaryScope.ts`）向模型注入原因和退出方式，配套的 `exit_role_flow` 工具让模型显式退出、恢复全量工具集。详见 [agent-core.md 的跨轮 sticky 恢复与退出](agent-core.md#跨轮-sticky-恢复与退出2026-07-21pr-532)。
+
 ### PolicyEnforcer 接线（GAP-002，PR #192）
 
 `PolicyEnforcer` 此前整层是 dead code（完整实现但从未被调用），`policy.toml` 的 `denied_path` 等规则形同虚设。现在它接进 `ToolExecutor.execute()`——在 guard_fabric 之后、任何审批路径（skill 预审批 / 安全白名单 / classifier）之前执行 policy 检查，规则真实生效，`DecisionTrace` 里随之出现 `policy_enforcer` 层。无 policy 文件时不再每次调用都重新探测文件系统。

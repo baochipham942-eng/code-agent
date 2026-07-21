@@ -3,7 +3,8 @@ export type MemoryInjectionBlockType =
   | 'memory_index'
   | 'memory_hint'
   | 'recent_conversations'
-  | 'failure_journal';
+  | 'failure_journal'
+  | 'library_pins';
 
 export interface MemoryInjectionTrace {
   id: string;

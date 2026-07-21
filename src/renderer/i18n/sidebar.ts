@@ -66,6 +66,8 @@ export const sidebarZh = {
       automationNext: '下次 {time} · {name}',
       automationCount: '{count} 个任务',
       automationEmpty: '按计划自动跑，结果回来给你过目',
+      library: '资料库',
+      librarySubtitle: '项目资产 · 可 pin 进对话',
     },
   },
   sessionMenu: {
@@ -279,6 +281,8 @@ export const sidebarEn: typeof sidebarZh = {
       automationNext: 'Next {time} · {name}',
       automationCount: '{count} tasks',
       automationEmpty: 'Runs on schedule, results come back for review',
+      library: 'Library',
+      librarySubtitle: 'Project assets · pin into chats',
     },
   },
   sessionMenu: {

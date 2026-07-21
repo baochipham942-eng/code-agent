@@ -251,6 +251,17 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'setStatus',
     'updateGoalStatus',
   ],
+  [IPC_DOMAINS.LIBRARY]: [
+    'addItem',
+    'delete',
+    'get',
+    'getPin',
+    'importFiles',
+    'list',
+    'pinnedItems',
+    'setPin',
+    'update',
+  ],
   [IPC_DOMAINS.PROVIDER]: [
     'discover_models',
     'getHealthStatus',

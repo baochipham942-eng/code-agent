@@ -16,6 +16,7 @@ import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../lightMemo
 import { getRepoMap } from '../../../context/repoMap';
 import { getCompressionPipelineOverride } from '../../../context/compressionPipeline';
 import { buildSessionMetadataBlock } from '../../../lightMemory/sessionMetadata';
+import { appendPinnedLibraryPromptBlock, getSessionPinFingerprint } from './libraryPins';
 import { buildRecentConversationsBlock } from '../../../lightMemory/recentConversations';
 import {
   getPromptForTask,
@@ -171,6 +172,8 @@ export function buildDynamicPromptCacheKey(
     String(projectSystemPrompt.append?.length ?? 0),
     projectSystemPrompt.sources.fullReplacePath || 'no-full',
     String(projectSystemPrompt.fullReplace?.length ?? 0),
+    // 会话 pin 变更即失效重建（Batch 2 L2：pinned 资料索引注入）
+    getSessionPinFingerprint(ctx.runtime.sessionId),
     userQuery,
   ].join('\u0000');
 }
@@ -467,6 +470,11 @@ ${deferredToolsSummary}
       'session metadata',
       ctx,
     );
+  }
+
+  // 注入会话 pinned 资料库索引（Batch 2 L2：只注入索引/摘要，正文按需 Read）
+  if (!artifactRepairMode && !shouldInjectArtifactBrief) {
+    systemPrompt = appendPinnedLibraryPromptBlock(systemPrompt, ctx, appendedBlocks);
   }
 
   const memoryContextEnabled =

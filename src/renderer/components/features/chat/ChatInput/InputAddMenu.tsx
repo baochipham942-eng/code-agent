@@ -3,7 +3,7 @@
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Image as ImageIcon, SlashSquare, Brain } from 'lucide-react';
+import { Plus, Image as ImageIcon, SlashSquare, Brain, BookOpen } from 'lucide-react';
 import { useModeStore } from '../../../../stores/modeStore';
 import type { InteractionMode } from '../../../../../shared/contract/agent';
 import type { SessionMemoryMode } from '../../../../../shared/contract';
@@ -16,6 +16,9 @@ interface Props {
   memoryMode: SessionMemoryMode;
   onToggleMemory: () => void;
   memoryToggleDisabled?: boolean;
+  /** Batch 2 L2：打开资料库 Pin 选择器（无会话时禁用） */
+  onOpenLibrary: () => void;
+  libraryDisabled?: boolean;
 }
 
 function buildModeOptions(hints: { code: string; plan: string; ask: string }): Array<{ value: InteractionMode; label: string; color: string; hint: string }> {
@@ -32,6 +35,8 @@ export const InputAddMenu: React.FC<Props> = ({
   memoryMode,
   onToggleMemory,
   memoryToggleDisabled,
+  onOpenLibrary,
+  libraryDisabled,
 }) => {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -107,6 +112,21 @@ export const InputAddMenu: React.FC<Props> = ({
             <SlashSquare className="w-3.5 h-3.5 text-zinc-400" />
             <span>{t.inputAddMenu.slashPanelLabel}</span>
             <span className="ml-auto text-[10px] text-zinc-500 font-mono">/</span>
+          </button>
+
+          {/* Batch 2 L2: 资料库 Pin 选择器入口 */}
+          <button /* ds-allow:button: "+"二级菜单行（图标+文案左对齐菜单项，同文件既有菜单行同构），Button primitive 是居中动作按钮形状，不适配菜单行 */
+            type="button"
+            data-library-pin-entry
+            disabled={libraryDisabled}
+            onClick={() => {
+              setOpen(false);
+              onOpenLibrary();
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
+            <span>{t.inputAddMenu.libraryLabel}</span>
           </button>
 
           {/* C-6: 本会话记忆开关（默认开启的低频功能，从底栏移入这里） */}

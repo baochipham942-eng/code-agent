@@ -853,6 +853,31 @@ export const zh = {
   // 聊天转录（TurnCard / StreamingIndicator 等）
 
 
+  // 资料库（Batch 2：条目 Pin 进会话上下文）
+  library: {
+    pinModalTitle: '资料库 · Pin 到本会话',
+    pinModalHint: 'Pin 后模型可见条目索引（标题/路径/摘要），正文按需读取，回答会标注来源。',
+    projectGroup: '本项目',
+    globalGroup: '全局 / 未归类',
+    empty: '资料库还没有条目——任务产物归档或上传文件后会出现在这里。',
+    loadFailed: '资料库加载失败',
+    pinFailed: 'Pin 更新失败，请重试',
+    pinnedCount: '已 Pin {count} 条',
+    panelTitle: '资料库',
+    panelDescription: '项目资产 · 可 pin 进对话',
+    scopeGlobal: '全局 / 未归类',
+    refresh: '刷新',
+    upload: '上传文件',
+    uploading: '上传中…',
+    importedCount: '已导入 {count} 条',
+    importFailed: '导入失败',
+    deleteAction: '删除',
+    deleteConfirm: '再点一次确认删除',
+    deleted: '已删除',
+    archivedToast: '已归档到资料库：{title}',
+    archiveFailed: '归档失败',
+  },
+
   ...chatTranscriptZh,
   ...chatInputZh,
   ...chatInputModelStrategyZh,

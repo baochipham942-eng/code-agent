@@ -24,10 +24,6 @@ export async function listLibraryItems(options?: LibraryListOptions): Promise<Li
   return ipcService.invokeDomain<LibraryItem[]>(IPC_DOMAINS.LIBRARY, 'list', options ?? {});
 }
 
-export async function getLibraryItem(itemId: string): Promise<LibraryItem> {
-  return ipcService.invokeDomain<LibraryItem>(IPC_DOMAINS.LIBRARY, 'get', { itemId });
-}
-
 export async function addLibraryItem(request: LibraryItemCreateRequest): Promise<LibraryItem> {
   return ipcService.invokeDomain<LibraryItem>(IPC_DOMAINS.LIBRARY, 'addItem', request);
 }
@@ -41,13 +37,6 @@ export async function importLibraryFiles(args: {
   return ipcService.invokeDomain<LibraryImportResult>(IPC_DOMAINS.LIBRARY, 'importFiles', args);
 }
 
-export async function updateLibraryItem(
-  itemId: string,
-  patch: { title?: string; tags?: string[]; summary?: string | null; projectId?: string | null },
-): Promise<LibraryItem> {
-  return ipcService.invokeDomain<LibraryItem>(IPC_DOMAINS.LIBRARY, 'update', { itemId, ...patch });
-}
-
 export async function deleteLibraryItem(itemId: string): Promise<void> {
   await ipcService.invokeDomain(IPC_DOMAINS.LIBRARY, 'delete', { itemId });
 }
@@ -58,8 +47,4 @@ export async function getSessionPin(sessionId: string): Promise<SessionContextPi
 
 export async function setSessionPin(sessionId: string, itemIds: string[]): Promise<SessionContextPin> {
   return ipcService.invokeDomain<SessionContextPin>(IPC_DOMAINS.LIBRARY, 'setPin', { sessionId, itemIds });
-}
-
-export async function getPinnedItems(sessionId: string): Promise<LibraryItem[]> {
-  return ipcService.invokeDomain<LibraryItem[]>(IPC_DOMAINS.LIBRARY, 'pinnedItems', { sessionId });
 }

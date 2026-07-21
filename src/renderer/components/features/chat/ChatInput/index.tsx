@@ -83,6 +83,7 @@ import {
 } from './debugDraftUrl';
 import { getTrailingSlashToken } from './slashPickerModel';
 import { AgentChip } from './AgentChip';
+import { LibraryPinModal } from '../../knowledge/LibraryPinModal';
 import { SurfaceExecutionComposerStatus } from '../../surfaceExecution/SurfaceExecutionRunStatus';
 
 // ============================================================================
@@ -174,6 +175,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [showSlashPopover, setShowSlashPopover] = useState(false);
+  const [showLibraryPin, setShowLibraryPin] = useState(false);
+  const currentSessionProjectId = useSessionStore((s) => s.sessions.find((x) => x.id === currentSessionId)?.projectId ?? null);
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
   const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
   const [comboSuggestion, setComboSuggestion] = useState<{
@@ -590,6 +593,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     >
       {/* Command Palette triggered by / */}
       <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
+      {/* Batch 2 L2: 资料库 Pin 选择器 */}
+      {showLibraryPin && currentSessionId && (
+        <LibraryPinModal
+          sessionId={currentSessionId}
+          projectId={currentSessionProjectId}
+          onClose={() => setShowLibraryPin(false)}
+        />
+      )}
       <form ref={formRef} onSubmit={handleSubmit} className="max-w-3xl mx-auto">
         {/* 会话内循环（/loop）运行状态条 */}
         <LoopStatusBar sessionId={currentSessionId} />
@@ -885,6 +896,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               memoryMode={currentSessionMemoryMode}
               onToggleMemory={handleMemoryModeToggle}
               memoryToggleDisabled={!currentSessionId}
+              onOpenLibrary={() => setShowLibraryPin(true)}
+              libraryDisabled={!currentSessionId}
             />
 
             {/* 运行权限模式 chip（高频，保留独立位置） */}

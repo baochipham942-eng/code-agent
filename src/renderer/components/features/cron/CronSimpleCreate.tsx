@@ -14,7 +14,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
 
-export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
+type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
 
 export interface SimpleScheduleInput {
   freq: SimpleFrequency;

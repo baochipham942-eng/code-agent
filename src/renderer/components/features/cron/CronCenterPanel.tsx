@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Clock3 } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
+import { useI18n } from '../../../hooks/useI18n';
 import { CronJobList } from './CronJobList';
 import { CronJobDetail } from './CronJobDetail';
 import { CronJobEditor } from './CronJobEditor';
@@ -11,6 +12,8 @@ interface CronCenterPanelProps {
 }
 
 export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => {
+  const { t } = useI18n();
+  const cc = t.cronCenter;
   const {
     jobs,
     stats,
@@ -51,16 +54,16 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     <FullScreenPage testId="cron-center-panel">
       <FullScreenPageHeader
         icon={<Clock3 className="h-4 w-4 text-amber-300" />}
-        title="Cron Center"
-        description="定时任务调度、执行历史与运行状态"
+        title={cc.title}
+        description={cc.subtitle}
         onClose={onClose}
-        closeLabel="关闭 Cron Center"
+        closeLabel={cc.close}
         actions={stats ? (
             <div className="hidden items-center gap-2 text-xs text-zinc-400 md:flex">
-              <span className="rounded-full bg-zinc-900 px-2.5 py-1">总任务 {stats.totalJobs}</span>
-              <span className="rounded-full bg-zinc-900 px-2.5 py-1">启用 {stats.activeJobs}</span>
+              <span className="rounded-full bg-zinc-900 px-2.5 py-1">{cc.statTotal} {stats.totalJobs}</span>
+              <span className="rounded-full bg-zinc-900 px-2.5 py-1">{cc.statActive} {stats.activeJobs}</span>
               <span className="rounded-full bg-zinc-900 px-2.5 py-1">
-                成功率 {stats.successRate.toFixed(0)}%
+                {cc.statRate} {stats.successRate.toFixed(0)}%
               </span>
             </div>
           ) : null}
@@ -77,7 +80,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         <div className="min-w-0">
           {isLoading && jobs.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-              正在加载定时任务…
+              {cc.loading}
             </div>
           ) : (
             <CronJobDetail job={selectedJob} />

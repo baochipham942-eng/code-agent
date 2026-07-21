@@ -1,5 +1,6 @@
 import React from 'react';
 import type { CronJobExecution } from '@shared/contract';
+import { useI18n } from '../../../hooks/useI18n';
 import {
   formatDateTime,
   formatDuration,
@@ -17,10 +18,12 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
   selectedExecutionId,
   onSelectExecution,
 }) => {
+  const { t } = useI18n();
+  const cc = t.cronCenter;
   if (executions.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 p-4 text-sm text-zinc-500">
-        还没有执行记录
+        {cc.execEmpty}
       </div>
     );
   }
@@ -30,12 +33,12 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
       <table className="w-full text-sm">
         <thead className="bg-zinc-950/80 text-left text-xs uppercase tracking-wide text-zinc-500">
           <tr>
-            <th className="px-3 py-2">状态</th>
-            <th className="px-3 py-2">计划时间</th>
-            <th className="px-3 py-2">开始时间</th>
-            <th className="px-3 py-2">耗时</th>
-            <th className="px-3 py-2">重试</th>
-            <th className="px-3 py-2">退出码</th>
+            <th className="px-3 py-2">{cc.colStatus}</th>
+            <th className="px-3 py-2">{cc.colScheduledAt}</th>
+            <th className="px-3 py-2">{cc.colStartedAt}</th>
+            <th className="px-3 py-2">{cc.colDuration}</th>
+            <th className="px-3 py-2">{cc.colRetry}</th>
+            <th className="px-3 py-2">{cc.colExitCode}</th>
           </tr>
         </thead>
         <tbody>
@@ -52,7 +55,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
               >
                 <td className="px-3 py-2">
                   <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
-                    {statusMeta.label}
+                    {cc.status[execution.status]}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-zinc-300">{formatDateTime(execution.scheduledAt)}</td>

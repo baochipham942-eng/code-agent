@@ -106,7 +106,12 @@ function shouldTriggerNextStep(record: SessionAutomationRecord, input: RecordAut
   // 其余只在自动化真正落入成功终态时触发下一步。
   // recurring cron 每个 tick 都会发 event='completed'，但记录仍保持 active，
   // 此处用持久化后的记录状态把关，堵死「每轮都自动接一棒」的烧钱循环。
-  return record.status === 'completed';
+  // pending_review 是成功终态的待审形态（一次性任务），同样放行。
+  return record.status === 'completed' || record.status === 'pending_review';
+}
+
+function hasPendingReview(record: SessionAutomationRecord): boolean {
+  return record.status === 'pending_review' || record.config?.pendingReview != null;
 }
 
 function rowToRecord(row: SessionAutomationRow): SessionAutomationRecord {
@@ -136,6 +141,7 @@ function statusLabel(status: SessionAutomationStatus): string {
     case 'active': return '已启用';
     case 'running': return '运行中';
     case 'completed': return '已完成';
+    case 'pending_review': return '待过目';
     case 'failed': return '失败';
     case 'paused': return '已暂停';
     case 'cancelled': return '已停止';
@@ -314,6 +320,7 @@ export class SessionAutomationService {
       const list = bySession.get(sessionId) ?? [];
       const active = list.filter((record) => ACTIVE_STATUSES.has(record.status));
       const running = list.filter((record) => RUNNING_STATUSES.has(record.status));
+      const pendingReview = list.filter(hasPendingReview);
       const nextRunAt = active
         .map((record) => record.nextRunAt)
         .filter((value): value is number => typeof value === 'number')
@@ -334,6 +341,7 @@ export class SessionAutomationService {
         total: list.length,
         activeCount: active.length,
         runningCount: running.length,
+        pendingReviewCount: pendingReview.length,
         nextRunAt,
         label,
         tooltip,
@@ -341,6 +349,35 @@ export class SessionAutomationService {
       };
     }
     return result;
+  }
+
+  listAll(): SessionAutomationRecord[] {
+    const db = getDb();
+    if (!db) return [];
+    const rows = db.prepare('SELECT * FROM session_automations ORDER BY updated_at DESC').all() as SessionAutomationRow[];
+    return rows.map(rowToRecord);
+  }
+
+  listPendingReview(): SessionAutomationRecord[] {
+    return this.listAll().filter(hasPendingReview);
+  }
+
+  countPendingReview(): number {
+    return this.listPendingReview().length;
+  }
+
+  /** 用户过目：清 pendingReview 标记；一次性任务的 pending_review 状态转 archived。不写回流消息。 */
+  markReviewed(automationId: string): SessionAutomationRecord | null {
+    const db = getDb();
+    if (!db) return null;
+    const record = this.getById(automationId);
+    if (!record) return null;
+    const config = { ...(record.config ?? {}) };
+    delete config.pendingReview;
+    const status: SessionAutomationStatus = record.status === 'pending_review' ? 'archived' : record.status;
+    db.prepare('UPDATE session_automations SET status = ?, config_json = ?, updated_at = ? WHERE id = ?')
+      .run(status, JSON.stringify(config), Date.now(), automationId);
+    return this.getById(automationId);
   }
 
   async recordCreated(input: UpsertSessionAutomationInput): Promise<SessionAutomationRecord> {

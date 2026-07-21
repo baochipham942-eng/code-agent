@@ -8,6 +8,14 @@ const listJobs = vi.fn<() => Promise<CronJobDefinition[]>>();
 const getStats = vi.fn<() => Promise<CronServiceStats>>();
 const getExecutions = vi.fn().mockResolvedValue([]);
 
+const countPendingReview = vi.fn<() => Promise<number>>().mockResolvedValue(0);
+
+vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
+  sessionAutomationClient: {
+    countPendingReview: () => countPendingReview(),
+  },
+}));
+
 vi.mock('../../../src/renderer/services/cronClient', () => ({
   cronClient: {
     listJobs: (...args: unknown[]) => listJobs(...(args as [])),
@@ -59,6 +67,7 @@ function makeStats(running: number): CronServiceStats {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  countPendingReview.mockResolvedValue(0);
   useCronStore.setState({ jobs: [], stats: null, selectedJobId: null, error: null });
 });
 
@@ -129,5 +138,18 @@ describe('SidebarCapabilityZone', () => {
     entry.click();
     expect(useAppStore.getState().showLibraryPanel).toBe(true);
     useAppStore.getState().setShowLibraryPanel(false);
+  });
+
+  it('有待过目时渲染角标且副文案切待过目（A4）', async () => {
+    listJobs.mockResolvedValue([makeJob({ nextRunAt: Date.now() + 3_600_000 })]);
+    getStats.mockResolvedValue(makeStats(0));
+    countPendingReview.mockResolvedValue(2);
+    render(<SidebarCapabilityZone />);
+    await waitFor(() => {
+      expect(screen.getByTestId('sidebar-capability-automation-pending').textContent).toBe('2');
+    });
+    // 待过目优先于下次运行
+    expect(screen.getByText('2 条待过目')).toBeTruthy();
+    expect(screen.queryByText(/下次 /)).toBeNull();
   });
 });

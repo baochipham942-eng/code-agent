@@ -8,6 +8,7 @@ export type SessionAutomationStatus =
   | 'active'
   | 'running'
   | 'completed'
+  | 'pending_review'
   | 'failed'
   | 'paused'
   | 'cancelled'
@@ -37,6 +38,8 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
   sourceMessageId?: string;
   handoffPrompt?: string;
   nextStage?: SessionAutomationNextStageConfig;
+  /** 最近一次成功运行的待过目标记；用户过目/归档后清除。recurring 任务记录保持 active，靠它进待审收件箱。 */
+  pendingReview?: { resultSessionId?: string; at: number };
 }
 
 export interface SessionAutomationRecord {
@@ -72,6 +75,8 @@ export interface SessionAutomationSessionSummary {
   total: number;
   activeCount: number;
   runningCount: number;
+  /** 待过目数（status=pending_review 或 config.pendingReview 存在） */
+  pendingReviewCount?: number;
   nextRunAt?: number;
   label?: string;
   tooltip: string;

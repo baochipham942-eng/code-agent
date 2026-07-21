@@ -47,6 +47,14 @@ describe('browserModule (vision Level 1)', () => {
       expect(actionEnum).toContain('screenshot');
       expect(actionEnum).toContain('switchTab');
       expect(actionEnum).toContain('switch_tab');
+      expect(actionEnum).toContain('upload_file');
+      expect(actionEnum).toContain('wait_for_download');
+      expect(browserSchema.inputSchema.properties).toMatchObject({
+        uploadFilePath: { type: 'string' },
+        engine: { enum: ['auto', 'managed', 'relay'] },
+        relayDomainScopes: { type: 'array' },
+        relayActionScopes: { type: 'array' },
+      });
     });
   });
 

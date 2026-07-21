@@ -4,12 +4,22 @@ import {
   redactBrowserCookiePayloadsInText,
   redactCookieValueFieldsInRecord,
 } from './browserComputerCookieRedaction';
+import {
+  isBrowserComputerInputPayloadAction,
+  isBrowserComputerToolName,
+  redactBrowserComputerInputPayloadsInValue,
+  redactBrowserComputerTextPreview,
+} from './browserComputerInputPayloadRedaction';
 
 export { sanitizeLargeTextToolArguments } from './browserComputerLargeTextRedaction';
 export { redactBrowserCookiePayloadsInText } from './browserComputerCookieRedaction';
+export {
+  isBrowserComputerInputPayloadAction,
+  isBrowserComputerToolName,
+  redactBrowserComputerInputPayloadsInValue,
+  redactBrowserComputerTextPreview,
+} from './browserComputerInputPayloadRedaction';
 
-const BROWSER_COMPUTER_TOOLS = new Set(["browser_action", "computer_use"]);
-const INPUT_PAYLOAD_ACTIONS = new Set(["type", "smart_type", "fill_form"]);
 const SECRET_REF_PLACEHOLDER = "[secretRef]";
 const SENSITIVE_KEY_PATTERN =
   /password|token|secret|credential|cookie|authorization/i;
@@ -30,6 +40,8 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "cookies",
   "cookieRows",
   "cookieSeeds",
+  "chainOfThought",
+  "chain_of_thought",
   "encrypted_value",
   "encryptedValue",
   "keychainPassword",
@@ -41,11 +53,14 @@ const RAW_BROWSER_COMPUTER_METADATA_KEYS = new Set([
   "rawAxTree",
   "rawDomSnapshot",
   "rawHtml",
+  "reasoning",
   "screenshotBase64",
   "screenshotData",
   "seeds",
   "sessionStorage",
   "storageState",
+  "thinking",
+  "thinkingContent",
   "userDataDir",
 ]);
 const OMIT = Symbol("omit-browser-computer-metadata");
@@ -256,10 +271,15 @@ function buildBrowserActionEvidenceInputs(
       state: "read",
     });
   }
-  if (typeof metadata.path === "string") {
+  const screenshotPath = typeof metadata.path === "string"
+    ? metadata.path
+    : typeof metadata.imagePath === "string"
+      ? metadata.imagePath
+      : null;
+  if (screenshotPath) {
     evidence.push({
       kind: "screenshot",
-      ref: metadata.path,
+      ref: screenshotPath,
       source: "browserAction.screenshot",
       state: metadata.analyzed === true ? "read" : "fresh",
     });
@@ -297,7 +317,7 @@ function inferBrowserActionVisualObservation(result: BrowserComputerResultLike):
   const metadata = result.metadata || {};
   if (metadata.domSnapshot) return { observed: true, source: "dom" };
   if (metadata.accessibilitySnapshot) return { observed: true, source: "a11y" };
-  if (typeof metadata.path === "string") {
+  if (typeof metadata.path === "string" || typeof metadata.imagePath === "string") {
     if (metadata.analyzed === true) return { observed: true, source: "analysis" };
     return {
       observed: false,
@@ -372,21 +392,6 @@ export interface BrowserComputerSecretPlaceholderSummary {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-export function isBrowserComputerToolName(
-  toolName: unknown,
-): toolName is "browser_action" | "computer_use" {
-  return typeof toolName === "string" && BROWSER_COMPUTER_TOOLS.has(toolName);
-}
-
-export function isBrowserComputerInputPayloadAction(action: unknown): boolean {
-  return typeof action === "string" && INPUT_PAYLOAD_ACTIONS.has(action);
-}
-
-export function redactBrowserComputerTextPreview(value: unknown): string {
-  const text = typeof value === "string" ? value : "";
-  return text ? `[redacted ${text.length} chars]` : "[redacted text]";
 }
 
 function normalizeDomain(value: unknown): string | null {
@@ -526,6 +531,12 @@ export function redactBrowserComputerInputArgs(
   const safeArgs = { ...args };
   if ("text" in safeArgs) {
     safeArgs.text = redactBrowserComputerTextPreview(safeArgs.text);
+  }
+  if ("clipboardText" in safeArgs) {
+    safeArgs.clipboardText = redactBrowserComputerTextPreview(safeArgs.clipboardText);
+  }
+  if ("dialogPromptText" in safeArgs) {
+    safeArgs.dialogPromptText = redactBrowserComputerTextPreview(safeArgs.dialogPromptText);
   }
   if ("formData" in safeArgs) {
     safeArgs.formData = redactBrowserComputerFormData(safeArgs.formData);
@@ -957,90 +968,4 @@ export function sanitizeBrowserComputerToolResult<
       result.metadata,
     ),
   };
-}
-
-interface BrowserComputerSensitiveLiteral {
-  value: string;
-  replacement: string;
-}
-
-function collectBrowserComputerInputPayloads(
-  toolName: string,
-  args: Record<string, unknown>,
-): BrowserComputerSensitiveLiteral[] {
-  if (
-    !isBrowserComputerToolName(toolName) ||
-    !isBrowserComputerInputPayloadAction(args.action)
-  ) {
-    return [];
-  }
-
-  const values = new Map<string, string>();
-  if (typeof args.text === "string" && args.text) {
-    values.set(args.text, redactBrowserComputerTextPreview(args.text));
-  }
-  if (isRecord(args.formData)) {
-    for (const value of Object.values(args.formData)) {
-      if (typeof value === "string" && value) {
-        values.set(value, redactBrowserComputerTextPreview(value));
-      }
-    }
-  }
-  if (typeof args.secretRef === "string" && args.secretRef) {
-    values.set(args.secretRef, SECRET_REF_PLACEHOLDER);
-  }
-
-  return [...values.entries()]
-    .map(([value, replacement]) => ({ value, replacement }))
-    .sort((a, b) => b.value.length - a.value.length);
-}
-
-function redactPayloadsInString(
-  value: string,
-  payloads: BrowserComputerSensitiveLiteral[],
-): string {
-  let redacted = value;
-  for (const payload of payloads) {
-    redacted = redacted
-      .split(payload.value)
-      .join(payload.replacement);
-  }
-  return redacted;
-}
-
-export function redactBrowserComputerInputPayloadsInValue(
-  toolName: string,
-  args: Record<string, unknown>,
-  value: unknown,
-): unknown {
-  const payloads = collectBrowserComputerInputPayloads(toolName, args);
-  const applyCookieText =
-    isBrowserComputerToolName(toolName) && typeof value === "string"
-      ? (text: string) => redactBrowserCookiePayloadsInText(text)
-      : (text: string) => text;
-
-  if (payloads.length === 0) {
-    if (typeof value === "string" && isBrowserComputerToolName(toolName)) {
-      return applyCookieText(value);
-    }
-    return value;
-  }
-
-  if (typeof value === "string") {
-    return applyCookieText(redactPayloadsInString(value, payloads));
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) =>
-      redactBrowserComputerInputPayloadsInValue(toolName, args, item),
-    );
-  }
-  if (isRecord(value)) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        redactBrowserComputerInputPayloadsInValue(toolName, args, item),
-      ]),
-    );
-  }
-  return value;
 }

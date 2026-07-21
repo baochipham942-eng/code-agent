@@ -54,6 +54,7 @@ import {
   buildCompletionSummaryRecord,
   persistCompletionSummaryRecord,
 } from '../../session/completionSummaryService';
+import { getConfiguredSurfaceExecutionRuntime } from '../../services/surfaceExecution/SurfaceExecutionRuntime';
 
 const logger = createLogger('AgentLoop');
 
@@ -198,12 +199,42 @@ export class RunFinalizer {
     genNum: number,
     terminal: RunTerminalInfo = {},
   ): Promise<void> {
-    const terminalStatus = terminal.status
+    let terminalStatus = terminal.status
       ?? (this.ctx.control.isCancelled
         ? 'cancelled'
         : this.ctx.control.isInterrupted
           ? 'interrupted'
           : 'completed');
+    let terminalError = terminal.error;
+
+    const surfaceRuntime = getConfiguredSurfaceExecutionRuntime();
+    const agentId = this.ctx.agentId?.trim();
+    const runId = this.ctx.runId?.trim();
+    if (surfaceRuntime && agentId && runId) {
+      try {
+        await surfaceRuntime.endRun({
+          conversationId: this.ctx.sessionId,
+          runId,
+          agentId,
+          emitSurfaceEvent: (event) => this.ctx.onEvent({ type: 'surface_execution', data: event }),
+        });
+      } catch (error) {
+        terminalStatus = 'failed';
+        terminalError = error;
+      }
+    }
+
+    // Legacy CUA lock/budget remain a compatibility cleanup until every caller
+    // is bound to a Surface Session. They must complete before any terminal UI event.
+    try {
+      await Promise.all([
+        import('../../mcp/cuaSessionLock').then(({ releaseCuaLock }) => releaseCuaLock(this.ctx.sessionId)),
+        import('../../mcp/cuaTrajectoryBudget').then(({ resetCuaBudget }) => resetCuaBudget(this.ctx.sessionId)),
+      ]);
+    } catch (error) {
+      terminalStatus = 'failed';
+      terminalError = terminalError || error;
+    }
 
     const runEvent = getRunTerminalPostHogEvent(terminalStatus);
     trackNode(runEvent, {
@@ -214,7 +245,7 @@ export class RunFinalizer {
 
     // Handle loop exit conditions
     if (terminalStatus === 'failed') {
-      const errorMessage = formatTerminalError(terminal.error);
+      const errorMessage = formatTerminalError(terminalError);
       if (this.ctx.goalMode?.isPending()) {
         const reason = `运行失败：${errorMessage}`;
         this.ctx.goalMode.markAborted(reason);
@@ -228,7 +259,7 @@ export class RunFinalizer {
           },
         });
       }
-      logger.error('[AgentLoop] Loop exited due to runtime error', terminal.error);
+      logger.error('[AgentLoop] Loop exited due to runtime error', terminalError);
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);
       this.ctx.onEvent({
         type: 'error',
@@ -308,7 +339,7 @@ export class RunFinalizer {
         status: terminalStatus,
         iterations,
         userMessage,
-        error: terminal.error,
+        error: terminalError,
       });
       await persistCompletionSummaryRecord(completionSummary);
       logger.info('[CompletionSummary] persisted run completion contract', {
@@ -350,16 +381,6 @@ export class RunFinalizer {
         logger.error('[AgentLoop] Session end hook error:', error);
       }
     }
-
-    // CU 跨会话锁：run 结束即释放（锁的临界区是一次活跃轨迹，不是整个会话；
-    // 不释放会让其他会话/工具的 computer use 阻塞到 TTL）。未持有时是 no-op。
-    import('../../mcp/cuaSessionLock')
-      .then(({ releaseCuaLock }) => releaseCuaLock(this.ctx.sessionId))
-      .catch(() => { /* non-critical */ });
-    // CUA 轨迹预算：同一临界区，run 结束重置计数
-    import('../../mcp/cuaTrajectoryBudget')
-      .then(({ resetCuaBudget }) => resetCuaBudget(this.ctx.sessionId))
-      .catch(() => { /* non-critical */ });
 
     // Light Memory: Record session stats + conversation summary
     const messageCount = this.ctx.messages.length;

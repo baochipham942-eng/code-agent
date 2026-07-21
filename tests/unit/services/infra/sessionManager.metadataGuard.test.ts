@@ -13,6 +13,8 @@ const dbMock = {
   getSession: vi.fn((id: string) => dbState.sessions.find((s) => s.id === id) ?? null),
   createSession: vi.fn(),
   createSessionWithId: vi.fn(),
+  addMessage: vi.fn(),
+  saveTodos: vi.fn(),
   updateSession: vi.fn(),
   patchSessionMetadata: vi.fn(() => true),
   getRecentMessages: vi.fn(() => []),
@@ -110,5 +112,116 @@ describe('SessionManager metadata guard (Codex audit R2)', () => {
       expect.objectContaining({ sessionId: 'session-1', keys: ['modelOverride'] }),
       'session-1',
     );
+  });
+
+  it('sanitizes legacy Surface metadata and messages before importing them', async () => {
+    const rawSurfaceMetadata = {
+      surfaceExecutionSessionV1: {
+        version: 1,
+        sessionId: 'surface-import',
+        runId: 'run-import',
+        conversationId: 'conversation-import',
+        agentId: 'agent-import',
+        surface: 'browser',
+        provider: 'relay',
+        state: 'completed',
+        grantId: 'grant-import-secret',
+        activeTarget: { tabRef: 'tab-import-secret' },
+        startedAt: 10,
+        heartbeatAt: 20,
+      },
+      surfaceExecutionEventsV1: [{
+        version: 1,
+        eventId: 'event-import',
+        sequence: 1,
+        sessionId: 'surface-import',
+        runId: 'run-import',
+        agentId: 'agent-import',
+        surface: 'browser',
+        provider: 'relay',
+        sessionState: 'completed',
+        phase: 'verify',
+        status: 'succeeded',
+        userSummary: '导入结果已复验',
+        target: {
+          kind: 'browser',
+          browserInstanceId: 'browser-import-secret',
+          windowRef: 'window-import-secret',
+          tabRef: 'tab-import-secret',
+          documentRevision: 'revision-import-secret',
+        },
+        observation: { verdict: 'pass', findings: ['业务状态正确'] },
+        evidenceRefs: [],
+        artifactRefs: [],
+        availableControls: [],
+        startedAt: 10,
+        completedAt: 20,
+      }],
+      grant: { grantId: 'grant-metadata-secret' },
+      targetRef: 'target-metadata-secret',
+      profilePath: '/Users/private/profile-import-secret',
+      cookie: 'cookie-import-secret',
+      token: 'token-import-secret',
+      reasoningContent: 'raw imported chain of thought',
+      ordinaryMetadata: 'preserved',
+    };
+    const manager = await makeManager();
+
+    await manager.importSession({
+      id: 'legacy-session',
+      title: 'Legacy import',
+      modelConfig: { provider: 'openai', model: 'test' },
+      createdAt: 1,
+      updatedAt: 2,
+      metadata: rawSurfaceMetadata,
+      messages: [{
+        id: 'legacy-message',
+        role: 'assistant',
+        content: '旧消息仍可读',
+        timestamp: 2,
+        reasoning: 'raw message reasoning',
+        thinking: 'raw message thinking',
+        metadata: rawSurfaceMetadata,
+        toolCalls: [{
+          id: 'legacy-tool-call',
+          name: 'legacy_custom_tool',
+          arguments: { legacyFlag: true },
+        }],
+      }],
+      todos: [],
+      messageCount: 1,
+    } as never);
+
+    const storedSession = dbMock.createSession.mock.calls[0][0] as Record<string, unknown>;
+    const storedMessage = dbMock.addMessage.mock.calls[0][1] as Record<string, unknown>;
+    expect(storedSession.metadata).toMatchObject({
+      ordinaryMetadata: 'preserved',
+      surfaceExecutionExportV1: {
+        version: 1,
+        sessions: [{
+          sessionId: 'surface-import',
+          events: [{ eventId: 'event-import', status: 'succeeded' }],
+        }],
+      },
+    });
+    expect(storedMessage).toMatchObject({
+      content: '旧消息仍可读',
+      toolCalls: [{
+        name: 'legacy_custom_tool',
+        arguments: { legacyFlag: true },
+      }],
+    });
+    expect(storedMessage.reasoning).toBeUndefined();
+    expect(storedMessage.thinking).toBeUndefined();
+    const serialized = JSON.stringify({ storedSession, storedMessage });
+    expect(serialized).not.toContain('surfaceExecutionSessionV1');
+    expect(serialized).not.toContain('surfaceExecutionEventsV1');
+    expect(serialized).not.toContain('grant-import-secret');
+    expect(serialized).not.toContain('target-metadata-secret');
+    expect(serialized).not.toContain('profile-import-secret');
+    expect(serialized).not.toContain('cookie-import-secret');
+    expect(serialized).not.toContain('token-import-secret');
+    expect(serialized).not.toContain('raw imported chain of thought');
+    expect(serialized).not.toContain('raw message reasoning');
   });
 });

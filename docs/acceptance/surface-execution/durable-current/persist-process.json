@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "phase": "persist",
+  "pid": 95362,
+  "assertions": {
+    "ledgerPersisted": true,
+    "canaryRedactedBeforeDisk": true,
+    "sourceWasWritableBeforeRestart": true,
+    "productionSessionStorePersisted": true,
+    "runtimeEventProjectionWired": true,
+    "activeGrantExistedBeforeRestart": true
+  },
+  "details": {
+    "conversationId": "session_1784605209855_86755de0",
+    "surfaceSessionId": "surface_fffca839-04f8-4b06-acc4-d9c2a2114365",
+    "persistentMedia": {
+      "dataDir": "/tmp/code-agent-surface-durable-94860",
+      "databasePath": "/tmp/code-agent-surface-durable-94860/code-agent.db",
+      "databaseBytes": 1159168,
+      "databaseSha256": "6eded441656cd2315b7a311f852943a482045aca10a5b9a0e86d8bbe67f3176a",
+      "recordKey": "surfaceExecutionLedgerV1",
+      "recordSha256": "ae3717e75ffe6b2713a5b286488ab082c92615cb09d8c71de0a3207c44a62a50"
+    },
+    "sourceExport": {
+      "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/durable-current/source-session-export.json",
+      "sha256": "64a5ddfe83d04c7ac7f2cfd4535ecb6010203ab1f018379f1cd4251a6f147724"
+    }
+  }
+}

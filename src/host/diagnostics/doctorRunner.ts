@@ -12,6 +12,7 @@ import {
 } from './checks/environment';
 import { checkProviderConnectivity } from './checks/network';
 import { checkProviderHealth } from './checks/providerHealth';
+import { checkCurrentBrowserRelay } from './checks/browserRelay';
 import { checkMcpServers } from './checks/mcp';
 import { checkHooksConfig } from './checks/hooks';
 import { checkAppVersion } from './checks/version';
@@ -102,6 +103,11 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
       category: 'provider_health',
       name: 'Provider health',
       run: async () => checkProviderHealth(),
+    },
+    {
+      category: 'provider_health',
+      name: 'Browser Relay V2',
+      run: checkCurrentBrowserRelay,
     },
     {
       category: 'mcp',

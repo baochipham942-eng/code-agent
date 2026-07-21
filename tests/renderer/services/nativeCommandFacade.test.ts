@@ -48,6 +48,27 @@ describe('nativeCommandFacade', () => {
     await invokeNativeCommandAction('framePip', { dataUrl: 'data:image/png;base64,abc' });
     expect(tauriInvoke).toHaveBeenLastCalledWith('pip_frame', { dataUrl: 'data:image/png;base64,abc' });
 
+    await invokeNativeCommandAction('setPipControls', {
+      controls: {
+        version: 1,
+        scope: {
+          conversationId: 'conversation-a',
+          runId: 'run-a',
+          agentId: 'agent-a',
+          surfaceSessionId: 'surface-a',
+        },
+        surface: 'browser',
+        state: 'running',
+        availableControls: ['pause', 'takeover', 'stop'],
+      },
+    });
+    expect(tauriInvoke).toHaveBeenLastCalledWith('pip_controls', {
+      controls: expect.objectContaining({
+        scope: expect.objectContaining({ surfaceSessionId: 'surface-a' }),
+        availableControls: ['pause', 'takeover', 'stop'],
+      }),
+    });
+
     await invokeNativeCommandAction('hidePip');
     expect(tauriInvoke).toHaveBeenLastCalledWith('pip_hide', undefined);
 

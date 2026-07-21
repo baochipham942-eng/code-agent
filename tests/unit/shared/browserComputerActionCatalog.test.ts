@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   getBrowserComputerActionCatalogEntry,
   getBrowserComputerActionCatalogForArgs,
+  getBrowserComputerSurfaceCapabilityDescriptor,
+  getStrictBrowserComputerActionCatalogEntry,
   isBrowserScopedComputerUseAction,
 } from '../../../src/shared/utils/browserComputerActionCatalog';
 
@@ -102,5 +104,59 @@ describe('browser/computer action catalog', () => {
       toolName: 'computer_use',
       arguments: { operation: 'act', stateId: 'state-1' },
     })).toMatchObject({ risk: 'desktop_input', evidenceKind: 'action_trace' });
+  });
+
+  it('provides a strict lookup for Host enforcement without changing legacy preview fallback', () => {
+    expect(getStrictBrowserComputerActionCatalogEntry('browser_action', 'navigate', {
+      action: 'navigate',
+    })?.action).toBe('navigate');
+    expect(getStrictBrowserComputerActionCatalogEntry('browser_action', 'unknown_action', {
+      action: 'unknown_action',
+    })).toBeNull();
+    expect(getBrowserComputerActionCatalogEntry('browser_action', 'unknown_action', {
+      action: 'unknown_action',
+    })?.risk).toBe('browser_action');
+  });
+
+  it('registers hover and drag as Browser input mutations', () => {
+    for (const action of ['hover', 'drag']) {
+      expect(getBrowserComputerSurfaceCapabilityDescriptor('browser_action', action, {
+        action,
+      })).toMatchObject({
+        surface: 'browser',
+        capabilities: ['input'],
+        mutation: true,
+        catalog: {
+          action,
+          scope: 'managed_browser',
+          evidenceKind: 'action_trace',
+        },
+      });
+    }
+  });
+
+  it('separates safe dialog observation from explicit destructive acceptance', () => {
+    expect(getBrowserComputerSurfaceCapabilityDescriptor('browser_action', 'get_dialog_state', {
+      action: 'get_dialog_state',
+    })).toMatchObject({ capabilities: ['observe'], mutation: false });
+    expect(getBrowserComputerSurfaceCapabilityDescriptor('browser_action', 'handle_dialog', {
+      action: 'handle_dialog',
+      dialogAction: 'dismiss',
+    })).toMatchObject({ capabilities: ['input'], mutation: true });
+    expect(getBrowserComputerSurfaceCapabilityDescriptor('browser_action', 'handle_dialog', {
+      action: 'handle_dialog',
+      dialogAction: 'accept',
+      dialogPromptText: 'sensitive prompt response',
+    })).toMatchObject({ capabilities: ['input', 'secret', 'destructive'], mutation: true });
+  });
+
+  it('treats clipboard reads as capability-scoped operations and clipboard writes as input', () => {
+    expect(getBrowserComputerSurfaceCapabilityDescriptor('browser_action', 'read_clipboard', {
+      action: 'read_clipboard',
+    })).toMatchObject({ capabilities: ['observe', 'secret'], mutation: true });
+    expect(getBrowserComputerSurfaceCapabilityDescriptor('browser_action', 'write_clipboard', {
+      action: 'write_clipboard',
+      clipboardText: 'sensitive clipboard value',
+    })).toMatchObject({ capabilities: ['input', 'secret'], mutation: true });
   });
 });

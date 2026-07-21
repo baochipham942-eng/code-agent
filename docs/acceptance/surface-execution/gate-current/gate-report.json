@@ -1,0 +1,3083 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-21T03:46:45.029Z",
+  "truthSource": "docs/plans/2026-07-20-surface-execution-browser-computer-use.md",
+  "invocation": [
+    "/opt/homebrew/Cellar/node@24/24.15.0/bin/node",
+    "/Users/linchen/.codex/worktrees/aedb/code-agent/scripts/acceptance/surface-execution-gate-report.ts",
+    "--out",
+    "docs/acceptance/surface-execution/gate-current",
+    "--campaign-id",
+    "surface-v1-20260721T033951Z-af6f0f298901",
+    "--campaign-started-at",
+    "2026-07-21T03:39:51.214Z",
+    "--json"
+  ],
+  "campaign": {
+    "id": "surface-v1-20260721T033951Z-af6f0f298901",
+    "startedAt": "2026-07-21T03:39:51.214Z"
+  },
+  "currentSourceFingerprint": {
+    "version": 1,
+    "algorithm": "sha256",
+    "sha256": "d60e72a1204a7026473317698bd9df5e602931bbbb54395d8d918efbf89675fa",
+    "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+    "dirty": true,
+    "dirtyPaths": [
+      "docs/architecture/frontend.md",
+      "package.json",
+      "public/pip.html",
+      "resources/browser-relay-extension/background.js",
+      "resources/browser-relay-extension/manifest.json",
+      "resources/browser-relay-extension/options.html",
+      "resources/browser-relay-extension/options.js",
+      "resources/browser-relay-extension/popup.html",
+      "resources/browser-relay-extension/popup.js",
+      "resources/browser-relay-extension/protocol-v2.js",
+      "scripts/acceptance/browser-computer-app-host-smoke.ts",
+      "scripts/acceptance/fixtures/surface-execution-conversation.ts",
+      "scripts/acceptance/fixtures/surface-execution-cross-surface.ts",
+      "scripts/acceptance/fixtures/surface-execution-workbuddy.ts",
+      "scripts/acceptance/surface-execution-canary-scan.ts",
+      "scripts/acceptance/surface-execution-computer-smoke.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-core.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-smoke.ts",
+      "scripts/acceptance/surface-execution-conversation-smoke.ts",
+      "scripts/acceptance/surface-execution-cross-surface-smoke.ts",
+      "scripts/acceptance/surface-execution-durable-restart-smoke.ts",
+      "scripts/acceptance/surface-execution-gate-report-core.ts",
+      "scripts/acceptance/surface-execution-gate-report.ts",
+      "scripts/acceptance/surface-execution-managed-smoke.ts",
+      "scripts/acceptance/surface-execution-metrics.ts",
+      "scripts/acceptance/surface-execution-p2-acceptance-core.ts",
+      "scripts/acceptance/surface-execution-proof.ts",
+      "scripts/acceptance/surface-execution-relay-smoke.ts",
+      "scripts/acceptance/surface-execution-replay-import-child.ts",
+      "scripts/acceptance/surface-execution-stop-benchmark.ts",
+      "scripts/acceptance/surface-execution-workbuddy-smoke.ts",
+      "src-tauri/src/main.rs",
+      "src-tauri/src/pip.rs",
+      "src/cli/commands/export.ts",
+      "src/host/agent/runtime/toolExecutionEngine.ts",
+      "src/host/app/agentAppService.ts",
+      "src/host/diagnostics/checks/browserRelay.ts",
+      "src/host/diagnostics/doctorRunner.ts",
+      "src/host/evaluation/telemetryQueryService.ts",
+      "src/host/evaluation/transcriptReplayBuilder.ts",
+      "src/host/ipc/desktop.ipc.ts",
+      "src/host/ipc/index.ts",
+      "src/host/ipc/surfaceExecution.ipc.ts",
+      "src/host/mcp/cuaSessionLock.ts",
+      "src/host/plugins/builtin/browserControl/browser.schema.ts",
+      "src/host/plugins/builtin/browserControl/browserAction.schema.ts",
+      "src/host/plugins/builtin/computerUse/cuaStatefulComputerUse.ts",
+      "src/host/protocol/tools.ts",
+      "src/host/services/infra/browser/browserArtifactActions.ts",
+      "src/host/services/infra/browser/browserSurfaceInteractions.ts",
+      "src/host/services/infra/browser/browserUploadApprovalRegistry.ts",
+      "src/host/services/infra/browser/domSnapshotBuilder.ts",
+      "src/host/services/infra/browser/domSnapshotParser.ts",
+      "src/host/services/infra/browser/managedBrowserCookieImport.ts",
+      "src/host/services/infra/browser/relayActionFacade.ts",
+      "src/host/services/infra/browser/targetRefRegistry.ts",
+      "src/host/services/infra/browser/types.ts",
+      "src/host/services/infra/browserRelayApprovalBoundary.ts",
+      "src/host/services/infra/browserRelayService.ts",
+      "src/host/services/infra/browserService.ts",
+      "src/host/services/infra/sessionManager.ts",
+      "src/host/services/surfaceExecution/BrowserElementRefFence.ts",
+      "src/host/services/surfaceExecution/BrowserProfileImportApprovalService.ts",
+      "src/host/services/surfaceExecution/BrowserTabLeaseService.ts",
+      "src/host/services/surfaceExecution/ComputerSurfaceEventProjection.ts",
+      "src/host/services/surfaceExecution/ExternalSurfaceAgentAdapter.ts",
+      "src/host/services/surfaceExecution/ManagedBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/RelayBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/SurfaceAccessGrantService.ts",
+      "src/host/services/surfaceExecution/surfaceBrowserRuntimeTypes.ts",
+      "src/host/services/surfaceExecution/surfaceComputerErrorProjection.ts",
+      "src/host/services/surfaceExecution/surfaceComputerRuntimeHelpers.ts",
+      "src/host/services/surfaceExecution/surfaceContinuationRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceContinuationService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationControlService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationProjectionService.ts",
+      "src/host/services/surfaceExecution/SurfaceEventHub.ts",
+      "src/host/services/surfaceExecution/surfaceExecutionResultProjection.ts",
+      "src/host/services/surfaceExecution/SurfaceExecutionRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceFrameRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceInterruptService.ts",
+      "src/host/services/surfaceExecution/SurfaceObservationRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceOrganizationPolicyService.ts",
+      "src/host/services/surfaceExecution/SurfaceOutputRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceProofService.ts",
+      "src/host/services/surfaceExecution/SurfaceProviderRegistry.ts",
+      "src/host/services/surfaceExecution/surfaceRunOwnership.ts",
+      "src/host/services/surfaceExecution/SurfaceSessionManager.ts",
+      "src/host/services/surfaceExecution/SurfaceSwitchCoordinator.ts",
+      "src/host/session/browserComputerProofStore.ts",
+      "src/host/session/exportMarkdown.ts",
+      "src/host/session/localCache.ts",
+      "src/host/session/surfaceExecutionSessionExport.ts",
+      "src/host/session/transcriptExporter.ts",
+      "src/host/shellCapabilities.ts",
+      "src/host/telemetry/diagnosticBundleService.ts",
+      "src/host/telemetry/telemetryCollectorInternal.ts",
+      "src/host/tools/artifacts/surfaceExecutionToolResultPipeline.ts",
+      "src/host/tools/toolExecutor.ts",
+      "src/host/tools/types.ts",
+      "src/host/tools/vision/browserAction.ts",
+      "src/host/tools/vision/browserActionFinalize.ts",
+      "src/host/tools/vision/browserActionResultProjection.ts",
+      "src/host/tools/vision/browserActionSurfaceInteractions.ts",
+      "src/host/tools/vision/browserEngineDispatch.ts",
+      "src/host/tools/vision/browserEngineRouter.ts",
+      "src/host/tools/vision/browserNavigate.ts",
+      "src/host/tools/vision/browserProfileActions.ts",
+      "src/host/tools/vision/BrowserTool.ts",
+      "src/host/tools/vision/browserUploadApproval.ts",
+      "src/host/tools/vision/computerUse.ts",
+      "src/renderer/App.tsx",
+      "src/renderer/components/ChatView.tsx",
+      "src/renderer/components/features/browser/BrowserSurfacePanel.tsx",
+      "src/renderer/components/features/chat/ChatInput/index.tsx",
+      "src/renderer/components/features/chat/ToolStepGroup.tsx",
+      "src/renderer/components/features/chat/TurnCard.tsx",
+      "src/renderer/components/features/export/ExportModal.tsx",
+      "src/renderer/components/features/sidebar/SidebarSessionItem.tsx",
+      "src/renderer/components/features/surfaceExecution/index.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceControls.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceList.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionChatPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/surfaceExecutionPresentation.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionRunStatus.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceInterventionCards.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceOutputEntry.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfacePermissionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceResourceSections.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSemanticTimeline.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSessionHeader.tsx",
+      "src/renderer/components/features/surfaceExecution/types.ts",
+      "src/renderer/hooks/agent/effects/useSurfaceExecutionEffects.ts",
+      "src/renderer/hooks/useComputerUsePip.ts",
+      "src/renderer/hooks/useSurfaceExecutionConversation.ts",
+      "src/renderer/hooks/useSurfaceExecutionPip.ts",
+      "src/renderer/i18n/surfaceExecution.ts",
+      "src/renderer/index.tsx",
+      "src/renderer/services/nativeCommandFacade.ts",
+      "src/renderer/services/surfaceExecutionClient.ts",
+      "src/renderer/services/surfaceExecutionController.ts",
+      "src/renderer/stores/surfaceExecutionStore.ts",
+      "src/renderer/utils/browserComputerExportRedaction.ts",
+      "src/renderer/utils/surfaceExecutionProjection.ts",
+      "src/shared/contract/browserRelay.ts",
+      "src/shared/contract/desktop.ts",
+      "src/shared/contract/surfaceExecution.ts",
+      "src/shared/ipc/domains.ts",
+      "src/shared/utils/browserComputerActionCatalog.ts",
+      "src/shared/utils/browserComputerInputPayloadRedaction.ts",
+      "src/shared/utils/browserComputerRedaction.ts",
+      "src/shared/utils/surfaceExecutionExportCaptureContext.ts",
+      "src/shared/utils/surfaceExecutionExportFieldSanitizer.ts",
+      "src/shared/utils/surfaceExecutionExportProjection.ts",
+      "src/shared/utils/surfaceExecutionRedaction.ts",
+      "src/web/routes/dev.ts",
+      "src/web/routes/devSurfaceExecutionConversation.ts",
+      "src/web/routes/devSurfaceExecutionConversationSeed.ts",
+      "tests/agent/cancellation-fanout.test.ts",
+      "tests/main/diagnostics/browserRelay.test.ts",
+      "tests/main/diagnostics/doctorRunner.test.ts",
+      "tests/renderer/components/abilityMenu.browserReadiness.test.ts",
+      "tests/renderer/components/chatView.surfaceExecution.integration.test.ts",
+      "tests/renderer/components/exportModal.surfaceExecution.test.ts",
+      "tests/renderer/components/surfaceExecution/fixtures.ts",
+      "tests/renderer/components/surfaceExecution/SurfaceControls.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceEvidenceCard.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionConversationPanel.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionRunStatus.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceResourceSections.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceSemanticTimeline.test.tsx",
+      "tests/renderer/components/turnCard.artifactFold.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionEffects.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionPip.test.tsx",
+      "tests/renderer/services/nativeCommandFacade.test.ts",
+      "tests/renderer/services/surfaceExecutionClient.test.ts",
+      "tests/renderer/services/surfaceExecutionController.test.ts",
+      "tests/renderer/stores/surfaceExecutionStore.test.ts",
+      "tests/renderer/utils/surfaceExecutionProjection.test.ts",
+      "tests/unit/agent/messageHistory.browserComputerRedaction.test.ts",
+      "tests/unit/evaluation/surfaceExecutionReplayProjection.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.static.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.worker.test.ts",
+      "tests/unit/host/app/browserSurfaceSideDoor.static.test.ts",
+      "tests/unit/ipc/desktop.domain.ipc.test.ts",
+      "tests/unit/ipc/surfaceExecution.ipc.test.ts",
+      "tests/unit/main/pipSurfaceControls.static.test.ts",
+      "tests/unit/main/shellCapabilities.test.ts",
+      "tests/unit/mcp/cuaSessionLock.test.ts",
+      "tests/unit/scripts/surfaceExecutionCanaryScan.test.ts",
+      "tests/unit/scripts/surfaceExecutionComputerAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionControlledComplex.test.ts",
+      "tests/unit/scripts/surfaceExecutionConversationAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionCrossSurfaceAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionDurableRestartAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionGateReport.test.ts",
+      "tests/unit/scripts/surfaceExecutionMetrics.test.ts",
+      "tests/unit/scripts/surfaceExecutionP2Acceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionProof.test.ts",
+      "tests/unit/scripts/surfaceExecutionReplayImportChild.test.ts",
+      "tests/unit/scripts/surfaceExecutionWorkBuddyAcceptance.test.ts",
+      "tests/unit/services/infra/browserArtifactActions.uploadApproval.test.ts",
+      "tests/unit/services/infra/browserDomSnapshotBuilder.test.ts",
+      "tests/unit/services/infra/browserRelayService.test.ts",
+      "tests/unit/services/infra/browserTargetRefRegistry.test.ts",
+      "tests/unit/services/infra/browserUploadApprovalRegistry.test.ts",
+      "tests/unit/services/infra/relayActionFacade.test.ts",
+      "tests/unit/services/infra/sessionManager.metadataGuard.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserProfileImportApprovalService.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserTabLeaseService.test.ts",
+      "tests/unit/services/surfaceExecution/ComputerSurfaceEventProjection.test.ts",
+      "tests/unit/services/surfaceExecution/ExternalSurfaceAgentAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/ManagedBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/RelayBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceBrowserRuntime.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceContinuationService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceControlPlane.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceConversationProjectionService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceFrameRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOrganizationPolicyService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOutputRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOwnershipStores.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProofService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProviderRegistry.test.ts",
+      "tests/unit/session/browserComputerProofStore.test.ts",
+      "tests/unit/session/surfaceExecutionExport.test.ts",
+      "tests/unit/shared/browserComputerActionCatalog.test.ts",
+      "tests/unit/shared/browserComputerRedaction.browserPolicy.test.ts",
+      "tests/unit/shared/contract/surfaceExecution.test.ts",
+      "tests/unit/shared/utils/surfaceExecutionExportProjection.test.ts",
+      "tests/unit/telemetry/diagnosticBundleService.test.ts",
+      "tests/unit/tools/cuaStatefulLockEvents.test.ts",
+      "tests/unit/tools/cuaStatefulSurfaceIntegration.test.ts",
+      "tests/unit/tools/modules/vision/browser.test.ts",
+      "tests/unit/tools/modules/vision/browserAction.test.ts",
+      "tests/unit/tools/surfaceExecutionToolResultPipeline.test.ts",
+      "tests/unit/tools/toolExecutor.executionIntent.test.ts",
+      "tests/unit/tools/vision/browserActionFinalize.test.ts",
+      "tests/unit/tools/vision/browserEngineDispatch.intent.test.ts",
+      "tests/unit/tools/vision/browserEngineRelayRouting.test.ts",
+      "tests/unit/tools/vision/browserEngineRouter.test.ts",
+      "tests/unit/tools/vision/browserNavigateSideDoor.test.ts",
+      "tests/unit/tools/vision/browserUploadApproval.test.ts",
+      "tests/unit/tools/vision/browserWorkbenchGating.test.ts",
+      "tests/unit/web/appAssembly.test.ts",
+      "tests/unit/web/devSurfaceExecutionConversation.test.ts"
+    ],
+    "scopes": [
+      "src",
+      "src-tauri",
+      "resources",
+      "public",
+      "scripts",
+      "tests",
+      "package.json",
+      "docs/architecture",
+      "docs/plans"
+    ]
+  },
+  "git": {
+    "worktree": "/Users/linchen/.codex/worktrees/aedb/code-agent",
+    "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+    "originMain": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+    "mergeBase": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+    "commands": [
+      {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "stdout": "af6f0f2989013e18923184b36de12359499ddd5e",
+        "exitCode": 0
+      },
+      {
+        "argv": [
+          "git",
+          "rev-parse",
+          "origin/main"
+        ],
+        "stdout": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+        "exitCode": 0
+      },
+      {
+        "argv": [
+          "git",
+          "merge-base",
+          "HEAD",
+          "origin/main"
+        ],
+        "stdout": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+        "exitCode": 0
+      },
+      {
+        "argv": [
+          "git",
+          "rev-parse",
+          "--show-toplevel"
+        ],
+        "stdout": "/Users/linchen/.codex/worktrees/aedb/code-agent",
+        "exitCode": 0
+      }
+    ]
+  },
+  "proofInventory": [
+    {
+      "id": "managed",
+      "path": "docs/acceptance/surface-execution/managed-current/proof.json",
+      "status": "passed",
+      "recordedStatus": "passed",
+      "issues": []
+    },
+    {
+      "id": "relay",
+      "path": "docs/acceptance/surface-execution/relay-current/proof.json",
+      "status": "passed",
+      "recordedStatus": "passed",
+      "issues": []
+    },
+    {
+      "id": "computer",
+      "path": "docs/acceptance/surface-execution/computer-current/proof.json",
+      "status": "passed",
+      "recordedStatus": "passed",
+      "issues": []
+    },
+    {
+      "id": "crossSurface",
+      "path": "docs/acceptance/surface-execution/cross-surface-current/proof.json",
+      "status": "passed",
+      "recordedStatus": "passed",
+      "issues": []
+    },
+    {
+      "id": "workbuddy",
+      "path": "docs/acceptance/surface-execution/workbuddy-current/proof.json",
+      "status": "passed",
+      "recordedStatus": "passed",
+      "issues": []
+    },
+    {
+      "id": "conversation",
+      "path": "docs/acceptance/surface-execution/conversation-current/proof.json",
+      "status": "passed",
+      "recordedStatus": "passed",
+      "issues": []
+    },
+    {
+      "id": "durable",
+      "path": "docs/acceptance/surface-execution/durable-current/proof.json",
+      "status": "passed",
+      "recordedStatus": "passed",
+      "issues": []
+    },
+    {
+      "id": "stopBenchmark",
+      "path": "docs/acceptance/surface-execution/stop-benchmark-current/proof.json",
+      "status": "passed",
+      "recordedStatus": "passed",
+      "issues": []
+    }
+  ],
+  "t0": [
+    {
+      "id": "t0-01-unauthorized-read-write",
+      "title": "未授权 tab 读取和写入均在协议层拒绝",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "unauthorizedBeforeLeaseBlocked",
+            "unauthorizedWriteBeforeLeaseBlocked"
+          ],
+          "assertionCandidates": {
+            "unauthorizedBeforeLeaseBlocked": [
+              "unauthorizedBeforeLeaseBlocked"
+            ],
+            "unauthorizedWriteBeforeLeaseBlocked": [
+              "unauthorizedWriteBeforeLeaseBlocked",
+              "unauthorizedMutationBeforeLeaseBlocked",
+              "unauthorizedInputBeforeLeaseBlocked"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "unauthorizedBeforeLeaseBlocked",
+            "unauthorizedWriteBeforeLeaseBlocked"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-02-exact-tab-scope",
+      "title": "Grant 只允许用户明确批准的 tab",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "explicitPopupApproval",
+            "exactTabApproved"
+          ],
+          "assertionCandidates": {
+            "explicitPopupApproval": [
+              "explicitPopupApproval"
+            ],
+            "exactTabApproved": [
+              "exactTabApproved"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "explicitPopupApproval",
+            "exactTabApproved"
+          ],
+          "artifactRecordPaths": [
+            "popupEvidence[]"
+          ],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-03-exact-domain-scope",
+      "title": "Grant 越域访问被拒绝",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "exactDomainBlocked"
+          ],
+          "assertionCandidates": {
+            "exactDomainBlocked": [
+              "exactDomainBlocked"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "exactDomainBlocked"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-04-exact-action-scope",
+      "title": "Grant 未授权 action 被拒绝",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "exactActionBlocked"
+          ],
+          "assertionCandidates": {
+            "exactActionBlocked": [
+              "exactActionBlocked"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "exactActionBlocked"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-05-exact-time-scope",
+      "title": "Grant 到期后 action 被拒绝",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "exactTimeExpiryBlocked"
+          ],
+          "assertionCandidates": {
+            "exactTimeExpiryBlocked": [
+              "exactTimeExpiryBlocked"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "exactTimeExpiryBlocked"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-06-cross-agent-session-isolation",
+      "title": "跨 Agent、Session 和 continuation 所有权不可串线",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "crossAgentTargetBlocked"
+          ],
+          "assertionCandidates": {
+            "crossAgentTargetBlocked": [
+              "crossAgentTargetBlocked"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "crossAgentTargetBlocked"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "crossAgentBlocked",
+            "agentWindowIsolation"
+          ],
+          "assertionCandidates": {
+            "crossAgentBlocked": [
+              "crossAgentBlocked"
+            ],
+            "agentWindowIsolation": [
+              "agentWindowIsolation"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "crossAgentBlocked",
+            "agentWindowIsolation"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "durable",
+          "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+          "assertionKeys": [
+            "continuationOwnerScoped",
+            "continuationSingleUse"
+          ],
+          "assertionCandidates": {
+            "continuationOwnerScoped": [
+              "continuationOwnerScoped"
+            ],
+            "continuationSingleUse": [
+              "continuationSingleUse"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "continuationOwnerScoped",
+            "continuationSingleUse"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-07-stale-target-fence",
+      "title": "旧 document/element ref 不可在 successor state 重用",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "staleElementRefBlocked"
+          ],
+          "assertionCandidates": {
+            "staleElementRefBlocked": [
+              "staleElementRefBlocked"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "staleElementRefBlocked"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-08-pause-takeover-fence",
+      "title": "Pause 与 takeover 独立阻断 mutation 并可明确恢复",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "independentPause",
+            "pauseResume",
+            "takeoverBlockedMutation",
+            "takeoverResume"
+          ],
+          "assertionCandidates": {
+            "independentPause": [
+              "independentPause"
+            ],
+            "pauseResume": [
+              "pauseResume"
+            ],
+            "takeoverBlockedMutation": [
+              "takeoverBlockedMutation"
+            ],
+            "takeoverResume": [
+              "takeoverResume"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "independentPause",
+            "pauseResume",
+            "takeoverBlockedMutation",
+            "takeoverResume"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-09-stop-cancel-fence",
+      "title": "Stop p95 小于两秒且停止后无新增 mutation",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "stopBenchmark",
+          "proofPath": "docs/acceptance/surface-execution/stop-benchmark-current/proof.json",
+          "assertionKeys": [
+            "independentRealSamples",
+            "stopP95BelowTwoSeconds",
+            "noPostStopMutation",
+            "cleanupReleasedEverySample"
+          ],
+          "assertionCandidates": {
+            "independentRealSamples": [
+              "independentRealSamples"
+            ],
+            "stopP95BelowTwoSeconds": [
+              "stopP95BelowTwoSeconds"
+            ],
+            "noPostStopMutation": [
+              "noPostStopMutation"
+            ],
+            "cleanupReleasedEverySample": [
+              "cleanupReleasedEverySample"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "independentRealSamples",
+            "stopP95BelowTwoSeconds",
+            "noPostStopMutation",
+            "cleanupReleasedEverySample"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-10-cleanup-and-return",
+      "title": "正常、Stop 和断线路径释放 browser、tab 与 Computer lock",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "cleanupReleasedAllSessions"
+          ],
+          "assertionCandidates": {
+            "cleanupReleasedAllSessions": [
+              "cleanupReleasedAllSessions"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "cleanupReleasedAllSessions"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "exactTabPlacementReturned",
+            "orphanedTabReturned"
+          ],
+          "assertionCandidates": {
+            "exactTabPlacementReturned": [
+              "exactTabPlacementReturned"
+            ],
+            "orphanedTabReturned": [
+              "orphanedTabReturned"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "exactTabPlacementReturned",
+            "orphanedTabReturned"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "computer",
+          "proofPath": "docs/acceptance/surface-execution/computer-current/proof.json",
+          "assertionKeys": [
+            "fixtureTerminated",
+            "mcpDisconnected"
+          ],
+          "assertionCandidates": {
+            "fixtureTerminated": [
+              "fixtureTerminated"
+            ],
+            "mcpDisconnected": [
+              "mcpDisconnected"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "fixtureTerminated",
+            "mcpDisconnected"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "stopBenchmark",
+          "proofPath": "docs/acceptance/surface-execution/stop-benchmark-current/proof.json",
+          "assertionKeys": [
+            "cleanupReleasedEverySample"
+          ],
+          "assertionCandidates": {
+            "cleanupReleasedEverySample": [
+              "cleanupReleasedEverySample"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "cleanupReleasedEverySample"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-11-protocol-version-mismatch",
+      "title": "Relay 握手与版本偏差 fail-closed",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "handshakeAndCapabilities",
+            "protocolVersionMismatchBlocked"
+          ],
+          "assertionCandidates": {
+            "handshakeAndCapabilities": [
+              "handshakeAndCapabilities"
+            ],
+            "protocolVersionMismatchBlocked": [
+              "protocolVersionMismatchBlocked",
+              "protocolMismatchBlocked",
+              "versionMismatchFailClosed"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "handshakeAndCapabilities",
+            "protocolVersionMismatchBlocked"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t0-12-redaction-and-secret-leak",
+      "title": "Canary 与 pairing material 不进入 proof、持久化或会话投影",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "redactionCanaryAbsent"
+          ],
+          "assertionCandidates": {
+            "redactionCanaryAbsent": [
+              "redactionCanaryAbsent"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "redactionCanaryAbsent"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "redactionCanaryAbsent",
+            "rawPairingMaterialAbsent"
+          ],
+          "assertionCandidates": {
+            "redactionCanaryAbsent": [
+              "redactionCanaryAbsent"
+            ],
+            "rawPairingMaterialAbsent": [
+              "rawPairingMaterialAbsent"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "redactionCanaryAbsent",
+            "rawPairingMaterialAbsent"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "crossSurface",
+          "proofPath": "docs/acceptance/surface-execution/cross-surface-current/proof.json",
+          "assertionKeys": [
+            "redactionCanaryAbsent"
+          ],
+          "assertionCandidates": {
+            "redactionCanaryAbsent": [
+              "redactionCanaryAbsent"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "redactionCanaryAbsent"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "workbuddy",
+          "proofPath": "docs/acceptance/surface-execution/workbuddy-current/proof.json",
+          "assertionKeys": [
+            "redactionCanaryAbsent"
+          ],
+          "assertionCandidates": {
+            "redactionCanaryAbsent": [
+              "redactionCanaryAbsent"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "redactionCanaryAbsent"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "conversation",
+          "proofPath": "docs/acceptance/surface-execution/conversation-current/proof.json",
+          "assertionKeys": [
+            "redaction_canary_dom_absence",
+            "redaction_canary_proof_absence"
+          ],
+          "assertionCandidates": {
+            "redaction_canary_dom_absence": [
+              "redaction_canary_dom_absence"
+            ],
+            "redaction_canary_proof_absence": [
+              "redaction_canary_proof_absence"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "redaction_canary_dom_absence",
+            "redaction_canary_proof_absence"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "durable",
+          "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+          "assertionKeys": [
+            "canaryRedactedBeforeDisk",
+            "redactionCanaryAbsent"
+          ],
+          "assertionCandidates": {
+            "canaryRedactedBeforeDisk": [
+              "canaryRedactedBeforeDisk"
+            ],
+            "redactionCanaryAbsent": [
+              "redactionCanaryAbsent"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "canaryRedactedBeforeDisk",
+            "redactionCanaryAbsent"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    }
+  ],
+  "t1": [
+    {
+      "id": "t1-01-react-reorder",
+      "title": "React 重排后重新观察并命中正确业务目标",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "reactReorderFreshObservationVerified"
+          ],
+          "assertionCandidates": {
+            "reactReorderFreshObservationVerified": [
+              "reactReorderFreshObservationVerified",
+              "reactReorderBusinessStateVerified"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "reactReorderFreshObservationVerified"
+          ],
+          "artifactRecordPaths": [
+            "complexEvidence.reactReorder.screenshot"
+          ],
+          "readbackPaths": [
+            "complexEvidence.reactReorder.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t1-02-iframe",
+      "title": "iframe 内目标使用 frame/document identity 完成业务读回",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "iframeExactTargetVerified"
+          ],
+          "assertionCandidates": {
+            "iframeExactTargetVerified": [
+              "iframeExactTargetVerified",
+              "iframeBusinessStateVerified"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "iframeExactTargetVerified"
+          ],
+          "artifactRecordPaths": [
+            "complexEvidence.iframe.screenshot"
+          ],
+          "readbackPaths": [
+            "complexEvidence.iframe.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t1-03-oopif",
+      "title": "跨站 OOPIF 在无专用 CDP session 时明确 fail-closed",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "oopifUnavailableFailClosed"
+          ],
+          "assertionCandidates": {
+            "oopifUnavailableFailClosed": [
+              "oopifUnavailableFailClosed",
+              "oopifRequiresDedicatedSessionFailClosed"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "oopifUnavailableFailClosed"
+          ],
+          "artifactRecordPaths": [
+            "complexEvidence.oopif.screenshot"
+          ],
+          "readbackPaths": [
+            "complexEvidence.oopif.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t1-04-shadow-dom",
+      "title": "Open Shadow DOM ref 可执行且 Closed Shadow 不泄漏假 ref",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "openShadowTargetVerified",
+            "closedShadowFailClosed"
+          ],
+          "assertionCandidates": {
+            "openShadowTargetVerified": [
+              "openShadowTargetVerified",
+              "openShadowDomBusinessStateVerified"
+            ],
+            "closedShadowFailClosed": [
+              "closedShadowFailClosed",
+              "closedShadowDomFailClosed"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "openShadowTargetVerified",
+            "closedShadowFailClosed"
+          ],
+          "artifactRecordPaths": [
+            "complexEvidence.shadowDom.screenshot"
+          ],
+          "readbackPaths": [
+            "complexEvidence.shadowDom.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t1-05-hover",
+      "title": "Hover 由真实输入触发并以业务状态读回验证",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "hoverBusinessStateVerified"
+          ],
+          "assertionCandidates": {
+            "hoverBusinessStateVerified": [
+              "hoverBusinessStateVerified"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "hoverBusinessStateVerified"
+          ],
+          "artifactRecordPaths": [
+            "complexEvidence.hover.screenshot"
+          ],
+          "readbackPaths": [
+            "complexEvidence.hover.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t1-06-drag",
+      "title": "Drag 使用真实输入并验证最终位置/顺序",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "dragBusinessStateVerified"
+          ],
+          "assertionCandidates": {
+            "dragBusinessStateVerified": [
+              "dragBusinessStateVerified"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "dragBusinessStateVerified"
+          ],
+          "artifactRecordPaths": [
+            "complexEvidence.drag.screenshot"
+          ],
+          "readbackPaths": [
+            "complexEvidence.drag.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t1-07-clipboard-policy",
+      "title": "Managed Clipboard 验证业务读回，Relay 权限边界明确 fail-closed",
+      "status": "evidence_backed_defer",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "clipboardBusinessStateVerified"
+          ],
+          "assertionCandidates": {
+            "clipboardBusinessStateVerified": [
+              "clipboardBusinessStateVerified",
+              "managedClipboardBusinessReadbackVerified"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "clipboardBusinessStateVerified"
+          ],
+          "artifactRecordPaths": [
+            "complexEvidence.clipboard.screenshot"
+          ],
+          "readbackPaths": [
+            "complexEvidence.clipboard.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "relayClipboardFailClosed"
+          ],
+          "assertionCandidates": {
+            "relayClipboardFailClosed": [
+              "relayClipboardFailClosed",
+              "clipboardCapabilityUnsupported"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "relayClipboardFailClosed"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ],
+      "deferEvidence": {
+        "proof": "relay",
+        "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+        "recordPaths": [
+          "evidenceBackedDefers[]",
+          "defers.clipboard"
+        ],
+        "status": "evidence_backed_defer",
+        "issues": [],
+        "defer": {
+          "gate": "G3",
+          "reason": "relay_clipboard_transport_unavailable",
+          "evidenceObserved": [
+            "relay-action-catalog-has-no-clipboard-method",
+            "relay-clipboard-request-fails-closed",
+            "managed-controlled-clipboard-business-readback-passed"
+          ],
+          "evidenceRequired": [
+            "explicit-system-clipboard-permission",
+            "metadata-only-readback",
+            "redaction-safe-proof"
+          ],
+          "fallback": "managed",
+          "capability": "relay_clipboard"
+        }
+      }
+    },
+    {
+      "id": "t1-08-dialog-policy",
+      "title": "Dialog accept/dismiss policy 明确且页面结果可验证",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "dialogPolicyBusinessStateVerified"
+          ],
+          "assertionCandidates": {
+            "dialogPolicyBusinessStateVerified": [
+              "dialogPolicyBusinessStateVerified"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "dialogPolicyBusinessStateVerified"
+          ],
+          "artifactRecordPaths": [
+            "complexEvidence.dialog.screenshot"
+          ],
+          "readbackPaths": [
+            "complexEvidence.dialog.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t1-09-upload",
+      "title": "Relay upload 显式批准、限定文件并验证业务结果",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "uploadApprovalAndBusinessStateVerified"
+          ],
+          "assertionCandidates": {
+            "uploadApprovalAndBusinessStateVerified": [
+              "uploadApprovalAndBusinessStateVerified",
+              "exactFileUploadApprovedAndVerified"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "exactFileUploadApprovedAndVerified"
+          ],
+          "artifactRecordPaths": [
+            "businessEvidence.upload",
+            "businessEvidence.screenshot"
+          ],
+          "readbackPaths": [
+            "businessEvidence.upload.pageReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t1-10-download",
+      "title": "Managed download 校验产物，Relay 无 cancel/cleanup 时明确 fail-closed",
+      "status": "evidence_backed_defer",
+      "evidence": [
+        {
+          "proof": "managed",
+          "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+          "assertionKeys": [
+            "downloadArtifactAndBusinessStateVerified"
+          ],
+          "assertionCandidates": {
+            "downloadArtifactAndBusinessStateVerified": [
+              "downloadArtifactAndBusinessStateVerified",
+              "managedDownloadBusinessReadbackVerified"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "downloadArtifactAndBusinessStateVerified"
+          ],
+          "artifactRecordPaths": [
+            "complexEvidence.download.artifact"
+          ],
+          "readbackPaths": [
+            "complexEvidence.download.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "relayDownloadFailClosed"
+          ],
+          "assertionCandidates": {
+            "relayDownloadFailClosed": [
+              "relayDownloadFailClosed"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "relayDownloadFailClosed"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ],
+      "deferEvidence": {
+        "proof": "relay",
+        "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+        "recordPaths": [
+          "evidenceBackedDefers[]",
+          "defers.download"
+        ],
+        "status": "evidence_backed_defer",
+        "issues": [],
+        "defer": {
+          "gate": "G3",
+          "reason": "relay_download_cancel_cleanup_unavailable",
+          "evidenceObserved": [
+            "relay-action-catalog-has-no-download-method",
+            "relay-download-request-fails-closed",
+            "managed-controlled-download-cleanup-passed"
+          ],
+          "evidenceRequired": [
+            "cancel-on-timeout",
+            "partial-file-cleanup",
+            "isolated-artifact-directory"
+          ],
+          "fallback": "managed",
+          "capability": "relay_download"
+        }
+      }
+    },
+    {
+      "id": "t1-11-disconnect-restart-recovery",
+      "title": "Relay 断线与进程重启都只读恢复并要求 fresh observation",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "relay",
+          "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+          "assertionKeys": [
+            "disconnectOrphanedLease",
+            "orphanedMutationBlocked",
+            "orphanedTabReturned"
+          ],
+          "assertionCandidates": {
+            "disconnectOrphanedLease": [
+              "disconnectOrphanedLease"
+            ],
+            "orphanedMutationBlocked": [
+              "orphanedMutationBlocked"
+            ],
+            "orphanedTabReturned": [
+              "orphanedTabReturned"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "disconnectOrphanedLease",
+            "orphanedMutationBlocked",
+            "orphanedTabReturned"
+          ],
+          "artifactRecordPaths": [],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "durable",
+          "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+          "assertionKeys": [
+            "realProcessBoundary",
+            "recoveredReadOnly",
+            "oldGrantRevoked",
+            "freshObservationRequired"
+          ],
+          "assertionCandidates": {
+            "realProcessBoundary": [
+              "realProcessBoundary"
+            ],
+            "recoveredReadOnly": [
+              "recoveredReadOnly"
+            ],
+            "oldGrantRevoked": [
+              "oldGrantRevoked"
+            ],
+            "freshObservationRequired": [
+              "freshObservationRequired"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "realProcessBoundary",
+            "recoveredReadOnly",
+            "oldGrantRevoked",
+            "freshObservationRequired"
+          ],
+          "artifactRecordPaths": [
+            "evidence.checkpoint"
+          ],
+          "readbackPaths": [],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "t1-12-computer-foreground-background",
+      "title": "Computer 前后台切换、输入锁恢复和跨 Surface 续跑可验证",
+      "status": "passed",
+      "evidence": [
+        {
+          "proof": "computer",
+          "proofPath": "docs/acceptance/surface-execution/computer-current/proof.json",
+          "assertionKeys": [
+            "foregroundObservationVerified",
+            "backgroundFallbackVerified",
+            "inputLockRecovered"
+          ],
+          "assertionCandidates": {
+            "foregroundObservationVerified": [
+              "foregroundObservationVerified"
+            ],
+            "backgroundFallbackVerified": [
+              "backgroundFallbackVerified"
+            ],
+            "inputLockRecovered": [
+              "inputLockRecovered"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "foregroundObservationVerified",
+            "backgroundFallbackVerified",
+            "inputLockRecovered"
+          ],
+          "artifactRecordPaths": [
+            "evidence.foregroundBackground.screenshot"
+          ],
+          "readbackPaths": [
+            "evidence.foregroundBackground.businessReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        },
+        {
+          "proof": "crossSurface",
+          "proofPath": "docs/acceptance/surface-execution/cross-surface-current/proof.json",
+          "assertionKeys": [
+            "surfaceSwitchReasonsRecorded",
+            "browserContinuationBusinessReadback",
+            "parentSessionLinked"
+          ],
+          "assertionCandidates": {
+            "surfaceSwitchReasonsRecorded": [
+              "surfaceSwitchReasonsRecorded"
+            ],
+            "browserContinuationBusinessReadback": [
+              "browserContinuationBusinessReadback"
+            ],
+            "parentSessionLinked": [
+              "parentSessionLinked"
+            ]
+          },
+          "resolvedAssertionKeys": [
+            "surfaceSwitchReasonsRecorded",
+            "browserContinuationBusinessReadback",
+            "parentSessionLinked"
+          ],
+          "artifactRecordPaths": [
+            "evidence.browser.beforeScreenshot",
+            "evidence.browser.afterScreenshot"
+          ],
+          "readbackPaths": [
+            "evidence.browser.beforeReadback",
+            "evidence.browser.afterReadback"
+          ],
+          "status": "passed",
+          "issues": []
+        }
+      ]
+    }
+  ],
+  "completion": {
+    "P0": [
+      {
+        "phase": "P0",
+        "id": "p0-a-contract-compatibility",
+        "title": "Surface V1 合同、Browser/Computer 真路径与旧消息兼容",
+        "status": "passed",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "crossSurface",
+            "proofPath": "docs/acceptance/surface-execution/cross-surface-current/proof.json",
+            "assertionKeys": [
+              "surfaceContractRoutedBrowserAndComputer",
+              "legacyProjectionRemainsReadable"
+            ],
+            "assertionCandidates": {
+              "surfaceContractRoutedBrowserAndComputer": [
+                "surfaceContractRoutedBrowserAndComputer"
+              ],
+              "legacyProjectionRemainsReadable": [
+                "legacyProjectionRemainsReadable"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "surfaceContractRoutedBrowserAndComputer",
+              "legacyProjectionRemainsReadable"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "issues": []
+      },
+      {
+        "phase": "P0",
+        "id": "p0-b-runtime-control-plane",
+        "title": "Owner、Grant、Observation、控制与 successor verification",
+        "status": "passed",
+        "gateIds": [
+          "t0-06-cross-agent-session-isolation",
+          "t0-07-stale-target-fence",
+          "t0-08-pause-takeover-fence",
+          "t0-09-stop-cancel-fence"
+        ],
+        "evidence": [],
+        "gateDefers": [],
+        "issues": []
+      },
+      {
+        "phase": "P0",
+        "id": "p0-c-browser-trust-boundary",
+        "title": "Relay tab lease、协议、权限、真实输入与 cleanup",
+        "status": "passed",
+        "gateIds": [
+          "t0-01-unauthorized-read-write",
+          "t0-02-exact-tab-scope",
+          "t0-03-exact-domain-scope",
+          "t0-04-exact-action-scope",
+          "t0-05-exact-time-scope",
+          "t0-07-stale-target-fence",
+          "t0-10-cleanup-and-return",
+          "t0-11-protocol-version-mismatch"
+        ],
+        "evidence": [],
+        "gateDefers": [],
+        "issues": []
+      },
+      {
+        "phase": "P0",
+        "id": "p0-d-conversation-execution-ux",
+        "title": "会话语义时间线、证据三态、控制、折叠与真实业务截图",
+        "status": "passed",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "conversation",
+            "proofPath": "docs/acceptance/surface-execution/conversation-current/proof.json",
+            "assertionKeys": [
+              "session_header_target_provider_state",
+              "semantic_timeline_business_phases",
+              "screenshot_evidence_lifecycle",
+              "screenshot_evidence_business_findings",
+              "conversation_evidence_frame_pixels",
+              "evidence_frozen_capture_context",
+              "outputs_evidence_sources_separated",
+              "owner_scoped_html_output_readback",
+              "owner_scoped_png_output_pixels",
+              "unknown_output_ref_fail_closed",
+              "folded_turn_keeps_key_surface_resources",
+              "unified_run_status_running",
+              "pause_control_effect",
+              "resume_control_effect",
+              "takeover_control_and_card",
+              "stop_control_effect",
+              "end_session_terminal_state",
+              "unified_run_status_terminal",
+              "terminal_frame_and_outputs_readback",
+              "control_sequence",
+              "production_snapshot_invocation_chain",
+              "production_frame_resolution_chain",
+              "production_output_resolution_chain",
+              "surface_sse_subscription_delivery",
+              "runtime_session_store_domain_renderer_chain"
+            ],
+            "assertionCandidates": {
+              "session_header_target_provider_state": [
+                "session_header_target_provider_state"
+              ],
+              "semantic_timeline_business_phases": [
+                "semantic_timeline_business_phases"
+              ],
+              "screenshot_evidence_lifecycle": [
+                "screenshot_evidence_lifecycle"
+              ],
+              "screenshot_evidence_business_findings": [
+                "screenshot_evidence_business_findings"
+              ],
+              "conversation_evidence_frame_pixels": [
+                "conversation_evidence_frame_pixels"
+              ],
+              "evidence_frozen_capture_context": [
+                "evidence_frozen_capture_context"
+              ],
+              "outputs_evidence_sources_separated": [
+                "outputs_evidence_sources_separated"
+              ],
+              "owner_scoped_html_output_readback": [
+                "owner_scoped_html_output_readback"
+              ],
+              "owner_scoped_png_output_pixels": [
+                "owner_scoped_png_output_pixels"
+              ],
+              "unknown_output_ref_fail_closed": [
+                "unknown_output_ref_fail_closed"
+              ],
+              "folded_turn_keeps_key_surface_resources": [
+                "folded_turn_keeps_key_surface_resources"
+              ],
+              "unified_run_status_running": [
+                "unified_run_status_running"
+              ],
+              "pause_control_effect": [
+                "pause_control_effect"
+              ],
+              "resume_control_effect": [
+                "resume_control_effect"
+              ],
+              "takeover_control_and_card": [
+                "takeover_control_and_card"
+              ],
+              "stop_control_effect": [
+                "stop_control_effect"
+              ],
+              "end_session_terminal_state": [
+                "end_session_terminal_state"
+              ],
+              "unified_run_status_terminal": [
+                "unified_run_status_terminal"
+              ],
+              "terminal_frame_and_outputs_readback": [
+                "terminal_frame_and_outputs_readback"
+              ],
+              "control_sequence": [
+                "control_sequence"
+              ],
+              "production_snapshot_invocation_chain": [
+                "production_snapshot_invocation_chain"
+              ],
+              "production_frame_resolution_chain": [
+                "production_frame_resolution_chain"
+              ],
+              "production_output_resolution_chain": [
+                "production_output_resolution_chain"
+              ],
+              "surface_sse_subscription_delivery": [
+                "surface_sse_subscription_delivery"
+              ],
+              "runtime_session_store_domain_renderer_chain": [
+                "runtime_session_store_domain_renderer_chain"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "session_header_target_provider_state",
+              "semantic_timeline_business_phases",
+              "screenshot_evidence_lifecycle",
+              "screenshot_evidence_business_findings",
+              "conversation_evidence_frame_pixels",
+              "evidence_frozen_capture_context",
+              "outputs_evidence_sources_separated",
+              "owner_scoped_html_output_readback",
+              "owner_scoped_png_output_pixels",
+              "unknown_output_ref_fail_closed",
+              "folded_turn_keeps_key_surface_resources",
+              "unified_run_status_running",
+              "pause_control_effect",
+              "resume_control_effect",
+              "takeover_control_and_card",
+              "stop_control_effect",
+              "end_session_terminal_state",
+              "unified_run_status_terminal",
+              "terminal_frame_and_outputs_readback",
+              "control_sequence",
+              "production_snapshot_invocation_chain",
+              "production_frame_resolution_chain",
+              "production_output_resolution_chain",
+              "surface_sse_subscription_delivery",
+              "runtime_session_store_domain_renderer_chain"
+            ],
+            "artifactRecordPaths": [
+              "businessEvidence.screenshot"
+            ],
+            "readbackPaths": [
+              "businessEvidence.deterministicInspection"
+            ],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "issues": []
+      },
+      {
+        "phase": "P0",
+        "id": "p0-e-integrated-acceptance",
+        "title": "T0 红线、受控登录态边界、真实 Computer、跨 Surface 与 WorkBuddy 主验收；外部登录站点待 G3",
+        "status": "evidence_backed_defer",
+        "gateIds": [
+          "t0-01-unauthorized-read-write",
+          "t0-02-exact-tab-scope",
+          "t0-03-exact-domain-scope",
+          "t0-04-exact-action-scope",
+          "t0-05-exact-time-scope",
+          "t0-06-cross-agent-session-isolation",
+          "t0-07-stale-target-fence",
+          "t0-08-pause-takeover-fence",
+          "t0-09-stop-cancel-fence",
+          "t0-10-cleanup-and-return",
+          "t0-11-protocol-version-mismatch",
+          "t0-12-redaction-and-secret-leak"
+        ],
+        "evidence": [
+          {
+            "proof": "managed",
+            "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+            "assertionKeys": [
+              "managedAuthenticatedSessionVerified"
+            ],
+            "assertionCandidates": {
+              "managedAuthenticatedSessionVerified": [
+                "managedAuthenticatedSessionVerified"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "managedAuthenticatedSessionVerified"
+            ],
+            "artifactRecordPaths": [
+              "complexEvidence.auth.screenshot"
+            ],
+            "readbackPaths": [
+              "complexEvidence.auth.businessReadback"
+            ],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "relay",
+            "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+            "assertionKeys": [
+              "relayAuthenticatedSessionReused"
+            ],
+            "assertionCandidates": {
+              "relayAuthenticatedSessionReused": [
+                "relayAuthenticatedSessionReused"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "relayAuthenticatedSessionReused"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [
+              "authenticationEvidence.readback"
+            ],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "workbuddy",
+            "proofPath": "docs/acceptance/surface-execution/workbuddy-current/proof.json",
+            "assertionKeys": [
+              "draftScreenshotCapturedThisRun",
+              "draftDomBusinessReadbackFailed",
+              "failureJudgmentProjected",
+              "artifactAdjustedAfterFailure",
+              "finalScreenshotCapturedThisRun",
+              "finalDomBusinessReadbackPassed",
+              "finalPixelSuccessBannerVerified",
+              "finalArtifactSaved"
+            ],
+            "assertionCandidates": {
+              "draftScreenshotCapturedThisRun": [
+                "draftScreenshotCapturedThisRun"
+              ],
+              "draftDomBusinessReadbackFailed": [
+                "draftDomBusinessReadbackFailed"
+              ],
+              "failureJudgmentProjected": [
+                "failureJudgmentProjected"
+              ],
+              "artifactAdjustedAfterFailure": [
+                "artifactAdjustedAfterFailure"
+              ],
+              "finalScreenshotCapturedThisRun": [
+                "finalScreenshotCapturedThisRun"
+              ],
+              "finalDomBusinessReadbackPassed": [
+                "finalDomBusinessReadbackPassed"
+              ],
+              "finalPixelSuccessBannerVerified": [
+                "finalPixelSuccessBannerVerified"
+              ],
+              "finalArtifactSaved": [
+                "finalArtifactSaved"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "draftScreenshotCapturedThisRun",
+              "draftDomBusinessReadbackFailed",
+              "failureJudgmentProjected",
+              "artifactAdjustedAfterFailure",
+              "finalScreenshotCapturedThisRun",
+              "finalDomBusinessReadbackPassed",
+              "finalPixelSuccessBannerVerified",
+              "finalArtifactSaved"
+            ],
+            "artifactRecordPaths": [
+              "stages.draft.screenshot",
+              "stages.final.screenshot",
+              "stages.final"
+            ],
+            "readbackPaths": [
+              "stages.draft.businessJudgment",
+              "stages.final.businessJudgment"
+            ],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "computer",
+            "proofPath": "docs/acceptance/surface-execution/computer-current/proof.json",
+            "assertionKeys": [
+              "realAppObserved",
+              "realAppMutationDelivered",
+              "realAppBusinessVerified",
+              "takeoverBlockedMutation",
+              "cleanupReleasedComputerLock"
+            ],
+            "assertionCandidates": {
+              "realAppObserved": [
+                "realAppObserved"
+              ],
+              "realAppMutationDelivered": [
+                "realAppMutationDelivered"
+              ],
+              "realAppBusinessVerified": [
+                "realAppBusinessVerified"
+              ],
+              "takeoverBlockedMutation": [
+                "takeoverBlockedMutation"
+              ],
+              "cleanupReleasedComputerLock": [
+                "cleanupReleasedComputerLock"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "realAppObserved",
+              "realAppMutationDelivered",
+              "realAppBusinessVerified",
+              "takeoverBlockedMutation",
+              "cleanupReleasedComputerLock"
+            ],
+            "artifactRecordPaths": [
+              "evidence.businessVerification.screenshot"
+            ],
+            "readbackPaths": [
+              "evidence.businessVerification.businessReadback"
+            ],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G3",
+          "reason": "Managed 与 Relay 已在真实 Chrome 运行时验证受控登录态隔离和授权 tab 复用，但当前没有用户授权的外部测试账号、OTP/MFA 协调或可复核的登录站点任务，不能把本地受控登录态 fixture 记作外部真实登录验收。",
+          "evidenceObserved": [
+            "managed-proof:controlled-authenticated-session-isolated-profile-readback",
+            "relay-proof:controlled-authenticated-session-reused-only-inside-explicit-tab-domain-action-time-scope",
+            "computer-cross-surface-workbuddy-real-runtime-business-verification-passed"
+          ],
+          "evidenceRequired": [
+            "user-authorized-external-test-account-or-public-login-sandbox",
+            "real-Managed-login-observe-act-verify-cleanup-E2E",
+            "real-Relay-login-state-reuse-with-exact-tab-domain-action-time-scope-and-tab-return",
+            "OTP-MFA-and-account-recovery-operator-evidence-if-the-selected-site-requires-it"
+          ]
+        },
+        "issues": []
+      }
+    ],
+    "P1": [
+      {
+        "phase": "P1",
+        "id": "p1-browser-complex-targets-input",
+        "title": "iframe/Shadow/hover/drag/clipboard/dialog 已验证；跨站 OOPIF 执行待 G3",
+        "status": "evidence_backed_defer",
+        "gateIds": [
+          "t1-02-iframe",
+          "t1-03-oopif",
+          "t1-04-shadow-dom",
+          "t1-05-hover",
+          "t1-06-drag",
+          "t1-07-clipboard-policy",
+          "t1-08-dialog-policy"
+        ],
+        "evidence": [],
+        "gateDefers": [
+          {
+            "gateId": "t1-07-clipboard-policy",
+            "gateTitle": "Managed Clipboard 验证业务读回，Relay 权限边界明确 fail-closed",
+            "proof": "relay",
+            "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+            "recordPaths": [
+              "evidenceBackedDefers[]",
+              "defers.clipboard"
+            ],
+            "status": "evidence_backed_defer",
+            "issues": [],
+            "defer": {
+              "gate": "G3",
+              "reason": "relay_clipboard_transport_unavailable",
+              "evidenceObserved": [
+                "relay-action-catalog-has-no-clipboard-method",
+                "relay-clipboard-request-fails-closed",
+                "managed-controlled-clipboard-business-readback-passed"
+              ],
+              "evidenceRequired": [
+                "explicit-system-clipboard-permission",
+                "metadata-only-readback",
+                "redaction-safe-proof"
+              ],
+              "fallback": "managed",
+              "capability": "relay_clipboard"
+            }
+          }
+        ],
+        "defer": {
+          "gate": "G3",
+          "reason": "当前 Managed provider 对跨站 OOPIF 明确 fail-closed，但还没有为目标 frame 建立专用 CDP session，因此不能把安全阻断记作跨站 OOPIF 执行完成。",
+          "evidenceObserved": [
+            "managed-proof:oopifRequiresDedicatedSessionFailClosed",
+            "managed-proof:cross-site-frame-is-rejected-before-input",
+            "controlled-complex-proof:iframe-shadow-hover-drag-clipboard-dialog-business-readbacks-pass"
+          ],
+          "evidenceRequired": [
+            "dedicated-CDP-session-owned-by-the-exact-OOPIF-target",
+            "real-cross-site-OOPIF-observe-act-verify-E2E",
+            "navigation-reorder-stale-ref-and-cleanup-adversarial-coverage"
+          ]
+        },
+        "issues": []
+      },
+      {
+        "phase": "P1",
+        "id": "p1-relay-artifact-parity",
+        "title": "Relay console/network、真实 screenshot、upload/download parity",
+        "status": "evidence_backed_defer",
+        "gateIds": [
+          "t1-09-upload",
+          "t1-10-download"
+        ],
+        "evidence": [
+          {
+            "proof": "relay",
+            "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+            "assertionKeys": [
+              "consoleNetworkCursor",
+              "screenshotCaptured"
+            ],
+            "assertionCandidates": {
+              "consoleNetworkCursor": [
+                "consoleNetworkCursor"
+              ],
+              "screenshotCaptured": [
+                "screenshotCaptured"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "consoleNetworkCursor",
+              "screenshotCaptured"
+            ],
+            "artifactRecordPaths": [
+              "businessEvidence.screenshot"
+            ],
+            "readbackPaths": [
+              "businessEvidence.expectedReadback"
+            ],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [
+          {
+            "gateId": "t1-10-download",
+            "gateTitle": "Managed download 校验产物，Relay 无 cancel/cleanup 时明确 fail-closed",
+            "proof": "relay",
+            "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+            "recordPaths": [
+              "evidenceBackedDefers[]",
+              "defers.download"
+            ],
+            "status": "evidence_backed_defer",
+            "issues": [],
+            "defer": {
+              "gate": "G3",
+              "reason": "relay_download_cancel_cleanup_unavailable",
+              "evidenceObserved": [
+                "relay-action-catalog-has-no-download-method",
+                "relay-download-request-fails-closed",
+                "managed-controlled-download-cleanup-passed"
+              ],
+              "evidenceRequired": [
+                "cancel-on-timeout",
+                "partial-file-cleanup",
+                "isolated-artifact-directory"
+              ],
+              "fallback": "managed",
+              "capability": "relay_download"
+            }
+          }
+        ],
+        "issues": []
+      },
+      {
+        "phase": "P1",
+        "id": "p1-router-and-three-session-control",
+        "title": "Router 决策与三个并行 Session 独立暂停/停止",
+        "status": "passed",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "managed",
+            "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+            "assertionKeys": [
+              "routerCapabilityOwnershipIntentVerified",
+              "threeConcurrentSessions",
+              "isolatedBrowserIdentities",
+              "independentPause",
+              "noPostStopMutation"
+            ],
+            "assertionCandidates": {
+              "routerCapabilityOwnershipIntentVerified": [
+                "routerCapabilityOwnershipIntentVerified"
+              ],
+              "threeConcurrentSessions": [
+                "threeConcurrentSessions"
+              ],
+              "isolatedBrowserIdentities": [
+                "isolatedBrowserIdentities"
+              ],
+              "independentPause": [
+                "independentPause"
+              ],
+              "noPostStopMutation": [
+                "noPostStopMutation"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "routerCapabilityOwnershipIntentVerified",
+              "threeConcurrentSessions",
+              "isolatedBrowserIdentities",
+              "independentPause",
+              "noPostStopMutation"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "relay",
+            "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+            "assertionKeys": [
+              "agentWindowIsolation"
+            ],
+            "assertionCandidates": {
+              "agentWindowIsolation": [
+                "agentWindowIsolation"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "agentWindowIsolation"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "issues": []
+      },
+      {
+        "phase": "P1",
+        "id": "p1-computer-and-cross-surface-recovery",
+        "title": "Computer 前后台、输入锁与 Browser/Computer 自动切换",
+        "status": "passed",
+        "gateIds": [
+          "t1-12-computer-foreground-background"
+        ],
+        "evidence": [
+          {
+            "proof": "conversation",
+            "proofPath": "docs/acceptance/surface-execution/conversation-current/proof.json",
+            "assertionKeys": [
+              "cross_surface_switch_reason_displayed"
+            ],
+            "assertionCandidates": {
+              "cross_surface_switch_reason_displayed": [
+                "cross_surface_switch_reason_displayed"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "cross_surface_switch_reason_displayed"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "issues": []
+      },
+      {
+        "phase": "P1",
+        "id": "p1-pairing-doctor-protocol-upgrade",
+        "title": "Pairing、doctor 与协议偏差已验证；真实版本升级待 G3",
+        "status": "evidence_backed_defer",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "relay",
+            "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+            "assertionKeys": [
+              "pairingFlowVerified",
+              "doctorStatusVerified",
+              "protocolVersionMismatchBlocked"
+            ],
+            "assertionCandidates": {
+              "pairingFlowVerified": [
+                "pairingFlowVerified"
+              ],
+              "doctorStatusVerified": [
+                "doctorStatusVerified"
+              ],
+              "protocolVersionMismatchBlocked": [
+                "protocolVersionMismatchBlocked"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "pairingFlowVerified",
+              "doctorStatusVerified",
+              "protocolVersionMismatchBlocked"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G3",
+          "reason": "当前运行只加载本 worktree 的 unpacked 扩展，没有一个可复核的上一版本安装包和升级前持久状态，因此不能把当前版本启动与协议拒绝记作升级兼容验证。",
+          "evidenceObserved": [
+            "relay-proof:current-unpacked-extension-pairing-flow-verified",
+            "relay-proof:doctor-status-verified",
+            "relay-proof:protocol-version-mismatch-fails-closed"
+          ],
+          "evidenceRequired": [
+            "immutable-previous-version-extension-bundle-with-source-fingerprint",
+            "previous-to-current-reload-upgrade-with-pairing-and-lease-state-migration",
+            "upgrade-rollback-protocol-mismatch-and-tab-return-E2E"
+          ]
+        },
+        "issues": []
+      },
+      {
+        "phase": "P1",
+        "id": "p1-extension-store-signing",
+        "title": "扩展商店签名与发布验证",
+        "status": "evidence_backed_defer",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "relay",
+            "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+            "assertionKeys": [
+              "pairingFlowVerified",
+              "doctorStatusVerified",
+              "protocolVersionMismatchBlocked"
+            ],
+            "assertionCandidates": {
+              "pairingFlowVerified": [
+                "pairingFlowVerified"
+              ],
+              "doctorStatusVerified": [
+                "doctorStatusVerified"
+              ],
+              "protocolVersionMismatchBlocked": [
+                "protocolVersionMismatchBlocked"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "pairingFlowVerified",
+              "doctorStatusVerified",
+              "protocolVersionMismatchBlocked"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G3",
+          "reason": "商店签名和提交需要用户发布授权；本 Goal 明确禁止未经授权提交扩展商店。",
+          "evidenceObserved": [
+            "truth-source:section-24.9-store-submission-requires-explicit-authorization",
+            "relay-proof:pairing-doctor-and-current-protocol-compatibility-verified",
+            "repository:extension-remains-an-unsubmitted-unpacked-bundle"
+          ],
+          "evidenceRequired": [
+            "用户明确发布授权",
+            "商店签名产物和签名身份",
+            "安装、升级、回滚与协议兼容 E2E"
+          ]
+        },
+        "issues": []
+      },
+      {
+        "phase": "P1",
+        "id": "p1-before-after-proof-and-durable-recovery",
+        "title": "before/after 检查清单、SurfaceProofService 与 durable continuation",
+        "status": "passed",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "workbuddy",
+            "proofPath": "docs/acceptance/surface-execution/workbuddy-current/proof.json",
+            "assertionKeys": [
+              "draftScreenshotCapturedThisRun",
+              "draftDomBusinessReadbackFailed",
+              "failureJudgmentProjected",
+              "artifactAdjustedAfterFailure",
+              "finalScreenshotCapturedThisRun",
+              "finalDomBusinessReadbackPassed",
+              "finalPixelSuccessBannerVerified",
+              "finalArtifactSaved"
+            ],
+            "assertionCandidates": {
+              "draftScreenshotCapturedThisRun": [
+                "draftScreenshotCapturedThisRun"
+              ],
+              "draftDomBusinessReadbackFailed": [
+                "draftDomBusinessReadbackFailed"
+              ],
+              "failureJudgmentProjected": [
+                "failureJudgmentProjected"
+              ],
+              "artifactAdjustedAfterFailure": [
+                "artifactAdjustedAfterFailure"
+              ],
+              "finalScreenshotCapturedThisRun": [
+                "finalScreenshotCapturedThisRun"
+              ],
+              "finalDomBusinessReadbackPassed": [
+                "finalDomBusinessReadbackPassed"
+              ],
+              "finalPixelSuccessBannerVerified": [
+                "finalPixelSuccessBannerVerified"
+              ],
+              "finalArtifactSaved": [
+                "finalArtifactSaved"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "draftScreenshotCapturedThisRun",
+              "draftDomBusinessReadbackFailed",
+              "failureJudgmentProjected",
+              "artifactAdjustedAfterFailure",
+              "finalScreenshotCapturedThisRun",
+              "finalDomBusinessReadbackPassed",
+              "finalPixelSuccessBannerVerified",
+              "finalArtifactSaved"
+            ],
+            "artifactRecordPaths": [
+              "stages.draft.screenshot",
+              "stages.final.screenshot",
+              "stages.final"
+            ],
+            "readbackPaths": [
+              "stages.draft.businessJudgment",
+              "stages.final.businessJudgment"
+            ],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "workbuddy",
+            "proofPath": "docs/acceptance/surface-execution/workbuddy-current/proof.json",
+            "assertionKeys": [
+              "sharedSurfaceProofCardsPresent",
+              "beforeAfterScreenshotsDiffer"
+            ],
+            "assertionCandidates": {
+              "sharedSurfaceProofCardsPresent": [
+                "sharedSurfaceProofCardsPresent"
+              ],
+              "beforeAfterScreenshotsDiffer": [
+                "beforeAfterScreenshotsDiffer"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "sharedSurfaceProofCardsPresent",
+              "beforeAfterScreenshotsDiffer"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "durable",
+            "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+            "assertionKeys": [
+              "realProcessBoundary",
+              "ledgerPersisted",
+              "recoveredReadOnly",
+              "onlyExplicitContinueAvailable",
+              "continuationOwnerScoped",
+              "continuationSingleUse",
+              "parentSessionLinked",
+              "freshObservationRequired",
+              "cleanupCompleted"
+            ],
+            "assertionCandidates": {
+              "realProcessBoundary": [
+                "realProcessBoundary"
+              ],
+              "ledgerPersisted": [
+                "ledgerPersisted"
+              ],
+              "recoveredReadOnly": [
+                "recoveredReadOnly"
+              ],
+              "onlyExplicitContinueAvailable": [
+                "onlyExplicitContinueAvailable"
+              ],
+              "continuationOwnerScoped": [
+                "continuationOwnerScoped"
+              ],
+              "continuationSingleUse": [
+                "continuationSingleUse"
+              ],
+              "parentSessionLinked": [
+                "parentSessionLinked"
+              ],
+              "freshObservationRequired": [
+                "freshObservationRequired"
+              ],
+              "cleanupCompleted": [
+                "cleanupCompleted"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "realProcessBoundary",
+              "ledgerPersisted",
+              "recoveredReadOnly",
+              "onlyExplicitContinueAvailable",
+              "continuationOwnerScoped",
+              "continuationSingleUse",
+              "parentSessionLinked",
+              "freshObservationRequired",
+              "cleanupCompleted"
+            ],
+            "artifactRecordPaths": [
+              "evidence.checkpoint"
+            ],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "issues": []
+      }
+    ],
+    "P2": [
+      {
+        "phase": "P2",
+        "id": "p2-external-agent-adapters",
+        "title": "外部 Agent authority seam 已验证；生产入口激活待 G4",
+        "status": "evidence_backed_defer",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "durable",
+            "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+            "assertionKeys": [
+              "externalSurfaceAdapterContractVerified"
+            ],
+            "assertionCandidates": {
+              "externalSurfaceAdapterContractVerified": [
+                "externalSurfaceAdapterContractVerified"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "externalSurfaceAdapterContractVerified"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G4",
+          "reason": "内部 authority fence 已实现，但仓内没有认证 transport、Host-owned bootstrap 或可调用的 neo surface / neo browser 生产入口；未经 consumer 与公开合同决策不能安全激活。",
+          "evidenceObserved": [
+            "durable-proof:p2Acceptance.assertions.externalSurfaceAdapterContractVerified",
+            "repository-audit:no-production-ExternalSurfaceAgentAdapter-registration",
+            "repository-audit:existing-providers-remain-the-single-runtime-owner"
+          ],
+          "evidenceRequired": [
+            "approved-external-consumer-and-authentication-contract",
+            "host-owned-run-session-provider-bootstrap",
+            "real-provider-entrypoint-e2e-with-cleanup-and-redaction"
+          ]
+        },
+        "issues": []
+      },
+      {
+        "phase": "P2",
+        "id": "p2-organization-policy-audit-retention",
+        "title": "组织策略引擎 seam 已验证；生产 provider 执行、持久配置与管理入口待 G4",
+        "status": "evidence_backed_defer",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "durable",
+            "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+            "assertionKeys": [
+              "organizationPolicyAuditRetentionVerified"
+            ],
+            "assertionCandidates": {
+              "organizationPolicyAuditRetentionVerified": [
+                "organizationPolicyAuditRetentionVerified"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "organizationPolicyAuditRetentionVerified"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G4",
+          "reason": "deny-by-default、审批、redacted audit 与 TTL 已通过 ExternalSurfaceAgentAdapter 和 P2 acceptance seam 验证；Managed、Relay、Computer 的 production bootstrap/enforcement 尚未接入，默认 audit store 也仍是进程内实现。",
+          "evidenceObserved": [
+            "durable-proof:p2Acceptance.assertions.organizationPolicyAuditRetentionVerified",
+            "repository:policy-enforcement-is-invoked-by-ExternalSurfaceAgentAdapter-and-acceptance-seam-only",
+            "repository:Managed-Relay-Computer-production-policy-bootstrap-and-enforcement-absent",
+            "repository:InMemorySurfaceOrganizationAuditStore-is-default",
+            "p2-proof:profile-and-account-omission-fail-closed"
+          ],
+          "evidenceRequired": [
+            "host-owned-organization-identity-and-policy-bootstrap-for-Managed-Relay-Computer",
+            "real-Managed-Relay-Computer-provider-policy-enforcement-E2E",
+            "organization-admin-contract",
+            "persistent-audit-store-and-migration",
+            "retention-access-control-and-deletion-e2e"
+          ]
+        },
+        "issues": []
+      },
+      {
+        "phase": "P2",
+        "id": "p2-replay-and-failure-reproduction",
+        "title": "跨进程语义 replay 已验证；可携带截图资产包待 G4",
+        "status": "evidence_backed_defer",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "workbuddy",
+            "proofPath": "docs/acceptance/surface-execution/workbuddy-current/proof.json",
+            "assertionKeys": [
+              "draftScreenshotCapturedThisRun",
+              "draftDomBusinessReadbackFailed",
+              "failureJudgmentProjected",
+              "artifactAdjustedAfterFailure",
+              "finalScreenshotCapturedThisRun",
+              "finalDomBusinessReadbackPassed",
+              "finalPixelSuccessBannerVerified",
+              "finalArtifactSaved"
+            ],
+            "assertionCandidates": {
+              "draftScreenshotCapturedThisRun": [
+                "draftScreenshotCapturedThisRun"
+              ],
+              "draftDomBusinessReadbackFailed": [
+                "draftDomBusinessReadbackFailed"
+              ],
+              "failureJudgmentProjected": [
+                "failureJudgmentProjected"
+              ],
+              "artifactAdjustedAfterFailure": [
+                "artifactAdjustedAfterFailure"
+              ],
+              "finalScreenshotCapturedThisRun": [
+                "finalScreenshotCapturedThisRun"
+              ],
+              "finalDomBusinessReadbackPassed": [
+                "finalDomBusinessReadbackPassed"
+              ],
+              "finalPixelSuccessBannerVerified": [
+                "finalPixelSuccessBannerVerified"
+              ],
+              "finalArtifactSaved": [
+                "finalArtifactSaved"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "draftScreenshotCapturedThisRun",
+              "draftDomBusinessReadbackFailed",
+              "failureJudgmentProjected",
+              "artifactAdjustedAfterFailure",
+              "finalScreenshotCapturedThisRun",
+              "finalDomBusinessReadbackPassed",
+              "finalPixelSuccessBannerVerified",
+              "finalArtifactSaved"
+            ],
+            "artifactRecordPaths": [
+              "stages.draft.screenshot",
+              "stages.final.screenshot",
+              "stages.final"
+            ],
+            "readbackPaths": [
+              "stages.draft.businessJudgment",
+              "stages.final.businessJudgment"
+            ],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "durable",
+            "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+            "assertionKeys": [
+              "freshProcessReplayBoundary",
+              "isolatedReplayDataDirectory",
+              "importedIntoIsolatedStore",
+              "conversationRebound",
+              "archiveProjectionReadOnly",
+              "grantNone",
+              "noTarget",
+              "noControls",
+              "runtimeMutationCallsZero",
+              "replayExplicitSurfaceEvents",
+              "failureAdjustPassReproduced",
+              "semanticDigestMatched",
+              "rawCanaryAbsent",
+              "portableScreenshotEvidenceMetadataOnly"
+            ],
+            "assertionCandidates": {
+              "freshProcessReplayBoundary": [
+                "freshProcessReplayBoundary"
+              ],
+              "isolatedReplayDataDirectory": [
+                "isolatedReplayDataDirectory"
+              ],
+              "importedIntoIsolatedStore": [
+                "importedIntoIsolatedStore"
+              ],
+              "conversationRebound": [
+                "conversationRebound"
+              ],
+              "archiveProjectionReadOnly": [
+                "archiveProjectionReadOnly"
+              ],
+              "grantNone": [
+                "grantNone"
+              ],
+              "noTarget": [
+                "noTarget"
+              ],
+              "noControls": [
+                "noControls"
+              ],
+              "runtimeMutationCallsZero": [
+                "runtimeMutationCallsZero"
+              ],
+              "replayExplicitSurfaceEvents": [
+                "replayExplicitSurfaceEvents"
+              ],
+              "failureAdjustPassReproduced": [
+                "failureAdjustPassReproduced"
+              ],
+              "semanticDigestMatched": [
+                "semanticDigestMatched"
+              ],
+              "rawCanaryAbsent": [
+                "rawCanaryAbsent"
+              ],
+              "portableScreenshotEvidenceMetadataOnly": [
+                "portableScreenshotEvidenceMetadataOnly"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "freshProcessReplayBoundary",
+              "isolatedReplayDataDirectory",
+              "importedIntoIsolatedStore",
+              "conversationRebound",
+              "archiveProjectionReadOnly",
+              "grantNone",
+              "noTarget",
+              "noControls",
+              "runtimeMutationCallsZero",
+              "replayExplicitSurfaceEvents",
+              "failureAdjustPassReproduced",
+              "semanticDigestMatched",
+              "rawCanaryAbsent",
+              "portableScreenshotEvidenceMetadataOnly"
+            ],
+            "artifactRecordPaths": [
+              "evidence.replayImport"
+            ],
+            "readbackPaths": [
+              "evidence.replayImport.businessReadback"
+            ],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G4",
+          "reason": "safe export 与 fresh-process replay 已复现失败、调整和复验语义，同时故意移除了 assetRef/path/bytes；当前没有可跨会话携带并重新验真的截图资产包。",
+          "evidenceObserved": [
+            "durable-proof:fresh-process-import-isolated-read-only-and-authority-free",
+            "durable-proof:source-and-replay-semantic-digests-match",
+            "durable-proof:screenshot-evidence-is-metadata-only-and-raw-paths-absent"
+          ],
+          "evidenceRequired": [
+            "redacted-portable-evidence-bundle-manifest-with-hash-and-byte-length",
+            "fresh-process-screenshot-asset-readback-and-business-reverification",
+            "missing-tampered-and-expired-asset-fail-closed-coverage"
+          ]
+        },
+        "issues": []
+      },
+      {
+        "phase": "P2",
+        "id": "p2-windows-linux-provider",
+        "title": "Windows/Linux profile import 与 Computer provider",
+        "status": "evidence_backed_defer",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "durable",
+            "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+            "assertionKeys": [
+              "providerNeutralRegistryContractVerified"
+            ],
+            "assertionCandidates": {
+              "providerNeutralRegistryContractVerified": [
+                "providerNeutralRegistryContractVerified"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "providerNeutralRegistryContractVerified"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G4",
+          "reason": "当前验收主机只有 macOS；跨平台 provider 需要对应系统、签名 helper 和真实权限环境。",
+          "evidenceObserved": [
+            "computer-proof:current-host-platform-darwin",
+            "repository:no-approved-windows-linux-provider-or-helper",
+            "truth-source:G4-cross-platform-provider-decision"
+          ],
+          "evidenceRequired": [
+            "Windows 与 Linux 专用验收主机",
+            "各平台签名 helper/version/codesign 等价证据",
+            "observe/mutate/verify/takeover/cleanup 真实 E2E"
+          ]
+        },
+        "issues": []
+      },
+      {
+        "phase": "P2",
+        "id": "p2-provider-neutral-registry",
+        "title": "Provider-neutral registry seam 已验证；多浏览器、remote Managed、mobile 与 in-app 实现待 G4",
+        "status": "evidence_backed_defer",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "durable",
+            "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+            "assertionKeys": [
+              "providerNeutralRegistryContractVerified",
+              "providerImplementationDefersExact"
+            ],
+            "assertionCandidates": {
+              "providerNeutralRegistryContractVerified": [
+                "providerNeutralRegistryContractVerified"
+              ],
+              "providerImplementationDefersExact": [
+                "providerImplementationDefersExact"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "providerNeutralRegistryContractVerified",
+              "providerImplementationDefersExact"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [
+              "p2Acceptance.evidenceBackedDefers.providerImplementations[]"
+            ],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G4",
+          "reason": "Provider-neutral registration、capability selection、ownership fence 与 gated provider 拒绝路径已验证；五类 future provider 仍只有注册合同和逐项 G4 决策记录，没有可运行实现或真实环境 E2E。",
+          "evidenceObserved": [
+            "durable-proof:p2Acceptance.assertions.providerNeutralRegistryContractVerified",
+            "durable-proof:p2Acceptance.evidenceBackedDefers.providerImplementations-records",
+            "p2-proof:future-provider-resolution-fails-with-provider-gate-pending"
+          ],
+          "evidenceRequired": [
+            "per-provider-demand-success-latency-cost-and-isolation-decision-evidence",
+            "approved-provider-implementation-with-host-owned-authority-and-cleanup",
+            "real-provider-observe-mutate-verify-recovery-redaction-E2E"
+          ]
+        },
+        "issues": []
+      },
+      {
+        "phase": "P2",
+        "id": "p2-continuous-real-site-app-regression",
+        "title": "代表性 Surface 主链已验证；T2 真实站点与应用连续回归基线待 G4",
+        "status": "evidence_backed_defer",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "managed",
+            "proofPath": "docs/acceptance/surface-execution/managed-current/proof.json",
+            "assertionKeys": [
+              "threeConcurrentSessions",
+              "businessReadback",
+              "managedAuthenticatedSessionVerified"
+            ],
+            "assertionCandidates": {
+              "threeConcurrentSessions": [
+                "threeConcurrentSessions"
+              ],
+              "businessReadback": [
+                "businessReadback"
+              ],
+              "managedAuthenticatedSessionVerified": [
+                "managedAuthenticatedSessionVerified"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "threeConcurrentSessions",
+              "businessReadback",
+              "managedAuthenticatedSessionVerified"
+            ],
+            "artifactRecordPaths": [
+              "evidence[]"
+            ],
+            "readbackPaths": [
+              "evidence[].businessReadback",
+              "complexEvidence.auth.businessReadback"
+            ],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "relay",
+            "proofPath": "docs/acceptance/surface-execution/relay-current/proof.json",
+            "assertionKeys": [
+              "businessReadback",
+              "relayAuthenticatedSessionReused"
+            ],
+            "assertionCandidates": {
+              "businessReadback": [
+                "businessReadback"
+              ],
+              "relayAuthenticatedSessionReused": [
+                "relayAuthenticatedSessionReused"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "businessReadback",
+              "relayAuthenticatedSessionReused"
+            ],
+            "artifactRecordPaths": [
+              "businessEvidence.screenshot"
+            ],
+            "readbackPaths": [
+              "businessEvidence.expectedReadback",
+              "authenticationEvidence.readback"
+            ],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "computer",
+            "proofPath": "docs/acceptance/surface-execution/computer-current/proof.json",
+            "assertionKeys": [
+              "realAppBusinessVerified",
+              "backgroundFallbackVerified"
+            ],
+            "assertionCandidates": {
+              "realAppBusinessVerified": [
+                "realAppBusinessVerified"
+              ],
+              "backgroundFallbackVerified": [
+                "backgroundFallbackVerified"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "realAppBusinessVerified",
+              "backgroundFallbackVerified"
+            ],
+            "artifactRecordPaths": [
+              "evidence.businessVerification.screenshot",
+              "evidence.foregroundBackground.screenshot"
+            ],
+            "readbackPaths": [
+              "evidence.businessVerification.businessReadback",
+              "evidence.foregroundBackground.businessReadback"
+            ],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "crossSurface",
+            "proofPath": "docs/acceptance/surface-execution/cross-surface-current/proof.json",
+            "assertionKeys": [
+              "realComputerBusinessVerified",
+              "browserContinuationBusinessReadback",
+              "surfaceSwitchReasonsRecorded"
+            ],
+            "assertionCandidates": {
+              "realComputerBusinessVerified": [
+                "realComputerBusinessVerified"
+              ],
+              "browserContinuationBusinessReadback": [
+                "browserContinuationBusinessReadback"
+              ],
+              "surfaceSwitchReasonsRecorded": [
+                "surfaceSwitchReasonsRecorded"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "realComputerBusinessVerified",
+              "browserContinuationBusinessReadback",
+              "surfaceSwitchReasonsRecorded"
+            ],
+            "artifactRecordPaths": [
+              "evidence.browser.beforeScreenshot",
+              "evidence.browser.afterScreenshot"
+            ],
+            "readbackPaths": [
+              "evidence.browser.beforeReadback",
+              "evidence.browser.afterReadback"
+            ],
+            "status": "passed",
+            "issues": []
+          },
+          {
+            "proof": "workbuddy",
+            "proofPath": "docs/acceptance/surface-execution/workbuddy-current/proof.json",
+            "assertionKeys": [
+              "draftScreenshotCapturedThisRun",
+              "draftDomBusinessReadbackFailed",
+              "failureJudgmentProjected",
+              "artifactAdjustedAfterFailure",
+              "finalScreenshotCapturedThisRun",
+              "finalDomBusinessReadbackPassed",
+              "finalPixelSuccessBannerVerified",
+              "finalArtifactSaved"
+            ],
+            "assertionCandidates": {
+              "draftScreenshotCapturedThisRun": [
+                "draftScreenshotCapturedThisRun"
+              ],
+              "draftDomBusinessReadbackFailed": [
+                "draftDomBusinessReadbackFailed"
+              ],
+              "failureJudgmentProjected": [
+                "failureJudgmentProjected"
+              ],
+              "artifactAdjustedAfterFailure": [
+                "artifactAdjustedAfterFailure"
+              ],
+              "finalScreenshotCapturedThisRun": [
+                "finalScreenshotCapturedThisRun"
+              ],
+              "finalDomBusinessReadbackPassed": [
+                "finalDomBusinessReadbackPassed"
+              ],
+              "finalPixelSuccessBannerVerified": [
+                "finalPixelSuccessBannerVerified"
+              ],
+              "finalArtifactSaved": [
+                "finalArtifactSaved"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "draftScreenshotCapturedThisRun",
+              "draftDomBusinessReadbackFailed",
+              "failureJudgmentProjected",
+              "artifactAdjustedAfterFailure",
+              "finalScreenshotCapturedThisRun",
+              "finalDomBusinessReadbackPassed",
+              "finalPixelSuccessBannerVerified",
+              "finalArtifactSaved"
+            ],
+            "artifactRecordPaths": [
+              "stages.draft.screenshot",
+              "stages.final.screenshot",
+              "stages.final"
+            ],
+            "readbackPaths": [
+              "stages.draft.businessJudgment",
+              "stages.final.businessJudgment"
+            ],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G4",
+          "reason": "Managed、Relay、Computer、跨 Surface 与 WorkBuddy 的代表性真实运行链已覆盖；T2 仍缺 12 个带登录态的真实站点/应用任务、OTP/MFA 协调、CI Computer 权限主机和连续指标样本，不能由受控 fixture 外推生产成功率。",
+          "evidenceObserved": [
+            "managed-proof:three-isolated-sessions-controlled-auth-readback-and-screenshots",
+            "relay-proof:explicit-tab-lease-controlled-auth-session-readback-and-tab-return",
+            "computer-proof:real-app-foreground-background-mutation-and-business-readback",
+            "cross-surface-proof:Browser-Computer-Browser-business-continuation",
+            "workbuddy-proof:generate-open-inspect-judge-adjust-reverify-artifact"
+          ],
+          "evidenceRequired": [
+            "T2-12-credentialed-real-site-and-real-app-task-corpus",
+            "OTP-MFA-and-account-recovery-operator-protocol",
+            "CI-Computer-host-with-real-accessibility-and-screen-recording-permissions",
+            "real-task-success-rate-at-least-85-percent-or-15pp-over-baseline",
+            "controlled-task-success-rate-at-least-95-percent",
+            "recovery-success-rate-at-least-90-percent",
+            "human-status-recognition-within-5-seconds-at-least-90-percent"
+          ]
+        },
+        "issues": []
+      },
+      {
+        "phase": "P2",
+        "id": "p2-remote-pool-device-cloud",
+        "title": "Remote browser pool 与设备云投入决策",
+        "status": "evidence_backed_defer",
+        "gateIds": [],
+        "evidence": [
+          {
+            "proof": "durable",
+            "proofPath": "docs/acceptance/surface-execution/durable-current/proof.json",
+            "assertionKeys": [
+              "providerNeutralRegistryContractVerified"
+            ],
+            "assertionCandidates": {
+              "providerNeutralRegistryContractVerified": [
+                "providerNeutralRegistryContractVerified"
+              ]
+            },
+            "resolvedAssertionKeys": [
+              "providerNeutralRegistryContractVerified"
+            ],
+            "artifactRecordPaths": [],
+            "readbackPaths": [],
+            "status": "passed",
+            "issues": []
+          }
+        ],
+        "gateDefers": [],
+        "defer": {
+          "gate": "G4",
+          "reason": "方案要求依据真实使用量和 benchmark 决策，当前不得在没有需求与成本证据时扩大产品范围。",
+          "evidenceObserved": [
+            "p2-proof:future-providers-fail-closed-with-provider-gate-pending",
+            "provider-registry:G4-decisions-require-demand-latency-cost-and-isolation-evidence",
+            "truth-source:section-16-investment-follows-real-usage-and-benchmark"
+          ],
+          "evidenceRequired": [
+            "真实 Browser/Computer 使用量与并发分布",
+            "本地和远程 provider 成功率、p95、恢复率 benchmark",
+            "设备云成本、数据驻留、账号隔离与退出方案"
+          ]
+        },
+        "issues": []
+      }
+    ]
+  },
+  "overall": {
+    "status": "passed",
+    "exitCode": 0,
+    "hasEvidenceBackedDefers": true,
+    "blockingStatuses": []
+  }
+}

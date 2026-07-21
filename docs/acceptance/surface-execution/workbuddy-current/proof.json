@@ -1,0 +1,614 @@
+{
+  "version": 1,
+  "status": "passed",
+  "campaign": {
+    "id": "surface-v1-20260721T033951Z-af6f0f298901",
+    "startedAt": "2026-07-21T03:39:51.214Z"
+  },
+  "scenario": "workbuddy-like-generation-browser-review-repair-reverify",
+  "recordedAt": "2026-07-21T03:43:44.275Z",
+  "runStartedAt": "2026-07-21T03:43:41.997Z",
+  "worktree": "/Users/linchen/.codex/worktrees/aedb/code-agent",
+  "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+  "originMain": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+  "mergeBase": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+  "sourceFingerprint": {
+    "version": 1,
+    "algorithm": "sha256",
+    "sha256": "d60e72a1204a7026473317698bd9df5e602931bbbb54395d8d918efbf89675fa",
+    "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+    "dirty": true,
+    "dirtyPaths": [
+      "docs/architecture/frontend.md",
+      "package.json",
+      "public/pip.html",
+      "resources/browser-relay-extension/background.js",
+      "resources/browser-relay-extension/manifest.json",
+      "resources/browser-relay-extension/options.html",
+      "resources/browser-relay-extension/options.js",
+      "resources/browser-relay-extension/popup.html",
+      "resources/browser-relay-extension/popup.js",
+      "resources/browser-relay-extension/protocol-v2.js",
+      "scripts/acceptance/browser-computer-app-host-smoke.ts",
+      "scripts/acceptance/fixtures/surface-execution-conversation.ts",
+      "scripts/acceptance/fixtures/surface-execution-cross-surface.ts",
+      "scripts/acceptance/fixtures/surface-execution-workbuddy.ts",
+      "scripts/acceptance/surface-execution-canary-scan.ts",
+      "scripts/acceptance/surface-execution-computer-smoke.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-core.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-smoke.ts",
+      "scripts/acceptance/surface-execution-conversation-smoke.ts",
+      "scripts/acceptance/surface-execution-cross-surface-smoke.ts",
+      "scripts/acceptance/surface-execution-durable-restart-smoke.ts",
+      "scripts/acceptance/surface-execution-gate-report-core.ts",
+      "scripts/acceptance/surface-execution-gate-report.ts",
+      "scripts/acceptance/surface-execution-managed-smoke.ts",
+      "scripts/acceptance/surface-execution-metrics.ts",
+      "scripts/acceptance/surface-execution-p2-acceptance-core.ts",
+      "scripts/acceptance/surface-execution-proof.ts",
+      "scripts/acceptance/surface-execution-relay-smoke.ts",
+      "scripts/acceptance/surface-execution-replay-import-child.ts",
+      "scripts/acceptance/surface-execution-stop-benchmark.ts",
+      "scripts/acceptance/surface-execution-workbuddy-smoke.ts",
+      "src-tauri/src/main.rs",
+      "src-tauri/src/pip.rs",
+      "src/cli/commands/export.ts",
+      "src/host/agent/runtime/toolExecutionEngine.ts",
+      "src/host/app/agentAppService.ts",
+      "src/host/diagnostics/checks/browserRelay.ts",
+      "src/host/diagnostics/doctorRunner.ts",
+      "src/host/evaluation/telemetryQueryService.ts",
+      "src/host/evaluation/transcriptReplayBuilder.ts",
+      "src/host/ipc/desktop.ipc.ts",
+      "src/host/ipc/index.ts",
+      "src/host/ipc/surfaceExecution.ipc.ts",
+      "src/host/mcp/cuaSessionLock.ts",
+      "src/host/plugins/builtin/browserControl/browser.schema.ts",
+      "src/host/plugins/builtin/browserControl/browserAction.schema.ts",
+      "src/host/plugins/builtin/computerUse/cuaStatefulComputerUse.ts",
+      "src/host/protocol/tools.ts",
+      "src/host/services/infra/browser/browserArtifactActions.ts",
+      "src/host/services/infra/browser/browserSurfaceInteractions.ts",
+      "src/host/services/infra/browser/browserUploadApprovalRegistry.ts",
+      "src/host/services/infra/browser/domSnapshotBuilder.ts",
+      "src/host/services/infra/browser/domSnapshotParser.ts",
+      "src/host/services/infra/browser/managedBrowserCookieImport.ts",
+      "src/host/services/infra/browser/relayActionFacade.ts",
+      "src/host/services/infra/browser/targetRefRegistry.ts",
+      "src/host/services/infra/browser/types.ts",
+      "src/host/services/infra/browserRelayApprovalBoundary.ts",
+      "src/host/services/infra/browserRelayService.ts",
+      "src/host/services/infra/browserService.ts",
+      "src/host/services/infra/sessionManager.ts",
+      "src/host/services/surfaceExecution/BrowserElementRefFence.ts",
+      "src/host/services/surfaceExecution/BrowserProfileImportApprovalService.ts",
+      "src/host/services/surfaceExecution/BrowserTabLeaseService.ts",
+      "src/host/services/surfaceExecution/ComputerSurfaceEventProjection.ts",
+      "src/host/services/surfaceExecution/ExternalSurfaceAgentAdapter.ts",
+      "src/host/services/surfaceExecution/ManagedBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/RelayBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/SurfaceAccessGrantService.ts",
+      "src/host/services/surfaceExecution/surfaceBrowserRuntimeTypes.ts",
+      "src/host/services/surfaceExecution/surfaceComputerErrorProjection.ts",
+      "src/host/services/surfaceExecution/surfaceComputerRuntimeHelpers.ts",
+      "src/host/services/surfaceExecution/surfaceContinuationRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceContinuationService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationControlService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationProjectionService.ts",
+      "src/host/services/surfaceExecution/SurfaceEventHub.ts",
+      "src/host/services/surfaceExecution/surfaceExecutionResultProjection.ts",
+      "src/host/services/surfaceExecution/SurfaceExecutionRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceFrameRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceInterruptService.ts",
+      "src/host/services/surfaceExecution/SurfaceObservationRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceOrganizationPolicyService.ts",
+      "src/host/services/surfaceExecution/SurfaceOutputRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceProofService.ts",
+      "src/host/services/surfaceExecution/SurfaceProviderRegistry.ts",
+      "src/host/services/surfaceExecution/surfaceRunOwnership.ts",
+      "src/host/services/surfaceExecution/SurfaceSessionManager.ts",
+      "src/host/services/surfaceExecution/SurfaceSwitchCoordinator.ts",
+      "src/host/session/browserComputerProofStore.ts",
+      "src/host/session/exportMarkdown.ts",
+      "src/host/session/localCache.ts",
+      "src/host/session/surfaceExecutionSessionExport.ts",
+      "src/host/session/transcriptExporter.ts",
+      "src/host/shellCapabilities.ts",
+      "src/host/telemetry/diagnosticBundleService.ts",
+      "src/host/telemetry/telemetryCollectorInternal.ts",
+      "src/host/tools/artifacts/surfaceExecutionToolResultPipeline.ts",
+      "src/host/tools/toolExecutor.ts",
+      "src/host/tools/types.ts",
+      "src/host/tools/vision/browserAction.ts",
+      "src/host/tools/vision/browserActionFinalize.ts",
+      "src/host/tools/vision/browserActionResultProjection.ts",
+      "src/host/tools/vision/browserActionSurfaceInteractions.ts",
+      "src/host/tools/vision/browserEngineDispatch.ts",
+      "src/host/tools/vision/browserEngineRouter.ts",
+      "src/host/tools/vision/browserNavigate.ts",
+      "src/host/tools/vision/browserProfileActions.ts",
+      "src/host/tools/vision/BrowserTool.ts",
+      "src/host/tools/vision/browserUploadApproval.ts",
+      "src/host/tools/vision/computerUse.ts",
+      "src/renderer/App.tsx",
+      "src/renderer/components/ChatView.tsx",
+      "src/renderer/components/features/browser/BrowserSurfacePanel.tsx",
+      "src/renderer/components/features/chat/ChatInput/index.tsx",
+      "src/renderer/components/features/chat/ToolStepGroup.tsx",
+      "src/renderer/components/features/chat/TurnCard.tsx",
+      "src/renderer/components/features/export/ExportModal.tsx",
+      "src/renderer/components/features/sidebar/SidebarSessionItem.tsx",
+      "src/renderer/components/features/surfaceExecution/index.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceControls.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceList.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionChatPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/surfaceExecutionPresentation.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionRunStatus.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceInterventionCards.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceOutputEntry.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfacePermissionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceResourceSections.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSemanticTimeline.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSessionHeader.tsx",
+      "src/renderer/components/features/surfaceExecution/types.ts",
+      "src/renderer/hooks/agent/effects/useSurfaceExecutionEffects.ts",
+      "src/renderer/hooks/useComputerUsePip.ts",
+      "src/renderer/hooks/useSurfaceExecutionConversation.ts",
+      "src/renderer/hooks/useSurfaceExecutionPip.ts",
+      "src/renderer/i18n/surfaceExecution.ts",
+      "src/renderer/index.tsx",
+      "src/renderer/services/nativeCommandFacade.ts",
+      "src/renderer/services/surfaceExecutionClient.ts",
+      "src/renderer/services/surfaceExecutionController.ts",
+      "src/renderer/stores/surfaceExecutionStore.ts",
+      "src/renderer/utils/browserComputerExportRedaction.ts",
+      "src/renderer/utils/surfaceExecutionProjection.ts",
+      "src/shared/contract/browserRelay.ts",
+      "src/shared/contract/desktop.ts",
+      "src/shared/contract/surfaceExecution.ts",
+      "src/shared/ipc/domains.ts",
+      "src/shared/utils/browserComputerActionCatalog.ts",
+      "src/shared/utils/browserComputerInputPayloadRedaction.ts",
+      "src/shared/utils/browserComputerRedaction.ts",
+      "src/shared/utils/surfaceExecutionExportCaptureContext.ts",
+      "src/shared/utils/surfaceExecutionExportFieldSanitizer.ts",
+      "src/shared/utils/surfaceExecutionExportProjection.ts",
+      "src/shared/utils/surfaceExecutionRedaction.ts",
+      "src/web/routes/dev.ts",
+      "src/web/routes/devSurfaceExecutionConversation.ts",
+      "src/web/routes/devSurfaceExecutionConversationSeed.ts",
+      "tests/agent/cancellation-fanout.test.ts",
+      "tests/main/diagnostics/browserRelay.test.ts",
+      "tests/main/diagnostics/doctorRunner.test.ts",
+      "tests/renderer/components/abilityMenu.browserReadiness.test.ts",
+      "tests/renderer/components/chatView.surfaceExecution.integration.test.ts",
+      "tests/renderer/components/exportModal.surfaceExecution.test.ts",
+      "tests/renderer/components/surfaceExecution/fixtures.ts",
+      "tests/renderer/components/surfaceExecution/SurfaceControls.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceEvidenceCard.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionConversationPanel.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionRunStatus.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceResourceSections.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceSemanticTimeline.test.tsx",
+      "tests/renderer/components/turnCard.artifactFold.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionEffects.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionPip.test.tsx",
+      "tests/renderer/services/nativeCommandFacade.test.ts",
+      "tests/renderer/services/surfaceExecutionClient.test.ts",
+      "tests/renderer/services/surfaceExecutionController.test.ts",
+      "tests/renderer/stores/surfaceExecutionStore.test.ts",
+      "tests/renderer/utils/surfaceExecutionProjection.test.ts",
+      "tests/unit/agent/messageHistory.browserComputerRedaction.test.ts",
+      "tests/unit/evaluation/surfaceExecutionReplayProjection.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.static.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.worker.test.ts",
+      "tests/unit/host/app/browserSurfaceSideDoor.static.test.ts",
+      "tests/unit/ipc/desktop.domain.ipc.test.ts",
+      "tests/unit/ipc/surfaceExecution.ipc.test.ts",
+      "tests/unit/main/pipSurfaceControls.static.test.ts",
+      "tests/unit/main/shellCapabilities.test.ts",
+      "tests/unit/mcp/cuaSessionLock.test.ts",
+      "tests/unit/scripts/surfaceExecutionCanaryScan.test.ts",
+      "tests/unit/scripts/surfaceExecutionComputerAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionControlledComplex.test.ts",
+      "tests/unit/scripts/surfaceExecutionConversationAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionCrossSurfaceAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionDurableRestartAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionGateReport.test.ts",
+      "tests/unit/scripts/surfaceExecutionMetrics.test.ts",
+      "tests/unit/scripts/surfaceExecutionP2Acceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionProof.test.ts",
+      "tests/unit/scripts/surfaceExecutionReplayImportChild.test.ts",
+      "tests/unit/scripts/surfaceExecutionWorkBuddyAcceptance.test.ts",
+      "tests/unit/services/infra/browserArtifactActions.uploadApproval.test.ts",
+      "tests/unit/services/infra/browserDomSnapshotBuilder.test.ts",
+      "tests/unit/services/infra/browserRelayService.test.ts",
+      "tests/unit/services/infra/browserTargetRefRegistry.test.ts",
+      "tests/unit/services/infra/browserUploadApprovalRegistry.test.ts",
+      "tests/unit/services/infra/relayActionFacade.test.ts",
+      "tests/unit/services/infra/sessionManager.metadataGuard.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserProfileImportApprovalService.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserTabLeaseService.test.ts",
+      "tests/unit/services/surfaceExecution/ComputerSurfaceEventProjection.test.ts",
+      "tests/unit/services/surfaceExecution/ExternalSurfaceAgentAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/ManagedBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/RelayBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceBrowserRuntime.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceContinuationService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceControlPlane.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceConversationProjectionService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceFrameRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOrganizationPolicyService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOutputRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOwnershipStores.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProofService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProviderRegistry.test.ts",
+      "tests/unit/session/browserComputerProofStore.test.ts",
+      "tests/unit/session/surfaceExecutionExport.test.ts",
+      "tests/unit/shared/browserComputerActionCatalog.test.ts",
+      "tests/unit/shared/browserComputerRedaction.browserPolicy.test.ts",
+      "tests/unit/shared/contract/surfaceExecution.test.ts",
+      "tests/unit/shared/utils/surfaceExecutionExportProjection.test.ts",
+      "tests/unit/telemetry/diagnosticBundleService.test.ts",
+      "tests/unit/tools/cuaStatefulLockEvents.test.ts",
+      "tests/unit/tools/cuaStatefulSurfaceIntegration.test.ts",
+      "tests/unit/tools/modules/vision/browser.test.ts",
+      "tests/unit/tools/modules/vision/browserAction.test.ts",
+      "tests/unit/tools/surfaceExecutionToolResultPipeline.test.ts",
+      "tests/unit/tools/toolExecutor.executionIntent.test.ts",
+      "tests/unit/tools/vision/browserActionFinalize.test.ts",
+      "tests/unit/tools/vision/browserEngineDispatch.intent.test.ts",
+      "tests/unit/tools/vision/browserEngineRelayRouting.test.ts",
+      "tests/unit/tools/vision/browserEngineRouter.test.ts",
+      "tests/unit/tools/vision/browserNavigateSideDoor.test.ts",
+      "tests/unit/tools/vision/browserUploadApproval.test.ts",
+      "tests/unit/tools/vision/browserWorkbenchGating.test.ts",
+      "tests/unit/web/appAssembly.test.ts",
+      "tests/unit/web/devSurfaceExecutionConversation.test.ts"
+    ],
+    "scopes": [
+      "src",
+      "src-tauri",
+      "resources",
+      "public",
+      "scripts",
+      "tests",
+      "package.json",
+      "docs/architecture",
+      "docs/plans"
+    ]
+  },
+  "command": "npm run acceptance:surface-execution-workbuddy -- --out docs/acceptance/surface-execution/workbuddy-current --json",
+  "browser": {
+    "provider": "system-chrome-cdp",
+    "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "version": "Google Chrome 150.0.7871.125",
+    "mode": "headless"
+  },
+  "surface": {
+    "conversationId": "surface-workbuddy-acceptance",
+    "runId": "surface-workbuddy-run",
+    "turnId": "turn-workbuddy-visual-repair",
+    "agentId": "workbuddy-reviewer",
+    "surfaceSessionId": "surface_a6357973-90c9-41dc-a89d-6086b5efff48",
+    "provider": "system-chrome-cdp",
+    "eventCount": 20,
+    "evidenceCount": 8,
+    "outputCount": 2,
+    "projectionSource": "live",
+    "writable": false,
+    "finalSessionState": "completed",
+    "durableLedgerPersisted": true,
+    "reviewEvents": [
+      {
+        "sequence": 11,
+        "phase": "verify",
+        "status": "failed",
+        "userSummary": "WorkBuddy draft artifact failed rendered business verification",
+        "verdict": "fail",
+        "findings": [
+          "Launch status did not satisfy Launch status: Ready to ship.",
+          "Checklist did not satisfy Checklist: 3 / 3 PASS.",
+          "Completion did not satisfy Completion: 100%.",
+          "Release package did not satisfy Release package: Final artifact saved."
+        ],
+        "evidenceRefs": [
+          "surface-proof:4ba97cc75992efb86d8f"
+        ],
+        "artifactRefs": [
+          "artifact://surface-execution-workbuddy/draft-artifact.html"
+        ]
+      },
+      {
+        "sequence": 17,
+        "phase": "verify",
+        "status": "succeeded",
+        "userSummary": "WorkBuddy repaired artifact passed rendered business verification",
+        "verdict": "pass",
+        "findings": [
+          "All four launch requirements passed after artifact repair."
+        ],
+        "evidenceRefs": [
+          "surface-proof:8c7ded1b9e1e359f98de"
+        ],
+        "artifactRefs": [
+          "artifact://surface-execution-workbuddy/final-artifact.html"
+        ]
+      }
+    ]
+  },
+  "assertions": {
+    "generatedIntentionalFailureArtifact": true,
+    "managedSystemChromeOpenedDraft": true,
+    "draftScreenshotCapturedThisRun": true,
+    "draftDomBusinessReadbackFailed": true,
+    "draftPixelFailureBannerVerified": true,
+    "failureJudgmentProjected": true,
+    "artifactAdjustedAfterFailure": true,
+    "managedSystemChromeReopenedFinal": true,
+    "finalScreenshotCapturedThisRun": true,
+    "finalDomBusinessReadbackPassed": true,
+    "finalPixelSuccessBannerVerified": true,
+    "beforeAfterScreenshotsDiffer": true,
+    "sharedSurfaceSessionUsed": true,
+    "sharedSurfaceProofCardsPresent": true,
+    "conversationProjectionContainsFailPass": true,
+    "durableConversationLedgerPersisted": true,
+    "finalArtifactSaved": true,
+    "redactionCanaryAbsent": true,
+    "cleanupReleasedManagedBrowser": true
+  },
+  "stages": {
+    "draft": {
+      "artifactPath": "draft-artifact.html",
+      "artifactSha256": "04f33e2dabbedb9aa95cb5f7b0b689ce71eb5d663df1d64e012c531d7a519669",
+      "artifactBytes": 6291,
+      "browserUrl": "http://127.0.0.1:64929/artifact?stage=draft&run=1784605421997",
+      "businessJudgment": {
+        "verdict": "fail",
+        "checks": [
+          {
+            "id": "launch-status",
+            "label": "Launch status",
+            "expected": "Launch status: Ready to ship",
+            "observed": "Launch status: Needs revision",
+            "passed": false
+          },
+          {
+            "id": "checklist",
+            "label": "Checklist",
+            "expected": "Checklist: 3 / 3 PASS",
+            "observed": "Checklist: 2 / 3 PASS",
+            "passed": false
+          },
+          {
+            "id": "completion",
+            "label": "Completion",
+            "expected": "Completion: 100%",
+            "observed": "Completion: 67%",
+            "passed": false
+          },
+          {
+            "id": "release-package",
+            "label": "Release package",
+            "expected": "Release package: Final artifact saved",
+            "observed": "Release package: Draft only",
+            "passed": false
+          }
+        ],
+        "findings": [
+          "Launch status did not satisfy Launch status: Ready to ship.",
+          "Checklist did not satisfy Checklist: 3 / 3 PASS.",
+          "Completion did not satisfy Completion: 100%.",
+          "Release package did not satisfy Release package: Final artifact saved."
+        ]
+      },
+      "screenshot": {
+        "path": "before-failed.png",
+        "sha256": "df1d6352fb34c5553605ce683f838f026030394b2403991d6b7b17010d4c4358",
+        "bytes": 195893,
+        "pixels": {
+          "width": 1280,
+          "height": 844,
+          "redPixels": 156427,
+          "greenPixels": 0,
+          "sampledPixels": 1080320
+        }
+      },
+      "proof": {
+        "evidenceId": "surface-proof:4ba97cc75992efb86d8f",
+        "kind": "screenshot",
+        "source": "browser",
+        "assetRef": "screenshot://surface-execution-workbuddy/before-failed.png",
+        "redactionStatus": "clean",
+        "inspection": {
+          "captureState": "captured",
+          "analysisState": "analyzed",
+          "verificationState": "rejected",
+          "inspectedBy": {
+            "kind": "service",
+            "id": "surface-workbuddy-acceptance",
+            "method": "vision"
+          },
+          "inspectedAt": 1784605423931,
+          "supportsStepIds": [
+            "workbuddy-reviewer:screenshot-draft:4"
+          ],
+          "checklist": [
+            {
+              "id": "business-launch-status",
+              "label": "Launch status",
+              "status": "failed",
+              "finding": "Launch status: Needs revision; expected Launch status: Ready to ship"
+            },
+            {
+              "id": "business-checklist",
+              "label": "Checklist",
+              "status": "failed",
+              "finding": "Checklist: 2 / 3 PASS; expected Checklist: 3 / 3 PASS"
+            },
+            {
+              "id": "business-completion",
+              "label": "Completion",
+              "status": "failed",
+              "finding": "Completion: 67%; expected Completion: 100%"
+            },
+            {
+              "id": "business-release-package",
+              "label": "Release package",
+              "status": "failed",
+              "finding": "Release package: Draft only; expected Release package: Final artifact saved"
+            },
+            {
+              "id": "rendered-status-color",
+              "label": "Rendered status color",
+              "status": "passed",
+              "finding": "Rendered failure banner: 156427 red pixels."
+            },
+            {
+              "id": "redaction-canary",
+              "label": "Redaction canary",
+              "status": "passed",
+              "finding": "The raw canary is absent from projected evidence."
+            }
+          ],
+          "afterEvidenceRef": "evidence_7a55364d"
+        }
+      }
+    },
+    "final": {
+      "artifactPath": "final-artifact.html",
+      "artifactSha256": "0e8a5c69db893348b68f16a2b0c9fe9405af8f997f1ea06a81768cf0aa3d6be5",
+      "artifactBytes": 6298,
+      "browserUrl": "http://127.0.0.1:64929/artifact?stage=final&run=1784605421997",
+      "businessJudgment": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "launch-status",
+            "label": "Launch status",
+            "expected": "Launch status: Ready to ship",
+            "observed": "Launch status: Ready to ship",
+            "passed": true
+          },
+          {
+            "id": "checklist",
+            "label": "Checklist",
+            "expected": "Checklist: 3 / 3 PASS",
+            "observed": "Checklist: 3 / 3 PASS",
+            "passed": true
+          },
+          {
+            "id": "completion",
+            "label": "Completion",
+            "expected": "Completion: 100%",
+            "observed": "Completion: 100%",
+            "passed": true
+          },
+          {
+            "id": "release-package",
+            "label": "Release package",
+            "expected": "Release package: Final artifact saved",
+            "observed": "Release package: Final artifact saved",
+            "passed": true
+          }
+        ],
+        "findings": []
+      },
+      "screenshot": {
+        "path": "after-fixed.png",
+        "sha256": "f7c74dd8cbdd65045a49bad1415fdb35f23789849195584b3a9e25eb73b1e5d7",
+        "bytes": 198699,
+        "pixels": {
+          "width": 1280,
+          "height": 844,
+          "redPixels": 0,
+          "greenPixels": 158231,
+          "sampledPixels": 1080320
+        }
+      },
+      "proof": {
+        "evidenceId": "surface-proof:8c7ded1b9e1e359f98de",
+        "kind": "screenshot",
+        "source": "browser",
+        "assetRef": "screenshot://surface-execution-workbuddy/after-fixed.png",
+        "redactionStatus": "clean",
+        "inspection": {
+          "captureState": "captured",
+          "analysisState": "analyzed",
+          "verificationState": "verified",
+          "inspectedBy": {
+            "kind": "service",
+            "id": "surface-workbuddy-acceptance",
+            "method": "vision"
+          },
+          "inspectedAt": 1784605424135,
+          "supportsStepIds": [
+            "workbuddy-reviewer:screenshot-final:8"
+          ],
+          "checklist": [
+            {
+              "id": "business-launch-status",
+              "label": "Launch status",
+              "status": "passed",
+              "finding": "Launch status: Ready to ship; expected Launch status: Ready to ship"
+            },
+            {
+              "id": "business-checklist",
+              "label": "Checklist",
+              "status": "passed",
+              "finding": "Checklist: 3 / 3 PASS; expected Checklist: 3 / 3 PASS"
+            },
+            {
+              "id": "business-completion",
+              "label": "Completion",
+              "status": "passed",
+              "finding": "Completion: 100%; expected Completion: 100%"
+            },
+            {
+              "id": "business-release-package",
+              "label": "Release package",
+              "status": "passed",
+              "finding": "Release package: Final artifact saved; expected Release package: Final artifact saved"
+            },
+            {
+              "id": "rendered-status-color",
+              "label": "Rendered status color",
+              "status": "passed",
+              "finding": "Rendered success banner: 158231 green pixels."
+            },
+            {
+              "id": "redaction-canary",
+              "label": "Redaction canary",
+              "status": "passed",
+              "finding": "The raw canary is absent from projected evidence."
+            }
+          ],
+          "afterEvidenceRef": "evidence_a4923f6b"
+        }
+      }
+    }
+  },
+  "canaryScan": {
+    "tokenSha256": "085d7208a19297d5393beddd6e55eb62d6fa2f368f74acd9f3c1c6857db9e2d0",
+    "result": "absent",
+    "inMemoryScopes": [
+      "tool results",
+      "Surface event stream",
+      "live conversation projection",
+      "durable conversation projection"
+    ],
+    "scannedFiles": [
+      "SHA256SUMS",
+      "after-fixed.png",
+      "before-failed.png",
+      "draft-artifact.html",
+      "final-artifact.html",
+      "proof.json",
+      "run.log"
+    ]
+  }
+}

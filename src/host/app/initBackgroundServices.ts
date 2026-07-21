@@ -286,96 +286,19 @@ function initializeSupabaseServices(mainWindow: AppWindow | null): void {
  */
 async function setupLogBridge(): Promise<void> {
   logBridge.setCommandHandler(async (command, params) => {
-    logger.debug('LogBridge executing command', { command, params });
+    logger.debug('LogBridge command received', { command, paramKeys: Object.keys(params) });
 
-    const { browserService } = await import('../services/infra/browserService.js');
+    // The localhost log bridge has no durable Run/Agent owner or permission
+    // channel. Browser reads and writes must therefore fail closed here and go
+    // through ToolExecutor + SurfaceExecution instead of the legacy singleton.
+    if (command === 'browser_action') {
+      return {
+        success: false,
+        error: 'REMOTE_BROWSER_ACTION_REQUIRES_SURFACE_OWNER: use the authenticated ToolExecutor browser_action path.',
+      };
+    }
 
     switch (command) {
-      case 'browser_action': {
-        const action = params.action as string;
-        if (!action) {
-          return { success: false, error: 'Missing action parameter' };
-        }
-
-        try {
-          switch (action) {
-            case 'launch':
-              await browserService.launch();
-              return { success: true, output: 'Browser launched' };
-
-            case 'close':
-              await browserService.close();
-              return { success: true, output: 'Browser closed' };
-
-            case 'new_tab': {
-              const tabId = await browserService.newTab(params.url as string);
-              return { success: true, output: `New tab created: ${tabId}` };
-            }
-
-            case 'navigate':
-              await browserService.navigate(params.url as string, params.tabId as string);
-              return { success: true, output: `Navigated to ${params.url}` };
-
-            case 'screenshot': {
-              const result = await browserService.screenshot({
-                fullPage: params.fullPage as boolean,
-                tabId: params.tabId as string,
-              });
-              return {
-                success: result.success,
-                output: result.path ? `Screenshot saved: ${result.path}` : undefined,
-                error: result.error,
-              };
-            }
-
-            case 'get_content': {
-              const content = await browserService.getPageContent(params.tabId as string);
-              return {
-                success: true,
-                output: `URL: ${content.url}\nTitle: ${content.title}\n\n${content.text.substring(0, 2000)}...`,
-              };
-            }
-
-            case 'click':
-              await browserService.click(params.selector as string, params.tabId as string);
-              return { success: true, output: `Clicked: ${params.selector}` };
-
-            case 'type':
-              await browserService.type(
-                params.selector as string,
-                params.text as string,
-                params.tabId as string
-              );
-              return { success: true, output: `Typed into: ${params.selector}` };
-
-            case 'get_logs': {
-              const logs = browserService.logger.getLogsAsString(params.count as number || 20);
-              return { success: true, output: logs };
-            }
-
-            case 'press_key':
-              await browserService.pressKey(params.key as string, params.tabId as string);
-              return { success: true, output: `Pressed key: ${params.key}` };
-
-            case 'scroll':
-              await browserService.scroll(
-                params.direction as 'up' | 'down',
-                params.amount as number,
-                params.tabId as string
-              );
-              return { success: true, output: `Scrolled ${params.direction}` };
-
-            default:
-              return { success: false, error: `Unknown browser action: ${action}` };
-          }
-        } catch (error) {
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-      }
-
       case 'ping':
         return { success: true, output: 'pong' };
 

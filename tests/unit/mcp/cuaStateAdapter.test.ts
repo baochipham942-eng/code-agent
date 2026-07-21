@@ -49,6 +49,7 @@ function element(
 
 class FakeDriver implements CuaDriverPort {
   generation = 'cua-driver:1';
+  appName = 'Notes';
   calls: Array<{ toolName: string; args: Record<string, unknown> }> = [];
   observations: CuaDriverCallResult[] = [];
   observationGenerations: string[] = [];
@@ -63,7 +64,7 @@ class FakeDriver implements CuaDriverPort {
           windows: [{
             pid: 42,
             window_id: 7,
-            app_name: 'Notes',
+            app_name: this.appName,
             title: 'Draft',
             bounds: { x: 1, y: 2, width: 300, height: 200 },
             is_on_screen: true,
@@ -215,7 +216,9 @@ describe('CuaStateAdapter', () => {
     }, context);
 
     expect(driver.calls.map((call) => call.toolName)).toEqual([
+      'list_windows',
       'get_window_state',
+      'list_windows',
       'click',
       'get_window_state',
     ]);
@@ -277,6 +280,28 @@ describe('CuaStateAdapter', () => {
       if (result.response.operation !== 'act') throw new Error('expected act');
       expect(result.response.result.error?.kind).toBe('provider_restarted');
     }
+  });
+
+  it('rejects window-id reuse by another application before mutation delivery', async () => {
+    const driver = new FakeDriver();
+    driver.observations.push(snapshot('before-reuse', [element(1, 'Submit')]));
+    const adapter = new CuaStateAdapter(driver);
+    const state = await observe(adapter);
+    driver.appName = 'Terminal';
+
+    const result = await adapter.execute({
+      operation: 'act',
+      stateId: state.stateId,
+      mutation: { kind: 'click', elementRef: 'e1' },
+    }, context);
+
+    if (result.response.operation !== 'act') throw new Error('expected act');
+    expect(result.response.result).toMatchObject({
+      delivery: 'not_attempted',
+      overall: 'failed',
+      error: { kind: 'state_conflict' },
+    });
+    expect(driver.calls.filter((call) => call.toolName === 'click')).toHaveLength(0);
   });
 
   it('rejects an observation whose provider generation changes in flight', async () => {
@@ -512,5 +537,86 @@ describe('CuaStateAdapter', () => {
       if (result.response.operation !== 'act') throw new Error('expected act');
       expect(result.response.result.error?.kind).toBe('stale_state');
     }
+  });
+
+  it('isolates states by conversation, native run, and agent owner', async () => {
+    const driver = new FakeDriver();
+    driver.observations.push(snapshot('agent-a', [element(1, 'Delete')]));
+    const adapter = new CuaStateAdapter(driver);
+    const ownerA: CuaDriverCallContext = {
+      sessionId: 'shared-conversation',
+      runId: 'run-1',
+      agentId: 'agent-a',
+      toolCallId: 'observe-a',
+    };
+    const ownerB: CuaDriverCallContext = {
+      sessionId: 'shared-conversation',
+      runId: 'run-1',
+      agentId: 'agent-b',
+      toolCallId: 'act-b',
+    };
+
+    const observed = await adapter.execute({
+      operation: 'observe',
+      target: { pid: 42, windowId: 7 },
+    }, ownerA);
+    if (observed.response.operation !== 'observe') throw new Error('expected observe');
+    const stateId = observed.response.state.stateId;
+
+    expect(adapter.getStateOwnership(stateId, ownerA)).toMatchObject({
+      sessionId: 'shared-conversation',
+      runId: 'run-1',
+      agentId: 'agent-a',
+      stateId,
+      providerGeneration: 'cua-driver:1',
+    });
+    expect(adapter.getStateOwnership(stateId, ownerB)).toBeNull();
+
+    const rejected = await adapter.execute({
+      operation: 'act',
+      stateId,
+      mutation: { kind: 'click', elementRef: 'e1' },
+    }, ownerB);
+    if (rejected.response.operation !== 'act') throw new Error('expected act');
+    expect(rejected.response.result).toMatchObject({
+      delivery: 'not_attempted',
+      overall: 'failed',
+      error: { kind: 'stale_state' },
+    });
+    expect(driver.calls.filter((call) => call.toolName === 'click')).toHaveLength(0);
+  });
+
+  it('isolates two Surface sessions owned by the same run and agent', async () => {
+    const driver = new FakeDriver();
+    driver.observations.push(snapshot('surface-a', [element(1, 'Delete')]));
+    const adapter = new CuaStateAdapter(driver);
+    const surfaceA: CuaDriverCallContext = {
+      sessionId: 'shared-conversation',
+      surfaceSessionId: 'surface-a',
+      runId: 'run-1',
+      agentId: 'agent-a',
+      toolCallId: 'observe-a',
+    };
+    const surfaceB: CuaDriverCallContext = {
+      ...surfaceA,
+      surfaceSessionId: 'surface-b',
+      toolCallId: 'act-b',
+    };
+
+    const observed = await adapter.execute({
+      operation: 'observe',
+      target: { pid: 42, windowId: 7 },
+    }, surfaceA);
+    if (observed.response.operation !== 'observe') throw new Error('expected observe');
+    const rejected = await adapter.execute({
+      operation: 'act',
+      stateId: observed.response.state.stateId,
+      mutation: { kind: 'click', elementRef: 'e1' },
+    }, surfaceB);
+
+    expect(adapter.getStateOwnership(observed.response.state.stateId, surfaceB)).toBeNull();
+    if (rejected.response.operation !== 'act') throw new Error('expected act');
+    expect(rejected.response.result.error?.kind).toBe('stale_state');
+    expect(driver.calls.filter((call) => call.toolName === 'click')).toHaveLength(0);
   });
 });

@@ -98,4 +98,34 @@ describe('persistBase64ImageMetadata', () => {
     expect(result.metadata?.imageBase64Persisted).toBe(false);
     expect(result.metadata?.imageBase64Omitted).toBe(true);
   });
+
+  it('persists failed or ambiguous tool screenshots and never leaves inline base64 behind', async () => {
+    const workingDirectory = await mkdtemp(path.join(tmpdir(), 'code-agent-base64-image-'));
+
+    const result = await persistBase64ImageMetadata({
+      success: false,
+      error: 'delivery unknown',
+      metadata: {
+        imageBase64: `data:image/png;base64,${ONE_BY_ONE_PNG_BASE64}`,
+        computerUseActionResultV1: {
+          delivery: 'unknown',
+          verification: 'inconclusive',
+          overall: 'ambiguous',
+        },
+      },
+    }, {
+      sourceTool: 'cua_stateful_computer_use',
+      workingDirectory,
+      sessionId: 'session-failed',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.metadata?.imageBase64).toBeUndefined();
+    expect(result.metadata?.imageBase64Persisted).toBe(true);
+    expect(result.outputPath).toMatch(/\.png$/);
+    expect(result.metadata?.computerUseActionResultV1).toMatchObject({
+      delivery: 'unknown',
+      overall: 'ambiguous',
+    });
+  });
 });

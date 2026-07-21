@@ -92,6 +92,8 @@ export interface ToolModule<Args = Record<string, unknown>, Output = unknown> {
 export interface ToolContext {
   /** Native Run identity only; Agent Team identity lives in swarmRunScope. */
   readonly runId?: string;
+  /** Conversation turn that owns this tool call and its durable projections. */
+  readonly turnId?: string;
   readonly sessionId: string;
   /** Immutable authorization/artifact boundary for this run. */
   readonly workspace?: string;

@@ -8,6 +8,10 @@ import type { ComputerSurfaceState } from '../../../shared/contract/desktop';
 import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
 import { getComputerSurface } from '../../services/desktop/computerSurface';
 import { acquireComputerSurfaceLock } from '../../services/desktop/computerSurfaceLock';
+import {
+  attachComputerSurfaceModeEvent,
+  createComputerSurfaceModeEvent,
+} from '../../services/surfaceExecution/ComputerSurfaceEventProjection';
 import { isMultiAgentMode } from '../../services/multiAgentMode';
 import { persistBrowserComputerProofFromResult } from '../../session/browserComputerProofStore';
 import {
@@ -433,6 +437,19 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
     const surfaceAuth = isSmartAction(action.action)
       ? null
       : await computerSurface.authorizeAction(action, context);
+    const surfaceModeEvent = surfaceAuth
+      ? createComputerSurfaceModeEvent({
+          mode: surfaceAuth.state.mode,
+          identity: {
+            conversationId: context.sessionId,
+            runId: context.runId,
+            turnId: context.turnId,
+            agentId: context.agentId,
+            toolCallId: context.currentToolCallId,
+          },
+        })
+      : null;
+    if (surfaceModeEvent) context.emit?.('surface_execution', surfaceModeEvent);
     if (surfaceAuth && !surfaceAuth.allowed) {
       const completedTrace = await computerSurface.recordAction(surfaceAuth.trace, {
         success: false,
@@ -444,7 +461,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       const failureKind = surfaceAuth.failureKind || completedTrace.failureKind || surfaceAuth.state.failureKind || null;
       const blockingReasons = surfaceAuth.blockingReasons || completedTrace.blockingReasons || surfaceAuth.state.blockingReasons;
       const recommendedAction = surfaceAuth.recommendedAction || completedTrace.recommendedAction || surfaceAuth.state.recommendedAction || null;
-      return appendBrowserWorkbenchNote(withComputerUseProof({
+      return appendBrowserWorkbenchNote(attachComputerSurfaceModeEvent(withComputerUseProof({
         success: false,
         error: surfaceAuth.reason || 'Computer Surface authorization failed',
         metadata: {
@@ -467,7 +484,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           recommendedAction,
           evidenceSummary: completedTrace.evidenceSummary || surfaceAuth.state.evidenceSummary,
         },
-      }, action, context), workbenchNotes);
+      }, action, context), surfaceModeEvent), workbenchNotes);
     }
 
     // Smart actions 走 BrowserService（已经按 agentId 池化，多 agent 并发 OK），
@@ -540,7 +557,10 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       }
 
       result = attachForegroundKeystrokeWarning(result, action, surfaceAuth?.state.mode || null);
-      return appendBrowserWorkbenchNote(withComputerUseProof(result, action, context), workbenchNotes);
+      return appendBrowserWorkbenchNote(attachComputerSurfaceModeEvent(
+        withComputerUseProof(result, action, context),
+        surfaceModeEvent,
+      ), workbenchNotes);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const result: ToolExecutionResult = {
@@ -555,7 +575,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           blockingReasons: [errorMessage],
           recommendedAction: 'Inspect the before/after evidence and retry with a verified target.',
         });
-        return appendBrowserWorkbenchNote(withComputerUseProof(withComputerSurfaceMetadata(result, {
+        return appendBrowserWorkbenchNote(attachComputerSurfaceModeEvent(withComputerUseProof(withComputerSurfaceMetadata(result, {
           state: computerSurface.getState({
             targetApp: surfaceAuth.state.targetApp || undefined,
             blockedReason: errorMessage,
@@ -563,9 +583,12 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
           }),
           trace: completedTrace,
           sensitive: surfaceAuth.sensitive,
-        }), action, context), workbenchNotes);
+        }), action, context), surfaceModeEvent), workbenchNotes);
       }
-      return appendBrowserWorkbenchNote(withComputerUseProof(result, action, context), workbenchNotes);
+      return appendBrowserWorkbenchNote(attachComputerSurfaceModeEvent(
+        withComputerUseProof(result, action, context),
+        surfaceModeEvent,
+      ), workbenchNotes);
     } finally {
       surfaceLockSlot?.release();
     }

@@ -22,7 +22,7 @@ import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
-import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
+import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
 import { type PermissionMode } from '../permissions/modes';
@@ -79,7 +79,7 @@ export type ToolExecutionDelegate = (toolName: string, params: Record<string, un
  */
 export interface ExecuteOptions {
   /** Native Run identity only. Never substitute sessionId or Team runId. */
-  runId?: string;
+  runId?: string; turnId?: string;
   planningService?: unknown; // PlanningService instance for persistent planning
   modelConfig?: unknown; // ModelConfig for subagent execution
   // Plan Mode support (borrowed from Claude Code v2.0)
@@ -391,7 +391,7 @@ export class ToolExecutor {
 
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
-      runId: effectiveRunId,
+      runId: effectiveRunId, turnId: options.turnId,
       sessionId: effectiveSessionId,
       workspace: this.workspaceRoot,
       workingDirectory: this.executionCwd,
@@ -931,20 +931,23 @@ export class ToolExecutor {
         : null;
       const rawResult = delegatedResult
         ?? await resolver.execute(executionToolName, params, context);
-      const resultWithArtifacts = await persistBase64ImageMetadata(rawResult, {
-        sourceTool: executionToolName,
+      const resultWithSurfaceProjection = await finalizeSurfaceAwareToolResult({
+        toolName: executionToolName,
+        arguments: params,
+        result: rawResult,
         workingDirectory: this.workspaceRoot,
-        sessionId: effectiveSessionId,
+        conversationId: effectiveSessionId, runId: effectiveRunId, turnId: options.turnId, agentId: options.agentId,
+        toolCallId: options.currentToolCallId || executionId, startedAt: startTime,
       });
       const result = writeIsolationMetadata
         ? {
-          ...resultWithArtifacts,
+          ...resultWithSurfaceProjection,
           metadata: {
-            ...(resultWithArtifacts.metadata ?? {}),
+            ...(resultWithSurfaceProjection.metadata ?? {}),
             writeIsolation: writeIsolationMetadata,
           },
         }
-        : resultWithArtifacts;
+        : resultWithSurfaceProjection;
       const duration = Date.now() - startTime;
 
       logger.debug('Tool result', { toolName: executionToolName, success: result.success, error: result.error });

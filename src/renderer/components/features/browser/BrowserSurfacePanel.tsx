@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Copy,
   ExternalLink,
   Globe,
   KeyRound,
@@ -42,21 +41,9 @@ type BusyAction =
   | 'startRelay'
   | 'stopRelay'
   | 'openExtension'
-  | 'copyToken'
   | 'listProfiles'
   | 'importProfile'
-  | 'clearCookies'
-  | 'listRelayTabs'
-  | 'attachRelayTab'
-  | 'detachRelayTab';
-
-interface RelayTabInfo {
-  id?: number;
-  url?: string;
-  title?: string;
-  active?: boolean;
-  attached?: boolean;
-}
+  | 'clearCookies';
 
 interface ProfileImportIpcResult {
   result: BrowserCookieImportResult;
@@ -106,7 +93,6 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
   const [lastImport, setLastImport] = useState<BrowserCookieImportResult | null>(null);
-  const [relayTabs, setRelayTabs] = useState<RelayTabInfo[]>([]);
   const livePointer = useLiveAgentPointer('browser');
 
   const managedRows = useMemo(
@@ -135,9 +121,9 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
     await ipcService.invokeDomain<ManagedBrowserSessionState>(
       IPC_DOMAINS.DESKTOP,
       'openManagedBrowserUrl',
-      { url, mode: 'visible', profileMode: 'persistent' },
+      { url, mode: 'visible', profileMode: 'isolated' },
     );
-    setNotice('已在托管浏览器打开。登录后会保留在 persistent profile。');
+    setNotice('已在本次隔离的托管浏览器打开。关闭后会清理临时 profile。');
   }), [run, setBrowserSessionMode, url]);
 
   const handleLaunch = useCallback(() => run('launch', async () => {
@@ -145,7 +131,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
     await ipcService.invokeDomain<ManagedBrowserSessionState>(
       IPC_DOMAINS.DESKTOP,
       'ensureManagedBrowserSession',
-      { mode: 'visible', profileMode: 'persistent' },
+      { mode: 'visible', profileMode: 'isolated' },
     );
     setNotice('托管浏览器已启动。');
   }), [run, setBrowserSessionMode]);
@@ -163,7 +149,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
       IPC_DOMAINS.DESKTOP,
       'closeManagedBrowserSession',
     );
-    setNotice('托管浏览器已关闭，persistent profile 会保留。');
+    setNotice('托管浏览器已关闭，隔离 profile 已进入清理。');
   }), [run]);
 
   const handleStartRelay = useCallback(() => run('startRelay', async () => {
@@ -188,42 +174,6 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
       'openBrowserRelayExtensionDirectory',
     );
     setNotice('已打开扩展目录。Chrome 里用「加载已解压的扩展程序」选择这个目录。');
-  }), [run]);
-
-  const handleCopyToken = useCallback(() => run('copyToken', async () => {
-    const token = bridge?.authToken;
-    if (!token) throw new Error('Relay token 尚未生成。先启动 Relay。');
-    await navigator.clipboard.writeText(token);
-    setNotice('Relay token 已复制。');
-  }), [bridge?.authToken, run]);
-
-  const handleListRelayTabs = useCallback(() => run('listRelayTabs', async () => {
-    const tabs = await ipcService.invokeDomain<RelayTabInfo[]>(
-      IPC_DOMAINS.DESKTOP,
-      'listBrowserRelayTabs',
-    );
-    setRelayTabs(Array.isArray(tabs) ? tabs : []);
-    setNotice(`已刷新 Chrome 标签列表（${Array.isArray(tabs) ? tabs.length : 0}）。`);
-  }), [run]);
-
-  const handleAttachRelayTab = useCallback((tabId: number) => run('attachRelayTab', async () => {
-    await ipcService.invokeDomain(IPC_DOMAINS.DESKTOP, 'attachBrowserRelayTab', { tabId });
-    const tabs = await ipcService.invokeDomain<RelayTabInfo[]>(
-      IPC_DOMAINS.DESKTOP,
-      'listBrowserRelayTabs',
-    );
-    setRelayTabs(Array.isArray(tabs) ? tabs : []);
-    setNotice(`已附着标签 ${tabId}。Agent 可用 engine=relay 操作。`);
-  }), [run]);
-
-  const handleDetachRelayTab = useCallback((tabId: number) => run('detachRelayTab', async () => {
-    await ipcService.invokeDomain(IPC_DOMAINS.DESKTOP, 'detachBrowserRelayTab', { tabId });
-    const tabs = await ipcService.invokeDomain<RelayTabInfo[]>(
-      IPC_DOMAINS.DESKTOP,
-      'listBrowserRelayTabs',
-    );
-    setRelayTabs(Array.isArray(tabs) ? tabs : []);
-    setNotice(`已解除附着标签 ${tabId}。`);
   }), [run]);
 
   const handleListProfiles = useCallback(() => run('listProfiles', async () => {
@@ -341,7 +291,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-medium text-zinc-200">托管浏览器</div>
-                  <div className="text-[11px] text-zinc-500">System Chrome CDP + persistent profile</div>
+                  <div className="text-[11px] text-zinc-500">System Chrome CDP + run-scoped isolated profile</div>
                 </div>
                 <span className={`text-xs ${getStatusClass(browserReady)}`}>
                   {browserReady ? 'Running' : 'Stopped'}
@@ -415,7 +365,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
                 <InfoRow label="Port" value={bridge?.port ? String(bridge.port) : '未启动'} />
                 <InfoRow label="Token" value={bridge?.tokenHint || '未生成'} />
                 <InfoRow label="Extension" value={bridge?.extensionPath ? '已打包' : '未找到'} title={bridge?.extensionPath || undefined} />
-                <InfoRow label="Attached" value={String(bridge?.attachedTabCount || 0)} />
+                <InfoRow label="Leased" value={String(bridge?.attachedTabCount || 0)} />
               </div>
 
               {bridge?.reason && (
@@ -428,14 +378,8 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
                 <BrowserActionButton busy={isBusy('startRelay')} disabled={Boolean(busyAction)} onClick={handleStartRelay}>
                   启动 Relay
                 </BrowserActionButton>
-                <BrowserActionButton busy={isBusy('copyToken')} disabled={Boolean(busyAction) || !bridge?.authToken} onClick={handleCopyToken} icon={<Copy className="h-3 w-3" />}>
-                  复制 Token
-                </BrowserActionButton>
                 <BrowserActionButton busy={isBusy('openExtension')} disabled={Boolean(busyAction) || !bridge?.extensionPath} onClick={handleOpenExtension}>
                   打开扩展目录
-                </BrowserActionButton>
-                <BrowserActionButton busy={isBusy('listRelayTabs')} disabled={Boolean(busyAction) || !bridgeReady} onClick={handleListRelayTabs}>
-                  刷新标签
                 </BrowserActionButton>
                 <BrowserActionButton busy={isBusy('stopRelay')} disabled={Boolean(busyAction) || bridge?.status === 'stopped'} onClick={handleStopRelay}>
                   停止
@@ -443,46 +387,8 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
               </div>
 
               <div className="mt-3 rounded-md border border-white/[0.06] bg-black/10 px-2 py-2 text-[11px] leading-relaxed text-zinc-500">
-                向导：1) 启动 Relay → 2) 打开扩展目录，Chrome 加载已解压扩展 → 3) 扩展 popup「Attach current tab」或下方附着 → 4) Agent 用 engine=relay。
+                向导：1) 启动 Relay → 2) Chrome 加载扩展 → 3) Agent 请求 Relay lease → 4) 只在扩展 popup 中选择当前 tab，并确认 domain、action 和有效期。Neo 不会列出你的其他标签或拿到原生 tab id。
               </div>
-
-              {relayTabs.length > 0 && (
-                <div className="mt-2 max-h-36 space-y-1 overflow-y-auto">
-                  {relayTabs.slice(0, 20).map((tab) => (
-                    <div
-                      key={String(tab.id)}
-                      className="flex items-center gap-2 rounded border border-white/[0.06] bg-zinc-900/50 px-2 py-1 text-[11px]"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-zinc-200">{tab.title || '(untitled)'}</div>
-                        <div className="truncate text-zinc-500">{tab.url || ''}</div>
-                      </div>
-                      <span className={tab.attached ? 'text-emerald-300' : 'text-zinc-500'}>
-                        {tab.attached ? 'attached' : '—'}
-                      </span>
-                      {typeof tab.id === 'number' && (
-                        tab.attached ? (
-                          <BrowserActionButton
-                            busy={isBusy('detachRelayTab')}
-                            disabled={Boolean(busyAction)}
-                            onClick={() => handleDetachRelayTab(tab.id as number)}
-                          >
-                            Detach
-                          </BrowserActionButton>
-                        ) : (
-                          <BrowserActionButton
-                            busy={isBusy('attachRelayTab')}
-                            disabled={Boolean(busyAction)}
-                            onClick={() => handleAttachRelayTab(tab.id as number)}
-                          >
-                            Attach
-                          </BrowserActionButton>
-                        )
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
             </section>
 
             <section className="lg:col-span-2 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">

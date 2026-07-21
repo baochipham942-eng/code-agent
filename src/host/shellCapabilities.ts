@@ -39,6 +39,8 @@ const NATIVE_TAURI_COMMANDS = [
   'install_update',
   'open_update_url',
   'pip_frame',
+  'pip_control',
+  'pip_controls',
   'pip_hide',
   'pip_show',
   'renderer_ready',
@@ -293,6 +295,12 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'listBySession',
     'summarizeSessions',
   ],
+  [IPC_DOMAINS.SURFACE_EXECUTION]: [
+    'control',
+    'getFrame',
+    'getOutput',
+    'getSnapshot',
+  ],
   [IPC_DOMAINS.SETTINGS]: [
     'checkApiKeyConfigured',
     'get',
@@ -406,6 +414,7 @@ const HIGH_RISK_CAPABILITIES = new Set([
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'importBrowserProfileCookies'),
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'observeComputerSurface'),
   makeShellCapabilityId(IPC_DOMAINS.DESKTOP, 'openManagedBrowserUrl'),
+  makeShellCapabilityId(IPC_DOMAINS.SURFACE_EXECUTION, 'control'),
   makeShellCapabilityId(IPC_DOMAINS.WORKSPACE, 'writeFile'),
   makeTauriCommandCapabilityId('install_update'),
 ]);

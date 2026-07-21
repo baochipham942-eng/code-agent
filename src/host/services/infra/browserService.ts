@@ -5,6 +5,7 @@
 // ============================================================================
 
 import type { Browser, BrowserContext, Page, Route } from 'playwright';
+import { randomUUID } from 'node:crypto';
 import * as path from 'path';
 import * as fs from 'fs';
 import { type ChildProcess } from 'child_process';
@@ -33,7 +34,7 @@ import {
   summarizeBrowserAccountState,
 } from './browser/accountStateHelpers';
 import {
-  captureBrowserScreenshot,
+  captureBrowserScreenshot, type ApprovedBrowserUploadFile,
   uploadBrowserFile,
   waitForBrowserDownload,
 } from './browser/browserArtifactActions';
@@ -53,7 +54,6 @@ import {
   isBrowserWorkbenchUrlAllowed,
   validateBrowserWorkbenchUrl,
 } from './browser/browserUrlPolicy';
-import { buildBrowserDomSnapshot } from './browser/domSnapshotBuilder';
 import {
   getPlaywrightProxyOptions,
   launchPlaywrightBundledBrowser,
@@ -69,7 +69,18 @@ import {
 } from './browser/pageInspectionHelpers';
 import { BrowserTargetRefRegistry } from './browser/targetRefRegistry';
 import {
-  BROWSER_TARGET_REF_TTL_MS,
+  dragBrowserTargetRefs,
+  captureBrowserDomSnapshot,
+  getBrowserAccessibilitySnapshot,
+  getBrowserDialogState,
+  handleBrowserDialog,
+  hoverBrowserTargetRef,
+  readBrowserClipboardMetadata,
+  waitForBrowserSelector,
+  writeBrowserClipboard,
+  type BrowserPendingDialog,
+} from './browser/browserSurfaceInteractions';
+import {
   MANAGED_BROWSER_ARTIFACT_DIR,
   MANAGED_BROWSER_ARTIFACT_ROOT_DIR,
   getDefaultUserAgent,
@@ -85,6 +96,7 @@ import {
 } from './browser/managedBrowserHelpers';
 import {
   type BrowserArtifactSummary,
+  type BrowserDialogState,
   type BrowserDomSnapshot,
   type BrowserProviderDiagnostics,
   type BrowserStorageStateArtifact,
@@ -120,6 +132,7 @@ type ManagedBrowserSessionChangeReason =
   | 'history'
   | 'reload'
   | 'set_viewport'
+  | 'dialog'
   | 'import_profile_cookies'
   | 'clear_cookies'
   | 'crashed';
@@ -151,6 +164,7 @@ export class BrowserService implements Disposable {
   private viewport = { width: 1280, height: 720 };
   private traces: WorkbenchActionTrace[] = [];
   private targetRefs = new BrowserTargetRefRegistry();
+  private pendingDialogs = new Map<string, BrowserPendingDialog>();
   private consoleErrors: string[] = [];
   private networkFailures: string[] = [];
   private allowedHosts: string[];
@@ -285,6 +299,7 @@ export class BrowserService implements Disposable {
       this.context = null;
       this.tabs.clear();
       this.targetRefs.clear();
+      this.pendingDialogs.clear();
       this.activeTabId = null;
       this.leaseController.release();
       await this.cleanupIsolatedProfileDir();
@@ -320,7 +335,7 @@ export class BrowserService implements Disposable {
     this.logger.log('INFO', `Creating new tab${url ? ` with URL: ${summarizeBrowserUrlForLog(url)}` : ''}`);
     const page = await this.context!.newPage();
     await page.setViewportSize(this.viewport).catch(() => undefined);
-    const tabId = `tab_${Date.now()}`;
+    const tabId = `tab_${randomUUID()}`;
 
     if (url) {
       this.logger.log('DEBUG', `Navigating to: ${summarizeBrowserUrlForLog(url)}`);
@@ -342,6 +357,13 @@ export class BrowserService implements Disposable {
       this.logger.log('DEBUG', `Page loaded: ${summarizeBrowserUrlForLog(tab.url)} - "${tab.title}"`);
       this.emitSessionChanged('page_load');
     });
+
+    page.on('dialog', (dialog) => {
+      this.pendingDialogs.set(tabId, { dialog, openedAtMs: Date.now() });
+      this.logger.log('WARN', `Browser dialog paused for explicit handling (${dialog.type()})`);
+      this.emitSessionChanged('dialog');
+    });
+    page.on('close', () => this.pendingDialogs.delete(tabId));
 
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
@@ -381,6 +403,7 @@ export class BrowserService implements Disposable {
       this.logger.log('INFO', `Closing tab: ${tabId} - "${tab.title}"`);
       await tab.page.close();
       this.tabs.delete(tabId);
+      this.pendingDialogs.delete(tabId);
       if (this.activeTabId === tabId) {
         this.activeTabId = this.tabs.size > 0 ? (this.tabs.keys().next().value ?? null) : null;
       }
@@ -463,6 +486,7 @@ export class BrowserService implements Disposable {
     const tab = this.getTab(tabId);
     this.logger.log('INFO', `Navigating to: ${summarizeBrowserUrlForLog(url)}`);
     await tab.page.goto(url, { waitUntil: 'domcontentloaded' });
+    this.targetRefs.clear();
     await this.refreshTabMetadata(tab);
     this.logger.log('INFO', `Navigation complete: "${tab.title}"`);
     this.emitSessionChanged('navigate');
@@ -472,6 +496,7 @@ export class BrowserService implements Disposable {
     this.logger.log('INFO', 'Going back in history');
     const tab = this.getTab(tabId);
     await tab.page.goBack();
+    this.targetRefs.clear();
     await this.refreshTabMetadata(tab);
     this.emitSessionChanged('history');
   }
@@ -479,6 +504,7 @@ export class BrowserService implements Disposable {
   async goForward(tabId?: string): Promise<void> {
     const tab = this.getTab(tabId);
     await tab.page.goForward();
+    this.targetRefs.clear();
     await this.refreshTabMetadata(tab);
     this.emitSessionChanged('history');
   }
@@ -486,6 +512,7 @@ export class BrowserService implements Disposable {
   async reload(tabId?: string): Promise<void> {
     const tab = this.getTab(tabId);
     await tab.page.reload();
+    this.targetRefs.clear();
     await this.refreshTabMetadata(tab);
     this.emitSessionChanged('reload');
   }
@@ -509,48 +536,31 @@ export class BrowserService implements Disposable {
   // Page Interaction
   // --------------------------------------------------------------------------
 
-  async click(selector: string, tabId?: string): Promise<void> {
-    const tab = this.getTab(tabId);
-    await tab.page.click(selector);
-  }
+  async click(selector: string, tabId?: string): Promise<void> { await this.getTab(tabId).page.click(selector); }
 
   async getElementBoundingBox(selector: string, tabId?: string): Promise<ElementInfo['rect'] | null> {
     return getBrowserElementBoundingBox(this.getTab(tabId), selector);
   }
 
   async clickTargetRef(targetRefInput: unknown, tabId?: string): Promise<BrowserTargetRef> {
-    const resolved = await this.targetRefs.resolve(targetRefInput, (id) => this.getTab(id), tabId);
-    const tab = this.getTab(resolved.targetRef.tabId);
-    await tab.page.click(resolved.targetRef.selector);
-    return resolved.targetRef;
+    return await this.targetRefs.click(targetRefInput, (id) => this.getTab(id), tabId);
   }
 
   async clickAtPosition(x: number, y: number, tabId?: string): Promise<void> {
-    const tab = this.getTab(tabId);
-    await tab.page.mouse.click(x, y);
+    await this.getTab(tabId).page.mouse.click(x, y);
   }
 
   async type(selector: string, text: string, tabId?: string): Promise<void> {
-    const tab = this.getTab(tabId);
-    await tab.page.fill(selector, text);
+    await this.getTab(tabId).page.fill(selector, text);
   }
 
   async typeTargetRef(targetRefInput: unknown, text: string, tabId?: string): Promise<BrowserTargetRef> {
-    const resolved = await this.targetRefs.resolve(targetRefInput, (id) => this.getTab(id), tabId);
-    const tab = this.getTab(resolved.targetRef.tabId);
-    await tab.page.fill(resolved.targetRef.selector, text);
-    return resolved.targetRef;
+    return await this.targetRefs.fill(targetRefInput, text, (id) => this.getTab(id), tabId);
   }
 
-  async typeAtFocus(text: string, tabId?: string): Promise<void> {
-    const tab = this.getTab(tabId);
-    await tab.page.keyboard.type(text);
-  }
+  async typeAtFocus(text: string, tabId?: string): Promise<void> { await this.getTab(tabId).page.keyboard.type(text); }
 
-  async pressKey(key: string, tabId?: string): Promise<void> {
-    const tab = this.getTab(tabId);
-    await tab.page.keyboard.press(key);
-  }
+  async pressKey(key: string, tabId?: string): Promise<void> { await this.getTab(tabId).page.keyboard.press(key); }
 
   async scroll(direction: 'up' | 'down', amount: number = 300, tabId?: string): Promise<void> {
     const tab = this.getTab(tabId);
@@ -558,19 +568,52 @@ export class BrowserService implements Disposable {
     await tab.page.mouse.wheel(0, delta);
   }
 
-  async hover(selector: string, tabId?: string): Promise<void> {
-    const tab = this.getTab(tabId);
-    await tab.page.hover(selector);
+  async hover(selector: string, tabId?: string): Promise<void> { await this.getTab(tabId).page.hover(selector); }
+
+  async hoverTargetRef(targetRefInput: unknown, tabId?: string): Promise<BrowserTargetRef> {
+    return hoverBrowserTargetRef({
+      getTab: (id) => this.getTab(id), registry: this.targetRefs, tabId, targetRefInput,
+    });
+  }
+
+  async dragTargetRefs(
+    sourceTargetRefInput: unknown,
+    destinationTargetRefInput: unknown,
+    tabId?: string,
+  ): Promise<{ source: BrowserTargetRef; destination: BrowserTargetRef }> {
+    return dragBrowserTargetRefs({
+      destinationTargetRefInput, getTab: (id) => this.getTab(id), registry: this.targetRefs,
+      sourceTargetRefInput, tabId,
+    });
+  }
+
+  getDialogState(tabId?: string): BrowserDialogState {
+    return getBrowserDialogState({
+      getTab: (id) => this.getTab(id), pendingDialogs: this.pendingDialogs, tabId,
+    });
+  }
+
+  async handleDialog(
+    action: 'accept' | 'dismiss',
+    promptText?: string,
+    tabId?: string,
+  ): Promise<BrowserDialogState> {
+    return handleBrowserDialog({
+      action, emitChanged: () => this.emitSessionChanged('dialog'), getTab: (id) => this.getTab(id),
+      pendingDialogs: this.pendingDialogs, promptText, tabId,
+    });
+  }
+
+  async readClipboardMetadata(tabId?: string): Promise<{ textLength: number }> {
+    return readBrowserClipboardMetadata(this.getTab(tabId));
+  }
+
+  async writeClipboard(text: string, tabId?: string): Promise<void> {
+    await writeBrowserClipboard(this.getTab(tabId), text);
   }
 
   async waitForSelector(selector: string, timeout: number = 5000, tabId?: string): Promise<boolean> {
-    const tab = this.getTab(tabId);
-    try {
-      await tab.page.waitForSelector(selector, { timeout });
-      return true;
-    } catch {
-      return false;
-    }
+    return waitForBrowserSelector(this.getTab(tabId), selector, timeout);
   }
 
   // --------------------------------------------------------------------------
@@ -604,33 +647,12 @@ export class BrowserService implements Disposable {
   }
 
   async getDomSnapshot(tabId?: string): Promise<BrowserDomSnapshot> {
-    const tab = this.getTab(tabId);
-    const snapshotId = this.targetRefs.createSnapshotId();
-    const capturedAtMs = Date.now();
-    const { snapshot, targetRefRecords } = await buildBrowserDomSnapshot({
-      tab,
-      snapshotId,
-      capturedAtMs,
-      targetRefTtlMs: BROWSER_TARGET_REF_TTL_MS,
-    });
-    this.targetRefs.addRecords(targetRefRecords, capturedAtMs);
-    return snapshot;
+    return captureBrowserDomSnapshot(this.getTab(tabId), this.targetRefs);
   }
 
   async getAccessibilitySnapshot(tabId?: string): Promise<unknown> {
     const tab = this.getTab(tabId);
-    const pageWithAccessibility = tab.page as unknown as {
-      accessibility?: {
-        snapshot(options?: { interestingOnly?: boolean }): Promise<unknown>;
-      };
-    };
-    if (pageWithAccessibility.accessibility?.snapshot) {
-      return await pageWithAccessibility.accessibility.snapshot({ interestingOnly: true });
-    }
-    return {
-      fallback: 'playwright_accessibility_snapshot_unavailable',
-      domSnapshot: await this.getDomSnapshot(tabId),
-    };
+    return getBrowserAccessibilitySnapshot(tab, () => this.getDomSnapshot(tab.id));
   }
 
   // --------------------------------------------------------------------------
@@ -666,7 +688,7 @@ export class BrowserService implements Disposable {
   }
 
   async uploadFile(args: {
-    filePath: string;
+    approvedFile: ApprovedBrowserUploadFile;
     selector?: string;
     targetRef?: unknown;
     tabId?: string;
@@ -1070,6 +1092,7 @@ export class BrowserService implements Disposable {
     this.context = null;
     this.tabs.clear();
     this.targetRefs.clear();
+    this.pendingDialogs.clear();
     this.activeTabId = null;
     this.leaseController.markExpired();
     this.emitSessionChanged('crashed');

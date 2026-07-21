@@ -23,6 +23,14 @@ import {
   buildAgentPointerTimeline,
   extractAgentPointerEvent,
 } from '../../shared/utils/agentPointerEvidence';
+import {
+  collectSurfaceExecutionExportProjection,
+  formatSurfaceExecutionProjectionForMarkdown,
+  projectSurfaceExecutionMetadataForExport,
+  projectSurfaceExecutionResultMetadataForExport,
+  surfaceExecutionArgumentsForExport,
+} from '../../shared/utils/surfaceExecutionExportProjection';
+import { redactSurfaceExecutionValue } from '../../shared/utils/surfaceExecutionRedaction';
 import { guardSensitiveText, guardSensitiveValue } from '../security/sensitiveDataGuard';
 import { getBackgroundTaskLedger } from '../task/backgroundTaskLedger';
 import {
@@ -179,13 +187,25 @@ function sanitizeToolExecutionForMarkdown(tool: {
   const rawArgs = tool.input && typeof tool.input === 'object' && !Array.isArray(tool.input)
     ? tool.input as Record<string, unknown>
     : {};
-  const input = tool.input && typeof tool.input === 'object' && !Array.isArray(tool.input)
-    ? sanitizeBrowserComputerToolArguments(tool.tool, tool.input as Record<string, unknown>) || tool.input
-    : tool.input;
-  const metadata = tool.metadata && typeof tool.metadata === 'object' && !Array.isArray(tool.metadata)
+  const surfaceProjection = projectSurfaceExecutionMetadataForExport(
+    tool.metadata && typeof tool.metadata === 'object' && !Array.isArray(tool.metadata)
+      ? tool.metadata as Record<string, unknown>
+      : undefined,
+  );
+  const input = surfaceProjection
+    ? surfaceExecutionArgumentsForExport(rawArgs)
+    : sanitizeBrowserComputerToolArguments(tool.tool, rawArgs) || rawArgs;
+  const metadata = surfaceProjection
+    ? projectSurfaceExecutionResultMetadataForExport(
+        tool.metadata as Record<string, unknown>,
+      )
+    : tool.metadata && typeof tool.metadata === 'object' && !Array.isArray(tool.metadata)
     ? sanitizeBrowserComputerMetadata(tool.tool, rawArgs, tool.metadata as Record<string, unknown>)
     : tool.metadata;
   let output = redactBrowserComputerInputPayloadsInValue(tool.tool, rawArgs, tool.output);
+  if (surfaceProjection) {
+    output = redactSurfaceExecutionValue(output);
+  }
   if (output && typeof output === 'object' && !Array.isArray(output)) {
     const outputRecord = output as Record<string, unknown>;
     output = {
@@ -589,6 +609,14 @@ export function exportSessionToMarkdown(
     // Table of contents
     if (includeTableOfContents && style === 'chat') {
       parts.push(generateTableOfContents(messages));
+    }
+
+    const surfaceExecutionSection = formatSurfaceExecutionProjectionForMarkdown(
+      collectSurfaceExecutionExportProjection(messages, session.metadata),
+    );
+    if (surfaceExecutionSection) {
+      parts.push(surfaceExecutionSection);
+      parts.push('');
     }
 
     // Messages

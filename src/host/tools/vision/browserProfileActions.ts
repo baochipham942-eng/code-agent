@@ -1,7 +1,7 @@
 /**
  * ADR-041 browser_action handlers for profile list/import/clear.
  */
-import type { ToolExecutionResult } from '../types';
+import type { ToolContext, ToolExecutionResult } from '../types';
 import type { BrowserProfileSourceId } from '../../../shared/contract/desktop';
 import type { BrowserService } from '../../services/infra/browserService';
 import {
@@ -9,6 +9,7 @@ import {
   importBrowserProfileCookiesViaService,
   listImportableBrowserProfiles,
 } from '../../services/infra/browser/managedBrowserCookieImport';
+import { getBrowserProfileImportApprovalService } from '../../services/surfaceExecution/BrowserProfileImportApprovalService';
 
 function summarizePathTail(value: string | undefined): string | null {
   if (!value) return null;
@@ -33,8 +34,9 @@ export async function executeBrowserProfileAction(args: {
   action: 'list_profiles' | 'import_profile_cookies' | 'clear_cookies';
   browserService: BrowserService;
   params: Record<string, unknown>;
+  context?: ToolContext;
 }): Promise<ToolExecutionResult> {
-  const { action, browserService, params } = args;
+  const { action, browserService, params, context } = args;
 
   if (action === 'list_profiles') {
     const profiles = listImportableBrowserProfiles().map((profile) => ({
@@ -85,6 +87,48 @@ export async function executeBrowserProfileAction(args: {
   const domainAllowlist = Array.isArray(params.domainAllowlist)
     ? params.domainAllowlist.filter((item): item is string => typeof item === 'string')
     : undefined;
+  if (!context) {
+    return {
+      success: false,
+      error: 'SURFACE_APPROVAL_INVALID: profile cookie import requires a Host permission context.',
+      metadata: { code: 'SURFACE_APPROVAL_INVALID' },
+    };
+  }
+  const hostApproved = await context.requestPermission({
+    type: 'file_read',
+    tool: 'browser_action.import_profile_cookies',
+    forceConfirm: true,
+    dangerLevel: 'warning',
+    reason: '导入浏览器登录 Cookie 需要一次性、限定 profile 与 domain 的 Host 授权。',
+    details: {
+      source,
+      profileId,
+      domainAllowlist: domainAllowlist || [],
+      approvalMode: 'host_signed_one_time',
+    },
+  });
+  if (!hostApproved) {
+    return {
+      success: false,
+      error: 'SURFACE_APPROVAL_REQUIRED: profile cookie import was not approved by the user.',
+      metadata: { code: 'SURFACE_APPROVAL_REQUIRED' },
+    };
+  }
+  const subject = {
+    conversationId: context.sessionId?.trim() || 'legacy-conversation',
+    runId: context.runId?.trim() || context.currentToolCallId?.trim() || 'legacy-run',
+    agentId: context.agentId?.trim() || 'primary',
+  };
+  const scope = { source, profileId, ...(domainAllowlist ? { domainAllowlist } : {}) };
+  const approvalService = getBrowserProfileImportApprovalService();
+  const approval = approvalService.issue({ subject, scope });
+  if (!approvalService.consume({ token: approval.token, subject, scope })) {
+    return {
+      success: false,
+      error: 'SURFACE_APPROVAL_INVALID: profile cookie import approval could not be consumed.',
+      metadata: { code: 'SURFACE_APPROVAL_INVALID' },
+    };
+  }
   const result = await importBrowserProfileCookiesViaService(browserService, {
     source: source as BrowserProfileSourceId,
     profileId,
@@ -112,6 +156,11 @@ export async function executeBrowserProfileAction(args: {
       domainCount: result.domainCount,
       domains: result.domains,
       browserAccountState: summarizeAccountStateForTool(result.accountState || null),
+      approval: {
+        mode: 'host_signed_one_time',
+        scopeHash: approval.scopeHash,
+        expiresAt: approval.expiresAt,
+      },
     },
   };
 }

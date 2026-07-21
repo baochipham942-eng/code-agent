@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "status": "passed",
+  "pid": 95666,
+  "identifiers": {
+    "sourceSessionIdSha256": "4063719d9139e5f555d5e950a16a944e51245a27b73a7a2b5daf8a11cbc48b7e",
+    "importedSessionIdSha256": "a79d613045a821c66b876c050431359c0f14b383fe83218b32e1e516e59d192a"
+  },
+  "semantics": {
+    "sourceSha256": "10e93f807b1485bb33e1bc532ce90b33eafe62a14190391da4155ca630a15cc5",
+    "replaySha256": "10e93f807b1485bb33e1bc532ce90b33eafe62a14190391da4155ca630a15cc5",
+    "sourceEventCount": 5,
+    "replayEventCount": 5
+  },
+  "assertions": {
+    "importedIntoIsolatedStore": true,
+    "conversationRebound": true,
+    "archiveProjectionReadOnly": true,
+    "grantNone": true,
+    "noTarget": true,
+    "noControls": true,
+    "runtimeMutationCallsZero": true,
+    "replayExplicitSurfaceEvents": true,
+    "failureAdjustPassReproduced": true,
+    "semanticDigestMatched": true,
+    "rawCanaryAbsent": true,
+    "portableScreenshotEvidenceMetadataOnly": true
+  }
+}

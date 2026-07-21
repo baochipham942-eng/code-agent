@@ -9,6 +9,11 @@ import type { Message } from '@shared/contract';
 import { Button, IconButton, Modal } from '../../primitives';
 import { createLogger } from '../../../utils/logger';
 import { sanitizeMessagesForBrowserComputerExport } from '../../../utils/browserComputerExportRedaction';
+import {
+  collectSurfaceExecutionExportProjection,
+  formatSurfaceExecutionProjectionForMarkdown,
+  projectSurfaceExecutionMetadataForExport,
+} from '@shared/utils/surfaceExecutionExportProjection';
 
 const logger = createLogger('ExportModal');
 
@@ -30,15 +35,18 @@ interface ExportModalProps {
 // Helper Functions
 // ============================================================================
 
-function formatMessageToMarkdown(message: Message): string {
+function formatMessageToMarkdown(message: Message, surfaceToolCallIds: ReadonlySet<string>): string {
   const role = message.role === 'user' ? '**用户**' : '**助手**';
   const timestamp = new Date(message.timestamp).toLocaleString('zh-CN');
   let content = message.content;
 
   // 处理工具调用
-  if (message.toolCalls && message.toolCalls.length > 0) {
+  const legacyToolCalls = message.toolCalls?.filter((call) => (
+    !surfaceToolCallIds.has(call.id)
+  ));
+  if (legacyToolCalls && legacyToolCalls.length > 0) {
     content += '\n\n<details>\n<summary>工具调用</summary>\n\n';
-    message.toolCalls.forEach(call => {
+    legacyToolCalls.forEach(call => {
       content += `- **${call.name}**\n`;
       if (call.arguments) {
         content += `  \`\`\`json\n  ${JSON.stringify(call.arguments, null, 2).split('\n').join('\n  ')}\n  \`\`\`\n`;
@@ -62,16 +70,33 @@ function formatMessageToMarkdown(message: Message): string {
 export function exportToMarkdown(title: string, messages: Message[]): string {
   const header = `# ${title}\n\n导出时间：${new Date().toLocaleString('zh-CN')}\n\n---\n\n`;
   const safeMessages = sanitizeMessagesForBrowserComputerExport(messages);
+  const surfaceToolCallIds = new Set<string>();
+  for (const message of safeMessages) {
+    for (const call of message.toolCalls || []) {
+      if (projectSurfaceExecutionMetadataForExport(call.result?.metadata)) {
+        surfaceToolCallIds.add(call.id);
+      }
+    }
+    for (const result of message.toolResults || []) {
+      if (projectSurfaceExecutionMetadataForExport(result.metadata)) {
+        surfaceToolCallIds.add(result.toolCallId);
+      }
+    }
+  }
 
   const messageContent = safeMessages
-    .map(formatMessageToMarkdown)
+    .map((message) => formatMessageToMarkdown(message, surfaceToolCallIds))
     .join('\n---\n\n');
+  const surfaceExecution = formatSurfaceExecutionProjectionForMarkdown(
+    collectSurfaceExecutionExportProjection(safeMessages),
+  );
 
-  return header + messageContent;
+  return `${header}${messageContent}${surfaceExecution ? `\n---\n\n${surfaceExecution}\n` : ''}`;
 }
 
 export function exportToJson(title: string, messages: Message[]): string {
   const safeMessages = sanitizeMessagesForBrowserComputerExport(messages);
+  const surfaceExecution = collectSurfaceExecutionExportProjection(safeMessages);
   const exportData = {
     title,
     exportedAt: new Date().toISOString(),
@@ -82,8 +107,8 @@ export function exportToJson(title: string, messages: Message[]): string {
       content: msg.content,
       timestamp: msg.timestamp,
       toolCalls: msg.toolCalls,
-      reasoning: msg.reasoning,
     })),
+    ...(surfaceExecution ? { surfaceExecution } : {}),
   };
 
   return JSON.stringify(exportData, null, 2);

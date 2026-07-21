@@ -5,8 +5,9 @@
 // 后调 `pip_frame` 推进来；本模块只负责窗口创建 / 更新 / 销毁，不做捕获。
 // 用 `eval` 注入帧而非 Tauri event，避免 PiP 窗口依赖 withGlobalTauri。
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const PIP_LABEL: &str = "computer-use-pip";
 const PIP_WIDTH: f64 = 320.0;
@@ -14,6 +15,91 @@ const PIP_HEIGHT: f64 = 220.0;
 const PIP_MARGIN: f64 = 16.0;
 /// 顶部留白避开菜单栏。
 const PIP_TOP_OFFSET: f64 = 28.0;
+const PIP_CONTROL_EVENT: &str = "surface-pip-control";
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PipControlScope {
+    conversation_id: String,
+    run_id: String,
+    agent_id: String,
+    surface_session_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PipControlRequestState {
+    action: String,
+    status: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PipControlsPayload {
+    version: u8,
+    scope: PipControlScope,
+    surface: String,
+    state: String,
+    available_controls: Vec<String>,
+    control_request: Option<PipControlRequestState>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PipControlPayload {
+    version: u8,
+    scope: PipControlScope,
+    action: String,
+}
+
+fn valid_scope(scope: &PipControlScope) -> bool {
+    [
+        &scope.conversation_id,
+        &scope.run_id,
+        &scope.agent_id,
+        &scope.surface_session_id,
+    ]
+    .iter()
+    .all(|value| !value.trim().is_empty() && value.len() <= 512)
+}
+
+fn valid_control(action: &str) -> bool {
+    matches!(action, "pause" | "resume" | "takeover" | "stop")
+}
+
+fn validate_controls(controls: &PipControlsPayload) -> Result<(), String> {
+    if controls.version != 1 || !valid_scope(&controls.scope) {
+        return Err("invalid Surface PiP control scope".into());
+    }
+    if !matches!(controls.surface.as_str(), "browser" | "computer") {
+        return Err("invalid Surface PiP surface".into());
+    }
+    if !matches!(
+        controls.state.as_str(),
+        "preparing"
+            | "waiting_permission"
+            | "running"
+            | "waiting_human"
+            | "paused"
+            | "stopping"
+            | "completed"
+            | "failed"
+    ) || controls
+        .available_controls
+        .iter()
+        .any(|action| !valid_control(action))
+    {
+        return Err("invalid Surface PiP control state".into());
+    }
+    if let Some(request) = &controls.control_request {
+        if !valid_control(&request.action)
+            || !matches!(request.status.as_str(), "pending" | "succeeded" | "failed")
+        {
+            return Err("invalid Surface PiP control request".into());
+        }
+    }
+    Ok(())
+}
 
 fn pip_url() -> WebviewUrl {
     WebviewUrl::App(PathBuf::from("pip.html"))
@@ -40,6 +126,7 @@ fn pip_top_right(app: &AppHandle) -> (f64, f64) {
 #[tauri::command]
 pub fn pip_show(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window(PIP_LABEL) {
+        let _ = w.set_ignore_cursor_events(false);
         let _ = w.show();
         return Ok(());
     }
@@ -62,7 +149,7 @@ pub fn pip_show(app: AppHandle) -> Result<(), String> {
         .build()
         .map_err(|e| format!("pip window build: {e}"))?;
 
-    let _ = window.set_ignore_cursor_events(true);
+    let _ = window.set_ignore_cursor_events(false);
 
     // 抬到 screen-saver 级 + 可进所有 Space，盖过全屏 app。AppKit 调用必须回主线程。
     #[cfg(target_os = "macos")]
@@ -84,9 +171,42 @@ pub fn pip_show(app: AppHandle) -> Result<(), String> {
 pub fn pip_frame(app: AppHandle, data_url: String) -> Result<(), String> {
     if let Some(w) = app.get_webview_window(PIP_LABEL) {
         let payload = serde_json::to_string(&data_url).map_err(|e| e.to_string())?;
-        let _ = w.eval(&format!("window.__setFrame && window.__setFrame({payload})"));
+        let _ = w.eval(&format!(
+            "window.__setFrame && window.__setFrame({payload})"
+        ));
     }
     Ok(())
+}
+
+/// 把当前 Surface scope、实际状态和可用控制投影到 PiP。
+#[tauri::command]
+pub fn pip_controls(app: AppHandle, controls: PipControlsPayload) -> Result<(), String> {
+    validate_controls(&controls)?;
+    if let Some(w) = app.get_webview_window(PIP_LABEL) {
+        let payload = serde_json::to_string(&controls).map_err(|e| e.to_string())?;
+        w.eval(&format!(
+            "window.__setControls && window.__setControls({payload})"
+        ))
+        .map_err(|e| format!("pip controls: {e}"))?;
+    }
+    Ok(())
+}
+
+/// 只接受 PiP webview 发出的 owner-scoped 控制意图，再由主 renderer 复核并执行。
+#[tauri::command]
+pub fn pip_control(
+    app: AppHandle,
+    window: WebviewWindow,
+    payload: PipControlPayload,
+) -> Result<(), String> {
+    if window.label() != PIP_LABEL {
+        return Err("Surface PiP controls are only accepted from the PiP window".into());
+    }
+    if payload.version != 1 || !valid_scope(&payload.scope) || !valid_control(&payload.action) {
+        return Err("invalid Surface PiP control intent".into());
+    }
+    app.emit(PIP_CONTROL_EVENT, payload)
+        .map_err(|e| format!("pip control event: {e}"))
 }
 
 /// 关闭 PiP 窗口。

@@ -8,7 +8,7 @@ export const browserActionSchema: ToolSchema = {
 
 Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state.
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
-Profile login reuse: list_profiles; import_profile_cookies requires userConfirmed=true (Browser Surface); clear_cookies clears managed profile cookies. Never log cookie values.
+Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
 storageState file path: export_storage_state / import_storage_state for CI/scripts.`,
   inputSchema: {
     type: 'object',
@@ -18,7 +18,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         enum: [
           'launch', 'close', 'new_tab', 'close_tab', 'list_tabs', 'switch_tab',
           'navigate', 'back', 'forward', 'reload', 'set_viewport',
-          'click', 'click_text', 'type', 'press_key', 'scroll',
+          'click', 'click_text', 'type', 'press_key', 'scroll', 'hover', 'drag',
+          'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
           'list_profiles', 'import_profile_cookies', 'clear_cookies',
@@ -39,9 +40,27 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         description: 'Short-lived target reference returned by get_dom_snapshot interactiveElements[].targetRef',
         additionalProperties: true,
       },
+      destinationTargetRef: {
+        type: 'object',
+        description: 'Fresh destination targetRef for drag. Both drag endpoints must come from the same current DOM snapshot.',
+        additionalProperties: true,
+      },
       text: {
         type: 'string',
         description: 'Text to type or element text to click',
+      },
+      clipboardText: {
+        type: 'string',
+        description: 'Sensitive text for write_clipboard. It requires explicit approval and is redacted from traces, proof, and export.',
+      },
+      dialogAction: {
+        type: 'string',
+        enum: ['accept', 'dismiss'],
+        description: 'Explicit action for a currently paused JavaScript dialog. Dialogs pause by default.',
+      },
+      dialogPromptText: {
+        type: 'string',
+        description: 'Sensitive prompt response used only with dialogAction=accept on a prompt dialog.',
       },
       key: {
         type: 'string',
@@ -58,7 +77,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
       tabId: {
         type: 'string',
-        description: 'Target tab ID (optional, uses active tab)',
+        description: 'Managed Browser tab reference. Relay never accepts native tab IDs.',
       },
       timeout: {
         type: 'number',
@@ -94,7 +113,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
       uploadFilePath: {
         type: 'string',
-        description: 'Local file path for upload_file. Sensitive paths require permission.',
+        description: 'Local file path for upload_file. Every upload requires one-time approval for the exact normalized file; Relay also requires a fresh targetRef.',
       },
       secretRef: {
         type: 'string',
@@ -105,6 +124,20 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         enum: ['auto', 'managed', 'relay'],
         description:
           'ADR-041 browser engine. auto (default) routes by isolation/login intent; managed uses Neo isolated browser; relay drives an attached real Chrome tab. Explicit managed/relay never silently switches engines.',
+      },
+      relayDomainScopes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Exact HTTP(S) origins or hostnames the user may approve for a time-bounded Relay tab lease.',
+      },
+      relayActionScopes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Explicit browser actions the user may approve for the Relay tab lease; wildcards are rejected.',
+      },
+      relayLeaseTtlMs: {
+        type: 'number',
+        description: 'Requested Relay lease lifetime in milliseconds, capped at 30 minutes.',
       },
       source: {
         type: 'string',
@@ -121,7 +154,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
       userConfirmed: {
         type: 'boolean',
-        description: 'Required true for import_profile_cookies — only set after explicit user approval (ADR-041)',
+        description: 'Legacy compatibility signal for import_profile_cookies. It cannot authorize import without a one-time Host permission bound to the exact profile/domain scope (ADR-041).',
       },
     },
     required: ['action'],

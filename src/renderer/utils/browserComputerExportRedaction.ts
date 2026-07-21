@@ -6,6 +6,13 @@ import {
   redactBrowserComputerInputPayloadsInValue,
 } from '@shared/utils/browserComputerRedaction';
 import {
+  projectSurfaceExecutionResultMetadataForExport,
+  projectSurfaceExecutionMetadataForExport,
+  stripRawSurfaceExecutionExportFields,
+  surfaceExecutionArgumentsForExport,
+} from '@shared/utils/surfaceExecutionExportProjection';
+import { redactSurfaceExecutionValue } from '@shared/utils/surfaceExecutionRedaction';
+import {
   formatBrowserComputerActionResultDetails,
   summarizeBrowserComputerActionResult,
 } from './browserComputerActionPreview';
@@ -20,6 +27,10 @@ function redactToolResultText(
   }
   const redacted = redactBrowserComputerInputPayloadsInValue(toolName, args, value);
   return typeof redacted === 'string' ? redacted : String(redacted);
+}
+
+function redactSurfaceResultText(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : String(redactSurfaceExecutionValue(value));
 }
 
 export function formatToolResultForBrowserComputerExport(call: ToolCall): string | undefined {
@@ -43,17 +54,30 @@ function buildBrowserComputerExportMetadata(
     call.arguments || {},
     call.result.metadata,
   ) || {};
-  return {
+  return projectSurfaceExecutionResultMetadataForExport({
     ...metadata,
     summary: resultSummary,
     status: call.result.success ? 'success' : 'error',
-  };
+  }, {
+    toolName: call.name,
+    toolCallId: call.id,
+    success: call.result.success,
+    error: call.result.error,
+  });
 }
 
-export function sanitizeBrowserComputerToolCallForExport(call: ToolCall): ToolCall {
+export function sanitizeBrowserComputerToolCallForExport(
+  call: ToolCall,
+  resultMetadata?: Record<string, unknown>,
+): ToolCall {
   const rawArguments = call.arguments || {};
+  const surfaceProjection = projectSurfaceExecutionMetadataForExport(
+    call.result?.metadata ?? resultMetadata,
+  );
   const safeArguments = isBrowserComputerToolName(call.name)
-    ? sanitizeBrowserComputerToolArguments(call.name, rawArguments)
+    ? surfaceProjection
+      ? surfaceExecutionArgumentsForExport(rawArguments)
+      : sanitizeBrowserComputerToolArguments(call.name, rawArguments)
     : call.arguments;
   const safeResultSummary = (isBrowserComputerToolName(call.name)
     ? formatToolResultForBrowserComputerExport(call)
@@ -70,11 +94,19 @@ export function sanitizeBrowserComputerToolCallForExport(call: ToolCall): ToolCa
       ? {
           ...call.result,
           output: call.result.success
-            ? safeResultSummary || redactToolResultText(call.name, rawArguments, call.result.output)
-            : redactToolResultText(call.name, rawArguments, call.result.output),
+            ? redactSurfaceResultText(
+                safeResultSummary || redactToolResultText(call.name, rawArguments, call.result.output),
+              )
+            : redactSurfaceResultText(
+                redactToolResultText(call.name, rawArguments, call.result.output),
+              ),
           error: call.result.success
-            ? redactToolResultText(call.name, rawArguments, call.result.error)
-            : safeResultSummary || redactToolResultText(call.name, rawArguments, call.result.error),
+            ? redactSurfaceResultText(
+                redactToolResultText(call.name, rawArguments, call.result.error),
+              )
+            : redactSurfaceResultText(
+                safeResultSummary || redactToolResultText(call.name, rawArguments, call.result.error),
+              ),
           metadata: isBrowserComputerToolName(call.name)
             ? buildBrowserComputerExportMetadata(call, safeResultSummary)
             : redactBrowserComputerInputPayloadsInValue(call.name, rawArguments, call.result.metadata) as Record<string, unknown> | undefined,
@@ -84,8 +116,37 @@ export function sanitizeBrowserComputerToolCallForExport(call: ToolCall): ToolCa
 }
 
 export function sanitizeMessagesForBrowserComputerExport(messages: Message[]): Message[] {
+  const calls = new Map<string, ToolCall>();
+  const resultMetadata = new Map<string, Record<string, unknown>>();
+  for (const message of messages) {
+    for (const call of message.toolCalls || []) calls.set(call.id, call);
+    for (const result of message.toolResults || []) {
+      if (result.metadata) resultMetadata.set(result.toolCallId, result.metadata);
+    }
+  }
   return messages.map((message) => ({
     ...message,
-    toolCalls: message.toolCalls?.map(sanitizeBrowserComputerToolCallForExport),
+    reasoning: undefined,
+    thinking: undefined,
+    metadata: message.metadata
+      ? stripRawSurfaceExecutionExportFields(message.metadata) as Message['metadata']
+      : message.metadata,
+    toolCalls: message.toolCalls?.map((call) => (
+      sanitizeBrowserComputerToolCallForExport(call, resultMetadata.get(call.id))
+    )),
+    toolResults: message.toolResults?.map((result) => {
+      const call = calls.get(result.toolCallId);
+      if (!call) {
+        return {
+          ...result,
+          metadata: projectSurfaceExecutionResultMetadataForExport(result.metadata, {
+            toolCallId: result.toolCallId,
+            success: result.success,
+            error: result.error,
+          }),
+        };
+      }
+      return sanitizeBrowserComputerToolCallForExport({ ...call, result }).result || result;
+    }),
   }));
 }

@@ -1,24 +1,65 @@
+import type { Browser, CDPSession } from 'playwright';
+import {
+  parseBrowserDomSnapshot,
+  type CdpDomSnapshotPayload,
+} from './domSnapshotParser';
 import type {
   BrowserDomSnapshot,
   BrowserTab,
-  BrowserTargetRef,
   BrowserTargetRefRecord,
 } from './types';
-
-interface RawBrowserInteractiveElement {
-  tag: string;
-  role?: string | null;
-  text: string;
-  ariaLabel?: string | null;
-  placeholder?: string | null;
-  selectorHint: string;
-  refConfidence: number;
-  rect: { x: number; y: number; width: number; height: number };
-}
 
 export interface BrowserDomSnapshotBuildResult {
   snapshot: BrowserDomSnapshot;
   targetRefRecords: BrowserTargetRefRecord[];
+}
+
+interface BrowserWithCdp extends Browser {
+  newBrowserCDPSession(): Promise<CDPSession>;
+}
+
+function isBrowserWithCdp(browser: Browser | null): browser is BrowserWithCdp {
+  return Boolean(browser && typeof (browser as Partial<BrowserWithCdp>).newBrowserCDPSession === 'function');
+}
+
+async function discoverUnavailableOopifDocuments(args: {
+  page: BrowserTab['page'];
+  snapshotId: string;
+  capturedFrameIds: Set<string>;
+}): Promise<NonNullable<BrowserDomSnapshot['frameDocuments']>> {
+  const browser = args.page.context().browser();
+  if (!isBrowserWithCdp(browser) || args.capturedFrameIds.size === 0) return [];
+  let session: CDPSession | null = null;
+  try {
+    session = await browser.newBrowserCDPSession();
+    const { targetInfos } = await session.send('Target.getTargets');
+    const iframeTargets = targetInfos.filter((target) => target.type === 'iframe');
+    const reachableParentIds = new Set(args.capturedFrameIds);
+    const unavailable: NonNullable<BrowserDomSnapshot['frameDocuments']> = [];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const target of iframeTargets) {
+        if (reachableParentIds.has(target.targetId)) continue;
+        const parentId = target.parentFrameId;
+        if (!parentId || !reachableParentIds.has(parentId)) continue;
+        reachableParentIds.add(target.targetId);
+        unavailable.push({
+          frameId: target.targetId,
+          documentRevision: `document_${args.snapshotId}_${target.targetId}`,
+          url: target.url,
+          status: 'unavailable',
+          reason: 'oopif_requires_dedicated_cdp_session',
+        });
+        changed = true;
+      }
+    }
+    return unavailable;
+  } catch {
+    return [];
+  } finally {
+    await session?.detach().catch(() => undefined);
+  }
 }
 
 export async function buildBrowserDomSnapshot(args: {
@@ -29,108 +70,34 @@ export async function buildBrowserDomSnapshot(args: {
 }): Promise<BrowserDomSnapshotBuildResult> {
   const { tab, snapshotId, capturedAtMs, targetRefTtlMs } = args;
   const page = tab.page;
-  const headingsPromise = page.$$eval('h1,h2,h3,h4,h5,h6', (nodes) =>
-    nodes.slice(0, 30).map((node) => ({
-      level: Number(node.tagName.replace(/^H/i, '')) || 0,
-      text: node.textContent?.trim().slice(0, 160) || '',
-    })).filter((item) => item.text)
-  ).catch((): BrowserDomSnapshot['headings'] => []);
-  const interactiveElementsPromise = page.$$eval(
-    'button, a[href], input, select, textarea, [role], [onclick], [tabindex]',
-    (nodes) => nodes.slice(0, 80).map((node) => {
-      const el = node as HTMLElement;
-      const rect = el.getBoundingClientRect();
-      const id = el.getAttribute('id');
-      const className = el.getAttribute('class');
-      const tag = el.tagName.toLowerCase();
-      const escapeCss = (value: string) => {
-        const css = (globalThis as typeof globalThis & { CSS?: { escape?: (input: string) => string } }).CSS;
-        if (css?.escape) {
-          return css.escape(value);
-        }
-        return value.replace(/(["\\#.:,[\]=\s>+~*])/g, '\\$1');
-      };
-      const quotedAttr = (name: string, value: string) => `[${name}="${value.replace(/(["\\])/g, '\\$1')}"]`;
-      const selectorHint = (() => {
-        if (id) return `#${escapeCss(id)}`;
-        const testId = el.getAttribute('data-testid') || el.getAttribute('data-test');
-        if (testId) return quotedAttr(el.getAttribute('data-testid') ? 'data-testid' : 'data-test', testId);
-        const name = el.getAttribute('name');
-        if (name && /^(input|select|textarea|button)$/i.test(tag)) {
-          return `${tag}${quotedAttr('name', name)}`;
-        }
-        if (className) {
-          const firstClass = className.split(/\s+/).filter(Boolean)[0];
-          if (firstClass) return `${tag}.${escapeCss(firstClass)}`;
-        }
-        const parts: string[] = [];
-        let current: HTMLElement | null = el;
-        while (current?.nodeType === Node.ELEMENT_NODE) {
-          const currentTag = current.tagName.toLowerCase();
-          const currentTagName = current.tagName;
-          const parent: HTMLElement | null = current.parentElement;
-          if (!parent) {
-            parts.unshift(currentTag);
-            break;
-          }
-          const sameTagSiblings = Array.from(parent.children).filter((child) => child.tagName === currentTagName);
-          const nth = sameTagSiblings.indexOf(current) + 1;
-          parts.unshift(sameTagSiblings.length > 1 ? `${currentTag}:nth-of-type(${nth})` : currentTag);
-          if (parent === document.body || parent === document.documentElement) {
-            break;
-          }
-          current = parent;
-        }
-        return parts.join(' > ') || tag;
-      })();
-      return {
-        tag,
-        role: el.getAttribute('role'),
-        text: el.textContent?.trim().slice(0, 160) || '',
-        ariaLabel: el.getAttribute('aria-label'),
-        placeholder: el.getAttribute('placeholder'),
-        selectorHint,
-        refConfidence: id ? 0.95 : className ? 0.65 : 0.45,
-        rect: {
-          x: Math.round(rect.x),
-          y: Math.round(rect.y),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-        },
-      };
-    }).filter((item) => item.rect.width > 0 && item.rect.height > 0)
-  ).catch((): RawBrowserInteractiveElement[] => []);
-  const [headings, rawInteractiveElements] = await Promise.all([
-    headingsPromise,
-    interactiveElementsPromise,
-  ]);
-  const currentUrl = page.url();
-  const targetRefRecords: BrowserTargetRefRecord[] = [];
-  const interactiveElements = rawInteractiveElements.map((element, index) => {
-    const targetRef: BrowserTargetRef = {
-      refId: `tref_${snapshotId}_${index + 1}`,
-      source: 'dom',
-      selector: element.selectorHint,
-      role: element.role,
-      name: element.ariaLabel || element.text || element.placeholder || element.selectorHint,
-      textHint: element.text || element.ariaLabel || element.placeholder || null,
-      frameId: null,
-      tabId: tab.id,
-      snapshotId,
-      capturedAtMs,
-      ttlMs: targetRefTtlMs,
-      confidence: element.refConfidence,
-      rect: element.rect,
-    };
-    targetRefRecords.push({
-      targetRef,
-      url: currentUrl,
-    });
-    const { refConfidence: _refConfidence, ...publicElement } = element;
-    return {
-      ...publicElement,
-      targetRef,
-    };
+  let session: CDPSession | null = null;
+  let payload: CdpDomSnapshotPayload;
+  try {
+    session = await page.context().newCDPSession(page);
+    payload = await session.send('DOMSnapshot.captureSnapshot', {
+      computedStyles: [],
+      includeDOMRects: true,
+    }) as CdpDomSnapshotPayload;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to capture Host-verifiable browser DOM identity: ${message}`, { cause: error });
+  } finally {
+    await session?.detach().catch(() => undefined);
+  }
+
+  const pageUrl = page.url();
+  const parsed = parseBrowserDomSnapshot({
+    payload,
+    snapshotId,
+    tabId: tab.id,
+    pageUrl,
+    capturedAtMs,
+    targetRefTtlMs,
+  });
+  const unavailableFrames = await discoverUnavailableOopifDocuments({
+    page,
+    snapshotId,
+    capturedFrameIds: new Set(parsed.frameDocuments.map((document) => document.frameId)),
   });
 
   return {
@@ -138,11 +105,12 @@ export async function buildBrowserDomSnapshot(args: {
       snapshotId,
       tabId: tab.id,
       capturedAtMs,
-      url: currentUrl,
+      url: pageUrl,
       title: await page.title(),
-      headings,
-      interactiveElements,
+      headings: parsed.headings,
+      frameDocuments: [...parsed.frameDocuments, ...unavailableFrames],
+      interactiveElements: parsed.interactiveElements,
     },
-    targetRefRecords,
+    targetRefRecords: parsed.targetRefRecords,
   };
 }

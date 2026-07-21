@@ -5,6 +5,7 @@
 import { Command } from 'commander';
 import { terminalOutput } from '../output';
 import { initializeCLIServices, getDatabaseService } from '../bootstrap';
+import { projectSurfaceExecutionResultMetadataForExport } from '../../shared/utils/surfaceExecutionExportProjection';
 
 export const exportCommand = new Command('export')
   .description('导出会话记录为 Markdown/JSON')
@@ -91,11 +92,16 @@ export const exportCommand = new Command('export')
           content: msg.content,
           timestamp: msg.timestamp,
           metadata: msg.metadata as Record<string, unknown> | undefined,
+          toolCalls: msg.toolCalls,
+          toolResults: msg.toolResults,
         })),
         startedAt: session.createdAt,
         lastActivityAt: session.updatedAt,
         totalTokens: 0,
-        metadata: { title: session.title },
+        metadata: {
+          ...(projectSurfaceExecutionResultMetadataForExport(session.metadata) || {}),
+          title: session.title,
+        },
       };
       cache.setSession(cachedSession);
 

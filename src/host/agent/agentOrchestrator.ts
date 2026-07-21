@@ -64,6 +64,8 @@ import { runDeepResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
 import { setSessionTodos, syncTodosToSessionTasks } from './todoParser';
 import { resolveNeoTagModelIntent } from '../services/project/neoTagModelIntentResolver';
+import type { RunHandle } from '../runtime/runContext';
+import type { RunRegistry } from '../runtime/runRegistry';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -113,6 +115,7 @@ export class AgentOrchestrator {
   private sessionId: string | null = null;
   private lastSerializedCompressionState: string | null = null;
   private activeRunPromise: Promise<void> | null = null;
+  private readonly runRegistry?: RunRegistry;
 
   // Dependency injection: decoupled from Electron APIs
   private getHomeDir: () => string;
@@ -123,6 +126,7 @@ export class AgentOrchestrator {
     this.onEvent = config.onEvent;
     this.getHomeDir = config.getHomeDir ?? (() => process.cwd());
     this.broadcastDAGEvent = config.broadcastDAGEvent;
+    this.runRegistry = config.runRegistry;
 
     this.workingDirectory = this.initializeWorkDirectory();
     this.isDefaultWorkingDirectory = true;
@@ -940,7 +944,10 @@ export class AgentOrchestrator {
       ? `${baseSystemPrompt}\n\n${options.neoTag.promptLayer}`
       : baseSystemPrompt;
 
-    this.agentLoop = new AgentLoop({
+    const nativeRunId = `run-${generateMessageId()}`;
+    let registeredRun: RunHandle | undefined;
+    try {
+      this.agentLoop = new AgentLoop({
       // provider 变体（roadmap 2.4）：默认主提示词按 provider 家族追加纪律段落
       // （Claude 系 Git 安全 / GPT 国产系自治坚持）；agent 路由自带 prompt 时不动
       systemPrompt,
@@ -949,6 +956,7 @@ export class AgentOrchestrator {
       messages: this.messages,
       onEvent: dagAwareOnEvent,
       planningService: this.planningService,
+      runId: nativeRunId,
       sessionId,
       agentId: routingResolution?.agent?.id ?? 'default',
       agentName: routingResolution?.agent?.name ?? 'default',
@@ -979,7 +987,16 @@ export class AgentOrchestrator {
           // Non-blocking
         }
       },
-    });
+      });
+
+      registeredRun = this.runRegistry && sessionId
+        ? this.runRegistry.start({
+            runId: nativeRunId,
+            sessionId,
+            workspace: this.workingDirectory,
+          })
+        : undefined;
+      await registeredRun?.attach(this.agentLoop);
 
     const complexityAnalysis = taskComplexityAnalyzer.analyze(content);
     const effortMap: Record<string, EffortLevel> = {
@@ -991,7 +1008,6 @@ export class AgentOrchestrator {
     this.agentLoop.setEffortLevel(effort);
     logger.info(`[EffortLevel] complexity=${complexityAnalysis.complexity} → effort=${effort}`);
 
-    try {
       logger.info('========== Starting agent loop ==========');
       const runPromise = this.agentLoop.run(effectiveContent);
       this.activeRunPromise = runPromise;
@@ -1010,6 +1026,7 @@ export class AgentOrchestrator {
         }
       }
     } finally {
+      if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);
       this.lastSerializedCompressionState = this.agentLoop?.getSerializedCompressionState()
         ?? this.lastSerializedCompressionState;
       logger.info('========== Finally block, agentLoop = null ==========');

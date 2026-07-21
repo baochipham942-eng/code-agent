@@ -14,6 +14,7 @@ import { initChannelAgentBridge } from '../channels/channelAgentBridge';
 import { getChannelManager } from '../channels';
 import { getMainWindow } from './window';
 import { EventBatcher } from '../agent/eventBatcher';
+import type { RunRegistry } from '../runtime/runRegistry';
 
 const logger = createLogger('Bootstrap:AgentRuntime');
 
@@ -33,7 +34,7 @@ function nextRendererEventSeq(sessionId: string): number {
  * No global AgentOrchestrator is created — TaskManager creates per-session
  * instances on demand (via getOrCreateOrchestrator).
  */
-export function createAgentRuntime(configService: ConfigService): void {
+export function createAgentRuntime(configService: ConfigService, runRegistry?: RunRegistry): void {
   const mainWindow = getMainWindow();
   const rendererEventBatcher = new EventBatcher<RendererAgentEvent>({
     flushInterval: 16,
@@ -56,6 +57,7 @@ export function createAgentRuntime(configService: ConfigService): void {
   const taskManager = getTaskManager();
   taskManager.initialize({
     configService,
+    runRegistry,
     planningService: undefined, // Will be set after planningService is initialized
     onAgentEvent: (sessionId, event) => {
       // Forward events to renderer with sessionId

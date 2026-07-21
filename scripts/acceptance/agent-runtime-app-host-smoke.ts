@@ -168,6 +168,9 @@ function startAppHost(port: number, dataDir: string): { child: ChildProcessByStd
       CODE_AGENT_DATA_DIR: dataDir,
       CODE_AGENT_ENABLE_DEV_API: 'true',
       CODE_AGENT_E2E: '1',
+      // Keep fresh-profile onboarding from covering the renderer stop control.
+      // The smoke intercepts /api/run and never sends this local-only value to a provider.
+      OPENAI_API_KEY: 'agent-runtime-app-host-smoke-local-only',
       NODE_ENV: 'development',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -295,6 +298,64 @@ async function waitForRenderer(page: Page, timeoutMs = 60_000): Promise<{ title:
       return typeof token === 'string' && token.length > 0;
     }),
   };
+}
+
+async function resolveFolderTrustGate(page: Page): Promise<'blocked' | 'not_shown'> {
+  const dialog = page
+    .getByRole('dialog')
+    .filter({ hasText: /(?:信任这个项目文件夹|Trust this project folder)/ })
+    .first();
+  const shown = await dialog.waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown) return 'not_shown';
+
+  await dialog
+    .getByRole('button', { name: /^(?:阻止项目配置|Block project config)$/ })
+    .first()
+    .click({ timeout: 5_000 });
+  await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
+  return 'blocked';
+}
+
+async function installIsolatedFolderTrustSafetyRoute(page: Page): Promise<void> {
+  await page.route('**/api/domain/folderTrust/set', async (route) => {
+    const request = route.request();
+    let requestedState: unknown;
+    try {
+      const body = JSON.parse(request.postData() || '{}') as { payload?: { state?: unknown } };
+      requestedState = body.payload?.state;
+    } catch {
+      requestedState = undefined;
+    }
+    if (request.method() !== 'POST' || requestedState !== 'blocked') {
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: false,
+          error: { message: 'Agent-runtime smoke only permits blocking project configuration.' },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          state: 'blocked',
+          canonicalRealpath: process.cwd(),
+          displayPath: process.cwd(),
+          dangerousItems: [],
+          blockedItems: [],
+          identityChanged: false,
+        },
+      }),
+    });
+  });
 }
 
 async function fetchFromRenderer<T>(
@@ -494,7 +555,19 @@ async function verifyRendererCancelClick(
     failures.push('renderer cancel smoke did not render the stop button while the run was held.');
   } else {
     stopRequestedAt = Date.now();
-    await stopButton.click();
+    await stopButton.click({ timeout: 5_000 }).catch(async (error) => {
+      stopRequestedAt = null;
+      const visibleDialogs = await page.locator('[role="dialog"]:visible').evaluateAll((dialogs) => (
+        dialogs.map((dialog) => ({
+          label: dialog.getAttribute('aria-label'),
+          text: (dialog.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300),
+        }))
+      )).catch(() => []);
+      failures.push(
+        `renderer stop button click was blocked: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}; `
+        + `visibleDialogs=${JSON.stringify(visibleDialogs)}`,
+      );
+    });
   }
 
   const stubAfterCancel = sessionId ? await waitForStubCancel(page, sessionId) : null;
@@ -584,8 +657,13 @@ async function main(): Promise<void> {
     });
 
     await installUiCancelRunInterception(page, uiCancelRunRequests);
+    await installIsolatedFolderTrustSafetyRoute(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     const renderer = await waitForRenderer(page);
+    const folderTrustDecision = await resolveFolderTrustGate(page);
+    if (folderTrustDecision !== 'blocked') {
+      failures.push('agent-runtime smoke did not explicitly block isolated project configuration.');
+    }
 
     const authResponse = await fetchFromRenderer<{
       success?: boolean;
@@ -658,6 +736,9 @@ async function main(): Promise<void> {
         cdpPort: chromeSession.port,
       },
       renderer,
+      folderTrust: {
+        decision: folderTrustDecision,
+      },
       auth: {
         status: authResponse.status,
         authenticated: authAuthenticated,

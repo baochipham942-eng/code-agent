@@ -1,0 +1,28 @@
+{
+  "prompt": false,
+  "callSucceeded": true,
+  "structured": {
+    "accessibility": true,
+    "screen_recording": true,
+    "screen_recording_capturable": true,
+    "source": {
+      "attribution": "caller",
+      "disclaim_env": true,
+      "executable": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver",
+      "note": "These booleans reflect the TCC identity of the app that launched this process (e.g. your terminal/IDE), NOT the CuaDriver daemon (com.trycua.driver). A standalone check can read `true` here while `tccutil … com.trycua.driver` reports no record. To grant for the driver, run `cua-driver permissions grant`.",
+      "pid": 60269,
+      "responsible_ppid": 60265
+    }
+  },
+  "decision": {
+    "ready": true,
+    "accessibility": true,
+    "screenRecording": true,
+    "screenRecordingCapturable": true,
+    "source": "caller",
+    "sourceExecutable": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver",
+    "sourceTrusted": true,
+    "inputMonitoring": "not_reported_not_required_for_ax_set_value",
+    "missing": []
+  }
+}

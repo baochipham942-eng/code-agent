@@ -76,6 +76,10 @@ export interface ProtocolContextInput {
 export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolContext {
   const logger = createLogger('ToolProtocol');
   const legacy = input.legacyCtx as unknown as Record<string, unknown> | undefined;
+  const legacyAgentId = legacy?.agentId;
+  const agentId = typeof legacyAgentId === 'string' && legacyAgentId.trim().length > 0
+    ? legacyAgentId
+    : undefined;
 
   const legacyEmitEvent = legacy?.emitEvent as ((event: string, data: unknown) => void) | undefined;
   const wrapEmit = (eventOrType: AgentEvent | string, data?: unknown) => {
@@ -119,6 +123,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     workspace: input.workspace,
     workingDir: input.workingDirectory,
     abortSignal: input.abortSignal ?? new AbortController().signal,
+    agentId,
     logger: {
       debug: (msg, meta) => logger.debug(msg, meta),
       info: (msg, meta) => logger.info(msg, meta),

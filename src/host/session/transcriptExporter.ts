@@ -19,6 +19,11 @@ import {
   CachedMessage,
 } from './localCache';
 import { guardSensitiveText, guardSensitiveTextAsync } from '../security/sensitiveDataGuard';
+import {
+  collectSurfaceExecutionExportProjection,
+  formatSurfaceExecutionProjectionForMarkdown,
+  projectSurfaceExecutionResultMetadataForExport,
+} from '../../shared/utils/surfaceExecutionExportProjection';
 
 const logger = createLogger('TranscriptExporter');
 
@@ -361,6 +366,12 @@ export class TranscriptExporter extends MarkdownExporter {
           markdown = renderDefaultTemplate(session, messages, options, summary);
       }
 
+      const surfaceExecution = collectSurfaceExecutionExportProjection(messages, session.metadata);
+      const surfaceExecutionMarkdown = formatSurfaceExecutionProjectionForMarkdown(surfaceExecution);
+      if (surfaceExecutionMarkdown) {
+        markdown = `${markdown.trimEnd()}\n\n${surfaceExecutionMarkdown}\n`;
+      }
+
       // Convert format if needed
       if (options.format === 'json') {
         const jsonResult = {
@@ -370,8 +381,9 @@ export class TranscriptExporter extends MarkdownExporter {
             role: m.role,
             content: m.content,
             timestamp: m.timestamp,
-            metadata: m.metadata,
+            metadata: projectSurfaceExecutionResultMetadataForExport(m.metadata),
           })),
+          ...(surfaceExecution ? { surfaceExecution } : {}),
           metadata: {
             startedAt: session.startedAt,
             lastActivityAt: session.lastActivityAt,

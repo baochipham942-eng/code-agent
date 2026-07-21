@@ -113,6 +113,41 @@ describe('Browser/Computer history redaction', () => {
     expect(json).not.toContain(SECRET);
   });
 
+  it('keeps blocked Surface canaries and raw reasoning out of serialized history', () => {
+    const canary = 'surface-secret-canary-history-persistence';
+    const toolCalls: ToolCall[] = [{
+      id: 'tool-canary',
+      name: 'browser_action',
+      arguments: { action: 'click', selector: '#submit' },
+    }];
+    const toolResults: ToolResult[] = [{
+      toolCallId: 'tool-canary',
+      success: false,
+      output: `Provider output: ${canary}`,
+      error: `Provider error: ${canary}`,
+      metadata: {
+        surfaceEvidenceCardV1: {
+          version: 1,
+          evidenceId: 'surface-proof:canary',
+          redactionStatus: 'blocked',
+          inspection: { captureState: 'blocked' },
+        },
+        providerDiagnostic: {
+          payload: canary,
+          reasoning: 'raw private chain of thought',
+        },
+      },
+    }];
+
+    const serialized = JSON.stringify(
+      sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls),
+    );
+
+    expect(serialized).toContain('[redacted-canary]');
+    expect(serialized).not.toContain(canary);
+    expect(serialized).not.toContain('raw private chain of thought');
+  });
+
   it('redacts typed Computer Use failure taxonomy metadata before persistence', () => {
     const typedSecret = 'typed-password-123';
     const toolCalls: ToolCall[] = [{

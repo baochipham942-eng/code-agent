@@ -6,6 +6,7 @@ import type { AgentEvent } from '../../../shared/contract';
 import type { ConfigService } from '../../services/core/configService';
 import type { PlanningService } from '../../planning';
 import type { DAGVisualizationEvent } from '../../../shared/contract/dagVisualization';
+import type { RunRegistry } from '../../runtime/runRegistry';
 
 /**
  * Agent Orchestrator 配置
@@ -15,6 +16,7 @@ export interface AgentOrchestratorConfig {
   configService: ConfigService;
   onEvent: (event: AgentEvent) => void;
   planningService?: PlanningService;
+  runRegistry?: RunRegistry;
   getHomeDir?: () => string;
   broadcastDAGEvent?: (event: DAGVisualizationEvent) => void;
 }

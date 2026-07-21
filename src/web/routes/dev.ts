@@ -19,6 +19,7 @@ import type { WebRouteLogger } from './routeTypes';
 import { createDevCancellableToolSmokeRouter } from './devCancellableToolSmoke';
 import { createDevAgentLoopStubSmokeRouter } from './devAgentLoopStubSmoke';
 import { createDevAgentTeamSmokeRouter } from './devAgentTeamSmoke';
+import { createDevSurfaceExecutionConversationRouter } from './devSurfaceExecutionConversation';
 import { registerDevTelemetrySeedRoutes } from './devTelemetrySeedRoutes';
 import { DevApiError } from './devSeedHelpers';
 import type { RunRegistry } from '../../host/runtime/runRegistry';
@@ -441,6 +442,11 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     logger,
   }));
   router.use('/dev/agent-team-smoke', createDevAgentTeamSmokeRouter({ isEnabled: isDevApiEnabled, logger }));
+  router.use('/dev/surface-execution-conversation', createDevSurfaceExecutionConversationRouter({
+    runRegistry,
+    isEnabled: isDevApiEnabled,
+    logger,
+  }));
 
   // ── GET /api/workspace/file ─────────────────────────────────────────
   router.get('/workspace/file', async (req: Request, res: Response) => {

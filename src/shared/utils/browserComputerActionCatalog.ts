@@ -52,6 +52,14 @@ export interface BrowserComputerActionCatalogEntry {
   safeRecovery: BrowserComputerCatalogSafeRecovery;
 }
 
+export interface BrowserComputerSurfaceCapabilityDescriptor {
+  surface: "browser" | "computer";
+  actionClass: string;
+  capabilities: Array<"observe" | "input" | "navigate" | "file" | "secret" | "destructive">;
+  mutation: boolean;
+  catalog: BrowserComputerActionCatalogEntry;
+}
+
 type ActionCatalogDefaults = Omit<BrowserComputerActionCatalogEntry, "tool" | "action">;
 type ActionCatalogMap = Record<string, Partial<ActionCatalogDefaults>>;
 
@@ -134,6 +142,18 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
   type: WRITE_BROWSER_DEFAULTS,
   press_key: WRITE_BROWSER_DEFAULTS,
   scroll: WRITE_BROWSER_DEFAULTS,
+  hover: WRITE_BROWSER_DEFAULTS,
+  drag: WRITE_BROWSER_DEFAULTS,
+  get_dialog_state: {
+    ...READ_BROWSER_DEFAULTS,
+    evidenceKind: "workbench_state",
+  },
+  handle_dialog: WRITE_BROWSER_DEFAULTS,
+  read_clipboard: {
+    ...READ_BROWSER_DEFAULTS,
+    evidenceKind: "workbench_state",
+  },
+  write_clipboard: WRITE_BROWSER_DEFAULTS,
   wait_for_download: {
     ...WRITE_BROWSER_DEFAULTS,
     evidenceKind: "artifact",
@@ -192,6 +212,21 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
     ...READ_BROWSER_DEFAULTS,
     evidenceKind: "browser_logs",
   },
+  list_profiles: {
+    ...READ_BROWSER_DEFAULTS,
+    requiresManagedSession: false,
+    evidenceKind: "account_state",
+    safeRecovery: "none",
+  },
+  import_profile_cookies: {
+    ...WRITE_BROWSER_DEFAULTS,
+    evidenceKind: "account_state",
+    approvalKind: "tool_executor_file",
+  },
+  clear_cookies: {
+    ...WRITE_BROWSER_DEFAULTS,
+    evidenceKind: "account_state",
+  },
 };
 
 const COMPUTER_USE_DESKTOP_CATALOG: ActionCatalogMap = {
@@ -231,6 +266,17 @@ const COMPUTER_USE_DESKTOP_CATALOG: ActionCatalogMap = {
   locate_role: {
     ...DESKTOP_READ_DEFAULTS,
     evidenceKind: "ax_candidates",
+  },
+  mouse_down: DESKTOP_INPUT_DEFAULTS,
+  mouse_up: DESKTOP_INPUT_DEFAULTS,
+  open_application: DESKTOP_INPUT_DEFAULTS,
+  write_clipboard: DESKTOP_INPUT_DEFAULTS,
+  computer_batch: DESKTOP_INPUT_DEFAULTS,
+  hold_key: DESKTOP_INPUT_DEFAULTS,
+  triple_click: DESKTOP_INPUT_DEFAULTS,
+  cursor_position: {
+    ...DESKTOP_READ_DEFAULTS,
+    evidenceKind: "desktop_observation",
   },
 };
 
@@ -324,6 +370,90 @@ export function getBrowserComputerActionCatalogEntry(
     ? DESKTOP_READ_DEFAULTS
     : DESKTOP_INPUT_DEFAULTS;
   return buildCatalogEntry("computer_use", action, defaults, overrides);
+}
+
+function isRegisteredBrowserComputerAction(
+  toolName: BrowserComputerCatalogTool,
+  action: string,
+  args?: Record<string, unknown>,
+): boolean {
+  if (toolName === "browser_action") {
+    return Object.prototype.hasOwnProperty.call(BROWSER_ACTION_CATALOG, action);
+  }
+  const catalog = isBrowserScopedComputerUseAction(action, args)
+    ? COMPUTER_USE_BROWSER_SCOPED_CATALOG
+    : COMPUTER_USE_DESKTOP_CATALOG;
+  return Object.prototype.hasOwnProperty.call(catalog, action);
+}
+
+export function getStrictBrowserComputerActionCatalogEntry(
+  toolName: unknown,
+  action: unknown,
+  args?: Record<string, unknown>,
+): BrowserComputerActionCatalogEntry | null {
+  if (!isBrowserComputerCatalogToolName(toolName) || typeof action !== "string") {
+    return null;
+  }
+  if (!isRegisteredBrowserComputerAction(toolName, action, args)) {
+    return null;
+  }
+  return getBrowserComputerActionCatalogEntry(toolName, action, args);
+}
+
+function capabilitiesForCatalogEntry(
+  entry: BrowserComputerActionCatalogEntry,
+  args?: Record<string, unknown>,
+): BrowserComputerSurfaceCapabilityDescriptor["capabilities"] {
+  const capabilities: BrowserComputerSurfaceCapabilityDescriptor["capabilities"] = [];
+  if (entry.risk === "read") capabilities.push("observe");
+  if (entry.risk === "browser_action" || entry.risk === "desktop_input") capabilities.push("input");
+  if (["launch", "close", "new_tab", "close_tab", "switch_tab", "navigate", "back", "forward", "reload"].includes(entry.action)) {
+    capabilities.push("navigate");
+  }
+  if (entry.approvalKind === "tool_executor_file") capabilities.push("file");
+  if (["import_profile_cookies", "import_storage_state", "export_storage_state"].includes(entry.action)
+    || containsSecretRef(args)) {
+    capabilities.push("secret");
+  }
+  if (["read_clipboard", "write_clipboard"].includes(entry.action)
+    || (entry.action === "handle_dialog" && typeof args?.dialogPromptText === "string")) {
+    capabilities.push("secret");
+  }
+  if (entry.action === "clear_cookies"
+    || (entry.action === "handle_dialog" && args?.dialogAction === "accept")
+    || args?.destructive === true) capabilities.push("destructive");
+  return Array.from(new Set(capabilities));
+}
+
+function containsSecretRef(value: unknown, depth = 0): boolean {
+  if (depth > 5 || !value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((item) => containsSecretRef(item, depth + 1));
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === "secretRef" && typeof child === "string" && child.trim().length > 0) return true;
+    if (containsSecretRef(child, depth + 1)) return true;
+  }
+  return false;
+}
+
+export function getBrowserComputerSurfaceCapabilityDescriptor(
+  toolName: unknown,
+  action: unknown,
+  args?: Record<string, unknown>,
+): BrowserComputerSurfaceCapabilityDescriptor | null {
+  const catalog = getStrictBrowserComputerActionCatalogEntry(toolName, action, args);
+  if (!catalog) return null;
+  const surface = catalog.scope === "desktop_surface" ? "computer" : "browser";
+  return {
+    surface,
+    actionClass: `${catalog.scope}:${catalog.action}`,
+    capabilities: capabilitiesForCatalogEntry(catalog, args),
+    // Clipboard reads cross a sensitive browser boundary. Treat them as an
+    // operation even though they do not mutate the page so the runtime issues
+    // and consumes a capability-scoped Surface grant instead of taking the
+    // observation fast path.
+    mutation: catalog.risk !== "read" || catalog.action === "read_clipboard",
+    catalog,
+  };
 }
 
 export function getBrowserComputerActionCatalogForArgs(args: {

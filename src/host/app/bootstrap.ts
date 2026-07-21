@@ -143,10 +143,10 @@ export async function initializeBackgroundServices(): Promise<void> {
   await initializeBackgroundInfra(configService);
 
   // Phase 3: Agent runtime (TaskManager as sole orchestrator owner, channels)
-  createAgentRuntime(configService);
+  const applicationRunRegistry = getApplicationRunRegistry();
+  createAgentRuntime(configService, applicationRunRegistry);
 
   // Phase 3b: Create AgentApplicationService (facade for IPC layer)
-  const applicationRunRegistry = getApplicationRunRegistry();
   const rolloutPolicy = resolveDurableRunRollout();
   if (rolloutPolicy.diagnostic) logger.error(rolloutPolicy.diagnostic);
   durableRunRuntime = await initializeDurableRun({

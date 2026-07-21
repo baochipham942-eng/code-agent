@@ -17,6 +17,7 @@ import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersiste
 import { stripAppshotBlocks } from '../../../shared/contract/appshot';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { createLogger } from './logger';
+import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -1216,18 +1217,19 @@ export class SessionManager implements Disposable {
   async exportSession(sessionId: string): Promise<SessionWithMessages | null> {
     const session = await this.getSession(sessionId, Number.MAX_SAFE_INTEGER);
     if (!session) return null;
-    return {
+    return sanitizeSurfaceExecutionSessionExport({
       ...session,
       generativeUI: getGenerativeUIRepository()
         .listBySession(sessionId)
         .map(toGenerativeUIExportSnapshot),
-    };
+    });
   }
 
   /**
    * 导入会话
    */
   async importSession(data: SessionWithMessages): Promise<string> {
+    const safeData = sanitizeSurfaceExecutionSessionExport(data);
     const db = getDatabase();
     const now = Date.now();
 
@@ -1236,17 +1238,17 @@ export class SessionManager implements Disposable {
 
     const session: Session = {
       id: newId,
-      userId: getAuthService().getCurrentUser()?.id ?? data.userId ?? null,
-      title: data.title,
-      modelConfig: sanitizeModelConfigForSession(data.modelConfig),
-      workingDirectory: data.workingDirectory,
-	      type: data.type || 'chat',
-	      origin: data.origin,
-	      metadata: data.metadata,
-	      parentSessionId: data.parentSessionId,
-      sourceRunId: data.sourceRunId,
-      readOnly: data.readOnly,
-      retryOfSessionId: data.retryOfSessionId,
+      userId: getAuthService().getCurrentUser()?.id ?? safeData.userId ?? null,
+      title: safeData.title,
+      modelConfig: sanitizeModelConfigForSession(safeData.modelConfig),
+      workingDirectory: safeData.workingDirectory,
+	      type: safeData.type || 'chat',
+	      origin: safeData.origin,
+	      metadata: safeData.metadata,
+	      parentSessionId: safeData.parentSessionId,
+      sourceRunId: safeData.sourceRunId,
+      readOnly: safeData.readOnly,
+      retryOfSessionId: safeData.retryOfSessionId,
       createdAt: now,
       updatedAt: now
     };
@@ -1254,7 +1256,7 @@ export class SessionManager implements Disposable {
     db.createSession(session);
 
     // 导入消息
-    for (const message of data.messages) {
+    for (const message of safeData.messages) {
       const newMessage: Message = {
         ...message,
         id: `msg_${Date.now()}_${crypto.randomUUID().split('-')[0]}`
@@ -1263,12 +1265,12 @@ export class SessionManager implements Disposable {
     }
 
     // 导入 todos
-    if (data.todos && data.todos.length > 0) {
-      db.saveTodos(newId, data.todos);
+    if (safeData.todos && safeData.todos.length > 0) {
+      db.saveTodos(newId, safeData.todos);
     }
 
     // 记录审计日志
-    db.logAuditEvent('session_imported', { newId, originalId: data.id }, newId);
+    db.logAuditEvent('session_imported', { newId, originalId: safeData.id }, newId);
 
     return newId;
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -7,6 +7,8 @@ import {
   releaseCuaLock,
   gateCuaToolCall,
   CUA_LOCK_TTL_MS,
+  subscribeCuaInputLockLifecycle,
+  type CuaInputLockLifecycleEvent,
 } from '../../../src/host/mcp/cuaSessionLock';
 
 describe('cuaSessionLock — 跨会话 computer-use 文件锁', () => {
@@ -111,6 +113,73 @@ describe('cuaSessionLock — 跨会话 computer-use 文件锁', () => {
     expect(existsSync(lockPath)).toBe(true);
     expect(await releaseCuaLock('session-a')).toBe(true);
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('发布 acquire/recover/release 生命周期，重复 release 保持幂等', async () => {
+    const events: CuaInputLockLifecycleEvent[] = [];
+    const unsubscribe = subscribeCuaInputLockLifecycle((event) => events.push(event));
+    try {
+      writeFileSync(lockPath, 'not-json{{{');
+      expect((await tryAcquireCuaLock('session-a')).kind).toBe('acquired');
+      expect((await tryAcquireCuaLock('session-a')).kind).toBe('acquired');
+      expect(await releaseCuaLock('session-a')).toBe(true);
+      expect(await releaseCuaLock('session-a')).toBe(false);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(events.map(({ phase, status, outcome }) => ({ phase, status, outcome }))).toEqual([
+      { phase: 'recover', status: 'succeeded', outcome: 'recovered' },
+      { phase: 'acquire', status: 'succeeded', outcome: 'recovered' },
+      { phase: 'acquire', status: 'succeeded', outcome: 'reentrant' },
+      { phase: 'release', status: 'succeeded', outcome: 'released' },
+      { phase: 'release', status: 'succeeded', outcome: 'already_released' },
+    ]);
+  });
+
+  it('锁失败 fail-closed，生命周期不泄露外部 owner、锁路径或 canary', async () => {
+    const foreignOwner = 'foreign-surface-secret-canary-lock-owner';
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ sessionId: foreignOwner, pid: 1, acquiredAt: Date.now() }),
+    );
+    const events: CuaInputLockLifecycleEvent[] = [];
+    const unsubscribe = subscribeCuaInputLockLifecycle((event) => events.push(event));
+    try {
+      const result = await tryAcquireCuaLock('session-a');
+      expect(result.kind).toBe('blocked');
+      expect(await releaseCuaLock('session-a')).toBe(false);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).sessionId).toBe(foreignOwner);
+    expect(events).toMatchObject([
+      { scope: 'session-a', phase: 'acquire', status: 'failed', outcome: 'blocked' },
+      { scope: 'session-a', phase: 'release', status: 'failed', outcome: 'not_owner' },
+    ]);
+    const serialized = JSON.stringify(events);
+    expect(serialized).not.toContain(foreignOwner);
+    expect(serialized).not.toContain(lockPath);
+    expect(serialized).not.toContain('surface-secret-canary');
+  });
+
+  it('锁文件不可读时 fail-closed，不把 I/O 错误误判成可回收陈旧锁', async () => {
+    mkdirSync(lockPath);
+    const events: CuaInputLockLifecycleEvent[] = [];
+    const unsubscribe = subscribeCuaInputLockLifecycle((event) => events.push(event));
+    try {
+      await expect(tryAcquireCuaLock('session-a')).rejects.toBeDefined();
+      expect(await releaseCuaLock('session-a')).toBe(false);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(events).toMatchObject([
+      { scope: 'session-a', phase: 'acquire', status: 'failed', outcome: 'error' },
+      { scope: 'session-a', phase: 'release', status: 'failed', outcome: 'error' },
+    ]);
+    expect(existsSync(lockPath)).toBe(true);
   });
 
   it('gate：只读工具（screenshot/get_window_state 等）不需要锁，被占用时也放行', async () => {

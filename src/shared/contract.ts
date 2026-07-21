@@ -118,6 +118,8 @@ export * from './contract/productClosure';
 export * from './contract/completionSummary';
 export * from './contract/persistence';
 export * from './contract/desktopShell';
+export * from './contract/surfaceExecution';
+export * from './contract/browserRelay';
 
 // Decision Trace types (Security decision chain transparency)
 export * from './contract/decisionTrace';

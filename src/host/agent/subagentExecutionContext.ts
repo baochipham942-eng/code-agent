@@ -84,7 +84,7 @@ export function createProtocolSubagentExecutionContext(
     abortSignal: overrides.abortSignal ?? ctx.abortSignal,
     traceContext: ctx.traceContext as RunTraceContext | undefined,
     currentToolCallId: overrides.currentToolCallId ?? ctx.currentToolCallId,
-    agentId: overrides.agentId ?? ctx.subagent?.agentId,
+    agentId: overrides.agentId ?? ctx.agentId ?? ctx.subagent?.agentId,
     agentName: overrides.agentName ?? ctx.subagent?.agentName,
     agentRole: overrides.agentRole ?? ctx.subagent?.agentRole,
     messages: ctx.subagent?.messages as SubagentExecutionContext['messages'],

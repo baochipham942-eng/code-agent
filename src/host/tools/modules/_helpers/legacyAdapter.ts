@@ -82,7 +82,7 @@ export function buildLegacyCtxFromProtocol(
     modelCallback: ctx.modelCallback,
     currentToolCallId: ctx.currentToolCallId,
     // subagent snapshot 字段
-    agentId: ctx.subagent?.agentId,
+    agentId: ctx.agentId || ctx.subagent?.agentId,
     agentName: ctx.subagent?.agentName,
     agentRole: ctx.subagent?.agentRole,
     spawnDepth: ctx.spawnDepth,

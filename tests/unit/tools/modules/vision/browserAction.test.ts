@@ -46,6 +46,19 @@ describe('browserActionModule (vision Level 1)', () => {
       expect(actionEnum).toContain('get_dom_snapshot');
       expect(actionEnum).toContain('export_storage_state');
       expect(actionEnum).toContain('upload_file');
+      expect(actionEnum).toEqual(expect.arrayContaining([
+        'hover',
+        'drag',
+        'get_dialog_state',
+        'handle_dialog',
+        'read_clipboard',
+        'write_clipboard',
+      ]));
+      const properties = browserActionSchema.inputSchema.properties as Record<string, unknown>;
+      expect(properties).toHaveProperty('destinationTargetRef');
+      expect(properties).toHaveProperty('dialogAction');
+      expect(properties).toHaveProperty('dialogPromptText');
+      expect(properties).toHaveProperty('clipboardText');
     });
   });
 

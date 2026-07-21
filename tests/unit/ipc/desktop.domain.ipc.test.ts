@@ -77,31 +77,29 @@ describe('简单委派', () => {
     const call = await setup();
     const res = await call('ensureManagedBrowserSession', {});
     expect(res.success).toBe(true);
-    expect(svc.browser.ensureSession).toHaveBeenCalledWith('about:blank', expect.objectContaining({ leaseOwner: 'desktop-ipc' }));
+    expect(svc.browser.ensureSession).toHaveBeenCalledWith('about:blank', expect.objectContaining({
+      leaseOwner: 'desktop-ipc',
+      profileMode: 'isolated',
+    }));
   });
 });
 
-describe('normalizeBrowserUrl（经 openBrowserRelayTab）', () => {
-  it('裸域名补 https://', async () => {
+describe('raw browser relay IPC', () => {
+  it('禁止 Renderer 列出、创建或按 native tab id attach/detach', async () => {
     const call = await setup();
-    await call('openBrowserRelayTab', { url: 'example.com' });
-    expect(svc.relay.createTab).toHaveBeenCalledWith('https://example.com/');
-  });
-
-  it('about:blank 原样', async () => {
-    const call = await setup();
-    await call('openBrowserRelayTab', { url: 'about:blank' });
-    expect(svc.relay.createTab).toHaveBeenCalledWith('about:blank');
-  });
-
-  it('空 url → DESKTOP_ERROR(URL is required)', async () => {
-    const call = await setup();
-    expect(await call('openBrowserRelayTab', {})).toMatchObject({ success: false, error: { code: 'DESKTOP_ERROR', message: expect.stringContaining('URL is required') } });
-  });
-
-  it('非 http(s) 协议 → 报错', async () => {
-    const call = await setup();
-    expect(await call('openBrowserRelayTab', { url: 'ftp://x.com' })).toMatchObject({ success: false, error: { message: expect.stringContaining('http(s)') } });
+    for (const [action, payload] of [
+      ['listBrowserRelayTabs', undefined],
+      ['openBrowserRelayTab', { url: 'https://example.com' }],
+      ['attachBrowserRelayTab', { tabId: 7 }],
+      ['detachBrowserRelayTab', { tabId: 7 }],
+    ] as const) {
+      expect(await call(action, payload)).toMatchObject({
+        success: false,
+        error: { code: 'DESKTOP_ERROR', message: expect.stringContaining('BROWSER_TAB_BORROW_REQUIRED') },
+      });
+    }
+    expect(svc.relay.listTabs).not.toHaveBeenCalled();
+    expect(svc.relay.createTab).not.toHaveBeenCalled();
   });
 });
 
@@ -126,12 +124,11 @@ describe('openManagedBrowserUrl 会话切换逻辑', () => {
 });
 
 describe('browser relay', () => {
-  it('start/stop/getState/listTabs 委派', async () => {
+  it('start/stop/getState 委派', async () => {
     const call = await setup();
     expect((await call('startBrowserRelay')).data).toMatchObject({ running: true });
     expect((await call('stopBrowserRelay')).data).toMatchObject({ running: false });
     expect((await call('getBrowserRelayState')).data).toMatchObject({ extensionPath: '/ext' });
-    expect((await call('listBrowserRelayTabs')).data).toEqual([{ id: 't1' }]);
   });
 
   it('openBrowserRelayExtensionDirectory 有路径 → shell.openPath', async () => {

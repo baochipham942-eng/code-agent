@@ -8,6 +8,8 @@ import type { TelemetryModelCall, TelemetryToolCall, ErrorCategory } from '../..
 import type { AgentEvent } from '../../shared/contract';
 import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import { sanitizeBrowserComputerToolArguments } from '../../shared/utils/browserComputerRedaction';
+import { projectSurfaceExecutionMetadataForExport } from '../../shared/utils/surfaceExecutionExportProjection';
+import { redactSurfaceExecutionValue } from '../../shared/utils/surfaceExecutionRedaction';
 
 // ----------------------------------------------------------------------------
 // Error Classification
@@ -323,17 +325,29 @@ export function extractEventData(event: AgentEvent): string | undefined {
       if (key in data) {
         const val = data[key];
         extracted[key] = typeof val === 'string'
-          ? val.substring(0, TELEMETRY_TRUNCATION.EVENT_SUMMARY)
+          ? String(redactSurfaceExecutionValue(val, key)).substring(0, TELEMETRY_TRUNCATION.EVENT_SUMMARY)
           : val;
       }
     }
+    const safeMetadata: Record<string, unknown> = {};
     if (metadata?.validationFailed === true) {
-      extracted.metadata = {
+      Object.assign(safeMetadata, {
         validationFailed: true,
         validationIssues: Array.isArray(metadata.validationIssues)
           ? metadata.validationIssues
           : undefined,
-      };
+      });
+    }
+    const surfaceExecutionExportV1 = projectSurfaceExecutionMetadataForExport(metadata, {
+      toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : undefined,
+      success: typeof data.success === 'boolean' ? data.success : undefined,
+      error: typeof data.error === 'string' ? data.error : undefined,
+    });
+    if (surfaceExecutionExportV1) {
+      safeMetadata.surfaceExecutionExportV1 = surfaceExecutionExportV1;
+    }
+    if (Object.keys(safeMetadata).length > 0) {
+      extracted.metadata = safeMetadata;
     }
     return Object.keys(extracted).length > 0 ? JSON.stringify(extracted) : undefined;
   }

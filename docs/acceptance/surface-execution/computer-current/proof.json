@@ -1,0 +1,2376 @@
+{
+  "version": 1,
+  "status": "passed",
+  "campaign": {
+    "id": "surface-v1-20260721T033951Z-af6f0f298901",
+    "startedAt": "2026-07-21T03:39:51.214Z"
+  },
+  "stage": "complete",
+  "recordedAt": "2026-07-21T03:42:20.144Z",
+  "worktree": "/Users/linchen/.codex/worktrees/aedb/code-agent",
+  "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+  "originMain": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+  "mergeBase": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+  "sourceFingerprint": {
+    "version": 1,
+    "algorithm": "sha256",
+    "sha256": "d60e72a1204a7026473317698bd9df5e602931bbbb54395d8d918efbf89675fa",
+    "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+    "dirty": true,
+    "dirtyPaths": [
+      "docs/architecture/frontend.md",
+      "package.json",
+      "public/pip.html",
+      "resources/browser-relay-extension/background.js",
+      "resources/browser-relay-extension/manifest.json",
+      "resources/browser-relay-extension/options.html",
+      "resources/browser-relay-extension/options.js",
+      "resources/browser-relay-extension/popup.html",
+      "resources/browser-relay-extension/popup.js",
+      "resources/browser-relay-extension/protocol-v2.js",
+      "scripts/acceptance/browser-computer-app-host-smoke.ts",
+      "scripts/acceptance/fixtures/surface-execution-conversation.ts",
+      "scripts/acceptance/fixtures/surface-execution-cross-surface.ts",
+      "scripts/acceptance/fixtures/surface-execution-workbuddy.ts",
+      "scripts/acceptance/surface-execution-canary-scan.ts",
+      "scripts/acceptance/surface-execution-computer-smoke.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-core.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-smoke.ts",
+      "scripts/acceptance/surface-execution-conversation-smoke.ts",
+      "scripts/acceptance/surface-execution-cross-surface-smoke.ts",
+      "scripts/acceptance/surface-execution-durable-restart-smoke.ts",
+      "scripts/acceptance/surface-execution-gate-report-core.ts",
+      "scripts/acceptance/surface-execution-gate-report.ts",
+      "scripts/acceptance/surface-execution-managed-smoke.ts",
+      "scripts/acceptance/surface-execution-metrics.ts",
+      "scripts/acceptance/surface-execution-p2-acceptance-core.ts",
+      "scripts/acceptance/surface-execution-proof.ts",
+      "scripts/acceptance/surface-execution-relay-smoke.ts",
+      "scripts/acceptance/surface-execution-replay-import-child.ts",
+      "scripts/acceptance/surface-execution-stop-benchmark.ts",
+      "scripts/acceptance/surface-execution-workbuddy-smoke.ts",
+      "src-tauri/src/main.rs",
+      "src-tauri/src/pip.rs",
+      "src/cli/commands/export.ts",
+      "src/host/agent/runtime/toolExecutionEngine.ts",
+      "src/host/app/agentAppService.ts",
+      "src/host/diagnostics/checks/browserRelay.ts",
+      "src/host/diagnostics/doctorRunner.ts",
+      "src/host/evaluation/telemetryQueryService.ts",
+      "src/host/evaluation/transcriptReplayBuilder.ts",
+      "src/host/ipc/desktop.ipc.ts",
+      "src/host/ipc/index.ts",
+      "src/host/ipc/surfaceExecution.ipc.ts",
+      "src/host/mcp/cuaSessionLock.ts",
+      "src/host/plugins/builtin/browserControl/browser.schema.ts",
+      "src/host/plugins/builtin/browserControl/browserAction.schema.ts",
+      "src/host/plugins/builtin/computerUse/cuaStatefulComputerUse.ts",
+      "src/host/protocol/tools.ts",
+      "src/host/services/infra/browser/browserArtifactActions.ts",
+      "src/host/services/infra/browser/browserSurfaceInteractions.ts",
+      "src/host/services/infra/browser/browserUploadApprovalRegistry.ts",
+      "src/host/services/infra/browser/domSnapshotBuilder.ts",
+      "src/host/services/infra/browser/domSnapshotParser.ts",
+      "src/host/services/infra/browser/managedBrowserCookieImport.ts",
+      "src/host/services/infra/browser/relayActionFacade.ts",
+      "src/host/services/infra/browser/targetRefRegistry.ts",
+      "src/host/services/infra/browser/types.ts",
+      "src/host/services/infra/browserRelayApprovalBoundary.ts",
+      "src/host/services/infra/browserRelayService.ts",
+      "src/host/services/infra/browserService.ts",
+      "src/host/services/infra/sessionManager.ts",
+      "src/host/services/surfaceExecution/BrowserElementRefFence.ts",
+      "src/host/services/surfaceExecution/BrowserProfileImportApprovalService.ts",
+      "src/host/services/surfaceExecution/BrowserTabLeaseService.ts",
+      "src/host/services/surfaceExecution/ComputerSurfaceEventProjection.ts",
+      "src/host/services/surfaceExecution/ExternalSurfaceAgentAdapter.ts",
+      "src/host/services/surfaceExecution/ManagedBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/RelayBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/SurfaceAccessGrantService.ts",
+      "src/host/services/surfaceExecution/surfaceBrowserRuntimeTypes.ts",
+      "src/host/services/surfaceExecution/surfaceComputerErrorProjection.ts",
+      "src/host/services/surfaceExecution/surfaceComputerRuntimeHelpers.ts",
+      "src/host/services/surfaceExecution/surfaceContinuationRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceContinuationService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationControlService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationProjectionService.ts",
+      "src/host/services/surfaceExecution/SurfaceEventHub.ts",
+      "src/host/services/surfaceExecution/surfaceExecutionResultProjection.ts",
+      "src/host/services/surfaceExecution/SurfaceExecutionRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceFrameRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceInterruptService.ts",
+      "src/host/services/surfaceExecution/SurfaceObservationRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceOrganizationPolicyService.ts",
+      "src/host/services/surfaceExecution/SurfaceOutputRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceProofService.ts",
+      "src/host/services/surfaceExecution/SurfaceProviderRegistry.ts",
+      "src/host/services/surfaceExecution/surfaceRunOwnership.ts",
+      "src/host/services/surfaceExecution/SurfaceSessionManager.ts",
+      "src/host/services/surfaceExecution/SurfaceSwitchCoordinator.ts",
+      "src/host/session/browserComputerProofStore.ts",
+      "src/host/session/exportMarkdown.ts",
+      "src/host/session/localCache.ts",
+      "src/host/session/surfaceExecutionSessionExport.ts",
+      "src/host/session/transcriptExporter.ts",
+      "src/host/shellCapabilities.ts",
+      "src/host/telemetry/diagnosticBundleService.ts",
+      "src/host/telemetry/telemetryCollectorInternal.ts",
+      "src/host/tools/artifacts/surfaceExecutionToolResultPipeline.ts",
+      "src/host/tools/toolExecutor.ts",
+      "src/host/tools/types.ts",
+      "src/host/tools/vision/browserAction.ts",
+      "src/host/tools/vision/browserActionFinalize.ts",
+      "src/host/tools/vision/browserActionResultProjection.ts",
+      "src/host/tools/vision/browserActionSurfaceInteractions.ts",
+      "src/host/tools/vision/browserEngineDispatch.ts",
+      "src/host/tools/vision/browserEngineRouter.ts",
+      "src/host/tools/vision/browserNavigate.ts",
+      "src/host/tools/vision/browserProfileActions.ts",
+      "src/host/tools/vision/BrowserTool.ts",
+      "src/host/tools/vision/browserUploadApproval.ts",
+      "src/host/tools/vision/computerUse.ts",
+      "src/renderer/App.tsx",
+      "src/renderer/components/ChatView.tsx",
+      "src/renderer/components/features/browser/BrowserSurfacePanel.tsx",
+      "src/renderer/components/features/chat/ChatInput/index.tsx",
+      "src/renderer/components/features/chat/ToolStepGroup.tsx",
+      "src/renderer/components/features/chat/TurnCard.tsx",
+      "src/renderer/components/features/export/ExportModal.tsx",
+      "src/renderer/components/features/sidebar/SidebarSessionItem.tsx",
+      "src/renderer/components/features/surfaceExecution/index.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceControls.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceList.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionChatPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/surfaceExecutionPresentation.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionRunStatus.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceInterventionCards.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceOutputEntry.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfacePermissionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceResourceSections.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSemanticTimeline.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSessionHeader.tsx",
+      "src/renderer/components/features/surfaceExecution/types.ts",
+      "src/renderer/hooks/agent/effects/useSurfaceExecutionEffects.ts",
+      "src/renderer/hooks/useComputerUsePip.ts",
+      "src/renderer/hooks/useSurfaceExecutionConversation.ts",
+      "src/renderer/hooks/useSurfaceExecutionPip.ts",
+      "src/renderer/i18n/surfaceExecution.ts",
+      "src/renderer/index.tsx",
+      "src/renderer/services/nativeCommandFacade.ts",
+      "src/renderer/services/surfaceExecutionClient.ts",
+      "src/renderer/services/surfaceExecutionController.ts",
+      "src/renderer/stores/surfaceExecutionStore.ts",
+      "src/renderer/utils/browserComputerExportRedaction.ts",
+      "src/renderer/utils/surfaceExecutionProjection.ts",
+      "src/shared/contract/browserRelay.ts",
+      "src/shared/contract/desktop.ts",
+      "src/shared/contract/surfaceExecution.ts",
+      "src/shared/ipc/domains.ts",
+      "src/shared/utils/browserComputerActionCatalog.ts",
+      "src/shared/utils/browserComputerInputPayloadRedaction.ts",
+      "src/shared/utils/browserComputerRedaction.ts",
+      "src/shared/utils/surfaceExecutionExportCaptureContext.ts",
+      "src/shared/utils/surfaceExecutionExportFieldSanitizer.ts",
+      "src/shared/utils/surfaceExecutionExportProjection.ts",
+      "src/shared/utils/surfaceExecutionRedaction.ts",
+      "src/web/routes/dev.ts",
+      "src/web/routes/devSurfaceExecutionConversation.ts",
+      "src/web/routes/devSurfaceExecutionConversationSeed.ts",
+      "tests/agent/cancellation-fanout.test.ts",
+      "tests/main/diagnostics/browserRelay.test.ts",
+      "tests/main/diagnostics/doctorRunner.test.ts",
+      "tests/renderer/components/abilityMenu.browserReadiness.test.ts",
+      "tests/renderer/components/chatView.surfaceExecution.integration.test.ts",
+      "tests/renderer/components/exportModal.surfaceExecution.test.ts",
+      "tests/renderer/components/surfaceExecution/fixtures.ts",
+      "tests/renderer/components/surfaceExecution/SurfaceControls.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceEvidenceCard.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionConversationPanel.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionRunStatus.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceResourceSections.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceSemanticTimeline.test.tsx",
+      "tests/renderer/components/turnCard.artifactFold.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionEffects.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionPip.test.tsx",
+      "tests/renderer/services/nativeCommandFacade.test.ts",
+      "tests/renderer/services/surfaceExecutionClient.test.ts",
+      "tests/renderer/services/surfaceExecutionController.test.ts",
+      "tests/renderer/stores/surfaceExecutionStore.test.ts",
+      "tests/renderer/utils/surfaceExecutionProjection.test.ts",
+      "tests/unit/agent/messageHistory.browserComputerRedaction.test.ts",
+      "tests/unit/evaluation/surfaceExecutionReplayProjection.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.static.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.worker.test.ts",
+      "tests/unit/host/app/browserSurfaceSideDoor.static.test.ts",
+      "tests/unit/ipc/desktop.domain.ipc.test.ts",
+      "tests/unit/ipc/surfaceExecution.ipc.test.ts",
+      "tests/unit/main/pipSurfaceControls.static.test.ts",
+      "tests/unit/main/shellCapabilities.test.ts",
+      "tests/unit/mcp/cuaSessionLock.test.ts",
+      "tests/unit/scripts/surfaceExecutionCanaryScan.test.ts",
+      "tests/unit/scripts/surfaceExecutionComputerAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionControlledComplex.test.ts",
+      "tests/unit/scripts/surfaceExecutionConversationAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionCrossSurfaceAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionDurableRestartAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionGateReport.test.ts",
+      "tests/unit/scripts/surfaceExecutionMetrics.test.ts",
+      "tests/unit/scripts/surfaceExecutionP2Acceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionProof.test.ts",
+      "tests/unit/scripts/surfaceExecutionReplayImportChild.test.ts",
+      "tests/unit/scripts/surfaceExecutionWorkBuddyAcceptance.test.ts",
+      "tests/unit/services/infra/browserArtifactActions.uploadApproval.test.ts",
+      "tests/unit/services/infra/browserDomSnapshotBuilder.test.ts",
+      "tests/unit/services/infra/browserRelayService.test.ts",
+      "tests/unit/services/infra/browserTargetRefRegistry.test.ts",
+      "tests/unit/services/infra/browserUploadApprovalRegistry.test.ts",
+      "tests/unit/services/infra/relayActionFacade.test.ts",
+      "tests/unit/services/infra/sessionManager.metadataGuard.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserProfileImportApprovalService.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserTabLeaseService.test.ts",
+      "tests/unit/services/surfaceExecution/ComputerSurfaceEventProjection.test.ts",
+      "tests/unit/services/surfaceExecution/ExternalSurfaceAgentAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/ManagedBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/RelayBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceBrowserRuntime.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceContinuationService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceControlPlane.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceConversationProjectionService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceFrameRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOrganizationPolicyService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOutputRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOwnershipStores.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProofService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProviderRegistry.test.ts",
+      "tests/unit/session/browserComputerProofStore.test.ts",
+      "tests/unit/session/surfaceExecutionExport.test.ts",
+      "tests/unit/shared/browserComputerActionCatalog.test.ts",
+      "tests/unit/shared/browserComputerRedaction.browserPolicy.test.ts",
+      "tests/unit/shared/contract/surfaceExecution.test.ts",
+      "tests/unit/shared/utils/surfaceExecutionExportProjection.test.ts",
+      "tests/unit/telemetry/diagnosticBundleService.test.ts",
+      "tests/unit/tools/cuaStatefulLockEvents.test.ts",
+      "tests/unit/tools/cuaStatefulSurfaceIntegration.test.ts",
+      "tests/unit/tools/modules/vision/browser.test.ts",
+      "tests/unit/tools/modules/vision/browserAction.test.ts",
+      "tests/unit/tools/surfaceExecutionToolResultPipeline.test.ts",
+      "tests/unit/tools/toolExecutor.executionIntent.test.ts",
+      "tests/unit/tools/vision/browserActionFinalize.test.ts",
+      "tests/unit/tools/vision/browserEngineDispatch.intent.test.ts",
+      "tests/unit/tools/vision/browserEngineRelayRouting.test.ts",
+      "tests/unit/tools/vision/browserEngineRouter.test.ts",
+      "tests/unit/tools/vision/browserNavigateSideDoor.test.ts",
+      "tests/unit/tools/vision/browserUploadApproval.test.ts",
+      "tests/unit/tools/vision/browserWorkbenchGating.test.ts",
+      "tests/unit/web/appAssembly.test.ts",
+      "tests/unit/web/devSurfaceExecutionConversation.test.ts"
+    ],
+    "scopes": [
+      "src",
+      "src-tauri",
+      "resources",
+      "public",
+      "scripts",
+      "tests",
+      "package.json",
+      "docs/architecture",
+      "docs/plans"
+    ]
+  },
+  "invocation": [
+    "npm",
+    "run",
+    "acceptance:surface-execution-computer",
+    "--",
+    "--out",
+    "docs/acceptance/surface-execution/computer-current",
+    "--json"
+  ],
+  "helper": {
+    "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver",
+    "app": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app",
+    "version": "cua-driver 0.8.1",
+    "signature": {
+      "identifier": "com.agentneo.computeruse",
+      "teamIdentifier": "D7CVTJ72NV",
+      "authority": "Developer ID Application: jay lem (D7CVTJ72NV)",
+      "cdHash": "cb9011602c9cec7c8195c8b096c8f9cf51a6c3b4"
+    }
+  },
+  "assertions": {
+    "helperVersion081": true,
+    "helperCodesignValid": true,
+    "helperBundleIdentity": true,
+    "signedHelperMcpConnected": true,
+    "permissionProbePromptFalse": true,
+    "permissionProbeSucceeded": true,
+    "permissionSourceTrusted": true,
+    "accessibilityGranted": true,
+    "screenRecordingGranted": true,
+    "screenRecordingCapturable": true,
+    "controlledFixtureStarted": true,
+    "fixtureRootDiscovered": true,
+    "statefulObservation": true,
+    "observationHasOpaqueState": true,
+    "observationHasScreenshot": true,
+    "realAppObserved": true,
+    "foregroundObservationVerified": true,
+    "crossAgentStateBlocked": true,
+    "crossAgentBlockedBeforePermission": true,
+    "crossAgentBlockedBeforeProvider": true,
+    "inputLockAcquired": true,
+    "inputLockContended": true,
+    "realProviderMutation": true,
+    "deliveryConfirmed": true,
+    "verificationSatisfied": true,
+    "businessReadback": true,
+    "realAppMutationDelivered": true,
+    "realAppBusinessVerified": true,
+    "backgroundFallbackVerified": true,
+    "takeoverInterruptedActiveOperation": true,
+    "takeoverNoPostMutation": true,
+    "takeoverBlockedMutation": true,
+    "takeoverResume": true,
+    "takeoverInvalidatedState": true,
+    "stopInterruptedActiveOperation": true,
+    "stopLatencyBelowTwoSeconds": true,
+    "stopNoPostMutation": true,
+    "endSessionForwarded": true,
+    "activeOperationsReleased": true,
+    "cuaLockReleased": true,
+    "surfaceSessionCompleted": true,
+    "cleanupReleasedComputerLock": true,
+    "inputLockRecovered": true,
+    "redactionCanaryAbsentFromToolResult": true,
+    "redactionCanaryAbsentFromEvents": true,
+    "redactionCanaryAbsentFromSnapshot": true,
+    "redactionCanaryAbsentFromSavedEvidence": true,
+    "fixtureTerminated": true,
+    "foregroundSentinelsTerminated": true,
+    "mcpDisconnected": true
+  },
+  "evidence": {
+    "helperVersionCommand": {
+      "command": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver",
+      "args": [
+        "--version"
+      ],
+      "exitCode": 0,
+      "stdout": "cua-driver 0.8.1\n",
+      "stderr": ""
+    },
+    "codesignVerifyCommand": {
+      "command": "codesign",
+      "args": [
+        "--verify",
+        "--strict",
+        "--verbose=2",
+        "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app: valid on disk\n/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app: satisfies its Designated Requirement\n"
+    },
+    "codesignDetailsCommand": {
+      "command": "codesign",
+      "args": [
+        "-d",
+        "--verbose=4",
+        "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "Executable=/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver\nIdentifier=com.agentneo.computeruse\nFormat=app bundle with Mach-O universal (x86_64 arm64)\nCodeDirectory v=20500 size=25476 flags=0x10000(runtime) hashes=785+7 location=embedded\nVersionPlatform=1\nVersionMin=851968\nVersionSDK=1705216\nHash type=sha256 size=32\nCandidateCDHash sha256=cb9011602c9cec7c8195c8b096c8f9cf51a6c3b4\nCandidateCDHashFull sha256=cb9011602c9cec7c8195c8b096c8f9cf51a6c3b459641778aba0a5d1514a1bfd\nHash choices=sha256\nCMSDigest=cb9011602c9cec7c8195c8b096c8f9cf51a6c3b459641778aba0a5d1514a1bfd\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=9109504\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=cb9011602c9cec7c8195c8b096c8f9cf51a6c3b4\nSignature size=9033\nAuthority=Developer ID Application: jay lem (D7CVTJ72NV)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=Jul 21, 2026 at 03:43:09\nInfo.plist entries=14\nTeamIdentifier=D7CVTJ72NV\nRuntime Version=26.5.0\nSealed Resources version=2 rules=13 files=2\nInternal requirements count=1 size=184\n"
+    },
+    "providerGeneration": "cua-driver:1",
+    "fixture": {
+      "executableSha256": "b44c10f0ce195ea97118f55398ed8a1d29e14b761bc9fc0f67ca4d7910b91c95",
+      "pid": 9426,
+      "windowTitle": "Neo Surface Computer Acceptance"
+    },
+    "fixtureRoot": {
+      "provider": "cua-driver",
+      "pid": 9426,
+      "windowId": 49724,
+      "appName": "NeoSurfaceComputerFixture",
+      "title": "Neo Surface Computer Acceptance",
+      "bounds": {
+        "x": 474,
+        "y": 192,
+        "width": 430,
+        "height": 222
+      },
+      "isOnScreen": false
+    },
+    "foregroundActivation": {
+      "providerSucceeded": true,
+      "output": "Brought pid 9426 to the foreground."
+    },
+    "foregroundFrontmost": {
+      "expectedPid": 9426,
+      "expectedActive": true,
+      "activePid": 9426,
+      "activeName": "NeoSurfaceComputerFixture",
+      "commands": [
+        {
+          "command": "/usr/bin/lsappinfo",
+          "args": [
+            "front"
+          ],
+          "exitCode": 0,
+          "stdout": "ASN:0x0-0xb55a54f:\n",
+          "stderr": ""
+        },
+        {
+          "command": "/usr/bin/lsappinfo",
+          "args": [
+            "info",
+            "-only",
+            "pid,name",
+            "ASN:0x0-0xb55a54f:"
+          ],
+          "exitCode": 0,
+          "stdout": "\"pid\"=9426\n\"LSDisplayName\"=\"NeoSurfaceComputerFixture\"\n",
+          "stderr": ""
+        }
+      ]
+    },
+    "foregroundOrder": {
+      "target": {
+        "pid": 9426,
+        "windowId": 49724,
+        "zIndex": 215
+      },
+      "sentinel": {
+        "pid": 9380,
+        "windowId": 49719,
+        "zIndex": 182
+      },
+      "targetHigherZIndex": true
+    },
+    "initialScreenshot": {
+      "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/computer-current/before.png",
+      "sha256": "224720ba20e8096e332dac6ccda0bd8e425cb4412665b792bf2f7394175faf83",
+      "bytes": 50891
+    },
+    "realAppObservation": {
+      "pid": 9426,
+      "windowId": 49724,
+      "windowTitle": "Neo Surface Computer Acceptance",
+      "inputRef": "e2",
+      "screenshot": {
+        "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/computer-current/before.png",
+        "sha256": "224720ba20e8096e332dac6ccda0bd8e425cb4412665b792bf2f7394175faf83",
+        "bytes": 50891
+      },
+      "helperFrontmost": {
+        "expectedPid": 9426,
+        "expectedActive": true,
+        "activePid": 9426,
+        "activeName": "NeoSurfaceComputerFixture",
+        "commands": [
+          {
+            "command": "/usr/bin/lsappinfo",
+            "args": [
+              "front"
+            ],
+            "exitCode": 0,
+            "stdout": "ASN:0x0-0xb55a54f:\n",
+            "stderr": ""
+          },
+          {
+            "command": "/usr/bin/lsappinfo",
+            "args": [
+              "info",
+              "-only",
+              "pid,name",
+              "ASN:0x0-0xb55a54f:"
+            ],
+            "exitCode": 0,
+            "stdout": "\"pid\"=9426\n\"LSDisplayName\"=\"NeoSurfaceComputerFixture\"\n",
+            "stderr": ""
+          }
+        ]
+      },
+      "helperWindowOrder": {
+        "target": {
+          "pid": 9426,
+          "windowId": 49724,
+          "zIndex": 215
+        },
+        "sentinel": {
+          "pid": 9380,
+          "windowId": 49719,
+          "zIndex": 182
+        },
+        "targetHigherZIndex": true
+      }
+    },
+    "inputLock": {
+      "ownerScopeSha256": "4fb0800a157d976bd83efe1d209dee27270abcb86ae2d8c43134ebbfd64ffe56",
+      "contenderScopeSha256": "d73faa47209f17a73f7c4e5dd364755f4e1e01033e8327c509a23827a367658d",
+      "lockPresentDuringMutation": true,
+      "ownerPreservedAfterContention": true,
+      "contentionProviderSucceeded": false,
+      "lifecycle": [
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "acquire",
+          "status": "succeeded",
+          "outcome": "acquired",
+          "occurredAt": 1784605335316
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "acquire",
+          "status": "succeeded",
+          "outcome": "reentrant",
+          "occurredAt": 1784605335659
+        },
+        {
+          "scope": "surface-computer-input-lock-contender",
+          "phase": "acquire",
+          "status": "failed",
+          "outcome": "blocked",
+          "occurredAt": 1784605336695
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "released",
+          "occurredAt": 1784605337533
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "acquire",
+          "status": "succeeded",
+          "outcome": "acquired",
+          "occurredAt": 1784605338256
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "acquire",
+          "status": "succeeded",
+          "outcome": "reentrant",
+          "occurredAt": 1784605338489
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "released",
+          "occurredAt": 1784605339804
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "already_released",
+          "occurredAt": 1784605339962
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "already_released",
+          "occurredAt": 1784605339964
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "already_released",
+          "occurredAt": 1784605340100
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "already_released",
+          "occurredAt": 1784605340105
+        }
+      ]
+    },
+    "afterScreenshot": {
+      "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/computer-current/after.png",
+      "sha256": "3427da1bae63af1d883b86835ce3697a3977564f7a2be2368e625d509d9effab",
+      "bytes": 52252
+    },
+    "businessReadback": {
+      "expected": "value=surface-business-readback-v1",
+      "actual": "value=surface-business-readback-v1",
+      "sha256": "b6642dc9de27895d53ae53c16cedd6d236edbcab16d78efc87eb872b9d81c869"
+    },
+    "businessVerification": {
+      "screenshot": {
+        "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/computer-current/after.png",
+        "sha256": "3427da1bae63af1d883b86835ce3697a3977564f7a2be2368e625d509d9effab",
+        "bytes": 52252
+      },
+      "businessReadback": {
+        "expected": "value=surface-business-readback-v1",
+        "actual": "value=surface-business-readback-v1",
+        "sha256": "b6642dc9de27895d53ae53c16cedd6d236edbcab16d78efc87eb872b9d81c869"
+      },
+      "delivery": "confirmed",
+      "verification": "satisfied",
+      "overall": "succeeded",
+      "successorValueSha256": "2c7cf0b0a19eb2ed0667391cad356b6d6935437f394b1e504b0ba829ad34768a",
+      "helperCall": {
+        "toolName": "set_value",
+        "at": "2026-07-21T03:42:15.658Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "deliveryMode": "foreground",
+        "forwarded": true,
+        "providerSucceeded": true
+      }
+    },
+    "backgroundActivation": {
+      "providerSucceeded": true,
+      "output": "Brought pid 10081 to the foreground."
+    },
+    "foregroundBackground": {
+      "screenshot": {
+        "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/computer-current/background.png",
+        "sha256": "847eecd9c19e12011f55559282f4edde775cf36d87455d500635e99b32122c73",
+        "bytes": 50415
+      },
+      "businessReadback": {
+        "expected": "value=surface-background-business-readback-v1",
+        "actual": "value=surface-background-business-readback-v1",
+        "sha256": "b0a25b5c0742cbebcf4d715ca416388b44733eb82b8f481fd5e03d436b49869c"
+      },
+      "foreground": {
+        "frontmost": {
+          "expectedPid": 9426,
+          "expectedActive": true,
+          "activePid": 9426,
+          "activeName": "NeoSurfaceComputerFixture",
+          "commands": [
+            {
+              "command": "/usr/bin/lsappinfo",
+              "args": [
+                "front"
+              ],
+              "exitCode": 0,
+              "stdout": "ASN:0x0-0xb55a54f:\n",
+              "stderr": ""
+            },
+            {
+              "command": "/usr/bin/lsappinfo",
+              "args": [
+                "info",
+                "-only",
+                "pid,name",
+                "ASN:0x0-0xb55a54f:"
+              ],
+              "exitCode": 0,
+              "stdout": "\"pid\"=9426\n\"LSDisplayName\"=\"NeoSurfaceComputerFixture\"\n",
+              "stderr": ""
+            }
+          ]
+        },
+        "zOrderDiagnostic": {
+          "target": {
+            "pid": 9426,
+            "windowId": 49724,
+            "zIndex": 215
+          },
+          "sentinel": {
+            "pid": 9380,
+            "windowId": 49719,
+            "zIndex": 182
+          },
+          "targetHigherZIndex": true
+        }
+      },
+      "backgroundBefore": {
+        "frontmost": {
+          "expectedPid": 10081,
+          "expectedActive": true,
+          "activePid": 10081,
+          "activeName": "NeoSurfaceForegroundSentinel-2",
+          "commands": [
+            {
+              "command": "/usr/bin/lsappinfo",
+              "args": [
+                "front"
+              ],
+              "exitCode": 0,
+              "stdout": "ASN:0x0-0xb55e553:\n",
+              "stderr": ""
+            },
+            {
+              "command": "/usr/bin/lsappinfo",
+              "args": [
+                "info",
+                "-only",
+                "pid,name",
+                "ASN:0x0-0xb55e553:"
+              ],
+              "exitCode": 0,
+              "stdout": "\"pid\"=10081\n\"LSDisplayName\"=\"NeoSurfaceForegroundSentinel-2\"\n",
+              "stderr": ""
+            }
+          ]
+        },
+        "zOrderDiagnostic": {
+          "target": {
+            "pid": 9426,
+            "windowId": 49724,
+            "zIndex": 215
+          },
+          "sentinel": {
+            "pid": 10081,
+            "windowId": 49737,
+            "zIndex": 226
+          },
+          "targetHigherZIndex": false
+        }
+      },
+      "backgroundAfter": {
+        "frontmost": {
+          "expectedPid": 10081,
+          "expectedActive": true,
+          "activePid": 10081,
+          "activeName": "NeoSurfaceForegroundSentinel-2",
+          "commands": [
+            {
+              "command": "/usr/bin/lsappinfo",
+              "args": [
+                "front"
+              ],
+              "exitCode": 0,
+              "stdout": "ASN:0x0-0xb55e553:\n",
+              "stderr": ""
+            },
+            {
+              "command": "/usr/bin/lsappinfo",
+              "args": [
+                "info",
+                "-only",
+                "pid,name",
+                "ASN:0x0-0xb55e553:"
+              ],
+              "exitCode": 0,
+              "stdout": "\"pid\"=10081\n\"LSDisplayName\"=\"NeoSurfaceForegroundSentinel-2\"\n",
+              "stderr": ""
+            }
+          ]
+        },
+        "zOrderDiagnostic": {
+          "target": {
+            "pid": 9426,
+            "windowId": 49724,
+            "zIndex": 215
+          },
+          "sentinel": {
+            "pid": 10081,
+            "windowId": 49737,
+            "zIndex": 226
+          },
+          "targetHigherZIndex": false
+        }
+      },
+      "helperCall": {
+        "toolName": "set_value",
+        "at": "2026-07-21T03:42:18.488Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "deliveryMode": "background",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      "successorValueSha256": "b90da29f469bfd4ed6ce93c69a54b5be1944589858db66a0f5bb3a30e0e79e0e"
+    },
+    "stopLatencyMs": 5,
+    "computerCleanup": {
+      "lockRemoved": true,
+      "releasedInputLock": true,
+      "activeOperationCount": 0,
+      "endSessionCall": {
+        "toolName": "end_session",
+        "at": "2026-07-21T03:42:20.100Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      "finalSessionState": "completed",
+      "lifecycle": [
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "acquire",
+          "status": "succeeded",
+          "outcome": "acquired",
+          "occurredAt": 1784605335316
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "acquire",
+          "status": "succeeded",
+          "outcome": "reentrant",
+          "occurredAt": 1784605335659
+        },
+        {
+          "scope": "surface-computer-input-lock-contender",
+          "phase": "acquire",
+          "status": "failed",
+          "outcome": "blocked",
+          "occurredAt": 1784605336695
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "released",
+          "occurredAt": 1784605337533
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "acquire",
+          "status": "succeeded",
+          "outcome": "acquired",
+          "occurredAt": 1784605338256
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "acquire",
+          "status": "succeeded",
+          "outcome": "reentrant",
+          "occurredAt": 1784605338489
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "released",
+          "occurredAt": 1784605339804
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "already_released",
+          "occurredAt": 1784605339962
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "already_released",
+          "occurredAt": 1784605339964
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "already_released",
+          "occurredAt": 1784605340100
+        },
+        {
+          "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "phase": "release",
+          "status": "succeeded",
+          "outcome": "already_released",
+          "occurredAt": 1784605340105
+        }
+      ]
+    },
+    "canary": {
+      "injected": true,
+      "sha256": "c7a4d8a98e08c63a49c6c36b5d5aaa4addbc21e19a16d5b9027103d1b5f2a67d",
+      "rawPersisted": false,
+      "scanned": [
+        "tool-result",
+        "surface-events",
+        "conversation-snapshot",
+        "permission-projection",
+        "driver-call-evidence",
+        "proof"
+      ]
+    },
+    "permissionRequestCount": 7,
+    "driverCalls": [
+      {
+        "toolName": "check_permissions",
+        "at": "2026-07-21T03:42:11.026Z",
+        "surfaceSessionId": "surface-computer-permission-probe",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:14.830Z",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:14.851Z",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "start_session",
+        "at": "2026-07-21T03:42:14.862Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:14.864Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:42:14.900Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "bring_to_front",
+        "at": "2026-07-21T03:42:15.315Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:15.356Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:42:15.373Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:15.653Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "set_value",
+        "at": "2026-07-21T03:42:15.658Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "deliveryMode": "foreground",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "set_value",
+        "at": "2026-07-21T03:42:16.694Z",
+        "surfaceSessionId": "surface-computer-input-lock-contender",
+        "forwarded": true,
+        "providerSucceeded": false
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:42:16.696Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:18.242Z",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "bring_to_front",
+        "at": "2026-07-21T03:42:18.256Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:18.276Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:42:18.289Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:18.470Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "set_value",
+        "at": "2026-07-21T03:42:18.488Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "deliveryMode": "background",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:42:19.617Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:19.803Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:42:19.833Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:19.954Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "set_value",
+        "at": "2026-07-21T03:42:19.959Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": false,
+        "interruptedBeforeForward": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:42:19.961Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": false
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:42:19.964Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:42:20.093Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      },
+      {
+        "toolName": "set_value",
+        "at": "2026-07-21T03:42:20.098Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": false,
+        "interruptedBeforeForward": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:42:20.099Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": false
+      },
+      {
+        "toolName": "end_session",
+        "at": "2026-07-21T03:42:20.100Z",
+        "surfaceSessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "forwarded": true,
+        "providerSucceeded": true
+      }
+    ],
+    "surfaceEventCount": 28,
+    "finalSession": {
+      "version": 1,
+      "session": {
+        "version": 1,
+        "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "runId": "surface-computer-run",
+        "turnId": "turn-computer-agent-alpha",
+        "conversationId": "surface-computer-acceptance",
+        "agentId": "computer-agent-alpha",
+        "surface": "computer",
+        "provider": "cua-driver",
+        "capabilities": {
+          "version": 1,
+          "surface": "computer",
+          "provider": "cua-driver",
+          "protocolVersion": "surface-execution-v1+cua-state-v1",
+          "operations": [
+            "act",
+            "list_roots",
+            "observe"
+          ],
+          "observationKinds": [
+            "ax",
+            "screenshot",
+            "window"
+          ],
+          "supports": {
+            "cancel": true,
+            "pause": true,
+            "takeover": true,
+            "cleanup": true,
+            "successorObservation": true
+          }
+        },
+        "state": "completed",
+        "startedAt": 1784605334861,
+        "heartbeatAt": 1784605340105,
+        "activeTarget": {
+          "kind": "computer",
+          "deviceId": "local",
+          "appName": "NeoSurfaceComputerFixture",
+          "pid": 9426,
+          "windowRef": "cua-window:78878d655aece19e36fe3608",
+          "windowRevision": "253631877e205713ab58acbd7227f217",
+          "title": "Neo Surface Computer Acceptance"
+        }
+      },
+      "grant": {
+        "state": "revoked",
+        "capabilities": [
+          "input"
+        ],
+        "actionClasses": [
+          "desktop_surface:act"
+        ],
+        "dataScopes": [
+          "window:cua-window:78878d655aece19e36fe3608"
+        ],
+        "expiresAt": 1784605400103
+      },
+      "events": [
+        {
+          "phase": "observe",
+          "status": "succeeded",
+          "userSummary": "Observed NeoSurfaceComputerFixture window",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "d4ad9174bfd57f60a0ef51928be72c90",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "observation": {
+            "verdict": "inconclusive",
+            "findings": []
+          },
+          "evidenceRefs": [
+            "shot_997116748dc9f23758d01894"
+          ],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605335312,
+          "version": 1,
+          "eventId": "surface_event_1617dde5-d9d4-47e2-acf8-f01f170cacb1",
+          "sequence": 1,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605335311,
+          "startedAt": 1784605335312
+        },
+        {
+          "phase": "observe",
+          "status": "succeeded",
+          "userSummary": "Observed NeoSurfaceComputerFixture window",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "76a84b11a742f2a7118e8e46e73ecfa0",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "observation": {
+            "verdict": "inconclusive",
+            "findings": []
+          },
+          "evidenceRefs": [
+            "shot_cb6457e8caa0eed4c1322978"
+          ],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605335647,
+          "version": 1,
+          "eventId": "surface_event_257e9ea2-f4ee-47de-8f64-5753237f7336",
+          "sequence": 2,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605335647,
+          "startedAt": 1784605335647
+        },
+        {
+          "phase": "act",
+          "status": "running",
+          "userSummary": "act running",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "76a84b11a742f2a7118e8e46e73ecfa0",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "operation": {
+            "action": "act",
+            "risk": "desktop_input",
+            "approvalScope": "tool_executor_desktop_surface",
+            "expectedOutcome": "text_present"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "version": 1,
+          "eventId": "surface_event_e4407665-8019-4901-8776-12478da4b7a1",
+          "sequence": 3,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605335651,
+          "startedAt": 1784605335653
+        },
+        {
+          "phase": "prepare",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership refreshed",
+          "operation": {
+            "action": "computer_input_lock_acquire",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605335659,
+          "completedAt": 1784605335659,
+          "version": 1,
+          "eventId": "surface_event_54b4190b-1d63-4075-b43e-dbc964adfd57",
+          "sequence": 4,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605335651
+        },
+        {
+          "phase": "observe",
+          "status": "succeeded",
+          "userSummary": "Observed the Computer target after input",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "79361ec3d1be3171ec7533486cacd72a",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "observation": {
+            "verdict": "inconclusive",
+            "findings": []
+          },
+          "evidenceRefs": [
+            "cua-evidence:e99158e2-3de1-40d7-bfe5-6eb5419b4774",
+            "shot_639303a705b29913e21ceab1"
+          ],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605336919,
+          "version": 1,
+          "eventId": "surface_event_ad747871-f67f-4036-8fa8-a7952567ba32",
+          "sequence": 5,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605336918,
+          "startedAt": 1784605336919
+        },
+        {
+          "phase": "verify",
+          "status": "succeeded",
+          "userSummary": "act succeeded",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "79361ec3d1be3171ec7533486cacd72a",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "operation": {
+            "action": "act",
+            "risk": "desktop_input",
+            "approvalScope": "tool_executor_desktop_surface"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [
+            "cua-evidence:e99158e2-3de1-40d7-bfe5-6eb5419b4774"
+          ],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605336919,
+          "version": 1,
+          "eventId": "surface_event_093a9437-4b6b-44c1-8925-2356d985cec0",
+          "sequence": 6,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605336918,
+          "startedAt": 1784605336919
+        },
+        {
+          "phase": "cleanup",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership released",
+          "operation": {
+            "action": "computer_input_lock_release",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605337533,
+          "completedAt": 1784605337533,
+          "version": 1,
+          "eventId": "surface_event_683f692d-1bce-4649-b87a-542bdcdfc4c6",
+          "sequence": 7,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605336918
+        },
+        {
+          "phase": "observe",
+          "status": "succeeded",
+          "userSummary": "Observed NeoSurfaceComputerFixture window",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "a318145e7216631c89f05a039c21c28c",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "observation": {
+            "verdict": "inconclusive",
+            "findings": []
+          },
+          "evidenceRefs": [
+            "shot_41b0872599517986b23297ac"
+          ],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605338467,
+          "version": 1,
+          "eventId": "surface_event_79b91843-a172-4e4a-ae12-3ec8def63ad8",
+          "sequence": 8,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605338467,
+          "startedAt": 1784605338467
+        },
+        {
+          "phase": "act",
+          "status": "running",
+          "userSummary": "act running",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "a318145e7216631c89f05a039c21c28c",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "operation": {
+            "action": "act",
+            "risk": "desktop_input",
+            "approvalScope": "tool_executor_desktop_surface",
+            "expectedOutcome": "text_present"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "version": 1,
+          "eventId": "surface_event_f8c01a51-0a20-4c62-aa1f-f2d7daf769f2",
+          "sequence": 9,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605338469,
+          "startedAt": 1784605338470
+        },
+        {
+          "phase": "prepare",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership refreshed",
+          "operation": {
+            "action": "computer_input_lock_acquire",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605338489,
+          "completedAt": 1784605338489,
+          "version": 1,
+          "eventId": "surface_event_fb18f35a-f93f-49e5-99a0-fb43217e1f5b",
+          "sequence": 10,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605338469
+        },
+        {
+          "phase": "observe",
+          "status": "succeeded",
+          "userSummary": "Observed the Computer target after input",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "5cb8a31efc8df3231c2e8af034057cb4",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "observation": {
+            "verdict": "inconclusive",
+            "findings": []
+          },
+          "evidenceRefs": [
+            "cua-evidence:b39c969b-8a3b-4f17-808c-787ae27ce3fa",
+            "shot_c19955922c620bd796846f10"
+          ],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605339801,
+          "version": 1,
+          "eventId": "surface_event_fb0ad1fa-5973-41de-831f-359fd438e273",
+          "sequence": 11,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605339801,
+          "startedAt": 1784605339801
+        },
+        {
+          "phase": "verify",
+          "status": "succeeded",
+          "userSummary": "act succeeded",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "5cb8a31efc8df3231c2e8af034057cb4",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "operation": {
+            "action": "act",
+            "risk": "desktop_input",
+            "approvalScope": "tool_executor_desktop_surface"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [
+            "cua-evidence:b39c969b-8a3b-4f17-808c-787ae27ce3fa"
+          ],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605339802,
+          "version": 1,
+          "eventId": "surface_event_068fe367-527e-42ff-974e-5769adbd2ed6",
+          "sequence": 12,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605339801,
+          "startedAt": 1784605339802
+        },
+        {
+          "phase": "cleanup",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership released",
+          "operation": {
+            "action": "computer_input_lock_release",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605339804,
+          "completedAt": 1784605339804,
+          "version": 1,
+          "eventId": "surface_event_ff0fbafc-77e7-43c2-99ac-f31c58003d0b",
+          "sequence": 13,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605339801
+        },
+        {
+          "phase": "observe",
+          "status": "succeeded",
+          "userSummary": "Observed NeoSurfaceComputerFixture window",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "8f516b6706a3604d7983254458be3bd4",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "observation": {
+            "verdict": "inconclusive",
+            "findings": []
+          },
+          "evidenceRefs": [
+            "shot_c19955922c620bd796846f10"
+          ],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605339952,
+          "version": 1,
+          "eventId": "surface_event_5840b3d9-043f-457c-b04b-fea5b4e5374d",
+          "sequence": 14,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605339952,
+          "startedAt": 1784605339952
+        },
+        {
+          "phase": "act",
+          "status": "running",
+          "userSummary": "act running",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "8f516b6706a3604d7983254458be3bd4",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "operation": {
+            "action": "act",
+            "risk": "desktop_input",
+            "approvalScope": "tool_executor_desktop_surface",
+            "expectedOutcome": "element e2 value equals expected value"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "version": 1,
+          "eventId": "surface_event_eca7661b-c96d-4b92-ae42-835389231e76",
+          "sequence": 15,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605339954,
+          "startedAt": 1784605339954
+        },
+        {
+          "phase": "cleanup",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership was already released",
+          "operation": {
+            "action": "computer_input_lock_release",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605339962,
+          "completedAt": 1784605339962,
+          "version": 1,
+          "eventId": "surface_event_bacf1afa-b86e-4146-8eec-803a6a2ade3b",
+          "sequence": 16,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605339954
+        },
+        {
+          "phase": "human",
+          "status": "waiting",
+          "userSummary": "Stateful Computer acceptance takeover",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "8f516b6706a3604d7983254458be3bd4",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "resume",
+            "stop",
+            "end_session"
+          ],
+          "version": 1,
+          "eventId": "surface_event_f1dc90ec-880f-446a-b8dd-46e4b421e8d4",
+          "sequence": 17,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "waiting_human",
+          "heartbeatAt": 1784605339962,
+          "startedAt": 1784605339962
+        },
+        {
+          "phase": "human",
+          "status": "waiting",
+          "userSummary": "Surface control takeover waiting",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "8f516b6706a3604d7983254458be3bd4",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "operation": {
+            "action": "takeover",
+            "risk": "control"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "resume",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605339962,
+          "version": 1,
+          "eventId": "surface_event_7836e8e2-8176-4f87-8a93-e4adec00d0ce",
+          "sequence": 18,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "waiting_human",
+          "heartbeatAt": 1784605339962,
+          "startedAt": 1784605339962
+        },
+        {
+          "phase": "human",
+          "status": "succeeded",
+          "userSummary": "Human takeover continue",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "8f516b6706a3604d7983254458be3bd4",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605339963,
+          "version": 1,
+          "eventId": "surface_event_4d85b77a-d33b-4453-be03-490dbb5afeb7",
+          "sequence": 19,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605339963,
+          "startedAt": 1784605339963
+        },
+        {
+          "phase": "human",
+          "status": "succeeded",
+          "userSummary": "Surface control resume succeeded",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "8f516b6706a3604d7983254458be3bd4",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "operation": {
+            "action": "resume",
+            "risk": "control"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605339963,
+          "version": 1,
+          "eventId": "surface_event_d9bdbae9-24be-4416-af81-929727081e66",
+          "sequence": 20,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605339963,
+          "startedAt": 1784605339963
+        },
+        {
+          "phase": "cleanup",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership was already released",
+          "operation": {
+            "action": "computer_input_lock_release",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605339964,
+          "completedAt": 1784605339964,
+          "version": 1,
+          "eventId": "surface_event_cbef7c0c-c3af-4dae-a920-27cd42fc4e1c",
+          "sequence": 21,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605339964
+        },
+        {
+          "phase": "observe",
+          "status": "succeeded",
+          "userSummary": "Observed NeoSurfaceComputerFixture window",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "253631877e205713ab58acbd7227f217",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "observation": {
+            "verdict": "inconclusive",
+            "findings": []
+          },
+          "evidenceRefs": [
+            "shot_c19955922c620bd796846f10"
+          ],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "completedAt": 1784605340090,
+          "version": 1,
+          "eventId": "surface_event_74da53c7-46b0-49d1-a577-b982711c7b29",
+          "sequence": 22,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605340090,
+          "startedAt": 1784605340090
+        },
+        {
+          "phase": "act",
+          "status": "running",
+          "userSummary": "act running",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "253631877e205713ab58acbd7227f217",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "operation": {
+            "action": "act",
+            "risk": "desktop_input",
+            "approvalScope": "tool_executor_desktop_surface",
+            "expectedOutcome": "element e2 value equals expected value"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "version": 1,
+          "eventId": "surface_event_4495ade9-2d52-4e31-890f-24e6d7d18201",
+          "sequence": 23,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605340092,
+          "startedAt": 1784605340093
+        },
+        {
+          "phase": "cleanup",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership was already released",
+          "operation": {
+            "action": "computer_input_lock_release",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605340100,
+          "completedAt": 1784605340100,
+          "version": 1,
+          "eventId": "surface_event_0a19a6aa-571d-455e-9666-be4b3947ee8c",
+          "sequence": 24,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "stopping",
+          "heartbeatAt": 1784605340099
+        },
+        {
+          "phase": "cleanup",
+          "status": "cancelled",
+          "userSummary": "Surface control stop cancelled",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "253631877e205713ab58acbd7227f217",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "operation": {
+            "action": "stop",
+            "risk": "control"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "end_session"
+          ],
+          "completedAt": 1784605340102,
+          "version": 1,
+          "eventId": "surface_event_126a2f92-e7a7-45e0-a2eb-e65b1578c013",
+          "sequence": 25,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "stopping",
+          "heartbeatAt": 1784605340099,
+          "startedAt": 1784605340102
+        },
+        {
+          "phase": "cleanup",
+          "status": "running",
+          "userSummary": "Ending Surface session and releasing control",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "253631877e205713ab58acbd7227f217",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "stop"
+          ],
+          "version": 1,
+          "eventId": "surface_event_7ae2bb9d-c72c-4b96-8300-6af75f30066a",
+          "sequence": 26,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "stopping",
+          "heartbeatAt": 1784605340103,
+          "startedAt": 1784605340105
+        },
+        {
+          "phase": "cleanup",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership was already released",
+          "operation": {
+            "action": "computer_input_lock_release",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [],
+          "startedAt": 1784605340105,
+          "completedAt": 1784605340105,
+          "version": 1,
+          "eventId": "surface_event_87729170-5790-4a71-89ca-27fbb5b9d9df",
+          "sequence": 27,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "completed",
+          "heartbeatAt": 1784605340105
+        },
+        {
+          "phase": "cleanup",
+          "status": "succeeded",
+          "userSummary": "Surface session ended and control was released",
+          "target": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoSurfaceComputerFixture",
+            "pid": 9426,
+            "windowRef": "cua-window:78878d655aece19e36fe3608",
+            "windowRevision": "253631877e205713ab58acbd7227f217",
+            "title": "Neo Surface Computer Acceptance"
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [],
+          "completedAt": 1784605340106,
+          "version": 1,
+          "eventId": "surface_event_cb4c291d-d73f-4ccb-988f-2b70194d015a",
+          "sequence": 28,
+          "sessionId": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+          "conversationId": "surface-computer-acceptance",
+          "runId": "surface-computer-run",
+          "turnId": "turn-computer-agent-alpha",
+          "agentId": "computer-agent-alpha",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "completed",
+          "heartbeatAt": 1784605340105,
+          "startedAt": 1784605340106
+        }
+      ],
+      "evidence": [],
+      "outputs": [],
+      "availableControls": [],
+      "source": "live",
+      "writable": false,
+      "updatedAt": 1784605340106
+    },
+    "fixtureStderr": "2026-07-21 11:42:18.178 NeoSurfaceComputerFixture[9426:82119769] error messaging the mach port for IMKCFRunLoopWakeUpReliable\n",
+    "foregroundSentinelStderr": [
+      "2026-07-21 11:42:15.039 NeoSurfaceForegroundSentinel-1[9380:82119637] error messaging the mach port for IMKCFRunLoopWakeUpReliable\n"
+    ],
+    "inputLockLifecycle": [
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "acquire",
+        "status": "succeeded",
+        "outcome": "acquired",
+        "occurredAt": 1784605335316
+      },
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "acquire",
+        "status": "succeeded",
+        "outcome": "reentrant",
+        "occurredAt": 1784605335659
+      },
+      {
+        "scope": "surface-computer-input-lock-contender",
+        "phase": "acquire",
+        "status": "failed",
+        "outcome": "blocked",
+        "occurredAt": 1784605336695
+      },
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "release",
+        "status": "succeeded",
+        "outcome": "released",
+        "occurredAt": 1784605337533
+      },
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "acquire",
+        "status": "succeeded",
+        "outcome": "acquired",
+        "occurredAt": 1784605338256
+      },
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "acquire",
+        "status": "succeeded",
+        "outcome": "reentrant",
+        "occurredAt": 1784605338489
+      },
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "release",
+        "status": "succeeded",
+        "outcome": "released",
+        "occurredAt": 1784605339804
+      },
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "release",
+        "status": "succeeded",
+        "outcome": "already_released",
+        "occurredAt": 1784605339962
+      },
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "release",
+        "status": "succeeded",
+        "outcome": "already_released",
+        "occurredAt": 1784605339964
+      },
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "release",
+        "status": "succeeded",
+        "outcome": "already_released",
+        "occurredAt": 1784605340100
+      },
+      {
+        "scope": "surface_0d3dae7d-7e4e-42b3-8bf6-3ba2d5d74cc1",
+        "phase": "release",
+        "status": "succeeded",
+        "outcome": "already_released",
+        "occurredAt": 1784605340105
+      }
+    ]
+  },
+  "permissions": {
+    "prompt": false,
+    "callSucceeded": true,
+    "structured": {
+      "accessibility": true,
+      "screen_recording": true,
+      "screen_recording_capturable": true,
+      "source": {
+        "attribution": "caller",
+        "disclaim_env": true,
+        "executable": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver",
+        "note": "These booleans reflect the TCC identity of the app that launched this process (e.g. your terminal/IDE), NOT the CuaDriver daemon (com.trycua.driver). A standalone check can read `true` here while `tccutil … com.trycua.driver` reports no record. To grant for the driver, run `cua-driver permissions grant`.",
+        "pid": 60269,
+        "responsible_ppid": 60265
+      }
+    },
+    "decision": {
+      "ready": true,
+      "accessibility": true,
+      "screenRecording": true,
+      "screenRecordingCapturable": true,
+      "source": "caller",
+      "sourceExecutable": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver",
+      "sourceTrusted": true,
+      "inputMonitoring": "not_reported_not_required_for_ax_set_value",
+      "missing": []
+    }
+  },
+  "exitCode": 0
+}

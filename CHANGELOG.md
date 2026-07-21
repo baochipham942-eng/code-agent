@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-07-21
+
+### Added
+
+- **Neo Surface Execution V1**：Browser 与 Computer 进入统一执行控制面，Session、Run、Surface、Agent 与 target identity 全程绑定，支持暂停、继续、人工接管、停止、结束和确定性 cleanup。
+- **Browser Adapter V2**：Managed 默认使用隔离 profile；Relay 仅在用户明确授予 tab、domain、action 与 time scope 后复用现有登录态，并在终态归还 tab。新增 frame/element ref fence、上传审批、截图与 DOM/console/network 证据投影。
+- **Computer Adapter V2**：原生桌面执行接入相同生命周期与结果语义，同时保留显示器、坐标、系统权限、输入和 helper cleanup 边界。
+- **Conversation Execution UX**：会话中直接展示执行状态、语义时间线、权限与人工介入、截图证据、判断结果和产物；支持三并发 Surface Session、跨 Surface 切换及 WorkBuddy 同型任务链。
+
+### Changed
+
+- **证据与恢复进入会话合同**：截图明确区分 captured、analyzed 与 verified；proof、replay、诊断包和 Session export 使用同一脱敏投影，重启后可恢复安全的 continuation 与失败复验上下文。
+- **旧入口保持兼容**：保留现有 tool 名、旧消息、replay 与 Session export 读取路径；Browser 与 Computer 通过兼容适配层接入统一控制面。
+
+### Fixed
+
+- **app-host 停止门保持 fail-closed**：隔离验收会显式阻止项目级配置加载，避免 fresh-profile 的目录信任弹窗遮挡停止控件，同时拒绝测试误授予目录信任。
+
+### Security
+
+- **跨 Agent 与越权访问阻断**：grant、lease、observation、output、frame/ref 与 RunRegistry 均校验 owner 和代际；过期引用、跨 Agent 访问、授权外动作和停止后的迟到 mutation 一律拒绝。
+- **登录态、输入与证据脱敏**：Managed cookie/profile 不跨 Session 复用；Relay 权限按最小 scope 到期；输入值、cookie、token、剪贴板及截图上下文在 UI、telemetry、proof、export 与诊断包中统一脱敏。
+
 ## [0.27.3] - 2026-07-16
 
 ### Fixed

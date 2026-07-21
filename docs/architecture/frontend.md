@@ -451,12 +451,12 @@ useToolExecutionEffects();      // tool start/delta/end/progress
 - **渲染**：`MessageBubble/MessageContent.tsx` 的 `IACTNavCard` 解析 `neo://` head/arg，调 `useSessionStore` / `useAppStore` 执行导航，渲染为带图标的内联按钮；未识别链接退化为纯文本，不渲染破卡片。
 - **净化白名单**：react-markdown v10 默认 `urlTransform` 会把 `neo://` 剥空，故加 `neoUrlTransform` 显式放行 `neo://`，其余仍走 `defaultUrlTransform`。
 
-### Computer-use PiP 窗口（WS3 — 实时可视化）
+### Surface Execution PiP 窗口（WS3 — 实时可视化与控制）
 
-agent 跑 computer-use（控屏）时，弹一个画中画窗口实时展示截图帧流，让用户看见 agent 在操作什么。
+Browser 或 Computer Surface 运行时，画中画窗口展示当前会话的安全截图帧、实际状态和 owner-scoped 控制。
 
-- **Rust 侧**（`src-tauri/src/pip.rs`）：三命令 `pip_show` / `pip_frame(dataUrl)` / `pip_hide`。窗口 320×220、右上角悬浮、透明无边框、`ignore_cursor_events`（穿透不拦交互）；macOS 设 NSWindow level 1000 + 所有 Space 可见，复用 appshots overlay 窗口范式。
-- **Renderer 接线**（`hooks/useComputerUsePip.ts`，在 `App.tsx` 顶层与 `useAppshots` 并列挂载）：监听 `agent:event` 里带 `computerSurfaceSnapshot.screenshotPath` 的 `tool_call_end`（不依赖工具名）→ 首帧 `pip_show`、逐帧 `appshots_read_image_data_url` 转 dataURL 再 `pip_frame`；`agent_complete/cancelled/stream_end/error` 时 `pip_hide`。读图失败/非 Tauri 静默 no-op。
+- **Rust 侧**（`src-tauri/src/pip.rs`）：`pip_show` / `pip_frame` / `pip_controls` / `pip_control` / `pip_hide` 维护 320×220 的可交互悬浮窗。`pip_control` 只接受 PiP webview，并把完整 conversation/run/agent/session scope 发回主 renderer 复核；macOS 仍使用所有 Space 可见的高层窗口。
+- **Renderer 接线**（`hooks/useSurfaceExecutionPip.ts`，由兼容入口 `useComputerUsePip.ts` 挂载）：从 Surface store 选择当前 conversation 最新活动 Session，只显示 redaction clean 的 Browser/Computer screenshot；异步读帧用 generation fence 防止跨 Session 串帧。Pause/Resume、Take over、Stop 先按当前 scope、可写性和 `availableControls` 校验，再进入统一 Surface control IPC；终态或不可读帧关闭 PiP。
 
 ---
 

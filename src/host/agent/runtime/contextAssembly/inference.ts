@@ -16,6 +16,8 @@ import {
 } from '../../../tools/dispatch/toolDefinitions';
 import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchToolScope';
 import { filterToolDefinitionsByStrictSkillBoundary } from '../../../tools/skillBoundaryScope';
+import { trackNode } from '../../../observability/posthogNode';
+import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
 import { filterToolsByRunPolicy } from '../toolRunPolicy';
 import {
   stripImagesFromMessages,
@@ -416,6 +418,15 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     logger.info(
       `[AgentLoop] Strict skill toolset: tool list narrowed ${beforeStrict} -> ${tools.length} (skill=${ctx.runtime.turn.skillToolBoundary?.skillName})`,
     );
+    // 收窄可观测性：只报工具数量与 skill 名，不含用户内容（2026-07-21 立项——
+    // 截图求助时远程无从判断"工具为什么少了"，本地日志用户拿不到）
+    trackNode(POSTHOG_EVENTS.TOOL_SCOPE_NARROWED, {
+      sessionId: ctx.runtime.sessionId,
+      narrowedBy: 'strict_skill',
+      skill: ctx.runtime.turn.skillToolBoundary?.skillName,
+      before: beforeStrict,
+      after: tools.length,
+    });
   }
   tools = filterToolsByRunPolicy(tools, ctx.runtime);
   if (isArtifactRepairMode(ctx)) {
@@ -425,6 +436,15 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     logger.info(
       `[AgentLoop] Artifact repair mode: tool list narrowed ${before} -> ${tools.length} (phase=${phase})`,
     );
+    if (tools.length !== before) {
+      trackNode(POSTHOG_EVENTS.TOOL_SCOPE_NARROWED, {
+        sessionId: ctx.runtime.sessionId,
+        narrowedBy: 'artifact_repair',
+        phase,
+        before,
+        after: tools.length,
+      });
+    }
   }
   tools = dedupeToolDefinitions(tools);
   // 前缀稳定（P1 request shape）：工具表按 name 字节序稳定排序，消除 registry 插入

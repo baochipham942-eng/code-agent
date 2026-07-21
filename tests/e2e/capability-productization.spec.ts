@@ -35,16 +35,16 @@ test('P2-1 角色列表按产物分类分组 + 卡片渲染图标', async ({ pag
   await dialog.getByRole('button', { name: '角色', exact: true }).click();
 
   // 预设角色卡片仍渲染（回归）
-  await expect(dialog.getByText('研究员', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  await expect(dialog.getByText('溯真', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
   await expect(dialog.getByText('数据分析师', { exact: true }).first()).toBeVisible();
 
-  // 分类分组容器：数据分析师 → data-analysis，研究员 → research
+  // 分类分组容器：数据分析师 → data-analysis，溯真 → research
   const dataGroup = dialog.locator('[data-role-category="data-analysis"]');
   const researchGroup = dialog.locator('[data-role-category="research"]');
   await expect(dataGroup).toBeVisible();
   await expect(researchGroup).toBeVisible();
   await expect(dataGroup.getByText('数据分析师', { exact: true })).toBeVisible();
-  await expect(researchGroup.getByText('研究员', { exact: true })).toBeVisible();
+  await expect(researchGroup.getByText('溯真', { exact: true })).toBeVisible();
 
   // 卡片图标：data-analysis 组内角色卡片含 lucide svg（非兜底 UserCircle 纯文字）
   await expect(dataGroup.locator('svg').first()).toBeVisible();

@@ -4,7 +4,7 @@
 //
 // 验证：
 //   1. 设置页「角色」tab 存在且可进入
-//   2. 预设角色卡片（研究员 / 数据分析师）渲染，含记忆条数
+//   2. 预设角色卡片（溯真 / 数据分析师）渲染，含记忆条数
 //   3. 点击角色卡片进入详情：角色记忆 / 工作履历 / 角色定义 三个区块渲染
 //   4. 返回列表正常
 //
@@ -41,7 +41,7 @@ test('角色面板渲染预设角色卡片', async ({ page }) => {
   await expect(dialog.getByText('持久化角色 = 角色定义 + 角色记忆 + 工作履历', { exact: false })).toBeVisible({ timeout: 10_000 });
 
   // 预设角色卡片（installBuiltinRoles 在 webServer 启动时安装，必然存在）
-  await expect(dialog.getByText('研究员', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  await expect(dialog.getByText('溯真', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
   await expect(dialog.getByText('数据分析师', { exact: true }).first()).toBeVisible();
 
   // 卡片上的记忆条数指标
@@ -53,8 +53,8 @@ test('角色面板渲染预设角色卡片', async ({ page }) => {
 test('角色详情：主动性 / 记忆 / 履历 / 定义 四区块渲染', async ({ page }) => {
   const dialog = await openRolesSettings(page);
 
-  // 点击研究员卡片进入详情
-  await dialog.getByText('研究员', { exact: true }).first().click();
+  // 点击溯真卡片进入详情
+  await dialog.getByText('溯真', { exact: true }).first().click();
 
   // 四个区块（记忆可能为空 → 空态文案也算渲染成功）
   await expect(dialog.getByText('主动性', { exact: true })).toBeVisible({ timeout: 10_000 });
@@ -75,7 +75,7 @@ test('角色详情：主动性 / 记忆 / 履历 / 定义 四区块渲染', asyn
 
 test('主动性开关：设置页开启每日简报 → 立即生效并持久化', async ({ page }) => {
   const dialog = await openRolesSettings(page);
-  await dialog.getByText('研究员', { exact: true }).first().click();
+  await dialog.getByText('溯真', { exact: true }).first().click();
   await expect(dialog.getByText('主动性', { exact: true })).toBeVisible({ timeout: 10_000 });
 
   // 点击"每日简报"档
@@ -86,7 +86,7 @@ test('主动性开关：设置页开启每日简报 → 立即生效并持久化
 
   // 退出再进入详情 → 配置已持久化（settings 写入 + detail 反映）
   await dialog.getByText('返回角色列表').click();
-  await dialog.getByText('研究员', { exact: true }).first().click();
+  await dialog.getByText('溯真', { exact: true }).first().click();
   await expect(dialog.getByText('主动性', { exact: true })).toBeVisible({ timeout: 10_000 });
   // 每日简报处于选中态（emerald 高亮的选项里包含"每日简报"）
   const selectedOption = dialog.locator('button.border-emerald-600\\/70');

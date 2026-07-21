@@ -6,7 +6,7 @@ import { getToolDefinitionWithCloudMeta } from '../tools/dispatch/toolDefinition
 import type { Message } from '../../shared/contract';
 import type { ObjectiveMetrics } from '../../shared/contract/sessionAnalytics';
 import { getReplayCompletenessReasons } from '../../shared/contract/evaluation';
-import { buildMemoryAuditBlock, buildTranscriptReplay, createEmptyToolDistribution, normalizeToolCategory } from './transcriptReplayBuilder';
+import { attachStoredSurfaceExecutionReplayBlocks, buildMemoryAuditBlock, buildTranscriptReplay, createEmptyToolDistribution, normalizeToolCategory } from './transcriptReplayBuilder';
 import { attachSessionQualityScoring } from './sessionQualityScoring';
 import { attachTelemetryReplayEvidence, buildAgentPointerReplayProjection } from './telemetryReplayEvidence';
 import { estimateTokens } from '../context/tokenEstimator';
@@ -19,6 +19,7 @@ import type {
   StructuredReplay,
   TelemetryCompleteness,
 } from '../../shared/contract/evaluation';
+import { projectSurfaceExecutionResultMetadataForExport } from '../../shared/utils/surfaceExecutionExportProjection';
 import type { SessionSnapshot, TurnSnapshot, QualitySignals as EvaluationQualitySignals } from './types';
 
 const logger = createLogger('TelemetryQueryService');
@@ -286,7 +287,7 @@ class TelemetryQueryService {
       if (eventToolCallId !== toolCallId) continue;
       const metadata = (data as Record<string, unknown>).metadata;
       if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
-        return metadata as Record<string, unknown>;
+        return projectSurfaceExecutionResultMetadataForExport(metadata as Record<string, unknown>, { toolCallId });
       }
     }
     return undefined;
@@ -926,6 +927,8 @@ class TelemetryQueryService {
           startTime: row.start_time as number,
         };
       });
+
+      attachStoredSurfaceExecutionReplayBlocks(sessionId, turns, (error) => logger.warn('Failed to attach Surface Execution archive events to telemetry replay', { error, sessionId }));
 
       let deviations:
         | Array<{

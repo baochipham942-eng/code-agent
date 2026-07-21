@@ -87,6 +87,12 @@ export class SurfaceAccessGrantService {
       : null;
   }
 
+  /** Host-only read used for renderer-safe projection after conversation ownership is checked. */
+  get(grantId: string): SurfaceAccessGrantV1 | null {
+    const grant = this.grants.get(grantId);
+    return grant ? structuredClone(grant) : null;
+  }
+
   validate(input: {
     grantId: string;
     subject: SurfaceGrantSubjectV1;

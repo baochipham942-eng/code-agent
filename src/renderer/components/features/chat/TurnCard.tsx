@@ -319,7 +319,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
         {/* 产物/来源固定锚点：始终渲染在最终答案之后，位置稳定（与正文内 Sources 一致），
             不再随工具调用在流中的位置而在答案上方/下方漂移。 */}
-        {!folded && (() => {
+        {(() => {
           const artifactNode = turn.nodes.find(
             (node) => node.turnTimeline?.kind === 'artifact_ownership',
           );

@@ -1,0 +1,918 @@
+{
+  "version": 1,
+  "status": "passed",
+  "scenario": "durable-production-session-store-real-process-restart-readonly-explicit-continuation",
+  "recordedAt": "2026-07-21T03:40:10.998Z",
+  "worktree": "/Users/linchen/.codex/worktrees/aedb/code-agent",
+  "command": "npm run acceptance:surface-execution-durable -- --out docs/acceptance/surface-execution/durable-current --json",
+  "sourceFingerprint": {
+    "version": 1,
+    "algorithm": "sha256",
+    "sha256": "d60e72a1204a7026473317698bd9df5e602931bbbb54395d8d918efbf89675fa",
+    "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+    "dirty": true,
+    "dirtyPaths": [
+      "docs/architecture/frontend.md",
+      "package.json",
+      "public/pip.html",
+      "resources/browser-relay-extension/background.js",
+      "resources/browser-relay-extension/manifest.json",
+      "resources/browser-relay-extension/options.html",
+      "resources/browser-relay-extension/options.js",
+      "resources/browser-relay-extension/popup.html",
+      "resources/browser-relay-extension/popup.js",
+      "resources/browser-relay-extension/protocol-v2.js",
+      "scripts/acceptance/browser-computer-app-host-smoke.ts",
+      "scripts/acceptance/fixtures/surface-execution-conversation.ts",
+      "scripts/acceptance/fixtures/surface-execution-cross-surface.ts",
+      "scripts/acceptance/fixtures/surface-execution-workbuddy.ts",
+      "scripts/acceptance/surface-execution-canary-scan.ts",
+      "scripts/acceptance/surface-execution-computer-smoke.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-core.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-smoke.ts",
+      "scripts/acceptance/surface-execution-conversation-smoke.ts",
+      "scripts/acceptance/surface-execution-cross-surface-smoke.ts",
+      "scripts/acceptance/surface-execution-durable-restart-smoke.ts",
+      "scripts/acceptance/surface-execution-gate-report-core.ts",
+      "scripts/acceptance/surface-execution-gate-report.ts",
+      "scripts/acceptance/surface-execution-managed-smoke.ts",
+      "scripts/acceptance/surface-execution-metrics.ts",
+      "scripts/acceptance/surface-execution-p2-acceptance-core.ts",
+      "scripts/acceptance/surface-execution-proof.ts",
+      "scripts/acceptance/surface-execution-relay-smoke.ts",
+      "scripts/acceptance/surface-execution-replay-import-child.ts",
+      "scripts/acceptance/surface-execution-stop-benchmark.ts",
+      "scripts/acceptance/surface-execution-workbuddy-smoke.ts",
+      "src-tauri/src/main.rs",
+      "src-tauri/src/pip.rs",
+      "src/cli/commands/export.ts",
+      "src/host/agent/runtime/toolExecutionEngine.ts",
+      "src/host/app/agentAppService.ts",
+      "src/host/diagnostics/checks/browserRelay.ts",
+      "src/host/diagnostics/doctorRunner.ts",
+      "src/host/evaluation/telemetryQueryService.ts",
+      "src/host/evaluation/transcriptReplayBuilder.ts",
+      "src/host/ipc/desktop.ipc.ts",
+      "src/host/ipc/index.ts",
+      "src/host/ipc/surfaceExecution.ipc.ts",
+      "src/host/mcp/cuaSessionLock.ts",
+      "src/host/plugins/builtin/browserControl/browser.schema.ts",
+      "src/host/plugins/builtin/browserControl/browserAction.schema.ts",
+      "src/host/plugins/builtin/computerUse/cuaStatefulComputerUse.ts",
+      "src/host/protocol/tools.ts",
+      "src/host/services/infra/browser/browserArtifactActions.ts",
+      "src/host/services/infra/browser/browserSurfaceInteractions.ts",
+      "src/host/services/infra/browser/browserUploadApprovalRegistry.ts",
+      "src/host/services/infra/browser/domSnapshotBuilder.ts",
+      "src/host/services/infra/browser/domSnapshotParser.ts",
+      "src/host/services/infra/browser/managedBrowserCookieImport.ts",
+      "src/host/services/infra/browser/relayActionFacade.ts",
+      "src/host/services/infra/browser/targetRefRegistry.ts",
+      "src/host/services/infra/browser/types.ts",
+      "src/host/services/infra/browserRelayApprovalBoundary.ts",
+      "src/host/services/infra/browserRelayService.ts",
+      "src/host/services/infra/browserService.ts",
+      "src/host/services/infra/sessionManager.ts",
+      "src/host/services/surfaceExecution/BrowserElementRefFence.ts",
+      "src/host/services/surfaceExecution/BrowserProfileImportApprovalService.ts",
+      "src/host/services/surfaceExecution/BrowserTabLeaseService.ts",
+      "src/host/services/surfaceExecution/ComputerSurfaceEventProjection.ts",
+      "src/host/services/surfaceExecution/ExternalSurfaceAgentAdapter.ts",
+      "src/host/services/surfaceExecution/ManagedBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/RelayBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/SurfaceAccessGrantService.ts",
+      "src/host/services/surfaceExecution/surfaceBrowserRuntimeTypes.ts",
+      "src/host/services/surfaceExecution/surfaceComputerErrorProjection.ts",
+      "src/host/services/surfaceExecution/surfaceComputerRuntimeHelpers.ts",
+      "src/host/services/surfaceExecution/surfaceContinuationRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceContinuationService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationControlService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationProjectionService.ts",
+      "src/host/services/surfaceExecution/SurfaceEventHub.ts",
+      "src/host/services/surfaceExecution/surfaceExecutionResultProjection.ts",
+      "src/host/services/surfaceExecution/SurfaceExecutionRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceFrameRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceInterruptService.ts",
+      "src/host/services/surfaceExecution/SurfaceObservationRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceOrganizationPolicyService.ts",
+      "src/host/services/surfaceExecution/SurfaceOutputRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceProofService.ts",
+      "src/host/services/surfaceExecution/SurfaceProviderRegistry.ts",
+      "src/host/services/surfaceExecution/surfaceRunOwnership.ts",
+      "src/host/services/surfaceExecution/SurfaceSessionManager.ts",
+      "src/host/services/surfaceExecution/SurfaceSwitchCoordinator.ts",
+      "src/host/session/browserComputerProofStore.ts",
+      "src/host/session/exportMarkdown.ts",
+      "src/host/session/localCache.ts",
+      "src/host/session/surfaceExecutionSessionExport.ts",
+      "src/host/session/transcriptExporter.ts",
+      "src/host/shellCapabilities.ts",
+      "src/host/telemetry/diagnosticBundleService.ts",
+      "src/host/telemetry/telemetryCollectorInternal.ts",
+      "src/host/tools/artifacts/surfaceExecutionToolResultPipeline.ts",
+      "src/host/tools/toolExecutor.ts",
+      "src/host/tools/types.ts",
+      "src/host/tools/vision/browserAction.ts",
+      "src/host/tools/vision/browserActionFinalize.ts",
+      "src/host/tools/vision/browserActionResultProjection.ts",
+      "src/host/tools/vision/browserActionSurfaceInteractions.ts",
+      "src/host/tools/vision/browserEngineDispatch.ts",
+      "src/host/tools/vision/browserEngineRouter.ts",
+      "src/host/tools/vision/browserNavigate.ts",
+      "src/host/tools/vision/browserProfileActions.ts",
+      "src/host/tools/vision/BrowserTool.ts",
+      "src/host/tools/vision/browserUploadApproval.ts",
+      "src/host/tools/vision/computerUse.ts",
+      "src/renderer/App.tsx",
+      "src/renderer/components/ChatView.tsx",
+      "src/renderer/components/features/browser/BrowserSurfacePanel.tsx",
+      "src/renderer/components/features/chat/ChatInput/index.tsx",
+      "src/renderer/components/features/chat/ToolStepGroup.tsx",
+      "src/renderer/components/features/chat/TurnCard.tsx",
+      "src/renderer/components/features/export/ExportModal.tsx",
+      "src/renderer/components/features/sidebar/SidebarSessionItem.tsx",
+      "src/renderer/components/features/surfaceExecution/index.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceControls.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceList.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionChatPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/surfaceExecutionPresentation.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionRunStatus.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceInterventionCards.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceOutputEntry.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfacePermissionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceResourceSections.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSemanticTimeline.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSessionHeader.tsx",
+      "src/renderer/components/features/surfaceExecution/types.ts",
+      "src/renderer/hooks/agent/effects/useSurfaceExecutionEffects.ts",
+      "src/renderer/hooks/useComputerUsePip.ts",
+      "src/renderer/hooks/useSurfaceExecutionConversation.ts",
+      "src/renderer/hooks/useSurfaceExecutionPip.ts",
+      "src/renderer/i18n/surfaceExecution.ts",
+      "src/renderer/index.tsx",
+      "src/renderer/services/nativeCommandFacade.ts",
+      "src/renderer/services/surfaceExecutionClient.ts",
+      "src/renderer/services/surfaceExecutionController.ts",
+      "src/renderer/stores/surfaceExecutionStore.ts",
+      "src/renderer/utils/browserComputerExportRedaction.ts",
+      "src/renderer/utils/surfaceExecutionProjection.ts",
+      "src/shared/contract/browserRelay.ts",
+      "src/shared/contract/desktop.ts",
+      "src/shared/contract/surfaceExecution.ts",
+      "src/shared/ipc/domains.ts",
+      "src/shared/utils/browserComputerActionCatalog.ts",
+      "src/shared/utils/browserComputerInputPayloadRedaction.ts",
+      "src/shared/utils/browserComputerRedaction.ts",
+      "src/shared/utils/surfaceExecutionExportCaptureContext.ts",
+      "src/shared/utils/surfaceExecutionExportFieldSanitizer.ts",
+      "src/shared/utils/surfaceExecutionExportProjection.ts",
+      "src/shared/utils/surfaceExecutionRedaction.ts",
+      "src/web/routes/dev.ts",
+      "src/web/routes/devSurfaceExecutionConversation.ts",
+      "src/web/routes/devSurfaceExecutionConversationSeed.ts",
+      "tests/agent/cancellation-fanout.test.ts",
+      "tests/main/diagnostics/browserRelay.test.ts",
+      "tests/main/diagnostics/doctorRunner.test.ts",
+      "tests/renderer/components/abilityMenu.browserReadiness.test.ts",
+      "tests/renderer/components/chatView.surfaceExecution.integration.test.ts",
+      "tests/renderer/components/exportModal.surfaceExecution.test.ts",
+      "tests/renderer/components/surfaceExecution/fixtures.ts",
+      "tests/renderer/components/surfaceExecution/SurfaceControls.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceEvidenceCard.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionConversationPanel.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionRunStatus.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceResourceSections.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceSemanticTimeline.test.tsx",
+      "tests/renderer/components/turnCard.artifactFold.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionEffects.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionPip.test.tsx",
+      "tests/renderer/services/nativeCommandFacade.test.ts",
+      "tests/renderer/services/surfaceExecutionClient.test.ts",
+      "tests/renderer/services/surfaceExecutionController.test.ts",
+      "tests/renderer/stores/surfaceExecutionStore.test.ts",
+      "tests/renderer/utils/surfaceExecutionProjection.test.ts",
+      "tests/unit/agent/messageHistory.browserComputerRedaction.test.ts",
+      "tests/unit/evaluation/surfaceExecutionReplayProjection.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.static.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.worker.test.ts",
+      "tests/unit/host/app/browserSurfaceSideDoor.static.test.ts",
+      "tests/unit/ipc/desktop.domain.ipc.test.ts",
+      "tests/unit/ipc/surfaceExecution.ipc.test.ts",
+      "tests/unit/main/pipSurfaceControls.static.test.ts",
+      "tests/unit/main/shellCapabilities.test.ts",
+      "tests/unit/mcp/cuaSessionLock.test.ts",
+      "tests/unit/scripts/surfaceExecutionCanaryScan.test.ts",
+      "tests/unit/scripts/surfaceExecutionComputerAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionControlledComplex.test.ts",
+      "tests/unit/scripts/surfaceExecutionConversationAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionCrossSurfaceAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionDurableRestartAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionGateReport.test.ts",
+      "tests/unit/scripts/surfaceExecutionMetrics.test.ts",
+      "tests/unit/scripts/surfaceExecutionP2Acceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionProof.test.ts",
+      "tests/unit/scripts/surfaceExecutionReplayImportChild.test.ts",
+      "tests/unit/scripts/surfaceExecutionWorkBuddyAcceptance.test.ts",
+      "tests/unit/services/infra/browserArtifactActions.uploadApproval.test.ts",
+      "tests/unit/services/infra/browserDomSnapshotBuilder.test.ts",
+      "tests/unit/services/infra/browserRelayService.test.ts",
+      "tests/unit/services/infra/browserTargetRefRegistry.test.ts",
+      "tests/unit/services/infra/browserUploadApprovalRegistry.test.ts",
+      "tests/unit/services/infra/relayActionFacade.test.ts",
+      "tests/unit/services/infra/sessionManager.metadataGuard.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserProfileImportApprovalService.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserTabLeaseService.test.ts",
+      "tests/unit/services/surfaceExecution/ComputerSurfaceEventProjection.test.ts",
+      "tests/unit/services/surfaceExecution/ExternalSurfaceAgentAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/ManagedBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/RelayBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceBrowserRuntime.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceContinuationService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceControlPlane.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceConversationProjectionService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceFrameRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOrganizationPolicyService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOutputRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOwnershipStores.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProofService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProviderRegistry.test.ts",
+      "tests/unit/session/browserComputerProofStore.test.ts",
+      "tests/unit/session/surfaceExecutionExport.test.ts",
+      "tests/unit/shared/browserComputerActionCatalog.test.ts",
+      "tests/unit/shared/browserComputerRedaction.browserPolicy.test.ts",
+      "tests/unit/shared/contract/surfaceExecution.test.ts",
+      "tests/unit/shared/utils/surfaceExecutionExportProjection.test.ts",
+      "tests/unit/telemetry/diagnosticBundleService.test.ts",
+      "tests/unit/tools/cuaStatefulLockEvents.test.ts",
+      "tests/unit/tools/cuaStatefulSurfaceIntegration.test.ts",
+      "tests/unit/tools/modules/vision/browser.test.ts",
+      "tests/unit/tools/modules/vision/browserAction.test.ts",
+      "tests/unit/tools/surfaceExecutionToolResultPipeline.test.ts",
+      "tests/unit/tools/toolExecutor.executionIntent.test.ts",
+      "tests/unit/tools/vision/browserActionFinalize.test.ts",
+      "tests/unit/tools/vision/browserEngineDispatch.intent.test.ts",
+      "tests/unit/tools/vision/browserEngineRelayRouting.test.ts",
+      "tests/unit/tools/vision/browserEngineRouter.test.ts",
+      "tests/unit/tools/vision/browserNavigateSideDoor.test.ts",
+      "tests/unit/tools/vision/browserUploadApproval.test.ts",
+      "tests/unit/tools/vision/browserWorkbenchGating.test.ts",
+      "tests/unit/web/appAssembly.test.ts",
+      "tests/unit/web/devSurfaceExecutionConversation.test.ts"
+    ],
+    "scopes": [
+      "src",
+      "src-tauri",
+      "resources",
+      "public",
+      "scripts",
+      "tests",
+      "package.json",
+      "docs/architecture",
+      "docs/plans"
+    ]
+  },
+  "campaign": {
+    "id": "surface-v1-20260721T033951Z-af6f0f298901",
+    "startedAt": "2026-07-21T03:39:51.214Z"
+  },
+  "processes": {
+    "orchestratorPid": 95045,
+    "persistPid": 95362,
+    "recoverPid": 95455,
+    "replayPid": 95666,
+    "distinct": true,
+    "persistExitCode": 0,
+    "recoverExitCode": 0,
+    "replayExitCode": 0
+  },
+  "assertions": {
+    "realProcessBoundary": true,
+    "sharedDataDirectory": true,
+    "recoveryIdentifierOnly": true,
+    "persistentRecordDigestMatched": true,
+    "freshProcessReplayBoundary": true,
+    "isolatedReplayDataDirectory": true,
+    "ledgerPersisted": true,
+    "canaryRedactedBeforeDisk": true,
+    "sourceWasWritableBeforeRestart": true,
+    "productionSessionStorePersisted": true,
+    "runtimeEventProjectionWired": true,
+    "activeGrantExistedBeforeRestart": true,
+    "recoveredReadOnly": true,
+    "oldGrantRevoked": true,
+    "onlyExplicitContinueAvailable": true,
+    "continuationOwnerScoped": true,
+    "continuationSingleUse": true,
+    "parentSessionLinked": true,
+    "freshObservationRequired": true,
+    "freshObservationCaptured": true,
+    "cleanupCompleted": true,
+    "productionSessionStoreReopened": true,
+    "externalSurfaceAdapterContractVerified": true,
+    "organizationPolicyAuditRetentionVerified": true,
+    "providerNeutralRegistryContractVerified": true,
+    "providerImplementationDefersExact": true,
+    "importedIntoIsolatedStore": true,
+    "conversationRebound": true,
+    "archiveProjectionReadOnly": true,
+    "grantNone": true,
+    "noTarget": true,
+    "noControls": true,
+    "runtimeMutationCallsZero": true,
+    "replayExplicitSurfaceEvents": true,
+    "failureAdjustPassReproduced": true,
+    "semanticDigestMatched": true,
+    "rawCanaryAbsent": true,
+    "portableScreenshotEvidenceMetadataOnly": true,
+    "redactionCanaryAbsent": true
+  },
+  "p2Acceptance": {
+    "version": 1,
+    "assertions": {
+      "externalSurfaceAdapterContractVerified": true,
+      "organizationPolicyAuditRetentionVerified": true,
+      "providerNeutralRegistryContractVerified": true,
+      "providerImplementationDefersExact": true
+    },
+    "details": {
+      "externalAdapter": {
+        "sanitizedDispatch": {
+          "requestKeys": [
+            "arguments",
+            "entrypoint",
+            "operation",
+            "version"
+          ],
+          "argumentKeys": [
+            "action",
+            "targetRef"
+          ],
+          "authorityKeysPresent": false
+        },
+        "dispatchCount": 1,
+        "delivery": "confirmed",
+        "sessionGrantProjected": false,
+        "staleRefCode": "SURFACE_ELEMENT_REF_NOT_FOUND",
+        "foreignOwnerCode": "SURFACE_TARGET_NOT_OWNED",
+        "forgedAuthorityCode": "SURFACE_POLICY_BLOCKED",
+        "forgedAuthorityReason": "external_authority_forbidden",
+        "policyAuditDecisions": [
+          "allow",
+          "allow",
+          "allow",
+          "allow",
+          "allow"
+        ]
+      },
+      "organizationPolicy": {
+        "domainAllowDecisions": [
+          "allow",
+          "allow"
+        ],
+        "profileDeniedReason": "profile_scope_denied",
+        "missingProfileDeniedReason": "profile_scope_denied",
+        "missingAccountDeniedReason": "account_scope_denied",
+        "foreignAccountDeniedReason": "account_scope_denied",
+        "domainDeniedReason": "domain_denied",
+        "appAllowDecision": "allow",
+        "appDeniedReason": "app_denied",
+        "auditEventsBeforeRetention": 9,
+        "auditMetadataRedacted": true,
+        "rawScopeAbsent": true,
+        "retentionPurgedAudits": 9,
+        "auditEventsAfterRetention": 0
+      },
+      "providerRegistry": {
+        "registeredProviderClass": "multi-browser",
+        "selectedProviderId": "vendor:p2-neutral-browser",
+        "selectedCapabilities": [
+          "observe"
+        ],
+        "targetAuthority": "host-issued",
+        "cleanupOwner": "provider",
+        "capabilityFailureReason": "capability_unsupported",
+        "surfaceFailureReason": "surface_mismatch",
+        "unknownProviderFailureReason": "provider_not_registered",
+        "duplicateRegistrationRejected": true,
+        "productionProviderIds": [
+          "browser-relay",
+          "cua-driver",
+          "system-chrome-cdp"
+        ],
+        "gatedProviderIds": [
+          "future:in-app-preview",
+          "future:mobile",
+          "future:multi-browser",
+          "future:remote-managed"
+        ],
+        "gatedProviderFailureReasons": {
+          "future:in-app-preview": "provider_gate_pending",
+          "future:mobile": "provider_gate_pending",
+          "future:multi-browser": "provider_gate_pending",
+          "future:remote-managed": "provider_gate_pending"
+        },
+        "g4DecisionRows": [
+          "multi-browser-provider",
+          "remote-managed-browser-pool",
+          "mobile-device-cloud",
+          "windows-linux-profile-and-computer-provider",
+          "in-app-preview-provider"
+        ],
+        "g4DecisionEvidenceComplete": true
+      }
+    },
+    "evidenceBackedDefers": {
+      "externalProductionEntrypoints": {
+        "row": "external-agent-production-entrypoints",
+        "status": "evidence-backed-defer",
+        "gate": "G4",
+        "reason": "The Host authority fence is implemented, but no authenticated transport, Host bootstrap, or public CLI contract exists for callable neo surface / neo browser entrypoints.",
+        "evidenceObserved": [
+          "external-authority-fence-contract-verified",
+          "production-entrypoint-registration-absent",
+          "provider-runtime-must-remain-single-owner"
+        ],
+        "evidenceRequired": [
+          "approved-external-consumer-and-authentication-contract",
+          "host-owned-run-session-provider-bootstrap",
+          "real-provider-entrypoint-e2e-with-cleanup-and-redaction"
+        ]
+      },
+      "organizationProductionStore": {
+        "row": "organization-policy-production-store",
+        "status": "evidence-backed-defer",
+        "gate": "G4",
+        "reason": "The deny-by-default policy engine, approvals, redacted audit, and TTL are verified through ExternalSurfaceAgentAdapter and the P2 acceptance seam only; Managed, Relay, and Computer production bootstrap/enforcement are not wired, and the default audit store remains process-local.",
+        "evidenceObserved": [
+          "external-surface-agent-adapter-policy-enforcement-verified",
+          "p2-acceptance-policy-seam-verified",
+          "managed-relay-computer-production-policy-bootstrap-and-enforcement-absent",
+          "redacted-audit-retention-verified",
+          "default-audit-store-is-process-local"
+        ],
+        "evidenceRequired": [
+          "host-owned-organization-identity-and-policy-bootstrap-for-managed-relay-computer",
+          "real-managed-relay-computer-provider-policy-enforcement-e2e",
+          "organization-admin-contract",
+          "persistent-audit-store-and-migration",
+          "retention-access-control-and-deletion-e2e"
+        ]
+      },
+      "providerImplementations": [
+        {
+          "row": "multi-browser-provider",
+          "status": "evidence-backed-defer",
+          "gate": "G4",
+          "reason": "The API boundary is declared; implementation waits for measured cross-browser demand and parity gaps.",
+          "evidenceRequired": [
+            "weekly-active-demand",
+            "task-success-delta",
+            "compatibility-failure-rate"
+          ],
+          "evidenceObserved": [
+            "provider-registry:future:multi-browser:api-boundary-declared",
+            "provider-registry:future:multi-browser:gate-pending-enforced",
+            "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:multi-browser"
+          ]
+        },
+        {
+          "row": "remote-managed-browser-pool",
+          "status": "evidence-backed-defer",
+          "gate": "G4",
+          "reason": "Remote infrastructure would expand data, identity, and cleanup scope without a frozen benchmark.",
+          "evidenceRequired": [
+            "p95-latency",
+            "success-rate-delta",
+            "cost-per-successful-run",
+            "isolation-audit"
+          ],
+          "evidenceObserved": [
+            "provider-registry:future:remote-managed:api-boundary-declared",
+            "provider-registry:future:remote-managed:gate-pending-enforced",
+            "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:remote-managed"
+          ]
+        },
+        {
+          "row": "mobile-device-cloud",
+          "status": "evidence-backed-defer",
+          "gate": "G4",
+          "reason": "A real device pool and device-cloud contract require separate security and reliability validation.",
+          "evidenceRequired": [
+            "mobile-task-demand",
+            "input-delivery-rate",
+            "device-cleanup-rate",
+            "cost-per-run"
+          ],
+          "evidenceObserved": [
+            "provider-registry:future:mobile:api-boundary-declared",
+            "provider-registry:future:mobile:gate-pending-enforced",
+            "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:mobile"
+          ]
+        },
+        {
+          "row": "windows-linux-profile-and-computer-provider",
+          "status": "evidence-backed-defer",
+          "gate": "G4",
+          "reason": "No approved Windows/Linux provider, profile credential path, or platform test environment is in scope.",
+          "evidenceRequired": [
+            "platform-provider-contract",
+            "credential-isolation-review",
+            "real-app-regression-baseline"
+          ],
+          "evidenceObserved": [
+            "repository:no-approved-windows-linux-provider-or-helper",
+            "runtime:current-acceptance-host-darwin",
+            "truth-source:G4-cross-platform-provider-decision"
+          ]
+        },
+        {
+          "row": "in-app-preview-provider",
+          "status": "evidence-backed-defer",
+          "gate": "G4",
+          "reason": "The provider seam is declared; implementation waits for target ownership and sandbox evidence.",
+          "evidenceRequired": [
+            "preview-ownership-contract",
+            "sandbox-escape-tests",
+            "workbuddy-success-delta"
+          ],
+          "evidenceObserved": [
+            "provider-registry:future:in-app-preview:api-boundary-declared",
+            "provider-registry:future:in-app-preview:gate-pending-enforced",
+            "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:in-app-preview"
+          ]
+        }
+      ]
+    }
+  },
+  "evidence": {
+    "persistentStore": {
+      "dataDir": "/tmp/code-agent-surface-durable-94860",
+      "databasePath": "/tmp/code-agent-surface-durable-94860/code-agent.db",
+      "recordKey": "surfaceExecutionLedgerV1",
+      "persistedRecordSha256": "ae3717e75ffe6b2713a5b286488ab082c92615cb09d8c71de0a3207c44a62a50",
+      "recoveredRecordSha256": "ae3717e75ffe6b2713a5b286488ab082c92615cb09d8c71de0a3207c44a62a50",
+      "persistDatabaseSha256": "6eded441656cd2315b7a311f852943a482045aca10a5b9a0e86d8bbe67f3176a",
+      "recoverDatabaseSha256": "31280a003f9a044bba548da4cbe642c9edc79e7dd2f9e1d6c37f896b59eaaaa9"
+    },
+    "checkpoint": {
+      "path": "durable-checkpoint-evidence.json",
+      "sha256": "d55f7ef565d62970a3af32044503ef3c3c6410d3f2d65beb5550f3f5dbeb399b",
+      "bytes": 776,
+      "businessReadback": "Persisted checkpoint reopened read-only; old grant revoked; explicit single-use continuation captured a fresh observation."
+    },
+    "replayImport": {
+      "path": "replay-import-process.json",
+      "sha256": "32b241e9f8ebe7c29cb666b942d8a3a8cd6de6386867da44aa8cfcdaa043cf73",
+      "bytes": 965,
+      "targetDataDir": "/var/folders/cc/j1hyp1hx4n1fqtd8w3j0n33r0000gn/T/code-agent-surface-replay-data-2tEXZh",
+      "sourceSemanticSha256": "10e93f807b1485bb33e1bc532ce90b33eafe62a14190391da4155ca630a15cc5",
+      "replaySemanticSha256": "10e93f807b1485bb33e1bc532ce90b33eafe62a14190391da4155ca630a15cc5",
+      "sourceEventCount": 5,
+      "replayEventCount": 5,
+      "businessReadback": "A fresh process imported the safe archive into an isolated store and reproduced verify-fail, adjust, verify-pass semantics without reviving authority."
+    },
+    "persistProcess": {
+      "version": 1,
+      "phase": "persist",
+      "pid": 95362,
+      "assertions": {
+        "ledgerPersisted": true,
+        "canaryRedactedBeforeDisk": true,
+        "sourceWasWritableBeforeRestart": true,
+        "productionSessionStorePersisted": true,
+        "runtimeEventProjectionWired": true,
+        "activeGrantExistedBeforeRestart": true
+      },
+      "details": {
+        "conversationId": "session_1784605209855_86755de0",
+        "surfaceSessionId": "surface_fffca839-04f8-4b06-acc4-d9c2a2114365",
+        "persistentMedia": {
+          "dataDir": "/tmp/code-agent-surface-durable-94860",
+          "databasePath": "/tmp/code-agent-surface-durable-94860/code-agent.db",
+          "databaseBytes": 1159168,
+          "databaseSha256": "6eded441656cd2315b7a311f852943a482045aca10a5b9a0e86d8bbe67f3176a",
+          "recordKey": "surfaceExecutionLedgerV1",
+          "recordSha256": "ae3717e75ffe6b2713a5b286488ab082c92615cb09d8c71de0a3207c44a62a50"
+        },
+        "sourceExport": {
+          "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/durable-current/source-session-export.json",
+          "sha256": "64a5ddfe83d04c7ac7f2cfd4535ecb6010203ab1f018379f1cd4251a6f147724"
+        }
+      }
+    },
+    "recoverProcess": {
+      "version": 1,
+      "phase": "recover",
+      "pid": 95455,
+      "assertions": {
+        "recoveredReadOnly": true,
+        "oldGrantRevoked": true,
+        "onlyExplicitContinueAvailable": true,
+        "continuationOwnerScoped": true,
+        "continuationSingleUse": true,
+        "parentSessionLinked": true,
+        "freshObservationRequired": true,
+        "freshObservationCaptured": true,
+        "cleanupCompleted": true,
+        "productionSessionStoreReopened": true,
+        "externalSurfaceAdapterContractVerified": true,
+        "organizationPolicyAuditRetentionVerified": true,
+        "providerNeutralRegistryContractVerified": true,
+        "providerImplementationDefersExact": true
+      },
+      "details": {
+        "conversationId": "session_1784605209855_86755de0",
+        "recoveredSessionId": "surface_fffca839-04f8-4b06-acc4-d9c2a2114365",
+        "continuationSessionId": "surface_87f6f8e7-b85e-4de1-8ba3-7a3d88faa162",
+        "parentSessionId": "surface_fffca839-04f8-4b06-acc4-d9c2a2114365",
+        "persistentMedia": {
+          "dataDir": "/tmp/code-agent-surface-durable-94860",
+          "databasePath": "/tmp/code-agent-surface-durable-94860/code-agent.db",
+          "databaseBytes": 1159168,
+          "databaseSha256": "31280a003f9a044bba548da4cbe642c9edc79e7dd2f9e1d6c37f896b59eaaaa9",
+          "recordKey": "surfaceExecutionLedgerV1",
+          "recordSha256": "ae3717e75ffe6b2713a5b286488ab082c92615cb09d8c71de0a3207c44a62a50"
+        },
+        "continuationEvent": {
+          "phase": "recover",
+          "status": "succeeded",
+          "userSummary": "Continued from a read-only Surface checkpoint; a fresh observation is required.",
+          "action": "continue_from_checkpoint",
+          "expectedOutcome": "Observe the current target before sending a new mutation."
+        },
+        "freshObservation": {
+          "stateId": "surface_state_b361d409-1953-465f-b5e5-37c43df77e43",
+          "lifecycle": "fresh",
+          "documentRevision": "document:durable-recovery:95455:1"
+        },
+        "p2Acceptance": {
+          "version": 1,
+          "assertions": {
+            "externalSurfaceAdapterContractVerified": true,
+            "organizationPolicyAuditRetentionVerified": true,
+            "providerNeutralRegistryContractVerified": true,
+            "providerImplementationDefersExact": true
+          },
+          "details": {
+            "externalAdapter": {
+              "sanitizedDispatch": {
+                "requestKeys": [
+                  "arguments",
+                  "entrypoint",
+                  "operation",
+                  "version"
+                ],
+                "argumentKeys": [
+                  "action",
+                  "targetRef"
+                ],
+                "authorityKeysPresent": false
+              },
+              "dispatchCount": 1,
+              "delivery": "confirmed",
+              "sessionGrantProjected": false,
+              "staleRefCode": "SURFACE_ELEMENT_REF_NOT_FOUND",
+              "foreignOwnerCode": "SURFACE_TARGET_NOT_OWNED",
+              "forgedAuthorityCode": "SURFACE_POLICY_BLOCKED",
+              "forgedAuthorityReason": "external_authority_forbidden",
+              "policyAuditDecisions": [
+                "allow",
+                "allow",
+                "allow",
+                "allow",
+                "allow"
+              ]
+            },
+            "organizationPolicy": {
+              "domainAllowDecisions": [
+                "allow",
+                "allow"
+              ],
+              "profileDeniedReason": "profile_scope_denied",
+              "missingProfileDeniedReason": "profile_scope_denied",
+              "missingAccountDeniedReason": "account_scope_denied",
+              "foreignAccountDeniedReason": "account_scope_denied",
+              "domainDeniedReason": "domain_denied",
+              "appAllowDecision": "allow",
+              "appDeniedReason": "app_denied",
+              "auditEventsBeforeRetention": 9,
+              "auditMetadataRedacted": true,
+              "rawScopeAbsent": true,
+              "retentionPurgedAudits": 9,
+              "auditEventsAfterRetention": 0
+            },
+            "providerRegistry": {
+              "registeredProviderClass": "multi-browser",
+              "selectedProviderId": "vendor:p2-neutral-browser",
+              "selectedCapabilities": [
+                "observe"
+              ],
+              "targetAuthority": "host-issued",
+              "cleanupOwner": "provider",
+              "capabilityFailureReason": "capability_unsupported",
+              "surfaceFailureReason": "surface_mismatch",
+              "unknownProviderFailureReason": "provider_not_registered",
+              "duplicateRegistrationRejected": true,
+              "productionProviderIds": [
+                "browser-relay",
+                "cua-driver",
+                "system-chrome-cdp"
+              ],
+              "gatedProviderIds": [
+                "future:in-app-preview",
+                "future:mobile",
+                "future:multi-browser",
+                "future:remote-managed"
+              ],
+              "gatedProviderFailureReasons": {
+                "future:in-app-preview": "provider_gate_pending",
+                "future:mobile": "provider_gate_pending",
+                "future:multi-browser": "provider_gate_pending",
+                "future:remote-managed": "provider_gate_pending"
+              },
+              "g4DecisionRows": [
+                "multi-browser-provider",
+                "remote-managed-browser-pool",
+                "mobile-device-cloud",
+                "windows-linux-profile-and-computer-provider",
+                "in-app-preview-provider"
+              ],
+              "g4DecisionEvidenceComplete": true
+            }
+          },
+          "evidenceBackedDefers": {
+            "externalProductionEntrypoints": {
+              "row": "external-agent-production-entrypoints",
+              "status": "evidence-backed-defer",
+              "gate": "G4",
+              "reason": "The Host authority fence is implemented, but no authenticated transport, Host bootstrap, or public CLI contract exists for callable neo surface / neo browser entrypoints.",
+              "evidenceObserved": [
+                "external-authority-fence-contract-verified",
+                "production-entrypoint-registration-absent",
+                "provider-runtime-must-remain-single-owner"
+              ],
+              "evidenceRequired": [
+                "approved-external-consumer-and-authentication-contract",
+                "host-owned-run-session-provider-bootstrap",
+                "real-provider-entrypoint-e2e-with-cleanup-and-redaction"
+              ]
+            },
+            "organizationProductionStore": {
+              "row": "organization-policy-production-store",
+              "status": "evidence-backed-defer",
+              "gate": "G4",
+              "reason": "The deny-by-default policy engine, approvals, redacted audit, and TTL are verified through ExternalSurfaceAgentAdapter and the P2 acceptance seam only; Managed, Relay, and Computer production bootstrap/enforcement are not wired, and the default audit store remains process-local.",
+              "evidenceObserved": [
+                "external-surface-agent-adapter-policy-enforcement-verified",
+                "p2-acceptance-policy-seam-verified",
+                "managed-relay-computer-production-policy-bootstrap-and-enforcement-absent",
+                "redacted-audit-retention-verified",
+                "default-audit-store-is-process-local"
+              ],
+              "evidenceRequired": [
+                "host-owned-organization-identity-and-policy-bootstrap-for-managed-relay-computer",
+                "real-managed-relay-computer-provider-policy-enforcement-e2e",
+                "organization-admin-contract",
+                "persistent-audit-store-and-migration",
+                "retention-access-control-and-deletion-e2e"
+              ]
+            },
+            "providerImplementations": [
+              {
+                "row": "multi-browser-provider",
+                "status": "evidence-backed-defer",
+                "gate": "G4",
+                "reason": "The API boundary is declared; implementation waits for measured cross-browser demand and parity gaps.",
+                "evidenceRequired": [
+                  "weekly-active-demand",
+                  "task-success-delta",
+                  "compatibility-failure-rate"
+                ],
+                "evidenceObserved": [
+                  "provider-registry:future:multi-browser:api-boundary-declared",
+                  "provider-registry:future:multi-browser:gate-pending-enforced",
+                  "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:multi-browser"
+                ]
+              },
+              {
+                "row": "remote-managed-browser-pool",
+                "status": "evidence-backed-defer",
+                "gate": "G4",
+                "reason": "Remote infrastructure would expand data, identity, and cleanup scope without a frozen benchmark.",
+                "evidenceRequired": [
+                  "p95-latency",
+                  "success-rate-delta",
+                  "cost-per-successful-run",
+                  "isolation-audit"
+                ],
+                "evidenceObserved": [
+                  "provider-registry:future:remote-managed:api-boundary-declared",
+                  "provider-registry:future:remote-managed:gate-pending-enforced",
+                  "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:remote-managed"
+                ]
+              },
+              {
+                "row": "mobile-device-cloud",
+                "status": "evidence-backed-defer",
+                "gate": "G4",
+                "reason": "A real device pool and device-cloud contract require separate security and reliability validation.",
+                "evidenceRequired": [
+                  "mobile-task-demand",
+                  "input-delivery-rate",
+                  "device-cleanup-rate",
+                  "cost-per-run"
+                ],
+                "evidenceObserved": [
+                  "provider-registry:future:mobile:api-boundary-declared",
+                  "provider-registry:future:mobile:gate-pending-enforced",
+                  "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:mobile"
+                ]
+              },
+              {
+                "row": "windows-linux-profile-and-computer-provider",
+                "status": "evidence-backed-defer",
+                "gate": "G4",
+                "reason": "No approved Windows/Linux provider, profile credential path, or platform test environment is in scope.",
+                "evidenceRequired": [
+                  "platform-provider-contract",
+                  "credential-isolation-review",
+                  "real-app-regression-baseline"
+                ],
+                "evidenceObserved": [
+                  "repository:no-approved-windows-linux-provider-or-helper",
+                  "runtime:current-acceptance-host-darwin",
+                  "truth-source:G4-cross-platform-provider-decision"
+                ]
+              },
+              {
+                "row": "in-app-preview-provider",
+                "status": "evidence-backed-defer",
+                "gate": "G4",
+                "reason": "The provider seam is declared; implementation waits for target ownership and sandbox evidence.",
+                "evidenceRequired": [
+                  "preview-ownership-contract",
+                  "sandbox-escape-tests",
+                  "workbuddy-success-delta"
+                ],
+                "evidenceObserved": [
+                  "provider-registry:future:in-app-preview:api-boundary-declared",
+                  "provider-registry:future:in-app-preview:gate-pending-enforced",
+                  "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:in-app-preview"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "replayProcess": {
+      "version": 1,
+      "status": "passed",
+      "pid": 95666,
+      "identifiers": {
+        "sourceSessionIdSha256": "4063719d9139e5f555d5e950a16a944e51245a27b73a7a2b5daf8a11cbc48b7e",
+        "importedSessionIdSha256": "a79d613045a821c66b876c050431359c0f14b383fe83218b32e1e516e59d192a"
+      },
+      "semantics": {
+        "sourceSha256": "10e93f807b1485bb33e1bc532ce90b33eafe62a14190391da4155ca630a15cc5",
+        "replaySha256": "10e93f807b1485bb33e1bc532ce90b33eafe62a14190391da4155ca630a15cc5",
+        "sourceEventCount": 5,
+        "replayEventCount": 5
+      },
+      "assertions": {
+        "importedIntoIsolatedStore": true,
+        "conversationRebound": true,
+        "archiveProjectionReadOnly": true,
+        "grantNone": true,
+        "noTarget": true,
+        "noControls": true,
+        "runtimeMutationCallsZero": true,
+        "replayExplicitSurfaceEvents": true,
+        "failureAdjustPassReproduced": true,
+        "semanticDigestMatched": true,
+        "rawCanaryAbsent": true,
+        "portableScreenshotEvidenceMetadataOnly": true
+      }
+    }
+  },
+  "canaryScan": {
+    "tokenSha256": "8856b68543dad53e632b91e29486c1b0603d54ba3fea73717f2d0dc7ae83f1c2",
+    "result": "absent",
+    "scannedFiles": [
+      "source-data/code-agent.db",
+      "source-data/logs/code-agent-2026-07-21.log",
+      "source-data/projects/588993abb2ffebb1/memory/MEMORY.md",
+      "source-data/projects/588993abb2ffebb1/meta.json",
+      "output/durable-checkpoint-evidence.json",
+      "output/persist-process.json",
+      "output/recover-process.json",
+      "output/replay-import-process.json",
+      "output/source-session-export.json",
+      "replay-data/code-agent.db",
+      "replay-data/logs/code-agent-2026-07-21.log"
+    ]
+  }
+}

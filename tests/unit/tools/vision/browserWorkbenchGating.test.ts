@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../../../src/host/tools/types';
 import type { WorkbenchActionTrace } from '../../../../src/shared/contract/desktop';
@@ -461,6 +464,7 @@ describe('browser workbench gating', () => {
       success: true,
     });
     expect(result.metadata?.workbenchTrace).toMatchObject({
+      targetKind: 'browser',
       agentPointerEvent: expect.objectContaining({
         surface: 'browser',
         phase: 'click',
@@ -849,40 +853,58 @@ describe('browser workbench gating', () => {
     });
   });
 
-  it('requires permission for sensitive upload files and hides the raw path', async () => {
+  it('requires one-time permission for every upload file and hides the raw path', async () => {
     browserMocks.state.running = true;
     browserMocks.state.tabs = [{ id: 'tab-1', url: 'https://example.com', title: 'Example' }];
     browserMocks.state.activeTabId = 'tab-1';
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'managed-browser-upload-'));
+    const uploadFilePath = path.join(directory, 'ordinary.txt');
+    fs.writeFileSync(uploadFilePath, 'ordinary upload bytes');
+    try {
+      const result = await browserActionTool.execute(
+        {
+          action: 'upload_file',
+          selector: '#file',
+          uploadFilePath,
+        },
+        makeContext({
+          requestPermission: async (request) => {
+            expect(request).toMatchObject({
+              tool: 'browser_action.upload_file',
+              forceConfirm: true,
+              details: {
+                file: '.../ordinary.txt',
+                approvalMode: 'host_one_time_exact_file',
+              },
+            });
+            expect(JSON.stringify(request)).not.toContain(directory);
+            return true;
+          },
+          executionIntent: {
+            browserSessionMode: 'managed',
+            preferBrowserSession: true,
+            allowBrowserAutomation: true,
+          },
+        }),
+      );
 
-    const result = await browserActionTool.execute(
-      {
-        action: 'upload_file',
+      expect(result.success).toBe(true);
+      expect(browserMocks.service.uploadFile).toHaveBeenCalledWith({
+        approvedFile: expect.objectContaining({
+          normalizedPath: fs.realpathSync.native(uploadFilePath),
+          name: 'ordinary.txt',
+          size: Buffer.byteLength('ordinary upload bytes'),
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
         selector: '#file',
-        uploadFilePath: `${process.env.HOME || '/Users/linchen'}/Downloads/secret.env`,
-      },
-      makeContext({
-        requestPermission: async (request) => {
-          expect(request.tool).toBe('browser_action.upload_file');
-          expect(request.details.file).toBe('.../secret.env');
-          return true;
-        },
-        executionIntent: {
-          browserSessionMode: 'managed',
-          preferBrowserSession: true,
-          allowBrowserAutomation: true,
-        },
-      }),
-    );
-
-    expect(result.success).toBe(true);
-    expect(browserMocks.service.uploadFile).toHaveBeenCalledWith({
-      filePath: `${process.env.HOME || '/Users/linchen'}/Downloads/secret.env`,
-      selector: '#file',
-      targetRef: undefined,
-      tabId: undefined,
-    });
-    expect(result.output).toContain('report.txt');
-    expect(JSON.stringify(result)).not.toContain('/Downloads/secret.env');
+        targetRef: undefined,
+        tabId: undefined,
+      });
+      expect(result.output).toContain('report.txt');
+      expect(JSON.stringify(result)).not.toContain(directory);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('returns public managed session state through browser_action get_workbench_state', async () => {

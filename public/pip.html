@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Agent Neo · Computer Use</title>
+    <title>Agent Neo · Surface Execution</title>
     <style>
       * {
         box-sizing: border-box;
@@ -43,6 +43,16 @@
         gap: 6px;
       }
 
+      #label-text {
+        white-space: nowrap;
+      }
+
+      #status {
+        margin-left: auto;
+        color: rgba(255, 255, 255, 0.72);
+        white-space: nowrap;
+      }
+
       #label .dot {
         width: 6px;
         height: 6px;
@@ -69,13 +79,59 @@
         color: rgba(255, 255, 255, 0.4);
         font: 12px -apple-system, system-ui;
       }
+
+      #controls {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 3;
+        display: none;
+        gap: 6px;
+        padding: 8px;
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.28));
+      }
+
+      #controls button {
+        min-height: 28px;
+        padding: 0 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        color: #fff;
+        background: rgba(30, 41, 59, 0.88);
+        font: 11px -apple-system, system-ui;
+        cursor: pointer;
+      }
+
+      #controls button:hover:not(:disabled) {
+        background: rgba(51, 65, 85, 0.96);
+      }
+
+      #controls button:disabled {
+        cursor: default;
+        opacity: 0.45;
+      }
+
+      #controls button[data-action='stop'] {
+        margin-left: auto;
+        background: rgba(127, 29, 29, 0.88);
+      }
     </style>
   </head>
   <body>
     <div id="card">
-      <div id="label"><span class="dot"></span><span>Agent Neo · Computer Use</span></div>
+      <div id="label">
+        <span class="dot"></span>
+        <span id="label-text">Agent Neo · Surface</span>
+        <span id="status">Preparing</span>
+      </div>
       <div id="empty">等待操作...</div>
       <img id="shot" />
+      <div id="controls">
+        <button id="pause-resume" type="button"></button>
+        <button id="takeover" type="button" data-action="takeover">Take over</button>
+        <button id="stop" type="button" data-action="stop">Stop</button>
+      </div>
     </div>
     <script>
       window.__setFrame = function (url) {
@@ -86,6 +142,86 @@
         img.style.display = 'block';
         if (empty) empty.style.display = 'none';
       };
+
+      (function () {
+        var current = null;
+        var localPending = false;
+        var allowedActions = ['pause', 'resume', 'takeover', 'stop'];
+        var stateLabels = {
+          preparing: 'Preparing',
+          waiting_permission: 'Permission',
+          running: 'Running',
+          waiting_human: 'Takeover',
+          paused: 'Paused',
+          stopping: 'Stopping',
+          completed: 'Completed',
+          failed: 'Failed'
+        };
+
+        function available(action) {
+          return Boolean(current && current.availableControls.indexOf(action) >= 0);
+        }
+
+        function render() {
+          if (!current) return;
+          var controls = document.getElementById('controls');
+          var pauseResume = document.getElementById('pause-resume');
+          var takeover = document.getElementById('takeover');
+          var stop = document.getElementById('stop');
+          var pending = localPending || Boolean(
+            current.controlRequest && current.controlRequest.status === 'pending'
+          );
+          var resume = available('resume') && !available('pause');
+          pauseResume.dataset.action = resume ? 'resume' : 'pause';
+          pauseResume.textContent = resume ? 'Resume' : 'Pause';
+          pauseResume.disabled = pending || !available(pauseResume.dataset.action);
+          takeover.disabled = pending || !available('takeover');
+          stop.disabled = pending || !available('stop');
+          controls.style.display = 'flex';
+          document.getElementById('label-text').textContent = current.surface === 'browser'
+            ? 'Agent Neo · Browser'
+            : 'Agent Neo · Computer';
+          document.getElementById('status').textContent = pending
+            ? 'Applying…'
+            : (stateLabels[current.state] || current.state);
+        }
+
+        function invokeControl(action) {
+          if (!current || allowedActions.indexOf(action) < 0 || !available(action) || localPending) return;
+          var internals = window.__TAURI_INTERNALS__;
+          if (!internals || typeof internals.invoke !== 'function') return;
+          localPending = true;
+          render();
+          internals.invoke('pip_control', {
+            payload: {
+              version: 1,
+              scope: current.scope,
+              action: action
+            }
+          }).catch(function () {
+            localPending = false;
+            document.getElementById('status').textContent = 'Control failed';
+            render();
+          });
+        }
+
+        ['pause-resume', 'takeover', 'stop'].forEach(function (id) {
+          document.getElementById(id).addEventListener('click', function (event) {
+            invokeControl(event.currentTarget.dataset.action);
+          });
+        });
+
+        window.__setControls = function (payload) {
+          if (!payload || payload.version !== 1 || !payload.scope
+            || !Array.isArray(payload.availableControls)
+            || payload.availableControls.some(function (action) {
+              return allowedActions.indexOf(action) < 0;
+            })) return;
+          current = payload;
+          localPending = false;
+          render();
+        };
+      }());
     </script>
   </body>
 </html>

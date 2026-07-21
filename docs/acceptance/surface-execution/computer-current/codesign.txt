@@ -1,0 +1,30 @@
+/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app: valid on disk
+/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app: satisfies its Designated Requirement
+Executable=/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver
+Identifier=com.agentneo.computeruse
+Format=app bundle with Mach-O universal (x86_64 arm64)
+CodeDirectory v=20500 size=25476 flags=0x10000(runtime) hashes=785+7 location=embedded
+VersionPlatform=1
+VersionMin=851968
+VersionSDK=1705216
+Hash type=sha256 size=32
+CandidateCDHash sha256=cb9011602c9cec7c8195c8b096c8f9cf51a6c3b4
+CandidateCDHashFull sha256=cb9011602c9cec7c8195c8b096c8f9cf51a6c3b459641778aba0a5d1514a1bfd
+Hash choices=sha256
+CMSDigest=cb9011602c9cec7c8195c8b096c8f9cf51a6c3b459641778aba0a5d1514a1bfd
+CMSDigestType=2
+Executable Segment base=0
+Executable Segment limit=9109504
+Executable Segment flags=0x1
+Page size=16384
+CDHash=cb9011602c9cec7c8195c8b096c8f9cf51a6c3b4
+Signature size=9033
+Authority=Developer ID Application: jay lem (D7CVTJ72NV)
+Authority=Developer ID Certification Authority
+Authority=Apple Root CA
+Timestamp=Jul 21, 2026 at 03:43:09
+Info.plist entries=14
+TeamIdentifier=D7CVTJ72NV
+Runtime Version=26.5.0
+Sealed Resources version=2 rules=13 files=2
+Internal requirements count=1 size=184

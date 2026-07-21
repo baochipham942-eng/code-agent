@@ -47,11 +47,15 @@ export interface BrowserTargetRef {
   name?: string | null;
   textHint?: string | null;
   frameId?: string | null;
+  /** Host-issued revision for the exact frame document observed in this snapshot. */
+  documentRevision?: string;
   tabId: string;
   snapshotId: string;
   capturedAtMs: number;
   ttlMs: number;
   confidence: number;
+  /** Chromium DOM backend node identity captured with this snapshot when available. */
+  backendNodeId?: number;
   rect?: { x: number; y: number; width: number; height: number } | null;
 }
 
@@ -61,7 +65,19 @@ export interface BrowserDomSnapshot {
   capturedAtMs: number;
   url: string;
   title: string;
-  headings: Array<{ level: number; text: string }>;
+  headings: Array<{
+    level: number;
+    text: string;
+    frameId?: string;
+    documentRevision?: string;
+  }>;
+  frameDocuments?: Array<{
+    frameId: string;
+    documentRevision: string;
+    url: string;
+    status: 'captured' | 'unavailable';
+    reason?: 'oopif_requires_dedicated_cdp_session';
+  }>;
   interactiveElements: Array<{
     tag: string;
     role?: string | null;
@@ -70,6 +86,8 @@ export interface BrowserDomSnapshot {
     placeholder?: string | null;
     selectorHint: string;
     targetRef: BrowserTargetRef;
+    backendNodeId?: number;
+    shadowRoot?: boolean;
     rect: { x: number; y: number; width: number; height: number };
   }>;
 }
@@ -118,6 +136,15 @@ export interface BrowserArtifactSummary {
   sessionId: string | null;
 }
 
+export interface BrowserDialogState {
+  pending: boolean;
+  /** Dialog text is intentionally excluded from logs, proof, and tool metadata. */
+  type?: 'alert' | 'beforeunload' | 'confirm' | 'prompt';
+  messageLength?: number;
+  openedAtMs?: number;
+  defaultPolicy: 'pause';
+}
+
 export interface BrowserStorageStateCookie {
   name?: unknown;
   value?: unknown;
@@ -152,7 +179,10 @@ export interface BrowserProviderDiagnostics {
 
 export interface BrowserTargetRefRecord {
   targetRef: BrowserTargetRef;
+  /** Top-level page URL used to fence tab navigation. */
   url: string;
+  /** URL of the exact frame document that owned backendNodeId at capture time. */
+  documentUrl?: string;
 }
 
 export class BrowserTargetRefError extends Error {

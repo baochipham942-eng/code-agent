@@ -41,6 +41,11 @@ vi.mock('../../../src/host/diagnostics/checks/providerHealth', () => ({
   checkProviderHealth: () => providerHealthMock(),
 }));
 
+const browserRelayMock = vi.fn();
+vi.mock('../../../src/host/diagnostics/checks/browserRelay', () => ({
+  checkCurrentBrowserRelay: () => browserRelayMock(),
+}));
+
 const mcpMock = vi.fn();
 vi.mock('../../../src/host/diagnostics/checks/mcp', () => ({
   checkMcpServers: () => mcpMock(),
@@ -78,6 +83,14 @@ beforeEach(() => {
       name: 'Provider 健康监控',
       status: 'skip',
       message: '尚无运行时数据',
+    },
+  ]);
+  browserRelayMock.mockResolvedValue([
+    {
+      category: 'provider_health',
+      name: 'Browser Relay V2',
+      status: 'pass',
+      message: 'connected · protocol 2.2',
     },
   ]);
   mcpMock.mockReturnValue([

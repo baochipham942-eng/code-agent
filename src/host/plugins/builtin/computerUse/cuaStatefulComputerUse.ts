@@ -12,6 +12,7 @@ import {
   type CuaStatefulExecutionResult,
 } from '../../../mcp/cuaStateAdapter';
 import { CuaMcpDriverPort } from '../../../mcp/cuaMcpDriverPort';
+import { subscribeCuaInputLockLifecycle } from '../../../mcp/cuaSessionLock';
 import { cuaStatefulComputerUseSchema as schema } from './cuaStatefulComputerUse.schema';
 import type {
   ComputerUseExpectationV1,
@@ -23,6 +24,7 @@ import {
   type SurfaceExecutionRuntime,
 } from '../../../services/surfaceExecution/SurfaceExecutionRuntime';
 import { SurfaceExecutionRuntimeError } from '../../../services/surfaceExecution/SurfaceExecutionRuntimeError';
+import { surfaceProofService } from '../../../services/surfaceExecution/SurfaceProofService';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -71,6 +73,7 @@ function runtimeIdentity(ctx: ToolContext): SurfaceRuntimeIdentityV1 | null {
   return {
     conversationId: ctx.sessionId,
     runId,
+    ...(ctx.turnId?.trim() ? { turnId: ctx.turnId.trim() } : {}),
     agentId,
     emitSurfaceEvent: (event) => ctx.emit({ type: 'surface_execution', data: event }),
   };
@@ -176,72 +179,84 @@ implements ToolHandler<Record<string, unknown>, string> {
       let execution: CuaStatefulExecutionResult;
       let surfaceMeta: Record<string, unknown> = {};
       if (request.operation === 'act' && identity && binding) {
-        const wrapped = await this.surfaceRuntime.executeComputerAction({
-          identity,
-          providerStateId: request.stateId,
-          operationId,
-          arguments: args,
-          ...(request.expect ? { expectation: request.expect } : {}),
-          parentSignal: ctx.abortSignal,
-          dispatch: async (signal, subject) => {
-            const driverContext = {
-              sessionId: ctx.sessionId,
-              surfaceSessionId: subject.sessionId,
-              runId: identity.runId,
-              agentId: identity.agentId,
-              toolCallId: operationId,
-              abortSignal: signal,
-            };
-            const providerExecution = await this.adapter.execute(request, driverContext);
-            if (providerExecution.response.operation !== 'act') {
-              throw new Error('cua state adapter returned a non-action response');
-            }
-            const actionResult = providerExecution.response.result;
-            let successorObservation;
-            if (actionResult.successorState) {
-              const ownership = this.adapter.getStateOwnership(
-                actionResult.successorState.stateId,
-                driverContext,
-              );
-              if (!ownership) {
-                throw new Error('cua successor state lost its Surface owner');
-              }
-              successorObservation = this.surfaceRuntime.recordComputerObservation({
-                identity,
-                surfaceSessionId: subject.sessionId,
-                state: actionResult.successorState,
-                metadata: {
-                  providerGeneration: ownership.providerGeneration,
-                  providerSnapshotId: ownership.providerSnapshotId,
-                  evidenceAssetIds: [actionResult.evidenceRef],
-                },
-                userSummary: 'Observed the Computer target after input',
-              }).observation;
-            }
-            return {
-              providerResult: providerExecution,
-              outcome: {
-                delivery: actionResult.delivery,
-                verification: actionResult.verification,
-                overall: actionResult.overall,
-                ...(successorObservation ? { successorObservation } : {}),
-                evidenceRefs: [actionResult.evidenceRef],
-                artifactRefs: [],
-                ...(actionResult.error
-                  ? {
-                      error: this.surfaceRuntime.surfaceErrorFromComputerResult({
-                        identity,
-                        operationId,
-                        kind: actionResult.error.kind,
-                        message: actionResult.error.message,
-                        target: binding.observation.target,
-                      }),
-                    }
-                  : {}),
-              },
-            };
-          },
+        const unsubscribeLockLifecycle = subscribeCuaInputLockLifecycle((lifecycle) => {
+          if (lifecycle.scope !== binding.subject.sessionId || lifecycle.phase === 'release') return;
+          this.surfaceRuntime.recordComputerInputLockLifecycle({
+            subject: binding.subject,
+            lifecycle,
+          });
         });
+        let wrapped;
+        try {
+          wrapped = await this.surfaceRuntime.executeComputerAction({
+            identity,
+            providerStateId: request.stateId,
+            operationId,
+            arguments: args,
+            ...(request.expect ? { expectation: request.expect } : {}),
+            parentSignal: ctx.abortSignal,
+            dispatch: async (signal, subject) => {
+              const driverContext = {
+                sessionId: ctx.sessionId,
+                surfaceSessionId: subject.sessionId,
+                runId: identity.runId,
+                agentId: identity.agentId,
+                toolCallId: operationId,
+                abortSignal: signal,
+              };
+              const providerExecution = await this.adapter.execute(request, driverContext);
+              if (providerExecution.response.operation !== 'act') {
+                throw new Error('cua state adapter returned a non-action response');
+              }
+              const actionResult = providerExecution.response.result;
+              let successorObservation;
+              if (actionResult.successorState) {
+                const ownership = this.adapter.getStateOwnership(
+                  actionResult.successorState.stateId,
+                  driverContext,
+                );
+                if (!ownership) {
+                  throw new Error('cua successor state lost its Surface owner');
+                }
+                successorObservation = this.surfaceRuntime.recordComputerObservation({
+                  identity,
+                  surfaceSessionId: subject.sessionId,
+                  state: actionResult.successorState,
+                  metadata: {
+                    providerGeneration: ownership.providerGeneration,
+                    providerSnapshotId: ownership.providerSnapshotId,
+                    evidenceAssetIds: [actionResult.evidenceRef],
+                  },
+                  userSummary: 'Observed the Computer target after input',
+                }).observation;
+              }
+              return {
+                providerResult: providerExecution,
+                outcome: {
+                  delivery: actionResult.delivery,
+                  verification: actionResult.verification,
+                  overall: actionResult.overall,
+                  ...(successorObservation ? { successorObservation } : {}),
+                  evidenceRefs: [actionResult.evidenceRef],
+                  artifactRefs: [],
+                  ...(actionResult.error
+                    ? {
+                        error: this.surfaceRuntime.surfaceErrorFromComputerResult({
+                          identity,
+                          operationId,
+                          kind: actionResult.error.kind,
+                          message: actionResult.error.message,
+                          target: binding.observation.target,
+                        }),
+                      }
+                    : {}),
+                },
+              };
+            },
+          });
+        } finally {
+          unsubscribeLockLifecycle();
+        }
         execution = wrapped.providerResult;
         surfaceMeta = {
           surfaceSessionId: wrapped.session.sessionId,
@@ -305,20 +320,40 @@ implements ToolHandler<Record<string, unknown>, string> {
         ...resultMeta(execution),
         ...surfaceMeta,
       };
-      if (
-        response.operation === 'act'
-        && (response.result.overall === 'failed' || response.result.overall === 'ambiguous')
-      ) {
+      const actionFailed = response.operation === 'act'
+        && (response.result.overall === 'failed' || response.result.overall === 'ambiguous');
+      const proofed = identity && typeof meta.surfaceSessionId === 'string'
+        ? surfaceProofService.finalizeToolResult({
+            toolName: 'computer_use',
+            action: request.operation,
+            surface: 'computer',
+            result: {
+              success: !actionFailed,
+              ...(actionFailed ? { error: output } : { output }),
+              metadata: meta,
+            },
+            identity: {
+              conversationId: identity.conversationId,
+              runId: identity.runId,
+              turnId: identity.turnId,
+              agentId: identity.agentId,
+              surfaceSessionId: meta.surfaceSessionId,
+              operationId,
+            },
+          })
+        : null;
+      const proofMeta = proofed?.metadata || meta;
+      if (actionFailed) {
         return {
           ok: false,
           error: output,
           code: response.result.overall === 'ambiguous'
             ? 'CUA_ACTION_AMBIGUOUS'
             : 'CUA_ACTION_FAILED',
-          meta,
+          meta: proofMeta,
         };
       }
-      return { ok: true, output, meta };
+      return { ok: true, output, meta: proofMeta };
     } catch (error) {
       if (error instanceof SurfaceExecutionRuntimeError) {
         return {

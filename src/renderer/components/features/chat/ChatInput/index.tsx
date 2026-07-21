@@ -83,6 +83,7 @@ import {
 } from './debugDraftUrl';
 import { getTrailingSlashToken } from './slashPickerModel';
 import { AgentChip } from './AgentChip';
+import { SurfaceExecutionComposerStatus } from '../../surfaceExecution/SurfaceExecutionRunStatus';
 
 // ============================================================================
 // 类型定义
@@ -689,6 +690,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
         )}
 
+        <SurfaceExecutionComposerStatus conversationId={currentSessionId} />
         <InlineWorkbenchBar />
         <CapabilitySuggestionStrip
           skillRecommendations={skillRecommendations}

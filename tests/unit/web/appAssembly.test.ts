@@ -82,6 +82,8 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['delete', '/:sessionId'],
   // dev router: devAgentTeamSmoke sub-router
   ['post', '/'],
+  // dev router: devSurfaceExecutionConversation sub-router
+  ['post', '/seed'],
   // dev router: flat routes
   ['get', '/workspace/file'],
   ['post', '/dev/exec-tool'],

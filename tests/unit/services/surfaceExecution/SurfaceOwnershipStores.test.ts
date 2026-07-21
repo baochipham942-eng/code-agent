@@ -195,5 +195,34 @@ describe('Surface owner/grant/observation stores', () => {
         backendNodeId: 1,
       }],
     })).toThrow(/does not match the observation target revision/);
+
+    expect(() => observations.register({
+      subject,
+      target,
+      providerGeneration: 'provider:1',
+      elementRefs: [{
+        kind: 'browser-element',
+        ref: 'element:wrong-main-document',
+        stateId: 'placeholder',
+        tabRef: target.tabRef,
+        documentRevision: 'doc:other',
+        backendNodeId: 2,
+      }],
+    })).toThrow(/does not match the observation target revision/);
+
+    expect(() => observations.register({
+      subject,
+      target,
+      providerGeneration: 'provider:1',
+      elementRefs: [{
+        kind: 'browser-element',
+        ref: 'element:owned-frame',
+        stateId: 'placeholder',
+        tabRef: target.tabRef,
+        frameRef: 'frame:child',
+        documentRevision: 'doc:child',
+        backendNodeId: 3,
+      }],
+    })).not.toThrow();
   });
 });

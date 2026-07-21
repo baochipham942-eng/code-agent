@@ -121,7 +121,7 @@ export interface BrowserCookieImportRequest {
   /** When set, only cookies whose domain matches (exact or subdomain) are imported. */
   domainAllowlist?: string[];
   includeExpired?: boolean;
-  /** Must be true — silent agent/background import is forbidden (ADR-041). */
+  /** Legacy compatibility signal. Callers must separately hold a one-time Host approval. */
   userConfirmed: true;
 }
 

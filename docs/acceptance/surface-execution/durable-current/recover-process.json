@@ -1,0 +1,265 @@
+{
+  "version": 1,
+  "phase": "recover",
+  "pid": 95455,
+  "assertions": {
+    "recoveredReadOnly": true,
+    "oldGrantRevoked": true,
+    "onlyExplicitContinueAvailable": true,
+    "continuationOwnerScoped": true,
+    "continuationSingleUse": true,
+    "parentSessionLinked": true,
+    "freshObservationRequired": true,
+    "freshObservationCaptured": true,
+    "cleanupCompleted": true,
+    "productionSessionStoreReopened": true,
+    "externalSurfaceAdapterContractVerified": true,
+    "organizationPolicyAuditRetentionVerified": true,
+    "providerNeutralRegistryContractVerified": true,
+    "providerImplementationDefersExact": true
+  },
+  "details": {
+    "conversationId": "session_1784605209855_86755de0",
+    "recoveredSessionId": "surface_fffca839-04f8-4b06-acc4-d9c2a2114365",
+    "continuationSessionId": "surface_87f6f8e7-b85e-4de1-8ba3-7a3d88faa162",
+    "parentSessionId": "surface_fffca839-04f8-4b06-acc4-d9c2a2114365",
+    "persistentMedia": {
+      "dataDir": "/tmp/code-agent-surface-durable-94860",
+      "databasePath": "/tmp/code-agent-surface-durable-94860/code-agent.db",
+      "databaseBytes": 1159168,
+      "databaseSha256": "31280a003f9a044bba548da4cbe642c9edc79e7dd2f9e1d6c37f896b59eaaaa9",
+      "recordKey": "surfaceExecutionLedgerV1",
+      "recordSha256": "ae3717e75ffe6b2713a5b286488ab082c92615cb09d8c71de0a3207c44a62a50"
+    },
+    "continuationEvent": {
+      "phase": "recover",
+      "status": "succeeded",
+      "userSummary": "Continued from a read-only Surface checkpoint; a fresh observation is required.",
+      "action": "continue_from_checkpoint",
+      "expectedOutcome": "Observe the current target before sending a new mutation."
+    },
+    "freshObservation": {
+      "stateId": "surface_state_b361d409-1953-465f-b5e5-37c43df77e43",
+      "lifecycle": "fresh",
+      "documentRevision": "document:durable-recovery:95455:1"
+    },
+    "p2Acceptance": {
+      "version": 1,
+      "assertions": {
+        "externalSurfaceAdapterContractVerified": true,
+        "organizationPolicyAuditRetentionVerified": true,
+        "providerNeutralRegistryContractVerified": true,
+        "providerImplementationDefersExact": true
+      },
+      "details": {
+        "externalAdapter": {
+          "sanitizedDispatch": {
+            "requestKeys": [
+              "arguments",
+              "entrypoint",
+              "operation",
+              "version"
+            ],
+            "argumentKeys": [
+              "action",
+              "targetRef"
+            ],
+            "authorityKeysPresent": false
+          },
+          "dispatchCount": 1,
+          "delivery": "confirmed",
+          "sessionGrantProjected": false,
+          "staleRefCode": "SURFACE_ELEMENT_REF_NOT_FOUND",
+          "foreignOwnerCode": "SURFACE_TARGET_NOT_OWNED",
+          "forgedAuthorityCode": "SURFACE_POLICY_BLOCKED",
+          "forgedAuthorityReason": "external_authority_forbidden",
+          "policyAuditDecisions": [
+            "allow",
+            "allow",
+            "allow",
+            "allow",
+            "allow"
+          ]
+        },
+        "organizationPolicy": {
+          "domainAllowDecisions": [
+            "allow",
+            "allow"
+          ],
+          "profileDeniedReason": "profile_scope_denied",
+          "missingProfileDeniedReason": "profile_scope_denied",
+          "missingAccountDeniedReason": "account_scope_denied",
+          "foreignAccountDeniedReason": "account_scope_denied",
+          "domainDeniedReason": "domain_denied",
+          "appAllowDecision": "allow",
+          "appDeniedReason": "app_denied",
+          "auditEventsBeforeRetention": 9,
+          "auditMetadataRedacted": true,
+          "rawScopeAbsent": true,
+          "retentionPurgedAudits": 9,
+          "auditEventsAfterRetention": 0
+        },
+        "providerRegistry": {
+          "registeredProviderClass": "multi-browser",
+          "selectedProviderId": "vendor:p2-neutral-browser",
+          "selectedCapabilities": [
+            "observe"
+          ],
+          "targetAuthority": "host-issued",
+          "cleanupOwner": "provider",
+          "capabilityFailureReason": "capability_unsupported",
+          "surfaceFailureReason": "surface_mismatch",
+          "unknownProviderFailureReason": "provider_not_registered",
+          "duplicateRegistrationRejected": true,
+          "productionProviderIds": [
+            "browser-relay",
+            "cua-driver",
+            "system-chrome-cdp"
+          ],
+          "gatedProviderIds": [
+            "future:in-app-preview",
+            "future:mobile",
+            "future:multi-browser",
+            "future:remote-managed"
+          ],
+          "gatedProviderFailureReasons": {
+            "future:in-app-preview": "provider_gate_pending",
+            "future:mobile": "provider_gate_pending",
+            "future:multi-browser": "provider_gate_pending",
+            "future:remote-managed": "provider_gate_pending"
+          },
+          "g4DecisionRows": [
+            "multi-browser-provider",
+            "remote-managed-browser-pool",
+            "mobile-device-cloud",
+            "windows-linux-profile-and-computer-provider",
+            "in-app-preview-provider"
+          ],
+          "g4DecisionEvidenceComplete": true
+        }
+      },
+      "evidenceBackedDefers": {
+        "externalProductionEntrypoints": {
+          "row": "external-agent-production-entrypoints",
+          "status": "evidence-backed-defer",
+          "gate": "G4",
+          "reason": "The Host authority fence is implemented, but no authenticated transport, Host bootstrap, or public CLI contract exists for callable neo surface / neo browser entrypoints.",
+          "evidenceObserved": [
+            "external-authority-fence-contract-verified",
+            "production-entrypoint-registration-absent",
+            "provider-runtime-must-remain-single-owner"
+          ],
+          "evidenceRequired": [
+            "approved-external-consumer-and-authentication-contract",
+            "host-owned-run-session-provider-bootstrap",
+            "real-provider-entrypoint-e2e-with-cleanup-and-redaction"
+          ]
+        },
+        "organizationProductionStore": {
+          "row": "organization-policy-production-store",
+          "status": "evidence-backed-defer",
+          "gate": "G4",
+          "reason": "The deny-by-default policy engine, approvals, redacted audit, and TTL are verified through ExternalSurfaceAgentAdapter and the P2 acceptance seam only; Managed, Relay, and Computer production bootstrap/enforcement are not wired, and the default audit store remains process-local.",
+          "evidenceObserved": [
+            "external-surface-agent-adapter-policy-enforcement-verified",
+            "p2-acceptance-policy-seam-verified",
+            "managed-relay-computer-production-policy-bootstrap-and-enforcement-absent",
+            "redacted-audit-retention-verified",
+            "default-audit-store-is-process-local"
+          ],
+          "evidenceRequired": [
+            "host-owned-organization-identity-and-policy-bootstrap-for-managed-relay-computer",
+            "real-managed-relay-computer-provider-policy-enforcement-e2e",
+            "organization-admin-contract",
+            "persistent-audit-store-and-migration",
+            "retention-access-control-and-deletion-e2e"
+          ]
+        },
+        "providerImplementations": [
+          {
+            "row": "multi-browser-provider",
+            "status": "evidence-backed-defer",
+            "gate": "G4",
+            "reason": "The API boundary is declared; implementation waits for measured cross-browser demand and parity gaps.",
+            "evidenceRequired": [
+              "weekly-active-demand",
+              "task-success-delta",
+              "compatibility-failure-rate"
+            ],
+            "evidenceObserved": [
+              "provider-registry:future:multi-browser:api-boundary-declared",
+              "provider-registry:future:multi-browser:gate-pending-enforced",
+              "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:multi-browser"
+            ]
+          },
+          {
+            "row": "remote-managed-browser-pool",
+            "status": "evidence-backed-defer",
+            "gate": "G4",
+            "reason": "Remote infrastructure would expand data, identity, and cleanup scope without a frozen benchmark.",
+            "evidenceRequired": [
+              "p95-latency",
+              "success-rate-delta",
+              "cost-per-successful-run",
+              "isolation-audit"
+            ],
+            "evidenceObserved": [
+              "provider-registry:future:remote-managed:api-boundary-declared",
+              "provider-registry:future:remote-managed:gate-pending-enforced",
+              "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:remote-managed"
+            ]
+          },
+          {
+            "row": "mobile-device-cloud",
+            "status": "evidence-backed-defer",
+            "gate": "G4",
+            "reason": "A real device pool and device-cloud contract require separate security and reliability validation.",
+            "evidenceRequired": [
+              "mobile-task-demand",
+              "input-delivery-rate",
+              "device-cleanup-rate",
+              "cost-per-run"
+            ],
+            "evidenceObserved": [
+              "provider-registry:future:mobile:api-boundary-declared",
+              "provider-registry:future:mobile:gate-pending-enforced",
+              "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:mobile"
+            ]
+          },
+          {
+            "row": "windows-linux-profile-and-computer-provider",
+            "status": "evidence-backed-defer",
+            "gate": "G4",
+            "reason": "No approved Windows/Linux provider, profile credential path, or platform test environment is in scope.",
+            "evidenceRequired": [
+              "platform-provider-contract",
+              "credential-isolation-review",
+              "real-app-regression-baseline"
+            ],
+            "evidenceObserved": [
+              "repository:no-approved-windows-linux-provider-or-helper",
+              "runtime:current-acceptance-host-darwin",
+              "truth-source:G4-cross-platform-provider-decision"
+            ]
+          },
+          {
+            "row": "in-app-preview-provider",
+            "status": "evidence-backed-defer",
+            "gate": "G4",
+            "reason": "The provider seam is declared; implementation waits for target ownership and sandbox evidence.",
+            "evidenceRequired": [
+              "preview-ownership-contract",
+              "sandbox-escape-tests",
+              "workbuddy-success-delta"
+            ],
+            "evidenceObserved": [
+              "provider-registry:future:in-app-preview:api-boundary-declared",
+              "provider-registry:future:in-app-preview:gate-pending-enforced",
+              "p2-acceptance:details.providerRegistry.gatedProviderFailureReasons.future:in-app-preview"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

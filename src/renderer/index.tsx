@@ -42,11 +42,13 @@ declare global {
     __modelStrategyE2E?: {
       injectExternalEngineFailure: (sessionId: string, failure: AgentEngineFailureDiagnostics) => void;
       getSessionEngine: (sessionId: string) => AgentEngineSessionMetadata | null;
-      createSession?: () => Promise<string | null>;
+      createSession?: (title?: string) => Promise<string | null>;
       getCurrentSessionId?: () => string | null;
       getMessageCount?: () => number;
+      getSurfaceExecutionDiagnostics?: () => Record<string, unknown> | null;
       injectMessages?: (messages: Message[]) => void;
     };
+    __surfaceExecutionEffectsE2E?: Record<string, unknown>;
   }
 }
 window.__openLivePreview = async (url: string) => {
@@ -133,8 +135,11 @@ if (new URLSearchParams(window.location.search).get('e2e') === '1') {
     getSessionEngine(sessionId) {
       return useSessionStore.getState().sessions.find((session) => session.id === sessionId)?.engine ?? null;
     },
-    async createSession() {
-      const session = await useSessionStore.getState().createSession('新对话', { workingDirectory: null });
+    async createSession(title) {
+      const session = await useSessionStore.getState().createSession(
+        title?.trim() || '新对话',
+        { workingDirectory: null },
+      );
       return session?.id ?? useSessionStore.getState().currentSessionId;
     },
     getCurrentSessionId() {
@@ -142,6 +147,10 @@ if (new URLSearchParams(window.location.search).get('e2e') === '1') {
     },
     getMessageCount() {
       return useSessionStore.getState().messages.length;
+    },
+    getSurfaceExecutionDiagnostics() {
+      const diagnostics = window.__surfaceExecutionEffectsE2E;
+      return diagnostics ? { ...diagnostics } : null;
     },
     injectMessages(messages) {
       useSessionStore.getState().setMessages(messages);

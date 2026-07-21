@@ -109,7 +109,13 @@ describe('ToolExecutor executionIntent propagation', () => {
         runId: 'run-surface-1',
         agentId: 'agent-surface-1',
         status: 'ambiguous',
-        evidenceRefs: ['proof-browser-1'],
+        evidenceRefs: [
+          'proof-browser-1',
+          expect.stringMatching(/^surface-proof:/),
+        ],
+        evidence: [expect.objectContaining({
+          evidenceId: expect.stringMatching(/^surface-proof:/),
+        })],
         artifactRefs: ['artifact-browser-1'],
       },
     });

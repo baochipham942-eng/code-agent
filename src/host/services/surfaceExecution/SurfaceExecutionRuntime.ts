@@ -1,36 +1,40 @@
-import { createHash } from 'node:crypto';
+import type { ComputerUseExpectationV1, ComputerUseStateViewV1 } from '../../../shared/contract/desktop';
 import type {
-  ComputerUseExpectationV1,
-  ComputerUseStateErrorKindV1,
-  ComputerUseStateViewV1,
-} from '../../../shared/contract/desktop';
-import type {
-  InteractiveSurfaceSessionV1,
-  SurfaceActionResultV1,
-  SurfaceExecutionErrorV1,
-  SurfaceExecutionEventV1,
-  SurfaceExpectationV1,
-  SurfaceObservationV1,
-  SurfaceTargetRefV1,
+  InteractiveSurfaceSessionV1, SurfaceActionResultV1, SurfaceConversationSnapshotV1,
+  SurfaceExecutionEventV1, SurfaceObservationV1,
+  SurfaceSessionControlActionV1, SurfaceSessionControlResultV1,
 } from '../../../shared/contract/surfaceExecution';
 import { getApplicationRunRegistry } from '../../app/applicationRunRegistry';
 import type { RunRegistry } from '../../runtime/runRegistry';
-import { releaseCuaLock } from '../../mcp/cuaSessionLock';
+import {
+  releaseCuaLock,
+  type CuaInputLockLifecycleEvent,
+} from '../../mcp/cuaSessionLock';
 import { resetCuaBudget } from '../../mcp/cuaTrajectoryBudget';
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceAccessGrantService } from './SurfaceAccessGrantService';
+import { assertBrowserElementRefsOwned } from './BrowserElementRefFence';
 import {
   BrowserTabLeaseService,
   type BrowserTabLeaseSubjectV1,
 } from './BrowserTabLeaseService';
 import { SurfaceCapabilityRegistry } from './SurfaceCapabilityRegistry';
+import { SurfaceConversationControlService } from './SurfaceConversationControlService';
+import {
+  getSurfaceContinuationService,
+  resetSurfaceContinuationServiceForTests,
+  type SurfaceContinuationService,
+} from './SurfaceContinuationService';
 import { SurfaceEventHub } from './SurfaceEventHub';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
+import { SurfaceFrameRegistry } from './SurfaceFrameRegistry';
 import { SurfaceHumanTakeoverService } from './SurfaceHumanTakeoverService';
 import { SurfaceInterruptService } from './SurfaceInterruptService';
 import { SurfaceObservationRegistry } from './SurfaceObservationRegistry';
+import { SurfaceOutputRegistry } from './SurfaceOutputRegistry';
 import {
   BROWSER_SURFACE_OPERATIONS, DEFAULT_BROWSER_PROVIDER, RELAY_BROWSER_PROVIDER,
+  RELAY_BROWSER_SURFACE_OPERATIONS,
   type BrowserStateBinding,
   type ExecuteBrowserActionInputV1,
   type GetBrowserBindingInputV1,
@@ -48,10 +52,23 @@ import {
   type SurfaceProviderActionOutcomeV1,
 } from './SurfaceOperationCoordinator';
 import { SurfaceSessionManager } from './SurfaceSessionManager';
+import { SurfaceSwitchCoordinator } from './SurfaceSwitchCoordinator';
+import {
+  projectSurfaceComputerError,
+  type SurfaceComputerErrorInputV1,
+} from './surfaceComputerErrorProjection';
+import {
+  computerExpectationToSurface,
+  computerTargetFromState,
+  recordComputerInputLockLifecycleEvent,
+} from './surfaceComputerRuntimeHelpers';
+import { publishSurfaceContinuationEvent } from './surfaceContinuationRuntime';
+import { assertSurfaceRunOwner } from './surfaceRunOwnership';
 
 export interface SurfaceRuntimeIdentityV1 {
   conversationId: string;
   runId: string;
+  turnId?: string;
   agentId: string;
   emitSurfaceEvent?: (event: SurfaceExecutionEventV1) => void;
 }
@@ -86,6 +103,7 @@ interface ComputerStateBinding {
 
 interface SurfaceExecutionRuntimeOptions {
   runRegistry?: RunRegistry;
+  continuations?: SurfaceContinuationService;
 }
 
 const COMPUTER_OPERATIONS = ['list_roots', 'observe', 'act'];
@@ -100,30 +118,40 @@ export class SurfaceExecutionRuntime {
   readonly sessions: SurfaceSessionManager;
   readonly grants: SurfaceAccessGrantService;
   readonly observations: SurfaceObservationRegistry;
-  readonly events: SurfaceEventHub;
+  readonly events: SurfaceEventHub; readonly frames: SurfaceFrameRegistry; readonly outputs: SurfaceOutputRegistry;
   readonly interrupts: SurfaceInterruptService;
   readonly operations: SurfaceOperationCoordinator;
   readonly takeover: SurfaceHumanTakeoverService;
   readonly browserTabLeases: BrowserTabLeaseService;
+  readonly continuations: SurfaceContinuationService;
 
   private readonly runRegistry: RunRegistry;
   private readonly emitters = new Map<string, (event: SurfaceExecutionEventV1) => void>();
   private readonly browserBindings = new Map<string, BrowserStateBinding>();
   private readonly computerBindings = new Map<string, ComputerStateBinding>();
   private readonly knownSubjects = new Map<string, SurfaceGrantSubjectV1>();
-  private readonly pendingTakeovers = new Map<string, SurfaceTakeoverControlV1>();
+  private readonly eventObservers = new Set<(event: SurfaceExecutionEventV1) => void>();
+  private readonly conversationControl: SurfaceConversationControlService;
+  private readonly switches: SurfaceSwitchCoordinator;
 
   constructor(options: SurfaceExecutionRuntimeOptions = {}) {
     this.runRegistry = options.runRegistry || getApplicationRunRegistry();
+    this.continuations = options.continuations || getSurfaceContinuationService();
     this.sessions = new SurfaceSessionManager({
       assertActiveOwner: (identity) => this.assertActiveRun(identity),
     });
     this.grants = new SurfaceAccessGrantService(this.sessions);
     this.browserTabLeases = new BrowserTabLeaseService(this.sessions);
     this.observations = new SurfaceObservationRegistry(this.sessions);
+    this.frames = new SurfaceFrameRegistry(this.sessions); this.outputs = new SurfaceOutputRegistry(this.sessions);
     this.events = new SurfaceEventHub(this.sessions, {
-      onEvent: (event) => this.emitters.get(event.sessionId)?.(event),
+      frames: this.frames,
+      onEvent: (event) => {
+        this.emitters.get(event.sessionId)?.(event);
+        for (const observer of this.eventObservers) observer(structuredClone(event));
+      },
     });
+    this.switches = new SurfaceSwitchCoordinator(this.sessions, this.events);
     this.interrupts = new SurfaceInterruptService(this.sessions);
     this.operations = new SurfaceOperationCoordinator(
       this.sessions,
@@ -139,12 +167,21 @@ export class SurfaceExecutionRuntime {
       this.interrupts,
       this.events,
     );
+    this.conversationControl = new SurfaceConversationControlService(
+      this.sessions,
+      this.grants,
+      this.events,
+      this.interrupts,
+      this.takeover,
+      this.runRegistry,
+      Date.now, this.outputs);
   }
 
   prepareBrowserSession(input: PrepareBrowserSessionInputV1): PrepareBrowserSessionResultV1 {
     const session = this.ensureBrowserSession(
       input.identity,
       input.provider || DEFAULT_BROWSER_PROVIDER,
+      input.switchReason,
     );
     return { session, subject: this.subjectFor(session) };
   }
@@ -294,6 +331,14 @@ export class SurfaceExecutionRuntime {
       );
     }
     const descriptor = this.capabilities.resolve('browser_action', input.action, input.arguments);
+    if (descriptor.mutation) {
+      assertBrowserElementRefsOwned({
+        session,
+        observation,
+        arguments: input.arguments,
+        operationId: input.operationId,
+      });
+    }
     if (provider === RELAY_BROWSER_PROVIDER) {
       this.browserTabLeases.authorize({
         leaseId: input.leaseId || '',
@@ -388,9 +433,25 @@ export class SurfaceExecutionRuntime {
   prepareComputerSession(input: {
     identity: SurfaceRuntimeIdentityV1;
     provider?: string;
+    switchReason?: string;
   }): { session: InteractiveSurfaceSessionV1; subject: SurfaceGrantSubjectV1 } {
-    const session = this.ensureComputerSession(input.identity, input.provider || 'cua-driver');
+    const session = this.ensureComputerSession(
+      input.identity,
+      input.provider || 'cua-driver',
+      input.switchReason,
+    );
     return { session, subject: this.subjectFor(session) };
+  }
+
+  recordComputerInputLockLifecycle(input: {
+    subject: SurfaceGrantSubjectV1;
+    lifecycle: CuaInputLockLifecycleEvent;
+  }): SurfaceExecutionEventV1 {
+    return recordComputerInputLockLifecycleEvent({
+      sessions: this.sessions,
+      events: this.events,
+      ...input,
+    });
   }
 
   registerCleanup(
@@ -552,7 +613,13 @@ export class SurfaceExecutionRuntime {
       deadlineMs: input.deadlineMs || 60_000,
       ...(input.parentSignal ? { parentSignal: input.parentSignal } : {}),
       releaseInput: input.releaseInput || (async () => {
-        await releaseCuaLock(binding.subject.sessionId);
+        await releaseCuaLock(
+          binding.subject.sessionId,
+          (lifecycle) => this.recordComputerInputLockLifecycle({
+            subject: binding.subject,
+            lifecycle,
+          }),
+        );
       }),
       dispatch: async (signal) => {
         const dispatched = await input.dispatch(signal, binding.subject);
@@ -592,133 +659,110 @@ export class SurfaceExecutionRuntime {
     return observation ? { subject: binding.subject, observation } : null;
   }
 
+  snapshotConversation(conversationId: string): SurfaceConversationSnapshotV1 {
+    return this.conversationControl.snapshotConversation(conversationId);
+  }
+
+  /** Host-only observer used by durable projections; callers receive redacted clones. */
+  subscribeEvents(observer: (event: SurfaceExecutionEventV1) => void): () => void {
+    this.eventObservers.add(observer);
+    return () => this.eventObservers.delete(observer);
+  }
+
+  async controlConversation(input: {
+    conversationId: string;
+    surfaceSessionId: string;
+    action: SurfaceSessionControlActionV1;
+    reason?: string;
+  }): Promise<SurfaceSessionControlResultV1> {
+    return this.conversationControl.controlConversation(input);
+  }
+
   async control(
     subject: SurfaceGrantSubjectV1,
-    action: 'pause' | 'resume' | 'takeover' | 'stop' | 'end_session',
+    action: SurfaceSessionControlActionV1,
     options?: { reason?: string; timeoutMs?: number },
   ): Promise<void | SurfaceTakeoverControlV1> {
-    if (action === 'pause') {
-      await this.interrupts.pause(subject);
-      return;
-    }
-    if (action === 'takeover') {
-      const pending = await this.takeover.request({
-        subject,
-        reason: options?.reason || 'Waiting for human control',
-        timeoutMs: options?.timeoutMs || 5 * 60_000,
+    if (action === 'continue') {
+      throw new SurfaceExecutionRuntimeError({
+        code: 'SURFACE_POLICY_BLOCKED',
+        message: 'Durable continuation must be prepared from an owned conversation checkpoint.',
+        phase: 'recover',
+        recommendedAction: 'Use the conversation Surface continuation control.',
+        surface: 'browser',
+        provider: 'surface-runtime',
+        sessionId: subject.sessionId,
       });
-      this.pendingTakeovers.set(subject.sessionId, pending);
-      void pending.wait.then(
-        () => this.deletePendingTakeover(subject.sessionId, pending.requestId),
-        () => this.deletePendingTakeover(subject.sessionId, pending.requestId),
-      );
-      return pending;
     }
-    if (action === 'resume') {
-      const pending = this.pendingTakeovers.get(subject.sessionId);
-      if (pending && this.takeover.respond(pending.requestId, subject, 'continue')) {
-        await pending.wait;
-      } else {
-        this.interrupts.resume(subject);
-      }
-      return;
-    }
-    await this.cancelPendingTakeover(subject);
-    if (action === 'stop') await this.interrupts.stop(subject);
-    else await this.interrupts.endSession(subject);
+    return this.conversationControl.control(subject, action, options);
   }
 
   async endRun(identity: SurfaceRuntimeIdentityV1): Promise<void> {
-    this.assertActiveRun(identity);
+    this.assertActiveRun(identity, 'computer', 'surface-runtime', 'cleanup');
     const subjects = Array.from(this.knownSubjects.values()).filter((subject) => {
       const session = this.sessions.get(subject.sessionId);
       return session?.conversationId === identity.conversationId && session.runId === identity.runId;
     });
     for (const subject of subjects) {
-      const session = this.sessions.requireOwned(subject.sessionId, subject);
-      if (session.state === 'completed' || session.state === 'failed') continue;
-      this.events.publish(subject, {
-        phase: 'cleanup',
-        status: 'running',
-        userSummary: 'Ending Surface session and releasing control',
-        ...(session.activeTarget ? { target: session.activeTarget } : {}),
-        evidenceRefs: [],
-        artifactRefs: [],
-        availableControls: ['stop'],
-      });
-      try {
-        this.grants.revokeForSession(subject);
-        await this.cancelPendingTakeover(subject);
-        await this.interrupts.endSession(subject);
-        if (session.surface === 'computer' && session.provider === 'cua-driver') {
-          await releaseCuaLock(subject.sessionId);
-          resetCuaBudget(subject.sessionId);
+      await this.sessions.withCancellingOwnerCleanup(subject.sessionId, subject, async () => {
+        const session = this.sessions.requireOwned(subject.sessionId, subject);
+        if (session.state === 'completed' || session.state === 'failed') return;
+        this.events.publish(subject, {
+          phase: 'cleanup',
+          status: 'running',
+          userSummary: 'Ending Surface session and releasing control',
+          ...(session.activeTarget ? { target: session.activeTarget } : {}),
+          evidenceRefs: [],
+          artifactRefs: [],
+          availableControls: ['stop'],
+        });
+        try {
+          this.grants.revokeForSession(subject);
+          await this.conversationControl.cancelPendingTakeover(subject);
+          await this.interrupts.endSession(subject);
+          if (session.surface === 'computer' && session.provider === 'cua-driver') {
+            await releaseCuaLock(
+              subject.sessionId,
+              (lifecycle) => this.recordComputerInputLockLifecycle({ subject, lifecycle }),
+            );
+            resetCuaBudget(subject.sessionId);
+          }
+          this.events.publish(subject, {
+            phase: 'cleanup',
+            status: 'succeeded',
+            userSummary: 'Surface session ended and control was released',
+            ...(session.activeTarget ? { target: session.activeTarget } : {}),
+            evidenceRefs: [],
+            artifactRefs: [],
+            availableControls: [],
+            completedAt: Date.now(),
+          });
+        } catch (error) {
+          this.events.publish(subject, {
+            phase: 'cleanup',
+            status: 'failed',
+            userSummary: error instanceof Error ? error.message : 'Surface cleanup failed',
+            ...(session.activeTarget ? { target: session.activeTarget } : {}),
+            evidenceRefs: [],
+            artifactRefs: [],
+            availableControls: ['end_session'],
+            completedAt: Date.now(),
+          });
+          throw error;
         }
-        this.events.publish(subject, {
-          phase: 'cleanup',
-          status: 'succeeded',
-          userSummary: 'Surface session ended and control was released',
-          ...(session.activeTarget ? { target: session.activeTarget } : {}),
-          evidenceRefs: [],
-          artifactRefs: [],
-          availableControls: [],
-          completedAt: Date.now(),
-        });
-      } catch (error) {
-        this.events.publish(subject, {
-          phase: 'cleanup',
-          status: 'failed',
-          userSummary: error instanceof Error ? error.message : 'Surface cleanup failed',
-          ...(session.activeTarget ? { target: session.activeTarget } : {}),
-          evidenceRefs: [],
-          artifactRefs: [],
-          availableControls: ['end_session'],
-          completedAt: Date.now(),
-        });
-        throw error;
-      }
+      });
     }
   }
 
-  surfaceErrorFromComputerResult(input: {
-    identity: SurfaceRuntimeIdentityV1;
-    provider?: string;
-    operationId: string;
-    kind: ComputerUseStateErrorKindV1;
-    message: string;
-    target?: SurfaceTargetRefV1;
-  }): SurfaceExecutionErrorV1 {
-    const codeByKind: Record<ComputerUseStateErrorKindV1, SurfaceExecutionErrorV1['code']> = {
-      invalid_request: 'SURFACE_POLICY_BLOCKED',
-      stale_state: 'SURFACE_STATE_STALE',
-      state_conflict: 'SURFACE_TARGET_REVISION_CHANGED',
-      provider_restarted: 'SURFACE_STATE_STALE',
-      target_missing: 'SURFACE_TARGET_NOT_OWNED',
-      delivery_unknown: 'SURFACE_DELIVERY_UNKNOWN',
-      verification_failed: 'SURFACE_POSTCONDITION_FAILED',
-      provider_error: 'SURFACE_TRANSPORT_UNAVAILABLE',
-    };
-    const code = codeByKind[input.kind];
-    return new SurfaceExecutionRuntimeError({
-      code,
-      message: input.message,
-      phase: input.kind === 'verification_failed' ? 'verify' : 'act',
-      retryable: input.kind !== 'invalid_request',
-      userActionRequired: input.kind === 'target_missing',
-      recommendedAction: input.kind === 'delivery_unknown'
-        ? 'Inspect the successor state before deciding whether to retry.'
-        : 'Capture a fresh observation before retrying.',
-      surface: 'computer',
-      provider: input.provider || 'cua-driver',
-      sessionId: this.findComputerSessionId(input.identity, input.provider || 'cua-driver'),
-      ...(input.target ? { targetRef: input.target } : {}),
-      operationId: input.operationId,
-    }).surfaceError;
+  surfaceErrorFromComputerResult(input: SurfaceComputerErrorInputV1) {
+    const provider = input.provider || 'cua-driver';
+    return projectSurfaceComputerError(input, this.findComputerSessionId(input.identity, provider));
   }
 
   private ensureBrowserSession(
     identity: SurfaceRuntimeIdentityV1,
     provider: string,
+    switchReason?: string,
   ): InteractiveSurfaceSessionV1 {
     this.assertActiveRun(identity, 'browser', provider);
     let session = this.sessions.findActive({
@@ -729,20 +773,29 @@ export class SurfaceExecutionRuntime {
       provider,
     });
     if (!session) {
+      const switchParentSessionId = this.switches.parentSessionId(identity, 'browser');
+      const continuation = switchParentSessionId ? null : this.continuations.consume(identity);
+      const parentSessionId = switchParentSessionId || continuation?.parentSessionId;
       session = this.sessions.create({
         conversationId: identity.conversationId,
         runId: identity.runId,
+        ...(identity.turnId ? { turnId: identity.turnId } : {}),
         agentId: identity.agentId,
         surface: 'browser',
         provider,
+        ...(parentSessionId ? { parentSessionId } : {}),
         capabilities: this.capabilities.buildManifest({
           surface: 'browser',
           provider,
           protocolVersion: provider === RELAY_BROWSER_PROVIDER
             ? 'surface-execution-v1+browser-relay-v2'
             : 'surface-execution-v1+browser-managed-v2',
-          operations: BROWSER_SURFACE_OPERATIONS,
-          observationKinds: ['dom', 'a11y', 'screenshot', 'network', 'console'],
+          operations: provider === RELAY_BROWSER_PROVIDER
+            ? RELAY_BROWSER_SURFACE_OPERATIONS
+            : BROWSER_SURFACE_OPERATIONS,
+          observationKinds: provider === RELAY_BROWSER_PROVIDER
+            ? ['dom', 'a11y', 'screenshot', 'console']
+            : ['dom', 'a11y', 'screenshot', 'network', 'console'],
           supports: {
             cancel: true,
             pause: true,
@@ -753,15 +806,21 @@ export class SurfaceExecutionRuntime {
         }),
       });
       session = this.sessions.transition(session.sessionId, this.subjectFor(session), 'running');
+      if (continuation) {
+        this.bindEmitter(session.sessionId, identity.emitSurfaceEvent);
+        publishSurfaceContinuationEvent(this.events, session, this.subjectFor(session));
+      }
     }
     this.bindEmitter(session.sessionId, identity.emitSurfaceEvent);
     this.knownSubjects.set(session.sessionId, this.subjectFor(session));
+    this.switches.activate(session, identity, switchReason);
     return session;
   }
 
   private ensureComputerSession(
     identity: SurfaceRuntimeIdentityV1,
     provider: string,
+    switchReason?: string,
   ): InteractiveSurfaceSessionV1 {
     this.assertActiveRun(identity);
     let session = this.sessions.findActive({
@@ -772,12 +831,17 @@ export class SurfaceExecutionRuntime {
       provider,
     });
     if (!session) {
+      const switchParentSessionId = this.switches.parentSessionId(identity, 'computer');
+      const continuation = switchParentSessionId ? null : this.continuations.consume(identity);
+      const parentSessionId = switchParentSessionId || continuation?.parentSessionId;
       session = this.sessions.create({
         conversationId: identity.conversationId,
         runId: identity.runId,
+        ...(identity.turnId ? { turnId: identity.turnId } : {}),
         agentId: identity.agentId,
         surface: 'computer',
         provider,
+        ...(parentSessionId ? { parentSessionId } : {}),
         capabilities: this.capabilities.buildManifest({
           surface: 'computer',
           provider,
@@ -794,9 +858,14 @@ export class SurfaceExecutionRuntime {
         }),
       });
       session = this.sessions.transition(session.sessionId, this.subjectFor(session), 'running');
+      if (continuation) {
+        this.bindEmitter(session.sessionId, identity.emitSurfaceEvent);
+        publishSurfaceContinuationEvent(this.events, session, this.subjectFor(session));
+      }
     }
     this.bindEmitter(session.sessionId, identity.emitSurfaceEvent);
     this.knownSubjects.set(session.sessionId, this.subjectFor(session));
+    this.switches.activate(session, identity, switchReason);
     return session;
   }
 
@@ -815,33 +884,14 @@ export class SurfaceExecutionRuntime {
     conversationId: string;
     runId: string;
     agentId: string;
-  }, surface: 'browser' | 'computer' = 'computer', provider = 'surface-runtime'): void {
-    if (!identity.conversationId.trim() || !identity.runId.trim() || !identity.agentId.trim()) {
-      throw new Error('Surface execution requires conversationId, runId, and agentId.');
-    }
-    const handle = this.runRegistry.resolve({
-      runId: identity.runId,
-      sessionId: identity.conversationId,
+  }, surface: 'browser' | 'computer' = 'computer', provider = 'surface-runtime', mode: 'active' | 'cleanup' = 'active'): void {
+    assertSurfaceRunOwner({
+      runRegistry: this.runRegistry,
+      identity,
+      surface,
+      provider,
+      access: mode,
     });
-    const durableTrace = this.runRegistry.getTraceContext(identity.runId);
-    const durableOwnerMissing = Boolean(durableTrace)
-      && !this.runRegistry.hasDurableOwner(identity.runId);
-    if (!handle || handle.cancellationRequested || durableOwnerMissing) {
-      throw new SurfaceExecutionRuntimeError({
-        code: 'SURFACE_TARGET_NOT_OWNED',
-        message: 'Surface execution owner is not the active RunRegistry handle.',
-        phase: 'prepare',
-        recommendedAction: 'Use the active run and conversation owner.',
-        surface,
-        provider,
-        sessionId: 'unbound',
-        detailsSafe: {
-          conversationId: identity.conversationId,
-          runId: identity.runId,
-          agentId: identity.agentId,
-        },
-      });
-    }
   }
 
   private browserBindingKey(
@@ -922,18 +972,6 @@ export class SurfaceExecutionRuntime {
     });
   }
 
-  private async cancelPendingTakeover(subject: SurfaceGrantSubjectV1): Promise<void> {
-    const pending = this.pendingTakeovers.get(subject.sessionId);
-    if (!pending) return;
-    if (this.takeover.respond(pending.requestId, subject, 'cancel')) await pending.wait;
-  }
-
-  private deletePendingTakeover(sessionId: string, requestId: string): void {
-    if (this.pendingTakeovers.get(sessionId)?.requestId === requestId) {
-      this.pendingTakeovers.delete(sessionId);
-    }
-  }
-
   private computerBindingKey(
     identity: SurfaceRuntimeIdentityV1,
     provider: string,
@@ -980,55 +1018,6 @@ export class SurfaceExecutionRuntime {
   }
 }
 
-function computerTargetFromState(
-  state: ComputerUseStateViewV1,
-  metadata: Pick<SurfaceComputerStateMetadataV1, 'providerGeneration' | 'providerSnapshotId'>,
-): Extract<SurfaceTargetRefV1, { kind: 'computer' }> {
-  const appName = state.root.appName?.trim();
-  if (!appName) {
-    throw new Error('Computer observation requires a verified application identity.');
-  }
-  const windowRef = `cua-window:${createHash('sha256')
-    .update(JSON.stringify([state.root.provider, state.root.pid, state.root.windowId]))
-    .digest('hex')
-    .slice(0, 24)}`;
-  const windowRevision = createHash('sha256')
-    .update(JSON.stringify([
-      metadata.providerGeneration,
-      metadata.providerSnapshotId,
-      state.hostRevision,
-    ]))
-    .digest('hex')
-    .slice(0, 32);
-  return {
-    kind: 'computer',
-    deviceId: 'local',
-    appName,
-    pid: state.root.pid,
-    windowRef,
-    windowRevision,
-    ...(state.root.title ? { title: state.root.title } : {}),
-  };
-}
-
-function computerExpectationToSurface(
-  expectation: ComputerUseExpectationV1,
-): SurfaceExpectationV1 {
-  if (expectation.kind === 'element_exists' || expectation.kind === 'element_absent') {
-    return { kind: expectation.kind, elementRef: expectation.elementRef || '' };
-  }
-  if (expectation.kind === 'text_present') {
-    return { kind: 'text_present', text: expectation.text || '' };
-  }
-  if (expectation.kind === 'window_present') {
-    return { kind: 'window_present' };
-  }
-  return {
-    kind: 'custom',
-    description: `element ${expectation.elementRef || ''} value equals expected value`,
-  };
-}
-
 let surfaceExecutionRuntime: SurfaceExecutionRuntime | null = null;
 
 export function getSurfaceExecutionRuntime(): SurfaceExecutionRuntime {
@@ -1042,4 +1031,5 @@ export function getConfiguredSurfaceExecutionRuntime(): SurfaceExecutionRuntime 
 
 export function resetSurfaceExecutionRuntimeForTests(): void {
   surfaceExecutionRuntime = null;
+  resetSurfaceContinuationServiceForTests();
 }

@@ -5,6 +5,11 @@ import {
   inferMimeType,
   sanitizeArtifactFilename,
 } from './managedBrowserHelpers';
+import {
+  readVerifiedBrowserUploadFile,
+  type ApprovedBrowserUploadFile,
+} from './browserUploadApprovalRegistry';
+export type { ApprovedBrowserUploadFile } from './browserUploadApprovalRegistry';
 import type {
   BrowserArtifactSummary,
   BrowserTab,
@@ -84,7 +89,7 @@ export async function waitForBrowserDownload(args: {
 }
 
 export async function uploadBrowserFile(args: {
-  filePath: string;
+  approvedFile: ApprovedBrowserUploadFile;
   selector?: string;
   targetRef?: unknown;
   tabId?: string;
@@ -92,45 +97,59 @@ export async function uploadBrowserFile(args: {
   getTab: (tabId?: string) => BrowserTab;
   resolveTargetRef: (targetRef: unknown, tabId?: string) => Promise<{ targetRef: BrowserTargetRef }>;
 }): Promise<BrowserArtifactSummary> {
-  const resolvedFilePath = path.resolve(args.filePath);
-  const stat = fs.statSync(resolvedFilePath);
-  if (!stat.isFile()) {
-    throw new Error(`Upload path is not a file: ${path.basename(resolvedFilePath)}`);
-  }
-
   if (args.targetRef) {
     const resolved = await args.resolveTargetRef(args.targetRef, args.tabId);
     const tab = args.getTab(resolved.targetRef.tabId);
-    await setUploadFileOnTarget(tab, resolved.targetRef.selector, resolvedFilePath);
+    await setUploadFileOnTarget(tab, resolved.targetRef.selector, args.approvedFile);
   } else {
     if (!args.selector) {
       throw new Error('selector or targetRef required for upload_file');
     }
     const tab = args.getTab(args.tabId);
-    await setUploadFileOnTarget(tab, args.selector, resolvedFilePath);
+    await setUploadFileOnTarget(tab, args.selector, args.approvedFile);
   }
 
-  return createBrowserArtifactSummary({
+  const createdAtMs = Date.now();
+  return {
+    artifactId: `upload_${createdAtMs}_${args.approvedFile.sha256.slice(0, 12)}`,
     kind: 'upload',
-    artifactPath: resolvedFilePath,
-    mimeType: inferMimeType(resolvedFilePath),
+    name: args.approvedFile.name,
+    artifactPath: args.approvedFile.normalizedPath,
+    size: args.approvedFile.size,
+    mimeType: inferMimeType(args.approvedFile.name),
+    sha256: args.approvedFile.sha256,
+    createdAtMs,
     sessionId: args.sessionId,
-  });
+  };
 }
 
-async function setUploadFileOnTarget(tab: BrowserTab, selector: string, filePath: string): Promise<void> {
+async function setUploadFileOnTarget(
+  tab: BrowserTab,
+  selector: string,
+  approvedFile: ApprovedBrowserUploadFile,
+): Promise<void> {
   const locator = tab.page.locator(selector).first();
   const isFileInput = await locator.evaluate((element) => {
     return element.tagName.toLowerCase() === 'input'
       && (element.getAttribute('type') || '').toLowerCase() === 'file';
   }).catch(() => false);
   if (isFileInput) {
-    await locator.setInputFiles(filePath);
+    const verified = readVerifiedBrowserUploadFile(approvedFile);
+    await locator.setInputFiles({
+      name: verified.file.name,
+      mimeType: inferMimeType(verified.file.name) || 'application/octet-stream',
+      buffer: verified.buffer,
+    });
     return;
   }
 
   const fileChooserPromise = tab.page.waitForEvent('filechooser', { timeout: 10_000 });
   await locator.click();
   const fileChooser = await fileChooserPromise;
-  await fileChooser.setFiles(filePath);
+  const verified = readVerifiedBrowserUploadFile(approvedFile);
+  await fileChooser.setFiles({
+    name: verified.file.name,
+    mimeType: inferMimeType(verified.file.name) || 'application/octet-stream',
+    buffer: verified.buffer,
+  });
 }

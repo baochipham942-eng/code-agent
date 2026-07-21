@@ -28,6 +28,10 @@ describe('shell capabilities', () => {
     ['domain:settings', 'getBudgetStatus'],
     ['domain:settings', 'setBudgetConfig'],
     ['domain:memory', 'memoryEntryUpdate'],
+    ['domain:surfaceExecution', 'control'],
+    ['domain:surfaceExecution', 'getFrame'],
+    ['domain:surfaceExecution', 'getOutput'],
+    ['domain:surfaceExecution', 'getSnapshot'],
   ])('advertises newly registered handler %s/%s in the capability manifest', (domain, action) => {
     const supported = new Set(getShellCapabilityIds());
     expect(supported.has(makeShellCapabilityId(domain, action))).toBe(true);

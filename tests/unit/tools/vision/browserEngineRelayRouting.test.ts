@@ -5,6 +5,7 @@ describe('browser engine routing for relay (ADR-041 M3)', () => {
   it('auto defaults to managed even when relay is connected and tabs are attached', () => {
     const decision = resolveBrowserActionEngine({
       requestedEngine: 'auto',
+      action: 'get_content',
       targetUrl: 'https://github.com/settings',
       relay: { status: 'connected', attachedTabCount: 2, enabled: true },
       relayLeaseReady: true,
@@ -16,6 +17,7 @@ describe('browser engine routing for relay (ADR-041 M3)', () => {
   it('keeps managed for localhost even when relay is ready', () => {
     const decision = resolveBrowserActionEngine({
       requestedEngine: 'auto',
+      action: 'get_content',
       targetUrl: 'http://127.0.0.1:5173',
       relay: { status: 'connected', attachedTabCount: 1, enabled: true },
       relayLeaseReady: true,

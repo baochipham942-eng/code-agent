@@ -17,7 +17,7 @@ export type BrowserTabLeaseStateV1 =
 export const BROWSER_TAB_LEASE_TRANSITIONS_V1: Readonly<
   Record<BrowserTabLeaseStateV1, readonly BrowserTabLeaseStateV1[]>
 > = {
-  available: ['consent_pending', 'orphaned'],
+  available: ['consent_pending', 'denied', 'orphaned'],
   consent_pending: ['leased', 'denied', 'expired', 'orphaned'],
   leased: ['returning', 'expired', 'orphaned'],
   returning: ['returned', 'orphaned', 'recovery_required'],
@@ -214,6 +214,17 @@ export class BrowserTabLeaseService {
     return this.transition(lease, 'denied');
   }
 
+  cancelPending(input: {
+    leaseId: string;
+    subject: BrowserTabLeaseSubjectV1;
+  }): BrowserTabLeaseV1 {
+    const lease = this.requireOwned(input.leaseId, input.subject);
+    this.expireIfDue(lease);
+    this.requireState(lease, ['available', 'consent_pending'], input.subject);
+    lease.deniedAt = this.now();
+    return this.transition(lease, 'denied');
+  }
+
   renew(input: {
     leaseId: string;
     subject: BrowserTabLeaseSubjectV1;
@@ -267,7 +278,7 @@ export class BrowserTabLeaseService {
   markOrphaned(input: {
     leaseId: string;
     subject: BrowserTabLeaseSubjectV1;
-    code: Exclude<NonNullable<BrowserTabLeaseV1['recoveryCode']>, 'return_failed'>;
+    code: NonNullable<BrowserTabLeaseV1['recoveryCode']>;
   }): BrowserTabLeaseV1 {
     const lease = this.requireOwned(input.leaseId, input.subject);
     this.requireState(lease, ['available', 'consent_pending', 'leased', 'returning', 'expired'], input.subject);
@@ -288,6 +299,30 @@ export class BrowserTabLeaseService {
     return this.transition(lease, 'recovery_required');
   }
 
+  confirmReturned(input: {
+    leaseId: string;
+    subject: BrowserTabLeaseSubjectV1;
+  }): BrowserTabLeaseV1 {
+    const lease = this.requireOwned(input.leaseId, input.subject);
+    if (lease.state === 'returned') return this.project(lease);
+    this.expireIfDue(lease);
+    this.requireState(
+      lease,
+      ['leased', 'returning', 'expired', 'orphaned', 'recovery_required'],
+      input.subject,
+    );
+    if (lease.approvedAt === undefined) {
+      throw this.error(input.subject, this.relayProvider, 'SURFACE_POLICY_BLOCKED', 'The tab was never borrowed and cannot have a trusted return confirmation.');
+    }
+    if (lease.state !== 'returning') {
+      lease.returningAt = this.now();
+      this.transition(lease, 'returning');
+    }
+    lease.returnedAt = this.now();
+    lease.recoveryCode = undefined;
+    return this.transition(lease, 'returned');
+  }
+
   async returnLease(input: {
     leaseId: string;
     subject: BrowserTabLeaseSubjectV1;
@@ -303,10 +338,12 @@ export class BrowserTabLeaseService {
     this.transition(lease, 'returning');
     try {
       await input.restore(Object.freeze({ ...lease.originalPlacement }));
+      if (lease.state === 'returned') return this.project(lease);
       lease.returnedAt = this.now();
       lease.recoveryCode = undefined;
       return this.transition(lease, 'returned');
     } catch {
+      if (lease.state === 'returned') return this.project(lease);
       lease.recoveryCode = 'return_failed';
       lease.recoveryRequiredAt = this.now();
       this.transition(lease, 'recovery_required');

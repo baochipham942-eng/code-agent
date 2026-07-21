@@ -14,6 +14,13 @@ import {
   extractAgentPointerEvent,
 } from '../../shared/utils/agentPointerEvidence';
 import { attachBrowserComputerProofTimeline } from '../../shared/utils/browserComputerProofTimeline';
+import {
+  collectSurfaceExecutionExportProjection,
+  projectSurfaceExecutionMetadataForExport,
+  projectSurfaceExecutionResultMetadataForExport,
+  stripRawSurfaceExecutionExportFields,
+  type SurfaceExecutionExportProjectionV1,
+} from '../../shared/utils/surfaceExecutionExportProjection';
 import type {
   ReplayBlock,
   ReplayMetricAvailability,
@@ -100,6 +107,175 @@ export function getToolResultContent(result: ToolResult): string {
     || (result.metadata ? JSON.stringify(result.metadata) : '');
 }
 
+export function projectTranscriptToolResultForReplay(input: {
+  toolName: string;
+  toolCallId: string;
+  result: ToolResult | undefined;
+  timestamp: number;
+}): {
+  resultContent?: string;
+  resultMetadata?: Record<string, unknown>;
+  agentPointerEvent?: ReturnType<typeof extractAgentPointerEvent>;
+  agentPointerTimeline?: ReturnType<typeof buildAgentPointerTimeline>;
+} {
+  const fallback = {
+    toolName: input.toolName,
+    toolCallId: input.toolCallId,
+    success: input.result?.success,
+    error: input.result?.error,
+    timestamp: input.timestamp,
+  };
+  const surfaceExecution = projectSurfaceExecutionMetadataForExport(
+    input.result?.metadata,
+    fallback,
+  );
+  const resultMetadata = input.result?.metadata
+    ? surfaceExecution
+      ? projectSurfaceExecutionResultMetadataForExport(input.result.metadata, fallback)
+      : stripRawSurfaceExecutionExportFields(
+          input.result.metadata,
+          0,
+          false,
+        ) as Record<string, unknown>
+    : undefined;
+  const agentPointerTimeline = buildAgentPointerTimeline(resultMetadata);
+  const agentPointerEvent = extractAgentPointerEvent(resultMetadata);
+  const surfaceEvent = surfaceExecution?.sessions
+    .flatMap((session) => session.events)
+    .at(-1);
+  return {
+    resultContent: surfaceEvent
+      ? `${surfaceEvent.userSummary} (${surfaceEvent.status})`
+      : input.result ? getToolResultContent(input.result) : undefined,
+    resultMetadata,
+    agentPointerEvent,
+    agentPointerTimeline: agentPointerTimeline.length > 0 ? agentPointerTimeline : undefined,
+  };
+}
+
+export function buildSurfaceExecutionReplayBlocks(
+  projection: SurfaceExecutionExportProjectionV1 | null | undefined,
+): ReplayBlock[] {
+  if (!projection) return [];
+  const blocks: ReplayBlock[] = [];
+  projection.sessions.forEach((session, sessionIndex) => {
+    session.events.forEach((event, eventIndex) => {
+      blocks.push({
+        type: 'event',
+        content: event.userSummary,
+        timestamp: event.startedAt,
+        event: {
+          eventType: 'surface_execution_archive',
+          summary: event.userSummary,
+          data: {
+            version: 1,
+            archiveOnly: true,
+            writable: false,
+            authority: 'none',
+            surfaceSessionId: `archive-session-${sessionIndex + 1}`,
+            eventId: `archive-event-${sessionIndex + 1}-${eventIndex + 1}`,
+            sequence: event.sequence,
+            surface: session.surface,
+            provider: event.provider || session.provider,
+            source: session.source,
+            phase: event.phase,
+            status: event.status,
+            sessionState: event.sessionState,
+            operation: event.operation,
+            observation: event.observation,
+            evidenceRefs: event.evidenceRefs,
+            evidence: event.evidence,
+            artifactRefs: event.artifactRefs,
+            historicalControls: event.availableControls,
+            actionResult: event.actionResult,
+            evidencePortability: 'metadata_only',
+            completedAt: event.completedAt,
+          },
+        },
+      });
+    });
+  });
+  return blocks.sort((left, right) => left.timestamp - right.timestamp);
+}
+
+export function attachSurfaceExecutionReplayBlocks(
+  turns: ReplayTurn[],
+  projection: SurfaceExecutionExportProjectionV1 | null | undefined,
+): void {
+  const blocks = buildSurfaceExecutionReplayBlocks(projection);
+  if (blocks.length === 0) return;
+  if (turns.length === 0) {
+    turns.push({
+      turnNumber: 1,
+      turnType: 'iteration',
+      blocks: [],
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs: 0,
+      startTime: blocks[0].timestamp,
+    });
+  }
+  const emittedEventIds = new Set(turns.flatMap((turn) => turn.blocks.flatMap((block) => {
+    if (block.type !== 'event' || block.event?.eventType !== 'surface_execution_archive') return [];
+    const data = block.event.data;
+    return data && typeof data === 'object' && !Array.isArray(data)
+      && typeof data.eventId === 'string'
+      ? [data.eventId]
+      : [];
+  })));
+  for (const block of blocks) {
+    const data = block.event?.data;
+    const eventId = data && typeof data === 'object' && !Array.isArray(data)
+      && typeof data.eventId === 'string'
+      ? data.eventId
+      : undefined;
+    if (eventId && emittedEventIds.has(eventId)) continue;
+    let target = turns[0];
+    for (const turn of turns) {
+      if (turn.startTime > block.timestamp) break;
+      target = turn;
+    }
+    target.blocks.push(block);
+    if (eventId) emittedEventIds.add(eventId);
+  }
+  const blockOrder: Record<ReplayBlock['type'], number> = {
+    user: 0,
+    thinking: 1,
+    model_call: 2,
+    memory_audit: 3,
+    event: 3,
+    context_event: 3,
+    tool_call: 4,
+    tool_result: 5,
+    error: 6,
+    text: 7,
+  };
+  for (const turn of turns) {
+    turn.blocks.sort((left, right) => (
+      left.timestamp - right.timestamp || blockOrder[left.type] - blockOrder[right.type]
+    ));
+    const endTimestamp = turn.blocks.at(-1)?.timestamp ?? turn.startTime;
+    turn.durationMs = Math.max(turn.durationMs, endTimestamp - turn.startTime, 0);
+  }
+}
+
+export function attachStoredSurfaceExecutionReplayBlocks(
+  sessionId: string,
+  turns: ReplayTurn[],
+  onError?: (error: unknown) => void,
+): void {
+  try {
+    const database = getDatabase();
+    const session = database.getSession(sessionId, { includeDeleted: true });
+    attachSurfaceExecutionReplayBlocks(
+      turns,
+      collectSurfaceExecutionExportProjection(database.getMessages(sessionId), session?.metadata),
+    );
+  } catch (error) {
+    onError?.(error);
+  }
+}
+
 function collectTranscriptToolResults(messages: Message[]): Map<string, ToolResult> {
   const results = new Map<string, ToolResult>();
   for (const message of messages) {
@@ -133,8 +309,12 @@ function buildTranscriptToolCallBlock(
   const result = toolCall.result || resultByCallId.get(toolCall.id);
   const args = toolCall.arguments || {};
   const category = normalizeToolCategory(toolCall.name);
-  const agentPointerTimeline = buildAgentPointerTimeline(result?.metadata);
-  const agentPointerEvent = extractAgentPointerEvent(result?.metadata);
+  const projectedResult = projectTranscriptToolResultForReplay({
+    toolName: toolCall.name,
+    toolCallId: toolCall.id,
+    result,
+    timestamp,
+  });
   return {
     type: 'tool_call',
     content: toolCall.name,
@@ -144,10 +324,10 @@ function buildTranscriptToolCallBlock(
       args,
       actualArgs: args,
       argsSource: 'transcript',
-      result: result ? getToolResultContent(result) || undefined : undefined,
-      resultMetadata: result?.metadata,
-      agentPointerEvent,
-      agentPointerTimeline: agentPointerTimeline.length > 0 ? agentPointerTimeline : undefined,
+      result: projectedResult.resultContent || undefined,
+      resultMetadata: projectedResult.resultMetadata,
+      agentPointerEvent: projectedResult.agentPointerEvent,
+      agentPointerTimeline: projectedResult.agentPointerTimeline,
       success: result?.success ?? true,
       successKnown: Boolean(result),
       duration: result?.duration ?? 0,
@@ -230,11 +410,15 @@ function toTranscriptReplayBlocks(
   for (const result of message.toolResults || []) {
     const matchingCall = callById.get(result.toolCallId);
     const args = matchingCall?.arguments || {};
-    const agentPointerTimeline = buildAgentPointerTimeline(result.metadata);
-    const agentPointerEvent = extractAgentPointerEvent(result.metadata);
+    const projectedResult = projectTranscriptToolResultForReplay({
+      toolName: matchingCall?.name || 'unknown',
+      toolCallId: result.toolCallId,
+      result,
+      timestamp: message.timestamp,
+    });
     blocks.push({
       type: 'tool_result',
-      content: getToolResultContent(result),
+      content: projectedResult.resultContent || '',
       timestamp: message.timestamp,
       toolCall: {
         id: result.toolCallId,
@@ -242,10 +426,10 @@ function toTranscriptReplayBlocks(
         args,
         actualArgs: matchingCall ? args : undefined,
         argsSource: matchingCall ? 'transcript' : undefined,
-        result: getToolResultContent(result) || undefined,
-        resultMetadata: result.metadata,
-        agentPointerEvent,
-        agentPointerTimeline: agentPointerTimeline.length > 0 ? agentPointerTimeline : undefined,
+        result: projectedResult.resultContent || undefined,
+        resultMetadata: projectedResult.resultMetadata,
+        agentPointerEvent: projectedResult.agentPointerEvent,
+        agentPointerTimeline: projectedResult.agentPointerTimeline,
         success: result.success,
         successKnown: true,
         duration: result.duration ?? 0,
@@ -311,7 +495,12 @@ export function buildTranscriptReplay(
     .slice()
     .sort((left, right) => left.timestamp - right.timestamp);
 
-  if (messages.length === 0) {
+  const surfaceExecution = collectSurfaceExecutionExportProjection(
+    messages,
+    session.metadata,
+  );
+
+  if (messages.length === 0 && !surfaceExecution) {
     return null;
   }
 
@@ -376,6 +565,7 @@ export function buildTranscriptReplay(
   });
 
   finalizeCurrentTurn();
+  attachSurfaceExecutionReplayBlocks(turns, surfaceExecution);
   const transcriptToolCallCount = Object.values(toolDistribution).reduce((sum, count) => sum + count, 0);
   const knownToolOutcomeCount = turns.reduce((sum, turn) => (
     sum + turn.blocks.filter(block => block.type === 'tool_call' && block.toolCall?.successKnown).length

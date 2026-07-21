@@ -142,6 +142,18 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
   type: WRITE_BROWSER_DEFAULTS,
   press_key: WRITE_BROWSER_DEFAULTS,
   scroll: WRITE_BROWSER_DEFAULTS,
+  hover: WRITE_BROWSER_DEFAULTS,
+  drag: WRITE_BROWSER_DEFAULTS,
+  get_dialog_state: {
+    ...READ_BROWSER_DEFAULTS,
+    evidenceKind: "workbench_state",
+  },
+  handle_dialog: WRITE_BROWSER_DEFAULTS,
+  read_clipboard: {
+    ...READ_BROWSER_DEFAULTS,
+    evidenceKind: "workbench_state",
+  },
+  write_clipboard: WRITE_BROWSER_DEFAULTS,
   wait_for_download: {
     ...WRITE_BROWSER_DEFAULTS,
     evidenceKind: "artifact",
@@ -403,7 +415,13 @@ function capabilitiesForCatalogEntry(
     || containsSecretRef(args)) {
     capabilities.push("secret");
   }
-  if (entry.action === "clear_cookies" || args?.destructive === true) capabilities.push("destructive");
+  if (["read_clipboard", "write_clipboard"].includes(entry.action)
+    || (entry.action === "handle_dialog" && typeof args?.dialogPromptText === "string")) {
+    capabilities.push("secret");
+  }
+  if (entry.action === "clear_cookies"
+    || (entry.action === "handle_dialog" && args?.dialogAction === "accept")
+    || args?.destructive === true) capabilities.push("destructive");
   return Array.from(new Set(capabilities));
 }
 
@@ -429,7 +447,11 @@ export function getBrowserComputerSurfaceCapabilityDescriptor(
     surface,
     actionClass: `${catalog.scope}:${catalog.action}`,
     capabilities: capabilitiesForCatalogEntry(catalog, args),
-    mutation: catalog.risk !== "read",
+    // Clipboard reads cross a sensitive browser boundary. Treat them as an
+    // operation even though they do not mutate the page so the runtime issues
+    // and consumes a capability-scoped Surface grant instead of taking the
+    // observation fast path.
+    mutation: catalog.risk !== "read" || catalog.action === "read_clipboard",
     catalog,
   };
 }

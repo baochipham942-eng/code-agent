@@ -8,9 +8,11 @@ import { buildAgentPointerEventFromToolCall } from '../../../shared/utils/agentP
 import { persistBrowserComputerProofFromResult } from '../../session/browserComputerProofStore';
 import { redactBrowserWorkbenchTraceParams } from '../../services/infra/browser/managedBrowserHelpers';
 import type { BrowserEngineRecovery, BrowserEngineRouteDecision } from '../../../shared/contract/desktop';
+import { surfaceProofService } from '../../services/surfaceExecution/SurfaceProofService';
 
 export interface BrowserActionTraceLike {
   id: string;
+  targetKind: 'browser';
   toolName: string;
   action: string;
   params: Record<string, unknown>;
@@ -34,6 +36,7 @@ function createSyntheticTrace(args: {
   const now = Date.now();
   return {
     id: `browser_trace_${now.toString(36)}_${Math.random().toString(16).slice(2, 8)}`,
+    targetKind: 'browser',
     toolName: 'browser_action',
     action: args.action,
     params: redactBrowserWorkbenchTraceParams('browser_action', args.params || {}),
@@ -66,6 +69,38 @@ function scrubResultMetadata(metadata: Record<string, unknown> | undefined): Rec
   if (next.cookieRows) next.cookieRows = '[redacted]';
   if (next.storageState) next.storageState = '[redacted]';
   return next;
+}
+
+function hasRawBase64Image(metadata: Record<string, unknown>): boolean {
+  return ['imageBase64', 'imageDataUrl', 'base64Image', 'image_base64', 'screenshotBase64']
+    .some((key) => typeof metadata[key] === 'string');
+}
+
+function attachSurfaceProof(
+  result: ToolExecutionResult,
+  input: {
+    action: string;
+    context?: ToolContext;
+    sessionId?: string;
+    runId?: string;
+    turnId?: string;
+    agentId?: string;
+    toolCallId?: string;
+  },
+): ToolExecutionResult {
+  return surfaceProofService.finalizeToolResult({
+    toolName: 'browser_action',
+    action: input.action,
+    result,
+    surface: 'browser',
+    identity: {
+      conversationId: input.context?.sessionId || input.sessionId,
+      runId: input.context?.runId || input.runId,
+      turnId: input.context?.turnId || input.turnId,
+      agentId: input.context?.agentId || input.agentId,
+      operationId: input.context?.currentToolCallId || input.toolCallId,
+    },
+  });
 }
 
 export function finalizeBrowserActionResult(args: {
@@ -125,7 +160,7 @@ export function finalizeBrowserActionResult(args: {
     agentPointerEvent: pointerEvent,
   };
 
-  let resultWithProof = attachBrowserActionProof({
+  const resultWithPointer: ToolExecutionResult = {
     ...args.result,
     metadata: {
       ...metadata,
@@ -133,7 +168,20 @@ export function finalizeBrowserActionResult(args: {
       workbenchTrace: safeTrace,
       agentPointerEvent: pointerEvent,
     },
-  }, safeTrace);
+  };
+  const deferProofPersistence = hasRawBase64Image(resultWithPointer.metadata || {});
+  let resultWithProof = deferProofPersistence
+    ? {
+        ...resultWithPointer,
+        metadata: {
+          ...(resultWithPointer.metadata || {}),
+          browserComputerProofPersistenceDeferred: true,
+        },
+      }
+    : attachSurfaceProof(attachBrowserActionProof(resultWithPointer, safeTrace), {
+        action: args.action,
+        context: args.context,
+      });
 
   const notes = (args.notes || []).filter((note): note is string => typeof note === 'string' && note.trim().length > 0);
   if (notes.length > 0) {
@@ -146,11 +194,48 @@ export function finalizeBrowserActionResult(args: {
     };
   }
 
+  if (!deferProofPersistence) {
+    persistBrowserComputerProofFromResult(resultWithProof, {
+      sessionId: args.context?.sessionId,
+      toolCallId: args.context?.currentToolCallId,
+      toolName: 'browser_action',
+    });
+  }
+
+  return resultWithProof;
+}
+
+export function finalizeDeferredBrowserActionProof(
+  result: ToolExecutionResult,
+  input: {
+    sessionId?: string;
+    runId?: string;
+    turnId?: string;
+    agentId?: string;
+    toolCallId?: string;
+  },
+): ToolExecutionResult {
+  if (result.metadata?.browserComputerProofPersistenceDeferred !== true) return result;
+  const trace = result.metadata.workbenchTrace;
+  const action = trace && typeof trace === 'object' && typeof (trace as BrowserActionTraceLike).action === 'string'
+    ? (trace as BrowserActionTraceLike).action
+    : 'unknown';
+  const resultWithProof = attachSurfaceProof(attachBrowserActionProof({
+    ...result,
+    metadata: {
+      ...(result.metadata || {}),
+      browserComputerProofPersistenceDeferred: false,
+    },
+  }, trace && typeof trace === 'object'
+    ? trace as BrowserActionTraceLike
+    : { id: typeof result.metadata.traceId === 'string' ? result.metadata.traceId : null }), {
+    action,
+    ...input,
+  });
   persistBrowserComputerProofFromResult(resultWithProof, {
-    sessionId: args.context?.sessionId,
-    toolCallId: args.context?.currentToolCallId,
+    sessionId: input.sessionId,
+    toolCallId: input.toolCallId,
     toolName: 'browser_action',
   });
-
   return resultWithProof;
 }

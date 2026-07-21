@@ -16,11 +16,18 @@ import { promisify } from 'util';
 import { getTelemetryStorage, type TelemetryStorage } from './telemetryStorage';
 import { getAppVersion } from '../platform/appPaths';
 import { createLogger, getCurrentLogFilePath } from '../services/infra/logger';
+import { getDatabase } from '../services/core/databaseService';
 import { scrubString } from '../../shared/observability/scrubEvent';
+import {
+  projectSurfaceExecutionMetadataForExport,
+  projectSurfaceExecutionResultMetadataForExport,
+} from '../../shared/utils/surfaceExecutionExportProjection';
+import { redactSurfaceExecutionValue } from '../../shared/utils/surfaceExecutionRedaction';
 import type {
   DiagnosticBundle,
   DiagnosticBundleTurn,
   DiagnosticEnvFingerprint,
+  TelemetryTimelineEvent,
 } from '../../shared/contract/telemetry';
 import type { SessionLogExport } from '../../shared/contract/appService';
 
@@ -28,6 +35,146 @@ const execAsync = promisify(exec);
 const logger = createLogger('DiagnosticBundle');
 
 const GIT_TIMEOUT_MS = 5000;
+const DIAGNOSTIC_BINARY_KEYS = new Set([
+  'base64image',
+  'binary',
+  'blob',
+  'imagedata',
+  'imagedataurl',
+  'imagebase64',
+  'image_base64',
+  'screenshotbase64',
+  'screenshotdata',
+]);
+const SURFACE_METADATA_KEYS = new Set([
+  'computerUseActionResultV1',
+  'surfaceActionRequestV1',
+  'surfaceActionResultV1',
+  'surfaceAccessGrantV1',
+  'surfaceExecutionActionRequestV1',
+  'surfaceExecutionActionResultV1',
+  'surfaceExecutionErrorV1',
+  'surfaceExecutionEventV1',
+  'surfaceExecutionEventsV1',
+  'surfaceExecutionExportV1',
+  'surfaceExecutionLedgerV1',
+  'surfaceExecutionSessionV1',
+  'surfaceGrantV1',
+  'surfaceObservationV1',
+]);
+const INLINE_BINARY_METADATA = /\b(screenshotBase64|screenshotData|imageBase64|imageData|imageDataUrl|base64Image|image_base64)\s*[:=]\s*["']?[a-z0-9+/=]{64,}/gi;
+const MAX_DIAGNOSTIC_JSON_DEPTH = 16;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizedKey(key: string): string {
+  return key.replace(/[^a-z0-9_]/gi, '').toLowerCase();
+}
+
+function readSessionMetadata(sessionId: string): Record<string, unknown> | undefined {
+  try {
+    const db = getDatabase().getDb();
+    if (!db) return undefined;
+    const row = db.prepare('SELECT metadata FROM sessions WHERE id = ?').get(sessionId) as {
+      metadata?: unknown;
+    } | undefined;
+    if (isRecord(row?.metadata)) return row.metadata;
+    if (typeof row?.metadata !== 'string' || !row.metadata.trim()) return undefined;
+    const parsed = JSON.parse(row.metadata) as unknown;
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function surfaceProjectionEvent(
+  metadata: Record<string, unknown> | undefined,
+  builtAt: number,
+): TelemetryTimelineEvent | null {
+  const projection = projectSurfaceExecutionMetadataForExport(metadata);
+  if (!projection) return null;
+  return {
+    id: `surface-execution-projection-${builtAt}`,
+    timestamp: builtAt,
+    eventType: 'surface_execution_projection',
+    summary: 'Surface execution session, event, and evidence projection',
+    data: JSON.stringify({
+      metadata: { surfaceExecutionExportV1: projection },
+    }),
+  };
+}
+
+function scrubDiagnosticString(value: string, homeDir: string, keyHint = ''): string {
+  const withoutInlineBinary = value.replace(INLINE_BINARY_METADATA, '$1=[redacted-binary]');
+  const scrubbed = scrubString(withoutInlineBinary, { homeDir });
+  return String(redactSurfaceExecutionValue(scrubbed, keyHint));
+}
+
+function sanitizeDiagnosticJsonValue(
+  value: unknown,
+  homeDir: string,
+  keyHint = '',
+  depth = 0,
+  allowSurfaceProjection = true,
+): unknown {
+  if (depth > MAX_DIAGNOSTIC_JSON_DEPTH) return '[truncated]';
+  if (typeof value === 'string') return scrubDiagnosticString(value, homeDir, keyHint);
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    return value.slice(0, 200).map((item) => sanitizeDiagnosticJsonValue(
+      item,
+      homeDir,
+      keyHint,
+      depth + 1,
+      allowSurfaceProjection,
+    ));
+  }
+
+  const record = value as Record<string, unknown>;
+  if (allowSurfaceProjection && Object.keys(record).some((key) => SURFACE_METADATA_KEYS.has(key))) {
+    const projected = projectSurfaceExecutionResultMetadataForExport(record, {
+      toolCallId: typeof record.toolCallId === 'string' ? record.toolCallId : undefined,
+      success: typeof record.success === 'boolean' ? record.success : undefined,
+      error: typeof record.error === 'string' ? record.error : undefined,
+      timestamp: typeof record.timestamp === 'number' ? record.timestamp : undefined,
+    });
+    return sanitizeDiagnosticJsonValue(
+      projected || {},
+      homeDir,
+      keyHint,
+      depth + 1,
+      false,
+    );
+  }
+
+  const output: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(record)) {
+    const normalized = normalizedKey(key);
+    if (DIAGNOSTIC_BINARY_KEYS.has(normalized) || key === 'reasoning' || key === 'thinking') continue;
+    output[key] = sanitizeDiagnosticJsonValue(
+      child,
+      homeDir,
+      key,
+      depth + 1,
+      allowSurfaceProjection,
+    );
+  }
+  return output;
+}
+
+function sanitizeDiagnosticText(value: string, homeDir: string, keyHint = ''): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      return JSON.stringify(sanitizeDiagnosticJsonValue(JSON.parse(value), homeDir));
+    } catch {
+      // Truncated or non-JSON telemetry falls back to string redaction.
+    }
+  }
+  return scrubDiagnosticString(value, homeDir, keyHint);
+}
 
 async function runGit(args: string, cwd: string): Promise<string | null> {
   try {
@@ -70,7 +217,11 @@ export async function gatherEnvFingerprint(workingDirectory: string): Promise<Di
  */
 export async function buildDiagnosticBundle(
   sessionId: string,
-  opts?: { builtAt?: number; storage?: TelemetryStorage },
+  opts?: {
+    builtAt?: number;
+    storage?: TelemetryStorage;
+    sessionMetadata?: Record<string, unknown>;
+  },
 ): Promise<DiagnosticBundle | null> {
   const storage = opts?.storage ?? getTelemetryStorage();
   const session = storage.getSession(sessionId);
@@ -85,10 +236,19 @@ export async function buildDiagnosticBundle(
   });
 
   const environment = await gatherEnvFingerprint(session.workingDirectory);
+  const builtAt = opts?.builtAt ?? Date.now();
+  const events = storage
+    .getEventsBySession(sessionId)
+    .filter((event) => event.eventType !== 'surface_execution_projection');
+  const projectionEvent = surfaceProjectionEvent(
+    opts?.sessionMetadata ?? readSessionMetadata(sessionId),
+    builtAt,
+  );
+  if (projectionEvent) events.push(projectionEvent);
 
   return {
     bundleVersion: 1,
-    builtAt: opts?.builtAt ?? Date.now(),
+    builtAt,
     sessionId,
     versions: {
       agentVersion: session.agentVersion,
@@ -98,7 +258,7 @@ export async function buildDiagnosticBundle(
     environment,
     session,
     turns,
-    events: storage.getEventsBySession(sessionId),
+    events,
     rawPayloads: storage.getRawPayloadsForSession(sessionId),
   };
 }
@@ -120,49 +280,49 @@ export function sanitizeDiagnosticBundle(
   opts?: { homeDir?: string },
 ): DiagnosticBundle {
   const homeDir = opts?.homeDir ?? os.homedir();
-  const scrub = <T extends string | undefined | null>(s: T): T =>
-    (typeof s === 'string' ? (scrubString(s, { homeDir }) as T) : s);
+  const scrub = <T extends string | undefined | null>(s: T, keyHint = ''): T =>
+    (typeof s === 'string' ? (sanitizeDiagnosticText(s, homeDir, keyHint) as T) : s);
 
   return {
     ...bundle,
     environment: {
       ...bundle.environment,
-      workingDirectory: scrub(bundle.environment.workingDirectory),
+      workingDirectory: scrub(bundle.environment.workingDirectory, 'workingDirectory'),
     },
     session: {
       ...bundle.session,
-      title: scrub(bundle.session.title),
-      workingDirectory: scrub(bundle.session.workingDirectory),
+      title: scrub(bundle.session.title, 'title'),
+      workingDirectory: scrub(bundle.session.workingDirectory, 'workingDirectory'),
     },
     turns: bundle.turns.map((t) => ({
       turn: {
         ...t.turn,
-        userPrompt: scrub(t.turn.userPrompt),
-        assistantResponse: scrub(t.turn.assistantResponse),
-        thinkingContent: scrub(t.turn.thinkingContent),
+        userPrompt: scrub(t.turn.userPrompt, 'userPrompt'),
+        assistantResponse: scrub(t.turn.assistantResponse, 'assistantResponse'),
+        thinkingContent: undefined,
       },
       modelCalls: t.modelCalls.map((m) => ({
         ...m,
-        prompt: scrub(m.prompt),
-        completion: scrub(m.completion),
-        error: scrub(m.error),
+        prompt: scrub(m.prompt, 'prompt'),
+        completion: scrub(m.completion, 'completion'),
+        error: scrub(m.error, 'error'),
       })),
       toolCalls: t.toolCalls.map((c) => ({
         ...c,
-        arguments: scrub(c.arguments),
-        actualArguments: scrub(c.actualArguments),
-        resultSummary: scrub(c.resultSummary),
-        error: scrub(c.error),
+        arguments: scrub(c.arguments, 'arguments'),
+        actualArguments: scrub(c.actualArguments, 'actualArguments'),
+        resultSummary: scrub(c.resultSummary, 'resultSummary'),
+        error: scrub(c.error, 'error'),
       })),
     })),
     events: bundle.events.map((e) => ({
       ...e,
-      summary: scrub(e.summary),
-      data: typeof e.data === 'string' ? scrub(e.data) : e.data,
+      summary: scrub(e.summary, 'summary'),
+      data: typeof e.data === 'string' ? scrub(e.data, 'data') : e.data,
     })),
     rawPayloads: bundle.rawPayloads.map((p) => ({
       ...p,
-      content: scrub(p.content),
+      content: scrub(p.content, p.field),
     })),
   };
 }
@@ -211,7 +371,7 @@ export async function buildSessionLogExport(
       exportedAt,
       sessionId,
       bundle: sanitized,
-      logTail: rawTail === null ? null : scrubString(rawTail, { homeDir }),
+      logTail: rawTail === null ? null : sanitizeDiagnosticText(rawTail, homeDir, 'logTail'),
     },
     null,
     2,

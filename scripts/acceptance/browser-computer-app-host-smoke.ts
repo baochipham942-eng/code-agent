@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'node:stream';
-import { existsSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync } from 'fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { Page } from 'playwright';
 import {
   finishWithError,
@@ -106,7 +108,10 @@ async function waitForHealth(baseUrl: string, server: ChildProcessByStdio<null, 
   throw new Error(`Timed out waiting for app-host health at ${baseUrl}/api/health\n${output()}`);
 }
 
-function startAppHost(port: number): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
+function startAppHost(
+  port: number,
+  dataDir: string,
+): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
   let logs = '';
   const child = spawn('node', ['dist/web/webServer.cjs'], {
     cwd: process.cwd(),
@@ -115,6 +120,7 @@ function startAppHost(port: number): { child: ChildProcessByStdio<null, Readable
       WEB_HOST: '127.0.0.1',
       WEB_PORT: String(port),
       CODE_AGENT_ENABLE_DEV_API: 'true',
+      CODE_AGENT_DATA_DIR: dataDir,
       NODE_ENV: 'development',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -130,6 +136,68 @@ function startAppHost(port: number): { child: ChildProcessByStdio<null, Readable
   child.stderr.on('data', append);
 
   return { child, output: () => logs };
+}
+
+async function resolveFolderTrustGate(page: Page): Promise<'blocked' | 'not_shown'> {
+  const dialog = page
+    .getByRole('dialog')
+    .filter({ hasText: /(?:信任这个项目文件夹|Trust this project folder)/ })
+    .first();
+  const shown = await dialog.waitFor({ state: 'visible', timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!shown) {
+    return 'not_shown';
+  }
+
+  const blockButton = dialog
+    .getByRole('button', { name: /^(?:阻止项目配置|Block project config)$/ })
+    .first();
+  await blockButton.click({ timeout: 5_000 });
+  await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
+  return 'blocked';
+}
+
+async function installIsolatedFolderTrustSafetyRoute(page: Page): Promise<void> {
+  await page.route('**/api/domain/folderTrust/set', async (route) => {
+    const request = route.request();
+    let requestedState: unknown;
+    try {
+      const body = JSON.parse(request.postData() || '{}') as {
+        payload?: { state?: unknown };
+      };
+      requestedState = body.payload?.state;
+    } catch {
+      requestedState = undefined;
+    }
+    if (request.method() !== 'POST' || requestedState !== 'blocked') {
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: false,
+          error: { message: 'App-host smoke only permits blocking project configuration.' },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          state: 'blocked',
+          canonicalRealpath: process.cwd(),
+          displayPath: process.cwd(),
+          dangerousItems: [],
+          blockedItems: [],
+          identityChanged: false,
+        },
+      }),
+    });
+  });
 }
 
 async function expectTextIncludes(label: string, text: string, expected: string, failures: string[]): Promise<void> {
@@ -525,32 +593,57 @@ async function injectComputerFailureMessages(page: Page, sessionId: string | nul
 }
 
 async function expandComputerFailureToolDetails(page: Page): Promise<void> {
-  await page.locator('[data-testid="tool-call-row-computer_use"]').first().click({
-    timeout: 5_000,
-  }).catch(() => undefined);
-  if (await page.locator('[data-testid="browser-computer-next-step-action-refresh_browser_snapshot"]').first().count()) {
-    return;
-  }
-  await page.locator('text=smart_type #missing-email').first().click({
-    force: true,
-    timeout: 5_000,
-  }).catch(() => undefined);
-  if (await page.locator('[data-testid="browser-computer-next-step-action-refresh_browser_snapshot"]').first().count()) {
-    return;
-  }
-  await page.evaluate(() => {
-    const rows = Array.from(document.querySelectorAll<HTMLElement>('.cursor-pointer'))
-      .filter((element) => (element.textContent || '').includes('smart_type #missing-email'))
-      .sort((left, right) => (left.textContent || '').length - (right.textContent || '').length);
-    if (rows[0]) {
-      rows[0].click();
-      return;
+  const deadline = Date.now() + 15_000;
+  let actionStableSince: number | null = null;
+  let lastExpanded: string | null = null;
+  let lastVisibleRowCount = 0;
+  let lastVisibleGroupCount = 0;
+  while (Date.now() < deadline) {
+    const foldedTurnToggles = page.locator('button[title="展开本轮"]:visible');
+    if (await foldedTurnToggles.count()) {
+      await foldedTurnToggles.last().evaluate((element) => (element as HTMLElement).click())
+        .catch(() => undefined);
     }
-    const candidates = Array.from(document.querySelectorAll<HTMLElement>('div'))
-      .filter((element) => (element.textContent || '').includes('smart_type #missing-email'))
-      .sort((left, right) => (left.textContent || '').length - (right.textContent || '').length);
-    candidates[0]?.click();
-  }).catch(() => undefined);
+
+    const groupButtons = page
+      .locator('button:visible')
+      .filter({ hasText: 'smart_type #missing-email' });
+    lastVisibleGroupCount = await groupButtons.count();
+    if (lastVisibleGroupCount > 0) {
+      const groupButton = groupButtons.last();
+      if (await groupButton.getAttribute('aria-expanded').catch(() => null) !== 'true') {
+        await groupButton.evaluate((element) => (element as HTMLElement).click())
+          .catch(() => undefined);
+      }
+    }
+
+    const rows = page.locator('[data-testid="tool-call-row-computer_use"]:visible');
+    lastVisibleRowCount = await rows.count();
+    if (lastVisibleRowCount > 0) {
+      const row = rows.last();
+      lastExpanded = await row.getAttribute('aria-expanded').catch(() => null);
+      if (lastExpanded !== 'true') {
+        await row.evaluate((element) => (element as HTMLElement).click()).catch(() => undefined);
+      }
+      const actionVisible = await page
+        .locator('[data-testid="browser-computer-next-step-action-refresh_browser_snapshot"]')
+        .first()
+        .isVisible()
+        .catch(() => false);
+      if (actionVisible) {
+        actionStableSince ??= Date.now();
+        if (Date.now() - actionStableSince >= 500) {
+          return;
+        }
+      } else {
+        actionStableSince = null;
+      }
+    }
+    await page.waitForTimeout(100);
+  }
+  throw new Error(
+    `computer_use snapshot recovery did not remain expanded; visibleGroups=${lastVisibleGroupCount}, visibleRows=${lastVisibleRowCount}, last aria-expanded=${lastExpanded}`,
+  );
 }
 
 async function installRunSseInterception(
@@ -681,18 +774,6 @@ async function closeDesktopPanelIfOpen(page: Page): Promise<void> {
   await panel.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined);
 }
 
-async function scrollAppContentToBottom(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const candidates = Array.from(document.querySelectorAll<HTMLElement>('body, body *'));
-    for (const element of candidates) {
-      if (element.scrollHeight > element.clientHeight) {
-        element.scrollTop = element.scrollHeight;
-      }
-    }
-    window.scrollTo(0, document.documentElement.scrollHeight);
-  }).catch(() => undefined);
-}
-
 async function invokeDesktopDomain(
   page: Page,
   action: string,
@@ -771,8 +852,15 @@ async function exerciseChatInputComputerFailure(
   } else if (runResponseStatus !== 200) {
     failures.push(`ChatInput /api/run returned ${runResponseStatus ?? 'unknown'}.`);
   } else {
-    await page.waitForTimeout(800);
-    await injectComputerFailureMessages(page, runRequest?.sessionId ?? null);
+    const streamedToolRow = await page
+      .locator('[data-testid="tool-call-row-computer_use"]')
+      .first()
+      .waitFor({ state: 'visible', timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!streamedToolRow) {
+      await injectComputerFailureMessages(page, runRequest?.sessionId ?? null);
+    }
   }
 
   await page.waitForFunction(
@@ -781,7 +869,6 @@ async function exerciseChatInputComputerFailure(
     { timeout: 15_000 },
   ).catch(() => undefined);
   await expandComputerFailureToolDetails(page);
-  await scrollAppContentToBottom(page);
   await page.waitForFunction(
     () => document.body.innerText.includes('刷新页面证据'),
     undefined,
@@ -799,7 +886,6 @@ async function exerciseChatInputComputerFailure(
       messageCount: hook?.getMessageCount?.() ?? null,
     };
   }).catch(() => ({ currentSessionId: null, messageCount: null }));
-  await scrollAppContentToBottom(page);
 
   const text = await page.locator('body').innerText({ timeout: 2_000 }).catch(() => '');
   const html = await page.content().catch(() => '');
@@ -922,7 +1008,8 @@ async function main(): Promise<void> {
 
   const appPort = getNumberOption(args, 'port') || await getFreePort();
   const baseUrl = `http://127.0.0.1:${appPort}`;
-  const appHost = startAppHost(appPort);
+  const appHostDataDir = mkdtempSync(path.join(os.tmpdir(), 'code-agent-app-host-smoke-'));
+  const appHost = startAppHost(appPort, appHostDataDir);
   const provider = getProviderOption(args);
   let chromeSession: Awaited<ReturnType<typeof launchSystemChromeSession>> | null = null;
   const failures: string[] = [];
@@ -939,6 +1026,7 @@ async function main(): Promise<void> {
     const page = context.pages()[0] || await context.newPage();
     await installProviderInjection(page, provider);
     await installRunSseInterception(page, runRequests);
+    await installIsolatedFolderTrustSafetyRoute(page);
 
     page.on('pageerror', (error) => {
       consoleErrors.push(error.message);
@@ -967,6 +1055,10 @@ async function main(): Promise<void> {
     await page.goto(`${baseUrl}?e2e=1`, { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
     await eventsReady;
+    const folderTrustDecision = await resolveFolderTrustGate(page);
+    if (folderTrustDecision !== 'blocked') {
+      failures.push('App-host smoke did not explicitly block isolated project configuration.');
+    }
     await createCleanSession(page);
     const hasAbilityMenu = await page.locator('[data-testid="ability-menu-trigger"]').count() > 0;
     let managedInitialText = hasAbilityMenu
@@ -1101,6 +1193,7 @@ async function main(): Promise<void> {
         cdpPort: chromeSession.port,
       },
       ui: {
+        folderTrustDecision,
         abilityMenuPresent: hasAbilityMenu,
         managedProvider: provider,
         managedInitial: {
@@ -1146,6 +1239,7 @@ async function main(): Promise<void> {
         ['chromeExecutable', result.chrome.executable],
         ['managedRepairProvider', result.ui.managedProvider],
         ['managedRepairReturnedProvider', result.ui.managedReady.returnedProvider],
+        ['folderTrustDecision', result.ui.folderTrustDecision],
         ['managedInitialBlocked', result.ui.managedInitial.blocked],
         ['managedReady', result.ui.managedReady.ready],
         ['managedMode', result.ui.managedReady.mode],
@@ -1189,6 +1283,7 @@ async function main(): Promise<void> {
     }
     if (!hasFlag(args, 'keep-server')) {
       await stopProcess(appHost.child);
+      rmSync(appHostDataDir, { recursive: true, force: true });
     }
   }
 }

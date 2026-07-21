@@ -56,6 +56,7 @@ import { registerSessionAutomationHandlers } from './sessionAutomation.ipc';
 import { registerNotificationHandlers } from './notification.ipc';
 import { registerCaptureHandlers } from './capture.ipc';
 import { registerDesktopHandlers } from './desktop.ipc';
+import { registerSurfaceExecutionHandlers } from './surfaceExecution.ipc';
 import { registerSuggestionsHandlers } from './suggestions.ipc';
 import { registerSoulHandlers } from './soul.ipc';
 import { registerVoicePasteHandlers } from './voicePaste.ipc';
@@ -250,6 +251,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Desktop handlers (原生桌面活动)
   registerDesktopHandlers(ipcMain);
+
+  // Surface Execution (Browser / Computer owner-aware snapshot + controls)
+  registerSurfaceExecutionHandlers(ipcMain);
 
   // Activity context handlers (统一活动上下文)
   registerActivityHandlers(ipcMain);

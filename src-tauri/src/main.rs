@@ -37,7 +37,7 @@ use native_desktop::{
     desktop_update_analyze_text, NativeDesktopState,
 };
 use agent_halo::{agent_halo_hide, agent_halo_mode, agent_halo_show, AgentHaloState};
-use pip::{pip_frame, pip_hide, pip_show};
+use pip::{pip_control, pip_controls, pip_frame, pip_hide, pip_show};
 
 /// 生产通道 webServer 端口；测试包用 DEV_WEB_PORT 以便与生产包同时运行。
 const PROD_WEB_PORT: u16 = 8180;
@@ -2722,6 +2722,8 @@ fn main() {
             appshots_set_enabled,
             pip_show,
             pip_frame,
+            pip_controls,
+            pip_control,
             pip_hide,
             agent_halo_show,
             agent_halo_mode,

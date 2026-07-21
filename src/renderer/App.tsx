@@ -56,7 +56,8 @@ import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-res
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { useAppshots } from './hooks/useAppshots';
-import { useComputerUsePip } from './hooks/useComputerUsePip';
+import { useSurfaceExecutionPip } from './hooks/useSurfaceExecutionPip';
+import { useSurfaceExecutionEffects } from './hooks/agent/effects/useSurfaceExecutionEffects';
 import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
 import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
@@ -145,7 +146,7 @@ function useWindowWidth(): number {
 
 export const App: React.FC = () => {
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
-  useComputerUsePip(); // computer-use 实时 PiP 窗（自主操作时悬浮显示截图）
+  useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
   const {
     showSettings,
@@ -217,6 +218,7 @@ export const App: React.FC = () => {
   const { showAuthModal, showPasswordResetModal, isLoading: isAuthLoading } = useAuthStore();
   const sentryUserId = useAuthStore((state) => state.user?.id ?? null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  useSurfaceExecutionEffects(currentSessionId);
   const currentProjectId = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === state.currentSessionId);
     return session?.projectId && session.projectId !== UNSORTED_PROJECT_ID ? session.projectId : null;

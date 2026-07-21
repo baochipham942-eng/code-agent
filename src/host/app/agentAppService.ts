@@ -328,6 +328,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       timestamp: message.timestamp,
       tokens: (message.inputTokens || 0) + (message.outputTokens || 0) || undefined,
       metadata,
+      toolCalls: message.toolCalls,
+      toolResults: message.toolResults,
     };
   }
 
@@ -342,6 +344,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         0,
       ),
       metadata: {
+        ...(session.metadata || {}),
         title: session.title,
         workingDirectory: session.workingDirectory,
       },
@@ -520,19 +523,24 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         // Keep the legacy path synchronous through fan-out and cancelTask().
         // Awaiting an optional call still yields when the service is absent,
         // which lets a second ESC arrive before cancelInFlight is registered.
+        const registeredHandle = this.externalRunRegistry?.getBySessionId(resolvedSessionId);
         const externalView = this.durableRunReadService
           ? await this.durableRunReadService.readExternalEngine(resolvedSessionId, () => {
-            const legacy = this.externalRunRegistry?.getBySessionId(resolvedSessionId);
             return {
-              runId: legacy?.context.runId,
-              status: legacy ? 'running' : 'idle',
-              engine: legacy ? { kind: 'external_cli' as const, engine: 'codex_cli' as const } : null,
+              runId: registeredHandle?.context.runId,
+              status: registeredHandle ? 'running' : 'idle',
+              engine: null,
             };
           })
           : undefined;
-        const externalHandle = externalView?.terminal
-          ? undefined
-          : this.externalRunRegistry?.getBySessionId(resolvedSessionId);
+        const durableExternalHandle = externalView?.terminal === false
+          && externalView.engine?.kind === 'external_cli'
+          && externalView.runId === registeredHandle?.context.runId
+          ? registeredHandle
+          : undefined;
+        const externalHandle = this.durableRunReadService
+          ? durableExternalHandle
+          : registeredHandle;
         if (externalHandle) {
           await externalHandle.cancel(normalizedReason === 'session-switch' ? 'session-switch' : 'user');
           return;

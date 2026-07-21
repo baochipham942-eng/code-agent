@@ -1,0 +1,2220 @@
+{
+  "version": 1,
+  "status": "passed",
+  "campaign": {
+    "id": "surface-v1-20260721T033951Z-af6f0f298901",
+    "startedAt": "2026-07-21T03:39:51.214Z"
+  },
+  "stage": "complete",
+  "recordedAt": "2026-07-21T03:43:23.910Z",
+  "worktree": "/Users/linchen/.codex/worktrees/aedb/code-agent",
+  "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+  "originMain": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+  "mergeBase": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+  "sourceFingerprint": {
+    "version": 1,
+    "algorithm": "sha256",
+    "sha256": "d60e72a1204a7026473317698bd9df5e602931bbbb54395d8d918efbf89675fa",
+    "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+    "dirty": true,
+    "dirtyPaths": [
+      "docs/architecture/frontend.md",
+      "package.json",
+      "public/pip.html",
+      "resources/browser-relay-extension/background.js",
+      "resources/browser-relay-extension/manifest.json",
+      "resources/browser-relay-extension/options.html",
+      "resources/browser-relay-extension/options.js",
+      "resources/browser-relay-extension/popup.html",
+      "resources/browser-relay-extension/popup.js",
+      "resources/browser-relay-extension/protocol-v2.js",
+      "scripts/acceptance/browser-computer-app-host-smoke.ts",
+      "scripts/acceptance/fixtures/surface-execution-conversation.ts",
+      "scripts/acceptance/fixtures/surface-execution-cross-surface.ts",
+      "scripts/acceptance/fixtures/surface-execution-workbuddy.ts",
+      "scripts/acceptance/surface-execution-canary-scan.ts",
+      "scripts/acceptance/surface-execution-computer-smoke.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-core.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-smoke.ts",
+      "scripts/acceptance/surface-execution-conversation-smoke.ts",
+      "scripts/acceptance/surface-execution-cross-surface-smoke.ts",
+      "scripts/acceptance/surface-execution-durable-restart-smoke.ts",
+      "scripts/acceptance/surface-execution-gate-report-core.ts",
+      "scripts/acceptance/surface-execution-gate-report.ts",
+      "scripts/acceptance/surface-execution-managed-smoke.ts",
+      "scripts/acceptance/surface-execution-metrics.ts",
+      "scripts/acceptance/surface-execution-p2-acceptance-core.ts",
+      "scripts/acceptance/surface-execution-proof.ts",
+      "scripts/acceptance/surface-execution-relay-smoke.ts",
+      "scripts/acceptance/surface-execution-replay-import-child.ts",
+      "scripts/acceptance/surface-execution-stop-benchmark.ts",
+      "scripts/acceptance/surface-execution-workbuddy-smoke.ts",
+      "src-tauri/src/main.rs",
+      "src-tauri/src/pip.rs",
+      "src/cli/commands/export.ts",
+      "src/host/agent/runtime/toolExecutionEngine.ts",
+      "src/host/app/agentAppService.ts",
+      "src/host/diagnostics/checks/browserRelay.ts",
+      "src/host/diagnostics/doctorRunner.ts",
+      "src/host/evaluation/telemetryQueryService.ts",
+      "src/host/evaluation/transcriptReplayBuilder.ts",
+      "src/host/ipc/desktop.ipc.ts",
+      "src/host/ipc/index.ts",
+      "src/host/ipc/surfaceExecution.ipc.ts",
+      "src/host/mcp/cuaSessionLock.ts",
+      "src/host/plugins/builtin/browserControl/browser.schema.ts",
+      "src/host/plugins/builtin/browserControl/browserAction.schema.ts",
+      "src/host/plugins/builtin/computerUse/cuaStatefulComputerUse.ts",
+      "src/host/protocol/tools.ts",
+      "src/host/services/infra/browser/browserArtifactActions.ts",
+      "src/host/services/infra/browser/browserSurfaceInteractions.ts",
+      "src/host/services/infra/browser/browserUploadApprovalRegistry.ts",
+      "src/host/services/infra/browser/domSnapshotBuilder.ts",
+      "src/host/services/infra/browser/domSnapshotParser.ts",
+      "src/host/services/infra/browser/managedBrowserCookieImport.ts",
+      "src/host/services/infra/browser/relayActionFacade.ts",
+      "src/host/services/infra/browser/targetRefRegistry.ts",
+      "src/host/services/infra/browser/types.ts",
+      "src/host/services/infra/browserRelayApprovalBoundary.ts",
+      "src/host/services/infra/browserRelayService.ts",
+      "src/host/services/infra/browserService.ts",
+      "src/host/services/infra/sessionManager.ts",
+      "src/host/services/surfaceExecution/BrowserElementRefFence.ts",
+      "src/host/services/surfaceExecution/BrowserProfileImportApprovalService.ts",
+      "src/host/services/surfaceExecution/BrowserTabLeaseService.ts",
+      "src/host/services/surfaceExecution/ComputerSurfaceEventProjection.ts",
+      "src/host/services/surfaceExecution/ExternalSurfaceAgentAdapter.ts",
+      "src/host/services/surfaceExecution/ManagedBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/RelayBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/SurfaceAccessGrantService.ts",
+      "src/host/services/surfaceExecution/surfaceBrowserRuntimeTypes.ts",
+      "src/host/services/surfaceExecution/surfaceComputerErrorProjection.ts",
+      "src/host/services/surfaceExecution/surfaceComputerRuntimeHelpers.ts",
+      "src/host/services/surfaceExecution/surfaceContinuationRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceContinuationService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationControlService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationProjectionService.ts",
+      "src/host/services/surfaceExecution/SurfaceEventHub.ts",
+      "src/host/services/surfaceExecution/surfaceExecutionResultProjection.ts",
+      "src/host/services/surfaceExecution/SurfaceExecutionRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceFrameRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceInterruptService.ts",
+      "src/host/services/surfaceExecution/SurfaceObservationRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceOrganizationPolicyService.ts",
+      "src/host/services/surfaceExecution/SurfaceOutputRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceProofService.ts",
+      "src/host/services/surfaceExecution/SurfaceProviderRegistry.ts",
+      "src/host/services/surfaceExecution/surfaceRunOwnership.ts",
+      "src/host/services/surfaceExecution/SurfaceSessionManager.ts",
+      "src/host/services/surfaceExecution/SurfaceSwitchCoordinator.ts",
+      "src/host/session/browserComputerProofStore.ts",
+      "src/host/session/exportMarkdown.ts",
+      "src/host/session/localCache.ts",
+      "src/host/session/surfaceExecutionSessionExport.ts",
+      "src/host/session/transcriptExporter.ts",
+      "src/host/shellCapabilities.ts",
+      "src/host/telemetry/diagnosticBundleService.ts",
+      "src/host/telemetry/telemetryCollectorInternal.ts",
+      "src/host/tools/artifacts/surfaceExecutionToolResultPipeline.ts",
+      "src/host/tools/toolExecutor.ts",
+      "src/host/tools/types.ts",
+      "src/host/tools/vision/browserAction.ts",
+      "src/host/tools/vision/browserActionFinalize.ts",
+      "src/host/tools/vision/browserActionResultProjection.ts",
+      "src/host/tools/vision/browserActionSurfaceInteractions.ts",
+      "src/host/tools/vision/browserEngineDispatch.ts",
+      "src/host/tools/vision/browserEngineRouter.ts",
+      "src/host/tools/vision/browserNavigate.ts",
+      "src/host/tools/vision/browserProfileActions.ts",
+      "src/host/tools/vision/BrowserTool.ts",
+      "src/host/tools/vision/browserUploadApproval.ts",
+      "src/host/tools/vision/computerUse.ts",
+      "src/renderer/App.tsx",
+      "src/renderer/components/ChatView.tsx",
+      "src/renderer/components/features/browser/BrowserSurfacePanel.tsx",
+      "src/renderer/components/features/chat/ChatInput/index.tsx",
+      "src/renderer/components/features/chat/ToolStepGroup.tsx",
+      "src/renderer/components/features/chat/TurnCard.tsx",
+      "src/renderer/components/features/export/ExportModal.tsx",
+      "src/renderer/components/features/sidebar/SidebarSessionItem.tsx",
+      "src/renderer/components/features/surfaceExecution/index.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceControls.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceList.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionChatPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/surfaceExecutionPresentation.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionRunStatus.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceInterventionCards.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceOutputEntry.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfacePermissionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceResourceSections.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSemanticTimeline.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSessionHeader.tsx",
+      "src/renderer/components/features/surfaceExecution/types.ts",
+      "src/renderer/hooks/agent/effects/useSurfaceExecutionEffects.ts",
+      "src/renderer/hooks/useComputerUsePip.ts",
+      "src/renderer/hooks/useSurfaceExecutionConversation.ts",
+      "src/renderer/hooks/useSurfaceExecutionPip.ts",
+      "src/renderer/i18n/surfaceExecution.ts",
+      "src/renderer/index.tsx",
+      "src/renderer/services/nativeCommandFacade.ts",
+      "src/renderer/services/surfaceExecutionClient.ts",
+      "src/renderer/services/surfaceExecutionController.ts",
+      "src/renderer/stores/surfaceExecutionStore.ts",
+      "src/renderer/utils/browserComputerExportRedaction.ts",
+      "src/renderer/utils/surfaceExecutionProjection.ts",
+      "src/shared/contract/browserRelay.ts",
+      "src/shared/contract/desktop.ts",
+      "src/shared/contract/surfaceExecution.ts",
+      "src/shared/ipc/domains.ts",
+      "src/shared/utils/browserComputerActionCatalog.ts",
+      "src/shared/utils/browserComputerInputPayloadRedaction.ts",
+      "src/shared/utils/browserComputerRedaction.ts",
+      "src/shared/utils/surfaceExecutionExportCaptureContext.ts",
+      "src/shared/utils/surfaceExecutionExportFieldSanitizer.ts",
+      "src/shared/utils/surfaceExecutionExportProjection.ts",
+      "src/shared/utils/surfaceExecutionRedaction.ts",
+      "src/web/routes/dev.ts",
+      "src/web/routes/devSurfaceExecutionConversation.ts",
+      "src/web/routes/devSurfaceExecutionConversationSeed.ts",
+      "tests/agent/cancellation-fanout.test.ts",
+      "tests/main/diagnostics/browserRelay.test.ts",
+      "tests/main/diagnostics/doctorRunner.test.ts",
+      "tests/renderer/components/abilityMenu.browserReadiness.test.ts",
+      "tests/renderer/components/chatView.surfaceExecution.integration.test.ts",
+      "tests/renderer/components/exportModal.surfaceExecution.test.ts",
+      "tests/renderer/components/surfaceExecution/fixtures.ts",
+      "tests/renderer/components/surfaceExecution/SurfaceControls.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceEvidenceCard.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionConversationPanel.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionRunStatus.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceResourceSections.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceSemanticTimeline.test.tsx",
+      "tests/renderer/components/turnCard.artifactFold.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionEffects.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionPip.test.tsx",
+      "tests/renderer/services/nativeCommandFacade.test.ts",
+      "tests/renderer/services/surfaceExecutionClient.test.ts",
+      "tests/renderer/services/surfaceExecutionController.test.ts",
+      "tests/renderer/stores/surfaceExecutionStore.test.ts",
+      "tests/renderer/utils/surfaceExecutionProjection.test.ts",
+      "tests/unit/agent/messageHistory.browserComputerRedaction.test.ts",
+      "tests/unit/evaluation/surfaceExecutionReplayProjection.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.static.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.worker.test.ts",
+      "tests/unit/host/app/browserSurfaceSideDoor.static.test.ts",
+      "tests/unit/ipc/desktop.domain.ipc.test.ts",
+      "tests/unit/ipc/surfaceExecution.ipc.test.ts",
+      "tests/unit/main/pipSurfaceControls.static.test.ts",
+      "tests/unit/main/shellCapabilities.test.ts",
+      "tests/unit/mcp/cuaSessionLock.test.ts",
+      "tests/unit/scripts/surfaceExecutionCanaryScan.test.ts",
+      "tests/unit/scripts/surfaceExecutionComputerAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionControlledComplex.test.ts",
+      "tests/unit/scripts/surfaceExecutionConversationAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionCrossSurfaceAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionDurableRestartAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionGateReport.test.ts",
+      "tests/unit/scripts/surfaceExecutionMetrics.test.ts",
+      "tests/unit/scripts/surfaceExecutionP2Acceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionProof.test.ts",
+      "tests/unit/scripts/surfaceExecutionReplayImportChild.test.ts",
+      "tests/unit/scripts/surfaceExecutionWorkBuddyAcceptance.test.ts",
+      "tests/unit/services/infra/browserArtifactActions.uploadApproval.test.ts",
+      "tests/unit/services/infra/browserDomSnapshotBuilder.test.ts",
+      "tests/unit/services/infra/browserRelayService.test.ts",
+      "tests/unit/services/infra/browserTargetRefRegistry.test.ts",
+      "tests/unit/services/infra/browserUploadApprovalRegistry.test.ts",
+      "tests/unit/services/infra/relayActionFacade.test.ts",
+      "tests/unit/services/infra/sessionManager.metadataGuard.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserProfileImportApprovalService.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserTabLeaseService.test.ts",
+      "tests/unit/services/surfaceExecution/ComputerSurfaceEventProjection.test.ts",
+      "tests/unit/services/surfaceExecution/ExternalSurfaceAgentAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/ManagedBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/RelayBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceBrowserRuntime.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceContinuationService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceControlPlane.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceConversationProjectionService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceFrameRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOrganizationPolicyService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOutputRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOwnershipStores.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProofService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProviderRegistry.test.ts",
+      "tests/unit/session/browserComputerProofStore.test.ts",
+      "tests/unit/session/surfaceExecutionExport.test.ts",
+      "tests/unit/shared/browserComputerActionCatalog.test.ts",
+      "tests/unit/shared/browserComputerRedaction.browserPolicy.test.ts",
+      "tests/unit/shared/contract/surfaceExecution.test.ts",
+      "tests/unit/shared/utils/surfaceExecutionExportProjection.test.ts",
+      "tests/unit/telemetry/diagnosticBundleService.test.ts",
+      "tests/unit/tools/cuaStatefulLockEvents.test.ts",
+      "tests/unit/tools/cuaStatefulSurfaceIntegration.test.ts",
+      "tests/unit/tools/modules/vision/browser.test.ts",
+      "tests/unit/tools/modules/vision/browserAction.test.ts",
+      "tests/unit/tools/surfaceExecutionToolResultPipeline.test.ts",
+      "tests/unit/tools/toolExecutor.executionIntent.test.ts",
+      "tests/unit/tools/vision/browserActionFinalize.test.ts",
+      "tests/unit/tools/vision/browserEngineDispatch.intent.test.ts",
+      "tests/unit/tools/vision/browserEngineRelayRouting.test.ts",
+      "tests/unit/tools/vision/browserEngineRouter.test.ts",
+      "tests/unit/tools/vision/browserNavigateSideDoor.test.ts",
+      "tests/unit/tools/vision/browserUploadApproval.test.ts",
+      "tests/unit/tools/vision/browserWorkbenchGating.test.ts",
+      "tests/unit/web/appAssembly.test.ts",
+      "tests/unit/web/devSurfaceExecutionConversation.test.ts"
+    ],
+    "scopes": [
+      "src",
+      "src-tauri",
+      "resources",
+      "public",
+      "scripts",
+      "tests",
+      "package.json",
+      "docs/architecture",
+      "docs/plans"
+    ]
+  },
+  "invocation": [
+    "npm",
+    "run",
+    "acceptance:surface-execution-cross-surface",
+    "--",
+    "--out",
+    "docs/acceptance/surface-execution/cross-surface-current",
+    "--json"
+  ],
+  "assertions": {
+    "realManagedBrowserBefore": true,
+    "crossAgentTargetBlocked": true,
+    "signedHelperVersion081": true,
+    "signedHelperCodesignValid": true,
+    "realComputerPermissionProbe": true,
+    "permissionProbePromptFalse": true,
+    "realComputerObserved": true,
+    "realComputerMutationDelivered": true,
+    "realComputerBusinessVerified": true,
+    "computerCrossAgentInputBlocked": true,
+    "computerInputLockAcquired": true,
+    "browserContinuationReusedSession": true,
+    "browserContinuationBusinessReadback": true,
+    "realManagedBrowserAfter": true,
+    "surfaceSwitchReasonsRecorded": true,
+    "surfaceContractRoutedBrowserAndComputer": true,
+    "sharedControlPlaneAndIndependentBoundaries": true,
+    "legacyProjectionRemainsReadable": true,
+    "computerInputLockLifecycleVerified": true,
+    "cleanupCompleted": true,
+    "computerProviderCleanupForwarded": true,
+    "mcpDisconnected": true,
+    "parentSessionLinked": true,
+    "ownerIsolationBlocked": true,
+    "redactionCanaryAbsent": true,
+    "computerFixtureTerminated": true
+  },
+  "evidence": {
+    "crossAgentResultCode": "SURFACE_ELEMENT_REF_NOT_FOUND",
+    "helper": {
+      "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver",
+      "app": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app",
+      "signature": {
+        "identifier": "com.agentneo.computeruse",
+        "teamIdentifier": "D7CVTJ72NV",
+        "authority": "Developer ID Application: jay lem (D7CVTJ72NV)",
+        "cdHash": "cb9011602c9cec7c8195c8b096c8f9cf51a6c3b4"
+      },
+      "providerGeneration": "cua-driver:1"
+    },
+    "permission": {
+      "ready": true,
+      "accessibility": true,
+      "screenRecording": true,
+      "screenRecordingCapturable": true,
+      "source": "caller",
+      "sourceExecutable": "/Users/linchen/.codex/worktrees/aedb/code-agent/.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver",
+      "sourceTrusted": true,
+      "missing": []
+    },
+    "computer": {
+      "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+      "target": {
+        "provider": "cua-driver",
+        "pid": 38627,
+        "windowId": 49748,
+        "appName": "NeoCrossSurfaceComputerFixture",
+        "title": "Neo Cross Surface Computer Acceptance",
+        "bounds": {
+          "x": 458,
+          "y": 192,
+          "width": 460,
+          "height": 222
+        },
+        "isOnScreen": true
+      },
+      "stateBefore": "cua_f76e9e36-68af-4e6b-8421-c71de15ecfb1",
+      "stateAfter": "cua_76d7d23c-fc6e-444b-bf70-f61162a708cc",
+      "fixtureReadback": "value=cross-surface-computer-business-verified",
+      "beforeScreenshot": {
+        "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/cross-surface-current/computer-before.png",
+        "sha256": "ac30eb30763b3b85e9437ec5e35132a66cee3d51700f69f95d1cbcfc17e9b512",
+        "bytes": 58590
+      },
+      "afterScreenshot": {
+        "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/cross-surface-current/computer-after.png",
+        "sha256": "ba635e665a6309e76cf64d2f1db11ac3157f82b21b75346fe0007632da9b3cac",
+        "bytes": 59421
+      },
+      "lockOwnerAfterMutation": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+      "lockEventsBeforeCleanup": [
+        {
+          "phase": "prepare",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership acquired",
+          "operation": {
+            "action": "computer_input_lock_acquire",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605402089,
+          "completedAt": 1784605402089,
+          "version": 1,
+          "eventId": "surface_event_1e6d20e6-2da2-482c-8ef0-d188fd3ddbbf",
+          "sequence": 4,
+          "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+          "conversationId": "surface-cross-acceptance",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "agentId": "surface-cross-owner",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605401865
+        }
+      ]
+    },
+    "providerCalls": [
+      {
+        "toolName": "check_permissions",
+        "at": "2026-07-21T03:43:19.490Z",
+        "surfaceSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "mutating": false,
+        "forwarded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:43:21.330Z",
+        "mutating": false,
+        "forwarded": true
+      },
+      {
+        "toolName": "start_session",
+        "at": "2026-07-21T03:43:21.376Z",
+        "surfaceSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "mutating": false,
+        "forwarded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:43:21.387Z",
+        "surfaceSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "mutating": false,
+        "forwarded": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:43:21.424Z",
+        "surfaceSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "mutating": false,
+        "forwarded": true
+      },
+      {
+        "toolName": "list_windows",
+        "at": "2026-07-21T03:43:21.866Z",
+        "surfaceSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "mutating": false,
+        "forwarded": true
+      },
+      {
+        "toolName": "set_value",
+        "at": "2026-07-21T03:43:22.087Z",
+        "surfaceSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "mutating": true,
+        "forwarded": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:43:23.127Z",
+        "surfaceSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "mutating": false,
+        "forwarded": true
+      },
+      {
+        "toolName": "get_window_state",
+        "at": "2026-07-21T03:43:23.320Z",
+        "surfaceSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "mutating": false,
+        "forwarded": true
+      },
+      {
+        "toolName": "end_session",
+        "at": "2026-07-21T03:43:23.901Z",
+        "surfaceSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "mutating": false,
+        "forwarded": true
+      }
+    ],
+    "controlPlaneBeforeCleanup": {
+      "browser": {
+        "version": 1,
+        "session": {
+          "version": 1,
+          "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "conversationId": "surface-cross-acceptance",
+          "agentId": "surface-cross-owner",
+          "surface": "browser",
+          "provider": "system-chrome-cdp",
+          "capabilities": {
+            "version": 1,
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "protocolVersion": "surface-execution-v1+browser-managed-v2",
+            "operations": [
+              "back",
+              "clear_cookies",
+              "click",
+              "click_text",
+              "close",
+              "close_tab",
+              "export_storage_state",
+              "fill_form",
+              "forward",
+              "get_a11y_snapshot",
+              "get_account_state",
+              "get_content",
+              "get_dom_snapshot",
+              "get_elements",
+              "get_logs",
+              "get_workbench_state",
+              "import_profile_cookies",
+              "import_storage_state",
+              "launch",
+              "list_profiles",
+              "list_tabs",
+              "navigate",
+              "new_tab",
+              "press_key",
+              "reload",
+              "screenshot",
+              "scroll",
+              "set_viewport",
+              "switch_tab",
+              "type",
+              "upload_file",
+              "wait",
+              "wait_for_download"
+            ],
+            "observationKinds": [
+              "dom",
+              "a11y",
+              "screenshot",
+              "network",
+              "console"
+            ],
+            "supports": {
+              "cancel": true,
+              "pause": true,
+              "takeover": true,
+              "cleanup": true,
+              "successorObservation": true
+            }
+          },
+          "state": "running",
+          "startedAt": 1784605397308,
+          "heartbeatAt": 1784605403573,
+          "activeTarget": {
+            "kind": "browser",
+            "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+            "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+            "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+            "origin": "http://127.0.0.1:64661",
+            "documentRevision": "100c06ff7cf2d2e78a64ba28",
+            "title": "Cross Surface Acceptance"
+          }
+        },
+        "grant": {
+          "state": "consumed",
+          "capabilities": [
+            "input"
+          ],
+          "actionClasses": [
+            "managed_browser:click"
+          ],
+          "dataScopes": [
+            "tab:tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+            "origin:http://127.0.0.1:64661"
+          ],
+          "expiresAt": 1784605463447
+        },
+        "events": [
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Prepared an isolated managed Browser Surface session",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "documentRevision": "8c6e9e15184993145a712c84"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605397316,
+            "version": 1,
+            "eventId": "surface_event_025c95b4-2dda-4f04-b1ed-1b48defeffee",
+            "sequence": 1,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397316,
+            "startedAt": 1784605397316
+          },
+          {
+            "phase": "act",
+            "status": "running",
+            "userSummary": "navigate running",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "documentRevision": "8c6e9e15184993145a712c84"
+            },
+            "operation": {
+              "action": "navigate",
+              "risk": "browser_action",
+              "approvalScope": "tool_executor"
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "version": 1,
+            "eventId": "surface_event_be6d40fa-be16-4b32-a41a-23b832f723f0",
+            "sequence": 2,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397317,
+            "startedAt": 1784605397317
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after navigate",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "6f75bf3d9b597fd8cca61489",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605397416,
+            "version": 1,
+            "eventId": "surface_event_807eab1d-93a8-4fd6-9244-2cd90c857c23",
+            "sequence": 3,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397416,
+            "startedAt": 1784605397416
+          },
+          {
+            "phase": "act",
+            "status": "succeeded",
+            "userSummary": "navigate delivered_unverified",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "6f75bf3d9b597fd8cca61489",
+              "title": "Cross Surface Acceptance"
+            },
+            "operation": {
+              "action": "navigate",
+              "risk": "browser_action",
+              "approvalScope": "tool_executor"
+            },
+            "observation": {
+              "verdict": "not_requested",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605397416,
+            "version": 1,
+            "eventId": "surface_event_565d8d87-d977-4904-ab3e-a3aff019f69a",
+            "sequence": 4,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397416,
+            "startedAt": 1784605397416
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after get_dom_snapshot",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "f9cf98e3ac3b2ae565af0ae4",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605397424,
+            "version": 1,
+            "eventId": "surface_event_44405339-325a-4e9f-b025-137a9cab01e7",
+            "sequence": 5,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397424,
+            "startedAt": 1784605397424
+          },
+          {
+            "phase": "act",
+            "status": "running",
+            "userSummary": "type running",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "f9cf98e3ac3b2ae565af0ae4",
+              "title": "Cross Surface Acceptance"
+            },
+            "operation": {
+              "action": "type",
+              "risk": "browser_action",
+              "approvalScope": "tool_executor"
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "version": 1,
+            "eventId": "surface_event_22cb554a-1ebd-4c36-a21e-9ed8807109a3",
+            "sequence": 6,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397426,
+            "startedAt": 1784605397426
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after type",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "0195d255e31f54e0769ba0a5",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605397434,
+            "version": 1,
+            "eventId": "surface_event_c3f628f7-4f1d-4442-84ac-16a6cd537424",
+            "sequence": 7,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397434,
+            "startedAt": 1784605397434
+          },
+          {
+            "phase": "act",
+            "status": "succeeded",
+            "userSummary": "type delivered_unverified",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "0195d255e31f54e0769ba0a5",
+              "title": "Cross Surface Acceptance"
+            },
+            "operation": {
+              "action": "type",
+              "risk": "browser_action",
+              "approvalScope": "tool_executor"
+            },
+            "observation": {
+              "verdict": "not_requested",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605397434,
+            "version": 1,
+            "eventId": "surface_event_5743aa20-5be7-4831-a136-426de2529125",
+            "sequence": 8,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397434,
+            "startedAt": 1784605397434
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after get_dom_snapshot",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "ec68a7472957d3b12e98fb53",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605397441,
+            "version": 1,
+            "eventId": "surface_event_bcfa760f-ab60-4ca5-af84-9cf77e30f173",
+            "sequence": 9,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397441,
+            "startedAt": 1784605397441
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after get_content",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "8ab343200d6703d024521584",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605397447,
+            "version": 1,
+            "eventId": "surface_event_28079820-829f-4692-a3cc-f18868c6871a",
+            "sequence": 10,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397447,
+            "startedAt": 1784605397448
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after screenshot",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "4a6683eabcb95a671a7779ea",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [
+              "[redacted-path]"
+            ],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605397523,
+            "version": 1,
+            "eventId": "surface_event_4014fd74-f136-4b7d-8218-e65acbf114ea",
+            "sequence": 11,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605397523,
+            "startedAt": 1784605397523
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after get_content",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "846f4cfda7a74371c1b3124d",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605398993,
+            "version": 1,
+            "eventId": "surface_event_e8629eb2-f530-4ab4-bb97-504a441cd240",
+            "sequence": 12,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605398993,
+            "startedAt": 1784605398993
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after get_dom_snapshot",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "f4a0427fb615f916bea44823",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605398999,
+            "version": 1,
+            "eventId": "surface_event_29e0c354-1619-46d5-b12e-53ff53c37fe6",
+            "sequence": 13,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605398999,
+            "startedAt": 1784605398999
+          },
+          {
+            "phase": "prepare",
+            "status": "succeeded",
+            "userSummary": "Switched from computer to browser: Computer business verification completed; returning to Browser business verification.",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "f4a0427fb615f916bea44823",
+              "title": "Cross Surface Acceptance"
+            },
+            "operation": {
+              "action": "surface_switch",
+              "risk": "control",
+              "approvalScope": "from:surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+              "expectedOutcome": "Computer business verification completed; returning to Browser business verification."
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605403446,
+            "version": 1,
+            "eventId": "surface_event_8dc499c9-0664-4ba3-b55a-3c6ba518b701",
+            "sequence": 14,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605398999,
+            "startedAt": 1784605403447
+          },
+          {
+            "phase": "act",
+            "status": "running",
+            "userSummary": "click running",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "f4a0427fb615f916bea44823",
+              "title": "Cross Surface Acceptance"
+            },
+            "operation": {
+              "action": "click",
+              "risk": "browser_action",
+              "approvalScope": "tool_executor"
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "version": 1,
+            "eventId": "surface_event_f8655e69-311d-4abe-a98e-0f5b0ece876d",
+            "sequence": 15,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605403447,
+            "startedAt": 1784605403448
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after click",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "159d8d58b4a0c47fa6f4233d",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605403518,
+            "version": 1,
+            "eventId": "surface_event_6c59d975-53e0-481d-a83a-f3e9793850f8",
+            "sequence": 16,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605403518,
+            "startedAt": 1784605403518
+          },
+          {
+            "phase": "act",
+            "status": "succeeded",
+            "userSummary": "click delivered_unverified",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "159d8d58b4a0c47fa6f4233d",
+              "title": "Cross Surface Acceptance"
+            },
+            "operation": {
+              "action": "click",
+              "risk": "browser_action",
+              "approvalScope": "tool_executor"
+            },
+            "observation": {
+              "verdict": "not_requested",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605403518,
+            "version": 1,
+            "eventId": "surface_event_598baabe-82bb-4a68-a397-4588f8d570ab",
+            "sequence": 17,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605403518,
+            "startedAt": 1784605403518
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after get_content",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "da4b6437d03be52956704d0a",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605403526,
+            "version": 1,
+            "eventId": "surface_event_628f53cc-f313-4604-aa5d-1f908276579b",
+            "sequence": 18,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605403526,
+            "startedAt": 1784605403526
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed managed browser after screenshot",
+            "target": {
+              "kind": "browser",
+              "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+              "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+              "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+              "origin": "http://127.0.0.1:64661",
+              "documentRevision": "100c06ff7cf2d2e78a64ba28",
+              "title": "Cross Surface Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [
+              "[redacted-path]"
+            ],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605403573,
+            "version": 1,
+            "eventId": "surface_event_631d2393-d3cb-47f8-bdb9-156240e8fa4a",
+            "sequence": 19,
+            "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "sessionState": "running",
+            "heartbeatAt": 1784605403573,
+            "startedAt": 1784605403573
+          }
+        ],
+        "evidence": [],
+        "outputs": [],
+        "availableControls": [
+          "pause",
+          "takeover",
+          "stop",
+          "end_session"
+        ],
+        "source": "live",
+        "writable": true,
+        "updatedAt": 1784605403573
+      },
+      "computer": {
+        "version": 1,
+        "session": {
+          "version": 1,
+          "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "conversationId": "surface-cross-acceptance",
+          "agentId": "surface-cross-owner",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "capabilities": {
+            "version": 1,
+            "surface": "computer",
+            "provider": "cua-driver",
+            "protocolVersion": "surface-execution-v1+cua-state-v1",
+            "operations": [
+              "act",
+              "list_roots",
+              "observe"
+            ],
+            "observationKinds": [
+              "ax",
+              "screenshot",
+              "window"
+            ],
+            "supports": {
+              "cancel": true,
+              "pause": true,
+              "takeover": true,
+              "cleanup": true,
+              "successorObservation": true
+            }
+          },
+          "state": "running",
+          "parentSessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+          "startedAt": 1784605399002,
+          "heartbeatAt": 1784605403445,
+          "activeTarget": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoCrossSurfaceComputerFixture",
+            "pid": 38627,
+            "windowRef": "cua-window:552638ebb4250d6b7f851f7f",
+            "windowRevision": "889d32e395f9a1b43f36814474e1b45a",
+            "title": "Neo Cross Surface Computer Acceptance"
+          }
+        },
+        "grant": {
+          "state": "consumed",
+          "capabilities": [
+            "input"
+          ],
+          "actionClasses": [
+            "desktop_surface:act"
+          ],
+          "dataScopes": [
+            "window:cua-window:552638ebb4250d6b7f851f7f"
+          ],
+          "expiresAt": 1784605461865
+        },
+        "events": [
+          {
+            "phase": "prepare",
+            "status": "succeeded",
+            "userSummary": "Switched from browser to computer: Native Computer observation and verified input are required for this task.",
+            "operation": {
+              "action": "surface_switch",
+              "risk": "control",
+              "approvalScope": "from:surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+              "expectedOutcome": "Native Computer observation and verified input are required for this task."
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605399002,
+            "version": 1,
+            "eventId": "surface_event_f270bd05-344a-4ab4-9956-20d6da5410dd",
+            "sequence": 1,
+            "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "computer",
+            "provider": "cua-driver",
+            "sessionState": "running",
+            "heartbeatAt": 1784605399002,
+            "startedAt": 1784605399002
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed NeoCrossSurfaceComputerFixture window",
+            "target": {
+              "kind": "computer",
+              "deviceId": "local",
+              "appName": "NeoCrossSurfaceComputerFixture",
+              "pid": 38627,
+              "windowRef": "cua-window:552638ebb4250d6b7f851f7f",
+              "windowRevision": "daff6cc81b93f1276c06e5a347501acc",
+              "title": "Neo Cross Surface Computer Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [
+              "shot_f8c19f2fbb7ca0f975b49833"
+            ],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605401861,
+            "version": 1,
+            "eventId": "surface_event_cc6bda6f-cb99-4db4-acc9-3a9b7f897ee3",
+            "sequence": 2,
+            "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "computer",
+            "provider": "cua-driver",
+            "sessionState": "running",
+            "heartbeatAt": 1784605401860,
+            "startedAt": 1784605401861
+          },
+          {
+            "phase": "act",
+            "status": "running",
+            "userSummary": "act running",
+            "target": {
+              "kind": "computer",
+              "deviceId": "local",
+              "appName": "NeoCrossSurfaceComputerFixture",
+              "pid": 38627,
+              "windowRef": "cua-window:552638ebb4250d6b7f851f7f",
+              "windowRevision": "daff6cc81b93f1276c06e5a347501acc",
+              "title": "Neo Cross Surface Computer Acceptance"
+            },
+            "operation": {
+              "action": "act",
+              "risk": "desktop_input",
+              "approvalScope": "tool_executor_desktop_surface",
+              "expectedOutcome": "text_present"
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "version": 1,
+            "eventId": "surface_event_c54dabcc-c197-4326-a8d0-bebcd69f138b",
+            "sequence": 3,
+            "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "computer",
+            "provider": "cua-driver",
+            "sessionState": "running",
+            "heartbeatAt": 1784605401865,
+            "startedAt": 1784605401866
+          },
+          {
+            "phase": "prepare",
+            "status": "succeeded",
+            "userSummary": "Computer input ownership acquired",
+            "operation": {
+              "action": "computer_input_lock_acquire",
+              "risk": "input",
+              "approvalScope": "surface-session"
+            },
+            "observation": {
+              "verdict": "pass",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "startedAt": 1784605402089,
+            "completedAt": 1784605402089,
+            "version": 1,
+            "eventId": "surface_event_1e6d20e6-2da2-482c-8ef0-d188fd3ddbbf",
+            "sequence": 4,
+            "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "computer",
+            "provider": "cua-driver",
+            "sessionState": "running",
+            "heartbeatAt": 1784605401865
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed the Computer target after input",
+            "target": {
+              "kind": "computer",
+              "deviceId": "local",
+              "appName": "NeoCrossSurfaceComputerFixture",
+              "pid": 38627,
+              "windowRef": "cua-window:552638ebb4250d6b7f851f7f",
+              "windowRevision": "e820dd61a636d001890422a889f81c0e",
+              "title": "Neo Cross Surface Computer Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [
+              "cua-evidence:afa13340-9c2b-450c-9ea8-cc7e49f9985e",
+              "shot_c3a693032e53b80ece2d905a"
+            ],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605403318,
+            "version": 1,
+            "eventId": "surface_event_18f68218-539f-4f0a-843e-059119d782ab",
+            "sequence": 5,
+            "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "computer",
+            "provider": "cua-driver",
+            "sessionState": "running",
+            "heartbeatAt": 1784605403318,
+            "startedAt": 1784605403318
+          },
+          {
+            "phase": "verify",
+            "status": "succeeded",
+            "userSummary": "act succeeded",
+            "target": {
+              "kind": "computer",
+              "deviceId": "local",
+              "appName": "NeoCrossSurfaceComputerFixture",
+              "pid": 38627,
+              "windowRef": "cua-window:552638ebb4250d6b7f851f7f",
+              "windowRevision": "e820dd61a636d001890422a889f81c0e",
+              "title": "Neo Cross Surface Computer Acceptance"
+            },
+            "operation": {
+              "action": "act",
+              "risk": "desktop_input",
+              "approvalScope": "tool_executor_desktop_surface"
+            },
+            "observation": {
+              "verdict": "pass",
+              "findings": []
+            },
+            "evidenceRefs": [
+              "cua-evidence:afa13340-9c2b-450c-9ea8-cc7e49f9985e"
+            ],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605403318,
+            "version": 1,
+            "eventId": "surface_event_9597136e-4cdf-479a-8319-fe117fe9ca62",
+            "sequence": 6,
+            "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "computer",
+            "provider": "cua-driver",
+            "sessionState": "running",
+            "heartbeatAt": 1784605403318,
+            "startedAt": 1784605403318
+          },
+          {
+            "phase": "cleanup",
+            "status": "succeeded",
+            "userSummary": "Computer input ownership released",
+            "operation": {
+              "action": "computer_input_lock_release",
+              "risk": "input",
+              "approvalScope": "surface-session"
+            },
+            "observation": {
+              "verdict": "pass",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "startedAt": 1784605403321,
+            "completedAt": 1784605403321,
+            "version": 1,
+            "eventId": "surface_event_d729f32b-676c-4f6a-90e4-f241d19809e2",
+            "sequence": 7,
+            "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "computer",
+            "provider": "cua-driver",
+            "sessionState": "running",
+            "heartbeatAt": 1784605403318
+          },
+          {
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "Observed NeoCrossSurfaceComputerFixture window",
+            "target": {
+              "kind": "computer",
+              "deviceId": "local",
+              "appName": "NeoCrossSurfaceComputerFixture",
+              "pid": 38627,
+              "windowRef": "cua-window:552638ebb4250d6b7f851f7f",
+              "windowRevision": "889d32e395f9a1b43f36814474e1b45a",
+              "title": "Neo Cross Surface Computer Acceptance"
+            },
+            "observation": {
+              "verdict": "inconclusive",
+              "findings": []
+            },
+            "evidenceRefs": [
+              "shot_c3a693032e53b80ece2d905a"
+            ],
+            "artifactRefs": [],
+            "availableControls": [
+              "pause",
+              "takeover",
+              "stop",
+              "end_session"
+            ],
+            "completedAt": 1784605403445,
+            "version": 1,
+            "eventId": "surface_event_f2bce6b4-7468-4724-a8ee-0f47aef2e6f4",
+            "sequence": 8,
+            "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+            "conversationId": "surface-cross-acceptance",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "computer",
+            "provider": "cua-driver",
+            "sessionState": "running",
+            "heartbeatAt": 1784605403445,
+            "startedAt": 1784605403445
+          }
+        ],
+        "evidence": [],
+        "outputs": [],
+        "availableControls": [
+          "pause",
+          "takeover",
+          "stop",
+          "end_session"
+        ],
+        "source": "live",
+        "writable": true,
+        "updatedAt": 1784605403445
+      },
+      "routedEventCount": 27,
+      "computerPermissionRequests": [
+        {
+          "surface": "computer",
+          "appName": "NeoCrossSurfaceComputerFixture",
+          "windowRef": "cua-window:552638ebb4250d6b7f851f7f"
+        }
+      ]
+    },
+    "legacyProjection": {
+      "mode": "compatibility",
+      "session": {
+        "version": 1,
+        "session": {
+          "version": 1,
+          "sessionId": "legacy-surface:legacy-cross-surface-browser-readback",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "conversationId": "surface-cross-acceptance",
+          "agentId": "surface-cross-owner",
+          "surface": "browser",
+          "provider": "legacy",
+          "capabilities": {
+            "version": 1,
+            "surface": "browser",
+            "provider": "legacy",
+            "protocolVersion": "surface-execution-v1+compatibility",
+            "operations": [
+              "get_content"
+            ],
+            "observationKinds": [],
+            "supports": {
+              "cancel": false,
+              "pause": false,
+              "takeover": false,
+              "cleanup": false,
+              "successorObservation": false
+            }
+          },
+          "state": "running",
+          "startedAt": 1784605403575,
+          "heartbeatAt": 1784605403576
+        },
+        "grant": {
+          "state": "none",
+          "capabilities": [],
+          "actionClasses": [],
+          "dataScopes": []
+        },
+        "events": [
+          {
+            "version": 1,
+            "eventId": "surface-tool:legacy-cross-surface-browser-readback",
+            "sequence": 1,
+            "sessionId": "legacy-surface:legacy-cross-surface-browser-readback",
+            "runId": "surface-cross-run",
+            "turnId": "turn-cross-surface",
+            "agentId": "surface-cross-owner",
+            "surface": "browser",
+            "phase": "observe",
+            "status": "succeeded",
+            "userSummary": "浏览器操作 get_content 已执行",
+            "operation": {
+              "action": "get_content",
+              "risk": "read",
+              "approvalScope": "tool_executor_read_only"
+            },
+            "observation": {
+              "verdict": "not_requested",
+              "findings": []
+            },
+            "evidenceRefs": [],
+            "artifactRefs": [],
+            "availableControls": [
+              "end_session"
+            ],
+            "startedAt": 1784605403575,
+            "completedAt": 1784605403576,
+            "conversationId": "surface-cross-acceptance"
+          }
+        ],
+        "evidence": [],
+        "outputs": [],
+        "availableControls": [],
+        "source": "compat",
+        "writable": false,
+        "updatedAt": 1784605403576
+      }
+    },
+    "computerCleanup": {
+      "lockRemoved": true,
+      "lockEvents": [
+        {
+          "phase": "prepare",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership acquired",
+          "operation": {
+            "action": "computer_input_lock_acquire",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605402089,
+          "completedAt": 1784605402089,
+          "version": 1,
+          "eventId": "surface_event_1e6d20e6-2da2-482c-8ef0-d188fd3ddbbf",
+          "sequence": 4,
+          "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+          "conversationId": "surface-cross-acceptance",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "agentId": "surface-cross-owner",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605401865
+        },
+        {
+          "phase": "cleanup",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership released",
+          "operation": {
+            "action": "computer_input_lock_release",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [
+            "pause",
+            "takeover",
+            "stop",
+            "end_session"
+          ],
+          "startedAt": 1784605403321,
+          "completedAt": 1784605403321,
+          "version": 1,
+          "eventId": "surface_event_d729f32b-676c-4f6a-90e4-f241d19809e2",
+          "sequence": 7,
+          "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+          "conversationId": "surface-cross-acceptance",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "agentId": "surface-cross-owner",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "running",
+          "heartbeatAt": 1784605403318
+        },
+        {
+          "phase": "cleanup",
+          "status": "succeeded",
+          "userSummary": "Computer input ownership was already released",
+          "operation": {
+            "action": "computer_input_lock_release",
+            "risk": "input",
+            "approvalScope": "surface-session"
+          },
+          "observation": {
+            "verdict": "pass",
+            "findings": []
+          },
+          "evidenceRefs": [],
+          "artifactRefs": [],
+          "availableControls": [],
+          "startedAt": 1784605403902,
+          "completedAt": 1784605403902,
+          "version": 1,
+          "eventId": "surface_event_e5eed07d-9ffa-4499-88f2-e14e96f4a7fe",
+          "sequence": 10,
+          "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+          "conversationId": "surface-cross-acceptance",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "agentId": "surface-cross-owner",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "sessionState": "completed",
+          "heartbeatAt": 1784605403902
+        }
+      ]
+    },
+    "browser": {
+      "fixtureOrigin": "http://127.0.0.1:64661",
+      "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+      "beforeReadback": "Browser ready before Computer probe",
+      "afterReadback": "Browser continuation verified",
+      "beforeScreenshot": {
+        "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/cross-surface-current/browser-before.png",
+        "sha256": "3f98b2ebc710b40990a36f4e3d79d834120b8b223f01e92c3bfa1a2ce52d69bc",
+        "bytes": 20474
+      },
+      "afterScreenshot": {
+        "path": "/Users/linchen/.codex/worktrees/aedb/code-agent/docs/acceptance/surface-execution/cross-surface-current/browser-after.png",
+        "sha256": "a6ddc22c8ac8578d83ab0cb456c707a05d4bffb595899587665aaf02d3741b2e",
+        "bytes": 19541
+      }
+    },
+    "sessions": [
+      {
+        "session": {
+          "version": 1,
+          "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "conversationId": "surface-cross-acceptance",
+          "agentId": "surface-cross-owner",
+          "surface": "browser",
+          "provider": "system-chrome-cdp",
+          "capabilities": {
+            "version": 1,
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "protocolVersion": "surface-execution-v1+browser-managed-v2",
+            "operations": [
+              "back",
+              "clear_cookies",
+              "click",
+              "click_text",
+              "close",
+              "close_tab",
+              "export_storage_state",
+              "fill_form",
+              "forward",
+              "get_a11y_snapshot",
+              "get_account_state",
+              "get_content",
+              "get_dom_snapshot",
+              "get_elements",
+              "get_logs",
+              "get_workbench_state",
+              "import_profile_cookies",
+              "import_storage_state",
+              "launch",
+              "list_profiles",
+              "list_tabs",
+              "navigate",
+              "new_tab",
+              "press_key",
+              "reload",
+              "screenshot",
+              "scroll",
+              "set_viewport",
+              "switch_tab",
+              "type",
+              "upload_file",
+              "wait",
+              "wait_for_download"
+            ],
+            "observationKinds": [
+              "dom",
+              "a11y",
+              "screenshot",
+              "network",
+              "console"
+            ],
+            "supports": {
+              "cancel": true,
+              "pause": true,
+              "takeover": true,
+              "cleanup": true,
+              "successorObservation": true
+            }
+          },
+          "state": "completed",
+          "startedAt": 1784605397308,
+          "heartbeatAt": 1784605403703,
+          "activeTarget": {
+            "kind": "browser",
+            "browserInstanceId": "managed-browser:140043359a3baf23b50fca66",
+            "windowRef": "managed-window:fab7ae2effdf76a830bdbf61",
+            "tabRef": "tab_c73789b0-ea80-4f11-8a33-bc2d06684697",
+            "origin": "http://127.0.0.1:64661",
+            "documentRevision": "100c06ff7cf2d2e78a64ba28",
+            "title": "Cross Surface Acceptance"
+          }
+        },
+        "eventCount": 21
+      },
+      {
+        "session": {
+          "version": 1,
+          "sessionId": "surface_1df3aa4d-31a0-4456-ac52-c972c55910f9",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "conversationId": "surface-cross-acceptance",
+          "agentId": "surface-cross-foreign",
+          "surface": "browser",
+          "provider": "system-chrome-cdp",
+          "capabilities": {
+            "version": 1,
+            "surface": "browser",
+            "provider": "system-chrome-cdp",
+            "protocolVersion": "surface-execution-v1+browser-managed-v2",
+            "operations": [
+              "back",
+              "clear_cookies",
+              "click",
+              "click_text",
+              "close",
+              "close_tab",
+              "export_storage_state",
+              "fill_form",
+              "forward",
+              "get_a11y_snapshot",
+              "get_account_state",
+              "get_content",
+              "get_dom_snapshot",
+              "get_elements",
+              "get_logs",
+              "get_workbench_state",
+              "import_profile_cookies",
+              "import_storage_state",
+              "launch",
+              "list_profiles",
+              "list_tabs",
+              "navigate",
+              "new_tab",
+              "press_key",
+              "reload",
+              "screenshot",
+              "scroll",
+              "set_viewport",
+              "switch_tab",
+              "type",
+              "upload_file",
+              "wait",
+              "wait_for_download"
+            ],
+            "observationKinds": [
+              "dom",
+              "a11y",
+              "screenshot",
+              "network",
+              "console"
+            ],
+            "supports": {
+              "cancel": true,
+              "pause": true,
+              "takeover": true,
+              "cleanup": true,
+              "successorObservation": true
+            }
+          },
+          "state": "completed",
+          "startedAt": 1784605398968,
+          "heartbeatAt": 1784605403900,
+          "activeTarget": {
+            "kind": "browser",
+            "browserInstanceId": "managed-browser:1ef9725ecc892cac31f94884",
+            "windowRef": "managed-window:5bc9d197185379318116decc",
+            "tabRef": "tab_fd5a29f9-90a0-4894-91ac-7c56af3dfdea",
+            "documentRevision": "942da0147f367b13a768a558"
+          }
+        },
+        "eventCount": 3
+      },
+      {
+        "session": {
+          "version": 1,
+          "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+          "runId": "surface-cross-run",
+          "turnId": "turn-cross-surface",
+          "conversationId": "surface-cross-acceptance",
+          "agentId": "surface-cross-owner",
+          "surface": "computer",
+          "provider": "cua-driver",
+          "capabilities": {
+            "version": 1,
+            "surface": "computer",
+            "provider": "cua-driver",
+            "protocolVersion": "surface-execution-v1+cua-state-v1",
+            "operations": [
+              "act",
+              "list_roots",
+              "observe"
+            ],
+            "observationKinds": [
+              "ax",
+              "screenshot",
+              "window"
+            ],
+            "supports": {
+              "cancel": true,
+              "pause": true,
+              "takeover": true,
+              "cleanup": true,
+              "successorObservation": true
+            }
+          },
+          "state": "completed",
+          "parentSessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+          "startedAt": 1784605399002,
+          "heartbeatAt": 1784605403902,
+          "activeTarget": {
+            "kind": "computer",
+            "deviceId": "local",
+            "appName": "NeoCrossSurfaceComputerFixture",
+            "pid": 38627,
+            "windowRef": "cua-window:552638ebb4250d6b7f851f7f",
+            "windowRevision": "889d32e395f9a1b43f36814474e1b45a",
+            "title": "Neo Cross Surface Computer Acceptance"
+          }
+        },
+        "eventCount": 11
+      }
+    ],
+    "switchEvents": [
+      {
+        "eventId": "surface_event_f270bd05-344a-4ab4-9956-20d6da5410dd",
+        "sessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "parentSessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+        "userSummary": "Switched from browser to computer: Native Computer observation and verified input are required for this task.",
+        "operation": {
+          "action": "surface_switch",
+          "risk": "control",
+          "approvalScope": "from:surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+          "expectedOutcome": "Native Computer observation and verified input are required for this task."
+        }
+      },
+      {
+        "eventId": "surface_event_8dc499c9-0664-4ba3-b55a-3c6ba518b701",
+        "sessionId": "surface_37413586-6a47-40ec-b23c-d99adda1e13b",
+        "parentSessionId": "surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+        "userSummary": "Switched from computer to browser: Computer business verification completed; returning to Browser business verification.",
+        "operation": {
+          "action": "surface_switch",
+          "risk": "control",
+          "approvalScope": "from:surface_c9208a0c-9ea4-40e0-88a3-ab0051cbe1c6",
+          "expectedOutcome": "Computer business verification completed; returning to Browser business verification."
+        }
+      }
+    ],
+    "eventCount": 35,
+    "redactionCanary": {
+      "injected": true,
+      "sha256": "06c95bd9552883952e7388b593c03632cdc9adf4caa498bd1124a4db455e3800",
+      "rawPersisted": false
+    }
+  },
+  "externalBlock": null,
+  "exitCode": 0
+}

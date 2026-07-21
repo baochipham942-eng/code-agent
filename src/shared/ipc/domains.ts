@@ -38,6 +38,7 @@ export const IPC_DOMAINS = {
   NOTIFICATION: 'domain:notification', // 桌面通知只读查询（核验后台任务/定时任务完成提醒）
   CAPTURE: 'domain:capture', // 浏览器采集
   DESKTOP: 'domain:desktop', // 原生桌面活动
+  SURFACE_EXECUTION: 'domain:surfaceExecution', // Browser / Computer 共用的 owner-aware 控制与投影
   ACTIVITY: 'domain:activity', // 屏幕记忆 / 桌面活动 provider 聚合
   SOUL: 'domain:soul',
   PROVIDER: 'domain:provider',

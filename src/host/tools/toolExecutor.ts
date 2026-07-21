@@ -22,8 +22,7 @@ import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
-import { persistBase64ImageMetadata } from './artifacts/base64ImageArtifacts';
-import { attachSurfaceExecutionResultProjection } from '../services/surfaceExecution/surfaceExecutionResultProjection';
+import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
 import { recordDecision } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
 import { type PermissionMode } from '../permissions/modes';
@@ -80,7 +79,7 @@ export type ToolExecutionDelegate = (toolName: string, params: Record<string, un
  */
 export interface ExecuteOptions {
   /** Native Run identity only. Never substitute sessionId or Team runId. */
-  runId?: string;
+  runId?: string; turnId?: string;
   planningService?: unknown; // PlanningService instance for persistent planning
   modelConfig?: unknown; // ModelConfig for subagent execution
   // Plan Mode support (borrowed from Claude Code v2.0)
@@ -392,7 +391,7 @@ export class ToolExecutor {
 
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
-      runId: effectiveRunId,
+      runId: effectiveRunId, turnId: options.turnId,
       sessionId: effectiveSessionId,
       workspace: this.workspaceRoot,
       workingDirectory: this.executionCwd,
@@ -932,21 +931,13 @@ export class ToolExecutor {
         : null;
       const rawResult = delegatedResult
         ?? await resolver.execute(executionToolName, params, context);
-      const resultWithArtifacts = await persistBase64ImageMetadata(rawResult, {
-        sourceTool: executionToolName,
-        workingDirectory: this.workspaceRoot,
-        sessionId: effectiveSessionId,
-      });
-      const resultWithSurfaceProjection = attachSurfaceExecutionResultProjection({
+      const resultWithSurfaceProjection = await finalizeSurfaceAwareToolResult({
         toolName: executionToolName,
         arguments: params,
-        result: resultWithArtifacts,
-        conversationId: effectiveSessionId,
-        runId: effectiveRunId,
-        agentId: options.agentId,
-        toolCallId: options.currentToolCallId || executionId,
-        startedAt: startTime,
-        completedAt: Date.now(),
+        result: rawResult,
+        workingDirectory: this.workspaceRoot,
+        conversationId: effectiveSessionId, runId: effectiveRunId, turnId: options.turnId, agentId: options.agentId,
+        toolCallId: options.currentToolCallId || executionId, startedAt: startTime,
       });
       const result = writeIsolationMetadata
         ? {

@@ -6,8 +6,10 @@ import path from 'path';
 import { URL } from 'url';
 import type { ManagedBrowserExternalBridgeState } from '../../../shared/contract/desktop';
 import {
+  BROWSER_RELAY_LEASE_ACTION_SCOPES_V2,
   BROWSER_RELAY_CAPABILITIES_V2,
   BROWSER_RELAY_PROTOCOL_VERSION_V2,
+  browserRelayMethodAllowsActionV2,
   isBrowserRelayOwnerV2,
   isBrowserRelayResponseV2,
   type BrowserRelayCapabilityV2,
@@ -17,7 +19,10 @@ import {
   type BrowserRelayHelloV2,
   type BrowserRelayLeaseApprovedV2,
   type BrowserRelayLeaseDeniedV2,
+  type BrowserRelayLeaseReturnResultV2,
   type BrowserRelayLeaseRequestV2,
+  type BrowserRelayLeaseRequestCancelV2,
+  type BrowserRelayMethodV2,
   type BrowserRelayOwnerV2,
   type BrowserRelayResponseV2,
   type BrowserRelayStableErrorCodeV2,
@@ -27,10 +32,21 @@ import { IPC_CHANNELS } from '../../../shared/ipc';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
 import { createLogger } from './logger';
+import {
+  browserRelayScopesAllowUrl,
+  isBrowserRelayOpaqueRef,
+  sameBrowserRelayOwner,
+  validateBrowserRelayLeaseApproval,
+} from './browserRelayApprovalBoundary';
 
 const DEFAULT_RELAY_PORT = 23001;
 const COMMAND_TIMEOUT_MS = 30_000;
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+const RELAY_MUTATION_ACTION_SCOPES = new Set([
+  'navigate', 'back', 'forward', 'reload', 'click', 'click_text',
+  'type', 'press_key', 'scroll', 'hover', 'drag', 'handle_dialog',
+  'upload_file', 'close', 'lease:return',
+]);
 
 type RelayStatus = ManagedBrowserExternalBridgeState['status'];
 
@@ -47,6 +63,15 @@ interface PendingLeaseRequest {
   resolve: (approval: BrowserRelayLeaseApprovedV2) => void;
   reject: (error: BrowserRelayProtocolError) => void;
   timer: ReturnType<typeof setTimeout>;
+  detachAbort?: () => void;
+}
+
+interface ActiveRelayLeaseV2 {
+  owner: BrowserRelayOwnerV2;
+  domainScopes: string[];
+  actionScopes: string[];
+  expiresAt: number;
+  orphaned: boolean;
 }
 
 export interface BrowserRelayCommandScopeV2 extends BrowserRelayOwnerV2 {
@@ -187,13 +212,17 @@ export class BrowserRelayService implements Disposable {
   private connectionGeneration: string | null = null;
   private handshakeComplete = false;
   private extensionCapabilities = new Set<BrowserRelayCapabilityV2>();
-  private activeLeaseIds = new Set<string>();
+  private activeLeases = new Map<string, ActiveRelayLeaseV2>();
+  private cancelledLeaseRequests = new Map<string, BrowserRelayLeaseRequestV2>();
   private disconnectListeners = new Set<(leaseIds: string[]) => void>();
+  private leaseLifecycleListeners = new Set<(result: BrowserRelayLeaseReturnResultV2) => void>();
 
   async ensureStarted(port = DEFAULT_RELAY_PORT): Promise<ManagedBrowserExternalBridgeState> {
     if (this.server && this.port) {
       return this.getState();
     }
+
+    this.rotateToken();
 
     this.server = http.createServer((req, res) => this.handleHttpRequest(req, res));
     this.server.on('upgrade', (req, socket) => this.handleUpgrade(req, socket as net.Socket));
@@ -232,9 +261,22 @@ export class BrowserRelayService implements Disposable {
   }
 
   async stop(): Promise<ManagedBrowserExternalBridgeState> {
+    if (this.activeLeases.size > 0) {
+      throw this.error(
+        'RELAY_LEASE_REQUIRED',
+        'End the owning Surface session before stopping Browser Relay so every borrowed tab is returned.',
+        false,
+        'not_attempted',
+      );
+    }
+    return await this.shutdown(false);
+  }
+
+  private async shutdown(force: boolean): Promise<ManagedBrowserExternalBridgeState> {
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.detachAbort?.();
+      this.sendCancel(pending.command, 'relay-service-stop');
       pending.reject(this.error(
         'RELAY_EXTENSION_DISCONNECTED',
         'Browser relay stopped before the command completed.',
@@ -243,8 +285,12 @@ export class BrowserRelayService implements Disposable {
       ));
     }
     this.pending.clear();
+    if (force) await this.returnActiveLeasesBeforeStop();
     for (const pending of this.pendingLeases.values()) {
       clearTimeout(pending.timer);
+      pending.detachAbort?.();
+      this.rememberCancelledLease(pending.request);
+      this.sendLeaseRequestCancel(pending.request, 'relay-service-stop');
       pending.reject(this.error(
         'RELAY_EXTENSION_DISCONNECTED',
         'Browser relay stopped before tab approval completed.',
@@ -260,7 +306,7 @@ export class BrowserRelayService implements Disposable {
     this.handshakeComplete = false;
     this.extensionCapabilities.clear();
     this.connectionGeneration = null;
-    this.activeLeaseIds.clear();
+    this.activeLeases.clear();
 
     if (this.server) {
       await new Promise<void>((resolve) => {
@@ -271,6 +317,7 @@ export class BrowserRelayService implements Disposable {
     this.server = null;
     this.port = null;
     this.status = 'stopped';
+    this.rotateToken();
     this.broadcastState();
     return this.getState();
   }
@@ -291,7 +338,7 @@ export class BrowserRelayService implements Disposable {
       tokenHint,
       extensionPath: this.resolveExtensionPath(),
       connectedTabCount: this.status === 'connected' ? 1 : 0,
-      attachedTabCount: this.activeLeaseIds.size,
+      attachedTabCount: this.activeLeaseCount(),
       lastConnectedAtMs: this.lastConnectedAtMs,
       lastError: this.lastError,
     };
@@ -302,7 +349,8 @@ export class BrowserRelayService implements Disposable {
   }
 
   hasActiveLease(leaseId: string): boolean {
-    return this.handshakeComplete && this.activeLeaseIds.has(leaseId);
+    const lease = this.activeLeases.get(leaseId);
+    return this.handshakeComplete && Boolean(lease && !lease.orphaned && lease.expiresAt > Date.now());
   }
 
   onDisconnect(listener: (leaseIds: string[]) => void): () => void {
@@ -310,11 +358,17 @@ export class BrowserRelayService implements Disposable {
     return () => this.disconnectListeners.delete(listener);
   }
 
+  onLeaseLifecycle(listener: (result: BrowserRelayLeaseReturnResultV2) => void): () => void {
+    this.leaseLifecycleListeners.add(listener);
+    return () => this.leaseLifecycleListeners.delete(listener);
+  }
+
   async requestTabLease(input: BrowserRelayOwnerV2 & {
     requestId: string;
     domainScopes: string[];
     actionScopes: string[];
     ttlMs: number;
+    abortSignal?: AbortSignal;
   }): Promise<BrowserRelayLeaseApprovedV2> {
     await this.ensureReady();
     if (!Number.isFinite(input.ttlMs) || input.ttlMs <= 0 || input.ttlMs > 30 * 60_000) {
@@ -323,6 +377,7 @@ export class BrowserRelayService implements Disposable {
     if (this.pendingLeases.has(input.requestId)) {
       throw this.error('RELAY_COMMAND_FAILED', 'Relay lease requestId is already active.', false, 'not_attempted');
     }
+    const requestedAt = Date.now();
     const request: BrowserRelayLeaseRequestV2 = {
       type: 'lease.request',
       protocolVersion: BROWSER_RELAY_PROTOCOL_VERSION_V2,
@@ -333,30 +388,63 @@ export class BrowserRelayService implements Disposable {
       agentId: input.agentId,
       domainScopes: this.explicitScopes(input.domainScopes, 'domain'),
       actionScopes: this.explicitScopes(input.actionScopes, 'action'),
-      expiresAt: Date.now() + Math.floor(input.ttlMs),
+      consentDeadlineAt: requestedAt + Math.min(Math.floor(input.ttlMs), COMMAND_TIMEOUT_MS),
+      expiresAt: requestedAt + Math.floor(input.ttlMs),
     };
     return await new Promise<BrowserRelayLeaseApprovedV2>((resolve, reject) => {
       const timer = setTimeout(() => {
+        const pending = this.pendingLeases.get(request.requestId);
         this.pendingLeases.delete(request.requestId);
+        pending?.detachAbort?.();
+        this.rememberCancelledLease(request);
+        this.sendLeaseRequestCancel(request, 'host-consent-timeout');
         reject(this.error('RELAY_OPERATION_TIMEOUT', 'Relay tab approval timed out.', true, 'not_attempted'));
-      }, Math.min(input.ttlMs, COMMAND_TIMEOUT_MS));
-      this.pendingLeases.set(request.requestId, { request, resolve, reject, timer });
+      }, Math.max(1, request.consentDeadlineAt - requestedAt));
+      const onAbort = () => {
+        const pending = this.pendingLeases.get(request.requestId);
+        if (!pending) return;
+        this.pendingLeases.delete(request.requestId);
+        clearTimeout(timer);
+        this.rememberCancelledLease(request);
+        this.sendLeaseRequestCancel(
+          request,
+          typeof input.abortSignal?.reason === 'string' ? input.abortSignal.reason : 'host-abort',
+        );
+        reject(this.error('RELAY_OPERATION_CANCELLED', 'Relay tab approval was cancelled.', true, 'not_attempted'));
+      };
+      const detachAbort = input.abortSignal
+        ? () => input.abortSignal?.removeEventListener('abort', onAbort)
+        : undefined;
+      this.pendingLeases.set(request.requestId, {
+        request,
+        resolve,
+        reject,
+        timer,
+        ...(detachAbort ? { detachAbort } : {}),
+      });
+      input.abortSignal?.addEventListener('abort', onAbort, { once: true });
+      if (input.abortSignal?.aborted) {
+        onAbort();
+        return;
+      }
       this.socket?.sendJson(request);
     });
   }
 
   async executeLeasedCommand(
     scope: BrowserRelayCommandScopeV2,
-    method: string,
+    method: BrowserRelayMethodV2,
     params: Record<string, unknown> = {},
   ): Promise<unknown> {
     await this.ensureReady();
-    if (!scope.leaseId || !this.activeLeaseIds.has(scope.leaseId)) {
+    const activeLease = scope.leaseId ? this.activeLeases.get(scope.leaseId) : undefined;
+    if (!activeLease) {
       throw this.error('RELAY_LEASE_REQUIRED', 'An active owner-scoped Relay tab lease is required.', false, 'not_attempted');
     }
     if (!scope.operationId.trim() || !scope.actionScope.trim() || !method.trim()) {
       throw this.error('RELAY_COMMAND_FAILED', 'Relay command requires operationId, actionScope, and method.', false, 'not_attempted');
     }
+    this.authorizeLeaseCommand(activeLease, scope, method, params);
     this.rejectRawNativeTargets(params);
     const deadlineMs = Math.min(Math.max(Math.floor(scope.deadlineMs || COMMAND_TIMEOUT_MS), 1), COMMAND_TIMEOUT_MS);
     const id = `relay_${crypto.randomUUID()}`;
@@ -402,13 +490,12 @@ export class BrowserRelayService implements Disposable {
       const detachAbort = scope.abortSignal
         ? () => scope.abortSignal?.removeEventListener('abort', onAbort)
         : undefined;
+      this.pending.set(id, { resolve, reject, timer, command, ...(detachAbort ? { detachAbort } : {}) });
+      scope.abortSignal?.addEventListener('abort', onAbort, { once: true });
       if (scope.abortSignal?.aborted) {
-        clearTimeout(timer);
         onAbort();
         return;
       }
-      scope.abortSignal?.addEventListener('abort', onAbort, { once: true });
-      this.pending.set(id, { resolve, reject, timer, command, ...(detachAbort ? { detachAbort } : {}) });
       this.socket?.sendJson(command);
     });
   }
@@ -418,7 +505,7 @@ export class BrowserRelayService implements Disposable {
       { ...scope, actionScope: 'lease:return' },
       'lease.return',
     );
-    this.activeLeaseIds.delete(scope.leaseId);
+    this.activeLeases.delete(scope.leaseId);
     this.broadcastState();
     return result;
   }
@@ -453,7 +540,7 @@ export class BrowserRelayService implements Disposable {
   }
 
   async dispose(): Promise<void> {
-    await this.stop();
+    await this.shutdown(true);
   }
 
   private async ensureReady(): Promise<void> {
@@ -483,6 +570,20 @@ export class BrowserRelayService implements Disposable {
     this.socket?.sendJson(cancel);
   }
 
+  private sendLeaseRequestCancel(request: BrowserRelayLeaseRequestV2, reason: string): void {
+    const cancel: BrowserRelayLeaseRequestCancelV2 = {
+      type: 'lease.request.cancel',
+      protocolVersion: BROWSER_RELAY_PROTOCOL_VERSION_V2,
+      surfaceSessionId: request.surfaceSessionId,
+      conversationId: request.conversationId,
+      runId: request.runId,
+      agentId: request.agentId,
+      requestId: request.requestId,
+      reason,
+    };
+    this.socket?.sendJson(cancel);
+  }
+
   private explicitScopes(values: string[], kind: 'domain' | 'action'): string[] {
     const scopes = Array.isArray(values)
       ? values.map((value) => typeof value === 'string' ? value.trim() : '').filter(Boolean)
@@ -491,6 +592,16 @@ export class BrowserRelayService implements Disposable {
       throw this.error(
         kind === 'domain' ? 'RELAY_DOMAIN_NOT_ALLOWED' : 'RELAY_ACTION_NOT_ALLOWED',
         `Relay ${kind} scopes must be explicit and non-empty.`,
+        false,
+        'not_attempted',
+      );
+    }
+    if (kind === 'action' && scopes.some((scope) => !BROWSER_RELAY_LEASE_ACTION_SCOPES_V2.includes(
+      scope as typeof BROWSER_RELAY_LEASE_ACTION_SCOPES_V2[number],
+    ))) {
+      throw this.error(
+        'RELAY_ACTION_NOT_ALLOWED',
+        'Relay action scopes contain an unsupported Browser Relay V2 action.',
         false,
         'not_attempted',
       );
@@ -506,15 +617,53 @@ export class BrowserRelayService implements Disposable {
     }
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
       const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
-      if (normalized === 'tabid' || normalized === 'windowid' || normalized === 'debuggerid') {
+      if (normalized.endsWith('tabid') || normalized.endsWith('windowid') || normalized.endsWith('debuggerid')) {
         throw this.error('RELAY_TARGET_CHANGED', 'Relay commands cannot carry native tab, window, or debugger ids.', false, 'not_attempted');
       }
       this.rejectRawNativeTargets(child, depth + 1);
     }
   }
 
+  private authorizeLeaseCommand(
+    lease: ActiveRelayLeaseV2,
+    scope: BrowserRelayCommandScopeV2,
+    method: string,
+    params: Record<string, unknown>,
+  ): void {
+    if (!sameBrowserRelayOwner(scope, lease.owner)) {
+      throw this.error('RELAY_SESSION_NOT_OWNED', 'Relay lease does not belong to this Surface owner.', false, 'not_attempted');
+    }
+    if (scope.actionScope !== 'lease:return' && lease.orphaned) {
+      throw this.error('RELAY_LEASE_NOT_OWNED', 'Relay tab lease was orphaned by an extension disconnect.', false, 'not_attempted');
+    }
+    if (scope.actionScope !== 'lease:return' && lease.expiresAt <= Date.now()) {
+      throw this.error('RELAY_LEASE_EXPIRED', 'Relay tab lease has expired and must be returned.', false, 'not_attempted');
+    }
+    if (scope.actionScope !== 'lease:return' && !lease.actionScopes.includes(scope.actionScope)) {
+      throw this.error('RELAY_ACTION_NOT_ALLOWED', 'Relay lease does not cover this action.', false, 'not_attempted');
+    }
+    if (!this.methodMatchesActionScope(method, scope.actionScope)) {
+      throw this.error('RELAY_ACTION_NOT_ALLOWED', 'Relay method does not match the approved action scope.', false, 'not_attempted');
+    }
+    if (typeof params.url === 'string' && !browserRelayScopesAllowUrl(lease.domainScopes, params.url)) {
+      throw this.error('RELAY_DOMAIN_NOT_ALLOWED', 'Relay lease does not cover the requested navigation origin.', false, 'not_attempted');
+    }
+  }
+
+  private methodMatchesActionScope(method: string, actionScope: string): boolean {
+    return browserRelayMethodAllowsActionV2(method, actionScope);
+  }
+
+  private activeLeaseCount(): number {
+    const now = Date.now();
+    return Array.from(this.activeLeases.values())
+      .filter((lease) => !lease.orphaned && lease.expiresAt > now).length;
+  }
+
   private deliveryFor(actionScope: string): BrowserRelayErrorV2['delivery'] {
-    return /^(?:input:|navigate|tab:|lease:return)/.test(actionScope) ? 'unknown' : 'not_attempted';
+    return RELAY_MUTATION_ACTION_SCOPES.has(actionScope)
+      ? 'unknown'
+      : 'not_attempted';
   }
 
   private error(
@@ -574,8 +723,7 @@ export class BrowserRelayService implements Disposable {
     ].join('\r\n'));
 
     this.socket?.close();
-    let relaySocket: BrowserRelaySocket;
-    relaySocket = new BrowserRelaySocket(
+    const relaySocket = new BrowserRelaySocket(
       socket,
       (message) => this.handleRelayMessage(message),
       () => {
@@ -583,6 +731,7 @@ export class BrowserRelayService implements Disposable {
       },
     );
     this.socket = relaySocket;
+    this.rotateToken();
     this.status = 'listening';
     this.handshakeComplete = false;
     this.extensionCapabilities.clear();
@@ -615,8 +764,19 @@ export class BrowserRelayService implements Disposable {
     }
     if (record.type === 'lease.returned' || record.type === 'lease.recovery_required') {
       const leaseId = typeof record.leaseId === 'string' ? record.leaseId : '';
-      if (record.type === 'lease.returned') this.activeLeaseIds.delete(leaseId);
+      const activeLease = this.activeLeases.get(leaseId);
+      if (!activeLease || !isBrowserRelayOwnerV2(record) || !sameBrowserRelayOwner(record, activeLease.owner)) return;
+      if (record.type === 'lease.returned') this.activeLeases.delete(leaseId);
+      else activeLease.orphaned = true;
       this.broadcastState();
+      const lifecycle = message as BrowserRelayLeaseReturnResultV2;
+      for (const listener of this.leaseLifecycleListeners) {
+        try {
+          listener(structuredClone(lifecycle));
+        } catch {
+          // Lifecycle observers cannot change the protocol boundary outcome.
+        }
+      }
       return;
     }
     if (!isBrowserRelayResponseV2(message)) return;
@@ -657,25 +817,93 @@ export class BrowserRelayService implements Disposable {
 
   private handleLeaseApproved(message: BrowserRelayLeaseApprovedV2): void {
     const pending = this.pendingLeases.get(message.requestId);
-    if (!pending) return;
-    this.pendingLeases.delete(message.requestId);
-    clearTimeout(pending.timer);
-    if (!isBrowserRelayOwnerV2(message)
-      || !this.sameOwner(message, pending.request)
-      || message.expiresAt > pending.request.expiresAt
-      || message.expiresAt <= Date.now()
-      || !this.isDomainScopeSubset(message.domainScopes, pending.request.domainScopes)
-      || !this.isScopeSubset(message.actionScopes, pending.request.actionScopes)
-      || typeof message.leaseId !== 'string'
-      || message.leaseId.length < 8
-      || typeof message.approvalRef !== 'string'
-      || message.approvalRef.length < 8) {
-      pending.reject(this.error('RELAY_LEASE_NOT_OWNED', 'Relay approval did not match the pending owner and scope.', false, 'not_attempted'));
+    if (!pending) {
+      void this.returnUnexpectedLease(message, this.cancelledLeaseRequests.get(message.requestId));
       return;
     }
-    this.activeLeaseIds.add(message.leaseId);
+    this.pendingLeases.delete(message.requestId);
+    clearTimeout(pending.timer);
+    pending.detachAbort?.();
+    const validationError = validateBrowserRelayLeaseApproval(message, pending.request);
+    if (validationError) {
+      this.rememberCancelledLease(pending.request);
+      pending.reject(this.error('RELAY_LEASE_NOT_OWNED', validationError, false, 'not_attempted'));
+      void this.returnUnexpectedLease(message, pending.request);
+      return;
+    }
+    this.activeLeases.set(message.leaseId, {
+      owner: {
+        surfaceSessionId: message.surfaceSessionId,
+        conversationId: message.conversationId,
+        runId: message.runId,
+        agentId: message.agentId,
+      },
+      domainScopes: [...message.domainScopes],
+      actionScopes: [...message.actionScopes],
+      expiresAt: message.expiresAt,
+      orphaned: false,
+    });
     pending.resolve(structuredClone(message));
     this.broadcastState();
+  }
+
+  private async returnUnexpectedLease(
+    message: BrowserRelayLeaseApprovedV2,
+    expected?: BrowserRelayLeaseRequestV2,
+  ): Promise<void> {
+    if (!isBrowserRelayOwnerV2(message)
+      || typeof message.leaseId !== 'string'
+      || !isBrowserRelayOpaqueRef(message.leaseId)
+      || (expected && !sameBrowserRelayOwner(message, expected))) return;
+    const existing = this.activeLeases.get(message.leaseId);
+    if (existing && !sameBrowserRelayOwner(message, existing.owner)) {
+      this.lastError = 'Relay sent a colliding lease reference for another owner.';
+      this.socket?.close();
+      this.broadcastState();
+      return;
+    }
+    this.activeLeases.set(message.leaseId, {
+      owner: {
+        surfaceSessionId: message.surfaceSessionId,
+        conversationId: message.conversationId,
+        runId: message.runId,
+        agentId: message.agentId,
+      },
+      domainScopes: Array.isArray(message.domainScopes) ? [...message.domainScopes] : [],
+      actionScopes: Array.isArray(message.actionScopes) ? [...message.actionScopes] : [],
+      expiresAt: Number.isFinite(message.expiresAt) ? message.expiresAt : Date.now() + 1,
+      orphaned: false,
+    });
+    this.broadcastState();
+    try {
+      await this.returnTabLease({
+        surfaceSessionId: message.surfaceSessionId,
+        conversationId: message.conversationId,
+        runId: message.runId,
+        agentId: message.agentId,
+        leaseId: message.leaseId,
+        operationId: `late-approval-return:${message.requestId}`,
+        deadlineMs: 1_500,
+      });
+    } catch {
+      const lease = this.activeLeases.get(message.leaseId);
+      if (lease) lease.orphaned = true;
+      this.lastError = 'A late Relay approval could not be returned automatically.';
+      this.broadcastState();
+    }
+  }
+
+  private async returnActiveLeasesBeforeStop(): Promise<void> {
+    if (!this.socket || !this.handshakeComplete || this.status !== 'connected') return;
+    const leases = Array.from(this.activeLeases.entries());
+    await Promise.allSettled(leases.map(async ([leaseId, lease]) => {
+      await this.returnTabLease({
+        ...lease.owner,
+        leaseId,
+        operationId: `relay-service-stop:${crypto.randomUUID()}`,
+        deadlineMs: 1_500,
+      });
+    }));
   }
 
   private handleLeaseDenied(message: BrowserRelayLeaseDeniedV2): void {
@@ -683,7 +911,8 @@ export class BrowserRelayService implements Disposable {
     if (!pending) return;
     this.pendingLeases.delete(message.requestId);
     clearTimeout(pending.timer);
-    if (!isBrowserRelayOwnerV2(message) || !this.sameOwner(message, pending.request)) {
+    pending.detachAbort?.();
+    if (!isBrowserRelayOwnerV2(message) || !sameBrowserRelayOwner(message, pending.request)) {
       pending.reject(this.error('RELAY_SESSION_NOT_OWNED', 'Relay denial owner did not match the pending request.', false, 'not_attempted'));
       return;
     }
@@ -705,34 +934,21 @@ export class BrowserRelayService implements Disposable {
     pending.detachAbort?.();
   }
 
-  private sameOwner(a: BrowserRelayOwnerV2, b: BrowserRelayOwnerV2): boolean {
-    return a.surfaceSessionId === b.surfaceSessionId
-      && a.conversationId === b.conversationId
-      && a.runId === b.runId
-      && a.agentId === b.agentId;
+  private rememberCancelledLease(request: BrowserRelayLeaseRequestV2): void {
+    const now = Date.now();
+    for (const [requestId, cancelled] of this.cancelledLeaseRequests) {
+      if (cancelled.expiresAt <= now) this.cancelledLeaseRequests.delete(requestId);
+    }
+    this.cancelledLeaseRequests.set(request.requestId, structuredClone(request));
+    while (this.cancelledLeaseRequests.size > 256) {
+      const oldest = this.cancelledLeaseRequests.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.cancelledLeaseRequests.delete(oldest);
+    }
   }
 
-  private isScopeSubset(candidate: unknown, allowed: string[]): candidate is string[] {
-    return Array.isArray(candidate)
-      && candidate.length > 0
-      && candidate.every((scope) => typeof scope === 'string' && allowed.includes(scope));
-  }
-
-  private isDomainScopeSubset(candidate: unknown, allowed: string[]): candidate is string[] {
-    if (!Array.isArray(candidate) || candidate.length === 0) return false;
-    return candidate.every((scope) => {
-      if (typeof scope !== 'string') return false;
-      if (allowed.includes(scope)) return true;
-      if (!allowed.includes('selected-tab-origin')) return false;
-      try {
-        const value = scope.startsWith('origin:') ? scope.slice('origin:'.length) : scope;
-        const parsed = new URL(value);
-        return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
-          && parsed.origin === value;
-      } catch {
-        return false;
-      }
-    });
+  private rotateToken(): void {
+    this.token = crypto.randomBytes(32).toString('base64url');
   }
 
   private protocolErrorFromExtension(error: BrowserRelayErrorV2): BrowserRelayProtocolError {
@@ -746,6 +962,8 @@ export class BrowserRelayService implements Disposable {
       'RELAY_LEASE_EXPIRED',
       'RELAY_DOMAIN_NOT_ALLOWED',
       'RELAY_ACTION_NOT_ALLOWED',
+      'RELAY_DIALOG_BLOCKED',
+      'RELAY_FILE_UPLOAD_BLOCKED',
       'RELAY_OPERATION_CANCELLED',
       'RELAY_OPERATION_TIMEOUT',
       'RELAY_EXTENSION_DISCONNECTED',
@@ -766,7 +984,7 @@ export class BrowserRelayService implements Disposable {
   }
 
   private notifyDisconnected(): void {
-    const leaseIds = [...this.activeLeaseIds];
+    const leaseIds = [...this.activeLeases.keys()];
     if (leaseIds.length === 0) return;
     for (const listener of this.disconnectListeners) listener([...leaseIds]);
   }
@@ -777,6 +995,7 @@ export class BrowserRelayService implements Disposable {
     }
     this.handshakeComplete = false;
     this.extensionCapabilities.clear();
+    for (const lease of this.activeLeases.values()) lease.orphaned = true;
     this.notifyDisconnected();
     if (this.server) {
       this.status = 'listening';
@@ -794,6 +1013,8 @@ export class BrowserRelayService implements Disposable {
     this.pending.clear();
     for (const pending of this.pendingLeases.values()) {
       clearTimeout(pending.timer);
+      pending.detachAbort?.();
+      this.rememberCancelledLease(pending.request);
       pending.reject(this.error(
         'RELAY_EXTENSION_DISCONNECTED',
         'Browser relay extension disconnected before consent completed.',
@@ -822,8 +1043,9 @@ export class BrowserRelayService implements Disposable {
       return 'Waiting for the Chrome extension to connect.';
     }
     if (this.status === 'connected') {
-      return this.activeLeaseIds.size > 0
-        ? `Chrome extension connected with ${this.activeLeaseIds.size} explicitly leased tab(s).`
+      const activeLeaseCount = this.activeLeaseCount();
+      return activeLeaseCount > 0
+        ? `Chrome extension connected with ${activeLeaseCount} explicitly leased tab(s).`
         : 'Chrome extension connected. A Relay Surface must request a tab and the user must approve it in the extension popup.';
     }
     return this.lastError;

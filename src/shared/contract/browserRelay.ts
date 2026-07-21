@@ -1,7 +1,8 @@
-export const BROWSER_RELAY_PROTOCOL_VERSION_V2 = '2.0' as const;
+export const BROWSER_RELAY_PROTOCOL_VERSION_V2 = '2.2' as const;
 
 export const BROWSER_RELAY_CAPABILITIES_V2 = [
   'lease.request',
+  'lease.request.cancel',
   'lease.return',
   'operation.cancel',
   'tab.agent_window',
@@ -9,11 +10,55 @@ export const BROWSER_RELAY_CAPABILITIES_V2 = [
   'tab.screenshot',
   'dom.snapshot',
   'ax.snapshot',
+  'network.metadata',
+  'dialog.control',
+  'file.upload',
   'input.mouse',
   'input.keyboard',
 ] as const;
 
 export type BrowserRelayCapabilityV2 = typeof BROWSER_RELAY_CAPABILITIES_V2[number];
+
+/** Canonical Browser Relay V2 command catalog. Host and extension must mirror it exactly. */
+export const BROWSER_RELAY_ACTION_METHODS_V2 = {
+  navigate: 'tab.navigate',
+  back: 'tab.back',
+  forward: 'tab.forward',
+  reload: 'tab.reload',
+  click: 'input.click',
+  click_text: 'input.click_text',
+  type: 'input.type',
+  press_key: 'input.key',
+  scroll: 'input.scroll',
+  hover: 'input.hover',
+  drag: 'input.drag',
+  get_dialog_state: 'dialog.get',
+  handle_dialog: 'dialog.handle',
+  upload_file: 'dom.set_file_input_files',
+  screenshot: 'tab.screenshot',
+  get_content: 'page.content',
+  get_dom_snapshot: 'dom.snapshot',
+  get_a11y_snapshot: 'ax.snapshot',
+  get_workbench_state: 'lease.get',
+  get_account_state: 'lease.get',
+  wait: 'operation.wait',
+  get_logs: 'page.logs',
+} as const;
+
+export const BROWSER_RELAY_LEASE_ACTION_SCOPES_V2 = [
+  ...Object.keys(BROWSER_RELAY_ACTION_METHODS_V2),
+  'close',
+  'lease:return',
+] as const;
+
+export type BrowserRelayActionScopeV2 = keyof typeof BROWSER_RELAY_ACTION_METHODS_V2;
+export type BrowserRelayMethodV2 = typeof BROWSER_RELAY_ACTION_METHODS_V2[BrowserRelayActionScopeV2]
+  | 'lease.return';
+
+export function browserRelayMethodAllowsActionV2(method: string, actionScope: string): boolean {
+  if (method === 'lease.return') return actionScope === 'lease:return';
+  return BROWSER_RELAY_ACTION_METHODS_V2[actionScope as BrowserRelayActionScopeV2] === method;
+}
 
 export type BrowserRelayStableErrorCodeV2 =
   | 'RELAY_PROTOCOL_VERSION_MISMATCH'
@@ -25,6 +70,8 @@ export type BrowserRelayStableErrorCodeV2 =
   | 'RELAY_LEASE_EXPIRED'
   | 'RELAY_DOMAIN_NOT_ALLOWED'
   | 'RELAY_ACTION_NOT_ALLOWED'
+  | 'RELAY_DIALOG_BLOCKED'
+  | 'RELAY_FILE_UPLOAD_BLOCKED'
   | 'RELAY_OPERATION_CANCELLED'
   | 'RELAY_OPERATION_TIMEOUT'
   | 'RELAY_EXTENSION_DISCONNECTED'
@@ -60,7 +107,15 @@ export interface BrowserRelayLeaseRequestV2 extends BrowserRelayOwnerV2 {
   requestId: string;
   domainScopes: string[];
   actionScopes: string[];
+  consentDeadlineAt: number;
   expiresAt: number;
+}
+
+export interface BrowserRelayLeaseRequestCancelV2 extends BrowserRelayOwnerV2 {
+  type: 'lease.request.cancel';
+  protocolVersion: typeof BROWSER_RELAY_PROTOCOL_VERSION_V2;
+  requestId: string;
+  reason?: string;
 }
 
 export interface BrowserRelayApprovedPlacementV2 {
@@ -101,7 +156,7 @@ export interface BrowserRelayCommandV2 extends BrowserRelayOwnerV2 {
   id: string;
   operationId: string;
   leaseId: string;
-  method: string;
+  method: BrowserRelayMethodV2;
   actionScope: string;
   deadlineAt: number;
   params: Record<string, unknown>;
@@ -148,6 +203,7 @@ export type BrowserRelayExtensionMessageV2 =
 export type BrowserRelayHostMessageV2 =
   | BrowserRelayHelloAckV2
   | BrowserRelayLeaseRequestV2
+  | BrowserRelayLeaseRequestCancelV2
   | BrowserRelayCommandV2
   | BrowserRelayCancelV2;
 

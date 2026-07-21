@@ -7,6 +7,7 @@ import type {
   SurfaceObservationV1,
   SurfaceTargetRefV1,
 } from '../../../shared/contract/surfaceExecution';
+import { BROWSER_RELAY_LEASE_ACTION_SCOPES_V2 } from '../../../shared/contract/browserRelay';
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import type { BrowserTabOriginalPlacementV1 } from './BrowserTabLeaseService';
 import type { SurfaceTakeoverResolutionV1 } from './SurfaceHumanTakeoverService';
@@ -32,6 +33,7 @@ export interface SurfaceBrowserActionExecutionV1<T> {
 export interface BrowserSurfaceRuntimeIdentityV1 {
   conversationId: string;
   runId: string;
+  turnId?: string;
   agentId: string;
   emitSurfaceEvent?: (event: SurfaceExecutionEventV1) => void;
 }
@@ -39,6 +41,7 @@ export interface BrowserSurfaceRuntimeIdentityV1 {
 export interface PrepareBrowserSessionInputV1 {
   identity: BrowserSurfaceRuntimeIdentityV1;
   provider?: string;
+  switchReason?: string;
 }
 
 export interface PrepareBrowserSessionResultV1 {
@@ -112,6 +115,11 @@ export const BROWSER_SURFACE_OPERATIONS = [
   'get_dom_snapshot', 'get_a11y_snapshot', 'get_workbench_state',
   'get_account_state', 'export_storage_state', 'import_storage_state',
   'wait', 'get_logs', 'list_profiles', 'import_profile_cookies', 'clear_cookies',
+];
+
+export const RELAY_BROWSER_SURFACE_OPERATIONS = [
+  'launch',
+  ...BROWSER_RELAY_LEASE_ACTION_SCOPES_V2.filter((action) => action !== 'lease:return'),
 ];
 
 export const DEFAULT_BROWSER_PROVIDER = 'system-chrome-cdp';

@@ -13,6 +13,10 @@ import { SidebarMessageHitList } from './SidebarMessageHitList';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 import type { SidebarSessionActions } from './useSidebarSessionActions';
 import type { SidebarRowActions } from './useSidebarRowActions';
+import {
+  SurfaceExecutionRunStatus,
+  useSurfaceExecutionRunSession,
+} from '../surfaceExecution/SurfaceExecutionRunStatus';
 
 /**
  * 需要关注但非运行中的状态，行尾显一个安静的小圆点（不是带文字的彩色 chip），
@@ -115,6 +119,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const isRenaming = renamingId === session.id;
   const sessionRuntime = sessionRuntimes.get(session.id);
   const backgroundSession = backgroundSessionMap.get(session.id);
+  const surfaceExecutionSession = useSurfaceExecutionRunSession(session.id);
   // 空会话（0 轮 / 0 消息）没有可回放内容，hover 也不挂 Replay 入口。
   const sessionHasActivity = (session.turnCount ?? 0) > 0 || (session.messageCount ?? 0) > 0;
   const status = getSessionStatusPresentation({
@@ -192,7 +197,9 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         {/* 右槽：运行中 spinner / 否则 时间（hover 时淡出给操作让位） */}
         {!isRenaming && (
           <span className="shrink-0 flex items-center gap-1.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
-            {isRunning ? (
+            {surfaceExecutionSession ? (
+              <SurfaceExecutionRunStatus session={surfaceExecutionSession} placement="sidebar" />
+            ) : isRunning ? (
               <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={status.label} />
             ) : (
               <>

@@ -6,6 +6,7 @@ import type { ToolExecutionResult } from '../tools/types';
 
 const LEDGER_FILE = 'browser-computer-proof-ledger.jsonl';
 const SCHEMA_VERSION = 1;
+const CANARY_PATTERN = /surface(?:[_-](?:secret|redaction))?[_-]canary[a-z0-9_-]*/gi;
 
 export interface BrowserComputerProofRecord {
   schemaVersion: 1;
@@ -21,6 +22,9 @@ export interface BrowserComputerProofRecord {
   targetKind: 'browser' | 'computer' | 'screenshot' | 'unknown';
   proof: unknown;
   card: unknown;
+  /** V1 semantic card/scope are additive; legacy proof/card readers remain compatible. */
+  surfaceEvidenceCard?: unknown;
+  surfaceScope?: unknown;
 }
 
 export interface PersistBrowserComputerProofInput {
@@ -80,7 +84,7 @@ function sanitizePathLikeString(value: string): string {
   if (/^data:/i.test(value) || /base64[,=]/i.test(value)) {
     return '[redacted]';
   }
-  return value.replace(
+  return value.replace(CANARY_PATTERN, '[redacted-canary]').replace(
     /(?:\/Users\/[^\s"'`]+|\/private\/tmp\/[^\s"'`]+|\/tmp\/[^\s"'`]+|\/var\/folders\/[^\s"'`]+|\/Volumes\/[^\s"'`]+)(?:\/[^\s"'`]*)*/g,
     (match) => `.../${path.basename(match) || 'path'}`,
   );
@@ -134,14 +138,25 @@ export function persistBrowserComputerProofFromResult(
   const metadata = result.metadata || {};
   const proof = isRecord(metadata.browserComputerProof) ? metadata.browserComputerProof : null;
   const card = isRecord(metadata.browserComputerEvidenceCard) ? metadata.browserComputerEvidenceCard : null;
-  if (!proof && !card) return null;
+  const surfaceCard = isRecord(metadata.surfaceEvidenceCardV1) ? metadata.surfaceEvidenceCardV1 : null;
+  const surfaceScope = isRecord(metadata.surfaceProofScopeV1) ? metadata.surfaceProofScopeV1 : null;
+  if (!proof && !card && !surfaceCard) return null;
 
   const createdAt = input.now?.() ?? Date.now();
-  const status = stringValue(card?.status) ?? 'captured';
-  const summary = stringValue(card?.summary) ?? 'Browser/Computer proof captured';
+  const inspection = isRecord(surfaceCard?.inspection) ? surfaceCard.inspection : null;
+  const surfaceStatus = stringValue(inspection?.verificationState);
+  const status = surfaceStatus && surfaceStatus !== 'not_requested'
+    ? surfaceStatus
+    : stringValue(card?.status)
+    ?? surfaceStatus
+    ?? 'captured';
+  const summary = sanitizePathLikeString(stringValue(surfaceCard?.summary)
+    ?? stringValue(card?.summary)
+    ?? 'Browser/Computer proof captured');
   const traceId = extractTraceId(metadata);
   const evidenceRefIds = stringArray(card?.evidenceRefIds);
   const fallbackEvidenceRefIds = proof ? evidenceRefIdsFromProof(proof) : [];
+  const surfaceEvidenceId = stringValue(surfaceCard?.evidenceId);
   const record: BrowserComputerProofRecord = {
     schemaVersion: SCHEMA_VERSION,
     id: buildRecordId({
@@ -159,10 +174,17 @@ export function persistBrowserComputerProofFromResult(
     createdAt,
     status,
     summary,
-    evidenceRefIds: evidenceRefIds.length > 0 ? evidenceRefIds : fallbackEvidenceRefIds,
+    evidenceRefIds: (evidenceRefIds.length > 0
+      ? evidenceRefIds
+      : fallbackEvidenceRefIds.length > 0
+        ? fallbackEvidenceRefIds
+        : surfaceEvidenceId ? [surfaceEvidenceId] : [])
+      .map(sanitizePathLikeString),
     targetKind: targetKindForTool(input.toolName),
     proof: sanitizeValue(proof),
     card: sanitizeValue(card),
+    ...(surfaceCard ? { surfaceEvidenceCard: sanitizeValue(surfaceCard) } : {}),
+    ...(surfaceScope ? { surfaceScope: sanitizeValue(surfaceScope) } : {}),
   };
 
   const ledgerPath = getBrowserComputerProofLedgerPath();

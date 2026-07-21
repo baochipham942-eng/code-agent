@@ -23,6 +23,8 @@ export interface Tool extends ToolDefinition {
 export interface ToolContext {
   /** Native Run identity only; Agent Team identity lives in swarmRunScope. */
   runId?: string;
+  /** Conversation turn that owns this tool call and its durable projections. */
+  turnId?: string;
   /** Immutable authorization/artifact boundary for a run-scoped executor. */
   workspace?: string;
   workingDirectory: string;

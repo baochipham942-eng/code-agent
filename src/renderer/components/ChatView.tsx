@@ -24,6 +24,7 @@ import { useRequireAuth } from '../hooks/useRequireAuth';
 import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
+import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { ChatInput } from './features/chat/ChatInput';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
@@ -747,6 +748,8 @@ export const ChatView: React.FC = () => {
             <span className="truncate">{channelSessionSource}</span>
           </div>
         )}
+
+        <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
         {/* Messages - Turn-based trace view */}
         <div className="flex-1 min-h-0 overflow-hidden">

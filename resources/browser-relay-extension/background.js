@@ -1,4 +1,9 @@
-const PROTOCOL_VERSION = '2.0';
+/* global AbortController, URL, WebSocket, chrome, clearTimeout, console, crypto, fetch, importScripts, setTimeout */
+
+importScripts('protocol-v2.js');
+
+const RELAY_PROTOCOL = globalThis.NEO_BROWSER_RELAY_V2;
+const PROTOCOL_VERSION = RELAY_PROTOCOL.protocolVersion;
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 const STORAGE_KEYS = Object.freeze({
   extensionInstanceId: 'browserRelayExtensionInstanceIdV2',
@@ -6,84 +11,53 @@ const STORAGE_KEYS = Object.freeze({
   pendingLease: 'browserRelayPendingLeaseV2',
 });
 
-const CAPABILITIES = Object.freeze({
-  leaseProtocol: 'v2',
-  explicitUserApproval: true,
-  opaqueTargetReferences: true,
-  orphanRecovery: true,
-  operationCancellation: true,
-  tabReturn: true,
-  methods: [
-    'lease.resume',
-    'lease.return',
-    'tabs.navigate',
-    'tabs.screenshot',
-    'dom.query',
-    'dom.snapshot',
-    'accessibility.snapshot',
-    'input.click',
-    'input.type',
-    'cdp.send',
-  ],
-  cdpMethods: [
-    'Page.captureScreenshot',
-    'Page.getLayoutMetrics',
-    'DOMSnapshot.captureSnapshot',
-    'Accessibility.getFullAXTree',
-    'Network.getResponseBody',
-  ],
-});
+const CAPABILITIES = RELAY_PROTOCOL.capabilities;
+const ACTION_METHODS = RELAY_PROTOCOL.actionMethods;
+const METHOD_ACTIONS = new Map();
+for (const [action, method] of Object.entries(ACTION_METHODS)) {
+  const actions = METHOD_ACTIONS.get(method) || [];
+  actions.push(action);
+  METHOD_ACTIONS.set(method, actions);
+}
+METHOD_ACTIONS.set('lease.return', ['lease:return']);
 
 const ERROR_CODES = Object.freeze({
   ACTION_NOT_ALLOWED: 'RELAY_ACTION_NOT_ALLOWED',
-  DEBUGGER_NOT_APPROVED: 'RELAY_DEBUGGER_NOT_APPROVED',
+  DEBUGGER_NOT_APPROVED: 'RELAY_CAPABILITY_UNSUPPORTED',
+  DIALOG_BLOCKED: 'RELAY_DIALOG_BLOCKED',
+  FILE_UPLOAD_BLOCKED: 'RELAY_FILE_UPLOAD_BLOCKED',
   HANDSHAKE_REQUIRED: 'RELAY_HANDSHAKE_REQUIRED',
-  INTERNAL: 'RELAY_INTERNAL_ERROR',
-  INVALID_COMMAND: 'RELAY_INVALID_COMMAND',
-  INVALID_LEASE_REQUEST: 'RELAY_INVALID_LEASE_REQUEST',
+  INTERNAL: 'RELAY_COMMAND_FAILED',
+  INVALID_COMMAND: 'RELAY_COMMAND_FAILED',
+  INVALID_LEASE_REQUEST: 'RELAY_COMMAND_FAILED',
   LEASE_EXPIRED: 'RELAY_LEASE_EXPIRED',
-  LEASE_NOT_FOUND: 'RELAY_LEASE_NOT_FOUND',
-  LEASE_ORPHANED: 'RELAY_LEASE_ORPHANED',
-  LEASE_OWNER_MISMATCH: 'RELAY_LEASE_OWNER_MISMATCH',
-  METHOD_NOT_ALLOWED: 'RELAY_METHOD_NOT_ALLOWED',
-  NATIVE_TARGET_FORBIDDEN: 'RELAY_NATIVE_TARGET_FORBIDDEN',
+  LEASE_NOT_FOUND: 'RELAY_LEASE_REQUIRED',
+  LEASE_ORPHANED: 'RELAY_LEASE_NOT_OWNED',
+  LEASE_OWNER_MISMATCH: 'RELAY_LEASE_NOT_OWNED',
+  METHOD_NOT_ALLOWED: 'RELAY_CAPABILITY_UNSUPPORTED',
+  NATIVE_TARGET_FORBIDDEN: 'RELAY_TARGET_CHANGED',
   OPERATION_CANCELLED: 'RELAY_OPERATION_CANCELLED',
-  OPERATION_IN_PROGRESS: 'RELAY_OPERATION_IN_PROGRESS',
-  OPERATION_NOT_FOUND: 'RELAY_OPERATION_NOT_FOUND',
-  ORIGIN_MISMATCH: 'RELAY_ORIGIN_MISMATCH',
-  PROTOCOL_UNSUPPORTED: 'RELAY_PROTOCOL_UNSUPPORTED',
-  TAB_ALREADY_LEASED: 'RELAY_TAB_ALREADY_LEASED',
+  OPERATION_IN_PROGRESS: 'RELAY_COMMAND_FAILED',
+  OPERATION_NOT_FOUND: 'RELAY_COMMAND_FAILED',
+  OPERATION_TIMEOUT: 'RELAY_OPERATION_TIMEOUT',
+  ORIGIN_MISMATCH: 'RELAY_DOMAIN_NOT_ALLOWED',
+  PROTOCOL_UNSUPPORTED: 'RELAY_PROTOCOL_VERSION_MISMATCH',
+  TAB_ALREADY_LEASED: 'RELAY_LEASE_REQUIRED',
   TAB_RETURN_FAILED: 'RELAY_TAB_RETURN_FAILED',
-  TAB_UNAVAILABLE: 'RELAY_TAB_UNAVAILABLE',
-  TARGET_NOT_FOUND: 'RELAY_TARGET_NOT_FOUND',
-  USER_APPROVAL_REQUIRED: 'RELAY_USER_APPROVAL_REQUIRED',
+  TAB_UNAVAILABLE: 'RELAY_TARGET_CHANGED',
+  TARGET_NOT_FOUND: 'RELAY_TARGET_CHANGED',
+  USER_APPROVAL_REQUIRED: 'RELAY_LEASE_REQUIRED',
 });
 
-const ALLOWED_ACTIONS = new Set([
-  'accessibility',
-  'cdp-read',
-  'dom',
-  'input',
-  'navigation',
-  'network-read',
-  'observe',
-  'screenshot',
-]);
-
-const CDP_ACTIONS = new Map([
-  ['Page.captureScreenshot', 'screenshot'],
-  ['Page.getLayoutMetrics', 'dom'],
-  ['DOMSnapshot.captureSnapshot', 'dom'],
-  ['Accessibility.getFullAXTree', 'accessibility'],
-  ['Network.getResponseBody', 'network-read'],
-]);
+const ALLOWED_ACTIONS = new Set([...Object.keys(ACTION_METHODS), 'close', 'lease:return']);
 
 class RelayError extends Error {
-  constructor(code, message, retryable = false) {
+  constructor(code, message, retryable = false, delivery = null) {
     super(message);
     this.name = 'RelayError';
     this.code = code;
     this.retryable = retryable;
+    this.delivery = delivery;
   }
 }
 
@@ -92,14 +66,22 @@ let reconnectDelay = 1000;
 let connectionState = 'disconnected';
 let handshakeComplete = false;
 let config = { port: 23001, token: '' };
-let pingTimer = null;
 let extensionInstanceId = '';
 let pendingLeaseRequest = null;
+let nextLogCursor = 1;
+let nextDialogGeneration = 1;
 
 const leases = new Map();
+const cancelledLeaseRequests = new Map();
 const nodeRefsByLease = new Map();
 const frameRefsByLease = new Map();
+const logsByLease = new Map();
+const dialogsByLease = new Map();
+const dialogOpenWaitersByLease = new Map();
+const documentInScopeByLease = new Map();
 const activeOperations = new Map();
+const leaseReturnPromises = new Map();
+const DIALOG_RECOVERY_METHODS = new Set(['dialog.get', 'dialog.handle']);
 const intentionalDebuggerDetach = new Set();
 
 function opaqueId(prefix) {
@@ -118,12 +100,13 @@ function relayError(error, fallbackCode = ERROR_CODES.INTERNAL) {
   return new RelayError(fallbackCode, error?.message || String(error));
 }
 
-function errorPayload(error) {
+function errorPayload(error, delivery = 'not_attempted') {
   const normalized = relayError(error);
   return {
     code: normalized.code,
     message: normalized.message,
     retryable: Boolean(normalized.retryable),
+    delivery: normalized.delivery || delivery,
   };
 }
 
@@ -153,7 +136,10 @@ async function restoreProtocolState() {
       };
       leases.set(restored.leaseId, restored);
     }
-    pendingLeaseRequest = stored[STORAGE_KEYS.pendingLease] || null;
+    const storedPendingLease = stored[STORAGE_KEYS.pendingLease];
+    pendingLeaseRequest = isPersistedPendingLease(storedPendingLease)
+      ? storedPendingLease
+      : null;
     await persistProtocolState();
   } catch (error) {
     console.warn('[Agent Neo Relay] Failed to restore protocol state', error);
@@ -166,9 +152,31 @@ function isPersistedLease(value) {
     value
       && isNonEmptyString(value.leaseId)
       && isNonEmptyString(value.surfaceSessionId)
+      && isNonEmptyString(value.conversationId)
       && isNonEmptyString(value.runId)
       && isNonEmptyString(value.agentId)
       && Number.isInteger(value.nativeTabId),
+  );
+}
+
+function isPersistedPendingLease(value) {
+  return Boolean(
+    value
+      && isNonEmptyString(value.requestId)
+      && isNonEmptyString(value.surfaceSessionId)
+      && isNonEmptyString(value.conversationId)
+      && isNonEmptyString(value.runId)
+      && isNonEmptyString(value.agentId)
+      && Array.isArray(value.domainScopes)
+      && value.domainScopes.length > 0
+      && value.domainScopes.every(isValidDomainScope)
+      && Array.isArray(value.actionScopes)
+      && value.actionScopes.length > 0
+      && value.actionScopes.every((action) => ALLOWED_ACTIONS.has(action))
+      && Number.isFinite(value.consentDeadlineAt)
+      && value.consentDeadlineAt > Date.now()
+      && Number.isFinite(value.expiresAt)
+      && value.expiresAt >= value.consentDeadlineAt,
   );
 }
 
@@ -186,9 +194,8 @@ async function persistProtocolState() {
 
 async function loadConfig() {
   try {
-    const stored = await chrome.storage.local.get(['relayPort', 'authToken']);
+    const stored = await chrome.storage.local.get(['relayPort']);
     if (stored.relayPort) config.port = stored.relayPort;
-    if (stored.authToken) config.token = stored.authToken;
   } catch (error) {
     console.warn('[Agent Neo Relay] Failed to load settings', error);
   }
@@ -197,19 +204,16 @@ async function loadConfig() {
     const response = await fetch(`http://127.0.0.1:${config.port}/api/browser-relay/config`, {
       cache: 'no-store',
       credentials: 'omit',
-      headers: { 'X-Agent-Neo-Relay-Extension': '2' },
+      headers: { 'X-Agent-Neo-Relay-Extension': PROTOCOL_VERSION },
     });
     if (response.ok) {
       const autoConfig = await response.json();
       if (autoConfig.port) config.port = autoConfig.port;
       if (autoConfig.token) config.token = autoConfig.token;
-      await chrome.storage.local.set({
-        relayPort: config.port,
-        authToken: config.token,
-      });
+      await chrome.storage.local.set({ relayPort: config.port });
     }
   } catch {
-    // Agent Neo may not be running yet. A manually stored token remains available.
+    // Agent Neo may not be running yet. Pairing material stays memory-only.
   }
 }
 
@@ -245,7 +249,6 @@ function connect(silent = false) {
     reconnectDelay = 1000;
     updateBadge();
     sendHello();
-    startPingTimer();
   };
 
   ws.onmessage = (event) => handleMessage(event.data);
@@ -255,7 +258,6 @@ function connect(silent = false) {
     handshakeComplete = false;
     connectionState = 'disconnected';
     updateBadge();
-    stopPingTimer();
     markLeasesOrphaned();
     cancelActiveOperations('Relay connection closed');
     scheduleReconnect();
@@ -272,7 +274,6 @@ function disconnect() {
   handshakeComplete = false;
   connectionState = 'disconnected';
   updateBadge();
-  stopPingTimer();
   markLeasesOrphaned();
   cancelActiveOperations('Relay disconnected');
 }
@@ -294,22 +295,11 @@ function sendHello() {
   send({
     type: 'hello',
     protocolVersion: PROTOCOL_VERSION,
-    capabilities: CAPABILITIES,
+    capabilities: [...CAPABILITIES],
     extensionInstanceId,
-    orphanedLeases: Array.from(leases.values())
+    orphanedLeaseIds: Array.from(leases.values())
       .filter((lease) => ['orphaned', 'recovery_required', 'expired'].includes(lease.state))
-      .map(publicLeaseReference),
-  });
-}
-
-function sendReady() {
-  send({
-    type: 'relay.ready',
-    protocolVersion: PROTOCOL_VERSION,
-    extensionInstanceId,
-    leases: Array.from(leases.values())
-      .filter((lease) => lease.state !== 'returned')
-      .map(publicLeaseReference),
+      .map((lease) => lease.leaseId),
   });
 }
 
@@ -317,6 +307,7 @@ function publicLeaseReference(lease) {
   return {
     leaseId: lease.leaseId,
     surfaceSessionId: lease.surfaceSessionId,
+    conversationId: lease.conversationId,
     runId: lease.runId,
     agentId: lease.agentId,
     browserInstanceRef: extensionInstanceId,
@@ -342,25 +333,13 @@ function targetMetadata(lease) {
   };
 }
 
-function startPingTimer() {
-  stopPingTimer();
-  pingTimer = setInterval(() => {
-    if (handshakeComplete) {
-      send({ type: 'ping', protocolVersion: PROTOCOL_VERSION });
-    }
-  }, 20000);
-}
-
-function stopPingTimer() {
-  if (pingTimer) clearInterval(pingTimer);
-  pingTimer = null;
-}
-
 function setupAlarms() {
   chrome.alarms.create('code-agent-relay-keepalive', { periodInMinutes: 25 / 60 });
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== 'code-agent-relay-keepalive') return;
-    expireProtocolState();
+    expireProtocolState().catch((error) => {
+      console.warn('[Agent Neo Relay] Failed to expire relay protocol state', error);
+    });
     if (connectionState === 'disconnected') connect(true);
   });
 }
@@ -370,11 +349,6 @@ async function handleMessage(raw) {
   try {
     message = JSON.parse(raw);
   } catch {
-    return;
-  }
-
-  if (message.type === 'ping') {
-    send({ type: 'pong', protocolVersion: PROTOCOL_VERSION });
     return;
   }
 
@@ -394,6 +368,11 @@ async function handleMessage(raw) {
 
   if (message.type === 'lease.request') {
     await handleLeaseRequest(message);
+    return;
+  }
+
+  if (message.type === 'lease.request.cancel') {
+    await handleLeaseRequestCancel(message);
     return;
   }
 
@@ -422,21 +401,96 @@ function handleHelloAck(message) {
     ws?.close(1002, 'Unsupported relay protocol');
     return;
   }
+  if (!isNonEmptyString(message.connectionGeneration)
+    || !Array.isArray(message.requiredCapabilities)
+    || message.requiredCapabilities.length !== CAPABILITIES.length
+    || CAPABILITIES.some((capability) => !message.requiredCapabilities.includes(capability))) {
+    sendProtocolFailure(message, new RelayError(
+      ERROR_CODES.PROTOCOL_UNSUPPORTED,
+      'hello_ack does not match the Browser Relay V2 capability manifest',
+    ));
+    ws?.close(1002, 'Invalid relay capability manifest');
+    return;
+  }
   handshakeComplete = true;
   connectionState = 'connected';
   updateBadge();
-  sendReady();
+  announceReturnedLeases();
 }
 
-function sendProtocolFailure(message, error) {
+function announceReturnedLeases() {
+  for (const lease of leases.values()) {
+    if (lease.state !== 'returned' || !isCompleteOwner(lease)) continue;
+    send({
+      type: 'lease.returned',
+      protocolVersion: PROTOCOL_VERSION,
+      leaseId: lease.leaseId,
+      surfaceSessionId: lease.surfaceSessionId,
+      conversationId: lease.conversationId,
+      runId: lease.runId,
+      agentId: lease.agentId,
+    });
+  }
+}
+
+function sendProtocolFailure(message, error, registeredOperation = null) {
+  if (message?.type === 'lease.request' && isCompleteOwner(message) && isNonEmptyString(message.requestId)) {
+    send({
+      type: 'lease.denied',
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: message.requestId,
+      surfaceSessionId: message.surfaceSessionId,
+      conversationId: message.conversationId,
+      runId: message.runId,
+      agentId: message.agentId,
+      deniedAt: Date.now(),
+    });
+    return;
+  }
+  if (message?.type !== 'command'
+    || !isNonEmptyString(message.id)
+    || !isNonEmptyString(message.operationId)) return;
+  const normalized = relayError(error);
+  const rejectedBeforeDelivery = new Set([
+    ERROR_CODES.ACTION_NOT_ALLOWED,
+    ERROR_CODES.DEBUGGER_NOT_APPROVED,
+    ERROR_CODES.DIALOG_BLOCKED,
+    ERROR_CODES.FILE_UPLOAD_BLOCKED,
+    ERROR_CODES.HANDSHAKE_REQUIRED,
+    ERROR_CODES.INVALID_COMMAND,
+    ERROR_CODES.LEASE_EXPIRED,
+    ERROR_CODES.LEASE_NOT_FOUND,
+    ERROR_CODES.LEASE_ORPHANED,
+    ERROR_CODES.LEASE_OWNER_MISMATCH,
+    ERROR_CODES.METHOD_NOT_ALLOWED,
+    ERROR_CODES.NATIVE_TARGET_FORBIDDEN,
+    ERROR_CODES.ORIGIN_MISMATCH,
+    ERROR_CODES.PROTOCOL_UNSUPPORTED,
+  ]).has(normalized.code);
+  const delivery = normalized.delivery || (isMutationAction(message?.actionScope)
+    && (registeredOperation?.deliveryStarted || !rejectedBeforeDelivery)
+    ? 'unknown'
+    : 'not_attempted');
   send({
-    type: message?.type === 'command' ? 'command.error' : 'protocol.error',
+    type: 'response',
     protocolVersion: PROTOCOL_VERSION,
-    id: message?.id || null,
-    operationId: message?.operationId || null,
-    leaseId: message?.leaseId || null,
-    error: errorPayload(error),
+    id: message.id,
+    operationId: message.operationId,
+    error: errorPayload(normalized, delivery),
   });
+}
+
+function isCompleteOwner(value) {
+  return ['surfaceSessionId', 'conversationId', 'runId', 'agentId']
+    .every((field) => isNonEmptyString(value?.[field]));
+}
+
+function isMutationAction(action) {
+  return [
+    'navigate', 'back', 'forward', 'reload', 'click', 'click_text',
+    'type', 'press_key', 'scroll', 'hover', 'drag', 'handle_dialog', 'upload_file',
+    'close', 'lease:return',
+  ].includes(action);
 }
 
 async function handleLeaseRequest(message) {
@@ -447,22 +501,38 @@ async function handleLeaseRequest(message) {
         type: 'lease.denied',
         protocolVersion: PROTOCOL_VERSION,
         requestId: pendingLeaseRequest.requestId,
-        error: {
-          code: 'RELAY_LEASE_REQUEST_SUPERSEDED',
-          message: 'A newer lease request replaced this pending request',
-          retryable: true,
-        },
+        surfaceSessionId: pendingLeaseRequest.surfaceSessionId,
+        conversationId: pendingLeaseRequest.conversationId,
+        runId: pendingLeaseRequest.runId,
+        agentId: pendingLeaseRequest.agentId,
+        deniedAt: Date.now(),
       });
     }
     pendingLeaseRequest = request;
     await persistProtocolState();
-    send({
-      type: 'lease.pending_user_approval',
-      protocolVersion: PROTOCOL_VERSION,
-      requestId: request.requestId,
-      surfaceSessionId: request.surfaceSessionId,
-      expiresAtMs: request.expiresAtMs,
-    });
+  } catch (error) {
+    sendProtocolFailure(message, relayError(error, ERROR_CODES.INVALID_LEASE_REQUEST));
+  }
+}
+
+async function handleLeaseRequestCancel(message) {
+  try {
+    if (message.protocolVersion !== PROTOCOL_VERSION || !isNonEmptyString(message.requestId)) {
+      throw new RelayError(ERROR_CODES.INVALID_LEASE_REQUEST, 'lease.request.cancel requires protocolVersion and requestId');
+    }
+    if (!isCompleteOwner(message)) {
+      throw new RelayError(ERROR_CODES.INVALID_LEASE_REQUEST, 'lease.request.cancel requires a complete owner');
+    }
+    const request = pendingLeaseRequest;
+    if (!request || request.requestId !== message.requestId) return;
+    for (const field of ['surfaceSessionId', 'conversationId', 'runId', 'agentId']) {
+      if (request[field] !== message[field]) {
+        throw new RelayError(ERROR_CODES.LEASE_OWNER_MISMATCH, 'Lease cancellation owner does not match the pending request');
+      }
+    }
+    cancelledLeaseRequests.set(request.requestId, request.expiresAt);
+    pendingLeaseRequest = null;
+    await persistProtocolState();
   } catch (error) {
     sendProtocolFailure(message, relayError(error, ERROR_CODES.INVALID_LEASE_REQUEST));
   }
@@ -472,78 +542,135 @@ function normalizeLeaseRequest(message) {
   if (message.protocolVersion !== PROTOCOL_VERSION) {
     throw new RelayError(ERROR_CODES.PROTOCOL_UNSUPPORTED, `Expected protocol ${PROTOCOL_VERSION}`);
   }
-  const scope = message.scope && typeof message.scope === 'object' ? message.scope : {};
-  const requestId = message.requestId || message.id;
-  const origin = normalizeOrigin(scope.origin || message.origin);
-  const hostname = normalizeHostname(scope.hostname || message.hostname);
-  const actions = Array.from(new Set(scope.actions || message.actionScope || []));
-  const expiresAtMs = Number(scope.expiresAtMs || message.expiresAtMs);
+  const requestId = message.requestId;
+  const domainScopes = Array.from(new Set(Array.isArray(message.domainScopes) ? message.domainScopes : []));
+  const actionScopes = Array.from(new Set(Array.isArray(message.actionScopes) ? message.actionScopes : []));
+  const consentDeadlineAt = Number(message.consentDeadlineAt);
+  const expiresAt = Number(message.expiresAt);
 
-  for (const field of ['requestId', 'surfaceSessionId', 'runId', 'agentId']) {
+  for (const field of ['requestId', 'surfaceSessionId', 'conversationId', 'runId', 'agentId']) {
     if (!isNonEmptyString(field === 'requestId' ? requestId : message[field])) {
       throw new RelayError(ERROR_CODES.INVALID_LEASE_REQUEST, `${field} is required`);
     }
   }
-  if (!origin || !hostname || new URL(origin).hostname !== hostname) {
-    throw new RelayError(ERROR_CODES.INVALID_LEASE_REQUEST, 'Exact origin and hostname must agree');
+  if (!domainScopes.length || domainScopes.some((scope) => !isValidDomainScope(scope))) {
+    throw new RelayError(ERROR_CODES.INVALID_LEASE_REQUEST, 'Lease domains must be explicit origins, hosts, or selected-tab-origin');
   }
-  if (!actions.length || actions.some((action) => !ALLOWED_ACTIONS.has(action))) {
+  if (!actionScopes.length || actionScopes.some((action) => !ALLOWED_ACTIONS.has(action))) {
     throw new RelayError(ERROR_CODES.INVALID_LEASE_REQUEST, 'Lease actions must be an explicit supported action list');
   }
-  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
-    throw new RelayError(ERROR_CODES.INVALID_LEASE_REQUEST, 'Lease expiry must be in the future');
+  if (!Number.isFinite(consentDeadlineAt)
+    || consentDeadlineAt <= Date.now()
+    || consentDeadlineAt > Date.now() + 30_000
+    || !Number.isFinite(expiresAt)
+    || expiresAt < consentDeadlineAt
+    || expiresAt > Date.now() + (30 * 60_000)) {
+    throw new RelayError(ERROR_CODES.INVALID_LEASE_REQUEST, 'Lease expiry must be within the next 30 minutes');
   }
 
   return {
     requestId,
     surfaceSessionId: message.surfaceSessionId,
+    conversationId: message.conversationId,
     runId: message.runId,
     agentId: message.agentId,
-    origin,
-    hostname,
-    actions,
-    expiresAtMs,
+    domainScopes,
+    actionScopes,
+    consentDeadlineAt,
+    expiresAt,
     requestedAtMs: Date.now(),
   };
 }
 
+function isValidDomainScope(scope) {
+  return Boolean(parseDomainScope(scope));
+}
+
 async function handleCommand(message) {
   let command;
+  let deadlineTimer = null;
+  let registeredOperation = null;
   try {
     command = validateCommandEnvelope(message);
+    preflightCommandLease(command);
     const existingOperation = activeOperations.get(command.operationId);
     if (existingOperation) {
       throw new RelayError(ERROR_CODES.OPERATION_IN_PROGRESS, 'Operation is already running', true);
     }
-    if (Array.from(activeOperations.values()).some((active) => active.leaseId === command.leaseId)) {
-      throw new RelayError(ERROR_CODES.OPERATION_IN_PROGRESS, 'Lease already has an active operation', true);
+    if (dialogsByLease.has(command.leaseId)
+      && command.method !== 'lease.return'
+      && !DIALOG_RECOVERY_METHODS.has(command.method)) {
+      throw new RelayError(
+        ERROR_CODES.DIALOG_BLOCKED,
+        'A browser dialog is paused; only dialog state or handling is allowed',
+        true,
+      );
+    }
+    const conflictingOperations = Array.from(activeOperations.entries())
+      .filter(([, active]) => active.leaseId === command.leaseId);
+    if (conflictingOperations.length > 0) {
+      const currentDialogGeneration = dialogsByLease.get(command.leaseId)?.generation;
+      const dialogRecoveryAllowed = command.method === 'dialog.get'
+        || (command.method === 'dialog.handle'
+          && Number.isInteger(currentDialogGeneration)
+          && !conflictingOperations.some(([, active]) => (
+            active.method === 'dialog.handle'
+            && active.dialogGeneration === currentDialogGeneration
+          )));
+      if (command.method !== 'lease.return' && !dialogRecoveryAllowed) {
+        throw new RelayError(ERROR_CODES.OPERATION_IN_PROGRESS, 'Lease already has an active operation', true);
+      }
     }
 
     const controller = new AbortController();
-    activeOperations.set(command.operationId, {
+    deadlineTimer = setTimeout(() => {
+      controller.abort(new RelayError(
+        ERROR_CODES.OPERATION_TIMEOUT,
+        'Relay command exceeded its Host-provided deadline',
+        true,
+        isMutationAction(command.actionScope) ? 'unknown' : 'not_attempted',
+      ));
+    }, Math.max(1, command.deadlineAt - Date.now()));
+    registeredOperation = {
       controller,
       leaseId: command.leaseId,
       method: command.method,
-    });
+      actionScope: command.actionScope,
+      deliveryStarted: false,
+      dialogGeneration: command.method === 'dialog.handle'
+        ? dialogsByLease.get(command.leaseId)?.generation ?? null
+        : null,
+    };
+    activeOperations.set(command.operationId, registeredOperation);
     const result = await executeCommand(command, controller.signal);
     throwIfAborted(controller.signal);
     const resultLease = leases.get(command.leaseId);
+    if (command.method !== 'lease.return' && resultLease) {
+      await requireLeaseTab(resultLease, true);
+      throwIfAborted(controller.signal);
+    }
     send({
-      type: 'command.result',
+      type: 'response',
       protocolVersion: PROTOCOL_VERSION,
       id: command.id,
       operationId: command.operationId,
-      leaseId: command.leaseId,
-      surfaceSessionId: command.surfaceSessionId,
       result: {
         ...(result && typeof result === 'object' ? result : { value: result }),
         target: resultLease ? targetMetadata(resultLease) : null,
       },
     });
   } catch (error) {
-    sendProtocolFailure(message, error);
+    const aborted = registeredOperation?.controller.signal.aborted
+      ? registeredOperation.controller.signal.reason
+      : null;
+    sendProtocolFailure(message, aborted || error, registeredOperation);
   } finally {
-    if (command?.operationId) activeOperations.delete(command.operationId);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    if (command?.operationId
+      && registeredOperation
+      && activeOperations.get(command.operationId) === registeredOperation) {
+      activeOperations.delete(command.operationId);
+    }
   }
 }
 
@@ -551,12 +678,15 @@ function validateCommandEnvelope(message) {
   if (message.type !== 'command' || message.protocolVersion !== PROTOCOL_VERSION) {
     throw new RelayError(ERROR_CODES.PROTOCOL_UNSUPPORTED, `Expected command protocol ${PROTOCOL_VERSION}`);
   }
-  for (const field of ['id', 'surfaceSessionId', 'runId', 'agentId', 'operationId', 'leaseId', 'method']) {
+  for (const field of ['id', 'surfaceSessionId', 'conversationId', 'runId', 'agentId', 'operationId', 'leaseId', 'method', 'actionScope']) {
     if (!isNonEmptyString(message[field])) {
       throw new RelayError(ERROR_CODES.INVALID_COMMAND, `${field} is required`);
     }
   }
   const params = message.params && typeof message.params === 'object' ? message.params : {};
+  if (!Number.isFinite(message.deadlineAt) || message.deadlineAt <= Date.now()) {
+    throw new RelayError(ERROR_CODES.OPERATION_TIMEOUT, 'Relay command deadline has expired', true);
+  }
   assertNoNativeTabReference(params);
   return { ...message, params };
 }
@@ -580,7 +710,7 @@ async function handleCancel(message) {
     if (message.protocolVersion !== PROTOCOL_VERSION || !isNonEmptyString(message.operationId)) {
       throw new RelayError(ERROR_CODES.INVALID_COMMAND, 'cancel requires protocolVersion and operationId');
     }
-    for (const field of ['surfaceSessionId', 'runId', 'agentId', 'leaseId']) {
+    for (const field of ['surfaceSessionId', 'conversationId', 'runId', 'agentId', 'leaseId']) {
       if (!isNonEmptyString(message[field])) {
         throw new RelayError(ERROR_CODES.INVALID_COMMAND, `${field} is required`);
       }
@@ -591,16 +721,15 @@ async function handleCancel(message) {
     if (!active || active.leaseId !== lease.leaseId) {
       throw new RelayError(ERROR_CODES.OPERATION_NOT_FOUND, 'Operation is not active');
     }
-    active.controller.abort(new RelayError(ERROR_CODES.OPERATION_CANCELLED, 'Operation cancelled by Host'));
-    if (active.method === 'tabs.navigate') {
+    active.controller.abort(new RelayError(
+      ERROR_CODES.OPERATION_CANCELLED,
+      'Operation cancelled by Host',
+      true,
+      isMutationAction(active.actionScope) ? 'unknown' : 'not_attempted',
+    ));
+    if (active.method === 'tab.navigate') {
       chrome.debugger.sendCommand({ tabId: lease.nativeTabId }, 'Page.stopLoading', {}).catch(() => {});
     }
-    send({
-      type: 'cancel.ack',
-      protocolVersion: PROTOCOL_VERSION,
-      operationId: message.operationId,
-      leaseId: lease.leaseId,
-    });
   } catch (error) {
     sendProtocolFailure(message, error);
   }
@@ -615,57 +744,67 @@ function cancelActiveOperations(message) {
 async function executeCommand(command, signal) {
   const lease = requireLease(command.leaseId);
   assertLeaseOwner(lease, command);
-
+  const allowedActions = METHOD_ACTIONS.get(command.method);
+  if (!allowedActions?.includes(command.actionScope)) {
+    throw new RelayError(
+      ERROR_CODES.ACTION_NOT_ALLOWED,
+      `Relay method ${command.method} does not match action scope ${command.actionScope}`,
+    );
+  }
   if (command.method === 'lease.return') {
-    return returnLease(lease, 'host_request');
-  }
-  if (command.method === 'lease.resume') {
-    return resumeLease(lease);
+    markOperationDeliveryStarted(signal);
+    return returnLease(lease, 'host_request', {
+      excludeOperationId: command.operationId,
+      deadlineAt: command.deadlineAt,
+    });
   }
 
-  const action = actionForCommand(command);
-  await authorizeLeaseAction(lease, action);
+  await authorizeLeaseAction(lease, command.actionScope);
   throwIfAborted(signal);
 
   switch (command.method) {
-    case 'tabs.navigate':
+    case 'tab.navigate':
       return navigateTab(lease, command.params, signal);
-    case 'tabs.screenshot':
+    case 'tab.back':
+      return navigateHistory(lease, -1, signal);
+    case 'tab.forward':
+      return navigateHistory(lease, 1, signal);
+    case 'tab.reload':
+      return reloadTab(lease, signal);
+    case 'tab.screenshot':
       return captureScreenshot(lease, command.params, signal);
-    case 'dom.query':
-      return queryDom(lease, command.params, signal);
+    case 'page.content':
+      return capturePageContent(lease, signal);
     case 'dom.snapshot':
       return captureDomSnapshot(lease, command.params, signal);
-    case 'accessibility.snapshot':
+    case 'ax.snapshot':
       return captureAccessibilitySnapshot(lease, command.params, signal);
     case 'input.click':
       return clickTarget(lease, command.params, signal);
+    case 'input.click_text':
+      return clickTextTarget(lease, command.params, signal);
     case 'input.type':
       return typeIntoTarget(lease, command.params, signal);
-    case 'cdp.send':
-      return sendAllowlistedCdp(lease, command.params, signal);
-    default:
-      throw new RelayError(ERROR_CODES.METHOD_NOT_ALLOWED, `Relay method is not allowed: ${command.method}`);
-  }
-}
-
-function actionForCommand(command) {
-  switch (command.method) {
-    case 'tabs.navigate': return 'navigation';
-    case 'tabs.screenshot': return 'screenshot';
-    case 'dom.query':
-    case 'dom.snapshot': return 'dom';
-    case 'accessibility.snapshot': return 'accessibility';
-    case 'input.click':
-    case 'input.type': return 'input';
-    case 'cdp.send': {
-      const cdpMethod = command.params.method;
-      const action = CDP_ACTIONS.get(cdpMethod);
-      if (!action) {
-        throw new RelayError(ERROR_CODES.METHOD_NOT_ALLOWED, `CDP method is not allowlisted: ${String(cdpMethod || '')}`);
-      }
-      return action;
-    }
+    case 'input.key':
+      return pressKey(lease, command.params, signal);
+    case 'input.scroll':
+      return scrollPage(lease, command.params, signal);
+    case 'input.hover':
+      return hoverTarget(lease, command.params, signal);
+    case 'input.drag':
+      return dragTarget(lease, command.params, signal);
+    case 'dialog.get':
+      return getDialogState(lease);
+    case 'dialog.handle':
+      return handleDialog(lease, command.params, signal);
+    case 'dom.set_file_input_files':
+      return uploadFileToTarget(lease, command.params, signal);
+    case 'lease.get':
+      return getLeaseState(lease);
+    case 'operation.wait':
+      return waitForOperation(command.params, signal);
+    case 'page.logs':
+      return getLogMetadata(lease, command.params);
     default:
       throw new RelayError(ERROR_CODES.METHOD_NOT_ALLOWED, `Relay method is not allowed: ${command.method}`);
   }
@@ -682,10 +821,40 @@ function requireLease(leaseId) {
 function assertLeaseOwner(lease, owner) {
   if (
     lease.surfaceSessionId !== owner.surfaceSessionId
+    || lease.conversationId !== owner.conversationId
     || lease.runId !== owner.runId
     || lease.agentId !== owner.agentId
   ) {
     throw new RelayError(ERROR_CODES.LEASE_OWNER_MISMATCH, 'Lease owner does not match command owner');
+  }
+}
+
+function preflightCommandLease(command) {
+  const lease = requireLease(command.leaseId);
+  assertLeaseOwner(lease, command);
+  const allowedActions = METHOD_ACTIONS.get(command.method);
+  if (!allowedActions?.includes(command.actionScope)) {
+    throw new RelayError(
+      ERROR_CODES.ACTION_NOT_ALLOWED,
+      `Relay method ${command.method} does not match action scope ${command.actionScope}`,
+    );
+  }
+  return lease;
+}
+
+function markOperationDeliveryStarted(signal) {
+  for (const active of activeOperations.values()) {
+    if (active.controller.signal !== signal) continue;
+    active.deliveryStarted = true;
+    return;
+  }
+}
+
+function markOperationDialogGeneration(signal, generation) {
+  for (const active of activeOperations.values()) {
+    if (active.controller.signal !== signal) continue;
+    active.dialogGeneration = generation;
+    return;
   }
 }
 
@@ -711,11 +880,7 @@ async function authorizeLeaseAction(lease, action) {
 }
 
 function isLeaseActionAllowed(actions, action) {
-  if (actions.includes(action)) return true;
-  if (actions.includes('observe') && ['screenshot', 'dom', 'accessibility', 'cdp-read', 'network-read'].includes(action)) {
-    return true;
-  }
-  return false;
+  return actions.includes(action);
 }
 
 async function requireLeaseTab(lease, validateScope) {
@@ -727,14 +892,26 @@ async function requireLeaseTab(lease, validateScope) {
     await persistProtocolState();
     throw new RelayError(ERROR_CODES.TAB_UNAVAILABLE, 'Leased tab is no longer available');
   }
-  if (validateScope) validateUrlScope(tab.url, lease);
+  if (tab.windowId !== lease.agentWindowId) {
+    lease.state = 'recovery_required';
+    await persistProtocolState();
+    throw new RelayError(
+      ERROR_CODES.TAB_UNAVAILABLE,
+      'Leased tab left its Surface Session Agent Window',
+    );
+  }
+  if (validateScope && !isUrlWithinLeaseScope(tab.url, lease)) {
+    markLeaseDocumentOutOfScope(lease);
+    throw new RelayError(
+      ERROR_CODES.ORIGIN_MISMATCH,
+      `Current tab is outside the approved origin ${lease.origin}`,
+    );
+  }
   return tab;
 }
 
 function validateUrlScope(url, scope) {
-  const origin = normalizeOrigin(url);
-  const hostname = normalizeHostname(url);
-  if (!origin || origin !== scope.origin || hostname !== scope.hostname) {
+  if (!isUrlWithinLeaseScope(url, scope)) {
     throw new RelayError(
       ERROR_CODES.ORIGIN_MISMATCH,
       `Current tab is outside the approved origin ${scope.origin}`,
@@ -742,10 +919,39 @@ function validateUrlScope(url, scope) {
   }
 }
 
+function isUrlWithinLeaseScope(url, lease) {
+  const origin = normalizeOrigin(url);
+  const hostname = normalizeHostname(url);
+  return Boolean(origin && origin === lease.origin && hostname === lease.hostname);
+}
+
+function markLeaseDocumentOutOfScope(lease) {
+  documentInScopeByLease.set(lease.leaseId, false);
+  logsByLease.delete(lease.leaseId);
+  dialogsByLease.delete(lease.leaseId);
+  advanceDocumentRevision(lease);
+  abortLeaseOperationsForOriginMismatch(lease);
+}
+
+function abortLeaseOperationsForOriginMismatch(lease) {
+  for (const active of activeOperations.values()) {
+    if (active.leaseId !== lease.leaseId) continue;
+    const delivery = isMutationAction(active.actionScope) && active.deliveryStarted
+      ? 'unknown'
+      : 'not_attempted';
+    active.controller.abort(new RelayError(
+      ERROR_CODES.ORIGIN_MISMATCH,
+      `Current tab navigated outside the approved origin ${lease.origin}`,
+      false,
+      delivery,
+    ));
+  }
+}
+
 function normalizeOrigin(value) {
   try {
     const url = new URL(String(value || ''));
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username || url.password) return '';
     return url.origin;
   } catch {
     return '';
@@ -761,29 +967,41 @@ function normalizeHostname(value) {
   }
 }
 
-async function resumeLease(lease) {
-  if (!['orphaned', 'recovery_required'].includes(lease.state)) {
-    return { lease: publicLeaseReference(lease), resumed: lease.state === 'leased' };
+function domainScopesAllowUrl(scopes, value) {
+  const origin = normalizeOrigin(value);
+  const hostname = normalizeHostname(value);
+  if (!origin || !hostname) return false;
+  return scopes.some((scope) => {
+    const parsed = parseDomainScope(scope);
+    if (!parsed) return false;
+    if (parsed.kind === 'selected') return true;
+    return parsed.kind === 'origin' ? parsed.value === origin : parsed.value === hostname;
+  });
+}
+
+function parseDomainScope(scope) {
+  if (!isNonEmptyString(scope) || scope.includes('*')) return null;
+  const normalized = scope.trim().toLowerCase();
+  if (normalized === 'selected-tab-origin') return { kind: 'selected', value: '' };
+  const raw = normalized.startsWith('origin:') ? normalized.slice('origin:'.length) : normalized;
+  if (raw.includes('://')) {
+    try {
+      const url = new URL(raw);
+      if ((url.protocol !== 'http:' && url.protocol !== 'https:')
+        || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null;
+      return { kind: 'origin', value: url.origin };
+    } catch {
+      return null;
+    }
   }
-  if (Date.now() >= lease.expiresAtMs) {
-    lease.state = 'expired';
-    await persistProtocolState();
-    throw new RelayError(ERROR_CODES.LEASE_EXPIRED, 'Lease has expired');
+  const hostValue = raw.startsWith('host:') ? raw.slice('host:'.length) : raw;
+  try {
+    const url = new URL(`https://${hostValue}`);
+    if (!url.hostname || url.pathname !== '/' || url.search || url.hash || url.username || url.password) return null;
+    return { kind: 'host', value: url.hostname.toLowerCase() };
+  } catch {
+    return null;
   }
-  await requireLeaseTab(lease, true);
-  const targets = await chrome.debugger.getTargets();
-  const target = targets.find((candidate) => candidate.tabId === lease.nativeTabId);
-  if (!target?.attached || !lease.debuggerApproved) {
-    lease.state = 'recovery_required';
-    await persistProtocolState();
-    throw new RelayError(
-      ERROR_CODES.DEBUGGER_NOT_APPROVED,
-      'Debugger is no longer attached; a fresh popup approval is required',
-    );
-  }
-  lease.state = 'leased';
-  await persistProtocolState();
-  return { lease: publicLeaseReference(lease), resumed: true };
 }
 
 async function captureScreenshot(lease, params, signal) {
@@ -792,38 +1010,68 @@ async function captureScreenshot(lease, params, signal) {
   const quality = format === 'jpeg'
     ? Math.max(1, Math.min(100, Number(params.quality) || 80))
     : undefined;
+  let viewport = {
+    captureBeyondViewport: false,
+  };
+  if (params.fullPage === true) {
+    const metrics = await chrome.debugger.sendCommand(
+      { tabId: lease.nativeTabId },
+      'Page.getLayoutMetrics',
+      {},
+    );
+    const contentSize = metrics?.cssContentSize || metrics?.contentSize;
+    const width = Math.ceil(Number(contentSize?.width));
+    const height = Math.ceil(Number(contentSize?.height));
+    if (!Number.isFinite(width) || !Number.isFinite(height)
+      || width <= 0 || height <= 0
+      || width > 16_384 || height > 16_384
+      || width * height > 100_000_000) {
+      throw new RelayError(
+        ERROR_CODES.TARGET_NOT_FOUND,
+        'Full-page screenshot dimensions are unavailable or exceed the safe capture limit',
+        true,
+      );
+    }
+    viewport = {
+      captureBeyondViewport: true,
+      clip: { x: 0, y: 0, width, height, scale: 1 },
+    };
+  }
+  throwIfAborted(signal);
   const result = await chrome.debugger.sendCommand(
     { tabId: lease.nativeTabId },
     'Page.captureScreenshot',
     {
       format,
       ...(quality ? { quality } : {}),
-      captureBeyondViewport: false,
+      ...viewport,
       fromSurface: true,
     },
   );
   throwIfAborted(signal);
   return {
-    data: result?.data || '',
-    format,
-    mimeType: format === 'png' ? 'image/png' : 'image/jpeg',
+    imageBase64: result?.data || '',
+    imageFormat: format,
+    imageMimeType: format === 'png' ? 'image/png' : 'image/jpeg',
+    fullPage: params.fullPage === true,
     tabRef: lease.tabRef,
   };
 }
 
 async function navigateTab(lease, params, signal) {
   if (!isNonEmptyString(params.url)) {
-    throw new RelayError(ERROR_CODES.INVALID_COMMAND, 'tabs.navigate requires url');
+    throw new RelayError(ERROR_CODES.INVALID_COMMAND, 'tab.navigate requires url');
   }
   validateUrlScope(params.url, lease);
   throwIfAborted(signal);
+  markOperationDeliveryStarted(signal);
   const result = await chrome.debugger.sendCommand(
     { tabId: lease.nativeTabId },
     'Page.navigate',
     { url: params.url },
   );
   throwIfAborted(signal);
-  lease.documentRevision = opaqueId('document');
+  advanceDocumentRevision(lease);
   await persistProtocolState();
   return {
     accepted: !result?.errorText,
@@ -833,17 +1081,59 @@ async function navigateTab(lease, params, signal) {
   };
 }
 
-async function queryDom(lease, params, signal) {
-  const target = await resolveNodeTarget(lease, params, signal);
-  return {
-    tabRef: lease.tabRef,
-    nodeRef: target.nodeRef,
-    backendNodeId: target.backendNodeId,
-    frameRef: target.frameRef,
-    role: target.role,
-    name: target.name,
-    bounds: target.bounds,
-  };
+async function navigateHistory(lease, delta, signal) {
+  throwIfAborted(signal);
+  const history = await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'Page.getNavigationHistory',
+    {},
+  );
+  throwIfAborted(signal);
+  const targetIndex = Number(history?.currentIndex) + delta;
+  const entry = Array.isArray(history?.entries) ? history.entries[targetIndex] : null;
+  if (!entry || !Number.isInteger(entry.id)) {
+    throw new RelayError(ERROR_CODES.TARGET_NOT_FOUND, delta < 0 ? 'No previous history entry' : 'No next history entry');
+  }
+  markOperationDeliveryStarted(signal);
+  await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'Page.navigateToHistoryEntry',
+    { entryId: entry.id },
+  );
+  throwIfAborted(signal);
+  advanceDocumentRevision(lease);
+  await persistProtocolState();
+  return { navigated: true, tabRef: lease.tabRef };
+}
+
+async function reloadTab(lease, signal) {
+  throwIfAborted(signal);
+  markOperationDeliveryStarted(signal);
+  await chrome.debugger.sendCommand({ tabId: lease.nativeTabId }, 'Page.reload', { ignoreCache: false });
+  throwIfAborted(signal);
+  advanceDocumentRevision(lease);
+  await persistProtocolState();
+  return { reloaded: true, tabRef: lease.tabRef };
+}
+
+async function capturePageContent(lease, signal) {
+  throwIfAborted(signal);
+  const documentResult = await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'DOM.getDocument',
+    { depth: 1, pierce: true },
+  );
+  throwIfAborted(signal);
+  const outer = await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'DOM.getOuterHTML',
+    { nodeId: documentResult.root.nodeId },
+  );
+  throwIfAborted(signal);
+  const output = typeof outer?.outerHTML === 'string'
+    ? outer.outerHTML.slice(0, 1_000_000)
+    : '';
+  return { output, tabRef: lease.tabRef, truncated: output.length >= 1_000_000 };
 }
 
 async function captureDomSnapshot(lease, params, signal) {
@@ -858,7 +1148,12 @@ async function captureDomSnapshot(lease, params, signal) {
     },
   );
   throwIfAborted(signal);
-  return { tabRef: lease.tabRef, snapshot: stripNativeTargetIdentifiers(result || {}) };
+  const elements = await captureInteractiveElements(lease, signal);
+  return {
+    tabRef: lease.tabRef,
+    snapshot: stripNativeTargetIdentifiers(result || {}),
+    elements,
+  };
 }
 
 async function captureAccessibilitySnapshot(lease, _params, signal) {
@@ -869,7 +1164,79 @@ async function captureAccessibilitySnapshot(lease, _params, signal) {
     {},
   );
   throwIfAborted(signal);
-  return { tabRef: lease.tabRef, tree: stripNativeTargetIdentifiers(result || {}) };
+  const elements = await interactiveElementsFromAxTree(lease, result?.nodes || [], signal);
+  return { tabRef: lease.tabRef, tree: stripNativeTargetIdentifiers(result || {}), elements };
+}
+
+async function captureInteractiveElements(lease, signal) {
+  const result = await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'Accessibility.getFullAXTree',
+    {},
+  );
+  return interactiveElementsFromAxTree(lease, result?.nodes || [], signal);
+}
+
+async function interactiveElementsFromAxTree(lease, nodes, signal) {
+  const interactiveRoles = new Set([
+    'button', 'checkbox', 'combobox', 'link', 'listbox', 'menuitem', 'option',
+    'radio', 'searchbox', 'slider', 'spinbutton', 'switch', 'tab', 'textbox',
+  ]);
+  const candidates = nodes.filter((node) => (
+    Number.isInteger(node.backendDOMNodeId)
+    && interactiveRoles.has(String(node.role?.value || '').toLowerCase())
+  )).slice(0, 200);
+  if (candidates.length === 0) return [];
+  const pushed = await pushBackendNodesToFrontend(
+    lease,
+    candidates.map((node) => node.backendDOMNodeId),
+    signal,
+  );
+  const refs = nodeRefsByLease.get(lease.leaseId) || new Map();
+  nodeRefsByLease.set(lease.leaseId, refs);
+  const settled = await Promise.allSettled(candidates.map(async (node, index) => {
+    const nodeId = pushed?.nodeIds?.[index];
+    if (!Number.isInteger(nodeId)) return null;
+    const box = await chrome.debugger.sendCommand(
+      { tabId: lease.nativeTabId },
+      'DOM.getBoxModel',
+      { nodeId },
+    );
+    const bounds = boundsFromQuad(box?.model?.content || box?.model?.border);
+    if (!bounds) return null;
+    const ref = opaqueId('node');
+    refs.set(ref, { nodeId, backendNodeId: node.backendDOMNodeId });
+    return {
+      ref,
+      backendNodeId: node.backendDOMNodeId,
+      frameRef: frameRefForLease(lease.leaseId, node.frameId || 'main'),
+      role: String(node.role?.value || ''),
+      name: String(node.name?.value || '').slice(0, 500),
+      bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+    };
+  }));
+  throwIfAborted(signal);
+  return settled.flatMap((entry) => entry.status === 'fulfilled' && entry.value ? [entry.value] : []);
+}
+
+async function pushBackendNodesToFrontend(lease, backendNodeIds, signal) {
+  throwIfAborted(signal);
+  const documentResult = await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'DOM.getDocument',
+    { depth: 1, pierce: true },
+  );
+  if (!Number.isInteger(documentResult?.root?.nodeId)) {
+    throw new RelayError(ERROR_CODES.TARGET_NOT_FOUND, 'The leased tab document is unavailable');
+  }
+  throwIfAborted(signal);
+  const pushed = await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'DOM.pushNodesByBackendIdsToFrontend',
+    { backendNodeIds },
+  );
+  throwIfAborted(signal);
+  return pushed;
 }
 
 async function resolveNodeTarget(lease, params, signal) {
@@ -877,21 +1244,25 @@ async function resolveNodeTarget(lease, params, signal) {
   const refs = nodeRefsByLease.get(lease.leaseId) || new Map();
   nodeRefsByLease.set(lease.leaseId, refs);
 
-  let nodeId = null;
+  let nodeId;
   let existingRef = null;
-  if (isNonEmptyString(params.nodeRef)) {
-    const existing = refs.get(params.nodeRef);
+  const requestedRef = isNonEmptyString(params.targetRef?.ref)
+    ? params.targetRef.ref
+    : params.nodeRef;
+  if (isNonEmptyString(requestedRef)) {
+    const existing = refs.get(requestedRef);
     if (!existing) {
       throw new RelayError(ERROR_CODES.TARGET_NOT_FOUND, 'Opaque node reference is unknown or stale');
     }
     nodeId = existing.nodeId;
-    existingRef = params.nodeRef;
+    existingRef = requestedRef;
   } else if (isNonEmptyString(params.selector)) {
     const documentResult = await chrome.debugger.sendCommand(
       { tabId: lease.nativeTabId },
       'DOM.getDocument',
       { depth: 1, pierce: true },
     );
+    throwIfAborted(signal);
     const queryResult = await chrome.debugger.sendCommand(
       { tabId: lease.nativeTabId },
       'DOM.querySelector',
@@ -910,6 +1281,7 @@ async function resolveNodeTarget(lease, params, signal) {
     chrome.debugger.sendCommand({ tabId: lease.nativeTabId }, 'DOM.getBoxModel', { nodeId }),
     chrome.debugger.sendCommand({ tabId: lease.nativeTabId }, 'DOM.describeNode', { nodeId, depth: 0 }),
   ]);
+  throwIfAborted(signal);
   const bounds = boundsFromQuad(boxResult?.model?.content || boxResult?.model?.border);
   if (!bounds) {
     throw new RelayError(ERROR_CODES.TARGET_NOT_FOUND, 'DOM target has no visible box');
@@ -965,25 +1337,142 @@ function boundsFromQuad(quad) {
 
 async function clickTarget(lease, params, signal) {
   const target = await resolveNodeTarget(lease, params, signal);
+  return dispatchClick(lease, target, params, signal);
+}
+
+async function clickTextTarget(lease, params, signal) {
+  if (!isNonEmptyString(params.text)) {
+    throw new RelayError(ERROR_CODES.INVALID_COMMAND, 'input.click_text requires text');
+  }
+  const expected = params.text.trim().toLocaleLowerCase();
+  const ax = await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'Accessibility.getFullAXTree',
+    {},
+  );
+  throwIfAborted(signal);
+  const candidates = (Array.isArray(ax?.nodes) ? ax.nodes : []).filter((node) => (
+    Number.isInteger(node.backendDOMNodeId)
+      && isNonEmptyString(node.name?.value)
+  ));
+  const selected = candidates.find((node) => String(node.name.value).trim().toLocaleLowerCase() === expected)
+    || candidates.find((node) => String(node.name.value).toLocaleLowerCase().includes(expected));
+  if (!selected) {
+    throw new RelayError(ERROR_CODES.TARGET_NOT_FOUND, 'No accessible element matched the requested text');
+  }
+  const pushed = await pushBackendNodesToFrontend(
+    lease,
+    [selected.backendDOMNodeId],
+    signal,
+  );
+  const nodeId = pushed?.nodeIds?.[0];
+  if (!Number.isInteger(nodeId)) {
+    throw new RelayError(ERROR_CODES.TARGET_NOT_FOUND, 'The matching accessible element is no longer attached');
+  }
+  const ref = opaqueId('node');
+  const refs = nodeRefsByLease.get(lease.leaseId) || new Map();
+  refs.set(ref, { nodeId, backendNodeId: selected.backendDOMNodeId });
+  nodeRefsByLease.set(lease.leaseId, refs);
+  const target = await resolveNodeTarget(lease, { nodeRef: ref }, signal);
+  return dispatchClick(lease, target, params, signal);
+}
+
+async function dispatchClick(lease, target, params, signal) {
   const button = ['left', 'middle', 'right'].includes(params.button) ? params.button : 'left';
   const clickCount = Math.max(1, Math.min(3, Number(params.clickCount) || 1));
-  for (const type of ['mousePressed', 'mouseReleased']) {
-    throwIfAborted(signal);
-    await chrome.debugger.sendCommand(
-      { tabId: lease.nativeTabId },
-      'Input.dispatchMouseEvent',
-      {
-        type,
-        x: target.bounds.centerX,
-        y: target.bounds.centerY,
-        button,
-        clickCount,
-      },
-    );
+  const dialogWaiter = createDialogOpeningWaiter(lease.leaseId);
+  const abortWaiter = createAbortWaiter(signal);
+  try {
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      throwIfAborted(signal);
+      markOperationDeliveryStarted(signal);
+      const mouseCommand = chrome.debugger.sendCommand(
+        { tabId: lease.nativeTabId },
+        'Input.dispatchMouseEvent',
+        {
+          type,
+          x: target.bounds.centerX,
+          y: target.bounds.centerY,
+          button,
+          clickCount,
+        },
+      );
+      const result = await Promise.race([
+        mouseCommand.then(() => ({ kind: 'command' })),
+        dialogWaiter.promise.then((dialog) => ({ kind: 'dialog', dialog })),
+        abortWaiter.promise.then((reason) => ({ kind: 'aborted', reason })),
+      ]);
+      if (result.kind === 'dialog') {
+        void mouseCommand.catch(() => {});
+        return {
+          clicked: true,
+          pending: true,
+          type: result.dialog?.type,
+          messageLength: result.dialog?.messageLength,
+          openedAtMs: result.dialog?.openedAtMs,
+          defaultPolicy: 'pause',
+          nodeRef: target.nodeRef,
+          backendNodeId: target.backendNodeId,
+          frameRef: target.frameRef,
+          tabRef: lease.tabRef,
+        };
+      }
+      if (result.kind === 'aborted') {
+        void mouseCommand.catch(() => {});
+        throw result.reason instanceof Error
+          ? result.reason
+          : new RelayError(ERROR_CODES.OPERATION_CANCELLED, 'Click was cancelled', true, 'unknown');
+      }
+    }
+  } finally {
+    dialogWaiter.cancel();
+    abortWaiter.cancel();
   }
-  lease.documentRevision = opaqueId('document');
+  advanceDocumentRevision(lease);
   await persistProtocolState();
-  return { clicked: true, nodeRef: target.nodeRef, tabRef: lease.tabRef };
+  return {
+    clicked: true,
+    nodeRef: target.nodeRef,
+    backendNodeId: target.backendNodeId,
+    frameRef: target.frameRef,
+    tabRef: lease.tabRef,
+  };
+}
+
+function createDialogOpeningWaiter(leaseId) {
+  let cancel = () => {};
+  const promise = new Promise((resolve) => {
+    const waiters = dialogOpenWaitersByLease.get(leaseId) || new Set();
+    const notify = (dialog) => {
+      waiters.delete(notify);
+      if (waiters.size === 0) dialogOpenWaitersByLease.delete(leaseId);
+      resolve(dialog);
+    };
+    waiters.add(notify);
+    dialogOpenWaitersByLease.set(leaseId, waiters);
+    cancel = () => {
+      waiters.delete(notify);
+      if (waiters.size === 0) dialogOpenWaitersByLease.delete(leaseId);
+    };
+  });
+  return { promise, cancel };
+}
+
+function createAbortWaiter(signal) {
+  let cancel = () => {};
+  const promise = new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      signal.removeEventListener('abort', onAbort);
+      resolve(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    cancel = () => signal.removeEventListener('abort', onAbort);
+  });
+  return { promise, cancel };
 }
 
 async function typeIntoTarget(lease, params, signal) {
@@ -995,20 +1484,24 @@ async function typeIntoTarget(lease, params, signal) {
   }
   const target = await resolveNodeTarget(lease, params, signal);
   throwIfAborted(signal);
+  markOperationDeliveryStarted(signal);
   await chrome.debugger.sendCommand(
     { tabId: lease.nativeTabId },
     'DOM.focus',
     { nodeId: target.nodeId },
   );
+  throwIfAborted(signal);
 
   if (params.replace !== false) {
     const platform = await chrome.runtime.getPlatformInfo();
+    throwIfAborted(signal);
     const modifiers = platform.os === 'mac' ? 4 : 2;
     await chrome.debugger.sendCommand(
       { tabId: lease.nativeTabId },
       'Input.dispatchKeyEvent',
       { type: 'rawKeyDown', key: 'a', code: 'KeyA', modifiers },
     );
+    throwIfAborted(signal);
     await chrome.debugger.sendCommand(
       { tabId: lease.nativeTabId },
       'Input.dispatchKeyEvent',
@@ -1023,24 +1516,466 @@ async function typeIntoTarget(lease, params, signal) {
     { text: params.text },
   );
   throwIfAborted(signal);
-  lease.documentRevision = opaqueId('document');
+  advanceDocumentRevision(lease);
   await persistProtocolState();
-  return { nodeRef: target.nodeRef, tabRef: lease.tabRef, typed: true };
+  return {
+    nodeRef: target.nodeRef,
+    backendNodeId: target.backendNodeId,
+    frameRef: target.frameRef,
+    tabRef: lease.tabRef,
+    typed: true,
+  };
 }
 
-async function sendAllowlistedCdp(lease, params, signal) {
-  const method = params.method;
-  if (!CDP_ACTIONS.has(method)) {
-    throw new RelayError(ERROR_CODES.METHOD_NOT_ALLOWED, `CDP method is not allowlisted: ${String(method || '')}`);
-  }
+async function pressKey(lease, params, signal) {
+  const stroke = keyStroke(params.key);
   throwIfAborted(signal);
-  const result = await chrome.debugger.sendCommand(
+  markOperationDeliveryStarted(signal);
+  await chrome.debugger.sendCommand(
     { tabId: lease.nativeTabId },
-    method,
-    params.params && typeof params.params === 'object' ? params.params : {},
+    'Input.dispatchKeyEvent',
+    {
+      type: 'rawKeyDown',
+      key: stroke.key,
+      code: stroke.code,
+      modifiers: stroke.modifiers,
+      windowsVirtualKeyCode: stroke.virtualKeyCode,
+      ...(stroke.text ? { text: stroke.text } : {}),
+    },
   );
   throwIfAborted(signal);
-  return { tabRef: lease.tabRef, result: stripNativeTargetIdentifiers(result || {}) };
+  await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'Input.dispatchKeyEvent',
+    {
+      type: 'keyUp',
+      key: stroke.key,
+      code: stroke.code,
+      modifiers: stroke.modifiers,
+      windowsVirtualKeyCode: stroke.virtualKeyCode,
+    },
+  );
+  advanceDocumentRevision(lease);
+  await persistProtocolState();
+  return { pressed: true, key: stroke.key, tabRef: lease.tabRef };
+}
+
+function keyStroke(value) {
+  if (!isNonEmptyString(value) || value.length > 64) {
+    throw new RelayError(ERROR_CODES.INVALID_COMMAND, 'input.key requires a supported key');
+  }
+  const parts = value.split('+').map((part) => part.trim()).filter(Boolean);
+  const requestedKey = parts.pop();
+  const modifierMap = new Map([
+    ['alt', 1], ['option', 1], ['control', 2], ['ctrl', 2],
+    ['command', 4], ['cmd', 4], ['meta', 4], ['shift', 8],
+  ]);
+  let modifiers = 0;
+  for (const modifier of parts) {
+    const flag = modifierMap.get(modifier.toLowerCase());
+    if (!flag) throw new RelayError(ERROR_CODES.INVALID_COMMAND, `Unsupported key modifier: ${modifier}`);
+    modifiers |= flag;
+  }
+  const named = {
+    enter: ['Enter', 'Enter', 13], tab: ['Tab', 'Tab', 9], escape: ['Escape', 'Escape', 27],
+    esc: ['Escape', 'Escape', 27], backspace: ['Backspace', 'Backspace', 8], delete: ['Delete', 'Delete', 46],
+    arrowup: ['ArrowUp', 'ArrowUp', 38], arrowdown: ['ArrowDown', 'ArrowDown', 40],
+    arrowleft: ['ArrowLeft', 'ArrowLeft', 37], arrowright: ['ArrowRight', 'ArrowRight', 39],
+    home: ['Home', 'Home', 36], end: ['End', 'End', 35], pageup: ['PageUp', 'PageUp', 33],
+    pagedown: ['PageDown', 'PageDown', 34], space: [' ', 'Space', 32],
+  };
+  const normalized = String(requestedKey || '').toLowerCase();
+  if (named[normalized]) {
+    const [key, code, virtualKeyCode] = named[normalized];
+    return { key, code, virtualKeyCode, modifiers, text: '' };
+  }
+  if (requestedKey?.length !== 1) {
+    throw new RelayError(ERROR_CODES.INVALID_COMMAND, `Unsupported key: ${String(requestedKey || '')}`);
+  }
+  const upper = requestedKey.toUpperCase();
+  const code = /[A-Z]/.test(upper) ? `Key${upper}` : /[0-9]/.test(upper) ? `Digit${upper}` : '';
+  return {
+    key: requestedKey,
+    code,
+    virtualKeyCode: upper.charCodeAt(0),
+    modifiers,
+    text: modifiers === 0 ? requestedKey : '',
+  };
+}
+
+async function scrollPage(lease, params, signal) {
+  const direction = params.direction === 'up' ? -1 : 1;
+  const amount = Math.max(1, Math.min(10_000, Math.abs(Number(params.amount) || 300)));
+  throwIfAborted(signal);
+  const metrics = await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'Page.getLayoutMetrics',
+    {},
+  ).catch(() => null);
+  throwIfAborted(signal);
+  const viewport = metrics?.cssVisualViewport || metrics?.visualViewport || {};
+  markOperationDeliveryStarted(signal);
+  await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'Input.dispatchMouseEvent',
+    {
+      type: 'mouseWheel',
+      x: Math.max(0, Number(viewport.clientWidth) || 800) / 2,
+      y: Math.max(0, Number(viewport.clientHeight) || 600) / 2,
+      deltaX: 0,
+      deltaY: direction * amount,
+    },
+  );
+  throwIfAborted(signal);
+  advanceDocumentRevision(lease);
+  await persistProtocolState();
+  return { scrolled: true, direction: direction < 0 ? 'up' : 'down', amount, tabRef: lease.tabRef };
+}
+
+function requireOpaqueTargetRef(params, field = 'targetRef') {
+  const targetRef = params?.[field];
+  if (!targetRef || !isNonEmptyString(targetRef.ref)) {
+    throw new RelayError(
+      ERROR_CODES.TARGET_NOT_FOUND,
+      `${field} must be a fresh opaque reference returned by dom.snapshot`,
+      true,
+    );
+  }
+  return targetRef;
+}
+
+async function hoverTarget(lease, params, signal) {
+  const targetRef = requireOpaqueTargetRef(params);
+  const target = await resolveNodeTarget(lease, { targetRef }, signal);
+  throwIfAborted(signal);
+  markOperationDeliveryStarted(signal);
+  await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'Input.dispatchMouseEvent',
+    {
+      type: 'mouseMoved',
+      x: target.bounds.centerX,
+      y: target.bounds.centerY,
+      button: 'none',
+    },
+  );
+  throwIfAborted(signal);
+  return {
+    hovered: true,
+    nodeRef: target.nodeRef,
+    backendNodeId: target.backendNodeId,
+    frameRef: target.frameRef,
+    tabRef: lease.tabRef,
+  };
+}
+
+async function dragTarget(lease, params, signal) {
+  const sourceRef = requireOpaqueTargetRef(params);
+  const destinationRef = requireOpaqueTargetRef(params, 'destinationTargetRef');
+  const source = await resolveNodeTarget(lease, { targetRef: sourceRef }, signal);
+  const destination = await resolveNodeTarget(lease, { targetRef: destinationRef }, signal);
+  let pressed = false;
+  try {
+    throwIfAborted(signal);
+    markOperationDeliveryStarted(signal);
+    await chrome.debugger.sendCommand(
+      { tabId: lease.nativeTabId },
+      'Input.dispatchMouseEvent',
+      {
+        type: 'mouseMoved',
+        x: source.bounds.centerX,
+        y: source.bounds.centerY,
+        button: 'none',
+      },
+    );
+    throwIfAborted(signal);
+    await chrome.debugger.sendCommand(
+      { tabId: lease.nativeTabId },
+      'Input.dispatchMouseEvent',
+      {
+        type: 'mousePressed',
+        x: source.bounds.centerX,
+        y: source.bounds.centerY,
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+      },
+    );
+    pressed = true;
+    for (let step = 1; step <= 10; step += 1) {
+      throwIfAborted(signal);
+      const progress = step / 10;
+      await chrome.debugger.sendCommand(
+        { tabId: lease.nativeTabId },
+        'Input.dispatchMouseEvent',
+        {
+          type: 'mouseMoved',
+          x: source.bounds.centerX + ((destination.bounds.centerX - source.bounds.centerX) * progress),
+          y: source.bounds.centerY + ((destination.bounds.centerY - source.bounds.centerY) * progress),
+          button: 'left',
+          buttons: 1,
+        },
+      );
+    }
+  } finally {
+    if (pressed
+      && lease.state !== 'returning'
+      && lease.state !== 'returned'
+      && signal.reason?.code !== ERROR_CODES.ORIGIN_MISMATCH) {
+      await chrome.debugger.sendCommand(
+        { tabId: lease.nativeTabId },
+        'Input.dispatchMouseEvent',
+        {
+          type: 'mouseReleased',
+          x: destination.bounds.centerX,
+          y: destination.bounds.centerY,
+          button: 'left',
+          buttons: 0,
+          clickCount: 1,
+        },
+      ).catch(() => {});
+    }
+  }
+  throwIfAborted(signal);
+  advanceDocumentRevision(lease);
+  await persistProtocolState();
+  return {
+    dragged: true,
+    sourceNodeRef: source.nodeRef,
+    destinationNodeRef: destination.nodeRef,
+    tabRef: lease.tabRef,
+  };
+}
+
+function getDialogState(lease) {
+  const dialog = dialogsByLease.get(lease.leaseId);
+  if (!dialog) {
+    return {
+      pending: false,
+      defaultPolicy: 'pause',
+      output: 'No browser dialog is currently pending. Dialogs pause by default.',
+    };
+  }
+  return {
+    pending: true,
+    type: dialog.type,
+    messageLength: dialog.messageLength,
+    openedAtMs: dialog.openedAtMs,
+    defaultPolicy: 'pause',
+    output: `A ${dialog.type || 'browser'} dialog is paused for explicit handling.`,
+  };
+}
+
+async function handleDialog(lease, params, signal) {
+  const dialog = dialogsByLease.get(lease.leaseId);
+  if (!dialog) {
+    throw new RelayError(ERROR_CODES.DIALOG_BLOCKED, 'No paused browser dialog is available');
+  }
+  const action = params.dialogAction;
+  if (action !== 'accept' && action !== 'dismiss') {
+    throw new RelayError(ERROR_CODES.INVALID_COMMAND, 'dialogAction must be accept or dismiss');
+  }
+  if (params.dialogPromptText !== undefined
+    && (action !== 'accept' || dialog.type !== 'prompt' || typeof params.dialogPromptText !== 'string')) {
+    throw new RelayError(
+      ERROR_CODES.ACTION_NOT_ALLOWED,
+      'dialogPromptText is only allowed when accepting a prompt dialog',
+    );
+  }
+  if (typeof params.dialogPromptText === 'string' && params.dialogPromptText.length > 100_000) {
+    throw new RelayError(ERROR_CODES.INVALID_COMMAND, 'dialogPromptText exceeds the relay limit');
+  }
+  throwIfAborted(signal);
+  markOperationDialogGeneration(signal, dialog.generation);
+  markOperationDeliveryStarted(signal);
+  await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'Page.handleJavaScriptDialog',
+    {
+      accept: action === 'accept',
+      ...(typeof params.dialogPromptText === 'string'
+        ? { promptText: params.dialogPromptText }
+        : {}),
+    },
+  );
+  // Once CDP has accepted the command the dialog is no longer pending, even if
+  // cancellation races with the response. Clear the local state before
+  // surfacing an unknown-delivery cancellation so a retry cannot double-handle
+  // a dialog that Chrome already closed.
+  if (dialogsByLease.get(lease.leaseId)?.generation === dialog.generation) {
+    dialogsByLease.delete(lease.leaseId);
+  }
+  throwIfAborted(signal);
+  advanceDocumentRevision(lease);
+  await persistProtocolState();
+  return {
+    handled: true,
+    action,
+    type: dialog.type,
+    defaultPolicy: 'pause',
+    tabRef: lease.tabRef,
+  };
+}
+
+async function uploadFileToTarget(lease, params, signal) {
+  const targetRef = requireOpaqueTargetRef(params);
+  if (!isNonEmptyString(params.uploadApprovalRef) || !isNonEmptyString(params.uploadFilePath)) {
+    throw new RelayError(
+      ERROR_CODES.FILE_UPLOAD_BLOCKED,
+      'Relay upload requires one exact Host-approved file',
+    );
+  }
+  const refs = nodeRefsByLease.get(lease.leaseId) || new Map();
+  const target = refs.get(targetRef.ref);
+  if (!target || !Number.isInteger(target.nodeId) || !Number.isInteger(target.backendNodeId)) {
+    throw new RelayError(
+      ERROR_CODES.TARGET_NOT_FOUND,
+      'The approved file input reference is unknown or stale',
+      true,
+    );
+  }
+  throwIfAborted(signal);
+  const description = await chrome.debugger.sendCommand(
+    { tabId: lease.nativeTabId },
+    'DOM.describeNode',
+    { nodeId: target.nodeId, depth: 0 },
+  );
+  const node = description?.node;
+  const attributes = Array.isArray(node?.attributes) ? node.attributes : [];
+  const attributeMap = new Map();
+  for (let index = 0; index + 1 < attributes.length; index += 2) {
+    attributeMap.set(String(attributes[index]).toLowerCase(), String(attributes[index + 1]).toLowerCase());
+  }
+  if (String(node?.nodeName || '').toLowerCase() !== 'input'
+    || attributeMap.get('type') !== 'file'
+    || node?.backendNodeId !== target.backendNodeId) {
+    throw new RelayError(
+      ERROR_CODES.FILE_UPLOAD_BLOCKED,
+      'The approved target is not the same current file input',
+    );
+  }
+
+  throwIfAborted(signal);
+  try {
+    markOperationDeliveryStarted(signal);
+    await chrome.debugger.sendCommand(
+      { tabId: lease.nativeTabId },
+      'DOM.setFileInputFiles',
+      {
+        files: [params.uploadFilePath],
+        backendNodeId: target.backendNodeId,
+      },
+    );
+  } catch {
+    throwIfAborted(signal);
+    throw new RelayError(
+      ERROR_CODES.INTERNAL,
+      'Chrome could not assign the approved file to the current input',
+      false,
+      'unknown',
+    );
+  }
+  throwIfAborted(signal);
+  let fileCount;
+  let fileSize;
+  let remoteObjectId;
+  try {
+    const resolved = await chrome.debugger.sendCommand(
+      { tabId: lease.nativeTabId },
+      'DOM.resolveNode',
+      { backendNodeId: target.backendNodeId },
+    );
+    throwIfAborted(signal);
+    remoteObjectId = resolved?.object?.objectId;
+    if (isNonEmptyString(remoteObjectId)) {
+      const verification = await chrome.debugger.sendCommand(
+        { tabId: lease.nativeTabId },
+        'Runtime.callFunctionOn',
+        {
+          objectId: remoteObjectId,
+          functionDeclaration: 'function () { const files = this.files; return { fileCount: files ? files.length : 0, fileSize: files && files.length === 1 ? files[0].size : -1 }; }',
+          returnByValue: true,
+          silent: true,
+        },
+      );
+      const value = verification?.result?.value;
+      if (Number.isSafeInteger(value?.fileCount)) fileCount = value.fileCount;
+      if (Number.isSafeInteger(value?.fileSize)) fileSize = value.fileSize;
+    }
+  } catch {
+    throwIfAborted(signal);
+    // Host treats missing verification fields as a failed postcondition. The
+    // file-input command has already been delivered, so never claim otherwise.
+  } finally {
+    if (isNonEmptyString(remoteObjectId) && !signal.aborted) {
+      try {
+        await chrome.debugger.sendCommand(
+          { tabId: lease.nativeTabId },
+          'Runtime.releaseObject',
+          { objectId: remoteObjectId },
+        );
+      } catch {
+        // Best-effort release of a transient CDP handle; no file data is retained.
+      }
+    }
+  }
+  advanceDocumentRevision(lease);
+  await persistProtocolState();
+  throwIfAborted(signal);
+  return {
+    fileAssigned: true,
+    ...(Number.isSafeInteger(fileCount) ? { fileCount } : {}),
+    ...(Number.isSafeInteger(fileSize) ? { fileSize } : {}),
+    tabRef: lease.tabRef,
+  };
+}
+
+function getLeaseState(lease) {
+  return {
+    lease: publicLeaseReference(lease),
+    output: `Relay tab lease is ${lease.state}.`,
+  };
+}
+
+async function waitForOperation(params, signal) {
+  const timeoutMs = Math.max(0, Math.min(30_000, Number(params.timeoutMs) || 1_000));
+  await new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, timeoutMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  throwIfAborted(signal);
+  return { waited: true, timeoutMs };
+}
+
+function getLogMetadata(lease, params = {}) {
+  const afterCursor = Number.isFinite(params.afterCursor) ? Number(params.afterCursor) : 0;
+  const limit = Math.max(1, Math.min(200, Number(params.limit) || 100));
+  const entries = (logsByLease.get(lease.leaseId) || [])
+    .filter((entry) => entry.cursor > afterCursor)
+    .slice(-limit);
+  return {
+    entries,
+    nextCursor: entries.at(-1)?.cursor || afterCursor,
+    output: `${entries.length} redacted browser log entries available.`,
+    tabRef: lease.tabRef,
+  };
+}
+
+function advanceDocumentRevision(lease) {
+  lease.documentRevision = opaqueId('document');
+  nodeRefsByLease.delete(lease.leaseId);
+  frameRefsByLease.delete(lease.leaseId);
 }
 
 function stripNativeTargetIdentifiers(value) {
@@ -1072,14 +2007,21 @@ async function approveLatestPendingLease() {
   if (!handshakeComplete) {
     throw new RelayError(ERROR_CODES.HANDSHAKE_REQUIRED, 'Host handshake is not active', true);
   }
-  if (Date.now() >= request.expiresAtMs) {
+  if (Date.now() >= request.consentDeadlineAt) {
     pendingLeaseRequest = null;
     await persistProtocolState();
     throw new RelayError(ERROR_CODES.LEASE_EXPIRED, 'Pending lease request has expired');
   }
 
+  assertLeaseRequestActive(request);
+
   const tab = await getCurrentActiveTab();
-  validateUrlScope(tab.url, request);
+  assertLeaseRequestActive(request);
+  if (!domainScopesAllowUrl(request.domainScopes, tab.url)) {
+    throw new RelayError(ERROR_CODES.ORIGIN_MISMATCH, 'Current tab is outside the requested Relay domain scope');
+  }
+  const approvedOrigin = normalizeOrigin(tab.url);
+  const approvedHostname = normalizeHostname(tab.url);
   if (Array.from(leases.values()).some((lease) => lease.nativeTabId === tab.id && lease.state !== 'returned')) {
     throw new RelayError(ERROR_CODES.TAB_ALREADY_LEASED, 'Current tab already belongs to a relay lease');
   }
@@ -1091,13 +2033,15 @@ async function approveLatestPendingLease() {
     active: Boolean(tab.active),
     placeholderTabId: null,
   };
-  let agentWindowId = null;
+  let agentWindowId;
   let debuggerApproved = false;
 
   try {
     original.placeholderTabId = await createReturnPlaceholderIfNeeded(tab);
+    assertLeaseRequestActive(request);
     if (tab.pinned) await chrome.tabs.update(tab.id, { pinned: false });
     agentWindowId = await moveToAgentWindow(tab, request.surfaceSessionId);
+    assertLeaseRequestActive(request);
 
     // The only debugger.attach path is this user-triggered popup approval flow.
     await chrome.debugger.attach({ tabId: tab.id }, DEBUGGER_PROTOCOL_VERSION);
@@ -1106,9 +2050,17 @@ async function approveLatestPendingLease() {
       chrome.debugger.sendCommand({ tabId: tab.id }, 'Page.enable', {}),
       chrome.debugger.sendCommand({ tabId: tab.id }, 'DOM.enable', {}),
       chrome.debugger.sendCommand({ tabId: tab.id }, 'Accessibility.enable', {}),
+      chrome.debugger.sendCommand({ tabId: tab.id }, 'Log.enable', {}),
+      chrome.debugger.sendCommand({ tabId: tab.id }, 'Network.enable', {
+        maxTotalBufferSize: 0,
+        maxResourceBufferSize: 0,
+        maxPostDataSize: 0,
+      }),
+      chrome.debugger.sendCommand({ tabId: tab.id }, 'Runtime.enable', {}),
     ]);
 
-    if (Date.now() >= request.expiresAtMs) {
+    assertLeaseRequestActive(request);
+    if (Date.now() >= request.expiresAt) {
       throw new RelayError(ERROR_CODES.LEASE_EXPIRED, 'Lease request expired during approval');
     }
 
@@ -1118,12 +2070,13 @@ async function approveLatestPendingLease() {
       agentWindowRef: opaqueId('agent_window'),
       originalWindowRef: opaqueId('original_window'),
       surfaceSessionId: request.surfaceSessionId,
+      conversationId: request.conversationId,
       runId: request.runId,
       agentId: request.agentId,
-      origin: request.origin,
-      hostname: request.hostname,
-      actions: request.actions,
-      expiresAtMs: request.expiresAtMs,
+      origin: approvedOrigin,
+      hostname: approvedHostname,
+      actions: request.actionScopes,
+      expiresAtMs: request.expiresAt,
       documentRevision: opaqueId('document'),
       approvedAtMs: Date.now(),
       state: 'leased',
@@ -1133,13 +2086,34 @@ async function approveLatestPendingLease() {
       debuggerApproved,
     };
     leases.set(lease.leaseId, lease);
+    documentInScopeByLease.set(lease.leaseId, true);
     pendingLeaseRequest = null;
     await persistProtocolState();
     send({
       type: 'lease.approved',
       protocolVersion: PROTOCOL_VERSION,
       requestId: request.requestId,
-      lease: publicLeaseReference(lease),
+      surfaceSessionId: request.surfaceSessionId,
+      conversationId: request.conversationId,
+      runId: request.runId,
+      agentId: request.agentId,
+      leaseId: lease.leaseId,
+      approvalRef: opaqueId('approval'),
+      approvedAt: lease.approvedAtMs,
+      expiresAt: lease.expiresAtMs,
+      domainScopes: [`origin:${approvedOrigin}`],
+      actionScopes: [...lease.actions],
+      placement: {
+        browserInstanceRef: extensionInstanceId,
+        tabRef: lease.tabRef,
+        agentWindowRef: lease.agentWindowRef,
+        originalWindowRef: lease.originalWindowRef,
+        originalIndex: original.index,
+        originalPinned: original.pinned,
+        originalActive: original.active,
+        origin: approvedOrigin,
+        documentRevision: lease.documentRevision,
+      },
     });
     return { lease: publicLeaseReference(lease), ok: true };
   } catch (error) {
@@ -1153,6 +2127,16 @@ async function approveLatestPendingLease() {
   }
 }
 
+function assertLeaseRequestActive(request) {
+  if (cancelledLeaseRequests.has(request.requestId)
+    || pendingLeaseRequest?.requestId !== request.requestId) {
+    throw new RelayError(ERROR_CODES.OPERATION_CANCELLED, 'Lease approval was cancelled by Host', true);
+  }
+  if (Date.now() >= request.consentDeadlineAt) {
+    throw new RelayError(ERROR_CODES.LEASE_EXPIRED, 'Lease consent deadline expired during approval');
+  }
+}
+
 async function denyLatestPendingLease() {
   const request = pendingLeaseRequest;
   if (!request) return { denied: false };
@@ -1162,11 +2146,11 @@ async function denyLatestPendingLease() {
     type: 'lease.denied',
     protocolVersion: PROTOCOL_VERSION,
     requestId: request.requestId,
-    error: {
-      code: 'RELAY_LEASE_DENIED',
-      message: 'User denied the lease request',
-      retryable: false,
-    },
+    surfaceSessionId: request.surfaceSessionId,
+    conversationId: request.conversationId,
+    runId: request.runId,
+    agentId: request.agentId,
+    deniedAt: Date.now(),
   });
   return { denied: true };
 }
@@ -1210,10 +2194,38 @@ async function moveToAgentWindow(tab, surfaceSessionId) {
   return agentWindow.id;
 }
 
-async function returnLease(lease, reason) {
+async function returnLease(lease, reason, options = {}) {
   if (lease.state === 'returned') return { returned: true, alreadyReturned: true };
+  const existing = leaseReturnPromises.get(lease.leaseId);
+  if (existing) return existing;
+  const returning = performLeaseReturn(lease, reason, options);
+  leaseReturnPromises.set(lease.leaseId, returning);
+  try {
+    return await returning;
+  } finally {
+    if (leaseReturnPromises.get(lease.leaseId) === returning) {
+      leaseReturnPromises.delete(lease.leaseId);
+    }
+  }
+}
+
+async function performLeaseReturn(lease, reason, options) {
+  if (lease.state === 'returned') return { returned: true, alreadyReturned: true };
+  const excludeOperationId = isNonEmptyString(options.excludeOperationId)
+    ? options.excludeOperationId
+    : null;
+  const deadlineAt = Number.isFinite(options.deadlineAt)
+    ? Number(options.deadlineAt)
+    : Date.now() + 2_000;
   lease.state = 'returning';
+  abortLeaseOperationsForReturn(lease.leaseId, excludeOperationId);
   await persistProtocolState();
+
+  await waitForLeaseOperationsToStop(
+    lease.leaseId,
+    excludeOperationId,
+    Math.min(deadlineAt, Date.now() + 25),
+  );
 
   try {
     if (lease.debuggerApproved) {
@@ -1229,29 +2241,73 @@ async function returnLease(lease, reason) {
       lease.debuggerApproved = false;
     }
 
+    // Detaching debugger authority makes any non-cooperative in-flight CDP call
+    // incapable of delivering further input. Give aborted handlers one bounded
+    // turn to unwind before the tab is moved back to the user.
+    await waitForLeaseOperationsToStop(
+      lease.leaseId,
+      excludeOperationId,
+      Math.min(deadlineAt, Date.now() + 250),
+    );
+
     await restoreOriginalPlacement(lease.nativeTabId, lease.original);
     lease.state = 'returned';
     lease.returnedAtMs = Date.now();
     lease.returnReason = reason;
     nodeRefsByLease.delete(lease.leaseId);
     frameRefsByLease.delete(lease.leaseId);
+    logsByLease.delete(lease.leaseId);
+    dialogsByLease.delete(lease.leaseId);
+    dialogOpenWaitersByLease.delete(lease.leaseId);
+    documentInScopeByLease.delete(lease.leaseId);
     await persistProtocolState();
     send({
       type: 'lease.returned',
       protocolVersion: PROTOCOL_VERSION,
       leaseId: lease.leaseId,
       surfaceSessionId: lease.surfaceSessionId,
-      reason,
+      conversationId: lease.conversationId,
+      runId: lease.runId,
+      agentId: lease.agentId,
     });
     return { returned: true, leaseId: lease.leaseId };
   } catch (error) {
     lease.state = 'recovery_required';
     await persistProtocolState();
-    throw new RelayError(
+    const relayFailure = new RelayError(
       ERROR_CODES.TAB_RETURN_FAILED,
       `Failed to restore the leased tab to its original placement: ${error?.message || String(error)}`,
+      false,
+      'unknown',
     );
+    sendLeaseRecoveryRequired(lease, relayFailure);
+    throw relayFailure;
   }
+}
+
+function abortLeaseOperationsForReturn(leaseId, excludeOperationId) {
+  for (const [operationId, active] of activeOperations) {
+    if (active.leaseId !== leaseId || operationId === excludeOperationId) continue;
+    const delivery = isMutationAction(active.actionScope) && active.deliveryStarted
+      ? 'unknown'
+      : 'not_attempted';
+    active.controller.abort(new RelayError(
+      ERROR_CODES.OPERATION_CANCELLED,
+      'Operation cancelled so the leased tab can be returned',
+      true,
+      delivery,
+    ));
+  }
+}
+
+async function waitForLeaseOperationsToStop(leaseId, excludeOperationId, deadlineAt) {
+  const hasConflictingOperation = () => Array.from(activeOperations.entries()).some(
+    ([operationId, active]) => active.leaseId === leaseId && operationId !== excludeOperationId,
+  );
+  while (hasConflictingOperation() && Date.now() < deadlineAt) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return !hasConflictingOperation();
 }
 
 async function restoreOriginalPlacement(nativeTabId, original) {
@@ -1303,27 +2359,171 @@ function markLeasesOrphaned() {
   if (changed) persistProtocolState();
 }
 
-function expireProtocolState() {
+async function expireProtocolState() {
   const now = Date.now();
   let changed = false;
-  if (pendingLeaseRequest && now >= pendingLeaseRequest.expiresAtMs) {
+  if (pendingLeaseRequest && now >= pendingLeaseRequest.consentDeadlineAt) {
+    const expiredRequest = pendingLeaseRequest;
     pendingLeaseRequest = null;
     changed = true;
+    send({
+      type: 'lease.denied',
+      protocolVersion: PROTOCOL_VERSION,
+      requestId: expiredRequest.requestId,
+      surfaceSessionId: expiredRequest.surfaceSessionId,
+      conversationId: expiredRequest.conversationId,
+      runId: expiredRequest.runId,
+      agentId: expiredRequest.agentId,
+      deniedAt: now,
+    });
   }
-  for (const lease of leases.values()) {
-    if (['leased', 'orphaned'].includes(lease.state) && now >= lease.expiresAtMs) {
-      lease.state = 'expired';
-      changed = true;
-      send({
-        type: 'lease.expired',
-        protocolVersion: PROTOCOL_VERSION,
-        leaseId: lease.leaseId,
-        surfaceSessionId: lease.surfaceSessionId,
-      });
-    }
+  for (const [requestId, expiresAt] of cancelledLeaseRequests) {
+    if (expiresAt <= now) cancelledLeaseRequests.delete(requestId);
   }
-  if (changed) persistProtocolState();
+  if (changed) await persistProtocolState();
+  const expiredLeases = Array.from(leases.values()).filter((lease) => (
+    ['leased', 'orphaned', 'expired'].includes(lease.state) && now >= lease.expiresAtMs
+  ));
+  await Promise.allSettled(expiredLeases.map((lease) => returnLease(lease, 'expired')));
 }
+
+function sendLeaseRecoveryRequired(lease, error) {
+  send({
+    type: 'lease.recovery_required',
+    protocolVersion: PROTOCOL_VERSION,
+    leaseId: lease.leaseId,
+    surfaceSessionId: lease.surfaceSessionId,
+    conversationId: lease.conversationId,
+    runId: lease.runId,
+    agentId: lease.agentId,
+    error: errorPayload(error),
+  });
+}
+
+function handleDebuggerEvent(source, method, params) {
+  if (!Number.isInteger(source.tabId)) return;
+  const lease = Array.from(leases.values()).find((candidate) => (
+    candidate.nativeTabId === source.tabId && candidate.state === 'leased'
+  ));
+  if (!lease) return;
+  if (method === 'Page.frameNavigated' && !params?.frame?.parentId) {
+    handleLeaseDocumentNavigation(lease, params?.frame?.url);
+    persistProtocolState();
+    return;
+  }
+  if (method === 'Page.navigatedWithinDocument') {
+    handleLeaseDocumentNavigation(lease, params?.url);
+    persistProtocolState();
+    return;
+  }
+  if (documentInScopeByLease.get(lease.leaseId) !== true) return;
+  if (method === 'Page.javascriptDialogOpening') {
+    const type = ['alert', 'beforeunload', 'confirm', 'prompt'].includes(params?.type)
+      ? params.type
+      : 'alert';
+    const dialog = {
+      generation: nextDialogGeneration++,
+      type,
+      messageLength: typeof params?.message === 'string' ? params.message.length : 0,
+      openedAtMs: Date.now(),
+    };
+    dialogsByLease.set(lease.leaseId, dialog);
+    const waiters = dialogOpenWaitersByLease.get(lease.leaseId);
+    if (waiters) {
+      for (const notify of [...waiters]) notify(dialog);
+    }
+    return;
+  }
+  if (method === 'Page.javascriptDialogClosed') {
+    dialogsByLease.delete(lease.leaseId);
+    return;
+  }
+  let entry = null;
+  if (method === 'Log.entryAdded' && params?.entry) {
+    if (params.entry.url && !isUrlWithinLeaseScope(params.entry.url, lease)) return;
+    entry = {
+      level: String(params.entry.level || 'info'),
+      source: String(params.entry.source || 'browser'),
+      text: redactLogText(params.entry.text),
+      url: safeLogUrl(params.entry.url),
+      timestamp: Number(params.entry.timestamp) || Date.now(),
+    };
+  } else if (method === 'Runtime.consoleAPICalled') {
+    const text = (Array.isArray(params?.args) ? params.args : [])
+      .map((argument) => {
+        if (['string', 'number', 'boolean'].includes(typeof argument?.value)) return String(argument.value);
+        return typeof argument?.description === 'string' ? argument.description : `[${String(argument?.type || 'value')}]`;
+      })
+      .join(' ');
+    entry = {
+      level: String(params?.type || 'log'),
+      source: 'console',
+      text: redactLogText(text),
+      url: '',
+      timestamp: Number(params?.timestamp) || Date.now(),
+    };
+  } else if (method === 'Network.requestWillBeSent' && params?.request) {
+    if (!isUrlWithinLeaseScope(params.request.url, lease)) return;
+    entry = {
+      level: 'info',
+      source: 'network',
+      text: `request ${String(params.request.method || 'GET').slice(0, 16)}`,
+      url: safeLogUrl(params.request.url),
+      timestamp: Number(params?.timestamp) || Date.now(),
+    };
+  } else if (method === 'Network.responseReceived' && params?.response) {
+    if (!isUrlWithinLeaseScope(params.response.url, lease)) return;
+    const status = Number(params.response.status) || 0;
+    entry = {
+      level: status >= 400 ? 'error' : 'info',
+      source: 'network',
+      text: `response ${status || 'unknown'} ${String(params.response.mimeType || '').slice(0, 120)}`.trim(),
+      url: safeLogUrl(params.response.url),
+      timestamp: Number(params?.timestamp) || Date.now(),
+    };
+  } else if (method === 'Network.loadingFailed') {
+    entry = {
+      level: params?.canceled ? 'info' : 'error',
+      source: 'network',
+      text: redactLogText(`failed ${String(params?.errorText || 'unknown network error')}`),
+      url: '',
+      timestamp: Number(params?.timestamp) || Date.now(),
+    };
+  }
+  if (!entry) return;
+  const entries = logsByLease.get(lease.leaseId) || [];
+  entries.push({ cursor: nextLogCursor++, ...entry });
+  if (entries.length > 500) entries.splice(0, entries.length - 500);
+  logsByLease.set(lease.leaseId, entries);
+}
+
+function handleLeaseDocumentNavigation(lease, url) {
+  dialogsByLease.delete(lease.leaseId);
+  if (!isUrlWithinLeaseScope(url, lease)) {
+    markLeaseDocumentOutOfScope(lease);
+    return;
+  }
+  documentInScopeByLease.set(lease.leaseId, true);
+  advanceDocumentRevision(lease);
+}
+
+function redactLogText(value) {
+  return String(value || '')
+    .slice(0, 10_000)
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
+    .replace(/\b(authorization|cookie|set-cookie|password|passwd|token|api[-_]?key|secret)\b\s*[:=]\s*([^\s,;]+)/gi, '$1=[REDACTED]');
+}
+
+function safeLogUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return `${url.origin}${url.pathname}`.slice(0, 2_000);
+  } catch {
+    return '';
+  }
+}
+
+chrome.debugger.onEvent.addListener(handleDebuggerEvent);
 
 chrome.debugger.onDetach.addListener((source, reason) => {
   if (!Number.isInteger(source.tabId) || intentionalDebuggerDetach.has(source.tabId)) return;
@@ -1334,17 +2534,11 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   lease.debuggerApproved = false;
   lease.state = 'recovery_required';
   persistProtocolState();
-  send({
-    type: 'lease.interrupted',
-    protocolVersion: PROTOCOL_VERSION,
-    leaseId: lease.leaseId,
-    surfaceSessionId: lease.surfaceSessionId,
-    error: {
-      code: 'RELAY_DEBUGGER_DETACHED',
-      message: `Chrome debugger detached: ${reason}`,
-      retryable: true,
-    },
-  });
+  sendLeaseRecoveryRequired(lease, new RelayError(
+    ERROR_CODES.TAB_UNAVAILABLE,
+    `Chrome debugger detached: ${reason}`,
+    true,
+  ));
 });
 
 chrome.tabs.onRemoved.addListener((nativeTabId) => {
@@ -1355,17 +2549,17 @@ chrome.tabs.onRemoved.addListener((nativeTabId) => {
   lease.state = 'recovery_required';
   lease.debuggerApproved = false;
   persistProtocolState();
+  sendLeaseRecoveryRequired(lease, new RelayError(
+    ERROR_CODES.TAB_UNAVAILABLE,
+    'The borrowed tab was closed before it could be returned',
+  ));
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   let changed = false;
-  if (changes.relayPort) {
+  if (changes.relayPort && changes.relayPort.newValue !== config.port) {
     config.port = changes.relayPort.newValue;
-    changed = true;
-  }
-  if (changes.authToken) {
-    config.token = changes.authToken.newValue;
     changed = true;
   }
   if (changed) {
@@ -1409,7 +2603,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 async function getPopupStatus() {
-  let currentTab = null;
+  let currentTab;
   try {
     const active = await getCurrentActiveTab();
     const lease = Array.from(leases.values()).find((candidate) => (
@@ -1423,16 +2617,17 @@ async function getPopupStatus() {
   } catch {
     currentTab = null;
   }
-  const pending = pendingLeaseRequest && pendingLeaseRequest.expiresAtMs > Date.now()
+  const pending = pendingLeaseRequest && pendingLeaseRequest.consentDeadlineAt > Date.now()
     ? {
         requestId: pendingLeaseRequest.requestId,
         surfaceSessionId: pendingLeaseRequest.surfaceSessionId,
+        conversationId: pendingLeaseRequest.conversationId,
         runId: pendingLeaseRequest.runId,
         agentId: pendingLeaseRequest.agentId,
-        origin: pendingLeaseRequest.origin,
-        hostname: pendingLeaseRequest.hostname,
-        actions: pendingLeaseRequest.actions,
-        expiresAtMs: pendingLeaseRequest.expiresAtMs,
+        origin: pendingLeaseRequest.domainScopes.join(', '),
+        hostname: pendingLeaseRequest.domainScopes.join(', '),
+        actions: pendingLeaseRequest.actionScopes,
+        expiresAtMs: pendingLeaseRequest.consentDeadlineAt,
       }
     : null;
   return {

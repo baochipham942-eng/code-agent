@@ -1,4 +1,31 @@
 import type { KeybindingActionId } from '@shared/keybindings';
+import type {
+  SurfaceKind,
+  SurfaceSessionControlActionV1,
+  SurfaceSessionStateV1,
+} from '@shared/contract/surfaceExecution';
+
+export type NativePipControlAction = Extract<
+  SurfaceSessionControlActionV1,
+  'pause' | 'resume' | 'takeover' | 'stop'
+>;
+
+export interface NativePipControlsPayload {
+  version: 1;
+  scope: {
+    conversationId: string;
+    runId: string;
+    agentId: string;
+    surfaceSessionId: string;
+  };
+  surface: SurfaceKind;
+  state: SurfaceSessionStateV1;
+  availableControls: NativePipControlAction[];
+  controlRequest?: {
+    action: NativePipControlAction;
+    status: 'pending' | 'succeeded' | 'failed';
+  };
+}
 
 export interface AppshotSlot {
   x: number;
@@ -44,6 +71,10 @@ export interface NativeCommandActionMap {
     payload: { dataUrl: string };
     result: unknown;
   };
+  setPipControls: {
+    payload: { controls: NativePipControlsPayload };
+    result: unknown;
+  };
   hidePip: {
     payload: undefined;
     result: unknown;
@@ -79,6 +110,7 @@ const NATIVE_COMMANDS: {
   setAppshotsEnabled: 'appshots_set_enabled',
   showPip: 'pip_show',
   framePip: 'pip_frame',
+  setPipControls: 'pip_controls',
   hidePip: 'pip_hide',
   showAgentHalo: 'agent_halo_show',
   setAgentHaloMode: 'agent_halo_mode',

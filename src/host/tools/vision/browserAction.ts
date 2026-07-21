@@ -6,10 +6,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import * as os from 'os';
-import * as path from 'path';
-import type { BrowserArtifactSummary, BrowserTargetRef } from '../../services/infra/browserService.js';
-import { browserService } from '../../services/infra/browserService.js';
+import type { BrowserTargetRef } from '../../services/infra/browserService.js';
 import { getBrowserService } from '../../services/infra/browserPool.js';
 import { createLogger } from '../../services/infra/logger';
 import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
@@ -21,7 +18,22 @@ import {
 } from './browserWorkbenchIntent';
 import { executeBrowserProfileAction } from './browserProfileActions';
 import { maybeDispatchRelayBrowserAction } from './browserEngineDispatch';
-import { finalizeBrowserActionResult } from './browserActionFinalize';
+import { requestBrowserUploadApproval } from './browserUploadApproval';
+import { createManagedBrowserOperationId, getManagedBrowserProviderAdapter, surfaceIdentityFromToolContext } from '../../services/surfaceExecution/ManagedBrowserProviderAdapter';
+import {
+  formatBrowserTargetRefLabel,
+  getBrowserTargetRefErrorDetails,
+  getScreenshotPathFromResult,
+  resolveBrowserSecretRef,
+  summarizeAccountStateForTool,
+  summarizeBrowserArtifactForTool,
+  summarizeBrowserTargetRefForTool,
+  summarizeManagedBrowserStateForTool,
+  summarizePathTail,
+  summarizeSecretRef,
+  withWorkbenchTrace,
+} from './browserActionResultProjection';
+import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
 
 const logger = createLogger('BrowserAction');
 
@@ -42,6 +54,12 @@ type BrowserActionType =
   | 'type'
   | 'press_key'
   | 'scroll'
+  | 'hover'
+  | 'drag'
+  | 'get_dialog_state'
+  | 'handle_dialog'
+  | 'read_clipboard'
+  | 'write_clipboard'
   | 'screenshot'
   | 'get_content'
   | 'get_elements'
@@ -71,6 +89,12 @@ const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
   'type',
   'press_key',
   'scroll',
+  'hover',
+  'drag',
+  'get_dialog_state',
+  'handle_dialog',
+  'read_clipboard',
+  'write_clipboard',
   'screenshot',
   'get_content',
   'get_elements',
@@ -94,7 +118,7 @@ export const browserActionTool: Tool = {
 
 Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state.
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
-Profile login reuse: list_profiles; import_profile_cookies requires userConfirmed=true (Browser Surface); clear_cookies clears managed profile cookies. Never log cookie values.
+Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
 storageState file path: export_storage_state / import_storage_state for CI/scripts.`,
   requiresPermission: true,
   permissionLevel: 'execute',
@@ -106,7 +130,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         enum: [
           'launch', 'close', 'new_tab', 'close_tab', 'list_tabs', 'switch_tab',
           'navigate', 'back', 'forward', 'reload', 'set_viewport',
-          'click', 'click_text', 'type', 'press_key', 'scroll',
+          'click', 'click_text', 'type', 'press_key', 'scroll', 'hover', 'drag',
+          'get_dialog_state', 'handle_dialog', 'read_clipboard', 'write_clipboard',
           'screenshot', 'get_content', 'get_elements', 'get_dom_snapshot', 'get_a11y_snapshot',
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
           'list_profiles', 'import_profile_cookies', 'clear_cookies',
@@ -127,9 +152,27 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         description: 'Short-lived target reference returned by get_dom_snapshot interactiveElements[].targetRef',
         additionalProperties: true,
       },
+      destinationTargetRef: {
+        type: 'object',
+        description: 'Fresh destination targetRef for drag. Both drag endpoints must come from the same current DOM snapshot.',
+        additionalProperties: true,
+      },
       text: {
         type: 'string',
         description: 'Text to type or element text to click',
+      },
+      clipboardText: {
+        type: 'string',
+        description: 'Sensitive text for write_clipboard. It requires explicit approval and is redacted from traces, proof, and export.',
+      },
+      dialogAction: {
+        type: 'string',
+        enum: ['accept', 'dismiss'],
+        description: 'Explicit action for a currently paused JavaScript dialog. Dialogs pause by default.',
+      },
+      dialogPromptText: {
+        type: 'string',
+        description: 'Sensitive prompt response used only with dialogAction=accept on a prompt dialog.',
       },
       key: {
         type: 'string',
@@ -182,7 +225,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
       uploadFilePath: {
         type: 'string',
-        description: 'Local file path for upload_file. Sensitive paths require permission.',
+        description: 'Local file path for upload_file. Every upload requires one-time approval for the exact normalized file; Relay also requires a fresh targetRef.',
       },
       secretRef: {
         type: 'string',
@@ -223,7 +266,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
       userConfirmed: {
         type: 'boolean',
-        description: 'Required true for import_profile_cookies — only set after explicit user approval (ADR-041)',
+        description: 'Legacy compatibility signal for import_profile_cookies. It cannot authorize import without a one-time Host permission bound to the exact profile/domain scope (ADR-041).',
       },
     },
     required: ['action'],
@@ -233,9 +276,6 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    // Shadow module-level browserService with per-agent instance from pool.
-    // 所有下面的 browserService.xxx 调用都解析到这个局部变量（agentId-scoped）。
-    const browserService = getBrowserService(context.agentId);
     const action = params.action as BrowserActionType;
     const url = params.url as string | undefined;
     const selector = params.selector as string | undefined;
@@ -284,7 +324,16 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       return relayDispatch;
     }
 
-    if (workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
+    const surfaceIdentity = surfaceIdentityFromToolContext(context);
+    const useManagedSurface = Boolean(surfaceIdentity) && action !== 'list_profiles';
+    const managedAdapter = getManagedBrowserProviderAdapter();
+    // Native runs are isolated by conversation/run/agent. Legacy callers without
+    // a complete owner identity keep the historical per-agent compatibility path.
+    const browserService = useManagedSurface && surfaceIdentity
+      ? managedAdapter.getBrowserService(surfaceIdentity)
+      : getBrowserService(context.agentId);
+
+    if (!useManagedSurface && workbenchPolicy.preferManagedBrowser && MANAGED_SESSION_ACTIONS.has(action)) {
       workbenchNotes.push(await ensureManagedBrowserSessionForWorkbench({ agentId: context.agentId }));
     }
 
@@ -295,7 +344,18 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     });
 
     try {
-      const rawResult = await (async (): Promise<ToolExecutionResult> => {
+      const executeManagedProviderAction = async (): Promise<ToolExecutionResult> => {
+        const surfaceInteractionResult = await maybeExecuteBrowserSurfaceInteraction({
+          action,
+          browserService,
+          context,
+          params,
+          tabId,
+        });
+        if (surfaceInteractionResult) {
+          return surfaceInteractionResult;
+        }
+
         switch (action) {
         // Browser lifecycle
         case 'launch':
@@ -630,6 +690,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
             action,
             browserService,
             params,
+            context,
           });
 
         case 'wait_for_download': {
@@ -653,18 +714,22 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           if (!selector && !targetRef) {
             return { success: false, error: 'selector or targetRef required for upload_file' };
           }
-          const approval = await requestUploadFileApprovalIfNeeded(uploadFilePath, context);
+          const approval = await requestBrowserUploadApproval({
+            filePath: uploadFilePath,
+            context,
+            engine: 'managed',
+          });
           if (!approval.approved) {
             return {
               success: false,
-              error: approval.reason || 'Upload file permission denied',
+              error: approval.reason,
               metadata: {
-                code: 'UPLOAD_FILE_PERMISSION_DENIED',
+                code: approval.code,
               },
             };
           }
           const artifact = await browserService.uploadFile({
-            filePath: uploadFilePath,
+            approvedFile: approval.file,
             selector,
             targetRef,
             tabId,
@@ -714,7 +779,17 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         default:
           return { success: false, error: `Unknown action: ${action}` };
         }
-      })();
+      };
+      const rawResult = useManagedSurface && surfaceIdentity
+        ? await managedAdapter.execute({
+            identity: surfaceIdentity,
+            operationId: createManagedBrowserOperationId(context, action),
+            action,
+            params,
+            ...(context.abortSignal ? { abortSignal: context.abortSignal } : {}),
+            executeProvider: async () => executeManagedProviderAction(),
+          })
+        : await executeManagedProviderAction();
       const completedTrace = browserService.finishTrace(trace, {
         success: rawResult.success,
         error: rawResult.error || null,
@@ -777,292 +852,3 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     }
   },
 };
-
-function getScreenshotPathFromResult(result: ToolExecutionResult): string | null {
-  const path = result.metadata?.path;
-  return typeof path === 'string' ? path : null;
-}
-
-function summarizeBrowserTargetRefForTool(targetRef: BrowserTargetRef): Record<string, unknown> {
-  return {
-    refId: targetRef.refId,
-    source: targetRef.source,
-    selector: targetRef.selector,
-    role: targetRef.role || null,
-    name: targetRef.name || null,
-    textHint: targetRef.textHint || null,
-    tabId: targetRef.tabId,
-    snapshotId: targetRef.snapshotId,
-    capturedAtMs: targetRef.capturedAtMs,
-    ttlMs: targetRef.ttlMs,
-    confidence: targetRef.confidence,
-    rect: targetRef.rect || null,
-    boundingBox: targetRef.rect || null,
-  };
-}
-
-function summarizeBrowserArtifactForTool(artifact: BrowserArtifactSummary): Record<string, unknown> {
-  return {
-    artifactId: artifact.artifactId,
-    kind: artifact.kind,
-    name: artifact.name,
-    artifactPath: summarizePathTail(artifact.artifactPath),
-    size: artifact.size,
-    mimeType: artifact.mimeType,
-    sha256: artifact.sha256,
-    createdAtMs: artifact.createdAtMs,
-    sessionId: artifact.sessionId,
-  };
-}
-
-function summarizeAccountStateForTool(accountState: unknown): Record<string, unknown> | null {
-  if (!accountState) {
-    return null;
-  }
-  const state = accountState as Record<string, unknown>;
-  return {
-    status: state.status || 'empty',
-    cookieCount: state.cookieCount || 0,
-    expiredCookieCount: state.expiredCookieCount || 0,
-    originCount: state.originCount || 0,
-    localStorageEntryCount: state.localStorageEntryCount || 0,
-    sessionStorageEntryCount: state.sessionStorageEntryCount || 0,
-    cookieDomains: Array.isArray(state.cookieDomains) ? state.cookieDomains : [],
-    origins: Array.isArray(state.origins) ? state.origins : [],
-    updatedAtMs: state.updatedAtMs || null,
-    storageStatePath: summarizePathTail(typeof state.storageStatePath === 'string' ? state.storageStatePath : undefined),
-  };
-}
-
-function formatBrowserTargetRefLabel(targetRef: BrowserTargetRef): string {
-  return [
-    targetRef.name || targetRef.textHint || targetRef.selector || targetRef.refId,
-    targetRef.source,
-    targetRef.snapshotId,
-  ].filter(Boolean).join(' · ');
-}
-
-function getBrowserTargetRefErrorDetails(error: unknown): {
-  code: string;
-  message: string;
-  retryHint: string;
-  refId: string | null;
-  snapshotId: string | null;
-} | null {
-  if (!error || typeof error !== 'object') {
-    return null;
-  }
-  const record = error as Record<string, unknown>;
-  if (record.code !== 'STALE_TARGET_REF') {
-    return null;
-  }
-  return {
-    code: typeof record.code === 'string' ? record.code : 'STALE_TARGET_REF',
-    message: error instanceof Error ? error.message : 'TargetRef is stale or unavailable.',
-    retryHint: typeof record.retryHint === 'string'
-      ? record.retryHint
-      : 'Run browser_action.get_dom_snapshot and retry with a fresh targetRef.',
-    refId: typeof record.refId === 'string' ? record.refId : null,
-    snapshotId: typeof record.snapshotId === 'string' ? record.snapshotId : null,
-  };
-}
-
-function resolveBrowserSecretRef(secretRef: string | undefined): string | undefined {
-  if (!secretRef) {
-    return undefined;
-  }
-  if (secretRef.startsWith('env:')) {
-    const envName = secretRef.slice(4);
-    if (!/^[A-Z0-9_]+$/.test(envName)) {
-      return undefined;
-    }
-    return process.env[envName];
-  }
-  return undefined;
-}
-
-function summarizeSecretRef(secretRef: string | undefined): string {
-  if (!secretRef) {
-    return 'secretRef';
-  }
-  if (secretRef.startsWith('env:')) {
-    return 'env';
-  }
-  return 'secretRef';
-}
-
-async function requestUploadFileApprovalIfNeeded(
-  filePath: string,
-  context: ToolContext,
-): Promise<{ approved: boolean; reason?: string }> {
-  if (!isSensitiveUploadPath(filePath)) {
-    return { approved: true };
-  }
-  const approved = await context.requestPermission({
-    type: 'file_read',
-    tool: 'browser_action.upload_file',
-    dangerLevel: 'warning',
-    reason: '上传敏感路径下的本地文件需要确认。',
-    details: {
-      file: summarizePathTail(filePath),
-      action: 'upload_file',
-    },
-  });
-  return approved
-    ? { approved: true }
-    : { approved: false, reason: 'Sensitive upload file was not approved.' };
-}
-
-function isSensitiveUploadPath(filePath: string): boolean {
-  const resolved = pathResolve(filePath);
-  const basename = getPathBasenameForUpload(resolved).toLowerCase();
-  if (/\.(env|pem|key|p12|pfx)$/i.test(basename)) {
-    return true;
-  }
-  if (/credential|secret|token|password|id_rsa|id_dsa|id_ecdsa|id_ed25519/i.test(basename)) {
-    return true;
-  }
-  const homeDir = os.homedir();
-  const home = homeDir ? pathResolve(homeDir) : null;
-  if (!home) {
-    return false;
-  }
-  const sensitiveRoots = ['Desktop', 'Downloads', '.ssh', '.aws', '.config'].map((segment) => `${home}/${segment}`);
-  return sensitiveRoots.some((root) => resolved === root || resolved.startsWith(`${root}/`));
-}
-
-function pathResolve(value: string): string {
-  return path.resolve(value).replace(/\/+$/g, '') || value;
-}
-
-function getPathBasenameForUpload(value: string): string {
-  const parts = value.split('/').filter(Boolean);
-  return parts.at(-1) || value;
-}
-
-function withWorkbenchTrace(
-  result: ToolExecutionResult,
-  trace: ReturnType<typeof browserService.finishTrace>,
-  context?: ToolContext,
-): ToolExecutionResult {
-  return finalizeBrowserActionResult({
-    result,
-    action: typeof trace.action === 'string' ? trace.action : 'unknown',
-    params: (trace.params || {}) as Record<string, unknown>,
-    context,
-    trace: {
-      id: trace.id,
-      toolName: trace.toolName || 'browser_action',
-      action: typeof trace.action === 'string' ? trace.action : 'unknown',
-      params: (trace.params || {}) as Record<string, unknown>,
-      startedAtMs: trace.startedAtMs,
-      completedAtMs: trace.completedAtMs ?? null,
-      success: trace.success ?? null,
-      error: trace.error ?? null,
-      provider: trace.provider ?? null,
-      mode: trace.mode ?? null,
-      screenshotPath: trace.screenshotPath ?? null,
-    },
-    provider: typeof result.metadata?.provider === 'string'
-      ? result.metadata.provider
-      : (trace.provider || 'system-chrome-cdp'),
-  });
-}
-
-function summarizeManagedBrowserStateForTool(state: ReturnType<typeof browserService.getSessionState>): Record<string, unknown> {
-  return {
-    sessionId: state.sessionId || null,
-    profileId: state.profileId || null,
-    profileMode: state.profileMode || null,
-    workspaceScope: summarizeWorkspaceScope(state.workspaceScope || undefined),
-    artifactDir: summarizePathTail(state.artifactDir || undefined),
-    lease: state.lease
-      ? {
-          leaseId: state.lease.leaseId,
-          owner: state.lease.owner,
-          acquiredAtMs: state.lease.acquiredAtMs,
-          lastHeartbeatAtMs: state.lease.lastHeartbeatAtMs,
-          expiresAtMs: state.lease.expiresAtMs,
-          ttlMs: state.lease.ttlMs,
-          status: state.lease.status,
-        }
-      : null,
-    proxy: state.proxy
-      ? {
-          mode: state.proxy.mode,
-          bypass: state.proxy.bypass,
-          regionHint: state.proxy.regionHint || null,
-          source: state.proxy.source,
-        }
-      : null,
-    externalBridge: state.externalBridge
-      ? {
-          enabled: state.externalBridge.enabled,
-          status: state.externalBridge.status,
-          requiresExplicitAuthorization: true,
-          port: state.externalBridge.port || null,
-          tokenHint: state.externalBridge.tokenHint || null,
-          connectedTabCount: state.externalBridge.connectedTabCount || 0,
-          attachedTabCount: state.externalBridge.attachedTabCount || 0,
-          reason: state.externalBridge.reason,
-        }
-      : null,
-    accountState: summarizeAccountStateForTool(state.accountState),
-    running: state.running,
-    tabCount: state.tabCount,
-    activeTab: state.activeTab
-      ? {
-          id: state.activeTab.id,
-          url: summarizeUrl(state.activeTab.url),
-          title: state.activeTab.title,
-        }
-      : null,
-    mode: state.mode || null,
-    provider: state.provider || null,
-    requestedProvider: state.requestedProvider || null,
-    cdpPort: state.cdpPort || null,
-    missingExecutable: state.missingExecutable || false,
-    recommendedAction: state.recommendedAction || null,
-    providerFallbackReason: state.providerFallbackReason || null,
-    viewport: state.viewport || null,
-    allowedHosts: state.allowedHosts || [],
-    blockedHosts: state.blockedHosts || [],
-    lastTraceId: state.lastTrace?.id || null,
-  };
-}
-
-function summarizePathTail(value: string | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-  const normalized = value.replace(/\\/g, '/');
-  const tail = normalized.split('/').filter(Boolean).pop();
-  return tail ? `.../${tail}` : null;
-}
-
-function summarizeWorkspaceScope(value: string | undefined): string | null {
-  if (!value) {
-    return null;
-  }
-  return value.includes('/') || value.includes('\\')
-    ? summarizePathTail(value)
-    : value;
-}
-
-function summarizeUrl(value: string): string {
-  try {
-    const url = new URL(value);
-    if (url.protocol === 'http:' || url.protocol === 'https:') {
-      return `${url.origin}${url.pathname}`;
-    }
-    if (url.protocol === 'about:' && url.pathname === 'blank') {
-      return 'about:blank';
-    }
-    if (url.protocol === 'blob:') {
-      return url.origin !== 'null' ? `blob:${url.origin}/[redacted]` : 'blob:[redacted]';
-    }
-    return `${url.protocol}[redacted]`;
-  } catch {
-    return '[invalid URL]';
-  }
-}

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "conversationId": "session_1784605209855_86755de0",
+  "recoveredSessionId": "surface_fffca839-04f8-4b06-acc4-d9c2a2114365",
+  "continuationSessionId": "surface_87f6f8e7-b85e-4de1-8ba3-7a3d88faa162",
+  "parentSessionId": "surface_fffca839-04f8-4b06-acc4-d9c2a2114365",
+  "persistPid": 95362,
+  "recoverPid": 95455,
+  "dataDirectoryMatched": true,
+  "databasePathMatched": true,
+  "persistedRecordSha256": "ae3717e75ffe6b2713a5b286488ab082c92615cb09d8c71de0a3207c44a62a50",
+  "recoveredRecordSha256": "ae3717e75ffe6b2713a5b286488ab082c92615cb09d8c71de0a3207c44a62a50",
+  "assertions": {
+    "recoveredReadOnly": true,
+    "oldGrantRevoked": true,
+    "continuationSingleUse": true,
+    "parentSessionLinked": true,
+    "freshObservationCaptured": true
+  }
+}

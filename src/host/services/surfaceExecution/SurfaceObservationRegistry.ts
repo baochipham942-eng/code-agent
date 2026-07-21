@@ -168,7 +168,8 @@ export class SurfaceObservationRegistry {
   ): void {
     for (const ref of refs) {
       const matches = target.kind === 'browser' && ref.kind === 'browser-element'
-        ? ref.tabRef === target.tabRef && ref.documentRevision === target.documentRevision
+        ? ref.tabRef === target.tabRef
+          && (ref.frameRef ? Boolean(ref.documentRevision) : ref.documentRevision === target.documentRevision)
         : target.kind === 'computer' && ref.kind === 'computer-element'
           ? ref.windowRef === target.windowRef && ref.windowRevision === target.windowRevision
           : false;

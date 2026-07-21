@@ -1,0 +1,3065 @@
+{
+  "version": 1,
+  "status": "passed",
+  "campaign": {
+    "id": "surface-v1-20260721T033951Z-af6f0f298901",
+    "startedAt": "2026-07-21T03:39:51.214Z"
+  },
+  "acceptance": "surface-execution-conversation-app-host",
+  "startedAt": "2026-07-21T03:45:13.178Z",
+  "finishedAt": "2026-07-21T03:45:35.331Z",
+  "worktree": "/Users/linchen/.codex/worktrees/aedb/code-agent",
+  "git": {
+    "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+    "originMain": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+    "mergeBase": "719660e20dcd47aa77fbc1277c2379082ae4db0d",
+    "branch": "codex/surface-execution-v1"
+  },
+  "build": {
+    "fresh": true,
+    "commands": [
+      "npm run build:web",
+      "npm run build:renderer"
+    ],
+    "rendererBundle": {
+      "digest": "b9b5c1cc16430647e009e835b87f08398861dea6f22ecdf76603b9864ec7fe5a",
+      "files": 140,
+      "bytes": 10154618
+    }
+  },
+  "sourceFingerprint": {
+    "version": 1,
+    "algorithm": "sha256",
+    "sha256": "d60e72a1204a7026473317698bd9df5e602931bbbb54395d8d918efbf89675fa",
+    "head": "af6f0f2989013e18923184b36de12359499ddd5e",
+    "dirty": true,
+    "dirtyPaths": [
+      "docs/architecture/frontend.md",
+      "package.json",
+      "public/pip.html",
+      "resources/browser-relay-extension/background.js",
+      "resources/browser-relay-extension/manifest.json",
+      "resources/browser-relay-extension/options.html",
+      "resources/browser-relay-extension/options.js",
+      "resources/browser-relay-extension/popup.html",
+      "resources/browser-relay-extension/popup.js",
+      "resources/browser-relay-extension/protocol-v2.js",
+      "scripts/acceptance/browser-computer-app-host-smoke.ts",
+      "scripts/acceptance/fixtures/surface-execution-conversation.ts",
+      "scripts/acceptance/fixtures/surface-execution-cross-surface.ts",
+      "scripts/acceptance/fixtures/surface-execution-workbuddy.ts",
+      "scripts/acceptance/surface-execution-canary-scan.ts",
+      "scripts/acceptance/surface-execution-computer-smoke.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-core.ts",
+      "scripts/acceptance/surface-execution-controlled-complex-smoke.ts",
+      "scripts/acceptance/surface-execution-conversation-smoke.ts",
+      "scripts/acceptance/surface-execution-cross-surface-smoke.ts",
+      "scripts/acceptance/surface-execution-durable-restart-smoke.ts",
+      "scripts/acceptance/surface-execution-gate-report-core.ts",
+      "scripts/acceptance/surface-execution-gate-report.ts",
+      "scripts/acceptance/surface-execution-managed-smoke.ts",
+      "scripts/acceptance/surface-execution-metrics.ts",
+      "scripts/acceptance/surface-execution-p2-acceptance-core.ts",
+      "scripts/acceptance/surface-execution-proof.ts",
+      "scripts/acceptance/surface-execution-relay-smoke.ts",
+      "scripts/acceptance/surface-execution-replay-import-child.ts",
+      "scripts/acceptance/surface-execution-stop-benchmark.ts",
+      "scripts/acceptance/surface-execution-workbuddy-smoke.ts",
+      "src-tauri/src/main.rs",
+      "src-tauri/src/pip.rs",
+      "src/cli/commands/export.ts",
+      "src/host/agent/runtime/toolExecutionEngine.ts",
+      "src/host/app/agentAppService.ts",
+      "src/host/diagnostics/checks/browserRelay.ts",
+      "src/host/diagnostics/doctorRunner.ts",
+      "src/host/evaluation/telemetryQueryService.ts",
+      "src/host/evaluation/transcriptReplayBuilder.ts",
+      "src/host/ipc/desktop.ipc.ts",
+      "src/host/ipc/index.ts",
+      "src/host/ipc/surfaceExecution.ipc.ts",
+      "src/host/mcp/cuaSessionLock.ts",
+      "src/host/plugins/builtin/browserControl/browser.schema.ts",
+      "src/host/plugins/builtin/browserControl/browserAction.schema.ts",
+      "src/host/plugins/builtin/computerUse/cuaStatefulComputerUse.ts",
+      "src/host/protocol/tools.ts",
+      "src/host/services/infra/browser/browserArtifactActions.ts",
+      "src/host/services/infra/browser/browserSurfaceInteractions.ts",
+      "src/host/services/infra/browser/browserUploadApprovalRegistry.ts",
+      "src/host/services/infra/browser/domSnapshotBuilder.ts",
+      "src/host/services/infra/browser/domSnapshotParser.ts",
+      "src/host/services/infra/browser/managedBrowserCookieImport.ts",
+      "src/host/services/infra/browser/relayActionFacade.ts",
+      "src/host/services/infra/browser/targetRefRegistry.ts",
+      "src/host/services/infra/browser/types.ts",
+      "src/host/services/infra/browserRelayApprovalBoundary.ts",
+      "src/host/services/infra/browserRelayService.ts",
+      "src/host/services/infra/browserService.ts",
+      "src/host/services/infra/sessionManager.ts",
+      "src/host/services/surfaceExecution/BrowserElementRefFence.ts",
+      "src/host/services/surfaceExecution/BrowserProfileImportApprovalService.ts",
+      "src/host/services/surfaceExecution/BrowserTabLeaseService.ts",
+      "src/host/services/surfaceExecution/ComputerSurfaceEventProjection.ts",
+      "src/host/services/surfaceExecution/ExternalSurfaceAgentAdapter.ts",
+      "src/host/services/surfaceExecution/ManagedBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/RelayBrowserProviderAdapter.ts",
+      "src/host/services/surfaceExecution/SurfaceAccessGrantService.ts",
+      "src/host/services/surfaceExecution/surfaceBrowserRuntimeTypes.ts",
+      "src/host/services/surfaceExecution/surfaceComputerErrorProjection.ts",
+      "src/host/services/surfaceExecution/surfaceComputerRuntimeHelpers.ts",
+      "src/host/services/surfaceExecution/surfaceContinuationRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceContinuationService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationControlService.ts",
+      "src/host/services/surfaceExecution/SurfaceConversationProjectionService.ts",
+      "src/host/services/surfaceExecution/SurfaceEventHub.ts",
+      "src/host/services/surfaceExecution/surfaceExecutionResultProjection.ts",
+      "src/host/services/surfaceExecution/SurfaceExecutionRuntime.ts",
+      "src/host/services/surfaceExecution/SurfaceFrameRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceInterruptService.ts",
+      "src/host/services/surfaceExecution/SurfaceObservationRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceOrganizationPolicyService.ts",
+      "src/host/services/surfaceExecution/SurfaceOutputRegistry.ts",
+      "src/host/services/surfaceExecution/SurfaceProofService.ts",
+      "src/host/services/surfaceExecution/SurfaceProviderRegistry.ts",
+      "src/host/services/surfaceExecution/surfaceRunOwnership.ts",
+      "src/host/services/surfaceExecution/SurfaceSessionManager.ts",
+      "src/host/services/surfaceExecution/SurfaceSwitchCoordinator.ts",
+      "src/host/session/browserComputerProofStore.ts",
+      "src/host/session/exportMarkdown.ts",
+      "src/host/session/localCache.ts",
+      "src/host/session/surfaceExecutionSessionExport.ts",
+      "src/host/session/transcriptExporter.ts",
+      "src/host/shellCapabilities.ts",
+      "src/host/telemetry/diagnosticBundleService.ts",
+      "src/host/telemetry/telemetryCollectorInternal.ts",
+      "src/host/tools/artifacts/surfaceExecutionToolResultPipeline.ts",
+      "src/host/tools/toolExecutor.ts",
+      "src/host/tools/types.ts",
+      "src/host/tools/vision/browserAction.ts",
+      "src/host/tools/vision/browserActionFinalize.ts",
+      "src/host/tools/vision/browserActionResultProjection.ts",
+      "src/host/tools/vision/browserActionSurfaceInteractions.ts",
+      "src/host/tools/vision/browserEngineDispatch.ts",
+      "src/host/tools/vision/browserEngineRouter.ts",
+      "src/host/tools/vision/browserNavigate.ts",
+      "src/host/tools/vision/browserProfileActions.ts",
+      "src/host/tools/vision/BrowserTool.ts",
+      "src/host/tools/vision/browserUploadApproval.ts",
+      "src/host/tools/vision/computerUse.ts",
+      "src/renderer/App.tsx",
+      "src/renderer/components/ChatView.tsx",
+      "src/renderer/components/features/browser/BrowserSurfacePanel.tsx",
+      "src/renderer/components/features/chat/ChatInput/index.tsx",
+      "src/renderer/components/features/chat/ToolStepGroup.tsx",
+      "src/renderer/components/features/chat/TurnCard.tsx",
+      "src/renderer/components/features/export/ExportModal.tsx",
+      "src/renderer/components/features/sidebar/SidebarSessionItem.tsx",
+      "src/renderer/components/features/surfaceExecution/index.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceControls.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceEvidenceList.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionChatPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel.tsx",
+      "src/renderer/components/features/surfaceExecution/surfaceExecutionPresentation.ts",
+      "src/renderer/components/features/surfaceExecution/SurfaceExecutionRunStatus.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceInterventionCards.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceOutputEntry.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfacePermissionCard.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceResourceSections.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSemanticTimeline.tsx",
+      "src/renderer/components/features/surfaceExecution/SurfaceSessionHeader.tsx",
+      "src/renderer/components/features/surfaceExecution/types.ts",
+      "src/renderer/hooks/agent/effects/useSurfaceExecutionEffects.ts",
+      "src/renderer/hooks/useComputerUsePip.ts",
+      "src/renderer/hooks/useSurfaceExecutionConversation.ts",
+      "src/renderer/hooks/useSurfaceExecutionPip.ts",
+      "src/renderer/i18n/surfaceExecution.ts",
+      "src/renderer/index.tsx",
+      "src/renderer/services/nativeCommandFacade.ts",
+      "src/renderer/services/surfaceExecutionClient.ts",
+      "src/renderer/services/surfaceExecutionController.ts",
+      "src/renderer/stores/surfaceExecutionStore.ts",
+      "src/renderer/utils/browserComputerExportRedaction.ts",
+      "src/renderer/utils/surfaceExecutionProjection.ts",
+      "src/shared/contract/browserRelay.ts",
+      "src/shared/contract/desktop.ts",
+      "src/shared/contract/surfaceExecution.ts",
+      "src/shared/ipc/domains.ts",
+      "src/shared/utils/browserComputerActionCatalog.ts",
+      "src/shared/utils/browserComputerInputPayloadRedaction.ts",
+      "src/shared/utils/browserComputerRedaction.ts",
+      "src/shared/utils/surfaceExecutionExportCaptureContext.ts",
+      "src/shared/utils/surfaceExecutionExportFieldSanitizer.ts",
+      "src/shared/utils/surfaceExecutionExportProjection.ts",
+      "src/shared/utils/surfaceExecutionRedaction.ts",
+      "src/web/routes/dev.ts",
+      "src/web/routes/devSurfaceExecutionConversation.ts",
+      "src/web/routes/devSurfaceExecutionConversationSeed.ts",
+      "tests/agent/cancellation-fanout.test.ts",
+      "tests/main/diagnostics/browserRelay.test.ts",
+      "tests/main/diagnostics/doctorRunner.test.ts",
+      "tests/renderer/components/abilityMenu.browserReadiness.test.ts",
+      "tests/renderer/components/chatView.surfaceExecution.integration.test.ts",
+      "tests/renderer/components/exportModal.surfaceExecution.test.ts",
+      "tests/renderer/components/surfaceExecution/fixtures.ts",
+      "tests/renderer/components/surfaceExecution/SurfaceControls.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceEvidenceCard.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionConversationPanel.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceExecutionRunStatus.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceResourceSections.test.tsx",
+      "tests/renderer/components/surfaceExecution/SurfaceSemanticTimeline.test.tsx",
+      "tests/renderer/components/turnCard.artifactFold.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionEffects.test.ts",
+      "tests/renderer/hooks/useSurfaceExecutionPip.test.tsx",
+      "tests/renderer/services/nativeCommandFacade.test.ts",
+      "tests/renderer/services/surfaceExecutionClient.test.ts",
+      "tests/renderer/services/surfaceExecutionController.test.ts",
+      "tests/renderer/stores/surfaceExecutionStore.test.ts",
+      "tests/renderer/utils/surfaceExecutionProjection.test.ts",
+      "tests/unit/agent/messageHistory.browserComputerRedaction.test.ts",
+      "tests/unit/evaluation/surfaceExecutionReplayProjection.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.static.test.ts",
+      "tests/unit/extension/browserRelayProtocolV2.worker.test.ts",
+      "tests/unit/host/app/browserSurfaceSideDoor.static.test.ts",
+      "tests/unit/ipc/desktop.domain.ipc.test.ts",
+      "tests/unit/ipc/surfaceExecution.ipc.test.ts",
+      "tests/unit/main/pipSurfaceControls.static.test.ts",
+      "tests/unit/main/shellCapabilities.test.ts",
+      "tests/unit/mcp/cuaSessionLock.test.ts",
+      "tests/unit/scripts/surfaceExecutionCanaryScan.test.ts",
+      "tests/unit/scripts/surfaceExecutionComputerAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionControlledComplex.test.ts",
+      "tests/unit/scripts/surfaceExecutionConversationAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionCrossSurfaceAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionDurableRestartAcceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionGateReport.test.ts",
+      "tests/unit/scripts/surfaceExecutionMetrics.test.ts",
+      "tests/unit/scripts/surfaceExecutionP2Acceptance.test.ts",
+      "tests/unit/scripts/surfaceExecutionProof.test.ts",
+      "tests/unit/scripts/surfaceExecutionReplayImportChild.test.ts",
+      "tests/unit/scripts/surfaceExecutionWorkBuddyAcceptance.test.ts",
+      "tests/unit/services/infra/browserArtifactActions.uploadApproval.test.ts",
+      "tests/unit/services/infra/browserDomSnapshotBuilder.test.ts",
+      "tests/unit/services/infra/browserRelayService.test.ts",
+      "tests/unit/services/infra/browserTargetRefRegistry.test.ts",
+      "tests/unit/services/infra/browserUploadApprovalRegistry.test.ts",
+      "tests/unit/services/infra/relayActionFacade.test.ts",
+      "tests/unit/services/infra/sessionManager.metadataGuard.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserProfileImportApprovalService.test.ts",
+      "tests/unit/services/surfaceExecution/BrowserTabLeaseService.test.ts",
+      "tests/unit/services/surfaceExecution/ComputerSurfaceEventProjection.test.ts",
+      "tests/unit/services/surfaceExecution/ExternalSurfaceAgentAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/ManagedBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/RelayBrowserProviderAdapter.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceBrowserRuntime.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceContinuationService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceControlPlane.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceConversationProjectionService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceFrameRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOrganizationPolicyService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOutputRegistry.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceOwnershipStores.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProofService.test.ts",
+      "tests/unit/services/surfaceExecution/SurfaceProviderRegistry.test.ts",
+      "tests/unit/session/browserComputerProofStore.test.ts",
+      "tests/unit/session/surfaceExecutionExport.test.ts",
+      "tests/unit/shared/browserComputerActionCatalog.test.ts",
+      "tests/unit/shared/browserComputerRedaction.browserPolicy.test.ts",
+      "tests/unit/shared/contract/surfaceExecution.test.ts",
+      "tests/unit/shared/utils/surfaceExecutionExportProjection.test.ts",
+      "tests/unit/telemetry/diagnosticBundleService.test.ts",
+      "tests/unit/tools/cuaStatefulLockEvents.test.ts",
+      "tests/unit/tools/cuaStatefulSurfaceIntegration.test.ts",
+      "tests/unit/tools/modules/vision/browser.test.ts",
+      "tests/unit/tools/modules/vision/browserAction.test.ts",
+      "tests/unit/tools/surfaceExecutionToolResultPipeline.test.ts",
+      "tests/unit/tools/toolExecutor.executionIntent.test.ts",
+      "tests/unit/tools/vision/browserActionFinalize.test.ts",
+      "tests/unit/tools/vision/browserEngineDispatch.intent.test.ts",
+      "tests/unit/tools/vision/browserEngineRelayRouting.test.ts",
+      "tests/unit/tools/vision/browserEngineRouter.test.ts",
+      "tests/unit/tools/vision/browserNavigateSideDoor.test.ts",
+      "tests/unit/tools/vision/browserUploadApproval.test.ts",
+      "tests/unit/tools/vision/browserWorkbenchGating.test.ts",
+      "tests/unit/web/appAssembly.test.ts",
+      "tests/unit/web/devSurfaceExecutionConversation.test.ts"
+    ],
+    "scopes": [
+      "src",
+      "src-tauri",
+      "resources",
+      "public",
+      "scripts",
+      "tests",
+      "package.json",
+      "docs/architecture",
+      "docs/plans"
+    ]
+  },
+  "targetedSourceFingerprint": {
+    "algorithm": "sha256",
+    "digest": "c957eb83be7db0e0d9b3da4e4dbc0856e7467eb9a01e78f9e67b12872706a066",
+    "diffDigest": "7a43c32ca494407fa19dd8a7c16078069d08094379e78130e1cb95881ef470d7",
+    "files": [
+      {
+        "file": "package.json",
+        "sha256": "fd8d11737e0e6911c847fed2b1dcd0285c07eb6c8030ff9bb567a8073267adfd",
+        "bytes": 24500
+      },
+      {
+        "file": "scripts/acceptance/surface-execution-conversation-smoke.ts",
+        "sha256": "778ca9b4d5184a7036bd028fd1a74bdf8bb1fe5937b133c1c498430bac774b44",
+        "bytes": 75404
+      },
+      {
+        "file": "scripts/acceptance/surface-execution-proof.ts",
+        "sha256": "dd90135da1a1093509a6f4ffa53241b989893c0d6ef11f5cc3b5e292a886c4e4",
+        "bytes": 4375
+      },
+      {
+        "file": "scripts/acceptance/fixtures/surface-execution-conversation.ts",
+        "sha256": "3c833609337ad40661d2dc35a1c77ac8d56ba59e9f5d810f88b3c7bc65d08649",
+        "bytes": 10376
+      },
+      {
+        "file": "src/renderer/App.tsx",
+        "sha256": "e2065fe22768ec333879af7faa673eb1759b2b68273c063241d98b69942a639d",
+        "bytes": 44418
+      },
+      {
+        "file": "src/renderer/components/ChatView.tsx",
+        "sha256": "d16f4bb1ebcca60667aef274747e42fdbed79c8eeeaf2714c20f2a15bdf64a45",
+        "bytes": 46930
+      },
+      {
+        "file": "src/renderer/components/features/chat/TurnCard.tsx",
+        "sha256": "7b27e2f2c7a30d087387e6fb87e926fc001c43fc1fb90b449207e81a5849e82f",
+        "bytes": 33170
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceControls.tsx",
+        "sha256": "9ed5b8071a531f3a7055cae373bdc9702be0d2049e0bb05a5e9698308d888dfa",
+        "bytes": 3157
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceEvidenceCard.tsx",
+        "sha256": "65dfd3b49a78b35f11a24c717999902a268b6611baa648fb3450f554c5ef7024",
+        "bytes": 10861
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceExecutionCard.tsx",
+        "sha256": "a518d45ae4e4e3fb9ba56b0aa308e0433948b6a37d553e92c423998396def359",
+        "bytes": 2404
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceExecutionChatPanel.tsx",
+        "sha256": "967ed07b756531881bc96cad8296d970d0e1310fb3ae8ff0340f7c429b022973",
+        "bytes": 820
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel.tsx",
+        "sha256": "439433104ee575a4d4cf10bc7cf279ac321a05bd8c4fc116b9e08cbc86a85502",
+        "bytes": 3936
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceInterventionCards.tsx",
+        "sha256": "aeb77a29e5f1b23f31b7ec08d7deaf46e7b89a5f4d4d512a51aef88bc609c353",
+        "bytes": 1694
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfacePermissionCard.tsx",
+        "sha256": "60818c9467b1e8471448926727cebbcd2e8377fed7fcbe92206afe59292c710b",
+        "bytes": 2902
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceOutputEntry.tsx",
+        "sha256": "522a0d5111cae5af8aa4200e5a60752fbf471e84a44ae360e6a5f0cdce608c6a",
+        "bytes": 4674
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceResourceSections.tsx",
+        "sha256": "8c1fbde24e7817cd0cc0e1a0ba6a72e6aaccb6df0c68d45d19aaedc5b7ce744b",
+        "bytes": 2154
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceSemanticTimeline.tsx",
+        "sha256": "329c9cb30c91587f824e8ade94dd102c3e173e8982f24a22099c2aa4b6b4d56a",
+        "bytes": 3395
+      },
+      {
+        "file": "src/renderer/components/features/surfaceExecution/SurfaceSessionHeader.tsx",
+        "sha256": "86e5e9201da46f7d470f99030894814469e76522c62d79c21a429af32fb4715c",
+        "bytes": 3606
+      },
+      {
+        "file": "src/renderer/hooks/agent/effects/useSurfaceExecutionEffects.ts",
+        "sha256": "3d024e9c443983f41d907ed035ab81d70da2645bb4909817bf554ea53e45f0ab",
+        "bytes": 9472
+      },
+      {
+        "file": "src/renderer/hooks/agent/useAgentEffects.ts",
+        "sha256": "50303bb152030dff131ea62e5cc24094eb3b653955c09bda66eb91518eae5eb0",
+        "bytes": 2593
+      },
+      {
+        "file": "src/renderer/hooks/useSurfaceExecutionConversation.ts",
+        "sha256": "e8e1468109abefb33cabb33a29693008b728b02eed803f3e8c15f59108f8f11e",
+        "bytes": 948
+      },
+      {
+        "file": "src/renderer/hooks/useSurfaceExecutionPip.ts",
+        "sha256": "b1a4bd8f0bae3c23bba764be90615b15a4a817ff4c7f48a30a5a9a7e6ff0aeda",
+        "bytes": 14194
+      },
+      {
+        "file": "src/renderer/i18n/surfaceExecution.ts",
+        "sha256": "455839b8fda92096d53a1d7b72500fff926e73a26f3bff7e6d3d8def62bab52b",
+        "bytes": 16100
+      },
+      {
+        "file": "src/renderer/index.tsx",
+        "sha256": "b7181f51aae57a587e6142a12fa21f82178a0194311d26ccc574946091c6cea5",
+        "bytes": 6499
+      },
+      {
+        "file": "src/renderer/services/surfaceExecutionClient.ts",
+        "sha256": "ce2cf2cbdee455d9a987364b94a832bfd33fd4a9471242cbe913473a6eb00254",
+        "bytes": 2624
+      },
+      {
+        "file": "src/renderer/services/surfaceExecutionController.ts",
+        "sha256": "8eaadc8ee8c03a44a982a3ed35a98f897244173bac83dd155072e6b16e3e1521",
+        "bytes": 3315
+      },
+      {
+        "file": "src/renderer/stores/surfaceExecutionStore.ts",
+        "sha256": "866631f1288bd0d35e974d084b6022c42cdd34f5b1e0d7d6c04000896c1830df",
+        "bytes": 11869
+      },
+      {
+        "file": "src/renderer/utils/surfaceExecutionProjection.ts",
+        "sha256": "682fd31073ed2b99e470eac46f30ef1a562d08d05a69248f315a52b8999d9a89",
+        "bytes": 25485
+      },
+      {
+        "file": "src/host/services/surfaceExecution/SurfaceFrameRegistry.ts",
+        "sha256": "6181e5a2487a09aebd53d153c2297929480782bc1bef86c1566c75af7c5bd61c",
+        "bytes": 11358
+      },
+      {
+        "file": "src/host/services/surfaceExecution/SurfaceOutputRegistry.ts",
+        "sha256": "eb2edd71d1d4d188e2564d221b7a2b88fb9e92d3ac9177324c45e7c1ae8cfb43",
+        "bytes": 15699
+      },
+      {
+        "file": "src/shared/contract/surfaceExecution.ts",
+        "sha256": "29329804e51721e33d02e2aa766d91a2270d8486e12081e1a813dcfaf525ef9d",
+        "bytes": 27253
+      },
+      {
+        "file": "src/shared/utils/surfaceExecutionRedaction.ts",
+        "sha256": "826c451eecbcf1012c2ded4b5d72898feaa338dd2b32b263257da1d85f82d4a6",
+        "bytes": 2493
+      }
+    ],
+    "status": [
+      "M package.json",
+      " M src/renderer/App.tsx",
+      " M src/renderer/components/ChatView.tsx",
+      " M src/renderer/components/features/chat/TurnCard.tsx",
+      " M src/renderer/index.tsx",
+      " M src/shared/contract/surfaceExecution.ts",
+      " M src/shared/utils/surfaceExecutionRedaction.ts",
+      "?? scripts/acceptance/fixtures/surface-execution-conversation.ts",
+      "?? scripts/acceptance/surface-execution-conversation-smoke.ts",
+      "?? scripts/acceptance/surface-execution-proof.ts",
+      "?? src/host/services/surfaceExecution/SurfaceFrameRegistry.ts",
+      "?? src/host/services/surfaceExecution/SurfaceOutputRegistry.ts",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceControls.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceEvidenceCard.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceExecutionCard.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceExecutionChatPanel.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceInterventionCards.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceOutputEntry.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfacePermissionCard.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceResourceSections.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceSemanticTimeline.tsx",
+      "?? src/renderer/components/features/surfaceExecution/SurfaceSessionHeader.tsx",
+      "?? src/renderer/hooks/agent/effects/useSurfaceExecutionEffects.ts",
+      "?? src/renderer/hooks/useSurfaceExecutionConversation.ts",
+      "?? src/renderer/hooks/useSurfaceExecutionPip.ts",
+      "?? src/renderer/i18n/surfaceExecution.ts",
+      "?? src/renderer/services/surfaceExecutionClient.ts",
+      "?? src/renderer/services/surfaceExecutionController.ts",
+      "?? src/renderer/stores/surfaceExecutionStore.ts",
+      "?? src/renderer/utils/surfaceExecutionProjection.ts"
+    ]
+  },
+  "runtime": {
+    "appHost": {
+      "baseUrl": "http://127.0.0.1:50297",
+      "healthStatus": 200
+    },
+    "servedRenderer": {
+      "script": "assets/index-BKRXxuhf.js",
+      "sha256": "175a7c71f76dbd3ff333e3d6f8d98ba8538748002a917033e9bd28e7fcb92789",
+      "bytes": 2126482,
+      "localSha256": "175a7c71f76dbd3ff333e3d6f8d98ba8538748002a917033e9bd28e7fcb92789",
+      "localBytes": 2126482
+    },
+    "browser": {
+      "provider": "system-chrome-cdp",
+      "version": "150.0.7871.125",
+      "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    },
+    "conversationId": "session_1784605532765_43274d4f",
+    "sessionTransition": {
+      "sessionId": "session_1784605532765_43274d4f",
+      "previousSessionId": "session_1784605528009_d9550cfe",
+      "title": "Conversation UX acceptance 1784605528321",
+      "guardedUntouchedDraft": true
+    },
+    "blockedIsolatedFolderConfiguration": true,
+    "hostRuntimeSeed": {
+      "ok": true,
+      "runId": "surface-conversation-acceptance-1784605532854",
+      "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+      "eventCount": 7,
+      "writable": true,
+      "grantState": "active",
+      "outputCount": 2
+    },
+    "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+    "snapshotRequests": 9,
+    "snapshotRequestConversationIds": [
+      "session_1784605532765_43274d4f",
+      "session_1784605532765_43274d4f",
+      "session_1784605532765_43274d4f",
+      "session_1784605532765_43274d4f",
+      "session_1784605532765_43274d4f",
+      "session_1784605532765_43274d4f",
+      "session_1784605532765_43274d4f",
+      "session_1784605532765_43274d4f",
+      "session_1784605532765_43274d4f"
+    ],
+    "initialConversationSnapshotRequests": 1,
+    "conversationSnapshotRequestsBeforeSse": 1,
+    "finalConversationSnapshotRequests": 9,
+    "surfaceRuntimeEvidence": {
+      "agentEventSubscriptions": 69,
+      "snapshotInvocations": [
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getSnapshot",
+          "conversationId": "session_1784605532765_43274d4f",
+          "at": 9180
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getSnapshot",
+          "conversationId": "session_1784605532765_43274d4f",
+          "at": 9334.199999928474
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getSnapshot",
+          "conversationId": "session_1784605532765_43274d4f",
+          "at": 10685.199999928474
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getSnapshot",
+          "conversationId": "session_1784605532765_43274d4f",
+          "at": 10948
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getSnapshot",
+          "conversationId": "session_1784605532765_43274d4f",
+          "at": 11071.599999904633
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getSnapshot",
+          "conversationId": "session_1784605532765_43274d4f",
+          "at": 11293.699999928474
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getSnapshot",
+          "conversationId": "session_1784605532765_43274d4f",
+          "at": 11376.699999928474
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getSnapshot",
+          "conversationId": "session_1784605532765_43274d4f",
+          "at": 11550
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getSnapshot",
+          "conversationId": "session_1784605532765_43274d4f",
+          "at": 11621.5
+        }
+      ],
+      "frameInvocations": [
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 9346.099999904633
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 9431.799999952316
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 10638.5
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 10693.899999976158
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 10901.199999928474
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 10955.299999952316
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11019.099999904633
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11090.399999976158
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11247.799999952316
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11319
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11384.099999904633
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11501.899999976158
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11557.799999952316
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getFrame",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11627.799999952316
+        }
+      ],
+      "outputInvocations": [
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getOutput",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 9700.899999976158
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getOutput",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 9784.799999952316
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getOutput",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11633.599999904633
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "getOutput",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "at": 11637.299999952316
+        }
+      ],
+      "controlInvocations": [
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "control",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "controlAction": "pause",
+          "at": 10617
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "control",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "controlAction": "resume",
+          "at": 10883.899999976158
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "control",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "controlAction": "takeover",
+          "at": 11003.199999928474
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "control",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "controlAction": "resume",
+          "at": 11219.099999904633
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "control",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "controlAction": "stop",
+          "at": 11301.399999976158
+        },
+        {
+          "domain": "domain:surfaceExecution",
+          "action": "control",
+          "conversationId": "session_1784605532765_43274d4f",
+          "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+          "controlAction": "end_session",
+          "at": 11484.599999904633
+        }
+      ],
+      "sseMessages": [
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.699999928474
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "kind": "message",
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.599999904633
+        }
+      ],
+      "deliveries": [
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.199999928474
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.199999928474
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.199999928474
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.399999976158
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.599999904633
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.599999904633
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.699999928474
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.699999928474
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.699999928474
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9281.899999976158
+        },
+        {
+          "id": 142,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 142,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 142,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 142,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.099999904633
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.299999952316
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 142,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 142,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.399999976158
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 142,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 9282.5
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.5
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.599999904633
+        },
+        {
+          "id": 150,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10633.599999904633
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.699999928474
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.699999928474
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.699999928474
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.699999928474
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.799999952316
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.799999952316
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.799999952316
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.799999952316
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.799999952316
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.799999952316
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.799999952316
+        },
+        {
+          "id": 156,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 10897.799999952316
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 164,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.399999976158
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 164,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11020.5
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.099999904633
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 168,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 168,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11243.199999928474
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11324.899999976158
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11325
+        },
+        {
+          "id": 174,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11325
+        },
+        {
+          "id": 4,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.599999904633
+        },
+        {
+          "id": 6,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.699999928474
+        },
+        {
+          "id": 16,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.699999928474
+        },
+        {
+          "id": 18,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.699999928474
+        },
+        {
+          "id": 20,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.699999928474
+        },
+        {
+          "id": 22,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.699999928474
+        },
+        {
+          "id": 24,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.699999928474
+        },
+        {
+          "id": 26,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.699999928474
+        },
+        {
+          "id": 34,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.699999928474
+        },
+        {
+          "id": 36,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.699999928474
+        },
+        {
+          "id": 124,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.799999952316
+        },
+        {
+          "id": 180,
+          "channel": "agent:event",
+          "eventType": "surface_execution",
+          "sessionId": "session_1784605532765_43274d4f",
+          "dataConversationId": "session_1784605532765_43274d4f",
+          "at": 11498.799999952316
+        }
+      ]
+    },
+    "controlRequests": [
+      {
+        "domain": "domain:surfaceExecution",
+        "action": "control",
+        "conversationId": "session_1784605532765_43274d4f",
+        "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+        "controlAction": "pause",
+        "at": 10617
+      },
+      {
+        "domain": "domain:surfaceExecution",
+        "action": "control",
+        "conversationId": "session_1784605532765_43274d4f",
+        "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+        "controlAction": "resume",
+        "at": 10883.899999976158
+      },
+      {
+        "domain": "domain:surfaceExecution",
+        "action": "control",
+        "conversationId": "session_1784605532765_43274d4f",
+        "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+        "controlAction": "takeover",
+        "at": 11003.199999928474
+      },
+      {
+        "domain": "domain:surfaceExecution",
+        "action": "control",
+        "conversationId": "session_1784605532765_43274d4f",
+        "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+        "controlAction": "resume",
+        "at": 11219.099999904633
+      },
+      {
+        "domain": "domain:surfaceExecution",
+        "action": "control",
+        "conversationId": "session_1784605532765_43274d4f",
+        "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+        "controlAction": "stop",
+        "at": 11301.399999976158
+      },
+      {
+        "domain": "domain:surfaceExecution",
+        "action": "control",
+        "conversationId": "session_1784605532765_43274d4f",
+        "surfaceSessionId": "surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811",
+        "controlAction": "end_session",
+        "at": 11484.599999904633
+      }
+    ],
+    "pipCommands": [
+      {
+        "command": "plugin:updater|check"
+      },
+      {
+        "command": "pip_show"
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "paused",
+        "controls": [
+          "resume",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "paused",
+        "controls": [
+          "resume",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "paused",
+        "controls": [
+          "resume",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "paused",
+        "controls": [
+          "resume",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "paused",
+        "controls": [
+          "resume",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "waiting_human",
+        "controls": [
+          "resume",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "waiting_human",
+        "controls": [
+          "resume",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "waiting_human",
+        "controls": [
+          "resume",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "waiting_human",
+        "controls": [
+          "resume",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "waiting_human",
+        "controls": [
+          "resume",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "running",
+        "controls": [
+          "pause",
+          "takeover",
+          "stop"
+        ]
+      },
+      {
+        "command": "pip_controls",
+        "state": "stopping",
+        "controls": []
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "stopping",
+        "controls": []
+      },
+      {
+        "command": "pip_controls",
+        "state": "stopping",
+        "controls": []
+      },
+      {
+        "command": "pip_frame",
+        "dataUrlLength": 360338
+      },
+      {
+        "command": "pip_controls",
+        "state": "stopping",
+        "controls": []
+      },
+      {
+        "command": "pip_controls",
+        "state": "stopping",
+        "controls": []
+      },
+      {
+        "command": "pip_hide"
+      }
+    ]
+  },
+  "businessEvidence": {
+    "deterministicInspection": {
+      "panels": 4,
+      "crop": "contained"
+    },
+    "screenshot": {
+      "file": "docs/acceptance/surface-execution/conversation-current/business-evidence.png",
+      "sha256": "1f69a3217f1556bf6bd6f63b8e6b8924dd1603640b388d0fc0575678c0b7dfaf",
+      "bytes": 270236,
+      "width": 1280,
+      "height": 900
+    }
+  },
+  "screenshots": [
+    {
+      "file": "docs/acceptance/surface-execution/conversation-current/business-evidence.png",
+      "sha256": "1f69a3217f1556bf6bd6f63b8e6b8924dd1603640b388d0fc0575678c0b7dfaf",
+      "bytes": 270236,
+      "width": 1280,
+      "height": 900
+    },
+    {
+      "file": "docs/acceptance/surface-execution/conversation-current/conversation-header-timeline.png",
+      "sha256": "3436eb6d9c25c470b195e44c3f0717107ee5a2d9d29ca2a4f6b3e12386e1bfbd",
+      "bytes": 81899,
+      "width": 1160,
+      "height": 773
+    },
+    {
+      "file": "docs/acceptance/surface-execution/conversation-current/conversation-folded-evidence.png",
+      "sha256": "2839c439c5a59375fc888dc3635a2958337aa7b7c866c2f9d603da8dd0595fb7",
+      "bytes": 109912,
+      "width": 1440,
+      "height": 1100
+    },
+    {
+      "file": "docs/acceptance/surface-execution/conversation-current/conversation-evidence-card.png",
+      "sha256": "662eaf42038cda6b83a7316aad4641af7b6de3529bab1b2c7a74ae854482a936",
+      "bytes": 45380,
+      "width": 560,
+      "height": 530
+    },
+    {
+      "file": "docs/acceptance/surface-execution/conversation-current/conversation-outputs-evidence-sources.png",
+      "sha256": "6ab9af5939d837a2249c7884102aae6c01d7eb591d2b6c46c696fabd727cc496",
+      "bytes": 95134,
+      "width": 1160,
+      "height": 786
+    },
+    {
+      "file": "docs/acceptance/surface-execution/conversation-current/conversation-paused.png",
+      "sha256": "691c6830d489b18155573c196e8662f678efcf88a87e621b61505c82c7418f8b",
+      "bytes": 6291,
+      "width": 1160,
+      "height": 78
+    },
+    {
+      "file": "docs/acceptance/surface-execution/conversation-current/conversation-takeover.png",
+      "sha256": "751e83a2ddfa104a231bcd396c728b26f94838fe8b5579389adb88e9c3bd473a",
+      "bytes": 4368,
+      "width": 560,
+      "height": 95
+    },
+    {
+      "file": "docs/acceptance/surface-execution/conversation-current/conversation-stopping.png",
+      "sha256": "0ded18e664b53e16e52a48017a2634d3d97273bddf36b4c4ddc2941e3a325448",
+      "bytes": 3537,
+      "width": 1160,
+      "height": 78
+    },
+    {
+      "file": "docs/acceptance/surface-execution/conversation-current/conversation-completed.png",
+      "sha256": "8c7d6cb98fdc6fc4593986384e46eaf59b8078a56c1825c7b6fbae0f184565e6",
+      "bytes": 18897,
+      "width": 1160,
+      "height": 129
+    }
+  ],
+  "redactionCanary": {
+    "injected": true,
+    "fingerprint": "8dd27fbff8bdf3e96d07eeddde11981b75b8f39c0f99641f5394e86ab77498a3",
+    "rawAbsentFromDom": true,
+    "rawAbsentFromArtifacts": true,
+    "placeholderObserved": true
+  },
+  "assertions": [
+    {
+      "id": "app_host_health",
+      "passed": true,
+      "expected": "HTTP 200",
+      "actual": "HTTP 200"
+    },
+    {
+      "id": "business_screenshot_bytes",
+      "passed": true,
+      "expected": "real PNG > 20KB at 1280x900+",
+      "actual": "270236 bytes 1280x900"
+    },
+    {
+      "id": "business_semantic_verification",
+      "passed": true,
+      "expected": "4 panels and contained Hero crop",
+      "actual": "4 panels, crop=contained"
+    },
+    {
+      "id": "fresh_renderer_bundle_served",
+      "passed": true,
+      "expected": "app-host served JS SHA and bytes equal local dist/renderer",
+      "actual": "assets/index-BKRXxuhf.js 175a7c71f76dbd3ff333e3d6f8d98ba8538748002a917033e9bd28e7fcb92789/175a7c71f76dbd3ff333e3d6f8d98ba8538748002a917033e9bd28e7fcb92789 2126482/2126482"
+    },
+    {
+      "id": "session_header_target_provider_state",
+      "passed": true,
+      "expected": "target, managed provider, running state and Neo controller",
+      "actual": "WorkBuddy 旅行站点 · 已复验 · 127.0.0.1 执行中 检测到页面 revision 更新，正在基于最新截图恢复 浏览器 · 托管浏览器 已运行 0 秒 当前控制者 Neo 隔离边界 本次会话独立环境 最近更新 刚刚"
+    },
+    {
+      "id": "semantic_timeline_business_phases",
+      "passed": true,
+      "expected": "prepare/observe/act/verify/artifact/recover",
+      "actual": "prepare,prepare,observe,act,verify,artifact,recover"
+    },
+    {
+      "id": "cross_surface_switch_reason_displayed",
+      "passed": true,
+      "expected": "visible reason for the Computer to Browser switch",
+      "actual": "执行时间线 准备 已完成 已建立本次会话独立的托管浏览器环境 准备 已完成 因为最终产物需要页面截图复验，已从 Computer 返回 Browser 观察 已完成 已打开生成后的旅行网站首页 判断 无法确认 操作 已完成 已调整第二张 Hero 图片的裁切与文案 验证 已完成 已读取最新页面截图；[redacted-canary] 判断 通过 四个业务板块完整 Hero 图片主体未被裁切 敏感校验串 [redacted-canary] 不得进入会话展示 产物 已完成 HTML 与 PNG 交付物已保存到会话产物区 恢复 等待中 检测到页面 revision 更新，正在基于最新截图恢复"
+    },
+    {
+      "id": "permission_scope",
+      "passed": true,
+      "expected": "active grant with observe/input/navigate/file",
+      "actual": "权限范围 授权有效 观察 输入 导航 文件 3 类允许动作 2 个数据范围 到期 12:00:32"
+    },
+    {
+      "id": "recovery_card",
+      "passed": true,
+      "expected": "visible latest revision recovery",
+      "actual": "执行正在恢复 检测到页面 revision 更新，正在基于最新截图恢复"
+    },
+    {
+      "id": "screenshot_evidence_lifecycle",
+      "passed": true,
+      "expected": "captured/analyzed/verified independent axes",
+      "actual": "captured,analyzed,verified"
+    },
+    {
+      "id": "screenshot_evidence_business_findings",
+      "passed": true,
+      "expected": "three passed business checklist findings",
+      "actual": "截图 浏览器 旅行网站最终复验截图 真实 System Chrome 截图已读取；四个板块完整，图片裁切已修复。 无敏感内容 采集于 11:45:32 原始证据已保存 放大查看证据 采集对象 http://127.0.0.1/workbuddy/travel-site 画面尺寸 1280×900 采集 已采集 读取 已读取 验证 已通过 检查项 四个业务板块完整 通过 Hero 图片主体完整 通过 HTML 与 PNG 产物可用 通过"
+    },
+    {
+      "id": "conversation_evidence_frame_pixels",
+      "passed": true,
+      "expected": "1280x900 owner-scoped frame with real pixels",
+      "actual": "{\"width\":1280,\"height\":900,\"sourceBytes\":360338}"
+    },
+    {
+      "id": "evidence_frozen_capture_context",
+      "passed": true,
+      "expected": "captured source URL and frame dimensions rendered from frozen evidence context",
+      "actual": "截图 浏览器 旅行网站最终复验截图 真实 System Chrome 截图已读取；四个板块完整，图片裁切已修复。 无敏感内容 采集于 11:45:32 原始证据已保存 放大查看证据 采集对象 http://127.0.0.1/workbuddy/travel-site 画面尺寸 1280×900 采集 已采集 读取 已读取 验证 已通过 检查项 四个业务板块完整 通过 Hero 图片主体完整 通过 HTML 与 PNG 产物可用 通过"
+    },
+    {
+      "id": "outputs_evidence_sources_separated",
+      "passed": true,
+      "expected": "HTML/PNG outputs and read-only source",
+      "actual": "产物 3 Output 3 产物 只读记录 travel-site-final.html 文件 打开产物 travel-site-final.png 产物 打开产物 来源 只读来源 WorkBuddy 旅行站点 · 已复验 · 127.0.0.1"
+    },
+    {
+      "id": "owner_scoped_html_output_readback",
+      "passed": true,
+      "expected": "HTML output opens as inert owner-scoped text with the generated deliverable marker",
+      "actual": "<!doctype html> <html lang=\"zh-CN\"> <head> <meta charset=\"utf-8\" /> <style> * { box-sizing: border-box; } body { margin: 0; min-height: 900px; color: #f5f4ef; background: #101a24; font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif; } header { min-height: 330px; padding: 64px 72px; background: linear-gradient(115deg, rgba(7,33,48,.98), rgba(16,72,76,.76)), radial-gradient(circle at 80% 30%, #d8a85c 0, transparent 28%); } .tag { letter-spacing: .18em; color: #f4c77d; text-transform: uppercase; font-size: 13px; } h1 { max-width: 760px; margin: 18px 0 16px; font-size: 58px; lin"
+    },
+    {
+      "id": "owner_scoped_png_output_pixels",
+      "passed": true,
+      "expected": "1280x900 owner-scoped PNG output",
+      "actual": "{\"width\":1280,\"height\":900,\"sourceBytes\":360338}"
+    },
+    {
+      "id": "unknown_output_ref_fail_closed",
+      "passed": true,
+      "expected": "unregistered trace remains read-only and cannot invoke a path or arbitrary ref",
+      "actual": "disabled=1"
+    },
+    {
+      "id": "folded_turn_keeps_key_surface_resources",
+      "passed": true,
+      "expected": "completed turn folded while Evidence and opened HTML/PNG resources remain mounted",
+      "actual": "aria-expanded=false, evidence=1, resources=1"
+    },
+    {
+      "id": "unified_run_status_running",
+      "passed": true,
+      "expected": "Conversation, Sidebar and Composer all read running from the same owner-scoped session",
+      "actual": "running/running/running"
+    },
+    {
+      "id": "redaction_canary_dom_absence",
+      "passed": true,
+      "expected": "raw canary absent and redacted placeholder visible",
+      "actual": "rawBody=false, rawHtml=false, placeholder=true"
+    },
+    {
+      "id": "pip_frame_and_live_controls",
+      "passed": true,
+      "expected": "PiP show/frame and running pause/takeover/stop controls",
+      "actual": "[{\"command\":\"plugin:updater|check\"},{\"command\":\"pip_show\"},{\"command\":\"pip_frame\",\"dataUrlLength\":360338},{\"command\":\"pip_controls\",\"state\":\"running\",\"controls\":[\"pause\",\"takeover\",\"stop\"]},{\"command\":\"pip_controls\",\"state\":\"running\",\"controls\":[\"pause\",\"takeover\",\"stop\"]},{\"command\":\"pip_frame\",\"dataUrlLength\":360338},{\"command\":\"pip_controls\",\"state\":\"running\",\"controls\":[\"pause\",\"takeover\",\"stop\"]}]"
+    },
+    {
+      "id": "pause_control_effect",
+      "passed": true,
+      "expected": "pause request -> paused state -> Resume control",
+      "actual": "pause/paused"
+    },
+    {
+      "id": "resume_control_effect",
+      "passed": true,
+      "expected": "resume request -> running state",
+      "actual": "resume/running"
+    },
+    {
+      "id": "takeover_control_and_card",
+      "passed": true,
+      "expected": "takeover request -> waiting_human card",
+      "actual": "takeover/需要你接管 Surface control takeover waiting"
+    },
+    {
+      "id": "stop_control_effect",
+      "passed": true,
+      "expected": "stop request -> stopping state",
+      "actual": "stop/stopping"
+    },
+    {
+      "id": "end_session_terminal_state",
+      "passed": true,
+      "expected": "end_session request -> completed read-only session",
+      "actual": "end_session/completed"
+    },
+    {
+      "id": "unified_run_status_terminal",
+      "passed": true,
+      "expected": "Conversation, Sidebar and Composer share completed while evidence and outputs remain mounted",
+      "actual": "completed/completed/completed"
+    },
+    {
+      "id": "terminal_frame_and_outputs_readback",
+      "passed": true,
+      "expected": "fresh owner-scoped frame, inert HTML and PNG remain readable after completed",
+      "actual": "{\"state\":\"completed\",\"writable\":false,\"frame\":{\"width\":1280,\"height\":900,\"sourceBytes\":360338},\"htmlMarker\":true,\"htmlCanaryAbsent\":true,\"image\":{\"width\":1280,\"height\":900,\"sourceBytes\":360338},\"outputCount\":3}"
+    },
+    {
+      "id": "control_sequence",
+      "passed": true,
+      "expected": "pause,resume,takeover,resume,stop,end_session",
+      "actual": "pause,resume,takeover,resume,stop,end_session"
+    },
+    {
+      "id": "session_switch_snapshot_request",
+      "passed": true,
+      "expected": "new conversation id and at least one production snapshot request before SSE",
+      "actual": "session_1784605528009_d9550cfe -> session_1784605532765_43274d4f; requests=1"
+    },
+    {
+      "id": "sse_snapshot_refresh",
+      "passed": true,
+      "expected": "same-conversation snapshot request count increases after SSE",
+      "actual": "1 -> 9"
+    },
+    {
+      "id": "native_snapshot_refresh",
+      "passed": true,
+      "expected": "at least initial and SSE-triggered snapshot requests",
+      "actual": "9"
+    },
+    {
+      "id": "renderer_page_errors",
+      "passed": true,
+      "expected": "zero uncaught renderer errors",
+      "actual": "0"
+    },
+    {
+      "id": "production_snapshot_invocation_chain",
+      "passed": true,
+      "expected": "at least session-switch and SSE production getSnapshot invocations",
+      "actual": "9"
+    },
+    {
+      "id": "surface_sse_subscription_delivery",
+      "passed": true,
+      "expected": "agent:event subscription plus matching SSE message and callback delivery",
+      "actual": "{\"agentEventSubscriptions\":69,\"snapshotInvocations\":[{\"domain\":\"domain:surfaceExecution\",\"action\":\"getSnapshot\",\"conversationId\":\"session_1784605532765_43274d4f\",\"at\":9180},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getSnapshot\",\"conversationId\":\"session_1784605532765_43274d4f\",\"at\":9334.199999928474},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getSnapshot\",\"conversationId\":\"session_1784605532765_43274d4f\",\"at\":10685.199999928474},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getSnapshot\",\"conversationId\":\"session_1784605532765_43274d4f\",\"at\":10948},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getSnapshot\",\"conversationId\":\"session_1784605532765_43274d4f\",\"at\":11071.599999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getSnapshot\",\"conversationId\":\"session_1784605532765_43274d4f\",\"at\":11293.699999928474},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getSnapshot\",\"conversationId\":\"session_1784605532765_43274d4f\",\"at\":11376.699999928474},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getSnapshot\",\"conversationId\":\"session_1784605532765_43274d4f\",\"at\":11550},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getSnapshot\",\"conversationId\":\"session_1784605532765_43274d4f\",\"at\":11621.5}],\"frameInvocations\":[{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":9346.099999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":9431.799999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":10638.5},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":10693.899999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":10901.199999928474},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":10955.299999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11019.099999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11090.399999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11247.799999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11319},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11384.099999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11501.899999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11557.799999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11627.799999952316}],\"outputInvocations\":[{\"domain\":\"domain:surfaceExecution\",\"action\":\"getOutput\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":9700.899999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getOutput\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":9784.799999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getOutput\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11633.599999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getOutput\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11637.299999952316}],\"controlInvocations\":[{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"pause\",\"at\":10617},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"resume\",\"at\":10883.899999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"takeover\",\"at\":11003.199999928474},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"resume\",\"at\":11219.099999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"stop\",\"at\":11301.399999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"end_session\",\"at\":11484.599999904633}],\"sseMessages\":[{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.699999928474},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"kind\":\"message\",\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.599999904633}],\"deliveries\":[{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.199999928474},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.199999928474},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.199999928474},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.399999976158},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.599999904633},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.599999904633},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.699999928474},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.699999928474},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.699999928474},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9281.899999976158},{\"id\":142,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":142,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":142,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":142,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.099999904633},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.299999952316},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":142,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":142,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.399999976158},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":142,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":9282.5},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.5},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.599999904633},{\"id\":150,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10633.599999904633},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.699999928474},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.699999928474},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.699999928474},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.699999928474},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.799999952316},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.799999952316},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.799999952316},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.799999952316},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.799999952316},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.799999952316},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.799999952316},{\"id\":156,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":10897.799999952316},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":164,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.399999976158},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":164,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11020.5},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.099999904633},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":168,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":168,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11243.199999928474},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11324.899999976158},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11325},{\"id\":174,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11325},{\"id\":4,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.599999904633},{\"id\":6,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.699999928474},{\"id\":16,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.699999928474},{\"id\":18,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.699999928474},{\"id\":20,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.699999928474},{\"id\":22,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.699999928474},{\"id\":24,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.699999928474},{\"id\":26,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.699999928474},{\"id\":34,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.699999928474},{\"id\":36,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.699999928474},{\"id\":124,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.799999952316},{\"id\":180,\"channel\":\"agent:event\",\"eventType\":\"surface_execution\",\"sessionId\":\"session_1784605532765_43274d4f\",\"dataConversationId\":\"session_1784605532765_43274d4f\",\"at\":11498.799999952316}]}"
+    },
+    {
+      "id": "production_frame_resolution_chain",
+      "passed": true,
+      "expected": "owner-scoped getFrame domain invocations before and after terminal state",
+      "actual": "[{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":9346.099999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":9431.799999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":10638.5},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":10693.899999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":10901.199999928474},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":10955.299999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11019.099999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11090.399999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11247.799999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11319},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11384.099999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11501.899999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11557.799999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getFrame\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11627.799999952316}]"
+    },
+    {
+      "id": "production_output_resolution_chain",
+      "passed": true,
+      "expected": "owner-scoped HTML/PNG getOutput invocations before and after terminal state",
+      "actual": "[{\"domain\":\"domain:surfaceExecution\",\"action\":\"getOutput\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":9700.899999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getOutput\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":9784.799999952316},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getOutput\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11633.599999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"getOutput\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"at\":11637.299999952316}]"
+    },
+    {
+      "id": "runtime_session_store_domain_renderer_chain",
+      "passed": true,
+      "expected": "host runtime -> SessionManager projection -> domain snapshot/frame/output -> SSE -> Renderer with six real controls",
+      "actual": "{\"surfaceSeed\":{\"ok\":true,\"runId\":\"surface-conversation-acceptance-1784605532854\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"eventCount\":7,\"writable\":true,\"grantState\":\"active\",\"outputCount\":2},\"snapshots\":9,\"frames\":14,\"outputs\":4,\"controls\":[{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"pause\",\"at\":10617},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"resume\",\"at\":10883.899999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"takeover\",\"at\":11003.199999928474},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"resume\",\"at\":11219.099999904633},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"stop\",\"at\":11301.399999976158},{\"domain\":\"domain:surfaceExecution\",\"action\":\"control\",\"conversationId\":\"session_1784605532765_43274d4f\",\"surfaceSessionId\":\"surface_c5e88fbc-032d-4f5c-92c8-2d4a0c8d7811\",\"controlAction\":\"end_session\",\"at\":11484.599999904633}]}"
+    },
+    {
+      "id": "screenshot_business_evidence_png",
+      "passed": true,
+      "expected": "non-empty valid PNG crop at least 200x40",
+      "actual": "270236 bytes 1280x900"
+    },
+    {
+      "id": "screenshot_conversation_header_timeline_png",
+      "passed": true,
+      "expected": "non-empty valid PNG crop at least 200x40",
+      "actual": "81899 bytes 1160x773"
+    },
+    {
+      "id": "screenshot_conversation_folded_evidence_png",
+      "passed": true,
+      "expected": "non-empty valid PNG crop at least 200x40",
+      "actual": "109912 bytes 1440x1100"
+    },
+    {
+      "id": "screenshot_conversation_evidence_card_png",
+      "passed": true,
+      "expected": "non-empty valid PNG crop at least 200x40",
+      "actual": "45380 bytes 560x530"
+    },
+    {
+      "id": "screenshot_conversation_outputs_evidence_sources_png",
+      "passed": true,
+      "expected": "non-empty valid PNG crop at least 200x40",
+      "actual": "95134 bytes 1160x786"
+    },
+    {
+      "id": "screenshot_conversation_paused_png",
+      "passed": true,
+      "expected": "non-empty valid PNG crop at least 200x40",
+      "actual": "6291 bytes 1160x78"
+    },
+    {
+      "id": "screenshot_conversation_takeover_png",
+      "passed": true,
+      "expected": "non-empty valid PNG crop at least 200x40",
+      "actual": "4368 bytes 560x95"
+    },
+    {
+      "id": "screenshot_conversation_stopping_png",
+      "passed": true,
+      "expected": "non-empty valid PNG crop at least 200x40",
+      "actual": "3537 bytes 1160x78"
+    },
+    {
+      "id": "screenshot_conversation_completed_png",
+      "passed": true,
+      "expected": "non-empty valid PNG crop at least 200x40",
+      "actual": "18897 bytes 1160x129"
+    },
+    {
+      "id": "redaction_canary_proof_absence",
+      "passed": true,
+      "expected": "raw canary absent from proof serialization",
+      "actual": "absent"
+    }
+  ],
+  "summary": {
+    "passed": 48,
+    "failed": 0,
+    "total": 48
+  }
+}

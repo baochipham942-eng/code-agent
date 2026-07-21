@@ -45,12 +45,37 @@ function existingSurfaceEvents(metadata: Record<string, unknown>): SurfaceExecut
     .map((event) => sanitizeSurfaceExecutionEventV1(event));
 }
 
+function compatibilityComputerModeEvent(input: {
+  toolName: string;
+  metadata: Record<string, unknown>;
+  conversationId: string;
+  runId: string;
+  agentId: string;
+  toolCallId: string;
+}): SurfaceExecutionEventV1 | null {
+  if (input.toolName !== 'computer_use') return null;
+  const value = input.metadata.surfaceExecutionModeEventV1;
+  if (!isSurfaceExecutionEventV1(value)) return null;
+  const expectedSessionId = `legacy-surface:${input.toolCallId}`;
+  if (value.eventId !== `computer-surface-mode:${input.toolCallId}`
+    || value.sessionId !== expectedSessionId
+    || value.conversationId !== input.conversationId
+    || value.runId !== input.runId
+    || value.agentId !== input.agentId
+    || value.surface !== 'computer'
+    || value.provider !== 'computer-surface-compat'
+    || value.phase !== 'prepare'
+    || value.operation?.action !== 'select_computer_surface_mode') return null;
+  return sanitizeSurfaceExecutionEventV1(value);
+}
+
 export function attachSurfaceExecutionResultProjection(input: {
   toolName: string;
   arguments: Record<string, unknown>;
   result: ToolExecutionResult;
   conversationId?: string;
   runId?: string;
+  turnId?: string;
   agentId?: string;
   toolCallId?: string;
   startedAt: number;
@@ -65,11 +90,22 @@ export function attachSurfaceExecutionResultProjection(input: {
 
   const metadata = input.result.metadata || {};
   const existingEvents = existingSurfaceEvents(metadata);
+  const modeEvent = existingEvents.length === 0
+    ? compatibilityComputerModeEvent({
+        toolName: input.toolName,
+        metadata,
+        conversationId,
+        runId,
+        agentId,
+        toolCallId,
+      })
+    : null;
   const projected = projectLegacyBrowserComputerResultToSurfaceEventV1({
     eventId: `surface-tool:${toolCallId}`,
-    sequence: (existingEvents.at(-1)?.sequence || 0) + 1,
+    sequence: (existingEvents.at(-1)?.sequence || modeEvent?.sequence || 0) + 1,
     sessionId: surfaceSessionId(metadata, toolCallId),
     runId,
+    ...(input.turnId?.trim() ? { turnId: input.turnId.trim() } : {}),
     agentId,
     toolName: input.toolName,
     arguments: input.arguments,
@@ -93,7 +129,7 @@ export function attachSurfaceExecutionResultProjection(input: {
     : projected;
   const events = existingEvents.length > 0
     ? [...existingEvents.slice(0, -1), terminalEvent]
-    : [terminalEvent];
+    : modeEvent ? [modeEvent, terminalEvent] : [terminalEvent];
   return {
     ...input.result,
     metadata: {

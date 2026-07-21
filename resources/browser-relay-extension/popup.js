@@ -1,3 +1,5 @@
+/* global chrome, document, setTimeout */
+
 function setText(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = value;
@@ -40,6 +42,7 @@ async function refresh() {
     setText('pendingOrigin', pending.origin);
     setText('pendingActions', pending.actions.join(', '));
     setText('pendingAgent', pending.agentId);
+    setText('pendingConversation', pending.conversationId);
     setText('pendingSession', pending.surfaceSessionId);
     setText('pendingExpiry', new Date(pending.expiresAtMs).toLocaleString());
   }

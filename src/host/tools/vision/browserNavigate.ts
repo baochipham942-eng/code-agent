@@ -1,17 +1,53 @@
 // ============================================================================
-// Browser Navigate Tool - Control browser navigation and interaction
-// Gen 6: Computer Use capability
+// Browser Navigate Tool - legacy compatibility boundary
 // ============================================================================
 
+import type { SurfaceExecutionErrorV1 } from '../../../shared/contract/surfaceExecution';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+type BrowserAction =
+  | 'open'
+  | 'navigate'
+  | 'back'
+  | 'forward'
+  | 'refresh'
+  | 'close'
+  | 'newTab'
+  | 'switchTab';
 
-type BrowserAction = 'open' | 'navigate' | 'back' | 'forward' | 'refresh' | 'close' | 'newTab' | 'switchTab';
+export const LEGACY_BROWSER_NAVIGATE_ERROR_CODE = 'SURFACE_POLICY_BLOCKED' as const;
+
+function buildLegacyBrowserNavigateBlockedResult(
+  context: ToolContext,
+  action: BrowserAction | undefined,
+): ToolExecutionResult {
+  const surfaceError: SurfaceExecutionErrorV1 = {
+    version: 1,
+    code: LEGACY_BROWSER_NAVIGATE_ERROR_CODE,
+    message: 'browser_navigate cannot directly control user browser tabs without a Surface owner.',
+    phase: 'prepare',
+    retryable: false,
+    userActionRequired: true,
+    recommendedAction: 'Use browser_action with Managed Browser, or explicitly authorize a scoped Relay tab lease.',
+    surface: 'browser',
+    provider: 'legacy-os-browser',
+    sessionId: context.sessionId || 'unowned',
+    detailsSafe: action ? { action } : undefined,
+  };
+
+  return {
+    success: false,
+    error: `${surfaceError.code}: ${surfaceError.message} ${surfaceError.recommendedAction}`,
+    metadata: {
+      surfaceExecutionErrorV1: surfaceError,
+    },
+  };
+}
 
 export const browserNavigateTool: Tool = {
+  // Keep the public tool name and schema readable for old messages, replay, and
+  // session export. Execution fails closed because this legacy path has no
+  // durable Run/Agent owner, target revision, grant, or cleanup boundary.
   name: 'browser_navigate',
   description: `Control browser navigation and basic interactions.
 
@@ -58,218 +94,11 @@ Parameters:
 
   async execute(
     params: Record<string, unknown>,
-    _context: ToolContext
+    context: ToolContext,
   ): Promise<ToolExecutionResult> {
-    const action = params.action as BrowserAction;
-    const url = params.url as string | undefined;
-    const browser = (params.browser as string) || 'default';
-    const tabIndex = params.tabIndex as number | undefined;
-
-    try {
-      if (process.platform === 'darwin') {
-        return await executeMacOSBrowserAction(action, url, browser, tabIndex);
-      } else if (process.platform === 'linux') {
-        return await executeLinuxBrowserAction(action, url, browser);
-      } else if (process.platform === 'win32') {
-        return await executeWindowsBrowserAction(action, url, browser);
-      } else {
-        return {
-          success: false,
-          error: `Unsupported platform: ${process.platform}`,
-        };
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: `Browser action failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      };
-    }
+    const action = typeof params.action === 'string'
+      ? params.action as BrowserAction
+      : undefined;
+    return buildLegacyBrowserNavigateBlockedResult(context, action);
   },
 };
-
-async function executeMacOSBrowserAction(
-  action: BrowserAction,
-  url?: string,
-  browser?: string,
-  tabIndex?: number
-): Promise<ToolExecutionResult> {
-  const browserApp = getBrowserAppName(browser || 'default', 'darwin');
-
-  switch (action) {
-    case 'open':
-    case 'navigate':
-      if (!url) {
-        return { success: false, error: 'URL required for open/navigate action' };
-      }
-
-      // Validate URL
-      if (!isValidUrl(url)) {
-        return { success: false, error: `Invalid URL: ${url}` };
-      }
-
-      if (browser === 'default') {
-        await execAsync(`open "${url}"`);
-      } else {
-        await execAsync(`open -a "${browserApp}" "${url}"`);
-      }
-      return {
-        success: true,
-        output: `Opened ${url} in ${browserApp}`,
-      };
-
-    case 'back':
-      await execAsync(`osascript -e 'tell application "${browserApp}" to tell active tab of front window to go back'`);
-      return { success: true, output: `Navigated back in ${browserApp}` };
-
-    case 'forward':
-      await execAsync(`osascript -e 'tell application "${browserApp}" to tell active tab of front window to go forward'`);
-      return { success: true, output: `Navigated forward in ${browserApp}` };
-
-    case 'refresh':
-      await execAsync(`osascript -e 'tell application "${browserApp}" to tell active tab of front window to reload'`);
-      return { success: true, output: `Refreshed page in ${browserApp}` };
-
-    case 'close':
-      await execAsync(`osascript -e 'tell application "${browserApp}" to close front window'`);
-      return { success: true, output: `Closed window in ${browserApp}` };
-
-    case 'newTab':
-      if (browserApp === 'Google Chrome') {
-        await execAsync(`osascript -e 'tell application "Google Chrome" to make new tab at end of tabs of front window'`);
-      } else if (browserApp === 'Safari') {
-        await execAsync(`osascript -e 'tell application "Safari" to make new tab at end of tabs of front window'`);
-      } else {
-        // Generic approach using keyboard shortcut
-        await execAsync(`osascript -e 'tell application "System Events" to keystroke "t" using command down'`);
-      }
-      return { success: true, output: `Opened new tab in ${browserApp}` };
-
-    case 'switchTab':
-      if (tabIndex === undefined) {
-        return { success: false, error: 'tabIndex required for switchTab action' };
-      }
-      if (browserApp === 'Google Chrome') {
-        await execAsync(`osascript -e 'tell application "Google Chrome" to set active tab index of front window to ${tabIndex + 1}'`);
-      } else if (browserApp === 'Safari') {
-        await execAsync(`osascript -e 'tell application "Safari" to set current tab of front window to tab ${tabIndex + 1} of front window'`);
-      }
-      return { success: true, output: `Switched to tab ${tabIndex} in ${browserApp}` };
-
-    default:
-      return { success: false, error: `Unknown action: ${action}` };
-  }
-}
-
-async function executeLinuxBrowserAction(
-  action: BrowserAction,
-  url?: string,
-  browser?: string,
-  tabIndex?: number
-): Promise<ToolExecutionResult> {
-  const browserCmd = getBrowserAppName(browser || 'default', 'linux');
-
-  switch (action) {
-    case 'open':
-    case 'navigate':
-      if (!url) {
-        return { success: false, error: 'URL required for open/navigate action' };
-      }
-      if (!isValidUrl(url)) {
-        return { success: false, error: `Invalid URL: ${url}` };
-      }
-
-      if (browser === 'default') {
-        await execAsync(`xdg-open "${url}"`);
-      } else {
-        await execAsync(`${browserCmd} "${url}"`);
-      }
-      return { success: true, output: `Opened ${url}` };
-
-    case 'back':
-      await execAsync(`xdotool key alt+Left`);
-      return { success: true, output: 'Navigated back' };
-
-    case 'forward':
-      await execAsync(`xdotool key alt+Right`);
-      return { success: true, output: 'Navigated forward' };
-
-    case 'refresh':
-      await execAsync(`xdotool key F5`);
-      return { success: true, output: 'Refreshed page' };
-
-    case 'close':
-      await execAsync(`xdotool key ctrl+w`);
-      return { success: true, output: 'Closed tab' };
-
-    case 'newTab':
-      await execAsync(`xdotool key ctrl+t`);
-      return { success: true, output: 'Opened new tab' };
-
-    case 'switchTab':
-      if (tabIndex === undefined) {
-        return { success: false, error: 'tabIndex required for switchTab action' };
-      }
-      if (tabIndex < 9) {
-        await execAsync(`xdotool key ctrl+${tabIndex + 1}`);
-      }
-      return { success: true, output: `Switched to tab ${tabIndex}` };
-
-    default:
-      return { success: false, error: `Unknown action: ${action}` };
-  }
-}
-
-async function executeWindowsBrowserAction(
-  action: BrowserAction,
-  url?: string,
-  _browser?: string
-): Promise<ToolExecutionResult> {
-  switch (action) {
-    case 'open':
-    case 'navigate':
-      if (!url) {
-        return { success: false, error: 'URL required for open/navigate action' };
-      }
-      if (!isValidUrl(url)) {
-        return { success: false, error: `Invalid URL: ${url}` };
-      }
-
-      await execAsync(`start "" "${url}"`);
-      return { success: true, output: `Opened ${url}` };
-
-    default:
-      return {
-        success: false,
-        error: 'Windows browser control requires more implementation. Basic URL opening works.',
-      };
-  }
-}
-
-function getBrowserAppName(browser: string, platform: string): string {
-  if (platform === 'darwin') {
-    switch (browser) {
-      case 'chrome': return 'Google Chrome';
-      case 'firefox': return 'Firefox';
-      case 'safari': return 'Safari';
-      case 'edge': return 'Microsoft Edge';
-      default: return 'Safari'; // macOS default
-    }
-  } else if (platform === 'linux') {
-    switch (browser) {
-      case 'chrome': return 'google-chrome';
-      case 'firefox': return 'firefox';
-      case 'edge': return 'microsoft-edge';
-      default: return 'xdg-open';
-    }
-  }
-  return browser;
-}
-
-function isValidUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return ['http:', 'https:', 'file:'].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
-}

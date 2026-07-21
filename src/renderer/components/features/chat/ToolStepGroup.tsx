@@ -377,4 +377,3 @@ function getToolGroupStatusClass(status: 'streaming' | 'partial' | 'error' | 'ok
   if (status === 'error') return 'text-red-300';
   return 'text-emerald-300';
 }
-

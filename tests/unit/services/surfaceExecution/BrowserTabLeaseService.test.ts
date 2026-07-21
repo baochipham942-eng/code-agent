@@ -363,4 +363,27 @@ describe('BrowserTabLeaseService', () => {
       restore: async () => Promise.resolve(),
     })).resolves.toMatchObject({ state: 'returned' });
   });
+
+  it('accepts trusted provider return confirmation only for the exact lease owner', () => {
+    const { leases, subject, register, approve } = createHarness();
+    const lease = register();
+    leases.requestConsent({ leaseId: lease.leaseId, subject });
+    approve(lease.leaseId);
+    leases.markOrphaned({
+      leaseId: lease.leaseId,
+      subject,
+      code: 'provider_disconnected',
+    });
+    leases.markRecoveryRequired({ leaseId: lease.leaseId, subject });
+
+    expect(() => leases.confirmReturned({
+      leaseId: lease.leaseId,
+      subject: { ...subject, agentId: 'agent-attacker' },
+    })).toThrowError(SurfaceExecutionRuntimeError);
+    expect(leases.getOwned(lease.leaseId, subject)).toMatchObject({ state: 'recovery_required' });
+    expect(leases.confirmReturned({ leaseId: lease.leaseId, subject }))
+      .toMatchObject({ state: 'returned', returnedAt: expect.any(Number) });
+    expect(leases.confirmReturned({ leaseId: lease.leaseId, subject }))
+      .toMatchObject({ state: 'returned' });
+  });
 });

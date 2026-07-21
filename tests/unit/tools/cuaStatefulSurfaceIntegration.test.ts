@@ -141,6 +141,16 @@ describe('cua_stateful_computer_use Surface integration', () => {
       },
       lifecycle: 'fresh',
     });
+    expect(observedMeta.surfaceEvidenceCardV1).toMatchObject({
+      source: 'computer',
+      redactionStatus: 'redacted',
+      inspection: {
+        captureState: 'captured',
+        analysisState: 'analyzed',
+        verificationState: 'not_requested',
+        inspectedBy: { method: 'ax' },
+      },
+    });
     const target = (observedMeta.surfaceObservationV1 as {
       target: { windowRef: string };
     }).target;
@@ -168,6 +178,25 @@ describe('cua_stateful_computer_use Surface integration', () => {
         verification: 'satisfied',
         overall: 'succeeded',
       },
+      surfaceEvidenceCardV1: {
+        source: 'computer',
+        inspection: {
+          verificationState: 'verified',
+          beforeEvidenceRef: expect.stringMatching(/^surface-state:/),
+          afterEvidenceRef: expect.any(String),
+          checklist: [
+            { id: 'delivery', status: 'passed' },
+            { id: 'verification', status: 'passed' },
+            { id: 'redaction', status: 'passed' },
+          ],
+        },
+      },
+    });
+    const actedEvents = (acted.meta as Record<string, unknown>)
+      .surfaceExecutionEventsV1 as Array<Record<string, unknown>>;
+    expect(actedEvents.at(-1)).toMatchObject({
+      observation: { verdict: 'pass' },
+      evidence: [expect.objectContaining({ source: 'computer' })],
     });
     expect(permissions).toHaveLength(1);
     expect(permissions[0]?.surfaceTarget).toMatchObject({

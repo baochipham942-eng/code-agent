@@ -135,6 +135,8 @@ describe('AbilityMenu browser readiness', () => {
     expect(html).toContain('Chrome Relay');
     expect(html).toContain('登录态摘要');
     expect(html).toContain('刷新账号摘要');
-    expect(html).toContain('复制 Token');
+    expect(html).toContain('只在扩展 popup 中选择当前 tab');
+    expect(html).not.toContain('复制 Token');
+    expect(html).not.toContain('刷新标签');
   });
 });

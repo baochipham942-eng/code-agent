@@ -10,6 +10,8 @@ const SENSITIVE_KEY_PARTS = [
   'token',
   'cookie',
   'cookies',
+  'clipboard',
+  'clipboardtext',
   'password',
   'passwd',
   'secret',
@@ -18,19 +20,23 @@ const SENSITIVE_KEY_PARTS = [
   'keymaterial',
   'sessionkey',
   'relaytoken',
+  'prompttext',
 ];
 const SENSITIVE_INLINE = /\b(?:bearer\s+[a-z0-9._~+/=-]+|(?:api[_-]?key|token|password|secret|cookie)\s*[:=]\s*[^\s,;]+)/gi;
-const CANARY_INLINE = /surface-secret-canary-[a-z0-9_-]+/gi;
+const CANARY_INLINE = /\b(?:surface(?:[_-](?:secret|redaction))?[_-]canary|canary[_-](?:secret|redaction))(?:[a-z0-9_-]*)\b/gi;
 const DATA_URL = /^data:[^,]+,/i;
 const ABSOLUTE_PATH = /(?:\/Users\/[^\s"'`]+|\/private\/tmp\/[^\s"'`]+|\/tmp\/[^\s"'`]+|\/var\/folders\/[^\s"'`]+|\/Volumes\/[^\s"'`]+)/g;
 const MAX_DEPTH = 8;
 
+export function redactSurfaceExecutionCanaryText(value: string): string {
+  return value.replace(CANARY_INLINE, '[redacted-canary]');
+}
+
 function redactString(value: string): string {
   if (DATA_URL.test(value)) return '[redacted-binary]';
-  return value
+  return redactSurfaceExecutionCanaryText(value
     .replace(SENSITIVE_INLINE, '[redacted]')
-    .replace(CANARY_INLINE, '[redacted-canary]')
-    .replace(ABSOLUTE_PATH, '[redacted-path]');
+    .replace(ABSOLUTE_PATH, '[redacted-path]'));
 }
 
 function isSensitiveKey(keyHint: string): boolean {

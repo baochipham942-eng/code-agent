@@ -31,6 +31,7 @@ import { createLogger } from '../services/infra/logger';
 import { shell } from '../platform';
 import { prepareRuntimeAssetOnDemand } from '../services/cloud/updateService';
 import { getRuntimeAssetsStatus } from '../runtime/runtimeAssetStatus';
+import { getBrowserProfileImportApprovalService } from '../services/surfaceExecution/BrowserProfileImportApprovalService';
 
 // 音频采集完全走手动触发（录制按钮），不再自动检测会议 app。
 // 自动检测会让 ScreenCaptureKit 在用户未知情时拉起，macOS 统一标注为"屏幕共享"，体验错位。
@@ -142,7 +143,7 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           const launchOptions = {
             mode: payload?.mode,
             provider: payload?.provider,
-            profileMode: payload?.profileMode,
+            profileMode: payload?.profileMode || 'isolated' as ManagedBrowserProfileMode,
             leaseOwner: payload?.leaseOwner || 'desktop-ipc',
             leaseTtlMs: payload?.leaseTtlMs,
             proxy: payload?.proxy,
@@ -167,7 +168,7 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           const launchOptions = {
             mode: payload?.mode || 'visible' as ManagedBrowserMode,
             provider: payload?.provider,
-            profileMode: payload?.profileMode || 'persistent' as ManagedBrowserProfileMode,
+            profileMode: payload?.profileMode || 'isolated' as ManagedBrowserProfileMode,
             leaseOwner: payload?.leaseOwner || 'browser-surface',
             leaseTtlMs: payload?.leaseTtlMs,
             proxy: payload?.proxy,
@@ -218,6 +219,19 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           if (payload.userConfirmed !== true) {
             throw new Error('Profile cookie import requires explicit userConfirmed=true (ADR-041).');
           }
+          const subject = { conversationId: 'desktop-ipc', runId: 'interactive-user', agentId: 'user' };
+          const scope = {
+            source: payload.source,
+            profileId: payload.profileId,
+            ...(Array.isArray(payload.domainAllowlist)
+              ? { domainAllowlist: payload.domainAllowlist }
+              : {}),
+          };
+          const approvalService = getBrowserProfileImportApprovalService();
+          const approval = approvalService.issue({ subject, scope });
+          if (!approvalService.consume({ token: approval.token, subject, scope })) {
+            throw new Error('SURFACE_APPROVAL_INVALID: profile cookie import approval could not be consumed.');
+          }
           const result = await importBrowserProfileCookiesViaService(browserService, {
             source: payload.source as BrowserProfileSourceId,
             profileId: payload.profileId,
@@ -230,6 +244,11 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
             data: {
               result,
               session: browserService.getSessionState(),
+              approval: {
+                mode: 'host_signed_one_time',
+                scopeHash: approval.scopeHash,
+                expiresAt: approval.expiresAt,
+              },
             },
           } satisfies IPCResponse<unknown>;
         }
@@ -274,40 +293,10 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
         }
 
         case 'listBrowserRelayTabs':
-          return {
-            success: true,
-            data: await browserRelayService.listTabs(),
-          } satisfies IPCResponse<unknown>;
-
-        case 'openBrowserRelayTab': {
-          const payload = request.payload as { url?: string } | undefined;
-          return {
-            success: true,
-            data: await browserRelayService.createTab(normalizeBrowserUrl(payload?.url)),
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'attachBrowserRelayTab': {
-          const payload = request.payload as { tabId?: number } | undefined;
-          if (typeof payload?.tabId !== 'number') {
-            throw new Error('tabId is required for attachBrowserRelayTab.');
-          }
-          return {
-            success: true,
-            data: await browserRelayService.attachTab(payload.tabId),
-          } satisfies IPCResponse<unknown>;
-        }
-
-        case 'detachBrowserRelayTab': {
-          const payload = request.payload as { tabId?: number } | undefined;
-          if (typeof payload?.tabId !== 'number') {
-            throw new Error('tabId is required for detachBrowserRelayTab.');
-          }
-          return {
-            success: true,
-            data: await browserRelayService.detachTab(payload.tabId),
-          } satisfies IPCResponse<unknown>;
-        }
+        case 'openBrowserRelayTab':
+        case 'attachBrowserRelayTab':
+        case 'detachBrowserRelayTab':
+          throw new Error('BROWSER_TAB_BORROW_REQUIRED: select and approve the current tab only in the Relay extension popup.');
 
         case 'getManagedBrowserRecoverySnapshot': {
           const payload = request.payload as { includeAccessibility?: boolean; tabId?: string } | undefined;

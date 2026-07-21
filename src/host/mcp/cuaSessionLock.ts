@@ -30,9 +30,64 @@ interface CuaLockRecord {
   lastUsedAt?: number;
 }
 
+type CuaLockReadResult =
+  | { kind: 'record'; record: CuaLockRecord }
+  | { kind: 'missing' }
+  | { kind: 'invalid' }
+  | { kind: 'error'; error: unknown };
+
 export type CuaAcquireResult =
   | { kind: 'acquired' }
   | { kind: 'blocked'; by: string };
+
+export type CuaInputLockLifecycleEvent = {
+  scope: string;
+  phase: 'acquire' | 'recover' | 'release';
+  status: 'succeeded' | 'failed';
+  outcome:
+    | 'acquired'
+    | 'reentrant'
+    | 'blocked'
+    | 'recovered'
+    | 'released'
+    | 'already_released'
+    | 'not_owner'
+    | 'error';
+  occurredAt: number;
+};
+
+export type CuaInputLockLifecycleObserver = (
+  event: CuaInputLockLifecycleEvent,
+) => void;
+
+const lifecycleObservers = new Set<CuaInputLockLifecycleObserver>();
+
+function publishLifecycle(
+  event: Omit<CuaInputLockLifecycleEvent, 'occurredAt'>,
+  observer?: CuaInputLockLifecycleObserver,
+): void {
+  const completed = { ...event, occurredAt: Date.now() } satisfies CuaInputLockLifecycleEvent;
+  // Lock safety must never depend on telemetry/event projection availability.
+  try {
+    observer?.(structuredClone(completed));
+  } catch {
+    // Ignore observer failures and preserve the lock outcome.
+  }
+  for (const listener of lifecycleObservers) {
+    try {
+      listener(structuredClone(completed));
+    } catch {
+      // Ignore observer failures and preserve the lock outcome.
+    }
+  }
+}
+
+export function subscribeCuaInputLockLifecycle(
+  observer: CuaInputLockLifecycleObserver,
+): () => void {
+  lifecycleObservers.add(observer);
+  return () => lifecycleObservers.delete(observer);
+}
 
 function getLockPath(): string {
   return process.env.CODE_AGENT_CU_LOCK_PATH || join(homedir(), '.claude', LOCK_FILENAME);
@@ -44,13 +99,17 @@ function isCuaLockRecord(value: unknown): value is CuaLockRecord {
   return typeof v.sessionId === 'string' && typeof v.pid === 'number';
 }
 
-async function readLock(): Promise<CuaLockRecord | undefined> {
+async function inspectLock(): Promise<CuaLockReadResult> {
   try {
     const raw = await readFile(getLockPath(), 'utf8');
     const parsed: unknown = JSON.parse(raw);
-    return isCuaLockRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
+    return isCuaLockRecord(parsed)
+      ? { kind: 'record', record: parsed }
+      : { kind: 'invalid' };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return { kind: 'missing' };
+    if (error instanceof SyntaxError) return { kind: 'invalid' };
+    return { kind: 'error', error };
   }
 }
 
@@ -81,41 +140,127 @@ function buildRecord(sessionId: string): CuaLockRecord {
 
 /** 锁文件存在但内容损坏/被占用者放弃时，清掉重试一次。 */
 async function recoverAndAcquire(sessionId: string): Promise<CuaAcquireResult> {
-  await unlink(getLockPath()).catch(() => {});
-  if (await tryCreateExclusive(buildRecord(sessionId))) {
-    return { kind: 'acquired' };
+  try {
+    await unlink(getLockPath()).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+    });
+    if (await tryCreateExclusive(buildRecord(sessionId))) {
+      publishLifecycle({
+        scope: sessionId,
+        phase: 'recover',
+        status: 'succeeded',
+        outcome: 'recovered',
+      });
+      return { kind: 'acquired' };
+    }
+    publishLifecycle({
+      scope: sessionId,
+      phase: 'recover',
+      status: 'failed',
+      outcome: 'blocked',
+    });
+    const current = await inspectLock();
+    if (current.kind === 'error') throw current.error;
+    return {
+      kind: 'blocked',
+      by: current.kind === 'record' ? current.record.sessionId : 'unknown',
+    };
+  } catch (error) {
+    publishLifecycle({
+      scope: sessionId,
+      phase: 'recover',
+      status: 'failed',
+      outcome: 'error',
+    });
+    throw error;
   }
-  return { kind: 'blocked', by: (await readLock())?.sessionId ?? 'unknown' };
 }
 
 export async function tryAcquireCuaLock(sessionId: string): Promise<CuaAcquireResult> {
-  await mkdir(dirname(getLockPath()), { recursive: true });
+  try {
+    await mkdir(dirname(getLockPath()), { recursive: true });
 
-  if (await tryCreateExclusive(buildRecord(sessionId))) {
-    return { kind: 'acquired' };
+    if (await tryCreateExclusive(buildRecord(sessionId))) {
+      publishLifecycle({
+        scope: sessionId,
+        phase: 'acquire',
+        status: 'succeeded',
+        outcome: 'acquired',
+      });
+      return { kind: 'acquired' };
+    }
+
+    const inspected = await inspectLock();
+    if (inspected.kind === 'error') throw inspected.error;
+
+    // 文件存在但不是合法锁记录 → 按损坏处理
+    if (inspected.kind !== 'record') {
+      const recovered = await recoverAndAcquire(sessionId);
+      publishLifecycle({
+        scope: sessionId,
+        phase: 'acquire',
+        status: recovered.kind === 'acquired' ? 'succeeded' : 'failed',
+        outcome: recovered.kind === 'acquired' ? 'recovered' : 'blocked',
+      });
+      return recovered;
+    }
+    const existing = inspected.record;
+
+    // 同会话重入：刷新 lastUsedAt，保持活跃轨迹不被 TTL 接管
+    if (existing.sessionId === sessionId) {
+      await writeFile(getLockPath(), JSON.stringify({ ...existing, lastUsedAt: Date.now() }));
+      publishLifecycle({
+        scope: sessionId,
+        phase: 'acquire',
+        status: 'succeeded',
+        outcome: 'reentrant',
+      });
+      return { kind: 'acquired' };
+    }
+
+    // 持有者进程已死 → 回收
+    if (!isProcessRunning(existing.pid)) {
+      const recovered = await recoverAndAcquire(sessionId);
+      publishLifecycle({
+        scope: sessionId,
+        phase: 'acquire',
+        status: recovered.kind === 'acquired' ? 'succeeded' : 'failed',
+        outcome: recovered.kind === 'acquired' ? 'recovered' : 'blocked',
+      });
+      return recovered;
+    }
+
+    // 同进程内另一会话：闲置超过 TTL 才接管
+    if (existing.pid === process.pid) {
+      const lastUsed = existing.lastUsedAt ?? existing.acquiredAt;
+      if (Date.now() - lastUsed > CUA_LOCK_TTL_MS) {
+        const recovered = await recoverAndAcquire(sessionId);
+        publishLifecycle({
+          scope: sessionId,
+          phase: 'acquire',
+          status: recovered.kind === 'acquired' ? 'succeeded' : 'failed',
+          outcome: recovered.kind === 'acquired' ? 'recovered' : 'blocked',
+        });
+        return recovered;
+      }
+    }
+
+    publishLifecycle({
+      scope: sessionId,
+      phase: 'acquire',
+      status: 'failed',
+      outcome: 'blocked',
+    });
+    return { kind: 'blocked', by: existing.sessionId };
+  } catch (error) {
+    publishLifecycle({
+      scope: sessionId,
+      phase: 'acquire',
+      status: 'failed',
+      outcome: 'error',
+    });
+    throw error;
   }
-
-  const existing = await readLock();
-
-  // 文件存在但不是合法锁记录 → 按损坏处理
-  if (!existing) return recoverAndAcquire(sessionId);
-
-  // 同会话重入：刷新 lastUsedAt，保持活跃轨迹不被 TTL 接管
-  if (existing.sessionId === sessionId) {
-    await writeFile(getLockPath(), JSON.stringify({ ...existing, lastUsedAt: Date.now() }));
-    return { kind: 'acquired' };
-  }
-
-  // 持有者进程已死 → 回收
-  if (!isProcessRunning(existing.pid)) return recoverAndAcquire(sessionId);
-
-  // 同进程内另一会话：闲置超过 TTL 才接管
-  if (existing.pid === process.pid) {
-    const lastUsed = existing.lastUsedAt ?? existing.acquiredAt;
-    if (Date.now() - lastUsed > CUA_LOCK_TTL_MS) return recoverAndAcquire(sessionId);
-  }
-
-  return { kind: 'blocked', by: existing.sessionId };
 }
 
 /**
@@ -163,13 +308,56 @@ export async function gateCuaToolCall(
   );
 }
 
-export async function releaseCuaLock(sessionId: string): Promise<boolean> {
-  const existing = await readLock();
-  if (existing?.sessionId !== sessionId) return false;
+export async function releaseCuaLock(
+  sessionId: string,
+  observer?: CuaInputLockLifecycleObserver,
+): Promise<boolean> {
+  const inspected = await inspectLock();
+  if (inspected.kind === 'missing') {
+    publishLifecycle({
+      scope: sessionId,
+      phase: 'release',
+      status: 'succeeded',
+      outcome: 'already_released',
+    }, observer);
+    return false;
+  }
+  if (inspected.kind === 'invalid' || inspected.kind === 'error') {
+    publishLifecycle({
+      scope: sessionId,
+      phase: 'release',
+      status: 'failed',
+      outcome: 'error',
+    }, observer);
+    return false;
+  }
+  const existing = inspected.record;
+  if (existing.sessionId !== sessionId) {
+    publishLifecycle({
+      scope: sessionId,
+      phase: 'release',
+      status: 'failed',
+      outcome: 'not_owner',
+    }, observer);
+    return false;
+  }
   try {
     await unlink(getLockPath());
+    publishLifecycle({
+      scope: sessionId,
+      phase: 'release',
+      status: 'succeeded',
+      outcome: 'released',
+    }, observer);
     return true;
-  } catch {
+  } catch (error) {
+    const alreadyReleased = (error as NodeJS.ErrnoException)?.code === 'ENOENT';
+    publishLifecycle({
+      scope: sessionId,
+      phase: 'release',
+      status: alreadyReleased ? 'succeeded' : 'failed',
+      outcome: alreadyReleased ? 'already_released' : 'error',
+    }, observer);
     return false;
   }
 }

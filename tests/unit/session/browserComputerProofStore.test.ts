@@ -114,6 +114,45 @@ describe('browserComputerProofStore', () => {
     expect(readBrowserComputerProofRecordsBySession('session-1')).toEqual([]);
   });
 
+  it('persists the additive Surface evidence card without changing the legacy schema', async () => {
+    const record = persistBrowserComputerProofFromResult({
+      success: false,
+      metadata: {
+        surfaceEvidenceCardV1: {
+          version: 1,
+          evidenceId: 'surface-proof-1',
+          summary: 'Verification surface-secret-canary-ledger failed.',
+          inspection: { verificationState: 'rejected' },
+        },
+        surfaceProofScopeV1: {
+          version: 1,
+          conversationId: 'session-surface',
+          runId: 'run-1',
+          agentId: 'agent-1',
+          surfaceSessionId: 'surface-1',
+          operationId: 'operation-1',
+        },
+      },
+    }, {
+      sessionId: 'session-surface',
+      toolCallId: 'operation-1',
+      toolName: 'computer_use',
+      now: () => 456,
+    });
+
+    expect(record).toMatchObject({
+      schemaVersion: 1,
+      status: 'rejected',
+      evidenceRefIds: ['surface-proof-1'],
+      targetKind: 'computer',
+      surfaceEvidenceCard: { evidenceId: 'surface-proof-1' },
+      surfaceScope: { surfaceSessionId: 'surface-1' },
+    });
+    expect(record?.summary).toBe('Verification [redacted-canary] failed.');
+    const rawLedger = await readFile(getBrowserComputerProofLedgerPath(), 'utf-8');
+    expect(rawLedger).not.toContain('surface-secret-canary-ledger');
+  });
+
   it('adds proof records to the unified evidence control summary in markdown exports', () => {
     persistBrowserComputerProofFromResult(makeResult(), {
       sessionId: 'session-export',

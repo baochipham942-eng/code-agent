@@ -26,7 +26,10 @@ vi.mock('../../src/host/services/infra/logger', () => ({
 }));
 
 import { AgentAppServiceImpl } from '../../src/host/app/agentAppService';
+import { DurableRunReadService } from '../../src/host/app/durableRunReadService';
+import { resolveDurableRunRollout } from '../../src/host/app/durableRunRollout';
 import { registerSwarmServices, resetSwarmServices } from '../../src/host/agent/swarmServices';
+import { RunRegistry } from '../../src/host/runtime/runRegistry';
 import type { TaskManager } from '../../src/host/task';
 
 type AnyMock = ReturnType<typeof vi.fn>;
@@ -243,6 +246,43 @@ describe('appService.cancel fan-out — AC-A (cascade) / AC-C (no cascade on chi
     await cancellation;
   });
 
+  it('does not misclassify a shared-registry native run as an external engine', async () => {
+    const swarm = buildSwarmServicesMock();
+    registerSwarmServices(swarm as unknown as Parameters<typeof registerSwarmServices>[0]);
+    const sessionId = 'sess-shared-native';
+    const registry = new RunRegistry();
+    const handle = registry.start({
+      runId: 'run-shared-native',
+      sessionId,
+      workspace: process.cwd(),
+    });
+    const handleCancel = vi.fn().mockResolvedValue(undefined);
+    await handle.attach({ cancel: handleCancel });
+    const reader = { getLatestBySession: vi.fn().mockResolvedValue(null) };
+    const readService = new DurableRunReadService(
+      resolveDurableRunRollout({ CODE_AGENT_DURABLE_RUN_MODE: 'durable_preferred' }),
+      reader,
+    );
+    const tm = buildTaskManagerMock(sessionId, { tmOwned: true });
+    const service = new AgentAppServiceImpl(
+      () => tm as never,
+      () => null,
+      () => sessionId,
+      () => {},
+      registry,
+      readService,
+    );
+
+    await service.cancel(sessionId, 'user-cancel');
+
+    expect(handleCancel).not.toHaveBeenCalled();
+    expect(swarm.planApproval.cancelSession).toHaveBeenCalledTimes(1);
+    expect(swarm.launchApproval.cancelSession).toHaveBeenCalledTimes(1);
+    expect(swarm.spawnGuard.cancelSession).toHaveBeenCalledTimes(1);
+    expect(swarm.parallelCoordinators.abortSession).toHaveBeenCalledTimes(1);
+    expect(tm.cancelTask).toHaveBeenCalledTimes(1);
+  });
+
   it('dedupes an asynchronous Durable read and external cancel across double ESC', async () => {
     const sessionId = 'sess-durable-external';
     const read = deferred<any>();
@@ -273,7 +313,11 @@ describe('appService.cancel fan-out — AC-A (cascade) / AC-C (no cascade on chi
     expect(durableRunReadService.readExternalEngine).toHaveBeenCalledTimes(1);
     expect(externalCancel).not.toHaveBeenCalled();
 
-    read.resolve({ terminal: false });
+    read.resolve({
+      terminal: false,
+      runId: 'run-external',
+      engine: { kind: 'external_cli', engine: 'codex_cli' },
+    });
     await Promise.all([first, second]);
 
     expect(externalRunRegistry.getBySessionId).toHaveBeenCalledTimes(1);

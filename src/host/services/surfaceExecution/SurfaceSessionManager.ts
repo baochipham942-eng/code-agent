@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import crypto from 'crypto';
 import type {
   InteractiveSurfaceSessionV1,
@@ -12,6 +13,10 @@ import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
 export interface SurfaceSessionOwnerV1 {
   runId: string;
   agentId: string;
+}
+
+interface SurfaceSessionCleanupOwnerV1 extends SurfaceSessionOwnerV1 {
+  sessionId: string;
 }
 
 export interface CreateSurfaceSessionInput {
@@ -43,6 +48,7 @@ export class SurfaceSessionManager {
   private readonly now: () => number;
   private readonly createId: () => string;
   private readonly assertActiveOwner?: SurfaceSessionManagerOptions['assertActiveOwner'];
+  private readonly cleanupOwner = new AsyncLocalStorage<SurfaceSessionCleanupOwnerV1>();
 
   constructor(options: SurfaceSessionManagerOptions = {}) {
     this.now = options.now || Date.now;
@@ -114,6 +120,34 @@ export class SurfaceSessionManager {
   }
 
   requireOwned(sessionId: string, owner: SurfaceSessionOwnerV1): InteractiveSurfaceSessionV1 {
+    const session = this.requireStoredOwner(sessionId, owner);
+    const cleanupOwner = this.cleanupOwner.getStore();
+    const isCleanupOwner = cleanupOwner?.sessionId === sessionId
+      && cleanupOwner.runId === owner.runId
+      && cleanupOwner.agentId === owner.agentId;
+    if (!isCleanupOwner) {
+      this.assertActiveOwner?.({
+        conversationId: session.conversationId,
+        runId: owner.runId,
+        agentId: owner.agentId,
+      });
+    }
+    return structuredClone(session);
+  }
+
+  async withCancellingOwnerCleanup<T>(
+    sessionId: string,
+    owner: SurfaceSessionOwnerV1,
+    cleanup: () => Promise<T>,
+  ): Promise<T> {
+    this.requireStoredOwner(sessionId, owner);
+    return this.cleanupOwner.run({ sessionId, ...owner }, cleanup);
+  }
+
+  private requireStoredOwner(
+    sessionId: string,
+    owner: SurfaceSessionOwnerV1,
+  ): InteractiveSurfaceSessionV1 {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw this.runtimeError(sessionId, 'SURFACE_SESSION_NOT_FOUND', 'Surface session was not found.', 'Create a new Surface session.');
@@ -124,12 +158,7 @@ export class SurfaceSessionManager {
     if (session.runId !== owner.runId || session.agentId !== owner.agentId) {
       throw this.runtimeError(sessionId, 'SURFACE_TARGET_NOT_OWNED', 'Surface session belongs to another run or agent.', 'Use the owning run and agent.', session);
     }
-    this.assertActiveOwner?.({
-      conversationId: session.conversationId,
-      runId: owner.runId,
-      agentId: owner.agentId,
-    });
-    return structuredClone(session);
+    return session;
   }
 
   transition(
@@ -195,6 +224,13 @@ export class SurfaceSessionManager {
       .filter((session) => session.conversationId === conversationId
         && session.runId === owner.runId
         && session.agentId === owner.agentId)
+      .map((session) => structuredClone(session));
+  }
+
+  /** Host-only enumeration. Callers must complete conversation ownership checks first. */
+  listByConversation(conversationId: string): InteractiveSurfaceSessionV1[] {
+    return Array.from(this.sessions.values())
+      .filter((session) => session.conversationId === conversationId)
       .map((session) => structuredClone(session));
   }
 

@@ -1,119 +1,145 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import {
+  BROWSER_RELAY_ACTION_METHODS_V2,
+  BROWSER_RELAY_CAPABILITIES_V2,
+  BROWSER_RELAY_PROTOCOL_VERSION_V2,
+} from '../../../src/shared/contract/browserRelay';
 
 const extensionRoot = path.join(process.cwd(), 'resources', 'browser-relay-extension');
-const background = fs.readFileSync(path.join(extensionRoot, 'background.js'), 'utf8');
-const popup = fs.readFileSync(path.join(extensionRoot, 'popup.js'), 'utf8');
-const popupHtml = fs.readFileSync(path.join(extensionRoot, 'popup.html'), 'utf8');
-const manifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, 'manifest.json'), 'utf8')) as {
+const read = (file: string) => fs.readFileSync(path.join(extensionRoot, file), 'utf8');
+const background = read('background.js');
+const protocolSource = read('protocol-v2.js');
+const popup = read('popup.js');
+const popupHtml = read('popup.html');
+const options = read('options.js');
+const optionsHtml = read('options.html');
+const manifest = JSON.parse(read('manifest.json')) as {
   version: string;
+  host_permissions: string[];
 };
 
+function extensionProtocol(): { protocolVersion: string; capabilities: string[]; actionMethods: Record<string, string> } {
+  const context = vm.createContext({});
+  vm.runInContext(protocolSource, context);
+  const value = vm.runInContext('globalThis.NEO_BROWSER_RELAY_V2', context) as {
+    protocolVersion: string;
+    capabilities: string[];
+    actionMethods: Record<string, string>;
+  };
+  return {
+    protocolVersion: value.protocolVersion,
+    capabilities: [...value.capabilities],
+    actionMethods: { ...value.actionMethods },
+  };
+}
+
 describe('Browser Relay extension protocol v2 static boundary', () => {
-  it('handshakes with protocol v2 before accepting any Host command', () => {
-    expect(background).toContain("const PROTOCOL_VERSION = '2.0'");
+  it('mirrors the shared protocol version, capabilities, and complete action catalog exactly', () => {
+    const extension = extensionProtocol();
+    expect(extension.protocolVersion).toBe(BROWSER_RELAY_PROTOCOL_VERSION_V2);
+    expect(extension.capabilities).toEqual([...BROWSER_RELAY_CAPABILITIES_V2]);
+    expect(extension.actionMethods).toEqual(BROWSER_RELAY_ACTION_METHODS_V2);
+    for (const method of new Set(Object.values(BROWSER_RELAY_ACTION_METHODS_V2))) {
+      expect(background).toContain(`case '${method}'`);
+    }
+    expect(background).toContain("METHOD_ACTIONS.set('lease.return', ['lease:return'])");
+  });
+
+  it('handshakes before accepting Host commands and requires the complete owner envelope', () => {
+    expect(background).toContain("importScripts('protocol-v2.js')");
     expect(background).toContain("type: 'hello'");
-    expect(background).toContain('capabilities: CAPABILITIES');
-    expect(background).toContain('extensionInstanceId');
+    expect(background).toContain('capabilities: [...CAPABILITIES]');
+    expect(background).toContain('orphanedLeaseIds:');
     expect(background).toContain("message.type === 'hello_ack'");
     expect(background).toContain('if (!handshakeComplete)');
-    expect(background).toContain('RELAY_HANDSHAKE_REQUIRED');
-    expect(background.indexOf('sendHello();')).toBeLessThan(background.indexOf('sendReady();'));
-  });
-
-  it('requires the full owner and operation envelope and rejects native tab references', () => {
-    for (const field of [
-      'id',
-      'surfaceSessionId',
-      'runId',
-      'agentId',
-      'operationId',
-      'leaseId',
-      'method',
-    ]) {
+    for (const field of ['surfaceSessionId', 'conversationId', 'runId', 'agentId']) {
       expect(background).toContain(`'${field}'`);
     }
-    expect(background).toContain("message.type !== 'command'");
+    expect(background).not.toContain("type: 'relay.ready'");
+    expect(background).not.toContain("type: 'lease.pending_user_approval'");
+  });
+
+  it('invalidates pre-owner leases and never accepts raw native target identifiers from Host', () => {
+    expect(background).toContain('isNonEmptyString(value.conversationId)');
+    expect(background).toContain('isPersistedPendingLease(storedPendingLease)');
     expect(background).toContain('assertNoNativeTabReference(params)');
-    expect(background).toContain('RELAY_NATIVE_TARGET_FORBIDDEN');
+    expect(background).toContain("key.toLowerCase() === 'tabid'");
+    expect(background).toContain("key.toLowerCase() === 'windowid'");
     expect(background).not.toContain('params.tabId');
-    expect(background).not.toContain("case 'tabs.list'");
     expect(background).not.toContain("case 'debugger.attach'");
     expect(background).not.toContain("case 'debugger.detach'");
+    expect(background).not.toContain("case 'lease.resume'");
   });
 
-  it('validates lease owner, exact origin, explicit action, expiry, and debugger approval before operations', () => {
-    expect(background).toContain('assertLeaseOwner(lease, command)');
-    expect(background).toContain('await authorizeLeaseAction(lease, action)');
-    expect(background).toContain('Date.now() >= lease.expiresAtMs');
-    expect(background).toContain('isLeaseActionAllowed(lease.actions, action)');
-    expect(background).toContain('validateUrlScope(tab.url, lease)');
-    expect(background).toContain('origin !== scope.origin || hostname !== scope.hostname');
-    expect(background).toContain('if (!lease.debuggerApproved)');
-  });
-
-  it('attaches the debugger only from explicit popup approval and exposes no attach control', () => {
+  it('attaches only after popup consent and returns the original tab placement with a flat approval', () => {
     expect(background.match(/chrome\.debugger\.attach/g)).toHaveLength(1);
     expect(background).toContain('async function approveLatestPendingLease()');
     expect(background.indexOf('async function approveLatestPendingLease()'))
       .toBeLessThan(background.indexOf('chrome.debugger.attach'));
-    expect(background).not.toContain("message.type === 'attachCurrentTab'");
-    expect(popup).toContain("type: 'approvePendingLease'");
-    expect(popup).toContain("type: 'denyPendingLease'");
-    expect(popup).not.toContain('attachCurrentTab');
-    expect(popupHtml).toContain('Approve current tab');
-    expect(popupHtml).not.toContain('Attach current tab');
-  });
-
-  it('moves an approved tab to an Agent Window and returns its original placement', () => {
-    expect(background).toContain('moveToAgentWindow(tab, request.surfaceSessionId)');
-    expect(background).toContain('originalWindowRef');
-    expect(background).toContain('originalIndex');
-    expect(background).toContain('originalPinned');
-    expect(background).toContain('originalActive');
-    expect(background).toContain('agentWindowRef');
+    expect(background).toContain("type: 'lease.approved'");
+    expect(background).toContain('approvalRef:');
+    expect(background).toContain('placement: {');
+    expect(background).not.toContain('lease: publicLeaseReference(lease),\n    });');
     expect(background).toContain('restoreOriginalPlacement(lease.nativeTabId, lease.original)');
-    expect(background).toContain('RELAY_TAB_RETURN_FAILED');
+    expect(background).toContain("type: 'lease.returned'");
+    expect(popup).toContain("type: 'approvePendingLease'");
     expect(popup).toContain("type: 'returnCurrentLease'");
+    expect(popupHtml).toContain('Approve current tab');
   });
 
-  it('uses CDP Input for click and type and never injects DOM click or value assignment', () => {
-    expect(background).toContain("'Input.dispatchMouseEvent'");
-    expect(background).toContain("'Input.dispatchKeyEvent'");
-    expect(background).toContain("'Input.insertText'");
-    expect(background).toContain("'DOM.focus'");
-    expect(background).not.toMatch(/\.click\s*\(/);
-    expect(background).not.toMatch(/\.value\s*=/);
+  it('uses real CDP DOM, AX, screenshot, input, history, wait, and redacted log operations', () => {
+    for (const method of [
+      'Page.captureScreenshot',
+      'DOMSnapshot.captureSnapshot',
+      'Accessibility.getFullAXTree',
+      'DOM.pushNodesByBackendIdsToFrontend',
+      'DOM.describeNode',
+      'Input.dispatchMouseEvent',
+      'Input.dispatchKeyEvent',
+      'Input.insertText',
+      'Page.getNavigationHistory',
+      'Page.navigateToHistoryEntry',
+    ]) {
+      expect(background).toContain(`'${method}'`);
+    }
+    expect(background).toContain('imageBase64: result?.data');
+    expect(background).toContain('backendNodeId: node.backendDOMNodeId');
+    expect(background).toContain('frameRef: frameRefForLease');
+    expect(background).toContain('async function waitForOperation');
+    expect(background).toContain('function redactLogText');
     expect(background).not.toContain('Runtime.evaluate');
+    expect(background).not.toMatch(/\.click\s*\(/);
+    expect(background).not.toMatch(/\.value\s*=(?!=)/);
   });
 
-  it('returns screenshot data, opaque placement refs, element identity, and successor target metadata', () => {
-    expect(background).toContain('data: result?.data');
-    expect(background).toContain('browserInstanceRef: extensionInstanceId');
-    expect(background).toContain("tabRef: opaqueId('tab')");
-    expect(background).toContain("documentRevision: opaqueId('document')");
-    expect(background).toContain('backendNodeId: target.backendNodeId');
-    expect(background).toContain('frameRef: target.frameRef');
-    expect(background).toContain('role: target.role');
-    expect(background).toContain('name: target.name');
-    expect(background).toContain('target: resultLease ? targetMetadata(resultLease) : null');
+  it('implements exact-file upload while keeping download on the Managed cleanup boundary', () => {
+    expect(BROWSER_RELAY_ACTION_METHODS_V2.upload_file).toBe('dom.set_file_input_files');
+    expect(BROWSER_RELAY_ACTION_METHODS_V2).not.toHaveProperty('wait_for_download');
+    for (const method of [
+      'DOM.setFileInputFiles',
+      'DOM.resolveNode',
+      'Runtime.callFunctionOn',
+      'Runtime.releaseObject',
+    ]) {
+      expect(background).toContain(`'${method}'`);
+    }
+    expect(background).not.toContain('Browser.setDownloadBehavior');
+    expect(background).not.toContain('Browser.cancelDownload');
+    expect(background).not.toContain('Page.setDownloadBehavior');
   });
 
-  it('supports cancellation and reconnect recovery without reporting global tab metadata', () => {
-    expect(background).toContain("message.type === 'cancel'");
-    expect(background).toContain('active.controller.abort');
-    expect(background).toContain('RELAY_OPERATION_CANCELLED');
-    expect(background).toContain('markLeasesOrphaned()');
-    expect(background).toContain('orphanedLeases:');
-    expect(background).toContain("command.method === 'lease.resume'");
-    expect(background).not.toContain('chrome.tabs.query({})');
-    expect(background).not.toContain('attachedTabs');
-  });
-
-  it('uses the extension-only config bootstrap marker and ships the v2 manifest', () => {
-    expect(background).toContain("'X-Agent-Neo-Relay-Extension': '2'");
-    expect(background).toContain("credentials: 'omit'");
+  it('keeps pairing material out of extension UI and persistent local storage', () => {
+    expect(background).toContain("headers: { 'X-Agent-Neo-Relay-Extension': PROTOCOL_VERSION }");
+    expect(background).toContain("chrome.storage.local.get(['relayPort'])");
+    expect(background).not.toContain("chrome.storage.local.get(['relayPort', 'authToken'])");
+    expect(options).not.toContain('authToken');
+    expect(options).not.toContain('toggleToken');
+    expect(optionsHtml).not.toContain('Auth token');
+    expect(optionsHtml).not.toContain('Show');
+    expect(manifest.host_permissions).not.toContain('<all_urls>');
     expect(manifest.version).toBe('0.2.0');
   });
 });

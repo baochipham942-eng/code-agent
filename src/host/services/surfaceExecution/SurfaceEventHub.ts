@@ -7,11 +7,23 @@ import { sameSurfaceTargetV1 } from '../../../shared/contract/surfaceExecution';
 import { sanitizeSurfaceExecutionEventV1 } from '../../../shared/utils/surfaceExecutionRedaction';
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceExecutionRuntimeError } from './SurfaceExecutionRuntimeError';
+import type { SurfaceFrameRegistry } from './SurfaceFrameRegistry';
 import { SurfaceSessionManager } from './SurfaceSessionManager';
 
 export type SurfaceExecutionEventDraftV1 = Omit<
   SurfaceExecutionEventV1,
-  'version' | 'eventId' | 'sequence' | 'sessionId' | 'runId' | 'agentId' | 'surface' | 'startedAt'
+  | 'version'
+  | 'eventId'
+  | 'sequence'
+  | 'sessionId'
+  | 'conversationId'
+  | 'runId'
+  | 'agentId'
+  | 'surface'
+  | 'provider'
+  | 'sessionState'
+  | 'heartbeatAt'
+  | 'startedAt'
 > & {
   eventId?: string;
   startedAt?: number;
@@ -21,6 +33,7 @@ interface SurfaceEventHubOptions {
   now?: () => number;
   createId?: () => string;
   onEvent?: (event: SurfaceExecutionEventV1) => void;
+  frames?: SurfaceFrameRegistry;
 }
 
 export class SurfaceEventHub {
@@ -29,6 +42,7 @@ export class SurfaceEventHub {
   private readonly now: () => number;
   private readonly createId: () => string;
   private readonly onEvent?: (event: SurfaceExecutionEventV1) => void;
+  private readonly frames?: SurfaceFrameRegistry;
 
   constructor(
     private readonly sessions: SurfaceSessionManager,
@@ -37,6 +51,7 @@ export class SurfaceEventHub {
     this.now = options.now || Date.now;
     this.createId = options.createId || (() => `surface_event_${crypto.randomUUID()}`);
     this.onEvent = options.onEvent;
+    this.frames = options.frames;
   }
 
   publish(
@@ -57,15 +72,22 @@ export class SurfaceEventHub {
       });
     }
     const list = this.events.get(session.sessionId) || [];
+    const evidence = this.frames?.projectEvidence(subject, draft.evidence) ?? draft.evidence;
     const event = sanitizeSurfaceExecutionEventV1({
       ...draft,
+      ...(evidence ? { evidence } : {}),
       version: 1,
       eventId: draft.eventId || this.createId(),
       sequence: list.length === 0 ? 1 : list[list.length - 1].sequence + 1,
       sessionId: session.sessionId,
+      conversationId: session.conversationId,
       runId: session.runId,
+      ...(session.turnId ? { turnId: session.turnId } : {}),
       agentId: session.agentId,
       surface: session.surface,
+      provider: session.provider,
+      sessionState: session.state,
+      heartbeatAt: session.heartbeatAt,
       startedAt: draft.startedAt ?? this.now(),
     });
     list.push(event);
@@ -80,6 +102,11 @@ export class SurfaceEventHub {
   listOwned(subject: SurfaceGrantSubjectV1): SurfaceExecutionEventV1[] {
     this.sessions.requireOwned(subject.sessionId, subject);
     return (this.events.get(subject.sessionId) || []).map((event) => structuredClone(event));
+  }
+
+  /** Host-only read used after the conversation owner has been checked. */
+  list(sessionId: string): SurfaceExecutionEventV1[] {
+    return (this.events.get(sessionId) || []).map((event) => structuredClone(event));
   }
 
   subscribeOwned(

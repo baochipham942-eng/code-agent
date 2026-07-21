@@ -274,6 +274,23 @@ describe('Surface control plane', () => {
     expect(failure.sessions.get(failure.subject.sessionId)?.state).toBe('failed');
   });
 
+  it('runs provider cleanup during stop before leaving the session in stopping', async () => {
+    const harness = createHarness();
+    let cleanupCount = 0;
+    harness.interrupts.registerCleanup(harness.subject, async () => {
+      await Promise.resolve();
+      cleanupCount += 1;
+    });
+
+    await harness.interrupts.stop(harness.subject);
+    expect(cleanupCount).toBe(1);
+    expect(harness.sessions.get(harness.subject.sessionId)?.state).toBe('stopping');
+
+    await harness.interrupts.endSession(harness.subject);
+    expect(cleanupCount).toBe(1);
+    expect(harness.sessions.get(harness.subject.sessionId)?.state).toBe('completed');
+  });
+
   it('runs blocking takeover with owner response and forces a fresh observation on resume', async () => {
     const { observations, takeover, sessions, subject } = createHarness();
     const observation = observations.register({

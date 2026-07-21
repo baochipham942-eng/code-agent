@@ -136,19 +136,36 @@ export class SurfaceInterruptService {
       this.sessions.transition(subject.sessionId, subject, 'stopping');
     }
     await this.abortActive(subject, 'surface-stopped');
+    await this.runCleanup(subject, session);
   }
 
   async endSession(subject: SurfaceGrantSubjectV1): Promise<void> {
     const before = this.sessions.requireOwned(subject.sessionId, subject);
     if (before.state === 'completed' || before.state === 'failed') return;
     await this.stop(subject);
+    const after = this.sessions.requireOwned(subject.sessionId, subject);
+    if (after.state === 'stopping') {
+      this.sessions.transition(subject.sessionId, subject, 'completed');
+    }
+  }
+
+  private async runCleanup(
+    subject: SurfaceGrantSubjectV1,
+    session: ReturnType<SurfaceSessionManager['requireOwned']>,
+  ): Promise<void> {
     const state = this.stateFor(subject.sessionId);
     try {
-      for (const cleanup of state.cleanup) await cleanup();
-      state.cleanup.clear();
-      this.sessions.transition(subject.sessionId, subject, 'completed');
+      for (const cleanup of [...state.cleanup]) {
+        await cleanup();
+        state.cleanup.delete(cleanup);
+      }
     } catch (error) {
-      this.sessions.transition(subject.sessionId, subject, 'failed');
+      const recoveryCanBeRetried = error instanceof SurfaceExecutionRuntimeError
+        && error.surfaceError.code === 'SURFACE_CLEANUP_FAILED'
+        && error.surfaceError.retryable;
+      if (!recoveryCanBeRetried) {
+        this.sessions.transition(subject.sessionId, subject, 'failed');
+      }
       throw new SurfaceExecutionRuntimeError({
         code: 'SURFACE_CLEANUP_FAILED',
         message: error instanceof Error ? error.message : String(error),
@@ -156,10 +173,10 @@ export class SurfaceInterruptService {
         retryable: true,
         userActionRequired: true,
         recommendedAction: 'Keep the target open and retry cleanup or recover it manually.',
-        surface: before.surface,
-        provider: before.provider,
-        sessionId: before.sessionId,
-        ...(before.activeTarget ? { targetRef: before.activeTarget } : {}),
+        surface: session.surface,
+        provider: session.provider,
+        sessionId: session.sessionId,
+        ...(session.activeTarget ? { targetRef: session.activeTarget } : {}),
       });
     }
   }

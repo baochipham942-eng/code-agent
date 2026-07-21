@@ -10,6 +10,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import type { ToolCall, ToolResult } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
 import { getUserConfigDir } from '../config/configPaths';
 
@@ -52,6 +53,10 @@ export interface CachedMessage {
   tokens?: number;
   /** Additional metadata */
   metadata?: Record<string, unknown>;
+  /** Persisted tool calls used by replay/export projections. */
+  toolCalls?: ToolCall[];
+  /** Persisted tool results used by replay/export projections. */
+  toolResults?: ToolResult[];
 }
 
 /**

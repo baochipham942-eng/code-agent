@@ -32,6 +32,127 @@ function modelCall(id: string, turnId: string, sessionId: string): TelemetryMode
   };
 }
 
+const SURFACE_CANARY = 'surface-secret-canary-diagnostic';
+const SCREENSHOT_BINARY = 'A'.repeat(512);
+
+function surfaceDiagnosticMetadata(): Record<string, unknown> {
+  return {
+    surfaceExecutionLedgerV1: {
+      version: 1,
+      conversationId: 'sess-1',
+      updatedAt: 200,
+      reasoning: 'raw private reasoning',
+      sessions: [{
+        version: 1,
+        session: {
+          version: 1,
+          sessionId: 'surface-diagnostic',
+          runId: 'run-diagnostic',
+          conversationId: 'sess-1',
+          agentId: 'agent-diagnostic',
+          surface: 'browser',
+          provider: 'managed',
+          capabilities: {
+            version: 1,
+            surface: 'browser',
+            provider: 'managed',
+            protocolVersion: 'surface-execution-v1',
+            operations: ['navigate'],
+            observationKinds: ['screenshot'],
+            supports: {
+              cancel: true,
+              pause: true,
+              takeover: true,
+              cleanup: true,
+              successorObservation: true,
+            },
+          },
+          state: 'completed',
+          activeTarget: {
+            kind: 'browser',
+            browserInstanceId: 'browser-private',
+            windowRef: 'window-private',
+            tabRef: 'tab-private',
+            documentRevision: 'revision-private',
+          },
+          startedAt: 100,
+          heartbeatAt: 200,
+        },
+        grant: {
+          state: 'revoked',
+          capabilities: ['observe'],
+          actionClasses: ['private-action'],
+          dataScopes: [`cookie=${SURFACE_CANARY}`],
+        },
+        events: [{
+          version: 1,
+          eventId: 'event-verify',
+          sequence: 1,
+          sessionId: 'surface-diagnostic',
+          conversationId: 'sess-1',
+          runId: 'run-diagnostic',
+          agentId: 'agent-diagnostic',
+          surface: 'browser',
+          provider: 'managed',
+          sessionState: 'completed',
+          phase: 'verify',
+          status: 'succeeded',
+          userSummary: `Visual verification passed ${SURFACE_CANARY}`,
+          observation: {
+            verdict: 'pass',
+            findings: ['The generated page is visible'],
+          },
+          evidenceRefs: ['evidence-screenshot'],
+          artifactRefs: ['artifact:generated-page'],
+          availableControls: [],
+          startedAt: 150,
+          completedAt: 200,
+        }],
+        evidence: [{
+          version: 1,
+          evidenceId: 'evidence-screenshot',
+          kind: 'screenshot',
+          source: 'browser',
+          title: 'Generated page screenshot',
+          summary: `Captured at /Users/tester/private/${SURFACE_CANARY}.png`,
+          capturedAt: 190,
+          assetRef: `/Users/tester/private/${SURFACE_CANARY}.png`,
+          redactionStatus: 'redacted',
+          inspection: {
+            captureState: 'captured',
+            analysisState: 'analyzed',
+            verificationState: 'verified',
+            inspectedBy: { kind: 'agent', id: 'vision-agent', method: 'vision' },
+            inspectedAt: 195,
+            supportsStepIds: ['verify-generated-page'],
+            checklist: [{
+              id: 'page-visible',
+              label: 'Generated page is visible',
+              status: 'passed',
+            }],
+          },
+        }],
+        outputs: [{
+          ref: 'artifact:generated-page',
+          kind: 'artifact',
+          label: 'Generated page',
+          createdAt: 200,
+        }],
+        availableControls: [],
+        source: 'persisted',
+        writable: false,
+        updatedAt: 200,
+      }],
+    },
+    token: 'token-value-private',
+    cookie: 'cookie-value-private',
+    selector: '#private-selector',
+    profileDir: '/Users/tester/private/profile',
+    downloadPath: `/private/tmp/${SURFACE_CANARY}.png`,
+    screenshotBase64: SCREENSHOT_BINARY,
+  };
+}
+
 describe('buildDiagnosticBundle', () => {
   let database: ReturnType<typeof getDatabase>;
   let originalGetDb: typeof database.getDb;
@@ -40,7 +161,7 @@ describe('buildDiagnosticBundle', () => {
   beforeEach(() => {
     dbState.sqlite = new Database(':memory:');
     dbState.sqlite.exec(`
-      CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT);
+      CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT, metadata TEXT);
       CREATE TABLE telemetry_sessions (
         id TEXT PRIMARY KEY, user_id TEXT, title TEXT NOT NULL, model_provider TEXT NOT NULL,
         model_name TEXT NOT NULL, working_directory TEXT NOT NULL, start_time INTEGER NOT NULL,
@@ -118,6 +239,60 @@ describe('buildDiagnosticBundle', () => {
     expect(bundle!.rawPayloads.find((p) => p.field === 'prompt')!.content).toBe('hello world');
   });
 
+  it('adds a metadata-first Surface session, event, and evidence projection', async () => {
+    const storage = new TelemetryStorage();
+    storage.insertSession(session('sess-1'));
+    dbState.sqlite!.prepare('INSERT INTO sessions (id, user_id, metadata) VALUES (?, ?, ?)').run(
+      'sess-1',
+      'u1',
+      JSON.stringify(surfaceDiagnosticMetadata()),
+    );
+
+    const bundle = await buildDiagnosticBundle('sess-1', { builtAt: 12345, storage });
+    const event = bundle?.events.find((candidate) => (
+      candidate.eventType === 'surface_execution_projection'
+    ));
+    expect(event).toBeDefined();
+    expect(event?.timestamp).toBe(12345);
+
+    const data = JSON.parse(event!.data!) as {
+      metadata: {
+        surfaceExecutionExportV1: {
+          sessions: Array<{ events: Array<Record<string, unknown>> }>;
+        };
+      };
+    };
+    expect(data.metadata.surfaceExecutionExportV1.sessions[0]).toMatchObject({
+      sessionId: 'surface-diagnostic',
+      surface: 'browser',
+      provider: 'managed',
+      state: 'completed',
+      events: [{
+        eventId: 'event-verify',
+        phase: 'verify',
+        status: 'succeeded',
+        observation: { verdict: 'pass' },
+        evidence: [{
+          evidenceId: 'evidence-screenshot',
+          captureState: 'captured',
+          analysisState: 'analyzed',
+          verificationState: 'verified',
+        }],
+        artifactRefs: ['artifact:generated-page'],
+      }],
+    });
+
+    const serialized = JSON.stringify(data);
+    expect(serialized).not.toContain(SURFACE_CANARY);
+    expect(serialized).not.toContain('token-value-private');
+    expect(serialized).not.toContain('cookie-value-private');
+    expect(serialized).not.toContain('#private-selector');
+    expect(serialized).not.toContain('/Users/tester');
+    expect(serialized).not.toContain(SCREENSHOT_BINARY);
+    expect(serialized).not.toContain('browser-private');
+    expect(serialized).not.toContain('raw private reasoning');
+  });
+
   it('buildSessionLogExport: 脱敏 bundle + 日志尾部；会话不存在时 bundle 为 null 仍可导出', async () => {
     const storage = new TelemetryStorage();
     storage.insertSession(session('sess-2'));
@@ -157,7 +332,11 @@ describe('sanitizeDiagnosticBundle', () => {
       },
       session: { ...session('s1'), workingDirectory: '/Users/tester/proj', title: 'open /Users/tester/proj' },
       turns: [{
-        turn: { userPrompt: 'see /Users/tester/notes.txt', assistantResponse: 'ok', thinkingContent: undefined } as never,
+        turn: {
+          userPrompt: 'see /Users/tester/notes.txt',
+          assistantResponse: 'ok',
+          thinkingContent: 'raw private chain of thought',
+        } as never,
         modelCalls: [], toolCalls: [],
       }],
       events: [],
@@ -186,5 +365,71 @@ describe('sanitizeDiagnosticBundle', () => {
     // 原对象未被改动
     expect(original.rawPayloads[0].content).toContain('sk-abcd1234efgh');
     expect(original.environment.workingDirectory).toBe('/Users/tester/proj');
+  });
+
+  it('projects Surface metadata and removes canaries, authority, paths, and screenshot bytes', () => {
+    const original = bundle();
+    const rawSurfaceData = JSON.stringify({
+      toolCallId: 'tool-surface',
+      success: true,
+      metadata: surfaceDiagnosticMetadata(),
+    });
+    original.events.push({
+      id: 'event-surface',
+      timestamp: 2,
+      eventType: 'tool_call_end',
+      summary: `Surface result ${SURFACE_CANARY}`,
+      data: rawSurfaceData,
+    });
+    original.rawPayloads.push({
+      turnId: 'turn-1',
+      refKind: 'tool_call',
+      refId: 'surface-result',
+      field: 'result',
+      content: rawSurfaceData,
+      byteLen: Buffer.byteLength(rawSurfaceData),
+      truncated: false,
+      createdAt: 2,
+    });
+
+    const sanitized = sanitizeDiagnosticBundle(original, { homeDir: '/Users/tester' });
+    const sanitizedEvent = sanitized.events.find((event) => event.id === 'event-surface');
+    const parsedEvent = JSON.parse(sanitizedEvent!.data!) as {
+      metadata: {
+        surfaceExecutionExportV1: {
+          sessions: Array<{ events: Array<Record<string, unknown>> }>;
+        };
+      };
+    };
+    expect(parsedEvent.metadata.surfaceExecutionExportV1.sessions[0]).toMatchObject({
+      sessionId: 'surface-diagnostic',
+      state: 'completed',
+      events: [{
+        phase: 'verify',
+        observation: { verdict: 'pass' },
+        evidence: [{
+          captureState: 'captured',
+          analysisState: 'analyzed',
+          verificationState: 'verified',
+        }],
+      }],
+    });
+
+    const serialized = JSON.stringify(sanitized);
+    expect(serialized).toContain('[redacted-canary]');
+    expect(serialized).not.toContain(SURFACE_CANARY);
+    expect(serialized).not.toContain('token-value-private');
+    expect(serialized).not.toContain('cookie-value-private');
+    expect(serialized).not.toContain('#private-selector');
+    expect(serialized).not.toContain('/Users/tester');
+    expect(serialized).not.toContain('/private/tmp');
+    expect(serialized).not.toContain(SCREENSHOT_BINARY);
+    expect(serialized).not.toContain('surfaceExecutionLedgerV1');
+    expect(serialized).not.toContain('browser-private');
+    expect(serialized).not.toContain('raw private chain of thought');
+    expect(sanitized.turns[0].turn.thinkingContent).toBeUndefined();
+
+    expect(original.events[0].data).toContain(SURFACE_CANARY);
+    expect(original.rawPayloads[1].content).toContain(SCREENSHOT_BINARY);
   });
 });

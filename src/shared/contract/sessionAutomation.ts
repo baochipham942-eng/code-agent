@@ -44,6 +44,7 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
 
 export interface SessionAutomationRecord {
   id: string;
+  /** 源会话 id；空串 = 面板/API 创建（无会话回流，仅生命周期与待过目） */
   sourceSessionId: string;
   type: SessionAutomationType;
   status: SessionAutomationStatus;

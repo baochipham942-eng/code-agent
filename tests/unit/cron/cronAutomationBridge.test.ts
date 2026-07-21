@@ -134,9 +134,10 @@ describe('formatCronScheduleLabel', () => {
 });
 
 describe('recordCronAutomationCreated', () => {
-  it('skips entirely without a source session id', async () => {
+  it('records with empty sourceSessionId when no source session (panel-created)', async () => {
     await recordCronAutomationCreated(def(), identityRuntime);
-    expect(service.recordCreated).not.toHaveBeenCalled();
+    expect(service.recordCreated).toHaveBeenCalledTimes(1);
+    expect(service.recordCreated.mock.calls[0][0].sourceSessionId).toBe('');
   });
 
   it('records creation with a composed id and enabled status', async () => {
@@ -182,9 +183,10 @@ describe('syncCronAutomationFromJob', () => {
     });
   });
 
-  it('does nothing without a source session', () => {
+  it('syncs with empty sourceSessionId when no source session (panel-created)', () => {
     syncCronAutomationFromJob(def(), identityRuntime);
-    expect(service.upsert).not.toHaveBeenCalled();
+    expect(service.upsert).toHaveBeenCalledTimes(1);
+    expect(service.upsert.mock.calls[0][0].sourceSessionId).toBe('');
   });
 });
 
@@ -290,6 +292,23 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.configPatch?.pendingReview?.resultSessionId).toBe('result-sess');
   });
 
+  it('面板创建（无源会话）的任务照常记录执行与待过目，sourceSessionId 为空串', async () => {
+    await recordCronAutomationExecution(
+      def({
+        // 无 metadata.sourceSessionId、无 agent context —— 面板/CronSimpleCreate 创建形态
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({ status: 'completed', sessionId: 'result-sess', completedAt: 99 }),
+      identityRuntime
+    );
+    expect(service.recordEvent).toHaveBeenCalledTimes(1);
+    expect(service.upsert.mock.calls[0][0].sourceSessionId).toBe('');
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
+      pendingReview: { resultSessionId: 'result-sess', at: 99 },
+    });
+  });
+
   it('shell 运行与无结果会话的运行不进待过目', async () => {
     await recordCronAutomationExecution(
       def({ metadata: { sourceSessionId: 'sess' }, scheduleType: 'every' }),
@@ -311,8 +330,8 @@ describe('recordCronAutomationExecution', () => {
     expect(service.recordEvent.mock.calls[0][0].configPatch).toBeUndefined();
   });
 
-  it('does nothing without a source session', async () => {
+  it('records execution with empty sourceSessionId when no source session (panel-created)', async () => {
     await recordCronAutomationExecution(def(), exec(), identityRuntime);
-    expect(service.recordEvent).not.toHaveBeenCalled();
+    expect(service.recordEvent).toHaveBeenCalledTimes(1);
   });
 });

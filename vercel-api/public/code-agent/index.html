@@ -810,10 +810,6 @@
       }
 
       .download-panel {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.56fr);
-        gap: 36px;
-        align-items: stretch;
         border: 1px solid var(--line);
         border-radius: var(--radius);
         background: rgba(255, 255, 255, 0.72);
@@ -821,15 +817,15 @@
         overflow: hidden;
       }
 
-      .download-copy { padding: 38px; }
+      .download-copy { padding: 38px 38px 10px; }
       .download-copy .lead { max-width: 720px; margin-top: 18px; }
 
+      /* 卡片横排自适应：1 张铺满、2 张并排、窄屏自动落单列（未来加 Linux 卡也不用改） */
       .download-card-shell {
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 12px;
-        padding: 18px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+        padding: 20px 38px 38px;
       }
 
       .download-card {
@@ -924,8 +920,7 @@
         .hero-inner { grid-template-columns: 1fr; gap: 28px; }
         .hero-stage { min-height: 360px; opacity: 0.88; }
         .section-head,
-        .memory-panel,
-        .download-panel { grid-template-columns: 1fr; }
+        .memory-panel { grid-template-columns: 1fr; }
         .section-head .lead { max-width: none; justify-self: start; }
         .value-grid,
         .flow-grid,

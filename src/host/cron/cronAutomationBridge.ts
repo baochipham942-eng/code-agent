@@ -216,13 +216,24 @@ export async function recordCronAutomationExecution(
         ? 'failed'
         : 'completed';
     const keepActive = definition.enabled && definition.scheduleType !== 'at';
-    const recordStatus: SessionAutomationStatus = keepActive ? 'active' : eventStatus;
+    // 成功且有结果会话的 agent 运行进入「待过目」：一次性任务状态落 pending_review；
+    // recurring 记录保持 active，用 config.pendingReview 标记最近一次待审运行。
+    const reviewable = !skipped && execution.status === 'completed'
+      && definition.action.type === 'agent' && Boolean(execution.sessionId);
+    const recordStatus: SessionAutomationStatus = keepActive
+      ? 'active'
+      : reviewable
+        ? 'pending_review'
+        : eventStatus;
     await service.recordEvent({
       type: getCronAutomationType(definition),
       sourceRefId: definition.id,
       event,
       status: eventStatus,
       recordStatus,
+      ...(reviewable
+        ? { configPatch: { pendingReview: { resultSessionId: execution.sessionId, at: execution.completedAt ?? Date.now() } } }
+        : {}),
       resultSessionId: execution.sessionId,
       summary: skipped
         ? '当前触发被跳过。'

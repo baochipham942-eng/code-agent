@@ -50,6 +50,7 @@ export const IPC_DOMAINS = {
   AGENT_REGISTRY: 'domain:agents', // 自定义 Agent 注册中心（builtin + user + project）
   ROLES: 'domain:roles', // 持久化角色资产（角色面板：列表/详情/记忆删改）
   PROJECT: 'domain:project', // P0-2 项目空间容器（项目/目标/角色入驻/产物聚合）
+  LIBRARY: 'domain:library', // 项目资料库（条目/导入/归档/会话 pin，Batch 2）
   TAG: 'domain:tag', // @neo Tag work card contract
   AGENT_ENGINE: 'domain:agentEngine', // Native / Codex CLI / Claude Code execution engines
   CAPABILITY: 'domain:capability', // Skill / MCP / Tool / Channel 能力中心

@@ -108,6 +108,9 @@ const KnowledgeMemoryPanel = React.lazy(() => import('./components/features/know
 const LibraryPanel = React.lazy(() => import('./components/features/knowledge/LibraryPanel').then((module) => ({
   default: module.LibraryPanel,
 })));
+const ExpertPanel = React.lazy(() => import('./components/features/expert/ExpertPanel').then((module) => ({
+  default: module.ExpertPanel,
+})));
 const CronCenterPanel = React.lazy(() => import('./components/features/cron/CronCenterPanel').then((module) => ({
   default: module.CronCenterPanel,
 })));
@@ -168,6 +171,7 @@ export const App: React.FC = () => {
     closeProjectCollaborationPage,
     showKnowledgeMemoryPanel,
     showLibraryPanel,
+    showExpertPanel,
     showActivityPanel,
     setShowActivityPanel,
     showBrowserSurfacePanel,
@@ -869,6 +873,10 @@ export const App: React.FC = () => {
               ) : showLibraryPanel ? (
                 <React.Suspense fallback={null}>
                   <LibraryPanel />
+                </React.Suspense>
+              ) : showExpertPanel ? (
+                <React.Suspense fallback={null}>
+                  <ExpertPanel />
                 </React.Suspense>
               ) : showComputerUsePanel ? (
                 <React.Suspense fallback={null}>

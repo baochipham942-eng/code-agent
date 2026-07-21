@@ -26,6 +26,11 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import { invokeDomain } from '../services/ipcService';
 import type { SettingsTab } from '../utils/settingsTabs';
+import {
+  dropLegacyActiveAgentKey,
+  readActiveAgentSessionMap,
+  writeActiveAgentSessionMap,
+} from './activeAgentSessionMap';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
 // 在 store 模块顶层引入 ipcService（store 是大量被 import 的模块，链路尽量短）
@@ -249,6 +254,9 @@ interface AppState {
   // Batch 2 L3: 资料库全屏页可见性
   showLibraryPanel: boolean;
 
+  // Batch 3 E2: 专家全屏页可见性
+  showExpertPanel: boolean;
+
   // File preview tab registry — one entry per opened file (content, dirty state, LRU).
   previewTabs: PreviewTab[];
   activePreviewTabId: string | null;
@@ -302,6 +310,12 @@ interface AppState {
   setActiveAgentId: (agentId: string | null) => void;
   /** 会话切换/创建/清空时同步当前会话的 agent 选择；inheritCurrent=会话创建时继承 draft 期选择。 */
   syncActiveAgentForSession: (sessionId: string | null, opts?: { inheritCurrent?: boolean }) => void;
+  /**
+   * 直接把 agent 绑到指定会话（E2「请 TA 来」）：先落盘 per-session map，再更新内存值。
+   * 与 setActiveAgentId 的区别：不依赖 activeAgentSessionKey 已同步到该会话——
+   * 新会话创建后 sync effect 尚未跑时也能正确绑定（sync 落地时从 map 读回同一值）。
+   */
+  bindAgentForSession: (sessionId: string, agentId: string) => void;
   /** 清理某会话持久化的 agent 选择；onlyIfAgentId = 仅当存量选择等于该值才清（防误清用户新选择）。 */
   clearActiveAgentForSession: (sessionId: string, opts?: { onlyIfAgentId?: string }) => void;
   setShowCapturePanel: (show: boolean) => void;
@@ -340,6 +354,7 @@ interface AppState {
   setShowLab: (show: boolean) => void;
   setShowKnowledgeMemoryPanel: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
+  setShowExpertPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
   openWorkspacePreview: (itemId?: string | null) => void;
   setSelectedWorkspacePreviewId: (itemId: string | null) => void;
@@ -389,46 +404,6 @@ interface AppState {
   setWorkingDirectory: (dir: string | null) => void;
   setContextHealth: (health: ContextHealthState | null) => void;
   setContextHealthCollapsed: (collapsed: boolean) => void;
-}
-
-// activeAgentId per-session 持久化（S3 收敛）：legacy 全局单值 key 是跨会话残留
-// 路由的根源，读到即丢弃（旧值无法归属到会话）；新 key 存 sessionId → agentId map。
-const LEGACY_ACTIVE_AGENT_STORAGE_KEY = 'app:activeAgentId';
-const ACTIVE_AGENT_SESSION_MAP_KEY = 'app:activeAgentIdBySession';
-
-function readActiveAgentSessionMap(): Record<string, string> {
-  try {
-    if (typeof localStorage === 'undefined') return {};
-    const raw = localStorage.getItem(ACTIVE_AGENT_SESSION_MAP_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>).filter(
-        (entry): entry is [string, string] => typeof entry[1] === 'string',
-      ),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function writeActiveAgentSessionMap(map: Record<string, string>): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(ACTIVE_AGENT_SESSION_MAP_KEY, JSON.stringify(map));
-  } catch {
-    // localStorage 在隐私模式下可能不可用——降级为纯内存状态
-  }
-}
-
-function dropLegacyActiveAgentKey(): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.removeItem(LEGACY_ACTIVE_AGENT_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
 }
 
 // Default model config — 引用 shared/constants.ts 常量
@@ -504,6 +479,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   showKnowledgeMemoryPanel: false,
   showLibraryPanel: false,
+  showExpertPanel: false,
 
   // Initial file preview registry
   previewTabs: [],
@@ -579,6 +555,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
     else delete map[sessionKey];
     writeActiveAgentSessionMap(map);
   },
+  bindAgentForSession: (sessionId, agentId) => {
+    const map = readActiveAgentSessionMap();
+    map[sessionId] = agentId;
+    writeActiveAgentSessionMap(map);
+    set({ activeAgentId: agentId });
+  },
   syncActiveAgentForSession: (sessionId, opts) => {
     dropLegacyActiveAgentKey();
     if (!sessionId) {
@@ -611,17 +593,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowComputerUsePanel: (show) => set({
     showComputerUsePanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showExpertPanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
   }),
   setShowInAppValidationPanel: (show) => set({
     showInAppValidationPanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showExpertPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
   }),
   openProjectCollaborationPage: (projectId) => set({
     showProjectCollaborationPage: true,
     projectCollaborationPageProjectId: projectId?.trim() || null,
     showKnowledgeMemoryPanel: false,
     showLibraryPanel: false,
+    showExpertPanel: false,
     showComputerUsePanel: false,
     showInAppValidationPanel: false,
   }),
@@ -683,11 +666,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
   setShowKnowledgeMemoryPanel: (show) => set({
     showKnowledgeMemoryPanel: show,
-    ...(show ? { showLibraryPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
+    ...(show ? { showLibraryPanel: false, showExpertPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
   }),
   setShowLibraryPanel: (show) => set({
     showLibraryPanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showComputerUsePanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showExpertPanel: false, showComputerUsePanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
+  }),
+  setShowExpertPanel: (show) => set({
+    showExpertPanel: show,
+    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showComputerUsePanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
   }),
 
   openPreview: (filePath) => {

@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::{

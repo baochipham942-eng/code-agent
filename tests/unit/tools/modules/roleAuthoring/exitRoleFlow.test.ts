@@ -20,7 +20,7 @@ const allow: CanUseToolFn = async () => ({ allow: true });
 
 describe('exit_role_flow', () => {
   it('成功返回 exitedRoleFlow 标记，输出告知草稿保留、继续用户请求', async () => {
-    const handler = exitRoleFlowModule.createHandler();
+    const handler = await exitRoleFlowModule.createHandler();
     const result = await handler.execute({ reason: '用户要整理股票复盘报告' }, mkToolCtx(), allow);
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -31,7 +31,7 @@ describe('exit_role_flow', () => {
   });
 
   it('abort 后不执行', async () => {
-    const handler = exitRoleFlowModule.createHandler();
+    const handler = await exitRoleFlowModule.createHandler();
     const result = await handler.execute({}, mkToolCtx(true), allow);
     expect(result.ok).toBe(false);
   });

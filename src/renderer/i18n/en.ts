@@ -9,6 +9,7 @@ import { chatTranscriptEn } from './chatTranscript';
 import { chatInputEn } from './chatInput';
 import { chatInputModelStrategyEn } from './chatInputModelStrategy';
 import { sidebarEn } from './sidebar';
+import { cronCenterEn } from './cronCenter';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
 import { taskStatusPanelsEn } from './taskStatusPanels';
@@ -868,6 +869,7 @@ export const en: Translations = {
   ...chatInputEn,
   ...chatInputModelStrategyEn,
   ...sidebarEn,
+  ...cronCenterEn,
   ...previewWorkspaceEn,
   ...modalPrimitivesEn,
   ...taskStatusPanelsEn,

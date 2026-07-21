@@ -60,6 +60,13 @@ export const sidebarZh = {
     // 会话默认标题
     newSessionTitle: '新对话',
     goalSessionTitle: '目标：{title}',
+    // 能力区（会话列表上方：自动化 / 专家 / 资料库）
+    capabilityZone: {
+      automation: '自动化',
+      automationNext: '下次 {time} · {name}',
+      automationCount: '{count} 个任务',
+      automationEmpty: '按计划自动跑，结果回来给你过目',
+    },
   },
   sessionMenu: {
     applyPreset: '应用 Preset: {name}',
@@ -267,6 +274,12 @@ export const sidebarEn: typeof sidebarZh = {
     updateDatasetFailed: 'Failed to update dataset label: {message}',
     newSessionTitle: 'New conversation',
     goalSessionTitle: 'Goal: {title}',
+    capabilityZone: {
+      automation: 'Automations',
+      automationNext: 'Next {time} · {name}',
+      automationCount: '{count} tasks',
+      automationEmpty: 'Runs on schedule, results come back for review',
+    },
   },
   sessionMenu: {
     applyPreset: 'Apply preset: {name}',

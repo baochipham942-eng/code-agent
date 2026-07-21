@@ -47,6 +47,7 @@
 | [CLI 架构](./architecture/cli.md) | 5 种运行模式、CLIAgent 适配层、输出格式化、命令系统 |
 | [Windows 支持](./architecture/windows-support.md) | win32-x64 移植：安全与路径地基、PowerShell 命令安全规则包、NSIS unsigned + minisign 发版链、真机调试记录、朋友验收清单 |
 | [Intel x64 支持](./architecture/intel-x64-support.md) | darwin 双架构（arm64 + x64）矩阵构建、资源覆盖机制、updater manifest 合并先例 |
+| [Surface Execution](./architecture/surface-execution.md) | Browser/Computer 统一执行运行时（ADR-046）：owner 三元组 Session/Grant/Observation 合同、可中止操作队列、Relay 协议 v2 + tab lease、Stateful CUA 适配、会话执行体验单一投影（Timeline/Evidence 三态/PiP）、全链脱敏与验收证据体系 |
 | [Design Mode 设计工作区](./architecture/design-mode.md) | 全屏设计工作台 as-built：**Tab 按交付媒介分 4 类(网页/图/演示稿/视频，`DesignOutputType` UI 聚合零破坏)**；网页(agent 编排) + 图〔设计稿/信息图〕(renderer 直连出图) + 视频(t2v/i2v) + **厚版演示稿(§15：引擎从 agent 工具抽 `services/design/slidesGenerator`，SlideData[] 单一真源，大纲编辑器/逐页预览/就地改字；4 增强=品牌色注入 OKLCH→sRGB / AI 大纲 / LibreOffice 像素预览 / AI 配图模型页面可选，付费 opt-in 成本前置)**；konva 自研无限画布、T1-T6 变体 spine/成本/一致性；P1 视觉模型注册表(D1 单源)多模型切换 + 标注重绘 + SSRF 守卫；**UC 参考图垫图(生成前贴图喂 wanx description_edit) + 统一历史(图像/视频/原型收口左侧一处、role-aware 分组)** |
 
 ### 近期规格
@@ -107,6 +108,7 @@
 | 042 | 远程 MCP OAuth 浏览器授权（SDK OAuthClientProvider 接线） | accepted |
 | 043 | 组级工具步骤三态折叠预览 | accepted |
 | 045 | 上下文压缩单一架构：删除旧三层 `checkAndCompress` 入口 | accepted |
+| 046 | Surface Execution V1：Browser/Computer 统一 owner-aware 执行运行时 | accepted |
 
 > **ADR-040 执行状态（2026-07-18）**：Word / PPT / Excel locator、共享 picker、generated-PPT resolver 与隐私安全 telemetry 已随 #377/#385 合入 `main`。Poppler `26.07.0` 双原生架构候选由 run `29412794021` 产出并发布到项目控制的不可变 OSS 前缀，`config/poppler-sidecar.lock.json` 已为 `ready`，Poppler promotion stop-ship 已解除；正式版本仍需走常规签名、公证、DMG 与安装版验收。
 
@@ -614,7 +616,7 @@ V2 的稳定口径是 **Vite-only MVP**：自动起 dev server + 点击源码定
 
 #### Browser / Computer 当前边界
 
-Browser 主路径仍是 in-app managed browser，默认验收走 System Chrome headless + CDP。**登录态复用**（ADR-041）已交付两条产品通道：（1）本机 Chromium 系 profile Cookie 导入进 managed persistent profile（显式确认 + Keychain，不挂载用户日常 `user-data-dir`）；（2）Chrome Relay 扩展附着真实标签 + `browser_action.engine=relay`，结果走 dual-engine proof/pointer finalizer。远程浏览器池、Firefox/Safari profile 导入、完整 localStorage/IDB 镜像、任意外部 CDP attach 仍属 backlog。Computer Surface 的 background AX / CGEvent 只对显式 target app/window 和本地受控 smoke 成立，foreground fallback 仍是需要人工确认的当前前台动作面。Agent Pointer 是 app surface 内的可视化反馈，不声明系统鼠标所有权；登录、MFA、CAPTCHA、支付和账号安全路径仍走 manual takeover / unsupported 分流。
+**2026-07-21 起（ADR-046 / #529 / v0.28.0）**：Browser 与 Computer 收口到 Surface Execution V1 owner-aware 执行运行时（owner 三元组 Session/Grant/Observation、可中止操作队列、Relay 协议 v2 + tab lease、会话执行体验单一投影），详见 `docs/architecture/surface-execution.md`。Browser 主路径仍是 in-app managed browser，默认验收走 System Chrome headless + CDP。**登录态复用**（ADR-041）已交付两条产品通道：（1）本机 Chromium 系 profile Cookie 导入进 managed persistent profile（显式确认 + Keychain，不挂载用户日常 `user-data-dir`）；（2）Chrome Relay 扩展附着真实标签 + `browser_action.engine=relay`，结果走 dual-engine proof/pointer finalizer。远程浏览器池、Firefox/Safari profile 导入、完整 localStorage/IDB 镜像、任意外部 CDP attach 仍属 backlog。Computer Surface 的 background AX / CGEvent 只对显式 target app/window 和本地受控 smoke 成立，foreground fallback 仍是需要人工确认的当前前台动作面。Agent Pointer 是 app surface 内的可视化反馈，不声明系统鼠标所有权；登录、MFA、CAPTCHA、支付和账号安全路径仍走 manual takeover / unsupported 分流。
 
 ---
 

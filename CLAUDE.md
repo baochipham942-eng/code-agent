@@ -48,6 +48,7 @@ Agent Neo 是产品名，`code-agent` 是仓库历史名。这个文件主要给
 | [docs/architecture/agent-core.md](docs/architecture/agent-core.md) | Agent 核心运行时 |
 | [docs/architecture/tool-system.md](docs/architecture/tool-system.md) | 工具系统 |
 | [docs/architecture/multiagent-system.md](docs/architecture/multiagent-system.md) | 混合多 Agent 架构 |
+| [docs/architecture/surface-execution.md](docs/architecture/surface-execution.md) | Browser/Computer 统一执行运行时（ADR-046） |
 | [docs/architecture/dynamic-workflow.md](docs/architecture/dynamic-workflow.md) | Dynamic Workflow 命令式脚本编排运行时 |
 | [docs/architecture/data-storage.md](docs/architecture/data-storage.md) | 数据存储 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 部署配置 |

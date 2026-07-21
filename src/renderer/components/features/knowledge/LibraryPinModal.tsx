@@ -59,6 +59,14 @@ export const LibraryPinModal: React.FC<Props> = ({ sessionId, projectId, onClose
     });
   };
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   const projectItems = items.filter((item) => item.projectId !== null);
   const globalItems = items.filter((item) => item.projectId === null);
 
@@ -92,8 +100,11 @@ export const LibraryPinModal: React.FC<Props> = ({ sessionId, projectId, onClose
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.library.pinModalTitle}
         data-library-pin-modal
         className="w-[420px] max-h-[70vh] flex flex-col bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl"
         onClick={(e) => e.stopPropagation()}

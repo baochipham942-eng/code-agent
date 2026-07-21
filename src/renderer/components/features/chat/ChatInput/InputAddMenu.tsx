@@ -115,7 +115,7 @@ export const InputAddMenu: React.FC<Props> = ({
           </button>
 
           {/* Batch 2 L2: 资料库 Pin 选择器入口 */}
-          <button
+          <button /* ds-allow:button: "+"二级菜单行（图标+文案左对齐菜单项，同文件既有菜单行同构），Button primitive 是居中动作按钮形状，不适配菜单行 */
             type="button"
             data-library-pin-entry
             disabled={libraryDisabled}

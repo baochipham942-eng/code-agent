@@ -6,11 +6,12 @@
 // 正文按需 Read）。选中即保存（乐观更新，失败回滚）。
 
 import React, { useEffect, useState } from 'react';
-import { BookOpen, Loader2, Pin, X } from 'lucide-react';
+import { BookOpen, Loader2, Pin } from 'lucide-react';
 import type { LibraryItem } from '@shared/contract/library';
 import { getSessionPin, listLibraryItems, setSessionPin } from '../../../services/libraryClient';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
+import { Modal } from '../../primitives/Modal';
 
 interface Props {
   sessionId: string;
@@ -59,14 +60,6 @@ export const LibraryPinModal: React.FC<Props> = ({ sessionId, projectId, onClose
     });
   };
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
-
   const projectItems = items.filter((item) => item.projectId !== null);
   const globalItems = items.filter((item) => item.projectId === null);
 
@@ -76,7 +69,7 @@ export const LibraryPinModal: React.FC<Props> = ({ sessionId, projectId, onClose
       <div key={label}>
         <div className="px-1 pt-2 pb-1 text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
         {groupItems.map((item) => (
-          <button
+          <button /* ds-allow:button: pin 选择列表行（图标+两行文本+选中态整行高亮），Button primitive 是居中动作按钮形状，变体不适配列表行 */
             key={item.id}
             type="button"
             data-library-pin-item={item.id}
@@ -100,32 +93,21 @@ export const LibraryPinModal: React.FC<Props> = ({ sessionId, projectId, onClose
   };
 
   return (
-    <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={t.library.pinModalTitle}
-        data-library-pin-modal
-        className="w-[420px] max-h-[70vh] flex flex-col bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-700/60">
-          <BookOpen className="w-4 h-4 text-indigo-300" />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm text-zinc-100">{t.library.pinModalTitle}</div>
-            <div className="text-[11px] text-zinc-500 leading-relaxed">{t.library.pinModalHint}</div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors"
-            title={t.common.close}
-          >
-            <X className="w-4 h-4" />
-          </button>
+    <Modal
+      isOpen
+      onClose={onClose}
+      title={t.library.pinModalTitle}
+      headerIcon={<BookOpen className="w-4 h-4 text-indigo-300" />}
+      size="md"
+      footer={(
+        <div className="text-[11px] text-zinc-500">
+          {t.library.pinnedCount.replace('{count}', String(pinned.size))}
         </div>
-
-        <div className="flex-1 overflow-y-auto px-2 py-1">
+      )}
+    >
+      <div data-library-pin-modal className="flex flex-col max-h-[55vh]">
+        <div className="px-1 pb-2 text-[11px] text-zinc-500 leading-relaxed">{t.library.pinModalHint}</div>
+        <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-8 text-zinc-500">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -139,11 +121,7 @@ export const LibraryPinModal: React.FC<Props> = ({ sessionId, projectId, onClose
             </>
           )}
         </div>
-
-        <div className="px-4 py-2.5 border-t border-zinc-700/60 text-[11px] text-zinc-500">
-          {t.library.pinnedCount.replace('{count}', String(pinned.size))}
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 };

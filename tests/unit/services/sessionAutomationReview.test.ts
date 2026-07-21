@@ -102,11 +102,17 @@ describe('pending review', () => {
     expect(service.markReviewed('ghost')).toBeNull();
   });
 
-  it('summarizeSessions 带 pendingReviewCount', () => {
+  it('recordEvent cancelled 清 pendingReview 标记（已删任务不占收件箱）', async () => {
     const service = new SessionAutomationService();
-    seed(service, 'a1', { status: 'active', config: { pendingReview: { at: 1 } } });
-    seed(service, 'a2', { status: 'active' });
-    const summary = service.summarizeSessions(['src-1'])['src-1'];
-    expect(summary.pendingReviewCount).toBe(1);
+    seed(service, 'doomed', { status: 'active', config: { pendingReview: { resultSessionId: 'r', at: 1 } } });
+    expect(service.countPendingReview()).toBe(1);
+    await service.recordEvent({
+      automationId: 'doomed',
+      event: 'cancelled',
+      status: 'cancelled',
+      summary: '定时任务已删除。',
+    });
+    expect(service.countPendingReview()).toBe(0);
+    expect(service.getById('doomed')?.status).toBe('cancelled');
   });
 });

@@ -320,7 +320,6 @@ export class SessionAutomationService {
       const list = bySession.get(sessionId) ?? [];
       const active = list.filter((record) => ACTIVE_STATUSES.has(record.status));
       const running = list.filter((record) => RUNNING_STATUSES.has(record.status));
-      const pendingReview = list.filter(hasPendingReview);
       const nextRunAt = active
         .map((record) => record.nextRunAt)
         .filter((value): value is number => typeof value === 'number')
@@ -341,7 +340,6 @@ export class SessionAutomationService {
         total: list.length,
         activeCount: active.length,
         runningCount: running.length,
-        pendingReviewCount: pendingReview.length,
         nextRunAt,
         label,
         tooltip,
@@ -397,6 +395,11 @@ export class SessionAutomationService {
     const nextConfig = input.configPatch
       ? { ...(existing.config ?? {}), ...input.configPatch }
       : existing.config;
+    // 取消/删除的自动化不该继续占据待审收件箱与侧栏徽标。
+    // upsert 是 existing-first 合并（sync 等调用方依赖它保住标记），
+    // 所以这里不能只从入参里删键——落库后再显式清一次。
+    const clearPendingReview = input.event === 'cancelled'
+      || (input.recordStatus ?? input.status) === 'cancelled';
     const record = this.upsert({
       id: existing.id,
       sourceSessionId: existing.sourceSessionId,
@@ -410,6 +413,14 @@ export class SessionAutomationService {
       resultSessionId: input.resultSessionId ?? existing.resultSessionId,
       config: nextConfig,
     });
+    if (clearPendingReview && record.config && 'pendingReview' in record.config) {
+      const db = getDb();
+      const config = { ...record.config };
+      delete config.pendingReview;
+      db?.prepare('UPDATE session_automations SET status = ?, config_json = ?, updated_at = ? WHERE id = ?')
+        .run(record.status, JSON.stringify(config), Date.now(), record.id);
+      record.config = config;
+    }
 
     await this.writeAutomationMessage(
       record,

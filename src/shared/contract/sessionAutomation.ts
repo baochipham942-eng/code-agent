@@ -75,8 +75,6 @@ export interface SessionAutomationSessionSummary {
   total: number;
   activeCount: number;
   runningCount: number;
-  /** 待过目数（status=pending_review 或 config.pendingReview 存在） */
-  pendingReviewCount?: number;
   nextRunAt?: number;
   label?: string;
   tooltip: string;

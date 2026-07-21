@@ -39,13 +39,17 @@ describe('LibraryService', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('saveUpload 落盘到项目目录并登记 upload 条目', () => {
-    const item = service.saveUpload({
-      projectId: 'proj_1',
-      filename: 'Brief.pdf',
-      dataBase64: Buffer.from('pdf-bytes').toString('base64'),
-      tags: ['素材'],
-    }, 1000);
+  function writeSource(name: string, content: string): string {
+    const dir = path.join(tmpDir, 'incoming');
+    fs.mkdirSync(dir, { recursive: true });
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, content);
+    return p;
+  }
+
+  it('importFile 拷入项目目录并登记 upload 条目', () => {
+    const src = writeSource('Brief.pdf', 'pdf-bytes');
+    const item = service.importFile({ projectId: 'proj_1', sourcePath: src, tags: ['素材'] }, 1000);
 
     expect(item.kind).toBe('upload');
     expect(item.projectId).toBe('proj_1');
@@ -53,37 +57,30 @@ describe('LibraryService', () => {
     expect(item.tags).toEqual(['素材']);
     expect(fs.readFileSync(item.pathOrUri, 'utf8')).toBe('pdf-bytes');
     expect(item.pathOrUri.startsWith(path.join(tmpDir, 'library', 'proj_1'))).toBe(true);
+    // 源文件保留（temp 清理归上传端点管）
+    expect(fs.existsSync(src)).toBe(true);
   });
 
-  it('saveUpload 同项目相同内容去重，不重复落盘', () => {
-    const data = Buffer.from('same-bytes').toString('base64');
-    const first = service.saveUpload({ projectId: null, filename: 'a.txt', dataBase64: data }, 1000);
-    const second = service.saveUpload({ projectId: null, filename: 'b.txt', dataBase64: data }, 2000);
+  it('importFile 同项目相同内容去重，不重复落盘', () => {
+    const first = service.importFile({ projectId: null, sourcePath: writeSource('a.txt', 'same-bytes') }, 1000);
+    const second = service.importFile({ projectId: null, sourcePath: writeSource('b.txt', 'same-bytes') }, 2000);
 
     expect(second.id).toBe(first.id);
     expect(fs.readdirSync(path.join(tmpDir, 'library', 'global'))).toHaveLength(1);
   });
 
-  it('saveUpload 文件名只取 basename，路径穿越被拦', () => {
-    const item = service.saveUpload({
-      filename: '../../etc/passwd',
-      dataBase64: Buffer.from('x').toString('base64'),
-    }, 1000);
-
-    expect(path.dirname(item.pathOrUri)).toBe(path.join(tmpDir, 'library', 'global'));
-    expect(path.basename(item.pathOrUri)).toBe('passwd');
-  });
-
-  it('saveUpload 重名文件加内容哈希后缀', () => {
-    const a = service.saveUpload({ filename: 'doc.md', dataBase64: Buffer.from('v1').toString('base64') }, 1000);
-    const b = service.saveUpload({ filename: 'doc.md', dataBase64: Buffer.from('v2').toString('base64') }, 2000);
+  it('importFile 重名文件加内容哈希后缀', () => {
+    const a = service.importFile({ sourcePath: writeSource('doc.md', 'v1') }, 1000);
+    fs.rmSync(path.join(tmpDir, 'incoming'), { recursive: true });
+    const b = service.importFile({ sourcePath: writeSource('doc.md', 'v2') }, 2000);
 
     expect(a.pathOrUri).not.toBe(b.pathOrUri);
     expect(fs.readFileSync(b.pathOrUri, 'utf8')).toBe('v2');
   });
 
-  it('saveUpload 空内容拒绝', () => {
-    expect(() => service.saveUpload({ filename: 'x.txt', dataBase64: '' }, 1000)).toThrow('empty');
+  it('importFile 空文件拒绝，源文件不存在时抛错', () => {
+    expect(() => service.importFile({ sourcePath: writeSource('x.txt', '') }, 1000)).toThrow('empty');
+    expect(() => service.importFile({ sourcePath: path.join(tmpDir, 'nope.txt') }, 1000)).toThrow();
   });
 
   it('addItem 归档产物：contentHash 命中时返回已有条目', () => {
@@ -106,7 +103,7 @@ describe('LibraryService', () => {
   });
 
   it('delete 只删资料库目录内的 upload 文件，库外文件不动', () => {
-    const uploaded = service.saveUpload({ filename: 'in.txt', dataBase64: Buffer.from('x').toString('base64') }, 1000);
+    const uploaded = service.importFile({ sourcePath: writeSource('in.txt', 'x') }, 1000);
     const outside = path.join(tmpDir, 'outside.txt');
     fs.writeFileSync(outside, 'keep');
     const external = service.addItem({ title: 'out', kind: 'artifact', pathOrUri: outside }, 1000);

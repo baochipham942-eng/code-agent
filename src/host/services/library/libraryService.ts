@@ -18,7 +18,7 @@ import type {
 
 const logger = createLogger('LibraryService');
 
-/** 单个上传文件上限（base64 解码后） */
+/** 单个导入文件上限（与 web /api/upload/temp 的 MAX_UPLOAD_SIZE 对齐） */
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 export class LibraryService {
@@ -68,20 +68,19 @@ export class LibraryService {
   }
 
   /**
-   * 上传文件（base64 传输）：落盘到资料库目录并登记条目。
-   * 内容 sha256 去重：同项目已有相同内容时不重复落盘。
+   * 导入本地文件（桌面原生选择器或 web /api/upload/temp 落地的临时路径）：
+   * 拷入资料库目录并登记条目。内容 sha256 去重：同项目相同内容不重复落盘。
    */
-  saveUpload(args: {
+  importFile(args: {
     projectId?: string | null;
-    filename: string;
-    dataBase64: string;
+    sourcePath: string;
     tags?: string[];
     sourceSessionId?: string;
   }, now: number = Date.now()): LibraryItem {
     const projectId = args.projectId ?? null;
-    const data = Buffer.from(args.dataBase64, 'base64');
+    const data = fs.readFileSync(args.sourcePath);
     if (data.byteLength === 0) {
-      throw new Error('Upload is empty');
+      throw new Error('File is empty');
     }
     if (data.byteLength > MAX_UPLOAD_BYTES) {
       throw new Error(`Upload exceeds ${Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024)}MB limit`);
@@ -95,7 +94,7 @@ export class LibraryService {
     }
 
     // 文件名只取 basename，防路径穿越；重名加短哈希后缀
-    const safeName = path.basename(args.filename).replace(/[\\/:*?"<>|]/g, '_') || 'untitled';
+    const safeName = path.basename(args.sourcePath).replace(/[\\/:*?"<>|]/g, '_') || 'untitled';
     const dir = this.libraryDir(projectId);
     fs.mkdirSync(dir, { recursive: true });
     let target = path.join(dir, safeName);

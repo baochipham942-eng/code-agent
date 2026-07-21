@@ -14,11 +14,13 @@ import {
 } from 'lucide-react';
 import type { AuditItem, InboxItem, InboxStatus } from './KnowledgeMemoryPanel';
 import { Badge } from '../../primitives';
+import { useI18n } from '../../../hooks/useI18n';
+import { zh, type Translations } from '../../../i18n';
 
-function formatTime(value: number | null): string {
-  if (!value) return '未知时间';
+function formatTime(value: number | null, t: Translations = zh): string {
+  if (!value) return t.knowledgeMemory.timeUnknown;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '未知时间';
+  if (Number.isNaN(date.getTime())) return t.knowledgeMemory.timeUnknown;
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
@@ -52,6 +54,7 @@ export function KnowledgeInboxList({
   onCancelEdit: () => void;
   onApproveEdit: (item: InboxItem, value: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="space-y-2">
       {items.map((item) => {
@@ -69,16 +72,16 @@ export function KnowledgeInboxList({
                 </div>
                 <h4 className="mt-1 line-clamp-2 text-sm font-medium text-zinc-100">{item.title}</h4>
               </div>
-              <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(item.updatedAt)}</span>
+              <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(item.updatedAt, t)}</span>
             </div>
             <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">{item.summary}</p>
             <dl className="mt-3 space-y-1 text-[11px] leading-4 text-zinc-500">
               <div>
-                <dt className="inline text-zinc-400">来源: </dt>
+                <dt className="inline text-zinc-400">{t.knowledgeMemory.sourceLabelPrefix}</dt>
                 <dd className="inline">{item.source}</dd>
               </div>
               <div>
-                <dt className="inline text-zinc-400">用途: </dt>
+                <dt className="inline text-zinc-400">{t.knowledgeMemory.purposeLabelPrefix}</dt>
                 <dd className="inline">{item.reason}</dd>
               </div>
             </dl>
@@ -89,7 +92,7 @@ export function KnowledgeInboxList({
                   value={draft}
                   onChange={(event) => onDraftChange(item.id, event.target.value)}
                   className="min-h-24 w-full resize-y rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs leading-5 text-zinc-200 outline-hidden focus:border-zinc-500"
-                  aria-label={`编辑 ${item.title}`}
+                  aria-label={t.knowledgeMemory.editAriaLabel.replace('{title}', item.title)}
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -99,7 +102,7 @@ export function KnowledgeInboxList({
                     className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
                   >
                     <Check className="h-3.5 w-3.5" />
-                    保存采纳
+                    {t.knowledgeMemory.saveAdopt}
                   </button>
                   <button
                     type="button"
@@ -107,7 +110,7 @@ export function KnowledgeInboxList({
                     disabled={isBusy}
                     className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
                   >
-                    取消
+                    {t.knowledgeMemory.cancel}
                   </button>
                 </div>
               </div>
@@ -120,7 +123,7 @@ export function KnowledgeInboxList({
                   className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50"
                 >
                   <Check className="h-3.5 w-3.5" />
-                  采纳
+                  {t.knowledgeMemory.adopt}
                 </button>
                 <button
                   type="button"
@@ -129,7 +132,7 @@ export function KnowledgeInboxList({
                   className="inline-flex h-7 items-center gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-2.5 text-[11px] font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50"
                 >
                   <PencilLine className="h-3.5 w-3.5" />
-                  编辑采纳
+                  {t.knowledgeMemory.editAdopt}
                 </button>
                 <button
                   type="button"
@@ -138,7 +141,7 @@ export function KnowledgeInboxList({
                   className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
                 >
                   <Ban className="h-3.5 w-3.5" />
-                  忽略
+                  {t.knowledgeMemory.ignore}
                 </button>
               </div>
             )}
@@ -157,11 +160,12 @@ export function KnowledgeInboxList({
 }
 
 function InboxStatusBadge({ status }: { status: InboxStatus }) {
+  const { t } = useI18n();
   const label: Record<InboxStatus, string> = {
-    approving: '采纳中',
-    rejecting: '忽略中',
-    approved: '已采纳',
-    rejected: '已忽略',
+    approving: t.knowledgeMemory.inboxStatusApproving,
+    rejecting: t.knowledgeMemory.inboxStatusRejecting,
+    approved: t.knowledgeMemory.inboxStatusApproved,
+    rejected: t.knowledgeMemory.inboxStatusRejected,
   };
   const tone = status === 'approved'
     ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
@@ -176,6 +180,7 @@ function InboxStatusBadge({ status }: { status: InboxStatus }) {
 }
 
 export function AuditRow({ item }: { item: AuditItem }) {
+  const { t } = useI18n();
   const confidence = formatConfidence(item.confidence);
   const [isExpanded, setIsExpanded] = useState(false);
   const hasBody = Boolean(item.body?.trim());
@@ -190,20 +195,20 @@ export function AuditRow({ item }: { item: AuditItem }) {
           </div>
           <h4 className="mt-2 line-clamp-2 text-sm font-medium text-zinc-100">{item.title}</h4>
         </div>
-        <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(item.updatedAt)}</span>
+        <span className="shrink-0 text-[11px] text-zinc-600">{formatTime(item.updatedAt, t)}</span>
       </div>
       <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-400">{item.summary}</p>
       <dl className="mt-3 grid grid-cols-1 gap-1 text-[11px] leading-4 text-zinc-500 lg:grid-cols-2">
         <div>
-          <dt className="inline text-zinc-400">来源: </dt>
+          <dt className="inline text-zinc-400">{t.knowledgeMemory.sourceLabelPrefix}</dt>
           <dd className="inline break-all">{item.source}</dd>
         </div>
         <div>
-          <dt className="inline text-zinc-400">用途: </dt>
+          <dt className="inline text-zinc-400">{t.knowledgeMemory.purposeLabelPrefix}</dt>
           <dd className="inline">{item.purpose}</dd>
         </div>
         <div>
-          <dt className="inline text-zinc-400">类型: </dt>
+          <dt className="inline text-zinc-400">{t.knowledgeMemory.typeLabelPrefix}</dt>
           <dd className="inline">{item.origin}</dd>
         </div>
       </dl>
@@ -215,7 +220,7 @@ export function AuditRow({ item }: { item: AuditItem }) {
             className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
           >
             {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            {isExpanded ? '收起原文证据' : '查看原文证据'}
+            {isExpanded ? t.knowledgeMemory.collapseEvidence : t.knowledgeMemory.expandEvidence}
           </button>
           {isExpanded ? (
             <pre className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950 p-3 text-[11px] leading-5 text-zinc-300">
@@ -229,12 +234,13 @@ export function AuditRow({ item }: { item: AuditItem }) {
 }
 
 function InjectionBadge({ value }: { value: AuditItem['injection'] }) {
+  const { t } = useI18n();
   const labels: Record<AuditItem['injection'], { text: string; className: string; Icon: LucideIcon }> = {
-    'seed-candidate': { text: 'seed 候选', className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300', Icon: Zap },
-    'memory-index': { text: 'index 候选', className: 'border-sky-500/30 bg-sky-500/10 text-sky-300', Icon: FileText },
-    'recent-conversations': { text: 'recent 候选', className: 'border-amber-500/30 bg-amber-500/10 text-amber-300', Icon: MessageSquareText },
-    available: { text: '按需读取', className: 'border-zinc-700 bg-zinc-800/70 text-zinc-300', Icon: FileText },
-    stored: { text: '已存储', className: 'border-zinc-700 bg-zinc-800/70 text-zinc-400', Icon: Database },
+    'seed-candidate': { text: t.knowledgeMemory.injectionSeedCandidate, className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300', Icon: Zap },
+    'memory-index': { text: t.knowledgeMemory.injectionIndexCandidate, className: 'border-sky-500/30 bg-sky-500/10 text-sky-300', Icon: FileText },
+    'recent-conversations': { text: t.knowledgeMemory.injectionRecentCandidate, className: 'border-amber-500/30 bg-amber-500/10 text-amber-300', Icon: MessageSquareText },
+    available: { text: t.knowledgeMemory.injectionOnDemand, className: 'border-zinc-700 bg-zinc-800/70 text-zinc-300', Icon: FileText },
+    stored: { text: t.knowledgeMemory.injectionStored, className: 'border-zinc-700 bg-zinc-800/70 text-zinc-400', Icon: Database },
   };
   const config = labels[value];
   return (

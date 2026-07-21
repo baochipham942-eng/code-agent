@@ -17,6 +17,8 @@ import ipcService from '../../../services/ipcService';
 import { isWebMode } from '../../../utils/platform';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useI18n } from '../../../hooks/useI18n';
+import { zh, type Translations } from '../../../i18n';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import {
   AuditRow,
@@ -152,7 +154,7 @@ export interface AuditItem {
   source: string;
   origin: string;
   purpose: string;
-  scope: '项目知识' | '个人/操作偏好' | '运行证据' | '未分类';
+  scope: string;
   updatedAt: number | null;
   confidence?: number;
   injection: 'seed-candidate' | 'memory-index' | 'recent-conversations' | 'available' | 'stored';
@@ -161,7 +163,7 @@ export interface AuditItem {
 export interface InboxItem {
   id: string;
   contentHash: string;
-  kind: '候选项目知识' | '会话结论' | '失败复盘' | '可沉淀经验';
+  kind: string;
   title: string;
   summary: string;
   content: string;
@@ -186,13 +188,15 @@ interface MemoryInboxResolvePayload {
 
 export type InboxStatus = 'approving' | 'rejecting' | 'approved' | 'rejected';
 
-const CATEGORY_META: Record<MemoryCategory, CategoryMeta> = {
-  user_preferences: { label: '用户偏好', tone: 'text-sky-300 border-sky-500/30 bg-sky-500/10', Icon: Brain },
-  project_rules: { label: '项目规则', tone: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10', Icon: FileText },
-  recent_topics: { label: '近期主题', tone: 'text-amber-300 border-amber-500/30 bg-amber-500/10', Icon: Clock3 },
-  agent_behavior: { label: 'agent 行为指令', tone: 'text-violet-300 border-violet-500/30 bg-violet-500/10', Icon: ShieldCheck },
-  uncategorized: { label: '未分类', tone: 'text-zinc-300 border-zinc-600 bg-zinc-800/70', Icon: Database },
-};
+function getCategoryMeta(t: Translations): Record<MemoryCategory, CategoryMeta> {
+  return {
+    user_preferences: { label: t.knowledgeMemory.categoryUserPreferences, tone: 'text-sky-300 border-sky-500/30 bg-sky-500/10', Icon: Brain },
+    project_rules: { label: t.knowledgeMemory.categoryProjectRules, tone: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10', Icon: FileText },
+    recent_topics: { label: t.knowledgeMemory.categoryRecentTopics, tone: 'text-amber-300 border-amber-500/30 bg-amber-500/10', Icon: Clock3 },
+    agent_behavior: { label: t.knowledgeMemory.categoryAgentBehavior, tone: 'text-violet-300 border-violet-500/30 bg-violet-500/10', Icon: ShieldCheck },
+    uncategorized: { label: t.knowledgeMemory.categoryUncategorized, tone: 'text-zinc-300 border-zinc-600 bg-zinc-800/70', Icon: Database },
+  };
+}
 
 const CATEGORY_ORDER: MemoryCategory[] = [
   'user_preferences',
@@ -347,54 +351,54 @@ function classifyStoredMemory(memory: StoredMemory): MemoryCategory {
   return 'uncategorized';
 }
 
-function lightFilePurpose(file: LightMemoryFile, category: MemoryCategory): string {
-  if (category === 'user_preferences') return '影响默认沟通方式、工具选择或长期个人偏好。';
-  if (category === 'project_rules') return '影响当前项目里的实现边界、命名和技术判断。';
-  if (category === 'agent_behavior') return '约束 agent 的行为方式、回复风格或执行纪律。';
-  if (category === 'recent_topics') return '帮助恢复最近反复出现的任务背景。';
-  return '只有 agent 主动读取时才会影响当前会话。';
+function lightFilePurpose(file: LightMemoryFile, category: MemoryCategory, t: Translations = zh): string {
+  if (category === 'user_preferences') return t.knowledgeMemory.purposeUserPreference;
+  if (category === 'project_rules') return t.knowledgeMemory.purposeProjectRules;
+  if (category === 'agent_behavior') return t.knowledgeMemory.purposeAgentBehavior;
+  if (category === 'recent_topics') return t.knowledgeMemory.purposeRecentTopics;
+  return t.knowledgeMemory.purposeDefault;
 }
 
-function storedMemoryPurpose(memory: StoredMemory, isSeedCandidate: boolean): string {
-  if (isSeedCandidate) return '当前项目会话启动时，seed-memory 可能把它放进系统上下文。';
-  if (memory.source === 'session_extracted') return '来自压缩前保留摘要，后续同项目任务可能参考。';
-  if (memory.type === 'user_preference') return '作为跨项目偏好，可能影响默认做法和沟通方式。';
-  if (memory.type === 'project_knowledge') return '作为项目知识，可能影响当前仓库里的实现判断。';
-  return '已存储，但当前没有直接注入证据。';
+function storedMemoryPurpose(memory: StoredMemory, isSeedCandidate: boolean, t: Translations = zh): string {
+  if (isSeedCandidate) return t.knowledgeMemory.purposeSeedCandidate;
+  if (memory.source === 'session_extracted') return t.knowledgeMemory.purposeSessionExtracted;
+  if (memory.type === 'user_preference') return t.knowledgeMemory.purposeUserPreferenceStored;
+  if (memory.type === 'project_knowledge') return t.knowledgeMemory.purposeProjectKnowledgeStored;
+  return t.knowledgeMemory.purposeStoredDefault;
 }
 
-function sourceLabelForStored(memory: StoredMemory): string {
+function sourceLabelForStored(memory: StoredMemory, t: Translations = zh): string {
   const sourceMap: Record<StoredMemory['source'], string> = {
-    auto_learned: '自动学习',
-    user_defined: '用户写入',
-    session_extracted: '压缩前提取',
+    auto_learned: t.knowledgeMemory.sourceAutoLearned,
+    user_defined: t.knowledgeMemory.sourceUserDefined,
+    session_extracted: t.knowledgeMemory.sourceSessionExtracted,
   };
   const project = memory.projectPath ? ` · ${memory.projectPath}` : '';
   const session = memory.sessionId ? ` · session ${memory.sessionId}` : '';
   return `${sourceMap[memory.source]}${project}${session}`;
 }
 
-function scopeForStored(memory: StoredMemory): AuditItem['scope'] {
-  if (memory.projectPath || memory.type === 'project_knowledge' || memory.type === 'code_pattern') return '项目知识';
-  if (memory.type === 'user_preference' || memory.type === 'tool_usage') return '个人/操作偏好';
-  if (memory.source === 'session_extracted') return '运行证据';
-  return '未分类';
+function scopeForStored(memory: StoredMemory, t: Translations = zh): AuditItem['scope'] {
+  if (memory.projectPath || memory.type === 'project_knowledge' || memory.type === 'code_pattern') return t.knowledgeMemory.scopeProjectKnowledge;
+  if (memory.type === 'user_preference' || memory.type === 'tool_usage') return t.knowledgeMemory.scopePersonalPreference;
+  if (memory.source === 'session_extracted') return t.knowledgeMemory.scopeRuntimeEvidence;
+  return t.knowledgeMemory.scopeUncategorized;
 }
 
-export function buildAuditItems(data: MemoryAuditPayload): AuditItem[] {
+export function buildAuditItems(data: MemoryAuditPayload, t: Translations = zh): AuditItem[] {
   const seedCandidateIds = new Set(data.seedCandidates.map((memory) => memory.id));
   const lightItems = data.lightFiles.map((file): AuditItem => {
     const category = classifyLightFile(file);
     return {
       id: `light:${file.filename}`,
       title: file.name || file.filename,
-      summary: file.description || compactText(file.content, 140) || '(空)',
+      summary: file.description || compactText(file.content, 140) || t.knowledgeMemory.emptyPlaceholder,
       body: file.content,
       category,
       source: `~/.code-agent/memory/${file.filename}`,
-      origin: 'Light Memory 文件',
-      purpose: lightFilePurpose(file, category),
-      scope: category === 'project_rules' ? '项目知识' : category === 'user_preferences' || category === 'agent_behavior' ? '个人/操作偏好' : '未分类',
+      origin: t.knowledgeMemory.originLightMemoryFile,
+      purpose: lightFilePurpose(file, category, t),
+      scope: category === 'project_rules' ? t.knowledgeMemory.scopeProjectKnowledge : category === 'user_preferences' || category === 'agent_behavior' ? t.knowledgeMemory.scopePersonalPreference : t.knowledgeMemory.scopeUncategorized,
       updatedAt: Date.parse(file.updatedAt) || null,
       injection: 'available',
     };
@@ -402,13 +406,13 @@ export function buildAuditItems(data: MemoryAuditPayload): AuditItem[] {
 
   const recentItems = data.lightStats.recentConversations.map((line, index): AuditItem => ({
     id: `recent:${index}`,
-    title: parseRecentTitle(line) || `最近会话 ${index + 1}`,
-    summary: compactText(line.replace(/^- /, ''), 160) || '(空)',
+    title: parseRecentTitle(line) || t.knowledgeMemory.recentSessionTitle.replace('{index}', String(index + 1)),
+    summary: compactText(line.replace(/^- /, ''), 160) || t.knowledgeMemory.emptyPlaceholder,
     category: 'recent_topics',
     source: '~/.code-agent/memory/recent-conversations.md',
     origin: 'Recent Conversations',
-    purpose: '当用户提到之前、上次、历史或 recall 类意图时，recent_conversations 可能注入。',
-    scope: '运行证据',
+    purpose: t.knowledgeMemory.purposeRecentConversations,
+    scope: t.knowledgeMemory.scopeRuntimeEvidence,
     updatedAt: null,
     injection: 'recent-conversations',
   }));
@@ -417,12 +421,12 @@ export function buildAuditItems(data: MemoryAuditPayload): AuditItem[] {
     ? [{
         id: 'light:index',
         title: 'Light Memory Index',
-        summary: `${data.lightFiles.length} 个 Light Memory 文件可被 INDEX.md 暴露给 agent。`,
+        summary: t.knowledgeMemory.lightMemoryIndexSummary.replace('{count}', String(data.lightFiles.length)),
         category: 'agent_behavior',
         source: '~/.code-agent/memory/INDEX.md',
         origin: 'Memory index',
-        purpose: '当用户提到记忆、之前、历史等意图时，memory_index 可能注入；日常对话只注入 memory_hint。',
-        scope: '运行证据',
+        purpose: t.knowledgeMemory.purposeMemoryIndex,
+        scope: t.knowledgeMemory.scopeRuntimeEvidence,
         updatedAt: Math.max(...data.lightFiles.map((file) => Date.parse(file.updatedAt) || 0)) || null,
         injection: 'memory-index',
       }]
@@ -433,13 +437,13 @@ export function buildAuditItems(data: MemoryAuditPayload): AuditItem[] {
     return {
       id: `db:${memory.id}`,
       title: compactText(memory.summary || memory.content, 80) || memory.category || memory.type,
-      summary: compactText(memory.content, 180) || '(空)',
+      summary: compactText(memory.content, 180) || t.knowledgeMemory.emptyPlaceholder,
       body: memory.content,
       category: classifyStoredMemory(memory),
-      source: sourceLabelForStored(memory),
+      source: sourceLabelForStored(memory, t),
       origin: memory.type,
-      purpose: storedMemoryPurpose(memory, isSeedCandidate),
-      scope: scopeForStored(memory),
+      purpose: storedMemoryPurpose(memory, isSeedCandidate, t),
+      scope: scopeForStored(memory, t),
       updatedAt: memory.updatedAt || memory.createdAt || null,
       confidence: memory.confidence,
       injection: isSeedCandidate ? 'seed-candidate' : 'stored',
@@ -454,7 +458,7 @@ function parseRecentTitle(line: string): string | null {
   return match?.[1] ?? null;
 }
 
-export function buildInboxItems(data: MemoryAuditPayload): InboxItem[] {
+export function buildInboxItems(data: MemoryAuditPayload, t: Translations = zh): InboxItem[] {
   const resolvedCandidateIds = new Set((data.inboxDecisions ?? []).map((decision) => decision.candidateId));
   const resolvedContentHashes = new Set((data.inboxDecisions ?? []).map((decision) => decision.contentHash).filter(Boolean));
   const isResolvedInboxMemory = (memory: StoredMemory): boolean => {
@@ -470,26 +474,26 @@ export function buildInboxItems(data: MemoryAuditPayload): InboxItem[] {
     .map((memory): InboxItem => ({
       id: `flush:${memory.id}`,
       contentHash: hashInboxContent(memory.content),
-      kind: memory.category === 'flush_decision' ? '候选项目知识' : '会话结论',
+      kind: memory.category === 'flush_decision' ? t.knowledgeMemory.kindProjectKnowledgeCandidate : t.knowledgeMemory.kindConversationOutcome,
       title: compactText(memory.summary || memory.content, 80) || memory.category,
-      summary: compactText(memory.content, 180) || '(空)',
+      summary: compactText(memory.content, 180) || t.knowledgeMemory.emptyPlaceholder,
       content: memory.content,
-      source: sourceLabelForStored(memory),
+      source: sourceLabelForStored(memory, t),
       reason: memory.category === 'flush_decision'
-        ? '压缩前识别为关键决策，需要用户后续确认是否沉淀成稳定项目知识。'
-        : '压缩前识别为用户要求，可能值得沉淀成稳定规则。',
+        ? t.knowledgeMemory.inboxReasonFlushDecision
+        : t.knowledgeMemory.inboxReasonUserRequirement,
       updatedAt: memory.updatedAt || memory.createdAt || null,
     }));
 
   const fromRecentConversations = data.lightStats.recentConversations.slice(0, 6).map((line, index): InboxItem => ({
     id: `conversation:${index}`,
     contentHash: hashInboxContent(line.replace(/^- /, '').trim()),
-    kind: '会话结论',
-    title: parseRecentTitle(line) || `最近会话 ${index + 1}`,
-    summary: compactText(line.replace(/^- /, ''), 180) || '(空)',
+    kind: t.knowledgeMemory.kindConversationOutcome,
+    title: parseRecentTitle(line) || t.knowledgeMemory.recentSessionTitle.replace('{index}', String(index + 1)),
+    summary: compactText(line.replace(/^- /, ''), 180) || t.knowledgeMemory.emptyPlaceholder,
     content: line.replace(/^- /, '').trim(),
     source: '~/.code-agent/memory/recent-conversations.md',
-    reason: '已有最近会话摘要，但当前没有自动确认/写入项目知识的闭环。',
+    reason: t.knowledgeMemory.inboxReasonRecentConversation,
     updatedAt: null,
   }));
 
@@ -500,12 +504,12 @@ export function buildInboxItems(data: MemoryAuditPayload): InboxItem[] {
     .map((memory): InboxItem => ({
       id: `pattern:${memory.id}`,
       contentHash: hashInboxContent(memory.content),
-      kind: memory.category.includes('error') ? '失败复盘' : '可沉淀经验',
+      kind: memory.category.includes('error') ? t.knowledgeMemory.kindFailureRetro : t.knowledgeMemory.kindReusableExperience,
       title: compactText(memory.summary || memory.content, 80) || memory.category,
-      summary: compactText(memory.content, 180) || '(空)',
+      summary: compactText(memory.content, 180) || t.knowledgeMemory.emptyPlaceholder,
       content: memory.content,
-      source: sourceLabelForStored(memory),
-      reason: '识别到经验或失败信号，第一版只展示，不自动写入新的知识库条目。',
+      source: sourceLabelForStored(memory, t),
+      reason: t.knowledgeMemory.inboxReasonExperiencePattern,
       updatedAt: memory.updatedAt || memory.createdAt || null,
     }));
 
@@ -523,6 +527,7 @@ export function buildInboxItems(data: MemoryAuditPayload): InboxItem[] {
 }
 
 export const KnowledgeMemoryPanel: React.FC = () => {
+  const { t } = useI18n();
   const setShowKnowledgeMemoryPanel = useAppStore((state) => state.setShowKnowledgeMemoryPanel);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -596,9 +601,9 @@ export const KnowledgeMemoryPanel: React.FC = () => {
         return next;
       });
       setInboxErrorById((prev) => ({ ...prev, [item.id]: message }));
-      setError(`Knowledge Inbox 处理失败：${message}`);
+      setError(t.knowledgeMemory.inboxProcessFailed.replace('{message}', message));
     }
-  }, [currentSessionId, loadAudit, workingDirectory]);
+  }, [currentSessionId, loadAudit, t, workingDirectory]);
 
   const handleStartEditInboxItem = useCallback((item: InboxItem) => {
     setEditingInboxId(item.id);
@@ -616,14 +621,15 @@ export const KnowledgeMemoryPanel: React.FC = () => {
       setRebuildResult(result);
       await loadAudit();
     } catch (err) {
-      setError(`Light Memory 重建失败：${err instanceof Error ? err.message : String(err)}`);
+      setError(t.knowledgeMemory.lightRebuildFailed.replace('{message}', err instanceof Error ? err.message : String(err)));
     } finally {
       setIsRebuildingIndex(false);
     }
-  }, [loadAudit]);
+  }, [loadAudit, t]);
 
-  const auditItems = useMemo(() => data ? buildAuditItems(data) : [], [data]);
-  const inboxItems = useMemo(() => data ? buildInboxItems(data) : [], [data]);
+  const categoryMeta = useMemo(() => getCategoryMeta(t), [t]);
+  const auditItems = useMemo(() => data ? buildAuditItems(data, t) : [], [data, t]);
+  const inboxItems = useMemo(() => data ? buildInboxItems(data, t) : [], [data, t]);
   const filteredAuditItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return auditItems;
@@ -661,7 +667,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
     }
     return groups;
   }, [filteredAuditItems]);
-  const contextLabel = data?.projectPath || workingDirectory || '全局上下文';
+  const contextLabel = data?.projectPath || workingDirectory || t.knowledgeMemory.contextGlobal;
   const sessionLabel = data?.sessionId || currentSessionId;
 
   return (
@@ -671,7 +677,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
         title="Knowledge / Memory"
         description={`${contextLabel}${sessionLabel ? ` · session ${sessionLabel}` : ''}`}
         onClose={() => setShowKnowledgeMemoryPanel(false)}
-        closeLabel="关闭 Knowledge / Memory"
+        closeLabel={t.knowledgeMemory.closeLabel}
         actions={(
           <button
             type="button"
@@ -680,7 +686,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
             className="inline-flex h-8 items-center gap-2 rounded-md border border-zinc-700 px-3 text-xs text-zinc-300 hover:border-zinc-600 hover:bg-zinc-900 disabled:opacity-60"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            刷新
+            {t.knowledgeMemory.refresh}
           </button>
         )}
       />
@@ -708,7 +714,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
                 <Inbox className="h-4 w-4 text-amber-300" />
                 <h3 className="text-sm font-semibold text-zinc-100">Knowledge Inbox</h3>
               </div>
-              <span className="text-xs text-zinc-500">{inboxItems.length} 条</span>
+              <span className="text-xs text-zinc-500">{t.knowledgeMemory.countSuffix.replace('{count}', String(inboxItems.length))}</span>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -718,8 +724,8 @@ export const KnowledgeMemoryPanel: React.FC = () => {
                 <EmptyState
                   variant="panel"
                   icon={Inbox}
-                  title="暂无待确认知识"
-                  text="没有发现可直接复用的候选链路；刷新会重新读取 Light Memory 和最近会话。"
+                  title={t.knowledgeMemory.inboxEmptyTitle}
+                  text={t.knowledgeMemory.inboxEmptyText}
                 />
               ) : (
                 <KnowledgeInboxList
@@ -752,7 +758,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="搜索记忆"
+                  placeholder={t.knowledgeMemory.searchPlaceholder}
                   className="h-8 w-full rounded-md border border-zinc-700 bg-zinc-950 pl-8 pr-3 text-xs text-zinc-200 outline-hidden placeholder:text-zinc-600 focus:border-zinc-500"
                 />
               </div>
@@ -760,7 +766,7 @@ export const KnowledgeMemoryPanel: React.FC = () => {
 
             <div className="mt-3 grid grid-cols-5 gap-2">
               {CATEGORY_ORDER.map((category) => {
-                const meta = CATEGORY_META[category];
+                const meta = categoryMeta[category];
                 return (
                   <div key={category} className={`rounded-md border px-2 py-2 ${meta.tone}`}>
                     <div className="flex items-center gap-1.5">
@@ -782,15 +788,15 @@ export const KnowledgeMemoryPanel: React.FC = () => {
               <EmptyState
                 variant="panel"
                 icon={Database}
-                title={query.trim() ? '没有匹配的记忆' : '暂无可审计记忆'}
-                text={query.trim() ? '换个关键词再查。' : '当前没有 Light Memory 文件、DB 记忆或最近会话摘要。'}
+                title={query.trim() ? t.knowledgeMemory.auditEmptyTitleFiltered : t.knowledgeMemory.auditEmptyTitleDefault}
+                text={query.trim() ? t.knowledgeMemory.auditEmptyTextFiltered : t.knowledgeMemory.auditEmptyTextDefault}
               />
             ) : (
               <div className="space-y-4">
                 {CATEGORY_ORDER.map((category) => {
                   const items = groupedAudit[category];
                   if (items.length === 0) return null;
-                  const meta = CATEGORY_META[category];
+                  const meta = categoryMeta[category];
                   return (
                     <div key={category}>
                       <div className="mb-2 flex items-center gap-2 px-1">
@@ -829,16 +835,16 @@ export function countLightMemoryHealthIssues(health: LightMemoryHealthReport | n
   ].filter(Boolean).length;
 }
 
-function buildLightMemoryIssuePreview(health: LightMemoryHealthReport): string[] {
+function buildLightMemoryIssuePreview(health: LightMemoryHealthReport, t: Translations = zh): string[] {
   const issues: string[] = [];
-  if (!health.indexExists && health.totalFiles > 0) issues.push('INDEX.md 缺失');
-  if (health.indexTooLong) issues.push(`INDEX.md ${health.indexLineCount} 行`);
-  for (const filename of health.missingInIndex.slice(0, 3)) issues.push(`未进索引: ${filename}`);
-  for (const filename of health.orphanInIndex.slice(0, 3)) issues.push(`孤儿索引: ${filename}`);
+  if (!health.indexExists && health.totalFiles > 0) issues.push(t.knowledgeMemory.healthIssueIndexMissing);
+  if (health.indexTooLong) issues.push(t.knowledgeMemory.healthIssueIndexTooLong.replace('{count}', String(health.indexLineCount)));
+  for (const filename of health.missingInIndex.slice(0, 3)) issues.push(t.knowledgeMemory.healthIssueMissingInIndex.replace('{filename}', filename));
+  for (const filename of health.orphanInIndex.slice(0, 3)) issues.push(t.knowledgeMemory.healthIssueOrphanInIndex.replace('{filename}', filename));
   for (const item of health.invalidFrontmatter.slice(0, 3)) issues.push(`${item.filename}: ${item.reason}`);
   for (const item of health.unreadableFiles.slice(0, 2)) issues.push(`${item.filename}: ${item.reason}`);
-  for (const item of health.duplicateNames.slice(0, 2)) issues.push(`重复名称: ${item.value}`);
-  for (const item of health.duplicateDescriptions.slice(0, 2)) issues.push(`重复描述: ${item.value}`);
+  for (const item of health.duplicateNames.slice(0, 2)) issues.push(t.knowledgeMemory.healthIssueDuplicateName.replace('{value}', item.value));
+  for (const item of health.duplicateDescriptions.slice(0, 2)) issues.push(t.knowledgeMemory.healthIssueDuplicateDescription.replace('{value}', item.value));
   return issues.slice(0, 5);
 }
 
@@ -855,13 +861,14 @@ export function LightMemoryHealthPanel({
   isRebuilding: boolean;
   onRebuild: () => void;
 }) {
+  const { t } = useI18n();
   const issueCount = countLightMemoryHealthIssues(health);
-  const issuePreview = health ? buildLightMemoryIssuePreview(health) : [];
+  const issuePreview = health ? buildLightMemoryIssuePreview(health, t) : [];
   const statusLabel = !health || isLoading
-    ? '检查中'
+    ? t.knowledgeMemory.healthCheckingStatus
     : issueCount === 0
-      ? '健康'
-      : `${issueCount} 项`;
+      ? t.knowledgeMemory.healthHealthyStatus
+      : t.knowledgeMemory.healthIssueCountStatus.replace('{count}', String(issueCount));
   const statusTone = !health || isLoading
     ? 'border-zinc-700 bg-zinc-900 text-zinc-400'
     : issueCount === 0
@@ -883,14 +890,14 @@ export function LightMemoryHealthPanel({
           className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-900 disabled:opacity-50"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${isRebuilding ? 'animate-spin' : ''}`} />
-          重建索引
+          {t.knowledgeMemory.healthRebuildIndex}
         </button>
       </div>
       <div className="space-y-3 p-3">
         <div className="grid grid-cols-3 gap-2">
-          <HealthMetric label="文件" value={health?.totalFiles ?? '-'} />
-          <HealthMetric label="索引行" value={health?.indexLineCount ?? '-'} />
-          <HealthMetric label="缺口" value={issueCount} />
+          <HealthMetric label={t.knowledgeMemory.healthMetricFiles} value={health?.totalFiles ?? '-'} />
+          <HealthMetric label={t.knowledgeMemory.healthMetricIndexLines} value={health?.indexLineCount ?? '-'} />
+          <HealthMetric label={t.knowledgeMemory.healthMetricIssues} value={issueCount} />
         </div>
         {issuePreview.length > 0 ? (
           <div className="space-y-1 rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-4 text-amber-100">
@@ -903,13 +910,13 @@ export function LightMemoryHealthPanel({
           </div>
         ) : (
           <div className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 py-2 text-[11px] text-zinc-500">
-            INDEX.md 与 Light Memory 文件一致。
+            {t.knowledgeMemory.healthIndexConsistent}
           </div>
         )}
         {rebuildResult ? (
           <div className="rounded-md border border-zinc-800 bg-zinc-950/60 px-2.5 py-2 text-[11px] leading-4 text-zinc-400">
-            已索引 {rebuildResult.indexedFiles}/{rebuildResult.totalFiles}
-            {rebuildResult.skippedFiles.length > 0 ? `，跳过 ${rebuildResult.skippedFiles.length}` : ''}
+            {t.knowledgeMemory.healthRebuildSummary.replace('{indexed}', String(rebuildResult.indexedFiles)).replace('{total}', String(rebuildResult.totalFiles))}
+            {rebuildResult.skippedFiles.length > 0 ? t.knowledgeMemory.healthRebuildSkipped.replace('{count}', String(rebuildResult.skippedFiles.length)) : ''}
           </div>
         ) : null}
       </div>
@@ -931,6 +938,7 @@ function HealthMetric({ label, value }: { label: string; value: string | number 
 }
 
 export function MemoryInjectionTraceList({ traces }: { traces: MemoryInjectionTrace[] }) {
+  const { t } = useI18n();
   const recentTraces = traces.slice(0, 5);
   return (
     <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5" data-testid="memory-injection-traces">
@@ -939,20 +947,20 @@ export function MemoryInjectionTraceList({ traces }: { traces: MemoryInjectionTr
           <Zap className="h-3.5 w-3.5 text-emerald-300" />
           <span className="text-[11px] font-medium text-zinc-300">Injection Trace</span>
         </div>
-        <span className="text-[11px] text-zinc-600">{traces.length} 条</span>
+        <span className="text-[11px] text-zinc-600">{t.knowledgeMemory.countSuffix.replace('{count}', String(traces.length))}</span>
       </div>
       {recentTraces.length === 0 ? (
-        <div className="text-[11px] text-zinc-500">暂无本进程注入记录。</div>
+        <div className="text-[11px] text-zinc-500">{t.knowledgeMemory.injectionTraceEmpty}</div>
       ) : (
         <div className="grid gap-1.5">
           {recentTraces.map((trace) => (
             <div key={trace.id} className="flex min-w-0 items-center gap-2 text-[11px] leading-4">
               <span className={`shrink-0 rounded border px-1.5 py-0.5 ${trace.injected ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900 text-zinc-500'}`}>
-                {trace.injected ? '已注入' : '未注入'}
+                {trace.injected ? t.knowledgeMemory.injectionTraceInjected : t.knowledgeMemory.injectionTraceNotInjected}
               </span>
               <span className="shrink-0 font-medium text-zinc-300">{trace.blockType}</span>
-              <span className="min-w-0 truncate text-zinc-500">{trace.trigger} · {trace.count} 项 · {trace.chars} chars</span>
-              <span className="ml-auto shrink-0 text-zinc-600">{formatTraceTime(trace.timestamp)}</span>
+              <span className="min-w-0 truncate text-zinc-500">{trace.trigger} · {t.knowledgeMemory.injectionTraceUnitCount.replace('{count}', String(trace.count))} · {trace.chars} chars</span>
+              <span className="ml-auto shrink-0 text-zinc-600">{formatTraceTime(trace.timestamp, t)}</span>
             </div>
           ))}
         </div>
@@ -961,8 +969,8 @@ export function MemoryInjectionTraceList({ traces }: { traces: MemoryInjectionTr
   );
 }
 
-function formatTraceTime(timestamp: number): string {
+function formatTraceTime(timestamp: number, t: Translations = zh): string {
   const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return '未知';
+  if (Number.isNaN(date.getTime())) return t.knowledgeMemory.traceTimeUnknown;
   return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }

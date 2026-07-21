@@ -19,6 +19,7 @@ import { labGpt1En } from './labGpt1';
 import { labNanogptEn } from './labNanogpt';
 import { labLlamafactoryEn } from './labLlamafactory';
 import { labAlignmentEn } from './labAlignment';
+import { knowledgeMemoryEn } from './knowledgeMemory';
 
 export const en: Translations = {
   // Common
@@ -890,6 +891,7 @@ export const en: Translations = {
     archiveFailed: 'Archive failed',
   },
 
+  ...knowledgeMemoryEn,
   ...chatTranscriptEn,
   ...chatInputEn,
   ...chatInputModelStrategyEn,

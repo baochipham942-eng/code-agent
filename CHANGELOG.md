@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-07-21
+
+### Fixed
+
+- **create-role/edit-role 的 strict 工具集不再无条件粘滞**：`conversationRuntimeStickySkill.ts` 恢复判定改为三重条件——本会话存在按 `sessionId` 过滤的 pending 角色草稿，或种子仍在最近 3 条 user 消息的访谈窗口内，且种子之后历史里未出现过 `exit_role_flow` 调用；否则不再恢复。此前只要历史里有过 `/create-role` 种子就无条件恢复 strict 工具集，草稿晾着未确认时用户提无关请求也会被锁在 5 个工具里。（#532）
+- **landing 页下载区双卡竖排视觉失衡**：下载区由「左文案|右卡片栏」两列 grid 改为文案顶部横条 + 卡片 auto-fit 网格（minmax 320px），Windows 测试版卡片放量后不再把左栏拉出大片空白。（#531）
+
+### Added
+
+- **`exit_role_flow` 工具**（`src/host/tools/modules/roleAuthoring/exitRoleFlow.ts`，strict 白名单内）：模型调用成功后 `ToolExecutionEngine` 同轮清除 `turn.skillToolBoundary` 并 `clearActiveSkill()`，全量工具集立即恢复，草稿保留在确认卡上不受影响。
+- **strict 工具集收窄原因注入**：`buildStrictToolsetNotice()`（`skillBoundaryScope.ts`）在 strict 边界激活轮向模型说明当前 skill 名、收窄后的工具清单、"这是流程设计不是故障"，以及退出方式；`messageProcessorUnavailableTools` 的 admission-repair 拦截消息同步带上同一段原因，模型不再只能对用户编"环境受限"。
+- **`tool_scope_narrowed` 观测事件**：PostHog 新增事件区分 `strict_skill` 与 `artifact_repair` 两类收窄来源，只报 skill 名与工具数量；`tool_call_failed` 补 `narrowedBy` 字段，方便远程判断失败源头是流程性收窄还是工具真坏。
+
 ## [0.28.0] - 2026-07-21
 
 ### Added

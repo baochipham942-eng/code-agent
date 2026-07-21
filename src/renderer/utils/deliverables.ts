@@ -254,6 +254,12 @@ function secondaryActionsForWorkspaceItem(
     actions.push({ kind: 'reveal-file', label: 'Reveal', path: item.file.path });
     actions.push({ kind: 'copy-reference', label: 'Copy path', value: item.file.path });
     actions.push({
+      kind: 'archive-to-library',
+      label: 'Archive to library',
+      path: item.file.path,
+      title: item.file.name || basename(item.file.path),
+    });
+    actions.push({
       kind: 'export-bundle',
       label: 'Export bundle',
       bundleName: `${basename(item.file.name || item.title || 'deliverable')}-bundle.zip`,
@@ -553,6 +559,12 @@ function secondaryActionsForTurnArtifact(item: TurnArtifactOwnershipItem): Deliv
   if (item.path) {
     actions.push({ kind: 'reveal-file', label: 'Reveal', path: item.path });
     actions.push({ kind: 'copy-reference', label: 'Copy path', value: item.path });
+    actions.push({
+      kind: 'archive-to-library',
+      label: 'Archive to library',
+      path: item.path,
+      title: item.label || basename(item.path),
+    });
     actions.push({
       kind: 'export-bundle',
       label: 'Export bundle',

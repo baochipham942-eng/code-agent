@@ -95,6 +95,15 @@ export type DeliverableSecondaryAction =
     manifest?: Record<string, unknown>;
     disabled?: boolean;
     reason?: string;
+  }
+  | {
+    /** Batch 2 L3：归档到当前项目资料库（默认打「定稿」标签） */
+    kind: 'archive-to-library';
+    label: string;
+    path: string;
+    title: string;
+    disabled?: boolean;
+    reason?: string;
   };
 
 export interface DeliverableCardView {

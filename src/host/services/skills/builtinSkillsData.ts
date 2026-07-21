@@ -1469,12 +1469,15 @@ end tell
 - **不要替用户点确认**——确认只能由用户在卡片上操作。你不要调用任何"确认/落盘"动作。
 - 如果 \`propose_role\` 返回重名错误，换个名字或提示用户已有同名角色。
 
+### 4. 用户跑题时退出流程
+如果用户此轮的请求与建角色无关（比如中途让你干别的活）：先调用 \`exit_role_flow\` 退出本流程（草稿会保留在确认卡上，用户随时可回来确认），然后正常处理用户的请求。不要拒绝用户，也不要说"环境受限"。
+
 ## 红线
 - 严禁自动创建：你只负责起草（propose_role），落盘由用户在确认卡上完成。
 - 不要硬塞工具：最小够用，高权限工具要向用户说明。
 - 访谈要短：用户烦被盘问，能推断就别问。`,
     basePath: '',
-    allowedTools: ['propose_role', 'ask_user_question', 'read_file', 'glob', 'grep'],
+    allowedTools: ['propose_role', 'exit_role_flow', 'ask_user_question', 'read_file', 'glob', 'grep'],
     // 严格工具集：只暴露上面这些工具，隐藏 core 的 Edit/Write，逼模型走 propose_role 确认卡
     strictToolset: true,
     disableModelInvocation: false,
@@ -1517,12 +1520,15 @@ end tell
 - 用户要再改 → 重新调用 \`propose_role\`（仍带 editingRoleId）。
 - **不要替用户点确认**——确认只能由用户在卡片上操作。
 
+### 5. 用户跑题时退出流程
+如果用户此轮的请求与改角色无关：先调用 \`exit_role_flow\` 退出本流程（修改草稿会保留在确认卡上），然后正常处理用户的请求。不要拒绝用户，也不要说"环境受限"。
+
 ## 红线
 - 只改定义，绝不动角色记忆 / 履历（那是用户积累的资产，确认落盘只覆盖 agents/<名字>.md）。
 - 不支持改名：editingRoleId 必须等于 roleId，想改名直接告诉用户本期不支持。
 - 严禁自动落盘：你只负责读现状 + 起草（propose_role），确认由用户在卡片上完成。`,
     basePath: '',
-    allowedTools: ['propose_role', 'read_file', 'ask_user_question', 'glob', 'grep'],
+    allowedTools: ['propose_role', 'exit_role_flow', 'read_file', 'ask_user_question', 'glob', 'grep'],
     // 严格工具集：只暴露上面这些工具，隐藏 core 的 Edit/Write，逼模型走 propose_role 确认卡
     strictToolset: true,
     disableModelInvocation: false,

@@ -27,7 +27,7 @@ import {
 
 export { stripRawSurfaceExecutionExportFields } from './surfaceExecutionExportFieldSanitizer';
 
-export interface SurfaceExecutionExportErrorV1 {
+interface SurfaceExecutionExportErrorV1 {
   code: string;
   message: string;
   phase?: SurfaceExecutionEventV1['phase'];
@@ -36,7 +36,7 @@ export interface SurfaceExecutionExportErrorV1 {
   recommendedAction?: string;
 }
 
-export interface SurfaceExecutionExportActionResultV1 {
+interface SurfaceExecutionExportActionResultV1 {
   operationId?: string;
   delivery?: SurfaceActionResultV1['delivery'];
   verification?: SurfaceActionResultV1['verification'];
@@ -756,7 +756,7 @@ export function projectSurfaceExecutionMetadataForExport(
   return mergeSurfaceExecutionExportProjections([alreadySafe, ledger, native]);
 }
 
-export function mergeSurfaceExecutionExportProjections(
+function mergeSurfaceExecutionExportProjections(
   projections: Array<SurfaceExecutionExportProjectionV1 | null | undefined>,
 ): SurfaceExecutionExportProjectionV1 | null {
   const sessions = new Map<string, SurfaceExecutionExportSessionV1>();

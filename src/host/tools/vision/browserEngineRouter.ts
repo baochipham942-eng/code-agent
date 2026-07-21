@@ -11,7 +11,7 @@ import type {
   ManagedBrowserExternalBridgeState,
 } from '../../../shared/contract/desktop';
 
-export interface BrowserEngineRouteOwner {
+interface BrowserEngineRouteOwner {
   conversationId: string;
   runId: string;
   agentId: string;

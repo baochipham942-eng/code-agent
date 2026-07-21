@@ -13,7 +13,7 @@ import type { BrowserTabOriginalPlacementV1 } from './BrowserTabLeaseService';
 import type { SurfaceTakeoverResolutionV1 } from './SurfaceHumanTakeoverService';
 import type { SurfaceProviderActionOutcomeV1 } from './SurfaceOperationCoordinator';
 
-export type SurfaceBrowserElementInputV1 = Omit<
+type SurfaceBrowserElementInputV1 = Omit<
   Extract<SurfaceElementRefV1, { kind: 'browser-element' }>,
   'stateId'
 >;
@@ -30,7 +30,7 @@ export interface SurfaceBrowserActionExecutionV1<T> {
   events: SurfaceExecutionEventV1[];
 }
 
-export interface BrowserSurfaceRuntimeIdentityV1 {
+interface BrowserSurfaceRuntimeIdentityV1 {
   conversationId: string;
   runId: string;
   turnId?: string;

@@ -845,8 +845,3 @@ export function getSurfaceConversationProjectionService(): SurfaceConversationPr
   });
   return surfaceConversationProjectionService;
 }
-
-export function resetSurfaceConversationProjectionServiceForTests(): void {
-  surfaceConversationProjectionService?.dispose();
-  surfaceConversationProjectionService = null;
-}

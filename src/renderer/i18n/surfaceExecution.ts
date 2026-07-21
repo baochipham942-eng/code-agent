@@ -305,7 +305,7 @@ export const surfaceExecutionZh: SurfaceExecutionTranslationsV1 = {
   fallback: { stage: '执行状态已更新', evidence: '执行证据', output: '未命名产物', source: '执行来源' },
 };
 
-export const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
+const surfaceExecutionEn: SurfaceExecutionTranslationsV1 = {
   panel: {
     label: 'Surface execution',
     sessionCount: '{count} execution sessions',

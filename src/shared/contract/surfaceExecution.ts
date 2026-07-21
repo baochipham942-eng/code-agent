@@ -1,7 +1,3 @@
-import type {
-  ComputerUseMutationV1,
-} from './desktop';
-
 export type SurfaceKind = 'browser' | 'computer';
 
 export type SurfaceSessionStateV1 =
@@ -96,7 +92,7 @@ export interface SurfaceAccessGrantV1 {
   consumedAt?: number;
 }
 
-export interface Rect {
+interface Rect {
   x: number;
   y: number;
   width: number;
@@ -130,7 +126,7 @@ export type SurfaceElementRefV1 =
       screenshotId?: string;
     };
 
-export type SurfaceObservationLifecycleV1 = 'fresh' | 'consumed' | 'superseded' | 'expired';
+type SurfaceObservationLifecycleV1 = 'fresh' | 'consumed' | 'superseded' | 'expired';
 
 export interface SurfaceObservationV1 {
   version: 1;
@@ -146,16 +142,6 @@ export interface SurfaceObservationV1 {
   consumedAt?: number;
 }
 
-export type BrowserMutationV1 =
-  | { kind: 'navigate'; url: string }
-  | { kind: 'click'; elementRef?: string; point?: { x: number; y: number; screenshotId?: string } }
-  | { kind: 'type'; elementRef?: string; text?: string; secretRef?: string }
-  | { kind: 'press_key'; key: string }
-  | { kind: 'scroll'; direction: 'up' | 'down'; amount?: number }
-  | { kind: 'upload_file'; elementRef?: string; artifactRef: string }
-  | { kind: 'fill_form'; fields: Array<{ elementRef: string; value?: string; secretRef?: string }> }
-  | { kind: 'tab'; action: 'create' | 'close' | 'switch' | 'back' | 'forward' | 'reload' };
-
 export type SurfaceExpectationV1 =
   | { kind: 'element_exists'; elementRef: string }
   | { kind: 'element_absent'; elementRef: string }
@@ -163,19 +149,6 @@ export type SurfaceExpectationV1 =
   | { kind: 'url_matches'; pattern: string }
   | { kind: 'window_present'; windowRef?: string }
   | { kind: 'custom'; description: string };
-
-export interface SurfaceActionRequestV1 {
-  version: 1;
-  operationId: string;
-  sessionId: string;
-  predecessorStateId: string;
-  target: SurfaceTargetRefV1;
-  mutation: BrowserMutationV1 | ComputerUseMutationV1;
-  expectation?: SurfaceExpectationV1;
-  grantRef: string;
-  deadlineMs: number;
-  idempotencyKey?: string;
-}
 
 export type SurfaceExecutionErrorCodeV1 =
   | 'SURFACE_TRANSPORT_UNAVAILABLE'
@@ -433,7 +406,7 @@ export interface SurfaceSessionControlResultV1 {
   snapshot: SurfaceConversationSnapshotV1;
 }
 
-export const SURFACE_SESSION_TRANSITIONS_V1: Readonly<Record<SurfaceSessionStateV1, readonly SurfaceSessionStateV1[]>> = {
+const SURFACE_SESSION_TRANSITIONS_V1: Readonly<Record<SurfaceSessionStateV1, readonly SurfaceSessionStateV1[]>> = {
   preparing: ['waiting_permission', 'running', 'stopping', 'failed'],
   waiting_permission: ['running', 'stopping', 'failed'],
   running: ['waiting_human', 'paused', 'stopping', 'completed', 'failed'],
@@ -513,7 +486,7 @@ export function isSurfaceTargetRefV1(value: unknown): value is SurfaceTargetRefV
   return false;
 }
 
-export function isSurfaceCapabilityManifestV1(
+function isSurfaceCapabilityManifestV1(
   value: unknown,
 ): value is SurfaceCapabilityManifestV1 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -706,7 +679,7 @@ export function isSurfaceExecutionEventV1(value: unknown): value is SurfaceExecu
     && validObservation;
 }
 
-export function isSurfaceSessionProjectionV1(
+function isSurfaceSessionProjectionV1(
   value: unknown,
 ): value is SurfaceSessionProjectionV1 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;

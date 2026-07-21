@@ -109,7 +109,3 @@ export function getBrowserProfileImportApprovalService(): BrowserProfileImportAp
   browserProfileImportApprovalService ??= new BrowserProfileImportApprovalService();
   return browserProfileImportApprovalService;
 }
-
-export function resetBrowserProfileImportApprovalServiceForTests(): void {
-  browserProfileImportApprovalService = null;
-}

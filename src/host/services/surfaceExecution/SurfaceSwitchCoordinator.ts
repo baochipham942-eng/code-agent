@@ -60,8 +60,8 @@ export class SurfaceSwitchCoordinator {
     const sessionId = this.activeSessionByOwner.get(this.ownerKey(identity));
     if (!sessionId) return null;
     const session = this.sessions.get(sessionId);
-    if (!session
-      || session.conversationId !== identity.conversationId
+    if (!session) return null;
+    if (session.conversationId !== identity.conversationId
       || session.runId !== identity.runId
       || session.agentId !== identity.agentId) return null;
     return session;

@@ -21,7 +21,7 @@ function eventBelongsToSession(
     && (event.conversationId === undefined || event.conversationId === projection.scope.conversationId);
 }
 
-export function selectSurfaceConversationSessions(
+function selectSurfaceConversationSessions(
   conversationId: string,
   projection: SurfaceExecutionConversationPanelProps['projection'],
   sessions: SurfaceExecutionConversationPanelProps['sessions'],

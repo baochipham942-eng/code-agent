@@ -40,7 +40,7 @@ export interface SurfaceExecutionPipFrameV1 {
   availableControls: NativePipControlAction[];
 }
 
-export interface SurfaceExecutionPipControlEventV1 {
+interface SurfaceExecutionPipControlEventV1 {
   version: 1;
   scope: SurfaceExecutionScopeV1;
   action: NativePipControlAction;
@@ -52,7 +52,7 @@ export interface SurfaceExecutionPipSelectionInputV1 {
   frameByScope: Record<string, SurfaceFrameViewStateV1>;
 }
 
-export interface SurfaceExecutionPipRequestTokenV1 {
+interface SurfaceExecutionPipRequestTokenV1 {
   generation: number;
   requestKey: string;
 }
@@ -158,7 +158,7 @@ function parsePipControlEvent(value: unknown): SurfaceExecutionPipControlEventV1
   };
 }
 
-export function allowedSurfaceExecutionPipControlV1(
+function allowedSurfaceExecutionPipControlV1(
   value: unknown,
   frame: SurfaceExecutionPipFrameV1 | null,
   session: RendererSurfaceSessionProjectionV1 | undefined,

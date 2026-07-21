@@ -14,7 +14,7 @@ export type SurfaceOrganizationPolicyRiskV1 =
   | 'browser_action'
   | 'desktop_input';
 
-export interface SurfaceOrganizationScopeRulesV1 {
+interface SurfaceOrganizationScopeRulesV1 {
   defaultDecision: 'allow' | 'deny';
   allow: string[];
   deny: string[];
@@ -109,7 +109,7 @@ export interface SurfaceOrganizationAuditStoreV1 {
   deleteExpired(now: number): number;
 }
 
-export class InMemorySurfaceOrganizationAuditStore implements SurfaceOrganizationAuditStoreV1 {
+class InMemorySurfaceOrganizationAuditStore implements SurfaceOrganizationAuditStoreV1 {
   private readonly events = new Map<string, SurfaceOrganizationAuditEventV1>();
 
   append(event: SurfaceOrganizationAuditEventV1): void {

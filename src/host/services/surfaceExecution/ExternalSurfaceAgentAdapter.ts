@@ -26,12 +26,12 @@ import {
   type SurfaceProviderRegistrationV1,
 } from './SurfaceProviderRegistry';
 
-export const EXTERNAL_SURFACE_AGENT_ENTRYPOINTS_V1 = [
+const EXTERNAL_SURFACE_AGENT_ENTRYPOINTS_V1 = [
   'neo surface',
   'neo browser',
 ] as const;
 
-export type ExternalSurfaceAgentEntrypointV1 =
+type ExternalSurfaceAgentEntrypointV1 =
   typeof EXTERNAL_SURFACE_AGENT_ENTRYPOINTS_V1[number];
 
 export interface ExternalSurfaceAgentRequestV1 {
@@ -73,7 +73,7 @@ export interface ExternalBrowserHostAuthorityV1 extends ExternalSurfaceHostAutho
   ): Promise<SurfaceBrowserActionDispatchV1<unknown>>;
 }
 
-export interface ExternalComputerHostAuthorityV1 extends ExternalSurfaceHostAuthorityBaseV1 {
+interface ExternalComputerHostAuthorityV1 extends ExternalSurfaceHostAuthorityBaseV1 {
   surface: 'computer';
   providerStateId: string;
   dispatch(

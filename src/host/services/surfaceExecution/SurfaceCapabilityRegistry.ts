@@ -68,4 +68,3 @@ export class SurfaceCapabilityRegistry {
   }
 }
 
-export const surfaceCapabilityRegistry = new SurfaceCapabilityRegistry();

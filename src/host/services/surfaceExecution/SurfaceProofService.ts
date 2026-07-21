@@ -22,7 +22,7 @@ import { sanitizeBrowserComputerToolResult } from '../../../shared/utils/browser
 type SurfaceProofToolName = 'browser_action' | 'computer_use';
 type SurfaceInspectionMethod = NonNullable<SurfaceEvidenceInspectionV1['inspectedBy']>['method'];
 
-export interface SurfaceProofIdentityV1 {
+interface SurfaceProofIdentityV1 {
   conversationId?: string;
   runId?: string;
   turnId?: string;

@@ -17,9 +17,9 @@ export type SurfaceProviderClassV1 =
   | 'mobile'
   | 'in-app-preview';
 
-export type SurfaceProviderAvailabilityV1 = 'available' | 'gated';
+type SurfaceProviderAvailabilityV1 = 'available' | 'gated';
 
-export type SurfaceProviderTargetBoundaryV1 =
+type SurfaceProviderTargetBoundaryV1 =
   | 'browser-tab-document'
   | 'computer-app-window'
   | 'mobile-app-screen'
@@ -149,7 +149,7 @@ function computerBoundaries(
   };
 }
 
-export const DEFAULT_SURFACE_PROVIDER_REGISTRATIONS_V1: readonly SurfaceProviderRegistrationV1[] = [
+const DEFAULT_SURFACE_PROVIDER_REGISTRATIONS_V1: readonly SurfaceProviderRegistrationV1[] = [
   {
     version: 1,
     providerId: DEFAULT_BROWSER_PROVIDER,
@@ -411,4 +411,3 @@ export class SurfaceProviderRegistry {
   }
 }
 
-export const surfaceProviderRegistry = new SurfaceProviderRegistry();

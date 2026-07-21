@@ -14,7 +14,7 @@ export type BrowserTabLeaseStateV1 =
   | 'orphaned'
   | 'recovery_required';
 
-export const BROWSER_TAB_LEASE_TRANSITIONS_V1: Readonly<
+const BROWSER_TAB_LEASE_TRANSITIONS_V1: Readonly<
   Record<BrowserTabLeaseStateV1, readonly BrowserTabLeaseStateV1[]>
 > = {
   available: ['consent_pending', 'denied', 'orphaned'],

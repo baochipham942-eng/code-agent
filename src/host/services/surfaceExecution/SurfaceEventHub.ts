@@ -1,8 +1,5 @@
 import crypto from 'crypto';
-import type {
-  SurfaceExecutionEventV1,
-  SurfaceTargetRefV1,
-} from '../../../shared/contract/surfaceExecution';
+import type { SurfaceExecutionEventV1 } from '../../../shared/contract/surfaceExecution';
 import { sameSurfaceTargetV1 } from '../../../shared/contract/surfaceExecution';
 import { sanitizeSurfaceExecutionEventV1 } from '../../../shared/utils/surfaceExecutionRedaction';
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
@@ -122,10 +119,4 @@ export class SurfaceEventHub {
       if (listeners.size === 0) this.listeners.delete(subject.sessionId);
     };
   }
-}
-
-export function targetForSurfaceEvent(
-  target: SurfaceTargetRefV1 | undefined,
-): SurfaceTargetRefV1 | undefined {
-  return target ? structuredClone(target) : undefined;
 }

@@ -118,7 +118,7 @@ export interface BrowserRelayLeaseRequestCancelV2 extends BrowserRelayOwnerV2 {
   reason?: string;
 }
 
-export interface BrowserRelayApprovedPlacementV2 {
+interface BrowserRelayApprovedPlacementV2 {
   browserInstanceRef: string;
   tabRef: string;
   agentWindowRef: string;
@@ -192,20 +192,6 @@ export interface BrowserRelayLeaseReturnResultV2 extends BrowserRelayOwnerV2 {
   leaseId: string;
   error?: BrowserRelayErrorV2;
 }
-
-export type BrowserRelayExtensionMessageV2 =
-  | BrowserRelayHelloV2
-  | BrowserRelayLeaseApprovedV2
-  | BrowserRelayLeaseDeniedV2
-  | BrowserRelayResponseV2
-  | BrowserRelayLeaseReturnResultV2;
-
-export type BrowserRelayHostMessageV2 =
-  | BrowserRelayHelloAckV2
-  | BrowserRelayLeaseRequestV2
-  | BrowserRelayLeaseRequestCancelV2
-  | BrowserRelayCommandV2
-  | BrowserRelayCancelV2;
 
 export function isBrowserRelayOwnerV2(value: unknown): value is BrowserRelayOwnerV2 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;

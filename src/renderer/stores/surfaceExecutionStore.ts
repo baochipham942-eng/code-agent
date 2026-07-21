@@ -25,7 +25,7 @@ export interface SurfaceFrameViewStateV1 {
   error?: string;
 }
 
-export interface SurfaceEvidenceRequestStateV1 {
+interface SurfaceEvidenceRequestStateV1 {
   evidenceId: SurfaceEvidenceCardV1['evidenceId'];
   status: 'pending' | 'ready' | 'failed';
   requestId?: string;
@@ -34,12 +34,12 @@ export interface SurfaceEvidenceRequestStateV1 {
   error?: string;
 }
 
-export interface SurfaceEvidenceScopeStateV1 {
+interface SurfaceEvidenceScopeStateV1 {
   scope: SurfaceExecutionScopeV1;
   requests: Record<string, SurfaceEvidenceRequestStateV1>;
 }
 
-export interface SurfaceControlRequestStateV1 {
+interface SurfaceControlRequestStateV1 {
   scope: SurfaceExecutionScopeV1;
   action: SurfaceSessionControlActionV1;
   status: 'pending' | 'succeeded' | 'failed';

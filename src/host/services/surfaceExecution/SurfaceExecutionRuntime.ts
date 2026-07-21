@@ -92,7 +92,7 @@ export interface SurfaceComputerActionExecutionV1<T> {
   events: SurfaceExecutionEventV1[];
 }
 
-export type { BrowserSurfaceRuntimeIdentityV1, ExecuteBrowserActionInputV1, GetBrowserBindingInputV1, PrepareBrowserSessionInputV1, PrepareBrowserSessionResultV1, RecordBrowserObservationInputV1, RecordBrowserObservationResultV1, RegisterBrowserTabLeaseCleanupInputV1, SurfaceBrowserActionDispatchV1, SurfaceBrowserActionExecutionV1, SurfaceBrowserBindingResultV1, SurfaceBrowserElementInputV1, SurfaceTakeoverControlV1 } from './surfaceBrowserRuntimeTypes';
+export type { ExecuteBrowserActionInputV1, GetBrowserBindingInputV1, PrepareBrowserSessionInputV1, PrepareBrowserSessionResultV1, RecordBrowserObservationInputV1, RecordBrowserObservationResultV1, RegisterBrowserTabLeaseCleanupInputV1, SurfaceBrowserActionExecutionV1, SurfaceBrowserBindingResultV1, SurfaceTakeoverControlV1 } from './surfaceBrowserRuntimeTypes';
 
 interface ComputerStateBinding {
   provider: string;

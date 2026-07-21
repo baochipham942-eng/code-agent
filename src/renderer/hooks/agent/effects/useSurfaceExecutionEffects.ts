@@ -13,7 +13,7 @@ const LIVE_REFRESH_DELAY_MS = 50;
 
 type SurfaceAgentEvent = AgentEventEnvelope | { type: string; data?: unknown; sessionId?: string };
 
-export interface SurfaceExecutionEffectsE2EDiagnostics {
+interface SurfaceExecutionEffectsE2EDiagnostics {
   renderCount: number;
   lastRenderConversationId: string | null;
   compatibilityEffectCount: number;

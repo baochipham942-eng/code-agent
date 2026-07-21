@@ -24,13 +24,13 @@ export function isBrowserRelayOpaqueRef(value: unknown): value is string {
     && !/^\d+$/.test(value);
 }
 
-export function isBrowserRelayScopeSubset(candidate: unknown, allowed: string[]): candidate is string[] {
+function isBrowserRelayScopeSubset(candidate: unknown, allowed: string[]): candidate is string[] {
   return Array.isArray(candidate)
     && candidate.length > 0
     && candidate.every((scope) => typeof scope === 'string' && allowed.includes(scope));
 }
 
-export function isBrowserRelayDomainScopeSubset(candidate: unknown, allowed: string[]): candidate is string[] {
+function isBrowserRelayDomainScopeSubset(candidate: unknown, allowed: string[]): candidate is string[] {
   if (!Array.isArray(candidate) || candidate.length === 0) return false;
   return candidate.every((scope) => {
     if (typeof scope !== 'string') return false;

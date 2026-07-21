@@ -1,7 +1,4 @@
-import type {
-  SurfaceExecutionErrorV1,
-  SurfaceExecutionEventV1,
-} from '../contract/surfaceExecution';
+import type { SurfaceExecutionEventV1 } from '../contract/surfaceExecution';
 
 const SENSITIVE_KEY_PARTS = [
   'authorization',
@@ -61,12 +58,6 @@ export function redactSurfaceExecutionValue(
     output[key] = redactSurfaceExecutionValue(child, key, depth + 1);
   }
   return output;
-}
-
-export function sanitizeSurfaceExecutionErrorV1(
-  error: SurfaceExecutionErrorV1,
-): SurfaceExecutionErrorV1 {
-  return redactSurfaceExecutionValue(error) as SurfaceExecutionErrorV1;
 }
 
 export function sanitizeSurfaceExecutionEventV1(

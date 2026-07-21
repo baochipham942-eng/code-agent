@@ -12,6 +12,7 @@
 
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import { resolveToolAlias } from '../services/toolSearch/deferredTools';
+import { EXIT_ROLE_FLOW_TOOL_NAME } from './modules/roleAuthoring/exitRoleFlow.schema';
 
 /** 取 allowed-tools 条目的基础工具名（去掉 Bash(git:*) 这种模式前缀），并归一别名 */
 function canonicalToolName(entry: string): string | undefined {
@@ -37,4 +38,23 @@ export function filterToolDefinitionsByStrictSkillBoundary<T extends { name: str
     if (canonical) allowed.add(canonical);
   }
   return tools.filter((tool) => allowed.has(resolveToolAlias(tool.name)));
+}
+
+/**
+ * strict 边界激活时注入给模型的说明：为什么工具变少了、超出流程范围时怎么退出。
+ * 没有它，模型只会对用户编一个"当前环境受限"的泛化解释（2026-07-21 真实故障）。
+ */
+export function buildStrictToolsetNotice(boundary: SkillToolBoundary): string {
+  const hasExitTool = boundary.allowedTools.some(
+    (entry) => canonicalToolName(entry) === EXIT_ROLE_FLOW_TOOL_NAME,
+  );
+  const exitHint = hasExitTool
+    ? `若用户此轮请求与该流程无关：先调用 ${EXIT_ROLE_FLOW_TOOL_NAME} 退出流程（未确认的草稿会保留在确认卡上），随后即可在本轮用完整工具继续处理用户请求。不要拒绝用户，也不要说"环境受限"。`
+    : '若用户此轮请求与该流程无关：向用户说明你正处于该流程、工具暂时收窄，建议完成当前流程或新开会话后再处理；不要笼统地说"环境受限"。';
+  return [
+    '<strict-skill-toolset>',
+    `当前处于「${boundary.skillName}」严格流程，本轮可见工具已收窄为：${boundary.allowedTools.join(', ')}。这是流程设计，不是权限问题或环境故障。`,
+    exitHint,
+    '</strict-skill-toolset>',
+  ].join('\n');
 }

@@ -56,47 +56,25 @@ export interface BuiltinRoleDefinition {
   visual: BuiltinRoleVisual;
 }
 
-export const BUILTIN_ROLE_IDS = ['研究员', '数据分析师', '牧之', '溯真', '青禾', '明镜'] as const;
+// 退役预设角色（Batch 3 收敛）：不再随新安装分发，但存量用户已装的保留"预设"身份 +
+// 视觉 metadata，避免界面降级。研究员的调研定位已被 E1 内置包「溯真」覆盖且更全
+// （溯真自带 competitor-teardown / multi-source-verification / industry-scan + playbook），
+// 故停止分发；用户目录里已有的研究员定义归用户所有，本模块不删。
+export const RETIRED_BUILTIN_ROLE_VISUALS: Record<string, BuiltinRoleVisual> = {
+  研究员: {
+    icon: 'Microscope',
+    category: 'research',
+    displayName: '研究员',
+    profession: '研究员',
+    tags: ['信息检索', '文献阅读', '调研报告'],
+    quickPrompts: [
+      '帮我调研一下这个主题，产出一份带来源的报告',
+      '帮我读一下这份 PDF，提炼关键论点',
+    ],
+  },
+};
 
 export const BUILTIN_ROLES: BuiltinRoleDefinition[] = [
-  {
-    id: '研究员',
-    agentMd: `---
-name: 研究员
-description: 调研、信息收集、报告产出专家
-tools: [Glob, Grep, Read, ListDirectory, Write, WebSearch, WebFetch, ReadDocument, MemoryRead, MemoryWrite, TaskManager]
-skills: [literature-review, paper-distillation]
-model: balanced
-max-iterations: 20
----
-
-你是一名专业研究员，负责调研、信息收集和报告产出。
-
-## 核心能力
-1. **信息检索**：用 WebSearch / WebFetch 搜集一手信息，交叉验证多个来源
-2. **文献阅读**：用 ReadDocument 读 PDF / Word，提炼关键论点
-3. **结构化输出**：调研结论以结构化报告呈现（背景 → 发现 → 证据 → 结论）
-
-## 工作准则
-- 信息必须注明来源，区分事实与推断
-- 多源交叉验证，单一来源的结论标注"待验证"
-- 调研中发现的可复用知识（领域口径、靠谱信源、用户偏好）值得写入角色记忆
-
-## 输出格式
-调研报告包含：摘要（3 句以内）、关键发现（带来源）、证据清单、结论与建议。
-`,
-    visual: {
-      icon: 'Microscope',
-      category: 'research',
-      displayName: '研究员',
-      profession: '研究员',
-      tags: ['信息检索', '文献阅读', '调研报告'],
-      quickPrompts: [
-        '帮我调研一下这个主题，产出一份带来源的报告',
-        '帮我读一下这份 PDF，提炼关键论点',
-      ],
-    },
-  },
   {
     id: '数据分析师',
     agentMd: `---
@@ -397,10 +375,20 @@ max-iterations: 20
   },
 ];
 
-/** 预设角色视觉 metadata 按 id 查表（P2-1：roles IPC 回填 RolePanelEntry 用） */
-const BUILTIN_ROLE_VISUAL_BY_ID = new Map<string, BuiltinRoleVisual>(
-  BUILTIN_ROLES.map((role) => [role.id, role.visual]),
-);
+/**
+ * 全部被识别为"预设"的角色 id（在装名册 + 退役角色）。
+ * roles IPC 据此把存量安装回填成 'builtin' 徽标——退役角色的存量安装也保留徽标。
+ */
+export const BUILTIN_ROLE_IDS: readonly string[] = [
+  ...BUILTIN_ROLES.map((role) => role.id),
+  ...Object.keys(RETIRED_BUILTIN_ROLE_VISUALS),
+];
+
+/** 预设角色视觉 metadata 按 id 查表（P2-1：roles IPC 回填 RolePanelEntry 用；含退役角色） */
+const BUILTIN_ROLE_VISUAL_BY_ID = new Map<string, BuiltinRoleVisual>([
+  ...BUILTIN_ROLES.map((role) => [role.id, role.visual] as const),
+  ...Object.entries(RETIRED_BUILTIN_ROLE_VISUALS),
+]);
 
 /** 取预设角色视觉 metadata；非预设角色返回 undefined（前端兜底默认 icon + "其他"分类） */
 export function getBuiltinRoleVisual(roleId: string): BuiltinRoleVisual | undefined {

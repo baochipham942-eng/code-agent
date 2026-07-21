@@ -5,6 +5,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   BUILTIN_ROLES,
+  BUILTIN_ROLE_IDS,
+  RETIRED_BUILTIN_ROLE_VISUALS,
+  getBuiltinRoleVisual,
   validateBuiltinRolePack,
   type BuiltinRoleDefinition,
 } from '../../../../src/host/services/roleAssets/builtinRoles';
@@ -39,6 +42,26 @@ describe('validateBuiltinRolePack', () => {
       const issues = validateBuiltinRolePack(role, knownSkillNames);
       expect(issues, `${role.id}: ${issues.map((i) => i.issue).join('; ')}`).toEqual([]);
     }
+  });
+});
+
+// 退役预设角色（Batch 3 收敛）：研究员停止分发但存量安装保留"预设"身份
+describe('退役预设角色（研究员）', () => {
+  it('研究员不在装名册（新安装不再分发，避免与溯真定位重叠）', () => {
+    expect(BUILTIN_ROLES.some((r) => r.id === '研究员')).toBe(false);
+    expect(RETIRED_BUILTIN_ROLE_VISUALS['研究员']).toBeDefined();
+  });
+
+  it('研究员仍被识别为预设（存量安装保留 builtin 徽标 + 视觉，不降级）', () => {
+    expect(BUILTIN_ROLE_IDS).toContain('研究员');
+    const visual = getBuiltinRoleVisual('研究员');
+    expect(visual?.icon).toBe('Microscope');
+    expect(visual?.category).toBe('research');
+    expect(visual?.displayName).toBe('研究员');
+  });
+
+  it('数据分析师保留在装名册（数据能力 4 包未覆盖，不收敛）', () => {
+    expect(BUILTIN_ROLES.some((r) => r.id === '数据分析师')).toBe(true);
   });
 
   // 喂坏输入验门真红

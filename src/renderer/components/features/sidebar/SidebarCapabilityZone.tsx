@@ -5,12 +5,16 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Clock3, ChevronRight, BookOpen } from 'lucide-react';
+import { Clock3, ChevronRight, BookOpen, UsersRound } from 'lucide-react';
+import type { RolePanelEntry } from '@shared/contract/roleAssets';
+import { listRoles, recentExperts } from '../../../services/rolesClient';
+import { inviteExpert } from '../../../utils/inviteExpert';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Badge } from '../../primitives/Badge';
+import { RoleIcon } from '../shared/RoleIcon';
 
 /** 下次运行时间：今天只显 HH:mm，其他日期带月日 */
 function formatNextRun(ts: number, locale: string): string {
@@ -29,7 +33,22 @@ function formatNextRun(ts: number, locale: string): string {
 export const SidebarCapabilityZone: React.FC = () => {
   const { t, language } = useI18n();
   const cz = t.sidebar.capabilityZone;
-  const { showCronCenter, setShowCronCenter, setShowLibraryPanel } = useAppStore();
+  const { showCronCenter, setShowCronCenter, setShowLibraryPanel, showExpertPanel, setShowExpertPanel } = useAppStore();
+  const [recentRoles, setRecentRoles] = useState<RolePanelEntry[]>([]);
+
+  useEffect(() => {
+    // 专家面板关闭时角色记录可能有变化（新会话/新记忆），跟着刷新
+    if (showExpertPanel) return;
+    let cancelled = false;
+    listRoles()
+      .then((roles) => {
+        if (!cancelled) setRecentRoles(recentExperts(roles));
+      })
+      .catch(() => { /* 侧栏静默失败，面板内有显式错误提示 */ });
+    return () => {
+      cancelled = true;
+    };
+  }, [showExpertPanel]);
   const jobs = useCronStore((state) => state.jobs);
   const stats = useCronStore((state) => state.stats);
   const refresh = useCronStore((state) => state.refresh);
@@ -72,6 +91,45 @@ export const SidebarCapabilityZone: React.FC = () => {
 
   return (
     <div className="px-2 pb-1 flex-shrink-0" data-testid="sidebar-capability-zone">
+      {/* Batch 3 E2: 专家槽位点亮 */}
+      <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
+        type="button"
+        onClick={() => setShowExpertPanel(true)}
+        data-testid="sidebar-capability-expert"
+        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
+      >
+        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-violet-500/10">
+          <UsersRound className="h-3.5 w-3.5 text-violet-400/90" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm text-zinc-300 group-hover:text-zinc-100">
+            {cz.expert}
+          </span>
+          <span className="block truncate text-[11px] text-zinc-500">
+            {recentRoles.length > 0
+              ? cz.expertRecent.replace('{count}', String(recentRoles.length))
+              : cz.expertSubtitle}
+          </span>
+        </span>
+        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
+      </button>
+      {/* 最近专家头像条（0–5，有记录才显示）：点头像直接请 TA 来 */}
+      {recentRoles.length > 0 && (
+        <div className="flex items-center gap-1 px-2 pb-1" data-testid="sidebar-expert-recent-strip">
+          {recentRoles.map((role) => (
+            <button /* ds-allow:button: 头像条圆形瓦片（图标即按钮），Button primitive 无头像形状 */
+              key={role.roleId}
+              type="button"
+              title={role.displayName || role.roleId}
+              data-testid={`sidebar-expert-avatar-${role.roleId}`}
+              onClick={() => void inviteExpert(role.roleId, { title: role.displayName || role.roleId })}
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800/80 transition-colors hover:bg-violet-500/20"
+            >
+              <RoleIcon name={role.icon} className="h-3.5 w-3.5" />
+            </button>
+          ))}
+        </div>
+      )}
       {/* Batch 2 L3: 资料库槽位点亮 */}
       <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"

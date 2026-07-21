@@ -62,7 +62,7 @@ export const SidebarCapabilityZone: React.FC = () => {
 
   return (
     <div className="px-2 pb-1 flex-shrink-0" data-testid="sidebar-capability-zone">
-      <button
+      <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
         onClick={() => setShowCronCenter(true)}
         data-testid="sidebar-capability-automation"

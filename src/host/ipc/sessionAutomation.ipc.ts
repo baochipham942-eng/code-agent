@@ -44,6 +44,17 @@ export function registerSessionAutomationHandlers(): void {
           if (!sessionId) throw new Error('缺少 sessionId');
           return { success: true, data: service.summarizeSessions([sessionId])[sessionId] } satisfies IPCResponse;
         }
+        case 'listPendingReview': {
+          return { success: true, data: service.listPendingReview() } satisfies IPCResponse;
+        }
+        case 'countPendingReview': {
+          return { success: true, data: service.countPendingReview() } satisfies IPCResponse;
+        }
+        case 'markReviewed': {
+          const automationId = getString(request.payload, 'automationId');
+          if (!automationId) throw new Error('缺少 automationId');
+          return { success: true, data: service.markReviewed(automationId) } satisfies IPCResponse;
+        }
         default:
           return {
             success: false,

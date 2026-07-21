@@ -303,8 +303,11 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'update',
   ],
   [IPC_DOMAINS.SESSION_AUTOMATION]: [
+    'countPendingReview',
     'getSessionSummary',
     'listBySession',
+    'listPendingReview',
+    'markReviewed',
     'summarizeSessions',
   ],
   [IPC_DOMAINS.SURFACE_EXECUTION]: [

@@ -97,6 +97,7 @@ export const SKILL_CATEGORIES: SkillCategoryMeta[] = [
   { id: 'data-analysis', label: '数据分析', description: '数据清洗、图表提取、留存分析' },
   { id: 'design-creative', label: '设计创意', description: '界面设计、海报、品牌、视频' },
   { id: 'content-marketing', label: '内容营销', description: '文案、SEO、社媒、竞品情报' },
+  { id: 'product', label: '产品管理', description: '需求梳理、PRD、评审准备' },
   { id: 'research', label: '研究调研', description: '深度调研、文献综述、用户研究' },
   { id: 'automation', label: '效率自动化', description: '文件整理、流程文档、状态报告' },
   { id: 'development', label: '开发工程', description: '调试、测试、代码审查、MCP 构建' },

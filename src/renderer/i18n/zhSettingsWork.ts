@@ -361,6 +361,7 @@ export const zhSettingsWork = {
         'data-analysis': '数据分析',
         'design-creative': '设计创意',
         'content-marketing': '内容营销',
+        product: '产品管理',
         research: '研究调研',
         automation: '效率自动化',
         development: '开发工程',

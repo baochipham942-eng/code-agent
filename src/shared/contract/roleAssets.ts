@@ -26,10 +26,18 @@ export interface RolePanelEntry {
    */
   icon?: string;
   /**
-   * 角色产物分类（P2-1）：复用 skillRepository 的 7 类 SkillCategory 子集，
+   * 角色产物分类（P2-1）：复用 skillRepository 的 SkillCategory 子集，
    * 与技能包共用一套分类体系。仅预设角色配置；用户自建角色缺省，前端归入"其他"。
    */
   category?: SkillCategory;
+  /** 展示名/花名（E1 Role Pack 展示合同）：仅预设角色配置，缺省用 roleId */
+  displayName?: string;
+  /** 职业（如"资深产品经理"）：仅预设角色配置 */
+  profession?: string;
+  /** 能力标签：仅预设角色配置 */
+  tags?: string[];
+  /** 快捷开场 prompt（点击即以此开新会话）：仅预设角色配置 */
+  quickPrompts?: string[];
 }
 
 /** 角色面板的单条记忆 */

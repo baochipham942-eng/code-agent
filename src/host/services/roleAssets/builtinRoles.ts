@@ -17,6 +17,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
+import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
 import { ensureRoleAssetDirs } from './roleAssetService';
@@ -27,12 +28,20 @@ const logger = createLogger('BuiltinRoles');
 // 角色定义
 // ----------------------------------------------------------------------------
 
-/** 预设角色视觉元数据（P2-1，与技能包共用 SkillCategory 分类体系） */
+/** 预设角色视觉元数据（P2-1 + E1 Role Pack 展示合同，与技能包共用 SkillCategory 分类体系） */
 export interface BuiltinRoleVisual {
   /** lucide 图标名（curated，前端按名渲染） */
   icon: string;
-  /** 产物分类（复用 7 类 SkillCategory 子集） */
+  /** 产物分类（复用 SkillCategory 子集） */
   category: SkillCategory;
+  /** 展示名（花名，与 roleId 一致或更口语） */
+  displayName: string;
+  /** 职业（如"资深产品经理"，展示在花名旁） */
+  profession: string;
+  /** 能力标签（3 个左右，发现页卡片展示） */
+  tags: string[];
+  /** 快捷开场 prompt（一句话真实 cowork 场景，点击即发） */
+  quickPrompts: string[];
 }
 
 export interface BuiltinRoleDefinition {
@@ -76,7 +85,17 @@ max-iterations: 20
 ## 输出格式
 调研报告包含：摘要（3 句以内）、关键发现（带来源）、证据清单、结论与建议。
 `,
-    visual: { icon: 'Microscope', category: 'research' },
+    visual: {
+      icon: 'Microscope',
+      category: 'research',
+      displayName: '研究员',
+      profession: '研究员',
+      tags: ['信息检索', '文献阅读', '调研报告'],
+      quickPrompts: [
+        '帮我调研一下这个主题，产出一份带来源的报告',
+        '帮我读一下这份 PDF，提炼关键论点',
+      ],
+    },
   },
   {
     id: '数据分析师',
@@ -104,7 +123,17 @@ max-iterations: 20
 ## 输出格式
 分析报告包含：数据概览、关键指标、异常点、趋势判断、建议动作。
 `,
-    visual: { icon: 'BarChart3', category: 'data-analysis' },
+    visual: {
+      icon: 'BarChart3',
+      category: 'data-analysis',
+      displayName: '数据分析师',
+      profession: '数据分析师',
+      tags: ['数据清洗', '图表看板', '周报'],
+      quickPrompts: [
+        '帮我分析这份表格，找出关键指标和异常点',
+        '把这些数据做成图表和一页结论',
+      ],
+    },
   },
 ];
 
@@ -116,6 +145,59 @@ const BUILTIN_ROLE_VISUAL_BY_ID = new Map<string, BuiltinRoleVisual>(
 /** 取预设角色视觉 metadata；非预设角色返回 undefined（前端兜底默认 icon + "其他"分类） */
 export function getBuiltinRoleVisual(roleId: string): BuiltinRoleVisual | undefined {
   return BUILTIN_ROLE_VISUAL_BY_ID.get(roleId);
+}
+
+// ----------------------------------------------------------------------------
+// Role Pack 校验（E1 §8.5：纯 prompt 无 skill 的包校验失败，不能上架）
+// ----------------------------------------------------------------------------
+
+export interface RolePackIssue {
+  roleId: string;
+  issue: string;
+}
+
+/**
+ * 校验单个预设 Role Pack：
+ * - agentMd frontmatter 可解析，且 frontmatter name 与 id 一致
+ * - frontmatter skills 非空（禁纯 prompt 空壳包）
+ * - 每个 skill 名都能在 knownSkillNames（内置 skill 全集）里解析——
+ *   内置包不得依赖需安装的外部 skill，否则破坏开箱即用
+ * - visual 的 tags / quickPrompts 非空（E2 发现页展示合同）
+ *
+ * knownSkillNames 由调用方注入（测试/上架点传 BUILTIN_SKILLS 名字集），
+ * 本模块不反向依赖 skills 数据层。
+ */
+export function validateBuiltinRolePack(
+  role: BuiltinRoleDefinition,
+  knownSkillNames: ReadonlySet<string>,
+): RolePackIssue[] {
+  const issues: RolePackIssue[] = [];
+  const push = (issue: string) => issues.push({ roleId: role.id, issue });
+
+  const parsed = parseAgentMd(role.agentMd, `${role.id}.md`);
+  if (!parsed) {
+    push('agentMd frontmatter 无法解析');
+    return issues;
+  }
+  if (parsed.name !== role.id) {
+    push(`frontmatter name "${parsed.name}" 与 roleId "${role.id}" 不一致`);
+  }
+  if (!parsed.skills || parsed.skills.length === 0) {
+    push('未绑定任何 skill（纯 prompt 空壳包）');
+  } else {
+    for (const skillName of parsed.skills) {
+      if (!knownSkillNames.has(skillName)) {
+        push(`skill "${skillName}" 不在内置 skill 全集中（内置包不得依赖需安装的 skill）`);
+      }
+    }
+  }
+  if (role.visual.tags.length === 0) {
+    push('visual.tags 为空');
+  }
+  if (role.visual.quickPrompts.length === 0) {
+    push('visual.quickPrompts 为空');
+  }
+  return issues;
 }
 
 // ----------------------------------------------------------------------------

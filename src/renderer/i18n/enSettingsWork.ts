@@ -361,6 +361,7 @@ export const enSettingsWork = {
         'data-analysis': 'Data analysis',
         'design-creative': 'Design & creative',
         'content-marketing': 'Content marketing',
+        product: 'Product management',
         research: 'Research',
         automation: 'Automation',
         development: 'Development',

@@ -107,6 +107,10 @@ async function handleList(): Promise<RolePanelEntry[]> {
       lastWork: history.length > 0 ? history[history.length - 1] : null,
       icon: visual?.icon,
       category: visual?.category,
+      displayName: visual?.displayName,
+      profession: visual?.profession,
+      tags: visual?.tags,
+      quickPrompts: visual?.quickPrompts,
     });
   }
   return entries;

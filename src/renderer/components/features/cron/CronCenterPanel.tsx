@@ -3,6 +3,7 @@ import { Clock3 } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { CronJobList } from './CronJobList';
+import { AutomationReviewInbox } from './AutomationReviewInbox';
 import { CronJobDetail } from './CronJobDetail';
 import { CronJobEditor } from './CronJobEditor';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
@@ -74,6 +75,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
           {error}
         </div>
       )}
+
+      <AutomationReviewInbox />
 
       <div className="grid min-h-0 flex-1 grid-cols-[360px_1fr] overflow-hidden">
         <CronJobList />

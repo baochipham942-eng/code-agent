@@ -7,12 +7,14 @@
 // - action 'detail'         -> 角色详情（定义原文 / 记忆 / 履历 / 主动性配置）
 // - action 'deleteMemory'   -> 删除一条角色记忆
 // - action 'updateMemory'   -> 编辑一条角色记忆（覆盖写）
+// - action 'writeProjectMemory' -> 写一条项目层记忆（资料库归档摘要；同名产物覆盖写）
 // - action 'setProactivity' -> 设置角色主动等级（写 settings + 立即同步 cadence cron）
 // - action 'listDrafts'     -> 列出待确认的角色草稿（对话式建角色）
 // - action 'confirmDraft'   -> 确认草稿：写 agents/<id>.md + 建 roles/<id>/（过安全闸）
 // - action 'rejectDraft'    -> 放弃草稿：删草稿目录
 // ============================================================================
 
+import { createHash } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { IpcMain } from '../platform';
@@ -52,6 +54,13 @@ interface DeleteMemoryPayload extends RoleIdPayload {
 
 interface UpdateMemoryPayload extends RoleIdPayload {
   filename?: string;
+  name?: string;
+  description?: string;
+  content?: string;
+}
+
+interface WriteProjectMemoryPayload {
+  workspacePath?: string;
   name?: string;
   description?: string;
   content?: string;
@@ -197,6 +206,23 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
           }
           const filePath = await writeScopedMemory(
             { scope: 'role', roleId },
+            { filename, name, description, content },
+          );
+          return { success: true, data: { path: filePath } };
+        }
+
+        case 'writeProjectMemory': {
+          const { workspacePath, name, description, content } = (payload ?? {}) as WriteProjectMemoryPayload;
+          if (!workspacePath || !name || !description || !content) {
+            return {
+              success: false,
+              error: { code: 'INVALID_ARGS', message: 'workspacePath, name, description, content are required' },
+            };
+          }
+          // 文件名按 name 哈希：同一产物重复归档覆盖同一条记忆，不产生重复条目
+          const filename = `archive-${createHash('sha256').update(name).digest('hex').slice(0, 12)}.md`;
+          const filePath = await writeScopedMemory(
+            { scope: 'project', workspacePath },
             { filename, name, description, content },
           );
           return { success: true, data: { path: filePath } };

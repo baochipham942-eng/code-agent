@@ -29,6 +29,30 @@ export const sessionAutomationClient = {
       { sessionId },
     );
   },
+
+  listPendingReview() {
+    return ipcService.invokeDomain<SessionAutomationRecord[]>(
+      IPC_DOMAINS.SESSION_AUTOMATION,
+      'listPendingReview',
+      {},
+    );
+  },
+
+  countPendingReview() {
+    return ipcService.invokeDomain<number>(
+      IPC_DOMAINS.SESSION_AUTOMATION,
+      'countPendingReview',
+      {},
+    );
+  },
+
+  markReviewed(automationId: string) {
+    return ipcService.invokeDomain<SessionAutomationRecord | null>(
+      IPC_DOMAINS.SESSION_AUTOMATION,
+      'markReviewed',
+      { automationId },
+    );
+  },
 };
 
 export default sessionAutomationClient;

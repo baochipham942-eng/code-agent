@@ -4,11 +4,13 @@
 // 数据只读复用 cronStore，不新增数据通道。
 // ============================================================================
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Clock3, ChevronRight, BookOpen } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
+import { Badge } from '../../primitives/Badge';
 
 /** 下次运行时间：今天只显 HH:mm，其他日期带月日 */
 function formatNextRun(ts: number, locale: string): string {
@@ -32,9 +34,15 @@ export const SidebarCapabilityZone: React.FC = () => {
   const stats = useCronStore((state) => state.stats);
   const refresh = useCronStore((state) => state.refresh);
 
+  const [pendingCount, setPendingCount] = useState(0);
+
   useEffect(() => {
-    // 面板关闭时任务大概率被增删改，跟着刷新一次
-    if (!showCronCenter) void refresh();
+    // 面板关闭时任务/待审大概率有变化，跟着刷新一次
+    if (showCronCenter) return;
+    void refresh();
+    sessionAutomationClient.countPendingReview()
+      .then((count) => setPendingCount(count ?? 0))
+      .catch(() => setPendingCount(0));
   }, [showCronCenter, refresh]);
 
   const runningCount = stats?.jobsByStatus?.running ?? 0;
@@ -52,7 +60,9 @@ export const SidebarCapabilityZone: React.FC = () => {
     return candidate;
   }, [enabledJobs]);
 
-  const subtitle = nextJob
+  const subtitle = pendingCount > 0
+    ? cz.automationPending.replace('{count}', String(pendingCount))
+    : nextJob
     ? cz.automationNext
         .replace('{time}', formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US'))
         .replace('{name}', nextJob.name)
@@ -101,6 +111,14 @@ export const SidebarCapabilityZone: React.FC = () => {
           </span>
           <span className="block truncate text-[11px] text-zinc-500">{subtitle}</span>
         </span>
+        {pendingCount > 0 && (
+          <Badge
+            className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300"
+            data-testid="sidebar-capability-automation-pending"
+          >
+            {pendingCount}
+          </Badge>
+        )}
         <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
     </div>

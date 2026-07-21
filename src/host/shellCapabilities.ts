@@ -279,6 +279,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'rejectDraft',
     'setProactivity',
     'updateMemory',
+    'writeProjectMemory',
   ],
   [IPC_DOMAINS.SESSION]: [
     'archive',

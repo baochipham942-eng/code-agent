@@ -8,6 +8,7 @@ export { ConfigRepository, type UserPreference, type ProjectKnowledge, type Tool
 export { CaptureRepository } from './CaptureRepository';
 export { ExperimentRepository } from './ExperimentRepository';
 export { ProjectRepository } from './ProjectRepository';
+export { LibraryRepository } from './LibraryRepository';
 export {
   NeoWorkCardRepository,
   type AppendNeoWorkCardRevisionOptions,

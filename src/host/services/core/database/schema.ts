@@ -497,6 +497,36 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // Library 表 (项目资料库条目：上传/产物归档/采集归档/外部引用)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS library_items (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      path_or_uri TEXT NOT NULL,
+      tags TEXT DEFAULT '[]',
+      summary TEXT,
+      source_session_id TEXT,
+      source_role_id TEXT,
+      content_hash TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_library_items_project ON library_items(project_id, updated_at DESC)`,
+  );
+
+  // Session Context Pins 表 (会话 pin 的资料条目，一行一会话)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_context_pins (
+      session_id TEXT PRIMARY KEY,
+      item_ids TEXT NOT NULL DEFAULT '[]',
+      added_at INTEGER NOT NULL
+    )
+  `);
+
   // Experiments 表 (统一评测数据)
   db.exec(`
     CREATE TABLE IF NOT EXISTS experiments (

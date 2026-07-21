@@ -7,6 +7,7 @@ import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
 import { DREAM_SKILL_PROMPT } from '../../agent/dreamPrompt';
 import { DISTILL_SKILL_PROMPT } from '../../agent/distillPrompt';
+import { ROLE_PACK_SKILLS, ROLE_PACK_SKILL_CATEGORY } from './rolePacks';
 
 /**
  * 内置 Skill 定义列表
@@ -2969,6 +2970,8 @@ See template at: \`<work-review>/code-reviewer.md\``,
     license: 'MIT (obra/superpowers, adapted via XiaomiMiMo/MiMo-Code)',
     metadata: { category: 'development', upstreamDescription: 'Use when completing tasks, implementing major features, or before merging to verify work meets requirements' },
   },
+  // E1 内置专家包 skill（牧之/溯真/青禾/明镜，按包拆文件防单文件超债门）
+  ...ROLE_PACK_SKILLS,
 ];
 
 // ----------------------------------------------------------------------------
@@ -3011,6 +3014,8 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   'photo-archive': 'automation',
   'create-role': 'automation',
   'edit-role': 'automation',
+  // E1 内置专家包（分类随包数据文件维护）
+  ...ROLE_PACK_SKILL_CATEGORY,
 };
 
 // 一次性把分类回填到 metadata.category（idempotent；所有 getter 共享同一引用）

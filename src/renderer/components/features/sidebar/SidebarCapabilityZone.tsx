@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useEffect, useMemo } from 'react';
-import { Clock3, ChevronRight } from 'lucide-react';
+import { Clock3, ChevronRight, BookOpen } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -27,7 +27,7 @@ function formatNextRun(ts: number, locale: string): string {
 export const SidebarCapabilityZone: React.FC = () => {
   const { t, language } = useI18n();
   const cz = t.sidebar.capabilityZone;
-  const { showCronCenter, setShowCronCenter } = useAppStore();
+  const { showCronCenter, setShowCronCenter, setShowLibraryPanel } = useAppStore();
   const jobs = useCronStore((state) => state.jobs);
   const stats = useCronStore((state) => state.stats);
   const refresh = useCronStore((state) => state.refresh);
@@ -62,6 +62,24 @@ export const SidebarCapabilityZone: React.FC = () => {
 
   return (
     <div className="px-2 pb-1 flex-shrink-0" data-testid="sidebar-capability-zone">
+      {/* Batch 2 L3: 资料库槽位点亮 */}
+      <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
+        type="button"
+        onClick={() => setShowLibraryPanel(true)}
+        data-testid="sidebar-capability-library"
+        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
+      >
+        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-indigo-500/10">
+          <BookOpen className="h-3.5 w-3.5 text-indigo-400/90" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm text-zinc-300 group-hover:text-zinc-100">
+            {cz.library}
+          </span>
+          <span className="block truncate text-[11px] text-zinc-500">{cz.librarySubtitle}</span>
+        </span>
+        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
+      </button>
       <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
         onClick={() => setShowCronCenter(true)}

@@ -18,6 +18,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
 
 import { SidebarCapabilityZone } from '../../../src/renderer/components/features/sidebar/SidebarCapabilityZone';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 function makeJob(overrides: Partial<CronJobDefinition>): CronJobDefinition {
   return {
@@ -113,5 +114,20 @@ describe('SidebarCapabilityZone', () => {
     await waitFor(() => {
       expect(screen.getByTestId('sidebar-capability-automation-running')).toBeTruthy();
     });
+  });
+
+  it('资料库槽位渲染并点击打开资料库面板', async () => {
+    listJobs.mockResolvedValue([]);
+    getStats.mockResolvedValue(makeStats(0));
+    render(<SidebarCapabilityZone />);
+
+    const entry = screen.getByTestId('sidebar-capability-library');
+    expect(entry.textContent).toContain('资料库');
+    expect(entry.textContent).toContain('项目资产');
+
+    expect(useAppStore.getState().showLibraryPanel).toBe(false);
+    entry.click();
+    expect(useAppStore.getState().showLibraryPanel).toBe(true);
+    useAppStore.getState().setShowLibraryPanel(false);
   });
 });

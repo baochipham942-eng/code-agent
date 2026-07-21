@@ -246,6 +246,9 @@ interface AppState {
 
   showKnowledgeMemoryPanel: boolean;
 
+  // Batch 2 L3: 资料库全屏页可见性
+  showLibraryPanel: boolean;
+
   // File preview tab registry — one entry per opened file (content, dirty state, LRU).
   previewTabs: PreviewTab[];
   activePreviewTabId: string | null;
@@ -336,6 +339,7 @@ interface AppState {
   toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
   setShowKnowledgeMemoryPanel: (show: boolean) => void;
+  setShowLibraryPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
   openWorkspacePreview: (itemId?: string | null) => void;
   setSelectedWorkspacePreviewId: (itemId: string | null) => void;
@@ -499,6 +503,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   devServerLauncherOpen: false,
 
   showKnowledgeMemoryPanel: false,
+  showLibraryPanel: false,
 
   // Initial file preview registry
   previewTabs: [],
@@ -606,16 +611,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowComputerUsePanel: (show) => set({
     showComputerUsePanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
   }),
   setShowInAppValidationPanel: (show) => set({
     showInAppValidationPanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
+    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
   }),
   openProjectCollaborationPage: (projectId) => set({
     showProjectCollaborationPage: true,
     projectCollaborationPageProjectId: projectId?.trim() || null,
     showKnowledgeMemoryPanel: false,
+    showLibraryPanel: false,
     showComputerUsePanel: false,
     showInAppValidationPanel: false,
   }),
@@ -677,7 +683,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
   setShowKnowledgeMemoryPanel: (show) => set({
     showKnowledgeMemoryPanel: show,
-    ...(show ? { showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
+    ...(show ? { showLibraryPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
+  }),
+  setShowLibraryPanel: (show) => set({
+    showLibraryPanel: show,
+    ...(show ? { showKnowledgeMemoryPanel: false, showComputerUsePanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
   }),
 
   openPreview: (filePath) => {

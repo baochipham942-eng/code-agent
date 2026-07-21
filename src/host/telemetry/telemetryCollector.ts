@@ -912,6 +912,8 @@ export class TelemetryCollector {
         errorCategory: errorCategory ?? 'unknown',
         validationFailed: metadata?.validationFailed === true,
         validationIssueCount: validationIssues?.length ?? 0,
+        // 流程性收窄（strict skill / artifact repair）导致的失败带上源头，区别于工具真坏
+        ...(typeof metadata?.narrowedBy === 'string' ? { narrowedBy: metadata.narrowedBy } : {}),
       });
     }
 

@@ -75,6 +75,7 @@ import {
   persistFailedRunContinuationContext,
 } from './conversationRuntimeContextBootstrap';
 import { resolveStickyStrictSkillInvocation } from './conversationRuntimeStickySkill';
+import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 
 
 const logger = createLogger('AgentLoop');
@@ -763,6 +764,12 @@ export class ConversationRuntime {
         // GAP-001: skill allowed-tools 限权边界
         if (skillContext.contextModifier.toolBoundary) {
           this.ctx.turn.setSkillToolBoundary(skillContext.contextModifier.toolBoundary);
+          // strict 收窄必须告诉模型原因和出路，否则它只会对用户说"环境受限"
+          if (skillContext.contextModifier.toolBoundary.strict) {
+            this.contextAssembly.injectSystemMessage(
+              buildStrictToolsetNotice(skillContext.contextModifier.toolBoundary),
+            );
+          }
         }
 
         isSimpleTask = false;

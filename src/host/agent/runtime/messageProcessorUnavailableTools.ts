@@ -30,6 +30,7 @@ import {
   sanitizeToolResultForObservation,
 } from './messageProcessorHelpers';
 import { attachTurnQualityMetadata } from './turnQuality';
+import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 
 export interface UnavailableToolCallsDeps {
   ctx: RuntimeContext;
@@ -147,11 +148,16 @@ export async function handleUnavailableToolCalls(
         repairPolicy,
       )
     : null;
+  // strict skill 边界收窄时把原因和出路一并给模型，避免它对用户编"环境受限"
+  const strictBoundary = ctx.turn.skillToolBoundary?.strict ? ctx.turn.skillToolBoundary : undefined;
   contextAssembly.injectSystemMessage(
     [
       '<tool-admission-repair>',
       `The previous tool call requested unavailable tools: ${requestedNames}.`,
       `Only these tools are currently available: ${allowedNames}.`,
+      strictBoundary
+        ? `Reason: the "${strictBoundary.skillName}" strict skill flow is active, which narrows the visible toolset by design. ${buildStrictToolsetNotice(strictBoundary)}`
+        : '',
       'Do not repeat the unavailable tool call. Pick the next action only from the currently available tools.',
       recoveryPrompt || '',
       '</tool-admission-repair>',
@@ -189,6 +195,8 @@ export async function handleUnavailableToolCalls(
         : 'Skipped because the same model response included unavailable repair tools.',
       duration: 0,
       metadata: {
+        // telemetry 与 UI 可据此判断失败源头是流程性收窄而非工具真坏
+        narrowedBy: guard?.targetFile ? 'artifact_repair' : strictBoundary ? 'strict_skill' : 'unavailable',
         artifactRepairGuard: {
           blocked: true,
           unavailableTool: blocked,

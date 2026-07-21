@@ -10,6 +10,7 @@ export const POSTHOG_EVENTS = {
   RUN_GOAL_MET: 'run_goal_met',
   TOOL_USED: 'tool_used',
   TOOL_CALL_FAILED: 'tool_call_failed',
+  TOOL_SCOPE_NARROWED: 'tool_scope_narrowed',
   MODEL_SELECTED: 'model_selected',
   MODEL_DECISION: 'model_decision',
   MODEL_STRATEGY_RECOMMENDATION_FEEDBACK: 'model_strategy_recommendation_feedback',

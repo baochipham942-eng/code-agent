@@ -129,6 +129,7 @@ import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
 import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
 import { historySchema } from './lightMemory/history.schema';
 import { proposeRoleSchema } from './roleAuthoring/proposeRole.schema';
+import { exitRoleFlowSchema } from './roleAuthoring/exitRoleFlow.schema';
 
 // planning/
 import { planModeFacadeSchema } from './planning/planModeFacade.schema';
@@ -654,10 +655,14 @@ export function registerMigratedTools(
     async () => (await import('./lightMemory/history')).historyModule,
   );
 
-  // roleAuthoring (1): propose_role —— 对话式建角色起草
+  // roleAuthoring (2): propose_role —— 对话式建角色起草 / exit_role_flow —— 退出严格流程
   registry.register(
     proposeRoleSchema,
     async () => (await import('./roleAuthoring/proposeRole')).proposeRoleModule,
+  );
+  registry.register(
+    exitRoleFlowSchema,
+    async () => (await import('./roleAuthoring/exitRoleFlow')).exitRoleFlowModule,
   );
 
   // network (2): ppt_generate / ppt_edit

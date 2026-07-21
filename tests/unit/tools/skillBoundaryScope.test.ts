@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { filterToolDefinitionsByStrictSkillBoundary } from '../../../src/host/tools/skillBoundaryScope';
+import { filterToolDefinitionsByStrictSkillBoundary, buildStrictToolsetNotice } from '../../../src/host/tools/skillBoundaryScope';
 import type { SkillToolBoundary } from '../../../src/shared/contract/agentSkill';
 
 const tools = [
@@ -57,5 +57,30 @@ describe('filterToolDefinitionsByStrictSkillBoundary', () => {
     };
     const visible = filterToolDefinitionsByStrictSkillBoundary(tools, boundary).map((t) => t.name);
     expect(visible.sort()).toEqual(['Bash', 'Read'].sort());
+  });
+});
+
+describe('buildStrictToolsetNotice', () => {
+  it('含 exit_role_flow 的边界：提示先退出流程再继续处理请求', () => {
+    const notice = buildStrictToolsetNotice({
+      skillName: 'create-role',
+      strict: true,
+      allowedTools: ['propose_role', 'exit_role_flow', 'read_file'],
+    });
+    expect(notice).toContain('create-role');
+    expect(notice).toContain('exit_role_flow');
+    expect(notice).toContain('草稿');
+    expect(notice).toContain('不是权限问题');
+  });
+
+  it('不含 exit_role_flow 的边界（dream/distill）：提示完成流程或新开会话', () => {
+    const notice = buildStrictToolsetNotice({
+      skillName: 'distill',
+      strict: true,
+      allowedTools: ['Read'],
+    });
+    expect(notice).toContain('distill');
+    expect(notice).not.toContain('exit_role_flow');
+    expect(notice).toContain('新开会话');
   });
 });

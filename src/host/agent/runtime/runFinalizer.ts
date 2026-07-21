@@ -55,6 +55,7 @@ import {
   persistCompletionSummaryRecord,
 } from '../../session/completionSummaryService';
 import { getConfiguredSurfaceExecutionRuntime } from '../../services/surfaceExecution/SurfaceExecutionRuntime';
+import { buildStrictToolsetNotice } from '../../tools/skillBoundaryScope';
 
 const logger = createLogger('AgentLoop');
 
@@ -683,6 +684,15 @@ export class RunFinalizer {
       if (skillResult.contextModifier.toolBoundary) {
         this.ctx.turn.setSkillToolBoundary(skillResult.contextModifier.toolBoundary);
         logger.debug(`[AgentLoop] Skill tool boundary set by "${skillResult.contextModifier.toolBoundary.skillName}": ${skillResult.contextModifier.toolBoundary.allowedTools.join(', ')}`);
+        // strict 收窄必须告诉模型原因和出路，否则它只会对用户说"环境受限"
+        if (skillResult.contextModifier.toolBoundary.strict) {
+          this.ctx.messages.push({
+            id: this.messageWriter.generateId(),
+            role: 'system',
+            content: buildStrictToolsetNotice(skillResult.contextModifier.toolBoundary),
+            timestamp: Date.now(),
+          });
+        }
       }
 
     }

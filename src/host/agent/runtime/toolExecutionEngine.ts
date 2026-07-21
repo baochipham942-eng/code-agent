@@ -15,6 +15,7 @@ import type {
 } from '../../../shared/contract';
 import { getLangfuseService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
+import { EXIT_ROLE_FLOW_TOOL_NAME } from '../../tools/modules/roleAuthoring/exitRoleFlow.schema';
 import { createLogger } from '../../services/infra/logger';
 import { TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS, DESIGN_QUALITY } from '../../../shared/constants';
 import { runDesignQualityReview } from '../../quality/designQualityHook';
@@ -782,6 +783,15 @@ export class ToolExecutionEngine {
       );
       clearInterval(progressInterval);
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
+
+      // exit_role_flow：工具本体触达不到 turn 状态，在引擎侧收口——成功即解除
+      // strict 边界与激活 skill，本轮下一次 inference 立刻恢复全量工具。
+      // 跨轮不恢复由 conversationRuntimeStickySkill 扫描历史里的本调用保证。
+      if (toolCall.name === EXIT_ROLE_FLOW_TOOL_NAME && result.success) {
+        this.ctx.turn.setSkillToolBoundary(undefined);
+        this.ctx.turn.clearActiveSkill();
+        logger.info('[AgentLoop] exit_role_flow succeeded: strict skill tool boundary cleared for this turn');
+      }
 
       // G20: 记一条 tool_dispatch trace —— 工具名 / 成败 / 耗时 / 错误，
       // 用于回放"这个 turn 派了哪些工具、结果如何"（也是验证 G7 是否死代码的数据来源）。

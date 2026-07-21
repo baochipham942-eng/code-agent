@@ -231,6 +231,9 @@ export function normalizeAction(value: unknown): CronJobAction | null {
         agentType: value.agentType,
         prompt: value.prompt,
         context: normalizeUnknownRecord(value.context),
+        roleId: typeof value.roleId === 'string' ? value.roleId : undefined,
+        libraryProjectId:
+          typeof value.libraryProjectId === 'string' ? value.libraryProjectId : undefined,
       };
     }
 

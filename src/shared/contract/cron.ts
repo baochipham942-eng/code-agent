@@ -151,6 +151,18 @@ export interface AgentAction {
   agentType: string;
   prompt: string;
   context?: Record<string, unknown>;
+  /**
+   * 以该持久化角色身份跑（roles/<roleId>/ 目录名）。设置后执行时注入
+   * L0 角色定义（agentOverrideId）+ L1 记忆索引/资料架（buildRoleContextBlock →
+   * turnSystemContext），复用 wakeRole 已验证的主会话链注入路径。
+   * 角色不存在时降级为默认 agent 跑并告警，不中断任务（A6 D5）。
+   */
+  roleId?: string;
+  /**
+   * 产出归档到该项目资料库（projectId 或 'global'）。缺省不归档，保持现有
+   * 任务行为零扰动（A6 D6）。填了才在跑完后复用 LibraryService 归档，标签「定稿」。
+   */
+  libraryProjectId?: string;
 }
 
 /**

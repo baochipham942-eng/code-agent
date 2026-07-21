@@ -15,6 +15,8 @@ import {
   type CronJobDraft,
 } from './types';
 import { CRON_TEMPLATES, type CronTemplate } from './cronTemplates';
+import { CronSimpleCreate } from './CronSimpleCreate';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -26,8 +28,8 @@ type FieldErrors = Partial<Record<keyof CronJobDraft, string>> & { form?: string
 
 type EditorTab = 'basic' | 'action' | 'advanced';
 
-/** Creation flow: pick template → fill fields → (or skip to manual) */
-type CreationStep = 'pick' | 'fill' | 'manual';
+/** Creation flow: simple (default) → pick template → fill fields → (or manual) */
+type CreationStep = 'simple' | 'pick' | 'fill' | 'manual';
 
 const TABS: { key: EditorTab; label: string; icon: React.ReactNode }[] = [
   { key: 'basic', label: '基本设置', icon: <Clock className="h-3.5 w-3.5" /> },
@@ -36,6 +38,8 @@ const TABS: { key: EditorTab; label: string; icon: React.ReactNode }[] = [
 ];
 
 export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClose }) => {
+  const { t } = useI18n();
+  const cc = t.cronCenter;
   const { createJob, updateJob } = useCronStore();
   const [draft, setDraft] = useState<CronJobDraft>(createDefaultCronJobDraft());
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -43,7 +47,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
   const [activeTab, setActiveTab] = useState<EditorTab>('basic');
 
   // Template-based creation state
-  const [step, setStep] = useState<CreationStep>('pick');
+  const [step, setStep] = useState<CreationStep>('simple');
   const [selectedTemplate, setSelectedTemplate] = useState<CronTemplate | null>(null);
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
 
@@ -54,7 +58,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
       setStep('manual');
     } else {
       setDraft(createDefaultCronJobDraft());
-      setStep('pick');
+      setStep('simple');
       setSelectedTemplate(null);
       setTemplateValues({});
     }
@@ -64,11 +68,13 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
 
   const title = job
     ? '编辑定时任务'
-    : step === 'pick'
-      ? '选择任务模板'
-      : step === 'fill'
-        ? selectedTemplate?.name || '填写参数'
-        : '手动配置任务';
+    : step === 'simple'
+      ? cc.simpleTitle
+      : step === 'pick'
+        ? '选择任务模板'
+        : step === 'fill'
+          ? selectedTemplate?.name || '填写参数'
+          : '手动配置任务';
 
   const scheduleOptions = useMemo(
     () => [
@@ -147,6 +153,30 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
     }
   };
 
+  // ── Simple create step (default) ───────────────────────────────────
+  if (!job && step === 'simple') {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title={title} size="lg">
+        <CronSimpleCreate onDone={onClose} />
+        <div className="mt-4 flex items-center justify-center gap-4 border-t border-zinc-800 pt-3 text-xs">
+          <button /* ds-allow:button: 纯文本次级链接（text-xs 无底色），primitive 变体会渲染按钮外观 */
+            onClick={() => setStep('pick')}
+            className="text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            {cc.fromTemplate}
+          </button>
+          <span className="h-3 w-px bg-zinc-800" />
+          <button /* ds-allow:button: 同上，纯文本次级链接 */
+            onClick={() => setStep('manual')}
+            className="text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            {cc.manualConfig}
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
   // ── Template picker step ───────────────────────────────────────────
   if (!job && step === 'pick') {
     return (
@@ -173,10 +203,17 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
             </button>
           ))}
         </div>
-        <div className="mt-4 text-center">
-          <button
+        <div className="mt-4 flex items-center justify-center gap-4 text-xs">
+          <button /* ds-allow:button: 同上，纯文本次级链接 */
+            onClick={() => setStep('simple')}
+            className="text-zinc-500 transition-colors hover:text-zinc-300"
+          >
+            {cc.backToSimple}
+          </button>
+          <span className="h-3 w-px bg-zinc-800" />
+          <button /* ds-allow:button: 同上，纯文本次级链接 */
             onClick={() => setStep('manual')}
-            className="text-xs text-zinc-500 transition-colors hover:text-zinc-300"
+            className="text-zinc-500 transition-colors hover:text-zinc-300"
           >
             跳过模板，手动配置
           </button>

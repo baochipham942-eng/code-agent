@@ -378,6 +378,23 @@ export const enSettingsWork = {
         noWork: 'No work history yet',
       },
       confirmDeleteQuestion: 'Confirm delete?',
+      bindings: {
+        title: 'Bookshelf',
+        hint: 'Materials this expert brings into every chat (index only; content is read on demand). Private materials never leak into other experts.',
+        empty: 'Nothing bound yet. Bound materials are always known to this expert at chat start.',
+        loadFailed: 'Failed to load bindings',
+        addFromLibrary: 'Bind from library',
+        addPath: 'Bind local path',
+        pathPlaceholder: 'Absolute path to a file or folder',
+        librarySelectPlaceholder: 'Select a library item…',
+        modeAlways: 'Always indexed',
+        modeOnDemand: 'On demand',
+        scopePrivate: 'Private',
+        scopeProject: 'Project shared',
+        add: 'Bind',
+        remove: 'Remove',
+        addFailed: 'Failed to bind',
+      },
       proactivity: {
         options: {
           silent: {

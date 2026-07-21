@@ -19,7 +19,15 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type { RolePanelDetail, RolePanelEntry, RoleProactivityLevel } from '../../shared/contract/roleAssets';
+import type {
+  ExpertBindingKind,
+  ExpertBindingMode,
+  ExpertBindingScope,
+  RolePanelDetail,
+  RolePanelEntry,
+  RoleProactivityLevel,
+} from '../../shared/contract/roleAssets';
+import { addRoleBinding, readRoleBindings, removeRoleBinding } from '../services/roleAssets/roleContextBindings';
 import {
   BUILTIN_ROLE_IDS,
   getBuiltinRoleVisual,
@@ -230,6 +238,41 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
             { filename, name, description, content },
           );
           return { success: true, data: { path: filePath } };
+        }
+
+        case 'listBindings': {
+          const { roleId } = (payload ?? {}) as RoleIdPayload;
+          if (!roleId) {
+            return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+          }
+          return { success: true, data: await readRoleBindings(roleId) };
+        }
+
+        case 'addBinding': {
+          const { roleId, kind, target, title, mode, scope } = (payload ?? {}) as {
+            roleId?: string;
+            kind?: ExpertBindingKind;
+            target?: string;
+            title?: string;
+            mode?: ExpertBindingMode;
+            scope?: ExpertBindingScope;
+          };
+          if (!roleId || !kind || !target || !mode || !scope) {
+            return {
+              success: false,
+              error: { code: 'INVALID_ARGS', message: 'roleId, kind, target, mode, scope are required' },
+            };
+          }
+          return { success: true, data: await addRoleBinding(roleId, { kind, target, title, mode, scope }) };
+        }
+
+        case 'removeBinding': {
+          const { roleId, bindingId } = (payload ?? {}) as { roleId?: string; bindingId?: string };
+          if (!roleId || !bindingId) {
+            return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and bindingId are required' } };
+          }
+          await removeRoleBinding(roleId, bindingId);
+          return { success: true, data: { removed: true } };
         }
 
         case 'setProactivity': {

@@ -15,6 +15,7 @@ import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { RoleIcon } from '../../shared/RoleIcon';
+import { RoleBindingsSection } from './RoleBindingsSection';
 import { SettingsPage, SettingsSection, SettingsDetails } from '../SettingsLayout';
 
 // ----------------------------------------------------------------------------
@@ -473,6 +474,9 @@ const RoleDetailView: React.FC<RoleDetailViewProps> = ({ roleId, icon, onBack })
               </div>
             </div>
           </SettingsSection>
+
+          {/* 资料架（E3：L1 默认绑定，开聊自动注入索引） */}
+          <RoleBindingsSection roleId={roleId} />
 
           {/* 记忆（可删可编辑） */}
           <SettingsSection

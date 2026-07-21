@@ -339,6 +339,14 @@ export async function buildRoleContextBlock(roleId: string, workspacePath?: stri
     sections.push(`## 最近工作履历\n${history.join('\n')}`);
   }
 
+  // E3：L1 默认资料架（索引常驻+按需清单）。会话级 pin（L3）在主链路注入，
+  // 权重高于这里；本块只对该角色的会话生效（L1 隔离天然按 roleId 取文件）。
+  const { buildRoleBindingsSection } = await import('./roleContextBindings');
+  const bindingsSection = await buildRoleBindingsSection(roleId);
+  if (bindingsSection) {
+    sections.push(bindingsSection);
+  }
+
   return [
     `<role_assets role="${roleId}">`,
     `你是持久化角色"${roleId}"。以下是你跨实例积累的长期资产（索引）：`,

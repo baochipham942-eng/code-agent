@@ -271,6 +271,43 @@ describe('roles.ipc (domain:roles)', () => {
     });
   });
 
+  describe('writeProjectMemory（资料库归档摘要 → 项目层记忆）', () => {
+    it('writes a project-scope memory', async () => {
+      const res = await invoke<{ path: string }>('writeProjectMemory', {
+        workspacePath: '/tmp/demo-workspace',
+        name: '周报定稿',
+        description: '本周进展摘要',
+        content: '正文',
+      });
+      expect(res.success).toBe(true);
+      expect(res.data?.path).toContain('.md');
+
+      const memories = await listScopedMemories({ scope: 'project', workspacePath: '/tmp/demo-workspace' });
+      expect(memories.length).toBe(1);
+      expect(memories[0].name).toBe('周报定稿');
+      expect(memories[0].description).toBe('本周进展摘要');
+    });
+
+    it('重复归档同名产物覆盖同一条记忆，不产生重复条目', async () => {
+      await invoke('writeProjectMemory', {
+        workspacePath: '/tmp/demo-workspace', name: '周报定稿', description: 'v1', content: 'c1',
+      });
+      await invoke('writeProjectMemory', {
+        workspacePath: '/tmp/demo-workspace', name: '周报定稿', description: 'v2', content: 'c2',
+      });
+
+      const memories = await listScopedMemories({ scope: 'project', workspacePath: '/tmp/demo-workspace' });
+      expect(memories.length).toBe(1);
+      expect(memories[0].content).toContain('c2');
+    });
+
+    it('requires workspacePath, name, description, content', async () => {
+      const res = await invoke('writeProjectMemory', { workspacePath: '/tmp/x', name: 'n' });
+      expect(res.success).toBe(false);
+      expect(res.error?.code).toBe('INVALID_ARGS');
+    });
+  });
+
   describe('setProactivity（设置页开启主动性，docs/designs/role-proactivity.md §4）', () => {
     it('写入 settings 覆盖 + 立即同步 cadence cron + detail 反映新值', async () => {
       await ensureRoleAssetDirs('研究员');

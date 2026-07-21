@@ -258,6 +258,59 @@ describe('recordCronAutomationExecution', () => {
     expect(service.upsert.mock.calls[0][0].cadenceLabel).not.toContain('每');
   });
 
+  it('成功的 recurring agent 运行：记录保持 active 并打 pendingReview 标记（A4 待过目）', async () => {
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({ status: 'completed', sessionId: 'result-sess', completedAt: 1234 }),
+      identityRuntime
+    );
+    const arg = service.recordEvent.mock.calls[0][0];
+    expect(arg.recordStatus).toBe('active');
+    expect(arg.configPatch).toEqual({ pendingReview: { resultSessionId: 'result-sess', at: 1234 } });
+  });
+
+  it('成功的一次性 agent 运行：记录状态落 pending_review', async () => {
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'at',
+        schedule: { type: 'at', datetime: Date.UTC(2026, 0, 2, 3, 4) },
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({ status: 'completed', sessionId: 'result-sess' }),
+      identityRuntime
+    );
+    const arg = service.recordEvent.mock.calls[0][0];
+    expect(arg.event).toBe('completed');
+    expect(arg.recordStatus).toBe('pending_review');
+    expect(arg.configPatch?.pendingReview?.resultSessionId).toBe('result-sess');
+  });
+
+  it('shell 运行与无结果会话的运行不进待过目', async () => {
+    await recordCronAutomationExecution(
+      def({ metadata: { sourceSessionId: 'sess' }, scheduleType: 'every' }),
+      exec({ status: 'completed', sessionId: 'result-sess' }),
+      identityRuntime
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toBeUndefined();
+
+    service.recordEvent.mockClear();
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({ status: 'completed', sessionId: undefined }),
+      identityRuntime
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toBeUndefined();
+  });
+
   it('does nothing without a source session', async () => {
     await recordCronAutomationExecution(def(), exec(), identityRuntime);
     expect(service.recordEvent).not.toHaveBeenCalled();

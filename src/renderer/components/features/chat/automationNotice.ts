@@ -63,6 +63,7 @@ function statusLabel(status?: SessionAutomationStatus): string {
     case 'active': return '已启用';
     case 'running': return '运行中';
     case 'completed': return '已完成';
+    case 'pending_review': return '待过目';
     case 'failed': return '失败';
     case 'paused': return '已暂停';
     case 'cancelled': return '已停止';

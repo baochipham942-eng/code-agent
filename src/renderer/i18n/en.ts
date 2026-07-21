@@ -864,6 +864,18 @@ export const en: Translations = {
 
 
   // Chat-flow Mermaid diagram card (pan/zoom + annotate-to-edit)
+  // Library (Batch 2: pin items into session context)
+  library: {
+    pinModalTitle: 'Library · Pin to this session',
+    pinModalHint: 'Pinned items expose their index (title/path/summary); content is read on demand and answers cite sources.',
+    projectGroup: 'This project',
+    globalGroup: 'Global / Uncategorized',
+    empty: 'The library is empty — archived task outputs and uploaded files will show up here.',
+    loadFailed: 'Failed to load library',
+    pinFailed: 'Failed to update pin, please retry',
+    pinnedCount: '{count} pinned',
+  },
+
   ...chatTranscriptEn,
   ...chatInputEn,
   ...chatInputModelStrategyEn,

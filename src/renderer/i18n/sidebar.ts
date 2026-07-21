@@ -69,6 +69,9 @@ export const sidebarZh = {
       automationPending: '{count} 条待过目',
       library: '资料库',
       librarySubtitle: '项目资产 · 可 pin 进对话',
+      expert: '专家',
+      expertSubtitle: '请一位懂行的搭档来搭把手',
+      expertRecent: '最近合作 {count} 位',
     },
   },
   sessionMenu: {
@@ -285,6 +288,9 @@ export const sidebarEn: typeof sidebarZh = {
       automationPending: '{count} to review',
       library: 'Library',
       librarySubtitle: 'Project assets · pin into chats',
+      expert: 'Experts',
+      expertSubtitle: 'Bring in a teammate who knows the craft',
+      expertRecent: '{count} recent collaborators',
     },
   },
   sessionMenu: {

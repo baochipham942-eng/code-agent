@@ -117,7 +117,8 @@ export const ChatView: React.FC = () => {
   const currentSession = sessions.find((session) => session.id === currentSessionId);
   const channelSessionSource = formatChannelSessionSource(currentSession);
   const launchRequests = useSwarmStore((state) => state.launchRequests);
-  const streamingMessageEntries = useStreamingMessageAccumulatorStore((state) => state.entries);
+  // 订阅节流快照而非原始 entries：原始 entries 每 token 变一次，会把投影重算推到 token 频率
+  const streamingMessageEntries = useStreamingMessageAccumulatorStore((state) => state.visibleEntries);
   const authUser = useAuthStore((state) => state.user);
   const neoWorkCards = useNeoWorkCardStore(useShallow((state) =>
     selectNeoWorkCardDetailsForConversation(state, currentSessionId),

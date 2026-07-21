@@ -376,8 +376,73 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
     repoId: 'marketing-skills',
     keywords: ['竞品画像', '对手分析'],
   },
+  {
+    name: 'topic-to-draft',
+    displayName: '公众号成稿',
+    description: '选题收窄到成稿，打磨钩子去 AI 腔',
+    category: 'content-marketing',
+    repoId: BUILTIN_REPO_ID,
+  },
+  {
+    name: 'xhs-post-crafting',
+    displayName: '小红书图文',
+    description: '多角度标题、短平快正文、配图规划',
+    category: 'content-marketing',
+    repoId: BUILTIN_REPO_ID,
+  },
+  {
+    name: 'deck-outline',
+    displayName: '演示稿大纲',
+    description: '叙事线到内容稿，一页一点带备注',
+    category: 'content-marketing',
+    repoId: BUILTIN_REPO_ID,
+  },
+
+  // ---- 产品管理（E1 内置专家包·牧之） ----
+  {
+    name: 'requirement-elicitation',
+    displayName: '需求澄清',
+    description: '把模糊想法澄清成结构化需求清单',
+    category: 'product',
+    repoId: BUILTIN_REPO_ID,
+  },
+  {
+    name: 'prd-authoring',
+    displayName: 'PRD 撰写',
+    description: '需求写成能过评审、能开工的 PRD',
+    category: 'product',
+    repoId: BUILTIN_REPO_ID,
+  },
+  {
+    name: 'review-prep',
+    displayName: '评审准备',
+    description: 'PRD 压成一页纸，预演各方质疑',
+    category: 'product',
+    repoId: BUILTIN_REPO_ID,
+  },
 
   // ---- 研究调研 ----
+  {
+    name: 'competitor-teardown',
+    displayName: '竞品拆解',
+    description: '拆穿竞品，输出该不该借鉴与成本档位',
+    category: 'research',
+    repoId: BUILTIN_REPO_ID,
+  },
+  {
+    name: 'multi-source-verification',
+    displayName: '多源核实',
+    description: '交叉验证一个说法，判证实/证伪/存疑',
+    category: 'research',
+    repoId: BUILTIN_REPO_ID,
+  },
+  {
+    name: 'industry-scan',
+    displayName: '行业调研',
+    description: '拆子问题分级信源，合成趋势判断',
+    category: 'research',
+    repoId: BUILTIN_REPO_ID,
+  },
   {
     name: 'literature-review',
     displayName: '文献综述',
@@ -458,6 +523,27 @@ export const RECOMMENDED_SKILLS: RecommendedSkillEntry[] = [
   },
 
   // ---- 效率自动化 ----
+  {
+    name: 'weekly-report-synthesis',
+    displayName: '周报萃取',
+    description: '从会话/文件/任务捞证据攒周报',
+    category: 'automation',
+    repoId: BUILTIN_REPO_ID,
+  },
+  {
+    name: 'project-retro',
+    displayName: '项目复盘',
+    description: '还原时间线对目标，每个坑配 action',
+    category: 'automation',
+    repoId: BUILTIN_REPO_ID,
+  },
+  {
+    name: 'monthly-review',
+    displayName: '月报汇报',
+    description: '聚合周报升维度，量化成果对里程碑',
+    category: 'automation',
+    repoId: BUILTIN_REPO_ID,
+  },
   {
     name: 'computer-housekeeper',
     displayName: '电脑管家',

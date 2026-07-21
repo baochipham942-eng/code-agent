@@ -354,7 +354,7 @@ export const zhSettingsWork = {
       newRole: '新建角色',
       refresh: '刷新',
       loading: '加载中…',
-      empty: '暂无持久化角色。重启应用后会自动安装预设角色（研究员 / 数据分析师）。',
+      empty: '暂无持久化角色。重启应用后会自动安装预设角色。',
       uncategorizedCategory: '其他',
       categories: {
         'docs-office': '文档办公',

@@ -354,7 +354,7 @@ export const enSettingsWork = {
       newRole: 'New role',
       refresh: 'Refresh',
       loading: 'Loading…',
-      empty: 'No persistent roles yet. Preset roles (Researcher / Data Analyst) are installed automatically after restarting the app.',
+      empty: 'No persistent roles yet. Preset roles are installed automatically after restarting the app.',
       uncategorizedCategory: 'Other',
       categories: {
         'docs-office': 'Docs & office',

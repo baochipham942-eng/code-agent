@@ -90,8 +90,10 @@ describe('内置 skill 分类回填（builtinSkills.ts SSoT）', () => {
     expect(counts).toMatchObject({
       'docs-office': 3, // xlsx, meeting-summary, reviewer-facing-delivery
       'data-analysis': 2, // data-cleaning, data-analysis-helper
-      research: 5, // literature-review, paper-distillation, research-monitor, opencli-search, research-brief-and-split
-      automation: 7, // computer-housekeeper, contract-review, image-ocr-search, photo-archive, create-role, edit-role, task-brief-builder
+      product: 3, // E1 牧之：requirement-elicitation, prd-authoring, review-prep
+      research: 8, // literature-review, paper-distillation, research-monitor, opencli-search, research-brief-and-split + E1 溯真 3（competitor-teardown/multi-source-verification/industry-scan）
+      'content-marketing': 3, // E1 青禾：topic-to-draft, xhs-post-crafting, deck-outline
+      automation: 10, // computer-housekeeper, contract-review, image-ocr-search, photo-archive, create-role, edit-role, task-brief-builder + E1 明镜 3（weekly-report-synthesis/project-retro/monthly-review）
       development: 15, // commit, review, test, explain, refactor, docker, dream, distill + 方法论 7（brainstorm/tdd/debug/verify/merge/work-review/implementation-closure）
     });
   });

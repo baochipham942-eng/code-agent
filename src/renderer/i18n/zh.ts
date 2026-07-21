@@ -18,6 +18,7 @@ import { labGpt1Zh } from './labGpt1';
 import { labNanogptZh } from './labNanogpt';
 import { labLlamafactoryZh } from './labLlamafactory';
 import { labAlignmentZh } from './labAlignment';
+import { knowledgeMemoryZh } from './knowledgeMemory';
 
 export const zh = {
   // Common
@@ -878,6 +879,7 @@ export const zh = {
     archiveFailed: '归档失败',
   },
 
+  ...knowledgeMemoryZh,
   ...chatTranscriptZh,
   ...chatInputZh,
   ...chatInputModelStrategyZh,

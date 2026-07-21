@@ -346,6 +346,18 @@ describe('desktop queued input drain persistence', () => {
       repository,
     }).dispose;
 
+    // drain 轮是一整个真实 orchestrator 回合（仅 inference 打桩），负载下合法耗时
+    // 可超过 vi.waitFor 默认 1s 窗口——等 task_completed 这个确定性完成信号
+    // （被取消轮发的是 task_cancelled，不会误触），而不是用固定窗口轮询 DB 状态。
+    const drainedTurnCompleted = new Promise<void>((resolve) => {
+      const onCompleted = (event: { sessionId: string }): void => {
+        if (event.sessionId !== sessionId) return;
+        manager.off('task_completed', onCompleted);
+        resolve();
+      };
+      manager.on('task_completed', onCompleted);
+    });
+
     const cancelledRun = manager.startTask(sessionId, 'cancel this desktop run');
     await Promise.race([
       cancelledInferenceReady,
@@ -356,6 +368,8 @@ describe('desktop queued input drain persistence', () => {
     await manager.cancelTask(sessionId);
     await cancelledRun;
 
+    await drainedTurnCompleted;
+    // task_completed 之后 markConsumed 只隔几个微任务，默认窗口只兜收尾。
     await vi.waitFor(() => {
       expect(repository.getById(queuedInputId)?.status).toBe('consumed');
     });

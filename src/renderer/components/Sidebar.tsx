@@ -48,6 +48,7 @@ import { createLogger } from '../utils/logger';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
 import { SidebarProjectGroup } from './features/sidebar/SidebarProjectGroup';
+import { SidebarCapabilityZone } from './features/sidebar/SidebarCapabilityZone';
 import type { SidebarSessionItemSharedProps } from './features/sidebar/SidebarSessionItem';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { sessionAutomationClient } from '../services/sessionAutomationClient';
@@ -708,6 +709,9 @@ export const Sidebar: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* 能力区：自动化 / 专家 / 资料库（三件套，逐批点亮） */}
+      <SidebarCapabilityZone />
 
       {/* Session List - Project Grouped */}
       <div className="flex-1 overflow-y-auto px-2 min-h-0">

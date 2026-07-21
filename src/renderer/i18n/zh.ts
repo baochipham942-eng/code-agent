@@ -8,6 +8,7 @@ import { chatTranscriptZh } from './chatTranscript';
 import { chatInputZh } from './chatInput';
 import { chatInputModelStrategyZh } from './chatInputModelStrategy';
 import { sidebarZh } from './sidebar';
+import { cronCenterZh } from './cronCenter';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
 import { taskStatusPanelsZh } from './taskStatusPanels';
@@ -868,6 +869,7 @@ export const zh = {
   ...chatInputZh,
   ...chatInputModelStrategyZh,
   ...sidebarZh,
+  ...cronCenterZh,
   ...previewWorkspaceZh,
   ...modalPrimitivesZh,
   ...taskStatusPanelsZh,

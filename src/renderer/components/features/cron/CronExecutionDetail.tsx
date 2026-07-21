@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { CronJobExecution } from '@shared/contract';
 import { MessageSquareText } from 'lucide-react';
+import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import {
@@ -15,6 +16,8 @@ interface CronExecutionDetailProps {
 }
 
 export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execution }) => {
+  const { t } = useI18n();
+  const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [isOpeningSession, setIsOpeningSession] = useState(false);
@@ -22,7 +25,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
   if (!execution) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 text-sm text-zinc-500">
-        选择一条执行记录查看详情
+        {cc.execSelectHint}
       </div>
     );
   }
@@ -43,7 +46,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h4 className="text-sm font-medium text-zinc-100">执行详情</h4>
+          <h4 className="text-sm font-medium text-zinc-100">{cc.execDetailTitle}</h4>
           <p className="mt-1 text-xs text-zinc-500">{execution.id}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -55,28 +58,28 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
             >
               <MessageSquareText className="h-3.5 w-3.5" />
-              {isOpeningSession ? '打开中' : '打开会话'}
+              {isOpeningSession ? cc.execOpeningSession : cc.execOpenSession}
             </button>
           )}
           <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
-            {statusMeta.label}
+            {cc.status[execution.status]}
           </span>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Info label="运行会话" value={execution.sessionId || '—'} />
-        <Info label="计划时间" value={formatDateTime(execution.scheduledAt)} />
-        <Info label="开始时间" value={formatDateTime(execution.startedAt)} />
-        <Info label="完成时间" value={formatDateTime(execution.completedAt)} />
-        <Info label="耗时" value={formatDuration(execution.duration)} />
-        <Info label="重试次数" value={String(execution.retryAttempt)} />
-        <Info label="退出码" value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
+        <Info label={cc.execSession} value={execution.sessionId || '—'} />
+        <Info label={cc.colScheduledAt} value={formatDateTime(execution.scheduledAt)} />
+        <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt)} />
+        <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt)} />
+        <Info label={cc.colDuration} value={formatDuration(execution.duration)} />
+        <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
+        <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
       </div>
 
       {execution.error && (
         <section className="mt-4">
-          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-red-300">错误</h5>
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-red-300">{cc.execError}</h5>
           <pre className="max-h-40 overflow-auto rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-100 whitespace-pre-wrap">
             {execution.error}
           </pre>
@@ -84,7 +87,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
       )}
 
       <section className="mt-4">
-        <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">结果</h5>
+        <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.execResult}</h5>
         <pre className="max-h-56 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-300 whitespace-pre-wrap">
           {prettyJson(execution.result)}
         </pre>

@@ -378,6 +378,23 @@ export const zhSettingsWork = {
         noWork: '尚无工作记录',
       },
       confirmDeleteQuestion: '确认删除？',
+      bindings: {
+        title: '资料架',
+        hint: '该专家开聊自动带上的资料（仅注入索引，正文按需读取）。私有资料不进其他专家。',
+        empty: '还没有绑定资料。绑定后该专家每次开聊都知道去哪找它们。',
+        loadFailed: '资料架加载失败',
+        addFromLibrary: '从资料库绑定',
+        addPath: '绑定本地路径',
+        pathPlaceholder: '文件或目录的绝对路径',
+        librarySelectPlaceholder: '选择资料库条目…',
+        modeAlways: '常驻索引',
+        modeOnDemand: '按需',
+        scopePrivate: '私有',
+        scopeProject: '项目共享',
+        add: '绑定',
+        remove: '移除',
+        addFailed: '绑定失败',
+      },
       proactivity: {
         options: {
           silent: {

@@ -308,6 +308,40 @@ describe('roles.ipc (domain:roles)', () => {
     });
   });
 
+  describe('bindings（E3 专家资料架）', () => {
+    it('listBindings 空资料架返回空数组；addBinding→list→removeBinding 回环', async () => {
+      const empty = await invoke<unknown[]>('listBindings', { roleId: '研究员' });
+      expect(empty.success).toBe(true);
+      expect(empty.data).toEqual([]);
+
+      const boundFile = path.join(mockConfigDir.dir, 'bound.md');
+      await fs.writeFile(boundFile, 'x', 'utf-8');
+      const added = await invoke<{ id: string; kind: string }>('addBinding', {
+        roleId: '研究员', kind: 'file', target: boundFile, mode: 'always', scope: 'private',
+      });
+      expect(added.success).toBe(true);
+
+      const listed = await invoke<Array<{ id: string }>>('listBindings', { roleId: '研究员' });
+      expect(listed.data).toHaveLength(1);
+
+      const removed = await invoke('removeBinding', { roleId: '研究员', bindingId: added.data!.id });
+      expect(removed.success).toBe(true);
+      const after = await invoke<unknown[]>('listBindings', { roleId: '研究员' });
+      expect(after.data).toEqual([]);
+    });
+
+    it('addBinding 缺参 / 路径不存在都报错', async () => {
+      const missingArgs = await invoke('addBinding', { roleId: '研究员', kind: 'file' });
+      expect(missingArgs.success).toBe(false);
+      expect(missingArgs.error?.code).toBe('INVALID_ARGS');
+
+      const badPath = await invoke('addBinding', {
+        roleId: '研究员', kind: 'file', target: path.join(mockConfigDir.dir, 'nope.md'), mode: 'always', scope: 'private',
+      });
+      expect(badPath.success).toBe(false);
+    });
+  });
+
   describe('setProactivity（设置页开启主动性，docs/designs/role-proactivity.md §4）', () => {
     it('写入 settings 覆盖 + 立即同步 cadence cron + detail 反映新值', async () => {
       await ensureRoleAssetDirs('研究员');

@@ -103,6 +103,8 @@ export const ROLE_ASSETS = {
   INDEX_FILENAME: 'MEMORY.md',
   /** 工作履历文件名（产物清单，设计 §4.3） */
   HISTORY_FILENAME: 'history.md',
+  /** 专家默认资料架绑定文件名（Batch 3 E3） */
+  BINDINGS_FILENAME: 'bindings.json',
   /** 项目目录元数据文件名（记录原始 workspace 路径，P0-2 迁移用） */
   META_FILENAME: 'meta.json',
   /** 项目 key 的 hash 截断长度 */

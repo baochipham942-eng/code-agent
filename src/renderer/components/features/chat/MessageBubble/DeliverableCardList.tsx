@@ -24,6 +24,8 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { copyPathToClipboard, isWebMode } from '../../../../utils/platform';
 import { addLibraryItem } from '../../../../services/libraryClient';
+import ipcService from '../../../../services/ipcService';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { BookOpen } from 'lucide-react';
@@ -150,6 +152,9 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
   const currentSessionProjectId = useSessionStore(
     (state) => state.sessions.find((s) => s.id === state.currentSessionId)?.projectId ?? null,
   );
+  const currentSessionWorkingDirectory = useSessionStore(
+    (state) => state.sessions.find((s) => s.id === state.currentSessionId)?.workingDirectory ?? null,
+  );
 
   if (cards.length === 0) return null;
 
@@ -169,7 +174,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
     }
   };
 
-  const runSecondaryAction = async (action: DeliverableSecondaryAction) => {
+  const runSecondaryAction = async (action: DeliverableSecondaryAction, card: DeliverableCardView) => {
     if (action.disabled) return;
     try {
       switch (action.kind) {
@@ -212,6 +217,17 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
               sourceSessionId: currentSessionId ?? undefined,
             });
             toast.success(t.library.archivedToast.replace('{title}', item.title));
+            // 归档成功后顺手写一句摘要进项目记忆；无摘要/无工作目录跳过，失败不打断归档主流程
+            if (currentSessionWorkingDirectory && card.description.trim()) {
+              void ipcService
+                .invokeDomain(IPC_DOMAINS.ROLES, 'writeProjectMemory', {
+                  workspacePath: currentSessionWorkingDirectory,
+                  name: card.title,
+                  description: card.description,
+                  content: `${card.description}\n\n定稿产物：${action.path}`,
+                })
+                .catch((err) => console.warn('[DeliverableCardList] write project memory failed', err));
+            }
           } catch (error) {
             toast.error(t.library.archiveFailed + (error instanceof Error ? `: ${error.message}` : ''));
           }
@@ -321,7 +337,7 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
                     <button
                       key={secondaryActionKey(action)}
                       type="button"
-                      onClick={() => void runSecondaryAction(action)}
+                      onClick={() => void runSecondaryAction(action, card)}
                       className="inline-flex h-6 w-6 items-center justify-center rounded text-zinc-500 hover:bg-surface-hover hover:text-zinc-200"
                       title={action.reason || action.label}
                       aria-label={`${action.label}: ${card.title}`}

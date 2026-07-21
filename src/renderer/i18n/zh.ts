@@ -874,6 +874,8 @@ export const zh = {
     deleteAction: '删除',
     deleteConfirm: '再点一次确认删除',
     deleted: '已删除',
+    archivedToast: '已归档到资料库：{title}',
+    archiveFailed: '归档失败',
   },
 
   ...chatTranscriptZh,

@@ -21,7 +21,12 @@ import {
 } from 'lucide-react';
 import type { DeliverableCardView, DeliverableSecondaryAction } from '@shared/contract';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { copyPathToClipboard, isWebMode } from '../../../../utils/platform';
+import { addLibraryItem } from '../../../../services/libraryClient';
+import { toast } from '../../../../hooks/useToast';
+import { useI18n } from '../../../../hooks/useI18n';
+import { BookOpen } from 'lucide-react';
 
 interface Props {
   cards: DeliverableCardView[];
@@ -138,8 +143,13 @@ function secondaryActionKey(action: DeliverableSecondaryAction): string {
 }
 
 export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2' }) => {
+  const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const currentSessionProjectId = useSessionStore(
+    (state) => state.sessions.find((s) => s.id === state.currentSessionId)?.projectId ?? null,
+  );
 
   if (cards.length === 0) return null;
 
@@ -190,6 +200,23 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
             filename: action.filename,
           });
           break;
+        case 'archive-to-library': {
+          // Batch 2 L3：一键归档到当前项目资料库，默认打「定稿」标签
+          try {
+            const item = await addLibraryItem({
+              projectId: currentSessionProjectId,
+              title: action.title,
+              kind: 'artifact',
+              pathOrUri: action.path,
+              tags: ['定稿'],
+              sourceSessionId: currentSessionId ?? undefined,
+            });
+            toast.success(t.library.archivedToast.replace('{title}', item.title));
+          } catch (error) {
+            toast.error(t.library.archiveFailed + (error instanceof Error ? `: ${error.message}` : ''));
+          }
+          break;
+        }
         case 'export-bundle': {
           const response = await window.domainAPI?.invoke<{ filePath: string }>('workspace', 'exportBundle', {
             files: action.files,
@@ -225,6 +252,8 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
         return <Download className={cls} />;
       case 'export-bundle':
         return <Archive className={cls} />;
+      case 'archive-to-library':
+        return <BookOpen className={cls} />;
       case 'copy-reference':
         return <Copy className={cls} />;
       case 'open-file':

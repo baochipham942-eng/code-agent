@@ -886,6 +886,8 @@ export const en: Translations = {
     deleteAction: 'Delete',
     deleteConfirm: 'Click again to confirm deletion',
     deleted: 'Deleted',
+    archivedToast: 'Archived to library: {title}',
+    archiveFailed: 'Archive failed',
   },
 
   ...chatTranscriptEn,

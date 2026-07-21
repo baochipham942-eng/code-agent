@@ -96,6 +96,11 @@ describe('deliverable card projection', () => {
       { kind: 'reveal-file', label: 'Reveal', path: '/repo/out/hero.png' },
       { kind: 'copy-reference', label: 'Copy path', value: '/repo/out/hero.png' },
       expect.objectContaining({
+        kind: 'archive-to-library',
+        path: '/repo/out/hero.png',
+        title: 'hero.png',
+      }),
+      expect.objectContaining({
         kind: 'export-bundle',
         label: 'Export bundle',
         files: [
@@ -215,6 +220,10 @@ describe('deliverable card projection', () => {
     expect(cards[0].secondaryActions).toEqual([
       { kind: 'reveal-file', label: 'Reveal', path: '/repo/out/diagram.png' },
       { kind: 'copy-reference', label: 'Copy path', value: '/repo/out/diagram.png' },
+      expect.objectContaining({
+        kind: 'archive-to-library',
+        path: '/repo/out/diagram.png',
+      }),
       expect.objectContaining({
         kind: 'export-bundle',
         files: [

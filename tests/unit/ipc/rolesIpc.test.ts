@@ -183,6 +183,19 @@ describe('roles.ipc (domain:roles)', () => {
       expect(res.success).toBe(true);
       expect(res.data![0].source).toBe('orphan');
     });
+
+    it('uses custom agent frontmatter visual, while builtin compiled visual wins', async () => {
+      await ensureRoleAssetDirs('自定义角色');
+      await ensureRoleAssetDirs('研究员');
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir, { recursive: true });
+      await fs.writeFile(path.join(agentsDir, '自定义角色.md'), '---\nname: 自定义角色\ndisplay-name: 小满\nprofession: 增长顾问\ntags:\n  - 增长\nquick-prompts:\n  - 帮我看增长，给建议\n---\n正文', 'utf-8');
+      await fs.writeFile(path.join(agentsDir, '研究员.md'), '---\nname: 研究员\ndisplay-name: 冒牌研究员\n---\n正文', 'utf-8');
+
+      const res = await invoke<RolePanelEntry[]>('list');
+      expect(res.data?.find((entry) => entry.roleId === '自定义角色')).toMatchObject({ displayName: '小满', profession: '增长顾问', tags: ['增长'], quickPrompts: ['帮我看增长，给建议'] });
+      expect(res.data?.find((entry) => entry.roleId === '研究员')?.displayName).toBe('研究员');
+    });
   });
 
   describe('detail', () => {
@@ -269,6 +282,27 @@ describe('roles.ipc (domain:roles)', () => {
 
       const memories = await listScopedMemories({ scope: 'role', roleId: '研究员' });
       expect(memories[0].content).toContain('新内容');
+    });
+  });
+
+  describe('updateVisual', () => {
+    it('changes only target frontmatter keys and keeps unknown fields and body byte-for-byte', async () => {
+      await ensureRoleAssetDirs('自定义角色');
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir, { recursive: true });
+      const body = '人设正文，必须保持不动。\n\n第二段。';
+      await fs.writeFile(path.join(agentsDir, '自定义角色.md'), `---\nname: 自定义角色\nunknown-key: 不认识也要留下\ntools:\n  - Read\n---\n${body}`, 'utf-8');
+
+      const res = await invoke('updateVisual', {
+        roleId: '自定义角色',
+        visual: { displayName: '小满', profession: '增长顾问', icon: 'Megaphone', category: 'content-marketing', tags: ['增长', '实验'], quickPrompts: ['帮我看增长，给建议'] },
+      });
+      expect(res.success).toBe(true);
+      const saved = await fs.readFile(path.join(agentsDir, '自定义角色.md'), 'utf-8');
+      expect(saved).toContain('unknown-key: 不认识也要留下');
+      expect(saved).toContain('tags:\n  - 增长\n  - 实验');
+      expect(saved).toContain('quick-prompts:\n  - 帮我看增长，给建议');
+      expect(saved.slice(saved.indexOf('---\n', 4) + 4)).toBe(body);
     });
   });
 

@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { parseAgentMd } from '../../../src/host/agent/hybrid/agentMdLoader';
+import { parseAgentMd, parseAgentMdVisual, updateAgentMdVisual } from '../../../src/host/agent/hybrid/agentMdLoader';
 
 describe('parseAgentMd', () => {
   it('should return null for content without frontmatter', () => {
@@ -127,5 +127,27 @@ describe('parseAgentMd', () => {
     expect(config).not.toBeNull();
     expect(config!.inputs).toBeUndefined();
     expect(config!.outputs).toBeUndefined();
+  });
+
+  it('writes visual arrays as block lists so Chinese commas round-trip without splitting', () => {
+    const original = [
+      '---', 'name: 自建专家', 'unknown-key: keep-me', 'tools: [Read]', '---',
+      '正文必须逐字保留，包含中文逗号，和换行。',
+    ].join('\n');
+    const saved = updateAgentMdVisual(original, {
+      displayName: '小满', profession: '增长顾问', icon: 'Megaphone', category: 'content-marketing',
+      tags: ['内容策略', '用户增长'], quickPrompts: ['帮我拆解增长问题，给出三步实验', '这句也有，中文逗号'],
+    });
+
+    expect(saved).toContain('tags:\n  - 内容策略\n  - 用户增长');
+    expect(saved).toContain('quick-prompts:\n  - 帮我拆解增长问题，给出三步实验\n  - 这句也有，中文逗号');
+    // 变异守卫：若 writer 退回 inline [a,b]，这条结构断言先红，随后 round-trip 也会把中文逗号切碎。
+    expect(saved).not.toContain('quick-prompts: [');
+    expect(parseAgentMdVisual(saved)).toEqual({
+      displayName: '小满', profession: '增长顾问', icon: 'Megaphone', category: 'content-marketing',
+      tags: ['内容策略', '用户增长'], quickPrompts: ['帮我拆解增长问题，给出三步实验', '这句也有，中文逗号'],
+    });
+    expect(saved).toContain('unknown-key: keep-me');
+    expect(saved.slice(saved.indexOf('---\n', 4) + 4)).toBe('正文必须逐字保留，包含中文逗号，和换行。');
   });
 });

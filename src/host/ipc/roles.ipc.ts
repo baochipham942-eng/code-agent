@@ -26,6 +26,7 @@ import type {
   RolePanelDetail,
   RolePanelEntry,
   RoleProactivityLevel,
+  RoleVisual,
 } from '../../shared/contract/roleAssets';
 import { addRoleBinding, readRoleBindings, removeRoleBinding } from '../services/roleAssets/roleContextBindings';
 import {
@@ -43,6 +44,7 @@ import {
   rejectRoleDraft,
 } from '../services/roleAssets';
 import { listAllAgents } from '../agent/agentRegistry';
+import { parseAgentMdVisual, updateAgentMdVisual } from '../agent/hybrid/agentMdLoader';
 import { getAgentsMdDir } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
 
@@ -79,6 +81,10 @@ interface SetProactivityPayload extends RoleIdPayload {
   cadence?: string;
 }
 
+interface UpdateVisualPayload extends RoleIdPayload {
+  visual?: RoleVisual;
+}
+
 interface DraftIdPayload {
   draftId?: string;
 }
@@ -93,6 +99,19 @@ const PROACTIVITY_LEVELS: ReadonlySet<string> = new Set(['silent', 'daily', 'rea
 // 面板需要按 roleId 对照预设清单还原成 'builtin'（显示"预设"标签）
 const builtinRoleIdSet = new Set<string>(BUILTIN_ROLE_IDS);
 
+async function loadFrontmatterVisual(roleId: string): Promise<RoleVisual> {
+  try {
+    return parseAgentMdVisual(await fs.readFile(path.join(getAgentsMdDir().user, `${roleId}.md`), 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+async function resolveVisual(roleId: string): Promise<RoleVisual> {
+  // 内置角色的编译期身份优先，用户编辑 agent.md 不会伪装或覆盖预设展示。
+  return getBuiltinRoleVisual(roleId) ?? await loadFrontmatterVisual(roleId);
+}
+
 async function handleList(): Promise<RolePanelEntry[]> {
   const roleIds = await listPersistentRoles();
   const agents = new Map(listAllAgents().map((a) => [a.id, a]));
@@ -105,8 +124,7 @@ async function handleList(): Promise<RolePanelEntry[]> {
     const source = agent
       ? (builtinRoleIdSet.has(roleId) ? 'builtin' : agent.source)
       : 'orphan';
-    // P2-1：预设角色回填 icon/category（用户自建角色缺省，前端兜底）
-    const visual = getBuiltinRoleVisual(roleId);
+    const visual = await resolveVisual(roleId);
     entries.push({
       roleId,
       description: agent?.description ?? '',
@@ -152,7 +170,17 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     })),
     history,
     proactivity,
+    visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
+    isBuiltin: builtinRoleIdSet.has(roleId),
   };
+}
+
+async function handleUpdateVisual(roleId: string, visual: RoleVisual): Promise<RoleVisual> {
+  const definitionPath = path.join(getAgentsMdDir().user, `${roleId}.md`);
+  const definition = await fs.readFile(definitionPath, 'utf-8');
+  await fs.writeFile(definitionPath, updateAgentMdVisual(definition, visual), 'utf-8');
+  // 内置角色仍返回编译内 visual，写回只保存用户的定义修改，不改其产品身份。
+  return resolveVisual(roleId);
 }
 
 /**
@@ -287,6 +315,14 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
             success: true,
             data: await handleSetProactivity(roleId, level as RoleProactivityLevel, cadence),
           };
+        }
+
+        case 'updateVisual': {
+          const { roleId, visual } = (payload ?? {}) as UpdateVisualPayload;
+          if (!roleId || !visual) {
+            return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and visual are required' } };
+          }
+          return { success: true, data: await handleUpdateVisual(roleId, visual) };
         }
 
         // --- 对话式建角色：草稿队列（role-creation-flow） ---

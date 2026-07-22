@@ -198,6 +198,7 @@ export const ExpertPanel: React.FC = () => {
             roleId={selectedRole.roleId}
             icon={selectedRole.icon}
             backLabel={text.back}
+            onVisualUpdated={() => { void load(); }}
             onBack={() => setSelectedRole(null)}
           />
         ) : (
@@ -280,7 +281,7 @@ export const ExpertPanel: React.FC = () => {
                   <p className="line-clamp-2 text-xs leading-relaxed text-zinc-400">{entry.description}</p>
                 ) : null}
 
-                {tab === 'discover' && entry.tags && entry.tags.length > 0 ? (
+                {entry.tags && entry.tags.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
                     {entry.tags.map((tag) => (
                       <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
@@ -313,7 +314,7 @@ export const ExpertPanel: React.FC = () => {
                   />
                 ) : null}
 
-                {tab === 'discover' && entry.quickPrompts && entry.quickPrompts.length > 0 ? (
+                {entry.quickPrompts && entry.quickPrompts.length > 0 ? (
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] uppercase tracking-wide text-zinc-600">{text.quickPromptsTitle}</span>
                     {entry.quickPrompts.map((prompt) => (

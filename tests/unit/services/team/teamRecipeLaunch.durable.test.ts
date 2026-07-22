@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
-const sessionManagerMock = vi.hoisted(() => ({ getSession: vi.fn() }));
+const sessionManagerMock = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  // launchTeamRecipe 起团队前落一条 user 请求消息（工具 checkpoint 的 sourceMessageId 锚点）
+  addMessageToSession: vi.fn().mockResolvedValue(undefined),
+}));
 const executorMock = vi.hoisted(() => ({ execute: vi.fn() }));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({

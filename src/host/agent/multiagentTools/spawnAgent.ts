@@ -55,7 +55,6 @@ import {
   cleanupAgentWorktree,
   cleanupOrphanedWorktrees,
   discardAgentWorktree,
-  isInsideGitRepo,
   resolveAgentWorktreeIsolation,
 } from '../agentWorktree';
 import { capabilityManifestForTools } from '../scriptRuntime/capabilityManifest';
@@ -358,15 +357,11 @@ export async function executeSpawnAgent(
 
       // Worktree isolation: explicit param > role-based default > none
       const effectiveIsolation = resolveAgentWorktreeIsolation({
-        tools,
+        tools, cwd,
         role,
         explicit: params.isolation as string | undefined,
       });
-      // 非 git 目录里 worktree 隔离没有意义且必然失败（协作者默认工作目录常是家目录）。
-      // 降级成无隔离照常起 agent，而不是让整次 spawn 失败。
-      if (effectiveIsolation === 'worktree' && !isInsideGitRepo(cwd)) {
-        console.warn(`[SpawnAgent] ${cwd} 不在 git 仓库内，本次子 agent 降级为无 worktree 隔离`);
-      } else if (effectiveIsolation === 'worktree') {
+      if (effectiveIsolation === 'worktree') {
         try {
           worktreeInfo = await createAgentWorktree(agentId, cwd);
           cwd = worktreeInfo.worktreePath;

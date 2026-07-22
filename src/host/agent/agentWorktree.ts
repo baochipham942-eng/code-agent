@@ -44,7 +44,13 @@ export function resolveAgentWorktreeIsolation(input: {
   tools: string[];
   role?: string;
   explicit?: string;
+  /** 子 agent 的工作目录；非 git 仓库时隔离没有意义且必然失败，直接判 none */
+  cwd?: string;
 }): 'worktree' | 'none' {
+  if (input.cwd !== undefined && !isInsideGitRepo(input.cwd)) {
+    logger.warn(`${input.cwd} 不在 git 仓库内，子 agent 降级为无 worktree 隔离`);
+    return 'none';
+  }
   if (input.explicit === 'worktree') return 'worktree';
   if (input.tools.some((tool) => ['Write', 'Edit', 'Bash'].includes(tool))) {
     return 'worktree';

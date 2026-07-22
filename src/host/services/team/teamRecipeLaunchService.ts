@@ -1,10 +1,12 @@
 import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
 import { validateTeamRecipe, type TeamRecipe } from '@shared/contract/teamRecipe';
 import { listAllAgents } from '../../agent/agentRegistry';
+import type { MultiagentExecutionResult } from '../../agent/multiagentExecutionTypes';
 import { launchAgentTeam } from '../../agent/multiagentTools/spawnAgent';
 import type { SubagentExecutionContext } from '../../agent/subagentExecutorTypes';
 import { getToolResolver } from '../../tools/dispatch/toolResolver';
 import { getSessionManager } from '../infra/sessionManager';
+import { getLibraryService } from '../library/libraryService';
 
 export interface LaunchTeamRecipeResult {
   ok: boolean;
@@ -32,6 +34,29 @@ export function compileRecipeToAgents(
       return `${recipe.members[depIdx].roleId}-${depIdx}`;
     }),
   }));
+}
+
+/** 团队完成后归档聚合产物到项目资料库。失败不抛（fire-and-forget 尾部调用）。 */
+export function archiveTeamResult(
+  result: MultiagentExecutionResult,
+  meta: { projectId: string | null; title: string; sourceSessionId: string },
+): void {
+  if (!result.success) return;
+
+  const text = typeof result.output === 'string' ? result.output.trim() : '';
+  if (!text) return;
+
+  try {
+    getLibraryService().archiveText({
+      projectId: meta.projectId,
+      title: meta.title,
+      text,
+      tags: ['定稿'],
+      sourceSessionId: meta.sourceSessionId,
+    });
+  } catch (error) {
+    console.warn('[TeamRecipe] 聚合产物归档失败（团队本身已完成）', error);
+  }
 }
 
 /** 用户点配方 → 确定性起 durable 团队。绕开模型。 */
@@ -71,10 +96,14 @@ export async function launchTeamRecipe(args: {
     currentToolCallId: `${runId}-team-recipe`,
   };
 
-  const result = await launchAgentTeam(agents, context);
-  return {
-    ok: result.success,
-    error: result.success ? undefined : result.error,
-    runId: context.runId,
-  };
+  const title = `${recipe.name}·${args.topic}`.slice(0, 120);
+  void launchAgentTeam(agents, context)
+    .then((result) => archiveTeamResult(result, {
+      projectId: session.projectId ?? null,
+      title,
+      sourceSessionId: args.sessionId,
+    }))
+    .catch((error) => console.warn('[TeamRecipe] 团队运行失败', error));
+
+  return { ok: true, runId: context.runId };
 }

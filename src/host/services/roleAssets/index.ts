@@ -8,3 +8,4 @@ export * from './roleWriteBack';
 export * from './builtinRoles';
 export * from './roleProactivity';
 export * from './roleDraftQueue';
+export * from './rolePackInstallService';

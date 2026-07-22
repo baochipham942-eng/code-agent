@@ -318,6 +318,32 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
           return { success: true, data: result };
         }
 
+        case 'rolePackList': {
+          const { listRolePacks } = await import('../services/roleAssets/rolePackInstallService');
+          return { success: true, data: await listRolePacks() };
+        }
+
+        case 'rolePackInstall': {
+          const { roleId } = (payload ?? {}) as RoleIdPayload;
+          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+          const { installRolePack } = await import('../services/roleAssets/rolePackInstallService');
+          return { success: true, data: await installRolePack(roleId) };
+        }
+
+        case 'rolePackUninstall': {
+          const { roleId } = (payload ?? {}) as RoleIdPayload;
+          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+          const { uninstallRolePack } = await import('../services/roleAssets/rolePackInstallService');
+          return { success: true, data: await uninstallRolePack(roleId) };
+        }
+
+        case 'rolePackRetryMissingSkills': {
+          const { roleId } = (payload ?? {}) as RoleIdPayload;
+          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+          const { retryMissingSkills } = await import('../services/roleAssets/rolePackInstallService');
+          return { success: true, data: await retryMissingSkills(roleId) };
+        }
+
         default:
           return {
             success: false,

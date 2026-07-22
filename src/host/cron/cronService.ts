@@ -36,6 +36,7 @@ import {
   type CronExecutionRow,
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
+import { buildCronAgentRunOptions } from './cronAgentRoleContext';
 
 const execAsync = promisify(exec);
 
@@ -682,10 +683,38 @@ export class CronService implements Disposable {
         if (cronSession.workingDirectory) {
           tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
         }
+        const agentRunOptions = await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory);
 
         let result: unknown;
         try {
-          result = await orchestrator.sendMessage(action.prompt);
+          result = await orchestrator.sendMessage(
+            action.prompt,
+            undefined,
+            agentRunOptions,
+          );
+
+          if (action.libraryProjectId) {
+            try {
+              const { getLibraryService } = await import('../services/library/libraryService');
+              const messages = orchestrator.getMessages();
+              const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
+              const text = lastAssistant?.content.trim() ?? '';
+              if (text) {
+                getLibraryService().archiveText({
+                  projectId: action.libraryProjectId,
+                  title: definition.name,
+                  text,
+                  tags: ['定稿'],
+                  sourceSessionId: cronSession.id,
+                  sourceRoleId: action.roleId,
+                });
+                console.error(`[CronService] agent 产出已归档到资料库 project=${action.libraryProjectId}`);
+              }
+            } catch (archiveError) {
+              // 归档是增量能力，失败不拖垮任务（fail-loud 日志，不中断）
+              console.warn('[CronService] agent 产出归档失败（任务本身已完成）', archiveError);
+            }
+          }
         } finally {
           tm.cleanup(cronSession.id);
         }

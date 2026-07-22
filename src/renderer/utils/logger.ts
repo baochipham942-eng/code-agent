@@ -9,6 +9,17 @@ export enum LogLevel {
   ERROR = 3,
 }
 
+/** 非 Error 值直接 String() 会得到无信息的 "[object Object]"（dogfood 实测 Agent error 就这样丢了正文）。 */
+export function formatNonErrorValue(error: unknown): string {
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    // 循环引用等 stringify 不了的值，退回原行为
+    return String(error);
+  }
+}
+
 class Logger {
   private context?: string;
 
@@ -33,7 +44,7 @@ class Logger {
       error instanceof Error
         ? { errorMessage: error.message, stack: error.stack }
         : error
-          ? { errorMessage: String(error) }
+          ? { errorMessage: formatNonErrorValue(error) }
           : {};
     this.log('ERROR', message, { ...meta, ...errorInfo });
   }

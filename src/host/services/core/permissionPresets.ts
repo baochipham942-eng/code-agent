@@ -62,15 +62,19 @@ export const PERMISSION_PRESETS: Record<Exclude<PermissionPreset, 'custom'>, Per
    * Development 模式 - 平衡安全与效率
    * - 读取操作自动批准
    * - 项目目录内的写入和执行自动批准
-   * - 网络操作需要确认
+   * - 网络操作（WebSearch/WebFetch 等，读取外部信息）自动批准，研究型子 agent 需要
    * - 危险命令需要二次确认
+   *
+   * 注：本 preset 仅用于子 agent（getPresetConfig 只被 subagentPipeline 调用，主 agent 走 modes.ts）。
+   * network 放开是产品决策——组队/研究型子 agent 联网调研是核心场景，且团队启动已走审批门；
+   * write/execute 仍由 trustProjectDirectory 收口，本机变更类操作不受此放开影响。
    */
   development: {
     autoApprove: {
       read: true,
       write: false, // 通过 trustProjectDirectory 控制
       execute: false, // 通过 trustProjectDirectory 控制
-      network: false,
+      network: true, // 读取型联网自动批准（研究型子 agent 需要）；写/执行仍受控
     },
     blockedCommands: [
       'rm -rf /',

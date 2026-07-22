@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { isPathTrusted } from '../../../../src/host/services/core/permissionPresets';
+import { getPresetConfig, isPathTrusted } from '../../../../src/host/services/core/permissionPresets';
+
+describe('getPresetConfig autoApprove（子 agent 权限档）', () => {
+  it('development 放开 network（研究型子 agent 联网调研），write/execute 仍受控', () => {
+    const dev = getPresetConfig('development');
+    expect(dev.autoApprove.network).toBe(true); // 产品决策：组队/研究子 agent 需要联网
+    expect(dev.autoApprove.read).toBe(true);
+    expect(dev.autoApprove.write).toBe(false); // 仍由 trustProjectDirectory 收口
+    expect(dev.autoApprove.execute).toBe(false);
+  });
+
+  it('strict 仍全禁（放开只限 development）', () => {
+    expect(getPresetConfig('strict').autoApprove.network).toBe(false);
+  });
+});
 
 describe('isPathTrusted', () => {
   describe('posix', () => {

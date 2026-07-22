@@ -5,8 +5,14 @@ import type { MultiagentExecutionResult } from '../../agent/multiagentExecutionT
 import { launchAgentTeam } from '../../agent/multiagentTools/spawnAgent';
 import type { SubagentExecutionContext } from '../../agent/subagentExecutorTypes';
 import { getToolResolver } from '../../tools/dispatch/toolResolver';
+import {
+  getApplicationRunRegistry,
+  getConfiguredApplicationRunRegistry,
+} from '../../app/applicationRunRegistry';
 import { getSessionManager } from '../infra/sessionManager';
 import { getLibraryService } from '../library/libraryService';
+import type { Message } from '@shared/contract/message';
+import { generateMessageId } from '../../../shared/utils/id';
 
 export interface LaunchTeamRecipeResult {
   ok: boolean;
@@ -81,29 +87,78 @@ export async function launchTeamRecipe(args: {
     return { ok: false, error: '会话不存在' };
   }
 
+  const registry = getConfiguredApplicationRunRegistry();
+  if (!registry) {
+    return { ok: false, error: '组队功能需要 Durable 运行时' };
+  }
+
+  // 落一条 user 请求消息：既是会话可见的组队起点（否则团队会话是空欢迎页），
+  // 也是 Native Durable 工具 checkpoint 的 sourceMessageId 锚点
+  // （prepareNativeToolCheckpoint 取会话最后一条 user 消息，缺则每个工具调用都抛）。
+  const requestMessage: Message = {
+    id: generateMessageId(),
+    role: 'user',
+    content: `【组队 · ${recipe.name}】${args.topic}`,
+    timestamp: Date.now(),
+  };
+  await getSessionManager().addMessageToSession(args.sessionId, requestMessage);
+
   const agents = compileRecipeToAgents(recipe, args.topic);
-  const runId = `team_recipe_${crypto.randomUUID()}`;
-  const context: SubagentExecutionContext = {
-    runId,
+  // 纯对话会话可能没有 workingDirectory；parent Durable Run 的 workspace 断言非空，
+  // 与 cwd 一样回退到 process.cwd()（对话型配方 agent 不落文件，中性 cwd 即可）。
+  const workspace = session.workingDirectory ?? process.cwd();
+  const requestedRunId = `team_recipe_${crypto.randomUUID()}`;
+  const parentRun = await getApplicationRunRegistry().startDurable({
     sessionId: args.sessionId,
-    workspace: session.workingDirectory,
-    cwd: session.workingDirectory ?? process.cwd(),
+    runId: requestedRunId,
+    workspace,
+    cwd: workspace,
+  });
+  const parentRunId = parentRun.context.runId;
+  const context: SubagentExecutionContext = {
+    runId: parentRunId,
+    sessionId: args.sessionId,
+    workspace,
+    cwd: workspace,
     modelConfig: session.modelConfig,
     resolver: getToolResolver(),
     permission: { request: async () => true },
     events: { emit: () => undefined },
     abortSignal: new AbortController().signal,
-    currentToolCallId: `${runId}-team-recipe`,
+    currentToolCallId: `${parentRunId}-team-recipe`,
   };
 
   const title = `${recipe.name}·${args.topic}`.slice(0, 120);
+  const terminalParent = async (status: 'completed' | 'failed', reason?: string) => {
+    try {
+      await registry.terminalDurable(parentRunId, {
+        now: Date.now(),
+        status,
+        reason,
+        event: {
+          type: status === 'completed' ? 'team_recipe_completed' : 'team_recipe_failed',
+          payload: { recipeId: recipe.id, sessionId: args.sessionId, reason },
+          recordedAt: Date.now(),
+        },
+      }, parentRun);
+    } catch (error) {
+      console.warn('[TeamRecipe] parent Durable Run 清理失败', error);
+    }
+  };
   void launchAgentTeam(agents, context)
-    .then((result) => archiveTeamResult(result, {
-      projectId: session.projectId ?? null,
-      title,
-      sourceSessionId: args.sessionId,
-    }))
-    .catch((error) => console.warn('[TeamRecipe] 团队运行失败', error));
+    .then(async (result) => {
+      if (!result.success) console.warn('[TeamRecipe] 团队未成功启动/完成', result.error);
+      archiveTeamResult(result, {
+        projectId: session.projectId ?? null,
+        title,
+        sourceSessionId: args.sessionId,
+      });
+      await terminalParent(result.success ? 'completed' : 'failed', result.error);
+    })
+    .catch(async (error) => {
+      console.warn('[TeamRecipe] 团队运行失败', error);
+      await terminalParent('failed', error instanceof Error ? error.message : String(error));
+    });
 
-  return { ok: true, runId: context.runId };
+  return { ok: true, runId: parentRunId };
 }

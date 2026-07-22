@@ -19,9 +19,10 @@ export const memoryWriteSchema: ToolSchema = {
       },
       scope: {
         type: 'string',
-        enum: ['global', 'role', 'project'],
+        enum: ['global', 'user', 'role', 'project'],
         description:
-          'Memory layer. "global" (default) = user-level memory shared by all agents. ' +
+          'Memory layer. In a persistent-role session, omitting scope writes to that role\'s memory; ' +
+          'use "global" explicitly for user-level memory shared by all agents. ' +
           '"role" = persistent-role memory (only available when running as a persistent role; ' +
           'professional knowledge reusable across projects). ' +
           '"project" = current-workspace memory (knowledge only meaningful in this project).',

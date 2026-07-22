@@ -87,6 +87,7 @@ export async function prepareAgentTeamDurableController(input: {
   try {
     return { controller: await startAgentTeamDurableController(input) };
   } catch (error) {
+    console.warn('[AgentTeam] durable 准备失败', error);
     return {
       result: {
         success: false,

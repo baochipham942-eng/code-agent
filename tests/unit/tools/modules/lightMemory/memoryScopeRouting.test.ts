@@ -1,6 +1,6 @@
 // ============================================================================
 // MemoryWrite/Read scope 参数测试 — 三层记忆路由（持久化角色资产）
-// scope='global'（默认/向后兼容）/ 'role' / 'project'
+// scope='global'/'user'（全局）/ 'role' / 'project'；持久角色默认写 role。
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -69,7 +69,7 @@ describe('memory scope routing (三层记忆)', () => {
   describe('MemoryWrite scope', () => {
     it('schema declares scope enum', () => {
       const scopeProp = memoryWriteModule.schema.inputSchema.properties?.scope as { enum?: string[] };
-      expect(scopeProp?.enum).toEqual(['global', 'role', 'project']);
+      expect(scopeProp?.enum).toEqual(['global', 'user', 'role', 'project']);
     });
 
     it('defaults to global scope (向后兼容)', async () => {
@@ -77,6 +77,33 @@ describe('memory scope routing (三层记忆)', () => {
       const result = await handler.execute(writeArgs(), makeCtx(), allowAll);
       expect(result.ok).toBe(true);
       // 写到全局 memory 目录
+      const globalFile = path.join(mockConfigDir.dir, 'memory', 'scoped-test.md');
+      expect(await fs.readFile(globalFile, 'utf-8')).toContain('GMV 不含退款');
+    });
+
+    it('defaults to the persistent role memory when agentRole is bound', async () => {
+      await ensureRoleAssetDirs('牧之');
+      const handler = await memoryWriteModule.createHandler();
+      const result = await handler.execute(
+        writeArgs(),
+        makeCtx({ subagent: { agentRole: '牧之' } }),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.meta?.scope).toBe('role');
+
+      const roleFile = path.join(mockConfigDir.dir, 'roles', '牧之', 'memories', 'scoped-test.md');
+      expect(await fs.readFile(roleFile, 'utf-8')).toContain('GMV 不含退款');
+    });
+
+    it('keeps explicit global scope global when agentRole is bound', async () => {
+      const handler = await memoryWriteModule.createHandler();
+      const result = await handler.execute(
+        writeArgs('global'),
+        makeCtx({ subagent: { agentRole: '牧之' } }),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
       const globalFile = path.join(mockConfigDir.dir, 'memory', 'scoped-test.md');
       expect(await fs.readFile(globalFile, 'utf-8')).toContain('GMV 不含退款');
     });

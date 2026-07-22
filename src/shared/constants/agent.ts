@@ -91,8 +91,13 @@ export const AGENT_TIMEOUTS = {
   DYNAMIC_AGENT: 300_000,
   /** 动态协调器 - 总超时 */
   DYNAMIC_TOTAL: 1_800_000,
-  /** 并行协调器 - 任务超时 */
-  PARALLEL_TASK: 120_000,
+  /**
+   * 并行协调器 - 单任务超时。
+   * 组队里研究/产品/内容型 agent 做真多步工作（多源检索+交叉验证+综述），120s 太紧会
+   * 在完成前被 coordinator cancel（dogfood 实测 溯真做竞品调研 WebSearch 成功但 120s 被砍）。
+   * 提到 600s，与 DOC_GENERATOR 同档；真卡死仍由 idle-timeout（≤90% 预算无输出即杀）兜底。
+   */
+  PARALLEL_TASK: 600_000,
 } as const;
 
 /**

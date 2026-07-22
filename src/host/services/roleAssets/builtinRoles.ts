@@ -399,15 +399,24 @@ export function getBuiltinRoleVisual(roleId: string): BuiltinRoleVisual | undefi
 
 export interface RolePackIssue {
   roleId: string;
+  code: RolePackIssueCode;
   issue: string;
 }
+
+type RolePackIssueCode =
+  | 'unparsable'
+  | 'name-mismatch'
+  | 'no-skills'
+  | 'unresolvable-skill'
+  | 'empty-tags'
+  | 'empty-quick-prompts';
 
 /**
  * 校验单个预设 Role Pack：
  * - agentMd frontmatter 可解析，且 frontmatter name 与 id 一致
  * - frontmatter skills 非空（禁纯 prompt 空壳包）
- * - 每个 skill 名都能在 knownSkillNames（内置 skill 全集）里解析——
- *   内置包不得依赖需安装的外部 skill，否则破坏开箱即用
+ * - 每个 skill 名都能在调用方给出的可解析集合里解析；内置安装点传编译内全集，
+ *   云包安装点只传「编译内 ∪ 本包刚成功安装的 registry skill」，不接纳本机偶然存在的 skill
  * - visual 的 tags / quickPrompts 非空（E2 发现页展示合同）
  *
  * knownSkillNames 由调用方注入（测试/上架点传 BUILTIN_SKILLS 名字集），
@@ -418,30 +427,30 @@ export function validateBuiltinRolePack(
   knownSkillNames: ReadonlySet<string>,
 ): RolePackIssue[] {
   const issues: RolePackIssue[] = [];
-  const push = (issue: string) => issues.push({ roleId: role.id, issue });
+  const push = (code: RolePackIssueCode, issue: string) => issues.push({ roleId: role.id, code, issue });
 
   const parsed = parseAgentMd(role.agentMd, `${role.id}.md`);
   if (!parsed) {
-    push('agentMd frontmatter 无法解析');
+    push('unparsable', 'agentMd frontmatter 无法解析');
     return issues;
   }
   if (parsed.name !== role.id) {
-    push(`frontmatter name "${parsed.name}" 与 roleId "${role.id}" 不一致`);
+    push('name-mismatch', `frontmatter name "${parsed.name}" 与 roleId "${role.id}" 不一致`);
   }
   if (!parsed.skills || parsed.skills.length === 0) {
-    push('未绑定任何 skill（纯 prompt 空壳包）');
+    push('no-skills', '未绑定任何 skill（纯 prompt 空壳包）');
   } else {
     for (const skillName of parsed.skills) {
       if (!knownSkillNames.has(skillName)) {
-        push(`skill "${skillName}" 不在内置 skill 全集中（内置包不得依赖需安装的 skill）`);
+        push('unresolvable-skill', `skill "${skillName}" 不在本次可解析 skill 集合中`);
       }
     }
   }
   if (role.visual.tags.length === 0) {
-    push('visual.tags 为空');
+    push('empty-tags', 'visual.tags 为空');
   }
   if (role.visual.quickPrompts.length === 0) {
-    push('visual.quickPrompts 为空');
+    push('empty-quick-prompts', 'visual.quickPrompts 为空');
   }
   return issues;
 }

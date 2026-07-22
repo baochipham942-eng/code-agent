@@ -76,7 +76,10 @@ describe('退役预设角色（研究员）', () => {
       '---\nname: 测试角色\ndescription: x\ntools: [Read]\nskills: [不存在的skill]\n---\n\n正文',
     );
     const issues = validateBuiltinRolePack(role, knownSkillNames);
-    expect(issues.some((i) => i.issue.includes('不存在的skill'))).toBe(true);
+    expect(issues).toContainEqual(expect.objectContaining({
+      code: 'unresolvable-skill',
+      issue: expect.stringContaining('不存在的skill'),
+    }));
   });
 
   it('拒绝无 frontmatter 的定义', () => {

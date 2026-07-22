@@ -11,6 +11,7 @@ import type { IPCRequest, IPCResponse } from '../../../src/shared/ipc';
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
 vi.mock('../../../src/host/config/configPaths', () => ({
+  CONFIG_DIR_NEW: '.code-agent',
   getUserConfigDir: () => mockConfigDir.dir,
   getAgentsMdDir: () => ({ user: path.join(mockConfigDir.dir, 'agents') }),
 }));

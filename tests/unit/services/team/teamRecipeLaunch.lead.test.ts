@@ -38,6 +38,12 @@ vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
 vi.mock('../../../../src/host/agent/agentRegistry', () => ({
   listAllAgents: () => [{ id: '牧之' }, { id: '溯真' }],
 }));
+vi.mock('../../../../src/host/services/team/teamRecipeService', () => ({
+  getTeamRecipeService: () => ({
+    get: () => undefined,
+    knownRoleIds: async () => new Set(['牧之', '溯真']),
+  }),
+}));
 vi.mock('../../../../src/host/task', () => ({
   getTaskManager: () => ({ getOrCreateCurrentOrchestrator: mocks.getOrCreateCurrentOrchestrator }),
 }));

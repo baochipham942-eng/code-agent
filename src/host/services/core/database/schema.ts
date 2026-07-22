@@ -520,6 +520,26 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     `CREATE INDEX IF NOT EXISTS idx_library_items_project ON library_items(project_id, updated_at DESC)`,
   );
 
+  // Team Recipes 表（可复用的用户组队配方；运行时团队状态由 teamPersistence 管）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS team_recipes (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      category TEXT NOT NULL,
+      lead_role_id TEXT,
+      lead_brief_template TEXT,
+      members_json TEXT NOT NULL,
+      pack_version TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_team_recipes_source_updated ON team_recipes(source, updated_at DESC)`,
+  );
+
   // Session Context Pins 表 (会话 pin 的资料条目，一行一会话)
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_context_pins (

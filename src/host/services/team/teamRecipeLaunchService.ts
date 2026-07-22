@@ -1,7 +1,6 @@
 import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
 import { SERVICE_TIMEOUTS } from '@shared/constants/timeouts';
 import { validateTeamRecipe, type TeamRecipe } from '@shared/contract/teamRecipe';
-import { listAllAgents } from '../../agent/agentRegistry';
 import type { MultiagentExecutionResult } from '../../agent/multiagentExecutionTypes';
 import { launchAgentTeam } from '../../agent/multiagentTools/spawnAgent';
 import type { SubagentExecutionContext } from '../../agent/subagentExecutorTypes';
@@ -12,6 +11,7 @@ import {
 } from '../../app/applicationRunRegistry';
 import { getSessionManager } from '../infra/sessionManager';
 import { getLibraryService } from '../library/libraryService';
+import { getTeamRecipeService } from './teamRecipeService';
 import { generateMessageId } from '../../../shared/utils/id';
 
 export interface LaunchTeamRecipeResult {
@@ -272,10 +272,11 @@ async function launchTeamRecipeViaLead(input: ValidatedTeamRecipeLaunch): Promis
 
 /** 用户点配方：lead 配方由主理人主会话轮自己起团；其余走确定性 durable 路径。 */
 export async function launchTeamRecipe(args: TeamRecipeLaunchInput): Promise<LaunchTeamRecipeResult> {
-  const recipe = TEAM_RECIPES.find((candidate) => candidate.id === args.recipeId);
+  const recipe = getTeamRecipeService().get(args.recipeId)
+    ?? TEAM_RECIPES.find((candidate) => candidate.id === args.recipeId);
   if (!recipe) return { ok: false, error: '配方不存在' };
 
-  const knownRoleIds = new Set(listAllAgents().map((agent) => agent.id));
+  const knownRoleIds = await getTeamRecipeService().knownRoleIds();
   const errors = validateTeamRecipe(recipe, knownRoleIds);
   if (errors.length > 0) return { ok: false, error: errors.map((error) => error.reason).join('; ') };
 

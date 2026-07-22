@@ -172,6 +172,11 @@ function buildPayloads(version, now = new Date()) {
       updatedAt,
       entries: [],
     },
+    roleRegistry: {
+      schemaVersion: 1,
+      updatedAt,
+      entries: [],
+    },
   };
 }
 
@@ -205,6 +210,7 @@ function buildVercelEnvCommands({ targetDir, keyId, repoRoot = REPO_ROOT }) {
     `vercel env add CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON production --force --yes < ${shellQuote(join(targetDir, 'agent-engine-model-catalog.json'))}`,
     `vercel env add CONTROL_PLANE_RENDERER_BUNDLE_ROLLOUT_JSON production --force --yes < ${shellQuote(join(targetDir, 'renderer-bundle-rollout.json'))}`,
     `vercel env add CONTROL_PLANE_SKILL_REGISTRY_JSON production --force --yes < ${shellQuote(join(targetDir, 'skill-registry.json'))}`,
+    `vercel env add CONTROL_PLANE_ROLE_REGISTRY_JSON production --force --yes < ${shellQuote(join(targetDir, 'role-registry.json'))}`,
     `vercel env add CODE_AGENT_CONTROL_PLANE_KEY_ID production --force --yes < ${shellQuote(keyIdFile)}`,
     `vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEY production --force --yes < ${shellQuote(join(targetDir, 'public.pem'))}`,
     `vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production --force --yes < ${shellQuote(join(targetDir, 'public-keys.json'))}`,
@@ -239,6 +245,7 @@ export function generateControlPlaneEnvBundle({
   writeJson(join(targetDir, 'agent-engine-model-catalog.json'), payloads.agentEngineModelCatalog);
   writeJson(join(targetDir, 'renderer-bundle-rollout.json'), payloads.rendererBundleRollout);
   writeJson(join(targetDir, 'skill-registry.json'), payloads.skillRegistry);
+  writeJson(join(targetDir, 'role-registry.json'), payloads.roleRegistry);
   writeFileSync(join(targetDir, 'vercel-env-commands.txt'), buildVercelEnvCommands({ targetDir, keyId }), { mode: 0o600 });
   writeFileSync(join(targetDir, 'post-apply-commands.txt'), buildPostApplyCommands(), { mode: 0o600 });
 
@@ -258,6 +265,7 @@ export function generateControlPlaneEnvBundle({
       'agent-engine-model-catalog.json',
       'renderer-bundle-rollout.json',
       'skill-registry.json',
+      'role-registry.json',
       'vercel-env-commands.txt',
       'post-apply-commands.txt',
     ].map((file) => join(targetDir, file)),

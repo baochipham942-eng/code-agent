@@ -35,6 +35,8 @@ export interface CronJobDraft {
   agentType: string;
   agentPrompt: string;
   agentContextText: string;
+  agentRoleId?: string;
+  agentLibraryProjectId?: string;
   webhookUrl: string;
   webhookMethod: WebhookAction['method'];
   webhookHeadersText: string;
@@ -69,6 +71,8 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     agentType: '',
     agentPrompt: '',
     agentContextText: '{}',
+    agentRoleId: '',
+    agentLibraryProjectId: '',
     webhookUrl: '',
     webhookMethod: 'POST',
     webhookHeadersText: '{}',
@@ -141,6 +145,8 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
       draft.agentType = action.agentType;
       draft.agentPrompt = action.prompt;
       draft.agentContextText = stringifyJson(action.context);
+      draft.agentRoleId = action.roleId ?? '';
+      draft.agentLibraryProjectId = action.libraryProjectId ?? '';
       break;
     }
     case 'webhook': {
@@ -268,6 +274,8 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       agentType: draft.agentType.trim(),
       prompt: draft.agentPrompt.trim(),
       context: parseJsonValue(draft.agentContextText, 'Agent context') as Record<string, unknown>,
+      roleId: draft.agentRoleId?.trim() || undefined,
+      libraryProjectId: draft.agentLibraryProjectId?.trim() || undefined,
     };
   } else if (draft.actionType === 'webhook') {
     if (!draft.webhookUrl.trim()) {

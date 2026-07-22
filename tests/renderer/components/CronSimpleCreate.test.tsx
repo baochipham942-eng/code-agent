@@ -15,6 +15,14 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
   },
 }));
 
+vi.mock('../../../src/renderer/services/rolesClient', () => ({
+  listRoles: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../../../src/renderer/services/projectClient', () => ({
+  listProjects: vi.fn().mockResolvedValue([]),
+}));
+
 import {
   CronSimpleCreate,
   buildSimpleDraft,
@@ -66,6 +74,40 @@ describe('buildSimpleDraft', () => {
     const input = buildCronJobInput(draft);
     expect(input.action).toEqual({ type: 'agent', agentType: 'default', prompt: goal, context: {} });
     expect(input.schedule).toEqual({ type: 'cron', expression: '30 8 * * *', timezone: undefined });
+  });
+
+  it('保留可选角色和归档项目，缺省为空串', () => {
+    const schedule = { scheduleType: 'cron' as const, cronExpression: '0 9 * * *' };
+    expect(buildSimpleDraft('整理简报', '简报', schedule, 'muzhi', 'proj_1')).toMatchObject({
+      agentRoleId: 'muzhi',
+      agentLibraryProjectId: 'proj_1',
+    });
+    expect(buildSimpleDraft('整理简报', '简报', schedule)).toMatchObject({
+      agentRoleId: '',
+      agentLibraryProjectId: '',
+    });
+  });
+});
+
+describe('buildCronJobInput agent options', () => {
+  it('传递角色与归档项目', () => {
+    const draft = buildSimpleDraft('整理简报', '简报', { scheduleType: 'cron', cronExpression: '0 9 * * *' }, 'muzhi', 'proj_1');
+    const action = buildCronJobInput(draft).action;
+    expect(action.type).toBe('agent');
+    if (action.type === 'agent') {
+      expect(action.roleId).toBe('muzhi');
+      expect(action.libraryProjectId).toBe('proj_1');
+    }
+  });
+
+  it('空选项保持 undefined，保持既有运行语义', () => {
+    const draft = buildSimpleDraft('整理简报', '简报', { scheduleType: 'cron', cronExpression: '0 9 * * *' });
+    const action = buildCronJobInput(draft).action;
+    expect(action.type).toBe('agent');
+    if (action.type === 'agent') {
+      expect(action.roleId).toBeUndefined();
+      expect(action.libraryProjectId).toBeUndefined();
+    }
   });
 });
 

@@ -1,12 +1,23 @@
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { launchTeamRecipe } from '../services/team/teamRecipeLaunchService';
+import { getTeamRecipeService, type TeamRecipeWrite } from '../services/team/teamRecipeService';
 
 interface LaunchRecipePayload {
   sessionId?: string;
   recipeId?: string;
   topic?: string;
 }
+
+interface RecipeIdPayload {
+  recipeId?: string;
+}
+
+interface RecipeWritePayload {
+  recipe?: TeamRecipeWrite;
+}
+
+interface RecipeUpdatePayload extends RecipeIdPayload, RecipeWritePayload {}
 
 function invalid(message: string): IPCResponse {
   return { success: false, error: { code: 'INVALID_ARGS', message } };
@@ -16,6 +27,28 @@ export function registerTeamHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(IPC_DOMAINS.TEAM, async (_event, request: IPCRequest): Promise<IPCResponse> => {
     try {
       switch (request.action) {
+        case 'recipeCreate': {
+          const { recipe } = (request.payload ?? {}) as RecipeWritePayload;
+          if (!recipe) return invalid('recipe is required');
+          return { success: true, data: await getTeamRecipeService().create(recipe) };
+        }
+        case 'recipeDelete': {
+          const { recipeId } = (request.payload ?? {}) as RecipeIdPayload;
+          if (!recipeId) return invalid('recipeId is required');
+          return getTeamRecipeService().delete(recipeId)
+            ? { success: true }
+            : { success: false, error: { code: 'NOT_FOUND', message: 'team recipe not found' } };
+        }
+        case 'recipeList':
+          return { success: true, data: getTeamRecipeService().list() };
+        case 'recipeUpdate': {
+          const { recipeId, recipe } = (request.payload ?? {}) as RecipeUpdatePayload;
+          if (!recipeId || !recipe) return invalid('recipeId and recipe are required');
+          const updated = await getTeamRecipeService().update(recipeId, recipe);
+          return updated
+            ? { success: true, data: updated }
+            : { success: false, error: { code: 'NOT_FOUND', message: 'team recipe not found' } };
+        }
         case 'launchRecipe': {
           const { sessionId, recipeId, topic } = (request.payload ?? {}) as LaunchRecipePayload;
           if (!sessionId || !recipeId || typeof topic !== 'string') {

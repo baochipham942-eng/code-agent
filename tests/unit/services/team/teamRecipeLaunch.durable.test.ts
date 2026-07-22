@@ -14,11 +14,26 @@ const timeoutsMock = vi.hoisted(() => ({
 }));
 const recipesMock = vi.hoisted(() => ([{
   id: 'durable-only',
-  name: '确定性组队',
-  description: '测试配方',
+  name: '内置主理人配方',
+  description: '同 id 的内置配方',
   category: 'product',
+  lead: { roleId: '牧之', briefTemplate: '围绕 {topic} 定稿。' },
   members: [{ roleId: '溯真', taskTemplate: '研究 {topic}' }],
 }]));
+const userRecipeMock = vi.hoisted(() => ({
+  id: 'durable-only',
+  source: 'user',
+  name: '用户专家小组',
+  description: '不设主理人',
+  category: 'product',
+  members: [{ roleId: '溯真', taskTemplate: '研究 {topic}' }],
+  createdAt: 100,
+  updatedAt: 100,
+}));
+const teamRecipeServiceMock = vi.hoisted(() => ({
+  get: vi.fn(),
+  knownRoleIds: vi.fn(),
+}));
 
 vi.mock('../../../../src/shared/constants/teamRecipeCatalog', () => ({
   TEAM_RECIPES: recipesMock,
@@ -36,6 +51,9 @@ vi.mock('../../../../src/host/agent/subagentExecutor', () => ({
 }));
 vi.mock('../../../../src/host/agent/agentRegistry', () => ({
   listAllAgents: () => [{ id: '牧之' }, { id: '溯真' }, { id: '青禾' }],
+}));
+vi.mock('../../../../src/host/services/team/teamRecipeService', () => ({
+  getTeamRecipeService: () => teamRecipeServiceMock,
 }));
 vi.mock('../../../../src/host/agent/agentDefinition', () => ({
   getPredefinedAgent: (id: string) => ({ id, name: id }),
@@ -99,6 +117,8 @@ describe('launchTeamRecipe durable parent', () => {
       iterations: 1,
       duration: 1,
     });
+    teamRecipeServiceMock.get.mockReturnValue(userRecipeMock);
+    teamRecipeServiceMock.knownRoleIds.mockResolvedValue(new Set(['牧之', '溯真', '青禾']));
   });
 
   afterEach(() => {
@@ -129,6 +149,21 @@ describe('launchTeamRecipe durable parent', () => {
       expect((await repository.get(teamRunId))?.status).toBe('completed');
       expect((await repository.get(parentRunId))?.status).toBe('completed');
     });
+  });
+
+  it('同 id 时用户配方优先，且无 lead 真走确定性 durable 路径', async () => {
+    const launched = await launchTeamRecipe({
+      sessionId: 'session-team-recipe',
+      recipeId: 'durable-only',
+      topic: '会员增长',
+    });
+
+    expect(teamRecipeServiceMock.get).toHaveBeenCalledWith('durable-only');
+    expect(launched).toMatchObject({ ok: true, runId: expect.stringMatching(/^team_recipe_/) });
+    expect(sessionManagerMock.addMessageToSession).toHaveBeenCalledWith(
+      'session-team-recipe',
+      expect.objectContaining({ content: '【组队 · 用户专家小组】会员增长' }),
+    );
   });
 
   it('冷启窗口内迟配置 kernel 时等待后仍能起团', async () => {

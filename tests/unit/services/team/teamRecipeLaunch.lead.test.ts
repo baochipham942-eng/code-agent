@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
   archiveText: vi.fn(),
   listRuns: vi.fn(),
   launchAgentTeam: vi.fn(),
+  spawnGuardList: vi.fn(),
+}));
+
+vi.mock('../../../../src/host/agent/spawnGuard', () => ({
+  getSpawnGuard: () => ({ list: mocks.spawnGuardList }),
 }));
 
 vi.mock('../../../../src/shared/constants/teamRecipeCatalog', () => ({
@@ -92,6 +97,7 @@ describe('team recipe lead orchestrator', () => {
     mocks.sendMessage.mockResolvedValue(undefined);
     mocks.buildRoleContextBlock.mockResolvedValue('角色上下文');
     mocks.listRuns.mockReturnValue([{ sessionId: 'session-lead', startedAt: Date.now() + 10_000, completedCount: 1 }]);
+    mocks.spawnGuardList.mockReturnValue([]);
     mocks.launchAgentTeam.mockResolvedValue({ success: true, output: '确定性聚合稿' });
   });
 
@@ -159,6 +165,18 @@ describe('team recipe lead orchestrator', () => {
     await eventually(() => expect(mocks.archiveText).toHaveBeenCalled());
     expect(mocks.launchAgentTeam).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('按已跑处理'), expect.any(Error));
+  });
+
+  it('成员经 Task/单发 spawn 委派（无 swarm run）也认账，照常归档', async () => {
+    // 真机实测：主理人在并行起团被 durable 挡住后改用 Task 逐个委派，
+    // 这类成员不写 swarm_runs，只在 SpawnGuard 里留痕 —— 只认 swarm_runs 会误判成「代写」。
+    mocks.listRuns.mockReturnValue([]);
+    mocks.spawnGuardList.mockReturnValue([{ id: 'agent_溯真_1', createdAt: Date.now() + 10_000 }]);
+
+    await launchTeamRecipe({ sessionId: 'session-lead', recipeId: 'lead-recipe', topic: '会员增长' });
+
+    await eventually(() => expect(mocks.archiveText).toHaveBeenCalled());
+    expect(mocks.launchAgentTeam).not.toHaveBeenCalled();
   });
 
   it('零成员 run 丢弃主理人稿并降级', async () => {

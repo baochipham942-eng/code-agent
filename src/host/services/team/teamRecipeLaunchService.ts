@@ -212,9 +212,17 @@ async function launchTeamRecipeViaLead(input: ValidatedTeamRecipeLaunch): Promis
   // 查询本身出错时按「跑过」处理（fail-open）——重跑一整个团队的代价远高于漏判一次。
   let membersRan = true;
   try {
+    // 两条证据取并集：SpawnGuard 覆盖全部委派形态（spawn_agent 单发 / 并行 / Task 工具都在这里注册），
+    // swarm_runs 是并行路径的持久化痕迹，在 SpawnGuard 的 5 分钟清理窗口之后仍然可查。
+    const { getSpawnGuard } = await import('../../agent/spawnGuard');
+    const spawnedMember = getSpawnGuard().list({ sessionId: input.sessionId })
+      .some((agent) => agent.createdAt >= startedAt);
+
     const { getDatabase } = await import('../core');
-    membersRan = getDatabase().getSwarmTraceRepo().listRuns(SWARM_RUN_LOOKUP_LIMIT)
+    const swarmMember = getDatabase().getSwarmTraceRepo().listRuns(SWARM_RUN_LOOKUP_LIMIT)
       .some((run) => run.sessionId === input.sessionId && run.startedAt >= startedAt && run.completedCount > 0);
+
+    membersRan = spawnedMember || swarmMember;
   } catch (error) {
     console.warn('[TeamRecipe] 成员 run 铁律校验查询失败，按已跑处理（不重跑团队）', error);
   }

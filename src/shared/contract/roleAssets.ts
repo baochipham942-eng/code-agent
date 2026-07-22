@@ -8,6 +8,22 @@
 import type { AgentSource } from './agentRegistry';
 import type { SkillCategory } from './skillRepository';
 
+/** 角色展示元数据；内置角色与云下发角色包共用这一合同。 */
+export interface BuiltinRoleVisual {
+  /** lucide 图标名（curated，前端按名渲染） */
+  icon: string;
+  /** 产物分类（复用 SkillCategory 子集） */
+  category: SkillCategory;
+  /** 展示名（花名，与 roleId 一致或更口语） */
+  displayName: string;
+  /** 职业（如“资深产品经理”，展示在花名旁） */
+  profession: string;
+  /** 能力标签（3 个左右，发现页卡片展示） */
+  tags: string[];
+  /** 快捷开场 prompt（一句话真实 cowork 场景，点击即发） */
+  quickPrompts: string[];
+}
+
 /** 角色面板列表条目（设计 §7：卡片 = 名字/记忆条数/最近工作） */
 export interface RolePanelEntry {
   /** 角色 ID = agents/<id>.md 的 frontmatter name = roles/<id>/ 目录名 */

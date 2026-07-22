@@ -63,8 +63,6 @@ export interface RemoteSkillRegistryServiceOptions {
   now?: number;
 }
 
-const LIST_ITEMS_CACHE_TTL_MS = 5 * 60 * 1000;
-
 export class RemoteSkillRegistryService {
   private options: RemoteSkillRegistryServiceOptions;
   private listItemsCache: { at: number; items: SkillRegistryListItem[] } | null = null;
@@ -163,7 +161,7 @@ export class RemoteSkillRegistryService {
    */
   async listItemsCached(): Promise<SkillRegistryListItem[]> {
     const now = Date.now();
-    if (this.listItemsCache && now - this.listItemsCache.at < LIST_ITEMS_CACHE_TTL_MS) {
+    if (this.listItemsCache && now - this.listItemsCache.at < CLOUD.REGISTRY_CACHE_TTL) {
       return this.listItemsCache.items;
     }
     const { items } = await this.listItems();

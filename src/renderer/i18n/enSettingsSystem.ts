@@ -514,6 +514,7 @@ export const enSettingsSystem = {
         agent_engine_model_catalog: 'Agent Engine model catalog',
         prompt_registry: 'Prompt registry',
         skill_registry: 'Official skill registry',
+        role_registry: 'Official role pack registry',
         update_manifest: 'Update manifest',
         runtime_assets_manifest: 'Runtime assets manifest',
         renderer_bundle: 'Renderer hot-update bundle',

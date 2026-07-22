@@ -21,6 +21,7 @@ import { labAlignmentZh } from './labAlignment';
 import { libraryZh } from './library';
 import { teamZh } from './team';
 import { knowledgeMemoryZh } from './knowledgeMemory';
+import { rolePackZh } from './rolePack';
 
 export const zh = {
   // Common
@@ -890,6 +891,7 @@ export const zh = {
   },
 
   ...teamZh,
+  ...rolePackZh,
   ...knowledgeMemoryZh,
   ...chatTranscriptZh,
   ...chatInputZh,

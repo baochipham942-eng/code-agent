@@ -6,10 +6,45 @@
 
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
+import type { RolePackEntry } from '@shared/contract/rolePackRegistry';
 import ipcService from './ipcService';
+
+export interface RolePackListItem {
+  entry: RolePackEntry;
+  tools: string[];
+  installed: boolean;
+  installState?: 'complete' | 'degraded';
+  missingSkills?: string[];
+  locallyModified?: boolean;
+  hasUpdate: boolean;
+}
+
+export interface RolePackActionResult {
+  success: boolean;
+  roleId: string;
+  installState?: 'complete' | 'degraded';
+  missingSkills?: string[];
+  locallyModified?: boolean;
+}
 
 export async function listRoles(): Promise<RolePanelEntry[]> {
   return ipcService.invokeDomain<RolePanelEntry[]>(IPC_DOMAINS.ROLES, 'list');
+}
+
+export async function listRolePacks(): Promise<RolePackListItem[]> {
+  return ipcService.invokeDomain<RolePackListItem[]>(IPC_DOMAINS.ROLES, 'rolePackList');
+}
+
+export async function installRolePack(roleId: string): Promise<RolePackActionResult> {
+  return ipcService.invokeDomain<RolePackActionResult>(IPC_DOMAINS.ROLES, 'rolePackInstall', { roleId });
+}
+
+export async function uninstallRolePack(roleId: string): Promise<RolePackActionResult> {
+  return ipcService.invokeDomain<RolePackActionResult>(IPC_DOMAINS.ROLES, 'rolePackUninstall', { roleId });
+}
+
+export async function retryRolePackMissingSkills(roleId: string): Promise<RolePackActionResult> {
+  return ipcService.invokeDomain<RolePackActionResult>(IPC_DOMAINS.ROLES, 'rolePackRetryMissingSkills', { roleId });
 }
 
 /**

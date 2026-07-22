@@ -36,6 +36,7 @@
 | [数据存储](./architecture/data-storage.md) | SQLite、Supabase、session runtime state、telemetry/replay、SecureStorage |
 | [云端/同步历史架构](./architecture/cloud-architecture.md) | 历史 cloud task / orchestrator 设计归档；当前保留配置、更新、feature flag、cloud proxy 等服务 |
 | [多 Agent 编排](./architecture/multiagent-system.md) | Agent Team 并行执行、parallel inbox、dependsOn gate、run-level cancel、SpawnGuard |
+| [专家、资料库与角色化自动化](./architecture/experts-and-library.md) | 内置专家包与 L1 资料架、项目资料库和会话 pin、以角色身份运行并归档的自动化 |
 | [Agent Engine 执行引擎](./architecture/agent-engine.md) | 执行内核(AgentEngineKind)≠模型 provider：Native + Codex/Claude/**MiMo/Kimi** 四外部 CLI 引擎接入(registry 探测 + 适配器分发 + catalog)、Runtime×Model 兼容矩阵 + billingMode(订阅/按量)、设置页「执行引擎」section、StatusBar「Engine·模型·Effort」切换器 |
 | [Dynamic Workflow](./architecture/dynamic-workflow.md) | 命令式脚本编排运行时：模型写 JS 脚本 → worker 沙箱后台执行、5 原语、forced 结构化、provider-aware 并发闸、token budget、跑前审批、resumable |
 | [Runtime Consolidation Snapshot](./architecture/runtime-consolidation-2026-05-31.md) | 2026-05-29~06-01 运行时收口 as-built：workflow、provider 控制、app-host 验收、observability、dead path 归属、product closure |
@@ -109,6 +110,7 @@
 | 043 | 组级工具步骤三态折叠预览 | accepted |
 | 045 | 上下文压缩单一架构：删除旧三层 `checkAndCompress` 入口 | accepted |
 | 046 | Surface Execution V1：Browser/Computer 统一 owner-aware 执行运行时 | accepted |
+| 047 | 组队配方采用主理人编排，确定性 coordinator 作为降级路径 | accepted |
 
 > **ADR-040 执行状态（2026-07-18）**：Word / PPT / Excel locator、共享 picker、generated-PPT resolver 与隐私安全 telemetry 已随 #377/#385 合入 `main`。Poppler `26.07.0` 双原生架构候选由 run `29412794021` 产出并发布到项目控制的不可变 OSS 前缀，`config/poppler-sidecar.lock.json` 已为 `ready`，Poppler promotion stop-ship 已解除；正式版本仍需走常规签名、公证、DMG 与安装版验收。
 

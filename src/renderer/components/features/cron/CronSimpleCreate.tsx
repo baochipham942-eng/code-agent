@@ -4,7 +4,9 @@
 // 不走 LLM；聊天侧 /schedule 的 LLM 解析入口保持不变。
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import type { RolePanelEntry } from '@shared/contract/roleAssets';
+import type { Project } from '@shared/contract/project';
 import { Button } from '../../primitives/Button';
 import { FormField } from '../../composites/FormField';
 import { Input } from '../../primitives/Input';
@@ -12,6 +14,8 @@ import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { listProjects } from '../../../services/projectClient';
+import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
 
 type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
@@ -51,7 +55,9 @@ export function compileSimpleSchedule(input: SimpleScheduleInput): Partial<CronJ
 export function buildSimpleDraft(
   goal: string,
   name: string,
-  schedule: Partial<CronJobDraft>
+  schedule: Partial<CronJobDraft>,
+  roleId?: string,
+  libraryProjectId?: string,
 ): CronJobDraft {
   return {
     ...createDefaultCronJobDraft(),
@@ -59,6 +65,8 @@ export function buildSimpleDraft(
     actionType: 'agent',
     agentType: 'default',
     agentPrompt: goal.trim(),
+    agentRoleId: roleId || '',
+    agentLibraryProjectId: libraryProjectId || '',
     ...schedule,
   };
 }
@@ -78,8 +86,17 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   const [weekday, setWeekday] = useState('1');
   const [intervalHours, setIntervalHours] = useState('1');
   const [onceAt, setOnceAt] = useState('');
+  const [roleId, setRoleId] = useState('');
+  const [libraryProjectId, setLibraryProjectId] = useState('');
+  const [roles, setRoles] = useState<RolePanelEntry[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listRoles().then(setRoles).catch(() => setRoles([]));
+    listProjects().then(setProjects).catch(() => setProjects([]));
+  }, []);
 
   const handleSubmit = async () => {
     if (!goal.trim()) {
@@ -89,7 +106,13 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
     setSubmitting(true);
     setError(null);
     try {
-      const draft = buildSimpleDraft(goal, name, compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }));
+      const draft = buildSimpleDraft(
+        goal,
+        name,
+        compileSimpleSchedule({ freq, time, weekday, intervalHours, onceAt }),
+        roleId,
+        libraryProjectId,
+      );
       await createJob(buildCronJobInput(draft));
       onDone();
     } catch (err) {
@@ -125,6 +148,29 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
           placeholder={cc.simpleNamePlaceholder}
         />
       </FormField>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label={cc.simpleRoleLabel}>
+          <Select
+            value={roleId}
+            onChange={(e) => setRoleId(e.target.value)}
+            options={[
+              { value: '', label: cc.simpleRoleNone },
+              ...roles.map((role) => ({ value: role.roleId, label: role.displayName || role.roleId })),
+            ]}
+          />
+        </FormField>
+        <FormField label={cc.simpleArchiveLabel}>
+          <Select
+            value={libraryProjectId}
+            onChange={(e) => setLibraryProjectId(e.target.value)}
+            options={[
+              { value: '', label: cc.simpleArchiveNone },
+              ...projects.map((project) => ({ value: project.id, label: project.name })),
+            ]}
+          />
+        </FormField>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField label={cc.simpleFreqLabel}>

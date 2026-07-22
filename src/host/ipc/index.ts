@@ -80,6 +80,7 @@ import { registerPiiHandlers } from './pii.ipc';
 import { registerAlmaRegistryHandlers } from './almaRegistry.ipc';
 import { registerGenerativeUIHandlers } from './generativeUI.ipc';
 import { registerFolderTrustHandlers } from './folderTrust.ipc';
+import { registerTeamHandlers } from './team.ipc';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
 
 /**
@@ -143,6 +144,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerPiiHandlers(ipcMain);
   registerGenerativeUIHandlers(ipcMain);
   registerFolderTrustHandlers(ipcMain, getAppService);
+  registerTeamHandlers(ipcMain);
 
   // Connector handlers
   registerConnectorHandlers(ipcMain, getMainWindow, getConfigService);

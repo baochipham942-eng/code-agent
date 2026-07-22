@@ -158,7 +158,7 @@ export async function executeSpawnAgent(
     if (!task) {
       return {
         success: false,
-        error: 'Task is required. Provide role+task for predefined agent or customPrompt+task for dynamic agent.',
+        error: Object.keys(params).length === 0 ? 'spawn_agent 收到的 arguments 为空。请立刻重新调用并带上参数：并行起团传 parallel=true + agents 数组（每项 role+task）；单发传 role+task。' : 'Task is required. Provide role+task for predefined agent or customPrompt+task for dynamic agent.',
       };
     }
 

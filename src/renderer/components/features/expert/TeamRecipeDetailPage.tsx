@@ -36,6 +36,8 @@ export const TeamRecipeDetailPage: React.FC<Props> = ({ recipe, entries, editabl
   const [draft, setDraft] = useState<TeamRecipeWrite>(() => writeFrom(recipe));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 提出来给 JSX 用：闭包里 TS 收窄不到 draft.lead，直接引用会逼出非空断言（棘轮 +1）
+  const lead = draft.lead;
 
   useEffect(() => {
     setDraft(writeFrom(recipe));
@@ -90,7 +92,7 @@ export const TeamRecipeDetailPage: React.FC<Props> = ({ recipe, entries, editabl
           </SettingsSection>
           <SettingsSection title={text.leadTitle} description={text.leadDescription}>
             <label className="block text-xs text-zinc-400"><span>{text.leadRole}</span><select aria-label={text.leadRole} value={draft.lead?.roleId ?? ''} onChange={(event) => setDraft({ ...draft, lead: event.target.value ? { roleId: event.target.value, briefTemplate: draft.lead?.briefTemplate ?? '' } : undefined })} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200"><option value="">{text.noLead}</option>{entries.map((entry) => <option key={entry.roleId} value={entry.roleId}>{entry.displayName || entry.roleId}</option>)}</select></label>
-            {draft.lead ? <label className="mt-3 block text-xs text-zinc-400"><span>{text.briefTemplate}</span><textarea aria-label={text.briefTemplate} value={draft.lead.briefTemplate} onChange={(event) => setDraft({ ...draft, lead: { ...draft.lead!, briefTemplate: event.target.value } })} rows={4} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200" /></label> : null}
+            {lead ? <label className="mt-3 block text-xs text-zinc-400"><span>{text.briefTemplate}</span><textarea aria-label={text.briefTemplate} value={lead.briefTemplate} onChange={(event) => setDraft({ ...draft, lead: { ...lead, briefTemplate: event.target.value } })} rows={4} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200" /></label> : null}
           </SettingsSection>
           <SettingsSection title={text.membersTitle.replace('{count}', String(draft.members.length))} description={text.membersDescription} actions={<Button size="sm" variant="secondary" onClick={addMember} disabled={draft.members.length >= 5} leftIcon={<Plus className="h-3.5 w-3.5" />}>{text.addMember}</Button>}>
             <p className="text-xs text-zinc-500">{text.topicHint}</p>

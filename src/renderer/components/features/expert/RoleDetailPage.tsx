@@ -130,16 +130,16 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
         <div className="flex shrink-0 items-center gap-1">
           {!editing && !confirmingDelete ? (
             <>
-              <button
-                /* ds-allow:button: 记忆编辑图标按钮 p-1.5，primitive 变体会改变尺寸与外观 */ type="button"
+              <button /* ds-allow:button: 记忆编辑图标按钮 p-1.5，primitive 变体会改变尺寸与外观 */
+                type="button"
                 title={commonText.edit}
                 onClick={() => setEditing(true)}
                 className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-zinc-700/60 hover:text-zinc-200"
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
-              <button
-                /* ds-allow:button: 记忆删除图标按钮 p-1.5（hover 红），primitive 变体会改变尺寸 */ type="button"
+              <button /* ds-allow:button: 记忆删除图标按钮 p-1.5（hover 红），primitive 变体会改变尺寸 */
+                type="button"
                 title={commonText.delete}
                 onClick={() => setConfirmingDelete(true)}
                 className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-red-900/40 hover:text-red-400"
@@ -153,16 +153,16 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
               <span className="text-xs text-red-400">
                 {roleText.confirmDeleteQuestion}
               </span>
-              <button
-                /* ds-allow:button: 删除确认按钮，自定义小尺寸弱化红（bg-red-900/50），与 danger 变体实心红不同 */ type="button"
+              <button /* ds-allow:button: 删除确认按钮，自定义小尺寸弱化红（bg-red-900/50），与 danger 变体实心红不同 */
+                type="button"
                 disabled={busy}
                 onClick={handleDelete}
                 className="rounded bg-red-900/50 px-2 py-1 text-xs text-red-300 hover:bg-red-900/80 disabled:opacity-50"
               >
                 {commonText.delete}
               </button>
-              <button
-                /* ds-allow:button: 删除取消按钮，自定义小尺寸无背景文本按钮，primitive 变体会强加 padding/bg */ type="button"
+              <button /* ds-allow:button: 删除取消按钮，自定义小尺寸无背景文本按钮，primitive 变体会强加 padding/bg */
+                type="button"
                 onClick={() => setConfirmingDelete(false)}
                 className="rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-700/60"
               >
@@ -181,16 +181,16 @@ const MemoryRow: React.FC<MemoryRowProps> = ({ roleId, memory, onChanged }) => {
             className="w-full rounded border border-zinc-600 bg-zinc-950/80 p-2 font-mono text-xs text-zinc-300 focus:border-zinc-400 focus:outline-none"
           />
           <div className="flex items-center gap-2">
-            <button
-              /* ds-allow:button: 记忆保存按钮，自定义小尺寸（px-2.5 py-1 text-xs），primitive 最小 sm 仍更大 */ type="button"
+            <button /* ds-allow:button: 记忆保存按钮，自定义小尺寸（px-2.5 py-1 text-xs），primitive 最小 sm 仍更大 */
+              type="button"
               disabled={busy}
               onClick={handleSaveEdit}
               className="flex items-center gap-1 rounded bg-zinc-700 px-2.5 py-1 text-xs text-zinc-200 hover:bg-zinc-600 disabled:opacity-50"
             >
               <Check className="h-3 w-3" /> {commonText.save}
             </button>
-            <button
-              /* ds-allow:button: 记忆编辑取消按钮，自定义小尺寸无背景文本按钮，primitive 变体会强加 padding/bg */ type="button"
+            <button /* ds-allow:button: 记忆编辑取消按钮，自定义小尺寸无背景文本按钮，primitive 变体会强加 padding/bg */
+              type="button"
               onClick={() => {
                 setEditing(false);
                 setEditContent(memory.content);
@@ -246,8 +246,8 @@ const ProactivitySelector: React.FC<{
         const option = optionsText[level];
         const selected = level === current;
         return (
-          <button
-            /* ds-allow:button: 主动性等级单选卡，全宽左对齐含单选圈+多行，primitive 居中变体不兼容 */ key={
+          <button /* ds-allow:button: 主动性等级单选卡，全宽左对齐含单选圈+多行，primitive 居中变体不兼容 */
+            key={
               level
             }
             type="button"
@@ -313,8 +313,8 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
   }, [loadDetail]);
   return (
     <div className="space-y-5" data-testid={`role-detail-page-${roleId}`}>
-      <button
-        /* ds-allow:button: 返回链接式按钮，纯文本+图标无背景，primitive 变体会强加 bg/padding */ type="button"
+      <button /* ds-allow:button: 返回链接式按钮，纯文本+图标无背景，primitive 变体会强加 bg/padding */
+        type="button"
         onClick={onBack}
         className="flex items-center gap-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200"
       >
@@ -329,8 +329,8 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
           <h3 className="text-base font-medium text-zinc-200">{roleId}</h3>
           <p className="text-xs text-zinc-500">{roleText.detail.subtitle}</p>
         </div>
-        <button
-          /* ds-allow:button: 对话式修改入口，emerald 语义色弱化胶囊，primitive 无对应变体 */ type="button"
+        <button /* ds-allow:button: 对话式修改入口，emerald 语义色弱化胶囊，primitive 无对应变体 */
+          type="button"
           onClick={() => void startEditRoleChat(roleId)}
           title={roleText.detail.editByChatTitle}
           className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"

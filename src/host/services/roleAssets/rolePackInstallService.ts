@@ -60,6 +60,20 @@ export interface RolePackListItem {
   hasUpdate: boolean;
 }
 
+export async function getInstalledRolePackState(roleId: string): Promise<{ locallyModified: boolean } | null> {
+  const record = (await loadRecords())[roleId];
+  if (!record) return null;
+  const currentHash = await readAgentHash(roleId);
+  return { locallyModified: currentHash !== null && currentHash !== record.installedAgentMdHash };
+}
+
+/** 还原云包时只取经签名 registry 验证过的原始 agentMd；拿不到就明确失败。 */
+export async function getRolePackFactoryDefinition(roleId: string): Promise<{ agentMd: string } | null> {
+  if (!(await loadRecords())[roleId]) return null;
+  const entry = await getRolePackRegistryService().getEntry(roleId);
+  return entry ? { agentMd: entry.agentMd } : null;
+}
+
 function rolePacksPath(): string {
   return path.join(getUserConfigDir(), ROLE_PACKS_FILE);
 }

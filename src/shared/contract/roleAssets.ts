@@ -161,4 +161,17 @@ export interface RolePanelDetail {
   visual: RoleVisual;
   /** 内置角色也允许写入个人展示偏好，但产品更新不会再覆盖这份定义。 */
   isBuiltin: boolean;
+  /** 装备层当前生效配置及由 host 解析出的本机可选项。 */
+  equipment?: {
+    skills: string[];
+    tools: string[];
+    model: 'fast' | 'balanced' | 'powerful';
+    maxIterations: number;
+    availableSkills: string[];
+    availableTools: string[];
+  };
+  /** 云包被本地改过时显示；内置和自建角色不使用这条提示。 */
+  locallyModified?: boolean;
+  /** 自建角色没有出厂定义；云包 registry 不可用时保留入口但禁用。 */
+  restore?: { available: boolean; disabledReason?: string };
 }

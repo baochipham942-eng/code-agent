@@ -88,6 +88,8 @@ function makeRoleDetail(overrides: Partial<RolePanelDetail> = {}): RolePanelDeta
     proactivity: { level: 'silent' },
     visual: { displayName: '牧之', profession: '资深产品经理', icon: 'ClipboardList', category: 'product', tags: ['需求梳理', 'PRD 撰写'], quickPrompts: ['我有个产品想法，帮我梳理成需求清单'] },
     isBuiltin: true,
+    equipment: { skills: ['research'], tools: ['Read'], model: 'balanced', maxIterations: 20, availableSkills: ['research', 'xlsx'], availableTools: ['Read', 'WebSearch'] },
+    restore: { available: true },
     ...overrides,
   };
 }
@@ -205,6 +207,44 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回' }));
     await waitFor(() => expect(screen.getByTestId('expert-card-自定义专家').textContent).toContain('小满'));
     expect(screen.getByTestId('expert-card-自定义专家').textContent).toContain('增长顾问');
+  });
+
+  it('装备和正文走独立 IPC 保存；自建角色没有还原出厂入口', async () => {
+    invokeDomain.mockImplementation((_domain: string, action: string, payload?: Record<string, unknown>) => {
+      if (action === 'detail') return Promise.resolve(makeRoleDetail({ roleId: '自定义专家', isBuiltin: false, restore: undefined }));
+      if (action === 'listBindings') return Promise.resolve([]);
+      if (action === 'updateEquipment' || action === 'updateDefinitionBody') return Promise.resolve(payload);
+      return Promise.resolve(undefined);
+    });
+    listRoles.mockResolvedValue([makeEntry({ roleId: '自定义专家', source: 'user' })]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-detail-自定义专家')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('expert-detail-自定义专家'));
+    await waitFor(() => expect(screen.getByTestId('role-equipment-editor')).toBeTruthy());
+    expect(screen.queryByTestId('role-restore-factory')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('xlsx'));
+    fireEvent.change(screen.getByTestId('role-equipment-model'), { target: { value: 'powerful' } });
+    fireEvent.click(screen.getByTestId('role-equipment-save'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateEquipment', expect.objectContaining({ roleId: '自定义专家', equipment: expect.objectContaining({ skills: ['research', 'xlsx'], model: 'powerful' }) })));
+
+    fireEvent.change(screen.getByTestId('role-definition-body'), { target: { value: '新的角色正文' } });
+    fireEvent.click(screen.getByTestId('role-definition-save'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateDefinitionBody', { roleId: '自定义专家', body: '新的角色正文' }));
+  });
+
+  it('云包角色在本地改过时显示不会被更新覆盖的提示', async () => {
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'detail') return Promise.resolve(makeRoleDetail({ roleId: '云端产品顾问', isBuiltin: false, locallyModified: true, restore: { available: false, disabledReason: '当前无法取得云端出厂定义' } }));
+      if (action === 'listBindings') return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+    listRoles.mockResolvedValue([makeEntry({ roleId: '云端产品顾问', source: 'user' })]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-detail-云端产品顾问')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('expert-detail-云端产品顾问'));
+    await waitFor(() => expect(screen.getByTestId('role-locally-modified').textContent).toContain('后续更新不会覆盖'));
+    expect((screen.getByTestId('role-restore-factory') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('空列表渲染空态', async () => {

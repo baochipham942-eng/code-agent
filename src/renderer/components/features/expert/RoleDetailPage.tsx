@@ -75,6 +75,68 @@ async function updateRoleVisual(roleId: string, visual: RoleVisual): Promise<Rol
   return ipcService.invokeDomain<RoleVisual>(IPC_DOMAINS.ROLES, "updateVisual", { roleId, visual });
 }
 
+type Equipment = NonNullable<RolePanelDetail["equipment"]>;
+
+async function updateRoleEquipment(roleId: string, equipment: Pick<Equipment, "skills" | "tools" | "model" | "maxIterations">): Promise<void> {
+  await ipcService.invokeDomain(IPC_DOMAINS.ROLES, "updateEquipment", { roleId, equipment });
+}
+
+async function updateRoleDefinitionBody(roleId: string, body: string): Promise<void> {
+  await ipcService.invokeDomain(IPC_DOMAINS.ROLES, "updateDefinitionBody", { roleId, body });
+}
+
+async function restoreRoleFactory(roleId: string): Promise<void> {
+  await ipcService.invokeDomain(IPC_DOMAINS.ROLES, "restoreFactory", { roleId });
+}
+
+function definitionBody(definition: string | null): string {
+  const match = definition?.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n([\s\S]*)$/);
+  return match?.[1] ?? "";
+}
+
+const EquipmentEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: () => void }> = ({ roleId, equipment, onSaved }) => {
+  const [draft, setDraft] = useState(() => ({ skills: equipment.skills, tools: equipment.tools, model: equipment.model, maxIterations: equipment.maxIterations }));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setDraft({ skills: equipment.skills, tools: equipment.tools, model: equipment.model, maxIterations: equipment.maxIterations }), [equipment]);
+  const toggle = (key: "skills" | "tools", value: string) => setDraft((current) => ({ ...current, [key]: current[key].includes(value) ? current[key].filter((item) => item !== value) : [...current[key], value] }));
+  const save = async () => {
+    setBusy(true); setError(null);
+    try { await updateRoleEquipment(roleId, draft); onSaved(); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
+  return <SettingsSection title="装备" description="从当前机器真实可用的技能和工具中选择，避免写入无效名称。">
+    <div data-testid="role-equipment-editor" className="space-y-4">
+      <label className="block space-y-1 text-xs text-zinc-400"><span>模型档位</span><select data-testid="role-equipment-model" value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value as Equipment["model"] })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200"><option value="fast">fast</option><option value="balanced">balanced</option><option value="powerful">powerful</option></select></label>
+      <label className="block space-y-1 text-xs text-zinc-400"><span>最大迭代次数</span><input data-testid="role-equipment-max-iterations" type="number" min={1} max={200} value={draft.maxIterations} onChange={(event) => setDraft({ ...draft, maxIterations: Math.max(1, Math.min(200, Number(event.target.value) || 1)) })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200" /></label>
+      <fieldset><legend className="mb-1 text-xs text-zinc-400">技能</legend><div className="grid max-h-40 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableSkills.map((skill) => <label key={skill} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.skills.includes(skill)} onChange={() => toggle("skills", skill)} />{skill}</label>)}</div></fieldset>
+      <fieldset><legend className="mb-1 text-xs text-zinc-400">工具</legend><div className="grid max-h-48 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableTools.map((tool) => <label key={tool} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.tools.includes(tool)} onChange={() => toggle("tools", tool)} />{tool}</label>)}</div></fieldset>
+      <button /* ds-allow:button: 装备表单的紧凑保存按钮，Button primitive 会改变布局 */ data-testid="role-equipment-save" type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50">{busy ? "保存中…" : "保存装备"}</button>
+      {error ? <div className="text-xs text-red-400">{error}</div> : null}
+    </div>
+  </SettingsSection>;
+};
+
+const DefinitionEditor: React.FC<{ roleId: string; definition: string | null; restore?: RolePanelDetail["restore"]; onSaved: () => void }> = ({ roleId, definition, restore, onSaved }) => {
+  const [body, setBody] = useState(() => definitionBody(definition));
+  const [busy, setBusy] = useState(false);
+  const [confirmingRestore, setConfirmingRestore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setBody(definitionBody(definition)), [definition]);
+  const save = async () => { setBusy(true); setError(null); try { await updateRoleDefinitionBody(roleId, body); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
+  const restoreFactory = async () => { setBusy(true); setError(null); try { await restoreRoleFactory(roleId); setConfirmingRestore(false); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
+  return <SettingsSection title="人设正文" description="直接编辑专家的人设；保存只会替换正文，不会改动 frontmatter。">
+    <div data-testid="role-definition-editor" className="space-y-3">
+      <textarea data-testid="role-definition-body" value={body} onChange={(event) => setBody(event.target.value)} rows={14} disabled={!definition} className="w-full rounded border border-zinc-700 bg-zinc-950/70 p-2 font-mono text-xs text-zinc-200 focus:outline-none" />
+      <div className="flex flex-wrap items-center gap-2"><button /* ds-allow:button: 人设正文保存的紧凑按钮，primitive 会改变布局 */ data-testid="role-definition-save" type="button" disabled={busy || !definition} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50">保存正文</button>
+        {restore ? (confirmingRestore ? <><span className="text-xs text-amber-200">会覆盖当前定义，不影响角色记忆与履历。</span><button /* ds-allow:button: 还原确认需紧凑危险操作样式 */ data-testid="role-restore-confirm" type="button" disabled={busy || !restore.available} onClick={() => void restoreFactory()} className="rounded bg-red-900/50 px-2 py-1 text-xs text-red-200 disabled:opacity-50">确认还原</button><button /* ds-allow:button: 还原取消为紧凑文本按钮 */ type="button" onClick={() => setConfirmingRestore(false)} className="px-2 py-1 text-xs text-zinc-400">取消</button></> : <button /* ds-allow:button: 还原出厂是紧凑破坏性操作，primitive 会改变布局 */ data-testid="role-restore-factory" type="button" disabled={!restore.available || busy} title={restore.disabledReason} onClick={() => setConfirmingRestore(true)} className="rounded border border-amber-700/60 px-3 py-1.5 text-xs text-amber-200 disabled:opacity-50">还原出厂</button>) : null}
+      </div>
+      {error ? <div className="text-xs text-red-400">{error}</div> : null}
+    </div>
+  </SettingsSection>;
+};
+
 const CATEGORY_IDS: SkillCategory[] = [
   "docs-office", "data-analysis", "design-creative", "content-marketing",
   "product", "research", "automation", "development",
@@ -437,6 +499,9 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
       {detail ? (
         <>
           <VisualEditor roleId={roleId} detail={detail} onSaved={() => { void loadDetail(); onVisualUpdated?.(); }} />
+          {detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">你已改过这个专家，后续更新不会覆盖你的改动。</p> : null}
+          {detail.equipment ? <EquipmentEditor roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
+          <DefinitionEditor roleId={roleId} definition={detail.definition} restore={detail.restore} onSaved={loadDetail} />
           <SettingsSection
             title={roleText.detail.proactivityTitle}
             description={roleText.detail.proactivityDescription}

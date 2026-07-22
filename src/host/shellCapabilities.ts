@@ -286,7 +286,10 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'rolePackUninstall',
     'setProactivity',
     'updateMemory',
+    'updateEquipment',
+    'updateDefinitionBody',
     'updateVisual',
+    'restoreFactory',
     'writeProjectMemory',
   ],
   [IPC_DOMAINS.SESSION]: [

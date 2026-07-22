@@ -70,6 +70,7 @@ import { ArtifactState } from './runtime/artifactState';
 import { createTelemetryAdapter } from '../telemetry/telemetryAdapter';
 import { composeTelemetryAdapters } from './metricsCollector';
 import { withRunTraceContext } from '../telemetry/runTraceContext';
+import { resolvePersistentRoleId } from './persistentRoleResolution';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -230,6 +231,8 @@ export class AgentLoop {
   }
 
   async run(userMessage: string): Promise<void> {
+    // 轮级只判定一次；普通预定义 agent（如 explore）不会取得角色记忆写入身份。
+    this.ctx.persistentRoleId = await resolvePersistentRoleId(this.ctx.agentId);
     // 每条 user 消息开新的工具 repair 失败统计窗口（Kimi 借鉴 #1）
     this.toolEngine.resetRepairGate();
     if (this.ctx.runTraceContext) {

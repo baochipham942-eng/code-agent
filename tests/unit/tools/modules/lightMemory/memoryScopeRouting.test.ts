@@ -72,9 +72,9 @@ describe('memory scope routing (三层记忆)', () => {
       expect(scopeProp?.enum).toEqual(['global', 'user', 'role', 'project']);
     });
 
-    it('defaults to global scope (向后兼容)', async () => {
+    it('非角色主会话 agent（explore）仍默认写全局', async () => {
       const handler = await memoryWriteModule.createHandler();
-      const result = await handler.execute(writeArgs(), makeCtx(), allowAll);
+      const result = await handler.execute(writeArgs(), makeCtx({ agentId: 'explore' }), allowAll);
       expect(result.ok).toBe(true);
       // 写到全局 memory 目录
       const globalFile = path.join(mockConfigDir.dir, 'memory', 'scoped-test.md');

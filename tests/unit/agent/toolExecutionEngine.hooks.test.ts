@@ -364,6 +364,37 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     fileReadTracker.clear();
   });
 
+  it('透传主会话已解析的 persistentRoleId 给工具上下文', async () => {
+    const toolExecutor = {
+      execute: vi.fn(async (): Promise<ToolResult> => ({
+        toolCallId: '',
+        success: true,
+        output: 'ok',
+      })),
+    };
+    const ctx = makeRuntimeContext({
+      persistentRoleId: '专家',
+      toolExecutor: toolExecutor as never,
+    });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    } as never, { emitTaskProgress: vi.fn() } as never, {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+    } as never);
+
+    await engine.executeToolsWithHooks([makeToolCall('role-memory-main-turn', 'memory.md')]);
+
+    expect(toolExecutor.execute).toHaveBeenCalledWith(
+      'read_file',
+      { path: 'memory.md' },
+      expect.objectContaining({ agentRole: '专家' }),
+    );
+  });
+
   it('appends completed background task reminders to one tool result only', async () => {
     const sessionId = 'session-tool-reminder';
     const runId = 'run-tool-reminder';

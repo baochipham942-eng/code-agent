@@ -36,6 +36,7 @@ import {
   type CronExecutionRow,
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
+import { buildCronAgentRunOptions } from './cronAgentRoleContext';
 
 const execAsync = promisify(exec);
 
@@ -682,10 +683,15 @@ export class CronService implements Disposable {
         if (cronSession.workingDirectory) {
           tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
         }
+        const agentRunOptions = await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory);
 
         let result: unknown;
         try {
-          result = await orchestrator.sendMessage(action.prompt);
+          result = await orchestrator.sendMessage(
+            action.prompt,
+            undefined,
+            agentRunOptions,
+          );
         } finally {
           tm.cleanup(cronSession.id);
         }

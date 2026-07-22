@@ -290,10 +290,8 @@ export class ProjectRepository {
       for (const row of strandedUnsorted) {
         const dir = ((row.working_directory as string) || (row.workspace as string) || '').trim();
         if (!dir) continue;
-        const key = getProjectKey(dir);
-        const existing = keyCache.has(dir)
-          ? { id: keyCache.get(dir)! }
-          : this.getProjectByWorkspaceKey(key);
+        // 同事务内能查到 orphans 趟刚 upsert 的项目，无需借 keyCache
+        const existing = this.getProjectByWorkspaceKey(getProjectKey(dir));
         if (existing && existing.id !== UNSORTED_PROJECT_ID) {
           this.assignSessionProject(row.id as string, existing.id);
           count++;

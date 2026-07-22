@@ -63,6 +63,8 @@ export interface RuntimeContext {
   readonly runTraceContext?: RunTraceContext;
   readonly sessionId: string;
   readonly agentId?: string;
+  /** 本轮路由到的持久化角色；仅角色资产目录存在时设置。 */
+  persistentRoleId?: string;
   readonly agentName?: string;
   /** 用户显式 /agent 请求的 agent id；与 agentId 不一致 = 显式选择已降级 */
   readonly requestedAgentId?: string;

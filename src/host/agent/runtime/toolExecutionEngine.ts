@@ -764,6 +764,9 @@ export class ToolExecutionEngine {
           // 透传到 ToolContext。子 agent 通过 subagent pipeline 派活时填入此字段，工具
           // 实现层（BrowserTool/browserAction/computerUse）按 agentId 取自己的 BrowserContext。
           agentId: this.ctx.agentId,
+          // 仅轮级确认的持久化角色可写入角色记忆，避免普通预定义 agent 误建角色目录。
+          agentRole: this.ctx.persistentRoleId,
+          // 仅轮级确认的持久化角色可写入角色记忆，避免普通预定义 agent 误建角色目录。
           preApprovedTools: this.ctx.control.preApprovedTools,
           // GAP-001: skill allowed-tools 限权边界透传
           skillToolBoundary: this.ctx.turn.skillToolBoundary,

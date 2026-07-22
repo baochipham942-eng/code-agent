@@ -19,6 +19,7 @@ interface FileInfo {
 export const WorkingFolder: React.FC = () => {
   const { workingDirectory, setWorkingDirectory } = useAppStore();
   const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
+  const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   const { messages } = useSessionStore();
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(true);
@@ -88,6 +89,7 @@ export const WorkingFolder: React.FC = () => {
       if (isWebMode()) {
         if (manualPath?.trim()) {
           setWorkingDirectory(manualPath.trim());
+          setComposerWorkingDirectory(manualPath.trim());
         }
         return;
       }
@@ -95,6 +97,7 @@ export const WorkingFolder: React.FC = () => {
         const result = await pickNativeDirectory({ title: t.taskPanel.selectDirectoryTitle });
         if (result) {
           setWorkingDirectory(result);
+          setComposerWorkingDirectory(result);
         }
       }
     } catch (error) {

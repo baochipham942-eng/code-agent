@@ -1,8 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
 import type {
   CronJobDefinition,
   CronJobExecution,
 } from '../../../src/shared/contract/cron';
+import { applySchema } from '../../../src/host/services/core/database/schema';
+import type { Logger } from '../../../src/host/services/core/database/schemaHelpers';
+import { applySessionAutomationsNullableSourceMigration } from '../../../src/host/services/core/database/migrations/sessionAutomations';
+
+const dbState = vi.hoisted(() => ({
+  db: null as import('better-sqlite3').Database | null,
+}));
 
 const service = {
   recordCreated: vi.fn(),
@@ -15,6 +25,18 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => service,
 }));
 
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({ getDb: () => dbState.db }),
+}));
+
+vi.mock('../../../src/host/platform', () => ({
+  broadcastToRenderer: vi.fn(),
+}));
+
+vi.mock('../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({ addMessageToSession: vi.fn() }),
+}));
+
 import {
   readCronSourceSessionId,
   getCronAutomationType,
@@ -25,6 +47,7 @@ import {
   recordCronAutomationArchived,
   recordCronAutomationExecution,
 } from '../../../src/host/cron/cronAutomationBridge';
+import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 
 const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
   id: 'job-1',
@@ -41,10 +64,91 @@ const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
 const identityRuntime = (d: CronJobDefinition) => d;
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  service.recordCreated.mockReset();
+  service.upsert.mockReset();
+  service.getBySourceRef.mockReset();
+  service.recordEvent.mockReset();
   service.getBySourceRef.mockReturnValue(null);
   service.recordCreated.mockResolvedValue(undefined);
   service.recordEvent.mockResolvedValue(undefined);
+  dbState.db = new Database(':memory:');
+  dbState.db.pragma('foreign_keys = ON');
+  applySchema(dbState.db, {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  } as unknown as Logger);
+});
+
+afterEach(() => {
+  dbState.db?.close();
+  dbState.db = null;
+});
+
+describe('session_automations migration', () => {
+  it('rebuilds the old NOT NULL source column as nullable without losing rows or indexes', () => {
+    const migrationDb = new Database(':memory:');
+    migrationDb.pragma('foreign_keys = ON');
+    migrationDb.exec(`
+      CREATE TABLE sessions (id TEXT PRIMARY KEY);
+      CREATE TABLE session_automations (
+        id TEXT PRIMARY KEY,
+        source_session_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        title TEXT NOT NULL,
+        cadence_label TEXT,
+        next_run_at INTEGER,
+        last_run_at INTEGER,
+        source_ref_id TEXT,
+        result_session_id TEXT,
+        config_json TEXT DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+        FOREIGN KEY (result_session_id) REFERENCES sessions(id) ON DELETE SET NULL
+      );
+      CREATE INDEX idx_session_automations_source
+        ON session_automations(source_session_id, status, next_run_at);
+      CREATE INDEX idx_session_automations_ref
+        ON session_automations(type, source_ref_id);
+      INSERT INTO sessions (id) VALUES ('source-session');
+      INSERT INTO session_automations (
+        id, source_session_id, type, status, title, source_ref_id, created_at, updated_at
+      ) VALUES (
+        'cron:existing', 'source-session', 'cron', 'active', 'existing', 'existing', 1, 1
+      );
+    `);
+    migrationDb.pragma('foreign_keys = OFF');
+    migrationDb.prepare(`
+      INSERT INTO session_automations (
+        id, source_session_id, type, status, title, source_ref_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('cron:legacy-panel', '', 'cron', 'active', 'legacy panel', 'legacy-panel', 1, 1);
+    migrationDb.pragma('foreign_keys = ON');
+
+    applySessionAutomationsNullableSourceMigration(migrationDb);
+
+    const sourceColumn = (migrationDb.pragma('table_info(session_automations)') as Array<{ name: string; notnull: number }>)
+      .find((column) => column.name === 'source_session_id');
+    const indexes = migrationDb.pragma('index_list(session_automations)') as Array<{ name: string }>;
+    expect(sourceColumn?.notnull).toBe(0);
+    expect(indexes.map((index) => index.name)).toEqual(expect.arrayContaining([
+      'idx_session_automations_source',
+      'idx_session_automations_ref',
+    ]));
+    expect(migrationDb.prepare('SELECT source_session_id FROM session_automations WHERE id = ?')
+      .get('cron:existing')).toEqual({ source_session_id: 'source-session' });
+    expect(migrationDb.prepare('SELECT source_session_id FROM session_automations WHERE id = ?')
+      .get('cron:legacy-panel')).toEqual({ source_session_id: null });
+    expect(() => migrationDb.prepare(`
+      INSERT INTO session_automations (
+        id, source_session_id, type, status, title, source_ref_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('cron:panel', null, 'cron', 'active', 'panel', 'panel', 2, 2)).not.toThrow();
+    migrationDb.close();
+  });
 });
 
 describe('readCronSourceSessionId', () => {
@@ -134,10 +238,10 @@ describe('formatCronScheduleLabel', () => {
 });
 
 describe('recordCronAutomationCreated', () => {
-  it('records with empty sourceSessionId when no source session (panel-created)', async () => {
+  it('records with null sourceSessionId when no source session (panel-created)', async () => {
     await recordCronAutomationCreated(def(), identityRuntime);
     expect(service.recordCreated).toHaveBeenCalledTimes(1);
-    expect(service.recordCreated.mock.calls[0][0].sourceSessionId).toBe('');
+    expect(service.recordCreated.mock.calls[0][0].sourceSessionId).toBeNull();
   });
 
   it('records creation with a composed id and enabled status', async () => {
@@ -183,10 +287,10 @@ describe('syncCronAutomationFromJob', () => {
     });
   });
 
-  it('syncs with empty sourceSessionId when no source session (panel-created)', () => {
+  it('syncs with null sourceSessionId when no source session (panel-created)', () => {
     syncCronAutomationFromJob(def(), identityRuntime);
     expect(service.upsert).toHaveBeenCalledTimes(1);
-    expect(service.upsert.mock.calls[0][0].sourceSessionId).toBe('');
+    expect(service.upsert.mock.calls[0][0].sourceSessionId).toBeNull();
   });
 });
 
@@ -292,21 +396,46 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.configPatch?.pendingReview?.resultSessionId).toBe('result-sess');
   });
 
-  it('面板创建（无源会话）的任务照常记录执行与待过目，sourceSessionId 为空串', async () => {
-    await recordCronAutomationExecution(
-      def({
-        // 无 metadata.sourceSessionId、无 agent context —— 面板/CronSimpleCreate 创建形态
-        scheduleType: 'every',
-        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
-      }),
-      exec({ status: 'completed', sessionId: 'result-sess', completedAt: 99 }),
-      identityRuntime
-    );
-    expect(service.recordEvent).toHaveBeenCalledTimes(1);
-    expect(service.upsert.mock.calls[0][0].sourceSessionId).toBe('');
-    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
-      pendingReview: { resultSessionId: 'result-sess', at: 99 },
+  it('面板创建（无源会话）的任务在 FK 开启时落库并进入待过目', async () => {
+    const automationService = new SessionAutomationService();
+    service.recordCreated.mockImplementation(automationService.recordCreated.bind(automationService));
+    service.upsert.mockImplementation(automationService.upsert.bind(automationService));
+    service.getBySourceRef.mockImplementation(automationService.getBySourceRef.bind(automationService));
+    service.recordEvent.mockImplementation(automationService.recordEvent.bind(automationService));
+
+    dbState.db?.prepare(`
+      INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('result-sess', 'Result', 'test', 'test', 1, 1);
+    expect(() => automationService.upsert({
+      id: 'cron:invalid-source',
+      sourceSessionId: 'missing-session',
+      type: 'cron',
+      status: 'active',
+      title: 'invalid',
+    })).toThrow(/FOREIGN KEY constraint failed/);
+
+    const panelDefinition = def({
+      // 无 metadata.sourceSessionId、无 agent context：面板/CronSimpleCreate 创建形态
+      scheduleType: 'every',
+      action: { type: 'agent', agentType: 'default', prompt: 'do it' },
     });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await expect(recordCronAutomationCreated(panelDefinition, identityRuntime)).resolves.toBeUndefined();
+    await expect(recordCronAutomationExecution(
+      panelDefinition,
+      exec({ status: 'completed', sessionId: 'result-sess', completedAt: 99 }),
+      identityRuntime,
+    )).resolves.toBeUndefined();
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+    expect(automationService.getBySourceRef('cron', 'job-1')).toMatchObject({
+      sourceSessionId: null,
+      status: 'active',
+      config: { pendingReview: { resultSessionId: 'result-sess', at: 99 } },
+    });
+    expect(automationService.listPendingReview()).toHaveLength(1);
   });
 
   it('shell 运行与无结果会话的运行不进待过目', async () => {
@@ -330,7 +459,7 @@ describe('recordCronAutomationExecution', () => {
     expect(service.recordEvent.mock.calls[0][0].configPatch).toBeUndefined();
   });
 
-  it('records execution with empty sourceSessionId when no source session (panel-created)', async () => {
+  it('records execution with null sourceSessionId when no source session (panel-created)', async () => {
     await recordCronAutomationExecution(def(), exec(), identityRuntime);
     expect(service.recordEvent).toHaveBeenCalledTimes(1);
   });

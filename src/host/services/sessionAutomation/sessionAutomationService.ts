@@ -27,7 +27,7 @@ const logger = createLogger('SessionAutomationService');
 
 type SessionAutomationRow = {
   id: string;
-  source_session_id: string;
+  source_session_id: string | null;
   type: SessionAutomationType;
   status: SessionAutomationStatus;
   title: string;
@@ -310,6 +310,7 @@ export class SessionAutomationService {
     const records = this.listBySessionIds(sessionIds);
     const bySession = new Map<string, SessionAutomationRecord[]>();
     for (const record of records) {
+      if (record.sourceSessionId === null) continue;
       const list = bySession.get(record.sourceSessionId) ?? [];
       list.push(record);
       bySession.set(record.sourceSessionId, list);
@@ -445,7 +446,7 @@ export class SessionAutomationService {
     content: string,
     eventId: string,
   ): Promise<void> {
-    if (!record.sourceSessionId) return;
+    if (record.sourceSessionId === null || record.sourceSessionId === '') return;
     const message: Message = {
       id: `automation:${eventId}`,
       role: 'assistant',

@@ -35,10 +35,23 @@ export const zh = {
     loading: '加载中…',
     retry: '重试',
     error: '错误',
+    incomplete: '未完成',
     success: '成功',
     active: '当前',
     coming: '即将推出',
     sessionExpiredReconnect: '登录已过期，请重新登录以恢复云端同步',
+  },
+
+  deliverable: {
+    workspacePreview: '在工作区预览中打开',
+    filePreview: '打开文件预览',
+    externalLink: '打开外部链接',
+    reveal: '在文件夹中显示',
+    openFile: '打开文件',
+    copyReference: '复制路径或链接',
+    download: '下载',
+    archiveToLibrary: '归档到资料库',
+    exportBundle: '导出文件包',
   },
 
   // 状态栏

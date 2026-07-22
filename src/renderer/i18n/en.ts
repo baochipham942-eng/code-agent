@@ -36,10 +36,23 @@ export const en: Translations = {
     loading: 'Loading...',
     retry: 'Retry',
     error: 'Error',
+    incomplete: 'Incomplete',
     success: 'Success',
     active: 'Active',
     coming: 'Coming',
     sessionExpiredReconnect: 'Your session has expired. Please sign in again to resume cloud sync.',
+  },
+
+  deliverable: {
+    workspacePreview: 'Open in Workspace Preview',
+    filePreview: 'Open file preview',
+    externalLink: 'Open external link',
+    reveal: 'Reveal',
+    openFile: 'Open file',
+    copyReference: 'Copy path or link',
+    download: 'Download',
+    archiveToLibrary: 'Archive to library',
+    exportBundle: 'Export bundle',
   },
 
   // Status bar

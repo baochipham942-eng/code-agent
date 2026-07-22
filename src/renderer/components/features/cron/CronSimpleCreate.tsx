@@ -55,7 +55,7 @@ export function buildSimpleDraft(
 ): CronJobDraft {
   return {
     ...createDefaultCronJobDraft(),
-    name: name.trim() || goal.trim().slice(0, 20),
+    name: name.trim() || goal.trim().slice(0, 48),
     actionType: 'agent',
     agentType: 'default',
     agentPrompt: goal.trim(),

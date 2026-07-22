@@ -131,6 +131,8 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     sessionStatus: session.status,
     hasNeedsInput: hasNeedsInputForSession(session.id),
   });
+  const localizedStatusLabel =
+    status.kind === 'error' ? t.common.error : status.kind === 'incomplete' ? t.common.incomplete : status.label;
   const isRunning = status.kind === 'live' || status.kind === 'background';
   const attentionDotClass = getAttentionDotClassName(status.kind);
   const latestActivityAt = Math.max(
@@ -200,11 +202,11 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             {surfaceExecutionSession ? (
               <SurfaceExecutionRunStatus session={surfaceExecutionSession} placement="sidebar" />
             ) : isRunning ? (
-              <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={status.label} />
+              <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : (
               <>
                 {attentionDotClass && (
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={status.label} />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
                 )}
                 <span className="text-[11px] text-zinc-600 tabular-nums">{lastActiveLabel}</span>
               </>

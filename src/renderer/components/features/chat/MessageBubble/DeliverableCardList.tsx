@@ -115,14 +115,14 @@ function qualityMeta(card: DeliverableCardView): { label: string; className: str
   return null;
 }
 
-function actionLabel(card: DeliverableCardView): string {
+function actionLabel(card: DeliverableCardView, labels: { workspacePreview: string; filePreview: string; externalLink: string }): string {
   switch (card.openTarget.kind) {
     case 'workspace-preview':
-      return 'Open in Workspace Preview';
+      return labels.workspacePreview;
     case 'file-preview':
-      return 'Open file preview';
+      return labels.filePreview;
     case 'external':
-      return 'Open external link';
+      return labels.externalLink;
     default:
       return card.openTarget.reason;
   }
@@ -146,6 +146,7 @@ function secondaryActionKey(action: DeliverableSecondaryAction): string {
 
 export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2' }) => {
   const { t } = useI18n();
+  const deliverableLabels = t.deliverable;
   const openPreview = useAppStore((state) => state.openPreview);
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -279,6 +280,23 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
     }
   };
 
+  const secondaryActionLabel = (action: DeliverableSecondaryAction): string => {
+    switch (action.kind) {
+      case 'reveal-file':
+        return deliverableLabels.reveal;
+      case 'open-file':
+        return deliverableLabels.openFile;
+      case 'copy-reference':
+        return deliverableLabels.copyReference;
+      case 'download-url':
+        return deliverableLabels.download;
+      case 'archive-to-library':
+        return deliverableLabels.archiveToLibrary;
+      case 'export-bundle':
+        return deliverableLabels.exportBundle;
+    }
+  };
+
   return (
     <div className={`${className} space-y-1.5`}>
       {cards.map((card) => {
@@ -325,8 +343,8 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
                 type="button"
                 onClick={() => clickable && openCard(card)}
                 className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left disabled:cursor-default"
-                title={actionLabel(card)}
-                aria-label={`${actionLabel(card)}: ${card.title}`}
+                title={actionLabel(card, deliverableLabels)}
+                aria-label={`${actionLabel(card, deliverableLabels)}: ${card.title}`}
                 disabled={!clickable}
               >
                 {content}
@@ -339,8 +357,8 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
                       type="button"
                       onClick={() => void runSecondaryAction(action, card)}
                       className="inline-flex h-6 w-6 items-center justify-center rounded text-zinc-500 hover:bg-surface-hover hover:text-zinc-200"
-                      title={action.reason || action.label}
-                      aria-label={`${action.label}: ${card.title}`}
+                      title={action.reason || secondaryActionLabel(action)}
+                      aria-label={`${secondaryActionLabel(action)}: ${card.title}`}
                     >
                       {secondaryIcon(action)}
                     </button>

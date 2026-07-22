@@ -23,6 +23,7 @@ import { libraryEn } from './library';
 import { teamEn } from './team';
 import { knowledgeMemoryEn } from './knowledgeMemory';
 import { rolePackEn } from './rolePack';
+import { expertEn } from './expert';
 
 export const en: Translations = {
   // Common
@@ -883,23 +884,7 @@ export const en: Translations = {
 
   ...libraryEn,
 
-  // 专家全屏页（Batch 3 E2）
-  expert: {
-    panelTitle: 'Experts',
-    panelDescription: 'Persistent teammates with real specialties · they learn you over time',
-    tabMine: 'Mine',
-    tabDiscover: 'Discover',
-    invite: 'Bring them in',
-    configure: 'Configure role',
-    refresh: 'Refresh',
-    loadFailed: 'Failed to load experts',
-    empty: 'No experts yet. Preset experts are installed automatically after restarting the app, or create a role in settings.',
-    memoryCount: '{count} memories',
-    lastWorkPrefix: 'Latest: ',
-    noRecordYet: 'No collaboration yet',
-    quickPromptsTitle: 'Just say it',
-    professionFallback: 'Custom role',
-  },
+  ...expertEn,
 
   ...teamEn,
   ...rolePackEn,

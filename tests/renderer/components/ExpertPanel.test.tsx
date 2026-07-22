@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RolePanelEntry } from '../../../src/shared/contract/roleAssets';
+import type { RolePanelDetail, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 import type { RolePackListItem } from '../../../src/renderer/services/rolesClient';
 
 const listRoles = vi.fn<() => Promise<RolePanelEntry[]>>();
@@ -11,6 +11,15 @@ const installRolePack = vi.fn();
 const uninstallRolePack = vi.fn();
 const retryRolePackMissingSkills = vi.fn();
 const inviteExpert = vi.fn().mockResolvedValue(undefined);
+const invokeDomain = vi.fn();
+
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: { invokeDomain: (...args: unknown[]) => invokeDomain(...args) },
+}));
+
+vi.mock('../../../src/renderer/services/libraryClient', () => ({
+  listLibraryItems: vi.fn().mockResolvedValue([]),
+}));
 
 vi.mock('../../../src/renderer/services/rolesClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../src/renderer/services/rolesClient')>();
@@ -68,6 +77,19 @@ function makeRolePack(overrides: Partial<RolePackListItem> = {}): RolePackListIt
   };
 }
 
+
+function makeRoleDetail(overrides: Partial<RolePanelDetail> = {}): RolePanelDetail {
+  return {
+    roleId: '牧之',
+    definition: '---\nname: 牧之\n---\n你是产品专家',
+    definitionPath: '/roles/牧之.md',
+    memories: [{ filename: 'preference.md', name: '用户偏好', description: '产品偏好', content: '关注交付质量', updatedAt: '2026-07-23' }],
+    history: ['- 整理了需求评审稿'],
+    proactivity: { level: 'silent' },
+    ...overrides,
+  };
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -78,8 +100,12 @@ beforeEach(() => {
   installRolePack.mockResolvedValue({ success: true, roleId: '云端产品顾问' });
   uninstallRolePack.mockResolvedValue({ success: true, roleId: '云端产品顾问' });
   retryRolePackMissingSkills.mockResolvedValue({ success: true, roleId: '云端产品顾问', installState: 'complete', missingSkills: [] });
+  invokeDomain.mockImplementation((_domain: string, action: string) => {
+    if (action === 'detail') return Promise.resolve(makeRoleDetail());
+    if (action === 'listBindings') return Promise.resolve([]);
+    return Promise.resolve(undefined);
+  });
 });
-
 describe('ExpertPanel', () => {
   it('「我的」渲染角色卡（花名/职业/记忆态），空记录显示未合作文案', async () => {
     listRoles.mockResolvedValue([
@@ -130,6 +156,22 @@ describe('ExpertPanel', () => {
     await waitFor(() => expect(screen.getByText('牧之')).toBeTruthy());
     fireEvent.click(screen.getByTestId('expert-invite-牧之'));
     expect(inviteExpert).toHaveBeenCalledWith('牧之', { seed: undefined, title: '牧之' });
+  });
+
+
+  it('点「详情」在同页展示共享详情组件，返回后回到专家卡片网格', async () => {
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-detail-牧之')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('expert-detail-牧之'));
+    await waitFor(() => expect(screen.getByTestId('role-detail-page-牧之')).toBeTruthy());
+    expect(screen.getByText('用户偏好')).toBeTruthy();
+    expect(screen.getByText('整理了需求评审稿')).toBeTruthy();
+    expect(screen.getByTestId('role-bindings-section')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '返回' }));
+    expect(screen.getByTestId('expert-card-牧之')).toBeTruthy();
   });
 
   it('空列表渲染空态', async () => {

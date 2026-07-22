@@ -363,6 +363,10 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.TEAM]: [
     'launchRecipe',
+    'recipeCreate',
+    'recipeDelete',
+    'recipeList',
+    'recipeUpdate',
   ],
   [IPC_DOMAINS.UPDATE]: [
     'check',

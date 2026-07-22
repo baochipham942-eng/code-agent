@@ -69,9 +69,16 @@ describe('control-plane env bundle generator', () => {
     expect(commands).toContain(`CONTROL_PLANE_TTL_SECONDS production --force --yes < '${outDir}/control-plane-ttl-seconds.txt'`);
     expect(commands).toContain('CONTROL_PLANE_AGENT_ENGINE_MODEL_CATALOG_JSON');
     expect(commands).toContain('CONTROL_PLANE_RENDERER_BUNDLE_ROLLOUT_JSON');
+    expect(commands).toContain(`CONTROL_PLANE_ROLE_REGISTRY_JSON production --force --yes < '${outDir}/role-registry.json'`);
     expect(commands).toContain('vercel env add CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS production');
     expect(commands).not.toContain('--value');
     expect(commands).not.toContain('BEGIN PRIVATE KEY');
+
+    const roleRegistry = JSON.parse(readFileSync(join(outDir, 'role-registry.json'), 'utf8')) as {
+      schemaVersion: number;
+      entries: unknown[];
+    };
+    expect(roleRegistry).toMatchObject({ schemaVersion: 1, entries: [] });
 
     const postApplyCommands = readFileSync(join(outDir, 'post-apply-commands.txt'), 'utf8');
     expect(postApplyCommands).toContain(`cd '${process.cwd()}'`);

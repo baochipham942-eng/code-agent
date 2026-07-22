@@ -136,9 +136,10 @@ function resolveScopedTarget(
   scope: string | undefined,
   ctx: ToolContext,
 ): ScopedMemoryTarget | { error: string } | undefined {
-  if (!scope || scope === 'global') return undefined;
-  if (scope === 'role') {
+  if (scope === 'global' || scope === 'user') return undefined;
+  if (!scope || scope === 'role') {
     const roleId = ctx.subagent?.agentRole;
+    if (!scope && !roleId) return undefined;
     if (!roleId) {
       return { error: 'scope "role" is only available when running as a persistent role agent' };
     }

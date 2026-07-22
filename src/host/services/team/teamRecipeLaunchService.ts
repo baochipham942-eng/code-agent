@@ -120,12 +120,20 @@ export async function launchTeamRecipeDeterministic(
 
   const agents = compileRecipeToAgents(input.recipe, input.topic);
   const requestedRunId = `team_recipe_${crypto.randomUUID()}`;
-  const parentRun = await getApplicationRunRegistry().startDurable({
-    sessionId: input.sessionId,
-    runId: requestedRunId,
-    workspace: input.workspace,
-    cwd: input.workspace,
-  });
+  // Durable kernel 是启动后异步配置的（实测冷启后约 13s 才 ready）；这期间点配方会抛，
+  // 必须给出人话原因而不是让 fire-and-forget 变成未捕获拒绝。
+  let parentRun;
+  try {
+    parentRun = await getApplicationRunRegistry().startDurable({
+      sessionId: input.sessionId,
+      runId: requestedRunId,
+      workspace: input.workspace,
+      cwd: input.workspace,
+    });
+  } catch (error) {
+    console.warn('[TeamRecipe] 确定性组队起 Durable 父 run 失败', error);
+    return { ok: false, error: '组队运行时尚未就绪，请稍后重试' };
+  }
   const parentRunId = parentRun.context.runId;
   const context: SubagentExecutionContext = {
     runId: parentRunId,
@@ -288,6 +296,8 @@ export async function launchTeamRecipe(args: TeamRecipeLaunchInput): Promise<Lau
     return launchTeamRecipeDeterministic(input);
   }
 
-  void launchTeamRecipeViaLead(input);
+  void launchTeamRecipeViaLead(input).catch((error) => {
+    console.warn('[TeamRecipe] 主理人流程异常退出', error);
+  });
   return { ok: true, sessionId: args.sessionId };
 }

@@ -30,7 +30,7 @@ describe('cron agent 会话拓扑标注接线', () => {
 
   it('cronService 在 sendMessage 前把 orchestrator 标为 async_agent', () => {
     expect(cronSource).toMatch(
-      /setExecutionTopology\('async_agent'\)[\s\S]{0,800}sendMessage\(action\.prompt\)/,
+      /setExecutionTopology\('async_agent'\)[\s\S]{0,1600}sendMessage\(\s*action\.prompt\s*,/,
     );
   });
 

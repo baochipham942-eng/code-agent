@@ -78,8 +78,8 @@ vi.mock('../../../src/renderer/stores/modeStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/stores/swarmStore', () => ({
-  useSwarmStore: (selector?: (state: { launchRequests: unknown[] }) => unknown) =>
-    selector ? selector({ launchRequests: [] }) : { launchRequests: [] },
+  useSwarmStore: (selector?: (state: { launchRequests: unknown[]; statistics: { totalTokens: number } }) => unknown) =>
+    selector ? selector({ launchRequests: [], statistics: { totalTokens: 0 } }) : { launchRequests: [], statistics: { totalTokens: 0 } },
 }));
 
 vi.mock('../../../src/renderer/stores/localBridgeStore', () => ({

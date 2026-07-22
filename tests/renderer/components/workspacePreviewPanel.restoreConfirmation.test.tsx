@@ -122,7 +122,7 @@ describe('WorkspacePreviewPanel restore confirmation', () => {
   it('archives file preview items with the current session context', async () => {
     render(<WorkspacePreviewPanel />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Archive to library: 项目方案' }));
+    fireEvent.click(screen.getByRole('button', { name: '归档到资料库: 项目方案' }));
 
     await waitFor(() => expect(mocks.addLibraryItem).toHaveBeenCalledWith({
       projectId: 'project-1',

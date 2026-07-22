@@ -18,8 +18,12 @@ function makeRecipe(members: TeamRecipe['members']): TeamRecipe {
   };
 }
 
+function makeRecipeWithLead(lead: NonNullable<TeamRecipe['lead']>, members: TeamRecipe['members']): TeamRecipe {
+  return { ...makeRecipe(members), lead };
+}
+
 describe('TeamRecipe', () => {
-  it('首发目录全部通过上架校验，含溯真双实例依赖', () => {
+  it('首发目录全部通过上架校验，含主理人与溯真双实例并行证据分工', () => {
     for (const recipe of TEAM_RECIPES) {
       const errors = validateTeamRecipe(recipe, KNOWN);
       expect(errors, `${recipe.id}: ${errors.map((error) => error.reason).join('; ')}`).toEqual([]);
@@ -27,9 +31,11 @@ describe('TeamRecipe', () => {
 
     const deepResearch = TEAM_RECIPES.find((recipe) => recipe.id === 'deep-research');
     expect(deepResearch?.members).toMatchObject([
-      { id: 'evidence', roleId: '溯真' },
-      { id: 'synthesis', roleId: '溯真', dependsOn: ['evidence'] },
+      { id: 'evidence-a', roleId: '溯真' },
+      { id: 'evidence-b', roleId: '溯真' },
     ]);
+    expect(deepResearch?.members.every((member) => member.dependsOn === undefined)).toBe(true);
+    expect(deepResearch?.members[0].taskTemplate).not.toBe(deepResearch?.members[1].taskTemplate);
   });
 
   it('无 id 时 member key 回退到 roleId', () => {
@@ -44,6 +50,18 @@ describe('TeamRecipe', () => {
     ['roleId 不在册', makeRecipe([{ roleId: '不存在', taskTemplate: 'x' }])],
     ['members 为空', makeRecipe([])],
     ['taskTemplate 为空', makeRecipe([{ roleId: '溯真', taskTemplate: '' }])],
+    [
+      'lead roleId 不在册',
+      makeRecipeWithLead({ roleId: '不存在', briefTemplate: '围绕「{topic}」定稿。' }, [{ roleId: '溯真', taskTemplate: 'x' }]),
+    ],
+    [
+      'lead briefTemplate 为空',
+      makeRecipeWithLead({ roleId: '牧之', briefTemplate: '  ' }, [{ roleId: '溯真', taskTemplate: 'x' }]),
+    ],
+    [
+      'lead roleId 与 member 键重复',
+      makeRecipeWithLead({ roleId: '牧之', briefTemplate: '围绕「{topic}」定稿。' }, [{ id: '牧之', roleId: '溯真', taskTemplate: 'x' }]),
+    ],
     [
       '依赖不存在的 member',
       makeRecipe([{ id: 'synthesis', roleId: '溯真', taskTemplate: 'x', dependsOn: ['evidence'] }]),

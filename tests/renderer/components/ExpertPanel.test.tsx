@@ -75,6 +75,15 @@ describe('ExpertPanel', () => {
     });
   });
 
+  it('「发现」配方卡显示主理人', async () => {
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    expect(screen.getByTestId('team-recipe-product-spec').textContent).toContain('主理人 · 牧之');
+  });
+
   it('「请 TA 来」按钮不带 seed 只建绑定会话', async () => {
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);

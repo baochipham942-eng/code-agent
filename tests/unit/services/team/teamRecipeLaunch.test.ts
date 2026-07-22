@@ -13,8 +13,8 @@ describe('compileRecipeToAgents', () => {
   it('编译产品规格配方并替换主题', () => {
     const agents = compileRecipeToAgents(getRecipe('product-spec'), '会员增长');
 
-    expect(agents).toHaveLength(3);
-    expect(agents.map((agent) => agent.role)).toEqual(['牧之', '溯真', '青禾']);
+    expect(agents).toHaveLength(2);
+    expect(agents.map((agent) => agent.role)).toEqual(['溯真', '青禾']);
     for (const agent of agents) {
       expect(agent.task).toContain('会员增长');
       expect(agent.task).not.toContain('{topic}');
@@ -22,13 +22,13 @@ describe('compileRecipeToAgents', () => {
     }
   });
 
-  it('把同角色依赖编译成 role-index', () => {
+  it('把同角色的并行证据成员编译成独立 role-index', () => {
     const agents = compileRecipeToAgents(getRecipe('deep-research'), '智能体协作');
 
     expect(agents).toHaveLength(2);
     expect(agents.map((agent) => agent.role)).toEqual(['溯真', '溯真']);
     expect(agents[0].dependsOn).toBeUndefined();
-    expect(agents[1].dependsOn).toEqual(['溯真-0']);
+    expect(agents[1].dependsOn).toBeUndefined();
   });
 
   it('替换 taskTemplate 中的全部主题占位', () => {

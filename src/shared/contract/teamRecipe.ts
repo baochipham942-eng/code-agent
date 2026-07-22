@@ -11,12 +11,20 @@ export interface TeamRecipeMember {
   dependsOn?: string[];
 }
 
+export interface TeamRecipeLead {
+  /** 主理人角色（可解析的持久化角色 id） */
+  roleId: string;
+  /** 含 {topic} 的主理人 SOP 简报 */
+  briefTemplate: string;
+}
+
 export interface TeamRecipe {
   id: string;
   name: string;
   description: string;
   category: SkillCategory;
   members: TeamRecipeMember[];
+  lead?: TeamRecipeLead;
   tags?: string[];
 }
 
@@ -42,9 +50,22 @@ export function validateTeamRecipe(
   const errors: TeamRecipeValidationError[] = [];
   const err = (reason: string) => errors.push({ recipeId: recipe.id, reason });
 
+  if (recipe.lead) {
+    if (!recipe.lead.roleId || !known.has(recipe.lead.roleId)) {
+      err(`lead roleId 不可解析：${recipe.lead.roleId || '(空)'}`);
+    }
+    if (!recipe.lead.briefTemplate.trim()) {
+      err('lead 的 briefTemplate 为空');
+    }
+  }
+
   if (!recipe.members.length) err('members 不能为空');
 
   const keys = recipe.members.map(teamRecipeMemberKey);
+  if (recipe.lead && keys.includes(recipe.lead.roleId)) {
+    err(`lead roleId 与 member 键重复：${recipe.lead.roleId}`);
+  }
+
   const duplicateKeys = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicateKeys.length) {
     err(`member 键重复：${[...new Set(duplicateKeys)].join(', ')}（同角色多实例请给不同 id）`);

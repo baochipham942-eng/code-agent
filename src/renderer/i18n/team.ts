@@ -6,6 +6,7 @@
 export const teamZh = {
   team: {
     sectionTitle: '组队',
+    lead: '主理人',
     useRecipe: '用这个配方',
     topicPlaceholder: '这次让团队做什么主题？',
     topicRequired: '请先填主题',
@@ -16,6 +17,7 @@ export const teamZh = {
 export const teamEn: typeof teamZh = {
   team: {
     sectionTitle: 'Team up',
+    lead: 'Lead',
     useRecipe: 'Use this recipe',
     topicPlaceholder: 'What topic for this team?',
     topicRequired: 'Enter a topic first',

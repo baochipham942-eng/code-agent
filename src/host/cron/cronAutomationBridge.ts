@@ -38,7 +38,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * 源会话 id；面板/API 创建的任务没有源会话，返回 undefined。
- * 桥接层对 undefined 一律按空串记录（automation 生命周期与待过目照常，
+ * 桥接层对 undefined 一律按 null 记录（automation 生命周期与待过目照常，
  * 仅跳过会话回流消息——writeAutomationMessage 对空 sourceSessionId 有守卫）。
  */
 export function readCronSourceSessionId(
@@ -115,7 +115,7 @@ export async function recordCronAutomationCreated(
   definition: CronJobDefinition,
   resolveRuntime: ResolveRuntimeDefinition,
 ): Promise<void> {
-  const sourceSessionId = readCronSourceSessionId(definition) ?? '';
+  const sourceSessionId = readCronSourceSessionId(definition) ?? null;
   try {
     const withRuntimeState = resolveRuntime(definition);
     await getSessionAutomationService().recordCreated({
@@ -138,7 +138,7 @@ export function syncCronAutomationFromJob(
   definition: CronJobDefinition,
   resolveRuntime: ResolveRuntimeDefinition,
 ): void {
-  const sourceSessionId = readCronSourceSessionId(definition) ?? '';
+  const sourceSessionId = readCronSourceSessionId(definition) ?? null;
   try {
     const withRuntimeState = resolveRuntime(definition);
     getSessionAutomationService().upsert({
@@ -158,7 +158,7 @@ export function syncCronAutomationFromJob(
 }
 
 export async function recordCronAutomationArchived(definition: CronJobDefinition): Promise<void> {
-  const sourceSessionId = readCronSourceSessionId(definition) ?? '';
+  const sourceSessionId = readCronSourceSessionId(definition) ?? null;
   try {
     const service = getSessionAutomationService();
     if (!service.getBySourceRef(getCronAutomationType(definition), definition.id)) {
@@ -191,7 +191,7 @@ export async function recordCronAutomationExecution(
   execution: CronJobExecution,
   resolveRuntime: ResolveRuntimeDefinition,
 ): Promise<void> {
-  const sourceSessionId = readCronSourceSessionId(definition) ?? '';
+  const sourceSessionId = readCronSourceSessionId(definition) ?? null;
   try {
     const service = getSessionAutomationService();
     const withRuntimeState = resolveRuntime(definition);

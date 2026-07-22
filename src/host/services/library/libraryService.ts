@@ -123,6 +123,46 @@ export class LibraryService {
     }, now);
   }
 
+  /**
+   * 归档一段生成文本（agent 产出 / 团队聚合稿）到资料库：写入 <libraryDir>/<title>-<hash>.md
+   * 并登记 artifact 条目。contentHash=sha256(text) 去重——同项目同内容重复归档幂等
+   * （刻意用 contentHash 而非 path 去重，绕开 findByPath 被 guardSensitiveText 重写路径导致的口径不一致）。
+   */
+  archiveText(args: {
+    projectId?: string | null;
+    title: string;
+    text: string;
+    tags?: string[];
+    summary?: string;
+    sourceSessionId?: string;
+    sourceRoleId?: string;
+  }, now: number = Date.now()): LibraryItem {
+    const projectId = args.projectId === 'global' ? null : (args.projectId ?? null);
+    const text = args.text;
+    const contentHash = crypto.createHash('sha256').update(text).digest('hex');
+    // 已存在同内容条目 → addItem 内部按 contentHash 直接返回，不重复落盘
+    const existing = this.repo.findByContentHash(projectId, contentHash);
+    if (existing) return existing;
+
+    const dir = this.libraryDir(projectId);
+    fs.mkdirSync(dir, { recursive: true });
+    const safeName = (args.title.replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 80)) || 'output';
+    const target = path.join(dir, `${safeName}-${contentHash.slice(0, 8)}.md`);
+    if (!fs.existsSync(target)) fs.writeFileSync(target, text);
+
+    return this.addItem({
+      projectId,
+      title: args.title,
+      kind: 'artifact',
+      pathOrUri: target,
+      tags: args.tags,
+      summary: args.summary,
+      sourceSessionId: args.sourceSessionId,
+      sourceRoleId: args.sourceRoleId,
+      contentHash,
+    }, now);
+  }
+
   list(options?: LibraryListOptions): LibraryItem[] {
     return this.repo.listItems(options);
   }

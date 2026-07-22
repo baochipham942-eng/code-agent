@@ -7,11 +7,13 @@ import type { LibraryItem } from '../../../src/shared/contract/library';
 const listLibraryItems = vi.fn<() => Promise<LibraryItem[]>>();
 const deleteLibraryItem = vi.fn().mockResolvedValue(undefined);
 const importLibraryFiles = vi.fn().mockResolvedValue({ items: [], errors: [] });
+const updateLibraryItem = vi.fn();
 
 vi.mock('../../../src/renderer/services/libraryClient', () => ({
   listLibraryItems: (...args: unknown[]) => listLibraryItems(...(args as [])),
   deleteLibraryItem: (...args: unknown[]) => deleteLibraryItem(...(args as [])),
   importLibraryFiles: (...args: unknown[]) => importLibraryFiles(...(args as [])),
+  updateLibraryItem: (...args: unknown[]) => updateLibraryItem(...(args as [])),
 }));
 
 vi.mock('../../../src/renderer/services/projectClient', () => ({
@@ -85,6 +87,41 @@ describe('LibraryPanel', () => {
     await waitFor(() => {
       expect(deleteLibraryItem).toHaveBeenCalledWith('lib_1');
     });
+  });
+
+  it('编辑标题和标签后保存，列表原地显示返回的新条目', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const original = makeItem();
+    const updated = makeItem({ title: '更新后的 Brief', tags: ['需求', '定稿'], summary: '新的摘要' });
+    listLibraryItems.mockResolvedValue([original]);
+    updateLibraryItem.mockResolvedValue(updated);
+    render(<LibraryPanel />);
+
+    fireEvent.click(await screen.findByTestId('library-edit-lib_1'));
+    fireEvent.change(screen.getByTestId('library-edit-title'), { target: { value: '更新后的 Brief' } });
+    fireEvent.change(screen.getByLabelText('标签'), { target: { value: '需求， 定稿,  ' } });
+    fireEvent.click(screen.getByTestId('library-edit-save'));
+
+    await waitFor(() => {
+      expect(updateLibraryItem).toHaveBeenCalledWith('lib_1', {
+        title: '更新后的 Brief',
+        tags: ['需求', '定稿'],
+        summary: '',
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByText('更新后的 Brief')).toBeTruthy();
+    });
+  });
+
+  it('标题清空时保存按钮禁用', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    listLibraryItems.mockResolvedValue([makeItem()]);
+    render(<LibraryPanel />);
+
+    fireEvent.click(await screen.findByTestId('library-edit-lib_1'));
+    fireEvent.change(screen.getByTestId('library-edit-title'), { target: { value: '' } });
+    expect(screen.getByTestId('library-edit-save')).toHaveProperty('disabled', true);
   });
 
   it('关闭按钮复位 appStore 面板开关', async () => {

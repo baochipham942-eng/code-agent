@@ -20,6 +20,13 @@ export interface LibraryImportResult {
   errors: Array<{ path: string; message: string }>;
 }
 
+/** 资料库面板允许修改的条目字段；移动项目不在此客户端出口内。 */
+export interface LibraryItemUpdatePatch {
+  title: string;
+  tags: string[];
+  summary: string;
+}
+
 export async function listLibraryItems(options?: LibraryListOptions): Promise<LibraryItem[]> {
   return ipcService.invokeDomain<LibraryItem[]>(IPC_DOMAINS.LIBRARY, 'list', options ?? {});
 }
@@ -39,6 +46,10 @@ export async function importLibraryFiles(args: {
 
 export async function deleteLibraryItem(itemId: string): Promise<void> {
   await ipcService.invokeDomain(IPC_DOMAINS.LIBRARY, 'delete', { itemId });
+}
+
+export async function updateLibraryItem(itemId: string, patch: LibraryItemUpdatePatch): Promise<LibraryItem> {
+  return ipcService.invokeDomain<LibraryItem>(IPC_DOMAINS.LIBRARY, 'update', { itemId, ...patch });
 }
 
 export async function getSessionPin(sessionId: string): Promise<SessionContextPin> {

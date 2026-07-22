@@ -2,6 +2,7 @@ import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
 import { SERVICE_TIMEOUTS } from '@shared/constants/timeouts';
 import { validateTeamRecipe, type TeamRecipe } from '@shared/contract/teamRecipe';
 import type { MultiagentExecutionResult } from '../../agent/multiagentExecutionTypes';
+import { listAllAgents } from '../../agent/agentRegistry';
 import { launchAgentTeam } from '../../agent/multiagentTools/spawnAgent';
 import type { SubagentExecutionContext } from '../../agent/subagentExecutorTypes';
 import { getToolResolver } from '../../tools/dispatch/toolResolver';
@@ -276,7 +277,10 @@ export async function launchTeamRecipe(args: TeamRecipeLaunchInput): Promise<Lau
     ?? TEAM_RECIPES.find((candidate) => candidate.id === args.recipeId);
   if (!recipe) return { ok: false, error: '配方不存在' };
 
-  const knownRoleIds = await getTeamRecipeService().knownRoleIds();
+  // 启动期沿用「全部可解析 agent」这一既有口径，不收窄为持久化角色：
+  // 收窄会让"存的时候合法、跑的时候被拒"，且本片的边界是只改查表顺序。
+  // 更严的持久化角色口径只用于自建/编辑期（teamRecipeService 的 create/update）。
+  const knownRoleIds = new Set(listAllAgents().map((agent) => agent.id));
   const errors = validateTeamRecipe(recipe, knownRoleIds);
   if (errors.length > 0) return { ok: false, error: errors.map((error) => error.reason).join('; ') };
 

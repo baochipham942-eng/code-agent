@@ -200,6 +200,8 @@ export class SubagentExecutor {
       effectiveSignal,
       cleanupTimer,
       markProgress,
+      markRequestStart,
+      markRequestEnd,
       stopIdleWatchdog,
     } = createSubagentCancellationLifecycle({
       agentName: config.name,
@@ -640,15 +642,19 @@ export class SubagentExecutor {
         // withTransientRetry 重试（重发常能过），而非把整个子代理预算耗在一次挂死上——旧 AI SDK 路径无
         // per-request 超时，一次 stall = 整个子代理跑满 90s 硬超时报废（实测 zhipu glm-4-flash 偶发）。
         const subagentRequestTimeoutMs = Math.floor(timeout / 2);
-        const response = useAiSdk
-          ? await inferenceViaAiSdk(inferenceMessages as unknown as Parameters<typeof inferenceViaAiSdk>[0], toolDefinitions, context.modelConfig, undefined, effectiveSignal, { requestTimeoutMs: subagentRequestTimeoutMs })
-          : await this.modelRouter.inference(
+        // 请求在途期间不判 idle：子代理非流式，一次大上下文调用可以远超 idle 阈值
+        // （实测 GLM-5 >120s），在途请求另有 per-request 超时 + 总预算兜底。
+        markRequestStart();
+        const response = await (useAiSdk
+          ? inferenceViaAiSdk(inferenceMessages as unknown as Parameters<typeof inferenceViaAiSdk>[0], toolDefinitions, context.modelConfig, undefined, effectiveSignal, { requestTimeoutMs: subagentRequestTimeoutMs })
+          : this.modelRouter.inference(
               providerMessages,
               toolDefinitions,
               context.modelConfig,
               () => {}, // No streaming for subagents
               effectiveSignal,
-            );
+            )
+        ).finally(markRequestEnd);
         const inferenceDuration = Date.now() - inferenceStartedAt;
         markProgress();
 

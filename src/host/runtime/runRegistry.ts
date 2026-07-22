@@ -86,6 +86,15 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     configureAutoAgentDurableRuntime(new AutoAgentDurableRuntime(kernel, this));
   }
 
+  /** Durable kernel 是启动后异步配置的（冷启实测约 13s）；硬依赖 durable 的入口先等它就绪再决定成败。 */
+  async waitForDurableKernel(timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (!this.kernel && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return this.kernel !== null;
+  }
+
   start(input: CreateRunContextInput): RunHandle {
     const context = createRunContext(input);
     const handle = createRunHandle(context);

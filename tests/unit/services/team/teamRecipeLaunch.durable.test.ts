@@ -9,6 +9,9 @@ const sessionManagerMock = vi.hoisted(() => ({
   addMessageToSession: vi.fn().mockResolvedValue(undefined),
 }));
 const executorMock = vi.hoisted(() => ({ execute: vi.fn() }));
+const timeoutsMock = vi.hoisted(() => ({
+  SERVICE_TIMEOUTS: { BOOTSTRAP: 500 },
+}));
 const recipesMock = vi.hoisted(() => ([{
   id: 'durable-only',
   name: '确定性组队',
@@ -19,6 +22,10 @@ const recipesMock = vi.hoisted(() => ([{
 
 vi.mock('../../../../src/shared/constants/teamRecipeCatalog', () => ({
   TEAM_RECIPES: recipesMock,
+}));
+vi.mock('../../../../src/shared/constants/timeouts', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../../src/shared/constants/timeouts')>(),
+  SERVICE_TIMEOUTS: timeoutsMock.SERVICE_TIMEOUTS,
 }));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
@@ -122,5 +129,35 @@ describe('launchTeamRecipe durable parent', () => {
       expect((await repository.get(teamRunId))?.status).toBe('completed');
       expect((await repository.get(parentRunId))?.status).toBe('completed');
     });
+  });
+
+  it('冷启窗口内迟配置 kernel 时等待后仍能起团', async () => {
+    resetApplicationRunRegistryForTests();
+    const registry = getApplicationRunRegistry();
+    setTimeout(() => {
+      registry.configureDurableKernel(new DurableRunKernel({
+        stores: repository,
+        ownerId: 'late-host',
+        processInstanceId: 'late-process',
+        leaseDurationMs: 10_000,
+      }));
+    }, 300);
+
+    await expect(launchTeamRecipe({
+      sessionId: 'session-team-recipe',
+      recipeId: 'durable-only',
+      topic: '会员增长',
+    })).resolves.toMatchObject({ ok: true, runId: expect.stringMatching(/^team_recipe_/) });
+  });
+
+  it('有界等待后 kernel 仍未配置时返回可见错误', async () => {
+    resetApplicationRunRegistryForTests();
+    getApplicationRunRegistry();
+
+    await expect(launchTeamRecipe({
+      sessionId: 'session-team-recipe',
+      recipeId: 'durable-only',
+      topic: '会员增长',
+    })).resolves.toEqual({ ok: false, error: '组队运行时正在启动，请稍后重试' });
   });
 });

@@ -33,6 +33,9 @@ const WORKFLOW_ORCHESTRATE_INTENT_RE =
 const MCP_MANAGEMENT_INTENT_RE =
   /\bMCPUnified\b|\bmcp[_\s-]*(?:add|server|config|configure|setup|connect|status|tool|resource)\b|\badd\s+(?:an?\s+)?mcp\b|\bconfigure\s+(?:an?\s+)?mcp\b|配置\s*mcp|添加\s*mcp|新增\s*mcp|连接\s*mcp|管理\s*mcp|mcp\s*(?:配置|服务器|工具|资源|状态)/i;
 
+// 简报/用户直接点名 spawn_agent（组队主理人首轮的固定脚手架就是这样）——不预载会白花一个 ToolSearch 来回。
+const SPAWN_AGENT_INTENT_RE = /\bspawn_agent\b/i;
+
 function getLatestUserText(runtime: RuntimeForDeferredToolPreload): string {
   for (let index = runtime.messages.length - 1; index >= 0; index -= 1) {
     const message = runtime.messages[index];
@@ -87,6 +90,10 @@ export function getDeferredToolsToPreloadForTurn(
 
   if (MCP_MANAGEMENT_INTENT_RE.test(userText)) {
     tools.add('MCPUnified');
+  }
+
+  if (SPAWN_AGENT_INTENT_RE.test(userText)) {
+    tools.add('spawn_agent');
   }
 
   // Active skill invocation：把本轮命中的 skill 的 allowedTools 里的非 core 工具预加载，

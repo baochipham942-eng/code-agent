@@ -246,6 +246,18 @@ describe('deferred tool preload', () => {
     expect(getToolSearchService().isToolLoaded('MCPUnified')).toBe(true);
   });
 
+  it('用户字面点名 spawn_agent 时预载该工具', () => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: '第一步调用 spawn_agent 起团队', timestamp: 1 }],
+    }))).toContain('spawn_agent');
+  });
+
+  it('普通请求不预载 spawn_agent', () => {
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      messages: [{ id: 'm1', role: 'user', content: '帮我改下这个函数', timestamp: 1 }],
+    }))).not.toContain('spawn_agent');
+  });
+
   // role-edit-flow 根因 #2 回归护栏：active skill 的 allowedTools 里的非 core 工具
   // （如 propose_role）必须本轮预加载，否则 deferred-loading 下模型看不见它，会退用 Edit 绕过流程。
   it('preloads a skill boundary\'s non-core allowedTools (propose_role)，core 工具被过滤', () => {

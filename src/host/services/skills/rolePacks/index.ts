@@ -21,18 +21,23 @@ export const ROLE_PACK_SKILLS: ParsedSkill[] = [
 /** 产物分类（并入 builtinSkillsData 的 BUILTIN_SKILL_CATEGORY 回填） */
 export const ROLE_PACK_SKILL_CATEGORY: Record<string, SkillCategory> = {
   // 牧之·产品
+  brainstorming: 'development',
   'requirement-elicitation': 'product',
   'prd-authoring': 'product',
   'review-prep': 'product',
+  'user-research-synthesis': 'research',
   // 溯真·调研
   'competitor-teardown': 'research',
   'multi-source-verification': 'research',
   'industry-scan': 'research',
   // 青禾·内容
+  copywriting: 'content-marketing',
   'topic-to-draft': 'content-marketing',
   'xhs-post-crafting': 'content-marketing',
   'deck-outline': 'content-marketing',
+  'notes-humanizer': 'content-marketing',
   // 明镜·复盘
+  'internal-comms': 'docs-office',
   'weekly-report-synthesis': 'automation',
   'project-retro': 'automation',
   'monthly-review': 'automation',

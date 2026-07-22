@@ -73,6 +73,16 @@ CREATE TABLE messages (
 
 当前边界：unit 级恢复链已经覆盖 todos、session_tasks、context interventions、runtime state、pending approvals、structured replay；完整 app restart / reload smoke 仍按对应计划文档里的延后风险处理。
 
+### 2026-07-21~22 专家、资料库与会话自动化
+
+| 表 / 字段 | 用途 | 外键与约束 |
+|-----------|------|------------|
+| `library_items` | 项目资料库条目：`project_id`、标题、`kind`、`path_or_uri`、tags、摘要、内容哈希及来源会话/角色；用于上传、产物归档、采集和外部引用 | `id` 为主键；`project_id` 可空表示全局库；当前 schema 未声明外键；同项目按内容哈希或规范化路径去重由 `LibraryRepository` 实现 |
+| `session_context_pins` | 会话选中的资料条目：`session_id` 一行对应 `item_ids` JSON 列表与 `added_at` | `session_id` 为主键；当前 schema 未声明外键；注入时会过滤已不存在的条目 |
+| `session_automations` | cron、heartbeat、loop、角色唤醒等自动化的类型、状态、标题、调度时间、来源引用、结果会话和配置 | `source_session_id` → `sessions(id)` 为 `ON DELETE CASCADE`；`result_session_id` → `sessions(id)` 为 `ON DELETE SET NULL`；`source_session_id` 允许 `NULL`，因为面板/API 创建没有源会话。历史空串会撞外键，专项迁移将其转换为 `NULL` |
+
+`session_automations` 的索引分别覆盖 `(source_session_id, status, next_run_at)` 与 `(type, source_ref_id)`；三表 schema 在 `src/host/services/core/database/schema.ts`，空源迁移在 `migrations/sessionAutomations.ts`。
+
 ### 2026-06-17 append-only event ledger durable state
 
 这轮把权限、工具执行和 Swarm 聚合从“只看当前投影”推进到 append-only 事件账本。SQLite 仍是本地事实层，表级边界如下：

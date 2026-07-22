@@ -11,6 +11,20 @@
 > - `src/host/agent/taskDag.ts` — DAG 依赖调度
 > - `src/host/agent/multiagentTools/` — spawnAgent / sendInput / waitAgent 等工具
 
+## 2026-07-22 组队配方与主理人编排
+
+配方合同 `TeamRecipe` 由可选 `lead` 和 `members` 构成。lead 有角色 ID 与含 `{topic}` 的简报模板；member 有角色 ID、任务模板、可选本地 `id` 和 `dependsOn`。`validateTeamRecipe()` 在启动前校验角色可解析、member 非空、键唯一、依赖存在且无环；目录 `TEAM_RECIPES` 是当前内置配方来源。
+
+`launchTeamRecipe()` 的启动顺序是：验证配方和会话 → 确认 durable registry → 有界等待 `waitForDurableKernel()` → 有 lead 时发起主理人路径；没有 lead 时走确定性 coordinator。主理人路径在当前会话的正常轮中以 `agentOverrideId` + `turnSystemContext` 绑定 lead 角色，由 `orchestrator.sendMessage()` 发送 `buildLeadBrief()`；lead 用 `spawn_agent(parallel=true)` 起成员。无 lead、拿不到 orchestrator、角色块不可解析、lead 轮抛错、或铁律验真未发现成员运行，都会 `console.warn` 并降级到 `parallelAgentCoordinator` 路径。
+
+审批仍由 `SwarmLaunchApprovalGate` 把有 renderer 时的写权限成员挡在显式确认前；120 秒未决自动拒绝（headless 按 gate 的自动批准规则处理）。lead 返回后，服务以 `SpawnGuard` 与 `swarm_runs` 运行记录的并集确认成员曾运行。成员为零时丢弃 lead 代写稿并降级；成员已运行但无定稿、或运行查询出错时，只告警不重跑，避免重复支付团队成本。
+
+确定性路径为 session 建立 durable 父 run，再启动 `agent_team` child；一个 session 只允许一个活跃根 run，二者可共存。kernel 在应用启动后异步配置，冷启不直接抛错，而由 `RunRegistry.waitForDurableKernel()` 在 bootstrap 时限内等待。
+
+deferred tool 模式下，`contextAssembly/deferredToolPreload.ts` 对最新用户文本字面命中 `spawn_agent` 时预载该工具；这是主理人固定首轮简报避免额外 ToolSearch 往返的前提，不扩展为模糊意图猜测。
+
+锚点：`src/shared/contract/teamRecipe.ts`、`src/shared/constants/teamRecipeCatalog.ts`、`src/host/services/team/teamRecipeLaunchService.ts`、`src/host/agent/swarmLaunchApproval.ts`、`src/host/runtime/runRegistry.ts`、`src/host/agent/runtime/contextAssembly/deferredToolPreload.ts`。决策背景见 [ADR-047](./decisions/ADR-047-team-lead-orchestrator.md)。
+
 ## 2026-07-10 Agent Team 运行作用域
 
 Agent Team 的身份从“进程里最近一次 swarm”升级为 `SwarmRunScope(sessionId, runId, treeId)`。agent id、任务、inbox、plan/launch approval、trace、取消、结果聚合、IPC 和 renderer event 都必须携带并校验同一 scope。

@@ -16,6 +16,7 @@ import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngin
 import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
 import { stripAppshotBlocks } from '../../../shared/contract/appshot';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
+import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
 
@@ -654,6 +655,28 @@ export class SessionManager implements Disposable {
     }
 
     db.updateSession(sessionId, updates);
+
+    // 工作目录后补时，仅为未归桶/待整理会话重算项目归属；明确归属不覆盖。
+    if (typeof updates.workingDirectory === 'string' && updates.workingDirectory.trim()) {
+      try {
+        const currentProjectId = db.getSession(sessionId)?.projectId ?? null;
+        if (currentProjectId === null || currentProjectId === UNSORTED_PROJECT_ID) {
+          const { getProjectService } = await import('../project/projectService');
+          const project = await getProjectService().ensureProjectForWorkspace(
+            updates.workingDirectory.trim(),
+            updates.updatedAt ?? Date.now(),
+          );
+          if (project.id !== currentProjectId) {
+            db.getProjectRepo().assignSessionProject(sessionId, project.id);
+            const cached = this.sessionCache.get(sessionId);
+            if (cached) cached.projectId = project.id;
+            this.notifySessionListUpdated();
+          }
+        }
+      } catch (err) {
+        logger.warn('[SessionManager] P0-2 项目归桶重算失败（不阻塞）:', err instanceof Error ? err.message : String(err));
+      }
+    }
 
     // 更新缓存
     if (this.sessionCache.has(sessionId)) {

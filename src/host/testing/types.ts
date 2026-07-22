@@ -396,6 +396,8 @@ export interface TestResult {
   telemetryCompleteness?: TelemetryCompleteness;
   /** Hard gate used by real-agent-run eval cases */
   telemetryGate?: RealAgentRunTelemetryGate;
+  /** agent 已启动，case 被 TestRunner 的超时机制终止。 */
+  killedByTimeout?: boolean;
 }
 
 /**

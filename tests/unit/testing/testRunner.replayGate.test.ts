@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { TestRunner, type AgentInterface } from '../../../src/host/testing/testRunner';
 import type { StructuredReplay } from '../../../src/shared/contract/evaluation';
+import { TEST_TIMEOUTS } from '../../../src/shared/constants/timeouts';
 
 const telemetryMocks = vi.hoisted(() => ({
   getStructuredReplay: vi.fn(),
@@ -220,6 +221,89 @@ describe('TestRunner real-agent-run replay gate', () => {
       passed: true,
       failures: [],
     });
+  });
+
+  it('persists partial telemetry when the runner kills a timed-out case', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-timeout-telemetry-'));
+    const casesDir = path.join(root, 'cases');
+    await mkdir(casesDir, { recursive: true });
+    await writeFile(path.join(casesDir, 'suite.yaml'), [
+      'name: timeout-telemetry',
+      'cases:',
+      '  - id: telemetry-timeout',
+      '    type: task',
+      '    description: preserves telemetry after timeout kill',
+      '    prompt: keep working',
+      `    timeout: ${TEST_TIMEOUTS.DEFAULT}`,
+      '    expect: {}',
+      '',
+    ].join('\n'));
+    const replay = createReplay('timeout-session');
+    const telemetryCompleteness = replay.summary.telemetryCompleteness;
+    if (!telemetryCompleteness) throw new Error('timeout test replay requires telemetry completeness');
+    replay.summary.telemetryCompleteness = {
+      ...telemetryCompleteness,
+      turnCount: 16,
+      toolCallCount: 10,
+      modelCallCount: 16,
+    };
+    telemetryMocks.getStructuredReplay.mockResolvedValue(replay);
+    const agent: AgentInterface = {
+      sendMessage: async () => {
+        throw new Error(`Test timeout after ${TEST_TIMEOUTS.DEFAULT}ms`);
+      },
+      reset: vi.fn(async () => undefined),
+      getAgentInfo: () => ({ name: 'timeout-agent', model: 'mock-model', provider: 'mock' }),
+      getSessionId: () => 'timeout-session',
+      finalizeSession: vi.fn(async () => undefined),
+    };
+    const runner = new TestRunner({
+      testCaseDir: casesDir,
+      resultsDir: path.join(root, 'results'),
+      workingDirectory: root,
+      defaultTimeout: TEST_TIMEOUTS.DEFAULT,
+      stopOnFailure: false,
+      verbose: false,
+      parallel: false,
+      maxParallel: 1,
+      enableEvalCritic: false,
+    }, agent);
+
+    try {
+      const report = await runner.runAll();
+      const result = report.results[0];
+      const persistedCases = databaseMocks.insertExperimentCases.mock.calls[0]?.[1];
+      const dataJson = JSON.parse(persistedCases[0].data_json);
+
+      expect(result.killedByTimeout).toBe(true);
+      expect(result.failureReason).toContain('执行至第 16 轮');
+      expect(result.failureReason).toContain('10 次工具调用');
+      expect(agent.finalizeSession).toHaveBeenCalledTimes(1);
+      expect(dataJson).toMatchObject({
+        killedByTimeout: true,
+        telemetryCompleteness: {
+          turnCount: 16,
+          toolCallCount: 10,
+          modelCallCount: 16,
+        },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not mark normally completed cases as killed by timeout', async () => {
+    telemetryMocks.getStructuredReplay.mockResolvedValue(createReplay('session-gate'));
+    const result = await createRunner().runSingleTest({
+      id: 'normal-complete',
+      type: 'task',
+      description: 'normal completion remains unchanged',
+      prompt: 'read a file',
+      expect: { response_contains: ['ok'] },
+    });
+
+    expect(result.status).toBe('passed');
+    expect(result.killedByTimeout).toBeUndefined();
   });
 
   it('fails real-agent-run cases when replay only has transcript fallback evidence', async () => {

@@ -11,6 +11,8 @@ import {
 } from '../../app/applicationRunRegistry';
 import { getSessionManager } from '../infra/sessionManager';
 import { getLibraryService } from '../library/libraryService';
+import type { Message } from '@shared/contract/message';
+import { generateMessageId } from '../../../shared/utils/id';
 
 export interface LaunchTeamRecipeResult {
   ok: boolean;
@@ -90,20 +92,34 @@ export async function launchTeamRecipe(args: {
     return { ok: false, error: '组队功能需要 Durable 运行时' };
   }
 
+  // 落一条 user 请求消息：既是会话可见的组队起点（否则团队会话是空欢迎页），
+  // 也是 Native Durable 工具 checkpoint 的 sourceMessageId 锚点
+  // （prepareNativeToolCheckpoint 取会话最后一条 user 消息，缺则每个工具调用都抛）。
+  const requestMessage: Message = {
+    id: generateMessageId(),
+    role: 'user',
+    content: `【组队 · ${recipe.name}】${args.topic}`,
+    timestamp: Date.now(),
+  };
+  await getSessionManager().addMessageToSession(args.sessionId, requestMessage);
+
   const agents = compileRecipeToAgents(recipe, args.topic);
+  // 纯对话会话可能没有 workingDirectory；parent Durable Run 的 workspace 断言非空，
+  // 与 cwd 一样回退到 process.cwd()（对话型配方 agent 不落文件，中性 cwd 即可）。
+  const workspace = session.workingDirectory ?? process.cwd();
   const requestedRunId = `team_recipe_${crypto.randomUUID()}`;
   const parentRun = await getApplicationRunRegistry().startDurable({
     sessionId: args.sessionId,
     runId: requestedRunId,
-    workspace: session.workingDirectory ?? '',
-    cwd: session.workingDirectory ?? process.cwd(),
+    workspace,
+    cwd: workspace,
   });
   const parentRunId = parentRun.context.runId;
   const context: SubagentExecutionContext = {
     runId: parentRunId,
     sessionId: args.sessionId,
-    workspace: session.workingDirectory,
-    cwd: session.workingDirectory ?? process.cwd(),
+    workspace,
+    cwd: workspace,
     modelConfig: session.modelConfig,
     resolver: getToolResolver(),
     permission: { request: async () => true },

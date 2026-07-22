@@ -251,17 +251,17 @@ function secondaryActionsForWorkspaceItem(
 ): DeliverableSecondaryAction[] {
   const actions: DeliverableSecondaryAction[] = [];
   if (item.file?.path) {
-    actions.push({ kind: 'reveal-file', label: 'Reveal', path: item.file.path });
-    actions.push({ kind: 'copy-reference', label: 'Copy path', value: item.file.path });
+    actions.push({ kind: 'reveal-file', label: 'reveal-file', path: item.file.path });
+    actions.push({ kind: 'copy-reference', label: 'copy-reference', value: item.file.path });
     actions.push({
       kind: 'archive-to-library',
-      label: 'Archive to library',
+      label: 'archive-to-library',
       path: item.file.path,
       title: item.file.name || basename(item.file.path),
     });
     actions.push({
       kind: 'export-bundle',
-      label: 'Export bundle',
+      label: 'export-bundle',
       bundleName: `${basename(item.file.name || item.title || 'deliverable')}-bundle.zip`,
       files: [{
         path: item.file.path,
@@ -282,7 +282,7 @@ function secondaryActionsForWorkspaceItem(
       },
     });
   } else if (openTarget.kind === 'workspace-preview') {
-    actions.push({ kind: 'copy-reference', label: 'Copy ref', value: openTarget.itemId });
+    actions.push({ kind: 'copy-reference', label: 'copy-reference', value: openTarget.itemId });
   }
   return actions;
 }
@@ -557,17 +557,17 @@ function openTargetForTurnArtifact(item: TurnArtifactOwnershipItem): Deliverable
 function secondaryActionsForTurnArtifact(item: TurnArtifactOwnershipItem): DeliverableSecondaryAction[] {
   const actions: DeliverableSecondaryAction[] = [];
   if (item.path) {
-    actions.push({ kind: 'reveal-file', label: 'Reveal', path: item.path });
-    actions.push({ kind: 'copy-reference', label: 'Copy path', value: item.path });
+    actions.push({ kind: 'reveal-file', label: 'reveal-file', path: item.path });
+    actions.push({ kind: 'copy-reference', label: 'copy-reference', value: item.path });
     actions.push({
       kind: 'archive-to-library',
-      label: 'Archive to library',
+      label: 'archive-to-library',
       path: item.path,
       title: item.label || basename(item.path),
     });
     actions.push({
       kind: 'export-bundle',
-      label: 'Export bundle',
+      label: 'export-bundle',
       bundleName: `${basename(item.label || item.path)}-bundle.zip`,
       files: [{
         path: item.path,
@@ -583,7 +583,7 @@ function secondaryActionsForTurnArtifact(item: TurnArtifactOwnershipItem): Deliv
       },
     });
   } else if (item.url) {
-    actions.push({ kind: 'copy-reference', label: 'Copy URL', value: item.url });
+    actions.push({ kind: 'copy-reference', label: 'copy-reference', value: item.url });
   }
   return actions;
 }

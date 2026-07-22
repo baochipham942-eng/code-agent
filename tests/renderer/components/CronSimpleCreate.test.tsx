@@ -63,13 +63,13 @@ describe('compileSimpleSchedule', () => {
 });
 
 describe('buildSimpleDraft', () => {
-  it('组装 agent action，空名称回退目标前 20 字', () => {
+  it('组装 agent action，空名称最多保留目标前 48 字', () => {
     const goal = '每天读一遍我关注的竞品动态，整理成一份简报发给我过目';
     const draft = buildSimpleDraft(goal, '', { scheduleType: 'cron', cronExpression: '30 8 * * *' });
     expect(draft.actionType).toBe('agent');
     expect(draft.agentType).toBe('default');
     expect(draft.agentPrompt).toBe(goal);
-    expect(draft.name).toBe(goal.slice(0, 20));
+    expect(draft.name).toBe(goal.slice(0, 48));
     // 全链路：draft 能通过 buildCronJobInput 校验并产出 agent action
     const input = buildCronJobInput(draft);
     expect(input.action).toEqual({ type: 'agent', agentType: 'default', prompt: goal, context: {} });

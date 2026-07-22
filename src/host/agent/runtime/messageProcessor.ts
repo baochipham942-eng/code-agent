@@ -786,6 +786,16 @@ export class MessageProcessor {
 
     toolCalls.forEach((tc: ToolCall, i: number) => {
       logger.debug(`   Tool ${i + 1}: ${tc.name}, args keys: ${Object.keys(tc.arguments || {}).join(', ')}`);
+      // 空参数工具调用是模型/流式侧偶发（实测 GLM-5 组队首轮），下一轮模型会自纠但白费一个来回。
+      // 用 WARN 记下 provider/model，让「偶发」变成可统计的频率，够高再单独立项查流式装配。
+      if (Object.keys(tc.arguments || {}).length === 0) {
+        logger.warn('Tool call arrived with empty arguments', {
+          tool: tc.name,
+          toolCallId: tc.id,
+          provider: this.ctx.modelConfig.provider,
+          model: this.ctx.modelConfig.model,
+        });
+      }
       logCollector.tool('INFO', `Tool call: ${tc.name}`, {
         toolId: tc.id,
         phase: classifyExecutionPhase(tc.name),

@@ -392,6 +392,11 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [workspaceGroupedSessions],
   );
   const [projectMetaById, setProjectMetaById] = useState<Record<string, SidebarProjectMeta>>({});
+  // visibleProjectIds 已 .sort()，join 成内容稳定 key：活动轮里每条 SSE 事件都会重建
+  // workspaceGroupedSessions → visibleProjectIds 变成新数组引用（内容不变）。若直接以数组引用做
+  // effect 依赖，会随每个 token 重拉 project detail/artifacts 打爆 socket 池（ERR_INSUFFICIENT_RESOURCES）。
+  // 与下方 visibleSessionIdsKey / trajectoryQualityCandidateKey 同款处理。
+  const visibleProjectIdsKey = visibleProjectIds.join('\n');
   const visibleSessionIds = useMemo(
     () => workspaceGroupedSessions.flatMap((group) => group.sessions.map((session) => session.id)),
     [workspaceGroupedSessions],
@@ -474,7 +479,9 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     return () => {
       cancelled = true;
     };
-  }, [visibleProjectIds]);
+    // 依赖 visibleProjectIdsKey（内容稳定）而非 visibleProjectIds（每次渲染新引用），
+    // 否则活动轮里每个 SSE tick 都会重拉 → 请求风暴。
+  }, [visibleProjectIdsKey]);
 
   useEffect(() => {
     if (!canOpenSessionReplay || visibleSessionIds.length === 0) {

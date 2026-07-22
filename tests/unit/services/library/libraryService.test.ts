@@ -84,12 +84,16 @@ describe('LibraryService', () => {
   });
 
   it('addItem 无 contentHash 时按同项目同路径去重（重复归档幂等）', () => {
-    const first = service.addItem({ projectId: 'proj_1', title: 'PRD.md', kind: 'artifact', pathOrUri: '/ws/PRD.md' }, 1000);
-    const again = service.addItem({ projectId: 'proj_1', title: 'PRD-again', kind: 'artifact', pathOrUri: '/ws/PRD.md' }, 2000);
-    const otherProject = service.addItem({ projectId: 'proj_2', title: 'PRD.md', kind: 'artifact', pathOrUri: '/ws/PRD.md' }, 3000);
+    const rawPath = path.join(os.homedir(), 'workspace', 'drafts', '..', 'PRD.md');
+    const normalizedPath = path.resolve(rawPath);
+    const first = service.addItem({ projectId: 'proj_1', title: 'PRD.md', kind: 'artifact', pathOrUri: rawPath }, 1000);
+    const again = service.addItem({ projectId: 'proj_1', title: 'PRD-again', kind: 'artifact', pathOrUri: normalizedPath }, 2000);
+    const otherProject = service.addItem({ projectId: 'proj_2', title: 'PRD.md', kind: 'artifact', pathOrUri: normalizedPath }, 3000);
 
     expect(again.id).toBe(first.id);
     expect(otherProject.id).not.toBe(first.id);
+    expect(service.get(first.id)?.pathOrUri).toBe(normalizedPath);
+    expect(service.list({ projectId: 'proj_1' })).toHaveLength(1);
   });
 
   it('addItem 归档产物：contentHash 命中时返回已有条目', () => {

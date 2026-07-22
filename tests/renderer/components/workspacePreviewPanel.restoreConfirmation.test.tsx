@@ -2,10 +2,12 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  invokeDomain: vi.fn(),
+  addLibraryItem: vi.fn(),
   setSelectedId: vi.fn(),
 }));
 
@@ -34,7 +36,10 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => {
-  const state = { currentSessionId: 'session-1', sessions: [] };
+  const state = {
+    currentSessionId: 'session-1',
+    sessions: [{ id: 'session-1', projectId: 'project-1', workingDirectory: '/workspace' }],
+  };
   const useSessionStore = (selector: (value: typeof state) => unknown) => selector(state);
   useSessionStore.getState = () => state;
   return { useSessionStore };
@@ -55,7 +60,11 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { invoke: mocks.invoke },
+  default: { invoke: mocks.invoke, invokeDomain: mocks.invokeDomain },
+}));
+
+vi.mock('../../../src/renderer/services/libraryClient', () => ({
+  addLibraryItem: mocks.addLibraryItem,
 }));
 
 vi.mock('../../../src/renderer/components/ProjectHeaderBar', () => ({
@@ -98,6 +107,10 @@ const { WorkspacePreviewPanel } = await import(
 beforeEach(() => {
   mocks.invoke.mockReset();
   mocks.invoke.mockResolvedValue({ success: true, filesRestored: 1 });
+  mocks.invokeDomain.mockReset();
+  mocks.invokeDomain.mockResolvedValue({ success: true });
+  mocks.addLibraryItem.mockReset();
+  mocks.addLibraryItem.mockResolvedValue({ title: 'plan.md' });
 });
 
 afterEach(() => {
@@ -106,6 +119,25 @@ afterEach(() => {
 });
 
 describe('WorkspacePreviewPanel restore confirmation', () => {
+  it('archives file preview items with the current session context', async () => {
+    render(<WorkspacePreviewPanel />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive to library: 项目方案' }));
+
+    await waitFor(() => expect(mocks.addLibraryItem).toHaveBeenCalledWith({
+      projectId: 'project-1',
+      title: 'plan.md',
+      kind: 'artifact',
+      pathOrUri: '/workspace/plan.md',
+      tags: ['定稿'],
+      sourceSessionId: 'session-1',
+    }));
+    expect(mocks.invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.ROLES, 'writeProjectMemory', expect.objectContaining({
+      workspacePath: '/workspace',
+      name: '项目方案',
+    }));
+  });
+
   it('shows the consequence before restoring and does not call IPC directly', () => {
     render(<WorkspacePreviewPanel />);
 

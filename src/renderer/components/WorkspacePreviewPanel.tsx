@@ -44,6 +44,8 @@ import {
   RevisionPanel,
   PreviewBody,
 } from './workspacePreview/parts';
+import { DeliverableCardList } from './features/chat/MessageBubble/DeliverableCardList';
+import { buildDeliverableCardFromWorkspaceItem } from '../utils/deliverables';
 
 type WorkspaceAssetDrawer = 'apps' | 'gallery' | 'feedback';
 
@@ -67,6 +69,12 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const [revisionActionError, setRevisionActionError] = useState<string | null>(null);
   const [revisionActionMessage, setRevisionActionMessage] = useState<string | null>(null);
   const galleryItems = useMemo(() => items.filter(isGalleryItem), [items]);
+  const fileDeliverableCards = useMemo(
+    () => new Map(items
+      .filter((item) => Boolean(item.file?.path))
+      .map((item) => [item.id, buildDeliverableCardFromWorkspaceItem(item)])),
+    [items],
+  );
   const appAssetCount = presets.length + recipes.length;
 
   // 监听 question-form 提交事件，把 brief 锁定到当前 session 运行时 state（不进 DB）。
@@ -325,14 +333,19 @@ export const WorkspacePreviewPanel: React.FC = () => {
               <span>{items.length}</span>
             </div>
             <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-              {items.map((item) => (
-                <PreviewListItem
-                  key={item.id}
-                  item={item}
-                  active={item.id === selected?.id}
-                  onSelect={() => setSelectedId(item.id)}
-                />
-              ))}
+              {items.map((item) => {
+                const deliverableCard = fileDeliverableCards.get(item.id);
+                return deliverableCard ? (
+                  <DeliverableCardList key={item.id} cards={[deliverableCard]} className="" />
+                ) : (
+                  <PreviewListItem
+                    key={item.id}
+                    item={item}
+                    active={item.id === selected?.id}
+                    onSelect={() => setSelectedId(item.id)}
+                  />
+                );
+              })}
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">

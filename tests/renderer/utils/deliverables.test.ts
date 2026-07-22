@@ -93,8 +93,8 @@ describe('deliverable card projection', () => {
     expect(card.evidencePack.refs.some((ref) => ref.kind === 'file_metadata' && ref.status === 'pass')).toBe(true);
     expect(card.contract.requiredChecks).toContain('File hash is recorded');
     expect(card.secondaryActions).toEqual([
-      { kind: 'reveal-file', label: 'Reveal', path: '/repo/out/hero.png' },
-      { kind: 'copy-reference', label: 'Copy path', value: '/repo/out/hero.png' },
+      { kind: 'reveal-file', label: 'reveal-file', path: '/repo/out/hero.png' },
+      { kind: 'copy-reference', label: 'copy-reference', value: '/repo/out/hero.png' },
       expect.objectContaining({
         kind: 'archive-to-library',
         path: '/repo/out/hero.png',
@@ -102,7 +102,7 @@ describe('deliverable card projection', () => {
       }),
       expect.objectContaining({
         kind: 'export-bundle',
-        label: 'Export bundle',
+        label: 'export-bundle',
         files: [
           {
             path: '/repo/out/hero.png',
@@ -218,8 +218,8 @@ describe('deliverable card projection', () => {
       },
     });
     expect(cards[0].secondaryActions).toEqual([
-      { kind: 'reveal-file', label: 'Reveal', path: '/repo/out/diagram.png' },
-      { kind: 'copy-reference', label: 'Copy path', value: '/repo/out/diagram.png' },
+      { kind: 'reveal-file', label: 'reveal-file', path: '/repo/out/diagram.png' },
+      { kind: 'copy-reference', label: 'copy-reference', value: '/repo/out/diagram.png' },
       expect.objectContaining({
         kind: 'archive-to-library',
         path: '/repo/out/diagram.png',

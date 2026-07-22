@@ -552,7 +552,12 @@ export const Sidebar: React.FC = () => {
         return {
           id: session.id,
           title: getDisplaySessionTitle(session.title),
-          statusLabel: status.label,
+          statusLabel:
+            status.kind === 'error'
+              ? t.common.error
+              : status.kind === 'incomplete'
+                ? t.common.incomplete
+                : status.label,
           statusToneClassName: status.toneClassName,
           showStatusBadge: status.showBadge,
           typeLabel: getSessionTypeLabel(session.type),

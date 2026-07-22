@@ -6,10 +6,10 @@
 // pin 进会话在聊天输入区的 LibraryPinModal 里做，本页只管资产面。
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, FileText, Globe, Loader2, Package, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { BookOpen, FileText, Globe, Loader2, Package, Pencil, RefreshCw, Trash2, Upload } from 'lucide-react';
 import type { LibraryItem, LibraryItemKind } from '@shared/contract/library';
 import type { Project } from '@shared/contract/project';
-import { deleteLibraryItem, importLibraryFiles, listLibraryItems } from '../../../services/libraryClient';
+import { deleteLibraryItem, importLibraryFiles, listLibraryItems, updateLibraryItem } from '../../../services/libraryClient';
 import { listProjects } from '../../../services/projectClient';
 import ipcService from '../../../services/ipcService';
 import { useAppStore } from '../../../stores/appStore';
@@ -18,8 +18,25 @@ import { toast } from '../../../hooks/useToast';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { Button } from '../../primitives/Button';
 import { IconButton } from '../../primitives/IconButton';
+import { Input } from '../../primitives/Input';
+import { Modal } from '../../primitives/Modal';
+import { Textarea } from '../../primitives/Textarea';
 
 const GLOBAL_SCOPE = 'global';
+
+interface LibraryItemDraft {
+  title: string;
+  tags: string;
+  summary: string;
+}
+
+function tagsToInput(tags: string[]): string {
+  return tags.join(', ');
+}
+
+function parseTags(value: string): string[] {
+  return value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean);
+}
 
 const KIND_ICONS: Record<LibraryItemKind, React.ReactNode> = {
   upload: <FileText className="h-3.5 w-3.5 text-sky-300" />,
@@ -39,6 +56,9 @@ export const LibraryPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<LibraryItem | null>(null);
+  const [draft, setDraft] = useState<LibraryItemDraft>({ title: '', tags: '', summary: '' });
+  const [saving, setSaving] = useState(false);
 
   const projectId = scope === GLOBAL_SCOPE ? null : scope;
 
@@ -98,6 +118,35 @@ export const LibraryPanel: React.FC = () => {
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const openEdit = (item: LibraryItem) => {
+    setEditingItem(item);
+    setDraft({ title: item.title, tags: tagsToInput(item.tags), summary: item.summary ?? '' });
+  };
+
+  const closeEdit = () => {
+    if (!saving) setEditingItem(null);
+  };
+
+  const handleSave = async () => {
+    if (!editingItem || !draft.title.trim()) return;
+    setSaving(true);
+    try {
+      const updatedItem = await updateLibraryItem(editingItem.id, {
+        title: draft.title.trim(),
+        tags: parseTags(draft.tags),
+        summary: draft.summary,
+      });
+      setItems((currentItems) => currentItems.map((item) => (
+        item.id === updatedItem.id ? updatedItem : item
+      )));
+      setEditingItem(null);
+    } catch (error) {
+      toast.error(t.library.editFailed + (error instanceof Error ? `: ${error.message}` : ''));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -190,6 +239,16 @@ export const LibraryPanel: React.FC = () => {
                   {new Date(item.updatedAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')}
                 </span>
                 <IconButton
+                  variant="ghost"
+                  size="sm"
+                  data-testid={`library-edit-${item.id}`}
+                  onClick={() => openEdit(item)}
+                  className="mt-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100"
+                  title={t.library.edit}
+                  aria-label={t.library.edit}
+                  icon={<Pencil className="h-3.5 w-3.5" />}
+                />
+                <IconButton
                   variant="danger"
                   size="sm"
                   data-testid={`library-delete-${item.id}`}
@@ -208,6 +267,63 @@ export const LibraryPanel: React.FC = () => {
           </div>
         )}
       </div>
+
+      <Modal
+        isOpen={editingItem !== null}
+        onClose={closeEdit}
+        title={t.library.editTitle}
+        size="md"
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={closeEdit} disabled={saving}>{t.common.cancel}</Button>
+            <Button
+              variant="primary"
+              onClick={() => void handleSave()}
+              disabled={!draft.title.trim() || saving}
+              loading={saving}
+              data-testid="library-edit-save"
+            >
+              {t.library.save}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <label className="block space-y-1.5 text-sm text-zinc-300" htmlFor="library-edit-title">
+            <span>{t.library.titleLabel}</span>
+            <Input
+              id="library-edit-title"
+              data-testid="library-edit-title"
+              value={draft.title}
+              onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+              disabled={saving}
+              required
+            />
+          </label>
+          <label className="block space-y-1.5 text-sm text-zinc-300" htmlFor="library-edit-tags">
+            <span>{t.library.tagsLabel}</span>
+            <Input
+              id="library-edit-tags"
+              data-testid="library-edit-tags"
+              value={draft.tags}
+              onChange={(event) => setDraft((current) => ({ ...current, tags: event.target.value }))}
+              placeholder={t.library.tagsHint}
+              disabled={saving}
+            />
+          </label>
+          <label className="block space-y-1.5 text-sm text-zinc-300" htmlFor="library-edit-summary">
+            <span>{t.library.summaryLabel}</span>
+            <Textarea
+              id="library-edit-summary"
+              data-testid="library-edit-summary"
+              value={draft.summary}
+              onChange={(event) => setDraft((current) => ({ ...current, summary: event.target.value }))}
+              disabled={saving}
+              minRows={3}
+            />
+          </label>
+        </div>
+      </Modal>
     </FullScreenPage>
   );
 };

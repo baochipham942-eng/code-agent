@@ -44,7 +44,13 @@ export function resolveAgentWorktreeIsolation(input: {
   tools: string[];
   role?: string;
   explicit?: string;
+  /** 子 agent 的工作目录；非 git 仓库时隔离没有意义且必然失败，直接判 none */
+  cwd?: string;
 }): 'worktree' | 'none' {
+  if (input.cwd !== undefined && !isInsideGitRepo(input.cwd)) {
+    logger.warn(`${input.cwd} 不在 git 仓库内，子 agent 降级为无 worktree 隔离`);
+    return 'none';
+  }
   if (input.explicit === 'worktree') return 'worktree';
   if (input.tools.some((tool) => ['Write', 'Edit', 'Bash'].includes(tool))) {
     return 'worktree';
@@ -52,6 +58,21 @@ export function resolveAgentWorktreeIsolation(input: {
   const roleDefault = ROLE_DEFAULT_ISOLATION[input.role ?? ''];
   if (roleDefault) return roleDefault;
   return 'none';
+}
+
+/**
+ * 目录是否在 git 仓库里（向上找 .git，worktree 里 .git 是文件不是目录）。
+ * worktree 隔离在非 git 目录下没有意义且必然失败——Neo 的协作者多数不是程序员，
+ * 默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用。
+ */
+function isInsideGitRepo(dir: string): boolean {
+  let current = path.resolve(dir);
+  for (;;) {
+    if (fs.existsSync(path.join(current, '.git'))) return true;
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
 }
 
 export interface WorktreeInfo {

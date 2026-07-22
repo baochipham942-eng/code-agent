@@ -9,6 +9,17 @@ const sessionManagerMock = vi.hoisted(() => ({
   addMessageToSession: vi.fn().mockResolvedValue(undefined),
 }));
 const executorMock = vi.hoisted(() => ({ execute: vi.fn() }));
+const recipesMock = vi.hoisted(() => ([{
+  id: 'durable-only',
+  name: '确定性组队',
+  description: '测试配方',
+  category: 'product',
+  members: [{ roleId: '溯真', taskTemplate: '研究 {topic}' }],
+}]));
+
+vi.mock('../../../../src/shared/constants/teamRecipeCatalog', () => ({
+  TEAM_RECIPES: recipesMock,
+}));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => sessionManagerMock,
@@ -93,7 +104,7 @@ describe('launchTeamRecipe durable parent', () => {
   it('creates a leased native parent, runs its durable team child, then terminals the parent', async () => {
     const launched = await launchTeamRecipe({
       sessionId: 'session-team-recipe',
-      recipeId: 'product-spec',
+      recipeId: 'durable-only',
       topic: '会员增长',
     });
 

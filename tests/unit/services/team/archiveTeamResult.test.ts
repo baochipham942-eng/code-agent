@@ -36,10 +36,16 @@ describe('archiveTeamResult', () => {
     });
   });
 
-  it('失败团队不归档', () => {
-    archiveTeamResult(result({ success: false }), meta);
+  it('部分失败团队仍归档，并标明缺席成员', () => {
+    archiveTeamResult(result({ success: false, error: '青禾超时' }), meta);
 
-    expect(mocks.archiveText).not.toHaveBeenCalled();
+    expect(mocks.archiveText).toHaveBeenCalledWith({
+      projectId: meta.projectId,
+      title: `${meta.title}（部分成员缺席）`,
+      text: '团队聚合产物\n\n> 缺席成员：青禾超时',
+      tags: ['定稿'],
+      sourceSessionId: meta.sourceSessionId,
+    });
   });
 
   it.each([undefined, '', '   '])('空聚合产物 %j 不归档', (output) => {

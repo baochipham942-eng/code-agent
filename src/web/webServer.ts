@@ -687,7 +687,10 @@ async function initializeServices(): Promise<void> {
   // createAgentRuntime 用 getMainWindow()（web 模式 = webModeWindow → SSE）转发 agent 事件。
   try {
     const { createAgentRuntime } = await import('../host/app/createAgentRuntime');
-    createAgentRuntime(configService as unknown as Parameters<typeof createAgentRuntime>[0]);
+    // runRegistry 必须一起传（桌面 bootstrap.ts 就是这么传的）：不传的话 orchestrator 的
+    // this.runRegistry 是 undefined，本轮根本不注册 Run，于是主机侧发起的轮里任何起团都会
+    // 报 "no live owner lease"（Agent Team 的 durable 准备硬要求父 run 持租约）。
+    createAgentRuntime(configService as unknown as Parameters<typeof createAgentRuntime>[0], runRegistry);
     logger.info('TaskManager initialized (web path) via createAgentRuntime');
   } catch (error) {
     logger.warn('createAgentRuntime init failed (web, non-blocking):', (error as Error).message);

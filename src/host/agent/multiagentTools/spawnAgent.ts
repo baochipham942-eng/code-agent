@@ -357,7 +357,7 @@ export async function executeSpawnAgent(
 
       // Worktree isolation: explicit param > role-based default > none
       const effectiveIsolation = resolveAgentWorktreeIsolation({
-        tools,
+        tools, cwd,
         role,
         explicit: params.isolation as string | undefined,
       });

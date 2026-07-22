@@ -142,6 +142,14 @@ describe('AgentWorktree', () => {
       expect(resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read'], explicit: 'worktree' })).toBe('worktree');
       expect(resolveAgentWorktreeIsolation({ role: 'reviewer', tools: ['Read', 'Write'] })).toBe('worktree');
     });
+
+    it('非 git 目录降级为无隔离，即使显式要求 worktree', () => {
+      // 协作者默认工作目录就是家目录，硬起隔离会让「派个会写文件的成员」整条路不可用
+      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: os.tmpdir() })).toBe('none');
+      expect(resolveAgentWorktreeIsolation({ tools: ['Read'], explicit: 'worktree', cwd: os.tmpdir() })).toBe('none');
+      // 传了 git 仓库目录时照常隔离
+      expect(resolveAgentWorktreeIsolation({ tools: ['Read', 'Write'], cwd: process.cwd() })).toBe('worktree');
+    });
   });
   beforeEach(() => {
     execState.reset();

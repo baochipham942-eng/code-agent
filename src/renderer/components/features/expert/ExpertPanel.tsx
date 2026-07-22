@@ -157,7 +157,7 @@ export const ExpertPanel: React.FC = () => {
                       <div>
                         <h3 className="text-sm font-medium text-zinc-100">{recipe.name}</h3>
                         <p className="mt-1 text-xs text-violet-200/70">
-                          {[...new Set(recipe.members.map((member) => member.roleId))].join(' + ')}
+                          {recipe.lead ? `${t.team.lead} · ${recipe.lead.roleId}` : [...new Set(recipe.members.map((member) => member.roleId))].join(' + ')}
                         </p>
                       </div>
                       <p className="text-xs leading-relaxed text-zinc-400">{recipe.description}</p>

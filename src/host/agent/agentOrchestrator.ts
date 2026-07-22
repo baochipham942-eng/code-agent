@@ -47,6 +47,7 @@ import { getPredefinedAgent } from './agentDefinition';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { buildRoutingToolDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
+import { startRunPreferringDurable } from './orchestrator/durableRunStart';
 
 // Sub-modules
 import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
@@ -990,7 +991,7 @@ export class AgentOrchestrator {
       });
 
       registeredRun = this.runRegistry && sessionId
-        ? this.runRegistry.start({
+        ? await startRunPreferringDurable(this.runRegistry, {
             runId: nativeRunId,
             sessionId,
             workspace: this.workingDirectory,

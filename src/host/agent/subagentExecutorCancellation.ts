@@ -12,6 +12,8 @@ export interface SubagentCancellationLifecycle {
   effectiveSignal: AbortSignal;
   cleanupTimer: () => void;
   markProgress: () => void;
+  markRequestStart: () => void;
+  markRequestEnd: () => void;
   stopIdleWatchdog: () => void;
 }
 
@@ -79,12 +81,22 @@ export function createSubagentCancellationLifecycle(options: {
   const effectiveSignal = effectiveController.signal;
 
   let lastProgressAt = Date.now();
+  let requestInFlight = false;
   const markProgress = (): void => {
     lastProgressAt = Date.now();
+  };
+  const markRequestStart = (): void => {
+    requestInFlight = true;
+  };
+  const markRequestEnd = (): void => {
+    requestInFlight = false;
+    markProgress();
   };
   const idleThreshold = getSubagentIdleTimeout(timeoutMs);
   const idleWatchdog = setInterval(() => {
     if (effectiveSignal.aborted) return;
+    // 请求在途 ≠ idle：在途另有 per-request 超时与总预算兜底
+    if (requestInFlight) return;
     const idle = Date.now() - lastProgressAt;
     if (idle > idleThreshold) {
       onIdleTimeout?.(idle);
@@ -98,6 +110,8 @@ export function createSubagentCancellationLifecycle(options: {
     effectiveSignal,
     cleanupTimer,
     markProgress,
+    markRequestStart,
+    markRequestEnd,
     stopIdleWatchdog: () => clearInterval(idleWatchdog),
   };
 }

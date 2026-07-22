@@ -100,7 +100,7 @@ export function archiveTeamResult(
 }
 
 /** 原有 durable 团队路径；lead 不可用或验真失败时的唯一降级目标。 */
-export async function launchTeamRecipeDeterministic(
+async function launchTeamRecipeDeterministic(
   input: ValidatedTeamRecipeLaunch,
 ): Promise<LaunchTeamRecipeResult> {
   const registry = getConfiguredApplicationRunRegistry();

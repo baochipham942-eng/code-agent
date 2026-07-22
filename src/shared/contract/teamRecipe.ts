@@ -11,7 +11,7 @@ export interface TeamRecipeMember {
   dependsOn?: string[];
 }
 
-export interface TeamRecipeLead {
+interface TeamRecipeLead {
   /** 主理人角色（可解析的持久化角色 id） */
   roleId: string;
   /** 含 {topic} 的主理人 SOP 简报 */

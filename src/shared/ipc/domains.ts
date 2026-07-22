@@ -57,6 +57,7 @@ export const IPC_DOMAINS = {
   PII: 'domain:pii', // 本地 PII 防线（GLiNER 一键启用，B3 推荐组合）
   GENERATIVE_UI: 'domain:generativeUI', // Agent Neo native generative UI state/actions
   FOLDER_TRUST: 'domain:folderTrust', // 项目级配置目录信任门
+  TEAM: 'domain:team', // 组队配方确定性启动
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

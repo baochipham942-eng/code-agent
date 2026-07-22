@@ -681,6 +681,8 @@ export function getAvailableAgents(): Array<{ id: string; name: string; descript
 // dispatch to executeSpawnAgent above.
 
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
+export async function launchAgentTeam(agents: Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }>, context: SubagentExecutionContext): Promise<MultiagentExecutionResult> { return executeParallelAgents(agents, context); }
+
 async function executeParallelAgents(
   agents: Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }>,
   context: SubagentExecutionContext,

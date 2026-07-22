@@ -357,6 +357,9 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'interrupt',
     'start',
   ],
+  [IPC_DOMAINS.TEAM]: [
+    'launchRecipe',
+  ],
   [IPC_DOMAINS.UPDATE]: [
     'check',
     'download',

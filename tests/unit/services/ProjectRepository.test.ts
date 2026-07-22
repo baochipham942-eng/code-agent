@@ -126,6 +126,30 @@ describe('ProjectRepository', () => {
     expect(repo.backfillSessions(NOW, (wp, key) => makeRow(wp, key, NOW))).toBe(0); // 第二次没有 NULL project_id 的 session
   });
 
+  it('backfill 修复残留：有 wd 但冻在 UNSORTED 的会话，若目录命中已存在项目则重归桶', () => {
+    // 先建 alpha 真实项目 + 一个已正确归桶的会话
+    seedSession(db, 's_ok', '/work/alpha', NOW);
+    repo.backfillSessions(NOW, (wp, key) => makeRow(wp, key, NOW));
+    const alpha = repo.getProjectByWorkspaceKey(getProjectKey('/work/alpha'))!;
+    // 模拟历史残留：同目录会话被冻在 UNSORTED
+    seedSession(db, 's_stuck', '/work/alpha', NOW);
+    repo.assignSessionProject('s_stuck', UNSORTED_PROJECT_ID);
+
+    const migrated = repo.backfillSessions(NOW, (wp, key) => makeRow(wp, key, NOW));
+    expect(migrated).toBe(1); // 只动 s_stuck（s_ok 已归桶不再动）
+    expect(repo.listSessionIds(alpha.id).sort()).toEqual(['s_ok', 's_stuck']);
+    expect(repo.listSessionIds(UNSORTED_PROJECT_ID)).toEqual([]);
+  });
+
+  it('backfill 保守：有 wd 但目录无对应项目的 UNSORTED 会话不新建项目、保持 UNSORTED', () => {
+    seedSession(db, 's_stuck', '/work/ghost', NOW);
+    repo.assignSessionProject('s_stuck', UNSORTED_PROJECT_ID);
+    const migrated = repo.backfillSessions(NOW, (wp, key) => makeRow(wp, key, NOW));
+    expect(migrated).toBe(0);
+    expect(repo.getProjectByWorkspaceKey(getProjectKey('/work/ghost'))).toBeUndefined();
+    expect(repo.listSessionIds(UNSORTED_PROJECT_ID)).toEqual(['s_stuck']);
+  });
+
   it('backfill 不破坏存量：session 其它字段不变', () => {
     seedSession(db, 's1', '/work/alpha', NOW);
     repo.backfillSessions(NOW, (wp, key) => makeRow(wp, key, NOW));

@@ -16,7 +16,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import type { SkillCategory } from '../../../shared/contract/skillRepository';
+import type { BuiltinRoleVisual } from '../../../shared/contract/roleAssets';
 import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
@@ -28,21 +28,7 @@ const logger = createLogger('BuiltinRoles');
 // 角色定义
 // ----------------------------------------------------------------------------
 
-/** 预设角色视觉元数据（P2-1 + E1 Role Pack 展示合同，与技能包共用 SkillCategory 分类体系） */
-export interface BuiltinRoleVisual {
-  /** lucide 图标名（curated，前端按名渲染） */
-  icon: string;
-  /** 产物分类（复用 SkillCategory 子集） */
-  category: SkillCategory;
-  /** 展示名（花名，与 roleId 一致或更口语） */
-  displayName: string;
-  /** 职业（如"资深产品经理"，展示在花名旁） */
-  profession: string;
-  /** 能力标签（3 个左右，发现页卡片展示） */
-  tags: string[];
-  /** 快捷开场 prompt（一句话真实 cowork 场景，点击即发） */
-  quickPrompts: string[];
-}
+export type { BuiltinRoleVisual } from '../../../shared/contract/roleAssets';
 
 export interface BuiltinRoleDefinition {
   /** 角色 ID = agents/<id>.md 文件名 = roles/<id>/ 目录名 */

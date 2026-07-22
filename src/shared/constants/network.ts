@@ -82,6 +82,8 @@ export const CLOUD = {
   WARMUP_INTERVAL: 300000,
   /** Fetch 超时 (5 秒) */
   FETCH_TIMEOUT: 5000,
+  /** 控制面货架缓存 TTL（5 分钟） */
+  REGISTRY_CACHE_TTL: 5 * 60 * 1000,
   /** 云端执行超时 (2 分钟) */
   CLOUD_EXECUTION_TIMEOUT: 120000,
   /** 本地执行超时 (1 分钟) */
@@ -145,6 +147,10 @@ export const CLOUD_ENDPOINTS = {
   /** 官方 Skill Registry（签名控制面） */
   get skillRegistry() {
     return `${getCloudApiUrl()}/api/v1/skill-registry`;
+  },
+  /** 官方 Role Pack Registry（签名控制面） */
+  get roleRegistry() {
+    return `${getCloudApiUrl()}/api/v1/role-registry`;
   },
   /** WebSocket 端点 */
   get websocket() {

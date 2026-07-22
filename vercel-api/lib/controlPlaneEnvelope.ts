@@ -42,6 +42,7 @@ export type ControlPlaneArtifactKind =
   | 'agent_engine_model_catalog'
   | 'prompt_registry'
   | 'skill_registry'
+  | 'role_registry'
   | 'update_manifest'
   | 'runtime_assets_manifest'
   | 'renderer_bundle'

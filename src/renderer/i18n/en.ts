@@ -22,6 +22,7 @@ import { labAlignmentEn } from './labAlignment';
 import { libraryEn } from './library';
 import { teamEn } from './team';
 import { knowledgeMemoryEn } from './knowledgeMemory';
+import { rolePackEn } from './rolePack';
 
 export const en: Translations = {
   // Common
@@ -901,6 +902,7 @@ export const en: Translations = {
   },
 
   ...teamEn,
+  ...rolePackEn,
   ...knowledgeMemoryEn,
   ...chatTranscriptEn,
   ...chatInputEn,

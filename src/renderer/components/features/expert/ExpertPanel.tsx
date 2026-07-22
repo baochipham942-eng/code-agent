@@ -10,7 +10,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Settings2, UserRound, UsersRound } from 'lucide-react';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
-import { listRoles } from '../../../services/rolesClient';
+import {
+  installRolePack,
+  listRolePacks,
+  listRoles,
+  retryRolePackMissingSkills,
+  uninstallRolePack,
+  type RolePackListItem,
+} from '../../../services/rolesClient';
 import { inviteExpert } from '../../../utils/inviteExpert';
 import { launchTeamRecipe } from '../../../utils/launchTeamRecipe';
 import { useAppStore } from '../../../stores/appStore';
@@ -22,6 +29,7 @@ import { IconButton } from '../../primitives/IconButton';
 import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
 import { RoleIcon } from '../shared/RoleIcon';
+import { RolePackHealthNotice, RolePackShelf } from './RolePackShelf';
 
 type ExpertTab = 'mine' | 'discover';
 
@@ -53,18 +61,32 @@ export const ExpertPanel: React.FC = () => {
 
   const [tab, setTab] = useState<ExpertTab>('mine');
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
+  const [rolePacks, setRolePacks] = useState<RolePackListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rolePacksLoading, setRolePacksLoading] = useState(true);
+  const [rolePacksError, setRolePacksError] = useState(false);
+  const [busyRolePackId, setBusyRolePackId] = useState<string | null>(null);
   const [activeRecipeId, setActiveRecipeId] = useState<string | null>(null);
   const [recipeTopic, setRecipeTopic] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
+    setRolePacksLoading(true);
+    setRolePacksError(false);
     try {
       setEntries(await listRoles());
     } catch (error) {
       toast.error(text.loadFailed + (error instanceof Error ? `: ${error.message}` : ''));
     } finally {
       setLoading(false);
+    }
+    try {
+      setRolePacks(await listRolePacks());
+    } catch {
+      // Control-plane diagnostics stay in host logs; the shelf only offers a safe retry.
+      setRolePacksError(true);
+    } finally {
+      setRolePacksLoading(false);
     }
   }, [text]);
 
@@ -76,9 +98,39 @@ export const ExpertPanel: React.FC = () => {
     void inviteExpert(entry.roleId, { seed, title: entry.displayName || entry.roleId });
   };
 
+  const loadRolePacks = async () => {
+    setRolePacksLoading(true);
+    setRolePacksError(false);
+    try {
+      setRolePacks(await listRolePacks());
+    } catch {
+      setRolePacksError(true);
+    } finally {
+      setRolePacksLoading(false);
+    }
+  };
+
+  const runRolePackAction = async (
+    roleId: string,
+    action: (id: string) => Promise<{ success: boolean }>,
+  ) => {
+    setBusyRolePackId(roleId);
+    try {
+      const result = await action(roleId);
+      if (!result.success) toast.error(t.rolePack.actionFailed);
+      await loadRolePacks();
+      setEntries(await listRoles());
+    } catch {
+      toast.error(t.rolePack.actionFailed);
+    } finally {
+      setBusyRolePackId(null);
+    }
+  };
+
   const discoverEntries = entries.filter((e) => e.source === 'builtin');
   const shown = tab === 'mine' ? entries : discoverEntries;
   const activeRecipe = TEAM_RECIPES.find((recipe) => recipe.id === activeRecipeId);
+  const rolePacksByRoleId = new Map(rolePacks.map((item) => [item.entry.roleId, item]));
 
   const openRecipe = (recipeId: string) => {
     setActiveRecipeId(recipeId);
@@ -175,6 +227,19 @@ export const ExpertPanel: React.FC = () => {
               </section>
             ) : null}
 
+            {tab === 'discover' ? (
+              <RolePackShelf
+                items={rolePacks}
+                loading={rolePacksLoading}
+                error={rolePacksError}
+                busyRoleId={busyRolePackId}
+                onRetryLoad={() => { void loadRolePacks(); }}
+                onInstall={(roleId) => { void runRolePackAction(roleId, installRolePack); }}
+                onUninstall={(roleId) => { void runRolePackAction(roleId, uninstallRolePack); }}
+                onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
+              />
+            ) : null}
+
             {tab === 'discover' && !loading && shown.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-700/70 p-8 text-center text-sm text-zinc-500">
                 {text.empty}
@@ -227,6 +292,14 @@ export const ExpertPanel: React.FC = () => {
                       )
                       : text.noRecordYet}
                   </div>
+                ) : null}
+
+                {tab === 'mine' ? (
+                  <RolePackHealthNotice
+                    item={rolePacksByRoleId.get(entry.roleId)}
+                    busy={busyRolePackId === entry.roleId}
+                    onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
+                  />
                 ) : null}
 
                 {tab === 'discover' && entry.quickPrompts && entry.quickPrompts.length > 0 ? (

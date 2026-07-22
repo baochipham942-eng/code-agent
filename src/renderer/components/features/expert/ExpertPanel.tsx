@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Settings2, UserRound, UsersRound } from 'lucide-react';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
+import type { TeamRecipe } from '@shared/contract/teamRecipe';
 import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
 import {
   installRolePack,
@@ -18,6 +19,7 @@ import {
   uninstallRolePack,
   type RolePackListItem,
 } from '../../../services/rolesClient';
+import { createTeamRecipe, deleteTeamRecipe, listTeamRecipes } from '../../../services/teamRecipeClient';
 import { inviteExpert } from '../../../utils/inviteExpert';
 import { launchTeamRecipe } from '../../../utils/launchTeamRecipe';
 import { useAppStore } from '../../../stores/appStore';
@@ -31,6 +33,7 @@ import { Modal } from '../../primitives/Modal';
 import { RoleIcon } from '../shared/RoleIcon';
 import { RolePackHealthNotice, RolePackShelf } from './RolePackShelf';
 import { RoleDetailPage } from './RoleDetailPage';
+import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
 
 type ExpertTab = 'mine' | 'discover';
 
@@ -67,7 +70,10 @@ export const ExpertPanel: React.FC = () => {
   const [rolePacksLoading, setRolePacksLoading] = useState(true);
   const [rolePacksError, setRolePacksError] = useState(false);
   const [busyRolePackId, setBusyRolePackId] = useState<string | null>(null);
-  const [activeRecipeId, setActiveRecipeId] = useState<string | null>(null);
+  const [userRecipes, setUserRecipes] = useState<TeamRecipe[]>([]);
+  const [activeRecipe, setActiveRecipe] = useState<TeamRecipe | null>(null);
+  const [selectedRecipe, setSelectedRecipe] = useState<{ recipe: TeamRecipe; editable: boolean } | null>(null);
+  const [confirmingRecipeDelete, setConfirmingRecipeDelete] = useState<string | null>(null);
   const [recipeTopic, setRecipeTopic] = useState('');
   const [selectedRole, setSelectedRole] = useState<RolePanelEntry | null>(null);
 
@@ -81,6 +87,11 @@ export const ExpertPanel: React.FC = () => {
       toast.error(text.loadFailed + (error instanceof Error ? `: ${error.message}` : ''));
     } finally {
       setLoading(false);
+    }
+    try {
+      setUserRecipes(await listTeamRecipes());
+    } catch (error) {
+      toast.error(t.team.loadFailed + (error instanceof Error ? `: ${error.message}` : ''));
     }
     try {
       setRolePacks(await listRolePacks());
@@ -131,16 +142,15 @@ export const ExpertPanel: React.FC = () => {
 
   const discoverEntries = entries.filter((e) => e.source === 'builtin');
   const shown = tab === 'mine' ? entries : discoverEntries;
-  const activeRecipe = TEAM_RECIPES.find((recipe) => recipe.id === activeRecipeId);
   const rolePacksByRoleId = new Map(rolePacks.map((item) => [item.entry.roleId, item]));
 
-  const openRecipe = (recipeId: string) => {
-    setActiveRecipeId(recipeId);
+  const openRecipe = (recipe: TeamRecipe) => {
+    setActiveRecipe(recipe);
     setRecipeTopic('');
   };
 
   const closeRecipe = () => {
-    setActiveRecipeId(null);
+    setActiveRecipe(null);
     setRecipeTopic('');
   };
 
@@ -152,6 +162,37 @@ export const ExpertPanel: React.FC = () => {
     }
   };
 
+  const copyRecipe = async (recipe: TeamRecipe) => {
+    try {
+      const copied = await createTeamRecipe({
+        name: recipe.name,
+        description: recipe.description,
+        category: recipe.category,
+        members: recipe.members.map((member) => ({ ...member })),
+        lead: recipe.lead ? { ...recipe.lead } : undefined,
+        tags: recipe.tags,
+      });
+      setUserRecipes((current) => [...current, copied]);
+      setSelectedRecipe({ recipe: copied, editable: true });
+    } catch (error) {
+      toast.error(t.team.copyFailed + (error instanceof Error ? `: ${error.message}` : ''));
+    }
+  };
+
+  const removeRecipe = async (recipeId: string) => {
+    try {
+      await deleteTeamRecipe(recipeId);
+      setUserRecipes((current) => current.filter((recipe) => recipe.id !== recipeId));
+      setConfirmingRecipeDelete(null);
+    } catch (error) {
+      toast.error(t.team.deleteFailed + (error instanceof Error ? `: ${error.message}` : ''));
+    }
+  };
+
+  const recipeMode = (recipe: TeamRecipe) => recipe.lead
+    ? t.team.expertTeam.replace('{lead}', entries.find((entry) => entry.roleId === recipe.lead?.roleId)?.displayName || recipe.lead.roleId)
+    : t.team.expertGroup.replace('{count}', String(recipe.members.length));
+
   return (
     <FullScreenPage testId="expert-panel">
       <FullScreenPageHeader
@@ -160,7 +201,7 @@ export const ExpertPanel: React.FC = () => {
         description={text.panelDescription}
         onClose={() => setShowExpertPanel(false)}
         closeLabel={t.common.close}
-        actions={selectedRole ? undefined : (
+        actions={selectedRole || selectedRecipe ? undefined : (
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
               {(['mine', 'discover'] as const).map((key) => (
@@ -201,6 +242,18 @@ export const ExpertPanel: React.FC = () => {
             onVisualUpdated={() => { void load(); }}
             onBack={() => setSelectedRole(null)}
           />
+        ) : selectedRecipe ? (
+          <TeamRecipeDetailPage
+            recipe={selectedRecipe.recipe}
+            entries={entries}
+            editable={selectedRecipe.editable}
+            onBack={() => setSelectedRecipe(null)}
+            onCopied={(recipe) => { void copyRecipe(recipe); }}
+            onSaved={(recipe) => {
+              setUserRecipes((current) => current.map((item) => item.id === recipe.id ? recipe : item));
+              setSelectedRecipe({ recipe, editable: true });
+            }}
+          />
         ) : (
           <>
         {!loading && tab === 'mine' && shown.length === 0 ? (
@@ -214,6 +267,7 @@ export const ExpertPanel: React.FC = () => {
                 <h2 id="team-recipes-title" className="mb-3 text-sm font-medium text-zinc-200">
                   {t.team.sectionTitle}
                 </h2>
+                <h3 className="mb-2 text-xs font-medium text-zinc-400">{t.team.builtinRecipes}</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {TEAM_RECIPES.map((recipe) => (
                     <div
@@ -222,17 +276,29 @@ export const ExpertPanel: React.FC = () => {
                       className="flex flex-col gap-2.5 rounded-xl border border-violet-900/60 bg-violet-950/20 p-3.5"
                     >
                       <div>
-                        <h3 className="text-sm font-medium text-zinc-100">{recipe.name}</h3>
+                        <button /* ds-allow:button: 出厂配方名是进入只读详情的文字链接，卡片底部动作仍仅保留使用与复制 */ type="button" aria-label={`${t.team.details} ${recipe.name}`} onClick={() => setSelectedRecipe({ recipe, editable: false })} className="text-left text-sm font-medium text-zinc-100 hover:text-violet-200">{recipe.name}</button>
                         <p className="mt-1 text-xs text-violet-200/70">
-                          {recipe.lead ? `${t.team.lead} · ${recipe.lead.roleId}` : [...new Set(recipe.members.map((member) => member.roleId))].join(' + ')}
+                          {recipeMode(recipe)}
                         </p>
                       </div>
                       <p className="text-xs leading-relaxed text-zinc-400">{recipe.description}</p>
-                      <div className="mt-auto pt-1">
-                        <Button variant="secondary" size="sm" onClick={() => openRecipe(recipe.id)}>
+                      <div className="mt-auto flex gap-2 pt-1">
+                        <Button variant="secondary" size="sm" onClick={() => openRecipe(recipe)}>
                           {t.team.useRecipe}
                         </Button>
+                        <Button variant="ghost" size="sm" onClick={() => { void copyRecipe(recipe); }}>{t.team.copy}</Button>
                       </div>
+                    </div>
+                  ))}
+                </div>
+                <h3 className="mb-2 mt-5 text-xs font-medium text-zinc-400">{t.team.myRecipes}</h3>
+                {userRecipes.length === 0 ? <p className="text-xs text-zinc-500">{t.team.myRecipes}</p> : null}
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {userRecipes.map((recipe) => (
+                    <div key={recipe.id} data-testid={`team-recipe-${recipe.id}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-700/70 bg-zinc-900/60 p-3.5">
+                      <div><h3 className="text-sm font-medium text-zinc-100">{recipe.name}</h3><p className="mt-1 text-xs text-violet-200/70">{recipeMode(recipe)}</p></div>
+                      <p className="text-xs leading-relaxed text-zinc-400">{recipe.description}</p>
+                      {confirmingRecipeDelete === recipe.id ? <div className="flex items-center gap-2 text-xs text-red-300"><span>{t.team.confirmDelete}</span><button /* ds-allow:button: 配方删除确认使用紧凑文字动作，现有 Button 的尺寸会挤压卡片 */ type="button" onClick={() => { void removeRecipe(recipe.id); }} className="rounded bg-red-900/50 px-2 py-1 hover:bg-red-900/80">{t.team.delete}</button><button /* ds-allow:button: 配方删除取消是紧凑文本按钮，保持卡片内联布局 */ type="button" onClick={() => setConfirmingRecipeDelete(null)} className="rounded px-2 py-1 text-zinc-400 hover:bg-zinc-700">{t.team.cancel}</button></div> : <div className="mt-auto flex flex-wrap gap-2 pt-1"><Button variant="secondary" size="sm" onClick={() => openRecipe(recipe)}>{t.team.useRecipe}</Button><Button variant="ghost" size="sm" onClick={() => setSelectedRecipe({ recipe, editable: true })}>{t.team.details}</Button><Button variant="ghost" size="sm" onClick={() => setConfirmingRecipeDelete(recipe.id)}>{t.team.delete}</Button></div>}
                     </div>
                   ))}
                 </div>
@@ -360,7 +426,7 @@ export const ExpertPanel: React.FC = () => {
       </div>
 
       <Modal
-        isOpen={activeRecipe !== undefined}
+        isOpen={activeRecipe !== null}
         onClose={closeRecipe}
         title={activeRecipe?.name}
         size="sm"

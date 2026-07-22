@@ -115,7 +115,7 @@ describe('team recipe lead orchestrator', () => {
     }, '会员增长');
 
     expect(brief).toContain('主题是 会员增长');
-    expect(brief).toContain('第一步必须调用 spawn_agent，parallel=true');
+    expect(brief).toContain('第一步必须调用 spawn_agent；只传两个参数：parallel=true 和 agents');
     expect(brief).toContain('禁止你自己代写成员的专业产出');
     expect(brief).toContain('"role": "溯真"');
     expect(brief).toContain('"task": "核验 会员增长"');

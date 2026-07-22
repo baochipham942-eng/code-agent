@@ -1,4 +1,5 @@
 import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
+import { SERVICE_TIMEOUTS } from '@shared/constants/timeouts';
 import { validateTeamRecipe, type TeamRecipe } from '@shared/contract/teamRecipe';
 import { listAllAgents } from '../../agent/agentRegistry';
 import type { MultiagentExecutionResult } from '../../agent/multiagentExecutionTypes';
@@ -68,7 +69,7 @@ export function buildLeadBrief(recipe: TeamRecipe, topic: string): string {
   const brief = recipe.lead.briefTemplate.split('{topic}').join(topic);
 
   return `${brief}\n\n` +
-    '执行铁律：第一步必须调用 spawn_agent，parallel=true，并将下方 agents JSON 原样传入；一次调用起全部成员。' +
+    '执行铁律：第一步必须调用 spawn_agent；只传两个参数：parallel=true 和 agents（将下方 JSON 数组原样传入）。不要传顶层 role/task，不要逐个起成员，一次调用起全部成员。' +
     '禁止你自己代写成员的专业产出。成员回报后，由你基于成员产出综述并定稿。\n\n' +
     `agents JSON：\n${JSON.stringify(members, null, 2)}`;
 }
@@ -283,6 +284,11 @@ export async function launchTeamRecipe(args: TeamRecipeLaunchInput): Promise<Lau
 
   if (!getConfiguredApplicationRunRegistry()) {
     return { ok: false, error: '组队功能需要 Durable 运行时' };
+  }
+
+  // Durable kernel 冷启后才异步配置；这期间点配方以前是静默失败，现在等它就绪再决定。
+  if (!await getApplicationRunRegistry().waitForDurableKernel(SERVICE_TIMEOUTS.BOOTSTRAP)) {
+    return { ok: false, error: '组队运行时正在启动，请稍后重试' };
   }
 
   const input: ValidatedTeamRecipeLaunch = {

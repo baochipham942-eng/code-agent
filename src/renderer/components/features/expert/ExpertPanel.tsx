@@ -90,9 +90,12 @@ export const ExpertPanel: React.FC = () => {
     setRecipeTopic('');
   };
 
-  const launchActiveRecipe = () => {
+  const launchActiveRecipe = async () => {
     if (!activeRecipe || !recipeTopic.trim()) return;
-    void launchTeamRecipe(activeRecipe.id, activeRecipe.name, recipeTopic.trim());
+    const result = await launchTeamRecipe(activeRecipe.id, activeRecipe.name, recipeTopic.trim());
+    if (!result.ok) {
+      toast.error(t.team.launchFailed + (result.error ? `: ${result.error}` : ''));
+    }
   };
 
   return (
@@ -269,7 +272,7 @@ export const ExpertPanel: React.FC = () => {
         footer={(
           <Button
             variant="primary"
-            onClick={launchActiveRecipe}
+            onClick={() => { void launchActiveRecipe(); }}
             disabled={!recipeTopic.trim()}
           >
             {t.team.launch}

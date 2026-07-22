@@ -11,6 +11,7 @@ export const teamZh = {
     topicPlaceholder: '这次让团队做什么主题？',
     topicRequired: '请先填主题',
     launch: '起团队',
+    launchFailed: '起团队失败',
   },
 };
 
@@ -22,5 +23,6 @@ export const teamEn: typeof teamZh = {
     topicPlaceholder: 'What topic for this team?',
     topicRequired: 'Enter a topic first',
     launch: 'Launch',
+    launchFailed: 'Failed to launch team',
   },
 };

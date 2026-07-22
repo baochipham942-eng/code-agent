@@ -223,6 +223,10 @@ export class ProjectRepository {
    * 回填归桶（D4）：把 project_id IS NULL 的存量 session 按 working_directory(缺则 workspace)
    * 算 hash 归入对应 project；无目录的归 UNSORTED_PROJECT_ID。幂等、单事务、不改 session 其它字段。
    * 返回归桶的 session 数。makeProjectRow 由 service 注入（带 id/时间戳生成）。
+   *
+   * 另修复归因只算一次的历史残留（#560 配套）：已冻在 UNSORTED 但其实有 working_directory
+   * 的会话，若该目录**已存在**真实项目，则重新归桶。ponytail: 只绑已存在的真实项目，不为
+   * 陈旧/一次性目录新建项目——启动期批量迁移保守优先，新会话侧 updateSession 已负责建桶。
    */
   backfillSessions(
     now: number,
@@ -233,7 +237,12 @@ export class ProjectRepository {
         "SELECT id, working_directory, workspace FROM sessions WHERE project_id IS NULL AND is_deleted = 0",
       )
       .all() as SQLiteRow[];
-    if (orphans.length === 0) return 0;
+    const strandedUnsorted = this.db
+      .prepare(
+        "SELECT id, working_directory, workspace FROM sessions WHERE project_id = ? AND is_deleted = 0 AND COALESCE(TRIM(working_directory), '') != ''",
+      )
+      .all(UNSORTED_PROJECT_ID) as SQLiteRow[];
+    if (orphans.length === 0 && strandedUnsorted.length === 0) return 0;
 
     const ensureUnsorted = (): void => {
       const exists = this.db.prepare('SELECT id FROM projects WHERE id = ?').get(UNSORTED_PROJECT_ID);
@@ -276,6 +285,17 @@ export class ProjectRepository {
         }
         this.assignSessionProject(row.id as string, projectId);
         count++;
+      }
+      // 第二趟：把有 wd 但冻在 UNSORTED 的会话重归到**已存在**的真实项目
+      for (const row of strandedUnsorted) {
+        const dir = ((row.working_directory as string) || (row.workspace as string) || '').trim();
+        if (!dir) continue;
+        // 同事务内能查到 orphans 趟刚 upsert 的项目，无需借 keyCache
+        const existing = this.getProjectByWorkspaceKey(getProjectKey(dir));
+        if (existing && existing.id !== UNSORTED_PROJECT_ID) {
+          this.assignSessionProject(row.id as string, existing.id);
+          count++;
+        }
       }
       return count;
     });

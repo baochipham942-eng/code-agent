@@ -10,7 +10,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { Bot, ChevronUp, ChevronDown, Square, ExternalLink } from 'lucide-react';
+import { Bot, ChevronUp, ChevronDown, Square, ExternalLink, Zap } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useAppStore } from '../../../stores/appStore';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -55,6 +55,14 @@ function isActive(s: AgentStatus): boolean {
   return s === 'pending' || s === 'ready' || s === 'running';
 }
 
+// ponytail: 本地 3 行格式化，formatTokens 已在 SwarmMonitor/SwarmTraceHistory 各存一份
+// 且未导出，项目规则「三行重复优于过早抽象」故就地复制，不新起共享 util。
+function formatInlineTokens(tokens: number): string {
+  if (tokens < 1000) return String(tokens);
+  if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(1)}K`;
+  return `${(tokens / 1_000_000).toFixed(2)}M`;
+}
+
 export async function cancelSwarmRunOrFallback(
   scope: SwarmRunRef,
   activeAgents: Array<Pick<SwarmAgentState, 'id'>>,
@@ -76,6 +84,7 @@ export async function cancelSwarmRunOrFallback(
 
 export function SwarmInlineMonitor() {
   const agents = useSwarmStore((s) => s.agents ?? []);
+  const totalTokens = useSwarmStore((s) => s.statistics.totalTokens ?? 0);
   const isRunning = useSwarmStore((s) => s.isRunning ?? false);
   const activeSessionId = useSwarmStore((s) => s.activeSessionId);
   const activeRunId = useSwarmStore((s) => s.activeRunId);
@@ -110,6 +119,15 @@ export function SwarmInlineMonitor() {
           </span>
           <span className="text-zinc-500">(@ to tag agents)</span>
           <div className="ml-auto flex items-center gap-2">
+            {totalTokens > 0 && (
+              <span
+                className="flex items-center gap-1 text-cyan-400/80"
+                title="本次组队已花 Token（实时累计）"
+              >
+                <Zap size={12} />
+                {formatInlineTokens(totalTokens)}
+              </span>
+            )}
             <button
               type="button"
               onClick={handleStopAll}

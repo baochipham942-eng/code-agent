@@ -7,7 +7,8 @@ import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
 
 export interface RolePackHealthNoticeProps {
-  item: RolePackListItem;
+  /** 缺省表示该角色不是云下发包，直接不渲染（省掉调用方的 has + 非空断言） */
+  item?: RolePackListItem;
   onRetryMissingSkills: (roleId: string) => void;
   busy?: boolean;
 }
@@ -16,6 +17,7 @@ export interface RolePackHealthNoticeProps {
 export const RolePackHealthNotice: React.FC<RolePackHealthNoticeProps> = ({ item, onRetryMissingSkills, busy = false }) => {
   const { t } = useI18n();
   const text = t.rolePack;
+  if (!item) return null;
   const missingSkills = item.missingSkills ?? [];
 
   return (

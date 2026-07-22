@@ -294,9 +294,9 @@ export const ExpertPanel: React.FC = () => {
                   </div>
                 ) : null}
 
-                {tab === 'mine' && rolePacksByRoleId.has(entry.roleId) ? (
+                {tab === 'mine' ? (
                   <RolePackHealthNotice
-                    item={rolePacksByRoleId.get(entry.roleId)!}
+                    item={rolePacksByRoleId.get(entry.roleId)}
                     busy={busyRolePackId === entry.roleId}
                     onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
                   />

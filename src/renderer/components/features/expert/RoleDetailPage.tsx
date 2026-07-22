@@ -19,7 +19,9 @@ import type {
   RolePanelDetail,
   RolePanelMemory,
   RoleProactivityLevel,
+  RoleVisual,
 } from "@shared/contract/roleAssets";
+import type { SkillCategory } from "@shared/contract/skillRepository";
 import ipcService from "../../../services/ipcService";
 import { createLogger } from "../../../utils/logger";
 import { startEditRoleChat } from "../../../utils/startEditRoleChat";
@@ -68,6 +70,93 @@ async function setRoleProactivity(
     level,
   });
 }
+
+async function updateRoleVisual(roleId: string, visual: RoleVisual): Promise<RoleVisual> {
+  return ipcService.invokeDomain<RoleVisual>(IPC_DOMAINS.ROLES, "updateVisual", { roleId, visual });
+}
+
+const CATEGORY_IDS: SkillCategory[] = [
+  "docs-office", "data-analysis", "design-creative", "content-marketing",
+  "product", "research", "automation", "development",
+];
+const ICON_NAMES = ["Microscope", "BarChart3", "FileText", "Palette", "Megaphone", "Zap", "Wrench"];
+
+const VisualEditor: React.FC<{
+  roleId: string;
+  detail: RolePanelDetail;
+  onSaved: () => void;
+}> = ({ roleId, detail, onSaved }) => {
+  const { t } = useI18n();
+  const text = t.expert.visual;
+  const [visual, setVisual] = useState<RoleVisual>(detail.visual);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setVisual(detail.visual), [detail.visual]);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateRoleVisual(roleId, {
+        ...visual,
+        displayName: visual.displayName?.trim(),
+        profession: visual.profession?.trim(),
+        tags: (visual.tags ?? []).map((value) => value.trim()).filter(Boolean),
+        quickPrompts: (visual.quickPrompts ?? []).map((value) => value.trim()).filter(Boolean),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      logger.error("Failed to update role visual", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SettingsSection title={text.title} description={text.description}>
+      {/* E6-3 接入 locallyModified 前，内置角色统一提示：这里拿不到角色包的本地修改状态。 */}
+      {detail.isBuiltin ? <p className="mb-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{text.builtinNotice}</p> : null}
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="space-y-1 text-xs text-zinc-400">
+          <span>{text.displayName}</span>
+          <input value={visual.displayName ?? ""} onChange={(event) => setVisual({ ...visual, displayName: event.target.value })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
+        </label>
+        <label className="space-y-1 text-xs text-zinc-400">
+          <span>{text.profession}</span>
+          <input value={visual.profession ?? ""} onChange={(event) => setVisual({ ...visual, profession: event.target.value })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
+        </label>
+        <label className="space-y-1 text-xs text-zinc-400">
+          <span>{text.category}</span>
+          <select value={visual.category ?? ""} onChange={(event) => setVisual({ ...visual, category: (event.target.value || undefined) as SkillCategory | undefined })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none">
+            <option value="">—</option>
+            {CATEGORY_IDS.map((category) => <option key={category} value={category}>{text.categories[category]}</option>)}
+          </select>
+        </label>
+        <label className="space-y-1 text-xs text-zinc-400">
+          <span>{text.icon}</span>
+          <select value={visual.icon ?? ""} onChange={(event) => setVisual({ ...visual, icon: event.target.value || undefined })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none">
+            <option value="">—</option>
+            {ICON_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>
+        <label className="space-y-1 text-xs text-zinc-400">
+          <span>{text.tags}</span>
+          <textarea value={(visual.tags ?? []).join("\n")} onChange={(event) => setVisual({ ...visual, tags: event.target.value.split("\n") })} placeholder={text.tagsHint} rows={3} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
+        </label>
+        <label className="space-y-1 text-xs text-zinc-400">
+          <span>{text.quickPrompts}</span>
+          <textarea value={(visual.quickPrompts ?? []).join("\n")} onChange={(event) => setVisual({ ...visual, quickPrompts: event.target.value.split("\n") })} placeholder={text.quickPromptsHint} rows={3} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
+        </label>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button /* ds-allow:button: 基本信息保存是紧凑的表单提交按钮，当前 Button primitive 会改变布局 */ type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50">{busy ? text.saving : text.save}</button>
+        {error ? <span className="text-xs text-red-400">{error}</span> : null}
+      </div>
+    </SettingsSection>
+  );
+};
 
 interface MemoryRowProps {
   roleId: string;
@@ -283,6 +372,7 @@ export interface RoleDetailPageProps {
   icon?: string;
   onBack: () => void;
   backLabel?: string;
+  onVisualUpdated?: () => void;
 }
 
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
@@ -290,6 +380,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
   icon,
   onBack,
   backLabel,
+  onVisualUpdated,
 }) => {
   const { t } = useI18n();
   const roleText = t.settings.roles;
@@ -323,11 +414,11 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
       </button>
       <header className="flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800 text-zinc-300">
-          <RoleIcon name={icon} className="h-7 w-7" />
+          <RoleIcon name={detail?.visual.icon ?? icon} className="h-7 w-7" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-base font-medium text-zinc-200">{roleId}</h3>
-          <p className="text-xs text-zinc-500">{roleText.detail.subtitle}</p>
+          <h3 className="text-base font-medium text-zinc-200">{detail?.visual.displayName || roleId}</h3>
+          <p className="text-xs text-zinc-500">{detail?.visual.profession || roleText.detail.subtitle}</p>
         </div>
         <button /* ds-allow:button: 对话式修改入口，emerald 语义色弱化胶囊，primitive 无对应变体 */
           type="button"
@@ -345,6 +436,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
       {error ? <div className="text-sm text-red-400">{error}</div> : null}
       {detail ? (
         <>
+          <VisualEditor roleId={roleId} detail={detail} onSaved={() => { void loadDetail(); onVisualUpdated?.(); }} />
           <SettingsSection
             title={roleText.detail.proactivityTitle}
             description={roleText.detail.proactivityDescription}

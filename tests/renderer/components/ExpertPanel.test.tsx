@@ -86,6 +86,8 @@ function makeRoleDetail(overrides: Partial<RolePanelDetail> = {}): RolePanelDeta
     memories: [{ filename: 'preference.md', name: '用户偏好', description: '产品偏好', content: '关注交付质量', updatedAt: '2026-07-23' }],
     history: ['- 整理了需求评审稿'],
     proactivity: { level: 'silent' },
+    visual: { displayName: '牧之', profession: '资深产品经理', icon: 'ClipboardList', category: 'product', tags: ['需求梳理', 'PRD 撰写'], quickPrompts: ['我有个产品想法，帮我梳理成需求清单'] },
+    isBuiltin: true,
     ...overrides,
   };
 }
@@ -110,14 +112,16 @@ describe('ExpertPanel', () => {
   it('「我的」渲染角色卡（花名/职业/记忆态），空记录显示未合作文案', async () => {
     listRoles.mockResolvedValue([
       makeEntry(),
-      makeEntry({ roleId: '自定义客服', source: 'user', icon: undefined, displayName: undefined, profession: undefined, memoryCount: 2, lastWork: '整理了 FAQ' }),
+      makeEntry({ roleId: '自定义客服', source: 'user', icon: undefined, displayName: '阿问', profession: '客服顾问', tags: ['FAQ 设计'], quickPrompts: ['帮我整理 FAQ，先找高频问题'], memoryCount: 2, lastWork: '整理了 FAQ' }),
     ]);
     render(<ExpertPanel />);
     await waitFor(() => {
       expect(screen.getByText('牧之')).toBeTruthy();
     });
     expect(screen.getByText('资深产品经理')).toBeTruthy();
-    expect(screen.getByText('自定义客服')).toBeTruthy();
+    expect(screen.getByText('阿问')).toBeTruthy();
+    expect(screen.getByText('FAQ 设计')).toBeTruthy();
+    expect(screen.getAllByText('可以直接开口')).toHaveLength(2);
     expect(screen.getByText(/2 条记忆/)).toBeTruthy();
     expect(screen.getByText('还没合作过')).toBeTruthy();
   });
@@ -172,6 +176,35 @@ describe('ExpertPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '返回' }));
     expect(screen.getByTestId('expert-card-牧之')).toBeTruthy();
+  });
+
+  it('保存基本信息后详情立即换成新花名，返回卡片也使用更新后的展示字段', async () => {
+    let saved = false;
+    const customEntry = (overrides: Partial<RolePanelEntry> = {}) => makeEntry({ roleId: '自定义专家', source: 'user', displayName: '初始名', profession: '初始职业', ...overrides });
+    listRoles.mockImplementation(async () => [customEntry(saved ? { displayName: '小满', profession: '增长顾问' } : {})]);
+    invokeDomain.mockImplementation((_domain: string, action: string, payload?: { visual?: Record<string, unknown> }) => {
+      if (action === 'detail') return Promise.resolve(makeRoleDetail({ roleId: '自定义专家', isBuiltin: false, visual: saved ? { displayName: '小满', profession: '增长顾问', tags: ['增长'], quickPrompts: ['帮我看增长，给建议'] } : { displayName: '初始名', profession: '初始职业' } }));
+      if (action === 'updateVisual') {
+        saved = true;
+        return Promise.resolve(payload?.visual);
+      }
+      if (action === 'listBindings') return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-detail-自定义专家')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('expert-detail-自定义专家'));
+    await waitFor(() => expect(screen.getByText('基本信息')).toBeTruthy());
+
+    fireEvent.change(screen.getByDisplayValue('初始名'), { target: { value: '小满' } });
+    fireEvent.change(screen.getByDisplayValue('初始职业'), { target: { value: '增长顾问' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存基本信息' }));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateVisual', expect.objectContaining({ roleId: '自定义专家', visual: expect.objectContaining({ displayName: '小满', profession: '增长顾问' }) })));
+    await waitFor(() => expect(screen.getAllByText('小满').length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByRole('button', { name: '返回' }));
+    await waitFor(() => expect(screen.getByTestId('expert-card-自定义专家').textContent).toContain('小满'));
+    expect(screen.getByTestId('expert-card-自定义专家').textContent).toContain('增长顾问');
   });
 
   it('空列表渲染空态', async () => {

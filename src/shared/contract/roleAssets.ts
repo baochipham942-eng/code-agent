@@ -24,6 +24,16 @@ export interface BuiltinRoleVisual {
   quickPrompts: string[];
 }
 
+/** 用户角色写入 agents/<id>.md frontmatter 的展示层字段。 */
+export interface RoleVisual {
+  icon?: string;
+  category?: SkillCategory;
+  displayName?: string;
+  profession?: string;
+  tags?: string[];
+  quickPrompts?: string[];
+}
+
 /** 角色面板列表条目（设计 §7：卡片 = 名字/记忆条数/最近工作） */
 export interface RolePanelEntry {
   /** 角色 ID = agents/<id>.md 的 frontmatter name = roles/<id>/ 目录名 */
@@ -147,4 +157,8 @@ export interface RolePanelDetail {
   history: string[];
   /** 主动性配置（解析后的生效值：settings 覆盖 > frontmatter > 出厂默认 silent） */
   proactivity: RoleProactivityConfig;
+  /** 编译内预设优先；自建角色取 agents/<id>.md 的扁平 visual frontmatter。 */
+  visual: RoleVisual;
+  /** 内置角色也允许写入个人展示偏好，但产品更新不会再覆盖这份定义。 */
+  isBuiltin: boolean;
 }

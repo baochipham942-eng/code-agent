@@ -7,7 +7,8 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import type { RoleProactivityLevel } from '../../../shared/contract/roleAssets';
+import type { RoleProactivityLevel, RoleVisual } from '../../../shared/contract/roleAssets';
+import type { SkillCategory } from '../../../shared/contract/skillRepository';
 import type { CoreAgentConfig, CoreAgentId, ModelTier } from './types';
 
 function stringValue(value: unknown): string | undefined {
@@ -37,6 +38,69 @@ function modelTierValue(value: unknown): ModelTier | undefined {
 
 function proactivityLevelValue(value: unknown): RoleProactivityLevel | undefined {
   return value === 'silent' || value === 'daily' || value === 'realtime' ? value : undefined;
+}
+
+const SKILL_CATEGORIES: ReadonlySet<SkillCategory> = new Set([
+  'docs-office', 'data-analysis', 'design-creative', 'content-marketing',
+  'product', 'research', 'automation', 'development',
+]);
+
+function roleVisualFromFrontmatter(frontmatter: Record<string, unknown>): RoleVisual {
+  const category = stringValue(frontmatter.category);
+  return {
+    ...(stringValue(frontmatter['display-name']) ? { displayName: stringValue(frontmatter['display-name']) } : {}),
+    ...(stringValue(frontmatter.profession) ? { profession: stringValue(frontmatter.profession) } : {}),
+    ...(stringValue(frontmatter.icon) ? { icon: stringValue(frontmatter.icon) } : {}),
+    ...(category && SKILL_CATEGORIES.has(category as SkillCategory) ? { category: category as SkillCategory } : {}),
+    ...(stringArrayValue(frontmatter.tags) ? { tags: stringArrayValue(frontmatter.tags) } : {}),
+    ...(stringArrayValue(frontmatter['quick-prompts']) ? { quickPrompts: stringArrayValue(frontmatter['quick-prompts']) } : {}),
+  };
+}
+
+/** 只读取展示层白名单；未知 frontmatter 对运行时和写回都保持透明。 */
+export function parseAgentMdVisual(content: string): RoleVisual {
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  return frontmatterMatch ? roleVisualFromFrontmatter(parseSimpleYaml(frontmatterMatch[1])) : {};
+}
+
+function scalar(value: string): string {
+  return value.replace(/[\r\n]/g, ' ').trim();
+}
+
+function block(key: string, values: string[], newline: string): string {
+  return values.length === 0
+    ? ''
+    : `${key}:${newline}${values.map((value) => `  - ${scalar(value)}`).join(newline)}`;
+}
+
+/**
+ * 只改展示层白名单，保留 frontmatter 的顺序、未知 key 和正文原文。
+ * tags / quick-prompts 强制块状数组，避免 simple YAML parser 将中文逗号拆断。
+ */
+export function updateAgentMdVisual(content: string, visual: RoleVisual): string {
+  const match = content.match(/^(---)(\r?\n)([\s\S]*?)(\r?\n---)([\s\S]*)$/);
+  if (!match) throw new Error('Invalid agent definition: missing frontmatter');
+  const [, opening, newline, rawFrontmatter, closing, body] = match;
+  let frontmatter = rawFrontmatter;
+  const replacements: Array<[string, string]> = [
+    ['display-name', visual.displayName ? `display-name: ${scalar(visual.displayName)}` : ''],
+    ['profession', visual.profession ? `profession: ${scalar(visual.profession)}` : ''],
+    ['icon', visual.icon ? `icon: ${scalar(visual.icon)}` : ''],
+    ['category', visual.category ? `category: ${visual.category}` : ''],
+    ['tags', block('tags', visual.tags ?? [], newline)],
+    ['quick-prompts', block('quick-prompts', visual.quickPrompts ?? [], newline)],
+  ];
+  for (const [key, replacement] of replacements) {
+    const expression = new RegExp(`(^|\\r?\\n)${key}:.*(?:\\r?\\n[ \\t]+-.*)*`, 'm');
+    if (expression.test(frontmatter)) {
+      frontmatter = frontmatter.replace(expression, (_matched, prefix: string) => replacement ? `${prefix}${replacement}` : '');
+    } else if (replacement) {
+      frontmatter += `${frontmatter ? newline : ''}${replacement}`;
+    }
+  }
+  // 删除字段后留下的空白行只限于刚才删掉的位置，不触碰其它字段顺序或正文。
+  frontmatter = frontmatter.replace(/(?:\r?\n){3,}/g, `${newline}${newline}`);
+  return `${opening}${newline}${frontmatter}${closing}${body}`;
 }
 
 /**
@@ -73,6 +137,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     ...(proactivityLevel
       ? { proactivity: { level: proactivityLevel, ...(proactivityCadence ? { cadence: proactivityCadence } : {}) } }
       : {}),
+    visual: roleVisualFromFrontmatter(frontmatter),
   };
 }
 

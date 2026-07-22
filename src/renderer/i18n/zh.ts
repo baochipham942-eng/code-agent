@@ -18,6 +18,7 @@ import { labGpt1Zh } from './labGpt1';
 import { labNanogptZh } from './labNanogpt';
 import { labLlamafactoryZh } from './labLlamafactory';
 import { labAlignmentZh } from './labAlignment';
+import { teamZh } from './team';
 import { knowledgeMemoryZh } from './knowledgeMemory';
 
 export const zh = {
@@ -910,6 +911,7 @@ export const zh = {
     professionFallback: '自定义角色',
   },
 
+  ...teamZh,
   ...knowledgeMemoryZh,
   ...chatTranscriptZh,
   ...chatInputZh,

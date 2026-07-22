@@ -155,7 +155,7 @@ async function installEntry(
   const currentHash = await readAgentHash(entry.roleId);
   let installedAgentMdHash = previous?.installedAgentMdHash ?? '';
   let locallyModified = false;
-  if (!currentHash || (previous && currentHash === previous.installedAgentMdHash)) {
+  if (!currentHash || previous?.installedAgentMdHash === currentHash) {
     await fs.mkdir(path.dirname(agentPath), { recursive: true });
     await fs.writeFile(agentPath, entry.agentMd, 'utf8');
     installedAgentMdHash = hash(entry.agentMd);

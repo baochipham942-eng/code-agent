@@ -5,6 +5,10 @@ import type { MultiagentExecutionResult } from '../../agent/multiagentExecutionT
 import { launchAgentTeam } from '../../agent/multiagentTools/spawnAgent';
 import type { SubagentExecutionContext } from '../../agent/subagentExecutorTypes';
 import { getToolResolver } from '../../tools/dispatch/toolResolver';
+import {
+  getApplicationRunRegistry,
+  getConfiguredApplicationRunRegistry,
+} from '../../app/applicationRunRegistry';
 import { getSessionManager } from '../infra/sessionManager';
 import { getLibraryService } from '../library/libraryService';
 
@@ -81,10 +85,22 @@ export async function launchTeamRecipe(args: {
     return { ok: false, error: '会话不存在' };
   }
 
+  const registry = getConfiguredApplicationRunRegistry();
+  if (!registry) {
+    return { ok: false, error: '组队功能需要 Durable 运行时' };
+  }
+
   const agents = compileRecipeToAgents(recipe, args.topic);
-  const runId = `team_recipe_${crypto.randomUUID()}`;
+  const requestedRunId = `team_recipe_${crypto.randomUUID()}`;
+  const parentRun = await getApplicationRunRegistry().startDurable({
+    sessionId: args.sessionId,
+    runId: requestedRunId,
+    workspace: session.workingDirectory ?? '',
+    cwd: session.workingDirectory ?? process.cwd(),
+  });
+  const parentRunId = parentRun.context.runId;
   const context: SubagentExecutionContext = {
-    runId,
+    runId: parentRunId,
     sessionId: args.sessionId,
     workspace: session.workingDirectory,
     cwd: session.workingDirectory ?? process.cwd(),
@@ -93,17 +109,40 @@ export async function launchTeamRecipe(args: {
     permission: { request: async () => true },
     events: { emit: () => undefined },
     abortSignal: new AbortController().signal,
-    currentToolCallId: `${runId}-team-recipe`,
+    currentToolCallId: `${parentRunId}-team-recipe`,
   };
 
   const title = `${recipe.name}·${args.topic}`.slice(0, 120);
+  const terminalParent = async (status: 'completed' | 'failed', reason?: string) => {
+    try {
+      await registry.terminalDurable(parentRunId, {
+        now: Date.now(),
+        status,
+        reason,
+        event: {
+          type: status === 'completed' ? 'team_recipe_completed' : 'team_recipe_failed',
+          payload: { recipeId: recipe.id, sessionId: args.sessionId, reason },
+          recordedAt: Date.now(),
+        },
+      }, parentRun);
+    } catch (error) {
+      console.warn('[TeamRecipe] parent Durable Run 清理失败', error);
+    }
+  };
   void launchAgentTeam(agents, context)
-    .then((result) => archiveTeamResult(result, {
-      projectId: session.projectId ?? null,
-      title,
-      sourceSessionId: args.sessionId,
-    }))
-    .catch((error) => console.warn('[TeamRecipe] 团队运行失败', error));
+    .then(async (result) => {
+      if (!result.success) console.warn('[TeamRecipe] 团队未成功启动/完成', result.error);
+      archiveTeamResult(result, {
+        projectId: session.projectId ?? null,
+        title,
+        sourceSessionId: args.sessionId,
+      });
+      await terminalParent(result.success ? 'completed' : 'failed', result.error);
+    })
+    .catch(async (error) => {
+      console.warn('[TeamRecipe] 团队运行失败', error);
+      await terminalParent('failed', error instanceof Error ? error.message : String(error));
+    });
 
-  return { ok: true, runId: context.runId };
+  return { ok: true, runId: parentRunId };
 }

@@ -3,6 +3,8 @@
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
+import os from 'os';
+import path from 'path';
 import type { LibraryItem, LibraryItemKind, LibraryListOptions, SessionContextPin } from '@shared/contract/library';
 import { guardSensitiveText } from '../../../security/sensitiveDataGuard';
 
@@ -14,6 +16,17 @@ function guardLibraryText(value: string, maxLength: number): string {
     mode: 'local-persist',
     maxLength,
   }).trim();
+}
+
+function normalizePathOrUri(value: string): string {
+  const trimmed = value.trim();
+  if (/^[a-z][a-z\d+.-]*:/i.test(trimmed)) return trimmed;
+  const expanded = trimmed === '~'
+    ? os.homedir()
+    : trimmed.startsWith(`~${path.sep}`)
+      ? path.join(os.homedir(), trimmed.slice(2))
+      : trimmed;
+  return path.resolve(expanded);
 }
 
 function parseJsonArray(value: unknown): string[] {
@@ -58,7 +71,7 @@ export class LibraryRepository {
       item.projectId,
       guardLibraryText(item.title, 2_000),
       item.kind,
-      guardLibraryText(item.pathOrUri, 4_000),
+      normalizePathOrUri(item.pathOrUri),
       JSON.stringify(item.tags.map((tag) => guardLibraryText(tag, 500))),
       item.summary ? guardLibraryText(item.summary, 2_000) : null,
       item.sourceSessionId ?? null,
@@ -149,9 +162,10 @@ export class LibraryRepository {
   }
 
   findByPath(projectId: string | null, pathOrUri: string): LibraryItem | undefined {
+    const normalizedPathOrUri = normalizePathOrUri(pathOrUri);
     const row = (projectId === null
-      ? this.db.prepare('SELECT * FROM library_items WHERE project_id IS NULL AND path_or_uri = ?').get(pathOrUri)
-      : this.db.prepare('SELECT * FROM library_items WHERE project_id = ? AND path_or_uri = ?').get(projectId, pathOrUri)
+      ? this.db.prepare('SELECT * FROM library_items WHERE project_id IS NULL AND path_or_uri = ?').get(normalizedPathOrUri)
+      : this.db.prepare('SELECT * FROM library_items WHERE project_id = ? AND path_or_uri = ?').get(projectId, normalizedPathOrUri)
     ) as SQLiteRow | undefined;
     return row ? rowToLibraryItem(row) : undefined;
   }

@@ -9,14 +9,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Settings2, UserRound, UsersRound } from 'lucide-react';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
+import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
 import { listRoles } from '../../../services/rolesClient';
 import { inviteExpert } from '../../../utils/inviteExpert';
+import { launchTeamRecipe } from '../../../utils/launchTeamRecipe';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { Button } from '../../primitives/Button';
 import { IconButton } from '../../primitives/IconButton';
+import { Input } from '../../primitives/Input';
+import { Modal } from '../../primitives/Modal';
 import { RoleIcon } from '../shared/RoleIcon';
 
 type ExpertTab = 'mine' | 'discover';
@@ -50,6 +54,8 @@ export const ExpertPanel: React.FC = () => {
   const [tab, setTab] = useState<ExpertTab>('mine');
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeRecipeId, setActiveRecipeId] = useState<string | null>(null);
+  const [recipeTopic, setRecipeTopic] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,6 +78,22 @@ export const ExpertPanel: React.FC = () => {
 
   const discoverEntries = entries.filter((e) => e.source === 'builtin');
   const shown = tab === 'mine' ? entries : discoverEntries;
+  const activeRecipe = TEAM_RECIPES.find((recipe) => recipe.id === activeRecipeId);
+
+  const openRecipe = (recipeId: string) => {
+    setActiveRecipeId(recipeId);
+    setRecipeTopic('');
+  };
+
+  const closeRecipe = () => {
+    setActiveRecipeId(null);
+    setRecipeTopic('');
+  };
+
+  const launchActiveRecipe = () => {
+    if (!activeRecipe || !recipeTopic.trim()) return;
+    void launchTeamRecipe(activeRecipe.id, activeRecipe.name, recipeTopic.trim());
+  };
 
   return (
     <FullScreenPage testId="expert-panel">
@@ -114,13 +136,50 @@ export const ExpertPanel: React.FC = () => {
       />
 
       <div className="flex-1 overflow-y-auto p-4">
-        {!loading && shown.length === 0 ? (
+        {!loading && tab === 'mine' && shown.length === 0 ? (
           <div className="rounded-lg border border-dashed border-zinc-700/70 p-8 text-center text-sm text-zinc-500">
             {text.empty}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {shown.map((entry) => (
+          <div className="space-y-6">
+            {tab === 'discover' ? (
+              <section aria-labelledby="team-recipes-title">
+                <h2 id="team-recipes-title" className="mb-3 text-sm font-medium text-zinc-200">
+                  {t.team.sectionTitle}
+                </h2>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {TEAM_RECIPES.map((recipe) => (
+                    <div
+                      key={recipe.id}
+                      data-testid={`team-recipe-${recipe.id}`}
+                      className="flex flex-col gap-2.5 rounded-xl border border-violet-900/60 bg-violet-950/20 p-3.5"
+                    >
+                      <div>
+                        <h3 className="text-sm font-medium text-zinc-100">{recipe.name}</h3>
+                        <p className="mt-1 text-xs text-violet-200/70">
+                          {[...new Set(recipe.members.map((member) => member.roleId))].join(' + ')}
+                        </p>
+                      </div>
+                      <p className="text-xs leading-relaxed text-zinc-400">{recipe.description}</p>
+                      <div className="mt-auto pt-1">
+                        <Button variant="secondary" size="sm" onClick={() => openRecipe(recipe.id)}>
+                          {t.team.useRecipe}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {tab === 'discover' && !loading && shown.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-zinc-700/70 p-8 text-center text-sm text-zinc-500">
+                {text.empty}
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {shown.map((entry) => (
               <div
                 key={entry.roleId}
                 data-testid={`expert-card-${entry.roleId}`}
@@ -197,9 +256,38 @@ export const ExpertPanel: React.FC = () => {
                 </div>
               </div>
             ))}
+            </div>
           </div>
         )}
       </div>
+
+      <Modal
+        isOpen={activeRecipe !== undefined}
+        onClose={closeRecipe}
+        title={activeRecipe?.name}
+        size="sm"
+        footer={(
+          <Button
+            variant="primary"
+            onClick={launchActiveRecipe}
+            disabled={!recipeTopic.trim()}
+          >
+            {t.team.launch}
+          </Button>
+        )}
+      >
+        <div className="space-y-2">
+          <Input
+            autoFocus
+            value={recipeTopic}
+            placeholder={t.team.topicPlaceholder}
+            onChange={(event) => setRecipeTopic(event.target.value)}
+          />
+          {!recipeTopic.trim() ? (
+            <p className="text-xs text-zinc-500">{t.team.topicRequired}</p>
+          ) : null}
+        </div>
+      </Modal>
     </FullScreenPage>
   );
 };

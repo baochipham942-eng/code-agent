@@ -19,6 +19,7 @@ import { labGpt1En } from './labGpt1';
 import { labNanogptEn } from './labNanogpt';
 import { labLlamafactoryEn } from './labLlamafactory';
 import { labAlignmentEn } from './labAlignment';
+import { teamEn } from './team';
 import { knowledgeMemoryEn } from './knowledgeMemory';
 
 export const en: Translations = {
@@ -922,6 +923,7 @@ export const en: Translations = {
     professionFallback: 'Custom role',
   },
 
+  ...teamEn,
   ...knowledgeMemoryEn,
   ...chatTranscriptEn,
   ...chatInputEn,

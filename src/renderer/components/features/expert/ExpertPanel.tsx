@@ -30,6 +30,7 @@ import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
 import { RoleIcon } from '../shared/RoleIcon';
 import { RolePackHealthNotice, RolePackShelf } from './RolePackShelf';
+import { RoleDetailPage } from './RoleDetailPage';
 
 type ExpertTab = 'mine' | 'discover';
 
@@ -68,6 +69,7 @@ export const ExpertPanel: React.FC = () => {
   const [busyRolePackId, setBusyRolePackId] = useState<string | null>(null);
   const [activeRecipeId, setActiveRecipeId] = useState<string | null>(null);
   const [recipeTopic, setRecipeTopic] = useState('');
+  const [selectedRole, setSelectedRole] = useState<RolePanelEntry | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -158,7 +160,7 @@ export const ExpertPanel: React.FC = () => {
         description={text.panelDescription}
         onClose={() => setShowExpertPanel(false)}
         closeLabel={t.common.close}
-        actions={(
+        actions={selectedRole ? undefined : (
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
               {(['mine', 'discover'] as const).map((key) => (
@@ -191,6 +193,15 @@ export const ExpertPanel: React.FC = () => {
       />
 
       <div className="flex-1 overflow-y-auto p-4">
+        {selectedRole ? (
+          <RoleDetailPage
+            roleId={selectedRole.roleId}
+            icon={selectedRole.icon}
+            backLabel={text.back}
+            onBack={() => setSelectedRole(null)}
+          />
+        ) : (
+          <>
         {!loading && tab === 'mine' && shown.length === 0 ? (
           <div className="rounded-lg border border-dashed border-zinc-700/70 p-8 text-center text-sm text-zinc-500">
             {text.empty}
@@ -319,7 +330,15 @@ export const ExpertPanel: React.FC = () => {
                   </div>
                 ) : null}
 
-                <div className="mt-auto pt-1">
+                <div className="mt-auto flex gap-2 pt-1">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    data-testid={`expert-detail-${entry.roleId}`}
+                    onClick={() => setSelectedRole(entry)}
+                  >
+                    {text.details}
+                  </Button>
                   <Button
                     variant="primary"
                     size="sm"
@@ -334,6 +353,8 @@ export const ExpertPanel: React.FC = () => {
             ))}
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
 

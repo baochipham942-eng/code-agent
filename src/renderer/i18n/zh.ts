@@ -22,6 +22,7 @@ import { libraryZh } from './library';
 import { teamZh } from './team';
 import { knowledgeMemoryZh } from './knowledgeMemory';
 import { rolePackZh } from './rolePack';
+import { expertZh } from './expert';
 
 export const zh = {
   // Common
@@ -872,23 +873,7 @@ export const zh = {
 
   ...libraryZh,
 
-  // 专家全屏页（Batch 3 E2）
-  expert: {
-    panelTitle: '专家',
-    panelDescription: '各有专长的持久搭档 · 越用越懂你',
-    tabMine: '我的',
-    tabDiscover: '发现',
-    invite: '请 TA 来',
-    configure: '配置角色',
-    refresh: '刷新',
-    loadFailed: '专家列表加载失败',
-    empty: '还没有专家。重启应用会自动安装预设专家，或到设置里新建角色。',
-    memoryCount: '{count} 条记忆',
-    lastWorkPrefix: '最近：',
-    noRecordYet: '还没合作过',
-    quickPromptsTitle: '可以直接开口',
-    professionFallback: '自定义角色',
-  },
+  ...expertZh,
 
   ...teamZh,
   ...rolePackZh,
@@ -1048,5 +1033,4 @@ export const zh = {
     config: { label: '配置', description: '查看当前配置' },
   },
 };
-
 export type Translations = typeof zh;

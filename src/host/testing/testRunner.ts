@@ -38,6 +38,7 @@ import { EvalCritic } from './evalCritic';
 import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
 import { isProviderVariantDisabled } from '../prompts/providerVariants';
 import { OS_SANDBOX } from '../../shared/constants/sandbox';
+import { TEST_TIMEOUTS } from '../../shared/constants/timeouts';
 import { getSandboxManager } from '../sandbox';
 
 const execAsync = promisify(exec);
@@ -252,6 +253,16 @@ export class TestRunner {
       ? `${result.failureReason}; ${gateReason}`
       : gateReason;
     result.errors.push(gateReason);
+  }
+
+  private appendTimeoutTelemetryFailureReason(result: TestResult): void {
+    const telemetry = result.telemetryCompleteness;
+    if (!telemetry) return;
+
+    const progress = `执行至第 ${telemetry.turnCount} 轮，已记录 ${telemetry.toolCallCount} 次工具调用、${telemetry.modelCallCount} 次模型调用`;
+    result.failureReason = result.failureReason
+      ? `${result.failureReason}; ${progress}`
+      : progress;
   }
 
   private toTrialSummary(result: TestResult): NonNullable<TestResult['trials']>[number] {
@@ -667,6 +678,7 @@ export class TestRunner {
       turnCount: 0,
       score: 0,
     };
+    let completedExecution = false;
 
     logger.info('Running test', { testId: testCase.id });
     this.emit({ type: 'case_start', testId: testCase.id, description: testCase.description });
@@ -957,22 +969,11 @@ export class TestRunner {
         result.failureStage = 'infra';
       }
 
-      await this.attachTelemetryReplay(testCase, result, agent);
-
-      // P3: Trajectory analysis (when enabled)
-      if (this.config.enableTrajectoryAnalysis) {
-        try {
-          const { TrajectoryBuilder } = await import('../evaluation/trajectory');
-          const builder = new TrajectoryBuilder();
-          result.trajectory = builder.buildFromTestResult(result, testCase);
-        } catch (trajError: unknown) {
-          const message = trajError instanceof Error ? trajError.message : String(trajError);
-          logger.warn('Trajectory analysis failed', { testId: testCase.id, error: message });
-        }
-      }
+      completedExecution = true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       // WP1-2：429/超时/5xx/网络 → infra 桶，不算 agent 能力失败
+      const killedByTimeout = /timeout after \d+ms/i.test(message);
       if (isInfraExclusionError(message)) {
         result.status = 'infra_excluded';
         result.failureStage = 'infra';
@@ -981,6 +982,7 @@ export class TestRunner {
       }
       result.failureReason = message || 'Unknown error';
       result.errors.push(message || String(error));
+      result.killedByTimeout = killedByTimeout;
       this.emit({ type: 'error', testId: testCase.id, error: message });
       // Circuit breaker: 账号/余额/内容策略等持久性错误 → abort 整个 run，
       // 避免后续 case 重复踩同一个错误烧 API 费。
@@ -995,6 +997,26 @@ export class TestRunner {
       // 只在未捕获时补——不许覆盖断言时刻的定格快照（审计 R2-M1 幽灵事件面）。
       if (testCase.goal_contract && result.goalRun === undefined) {
         result.goalRun = agent.getGoalRunRecord?.();
+      }
+
+      // 所有退出路径都在这里收敛 telemetry。此前超时从 catch 直接落到 finally，
+      // 绕过 try 内的 attachTelemetryReplay，导致 DB 只能写入全 0 fallback。
+      result.sessionId ??= agent.getSessionId?.();
+      await this.attachTelemetryReplay(testCase, result, agent);
+      if (result.killedByTimeout) {
+        this.appendTimeoutTelemetryFailureReason(result);
+      }
+
+      // 保持原有时序：轨迹分析只发生在断言已完成的正常执行路径，且读取已收敛的 telemetry。
+      if (completedExecution && this.config.enableTrajectoryAnalysis) {
+        try {
+          const { TrajectoryBuilder } = await import('../evaluation/trajectory');
+          const builder = new TrajectoryBuilder();
+          result.trajectory = builder.buildFromTestResult(result, testCase);
+        } catch (trajError: unknown) {
+          const message = trajError instanceof Error ? trajError.message : String(trajError);
+          logger.warn('Trajectory analysis failed', { testId: testCase.id, error: message });
+        }
       }
 
       // 清理注入的附件（best-effort）
@@ -1171,7 +1193,7 @@ export function createDefaultConfig(
     testCaseDir: testDirs.testCases.new, // Default to new path
     resultsDir: testDirs.results.new,
     workingDirectory,
-    defaultTimeout: parseInt(process.env.CODE_AGENT_TEST_TIMEOUT || '60000', 10),
+    defaultTimeout: parseInt(process.env.CODE_AGENT_TEST_TIMEOUT || String(TEST_TIMEOUTS.DEFAULT), 10),
     stopOnFailure: false,
     verbose: false,
     parallel: false,

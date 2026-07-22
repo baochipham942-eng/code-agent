@@ -4,6 +4,7 @@ import { applyTelemetrySchema } from './schemaTelemetry';
 import { safeAlter, type Logger } from './schemaHelpers';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
+import { applySessionAutomationsNullableSourceMigration } from './migrations/sessionAutomations';
 
 
 
@@ -414,7 +415,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_automations (
       id TEXT PRIMARY KEY,
-      source_session_id TEXT NOT NULL,
+      source_session_id TEXT,
       type TEXT NOT NULL,
       status TEXT NOT NULL,
       title TEXT NOT NULL,
@@ -436,6 +437,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, 'ALTER TABLE session_automations ADD COLUMN source_ref_id TEXT', logger);
   safeAlter(db, 'ALTER TABLE session_automations ADD COLUMN result_session_id TEXT', logger);
   safeAlter(db, "ALTER TABLE session_automations ADD COLUMN config_json TEXT DEFAULT '{}'", logger);
+  applySessionAutomationsNullableSourceMigration(db);
 
   // Heartbeats 表 (心跳配置)
   db.exec(`

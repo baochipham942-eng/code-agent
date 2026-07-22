@@ -352,6 +352,7 @@ export class ExperimentAdapter {
           expectationResults: r.expectationResults,
           telemetryGate: r.telemetryGate,
           realAgentRun,
+          ...(r.killedByTimeout ? { killedByTimeout: true } : {}),
           ...(r.status === 'infra_excluded' ? { infraExcluded: true } : {}),
           ...(r.variance !== undefined ? { variance: r.variance, stdDev: r.stdDev, unstable: r.unstable } : {}),
         },

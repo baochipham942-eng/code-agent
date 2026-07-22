@@ -12,6 +12,7 @@ const appState = {
 
 const sessionState = {
   currentSessionId: 'session-1',
+  sessions: [] as Array<any>,
   messages: [] as Array<any>,
   sessionTasks: [] as Array<any>,
   sessionDesignBriefs: new Map<string, any>(),

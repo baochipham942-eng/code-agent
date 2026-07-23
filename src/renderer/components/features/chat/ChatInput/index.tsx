@@ -509,6 +509,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 斜杠命令 / 能力选择单元：slash popover 选择分发 + skill/connector/mcp 当轮挂载
   const {
     handleSlashCommandSelect,
+    selectWorkbenchCapabilityForCurrentTurn,
   } = useChatInputSlashCommands({
     value,
     currentSessionId,
@@ -910,6 +911,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               memoryToggleDisabled={!currentSessionId}
               onOpenLibrary={() => setShowLibraryPin(true)}
               libraryDisabled={!currentSessionId}
+              onSelectCapability={selectWorkbenchCapabilityForCurrentTurn}
             />
 
             {/* 运行权限模式 chip（高频，保留独立位置） */}

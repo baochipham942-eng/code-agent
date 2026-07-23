@@ -2,11 +2,17 @@ import fs from 'fs/promises';
 import path from 'path';
 import { createHash } from 'crypto';
 import JSZip from 'jszip';
+import { createLogger } from '../../services/infra/logger';
 
 export const MAX_GITHUB_ARCHIVE_BYTES = 50 * 1024 * 1024;
 
 const UNIX_FILE_TYPE_MASK = 0o170000;
 const UNIX_SYMLINK_TYPE = 0o120000;
+const logger = createLogger('GitHubArchiveSecurity');
+
+export interface ZipExtractionResult {
+  skippedSymlinkEntries: string[];
+}
 
 export async function downloadArchive(
   url: string,
@@ -71,14 +77,12 @@ function getUnixPermissions(entry: JSZip.JSZipObject): number | null {
   return typeof entry.unixPermissions === 'number' ? entry.unixPermissions : null;
 }
 
-function assertNotSymlinkEntry(entry: JSZip.JSZipObject): void {
+function isSymlinkEntry(entry: JSZip.JSZipObject): boolean {
   const unixPermissions = getUnixPermissions(entry);
-  if (
+  return (
     unixPermissions !== null
     && (unixPermissions & UNIX_FILE_TYPE_MASK) === UNIX_SYMLINK_TYPE
-  ) {
-    throw new Error(`Symbolic link zip entry rejected: ${entry.name}`);
-  }
+  );
 }
 
 /**
@@ -97,19 +101,24 @@ export function assertTrustedArchiveHash(
   }
 }
 
-export async function extractZipSafely(archive: Buffer, destDir: string): Promise<void> {
+export async function extractZipSafely(archive: Buffer, destDir: string): Promise<ZipExtractionResult> {
   const zip = await JSZip.loadAsync(archive);
   const entries = Object.values(zip.files);
+  const symlinkEntries = new Set<string>();
 
   for (const entry of entries) {
     const originalName = (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName
       ?? entry.name;
     assertSafeZipEntry(originalName);
-    assertNotSymlinkEntry(entry);
+    if (isSymlinkEntry(entry)) {
+      symlinkEntries.add(entry.name);
+      logger.warn('Skipping symbolic link zip entry', { entry: entry.name });
+    }
   }
 
   await fs.mkdir(destDir, { recursive: true });
   for (const entry of entries) {
+    if (symlinkEntries.has(entry.name)) continue;
     const outputPath = path.join(destDir, entry.name);
     if (entry.dir) {
       await fs.mkdir(outputPath, { recursive: true });
@@ -122,4 +131,5 @@ export async function extractZipSafely(archive: Buffer, destDir: string): Promis
       await fs.chmod(outputPath, unixPermissions & 0o777);
     }
   }
+  return { skippedSymlinkEntries: [...symlinkEntries] };
 }

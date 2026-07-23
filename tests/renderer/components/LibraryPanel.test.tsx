@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { LibraryItem } from '../../../src/shared/contract/library';
+import { LIBRARY_ITEM_KINDS, type LibraryItem } from '../../../src/shared/contract/library';
 
 const listLibraryItems = vi.fn<() => Promise<LibraryItem[]>>();
 const deleteLibraryItem = vi.fn().mockResolvedValue(undefined);
@@ -22,6 +22,7 @@ vi.mock('../../../src/renderer/services/projectClient', () => ({
 
 import { LibraryPanel } from '../../../src/renderer/components/features/knowledge/LibraryPanel';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 function makeItem(overrides: Partial<LibraryItem> = {}): LibraryItem {
   return {
@@ -40,6 +41,7 @@ function makeItem(overrides: Partial<LibraryItem> = {}): LibraryItem {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  useSessionStore.setState({ sessions: [] });
 });
 
 describe('LibraryPanel', () => {
@@ -69,6 +71,57 @@ describe('LibraryPanel', () => {
     await waitFor(() => {
       expect(listLibraryItems).toHaveBeenCalledWith({ projectId: 'proj_1' });
     });
+  });
+
+  it('按会话标题分组，找不到会话标题时归入未分组而不暴露会话 id', async () => {
+    listLibraryItems.mockResolvedValue([
+      makeItem({ id: 'lib_alpha', title: 'Alpha', sourceSessionId: 'session_alpha' }),
+      makeItem({ id: 'lib_beta', title: 'Beta', sourceSessionId: 'session_beta' }),
+      makeItem({ id: 'lib_missing', title: 'Missing', sourceSessionId: 'session_missing' }),
+    ]);
+    useSessionStore.setState({ sessions: [
+      { id: 'session_alpha', title: '需求梳理' },
+      { id: 'session_beta', title: '交付复盘' },
+    ] as never });
+    render(<LibraryPanel />);
+
+    await screen.findByText('需求梳理');
+    expect(screen.getByTestId('library-group-session_alpha')).toBeTruthy();
+    expect(screen.getByTestId('library-group-session_beta')).toBeTruthy();
+    expect(screen.getByTestId('library-group-ungrouped')).toBeTruthy();
+    expect(screen.getByText('未分组')).toBeTruthy();
+    expect(screen.queryByText('session_missing')).toBeNull();
+  });
+
+  it('按 contract 推导类型选项，筛选后只显示对应条目', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    listLibraryItems.mockResolvedValue([
+      makeItem({ id: 'upload', kind: 'upload', title: '上传条目' }),
+      makeItem({ id: 'artifact', kind: 'artifact', title: '产物条目' }),
+    ]);
+    render(<LibraryPanel />);
+    const filter = await screen.findByTestId('library-kind-filter') as HTMLSelectElement;
+    expect(filter.querySelectorAll('option')).toHaveLength(LIBRARY_ITEM_KINDS.length + 1);
+    fireEvent.change(filter, { target: { value: 'artifact' } });
+    await screen.findByText('产物条目');
+    expect(document.querySelector('[data-library-item="artifact"]')).toBeTruthy();
+    expect(document.querySelector('[data-library-item="upload"]')).toBeNull();
+  });
+
+  it('搜索可按摘要和标签命中', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    listLibraryItems.mockResolvedValue([
+      makeItem({ id: 'summary', title: '方案', summary: '包含发布节奏', tags: ['设计'] }),
+      makeItem({ id: 'tag', title: '素材', tags: ['关键证据'] }),
+    ]);
+    render(<LibraryPanel />);
+    const search = await screen.findByTestId('library-search');
+    fireEvent.change(search, { target: { value: '发布节奏' } });
+    expect(await screen.findByText('方案')).toBeTruthy();
+    expect(screen.queryByText('素材')).toBeNull();
+    fireEvent.change(search, { target: { value: '关键证据' } });
+    expect(await screen.findByText('素材')).toBeTruthy();
+    expect(screen.queryByText('方案')).toBeNull();
   });
 
   it('删除是两段式：第一次点进入确认态，第二次才真删', async () => {
@@ -134,4 +187,5 @@ describe('LibraryPanel', () => {
     screen.getByLabelText('关闭').click();
     expect(useAppStore.getState().showLibraryPanel).toBe(false);
   });
+
 });

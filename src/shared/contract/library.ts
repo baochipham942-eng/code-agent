@@ -9,7 +9,10 @@
  * - capture: 浏览器采集内容归档
  * - external_ref: 外部引用（URL 等，不落盘）
  */
-export type LibraryItemKind = 'upload' | 'artifact' | 'capture' | 'external_ref';
+/** 资料库支持的条目类型；UI 筛选和显示必须从此处推导。 */
+export const LIBRARY_ITEM_KINDS = ['upload', 'artifact', 'capture', 'external_ref'] as const;
+
+export type LibraryItemKind = (typeof LIBRARY_ITEM_KINDS)[number];
 
 /**
  * 资料库条目

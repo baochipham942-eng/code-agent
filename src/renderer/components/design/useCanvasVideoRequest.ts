@@ -3,7 +3,7 @@
 // 此处只负责落地，不再弹任何确认。
 //
 // 设计画布 store 是全局单例，但激活态按 session 记录，属主也绑定 session。agent 自动进画布
-// 只会设置 per-session 激活态并认领画布，不会切 workspaceMode；因此落地闸必须复用统一的
+// 只会设置 per-session 激活态并认领画布；因此落地闸必须复用统一的
 // designCanvasActive 判据，严格校验「当前 session 已设计激活 + 画布属主是当前 session」。
 import { useEffect } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -25,7 +25,7 @@ export function useCanvasVideoRequest(): void {
         };
 
         // 设计会话属主闸（fail-closed）：无主、属主非当前会话、或请求来自其他会话均拒绝。
-        // workspaceMode 不参与判定，agent 自动认领画布时仍可正常落地视频。
+        // agent 自动认领画布时仍可正常落地视频。
         const currentSessionId = useSessionStore.getState().currentSessionId;
         const requestMatchesCurrentSession = !request.sessionId || request.sessionId === currentSessionId;
         if (!requestMatchesCurrentSession || !isDesignCanvasActiveForSession(currentSessionId)) {

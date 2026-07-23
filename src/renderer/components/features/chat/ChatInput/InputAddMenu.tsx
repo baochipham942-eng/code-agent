@@ -3,11 +3,16 @@
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Image as ImageIcon, SlashSquare, Brain, BookOpen } from 'lucide-react';
+import { Plus, Image as ImageIcon, SlashSquare, Brain, BookOpen, Bot, ChevronRight, Plug, Sparkles } from 'lucide-react';
 import { useModeStore } from '../../../../stores/modeStore';
+import { useAppStore } from '../../../../stores/appStore';
+import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
+import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { InteractionMode } from '../../../../../shared/contract/agent';
 import type { SessionMemoryMode } from '../../../../../shared/contract';
+import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { useI18n } from '../../../../hooks/useI18n';
+import { InputAddSubmenu, type InputAddSubmenuItem } from './InputAddSubmenu';
 
 interface Props {
   onSlashCommand: () => void;
@@ -19,6 +24,8 @@ interface Props {
   /** Batch 2 L2：打开资料库 Pin 选择器（无会话时禁用） */
   onOpenLibrary: () => void;
   libraryDisabled?: boolean;
+  /** 当轮能力选择动作（由 ChatInput 从 useChatInputSlashCommands 透传） */
+  onSelectCapability: (capability: WorkbenchCapabilityRegistryItem) => void;
 }
 
 function buildModeOptions(hints: { code: string; plan: string; ask: string }): Array<{ value: InteractionMode; label: string; color: string; hint: string }> {
@@ -37,16 +44,43 @@ export const InputAddMenu: React.FC<Props> = ({
   memoryToggleDisabled,
   onOpenLibrary,
   libraryDisabled,
+  onSelectCapability,
 }) => {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [submenu, setSubmenu] = useState<'experts' | 'skills' | 'connectors' | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const interactionMode = useModeStore((s) => s.interactionMode);
   const setInteractionMode = useModeStore((s) => s.setInteractionMode);
+  const { skills, connectors } = useWorkbenchCapabilityRegistry();
+  const expertEntries = useAgentRegistryStore((s) => s.entries);
+  const activeAgentId = useAppStore((s) => s.activeAgentId);
+  const setActiveAgentId = useAppStore((s) => s.setActiveAgentId);
+  const openCapabilityHub = useAppStore((s) => s.openCapabilityHub);
   const modeOptions = buildModeOptions(t.inputAddMenu.modeHints);
+
+  const closeMenu = () => {
+    setSubmenu(null);
+    setOpen(false);
+  };
+  const focusComposer = () => {
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-testid="chat-composer-textarea"]')?.focus());
+  };
+  const capabilityItems = (items: WorkbenchCapabilityRegistryItem[]): InputAddSubmenuItem[] => items.map((item) => ({
+    id: item.id,
+    label: item.label,
+    description: item.kind === 'skill' ? item.description : item.kind === 'connector' ? item.detail || item.capabilities.join(' · ') : item.error,
+    selected: item.selected,
+  }));
+  const expertItems: InputAddSubmenuItem[] = expertEntries.map((entry) => ({
+    id: entry.id,
+    label: entry.name || entry.id,
+    description: entry.description,
+    selected: entry.id === activeAgentId,
+  }));
 
   useEffect(() => {
     if (!open) return;
@@ -54,7 +88,7 @@ export const InputAddMenu: React.FC<Props> = ({
       const target = e.target as Node;
       if (triggerRef.current?.contains(target)) return;
       if (menuRef.current?.contains(target)) return;
-      setOpen(false);
+      closeMenu();
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -65,7 +99,7 @@ export const InputAddMenu: React.FC<Props> = ({
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen((v) => { if (v) setSubmenu(null); return !v; })}
         aria-label={t.inputAddMenu.moreOptionsAria}
         aria-expanded={open}
         title={t.inputAddMenu.moreOptionsTitle}
@@ -104,7 +138,7 @@ export const InputAddMenu: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => {
-              setOpen(false);
+              closeMenu();
               onSlashCommand();
             }}
             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left"
@@ -114,13 +148,58 @@ export const InputAddMenu: React.FC<Props> = ({
             <span className="ml-auto text-[10px] text-zinc-500 font-mono">/</span>
           </button>
 
+          <div className="border-t border-zinc-700/60 mt-1 pt-1">
+            {([
+              ['experts', Bot, t.inputAddMenu.expertsLabel],
+              ['skills', Sparkles, t.inputAddMenu.skillsLabel],
+              ['connectors', Plug, t.inputAddMenu.connectorsLabel],
+            ] as const).map(([kind, Icon, label]) => (
+              <div key={kind} className="relative" onMouseEnter={() => setSubmenu(kind)}>
+                <button /* ds-allow:button: "+"菜单的二级入口是图标、文案和 chevron 对齐的完整菜单行，Button primitive 不适配 */
+                  type="button"
+                  onClick={() => setSubmenu((current) => current === kind ? null : kind)}
+                  aria-expanded={submenu === kind}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-200 hover:bg-zinc-700"
+                >
+                  <Icon className="h-3.5 w-3.5 text-zinc-400" />
+                  <span>{label}</span>
+                  <ChevronRight className="ml-auto h-3.5 w-3.5 text-zinc-500" />
+                </button>
+                {submenu === kind && (
+                  <div className="absolute bottom-0 left-full ml-1 z-40">
+                    <InputAddSubmenu
+                      items={kind === 'experts' ? expertItems : capabilityItems(kind === 'skills' ? skills : connectors)}
+                      onSelect={(item) => {
+                        if (kind === 'experts') {
+                          setActiveAgentId(item.id);
+                          focusComposer();
+                        } else {
+                          const capability = (kind === 'skills' ? skills : connectors).find((entry) => entry.id === item.id);
+                          if (capability) onSelectCapability(capability);
+                        }
+                        closeMenu();
+                      }}
+                      footerActions={[{
+                        label: kind === 'experts' ? t.inputAddMenu.manageExperts : kind === 'skills' ? t.inputAddMenu.manageSkills : t.inputAddMenu.manageConnectors,
+                        onClick: () => {
+                          openCapabilityHub(kind);
+                          closeMenu();
+                        },
+                      }]}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
           {/* Batch 2 L2: 资料库 Pin 选择器入口 */}
           <button /* ds-allow:button: "+"二级菜单行（图标+文案左对齐菜单项，同文件既有菜单行同构），Button primitive 是居中动作按钮形状，不适配菜单行 */
             type="button"
             data-library-pin-entry
             disabled={libraryDisabled}
             onClick={() => {
-              setOpen(false);
+              closeMenu();
               onOpenLibrary();
             }}
             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left disabled:cursor-not-allowed disabled:opacity-40"
@@ -135,7 +214,7 @@ export const InputAddMenu: React.FC<Props> = ({
             disabled={memoryToggleDisabled}
             onClick={() => {
               onToggleMemory();
-              setOpen(false);
+              closeMenu();
             }}
             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-700 transition-colors text-left disabled:cursor-not-allowed disabled:opacity-40"
             title={memoryMode === 'off' ? t.inputAddMenu.memoryOffTitle : t.inputAddMenu.memoryOnTitle}
@@ -157,7 +236,7 @@ export const InputAddMenu: React.FC<Props> = ({
                   type="button"
                   onClick={() => {
                     setInteractionMode(opt.value);
-                    setOpen(false);
+                    closeMenu();
                   }}
                   className={`
                     px-2 py-1.5 text-[11px] rounded transition-colors

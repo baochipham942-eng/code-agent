@@ -126,8 +126,10 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
         run_id, agent_id, name, role, status,
         start_time, end_time, duration_ms,
         tokens_in, tokens_out, tool_calls, cost_usd,
-        error, failure_category, files_changed_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        error, failure_category, files_changed_json,
+        dispatched_task, dispatched_task_truncated, dispatched_task_archive_item_id,
+        final_output, final_output_truncated, final_output_archive_item_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(run_id, agent_id) DO UPDATE SET
         name = excluded.name,
         role = excluded.role,
@@ -141,7 +143,13 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
         cost_usd = excluded.cost_usd,
         error = excluded.error,
         failure_category = excluded.failure_category,
-        files_changed_json = excluded.files_changed_json
+        files_changed_json = excluded.files_changed_json,
+        dispatched_task = excluded.dispatched_task,
+        dispatched_task_truncated = excluded.dispatched_task_truncated,
+        dispatched_task_archive_item_id = excluded.dispatched_task_archive_item_id,
+        final_output = excluded.final_output,
+        final_output_truncated = excluded.final_output_truncated,
+        final_output_archive_item_id = excluded.final_output_archive_item_id
     `).run(
       input.runId,
       input.agentId,
@@ -158,6 +166,12 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
       input.error,
       input.failureCategory,
       JSON.stringify(input.filesChanged ?? []),
+      input.dispatchedTask ?? null,
+      input.dispatchedTaskTruncated ? 1 : null,
+      input.dispatchedTaskArchiveItemId ?? null,
+      input.finalOutput ?? null,
+      input.finalOutputTruncated ? 1 : null,
+      input.finalOutputArchiveItemId ?? null,
     );
   }
 
@@ -190,8 +204,10 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
           run_id, agent_id, name, role, status,
           start_time, end_time, duration_ms,
           tokens_in, tokens_out, tool_calls, cost_usd,
-          error, failure_category, files_changed_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          error, failure_category, files_changed_json,
+          dispatched_task, dispatched_task_truncated, dispatched_task_archive_item_id,
+          final_output, final_output_truncated, final_output_archive_item_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const a of detail.agents) {
         insertAgent.run(
@@ -199,6 +215,8 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
           a.startTime, a.endTime, a.durationMs,
           a.tokensIn, a.tokensOut, a.toolCalls, a.costUsd,
           a.error, a.failureCategory, JSON.stringify(a.filesChanged ?? []),
+          a.dispatchedTask ?? null, a.dispatchedTaskTruncated ? 1 : null, a.dispatchedTaskArchiveItemId ?? null,
+          a.finalOutput ?? null, a.finalOutputTruncated ? 1 : null, a.finalOutputArchiveItemId ?? null,
         );
       }
     });
@@ -344,6 +362,12 @@ export class SwarmTraceRepository implements SwarmTraceRepo {
       error: (row.error as string | null) ?? null,
       failureCategory: (row.failure_category as string | null) ?? null,
       filesChanged: safeJSONParse<string[]>(row.files_changed_json, []),
+      dispatchedTask: (row.dispatched_task as string | null) ?? undefined,
+      dispatchedTaskTruncated: row.dispatched_task_truncated ? true : undefined,
+      dispatchedTaskArchiveItemId: (row.dispatched_task_archive_item_id as string | null) ?? undefined,
+      finalOutput: (row.final_output as string | null) ?? undefined,
+      finalOutputTruncated: row.final_output_truncated ? true : undefined,
+      finalOutputArchiveItemId: (row.final_output_archive_item_id as string | null) ?? undefined,
     };
   }
 

@@ -77,4 +77,36 @@ describe('rebuildRunDetail（3b · 从 ledger 重建 rollup）', () => {
     expect(detail.agents).toHaveLength(1);
     expect(detail.run.totalTokensIn).toBe(7);
   });
+
+  it('历史 agent_snapshot 缺少任务/产出字段仍可回放，并保留缺省值', () => {
+    const events: SwarmLedgerEvent[] = [
+      ev({ seq: 0, kind: 'run_started', payload: { coordinator: 'hybrid', startedAt: 100, totalAgents: 1, trigger: 'auto' } }),
+      // 2026-07-23 前的真实历史形状：没有任何新字段。
+      agentSnap(1, 'legacy-agent', 'completed'),
+    ];
+    const detail = rebuildRunDetail(events)!;
+    expect(detail.agents[0]).toMatchObject({ agentId: 'legacy-agent', status: 'completed' });
+    expect(detail.agents[0]?.dispatchedTask).toBeUndefined();
+    expect(detail.agents[0]?.finalOutput).toBeUndefined();
+    expect(detail.agents[0]?.dispatchedTaskTruncated).toBeUndefined();
+    expect(detail.agents[0]?.finalOutputArchiveItemId).toBeUndefined();
+  });
+
+  it('回放新快照的任务、完整产出与归档引用', () => {
+    const events: SwarmLedgerEvent[] = [
+      ev({ seq: 0, kind: 'run_started', payload: { coordinator: 'hybrid', startedAt: 100, totalAgents: 1, trigger: 'auto' } }),
+      agentSnap(1, 'a1', 'completed', {
+        dispatchedTask: '调查留存',
+        finalOutput: '完整结论，不是 200 字预览',
+        finalOutputTruncated: true,
+        finalOutputArchiveItemId: 'lib_full_output',
+      }),
+    ];
+    expect(rebuildRunDetail(events)!.agents[0]).toMatchObject({
+      dispatchedTask: '调查留存',
+      finalOutput: '完整结论，不是 200 字预览',
+      finalOutputTruncated: true,
+      finalOutputArchiveItemId: 'lib_full_output',
+    });
+  });
 });

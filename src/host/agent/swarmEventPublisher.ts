@@ -107,7 +107,7 @@ export class SwarmEventEmitter {
     });
   }
 
-  agentAdded(scope: SwarmRunScope, agent: { id: string; name: string; role: string }): void {
+  agentAdded(scope: SwarmRunScope, agent: { id: string; name: string; role: string; dispatchedTask?: string }): void {
     this.publish(scope, {
       type: 'swarm:agent:added',
       timestamp: Date.now(),
@@ -119,6 +119,7 @@ export class SwarmEventEmitter {
           role: agent.role,
           status: 'pending',
           iterations: 0,
+          dispatchedTask: agent.dispatchedTask,
         },
       },
     });
@@ -172,6 +173,7 @@ export class SwarmEventEmitter {
           iterations: 0,
           endTime: Date.now(),
           lastReport: output?.slice(0, 100),
+          finalOutput: output,
         },
       },
     });

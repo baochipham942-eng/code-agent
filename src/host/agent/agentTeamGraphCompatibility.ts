@@ -22,7 +22,12 @@ export function createAgentTeamGraphCompatibility(input: {
       if (event.type === 'node_queued' && event.nodeId) {
         const task = input.tasks.find((candidate) => candidate.id === event.nodeId);
         if (task) {
-          input.emitter.agentAdded(input.scope, { id: task.id, name: task.role, role: task.role });
+          input.emitter.agentAdded(input.scope, {
+            id: task.id,
+            name: task.role,
+            role: task.role,
+            dispatchedTask: task.task,
+          });
         }
       }
       if (

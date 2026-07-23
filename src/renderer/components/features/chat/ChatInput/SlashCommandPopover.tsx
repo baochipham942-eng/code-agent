@@ -48,6 +48,7 @@ import {
 } from './slashPickerModel';
 import { useKeybindingsSettings } from '../../../../hooks/useKeybindingsSettings';
 import { useI18n } from '../../../../hooks/useI18n';
+import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 
 type ExtensionMutationResult = { success: boolean; error?: string };
 
@@ -97,15 +98,6 @@ function makeCommand(seed: SlashCommandSeed, labels?: SlashPickerLabels): SlashC
     ...(seed.sourceLabel ? { sourceLabel: seed.sourceLabel } : {}),
   };
 }
-
-const slashKindLabel: Record<SlashCommand['kind'], string> = {
-  command: 'Command',
-  prompt: 'Prompt',
-  agent: 'Agent',
-  skill: 'Skill',
-  connector: 'Connector',
-  mcp: 'MCP',
-};
 
 function getPromptCommandSourceLabel(command: PromptCommandCandidateInput): string {
   if (command.source === 'mcp') {
@@ -891,6 +883,7 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
               const mcpStatus = cmd.kind === 'mcp'
                 ? cmd.mcpConnected ? sc.badges.mcpAvailable : sc.badges.mcpDisconnected
                 : null;
+              const usesInitialAvatar = cmd.kind === 'skill' || cmd.kind === 'agent' || cmd.kind === 'connector' || cmd.kind === 'mcp';
               return (
                 <button
                   key={cmd.id}
@@ -905,16 +898,15 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                   }`}
                 >
                   <span className={i === selectedIndex ? 'text-primary-400' : 'text-zinc-500'}>
-                    {cmd.icon}
+                    {usesInitialAvatar ? (
+                      <RoleInitialAvatar roleId={cmd.id} name={cmd.label} className="h-4 w-4 text-[10px]" />
+                    ) : cmd.icon}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="truncate text-sm">{cmd.label}</span>
                       <span className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
                         {cmd.slashText}
-                      </span>
-                      <span className="shrink-0 text-[10px] uppercase tracking-wide text-zinc-600">
-                        {slashKindLabel[cmd.kind]}
                       </span>
                       {skillStatus ? (
                         <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
@@ -929,7 +921,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                     </div>
                     <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-zinc-500">
                       <span className="truncate">{cmd.description}</span>
-                      <span className="shrink-0 text-zinc-600">{cmd.effectLabel}</span>
+                      {i === selectedIndex && cmd.effectLabel ? (
+                        <span className="shrink-0 text-zinc-600">{cmd.effectLabel}</span>
+                      ) : null}
                     </div>
                   </div>
                   {cmd.shortcut && (

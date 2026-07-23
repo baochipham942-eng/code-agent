@@ -34,6 +34,7 @@ import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
 import { BackgroundSessionPanel } from './components/features/background';
 import { FullScreenPage } from './components/features/shared/FullScreenPage';
+import { RoleDetailPage } from './components/features/expert/RoleDetailPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ModelOnboardingModal } from './components/onboarding/ModelOnboardingModal';
@@ -158,6 +159,7 @@ export const App: React.FC = () => {
     showSettings,
     setTaskPanelTab,
     showCapabilityHub,
+    expertDetailRoleId,
     showCronCenter,
     setShowCronCenter,
     showTimeCapabilityCenter,
@@ -867,7 +869,9 @@ export const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">
-              {showKnowledgeMemoryPanel ? (
+              {expertDetailRoleId ? (
+                <RoleDetailPage roleId={expertDetailRoleId} />
+              ) : showKnowledgeMemoryPanel ? (
                 <React.Suspense fallback={null}>
                   <KnowledgeMemoryPanel />
                 </React.Suspense>

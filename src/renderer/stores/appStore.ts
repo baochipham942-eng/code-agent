@@ -258,9 +258,8 @@ interface AppState {
   // Batch 2 L3: 资料库全屏页可见性
   showLibraryPanel: boolean;
 
-  // 能力中心内的专家详情跳转请求
-  /** 从会话身份条直达专家详情；消费后由 ExpertPanel 清空。 */
-  requestedExpertRoleId: string | null;
+  /** 当前全屏专家详情页；关闭后回到能力中心的专家 tab。 */
+  expertDetailRoleId: string | null;
 
   // File preview tab registry — one entry per opened file (content, dirty state, LRU).
   previewTabs: PreviewTab[];
@@ -362,7 +361,6 @@ interface AppState {
   setShowKnowledgeMemoryPanel: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
   openExpertRoleDetail: (roleId: string) => void;
-  clearRequestedExpertRoleDetail: () => void;
   openPreview: (filePath: string) => void;
   openWorkspacePreview: (itemId?: string | null) => void;
   setSelectedWorkspacePreviewId: (itemId: string | null) => void;
@@ -425,6 +423,7 @@ const FULLSCREEN_PANELS_CLOSED = {
   showComputerUsePanel: false,
   showInAppValidationPanel: false,
   showProjectCollaborationPage: false,
+  expertDetailRoleId: null,
 } as const;
 
 // Default model config — 引用 shared/constants.ts 常量
@@ -502,7 +501,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   showKnowledgeMemoryPanel: false,
   showLibraryPanel: false,
-  requestedExpertRoleId: null,
+  expertDetailRoleId: null,
 
   // Initial file preview registry
   previewTabs: [],
@@ -691,13 +690,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
   setShowKnowledgeMemoryPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showKnowledgeMemoryPanel: show }),
   setShowLibraryPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showLibraryPanel: show }),
-  openExpertRoleDetail: (roleId) => set({
-    ...FULLSCREEN_PANELS_CLOSED,
-    showCapabilityHub: true,
-    capabilityHubTab: 'experts',
-    requestedExpertRoleId: roleId,
-  }),
-  clearRequestedExpertRoleDetail: () => set({ requestedExpertRoleId: null }),
+  openExpertRoleDetail: (roleId) => set({ ...FULLSCREEN_PANELS_CLOSED, expertDetailRoleId: roleId }),
 
   openPreview: (filePath) => {
     // Resolve relative paths against workingDirectory

@@ -123,9 +123,9 @@ export interface ChatInputHandle {
   focus: () => void;
 }
 
-export const RuntimeInputShortcutHint: React.FC<{ isProcessing: boolean }> = ({ isProcessing }) => {
+export const RuntimeInputShortcutHint: React.FC<{ isProcessing: boolean; hasDraft: boolean }> = ({ isProcessing, hasDraft }) => {
   const { t } = useI18n();
-  if (!isProcessing) return null;
+  if (!isProcessing || !hasDraft) return null;
 
   return (
     <div
@@ -840,7 +840,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onHistoryReset={resetInputHistoryIndex}
             onAutocompleteKeyDown={handleAutocompleteKeyDown}
           />
-          <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} />
+          <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
           {queuedRuntimeInputs.length > 0 && (
             <div className="px-4 pb-2 -mt-1 space-y-1.5">
               {queuedRuntimeInputs.map((item) => (

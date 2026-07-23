@@ -72,6 +72,12 @@ function createSchema(db: BetterSqlite3.Database): void {
       error TEXT,
       failure_category TEXT,
       files_changed_json TEXT NOT NULL DEFAULT '[]',
+      dispatched_task TEXT,
+      dispatched_task_truncated INTEGER,
+      dispatched_task_archive_item_id TEXT,
+      final_output TEXT,
+      final_output_truncated INTEGER,
+      final_output_archive_item_id TEXT,
       PRIMARY KEY (run_id, agent_id),
       FOREIGN KEY (run_id) REFERENCES swarm_runs(id) ON DELETE CASCADE
     );

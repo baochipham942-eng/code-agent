@@ -72,6 +72,12 @@ export function backfillSwarmLedger(deps: SwarmLedgerBackfillDeps): SwarmLedgerB
               startTime: a.startTime, endTime: a.endTime, durationMs: a.durationMs,
               tokensIn: a.tokensIn, tokensOut: a.tokensOut, toolCalls: a.toolCalls, costUsd: a.costUsd,
               error: a.error, failureCategory: a.failureCategory, filesChanged: a.filesChanged,
+              dispatchedTask: a.dispatchedTask,
+              dispatchedTaskTruncated: a.dispatchedTaskTruncated,
+              dispatchedTaskArchiveItemId: a.dispatchedTaskArchiveItemId,
+              finalOutput: a.finalOutput,
+              finalOutputTruncated: a.finalOutputTruncated,
+              finalOutputArchiveItemId: a.finalOutputArchiveItemId,
             },
             recordedAt: a.endTime ?? closedAt,
           });

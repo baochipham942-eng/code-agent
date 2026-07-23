@@ -75,6 +75,12 @@ interface AgentUpsertedEntry {
   error: string | null;
   failureCategory: string | null;
   filesChanged: string[];
+  dispatchedTask?: string;
+  dispatchedTaskTruncated?: boolean;
+  dispatchedTaskArchiveItemId?: string;
+  finalOutput?: string;
+  finalOutputTruncated?: boolean;
+  finalOutputArchiveItemId?: string;
 }
 
 interface EventEntry {
@@ -244,6 +250,12 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
       error: input.error,
       failureCategory: input.failureCategory,
       filesChanged: input.filesChanged ?? [],
+      dispatchedTask: input.dispatchedTask,
+      dispatchedTaskTruncated: input.dispatchedTaskTruncated,
+      dispatchedTaskArchiveItemId: input.dispatchedTaskArchiveItemId,
+      finalOutput: input.finalOutput,
+      finalOutputTruncated: input.finalOutputTruncated,
+      finalOutputArchiveItemId: input.finalOutputArchiveItemId,
     };
     this.appendLine(cache, entry);
   }
@@ -557,6 +569,12 @@ export class FileSwarmTraceRepository implements SwarmTraceRepo {
         error: a.error,
         failureCategory: a.failureCategory,
         filesChanged: a.filesChanged,
+        dispatchedTask: a.dispatchedTask,
+        dispatchedTaskTruncated: a.dispatchedTaskTruncated,
+        dispatchedTaskArchiveItemId: a.dispatchedTaskArchiveItemId,
+        finalOutput: a.finalOutput,
+        finalOutputTruncated: a.finalOutputTruncated,
+        finalOutputArchiveItemId: a.finalOutputArchiveItemId,
       }));
 
     // events 按 seq ASC；id 用回放顺序号模拟 SQL AUTOINCREMENT

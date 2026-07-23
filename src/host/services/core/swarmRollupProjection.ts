@@ -50,6 +50,13 @@ function toAgentRecord(runId: string, p: Record<string, unknown>): SwarmRunAgent
     error: p.error == null ? null : str(p.error),
     failureCategory: p.failureCategory == null ? null : str(p.failureCategory),
     filesChanged: Array.isArray(p.filesChanged) ? p.filesChanged.map((f) => String(f)) : [],
+    // 历史账本没有这组字段：保持 undefined，不能让旧 snapshot 回放失败。
+    dispatchedTask: p.dispatchedTask == null ? undefined : str(p.dispatchedTask),
+    dispatchedTaskTruncated: p.dispatchedTaskTruncated === true ? true : undefined,
+    dispatchedTaskArchiveItemId: p.dispatchedTaskArchiveItemId == null ? undefined : str(p.dispatchedTaskArchiveItemId),
+    finalOutput: p.finalOutput == null ? undefined : str(p.finalOutput),
+    finalOutputTruncated: p.finalOutputTruncated === true ? true : undefined,
+    finalOutputArchiveItemId: p.finalOutputArchiveItemId == null ? undefined : str(p.finalOutputArchiveItemId),
   };
 }
 

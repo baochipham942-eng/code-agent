@@ -700,10 +700,23 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       error TEXT,
       failure_category TEXT,
       files_changed_json TEXT NOT NULL DEFAULT '[]',
+      dispatched_task TEXT,
+      dispatched_task_truncated INTEGER,
+      dispatched_task_archive_item_id TEXT,
+      final_output TEXT,
+      final_output_truncated INTEGER,
+      final_output_archive_item_id TEXT,
       PRIMARY KEY (run_id, agent_id),
       FOREIGN KEY (run_id) REFERENCES swarm_runs(id) ON DELETE CASCADE
     )
   `);
+  // 存量 rollup 是可重建缓存；新字段可空，保证历史轨迹/旧数据库读取不受影响。
+  safeAlter(db, `ALTER TABLE swarm_run_agents ADD COLUMN dispatched_task TEXT`, logger);
+  safeAlter(db, `ALTER TABLE swarm_run_agents ADD COLUMN dispatched_task_truncated INTEGER`, logger);
+  safeAlter(db, `ALTER TABLE swarm_run_agents ADD COLUMN dispatched_task_archive_item_id TEXT`, logger);
+  safeAlter(db, `ALTER TABLE swarm_run_agents ADD COLUMN final_output TEXT`, logger);
+  safeAlter(db, `ALTER TABLE swarm_run_agents ADD COLUMN final_output_truncated INTEGER`, logger);
+  safeAlter(db, `ALTER TABLE swarm_run_agents ADD COLUMN final_output_archive_item_id TEXT`, logger);
 
   // swarm_run_events - run timeline 事件
   db.exec(`

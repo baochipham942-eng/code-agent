@@ -63,6 +63,18 @@ export interface SwarmRunAgentRecord {
   /** 沿用 telemetry_tool_calls.error_category 的简单枚举式归因，不跑 LLM */
   failureCategory: string | null;
   filesChanged: string[];
+  /** 实际下发给成员的任务文本；历史账本记录没有该字段。 */
+  dispatchedTask?: string;
+  /** 任务文本超过账本单字段上限时为 true。 */
+  dispatchedTaskTruncated?: boolean;
+  /** 被截断任务文本的资料库条目 ID；归档失败时缺省。 */
+  dispatchedTaskArchiveItemId?: string;
+  /** 成员完成时返回的完整产出；历史账本记录没有该字段。 */
+  finalOutput?: string;
+  /** 成员产出超过账本单字段上限时为 true。 */
+  finalOutputTruncated?: boolean;
+  /** 被截断成员产出的资料库条目 ID；归档失败时缺省。 */
+  finalOutputArchiveItemId?: string;
 }
 
 export interface SwarmRunEventRecord {
@@ -129,6 +141,12 @@ export interface UpsertAgentInput {
   error: string | null;
   failureCategory: string | null;
   filesChanged: string[];
+  dispatchedTask?: string;
+  dispatchedTaskTruncated?: boolean;
+  dispatchedTaskArchiveItemId?: string;
+  finalOutput?: string;
+  finalOutputTruncated?: boolean;
+  finalOutputArchiveItemId?: string;
 }
 
 export interface AppendEventInput {

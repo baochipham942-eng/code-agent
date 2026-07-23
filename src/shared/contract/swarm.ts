@@ -235,6 +235,10 @@ export interface SwarmAgentState {
   cost?: number;
   /** Result preview text (first ~200 chars) */
   resultPreview?: string;
+  /** 实际下发给成员的任务文本，仅供 host 账本持久化。 */
+  dispatchedTask?: string;
+  /** 成员完成时的完整产出，仅供 host 账本持久化。 */
+  finalOutput?: string;
   /** Files this agent changed */
   filesChanged?: string[];
   /** Lightweight per-agent context snapshot */

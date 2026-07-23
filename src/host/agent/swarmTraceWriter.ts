@@ -28,10 +28,26 @@ import type {
   SwarmTraceRepo,
 } from '../../shared/contract/swarmTrace';
 import type { SwarmLedgerAppendInput } from '../../shared/contract/swarmLedger';
+import type { LibraryItem } from '../../shared/contract/library';
 import { getEventBus } from '../services/eventing/bus';
 import { createLogger } from '../services/infra/logger';
+import { getLibraryService } from '../services/library/libraryService';
 
 const logger = createLogger('SwarmTraceWriter');
+/** append-only 账本中的每个任务/产出字段上限；超额正文改存资料库。 */
+const SWARM_AGENT_TEXT_MAX_BYTES = 32 * 1024;
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  let bytes = 0;
+  let end = 0;
+  for (const char of value) {
+    const size = Buffer.byteLength(char, 'utf8');
+    if (bytes + size > maxBytes) break;
+    bytes += size;
+    end += char.length;
+  }
+  return value.slice(0, end);
+}
 
 interface AgentRollup {
   name: string;
@@ -45,6 +61,12 @@ interface AgentRollup {
   costUsd: number;
   error: string | null;
   filesChanged: string[];
+  dispatchedTask?: string;
+  dispatchedTaskTruncated?: boolean;
+  dispatchedTaskArchiveItemId?: string;
+  finalOutput?: string;
+  finalOutputTruncated?: boolean;
+  finalOutputArchiveItemId?: string;
 }
 
 interface RunState {
@@ -77,12 +99,22 @@ export interface SwarmTraceWriterOptions {
    * 现有写入路径一行不改。
    */
   appendLedger?: (input: SwarmLedgerAppendInput) => void;
+  /** 超限成员任务/产出的资料库归档；测试可注入失败或返回值。 */
+  archiveText?: (args: {
+    projectId: null;
+    title: string;
+    text: string;
+    tags: string[];
+    sourceSessionId: string;
+    sourceRoleId: string;
+  }) => LibraryItem;
 }
 
 export class SwarmTraceWriter {
   private readonly repo: SwarmTraceRepo;
-  private readonly options: Required<Omit<SwarmTraceWriterOptions, 'appendLedger'>>;
+  private readonly options: Required<Omit<SwarmTraceWriterOptions, 'appendLedger' | 'archiveText'>>;
   private readonly appendLedger?: (input: SwarmLedgerAppendInput) => void;
+  private readonly archiveText: NonNullable<SwarmTraceWriterOptions['archiveText']>;
   private runs = new Map<string, RunState>();
   /** fire-and-forget 串行写入链，drain() 时 await 这条链 */
   private pendingPersist: Promise<void> = Promise.resolve();
@@ -96,6 +128,7 @@ export class SwarmTraceWriter {
       defaultCoordinator: options.defaultCoordinator ?? 'hybrid',
     };
     this.appendLedger = options.appendLedger;
+    this.archiveText = options.archiveText ?? ((args) => getLibraryService().archiveText(args));
   }
 
   /** 启动订阅，幂等 */
@@ -254,6 +287,12 @@ export class SwarmTraceWriter {
         error: rollup.error,
         failureCategory,
         filesChanged: rollup.filesChanged,
+        dispatchedTask: rollup.dispatchedTask,
+        dispatchedTaskTruncated: rollup.dispatchedTaskTruncated,
+        dispatchedTaskArchiveItemId: rollup.dispatchedTaskArchiveItemId,
+        finalOutput: rollup.finalOutput,
+        finalOutputTruncated: rollup.finalOutputTruncated,
+        finalOutputArchiveItemId: rollup.finalOutputArchiveItemId,
       });
     });
 
@@ -273,6 +312,12 @@ export class SwarmTraceWriter {
       error: rollup.error,
       failureCategory,
       filesChanged: rollup.filesChanged,
+      dispatchedTask: rollup.dispatchedTask,
+      dispatchedTaskTruncated: rollup.dispatchedTaskTruncated,
+      dispatchedTaskArchiveItemId: rollup.dispatchedTaskArchiveItemId,
+      finalOutput: rollup.finalOutput,
+      finalOutputTruncated: rollup.finalOutputTruncated,
+      finalOutputArchiveItemId: rollup.finalOutputArchiveItemId,
     }, event.timestamp);
   }
 
@@ -390,6 +435,12 @@ export class SwarmTraceWriter {
 
   private mergeAgentRollup(run: RunState, state: SwarmAgentState): AgentRollup {
     const existing = run.agents.get(state.id);
+    const dispatchedTask = state.dispatchedTask === undefined
+      ? undefined
+      : this.compactAgentText('task', state.dispatchedTask, run, state.id, state.name || existing?.name || 'agent');
+    const finalOutput = state.finalOutput === undefined
+      ? undefined
+      : this.compactAgentText('output', state.finalOutput, run, state.id, state.name || existing?.name || 'agent');
     const next: AgentRollup = {
       name: state.name || existing?.name || '',
       role: state.role || existing?.role || '',
@@ -402,9 +453,44 @@ export class SwarmTraceWriter {
       costUsd: state.cost ?? existing?.costUsd ?? 0,
       error: state.error ?? existing?.error ?? null,
       filesChanged: state.filesChanged ?? existing?.filesChanged ?? [],
+      dispatchedTask: dispatchedTask?.text ?? existing?.dispatchedTask,
+      dispatchedTaskTruncated: dispatchedTask?.truncated ?? existing?.dispatchedTaskTruncated,
+      dispatchedTaskArchiveItemId: dispatchedTask?.archiveItemId ?? existing?.dispatchedTaskArchiveItemId,
+      finalOutput: finalOutput?.text ?? existing?.finalOutput,
+      finalOutputTruncated: finalOutput?.truncated ?? existing?.finalOutputTruncated,
+      finalOutputArchiveItemId: finalOutput?.archiveItemId ?? existing?.finalOutputArchiveItemId,
     };
     run.agents.set(state.id, next);
     return next;
+  }
+
+  private compactAgentText(
+    kind: 'task' | 'output',
+    text: string,
+    run: RunState,
+    agentId: string,
+    agentName: string,
+  ): { text: string; truncated?: boolean; archiveItemId?: string } {
+    if (Buffer.byteLength(text, 'utf8') <= SWARM_AGENT_TEXT_MAX_BYTES) return { text };
+
+    // 账本是不可删的轨迹真理源，不应承担无限文本存储；只保留可检索前缀，完整正文归档到资料库。
+    const result: { text: string; truncated: true; archiveItemId?: string } = {
+      text: truncateUtf8(text, SWARM_AGENT_TEXT_MAX_BYTES),
+      truncated: true,
+    };
+    try {
+      result.archiveItemId = this.archiveText({
+        projectId: null,
+        title: `Swarm ${agentName} ${kind === 'task' ? '下发任务' : '完整产出'}`,
+        text,
+        tags: ['swarm', kind],
+        sourceSessionId: run.sessionId,
+        sourceRoleId: agentId,
+      }).id;
+    } catch (error) {
+      logger.warn('Swarm agent text archive failed; persisting truncated ledger snapshot', error);
+    }
+    return result;
   }
 
   private aggregateAgentTotals(run: RunState | undefined): {

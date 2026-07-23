@@ -640,6 +640,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'list_experts',
+    shortDescription: '列出本机可用于组队的权威专家名册（起草团队前先调它，别用 Bash/Glob 猜角色）',
+    tags: ['planning'],
+    aliases: ['list experts', 'list roles', 'available experts', '专家名册', '有哪些专家', '可用角色'],
+    source: 'builtin',
+  },
+  {
     name: 'propose_team_recipe',
     shortDescription: '对话式建配方：把专家团或专家小组定义入队为草稿，等用户确认入库',
     tags: ['planning'],

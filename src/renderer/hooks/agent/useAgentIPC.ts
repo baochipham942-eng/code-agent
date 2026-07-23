@@ -28,10 +28,10 @@ import type { SwarmAgentState } from '@shared/contract/swarm';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
 import { useDesignCanvasStore } from '../../components/design/designCanvasStore';
+import { isDesignCanvasActiveForSession } from '../../components/design/designCanvasSessionGate';
 import { buildCanvasSnapshot } from '../../components/design/buildCanvasSnapshot';
 import { isReferenceNode, isVideoNode, type CanvasNode } from '../../components/design/designCanvasTypes';
 import { useSessionStore } from '../../stores/sessionStore';
-import { useWorkspaceModeStore } from '../../stores/workspaceModeStore';
 import { useSwarmStore } from '../../stores/swarmStore';
 import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
@@ -129,10 +129,8 @@ function applyDesignCodeHandoffToContent(
  * 命中则把引导 prepend 到 content 前；否则原样返回。
  */
 export function applyDesignCanvasSessionToContent(content: string, sessionId: string | null | undefined): string {
-  if (!sessionId) return content;
-  if (!useDesignCanvasStore.getState().isSessionDesignActive(sessionId)) return content;
+  if (!isDesignCanvasActiveForSession(sessionId)) return content;
   const cs = useDesignCanvasStore.getState();
-  if (cs.ownerSessionId !== sessionId) return content; // 画布属主非当前会话 → 不注入（防跨会话泄漏）
   const reminder = formatDesignCanvasSessionReminder(cs.nodes.length === 0);
   return `${reminder}\n\n${content}`;
 }
@@ -166,9 +164,8 @@ export function withCanvasSnapshotContext(
   context: ConversationEnvelopeContext | undefined,
 ): ConversationEnvelopeContext | undefined {
   const sessionId = useSessionStore.getState().currentSessionId;
-  if (!useDesignCanvasStore.getState().isSessionDesignActive(sessionId)) return context;
+  if (!isDesignCanvasActiveForSession(sessionId)) return context;
   const cs = useDesignCanvasStore.getState();
-  if (cs.ownerSessionId !== sessionId) return context; // 画布属主非当前会话 → 不注入（防跨会话泄漏）
   if (cs.nodes.length === 0) return context;
   const canvasSnapshot = buildCanvasSnapshot({ nodes: cs.nodes, connectors: cs.connectors, shapes: cs.shapes });
   if (canvasSnapshot.nodes.length === 0) return context;
@@ -275,19 +272,14 @@ export function buildDesignCodeHandoffContextFromCanvas(
 export function withHandoffContext(
   context: ConversationEnvelopeContext | undefined,
 ): ConversationEnvelopeContext | undefined {
-  if (useWorkspaceModeStore.getState().workspaceMode !== 'design') return context;
+  const sessionId = useSessionStore.getState().currentSessionId;
+  if (!isDesignCanvasActiveForSession(sessionId)) return context;
   const designCodeHandoff = buildDesignCodeHandoffContextFromCanvas(context);
   if (!designCodeHandoff) return context;
   return {
     ...(context || {}),
     designCodeHandoff,
   };
-}
-
-function isDesignCanvasActiveForSession(sessionId: string | null | undefined): boolean {
-  if (!sessionId) return false;
-  if (!useDesignCanvasStore.getState().isSessionDesignActive(sessionId)) return false;
-  return useDesignCanvasStore.getState().ownerSessionId === sessionId;
 }
 
 type AppStoreState = ReturnType<typeof useAppStore.getState>;

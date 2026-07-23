@@ -1,13 +1,20 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIBRARY_ITEM_KINDS, type LibraryItem } from '../../../src/shared/contract/library';
+import type { BrandContract, BrandMeta } from '../../../src/shared/contract/brandContract';
 
 const listLibraryItems = vi.fn<() => Promise<LibraryItem[]>>();
 const deleteLibraryItem = vi.fn().mockResolvedValue(undefined);
 const importLibraryFiles = vi.fn().mockResolvedValue({ items: [], errors: [] });
 const updateLibraryItem = vi.fn();
+const listBrands = vi.fn<() => Promise<{ brands: BrandMeta[]; activeId?: string }>>();
+const readBrand = vi.fn<() => Promise<BrandContract | null>>();
+const saveBrand = vi.fn<() => Promise<string | null>>();
+const deleteBrand = vi.fn().mockResolvedValue(true);
+const setActiveBrand = vi.fn().mockResolvedValue(true);
+const extractBrandFromImage = vi.fn();
 
 vi.mock('../../../src/renderer/services/libraryClient', () => ({
   listLibraryItems: (...args: unknown[]) => listLibraryItems(...(args as [])),
@@ -18,6 +25,15 @@ vi.mock('../../../src/renderer/services/libraryClient', () => ({
 
 vi.mock('../../../src/renderer/services/projectClient', () => ({
   listProjects: vi.fn().mockResolvedValue([{ id: 'proj_1', name: '示例项目', status: 'active', createdAt: 1, updatedAt: 1 }]),
+}));
+
+vi.mock('../../../src/renderer/components/design/designFiles', () => ({
+  listBrands: (...args: unknown[]) => listBrands(...(args as [])),
+  readBrand: (...args: unknown[]) => readBrand(...(args as [])),
+  saveBrand: (...args: unknown[]) => saveBrand(...(args as [])),
+  deleteBrand: (...args: unknown[]) => deleteBrand(...(args as [])),
+  setActiveBrand: (...args: unknown[]) => setActiveBrand(...(args as [])),
+  extractBrandFromImage: (...args: unknown[]) => extractBrandFromImage(...(args as [])),
 }));
 
 import { LibraryPanel } from '../../../src/renderer/components/features/knowledge/LibraryPanel';
@@ -42,6 +58,12 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   useSessionStore.setState({ sessions: [] });
+});
+
+beforeEach(() => {
+  listBrands.mockResolvedValue({ brands: [] });
+  readBrand.mockResolvedValue(null);
+  saveBrand.mockResolvedValue('brand-new');
 });
 
 describe('LibraryPanel', () => {
@@ -106,6 +128,52 @@ describe('LibraryPanel', () => {
     await screen.findByText('产物条目');
     expect(document.querySelector('[data-library-item="artifact"]')).toBeTruthy();
     expect(document.querySelector('[data-library-item="upload"]')).toBeNull();
+  });
+
+  it('品牌套件作为并列分区列出真实品牌，且不改变资料条目的筛选和计数', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    listLibraryItems.mockResolvedValue([makeItem()]);
+    listBrands.mockResolvedValue({
+      brands: [{ id: 'porsche-digital', name: 'Porsche 数字品牌', updatedAt: 200 }],
+      activeId: 'porsche-digital',
+    });
+    render(<LibraryPanel />);
+
+    await screen.findByText('Brief.pdf');
+    const filter = screen.getByTestId('library-kind-filter') as HTMLSelectElement;
+    expect(filter.querySelectorAll('option')).toHaveLength(LIBRARY_ITEM_KINDS.length + 1);
+    expect(screen.getByText('1 条')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: '品牌套件' }));
+    expect(await screen.findByText('Porsche 数字品牌')).toBeTruthy();
+    expect(listBrands).toHaveBeenCalledTimes(1);
+    expect(listLibraryItems).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('tab', { name: '资料条目' }));
+    expect(await screen.findByText('Brief.pdf')).toBeTruthy();
+    expect((screen.getByTestId('library-kind-filter') as HTMLSelectElement).querySelectorAll('option'))
+      .toHaveLength(LIBRARY_ITEM_KINDS.length + 1);
+    expect(screen.getByText('1 条')).toBeTruthy();
+  });
+
+  it('从品牌套件分区新建品牌仍调用 saveBrand 契约', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    listLibraryItems.mockResolvedValue([]);
+    render(<LibraryPanel />);
+
+    fireEvent.click(screen.getByRole('tab', { name: '品牌套件' }));
+    await waitFor(() => expect(listBrands).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: '新建品牌' }));
+    fireEvent.change(screen.getByLabelText('品牌名称'), { target: { value: '资料库新品牌' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存品牌' }));
+
+    await waitFor(() => {
+      expect(saveBrand).toHaveBeenCalledWith(expect.objectContaining({
+        id: '',
+        name: '资料库新品牌',
+        source: 'manual',
+      }));
+    });
   });
 
   it('搜索可按摘要和标签命中', async () => {

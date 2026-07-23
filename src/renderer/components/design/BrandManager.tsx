@@ -405,11 +405,18 @@ export const BrandManagerView: React.FC<BrandManagerViewProps> = ({
 export interface BrandManagerProps {
   isOpen: boolean;
   onClose: () => void;
+  /** 默认弹窗；资料库使用 inline，把同一套管理 UI 嵌入页面。 */
+  presentation?: 'modal' | 'inline';
   /** active 变化时通知父级（如刷新方向卡），可选。 */
   onActiveChange?: (activeId?: string) => void;
 }
 
-export const BrandManager: React.FC<BrandManagerProps> = ({ isOpen, onClose, onActiveChange }) => {
+export const BrandManager: React.FC<BrandManagerProps> = ({
+  isOpen,
+  onClose,
+  presentation = 'modal',
+  onActiveChange,
+}) => {
   const { t } = useI18n();
   const s = t.design.brand;
 
@@ -519,28 +526,37 @@ export const BrandManager: React.FC<BrandManagerProps> = ({ isOpen, onClose, onA
 
   const title = useMemo(() => s.title, [s.title]);
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} size="lg">
-      <BrandManagerView
-        s={s}
-        brands={brands}
-        activeId={activeId}
-        mode={mode}
-        form={form}
-        saving={saving}
-        error={error}
-        extracting={extracting}
-        onExtract={handleExtract}
-        onSetActive={handleSetActive}
-        onDelete={handleDelete}
-        onCreate={handleCreate}
-        onEdit={handleEdit}
-        onFormChange={setForm}
-        onSave={handleSave}
-        onBack={() => setMode('list')}
-      />
-    </Modal>
+  const managerView = (
+    <BrandManagerView
+      s={s}
+      brands={brands}
+      activeId={activeId}
+      mode={mode}
+      form={form}
+      saving={saving}
+      error={error}
+      extracting={extracting}
+      onExtract={handleExtract}
+      onSetActive={handleSetActive}
+      onDelete={handleDelete}
+      onCreate={handleCreate}
+      onEdit={handleEdit}
+      onFormChange={setForm}
+      onSave={handleSave}
+      onBack={() => setMode('list')}
+    />
   );
+
+  if (presentation === 'inline') {
+    if (!isOpen) return null;
+    return (
+      <section aria-label={title} data-testid="brand-manager-inline" className="mx-auto w-full max-w-3xl">
+        {managerView}
+      </section>
+    );
+  }
+
+  return <Modal isOpen={isOpen} onClose={onClose} title={title} size="lg">{managerView}</Modal>;
 };
 
 export default BrandManager;

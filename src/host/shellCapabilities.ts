@@ -276,6 +276,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'deleteMemory',
     'detail',
     'list',
+    'listBoundCronJobs',
     'listBindings',
     'listDrafts',
     'rejectDraft',

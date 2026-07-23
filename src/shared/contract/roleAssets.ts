@@ -7,6 +7,7 @@
 
 import type { AgentSource } from './agentRegistry';
 import type { SkillCategory } from './skillRepository';
+import type { CronScheduleConfig } from './cron';
 
 /** 角色展示元数据；内置角色与云下发角色包共用这一合同。 */
 export interface BuiltinRoleVisual {
@@ -96,6 +97,17 @@ export interface RolePanelMemory {
   description: string;
   content: string;
   updatedAt: string;
+}
+
+/** 详情页反向展示的角色 cron 绑定；编辑仍由自动化面板负责。 */
+export interface RoleBoundCronJob {
+  id: string;
+  name: string;
+  schedule: CronScheduleConfig;
+  enabled: boolean;
+  nextRunAt?: number;
+  lastRunAt?: number;
+  actionType: 'agent' | 'role_wake';
 }
 
 // ----------------------------------------------------------------------------

@@ -133,6 +133,7 @@ beforeEach(() => {
   retryRolePackMissingSkills.mockResolvedValue({ success: true, roleId: '云端产品顾问', installState: 'complete', missingSkills: [] });
   invokeDomain.mockImplementation((_domain: string, action: string) => {
     if (action === 'detail') return Promise.resolve(makeRoleDetail());
+    if (action === 'listBoundCronJobs') return Promise.resolve([]);
     if (action === 'listBindings') return Promise.resolve([]);
     return Promise.resolve(undefined);
   });
@@ -267,9 +268,30 @@ describe('ExpertPanel', () => {
     expect(screen.getByText('用户偏好')).toBeTruthy();
     expect(screen.getByText('整理了需求评审稿')).toBeTruthy();
     expect(screen.getByTestId('role-bindings-section')).toBeTruthy();
+    expect(screen.getByTestId('role-bound-automations-empty').textContent).toContain('这个角色还没有绑定的自动化');
 
     fireEvent.click(screen.getByRole('button', { name: '返回' }));
     expect(screen.getByTestId('expert-card-牧之')).toBeTruthy();
+  });
+
+  it('详情页为空时展示绑定自动化空态；有任务时展示调度、状态和主动性管理标注', async () => {
+    listRoles.mockResolvedValue([makeEntry()]);
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'detail') return Promise.resolve(makeRoleDetail());
+      if (action === 'listBindings') return Promise.resolve([]);
+      if (action === 'listBoundCronJobs') return Promise.resolve([
+        { id: 'daily-report', name: '日报', schedule: { type: 'every', interval: 1, unit: 'days' }, enabled: true, nextRunAt: 1_800_000_000_000, actionType: 'agent' },
+        { id: 'wake', name: '主动巡检', schedule: { type: 'cron', expression: '0 9 * * *' }, enabled: false, actionType: 'role_wake' },
+      ]);
+      return Promise.resolve(undefined);
+    });
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-detail-牧之')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('expert-detail-牧之'));
+    await waitFor(() => expect(screen.getByTestId('role-bound-automations-list')).toBeTruthy());
+    expect(screen.getByTestId('role-bound-automation-daily-report').textContent).toContain('每 1 天');
+    expect(screen.getByTestId('role-bound-automation-daily-report').textContent).toContain('启用');
+    expect(screen.getByTestId('role-bound-automation-managed-wake').textContent).toContain('由上方「主动性」设置管理');
   });
 
   it('保存基本信息后详情立即换成新花名，返回卡片也使用更新后的展示字段', async () => {

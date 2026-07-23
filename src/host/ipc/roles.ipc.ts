@@ -25,6 +25,7 @@ import type {
   ExpertBindingScope,
   RolePanelDetail,
   RolePanelEntry,
+  RoleBoundCronJob,
   RoleProactivityLevel,
   RoleVisual,
 } from '../../shared/contract/roleAssets';
@@ -43,6 +44,9 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
 } from '../services/roleAssets';
+import { getDatabase } from '../services/core/databaseService';
+import { getCronService } from '../cron/cronService';
+import { normalizeSchedule, parseJsonValue, isRecord } from '../cron/cronNormalizers';
 import { listAllAgents } from '../agent/agentRegistry';
 import { parseAgentMd, parseAgentMdVisual, updateAgentMdBody, updateAgentMdEquipment, updateAgentMdVisual, type AgentMdEquipment } from '../agent/hybrid/agentMdLoader';
 import { getAgentsMdDir } from '../config/configPaths';
@@ -62,6 +66,43 @@ const logger = createLogger('RolesIPC');
 
 interface RoleIdPayload {
   roleId?: string;
+}
+
+type CronBindingRow = { id: string; name: string; schedule: string; action: string; enabled: number; last_run_at: number | null };
+
+function getBoundActionType(action: unknown, roleId: string): RoleBoundCronJob['actionType'] | null {
+  if (!isRecord(action) || action.roleId !== roleId) return null;
+  if (action.type === 'agent') return 'agent';
+  if (action.type === 'role-wake') return 'role_wake';
+  return null;
+}
+
+function handleListBoundCronJobs(roleId: string): RoleBoundCronJob[] {
+  const db = getDatabase().getDb();
+  if (!db) return [];
+  // 本机 cron 通常只有十位数；为详情页扫描并 JSON.parse action 足够，避免为这个低频反查增加 roleId 列、索引或迁移负担。
+  const rows = db.prepare(`
+    SELECT j.id, j.name, j.schedule, j.action, j.enabled,
+      (SELECT MAX(COALESCE(e.completed_at, e.started_at, e.scheduled_at)) FROM cron_executions e WHERE e.job_id = j.id) AS last_run_at
+    FROM cron_jobs j
+  `).all() as CronBindingRow[];
+  const nextRuns = new Map(getCronService().listJobs().map((job) => [job.id, job.nextRunAt]));
+  const bindings: RoleBoundCronJob[] = [];
+  for (const row of rows) {
+    const actionType = getBoundActionType(parseJsonValue(row.action), roleId);
+    const schedule = normalizeSchedule(parseJsonValue(row.schedule));
+    if (!actionType || !schedule) continue;
+    bindings.push({
+      id: row.id,
+      name: row.name,
+      schedule,
+      enabled: Boolean(row.enabled),
+      ...(nextRuns.get(row.id) !== undefined ? { nextRunAt: nextRuns.get(row.id) } : {}),
+      ...(typeof row.last_run_at === 'number' ? { lastRunAt: row.last_run_at } : {}),
+      actionType,
+    });
+  }
+  return bindings;
 }
 
 interface DeleteMemoryPayload extends RoleIdPayload {
@@ -285,6 +326,12 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
             return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
           }
           return { success: true, data: await handleDetail(roleId) };
+        }
+
+        case 'listBoundCronJobs': {
+          const { roleId } = (payload ?? {}) as RoleIdPayload;
+          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+          return { success: true, data: handleListBoundCronJobs(roleId) };
         }
 
         case 'deleteMemory': {

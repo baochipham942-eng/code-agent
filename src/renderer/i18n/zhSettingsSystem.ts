@@ -540,7 +540,8 @@ export const zhSettingsSystem = {
       noEvents: '暂无事件',
     },
     capabilities: {
-      title: '能力中心',
+      // 「能力中心」现在是整个页面的名字（ADR-049），这里是它的一个 tab，得叫清单避免同名
+      title: '能力清单',
       description: '本地 Skills、MCP、Tools、Connectors、Channels 和 workflow recipes 的库存与审计。',
       overviewTitle: '总览',
       refresh: '刷新',

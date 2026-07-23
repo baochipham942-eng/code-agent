@@ -165,7 +165,9 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('常用');
     expect(html).toContain('活动');
     expect(html).toContain('知识与记忆');
-    expect(html).toContain('自动化');
+    // 账号菜单里这项的真实文案是「高级定时任务」；原先断言的「自动化」其实命中的是
+    // 侧栏能力区那一行，随 ADR-049 收进能力中心后就没了——断言要钉菜单项本身。
+    expect(html).toContain('高级定时任务');
     expect(html).toContain('提示词');
     expect(html).toContain('用户管理');
     expect(html).toContain('邀请码管理');

@@ -171,6 +171,20 @@ export interface RoleDraftPendingData {
   }>;
 }
 
+/** 对话式建团队配方草稿待确认（propose_team_recipe 工具发射，聊天弹确认卡） */
+export interface TeamRecipeDraftPendingData {
+  sessionId: string;
+  drafts: Array<{
+    id: string;
+    name: string;
+    description: string;
+    lead?: { roleId: string; briefTemplate: string };
+    members: Array<{ id?: string; roleId: string; taskTemplate: string }>;
+    /** 兼容资料转化的前端提示；当前校验失败时草稿不会入队。 */
+    unknownRoleNames?: string[];
+  }>;
+}
+
 // Deep Research 相关类型
 export type ResearchPhase = 'planning' | 'researching' | 'reporting' | 'complete' | 'error';
 
@@ -444,6 +458,7 @@ export type AgentEvent =
   | { type: 'skill_draft_pending'; data: SkillDraftPendingData }
   // role-creation-flow: 对话式建角色草稿待确认事件
   | { type: 'role_draft_pending'; data: RoleDraftPendingData }
+  | { type: 'team_recipe_draft_pending'; data: TeamRecipeDraftPendingData }
   // Deep Research 事件
   | { type: 'research_mode_started'; data: ResearchModeStartedData }
   | { type: 'research_progress'; data: ResearchProgressData }

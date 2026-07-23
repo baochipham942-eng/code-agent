@@ -639,6 +639,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     aliases: ['propose role', 'draft role', 'create role', 'edit role', '建角色', '改角色'],
     source: 'builtin',
   },
+  {
+    name: 'propose_team_recipe',
+    shortDescription: '对话式建配方：把专家团或专家小组定义入队为草稿，等用户确认入库',
+    tags: ['planning'],
+    aliases: ['propose team recipe', 'draft team', 'create team', '建配方', '组团队', '资料转配方'],
+    source: 'builtin',
+  },
 
   // ============================================================================
   // 设计画布（意图驱动发现）

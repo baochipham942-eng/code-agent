@@ -46,6 +46,13 @@ describe('TeamRecipe', () => {
     expect(teamRecipeMemberKey({ id: 'evidence', roleId: '溯真', taskTemplate: 'x' })).toBe('evidence');
   });
 
+  it('成员 roleId 不可解析时带有结构化 code', () => {
+    expect(validateTeamRecipe(makeRecipe([{ roleId: '不存在', taskTemplate: 'x' }]), KNOWN)).toContainEqual(expect.objectContaining({
+      code: 'unresolvable-role',
+      reason: 'member roleId 不可解析：不存在',
+    }));
+  });
+
   it.each([
     ['roleId 不在册', makeRecipe([{ roleId: '不存在', taskTemplate: 'x' }])],
     ['members 为空', makeRecipe([])],

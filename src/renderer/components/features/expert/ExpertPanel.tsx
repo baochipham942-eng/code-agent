@@ -22,6 +22,7 @@ import {
 import { createTeamRecipe, deleteTeamRecipe, listTeamRecipes } from '../../../services/teamRecipeClient';
 import { inviteExpert } from '../../../utils/inviteExpert';
 import { launchTeamRecipe } from '../../../utils/launchTeamRecipe';
+import { startCreateTeamChat } from '../../../utils/startCreateTeamChat';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
@@ -265,7 +266,8 @@ export const ExpertPanel: React.FC = () => {
             {tab === 'discover' ? (
               <section aria-labelledby="team-recipes-title">
                 <h2 id="team-recipes-title" className="mb-3 text-sm font-medium text-zinc-200">
-                  {t.team.sectionTitle}
+                  <span>{t.team.sectionTitle}</span>
+                  <Button className="ml-2" variant="ghost" size="sm" onClick={() => void startCreateTeamChat()}>{t.team.createByChat}</Button>
                 </h2>
                 <h3 className="mb-2 text-xs font-medium text-zinc-400">{t.team.builtinRecipes}</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">

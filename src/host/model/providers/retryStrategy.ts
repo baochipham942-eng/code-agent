@@ -63,6 +63,11 @@ const TRANSIENT_PATTERNS = [
   '503',
   '504',
   '429',
+  // 网关类错误的**文案形态**：AI SDK 的 APICallError.message 常常只有 'Bad Gateway'，
+  // 不含 '502' 这三个字符（2026-07-23 实测智谱 GLM-5 上游 502，因此一次没重试就抛给用户）。
+  'bad gateway',
+  'service unavailable',
+  'gateway timeout',
 ];
 
 const FALLBACK_ONLY_PATTERNS = [

@@ -49,6 +49,11 @@ interface ComposerState {
   selectedConnectorIds: string[];
   selectedMcpServerIds: string[];
   turnCapabilityScopeMode: TurnCapabilityScopeMode;
+  /**
+   * 预选的团队配方 id：只是「待命」，成员条会先把名单铺出来，
+   * 真正启动发生在发送那一刻（输入的第一句话当主题）。
+   */
+  selectedTeamRecipeId: string | null;
   hydratedSessionId: string | null;
   hydrateFromSession: (sessionId: string | null, workingDirectory: string | null) => void;
   applySessionWorkbenchPreset: (source: WorkbenchPresetSessionSource) => void;
@@ -62,6 +67,7 @@ interface ComposerState {
   setSelectedConnectorIds: (ids: string[]) => void;
   setSelectedMcpServerIds: (ids: string[]) => void;
   setTurnCapabilityScopeMode: (mode: TurnCapabilityScopeMode) => void;
+  setSelectedTeamRecipeId: (id: string | null) => void;
   resetForSuccessfulSend: () => void;
   buildContext: () => ConversationEnvelopeContext | undefined;
 }
@@ -75,6 +81,7 @@ const initialComposerState = {
   selectedConnectorIds: [],
   selectedMcpServerIds: [],
   turnCapabilityScopeMode: 'auto' as const,
+  selectedTeamRecipeId: null,
   hydratedSessionId: null,
 };
 
@@ -121,6 +128,8 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
           selectedConnectorIds: [],
           selectedMcpServerIds: [],
           turnCapabilityScopeMode: 'auto',
+          // 换会话不该把上一个会话选的团队带过来
+          selectedTeamRecipeId: null,
         };
       }
 
@@ -207,9 +216,13 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
           }),
     })),
 
+  setSelectedTeamRecipeId: (id) => set({ selectedTeamRecipeId: id }),
+
   resetForSuccessfulSend: () =>
     set((state) => ({
       targetAgentIds: state.routingMode === 'direct' ? state.targetAgentIds : [],
+      // 配方已经启动，预选态就该退场——留着会让下一句话又想启动一次
+      selectedTeamRecipeId: null,
     })),
 
   buildContext: () => {

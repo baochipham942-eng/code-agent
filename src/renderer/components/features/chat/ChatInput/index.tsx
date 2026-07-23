@@ -42,6 +42,7 @@ import { ComboSkillCard } from './ComboSkillCard';
 import { SkillDraftNotifications } from './SkillDraftCard';
 import { RoleDraftNotifications } from './RoleDraftCard';
 import { TeamRecipeDraftNotifications } from './TeamRecipeDraftCard';
+import { SessionMemberBar } from '../../expert/SessionMemberBar';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import { useSkillRecommendations } from './useSkillRecommendations';
@@ -709,6 +710,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         <SkillDraftNotifications />
         <RoleDraftNotifications />
         <TeamRecipeDraftNotifications />
+        <SessionMemberBar sessionId={currentSessionId ?? null} />
 
         {/* Suggestion Bar - show when input is empty */}
         {value.trim().length === 0 && suggestions.length > 0 && (

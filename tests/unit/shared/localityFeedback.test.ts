@@ -56,4 +56,24 @@ describe('buildLocalityFeedbackMessage', () => {
     );
     expect(msg).toContain('：改大字号。');
   });
+
+  it('HTML 锚点：消息包含绝对文件路径和 CSS 选择器', () => {
+    const msg = buildLocalityFeedbackMessage(
+      {
+        kind: 'html',
+        filePath: '/tmp/travel/prototype.html',
+        selector: 'html > body > main > button:nth-of-type(2)',
+        tag: 'button',
+        text: '开始规划行程',
+        displayName: 'prototype.html',
+      },
+      '这里改成蓝色主按钮',
+    );
+
+    expect(msg).toContain('/tmp/travel/prototype.html');
+    expect(msg).toContain('html > body > main > button:nth-of-type(2)');
+    expect(msg).toContain('<button>');
+    expect(msg).toContain('开始规划行程');
+    expect(msg).toContain('这里改成蓝色主按钮');
+  });
 });

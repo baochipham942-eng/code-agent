@@ -2,8 +2,8 @@
 // PreviewPanel - Right side panel for HTML/Web preview
 // ============================================================================
 
-import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save, FolderOpen, Presentation } from 'lucide-react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Archive, File, Folder, X, RefreshCw, ExternalLink, Maximize2, Minimize2, Camera, Eye, Pencil, Save, FolderOpen, Presentation, MousePointerClick } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
@@ -16,6 +16,13 @@ import { DocumentBlock } from './features/chat/MessageBubble/DocumentBlock';
 import { SpreadsheetBlock } from './features/chat/MessageBubble/SpreadsheetBlock';
 import { PresentationPagePicker } from './PresentationPagePicker';
 import type { PresentationPagePreviewResult } from '@shared/contract';
+import type { HtmlLocalityAnchor } from '@shared/livePreview/localityFeedback';
+import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
+import {
+  attachHtmlLocalitySelection,
+  htmlLocalityLocationLabel,
+  type HtmlLocalitySelectionController,
+} from '../utils/htmlLocality';
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
@@ -463,6 +470,124 @@ export function PresentationPreview({ content }: { content: string }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function StaticHtmlPreview({
+  html,
+  filePath,
+  iframeRef,
+  title,
+}: {
+  html: string;
+  filePath: string;
+  iframeRef: React.RefObject<HTMLIFrameElement | null>;
+  title: string;
+}) {
+  const { t } = useI18n();
+  const pv = t.previewWorkspace.preview;
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selection, setSelection] = useState<HtmlLocalityAnchor | null>(null);
+  const controllerRef = useRef<HtmlLocalitySelectionController | null>(null);
+
+  const detachSelection = useCallback(() => {
+    controllerRef.current?.destroy();
+    controllerRef.current = null;
+    setSelection(null);
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    controllerRef.current?.clear();
+    setSelection(null);
+  }, []);
+
+  const attachToCurrentDocument = useCallback(() => {
+    detachSelection();
+    if (!selectionMode) return;
+
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    controllerRef.current = attachHtmlLocalitySelection(doc, (next) => {
+      setSelection(next
+        ? {
+            kind: 'html',
+            filePath,
+            selector: next.selector,
+            tag: next.tag,
+            text: next.text,
+            displayName: basename(filePath),
+          }
+        : null);
+    });
+  }, [detachSelection, filePath, iframeRef, selectionMode]);
+
+  const toggleSelectionMode = useCallback(() => {
+    if (selectionMode) {
+      detachSelection();
+      setSelectionMode(false);
+      return;
+    }
+    setSelectionMode(true);
+  }, [detachSelection, selectionMode]);
+
+  useEffect(() => {
+    if (selectionMode) attachToCurrentDocument();
+  }, [attachToCurrentDocument, selectionMode]);
+
+  // srcdoc 变化会替换 document。先释放旧监听/节点引用并清 UI，onLoad 再挂新 document。
+  useEffect(() => {
+    detachSelection();
+  }, [detachSelection, html, filePath]);
+
+  useEffect(() => () => detachSelection(), [detachSelection]);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="static-html-preview">
+      <div className="flex shrink-0 items-center justify-end border-b border-zinc-700 bg-zinc-800 px-3 py-1.5">
+        <button
+          type="button"
+          onClick={toggleSelectionMode}
+          aria-pressed={selectionMode}
+          title={selectionMode ? pv.selectElementActiveHint : pv.selectElement}
+          className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+            selectionMode
+              ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-200'
+              : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <MousePointerClick className="h-3.5 w-3.5" />
+          <span>{pv.selectElement}</span>
+        </button>
+      </div>
+      <iframe
+        ref={iframeRef}
+        srcDoc={html}
+        className="min-h-0 flex-1 border-0"
+        title={title}
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"
+        allow="fullscreen; gamepad; autoplay"
+        allowFullScreen
+        onLoad={attachToCurrentDocument}
+      />
+      {selection && (
+        <div className="flex shrink-0 items-center gap-2 border-t border-zinc-700 bg-zinc-900 px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <LocalityFeedbackBar
+              anchor={selection}
+              locationLabel={htmlLocalityLocationLabel(selection, pv.htmlElementFallback)}
+              onSubmitted={clearSelection}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="shrink-0 rounded px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+          >
+            {pv.clearSelection}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -947,14 +1072,11 @@ export const PreviewPanel: React.FC = () => {
             <CsvTable content={content} delimiter={csvDelimiter} />
           </Suspense>
         ) : (
-          <iframe
-            ref={iframeRef}
-            srcDoc={previewHtml ?? content}
-            className="w-full h-full border-0"
+          <StaticHtmlPreview
+            html={previewHtml ?? content}
+            filePath={activeTab.path}
+            iframeRef={iframeRef}
             title={pv.htmlPreviewTitle}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-pointer-lock"
-            allow="fullscreen; gamepad; autoplay"
-            allowFullScreen
           />
         )}
       </div>

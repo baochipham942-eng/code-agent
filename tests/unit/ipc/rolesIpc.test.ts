@@ -80,13 +80,21 @@ vi.mock('../../../src/host/services/core/configService', () => {
 // cronService：setProactivity 后立即同步 cadence job
 const mockCronCreateJob = vi.hoisted(() => vi.fn(async (def: unknown) => ({ ...(def as object), id: 'job-1' })));
 const mockCronDeleteJob = vi.hoisted(() => vi.fn(async () => true));
+const mockCronListJobs = vi.hoisted(() => vi.fn<() => unknown[]>(() => []));
+const mockCronRows = vi.hoisted(() => ({ value: [] as unknown[] }));
 
 vi.mock('../../../src/host/cron/cronService', () => ({
   getCronService: () => ({
-    listJobs: () => [],
+    listJobs: mockCronListJobs,
     createJob: mockCronCreateJob,
     updateJob: vi.fn(),
     deleteJob: mockCronDeleteJob,
+  }),
+}));
+
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({
+    getDb: () => ({ prepare: () => ({ all: () => mockCronRows.value }) }),
   }),
 }));
 
@@ -118,6 +126,8 @@ describe('roles.ipc (domain:roles)', () => {
   beforeEach(async () => {
     mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'roles-ipc-'));
     mockSettingsStore.value = {};
+    mockCronRows.value = [];
+    mockCronListJobs.mockReturnValue([]);
     vi.clearAllMocks();
     registerRolesHandlers(mockIpcMain);
   });
@@ -196,6 +206,37 @@ describe('roles.ipc (domain:roles)', () => {
       const res = await invoke<RolePanelEntry[]>('list');
       expect(res.data?.find((entry) => entry.roleId === '自定义角色')).toMatchObject({ displayName: '小满', profession: '增长顾问', tags: ['增长'], quickPrompts: ['帮我看增长，给建议'] });
       expect(res.data?.find((entry) => entry.roleId === '研究员')?.displayName).toBe('研究员');
+    });
+  });
+
+  describe('listBoundCronJobs', () => {
+    it('only returns cron jobs whose action binds the requested role, preserving agent and role wake types', async () => {
+      mockCronRows.value = [
+        { id: 'agent-for-role', name: '晨报', schedule: JSON.stringify({ type: 'every', interval: 1, unit: 'days' }), action: JSON.stringify({ type: 'agent', agentType: 'general', prompt: '晨报', roleId: '研究员' }), enabled: 1, last_run_at: 100 },
+        { id: 'wake-for-role', name: '主动巡检', schedule: JSON.stringify({ type: 'cron', expression: '0 9 * * *' }), action: JSON.stringify({ type: 'role-wake', roleId: '研究员' }), enabled: 0, last_run_at: null },
+        { id: 'other-role', name: '别人的任务', schedule: JSON.stringify({ type: 'every', interval: 1, unit: 'hours' }), action: JSON.stringify({ type: 'agent', agentType: 'general', prompt: 'x', roleId: '别的角色' }), enabled: 1, last_run_at: null },
+      ];
+      mockCronListJobs.mockReturnValue([{ id: 'agent-for-role', nextRunAt: 200 }]);
+
+      const res = await invoke<import('../../../src/shared/contract/roleAssets').RoleBoundCronJob[]>('listBoundCronJobs', { roleId: '研究员' });
+
+      expect(res.success).toBe(true);
+      expect(res.data).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'agent-for-role', actionType: 'agent', nextRunAt: 200, lastRunAt: 100 }),
+        expect.objectContaining({ id: 'wake-for-role', actionType: 'role_wake' }),
+      ]));
+      expect(res.data?.map((job) => job.id)).not.toContain('other-role');
+    });
+
+    it('skips malformed action JSON and actions without roleId without failing the lookup', async () => {
+      mockCronRows.value = [
+        { id: 'bad-json', name: '坏数据', schedule: JSON.stringify({ type: 'every', interval: 1, unit: 'hours' }), action: '{', enabled: 1, last_run_at: null },
+        { id: 'no-role', name: '未绑定', schedule: JSON.stringify({ type: 'every', interval: 1, unit: 'hours' }), action: JSON.stringify({ type: 'agent', agentType: 'general', prompt: 'x' }), enabled: 1, last_run_at: null },
+      ];
+
+      const res = await invoke('listBoundCronJobs', { roleId: '研究员' });
+
+      expect(res).toMatchObject({ success: true, data: [] });
     });
   });
 

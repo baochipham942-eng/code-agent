@@ -56,7 +56,9 @@ export interface ToolResultSpillResult {
 
 /** 路径片段消毒：防止 sessionId / toolName 里的特殊字符构造出意外路径（含 .. 遍历 / 隐藏目录） */
 function sanitizeSegment(segment: string): string {
-  return segment.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^\.+/, '_');
+  const clean = segment.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^\.+/, '_');
+  if (clean.length <= TOOL_RESULT_SPILL.MAX_FILENAME_SEGMENT) return clean;
+  return `${clean.slice(0, TOOL_RESULT_SPILL.MAX_FILENAME_SEGMENT - 13)}-${sha256(clean).slice(0, 12)}`;
 }
 
 /** 获取 session 的工具结果落盘目录：~/.code-agent/tmp/<session>/tool-results/ */

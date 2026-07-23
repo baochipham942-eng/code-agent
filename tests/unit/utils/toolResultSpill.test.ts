@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { createHash } from 'crypto';
 
 // mock factory 与测试体各自计算同一确定性路径（避免 vi.hoisted 跨作用域引用）
 const testRoot = path.join(os.tmpdir(), `neo-spill-test-${process.pid}`);
@@ -122,6 +123,38 @@ describe('toolResultSpill (GAP-009)', () => {
     expect(spillPath).not.toContain('..');
     expect(path.basename(spillPath!)).not.toContain(' ');
     expect(path.basename(spillPath!)).not.toContain('/');
+  });
+
+  it('compresses long tool call IDs into stable, filesystem-safe archive names', () => {
+    const toolCallId = `swarm-agent.v1.${'team-id.'.repeat(30)}`;
+    const options = {
+      content: 'long identifier output',
+      toolName: 'Bash',
+      sessionId: 'session-long-id',
+      toolCallId,
+    };
+
+    const first = spillToolResultArchive(options);
+    const second = spillToolResultArchive(options);
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(Buffer.byteLength(path.basename(first!.filePath), 'utf-8')).toBeLessThan(255);
+    expect(Buffer.byteLength(`${path.basename(first!.filePath)}.archive.json`, 'utf-8')).toBeLessThan(255);
+    expect(path.basename(second!.filePath)).toBe(path.basename(first!.filePath));
+  });
+
+  it('keeps short tool call IDs in their existing filename form', () => {
+    const content = 'short identifier output';
+    const result = spillToolResultArchive({
+      content,
+      toolName: 'Bash',
+      sessionId: 'session-short-id',
+      toolCallId: 'call-123',
+    });
+    const contentHash = createHash('sha256').update(content, 'utf-8').digest('hex');
+
+    expect(path.basename(result!.filePath)).toBe(`Bash-call-123-${contentHash.slice(0, 12)}.txt`);
   });
 
   it('skips content that already contains a spill notice (no double spill)', () => {

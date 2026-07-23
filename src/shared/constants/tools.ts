@@ -66,6 +66,8 @@ export const TOOL_RESULT_SPILL = {
   SHARED_SESSION: 'shared',
   /** 单文件最大落盘字节数（10MB，防止异常超大输出写爆磁盘） */
   MAX_SPILL_BYTES: 10 * 1024 * 1024,
+  /** 落盘文件名单段最大字符数，避免结构化调用 ID 超出文件系统单段限制 */
+  MAX_FILENAME_SEGMENT: 48,
   /**
    * 落盘提示的标识前缀。
    * 同时用于：防重复落盘（toolResultSpill）+ 压缩豁免（tokenOptimizer 提取后拼回，

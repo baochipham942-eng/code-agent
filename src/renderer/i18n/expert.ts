@@ -27,6 +27,11 @@ export const expertZh = {
       completed: '已完成',
       working: '工作中',
     },
+    memberBar: {
+      leader: '主会话',
+      leaderTitle: '回到主对话',
+      standbyHint: '待命中，发第一句话就开工',
+    },
     workRecord: {
       title: '工作记录',
       receivedTask: '收到的任务',
@@ -116,6 +121,11 @@ export const expertEn: typeof expertZh = {
       team: 'Expert team',
       completed: 'Completed',
       working: 'Working',
+    },
+    memberBar: {
+      leader: 'Main chat',
+      leaderTitle: 'Back to the main conversation',
+      standbyHint: 'On standby — your first message starts them',
     },
     workRecord: {
       title: 'Work record',

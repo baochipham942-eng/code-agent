@@ -144,6 +144,8 @@ export const chatInputZh = {
     memoryOnStatus: '已开启',
     interactionModeHeader: '交互模式',
     expertsLabel: '专家',
+    teamsLabel: '团队',
+    teamLeadPrefix: '主理人 {lead}',
     skillsLabel: '技能',
     connectorsLabel: '连接器',
     submenuSearchPlaceholder: '搜索…',
@@ -155,6 +157,7 @@ export const chatInputZh = {
     pinAria: '置顶',
     unpinAria: '取消置顶',
     manageExperts: '管理专家',
+    manageTeams: '管理团队',
     manageSkills: '管理技能',
     manageConnectors: '管理连接器',
     modeHints: {
@@ -267,6 +270,7 @@ export const chatInputZh = {
   },
   chatInputSubmit: {
     scheduleParsingToast: '正在解析定时任务…',
+    teamRecipeLaunchFailed: '团队没能启动，稍后再试',
     unnamedAutomation: '未命名自动化',
     resumeAfterWakeTitle: '唤醒后继续',
     scheduleCreatedToastPrefix: '已创建定时任务「',
@@ -471,6 +475,8 @@ export const chatInputEn: typeof chatInputZh = {
     memoryOnStatus: 'On',
     interactionModeHeader: 'Interaction mode',
     expertsLabel: 'Experts',
+    teamsLabel: 'Teams',
+    teamLeadPrefix: 'Led by {lead}',
     skillsLabel: 'Skills',
     connectorsLabel: 'Connectors',
     submenuSearchPlaceholder: 'Search…',
@@ -482,6 +488,7 @@ export const chatInputEn: typeof chatInputZh = {
     pinAria: 'Pin',
     unpinAria: 'Unpin',
     manageExperts: 'Manage experts',
+    manageTeams: 'Manage teams',
     manageSkills: 'Manage skills',
     manageConnectors: 'Manage connectors',
     modeHints: {
@@ -594,6 +601,7 @@ export const chatInputEn: typeof chatInputZh = {
   },
   chatInputSubmit: {
     scheduleParsingToast: 'Parsing the scheduled task…',
+    teamRecipeLaunchFailed: 'The team could not start — try again',
     unnamedAutomation: 'Unnamed automation',
     resumeAfterWakeTitle: 'Continue after wake-up',
     scheduleCreatedToastPrefix: 'Created scheduled task "',

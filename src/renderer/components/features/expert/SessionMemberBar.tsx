@@ -19,6 +19,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
+import { useComposerNoticeStore, selectHasBlockingNotice } from '../../../stores/composerNoticeStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
@@ -142,13 +143,44 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const pills = useSessionMembers(sessionId);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
+  const blockedByNotice = useComposerNoticeStore(selectHasBlockingNotice);
+  const [expandedOverNotice, setExpandedOverNotice] = useState(false);
 
   // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
+  // 确认卡收掉后回到常态，别把「展开」黏在下一次
+  useEffect(() => { if (!blockedByNotice) setExpandedOverNotice(false); }, [blockedByNotice]);
 
   if (pills.length === 0) return null;
 
   const standby = pills[0]?.status === 'standby';
+
+  // 确认卡是阻塞性决策，优先占位；成员条退成一行摘要而不是整条消失
+  // （WorkBuddy 的做法是直接吞掉，用户看不到成员也不知道为什么）
+  if (blockedByNotice && !expandedOverNotice) {
+    const running = pills.filter((pill) => pill.status === 'running').length;
+    const summary = standby
+      ? text.collapsedStandby.replace('{count}', String(pills.length))
+      : running > 0
+        ? text.collapsedWorking.replace('{count}', String(running))
+        : text.collapsedDone.replace('{count}', String(pills.length));
+    return (
+      <button /* ds-allow:button: 被确认卡挤掉时的一行摘要，点开恢复完整成员条 */
+        type="button"
+        data-testid="session-member-bar-collapsed"
+        onClick={() => setExpandedOverNotice(true)}
+        className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
+      >
+        <span className="flex -space-x-1.5">
+          {pills.slice(0, 4).map((pill) => (
+            <RoleInitialAvatar key={pill.key} roleId={pill.roleId} name={pill.name} className="h-4 w-4 border border-zinc-900 text-[8px]" />
+          ))}
+        </span>
+        <span className="truncate">{summary}</span>
+        <span aria-hidden>›</span>
+      </button>
+    );
+  }
 
   return (
     <>

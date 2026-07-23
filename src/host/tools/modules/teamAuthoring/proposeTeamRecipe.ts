@@ -47,8 +47,8 @@ class ProposeTeamRecipeHandler implements ToolHandler<Record<string, unknown>, s
     const knownRoleIds = await getTeamRecipeService().knownRoleIds();
     const errors = validateTeamRecipe(recipe, knownRoleIds);
     if (errors.length) {
-      const unknown = errors.filter((error) => error.reason.includes('roleId 不可解析')).map((error) => error.reason).join('；');
-      return { ok: false, error: `${errors.map((error) => error.reason).join('；')}${unknown ? '。文档里的这些角色本机没有对应专家：请换成已有专家，或先去建这个角色。' : ''}`, code: 'DRAFT_REJECTED' };
+      const unknown = errors.filter((error) => error.code === 'unresolvable-role');
+      return { ok: false, error: `${errors.map((error) => error.reason).join('；')}${unknown.length ? '。文档里的这些角色本机没有对应专家：请换成已有专家，或先去建这个角色。' : ''}`, code: 'DRAFT_REJECTED' };
     }
 
     onProgress?.({ stage: 'starting', detail: `起草配方「${name}」` });

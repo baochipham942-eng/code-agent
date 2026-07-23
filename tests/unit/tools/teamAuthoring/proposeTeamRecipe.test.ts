@@ -55,11 +55,17 @@ describe('propose_team_recipe', () => {
     expect((ctx.emit as ReturnType<typeof vi.fn>).mock.calls[0][0].data.drafts[0].lead).toBeUndefined();
   });
 
-  it('未知角色明确列出且不静默丢弃', async () => {
+  it('unresolvable-role code 出现时追加未知角色引导', async () => {
     const result = await (await proposeTeamRecipeModule.createHandler()).execute(args({ members: [{ roleId: '法务审核', taskTemplate: '审核 {topic}' }] }), context() as never, allow as never);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain('法务审核');
     if (!result.ok) expect(result.error).toContain('本机没有对应专家');
+  });
+
+  it('非 unresolvable-role 校验错误不追加未知角色引导', async () => {
+    const result = await (await proposeTeamRecipeModule.createHandler()).execute(args({ members: [] }), context() as never, allow as never);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).not.toContain('本机没有对应专家');
   });
 
   it('确认前不入库，确认后才创建配方', async () => {

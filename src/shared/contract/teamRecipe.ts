@@ -30,8 +30,19 @@ export interface TeamRecipe {
 
 export interface TeamRecipeValidationError {
   recipeId: string;
+  code: TeamRecipeValidationErrorCode;
   reason: string;
 }
+
+type TeamRecipeValidationErrorCode =
+  | 'unresolvable-role'
+  | 'empty-members'
+  | 'duplicate-member-key'
+  | 'missing-brief'
+  | 'lead-member-collision'
+  | 'unknown-dependency'
+  | 'cycle'
+  | 'empty-task';
 
 /** 每个 member 的解析键（dependsOn 的引用目标） */
 export function teamRecipeMemberKey(member: TeamRecipeMember): string {
@@ -48,39 +59,39 @@ export function validateTeamRecipe(
 ): TeamRecipeValidationError[] {
   const known = knownRoleIds instanceof Set ? knownRoleIds : new Set(knownRoleIds);
   const errors: TeamRecipeValidationError[] = [];
-  const err = (reason: string) => errors.push({ recipeId: recipe.id, reason });
+  const err = (code: TeamRecipeValidationErrorCode, reason: string) => errors.push({ recipeId: recipe.id, code, reason });
 
   if (recipe.lead) {
     if (!recipe.lead.roleId || !known.has(recipe.lead.roleId)) {
-      err(`lead roleId 不可解析：${recipe.lead.roleId || '(空)'}`);
+      err('unresolvable-role', `lead roleId 不可解析：${recipe.lead.roleId || '(空)'}`);
     }
     if (!recipe.lead.briefTemplate.trim()) {
-      err('lead 的 briefTemplate 为空');
+      err('missing-brief', 'lead 的 briefTemplate 为空');
     }
   }
 
-  if (!recipe.members.length) err('members 不能为空');
+  if (!recipe.members.length) err('empty-members', 'members 不能为空');
 
   const keys = recipe.members.map(teamRecipeMemberKey);
   if (recipe.lead && keys.includes(recipe.lead.roleId)) {
-    err(`lead roleId 与 member 键重复：${recipe.lead.roleId}`);
+    err('lead-member-collision', `lead roleId 与 member 键重复：${recipe.lead.roleId}`);
   }
 
   const duplicateKeys = keys.filter((key, index) => keys.indexOf(key) !== index);
   if (duplicateKeys.length) {
-    err(`member 键重复：${[...new Set(duplicateKeys)].join(', ')}（同角色多实例请给不同 id）`);
+    err('duplicate-member-key', `member 键重复：${[...new Set(duplicateKeys)].join(', ')}（同角色多实例请给不同 id）`);
   }
 
   for (const member of recipe.members) {
     if (!member.roleId || !known.has(member.roleId)) {
-      err(`member roleId 不可解析：${member.roleId || '(空)'}`);
+      err('unresolvable-role', `member roleId 不可解析：${member.roleId || '(空)'}`);
     }
     if (!member.taskTemplate.trim()) {
-      err(`member ${teamRecipeMemberKey(member)} 的 taskTemplate 为空`);
+      err('empty-task', `member ${teamRecipeMemberKey(member)} 的 taskTemplate 为空`);
     }
     for (const dependency of member.dependsOn ?? []) {
       if (!keys.includes(dependency)) {
-        err(`member ${teamRecipeMemberKey(member)} 依赖不存在的 ${dependency}`);
+        err('unknown-dependency', `member ${teamRecipeMemberKey(member)} 依赖不存在的 ${dependency}`);
       }
     }
   }
@@ -110,7 +121,7 @@ export function validateTeamRecipe(
 
   for (const key of keys) {
     if ((color.get(key) ?? WHITE) === WHITE && hasCycle(key)) {
-      err('dependsOn 存在环');
+      err('cycle', 'dependsOn 存在环');
       break;
     }
   }

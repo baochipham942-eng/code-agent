@@ -127,6 +127,7 @@ import { visualEditSchema } from './vision/visualEdit.schema';
 import { memoryReadSchema } from './lightMemory/memoryRead.schema';
 import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
 import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
+import { memorySearchSchema } from './lightMemory/memorySearch.schema';
 import { historySchema } from './lightMemory/history.schema';
 import { proposeRoleSchema } from './roleAuthoring/proposeRole.schema';
 import { proposeTeamRecipeSchema } from './teamAuthoring/proposeTeamRecipe.schema';
@@ -651,6 +652,10 @@ export function registerMigratedTools(
   registry.register(
     episodicRecallSchema,
     async () => (await import('./lightMemory/episodicRecall')).episodicRecallModule,
+  );
+  registry.register(
+    memorySearchSchema,
+    async () => (await import('./lightMemory/memorySearch')).memorySearchModule,
   );
   registry.register(
     historySchema,

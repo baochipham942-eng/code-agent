@@ -20,8 +20,6 @@ import { IPC_DOMAINS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { InputAddMenu } from './InputAddMenu';
-import { AttachmentBar } from './AttachmentBar';
-import { NeoContinuationChip } from './NeoContinuationChip';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
@@ -51,7 +49,7 @@ import { CapabilitySuggestionStrip } from './CapabilitySuggestionStrip';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
-import { AppshotChip } from './AppshotChip';
+import { ComposerChipsRow } from './ComposerChipsRow';
 import { InlineWorkbenchBar } from '../InlineWorkbenchBar';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { ModelSwitcher } from '../../../StatusBar/ModelSwitcher';
@@ -685,24 +683,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {/* Appshot 飞入动画落点锚（0 高，仅用于测量 composer 槽位屏幕坐标） */}
         <div ref={appshotSlotRef} aria-hidden className="h-0" />
 
-        {/* Appshot 预览片 */}
-        {pendingAppshot && (
-          <div className="mb-2 px-2">
-            <AppshotChip capture={pendingAppshot} onRemove={clearAppshot} />
-          </div>
-        )}
-
-        {/* @neo 续接 chip（ADR-035）：标记这条消息续接哪个 topic */}
-        <div className="empty:hidden mb-2 px-2">
-          <NeoContinuationChip />
-        </div>
-
-        {/* 附件预览区 */}
-        {attachments.length > 0 && (
-          <div className="mb-2">
-            <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
-          </div>
-        )}
+        <ComposerChipsRow pendingAppshot={pendingAppshot} clearAppshot={clearAppshot} attachments={attachments} removeAttachment={removeAttachment} />
 
         {/* 拖放提示 */}
         {isDragOver && (

@@ -954,6 +954,22 @@ export const zh = {
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
 
   // 命令面板（Cmd/Ctrl+K）
+  selectedCapabilityChips: {
+    removeAria: '移除能力：{name}',
+  },
+
+  inlineWorkbenchBar: {
+    skillsSummary: '技能 {selected}/{total}',
+    connectorsSummary: '连接器 {selected}/{total}',
+    mcpSummary: 'MCP 服务 {selected}/{total}',
+    capabilities: '能力',
+    auto: '自动',
+    manual: '手动',
+    autoTitle: '系统自动选择可用能力',
+    manualTitle: '手动限定本轮能力范围',
+    noMountedSkills: '当前会话还没有已挂载的技能。',
+  },
+
   commandPalette: {
     ariaLabel: '命令面板',
     searchPlaceholder: '搜索命令…',

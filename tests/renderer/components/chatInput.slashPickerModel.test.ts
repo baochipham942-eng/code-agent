@@ -3,7 +3,6 @@ import type { ParsedSkill } from '../../../src/shared/contract/agentSkill';
 import type { AgentListEntry } from '../../../src/shared/contract/agentRegistry';
 import type { SessionSkillMount } from '../../../src/shared/contract/skillRepository';
 import {
-  buildInlineSkillTokenValue,
   buildLeadingSlashCommandValue,
   createAgentCandidates,
   createCommandCandidate,
@@ -67,10 +66,9 @@ describe('slash picker model', () => {
     expect(buildLeadingSlashCommandValue('/goal', 'goal')).toBe('/goal ');
   });
 
-  it('replaces the trailing slash with an inline skill token', () => {
-    expect(buildInlineSkillTokenValue('帮我处理 /doc', 'docx')).toBe('帮我处理 <docx> ');
-    expect(buildInlineSkillTokenValue('帮我处理 <docx> /doc', 'docx')).toBe('帮我处理 <docx> ');
+  it('removes the trailing slash token without changing the draft body', () => {
     expect(removeTrailingSlashToken('帮我处理 /doc')).toBe('帮我处理');
+    expect(removeTrailingSlashToken('帮我处理 <docx> /doc')).toBe('帮我处理 <docx>');
   });
 
   it('ranks exact slash command matches ahead of substring matches', () => {

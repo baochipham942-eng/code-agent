@@ -22,6 +22,10 @@ const composerState = {
 };
 
 const appState = {
+  // InlineWorkbenchBar 现在经 useI18n 无参调用 useAppStore()，这几项是 useI18n 需要的
+  language: 'zh' as const,
+  setLanguage: vi.fn(),
+  cloudUIStrings: undefined,
   setWorkingDirectory: vi.fn(),
   selectedSwarmAgentId: null as string | null,
   openSettingsTab: vi.fn(),
@@ -103,8 +107,9 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
 }));
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: (selector: (state: any) => unknown) =>
-    selector(appState),
+  // useI18n 无参调用 useAppStore()，选择器可缺省
+  useAppStore: (selector?: (state: any) => unknown) =>
+    (selector ? selector(appState) : appState),
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -372,12 +377,11 @@ describe('InlineWorkbenchBar mention preview', () => {
       React.createElement(InlineWorkbenchBar),
     );
 
-    expect(html).toContain('Skills');
-    expect(html).toContain('Skills 1/2');
-    expect(html).toContain('Connectors 0/1');
-    expect(html).toContain('MCP 0/1');
-    expect(html).toContain('Auto');
-    expect(html).toContain('Manual');
+    expect(html).toContain('技能 1/2');
+    expect(html).toContain('连接器 0/1');
+    expect(html).toContain('MCP 服务 0/1');
+    expect(html).toContain('自动');
+    expect(html).toContain('手动');
   });
 
   // Connectors 选择器已从 InlineWorkbenchBar 移除（#2），测试删除。

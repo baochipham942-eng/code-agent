@@ -15,7 +15,6 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { type SkillRecommendationView } from './CapabilitySuggestionStrip';
 import type { SlashCommand } from './SlashCommandPopover';
 import {
-  buildInlineSkillTokenValue,
   buildLeadingSlashCommandValue,
   removeTrailingSlashToken,
 } from './slashPickerModel';
@@ -77,7 +76,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
   const markSkillSelected = useCallback((skillName: string) => {
     const currentSelectedSkillIds = useComposerStore.getState().selectedSkillIds;
     setSelectedSkillIds([...new Set([...currentSelectedSkillIds, skillName])]);
-    setValue((prev) => buildInlineSkillTokenValue(prev, skillName));
+    setValue((prev) => removeTrailingSlashToken(prev));
     focusComposer();
   }, [focusComposer, setSelectedSkillIds, setValue]);
 

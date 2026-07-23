@@ -29,7 +29,6 @@ vi.mock('../../../../src/renderer/components/design/designProposedVideoGen', () 
 import { useCanvasVideoRequest } from '../../../../src/renderer/components/design/useCanvasVideoRequest';
 import { useDesignCanvasStore } from '../../../../src/renderer/components/design/designCanvasStore';
 import { useSessionStore } from '../../../../src/renderer/stores/sessionStore';
-import { useWorkspaceModeStore } from '../../../../src/renderer/stores/workspaceModeStore';
 import { IPC_CHANNELS } from '../../../../src/shared/ipc';
 import type { CanvasVideoRequest } from '../../../../src/shared/contract';
 
@@ -67,7 +66,6 @@ describe('useCanvasVideoRequest per-session design gate', () => {
     handlers.clear();
     invokeMock.mockClear();
     generateVideoMock.mockClear();
-    useWorkspaceModeStore.setState({ workspaceMode: 'code' });
     useSessionStore.setState({ currentSessionId: null });
     useDesignCanvasStore.setState({
       ownerSessionId: null,
@@ -89,13 +87,12 @@ describe('useCanvasVideoRequest per-session design gate', () => {
     });
   });
 
-  it('allows the agentic path when workspaceMode stays code but the session is active and owns the canvas', async () => {
+  it('allows the agentic path when the session is active and owns the canvas', async () => {
     activateAndClaim(SESSION_ID);
     renderHook(() => useCanvasVideoRequest());
 
     await fireVideoAsk();
 
-    expect(useWorkspaceModeStore.getState().workspaceMode).toBe('code');
     expect(generateVideoMock).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenCalledWith(
       IPC_CHANNELS.CANVAS_VIDEO_RESPONSE,

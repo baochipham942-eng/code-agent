@@ -3,7 +3,7 @@
 // DesignCanvasTab —— 把 konva 画布从全屏覆盖层挪进 workbench 预览 tab（R2）。
 // 覆盖三件事：
 //  1) WorkbenchTabId 接受 'design-canvas' 成员（经 appStore.openWorkbenchTab 验证）；
-//  2) DesignCanvasTab 挂载时复刻 DesignWorkspace 的画布恢复 effect——runDir 非空且
+//  2) DesignCanvasTab 挂载时执行画布恢复 effect——runDir 非空且
 //     nodes 为空 → 调 loadCanvasDoc(runDir)；runDir 为空 → 不调。
 //  3) 画布 tab 浮层挂载真实 DesignCostHistory，默认收起仍显示累计花费，展开后显示时间线。
 // konva 在 jsdom 下不可渲染，故 mock 掉 ./DesignCanvas，测试只聚焦容器 + effect。

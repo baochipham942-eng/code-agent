@@ -7,10 +7,10 @@ import { DesignCostHistory } from './DesignCostHistory';
 import { useRestoreCanvasFromDisk } from './useRestoreCanvasFromDisk';
 
 /**
- * 把 konva 设计画布作为「产物预览面」挂进专属 workbench tab（与全屏 DesignWorkspace 并存）。
+ * 把 konva 设计画布作为「产物预览面」挂进专属 workbench tab。
  * 薄容器：给 DesignCanvas 一个 h-full w-full 的尺寸盒（Stage 需显式像素宽高，
  * 由 DesignCanvas 内部 ResizeObserver 跟随），并复用共享的画布磁盘恢复 hook。
- * 外层容器挂 data-testid="design-canvas-tab" 以与全屏覆盖层的 design-canvas 区分（M3）。
+ * 外层容器挂 data-testid="design-canvas-tab" 供交互测试定位。
  */
 export const DesignCanvasTab: React.FC = () => {
   const { t } = useI18n();

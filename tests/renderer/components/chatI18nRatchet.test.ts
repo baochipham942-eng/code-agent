@@ -41,6 +41,7 @@ const MIGRATED: string[] = [
   'features/chat/ChatInput/SeedComposerCard.tsx',
   'features/chat/ChatInput/InputAddMenu.tsx',
   'features/chat/ChatInput/InputAddSubmenu.tsx',
+  'features/chat/ChatInput/inputAddSubmenuPrefs.ts',
   'features/chat/ChatInput/LoopStatusBar.tsx',
   'features/chat/ChatInput/ModelStrategyRecommendationStrip.tsx',
   'features/chat/ChatInput/ModeSelector.tsx',

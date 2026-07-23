@@ -168,6 +168,7 @@ export const InputAddMenu: React.FC<Props> = ({
                 {submenu === kind && (
                   <div className="absolute bottom-0 left-full ml-1 z-40">
                     <InputAddSubmenu
+                      scope={kind}
                       items={kind === 'experts' ? expertItems : capabilityItems(kind === 'skills' ? skills : connectors)}
                       onSelect={(item) => {
                         if (kind === 'experts') {

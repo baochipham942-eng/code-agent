@@ -18,7 +18,7 @@ const SESSION_MAP_KEY = 'app:activeAgentIdBySession';
 beforeEach(() => {
   localStorage.clear();
   useAppStore.setState({
-    showExpertPanel: true,
+    showCapabilityHub: true,
     pendingRoleChatSeed: null,
     activeAgentId: null,
   });
@@ -38,7 +38,7 @@ describe('inviteExpert', () => {
     expect(map['session_new_1']).toBe('牧之');
 
     const state = useAppStore.getState();
-    expect(state.showExpertPanel).toBe(false);
+    expect(state.showCapabilityHub).toBe(false);
     expect(state.activeAgentId).toBe('牧之');
     expect(state.pendingRoleChatSeed).toBe('帮我梳理需求');
   });

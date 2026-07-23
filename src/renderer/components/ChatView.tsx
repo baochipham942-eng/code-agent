@@ -621,7 +621,7 @@ export const ChatView: React.FC = () => {
   // 末位消息必然就是触发这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
   const retryTurnMessage = deriveRetryTurnMessage(streamSnapshot, messages);
 
-  // 对话式建角色：入口（RolesTab / AgentSwitcher）起新会话后写入种子消息，
+  // 对话式建角色：入口（能力中心 · 专家 / AgentSwitcher）起新会话后写入种子消息，
   // 这里在新会话就绪后自动发出可见的种子消息，触发 create-role skill。
   const pendingRoleChatSeed = useAppStore((state) => state.pendingRoleChatSeed);
   useEffect(() => {

@@ -72,7 +72,6 @@ describe('SettingsModal screen memory tab visibility', () => {
       'visualModels',
       'search',
       'soul',
-      'skills',
     ]);
     expect(groups[0].tabs[0].label).toBe('通用模型');
     expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
@@ -84,15 +83,11 @@ describe('SettingsModal screen memory tab visibility', () => {
     ]);
     expect(groups[2].tabs.map((tab) => tab.id)).toEqual([
       'workspace',
-      'automation',
       'channels',
-      'roles',
     ]);
-    // 高级组：技术项收纳（普通用户可自行配置，默认折叠）
+    // 高级组：仅保留仍属于设置页的技术项
     expect(groups[5].tabs.map((tab) => tab.id)).toEqual([
       'agentEngine',
-      'mcp',
-      'plugins',
       'hooks',
       'appshots',
       'cache',
@@ -102,7 +97,6 @@ describe('SettingsModal screen memory tab visibility', () => {
       'users',
       'invites',
       'controlPlane',
-      'capabilities',
     ]);
     expect(groups[4].tabs.map((tab) => tab.id)).toEqual([
       'update',
@@ -124,8 +118,7 @@ describe('SettingsModal screen memory tab visibility', () => {
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('invites');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('controlPlane');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('capabilities');
-    // v2 拍板：plugins/hooks 下放普通用户（高级组内可自行配置）
-    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).toContain('plugins');
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('plugins');
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).toContain('hooks');
   });
 
@@ -140,12 +133,12 @@ describe('SettingsModal screen memory tab visibility', () => {
 
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).toEqual(expect.arrayContaining([
       'model',
-      'mcp',
-      'skills',
       'channels',
       'memory',
-      'automation',
       'workspace',
+    ]));
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).toEqual(expect.not.arrayContaining([
+      'roles', 'automation', 'skills', 'capabilities', 'mcp', 'plugins',
     ]));
   });
 });

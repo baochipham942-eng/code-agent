@@ -20,7 +20,7 @@ export interface InviteExpertOptions {
 export async function inviteExpert(roleId: string, options?: InviteExpertOptions): Promise<void> {
   const app = useAppStore.getState();
   app.setShowSettings(false);
-  app.setShowExpertPanel(false);
+  app.setShowCapabilityHub(false);
 
   const session = await useSessionStore.getState().createSession(options?.title || roleId);
   if (!session) return;

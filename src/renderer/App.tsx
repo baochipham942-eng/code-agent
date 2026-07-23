@@ -108,11 +108,8 @@ const KnowledgeMemoryPanel = React.lazy(() => import('./components/features/know
 const LibraryPanel = React.lazy(() => import('./components/features/knowledge/LibraryPanel').then((module) => ({
   default: module.LibraryPanel,
 })));
-const ExpertPanel = React.lazy(() => import('./components/features/expert/ExpertPanel').then((module) => ({
-  default: module.ExpertPanel,
-})));
-const CronCenterPanel = React.lazy(() => import('./components/features/cron/CronCenterPanel').then((module) => ({
-  default: module.CronCenterPanel,
+const CapabilityHubPage = React.lazy(() => import('./components/features/capabilityHub/CapabilityHubPage').then((module) => ({
+  default: module.CapabilityHubPage,
 })));
 const TimeCapabilityPanel = React.lazy(() => import('./components/features/timeCapability/TimeCapabilityPanel'));
 const AgentTeamPanel = React.lazy(() => import('./components/features/agentTeam').then((module) => ({
@@ -157,7 +154,7 @@ export const App: React.FC = () => {
   const {
     showSettings,
     setTaskPanelTab,
-    showCronCenter,
+    showCapabilityHub,
     showTimeCapabilityCenter,
     setShowFileExplorer,
     showAgentTeamPanel,
@@ -171,7 +168,6 @@ export const App: React.FC = () => {
     closeProjectCollaborationPage,
     showKnowledgeMemoryPanel,
     showLibraryPanel,
-    showExpertPanel,
     showActivityPanel,
     setShowActivityPanel,
     showBrowserSurfacePanel,
@@ -874,9 +870,9 @@ export const App: React.FC = () => {
                 <React.Suspense fallback={null}>
                   <LibraryPanel />
                 </React.Suspense>
-              ) : showExpertPanel ? (
+              ) : showCapabilityHub ? (
                 <React.Suspense fallback={null}>
-                  <ExpertPanel />
+                  <CapabilityHubPage />
                 </React.Suspense>
               ) : showComputerUsePanel ? (
                 <React.Suspense fallback={null}>
@@ -1063,13 +1059,6 @@ export const App: React.FC = () => {
       {useAppStore((s) => s.showCapturePanel) && (
         <React.Suspense fallback={null}>
           <CapturePanel />
-        </React.Suspense>
-      )}
-
-      {/* Cron Center - 定时任务中心 */}
-      {showCronCenter && (
-        <React.Suspense fallback={null}>
-          <CronCenterPanel onClose={() => useAppStore.getState().setShowCronCenter(false)} />
         </React.Suspense>
       )}
 

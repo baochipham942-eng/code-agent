@@ -104,8 +104,9 @@ export const Sidebar: React.FC = () => {
     setWorkingDirectory,
     showLab,
     setShowLab,
-    showCronCenter,
-    setShowCronCenter,
+    showCapabilityHub,
+    capabilityHubTab,
+    openCapabilityHub,
     showTimeCapabilityCenter,
     setShowTimeCapabilityCenter,
     showDesktopPanel,
@@ -902,10 +903,10 @@ export const Sidebar: React.FC = () => {
                 />
                 <AccountMenuItem
                   onClick={() => {
-                    setShowCronCenter(!showCronCenter);
+                    openCapabilityHub('automation');
                     setShowUserMenu(false);
                   }}
-                  icon={<Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}
+                  icon={<Clock3 className={`w-4 h-4 ${showCapabilityHub && capabilityHubTab === 'automation' ? 'text-amber-400' : 'text-amber-400/80'}`} />}
                   label={sb.menuAutomation}
                 />
                 {canOpenPromptManager && (

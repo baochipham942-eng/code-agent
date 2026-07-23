@@ -69,6 +69,7 @@ afterEach(() => {
   vi.clearAllMocks();
   countPendingReview.mockResolvedValue(0);
   useCronStore.setState({ jobs: [], stats: null, selectedJobId: null, error: null });
+  useAppStore.setState({ showCapabilityHub: false, capabilityHubTab: 'experts' });
 });
 
 describe('SidebarCapabilityZone', () => {
@@ -138,6 +139,20 @@ describe('SidebarCapabilityZone', () => {
     entry.click();
     expect(useAppStore.getState().showLibraryPanel).toBe(true);
     useAppStore.getState().setShowLibraryPanel(false);
+  });
+
+  it('能力中心与自动化深链打开对应 tab', () => {
+    listJobs.mockResolvedValue([]);
+    getStats.mockResolvedValue(makeStats(0));
+    render(<SidebarCapabilityZone />);
+
+    screen.getByTestId('sidebar-capability-hub').click();
+    expect(useAppStore.getState().showCapabilityHub).toBe(true);
+    expect(useAppStore.getState().capabilityHubTab).toBe('experts');
+
+    screen.getByTestId('sidebar-capability-automation').click();
+    expect(useAppStore.getState().showCapabilityHub).toBe(true);
+    expect(useAppStore.getState().capabilityHubTab).toBe('automation');
   });
 
   it('有待过目时渲染角标且副文案切待过目（A4）', async () => {

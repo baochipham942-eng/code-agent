@@ -9,7 +9,7 @@ export async function launchTeamRecipe(
   topic: string,
 ): Promise<LaunchRecipeResult> {
   const app = useAppStore.getState();
-  app.setShowExpertPanel(false);
+  app.setShowCapabilityHub(false);
 
   // 建会话失败不带 error：调用方用 i18n 文案兜底，避免这里硬编码中文串漏出到英文界面
   let session;

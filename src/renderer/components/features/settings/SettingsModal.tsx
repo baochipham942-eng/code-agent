@@ -15,27 +15,21 @@ import {
   Info,
   Database,
   Download,
-  Plug,
   Brain,
   BrainCircuit,
-  Sparkles,
   Eye,
   FoldVertical,
   Shield,
   MessageSquare,
   Webhook,
-  Boxes,
   FolderOpen,
-  Clock,
   Ticket,
   Users,
   Cloud,
-  PackagePlus,
   Camera,
   Keyboard,
   ShieldCheck,
   Terminal,
-  UserCircle,
   Mic,
   Search,
 } from 'lucide-react';
@@ -56,6 +50,7 @@ import {
   SETTINGS_TAB_GROUP_BY_TAB,
   SETTINGS_TAB_GROUP_ORDER,
   COLLAPSED_SETTINGS_TAB_GROUPS,
+  CAPABILITY_HUB_TAB_BY_SETTINGS_TAB,
   canAccessSettingsTab,
   type SettingsTab,
   type SettingsTabGroupId,
@@ -67,19 +62,13 @@ const logger = createLogger('SettingsModal');
 const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'cache',
   'keybindings',
-  'capabilities',
-  'plugins',
   'model',
   'visualModels',
-  'mcp',
-  'skills',
-  'roles',
   'channels',
   'hooks',
   'memory',
   'openchronicle',
   'workspace',
-  'automation',
   'users',
   'invites',
   'controlPlane',
@@ -91,7 +80,6 @@ import { ConversationSettings } from './tabs/ConversationSettings';
 import { VoiceInputSettings } from './tabs/VoiceInputSettings';
 import { KeybindingsSettings } from './tabs/KeybindingsSettings';
 import { WorkspaceSettings } from './tabs/WorkspaceSettings';
-import { AutomationSettings } from './tabs/AutomationSettings';
 import { AppshotsSettings } from './tabs/AppshotsSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { VisualModelsSettings } from './tabs/VisualModelsSettings';
@@ -101,20 +89,7 @@ import { AppearanceSettings } from './tabs/AppearanceSettings';
 import { SoulSettings } from './tabs/SoulSettings';
 import { DataSettings } from './tabs/DataSettings';
 import { UpdateSettings } from './tabs/UpdateSettings';
-// 重型 tab（拉 mcpCatalog / almaPluginRegistry / almaRecommendationPolicy 等大注册表）
-// 改懒加载：首屏不再随 SettingsModal chunk 一起加载，按需打开对应 tab 才拉。
-const MCPSettings = React.lazy(() =>
-  import('./tabs/MCPSettings').then((m) => ({ default: m.MCPSettings })),
-);
 import { MemoryTab } from './tabs/MemoryTab';
-import { RolesTab } from './tabs/RolesTab';
-const SkillsSettings = React.lazy(() =>
-  import('./tabs/SkillsSettings').then((m) => ({ default: m.SkillsSettings })),
-);
-const PluginsSettings = React.lazy(() =>
-  import('./tabs/PluginsSettings').then((m) => ({ default: m.PluginsSettings })),
-);
-import { CapabilityCenterSettings } from './tabs/CapabilityCenterSettings';
 import { ChannelsSettings } from './tabs/ChannelsSettings';
 import { HooksSettings } from './tabs/HooksSettings';
 import { AboutSettings } from './tabs/AboutSettings';
@@ -161,7 +136,6 @@ export function buildSettingsTabGroups({
     { id: 'visualModels', label: t.settings.tabs.visualModels, icon: <ImageIcon className="w-4 h-4" /> },
     { id: 'search', label: t.settings.tabs.search, icon: <Search className="w-4 h-4" /> },
     { id: 'soul', label: t.settings.tabs.soul, icon: <Fingerprint className="w-4 h-4" /> },
-    { id: 'skills', label: t.settings.tabs.skills, icon: <Sparkles className="w-4 h-4" /> },
     // 基础偏好
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'general', label: t.settings.tabs.general, icon: <Shield className="w-4 h-4" /> },
@@ -170,9 +144,7 @@ export function buildSettingsTabGroups({
     { id: 'voiceInput', label: t.settings.tabs.voiceInput, icon: <Mic className="w-4 h-4" /> },
     // 工作与协作
     { id: 'workspace', label: t.settings.tabs.workspace, icon: <FolderOpen className="w-4 h-4" /> },
-    { id: 'automation', label: t.settings.tabs.automation, icon: <Clock className="w-4 h-4" /> },
     { id: 'channels', label: t.settings.tabs.channels, icon: <MessageSquare className="w-4 h-4" /> },
-    { id: 'roles', label: t.settings.tabs.roles, icon: <UserCircle className="w-4 h-4" /> },
     // 记忆与隐私
     { id: 'memory', label: t.settings.tabs.memory, icon: <BrainCircuit className="w-4 h-4" /> },
     ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: t.settings.tabs.openchronicle, icon: <Eye className="w-4 h-4" /> }] : []),
@@ -182,8 +154,6 @@ export function buildSettingsTabGroups({
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
     // 高级（默认折叠，普通用户可自行配置）
     { id: 'agentEngine', label: t.engineCompat.engineSection.title, icon: <Terminal className="w-4 h-4" /> },
-    { id: 'mcp', label: t.settings.tabs.mcp, icon: <Plug className="w-4 h-4" /> },
-    { id: 'plugins', label: t.settings.tabs.plugins, icon: <PackagePlus className="w-4 h-4" /> },
     { id: 'hooks', label: t.settings.tabs.hooks, icon: <Webhook className="w-4 h-4" /> },
     { id: 'appshots', label: t.settings.tabs.appshots, icon: <Camera className="w-4 h-4" /> },
     { id: 'cache', label: t.settings.tabs.cache, icon: <Database className="w-4 h-4" /> },
@@ -191,7 +161,6 @@ export function buildSettingsTabGroups({
     { id: 'users', label: t.settings.tabs.users, icon: <Users className="w-4 h-4" /> },
     { id: 'invites', label: t.settings.tabs.invites, icon: <Ticket className="w-4 h-4" /> },
     { id: 'controlPlane', label: t.settings.tabs.controlPlane, icon: <Cloud className="w-4 h-4" /> },
-    { id: 'capabilities', label: t.settings.tabs.capabilities, icon: <Boxes className="w-4 h-4" /> },
   ];
 
   const groups = new Map<SettingsTabGroupId, SettingsTabConfig[]>();
@@ -241,6 +210,7 @@ function getErrorMessage(error: unknown): string {
 export const SettingsModal: React.FC = () => {
   const {
     setShowSettings,
+    openSettingsTab,
     modelConfig,
     setModelConfig,
     settingsInitialTab,
@@ -253,7 +223,6 @@ export const SettingsModal: React.FC = () => {
   const canViewUsers = canAccessSettingsTab('users', accessSubject);
   const canViewInvites = canAccessSettingsTab('invites', accessSubject);
   const canViewControlPlane = canAccessSettingsTab('controlPlane', accessSubject);
-  const canViewPlugins = canAccessSettingsTab('plugins', accessSubject);
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
@@ -288,8 +257,12 @@ export const SettingsModal: React.FC = () => {
   }, []);
 
   const handleSearchNavigate = useCallback((tab: SettingsTab) => {
+    if (CAPABILITY_HUB_TAB_BY_SETTINGS_TAB[tab]) {
+      openSettingsTab(tab);
+      return;
+    }
     setActiveTab(tab);
-  }, [setOptionalUpdateInfo]);
+  }, [openSettingsTab]);
 
   const handleClose = useCallback(() => {
     setShowSettings(false);
@@ -462,7 +435,6 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'voiceInput' && <VoiceInputSettings />}
             {activeTab === 'keybindings' && <KeybindingsSettings />}
             {activeTab === 'workspace' && <WorkspaceSettings />}
-            {activeTab === 'automation' && <AutomationSettings />}
             {activeTab === 'appshots' && <AppshotsSettings />}
             {canViewUsers && activeTab === 'users' && <UserDashboardSettings />}
             {canViewInvites && activeTab === 'invites' && <InviteCodesSettings />}
@@ -475,17 +447,6 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'soul' && <SoulSettings />}
             {activeTab === 'cache' && <DataSettings />}
-            {activeTab === 'capabilities' && (
-              <CapabilityCenterSettings onNavigateSettings={handleSearchNavigate} />
-            )}
-            {(activeTab === 'mcp' || activeTab === 'skills' || (canViewPlugins && activeTab === 'plugins')) && (
-              <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
-                {canViewPlugins && activeTab === 'plugins' && <PluginsSettings />}
-                {activeTab === 'mcp' && <MCPSettings />}
-                {activeTab === 'skills' && <SkillsSettings />}
-              </React.Suspense>
-            )}
-            {activeTab === 'roles' && <RolesTab />}
             {activeTab === 'channels' && <ChannelsSettings />}
             {activeTab === 'hooks' && <HooksSettings />}
             {activeTab === 'memory' && <MemoryTab />}

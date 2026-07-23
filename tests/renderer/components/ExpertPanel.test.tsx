@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RolePanelDetail, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 import type { RolePackListItem } from '../../../src/renderer/services/rolesClient';
+import type { TeamRecipe } from '../../../src/shared/contract/teamRecipe';
 
 const listRoles = vi.fn<() => Promise<RolePanelEntry[]>>();
 const listRolePacks = vi.fn<() => Promise<RolePackListItem[]>>();
@@ -12,6 +13,10 @@ const uninstallRolePack = vi.fn();
 const retryRolePackMissingSkills = vi.fn();
 const inviteExpert = vi.fn().mockResolvedValue(undefined);
 const invokeDomain = vi.fn();
+const listTeamRecipes = vi.fn<() => Promise<TeamRecipe[]>>();
+const createTeamRecipe = vi.fn();
+const updateTeamRecipe = vi.fn();
+const deleteTeamRecipe = vi.fn();
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain: (...args: unknown[]) => invokeDomain(...args) },
@@ -35,6 +40,13 @@ vi.mock('../../../src/renderer/services/rolesClient', async (importOriginal) => 
 
 vi.mock('../../../src/renderer/utils/inviteExpert', () => ({
   inviteExpert: (...args: unknown[]) => inviteExpert(...args),
+}));
+
+vi.mock('../../../src/renderer/services/teamRecipeClient', () => ({
+  listTeamRecipes: (...args: unknown[]) => listTeamRecipes(...(args as [])),
+  createTeamRecipe: (...args: unknown[]) => createTeamRecipe(...args),
+  updateTeamRecipe: (...args: unknown[]) => updateTeamRecipe(...args),
+  deleteTeamRecipe: (...args: unknown[]) => deleteTeamRecipe(...args),
 }));
 
 import { ExpertPanel } from '../../../src/renderer/components/features/expert/ExpertPanel';
@@ -77,6 +89,17 @@ function makeRolePack(overrides: Partial<RolePackListItem> = {}): RolePackListIt
   };
 }
 
+function makeRecipe(overrides: Partial<TeamRecipe> = {}): TeamRecipe {
+  return {
+    id: 'user-recipe-1',
+    name: '我的调研配方',
+    description: '两人各自找证据',
+    category: 'research',
+    members: [{ roleId: '牧之', taskTemplate: '研究 {topic}' }],
+    ...overrides,
+  };
+}
+
 
 function makeRoleDetail(overrides: Partial<RolePanelDetail> = {}): RolePanelDetail {
   return {
@@ -101,6 +124,10 @@ afterEach(() => {
 
 beforeEach(() => {
   listRolePacks.mockResolvedValue([]);
+  listTeamRecipes.mockResolvedValue([]);
+  createTeamRecipe.mockImplementation(async (recipe: Omit<TeamRecipe, 'id'>) => ({ ...recipe, id: 'user-copied' }));
+  updateTeamRecipe.mockImplementation(async (recipeId: string, recipe: Omit<TeamRecipe, 'id'>) => ({ ...recipe, id: recipeId }));
+  deleteTeamRecipe.mockResolvedValue(undefined);
   installRolePack.mockResolvedValue({ success: true, roleId: '云端产品顾问' });
   uninstallRolePack.mockResolvedValue({ success: true, roleId: '云端产品顾问' });
   retryRolePackMissingSkills.mockResolvedValue({ success: true, roleId: '云端产品顾问', installState: 'complete', missingSkills: [] });
@@ -147,13 +174,78 @@ describe('ExpertPanel', () => {
     });
   });
 
-  it('「发现」配方卡显示主理人', async () => {
+  it('组队区渲染出厂配方和我的配方，卡片按 lead 显示正确档位', async () => {
+    listTeamRecipes.mockResolvedValue([makeRecipe()]);
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);
     await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
 
     fireEvent.click(screen.getByTestId('expert-tab-discover'));
-    expect(screen.getByTestId('team-recipe-product-spec').textContent).toContain('主理人 · 牧之');
+    expect(screen.getByText('出厂配方')).toBeTruthy();
+    expect(screen.getByText('我的配方')).toBeTruthy();
+    expect(screen.getByTestId('team-recipe-product-spec').textContent).toContain('专家团 · 主理人 牧之');
+    expect(screen.getByTestId('team-recipe-user-recipe-1').textContent).toContain('专家小组 · 1 人各自作答');
+    expect(within(screen.getByTestId('team-recipe-product-spec')).getByText('复制为我的')).toBeTruthy();
+    expect(within(screen.getByTestId('team-recipe-user-recipe-1')).getByText('详情')).toBeTruthy();
+  });
+
+  it('复制出厂配方后调用 recipeCreate 并直接进入编辑器', async () => {
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    fireEvent.click(within(screen.getByTestId('team-recipe-product-spec')).getByText('复制为我的'));
+    await waitFor(() => expect(createTeamRecipe).toHaveBeenCalledWith(expect.objectContaining({ name: '产品规格' })));
+    await waitFor(() => expect(screen.getByTestId('team-recipe-detail-user-copied')).toBeTruthy());
+  });
+
+  it('点出厂配方名进入只读详情，展示主理人和预计并发', async () => {
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    fireEvent.click(screen.getByRole('button', { name: '详情 产品规格' }));
+    expect(screen.getByTestId('team-recipe-detail-product-spec')).toBeTruthy();
+    expect(screen.getByText('专家团 · 主理人 牧之')).toBeTruthy();
+    expect(screen.getByText('预计并发 2 人')).toBeTruthy();
+  });
+
+  it('保存编辑配方调用 recipeUpdate，服务端校验错误显示具体原因', async () => {
+    const recipe = makeRecipe();
+    listTeamRecipes.mockResolvedValue([recipe]);
+    updateTeamRecipe.mockRejectedValue(new Error('member 牧之 的 taskTemplate 为空'));
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    fireEvent.click(within(screen.getByTestId('team-recipe-user-recipe-1')).getByText('详情'));
+    fireEvent.click(screen.getByTestId('team-recipe-save'));
+    await waitFor(() => expect(updateTeamRecipe).toHaveBeenCalledWith('user-recipe-1', expect.anything()));
+    expect((await screen.findByRole('alert')).textContent).toContain('member 牧之 的 taskTemplate 为空');
+  });
+
+  it('不设主理人的专家小组可保存', async () => {
+    const recipe = makeRecipe();
+    listTeamRecipes.mockResolvedValue([recipe]);
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    fireEvent.click(within(screen.getByTestId('team-recipe-user-recipe-1')).getByText('详情'));
+    fireEvent.click(screen.getByTestId('team-recipe-save'));
+    await waitFor(() => expect(updateTeamRecipe).toHaveBeenCalledWith('user-recipe-1', expect.objectContaining({ lead: undefined })));
+  });
+
+  it('删除我的配方要二次确认才调用 recipeDelete', async () => {
+    listTeamRecipes.mockResolvedValue([makeRecipe()]);
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    fireEvent.click(within(screen.getByTestId('team-recipe-user-recipe-1')).getByText('删除'));
+    expect(deleteTeamRecipe).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByText('确认删除这个配方？').parentElement!).getByText('删除'));
+    await waitFor(() => expect(deleteTeamRecipe).toHaveBeenCalledWith('user-recipe-1'));
   });
 
   it('「请 TA 来」按钮不带 seed 只建绑定会话', async () => {

@@ -294,7 +294,7 @@ export const ExpertPanel: React.FC = () => {
                   ))}
                 </div>
                 <h3 className="mb-2 mt-5 text-xs font-medium text-zinc-400">{t.team.myRecipes}</h3>
-                {userRecipes.length === 0 ? <p className="text-xs text-zinc-500">{t.team.myRecipes}</p> : null}
+                {userRecipes.length === 0 ? <p data-testid="team-my-recipes-empty" className="text-xs text-zinc-500">{t.team.myRecipesEmpty}</p> : null}
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {userRecipes.map((recipe) => (
                     <div key={recipe.id} data-testid={`team-recipe-${recipe.id}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-700/70 bg-zinc-900/60 p-3.5">

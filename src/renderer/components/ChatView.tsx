@@ -35,6 +35,7 @@ import { SwarmInlineMonitor } from './features/swarm/SwarmInlineMonitor';
 import { WorkflowInlineMonitor } from './features/workflow/WorkflowInlineMonitor';
 import { WorkflowLaunchCard } from './features/workflow/WorkflowLaunchCard';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
+import { SessionAgentIdentityBar } from './features/expert/SessionAgentIdentityBar';
 import { LocalBridgePrompt } from './features/chat/LocalBridgePrompt';
 import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
 import { DirectoryPickerModal } from './features/chat/DirectoryPickerModal';
@@ -723,6 +724,7 @@ export const ChatView: React.FC = () => {
       <div className="flex-1 min-h-0 flex flex-col min-w-0">
         {/* Task Status Bar - 显示多任务状态 */}
         <TaskStatusBar className="shrink-0 mx-4 mt-2" />
+        <SessionAgentIdentityBar sessionId={currentSessionId} />
 
         {/* Todo Progress Panel 已移至右侧 TaskInfo 面板 */}
 

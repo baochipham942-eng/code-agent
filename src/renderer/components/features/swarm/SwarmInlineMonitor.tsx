@@ -12,11 +12,12 @@
 import React, { useState } from 'react';
 import { Bot, ChevronUp, ChevronDown, Square, ExternalLink, Zap } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
-import { useAppStore } from '../../../stores/appStore';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentStatus, SwarmAgentState, SwarmRunRef } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
 import { DiscussionStream } from './DiscussionStream';
+import { AgentWorkRecordDialog } from './AgentWorkRecordDialog';
+import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 
 const AGENT_COLORS = [
   'text-emerald-400',
@@ -90,6 +91,9 @@ export function SwarmInlineMonitor() {
   const activeRunId = useSwarmStore((s) => s.activeRunId);
   const [collapsed, setCollapsed] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<SwarmAgentState | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<SwarmRunAgentRecord | null>(null);
+  const [recordLoading, setRecordLoading] = useState(false);
 
   const activeAgents = agents.filter((a) => isActive(a.status));
   // swarm 没跑或没活跃 agent 时不渲染
@@ -106,6 +110,21 @@ export function SwarmInlineMonitor() {
       );
     } finally {
       setStopping(false);
+    }
+  };
+
+  const openWorkRecord = async (agent: SwarmAgentState) => {
+    setSelectedAgent(agent);
+    setSelectedRecord(null);
+    if (!activeSessionId || !activeRunId) return;
+    setRecordLoading(true);
+    try {
+      const detail = await ipcService.invoke(IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL, { sessionId: activeSessionId, runId: activeRunId });
+      setSelectedRecord(detail?.agents.find((item) => item.agentId === agent.id) ?? null);
+    } catch {
+      setSelectedRecord(null);
+    } finally {
+      setRecordLoading(false);
     }
   };
 
@@ -155,7 +174,7 @@ export function SwarmInlineMonitor() {
           <>
             <div className="border-t border-zinc-700/40 max-h-48 overflow-y-auto">
               {agents.map((agent) => (
-                <SwarmAgentRow key={agent.id} agent={agent} />
+                <SwarmAgentRow key={agent.id} agent={agent} onOpen={() => { void openWorkRecord(agent); }} />
               ))}
             </div>
             {/* 协作过程可见性（P1-3）：agent 间讨论 / 发现 / 决策 / 人话状态 */}
@@ -163,23 +182,13 @@ export function SwarmInlineMonitor() {
           </>
         )}
       </div>
+      {selectedAgent ? <AgentWorkRecordDialog agent={selectedAgent} record={selectedRecord} loading={recordLoading} onBack={() => setSelectedAgent(null)} /> : null}
     </div>
   );
 }
 
-function SwarmAgentRow({ agent }: { agent: SwarmAgentState }) {
+function SwarmAgentRow({ agent, onOpen }: { agent: SwarmAgentState; onOpen: () => void }) {
   const colorClass = colorFor(agent.id);
-  const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
-  const setTaskPanelTab = useAppStore((s) => s.setTaskPanelTab);
-  const setSelectedSwarmAgentId = useAppStore((s) => s.setSelectedSwarmAgentId);
-
-  const handleOpen = () => {
-    // 三步打开 SwarmMonitor 面板 + 切到 monitor tab + focus 这个 agent
-    // —— 让用户从底部浮层一键跳到右侧详细视图，不用手动切 tab
-    openWorkbenchTab('task');
-    setTaskPanelTab('monitor');
-    setSelectedSwarmAgentId(agent.id);
-  };
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800/40 transition-colors">
@@ -190,7 +199,7 @@ function SwarmAgentRow({ agent }: { agent: SwarmAgentState }) {
       </span>
       <button
         type="button"
-        onClick={handleOpen}
+        onClick={onOpen}
         className="ml-auto flex items-center gap-1 text-zinc-500 hover:text-zinc-200 transition-colors"
         title={`查看 ${agent.name || agent.id} 详情`}
       >

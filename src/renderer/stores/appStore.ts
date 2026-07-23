@@ -256,6 +256,8 @@ interface AppState {
 
   // Batch 3 E2: 专家全屏页可见性
   showExpertPanel: boolean;
+  /** 从会话身份条直达专家详情；消费后由 ExpertPanel 清空。 */
+  requestedExpertRoleId: string | null;
 
   // File preview tab registry — one entry per opened file (content, dirty state, LRU).
   previewTabs: PreviewTab[];
@@ -355,6 +357,8 @@ interface AppState {
   setShowKnowledgeMemoryPanel: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
   setShowExpertPanel: (show: boolean) => void;
+  openExpertRoleDetail: (roleId: string) => void;
+  clearRequestedExpertRoleDetail: () => void;
   openPreview: (filePath: string) => void;
   openWorkspacePreview: (itemId?: string | null) => void;
   setSelectedWorkspacePreviewId: (itemId: string | null) => void;
@@ -480,6 +484,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showKnowledgeMemoryPanel: false,
   showLibraryPanel: false,
   showExpertPanel: false,
+  requestedExpertRoleId: null,
 
   // Initial file preview registry
   previewTabs: [],
@@ -676,6 +681,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
     showExpertPanel: show,
     ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showComputerUsePanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
   }),
+  openExpertRoleDetail: (roleId) => set({
+    requestedExpertRoleId: roleId,
+    showExpertPanel: true,
+    showKnowledgeMemoryPanel: false,
+    showLibraryPanel: false,
+    showComputerUsePanel: false,
+    showInAppValidationPanel: false,
+    showProjectCollaborationPage: false,
+  }),
+  clearRequestedExpertRoleDetail: () => set({ requestedExpertRoleId: null }),
 
   openPreview: (filePath) => {
     // Resolve relative paths against workingDirectory

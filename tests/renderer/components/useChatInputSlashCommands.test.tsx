@@ -52,6 +52,7 @@ describe('useChatInputSlashCommands', () => {
       setPendingPromptCommand: vi.fn(),
       setPendingAgentSelection: vi.fn(),
       setActiveAgentId: vi.fn(),
+      openSeedComposer: vi.fn(),
     }));
 
     await act(async () => {

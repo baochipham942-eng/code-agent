@@ -525,6 +525,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setPendingPromptCommand,
     setPendingAgentSelection,
     setActiveAgentId,
+    openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
   });
 
   // 历史命令功能

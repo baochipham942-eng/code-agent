@@ -368,7 +368,7 @@ describe('InlineWorkbenchBar mention preview', () => {
   // Routing / mention preview / direct target UI 已迁到 ChatInput AbilityMenu 与
   // @agent mention 解析；InlineWorkbenchBar 不再承担 routing 可视化，相关测试删除。
 
-  it('renders mounted skill summary in the workbench bar', () => {
+  it('hides the duplicate count summary but keeps the workbench controls for selected capabilities', () => {
     composerState.routingMode = 'auto';
     composerState.targetAgentIds = [];
     composerState.selectedSkillIds = ['review-skill'];
@@ -377,11 +377,29 @@ describe('InlineWorkbenchBar mention preview', () => {
       React.createElement(InlineWorkbenchBar),
     );
 
-    expect(html).toContain('技能 1/2');
-    expect(html).toContain('连接器 0/1');
-    expect(html).toContain('MCP 服务 0/1');
+    // 先确认 bar 仍在：摘要隐藏后，chevron 和 Auto/Manual 仍是能力网格入口。
+    expect(html).toContain('aria-label="展开能力列表"');
     expect(html).toContain('自动');
     expect(html).toContain('手动');
+    expect(html).not.toContain('技能 1/2');
+    expect(html).not.toContain('连接器 0/1');
+    expect(html).not.toContain('MCP 服务 0/1');
+  });
+
+  it('keeps the count summary when no capabilities are selected', () => {
+    composerState.turnCapabilityScopeMode = 'manual';
+
+    const html = renderToStaticMarkup(
+      React.createElement(InlineWorkbenchBar),
+    );
+
+    // 先确认 bar 本身已渲染，避免仅凭“不出现”产生假绿。
+    expect(html).toContain('aria-label="展开能力列表"');
+    expect(html).toContain('自动');
+    expect(html).toContain('手动');
+    expect(html).toContain('技能 0/2');
+    expect(html).toContain('连接器 0/1');
+    expect(html).toContain('MCP 服务 0/1');
   });
 
   // Connectors 选择器已从 InlineWorkbenchBar 移除（#2），测试删除。

@@ -63,6 +63,8 @@ export const ExpertPanel: React.FC = () => {
   const text = t.expert;
   const setShowExpertPanel = useAppStore((s) => s.setShowExpertPanel);
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
+  const requestedRoleId = useAppStore((s) => s.requestedExpertRoleId);
+  const clearRequestedRoleDetail = useAppStore((s) => s.clearRequestedExpertRoleDetail);
 
   const [tab, setTab] = useState<ExpertTab>('mine');
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
@@ -107,6 +109,13 @@ export const ExpertPanel: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!requestedRoleId || loading) return;
+    const entry = entries.find((item) => item.roleId === requestedRoleId);
+    if (entry) setSelectedRole(entry);
+    clearRequestedRoleDetail();
+  }, [clearRequestedRoleDetail, entries, loading, requestedRoleId]);
 
   const invite = (entry: RolePanelEntry, seed?: string) => {
     void inviteExpert(entry.roleId, { seed, title: entry.displayName || entry.roleId });

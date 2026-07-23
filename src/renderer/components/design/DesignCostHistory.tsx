@@ -32,12 +32,14 @@ export interface DesignCostHistoryViewProps {
   nodes: CanvasNode[];
   onSetChosen: (id: string) => void;
   onRename: (id: string, label: string) => void;
+  collapsed?: boolean;
 }
 
 export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
   nodes,
   onSetChosen,
   onRename,
+  collapsed = false,
 }) => {
   const { t } = useI18n();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -105,27 +107,29 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
         )}
       </div>
 
-      {/* 参考图分组：喂模型的视觉输入，独立于版本时间线（不占版本序号、不计花费）。 */}
-      {referenceNodes.length > 0 && (
-        <div className="flex items-center gap-1.5 rounded-md border border-sky-400/20 bg-sky-400/[0.05] px-2 py-1 text-[11px] text-sky-200">
-          <Images className="h-3 w-3 shrink-0" />
-          <span className="flex-1">{t.design.historyReferenceGroup}</span>
-          <span className="font-mono text-sky-300">×{referenceNodes.length}</span>
-        </div>
-      )}
+      {!collapsed && (
+        <>
+          {/* 参考图分组：喂模型的视觉输入，独立于版本时间线（不占版本序号、不计花费）。 */}
+          {referenceNodes.length > 0 && (
+            <div className="flex items-center gap-1.5 rounded-md border border-sky-400/20 bg-sky-400/[0.05] px-2 py-1 text-[11px] text-sky-200">
+              <Images className="h-3 w-3 shrink-0" />
+              <span className="flex-1">{t.design.historyReferenceGroup}</span>
+              <span className="font-mono text-sky-300">×{referenceNodes.length}</span>
+            </div>
+          )}
 
-      {!hasSteps && <p className="text-[11px] leading-snug text-zinc-500">{t.design.historyPanelEmpty}</p>}
+          {!hasSteps && <p className="text-[11px] leading-snug text-zinc-500">{t.design.historyPanelEmpty}</p>}
 
-      {slots.map((slot) => {
-        const timeline = slotTimeline(spine, slot);
-        const current = currentVariant(spine, slot);
-        const undoId = previousVariantId(spine, slot);
-        const redoId = nextVariantId(spine, slot);
-        return (
-          <div
-            key={slot}
-            className="flex flex-col gap-1.5 border-t border-white/[0.05] pt-2 first:border-t-0 first:pt-0"
-          >
+          {slots.map((slot) => {
+            const timeline = slotTimeline(spine, slot);
+            const current = currentVariant(spine, slot);
+            const undoId = previousVariantId(spine, slot);
+            const redoId = nextVariantId(spine, slot);
+            return (
+              <div
+                key={slot}
+                className="flex flex-col gap-1.5 border-t border-white/[0.05] pt-2 first:border-t-0 first:pt-0"
+              >
             {/* 槽级 undo/redo */}
             {timeline.length > 1 && (
               <div className="flex items-center gap-1.5">
@@ -241,17 +245,26 @@ export const DesignCostHistoryView: React.FC<DesignCostHistoryViewProps> = ({
                 </div>
               );
             })}
-          </div>
-        );
-      })}
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 };
 
 /** 容器：接 designCanvasStore，回滚=setChosen，命名=renameNode。 */
-export const DesignCostHistory: React.FC = () => {
+export const DesignCostHistory: React.FC<{ collapsed?: boolean }> = ({ collapsed = false }) => {
   const nodes = useDesignCanvasStore((s) => s.nodes);
   const setChosen = useDesignCanvasStore((s) => s.setChosen);
   const renameNode = useDesignCanvasStore((s) => s.renameNode);
-  return <DesignCostHistoryView nodes={nodes} onSetChosen={setChosen} onRename={renameNode} />;
+  return (
+    <DesignCostHistoryView
+      nodes={nodes}
+      onSetChosen={setChosen}
+      onRename={renameNode}
+      collapsed={collapsed}
+    />
+  );
 };

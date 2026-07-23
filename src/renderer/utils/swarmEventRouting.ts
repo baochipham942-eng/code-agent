@@ -7,16 +7,16 @@ interface ActiveSwarmProjection {
   lastEventAt?: number;
 }
 
-function isRootEvent(event: SwarmEvent): boolean {
+export function isSwarmSurfaceArtifact(event: SwarmEvent): boolean {
   return event.type === 'swarm:launch:requested' || event.type === 'swarm:started';
 }
 
-export function shouldOpenSwarmWorkbench(
+function isSelectedSessionSwarmRoot(
   event: SwarmEvent,
   currentSessionId: string | null,
 ): boolean {
   return event.sessionId === currentSessionId
-    && isRootEvent(event);
+    && isSwarmSurfaceArtifact(event);
 }
 
 /**
@@ -29,7 +29,7 @@ export function shouldActivateSwarmScopeFromRoot(
   currentSessionId: string | null,
   projection: ActiveSwarmProjection,
 ): boolean {
-  if (!shouldOpenSwarmWorkbench(event, currentSessionId)) return false;
+  if (!isSelectedSessionSwarmRoot(event, currentSessionId)) return false;
   if (projection.activeSessionId !== event.sessionId || !projection.activeRunId) return true;
   if (projection.activeRunId === event.runId) return false;
 

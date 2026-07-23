@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { SwarmEvent } from '../../../src/shared/contract/swarm';
 import {
+  isSwarmSurfaceArtifact,
   shouldActivateSwarmScopeFromRoot,
-  shouldOpenSwarmWorkbench,
 } from '../../../src/renderer/utils/swarmEventRouting';
 
 function rootEvent(sessionId: string, runId: string): SwarmEvent {
@@ -17,17 +17,16 @@ function rootEvent(sessionId: string, runId: string): SwarmEvent {
 }
 
 describe('swarm event UI routing', () => {
-  it('opens the workbench only for a root event from the selected session', () => {
-    expect(shouldOpenSwarmWorkbench(rootEvent('session-a', 'run-a'), 'session-a')).toBe(true);
-    expect(shouldOpenSwarmWorkbench(rootEvent('session-b', 'run-b'), 'session-a')).toBe(false);
-    expect(shouldOpenSwarmWorkbench(rootEvent('session-a', 'run-a'), null)).toBe(false);
+  it('only root events represent a swarm surface artifact', () => {
+    expect(isSwarmSurfaceArtifact(rootEvent('session-a', 'run-a'))).toBe(true);
+    expect(isSwarmSurfaceArtifact(rootEvent('session-b', 'run-b'))).toBe(true);
   });
 
-  it('does not auto-open for non-root events in the selected run', () => {
-    expect(shouldOpenSwarmWorkbench({
+  it('does not classify non-root events as surface artifacts', () => {
+    expect(isSwarmSurfaceArtifact({
       ...rootEvent('session-a', 'run-a'),
       type: 'swarm:agent:added',
-    }, 'session-a')).toBe(false);
+    })).toBe(false);
   });
 
   it('does not activate a delayed root over a newer run in the same session', () => {

@@ -14,12 +14,16 @@ export const LIGHT_MEMORY = {
 
 /** session 收尾 LLM 判断（runFinalizer → conversationJudge） */
 export const SESSION_JUDGE = {
-  /** quick model max_tokens：只需返回一小段 JSON 判断，给足余量即可 */
-  MAX_TOKENS: 256,
+  /** quick model max_tokens：需要容纳判断结果与少量长期事实正文 */
+  MAX_TOKENS: 768,
   /** quick model 调用超时（ms）。收尾异步执行，不阻塞会话，给比 intent 分类宽松的窗口 */
   TIMEOUT_MS: 8000,
   /** 参与判断的最近用户轮数（多轮会话取最近 N 轮即可锁定当前主题） */
   RECENT_USER_TURNS: 8,
+  /** 单轮最多沉淀的长期事实条数 */
+  MAX_DURABLE_FACTS: 3,
+  /** 单条长期事实正文最大字符数 */
+  MAX_DURABLE_FACT_CHARS: 1200,
 } as const;
 
 /**

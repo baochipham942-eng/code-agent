@@ -16,6 +16,7 @@ import type {
 import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
 import { appendConversationSummary, isLoopAutomationSummaryText } from '../../lightMemory/recentConversations';
 import { judgeConversation } from '../../lightMemory/conversationJudge';
+import { writeDurableFacts } from '../../lightMemory/durableFactWriter';
 import { getLangfuseService, getBudgetService, BudgetAlertLevel } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from '../../services/infra/logger';
@@ -753,6 +754,22 @@ export class RunFinalizer {
     const lastAssistantText = typeof lastAssistant?.content === 'string' ? lastAssistant.content : undefined;
 
     const judgment = await judgeConversation({ userMessages, lastAssistant: lastAssistantText });
+
+    if (
+      judgment.worth
+      && judgment.source === 'llm'
+      && judgment.durableFacts.length > 0
+    ) {
+      writeDurableFacts(judgment.durableFacts)
+        .then(({ written, skipped }) => {
+          logger.info('[RunFinalizer] Durable facts persisted', { written, skipped });
+        })
+        .catch((error) => {
+          logger.warn('[RunFinalizer] Durable fact persistence failed', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+    }
 
     // "只存值得留的" — skip trivial chats (greetings, "继续"/"ok", no-signal turns).
     if (!judgment.worth || !judgment.title) {

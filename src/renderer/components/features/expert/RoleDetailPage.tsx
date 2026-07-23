@@ -18,9 +18,11 @@ import { IPC_DOMAINS } from "@shared/ipc";
 import type {
   RolePanelDetail,
   RolePanelMemory,
+  RoleBoundCronJob,
   RoleProactivityLevel,
   RoleVisual,
 } from "@shared/contract/roleAssets";
+import type { CronScheduleConfig } from "@shared/contract/cron";
 import type { SkillCategory } from "@shared/contract/skillRepository";
 import ipcService from "../../../services/ipcService";
 import { createLogger } from "../../../utils/logger";
@@ -29,6 +31,7 @@ import { useI18n } from "../../../hooks/useI18n";
 import { RoleIcon } from "../shared/RoleIcon";
 import { SettingsDetails, SettingsSection } from "../settings/SettingsLayout";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
+import { useAppStore } from "../../../stores/appStore";
 
 const logger = createLogger("RoleDetailPage");
 
@@ -36,6 +39,10 @@ async function fetchRoleDetail(roleId: string): Promise<RolePanelDetail> {
   return ipcService.invokeDomain<RolePanelDetail>(IPC_DOMAINS.ROLES, "detail", {
     roleId,
   });
+}
+
+async function fetchBoundCronJobs(roleId: string): Promise<RoleBoundCronJob[]> {
+  return ipcService.invokeDomain<RoleBoundCronJob[]>(IPC_DOMAINS.ROLES, "listBoundCronJobs", { roleId });
 }
 
 async function deleteRoleMemory(
@@ -93,6 +100,39 @@ function definitionBody(definition: string | null): string {
   const match = definition?.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n([\s\S]*)$/);
   return match?.[1] ?? "";
 }
+
+function formatAutomationSchedule(schedule: CronScheduleConfig, text: ReturnType<typeof useI18n>["t"]["expert"]["roleDetail"]): string {
+  if (schedule.type === "every") {
+    return text.automationEvery.replace("{interval}", String(schedule.interval)).replace("{unit}", text.automationUnits[schedule.unit]);
+  }
+  if (schedule.type === "at") {
+    const timestamp = typeof schedule.datetime === "number" ? schedule.datetime : Date.parse(schedule.datetime);
+    const time = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : String(schedule.datetime);
+    return text.automationAt.replace("{time}", time);
+  }
+  return text.automationCron.replace("{expression}", schedule.timezone ? `${schedule.expression} · ${schedule.timezone}` : schedule.expression);
+}
+
+const BoundAutomationsSection: React.FC<{ jobs?: RoleBoundCronJob[] }> = ({ jobs = [] }) => {
+  const { t } = useI18n();
+  const text = t.expert.roleDetail;
+  const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
+  return <SettingsSection title={text.automationsTitle} description={text.automationsDescription}>
+    {jobs.length === 0 ? <div data-testid="role-bound-automations-empty" className="rounded-lg border border-dashed border-zinc-700/70 p-4 text-center text-xs text-zinc-500">{text.automationsEmpty}</div> : <div className="space-y-2" data-testid="role-bound-automations-list">
+      {jobs.map((job) => {
+        const nextRun = job.nextRunAt ? text.automationNextRun.replace("{time}", new Date(job.nextRunAt).toLocaleString()) : text.automationNoNextRun;
+        return <div key={job.id} data-testid={`role-bound-automation-${job.id}`} className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0"><div className="truncate text-sm text-zinc-200">{job.name}</div><div className="mt-1 text-xs text-zinc-500">{formatAutomationSchedule(job.schedule, text)} · {nextRun}</div></div>
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]"><span className={`rounded px-1.5 py-0.5 ${job.enabled ? "bg-emerald-500/10 text-emerald-300" : "bg-zinc-700/60 text-zinc-400"}`}>{job.enabled ? text.automationStatusEnabled : text.automationStatusDisabled}</span><span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-violet-200">{job.actionType === "agent" ? text.automationTypeAgent : text.automationTypeRoleWake}</span></div>
+          </div>
+          {job.actionType === "role_wake" ? <p data-testid={`role-bound-automation-managed-${job.id}`} className="mt-2 text-xs text-amber-200/80">{text.automationRoleWakeManaged}</p> : null}
+          <button /* ds-allow:button: 详情行跳转自动化面板需保持紧凑文字动作 */ type="button" onClick={() => setShowCronCenter(true)} className="mt-2 text-xs text-violet-300 hover:text-violet-200">{text.automationOpenPanel}</button>
+        </div>;
+      })}
+    </div>}
+  </SettingsSection>;
+};
 
 const EquipmentEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: () => void }> = ({ roleId, equipment, onSaved }) => {
   const { t } = useI18n();
@@ -452,13 +492,16 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
   const roleText = t.settings.roles;
   const expertText = t.expert;
   const [detail, setDetail] = useState<RolePanelDetail | null>(null);
+  const [boundCronJobs, setBoundCronJobs] = useState<RoleBoundCronJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadDetail = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setDetail(await fetchRoleDetail(roleId));
+      const [nextDetail, jobs] = await Promise.all([fetchRoleDetail(roleId), fetchBoundCronJobs(roleId)]);
+      setDetail(nextDetail);
+      setBoundCronJobs(jobs);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       logger.error("Failed to load role detail", err);
@@ -522,6 +565,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
               </div>
             </div>
           </SettingsSection>
+          <BoundAutomationsSection jobs={boundCronJobs} />
           <RoleBindingsSection roleId={roleId} />
           <SettingsSection
             title={`${roleText.detail.memoriesTitlePrefix}${detail.memories.length}${roleText.detail.memoriesTitleSuffix}`}

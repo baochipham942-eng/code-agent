@@ -68,9 +68,19 @@ export const CapabilityHubPage: React.FC = () => {
           </div>
         )}
       />
-      <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
-        {content}
-      </React.Suspense>
+      {/* 滚动容器由能力中心统一提供：技能/连接器/插件/能力清单四个组件原先住在
+          SettingsModal 的 overflow-y-auto main 里，换挂载点必须把这层补上，
+          否则超过一屏的内容直接被 FullScreenPage 裁掉、滚不到。
+          自动化是唯一例外——CronCenter 的左右两栏各自内部滚动，要占满高度。 */}
+      <div
+        className={capabilityHubTab === 'automation'
+          ? 'flex min-h-0 flex-1 flex-col'
+          : 'min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-4'}
+      >
+        <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
+          {content}
+        </React.Suspense>
+      </div>
     </FullScreenPage>
   );
 };

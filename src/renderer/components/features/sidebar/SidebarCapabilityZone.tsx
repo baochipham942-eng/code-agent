@@ -1,55 +1,23 @@
 // ============================================================================
 // SidebarCapabilityZone —— 侧栏能力区（会话列表上方的一等能力入口）。
-// 三件套共用容器：自动化（本批点亮）/ 专家 / 资料库（后续批次各自点亮）。
+// 两个槽位：能力中心（专家 / 自动化 / 技能 / 连接器 / 插件，ADR-049）与资料库。
+// 自动化不再单列一行——它是能力中心的一个 tab，并列会变成第二个入口；
+// 它的实时信号（运行中 / 待过目）挂在能力中心行上，不丢提醒。
 // 数据只读复用 cronStore，不新增数据通道。
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Clock3, ChevronRight, BookOpen, UsersRound } from 'lucide-react';
-import type { RolePanelEntry } from '@shared/contract/roleAssets';
-import { listRoles, recentExperts } from '../../../services/rolesClient';
-import { inviteExpert } from '../../../utils/inviteExpert';
+import React, { useEffect, useState } from 'react';
+import { ChevronRight, BookOpen, Boxes } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Badge } from '../../primitives/Badge';
-import { RoleIcon } from '../shared/RoleIcon';
-
-/** 下次运行时间：今天只显 HH:mm，其他日期带月日 */
-function formatNextRun(ts: number, locale: string): string {
-  const date = new Date(ts);
-  const now = new Date();
-  const sameDay =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-  if (sameDay) return time;
-  const day = date.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' });
-  return `${day} ${time}`;
-}
 
 export const SidebarCapabilityZone: React.FC = () => {
-  const { t, language } = useI18n();
+  const { t } = useI18n();
   const cz = t.sidebar.capabilityZone;
   const { showCapabilityHub, openCapabilityHub, setShowLibraryPanel } = useAppStore();
-  const [recentRoles, setRecentRoles] = useState<RolePanelEntry[]>([]);
-
-  useEffect(() => {
-    // 专家面板关闭时角色记录可能有变化（新会话/新记忆），跟着刷新
-    if (showCapabilityHub) return;
-    let cancelled = false;
-    listRoles()
-      .then((roles) => {
-        if (!cancelled) setRecentRoles(recentExperts(roles));
-      })
-      .catch(() => { /* 侧栏静默失败，面板内有显式错误提示 */ });
-    return () => {
-      cancelled = true;
-    };
-  }, [showCapabilityHub]);
-  const jobs = useCronStore((state) => state.jobs);
   const stats = useCronStore((state) => state.stats);
   const refresh = useCronStore((state) => state.refresh);
 
@@ -65,71 +33,42 @@ export const SidebarCapabilityZone: React.FC = () => {
   }, [showCapabilityHub, refresh]);
 
   const runningCount = stats?.jobsByStatus?.running ?? 0;
-  const enabledJobs = useMemo(() => jobs.filter((job) => job.enabled), [jobs]);
-
-  const nextJob = useMemo(() => {
-    let candidate: { name: string; at: number } | null = null;
-    const now = Date.now();
-    for (const job of enabledJobs) {
-      if (job.nextRunAt == null || job.nextRunAt < now) continue;
-      if (!candidate || job.nextRunAt < candidate.at) {
-        candidate = { name: job.name, at: job.nextRunAt };
-      }
-    }
-    return candidate;
-  }, [enabledJobs]);
-
-  const subtitle = pendingCount > 0
-    ? cz.automationPending.replace('{count}', String(pendingCount))
-    : nextJob
-    ? cz.automationNext
-        .replace('{time}', formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US'))
-        .replace('{name}', nextJob.name)
-    : enabledJobs.length > 0
-      ? cz.automationCount.replace('{count}', String(enabledJobs.length))
-      : cz.automationEmpty;
 
   return (
     <div className="px-2 pb-1 flex-shrink-0" data-testid="sidebar-capability-zone">
-      {/* 能力中心入口 */}
+      {/* 能力中心入口（ADR-049：五项能力唯一的家） */}
       <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
         onClick={() => openCapabilityHub('experts')}
         data-testid="sidebar-capability-hub"
         className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
       >
-        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-violet-500/10">
-          <UsersRound className="h-3.5 w-3.5 text-violet-400/90" />
+        <span className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-violet-500/10">
+          <Boxes className="h-3.5 w-3.5 text-violet-400/90" />
+          {runningCount > 0 && (
+            <span
+              className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-emerald-400"
+              data-testid="sidebar-capability-automation-running"
+            />
+          )}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm text-zinc-300 group-hover:text-zinc-100">
             {cz.capabilityHub}
           </span>
-          <span className="block truncate text-[11px] text-zinc-500">
-            {recentRoles.length > 0
-              ? cz.expertRecent.replace('{count}', String(recentRoles.length))
-              : cz.capabilityHubSubtitle}
-          </span>
+          <span className="block truncate text-[11px] text-zinc-500">{cz.capabilityHubSubtitle}</span>
         </span>
+        {pendingCount > 0 && (
+          <Badge
+            className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300"
+            title={cz.automationPending.replace('{count}', String(pendingCount))}
+            data-testid="sidebar-capability-automation-pending"
+          >
+            {pendingCount}
+          </Badge>
+        )}
         <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
-      {/* 最近专家头像条（0–5，有记录才显示）：点头像直接请 TA 来 */}
-      {recentRoles.length > 0 && (
-        <div className="flex items-center gap-1 px-2 pb-1" data-testid="sidebar-expert-recent-strip">
-          {recentRoles.map((role) => (
-            <button /* ds-allow:button: 头像条圆形瓦片（图标即按钮），Button primitive 无头像形状 */
-              key={role.roleId}
-              type="button"
-              title={role.displayName || role.roleId}
-              data-testid={`sidebar-expert-avatar-${role.roleId}`}
-              onClick={() => void inviteExpert(role.roleId, { title: role.displayName || role.roleId })}
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800/80 transition-colors hover:bg-violet-500/20"
-            >
-              <RoleIcon name={role.icon} className="h-3.5 w-3.5" />
-            </button>
-          ))}
-        </div>
-      )}
       {/* Batch 2 L3: 资料库槽位点亮 */}
       <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
@@ -146,37 +85,6 @@ export const SidebarCapabilityZone: React.FC = () => {
           </span>
           <span className="block truncate text-[11px] text-zinc-500">{cz.librarySubtitle}</span>
         </span>
-        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
-      </button>
-      <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
-        type="button"
-        onClick={() => openCapabilityHub('automation')}
-        data-testid="sidebar-capability-automation"
-        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
-      >
-        <span className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-amber-500/10">
-          <Clock3 className="h-3.5 w-3.5 text-amber-400/90" />
-          {runningCount > 0 && (
-            <span
-              className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-emerald-400"
-              data-testid="sidebar-capability-automation-running"
-            />
-          )}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-zinc-300 group-hover:text-zinc-100">
-            {cz.automation}
-          </span>
-          <span className="block truncate text-[11px] text-zinc-500">{subtitle}</span>
-        </span>
-        {pendingCount > 0 && (
-          <Badge
-            className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300"
-            data-testid="sidebar-capability-automation-pending"
-          >
-            {pendingCount}
-          </Badge>
-        )}
         <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
     </div>

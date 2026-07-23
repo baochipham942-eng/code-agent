@@ -73,51 +73,37 @@ afterEach(() => {
 });
 
 describe('SidebarCapabilityZone', () => {
-  it('无任务时显示空态引导文案', async () => {
+  it('能力区只有能力中心与资料库两个槽位，自动化不再单列一行', async () => {
     listJobs.mockResolvedValue([]);
     getStats.mockResolvedValue(makeStats(0));
     render(<SidebarCapabilityZone />);
-    expect(screen.getByTestId('sidebar-capability-automation')).toBeTruthy();
+
+    expect(screen.getByTestId('sidebar-capability-hub')).toBeTruthy();
+    expect(screen.getByTestId('sidebar-capability-library')).toBeTruthy();
+    // 自动化是能力中心的一个 tab，并列一行会变成第二个入口（ADR-049）
+    expect(screen.queryByTestId('sidebar-capability-automation')).toBeNull();
+    expect(
+      screen.getByTestId('sidebar-capability-zone').querySelectorAll('button'),
+    ).toHaveLength(2);
     await waitFor(() => {
-      expect(screen.getByText('按计划自动跑，结果回来给你过目')).toBeTruthy();
+      expect(screen.getByText('专家 · 技能 · 连接器')).toBeTruthy();
     });
     expect(screen.queryByTestId('sidebar-capability-automation-running')).toBeNull();
   });
 
-  it('有未来任务时副文案显示下次时间与名称', async () => {
-    const future = Date.now() + 60 * 60 * 1000;
-    listJobs.mockResolvedValue([makeJob({ nextRunAt: future })]);
+  it('副文案恒为能力构成，不被自动化状态挤掉', async () => {
+    listJobs.mockResolvedValue([makeJob({ nextRunAt: Date.now() + 3_600_000 })]);
     getStats.mockResolvedValue(makeStats(0));
     render(<SidebarCapabilityZone />);
-    await waitFor(() => {
-      expect(screen.getByText(/下次 .+ · 英语单词/)).toBeTruthy();
-    });
-  });
-
-  it('启用任务无 nextRunAt 时回退到任务计数', async () => {
-    listJobs.mockResolvedValue([makeJob({ nextRunAt: undefined })]);
-    getStats.mockResolvedValue(makeStats(0));
-    render(<SidebarCapabilityZone />);
-    await waitFor(() => {
-      expect(screen.getByText('1 个任务')).toBeTruthy();
-    });
-  });
-
-  it('禁用任务不参与副文案与计数', async () => {
-    listJobs.mockResolvedValue([
-      makeJob({ enabled: false, nextRunAt: Date.now() + 3_600_000 }),
-    ]);
-    getStats.mockResolvedValue(makeStats(0));
-    render(<SidebarCapabilityZone />);
-    // 先等数据真正流入 store，再断言空文案仍在（防初始空态竞态假绿）
     await waitFor(() => {
       expect(useCronStore.getState().jobs.length).toBe(1);
     });
-    expect(screen.getByText('按计划自动跑，结果回来给你过目')).toBeTruthy();
+    expect(screen.getByText('专家 · 技能 · 连接器')).toBeTruthy();
     expect(screen.queryByText(/下次 /)).toBeNull();
+    expect(screen.queryByText('1 个任务')).toBeNull();
   });
 
-  it('有运行中任务时渲染 running 圆点', async () => {
+  it('有运行中任务时在能力中心图标上渲染 running 圆点', async () => {
     listJobs.mockResolvedValue([makeJob({})]);
     getStats.mockResolvedValue(makeStats(1));
     render(<SidebarCapabilityZone />);
@@ -141,7 +127,7 @@ describe('SidebarCapabilityZone', () => {
     useAppStore.getState().setShowLibraryPanel(false);
   });
 
-  it('能力中心与自动化深链打开对应 tab', () => {
+  it('能力中心入口打开专家 tab', () => {
     listJobs.mockResolvedValue([]);
     getStats.mockResolvedValue(makeStats(0));
     render(<SidebarCapabilityZone />);
@@ -149,22 +135,16 @@ describe('SidebarCapabilityZone', () => {
     screen.getByTestId('sidebar-capability-hub').click();
     expect(useAppStore.getState().showCapabilityHub).toBe(true);
     expect(useAppStore.getState().capabilityHubTab).toBe('experts');
-
-    screen.getByTestId('sidebar-capability-automation').click();
-    expect(useAppStore.getState().showCapabilityHub).toBe(true);
-    expect(useAppStore.getState().capabilityHubTab).toBe('automation');
   });
 
-  it('有待过目时渲染角标且副文案切待过目（A4）', async () => {
+  it('有待过目时角标挂在能力中心行上（A4，提醒不随自动化槽位一起消失）', async () => {
     listJobs.mockResolvedValue([makeJob({ nextRunAt: Date.now() + 3_600_000 })]);
     getStats.mockResolvedValue(makeStats(0));
     countPendingReview.mockResolvedValue(2);
     render(<SidebarCapabilityZone />);
-    await waitFor(() => {
-      expect(screen.getByTestId('sidebar-capability-automation-pending').textContent).toBe('2');
-    });
-    // 待过目优先于下次运行
-    expect(screen.getByText('2 条待过目')).toBeTruthy();
-    expect(screen.queryByText(/下次 /)).toBeNull();
+    const badge = await waitFor(() => screen.getByTestId('sidebar-capability-automation-pending'));
+    expect(badge.textContent).toBe('2');
+    expect(badge.getAttribute('title')).toBe('2 条待过目');
+    expect(screen.getByTestId('sidebar-capability-hub').contains(badge)).toBe(true);
   });
 });

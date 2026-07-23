@@ -62,18 +62,11 @@ export const sidebarZh = {
     goalSessionTitle: '目标：{title}',
     // 能力区（会话列表上方：自动化 / 专家 / 资料库）
     capabilityZone: {
-      automation: '自动化',
-      automationNext: '下次 {time} · {name}',
-      automationCount: '{count} 个任务',
-      automationEmpty: '按计划自动跑，结果回来给你过目',
       automationPending: '{count} 条待过目',
       library: '资料库',
       librarySubtitle: '项目资产 · 可 pin 进对话',
       capabilityHub: '能力中心',
       capabilityHubSubtitle: '专家 · 技能 · 连接器',
-      expert: '专家',
-      expertSubtitle: '请一位懂行的搭档来搭把手',
-      expertRecent: '最近合作 {count} 位',
     },
   },
   sessionMenu: {
@@ -283,18 +276,11 @@ export const sidebarEn: typeof sidebarZh = {
     newSessionTitle: 'New conversation',
     goalSessionTitle: 'Goal: {title}',
     capabilityZone: {
-      automation: 'Automations',
-      automationNext: 'Next {time} · {name}',
-      automationCount: '{count} tasks',
-      automationEmpty: 'Runs on schedule, results come back for review',
       automationPending: '{count} to review',
       library: 'Library',
       librarySubtitle: 'Project assets · pin into chats',
       capabilityHub: 'Capability Hub',
       capabilityHubSubtitle: 'Experts · Skills · Connectors',
-      expert: 'Experts',
-      expertSubtitle: 'Bring in a teammate who knows the craft',
-      expertRecent: '{count} recent collaborators',
     },
   },
   sessionMenu: {

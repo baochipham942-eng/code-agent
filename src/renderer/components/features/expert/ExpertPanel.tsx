@@ -78,9 +78,10 @@ const ExpertCard: React.FC<{
         {entry.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}
       </div>
     ) : null}
+    {/* truncate 只对块级生效：外层必须 flex + min-w-0，否则长履历会撑破卡片 */}
     {tab === 'mine' ? (
-      <div className="text-[11px] text-zinc-500">
-        {entry.memoryCount > 0 || entry.lastWork ? <><span>{text.memoryCount.replace('{count}', String(entry.memoryCount))}</span>{entry.lastWork ? <span className="ml-2 truncate">{text.lastWorkPrefix}{entry.lastWork}</span> : null}</> : text.noRecordYet}
+      <div className="flex min-w-0 items-baseline text-[11px] text-zinc-500">
+        {entry.memoryCount > 0 || entry.lastWork ? <><span className="flex-shrink-0">{text.memoryCount.replace('{count}', String(entry.memoryCount))}</span>{entry.lastWork ? <span className="ml-2 min-w-0 truncate" title={entry.lastWork}>{text.lastWorkPrefix}{entry.lastWork}</span> : null}</> : text.noRecordYet}
       </div>
     ) : null}
     {tab === 'mine' ? <RolePackHealthNotice item={rolePacksByRoleId.get(entry.roleId)} busy={busyRolePackId === entry.roleId} onRetryMissingSkills={onRetryMissingSkills} /> : null}
@@ -248,10 +249,12 @@ export const ExpertPanel: React.FC = () => {
     ? t.team.expertTeam.replace('{lead}', entries.find((entry) => entry.roleId === recipe.lead?.roleId)?.displayName || recipe.lead.roleId)
     : t.team.expertGroup.replace('{count}', String(recipe.members.length));
 
+  // 滚动由能力中心的外层容器统一负责，这里只排内容；
+  // 「我的 / 发现」操作条 sticky 住，否则列表一长就被滚出视野。
   return (
-    <div className="flex-1 overflow-y-auto p-4" data-testid="expert-panel">
+    <div data-testid="expert-panel">
       {selectedRole || selectedRecipe ? null : (
-          <div className="flex items-center gap-2">
+          <div className="sticky top-0 z-10 -mx-6 mb-3 flex items-center gap-2 bg-zinc-950/95 px-6 py-2 backdrop-blur">
             <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
               {(['mine', 'discover'] as const).map((key) => (
                 <button /* ds-allow:button: tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
@@ -377,13 +380,19 @@ export const ExpertPanel: React.FC = () => {
               </div>
             ) : null}
 
-            {tab === 'mine' ? roleCategoryGroups.map((group) => (
-              <div key={group.key} className="mb-4 last:mb-0" data-role-category={group.key}>
-                <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                  {group.label}{t.settings.roles.categoryCountPrefix}{group.entries.length}{t.settings.roles.categoryCountSuffix}
-                </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {group.entries.map((entry) => (
+            {/* 分类标题用 col-span-full 横跨整行，卡片留在同一个 grid 里连续排布：
+                每组各起一个 grid 会让只有 1–2 位专家的分类把整行拉空。 */}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {tab === 'mine'
+                ? roleCategoryGroups.flatMap((group) => [
+                  <div
+                    key={`category-${group.key}`}
+                    data-role-category={group.key}
+                    className="col-span-full pt-2 text-xs font-medium uppercase tracking-wide text-zinc-500 first:pt-0"
+                  >
+                    {group.label}{t.settings.roles.categoryCountPrefix}{group.entries.length}{t.settings.roles.categoryCountSuffix}
+                  </div>,
+                  ...group.entries.map((entry) => (
                     <ExpertCard
                       key={entry.roleId}
                       entry={entry}
@@ -395,26 +404,22 @@ export const ExpertPanel: React.FC = () => {
                       onDetail={() => setSelectedRole(entry)}
                       onInvite={(seed) => invite(entry, seed)}
                     />
-                  ))}
-                </div>
-              </div>
-            )) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {shown.map((entry) => (
-                <ExpertCard
-                  key={entry.roleId}
-                  entry={entry}
-                  tab={tab}
-                  text={text}
-                  rolePacksByRoleId={rolePacksByRoleId}
-                  busyRolePackId={busyRolePackId}
-                  onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
-                  onDetail={() => setSelectedRole(entry)}
-                  onInvite={(seed) => invite(entry, seed)}
-                />
-              ))}
-              </div>
-            )}
+                  )),
+                ])
+                : shown.map((entry) => (
+                  <ExpertCard
+                    key={entry.roleId}
+                    entry={entry}
+                    tab={tab}
+                    text={text}
+                    rolePacksByRoleId={rolePacksByRoleId}
+                    busyRolePackId={busyRolePackId}
+                    onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
+                    onDetail={() => setSelectedRole(entry)}
+                    onInvite={(seed) => invite(entry, seed)}
+                  />
+                ))}
+            </div>
           </div>
         )}
           </>

@@ -540,7 +540,7 @@ export const enSettingsSystem = {
       noEvents: 'No events yet',
     },
     capabilities: {
-      title: 'Capability center',
+      title: 'Capability inventory',
       description: 'Inventory and audit view for local Skills, MCP, Tools, Connectors, Channels, and workflow recipes.',
       overviewTitle: 'Overview',
       refresh: 'Refresh',

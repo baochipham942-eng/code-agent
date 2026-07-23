@@ -3047,6 +3047,7 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   'image-ocr-search': 'automation',
   'photo-archive': 'automation',
   'create-role': 'automation',
+  'create-team': 'automation',
   'edit-role': 'automation',
   // E1 内置专家包（分类随包数据文件维护）
   ...ROLE_PACK_SKILL_CATEGORY,

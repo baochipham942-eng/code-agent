@@ -6,6 +6,7 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useComposerNoticeStore } from '../../../../stores/composerNoticeStore';
 import { UserPlus, Check, X, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import ipcService from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -44,6 +45,13 @@ export const RoleDraftNotifications: React.FC = () => {
     });
     return () => { unsubscribe?.(); };
   }, []);
+
+  // 确认卡是阻塞性决策，占住输入框上方那一格（成员条会据此收成极窄摘要）
+  useEffect(() => {
+    const setNotice = useComposerNoticeStore.getState().setNotice;
+    setNotice('role-draft', drafts.length > 0);
+    return () => setNotice('role-draft', false);
+  }, [drafts.length]);
 
   if (drafts.length === 0) return null;
 

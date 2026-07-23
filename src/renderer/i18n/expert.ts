@@ -34,6 +34,9 @@ export const expertZh = {
       readOnlyHint: '只读视图',
       processMessages: '过程消息',
       returnToMain: '返回主会话继续对话',
+      collapsedWorking: '{count} 位成员工作中',
+      collapsedDone: '{count} 位成员已完成',
+      collapsedStandby: '{count} 位成员待命中',
     },
     workRecord: {
       title: '工作记录',
@@ -132,6 +135,9 @@ export const expertEn: typeof expertZh = {
       readOnlyHint: 'Read-only',
       processMessages: 'Working messages',
       returnToMain: 'Back to the main conversation',
+      collapsedWorking: '{count} working',
+      collapsedDone: '{count} done',
+      collapsedStandby: '{count} on standby',
     },
     workRecord: {
       title: 'Work record',

@@ -1,6 +1,7 @@
 export type ModelErrorDiagnosticCode =
   | 'unsupported_temperature'
-  | 'fallback_not_configured';
+  | 'fallback_not_configured'
+  | 'upstream_unavailable';
 
 export interface ModelErrorDiagnostic {
   code: ModelErrorDiagnosticCode;
@@ -37,6 +38,25 @@ export function classifyModelErrorMessage(message: string): ModelErrorDiagnostic
         : '重试会使用默认温度 1；如果仍失败，请切换到支持自定义温度的模型。',
       retryable: true,
       ...(fallbackNotConfigured ? { hasFallbackConfigurationIssue: true } : {}),
+    };
+  }
+
+  // 网关/上游暂时不可用：只管 502/503/504 这一族。既匹配数字，也匹配 AI SDK 只给文案的形态
+  // （实测 APICallError.message 就是 'Bad Gateway'，不含数字）。
+  // ⚠️ 429 / too many requests **故意不收**：那一族有独立的配额语义（quota_exhausted），
+  // 收进来会把「配额耗尽」误判成「网关抖动」，让用户以为重试就能好（2026-07-23 实测撞红）。
+  const upstreamUnavailable =
+    lower.includes('bad gateway')
+    || lower.includes('service unavailable')
+    || lower.includes('gateway timeout')
+    || /\b(502|503|504)\b/.test(lower);
+
+  if (upstreamUnavailable) {
+    return {
+      code: 'upstream_unavailable',
+      message: '模型服务暂时不可用：上游网关没能把请求转过去（通常是服务方在抖动或限流）。',
+      suggestion: '稍等几秒重试；持续失败就在输入框右下角换一个模型。',
+      retryable: true,
     };
   }
 

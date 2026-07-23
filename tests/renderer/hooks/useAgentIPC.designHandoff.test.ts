@@ -3,6 +3,7 @@ import { withHandoffContext } from '../../../src/renderer/hooks/agent/useAgentIP
 import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
 import type { CanvasNode, DesignCanvasDoc } from '../../../src/renderer/components/design/designCanvasTypes';
 import { DEFAULT_CAMERA } from '../../../src/renderer/components/design/designCanvasTypes';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useWorkspaceModeStore } from '../../../src/renderer/stores/workspaceModeStore';
 import type { ConversationEnvelopeContext } from '../../../src/shared/contract/conversationEnvelope';
 
@@ -28,6 +29,12 @@ function loadCanvas(runDir: string, nodes: CanvasNode[]) {
   useDesignCanvasStore.getState().loadDoc(runDir, doc);
 }
 
+function activateDesignSession(sessionId: string): void {
+  useSessionStore.setState({ currentSessionId: sessionId });
+  useDesignCanvasStore.getState().markSessionDesignActive(sessionId);
+  useDesignCanvasStore.getState().claimCanvasForSession(sessionId);
+}
+
 describe('useAgentIPC design handoff context', () => {
   afterEach(() => {
     useWorkspaceModeStore.setState({ workspaceMode: 'code' });
@@ -38,11 +45,15 @@ describe('useAgentIPC design handoff context', () => {
       shapes: [],
       selectedIds: [],
       selectedDiagram: null,
+      ownerSessionId: null,
+      designActiveSessions: new Set<string>(),
     });
+    useSessionStore.setState({ currentSessionId: null });
   });
 
   it('builds hidden Design->Code handoff from the selected variant and absolute canvas bounds', () => {
     useWorkspaceModeStore.setState({ workspaceMode: 'design' });
+    activateDesignSession('design-session');
     loadCanvas('/tmp/design-run', [
       node('reference', { role: 'reference', createdAt: 1 }),
       node('chosen-v1', { chosen: true, label: 'Old chosen variant', createdAt: 2 }),
@@ -147,14 +158,17 @@ describe('useAgentIPC design handoff context', () => {
     ]);
   });
 
-  it('does not inject handoff context outside design mode', () => {
+  it('injects designCodeHandoff for an agentic design session while workspaceMode remains code', () => {
     useWorkspaceModeStore.setState({ workspaceMode: 'code' });
+    activateDesignSession('agentic-design-session');
     loadCanvas('/tmp/design-run', [node('selected-v2', { chosen: true })]);
 
     const context: ConversationEnvelopeContext = {};
     const enriched = withHandoffContext(context);
 
-    expect(enriched).toBe(context);
-    expect(enriched?.designCodeHandoff).toBeUndefined();
+    expect(enriched).not.toBe(context);
+    expect(enriched?.designCodeHandoff?.selectedVariants).toMatchObject([
+      { id: 'selected-v2', sourcePath: '/tmp/design-run/assets/selected-v2.png' },
+    ]);
   });
 });

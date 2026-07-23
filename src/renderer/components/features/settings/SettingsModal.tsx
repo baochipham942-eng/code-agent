@@ -32,6 +32,7 @@ import {
   Terminal,
   Mic,
   Search,
+  Boxes,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -50,7 +51,7 @@ import {
   SETTINGS_TAB_GROUP_BY_TAB,
   SETTINGS_TAB_GROUP_ORDER,
   COLLAPSED_SETTINGS_TAB_GROUPS,
-  CAPABILITY_HUB_TAB_BY_SETTINGS_TAB,
+  resolveSettingsDeepLink,
   canAccessSettingsTab,
   type SettingsTab,
   type SettingsTabGroupId,
@@ -72,6 +73,7 @@ const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'users',
   'invites',
   'controlPlane',
+  'capabilities',
 ]);
 
 // Tab Components
@@ -98,6 +100,7 @@ import PrivacySettings from './tabs/PrivacySettings';
 import { UserDashboardSettings } from './tabs/UserDashboardSettings';
 import { InviteCodesSettings } from './tabs/InviteCodesSettings';
 import { ControlPlaneSettings } from './tabs/ControlPlaneSettings';
+const CapabilityCenterSettings = React.lazy(() => import('./tabs/CapabilityCenterSettings').then((m) => ({ default: m.CapabilityCenterSettings })));
 import ipcService from '../../../services/ipcService';
 
 interface SettingsTabConfig {
@@ -161,6 +164,7 @@ export function buildSettingsTabGroups({
     { id: 'users', label: t.settings.tabs.users, icon: <Users className="w-4 h-4" /> },
     { id: 'invites', label: t.settings.tabs.invites, icon: <Ticket className="w-4 h-4" /> },
     { id: 'controlPlane', label: t.settings.tabs.controlPlane, icon: <Cloud className="w-4 h-4" /> },
+    { id: 'capabilities', label: t.settings.tabs.capabilities, icon: <Boxes className="w-4 h-4" /> },
   ];
 
   const groups = new Map<SettingsTabGroupId, SettingsTabConfig[]>();
@@ -223,6 +227,7 @@ export const SettingsModal: React.FC = () => {
   const canViewUsers = canAccessSettingsTab('users', accessSubject);
   const canViewInvites = canAccessSettingsTab('invites', accessSubject);
   const canViewControlPlane = canAccessSettingsTab('controlPlane', accessSubject);
+  const canViewCapabilities = canAccessSettingsTab('capabilities', accessSubject);
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
@@ -256,8 +261,9 @@ export const SettingsModal: React.FC = () => {
     });
   }, []);
 
+  // 搜到的条目落点未必还在设置页（自动化 / 能力中心那四项已搬走），交给同一个判定函数分流
   const handleSearchNavigate = useCallback((tab: SettingsTab) => {
-    if (CAPABILITY_HUB_TAB_BY_SETTINGS_TAB[tab]) {
+    if (resolveSettingsDeepLink(tab).kind !== 'settings') {
       openSettingsTab(tab);
       return;
     }
@@ -439,6 +445,7 @@ export const SettingsModal: React.FC = () => {
             {canViewUsers && activeTab === 'users' && <UserDashboardSettings />}
             {canViewInvites && activeTab === 'invites' && <InviteCodesSettings />}
             {canViewControlPlane && activeTab === 'controlPlane' && <ControlPlaneSettings />}
+            {canViewCapabilities && activeTab === 'capabilities' && <CapabilityCenterSettings onNavigateSettings={handleSearchNavigate} />}
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}

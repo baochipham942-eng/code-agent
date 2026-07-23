@@ -111,6 +111,9 @@ const LibraryPanel = React.lazy(() => import('./components/features/knowledge/Li
 const CapabilityHubPage = React.lazy(() => import('./components/features/capabilityHub/CapabilityHubPage').then((module) => ({
   default: module.CapabilityHubPage,
 })));
+const CronCenterPanel = React.lazy(() => import('./components/features/cron/CronCenterPanel').then((module) => ({
+  default: module.CronCenterPanel,
+})));
 const TimeCapabilityPanel = React.lazy(() => import('./components/features/timeCapability/TimeCapabilityPanel'));
 const AgentTeamPanel = React.lazy(() => import('./components/features/agentTeam').then((module) => ({
   default: module.AgentTeamPanel,
@@ -155,6 +158,8 @@ export const App: React.FC = () => {
     showSettings,
     setTaskPanelTab,
     showCapabilityHub,
+    showCronCenter,
+    setShowCronCenter,
     showTimeCapabilityCenter,
     setShowFileExplorer,
     showAgentTeamPanel,
@@ -873,6 +878,10 @@ export const App: React.FC = () => {
               ) : showCapabilityHub ? (
                 <React.Suspense fallback={null}>
                   <CapabilityHubPage />
+                </React.Suspense>
+              ) : showCronCenter ? (
+                <React.Suspense fallback={null}>
+                  <CronCenterPanel onClose={() => setShowCronCenter(false)} />
                 </React.Suspense>
               ) : showComputerUsePanel ? (
                 <React.Suspense fallback={null}>

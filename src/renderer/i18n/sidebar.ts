@@ -62,6 +62,10 @@ export const sidebarZh = {
     goalSessionTitle: '目标：{title}',
     // 能力区（会话列表上方：自动化 / 专家 / 资料库）
     capabilityZone: {
+      automation: '自动化',
+      automationNext: '下次 {time} · {name}',
+      automationCount: '{count} 个任务',
+      automationEmpty: '按计划自动跑，结果回来给你过目',
       automationPending: '{count} 条待过目',
       library: '资料库',
       librarySubtitle: '项目资产 · 可 pin 进对话',
@@ -276,6 +280,10 @@ export const sidebarEn: typeof sidebarZh = {
     newSessionTitle: 'New conversation',
     goalSessionTitle: 'Goal: {title}',
     capabilityZone: {
+      automation: 'Automations',
+      automationNext: 'Next {time} · {name}',
+      automationCount: '{count} tasks',
+      automationEmpty: 'Runs on schedule, results come back for review',
       automationPending: '{count} to review',
       library: 'Library',
       librarySubtitle: 'Project assets · pin into chats',

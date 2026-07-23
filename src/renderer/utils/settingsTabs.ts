@@ -46,21 +46,35 @@ export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
 // 能力中心的顶层 tab（ADR-049）。单一真源放在 tab 注册表这里，appStore 只做 re-export。
 export type CapabilityHubTab =
   | 'experts'
-  | 'automation'
   | 'skills'
   | 'connectors'
-  | 'plugins'
-  | 'inventory';
+  | 'plugins';
 
-// 能力中心是这六项唯一的家；SettingsTab id 仍保留给搜索和深链入口。
+// 能力中心是专家 / 技能 / 连接器 / 插件的唯一入口；SettingsTab id 仍保留给搜索和深链入口。
 export const CAPABILITY_HUB_TAB_BY_SETTINGS_TAB: Partial<Record<SettingsTab, CapabilityHubTab>> = {
   roles: 'experts',
-  automation: 'automation',
   skills: 'skills',
   mcp: 'connectors',
   plugins: 'plugins',
-  capabilities: 'inventory',
 };
+
+/** `openSettingsTab(id)` 的落点：这些 id 保留着只是让老深链继续可用，落点未必还在设置页。 */
+export type SettingsDeepLinkTarget =
+  | { kind: 'settings'; tab: SettingsTab }
+  | { kind: 'capabilityHub'; tab: CapabilityHubTab }
+  | { kind: 'cronCenter' };
+
+/**
+ * 深链落点单点判定（ADR-049 §收窄）：自动化去独立的自动化面板，
+ * 能力中心那四项去能力中心，其余照常开设置页。
+ * 放在 tab 注册表这里而不是 store 里，是为了让「id → 落点」只有一处可改——
+ * 设置页搜索也走它，否则搜「自动化」会把 activeTab 设成一个已不存在的 tab。
+ */
+export function resolveSettingsDeepLink(tab: SettingsTab): SettingsDeepLinkTarget {
+  if (tab === 'automation') return { kind: 'cronCenter' };
+  const hubTab = CAPABILITY_HUB_TAB_BY_SETTINGS_TAB[tab];
+  return hubTab ? { kind: 'capabilityHub', tab: hubTab } : { kind: 'settings', tab };
+}
 
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'model';
 

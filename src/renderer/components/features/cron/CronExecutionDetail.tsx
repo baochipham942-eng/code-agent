@@ -19,7 +19,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
   const { t } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
-  const setShowCapabilityHub = useAppStore((state) => state.setShowCapabilityHub);
+  const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [isOpeningSession, setIsOpeningSession] = useState(false);
 
   if (!execution) {
@@ -36,7 +36,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
     setIsOpeningSession(true);
     try {
       await switchSession(execution.sessionId);
-      setShowCapabilityHub(false);
+      setShowCronCenter(false);
     } finally {
       setIsOpeningSession(false);
     }

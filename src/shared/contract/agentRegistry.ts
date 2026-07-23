@@ -22,6 +22,11 @@ export interface AgentListEntry {
   outputs?: string[];
   /** 该条目是角色资产（agents/<id>.md 且存在 roles/<id>/ 目录）——面板上与 agent 分组显示 */
   isRole?: boolean;
+  /**
+   * 职业（如「内容主理人」）：展示在花名旁，让用户知道这个专家是干什么的。
+   * 预设角色取 BuiltinRoleVisual，自定义角色取 agent.md frontmatter 的 profession；都没有则缺省。
+   */
+  profession?: string;
 }
 
 /**

@@ -4,9 +4,21 @@ import { listExpertsSchema } from './listExperts.schema';
 
 const schema: ToolSchema = listExpertsSchema;
 
+/**
+ * 花名后面补上「他是干什么的」。roleId 保持在行首且原样——模型要拿它填
+ * propose_team_recipe 的 members.roleId，格式再怎么改都不能让它变得难辨认。
+ */
+function roleLabelSuffix(role: KnownTeamRole): string {
+  const parts = [
+    role.displayName && role.displayName !== role.roleId ? role.displayName : '',
+    role.profession ?? '',
+  ].filter(Boolean);
+  return parts.length ? `（${parts.join(' · ')}）` : '';
+}
+
 function formatRoster(roles: KnownTeamRole[]): string {
   if (roles.length === 0) return '本机还没有可用专家，请先建一个角色。';
-  return roles.map((role) => `${role.roleId} — ${role.displayName}：${role.description}`).join('\n');
+  return roles.map((role) => `${role.roleId}${roleLabelSuffix(role)} — ${role.description}`).join('\n');
 }
 
 class ListExpertsHandler implements ToolHandler<Record<string, unknown>, string> {

@@ -104,4 +104,3 @@ export const CronFeaturedTemplates: React.FC = () => {
   );
 };
 
-export default CronFeaturedTemplates;

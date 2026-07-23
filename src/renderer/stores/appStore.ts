@@ -32,6 +32,8 @@ import {
   readActiveAgentSessionMap,
   writeActiveAgentSessionMap,
 } from './activeAgentSessionMap';
+import { noteSurfaceIntentNavigation } from '../services/surfaceIntentRuntime';
+import { surfaceIntentViewForWorkbenchTab } from '../utils/surfaceIntent';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
 // 在 store 模块顶层引入 ipcService（store 是大量被 import 的模块，链路尽量短）
@@ -361,8 +363,8 @@ interface AppState {
   setShowKnowledgeMemoryPanel: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
   openExpertRoleDetail: (roleId: string) => void;
-  openPreview: (filePath: string) => void;
-  openWorkspacePreview: (itemId?: string | null) => void;
+  openPreview: (filePath: string, options?: OpenWorkbenchTabOptions) => void;
+  openWorkspacePreview: (itemId?: string | null, options?: OpenWorkbenchTabOptions) => void;
   setSelectedWorkspacePreviewId: (itemId: string | null) => void;
   openLivePreview: (devServerUrl: string, devServerSessionId?: string) => void;
   /** V2-A: 打开/关闭 dev server launcher 模态 */
@@ -692,7 +694,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowLibraryPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showLibraryPanel: show }),
   openExpertRoleDetail: (roleId) => set({ ...FULLSCREEN_PANELS_CLOSED, expertDetailRoleId: roleId }),
 
-  openPreview: (filePath) => {
+  openPreview: (filePath, options) => {
+    noteSurfaceIntentNavigation('file-preview', options?.source ?? 'user');
     // Resolve relative paths against workingDirectory
     let resolved = filePath;
     if (filePath && !filePath.startsWith('/')) {
@@ -752,7 +755,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       };
     });
   },
-  openWorkspacePreview: (itemId = null) => {
+  openWorkspacePreview: (itemId = null, options) => {
+    noteSurfaceIntentNavigation('workspace-preview', options?.source ?? 'user');
     set((state) => ({
       ...state,
       selectedWorkspacePreviewId: itemId ?? state.selectedWorkspacePreviewId,
@@ -940,6 +944,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   openWorkbenchTab: (id, options) => {
+    noteSurfaceIntentNavigation(surfaceIntentViewForWorkbenchTab(id), options?.source ?? 'user');
     set((state) => {
       const taskWorkbenchOpenSource = id === 'task'
         ? options?.source === 'auto' && state.taskWorkbenchOpenSource === 'user'

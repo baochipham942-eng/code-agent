@@ -36,7 +36,6 @@ export const WorkbenchTabs: React.FC = () => {
   const workbenchTabs = useAppStore((s) => s.workbenchTabs);
   const activeWorkbenchTab = useAppStore((s) => s.activeWorkbenchTab);
   const previewTabs = useAppStore((s) => s.previewTabs);
-  const setActiveWorkbenchTab = useAppStore((s) => s.setActiveWorkbenchTab);
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
@@ -156,11 +155,11 @@ export const WorkbenchTabs: React.FC = () => {
               role="tab"
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}
-              onClick={() => setActiveWorkbenchTab(meta.id)}
+              onClick={() => openWorkbenchTab(meta.id, { source: 'user' })}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
-                  setActiveWorkbenchTab(meta.id);
+                  openWorkbenchTab(meta.id, { source: 'user' });
                   return;
                 }
                 if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
@@ -169,7 +168,7 @@ export const WorkbenchTabs: React.FC = () => {
                 const currentIndex = metas.findIndex((item) => item.id === meta.id);
                 const next = metas[(currentIndex + offset + metas.length) % metas.length];
                 if (!next) return;
-                setActiveWorkbenchTab(next.id);
+                openWorkbenchTab(next.id, { source: 'user' });
                 tabRefs.current.get(next.id)?.focus();
               }}
               className="flex min-w-0 flex-1 items-center gap-1.5 text-left"

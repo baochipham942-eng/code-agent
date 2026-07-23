@@ -942,6 +942,8 @@ export class ConversationRuntime {
           hasError: false,
           maxReminderTokens: 1200,
           includeFewShot: genNum >= 4,
+          // skill 在本方法上游已激活（activateSkill），authoring 流程靠它避开内容生成提醒
+          activeSkillName: this.ctx.turn.activeSkillInvocation?.skillName,
         });
         logger.info(`[AgentLoop] Dynamic mode detected: ${dynamicResult.mode}`, {
           features: dynamicResult.features,

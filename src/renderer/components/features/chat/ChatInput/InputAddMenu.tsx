@@ -78,6 +78,7 @@ export const InputAddMenu: React.FC<Props> = ({
   const expertItems: InputAddSubmenuItem[] = expertEntries.map((entry) => ({
     id: entry.id,
     label: entry.name || entry.id,
+    sublabel: entry.profession,
     description: entry.description,
     selected: entry.id === activeAgentId,
   }));

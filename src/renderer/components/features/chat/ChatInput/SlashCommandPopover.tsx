@@ -905,6 +905,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="truncate text-sm">{cmd.label}</span>
+                      {cmd.sublabel ? (
+                        <span className="shrink-0 text-[10px] text-zinc-500">{cmd.sublabel}</span>
+                      ) : null}
                       <span className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-mono text-zinc-500">
                         {cmd.slashText}
                       </span>

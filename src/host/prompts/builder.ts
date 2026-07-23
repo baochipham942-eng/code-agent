@@ -303,6 +303,7 @@ export function buildDynamicPromptV2(
     lastToolResult?: string;
     maxReminderTokens?: number;
     includeFewShot?: boolean;
+    activeSkillName?: string;
   } = {}
 ): DynamicPromptResultV2 {
   const basePrompt = SYSTEM_PROMPT;
@@ -317,6 +318,7 @@ export function buildDynamicPromptV2(
     hasError: options.hasError || false,
     lastToolResult: options.lastToolResult,
     tokenBudget: options.maxReminderTokens || 800,
+    activeSkillName: options.activeSkillName,
   });
 
   const reminderResult = selectReminders(reminderContext, {

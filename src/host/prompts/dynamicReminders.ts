@@ -208,6 +208,7 @@ export function createReminderContext(
     currentMode?: string;
     hasError?: boolean;
     lastToolResult?: string;
+    activeSkillName?: string;
   } = {}
 ): ReminderContext {
   const features = detectTaskFeatures(taskPrompt);
@@ -225,6 +226,7 @@ export function createReminderContext(
     currentMode: options.currentMode || 'normal',
     hasError: options.hasError || false,
     lastToolResult: options.lastToolResult,
+    activeSkillName: options.activeSkillName,
   };
 }
 

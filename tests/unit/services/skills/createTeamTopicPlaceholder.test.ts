@@ -36,4 +36,12 @@ describe('create-team 的主题占位约定', () => {
   it('起草前先取权威名册这条也仍在（#607 的约定）', () => {
     expect(createTeamPrompt()).toContain('list_experts');
   });
+
+  // 2026-07-23 实测：模型用纯文本追问「这篇推文写什么主题或方向？比如产品推广、行业观点、
+  // 个人故事」——典型的可枚举封闭选择，本该弹选项卡一次点完，却换来两轮打字。
+  it('可枚举的澄清必须走 ask_user_question，不许纯文本追问', () => {
+    const prompt = createTeamPrompt();
+    expect(prompt).toContain('ask_user_question');
+    expect(prompt).toContain('选项');
+  });
 });

@@ -8,6 +8,8 @@ export interface AgentCommandOption {
   token: string;
   /** 面板分组：内置/自建 agent 在前，角色（roles）折叠成独立组在后 */
   group: 'agent' | 'role';
+  /** 职业（如「内容主理人」）：跟在花名后，让用户知道这个专家是干什么的 */
+  profession?: string;
 }
 
 export interface AgentCommandOptionLabels {
@@ -52,6 +54,7 @@ export function getAgentCommandOptions(
     description: agent.description,
     token: getAgentCommandToken(agent),
     group: agent.isRole ? 'role' : 'agent',
+    profession: agent.profession,
   });
   const agentOptions = visible.filter((a) => !a.isRole).map(toOption);
   const roleOptions = visible.filter((a) => a.isRole).map(toOption);

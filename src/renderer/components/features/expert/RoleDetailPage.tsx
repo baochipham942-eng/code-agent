@@ -5,9 +5,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   AlarmClock,
-  ArrowLeft,
   Check,
-  FileText,
   History,
   MessageSquarePlus,
   Pencil,
@@ -29,9 +27,14 @@ import { createLogger } from "../../../utils/logger";
 import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { useI18n } from "../../../hooks/useI18n";
 import { RoleIcon } from "../shared/RoleIcon";
-import { SettingsDetails, SettingsSection } from "../settings/SettingsLayout";
+import { SettingsSection } from "../settings/SettingsLayout";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { useAppStore } from "../../../stores/appStore";
+import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
+import { RoleBasicTab } from './RoleBasicTab';
+import { RoleEquipmentTab } from './RoleEquipmentTab';
+import { RolePersonaTab } from './RolePersonaTab';
+import { RoleRecordsTab } from './RoleRecordsTab';
 
 const logger = createLogger("RoleDetailPage");
 
@@ -140,7 +143,6 @@ const EquipmentEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved:
   const [draft, setDraft] = useState(() => ({ skills: equipment.skills, tools: equipment.tools, model: equipment.model, maxIterations: equipment.maxIterations }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setDraft({ skills: equipment.skills, tools: equipment.tools, model: equipment.model, maxIterations: equipment.maxIterations }), [equipment]);
   const toggle = (key: "skills" | "tools", value: string) => setDraft((current) => ({ ...current, [key]: current[key].includes(value) ? current[key].filter((item) => item !== value) : [...current[key], value] }));
   const save = async () => {
     setBusy(true); setError(null);
@@ -167,7 +169,6 @@ const DefinitionEditor: React.FC<{ roleId: string; definition: string | null; re
   const [busy, setBusy] = useState(false);
   const [confirmingRestore, setConfirmingRestore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setBody(definitionBody(definition)), [definition]);
   const save = async () => { setBusy(true); setError(null); try { await updateRoleDefinitionBody(roleId, body); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
   const restoreFactory = async () => { setBusy(true); setError(null); try { await restoreRoleFactory(roleId); setConfirmingRestore(false); onSaved(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); } };
   return <SettingsSection title="人设正文" description="直接编辑专家的人设；保存只会替换正文，不会改动 frontmatter。">
@@ -198,7 +199,6 @@ const VisualEditor: React.FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => setVisual(detail.visual), [detail.visual]);
 
   const save = async () => {
     setBusy(true);
@@ -227,33 +227,33 @@ const VisualEditor: React.FC<{
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.displayName}</span>
-          <input value={visual.displayName ?? ""} onChange={(event) => setVisual({ ...visual, displayName: event.target.value })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
+          <input value={visual.displayName ?? ""} onChange={(event) => setVisual((current) => ({ ...current, displayName: event.target.value }))} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
         </label>
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.profession}</span>
-          <input value={visual.profession ?? ""} onChange={(event) => setVisual({ ...visual, profession: event.target.value })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
+          <input value={visual.profession ?? ""} onChange={(event) => setVisual((current) => ({ ...current, profession: event.target.value }))} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
         </label>
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.category}</span>
-          <select value={visual.category ?? ""} onChange={(event) => setVisual({ ...visual, category: (event.target.value || undefined) as SkillCategory | undefined })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none">
+          <select value={visual.category ?? ""} onChange={(event) => setVisual((current) => ({ ...current, category: (event.target.value || undefined) as SkillCategory | undefined }))} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none">
             <option value="">—</option>
             {CATEGORY_IDS.map((category) => <option key={category} value={category}>{text.categories[category]}</option>)}
           </select>
         </label>
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.icon}</span>
-          <select value={visual.icon ?? ""} onChange={(event) => setVisual({ ...visual, icon: event.target.value || undefined })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none">
+          <select value={visual.icon ?? ""} onChange={(event) => setVisual((current) => ({ ...current, icon: event.target.value || undefined }))} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none">
             <option value="">—</option>
             {ICON_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
         </label>
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.tags}</span>
-          <textarea value={(visual.tags ?? []).join("\n")} onChange={(event) => setVisual({ ...visual, tags: event.target.value.split("\n") })} placeholder={text.tagsHint} rows={3} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
+          <textarea value={(visual.tags ?? []).join("\n")} onChange={(event) => setVisual((current) => ({ ...current, tags: event.target.value.split("\n") }))} placeholder={text.tagsHint} rows={3} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
         </label>
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.quickPrompts}</span>
-          <textarea value={(visual.quickPrompts ?? []).join("\n")} onChange={(event) => setVisual({ ...visual, quickPrompts: event.target.value.split("\n") })} placeholder={text.quickPromptsHint} rows={3} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
+          <textarea value={(visual.quickPrompts ?? []).join("\n")} onChange={(event) => setVisual((current) => ({ ...current, quickPrompts: event.target.value.split("\n") }))} placeholder={text.quickPromptsHint} rows={3} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200 focus:border-zinc-500 focus:outline-none" />
         </label>
       </div>
       <div className="mt-3 flex items-center gap-2">
@@ -475,22 +475,18 @@ const ProactivitySelector: React.FC<{
 
 export interface RoleDetailPageProps {
   roleId: string;
-  icon?: string;
-  onBack: () => void;
-  backLabel?: string;
-  onVisualUpdated?: () => void;
 }
 
-export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
-  roleId,
-  icon,
-  onBack,
-  backLabel,
-  onVisualUpdated,
-}) => {
+type RoleDetailTab = 'basic' | 'equipment' | 'persona' | 'records';
+
+export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   const { t } = useI18n();
   const roleText = t.settings.roles;
   const expertText = t.expert;
+  const [tab, setTab] = useState<RoleDetailTab>('basic');
+  // selector 必须返回稳定引用：返回新建的闭包会让 zustand 每次 getSnapshot 都不同 → 无限重渲染
+  const setShowCapabilityHub = useAppStore((state) => state.setShowCapabilityHub);
+  const closeDetail = useCallback(() => setShowCapabilityHub(true), [setShowCapabilityHub]);
   const [detail, setDetail] = useState<RolePanelDetail | null>(null);
   const [boundCronJobs, setBoundCronJobs] = useState<RoleBoundCronJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -513,44 +509,26 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
     void loadDetail();
   }, [loadDetail]);
   return (
-    <div className="space-y-5" data-testid={`role-detail-page-${roleId}`}>
-      <button /* ds-allow:button: 返回链接式按钮，纯文本+图标无背景，primitive 变体会强加 bg/padding */
-        type="button"
-        onClick={onBack}
-        className="flex items-center gap-1.5 text-xs text-zinc-400 transition-colors hover:text-zinc-200"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />{" "}
-        {backLabel ?? roleText.detail.backToList}
-      </button>
-      <header className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-800 text-zinc-300">
-          <RoleIcon name={detail?.visual.icon ?? icon} className="h-7 w-7" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-base font-medium text-zinc-200">{detail?.visual.displayName || roleId}</h3>
-          <p className="text-xs text-zinc-500">{detail?.visual.profession || roleText.detail.subtitle}</p>
-        </div>
-        <button /* ds-allow:button: 对话式修改入口，emerald 语义色弱化胶囊，primitive 无对应变体 */
-          type="button"
-          onClick={() => void startEditRoleChat(roleId)}
-          title={roleText.detail.editByChatTitle}
-          className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"
-        >
-          <MessageSquarePlus className="h-3.5 w-3.5" />
-          {roleText.detail.editByChat}
-        </button>
-      </header>
+    <FullScreenPage testId={`role-detail-page-${roleId}`}>
+      <FullScreenPageHeader
+        icon={<RoleIcon name={detail?.visual.icon} className="h-5 w-5 text-zinc-300" />}
+        title={detail?.visual.displayName || roleId}
+        description={detail?.visual.profession || roleText.detail.subtitle}
+        onClose={closeDetail}
+        closeLabel={t.common.close}
+        actions={<div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">{(['basic', 'equipment', 'persona', 'records'] as const).map((key) => <button /* ds-allow:button: 详情页内部 tab 使用语义分段控件 */ key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`role-detail-tab-${key}`} onClick={() => setTab(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>{expertText.detailTabs[key]}</button>)}</div>}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-5">
       {loading ? (
         <div className="text-sm text-zinc-500">{roleText.loading}</div>
       ) : null}
       {error ? <div className="text-sm text-red-400">{error}</div> : null}
       {detail ? (
         <>
-          <VisualEditor roleId={roleId} detail={detail} onSaved={() => { void loadDetail(); onVisualUpdated?.(); }} />
-          {detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{expertText.visual.builtinNotice}</p> : null}
-          {detail.equipment ? <EquipmentEditor roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
-          <DefinitionEditor roleId={roleId} definition={detail.definition} restore={detail.restore} onSaved={loadDetail} />
-          <SettingsSection
+          {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{expertText.visual.builtinNotice}</p> : null} /> : null}
+          {tab === 'equipment' && detail.equipment ? <RoleEquipmentTab><EquipmentEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /></RoleEquipmentTab> : null}
+          {tab === 'persona' ? <RolePersonaTab><DefinitionEditor key={roleId} roleId={roleId} definition={detail.definition} restore={detail.restore} onSaved={loadDetail} /></RolePersonaTab> : null}
+          {tab === 'records' ? <RoleRecordsTab><SettingsSection
             title={roleText.detail.proactivityTitle}
             description={roleText.detail.proactivityDescription}
           >
@@ -610,29 +588,10 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
               </ul>
             )}
           </SettingsSection>
-          <SettingsDetails
-            title={roleText.detail.definitionTitle}
-            description={
-              detail.definition
-                ? `${roleText.detail.definitionDescriptionPrefix}${detail.definitionPath}`
-                : roleText.detail.definitionMissingDescription
-            }
-          >
-            {detail.definition ? (
-              <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded bg-zinc-950/60 p-3 font-mono text-xs text-zinc-400">
-                {detail.definition}
-              </pre>
-            ) : (
-              <div className="flex items-center gap-2 text-xs text-zinc-500">
-                <FileText className="h-3.5 w-3.5" />
-                {roleText.detail.definitionMissingPrefix}
-                {detail.definitionPath}
-                {roleText.detail.definitionMissingSuffix}
-              </div>
-            )}
-          </SettingsDetails>
+          </RoleRecordsTab> : null}
         </>
       ) : null}
-    </div>
+      </div>
+    </FullScreenPage>
   );
 };

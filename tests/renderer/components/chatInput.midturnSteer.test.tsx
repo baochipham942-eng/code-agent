@@ -158,13 +158,18 @@ describe('mid-turn composer submission', () => {
 });
 
 describe('running-turn shortcut hint', () => {
-  it('renders a stable hint anchor while processing', () => {
-    render(<RuntimeInputShortcutHint isProcessing />);
+  it('renders a stable hint anchor while processing with a draft', () => {
+    render(<RuntimeInputShortcutHint isProcessing hasDraft />);
     expect(screen.getByTestId('runtime-input-shortcut-hint')).toBeTruthy();
   });
 
   it('does not render the hint anchor while idle', () => {
-    render(<RuntimeInputShortcutHint isProcessing={false} />);
+    render(<RuntimeInputShortcutHint isProcessing={false} hasDraft />);
+    expect(screen.queryByTestId('runtime-input-shortcut-hint')).toBeNull();
+  });
+
+  it('does not render the hint anchor while processing without a draft', () => {
+    render(<RuntimeInputShortcutHint isProcessing hasDraft={false} />);
     expect(screen.queryByTestId('runtime-input-shortcut-hint')).toBeNull();
   });
 });

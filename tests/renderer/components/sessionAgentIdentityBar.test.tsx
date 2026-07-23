@@ -45,11 +45,10 @@ describe('SessionAgentIdentityBar', () => {
   });
   afterEach(() => cleanup());
 
-  it('已绑定专家显示花名、职业与首字头像', async () => {
+  it('单专家会话不渲染顶部身份条', async () => {
     render(<SessionAgentIdentityBar sessionId="session-1" />);
-    await waitFor(() => expect(screen.getByTestId('session-agent-identity')).toBeTruthy());
-    expect(screen.getByText('资深产品经理')).toBeTruthy();
-    expect(screen.getByTestId('role-initial-avatar-muzhi').textContent).toBe('牧');
+    await Promise.resolve();
+    expect(screen.queryByTestId('session-agent-identity')).toBeNull();
   });
 
   it('普通未绑定会话不渲染身份条', async () => {

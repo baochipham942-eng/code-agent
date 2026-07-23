@@ -32,7 +32,6 @@ import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
 import { RoleIcon } from '../shared/RoleIcon';
 import { RolePackHealthNotice, RolePackShelf } from './RolePackShelf';
-import { RoleDetailPage } from './RoleDetailPage';
 import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
 import { groupRolesByCategory } from './roleCategoryGroups';
 
@@ -68,7 +67,7 @@ const ExpertCard: React.FC<{
   onDetail: () => void;
   onInvite: (seed?: string) => void;
 }> = ({ entry, tab, text, rolePacksByRoleId, busyRolePackId, onRetryMissingSkills, onDetail, onInvite }) => (
-  <div data-testid={`expert-card-${entry.roleId}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3.5">
+  <div data-testid={`expert-card-${entry.roleId}`} className="flex flex-col gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/60 p-2.5">
     <div className="flex items-start justify-between gap-2">
       <ExpertCardHead entry={entry} professionFallback={text.professionFallback} />
     </div>
@@ -85,14 +84,12 @@ const ExpertCard: React.FC<{
       </div>
     ) : null}
     {tab === 'mine' ? <RolePackHealthNotice item={rolePacksByRoleId.get(entry.roleId)} busy={busyRolePackId === entry.roleId} onRetryMissingSkills={onRetryMissingSkills} /> : null}
-    {entry.quickPrompts && entry.quickPrompts.length > 0 ? (
+    {entry.quickPrompts?.[0] ? (
       <div className="flex flex-col gap-1">
         <span className="text-[10px] uppercase tracking-wide text-zinc-600">{text.quickPromptsTitle}</span>
-        {entry.quickPrompts.map((prompt) => (
-          <button /* ds-allow:button: quickPrompt 引导句列表行（左对齐引号文案），Button primitive 是居中动作按钮形状 */ key={prompt} type="button" data-testid="expert-quick-prompt" onClick={() => onInvite(prompt)} className="rounded-md bg-zinc-800/60 px-2 py-1.5 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100">
-            “{prompt}”
-          </button>
-        ))}
+        <button /* ds-allow:button: quickPrompt 引导句列表行（左对齐引号文案），Button primitive 是居中动作按钮形状 */ type="button" data-testid="expert-quick-prompt" onClick={() => onInvite(entry.quickPrompts?.[0])} className="rounded-md bg-zinc-800/60 px-2 py-1 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-700/70 hover:text-zinc-100">
+          “{entry.quickPrompts[0]}”
+        </button>
       </div>
     ) : null}
     <div className="mt-auto flex gap-2 pt-1">
@@ -105,8 +102,7 @@ const ExpertCard: React.FC<{
 export const ExpertPanel: React.FC = () => {
   const { t } = useI18n();
   const text = t.expert;
-  const requestedRoleId = useAppStore((s) => s.requestedExpertRoleId);
-  const clearRequestedRoleDetail = useAppStore((s) => s.clearRequestedExpertRoleDetail);
+  const openExpertRoleDetail = useAppStore((s) => s.openExpertRoleDetail);
 
   const [tab, setTab] = useState<ExpertTab>('discover');
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
@@ -120,7 +116,6 @@ export const ExpertPanel: React.FC = () => {
   const [selectedRecipe, setSelectedRecipe] = useState<{ recipe: TeamRecipe; editable: boolean } | null>(null);
   const [confirmingRecipeDelete, setConfirmingRecipeDelete] = useState<string | null>(null);
   const [recipeTopic, setRecipeTopic] = useState('');
-  const [selectedRole, setSelectedRole] = useState<RolePanelEntry | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -151,13 +146,6 @@ export const ExpertPanel: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    if (!requestedRoleId || loading) return;
-    const entry = entries.find((item) => item.roleId === requestedRoleId);
-    if (entry) setSelectedRole(entry);
-    clearRequestedRoleDetail();
-  }, [clearRequestedRoleDetail, entries, loading, requestedRoleId]);
 
   const invite = (entry: RolePanelEntry, seed?: string) => {
     void inviteExpert(entry.roleId, { seed, title: entry.displayName || entry.roleId });
@@ -253,7 +241,7 @@ export const ExpertPanel: React.FC = () => {
   // 「我的 / 发现」操作条 sticky 住，否则列表一长就被滚出视野。
   return (
     <div data-testid="expert-panel">
-      {selectedRole || selectedRecipe ? null : (
+      {selectedRecipe ? null : (
           <div className="sticky top-0 z-10 -mx-6 mb-3 flex items-center justify-end gap-2 bg-zinc-950/95 px-6 py-2 backdrop-blur">
             <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
               {(['mine', 'discover'] as const).map((key) => (
@@ -281,21 +269,13 @@ export const ExpertPanel: React.FC = () => {
             >
               {text.refresh}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
-              {t.settings.roles.newRole}
+            <Button variant="secondary" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
+              {text.createExpert}
             </Button>
           </div>
       )}
       <div>
-        {selectedRole ? (
-          <RoleDetailPage
-            roleId={selectedRole.roleId}
-            icon={selectedRole.icon}
-            backLabel={text.back}
-            onVisualUpdated={() => { void load(); }}
-            onBack={() => setSelectedRole(null)}
-          />
-        ) : selectedRecipe ? (
+        {selectedRecipe ? (
           <TeamRecipeDetailPage
             recipe={selectedRecipe.recipe}
             entries={entries}
@@ -399,7 +379,7 @@ export const ExpertPanel: React.FC = () => {
                       rolePacksByRoleId={rolePacksByRoleId}
                       busyRolePackId={busyRolePackId}
                       onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
-                      onDetail={() => setSelectedRole(entry)}
+                      onDetail={() => openExpertRoleDetail(entry.roleId)}
                       onInvite={(seed) => invite(entry, seed)}
                     />
                   )),
@@ -413,7 +393,7 @@ export const ExpertPanel: React.FC = () => {
                     rolePacksByRoleId={rolePacksByRoleId}
                     busyRolePackId={busyRolePackId}
                     onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
-                    onDetail={() => setSelectedRole(entry)}
+                    onDetail={() => openExpertRoleDetail(entry.roleId)}
                     onInvite={(seed) => invite(entry, seed)}
                   />
                 ))}

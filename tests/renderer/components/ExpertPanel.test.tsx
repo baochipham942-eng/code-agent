@@ -51,6 +51,8 @@ vi.mock('../../../src/renderer/services/teamRecipeClient', () => ({
 }));
 
 import { ExpertPanel } from '../../../src/renderer/components/features/expert/ExpertPanel';
+import { RoleDetailPage } from '../../../src/renderer/components/features/expert/RoleDetailPage';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 function makeEntry(overrides: Partial<RolePanelEntry> = {}): RolePanelEntry {
   return {
@@ -158,12 +160,14 @@ describe('ExpertPanel', () => {
     expect(screen.getByText('还没合作过')).toBeTruthy();
   });
 
-  it('默认停在发现，并始终提供新建角色入口', async () => {
+  it('默认停在发现，并始终提供有明显样式的新建专家入口', async () => {
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);
     await waitFor(() => expect(screen.getByTestId('expert-tab-discover').getAttribute('aria-selected')).toBe('true'));
     expect(screen.getByTestId('expert-tab-mine').getAttribute('aria-selected')).toBe('false');
-    expect(screen.getByTestId('expert-create-role')).toBeTruthy();
+    const create = screen.getByTestId('expert-create-role');
+    expect(create.textContent).toContain('新建专家');
+    expect(create.className).toContain('bg-zinc-600');
   });
 
   it('专家团词条不回潮为配方或 recipe', () => {
@@ -286,20 +290,37 @@ describe('ExpertPanel', () => {
   });
 
 
-  it('点「详情」在同页展示共享详情组件，返回后回到专家卡片网格', async () => {
+  it('点「详情」请求打开独立全屏详情页', async () => {
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);
     await waitFor(() => expect(screen.getByTestId('expert-detail-牧之')).toBeTruthy());
 
     fireEvent.click(screen.getByTestId('expert-detail-牧之'));
+    cleanup();
+    render(<RoleDetailPage roleId="牧之" />);
     await waitFor(() => expect(screen.getByTestId('role-detail-page-牧之')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('role-detail-tab-records'));
     expect(screen.getByText('用户偏好')).toBeTruthy();
     expect(screen.getByText('整理了需求评审稿')).toBeTruthy();
     expect(screen.getByTestId('role-bindings-section')).toBeTruthy();
     expect(screen.getByTestId('role-bound-automations-empty').textContent).toContain('这个角色还没有绑定的自动化');
 
-    fireEvent.click(screen.getByRole('button', { name: '返回' }));
-    expect(screen.getByTestId('expert-card-牧之')).toBeTruthy();
+    expect(screen.getByTestId('role-detail-records-tab')).toBeTruthy();
+  });
+
+  it('独立详情页的四个 tab 都可切换，关闭回到能力中心专家 tab', async () => {
+    useAppStore.getState().openExpertRoleDetail('牧之');
+    render(<RoleDetailPage roleId="牧之" />);
+    await waitFor(() => expect(screen.getByTestId('role-detail-basic-tab')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('role-detail-tab-equipment'));
+    expect(screen.getByTestId('role-detail-equipment-tab')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('role-detail-tab-persona'));
+    expect(screen.getByTestId('role-detail-persona-tab')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('role-detail-tab-records'));
+    expect(screen.getByTestId('role-detail-records-tab')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    expect(useAppStore.getState().showCapabilityHub).toBe(true);
+    expect(useAppStore.getState().capabilityHubTab).toBe('experts');
   });
 
   it('详情页为空时展示绑定自动化空态；有任务时展示调度、状态和主动性管理标注', async () => {
@@ -316,6 +337,9 @@ describe('ExpertPanel', () => {
     render(<ExpertPanel />);
     await waitFor(() => expect(screen.getByTestId('expert-detail-牧之')).toBeTruthy());
     fireEvent.click(screen.getByTestId('expert-detail-牧之'));
+    cleanup();
+    render(<RoleDetailPage roleId="牧之" />);
+    fireEvent.click(screen.getByTestId('role-detail-tab-records'));
     await waitFor(() => expect(screen.getByTestId('role-bound-automations-list')).toBeTruthy());
     expect(screen.getByTestId('role-bound-automation-daily-report').textContent).toContain('每 1 天');
     expect(screen.getByTestId('role-bound-automation-daily-report').textContent).toContain('启用');
@@ -339,6 +363,8 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('expert-tab-mine'));
     await waitFor(() => expect(screen.getByTestId('expert-detail-自定义专家')).toBeTruthy());
     fireEvent.click(screen.getByTestId('expert-detail-自定义专家'));
+    cleanup();
+    render(<RoleDetailPage roleId="自定义专家" />);
     await waitFor(() => expect(screen.getByText('基本信息')).toBeTruthy());
 
     fireEvent.change(screen.getByDisplayValue('初始名'), { target: { value: '小满' } });
@@ -347,9 +373,7 @@ describe('ExpertPanel', () => {
     await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateVisual', expect.objectContaining({ roleId: '自定义专家', visual: expect.objectContaining({ displayName: '小满', profession: '增长顾问' }) })));
     await waitFor(() => expect(screen.getAllByText('小满').length).toBeGreaterThan(0));
 
-    fireEvent.click(screen.getByRole('button', { name: '返回' }));
-    await waitFor(() => expect(screen.getByTestId('expert-card-自定义专家').textContent).toContain('小满'));
-    expect(screen.getByTestId('expert-card-自定义专家').textContent).toContain('增长顾问');
+    expect(screen.getByText('小满')).toBeTruthy();
   });
 
   it('装备和正文走独立 IPC 保存；自建角色没有还原出厂入口', async () => {
@@ -364,6 +388,9 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('expert-tab-mine'));
     await waitFor(() => expect(screen.getByTestId('expert-detail-自定义专家')).toBeTruthy());
     fireEvent.click(screen.getByTestId('expert-detail-自定义专家'));
+    cleanup();
+    render(<RoleDetailPage roleId="自定义专家" />);
+    fireEvent.click(screen.getByTestId('role-detail-tab-equipment'));
     await waitFor(() => expect(screen.getByTestId('role-equipment-editor')).toBeTruthy());
     expect(screen.queryByTestId('role-restore-factory')).toBeNull();
 
@@ -372,6 +399,7 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('role-equipment-save'));
     await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateEquipment', expect.objectContaining({ roleId: '自定义专家', equipment: expect.objectContaining({ skills: ['research', 'xlsx'], model: 'powerful' }) })));
 
+    fireEvent.click(screen.getByTestId('role-detail-tab-persona'));
     fireEvent.change(screen.getByTestId('role-definition-body'), { target: { value: '新的角色正文' } });
     fireEvent.click(screen.getByTestId('role-definition-save'));
     await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateDefinitionBody', { roleId: '自定义专家', body: '新的角色正文' }));
@@ -388,8 +416,12 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('expert-tab-mine'));
     await waitFor(() => expect(screen.getByTestId('expert-detail-云端产品顾问')).toBeTruthy());
     fireEvent.click(screen.getByTestId('expert-detail-云端产品顾问'));
+    cleanup();
+    render(<RoleDetailPage roleId="云端产品顾问" />);
+    // 「本地已改过」提示在基本信息 tab；「还原出厂」随人设正文一起住在人设 tab
     await waitFor(() => expect(screen.getByTestId('role-locally-modified').textContent).toContain('后续更新不会覆盖'));
-    expect((screen.getByTestId('role-restore-factory') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('role-detail-tab-persona'));
+    expect((await screen.findByTestId('role-restore-factory') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('空列表渲染空态', async () => {

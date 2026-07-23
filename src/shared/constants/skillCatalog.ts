@@ -735,6 +735,25 @@ export function getBuiltinSkillCatalogPayload(): SkillCatalogPayload {
   };
 }
 
+/**
+ * 把可能半截的 catalog 补成完整 payload：缺哪个数组就用内置目录顶上。
+ *
+ * 默认参数只在 `catalog === undefined` 时生效，挡不住云端返回一个缺字段的对象——
+ * 而「发现」现在是技能页的默认落地 tab，任何一次拉取抖动都会让整页白屏。
+ * 消费方一律先过这个归一化，别在各个 `.map` 处逐个打 `?.` 补丁。
+ */
+export function normalizeSkillCatalogPayload(
+  catalog?: Partial<SkillCatalogPayload> | null,
+): SkillCatalogPayload {
+  const builtin = getBuiltinSkillCatalogPayload();
+  return {
+    categories: catalog?.categories ?? builtin.categories,
+    skills: catalog?.skills ?? builtin.skills,
+    bundles: catalog?.bundles ?? builtin.bundles,
+    repositories: catalog?.repositories ?? builtin.repositories,
+  };
+}
+
 /** 按分类分组推荐 skill（保持分类顺序）；不传 catalog 时用内置目录 */
 export function groupRecommendedSkillsByCategory(
   catalog: SkillCatalogPayload = getBuiltinSkillCatalogPayload()
@@ -742,9 +761,10 @@ export function groupRecommendedSkillsByCategory(
   category: SkillCategoryMeta;
   skills: RecommendedSkillEntry[];
 }> {
-  return catalog.categories.map((category) => ({
+  const { categories, skills } = normalizeSkillCatalogPayload(catalog);
+  return categories.map((category) => ({
     category,
-    skills: catalog.skills.filter((skill) => skill.category === category.id),
+    skills: skills.filter((skill) => skill.category === category.id),
   })).filter((group) => group.skills.length > 0);
 }
 

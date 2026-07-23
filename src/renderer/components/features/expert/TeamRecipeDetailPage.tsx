@@ -74,7 +74,7 @@ export const TeamRecipeDetailPage: React.FC<Props> = ({ recipe, entries, editabl
 
   return (
     <div className="space-y-5" data-testid={`team-recipe-detail-${recipe.id}`}>
-      <button /* ds-allow:button: 配方详情返回是无背景的文字链接，Button primitive 会改变页面层级 */ type="button" onClick={onBack} className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200">
+      <button /* ds-allow:button: 专家团详情返回是无背景的文字链接，Button primitive 会改变页面层级 */ type="button" onClick={onBack} className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200">
         <ArrowLeft className="h-3.5 w-3.5" />{text.back}
       </button>
       <header className="flex items-start justify-between gap-3">

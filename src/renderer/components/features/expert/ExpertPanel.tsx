@@ -108,7 +108,7 @@ export const ExpertPanel: React.FC = () => {
   const requestedRoleId = useAppStore((s) => s.requestedExpertRoleId);
   const clearRequestedRoleDetail = useAppStore((s) => s.clearRequestedExpertRoleDetail);
 
-  const [tab, setTab] = useState<ExpertTab>('mine');
+  const [tab, setTab] = useState<ExpertTab>('discover');
   const [entries, setEntries] = useState<RolePanelEntry[]>([]);
   const [rolePacks, setRolePacks] = useState<RolePackListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,7 +254,7 @@ export const ExpertPanel: React.FC = () => {
   return (
     <div data-testid="expert-panel">
       {selectedRole || selectedRecipe ? null : (
-          <div className="sticky top-0 z-10 -mx-6 mb-3 flex items-center gap-2 bg-zinc-950/95 px-6 py-2 backdrop-blur">
+          <div className="sticky top-0 z-10 -mx-6 mb-3 flex items-center justify-end gap-2 bg-zinc-950/95 px-6 py-2 backdrop-blur">
             <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
               {(['mine', 'discover'] as const).map((key) => (
                 <button /* ds-allow:button: tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
@@ -281,11 +281,9 @@ export const ExpertPanel: React.FC = () => {
             >
               {text.refresh}
             </Button>
-            {tab === 'mine' ? (
-              <Button variant="ghost" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
-                {t.settings.roles.newRole}
-              </Button>
-            ) : null}
+            <Button variant="ghost" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
+              {t.settings.roles.newRole}
+            </Button>
           </div>
       )}
       <div>
@@ -321,7 +319,7 @@ export const ExpertPanel: React.FC = () => {
               <section aria-labelledby="team-recipes-title">
                 <h2 id="team-recipes-title" className="mb-3 text-sm font-medium text-zinc-200">
                   <span>{t.team.sectionTitle}</span>
-                  <Button className="ml-2" variant="ghost" size="sm" onClick={() => void startCreateTeamChat()}>{t.team.createByChat}</Button>
+                  <Button className="ml-2" variant="ghost" size="sm" onClick={() => void startCreateTeamChat(t.team.createChatSessionTitle)}>{t.team.createByChat}</Button>
                 </h2>
                 <h3 className="mb-2 text-xs font-medium text-zinc-400">{t.team.builtinRecipes}</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -332,7 +330,7 @@ export const ExpertPanel: React.FC = () => {
                       className="flex flex-col gap-2.5 rounded-xl border border-violet-900/60 bg-violet-950/20 p-3.5"
                     >
                       <div>
-                        <button /* ds-allow:button: 出厂配方名是进入只读详情的文字链接，卡片底部动作仍仅保留使用与复制 */ type="button" aria-label={`${t.team.details} ${recipe.name}`} onClick={() => setSelectedRecipe({ recipe, editable: false })} className="text-left text-sm font-medium text-zinc-100 hover:text-violet-200">{recipe.name}</button>
+                        <button /* ds-allow:button: 出厂专家团名是进入只读详情的文字链接，卡片底部动作仍仅保留使用与复制 */ type="button" aria-label={`${t.team.details} ${recipe.name}`} onClick={() => setSelectedRecipe({ recipe, editable: false })} className="text-left text-sm font-medium text-zinc-100 hover:text-violet-200">{recipe.name}</button>
                         <p className="mt-1 text-xs text-violet-200/70">
                           {recipeMode(recipe)}
                         </p>
@@ -354,7 +352,7 @@ export const ExpertPanel: React.FC = () => {
                     <div key={recipe.id} data-testid={`team-recipe-${recipe.id}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-700/70 bg-zinc-900/60 p-3.5">
                       <div><h3 className="text-sm font-medium text-zinc-100">{recipe.name}</h3><p className="mt-1 text-xs text-violet-200/70">{recipeMode(recipe)}</p></div>
                       <p className="text-xs leading-relaxed text-zinc-400">{recipe.description}</p>
-                      {confirmingRecipeDelete === recipe.id ? <div className="flex items-center gap-2 text-xs text-red-300"><span>{t.team.confirmDelete}</span><button /* ds-allow:button: 配方删除确认使用紧凑文字动作，现有 Button 的尺寸会挤压卡片 */ type="button" onClick={() => { void removeRecipe(recipe.id); }} className="rounded bg-red-900/50 px-2 py-1 hover:bg-red-900/80">{t.team.delete}</button><button /* ds-allow:button: 配方删除取消是紧凑文本按钮，保持卡片内联布局 */ type="button" onClick={() => setConfirmingRecipeDelete(null)} className="rounded px-2 py-1 text-zinc-400 hover:bg-zinc-700">{t.team.cancel}</button></div> : <div className="mt-auto flex flex-wrap gap-2 pt-1"><Button variant="secondary" size="sm" onClick={() => openRecipe(recipe)}>{t.team.useRecipe}</Button><Button variant="ghost" size="sm" onClick={() => setSelectedRecipe({ recipe, editable: true })}>{t.team.details}</Button><Button variant="ghost" size="sm" onClick={() => setConfirmingRecipeDelete(recipe.id)}>{t.team.delete}</Button></div>}
+                      {confirmingRecipeDelete === recipe.id ? <div className="flex items-center gap-2 text-xs text-red-300"><span>{t.team.confirmDelete}</span><button /* ds-allow:button: 专家团删除确认使用紧凑文字动作，现有 Button 的尺寸会挤压卡片 */ type="button" onClick={() => { void removeRecipe(recipe.id); }} className="rounded bg-red-900/50 px-2 py-1 hover:bg-red-900/80">{t.team.delete}</button><button /* ds-allow:button: 专家团删除取消是紧凑文本按钮，保持卡片内联布局 */ type="button" onClick={() => setConfirmingRecipeDelete(null)} className="rounded px-2 py-1 text-zinc-400 hover:bg-zinc-700">{t.team.cancel}</button></div> : <div className="mt-auto flex flex-wrap gap-2 pt-1"><Button variant="secondary" size="sm" onClick={() => openRecipe(recipe)}>{t.team.useRecipe}</Button><Button variant="ghost" size="sm" onClick={() => setSelectedRecipe({ recipe, editable: true })}>{t.team.details}</Button><Button variant="ghost" size="sm" onClick={() => setConfirmingRecipeDelete(recipe.id)}>{t.team.delete}</Button></div>}
                     </div>
                   ))}
                 </div>

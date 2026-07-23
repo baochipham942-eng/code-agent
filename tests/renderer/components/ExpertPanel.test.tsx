@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RolePanelDetail, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 import type { RolePackListItem } from '../../../src/renderer/services/rolesClient';
 import type { TeamRecipe } from '../../../src/shared/contract/teamRecipe';
+import { teamEn, teamZh } from '../../../src/renderer/i18n/team';
 
 const listRoles = vi.fn<() => Promise<RolePanelEntry[]>>();
 const listRolePacks = vi.fn<() => Promise<RolePackListItem[]>>();
@@ -145,6 +146,7 @@ describe('ExpertPanel', () => {
       makeEntry({ roleId: '自定义客服', source: 'user', icon: undefined, displayName: '阿问', profession: '客服顾问', tags: ['FAQ 设计'], quickPrompts: ['帮我整理 FAQ，先找高频问题'], memoryCount: 2, lastWork: '整理了 FAQ' }),
     ]);
     render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
     await waitFor(() => {
       expect(screen.getByText('牧之')).toBeTruthy();
     });
@@ -154,6 +156,19 @@ describe('ExpertPanel', () => {
     expect(screen.getAllByText('可以直接开口')).toHaveLength(2);
     expect(screen.getByText(/2 条记忆/)).toBeTruthy();
     expect(screen.getByText('还没合作过')).toBeTruthy();
+  });
+
+  it('默认停在发现，并始终提供新建角色入口', async () => {
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-tab-discover').getAttribute('aria-selected')).toBe('true'));
+    expect(screen.getByTestId('expert-tab-mine').getAttribute('aria-selected')).toBe('false');
+    expect(screen.getByTestId('expert-create-role')).toBeTruthy();
+  });
+
+  it('专家团词条不回潮为配方或 recipe', () => {
+    expect(Object.values(teamZh.team).join('\n')).not.toContain('配方');
+    expect(Object.values(teamEn.team).join('\n').toLowerCase()).not.toContain('recipe');
   });
 
   it('「发现」只展示内置专家，quickPrompt 点击以该句请 TA 来', async () => {
@@ -185,18 +200,18 @@ describe('ExpertPanel', () => {
     const empty = screen.getByTestId('team-my-recipes-empty');
     expect(empty.textContent).toContain('复制为我的');
     // 变异守卫：若空态退回渲染 t.team.myRecipes，这条会红（标题文案不含"复制为我的"）
-    expect(empty.textContent).not.toBe('我的配方');
+    expect(empty.textContent).not.toBe('我的专家团');
   });
 
-  it('组队区渲染出厂配方和我的配方，卡片按 lead 显示正确档位', async () => {
+  it('组队区渲染出厂专家团和我的专家团，卡片按 lead 显示正确档位', async () => {
     listTeamRecipes.mockResolvedValue([makeRecipe()]);
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);
     await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
 
     fireEvent.click(screen.getByTestId('expert-tab-discover'));
-    expect(screen.getByText('出厂配方')).toBeTruthy();
-    expect(screen.getByText('我的配方')).toBeTruthy();
+    expect(screen.getByText('出厂专家团')).toBeTruthy();
+    expect(screen.getByText('我的专家团')).toBeTruthy();
     expect(screen.getByTestId('team-recipe-product-spec').textContent).toContain('专家团 · 主理人 牧之');
     expect(screen.getByTestId('team-recipe-user-recipe-1').textContent).toContain('专家小组 · 1 人各自作答');
     expect(within(screen.getByTestId('team-recipe-product-spec')).getByText('复制为我的')).toBeTruthy();
@@ -258,7 +273,7 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('expert-tab-discover'));
     fireEvent.click(within(screen.getByTestId('team-recipe-user-recipe-1')).getByText('删除'));
     expect(deleteTeamRecipe).not.toHaveBeenCalled();
-    fireEvent.click(within(screen.getByText('确认删除这个配方？').parentElement!).getByText('删除'));
+    fireEvent.click(within(screen.getByText('确认删除这个专家团？').parentElement!).getByText('删除'));
     await waitFor(() => expect(deleteTeamRecipe).toHaveBeenCalledWith('user-recipe-1'));
   });
 
@@ -321,6 +336,7 @@ describe('ExpertPanel', () => {
       return Promise.resolve(undefined);
     });
     render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
     await waitFor(() => expect(screen.getByTestId('expert-detail-自定义专家')).toBeTruthy());
     fireEvent.click(screen.getByTestId('expert-detail-自定义专家'));
     await waitFor(() => expect(screen.getByText('基本信息')).toBeTruthy());
@@ -345,6 +361,7 @@ describe('ExpertPanel', () => {
     });
     listRoles.mockResolvedValue([makeEntry({ roleId: '自定义专家', source: 'user' })]);
     render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
     await waitFor(() => expect(screen.getByTestId('expert-detail-自定义专家')).toBeTruthy());
     fireEvent.click(screen.getByTestId('expert-detail-自定义专家'));
     await waitFor(() => expect(screen.getByTestId('role-equipment-editor')).toBeTruthy());
@@ -368,6 +385,7 @@ describe('ExpertPanel', () => {
     });
     listRoles.mockResolvedValue([makeEntry({ roleId: '云端产品顾问', source: 'user' })]);
     render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
     await waitFor(() => expect(screen.getByTestId('expert-detail-云端产品顾问')).toBeTruthy());
     fireEvent.click(screen.getByTestId('expert-detail-云端产品顾问'));
     await waitFor(() => expect(screen.getByTestId('role-locally-modified').textContent).toContain('后续更新不会覆盖'));
@@ -387,6 +405,7 @@ describe('ExpertPanel', () => {
     listRoles.mockResolvedValue([makeEntry({ roleId: '云端产品顾问', source: 'user', displayName: '云端产品顾问' })]);
     listRolePacks.mockResolvedValue([degraded]);
     render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-mine'));
 
     await waitFor(() => expect(screen.getByTestId('role-pack-degraded-云端产品顾问')).toBeTruthy());
     expect(screen.getByTestId('expert-card-云端产品顾问')).toBeTruthy();

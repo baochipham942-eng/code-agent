@@ -32,7 +32,6 @@ import { LocalBridgeSection } from '../sections/localBridge';
 import { NativeConnectorsSection } from '../sections';
 import { McpServerEditor, type McpServerConfig } from '../McpServerEditor';
 import { McpDiscoverTab } from './McpDiscoverTab';
-import { AlmaRegistryAuditPanel } from './AlmaRegistryAuditPanel';
 import type { McpCatalogPayload, RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
 import {
   getBuiltinMcpCatalogPayload,
@@ -391,8 +390,6 @@ export const MCPSettings: React.FC = () => {
           </Button>
         </div>
       )}
-
-      <AlmaRegistryAuditPanel />
 
       {/* Tab 切换：已连接 / 发现连接 */}
       <div className="flex w-fit items-center gap-1 rounded-lg bg-zinc-800/80 p-1">

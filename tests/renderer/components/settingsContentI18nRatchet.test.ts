@@ -52,7 +52,6 @@ const MIGRATED: string[] = [
   'tabs/UserDashboardSettings.tsx',
   'tabs/InviteCodesSettings.tsx',
   'tabs/ControlPlaneSettings.tsx',
-  'tabs/AlmaRegistryAuditPanel.tsx',
   'tabs/AddProviderCard.tsx',
   'sections/NativeDesktopSection.tsx',
   'sections/NativeConnectorsSection.tsx',

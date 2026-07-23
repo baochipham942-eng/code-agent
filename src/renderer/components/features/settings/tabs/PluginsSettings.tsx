@@ -18,16 +18,6 @@ import {
   Trash2,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import {
-  ALMA_FEATURED_PLUGIN_REGISTRY,
-  adaptAlmaPluginToCodeAgentSpec,
-  type AlmaFeaturedPluginEntry,
-} from '@shared/constants/almaPluginRegistry';
-import { ALMA_PLUGIN_REGISTRY_URL } from '@shared/constants/almaRegistryAudit';
-import {
-  getAlmaPluginRecommendationPolicy,
-  type AlmaRecommendationPolicyTier,
-} from '@shared/constants/almaRecommendationPolicy';
 import type {
   InstalledPlugin,
   MarketplaceInfo,
@@ -39,12 +29,10 @@ import { useI18n } from '../../../../hooks/useI18n';
 import ipcService from '../../../../services/ipcService';
 import { Button, EmptyState } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
-import { AlmaRegistryAuditPanel } from './AlmaRegistryAuditPanel';
 
 type Notice = { type: 'success' | 'error'; text: string };
 export * from './PluginsSettings.helpers';
 import {
-  type PluginsSettingsText,
   type PluginCompletenessRow,
   getPluginSpec,
   getPluginTrustSummary,
@@ -95,58 +83,6 @@ const Pill: React.FC<{
     <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ${toneClass}`}>
       {children}
     </span>
-  );
-};
-
-function getAlmaPluginTierTone(tier: AlmaRecommendationPolicyTier): 'default' | 'success' | 'warning' | 'danger' {
-  switch (tier) {
-    case 'default_visible':
-      return 'success';
-    case 'conditional':
-      return 'warning';
-    case 'not_default':
-      return 'default';
-    case 'unsupported':
-      return 'danger';
-    default:
-      return 'default';
-  }
-}
-
-const AlmaFeaturedPluginCard: React.FC<{
-  plugin: AlmaFeaturedPluginEntry;
-  labels: PluginsSettingsText['almaFeatured']['card'];
-}> = ({ plugin, labels }) => {
-  const policy = getAlmaPluginRecommendationPolicy(plugin);
-  const adapter = adaptAlmaPluginToCodeAgentSpec(plugin);
-
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-sm font-medium text-zinc-100">{plugin.name}</h4>
-            <Pill>{plugin.id}</Pill>
-            <Pill>{plugin.kind}</Pill>
-            <Pill tone={getAlmaPluginTierTone(policy.tier)}>
-              {policy.label}
-            </Pill>
-            <Pill tone={adapter.canInstall ? 'success' : 'warning'}>
-              {adapter.canInstall ? labels.installable : labels.displayOnly}
-            </Pill>
-          </div>
-          <p className="mt-2 text-xs leading-5 text-zinc-500">{policy.reason}</p>
-        </div>
-        <PackageCheck className="mt-0.5 h-5 w-5 shrink-0 text-sky-300" />
-      </div>
-      <div className="mt-3 rounded-md bg-zinc-950/60 p-3 text-xs leading-5 text-zinc-500">
-        <div><span className="text-zinc-300">{labels.author}</span> {plugin.author}</div>
-        <div><span className="text-zinc-300">{labels.boundary}</span> {policy.riskNote}</div>
-        <div><span className="text-zinc-300">{labels.surface}</span> {adapter.surface} · {adapter.installability}</div>
-        <div><span className="text-zinc-300">{labels.missing}</span> {adapter.requiredRuntimeCapabilities.join(', ') || labels.none}</div>
-        <div><span className="text-zinc-300">{labels.reason}</span> {adapter.unsupportedReason}</div>
-      </div>
-    </div>
   );
 };
 
@@ -361,43 +297,6 @@ export const PluginsSettings: React.FC = () => {
           <span>{notice.text}</span>
         </div>
       )}
-
-      <SettingsSection
-        title={pluginsText.almaFeatured.title}
-        description={pluginsText.almaFeatured.description}
-        actions={(
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              void runAction('marketplace:add:alma-plugins', async () => {
-                const result = normalizeMarketplaceResult<MarketplaceInfo>(
-                  await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_ADD, ALMA_PLUGIN_REGISTRY_URL),
-                  pluginsText.toast.addAlmaSourceFailed,
-                );
-                if (!result.success) throw new Error(getResultError(result, pluginsText.errors));
-                return `${pluginsText.toast.addAlmaSourceSuccessPrefix}${result.data?.name || pluginsText.toast.almaFallbackName}`;
-              });
-            }}
-            loading={busyKey === 'marketplace:add:alma-plugins'}
-            disabled={busyKey !== null}
-            leftIcon={<PackagePlus className="h-3.5 w-3.5" />}
-          >
-            {pluginsText.almaFeatured.addOfficialSource}
-          </Button>
-        )}
-      >
-        <div className="grid gap-3 lg:grid-cols-2">
-          {ALMA_FEATURED_PLUGIN_REGISTRY.map((plugin) => (
-            <AlmaFeaturedPluginCard
-              key={plugin.id}
-              plugin={plugin}
-              labels={pluginsText.almaFeatured.card}
-            />
-          ))}
-        </div>
-        <AlmaRegistryAuditPanel />
-      </SettingsSection>
 
       <SettingsSection
         title={pluginsText.installed.title}

@@ -22,8 +22,12 @@ import { IconButton } from '../../primitives/IconButton';
 import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
 import { Textarea } from '../../primitives/Textarea';
+import { BrandManager } from '../../design/BrandManager';
 
 const GLOBAL_SCOPE = 'global';
+const closeEmbeddedBrandManager = () => undefined;
+
+type LibrarySection = 'items' | 'brands';
 
 interface LibraryItemDraft {
   title: string;
@@ -79,6 +83,7 @@ export const LibraryPanel: React.FC = () => {
   const [search, setSearch] = useState('');
   const [updatedAtDescending, setUpdatedAtDescending] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [section, setSection] = useState<LibrarySection>('items');
 
   const projectId = scope === GLOBAL_SCOPE ? null : scope;
   const sessionTitles = useMemo(() => new Map<string, string>(
@@ -222,7 +227,7 @@ export const LibraryPanel: React.FC = () => {
         description={t.library.panelDescription}
         onClose={() => setShowLibraryPanel(false)}
         closeLabel={t.common.close}
-        actions={(
+        actions={section === 'items' ? (
           <div className="flex items-center gap-2">
             <select
               value={scope}
@@ -282,68 +287,105 @@ export const LibraryPanel: React.FC = () => {
               }}
             />
           </div>
-        )}
+        ) : undefined}
       />
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-zinc-500">
-            <Loader2 className="h-5 w-5 animate-spin" />
-          </div>
-        ) : items.length === 0 ? (
-          <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.empty}</div>
-        ) : groups.length === 0 ? (
-          <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.empty}</div>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-zinc-800" data-testid="library-item-list">
-            <table className="w-full table-fixed text-left text-xs">
-              <thead className="bg-zinc-900 text-zinc-500">
-                <tr>
-                  <th className="w-[38%] px-3 py-2 font-medium">{t.library.nameColumn}</th>
-                  <th className="w-[14%] px-3 py-2 font-medium">{t.library.typeColumn}</th>
-                  <th className="w-[18%] px-3 py-2 font-medium">{t.library.sourceColumn}</th>
-                  <th className="w-[16%] px-3 py-2 font-medium">
-                    <button type="button" onClick={() => setUpdatedAtDescending((current) => !current)} className="hover:text-zinc-300" aria-label={t.library.sortByUpdatedAt}>
-                      {t.library.updatedAtColumn}
-                    </button>
-                  </th>
-                  <th className="w-[14%] px-3 py-2 font-medium">{t.library.actionsColumn}</th>
-                </tr>
-              </thead>
-              {groups.map((group) => {
-                const collapsed = collapsedGroups.has(group.id);
-                return (
-                  <tbody key={group.id} data-testid={`library-group-${group.id}`}>
-                    <tr className="border-y border-zinc-800 bg-zinc-900/70">
-                      <th colSpan={5} className="px-3 py-2 text-left font-medium text-zinc-300">
-                        <button type="button" onClick={() => toggleGroup(group.id)} className="inline-flex items-center gap-1.5 hover:text-white" aria-expanded={!collapsed}>
-                          {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                          <span>{group.name}</span>
-                          <span className="text-[11px] font-normal text-zinc-500">{t.library.groupCount.replace('{count}', String(group.items.length))}</span>
-                        </button>
-                      </th>
-                    </tr>
-                    {!collapsed && group.items.map((item) => (
-                      <tr key={item.id} data-library-item={item.id} className="group border-t border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-800/50">
-                        <td className="px-3 py-2.5">
-                          <div className="flex min-w-0 items-start gap-2">
-                            <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-zinc-800">{KIND_ICONS[item.kind]}</span>
-                            <div className="min-w-0"><div className="truncate text-sm text-zinc-200">{item.title}</div><div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div><div className="mt-1 flex flex-wrap gap-1">{item.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}</div></div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-zinc-400">{kindLabels[item.kind]}</td>
-                        <td className="truncate px-3 py-2.5 text-zinc-400">{item.sourceRoleId || t.library.sourceUpload}</td>
-                        <td className="px-3 py-2.5 text-zinc-500">{new Date(item.updatedAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')}</td>
-                        <td className="px-3 py-2.5"><div className="flex items-center gap-1"><IconButton variant="ghost" size="sm" data-testid={`library-edit-${item.id}`} onClick={() => openEdit(item)} title={t.library.edit} aria-label={t.library.edit} icon={<Pencil className="h-3.5 w-3.5" />} /><IconButton variant="danger" size="sm" data-testid={`library-delete-${item.id}`} onClick={() => void handleDelete(item.id)} className={confirmingDelete === item.id ? 'bg-red-500/20 text-red-300' : ''} title={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} aria-label={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} icon={<Trash2 className="h-3.5 w-3.5" />} /></div></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                );
-              })}
-            </table>
-          </div>
-        )}
+      <div className="shrink-0 border-b border-zinc-800 px-5 py-2">
+        <div className="flex items-center gap-1" role="tablist" aria-label={t.library.sectionsLabel}>
+          <Button
+            type="button"
+            role="tab"
+            size="sm"
+            variant={section === 'items' ? 'secondary' : 'ghost'}
+            aria-selected={section === 'items'}
+            aria-controls="library-items-panel"
+            tabIndex={section === 'items' ? 0 : -1}
+            data-testid="library-section-items"
+            onClick={() => setSection('items')}
+          >
+            {t.library.itemsTab}
+          </Button>
+          <Button
+            type="button"
+            role="tab"
+            size="sm"
+            variant={section === 'brands' ? 'secondary' : 'ghost'}
+            aria-selected={section === 'brands'}
+            aria-controls="library-brands-panel"
+            tabIndex={section === 'brands' ? 0 : -1}
+            data-testid="library-section-brands"
+            onClick={() => setSection('brands')}
+          >
+            {t.library.brandKitsTab}
+          </Button>
+        </div>
       </div>
+
+      {section === 'items' ? (
+        <div id="library-items-panel" role="tabpanel" className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-16 text-zinc-500">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : items.length === 0 ? (
+            <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.empty}</div>
+          ) : groups.length === 0 ? (
+            <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.empty}</div>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-zinc-800" data-testid="library-item-list">
+              <table className="w-full table-fixed text-left text-xs">
+                <thead className="bg-zinc-900 text-zinc-500">
+                  <tr>
+                    <th className="w-[38%] px-3 py-2 font-medium">{t.library.nameColumn}</th>
+                    <th className="w-[14%] px-3 py-2 font-medium">{t.library.typeColumn}</th>
+                    <th className="w-[18%] px-3 py-2 font-medium">{t.library.sourceColumn}</th>
+                    <th className="w-[16%] px-3 py-2 font-medium">
+                      <button type="button" onClick={() => setUpdatedAtDescending((current) => !current)} className="hover:text-zinc-300" aria-label={t.library.sortByUpdatedAt}>
+                        {t.library.updatedAtColumn}
+                      </button>
+                    </th>
+                    <th className="w-[14%] px-3 py-2 font-medium">{t.library.actionsColumn}</th>
+                  </tr>
+                </thead>
+                {groups.map((group) => {
+                  const collapsed = collapsedGroups.has(group.id);
+                  return (
+                    <tbody key={group.id} data-testid={`library-group-${group.id}`}>
+                      <tr className="border-y border-zinc-800 bg-zinc-900/70">
+                        <th colSpan={5} className="px-3 py-2 text-left font-medium text-zinc-300">
+                          <button type="button" onClick={() => toggleGroup(group.id)} className="inline-flex items-center gap-1.5 hover:text-white" aria-expanded={!collapsed}>
+                            {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                            <span>{group.name}</span>
+                            <span className="text-[11px] font-normal text-zinc-500">{t.library.groupCount.replace('{count}', String(group.items.length))}</span>
+                          </button>
+                        </th>
+                      </tr>
+                      {!collapsed && group.items.map((item) => (
+                        <tr key={item.id} data-library-item={item.id} className="group border-t border-zinc-800/80 bg-zinc-900/40 hover:bg-zinc-800/50">
+                          <td className="px-3 py-2.5">
+                            <div className="flex min-w-0 items-start gap-2">
+                              <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-zinc-800">{KIND_ICONS[item.kind]}</span>
+                              <div className="min-w-0"><div className="truncate text-sm text-zinc-200">{item.title}</div><div className="mt-0.5 truncate text-[11px] text-zinc-500">{item.summary || item.pathOrUri}</div><div className="mt-1 flex flex-wrap gap-1">{item.tags.map((tag) => <span key={tag} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{tag}</span>)}</div></div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-zinc-400">{kindLabels[item.kind]}</td>
+                          <td className="truncate px-3 py-2.5 text-zinc-400">{item.sourceRoleId || t.library.sourceUpload}</td>
+                          <td className="px-3 py-2.5 text-zinc-500">{new Date(item.updatedAt).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')}</td>
+                          <td className="px-3 py-2.5"><div className="flex items-center gap-1"><IconButton variant="ghost" size="sm" data-testid={`library-edit-${item.id}`} onClick={() => openEdit(item)} title={t.library.edit} aria-label={t.library.edit} icon={<Pencil className="h-3.5 w-3.5" />} /><IconButton variant="danger" size="sm" data-testid={`library-delete-${item.id}`} onClick={() => void handleDelete(item.id)} className={confirmingDelete === item.id ? 'bg-red-500/20 text-red-300' : ''} title={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} aria-label={confirmingDelete === item.id ? t.library.deleteConfirm : t.library.deleteAction} icon={<Trash2 className="h-3.5 w-3.5" />} /></div></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  );
+                })}
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div id="library-brands-panel" role="tabpanel" className="flex-1 min-h-0 overflow-y-auto px-5 py-5">
+          <BrandManager isOpen onClose={closeEmbeddedBrandManager} presentation="inline" />
+        </div>
+      )}
 
       <Modal
         isOpen={editingItem !== null}

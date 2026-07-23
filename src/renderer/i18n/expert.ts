@@ -31,6 +31,9 @@ export const expertZh = {
       leader: '主会话',
       leaderTitle: '回到主对话',
       standbyHint: '待命中，发第一句话就开工',
+      readOnlyHint: '只读视图',
+      processMessages: '过程消息',
+      returnToMain: '返回主会话继续对话',
     },
     workRecord: {
       title: '工作记录',
@@ -126,6 +129,9 @@ export const expertEn: typeof expertZh = {
       leader: 'Main chat',
       leaderTitle: 'Back to the main conversation',
       standbyHint: 'On standby — your first message starts them',
+      readOnlyHint: 'Read-only',
+      processMessages: 'Working messages',
+      returnToMain: 'Back to the main conversation',
     },
     workRecord: {
       title: 'Work record',

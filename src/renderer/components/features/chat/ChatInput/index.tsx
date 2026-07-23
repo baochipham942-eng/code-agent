@@ -43,6 +43,7 @@ import { SkillDraftNotifications } from './SkillDraftCard';
 import { RoleDraftNotifications } from './RoleDraftCard';
 import { TeamRecipeDraftNotifications } from './TeamRecipeDraftCard';
 import { SessionMemberBar } from '../../expert/SessionMemberBar';
+import { useMemberViewStore } from '../../../../stores/memberViewStore';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import { useSkillRecommendations } from './useSkillRecommendations';
@@ -287,6 +288,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const targetAgentIds = useComposerStore((state) => state.targetAgentIds);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const activeAgentId = useAppStore((state) => state.activeAgentId);
+  const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
+  const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const setActiveAgentId = useAppStore((state) => state.setActiveAgentId);
   const hasMessages = useSessionStore((state) => state.messages.length > 0);
   const currentSessionMemoryMode = useSessionStore((state) =>
@@ -734,6 +737,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
         {/* Codex 风格融合：去掉明显边框 + 阴影，只用极弱 bg 区分输入区跟聊天内容 */}
         <div className="relative bg-white/[0.02] backdrop-blur-sm rounded-2xl focus-within:bg-white/[0.04] transition-colors duration-200">
+          {/* 看某位成员时输入框整块封住：人只跟团长说话，不跟成员说话 */}
+          {viewingMemberId && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-zinc-900/80 backdrop-blur-sm">
+              <button /* ds-allow:button: 覆盖层里唯一的返回动作，需盖住整个输入区 */
+                type="button"
+                data-testid="member-return-main"
+                onClick={() => setViewingMemberId(null)}
+                className="rounded-full border border-zinc-600 bg-zinc-800 px-4 py-1.5 text-xs text-zinc-100 hover:border-zinc-400"
+              >
+                ↩ {t.expert.memberBar.returnToMain}
+              </button>
+            </div>
+          )}
           {/* Slash command inline popover */}
           <SlashCommandPopover
             isOpen={showSlashPopover}

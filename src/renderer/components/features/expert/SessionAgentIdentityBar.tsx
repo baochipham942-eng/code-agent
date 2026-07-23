@@ -11,7 +11,7 @@ import { AgentWorkRecordDialog } from '../swarm/AgentWorkRecordDialog';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 
 /** 头像 hover 提示：花名 + 职业，查不到职业就只给花名 */
-export function memberTitle(name: string, profession?: string): string {
+function memberTitle(name: string, profession?: string): string {
   return profession ? `${name} · ${profession}` : name;
 }
 

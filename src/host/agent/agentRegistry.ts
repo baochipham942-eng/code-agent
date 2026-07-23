@@ -28,6 +28,7 @@ import type { CoreAgentConfig } from './hybrid/types';
 import { createLogger } from '../services/infra/logger';
 import type { AgentSource, AgentListEntry } from '../../shared/contract/agentRegistry';
 import { listPersistentRoles } from '../services/roleAssets/roleAssetService';
+import { getBuiltinRoleVisual } from '../services/roleAssets/builtinRoles';
 import { isProjectConfigTrusted } from '../security/folderTrustService';
 
 const logger = createLogger('AgentRegistry');
@@ -164,7 +165,7 @@ export function getBuiltinAgent(id: string): RegisteredAgent | undefined {
  * 顺序：builtin 在前，自定义在后，自定义按 source 排序（user → project）。
  */
 function toListEntry(
-  agent: Pick<CoreAgentConfig, 'id' | 'name' | 'description' | 'model' | 'readonly' | 'tools' | 'inputs' | 'outputs'>,
+  agent: Pick<CoreAgentConfig, 'id' | 'name' | 'description' | 'model' | 'readonly' | 'tools' | 'inputs' | 'outputs' | 'visual'>,
   source: AgentSource,
 ): AgentListEntry {
   return {
@@ -177,6 +178,9 @@ function toListEntry(
     tools: agent.tools,
     inputs: agent.inputs,
     outputs: agent.outputs,
+    // 预设角色的 profession 在 BuiltinRoleVisual 里（不写进 agent.md frontmatter），
+    // 自定义角色写在 frontmatter 由 agentMdLoader 解析进 visual
+    profession: agent.visual?.profession ?? getBuiltinRoleVisual(agent.id)?.profession,
   };
 }
 

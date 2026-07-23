@@ -13,6 +13,8 @@ import {
 export interface InputAddSubmenuItem {
   id: string;
   label: string;
+  /** 跟在 label 后的次要信息（专家的职业）；缺省时不占位、不留分隔符 */
+  sublabel?: string;
   description?: string;
   selected?: boolean;
 }
@@ -100,7 +102,10 @@ export const InputAddSubmenu: React.FC<InputAddSubmenuProps> = ({ scope, items, 
               <button /* ds-allow:button: 二级面板选择行需承载头像、两行文字和选中状态，Button primitive 的居中按钮形态不适配 */ type="button" onClick={() => selectItem(item)} className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left">
                 <RoleInitialAvatar roleId={item.id} name={item.label} className="h-4 w-4 text-[8px]" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs text-zinc-100">{item.label}</span>
+                  <span className="flex min-w-0 items-baseline gap-1">
+                    <span className="shrink-0 text-xs text-zinc-100">{item.label}</span>
+                    {item.sublabel && <span className="min-w-0 truncate text-[10px] text-zinc-500">{item.sublabel}</span>}
+                  </span>
                   <span className="block truncate text-[10px] text-zinc-500">{item.description || t.inputAddMenu.submenuNoDescription}</span>
                 </span>
                 {item.selected && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-300" aria-label={t.inputAddMenu.selectedAria} />}

@@ -33,12 +33,12 @@ function formatNextRun(ts: number, locale: string): string {
 export const SidebarCapabilityZone: React.FC = () => {
   const { t, language } = useI18n();
   const cz = t.sidebar.capabilityZone;
-  const { showCronCenter, setShowCronCenter, setShowLibraryPanel, showExpertPanel, setShowExpertPanel } = useAppStore();
+  const { showCapabilityHub, openCapabilityHub, setShowLibraryPanel } = useAppStore();
   const [recentRoles, setRecentRoles] = useState<RolePanelEntry[]>([]);
 
   useEffect(() => {
     // 专家面板关闭时角色记录可能有变化（新会话/新记忆），跟着刷新
-    if (showExpertPanel) return;
+    if (showCapabilityHub) return;
     let cancelled = false;
     listRoles()
       .then((roles) => {
@@ -48,7 +48,7 @@ export const SidebarCapabilityZone: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [showExpertPanel]);
+  }, [showCapabilityHub]);
   const jobs = useCronStore((state) => state.jobs);
   const stats = useCronStore((state) => state.stats);
   const refresh = useCronStore((state) => state.refresh);
@@ -57,12 +57,12 @@ export const SidebarCapabilityZone: React.FC = () => {
 
   useEffect(() => {
     // 面板关闭时任务/待审大概率有变化，跟着刷新一次
-    if (showCronCenter) return;
+    if (showCapabilityHub) return;
     void refresh();
     sessionAutomationClient.countPendingReview()
       .then((count) => setPendingCount(count ?? 0))
       .catch(() => setPendingCount(0));
-  }, [showCronCenter, refresh]);
+  }, [showCapabilityHub, refresh]);
 
   const runningCount = stats?.jobsByStatus?.running ?? 0;
   const enabledJobs = useMemo(() => jobs.filter((job) => job.enabled), [jobs]);
@@ -91,11 +91,11 @@ export const SidebarCapabilityZone: React.FC = () => {
 
   return (
     <div className="px-2 pb-1 flex-shrink-0" data-testid="sidebar-capability-zone">
-      {/* Batch 3 E2: 专家槽位点亮 */}
+      {/* 能力中心入口 */}
       <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
-        onClick={() => setShowExpertPanel(true)}
-        data-testid="sidebar-capability-expert"
+        onClick={() => openCapabilityHub('experts')}
+        data-testid="sidebar-capability-hub"
         className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
       >
         <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-violet-500/10">
@@ -103,12 +103,12 @@ export const SidebarCapabilityZone: React.FC = () => {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm text-zinc-300 group-hover:text-zinc-100">
-            {cz.expert}
+            {cz.capabilityHub}
           </span>
           <span className="block truncate text-[11px] text-zinc-500">
             {recentRoles.length > 0
               ? cz.expertRecent.replace('{count}', String(recentRoles.length))
-              : cz.expertSubtitle}
+              : cz.capabilityHubSubtitle}
           </span>
         </span>
         <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
@@ -150,7 +150,7 @@ export const SidebarCapabilityZone: React.FC = () => {
       </button>
       <button /* ds-allow:button: 侧栏能力区列表行（两行文本+图标瓦片+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
-        onClick={() => setShowCronCenter(true)}
+        onClick={() => openCapabilityHub('automation')}
         data-testid="sidebar-capability-automation"
         className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
       >

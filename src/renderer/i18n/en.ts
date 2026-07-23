@@ -24,8 +24,10 @@ import { teamEn } from './team';
 import { knowledgeMemoryEn } from './knowledgeMemory';
 import { rolePackEn } from './rolePack';
 import { expertEn } from './expert';
+import { capabilityHubEn } from './capabilityHub';
 
 export const en: Translations = {
+  ...capabilityHubEn,
   // Common
   common: {
     save: 'Save',

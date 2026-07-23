@@ -1,7 +1,7 @@
 // ============================================================================
 // startEditRoleChat — 对话式改已有角色入口的触发器（role-edit-flow，对照 startCreateRoleChat）
 //
-// 设置页 RolesTab 角色详情页的"对话式修改"按钮触发：关闭设置 → 起一个新会话 →
+// 能力中心 · 专家角色详情页的"对话式修改"按钮触发：关闭设置 → 起一个新会话 →
 // 写入待发种子消息。ChatView 在新会话就绪后消费 pendingRoleChatSeed，自动发出可见的
 // 种子消息，触发 edit-role 内置 skill（读现有定义 → 访谈改什么 → propose_role 带
 // editingRoleId 重起草 → 确认卡）。

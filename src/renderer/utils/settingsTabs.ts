@@ -43,6 +43,25 @@ export const SETTINGS_TAB_IDS = [
 
 export type SettingsTab = typeof SETTINGS_TAB_IDS[number];
 
+// 能力中心的顶层 tab（ADR-049）。单一真源放在 tab 注册表这里，appStore 只做 re-export。
+export type CapabilityHubTab =
+  | 'experts'
+  | 'automation'
+  | 'skills'
+  | 'connectors'
+  | 'plugins'
+  | 'inventory';
+
+// 能力中心是这六项唯一的家；SettingsTab id 仍保留给搜索和深链入口。
+export const CAPABILITY_HUB_TAB_BY_SETTINGS_TAB: Partial<Record<SettingsTab, CapabilityHubTab>> = {
+  roles: 'experts',
+  automation: 'automation',
+  skills: 'skills',
+  mcp: 'connectors',
+  plugins: 'plugins',
+  capabilities: 'inventory',
+};
+
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'model';
 
 // Settings IA 收敛（maka⑤批 v2 拍板 2026-07-03）：面向非程序员协作者，

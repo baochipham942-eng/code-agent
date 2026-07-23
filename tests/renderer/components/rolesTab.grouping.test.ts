@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 import type { SkillCategory } from '../../../src/shared/contract/skillRepository';
-import { groupRolesByCategory } from '../../../src/renderer/components/features/settings/tabs/RolesTab';
+import { groupRolesByCategory } from '../../../src/renderer/components/features/expert/roleCategoryGroups';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const labels = {

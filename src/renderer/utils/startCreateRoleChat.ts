@@ -1,7 +1,7 @@
 // ============================================================================
 // startCreateRoleChat — 对话式建角色入口的统一触发器（role-creation-flow §7）
 //
-// 设置页 RolesTab 的"+ 新建角色"按钮与状态栏 AgentSwitcher 的"＋ 新建角色"
+// 能力中心 · 专家的"+ 新建角色"按钮与状态栏 AgentSwitcher 的"＋ 新建角色"
 // 共用这条路径：关闭设置 → 起一个新会话 → 写入待发种子消息。
 // ChatView 在新会话就绪后消费 pendingRoleChatSeed，自动发出可见的种子消息，
 // 触发 create-role 内置 skill（角色架构师访谈 → 起草 → 确认卡）。

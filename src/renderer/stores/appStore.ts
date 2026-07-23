@@ -25,7 +25,8 @@ import {
 } from '@shared/constants';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import { invokeDomain } from '../services/ipcService';
-import type { SettingsTab } from '../utils/settingsTabs';
+import type { SettingsTab, CapabilityHubTab } from '../utils/settingsTabs';
+import { CAPABILITY_HUB_TAB_BY_SETTINGS_TAB } from '../utils/settingsTabs';
 import {
   dropLegacyActiveAgentKey,
   readActiveAgentSessionMap,
@@ -57,6 +58,7 @@ type CloudUIStrings = {
 // 设置页 Tab 类型
 export type { SettingsTab } from '../utils/settingsTabs';
 export type TaskPanelTab = 'monitor' | 'orchestration';
+export type { CapabilityHubTab } from '../utils/settingsTabs';
 
 // Preview tab — one per opened file (kind === 'file') or live dev server (kind === 'liveDev')
 export interface PreviewTab {
@@ -208,7 +210,8 @@ interface AppState {
   showProjectCollaborationPage: boolean;
   projectCollaborationPageProjectId: string | null;
   showActivityPanel: boolean;
-  showCronCenter: boolean;
+  showCapabilityHub: boolean;
+  capabilityHubTab: CapabilityHubTab;
   showTimeCapabilityCenter: boolean;
   showFileExplorer: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
@@ -254,8 +257,7 @@ interface AppState {
   // Batch 2 L3: 资料库全屏页可见性
   showLibraryPanel: boolean;
 
-  // Batch 3 E2: 专家全屏页可见性
-  showExpertPanel: boolean;
+  // 能力中心内的专家详情跳转请求
   /** 从会话身份条直达专家详情；消费后由 ExpertPanel 清空。 */
   requestedExpertRoleId: string | null;
 
@@ -331,7 +333,8 @@ interface AppState {
     request: import('@shared/contract/browserInteraction').InAppValidationRequest | null,
   ) => void;
   setShowActivityPanel: (show: boolean) => void;
-  setShowCronCenter: (show: boolean) => void;
+  setShowCapabilityHub: (show: boolean) => void;
+  openCapabilityHub: (tab: CapabilityHubTab) => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
   setShowFileExplorer: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
@@ -356,7 +359,6 @@ interface AppState {
   setShowLab: (show: boolean) => void;
   setShowKnowledgeMemoryPanel: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
-  setShowExpertPanel: (show: boolean) => void;
   openExpertRoleDetail: (roleId: string) => void;
   clearRequestedExpertRoleDetail: () => void;
   openPreview: (filePath: string) => void;
@@ -410,6 +412,18 @@ interface AppState {
   setContextHealthCollapsed: (collapsed: boolean) => void;
 }
 
+// 会话区互斥全屏页：任一打开时其余全关。新增全屏页只加进这一份表——
+// 原先七个 setter 各手抄一份清单，已经漏过一次（知识记忆面板忘了关 InAppValidation）。
+// 用法：`set({ ...FULLSCREEN_PANELS_CLOSED, showXxx: true })`，自身键放在展开之后才不会被覆盖。
+const FULLSCREEN_PANELS_CLOSED = {
+  showKnowledgeMemoryPanel: false,
+  showLibraryPanel: false,
+  showCapabilityHub: false,
+  showComputerUsePanel: false,
+  showInAppValidationPanel: false,
+  showProjectCollaborationPage: false,
+} as const;
+
 // Default model config — 引用 shared/constants.ts 常量
 const defaultModelConfig: ModelConfig = {
   provider: DEFAULT_PROVIDER,
@@ -444,7 +458,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showProjectCollaborationPage: false,
   projectCollaborationPageProjectId: null,
   showActivityPanel: false,
-  showCronCenter: false,
+  showCapabilityHub: false,
+  capabilityHubTab: 'experts',
   showTimeCapabilityCenter: false,
   showFileExplorer: false,
   voicePasteStatus: 'idle' as const,
@@ -483,7 +498,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   showKnowledgeMemoryPanel: false,
   showLibraryPanel: false,
-  showExpertPanel: false,
   requestedExpertRoleId: null,
 
   // Initial file preview registry
@@ -521,12 +535,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
   setPendingProjectGoalChatSeed: (seed) => set({ pendingProjectGoalChatSeed: seed }),
   setShowPromptManager: (show) => set({ showPromptManager: show }),
-  openSettingsTab: (tab) => set({
-    showSettings: true,
-    settingsInitialTab: tab,
-    settingsMemoryFocus: null,
-    settingsCapabilityFocus: null,
-  }),
+  openSettingsTab: (tab) => {
+    // 能力中心是唯一的家：保留 SettingsTab 深链 id，但统一分流到能力中心。
+    const hubTab = CAPABILITY_HUB_TAB_BY_SETTINGS_TAB[tab];
+    if (hubTab) {
+      get().openCapabilityHub(hubTab);
+      set({ settingsMemoryFocus: null, settingsCapabilityFocus: null });
+      return;
+    }
+    set({
+      showSettings: true,
+      settingsInitialTab: tab,
+      settingsMemoryFocus: null,
+      settingsCapabilityFocus: null,
+    });
+  },
   openMemorySettings: (focus) => set({
     showSettings: true,
     settingsInitialTab: 'memory',
@@ -535,15 +558,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
       : null,
     settingsCapabilityFocus: null,
   }),
-  openCapabilitySettingsTarget: (focus) => set({
-    showSettings: true,
-    settingsInitialTab: focus.kind === 'skill' ? 'skills' : 'mcp',
-    settingsMemoryFocus: null,
-    settingsCapabilityFocus: {
-      ...focus,
-      nonce: nextSettingsCapabilityFocusNonce(),
-    },
-  }),
+  openCapabilitySettingsTarget: (focus) => {
+    get().openCapabilityHub(focus.kind === 'skill' ? 'skills' : 'connectors');
+    set({
+      settingsMemoryFocus: null,
+      settingsCapabilityFocus: {
+        ...focus,
+        nonce: nextSettingsCapabilityFocusNonce(),
+      },
+    });
+  },
   clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
   clearSettingsMemoryFocus: () => set({ settingsMemoryFocus: null }),
   clearSettingsCapabilityFocus: () => set({ settingsCapabilityFocus: null }),
@@ -596,22 +620,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowBrowserSurfacePanel: (show) => set({ showBrowserSurfacePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
-  setShowComputerUsePanel: (show) => set({
-    showComputerUsePanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showExpertPanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
-  }),
-  setShowInAppValidationPanel: (show) => set({
-    showInAppValidationPanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showExpertPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
-  }),
+  setShowComputerUsePanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showComputerUsePanel: show }),
+  setShowInAppValidationPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showInAppValidationPanel: show }),
   openProjectCollaborationPage: (projectId) => set({
+    ...FULLSCREEN_PANELS_CLOSED,
     showProjectCollaborationPage: true,
     projectCollaborationPageProjectId: projectId?.trim() || null,
-    showKnowledgeMemoryPanel: false,
-    showLibraryPanel: false,
-    showExpertPanel: false,
-    showComputerUsePanel: false,
-    showInAppValidationPanel: false,
   }),
   closeProjectCollaborationPage: () => set({
     showProjectCollaborationPage: false,
@@ -619,7 +633,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   }),
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
-  setShowCronCenter: (show) => set({ showCronCenter: show }),
+  setShowCapabilityHub: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showCapabilityHub: show }),
+  openCapabilityHub: (tab) => set({
+    ...FULLSCREEN_PANELS_CLOSED,
+    showCapabilityHub: true,
+    showSettings: false,
+    capabilityHubTab: tab,
+  }),
   setShowTimeCapabilityCenter: (show) => set({ showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {
     const state = get();
@@ -669,26 +689,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowLab: (show) => set({ showLab: show }),
   openDevServerLauncher: () => set({ devServerLauncherOpen: true }),
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
-  setShowKnowledgeMemoryPanel: (show) => set({
-    showKnowledgeMemoryPanel: show,
-    ...(show ? { showLibraryPanel: false, showExpertPanel: false, showComputerUsePanel: false, showProjectCollaborationPage: false } : {}),
-  }),
-  setShowLibraryPanel: (show) => set({
-    showLibraryPanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showExpertPanel: false, showComputerUsePanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
-  }),
-  setShowExpertPanel: (show) => set({
-    showExpertPanel: show,
-    ...(show ? { showKnowledgeMemoryPanel: false, showLibraryPanel: false, showComputerUsePanel: false, showInAppValidationPanel: false, showProjectCollaborationPage: false } : {}),
-  }),
+  setShowKnowledgeMemoryPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showKnowledgeMemoryPanel: show }),
+  setShowLibraryPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showLibraryPanel: show }),
   openExpertRoleDetail: (roleId) => set({
+    ...FULLSCREEN_PANELS_CLOSED,
+    showCapabilityHub: true,
+    capabilityHubTab: 'experts',
     requestedExpertRoleId: roleId,
-    showExpertPanel: true,
-    showKnowledgeMemoryPanel: false,
-    showLibraryPanel: false,
-    showComputerUsePanel: false,
-    showInAppValidationPanel: false,
-    showProjectCollaborationPage: false,
   }),
   clearRequestedExpertRoleDetail: () => set({ requestedExpertRoleId: null }),
 

@@ -23,8 +23,10 @@ import { teamZh } from './team';
 import { knowledgeMemoryZh } from './knowledgeMemory';
 import { rolePackZh } from './rolePack';
 import { expertZh } from './expert';
+import { capabilityHubZh } from './capabilityHub';
 
 export const zh = {
+  ...capabilityHubZh,
   // Common
   common: {
     save: '保存',

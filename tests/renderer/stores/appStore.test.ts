@@ -23,6 +23,8 @@ describe('appStore', () => {
       showAgentTeamPanel: false,
       taskPanelTab: 'monitor',
       showSettings: false,
+      showCapabilityHub: false,
+      capabilityHubTab: 'experts',
       settingsInitialTab: null,
       settingsMemoryFocus: null,
       settingsCapabilityFocus: null,
@@ -120,12 +122,30 @@ describe('appStore', () => {
     });
   });
 
+  it.each([
+    ['roles', 'experts'],
+    ['automation', 'automation'],
+    ['skills', 'skills'],
+    ['mcp', 'connectors'],
+    ['plugins', 'plugins'],
+    ['capabilities', 'inventory'],
+  ] as const)('routes legacy settings deep link %s to capability hub %s', (tab, hubTab) => {
+    useAppStore.getState().openSettingsTab(tab);
+
+    expect(useAppStore.getState()).toMatchObject({
+      showSettings: false,
+      showCapabilityHub: true,
+      capabilityHubTab: hubTab,
+    });
+  });
+
   it('opens capability settings with a typed focus target', () => {
     useAppStore.getState().openCapabilitySettingsTarget({ kind: 'mcp', id: 'github' });
 
     expect(useAppStore.getState()).toMatchObject({
-      showSettings: true,
-      settingsInitialTab: 'mcp',
+      showSettings: false,
+      showCapabilityHub: true,
+      capabilityHubTab: 'connectors',
       settingsMemoryFocus: null,
       settingsCapabilityFocus: {
         kind: 'mcp',
@@ -137,8 +157,9 @@ describe('appStore', () => {
     useAppStore.getState().openCapabilitySettingsTarget({ kind: 'skill', id: 'review-skill' });
 
     expect(useAppStore.getState()).toMatchObject({
-      showSettings: true,
-      settingsInitialTab: 'skills',
+      showSettings: false,
+      showCapabilityHub: true,
+      capabilityHubTab: 'skills',
       settingsCapabilityFocus: {
         kind: 'skill',
         id: 'review-skill',

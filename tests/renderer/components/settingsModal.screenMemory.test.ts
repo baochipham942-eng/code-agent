@@ -97,6 +97,7 @@ describe('SettingsModal screen memory tab visibility', () => {
       'users',
       'invites',
       'controlPlane',
+      'capabilities',
     ]);
     expect(groups[4].tabs.map((tab) => tab.id)).toEqual([
       'update',
@@ -138,7 +139,7 @@ describe('SettingsModal screen memory tab visibility', () => {
       'workspace',
     ]));
     expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).toEqual(expect.not.arrayContaining([
-      'roles', 'automation', 'skills', 'capabilities', 'mcp', 'plugins',
+      'roles', 'automation', 'skills', 'mcp', 'plugins',
     ]));
   });
 });

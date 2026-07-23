@@ -25,6 +25,7 @@ describe('appStore', () => {
       showSettings: false,
       showCapabilityHub: false,
       capabilityHubTab: 'experts',
+      showCronCenter: false,
       settingsInitialTab: null,
       settingsMemoryFocus: null,
       settingsCapabilityFocus: null,
@@ -124,11 +125,9 @@ describe('appStore', () => {
 
   it.each([
     ['roles', 'experts'],
-    ['automation', 'automation'],
     ['skills', 'skills'],
     ['mcp', 'connectors'],
     ['plugins', 'plugins'],
-    ['capabilities', 'inventory'],
   ] as const)('routes legacy settings deep link %s to capability hub %s', (tab, hubTab) => {
     useAppStore.getState().openSettingsTab(tab);
 
@@ -137,6 +136,16 @@ describe('appStore', () => {
       showCapabilityHub: true,
       capabilityHubTab: hubTab,
     });
+  });
+
+  it('opens automation deep links in the standalone cron center', () => {
+    useAppStore.getState().openSettingsTab('automation');
+    expect(useAppStore.getState()).toMatchObject({ showCronCenter: true, showSettings: false });
+  });
+
+  it('keeps capabilities deep links in settings', () => {
+    useAppStore.getState().openSettingsTab('capabilities');
+    expect(useAppStore.getState()).toMatchObject({ showSettings: true, settingsInitialTab: 'capabilities', showCapabilityHub: false });
   });
 
   it('opens capability settings with a typed focus target', () => {

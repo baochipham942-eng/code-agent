@@ -20,7 +20,7 @@ export const AutomationReviewInbox: React.FC = () => {
   const { t } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
-  const setShowCapabilityHub = useAppStore((state) => state.setShowCapabilityHub);
+  const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [items, setItems] = useState<SessionAutomationRecord[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -41,7 +41,7 @@ export const AutomationReviewInbox: React.FC = () => {
       await sessionAutomationClient.markReviewed(record.id);
       if (sessionId) {
         await switchSession(sessionId);
-        setShowCapabilityHub(false);
+        setShowCronCenter(false);
       }
       load();
     } finally {

@@ -116,7 +116,7 @@ function formatAutomationSchedule(schedule: CronScheduleConfig, text: ReturnType
 const BoundAutomationsSection: React.FC<{ jobs?: RoleBoundCronJob[] }> = ({ jobs = [] }) => {
   const { t } = useI18n();
   const text = t.expert.roleDetail;
-  const openCapabilityHub = useAppStore((state) => state.openCapabilityHub);
+  const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   return <SettingsSection title={text.automationsTitle} description={text.automationsDescription}>
     {jobs.length === 0 ? <div data-testid="role-bound-automations-empty" className="rounded-lg border border-dashed border-zinc-700/70 p-4 text-center text-xs text-zinc-500">{text.automationsEmpty}</div> : <div className="space-y-2" data-testid="role-bound-automations-list">
       {jobs.map((job) => {
@@ -127,7 +127,7 @@ const BoundAutomationsSection: React.FC<{ jobs?: RoleBoundCronJob[] }> = ({ jobs
             <div className="flex flex-wrap items-center gap-1.5 text-[11px]"><span className={`rounded px-1.5 py-0.5 ${job.enabled ? "bg-emerald-500/10 text-emerald-300" : "bg-zinc-700/60 text-zinc-400"}`}>{job.enabled ? text.automationStatusEnabled : text.automationStatusDisabled}</span><span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-violet-200">{job.actionType === "agent" ? text.automationTypeAgent : text.automationTypeRoleWake}</span></div>
           </div>
           {job.actionType === "role_wake" ? <p data-testid={`role-bound-automation-managed-${job.id}`} className="mt-2 text-xs text-amber-200/80">{text.automationRoleWakeManaged}</p> : null}
-          <button /* ds-allow:button: 详情行跳转自动化面板需保持紧凑文字动作 */ type="button" onClick={() => openCapabilityHub('automation')} className="mt-2 text-xs text-violet-300 hover:text-violet-200">{text.automationOpenPanel}</button>
+          <button /* ds-allow:button: 详情行跳转自动化面板需保持紧凑文字动作 */ type="button" onClick={() => setShowCronCenter(true)} className="mt-2 text-xs text-violet-300 hover:text-violet-200">{text.automationOpenPanel}</button>
         </div>;
       })}
     </div>}

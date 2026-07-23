@@ -26,7 +26,7 @@ import {
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import { invokeDomain } from '../services/ipcService';
 import type { SettingsTab, CapabilityHubTab } from '../utils/settingsTabs';
-import { CAPABILITY_HUB_TAB_BY_SETTINGS_TAB } from '../utils/settingsTabs';
+import { resolveSettingsDeepLink } from '../utils/settingsTabs';
 import {
   dropLegacyActiveAgentKey,
   readActiveAgentSessionMap,
@@ -212,6 +212,7 @@ interface AppState {
   showActivityPanel: boolean;
   showCapabilityHub: boolean;
   capabilityHubTab: CapabilityHubTab;
+  showCronCenter: boolean;
   showTimeCapabilityCenter: boolean;
   showFileExplorer: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
@@ -335,6 +336,7 @@ interface AppState {
   setShowActivityPanel: (show: boolean) => void;
   setShowCapabilityHub: (show: boolean) => void;
   openCapabilityHub: (tab: CapabilityHubTab) => void;
+  setShowCronCenter: (show: boolean) => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
   setShowFileExplorer: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
@@ -419,6 +421,7 @@ const FULLSCREEN_PANELS_CLOSED = {
   showKnowledgeMemoryPanel: false,
   showLibraryPanel: false,
   showCapabilityHub: false,
+  showCronCenter: false,
   showComputerUsePanel: false,
   showInAppValidationPanel: false,
   showProjectCollaborationPage: false,
@@ -460,6 +463,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showActivityPanel: false,
   showCapabilityHub: false,
   capabilityHubTab: 'experts',
+  showCronCenter: false,
   showTimeCapabilityCenter: false,
   showFileExplorer: false,
   voicePasteStatus: 'idle' as const,
@@ -535,20 +539,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
   setPendingProjectGoalChatSeed: (seed) => set({ pendingProjectGoalChatSeed: seed }),
   setShowPromptManager: (show) => set({ showPromptManager: show }),
+  // 落点判定收在 resolveSettingsDeepLink 一处（ADR-049 §收窄），store 只负责应用
   openSettingsTab: (tab) => {
-    // 能力中心是唯一的家：保留 SettingsTab 深链 id，但统一分流到能力中心。
-    const hubTab = CAPABILITY_HUB_TAB_BY_SETTINGS_TAB[tab];
-    if (hubTab) {
-      get().openCapabilityHub(hubTab);
-      set({ settingsMemoryFocus: null, settingsCapabilityFocus: null });
-      return;
+    const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
+    const target = resolveSettingsDeepLink(tab);
+    if (target.kind === 'cronCenter') {
+      set({ ...FULLSCREEN_PANELS_CLOSED, showCronCenter: true, showSettings: false, ...noFocus });
+    } else if (target.kind === 'capabilityHub') {
+      get().openCapabilityHub(target.tab);
+      set(noFocus);
+    } else {
+      set({ showSettings: true, settingsInitialTab: target.tab, ...noFocus });
     }
-    set({
-      showSettings: true,
-      settingsInitialTab: tab,
-      settingsMemoryFocus: null,
-      settingsCapabilityFocus: null,
-    });
   },
   openMemorySettings: (focus) => set({
     showSettings: true,
@@ -562,10 +564,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     get().openCapabilityHub(focus.kind === 'skill' ? 'skills' : 'connectors');
     set({
       settingsMemoryFocus: null,
-      settingsCapabilityFocus: {
-        ...focus,
-        nonce: nextSettingsCapabilityFocusNonce(),
-      },
+      settingsCapabilityFocus: { ...focus, nonce: nextSettingsCapabilityFocusNonce() },
     });
   },
   clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
@@ -640,6 +639,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     showSettings: false,
     capabilityHubTab: tab,
   }),
+  setShowCronCenter: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showCronCenter: show }),
   setShowTimeCapabilityCenter: (show) => set({ showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {
     const state = get();

@@ -60,7 +60,6 @@ import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, T
 import type { PromptRewindResult } from '@shared/contract/appService';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { useI18n } from '../hooks/useI18n';
-import type { Translations } from '../i18n';
 import { localeForLanguage } from '../utils/i18nTime';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';

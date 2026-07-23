@@ -95,6 +95,8 @@ function definitionBody(definition: string | null): string {
 }
 
 const EquipmentEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: () => void }> = ({ roleId, equipment, onSaved }) => {
+  const { t } = useI18n();
+  const text = t.expert.roleDetail;
   const [draft, setDraft] = useState(() => ({ skills: equipment.skills, tools: equipment.tools, model: equipment.model, maxIterations: equipment.maxIterations }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,10 +110,10 @@ const EquipmentEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved:
   };
   return <SettingsSection title="装备" description="从当前机器真实可用的技能和工具中选择，避免写入无效名称。">
     <div data-testid="role-equipment-editor" className="space-y-4">
-      <label className="block space-y-1 text-xs text-zinc-400"><span>模型档位</span><select data-testid="role-equipment-model" value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value as Equipment["model"] })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200"><option value="fast">fast</option><option value="balanced">balanced</option><option value="powerful">powerful</option></select></label>
-      <label className="block space-y-1 text-xs text-zinc-400"><span>最大迭代次数</span><input data-testid="role-equipment-max-iterations" type="number" min={1} max={200} value={draft.maxIterations} onChange={(event) => setDraft({ ...draft, maxIterations: Math.max(1, Math.min(200, Number(event.target.value) || 1)) })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200" /></label>
-      <fieldset><legend className="mb-1 text-xs text-zinc-400">技能</legend><div className="grid max-h-40 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableSkills.map((skill) => <label key={skill} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.skills.includes(skill)} onChange={() => toggle("skills", skill)} />{skill}</label>)}</div></fieldset>
-      <fieldset><legend className="mb-1 text-xs text-zinc-400">工具</legend><div className="grid max-h-48 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableTools.map((tool) => <label key={tool} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.tools.includes(tool)} onChange={() => toggle("tools", tool)} />{tool}</label>)}</div></fieldset>
+      <label className="block space-y-1 text-xs text-zinc-400"><span>{text.modelTier}</span><select data-testid="role-equipment-model" value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value as Equipment["model"] })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200"><option value="fast">fast</option><option value="balanced">balanced</option><option value="powerful">powerful</option></select></label>
+      <label className="block space-y-1 text-xs text-zinc-400"><span>{text.maxIterations}</span><input data-testid="role-equipment-max-iterations" type="number" min={1} max={200} value={draft.maxIterations} onChange={(event) => setDraft({ ...draft, maxIterations: Math.max(1, Math.min(200, Number(event.target.value) || 1)) })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200" /></label>
+      <fieldset><legend className="mb-1 text-xs text-zinc-400">{text.skills}</legend><div className="grid max-h-40 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableSkills.map((skill) => <label key={skill} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.skills.includes(skill)} onChange={() => toggle("skills", skill)} />{skill}</label>)}</div></fieldset>
+      <fieldset><legend className="mb-1 text-xs text-zinc-400">{text.tools}</legend><div className="grid max-h-48 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableTools.map((tool) => <label key={tool} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.tools.includes(tool)} onChange={() => toggle("tools", tool)} />{tool}</label>)}</div></fieldset>
       <button /* ds-allow:button: 装备表单的紧凑保存按钮，Button primitive 会改变布局 */ data-testid="role-equipment-save" type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50">{busy ? "保存中…" : "保存装备"}</button>
       {error ? <div className="text-xs text-red-400">{error}</div> : null}
     </div>
@@ -119,6 +121,8 @@ const EquipmentEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved:
 };
 
 const DefinitionEditor: React.FC<{ roleId: string; definition: string | null; restore?: RolePanelDetail["restore"]; onSaved: () => void }> = ({ roleId, definition, restore, onSaved }) => {
+  const { t } = useI18n();
+  const text = t.expert.roleDetail;
   const [body, setBody] = useState(() => definitionBody(definition));
   const [busy, setBusy] = useState(false);
   const [confirmingRestore, setConfirmingRestore] = useState(false);
@@ -129,8 +133,8 @@ const DefinitionEditor: React.FC<{ roleId: string; definition: string | null; re
   return <SettingsSection title="人设正文" description="直接编辑专家的人设；保存只会替换正文，不会改动 frontmatter。">
     <div data-testid="role-definition-editor" className="space-y-3">
       <textarea data-testid="role-definition-body" value={body} onChange={(event) => setBody(event.target.value)} rows={14} disabled={!definition} className="w-full rounded border border-zinc-700 bg-zinc-950/70 p-2 font-mono text-xs text-zinc-200 focus:outline-none" />
-      <div className="flex flex-wrap items-center gap-2"><button /* ds-allow:button: 人设正文保存的紧凑按钮，primitive 会改变布局 */ data-testid="role-definition-save" type="button" disabled={busy || !definition} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50">保存正文</button>
-        {restore ? (confirmingRestore ? <><span className="text-xs text-amber-200">会覆盖当前定义，不影响角色记忆与履历。</span><button /* ds-allow:button: 还原确认需紧凑危险操作样式 */ data-testid="role-restore-confirm" type="button" disabled={busy || !restore.available} onClick={() => void restoreFactory()} className="rounded bg-red-900/50 px-2 py-1 text-xs text-red-200 disabled:opacity-50">确认还原</button><button /* ds-allow:button: 还原取消为紧凑文本按钮 */ type="button" onClick={() => setConfirmingRestore(false)} className="px-2 py-1 text-xs text-zinc-400">取消</button></> : <button /* ds-allow:button: 还原出厂是紧凑破坏性操作，primitive 会改变布局 */ data-testid="role-restore-factory" type="button" disabled={!restore.available || busy} title={restore.disabledReason} onClick={() => setConfirmingRestore(true)} className="rounded border border-amber-700/60 px-3 py-1.5 text-xs text-amber-200 disabled:opacity-50">还原出厂</button>) : null}
+      <div className="flex flex-wrap items-center gap-2"><button /* ds-allow:button: 人设正文保存的紧凑按钮，primitive 会改变布局 */ data-testid="role-definition-save" type="button" disabled={busy || !definition} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50">{text.saveDefinition}</button>
+        {restore ? (confirmingRestore ? <><span className="text-xs text-amber-200">{text.restoreWarning}</span><button /* ds-allow:button: 还原确认需紧凑危险操作样式 */ data-testid="role-restore-confirm" type="button" disabled={busy || !restore.available} onClick={() => void restoreFactory()} className="rounded bg-red-900/50 px-2 py-1 text-xs text-red-200 disabled:opacity-50">{text.confirmRestore}</button><button /* ds-allow:button: 还原取消为紧凑文本按钮 */ type="button" onClick={() => setConfirmingRestore(false)} className="px-2 py-1 text-xs text-zinc-400">{text.cancel}</button></> : <button /* ds-allow:button: 还原出厂是紧凑破坏性操作，primitive 会改变布局 */ data-testid="role-restore-factory" type="button" disabled={!restore.available || busy} title={restore.disabledReason} onClick={() => setConfirmingRestore(true)} className="rounded border border-amber-700/60 px-3 py-1.5 text-xs text-amber-200 disabled:opacity-50">{text.restoreFactory}</button>) : null}
       </div>
       {error ? <div className="text-xs text-red-400">{error}</div> : null}
     </div>
@@ -446,6 +450,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
 }) => {
   const { t } = useI18n();
   const roleText = t.settings.roles;
+  const expertText = t.expert;
   const [detail, setDetail] = useState<RolePanelDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -499,7 +504,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({
       {detail ? (
         <>
           <VisualEditor roleId={roleId} detail={detail} onSaved={() => { void loadDetail(); onVisualUpdated?.(); }} />
-          {detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">你已改过这个专家，后续更新不会覆盖你的改动。</p> : null}
+          {detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{expertText.visual.builtinNotice}</p> : null}
           {detail.equipment ? <EquipmentEditor roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           <DefinitionEditor roleId={roleId} definition={detail.definition} restore={detail.restore} onSaved={loadDetail} />
           <SettingsSection

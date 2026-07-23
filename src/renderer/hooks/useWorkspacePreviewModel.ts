@@ -3,6 +3,7 @@ import type { ArtifactIssue, WorkspacePreviewItem, WorkspacePreviewQuality } fro
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useCurrentTurnArtifactOwnership } from './useCurrentTurnArtifactOwnership';
+import type { CurrentTurnArtifactOwnershipView } from './useCurrentTurnArtifactOwnership';
 import { buildWorkspacePreviewItems } from '../utils/workspacePreview';
 import { getArtifactIssuesByArtifactId } from '../services/projectClient';
 
@@ -63,7 +64,12 @@ function mergeRepositoryIssueQuality(
   });
 }
 
-export function useWorkspacePreviewModel() {
+export interface WorkspacePreviewModelState {
+  items: WorkspacePreviewItem[];
+  currentTurnArtifacts: CurrentTurnArtifactOwnershipView | null;
+}
+
+export function useWorkspacePreviewModelState(): WorkspacePreviewModelState {
   const messages = useSessionStore((state) => state.messages);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
@@ -109,7 +115,7 @@ export function useWorkspacePreviewModel() {
     };
   }, [artifactIds]);
 
-  return useMemo(() => {
+  const items = useMemo(() => {
     const items = mergeRepositoryIssueQuality(baseItems, artifactIssues);
     if (!lockedBrief) return items;
     // 当前会话已锁定 brief 时，把它复制到所有非 question_form artifact 的 designBrief 上，
@@ -120,4 +126,13 @@ export function useWorkspacePreviewModel() {
         : { ...item, designBrief: lockedBrief },
     );
   }, [artifactIssues, baseItems, lockedBrief]);
+
+  return useMemo(
+    () => ({ items, currentTurnArtifacts }),
+    [currentTurnArtifacts, items],
+  );
+}
+
+export function useWorkspacePreviewModel(): WorkspacePreviewItem[] {
+  return useWorkspacePreviewModelState().items;
 }

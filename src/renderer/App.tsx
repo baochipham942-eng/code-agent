@@ -53,6 +53,7 @@ import { useTaskSync } from './hooks/useTaskSync';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
+import { useArtifactSurfaceIntent } from './hooks/useArtifactSurfaceIntent';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
 import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
@@ -77,8 +78,9 @@ import { signalRendererReady, RENDERER_READY_SETTLE_CAP_MS } from './utils/rende
 import { whenInitialSessionStateSettled } from './stores/sessionStore';
 import {
   shouldActivateSwarmScopeFromRoot,
-  shouldOpenSwarmWorkbench,
+  isSwarmSurfaceArtifact,
 } from './utils/swarmEventRouting';
+import { openSurfaceForArtifact } from './services/surfaceIntentDispatcher';
 
 const logger = createLogger('App');
 const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1180;
@@ -278,6 +280,7 @@ export const App: React.FC = () => {
   useInAppValidationBridge();
   // 2b：监听 agent（ProposeSlidesOps 等）生成文档型产物后请求打开预览 tab（按当前会话过滤）。
   useOpenPreviewBridge();
+  useArtifactSurfaceIntent();
   useRendererBundleAutoReload();
 
   // 全局快捷键（命令面板、设置、会话导航等；compact 只有用户显式绑定后才会触发）
@@ -736,9 +739,11 @@ export const App: React.FC = () => {
           selectedSessionId,
           swarmState,
         );
-        if (shouldOpenSwarmWorkbench(event, selectedSessionId)) {
-          openWorkbenchTab('task', { source: 'auto' });
-          setTaskPanelTab('monitor');
+        if (isSwarmSurfaceArtifact(event)) {
+          openSurfaceForArtifact({
+            artifact: { kind: 'swarm-monitor' },
+            artifactSessionId: event.sessionId,
+          });
         }
         swarmState.handleEvent(event);
         if (shouldActivateScope) {
@@ -750,7 +755,7 @@ export const App: React.FC = () => {
     return () => {
       unsubscribe?.();
     };
-  }, [openWorkbenchTab, setTaskPanelTab]);
+  }, []);
 
   const hasOpenSessionTask = sessionTasks.some((task) =>
     task.status === 'pending' || task.status === 'in_progress'

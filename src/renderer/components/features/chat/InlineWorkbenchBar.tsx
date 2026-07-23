@@ -7,6 +7,7 @@ import { GapCard } from '../capability/GapCard';
 import { useWorkbenchCapabilityRegistry } from '../../../hooks/useWorkbenchCapabilityRegistry';
 import { useWorkbenchCapabilityQuickActionRunner } from '../../../hooks/useWorkbenchCapabilityQuickActionRunner';
 import { useWorkbenchInsights } from '../../../hooks/useWorkbenchInsights';
+import { useI18n } from '../../../hooks/useI18n';
 import {
   WorkbenchCapabilityDetailButton,
   WorkbenchPill,
@@ -86,6 +87,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   previewTargetAgentIds: _previewTargetAgentIds,
   onDirectTargetIdsChange: _onDirectTargetIdsChange,
 }) => {
+  const { t } = useI18n();
   const selectedSkillIds = useComposerStore((state) => state.selectedSkillIds);
   const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
   const selectedConnectorIds = useComposerStore((state) => state.selectedConnectorIds);
@@ -122,11 +124,6 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     () => registryItems.filter((capability) => capability.selected),
     [registryItems],
   );
-  const selectedPreviewCapabilities = useMemo(
-    () => sortCapabilities(selectedCapabilities).slice(0, 8),
-    [selectedCapabilities],
-  );
-  const selectedPreviewOverflowCount = Math.max(0, selectedCapabilities.length - selectedPreviewCapabilities.length);
   const blockedCapabilities = selectedCapabilities
     .map((capability) => ({
       capability,
@@ -169,16 +166,6 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
     setTurnCapabilityScopeMode('manual');
     setSelectedMcpServerIds(toggleId(selectedMcpServerIds, serverId));
   }, [selectedMcpServerIds, setSelectedMcpServerIds, setTurnCapabilityScopeMode]);
-
-  const toggleCapability = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
-    if (capability.kind === 'skill') {
-      toggleSkill(capability.id);
-    } else if (capability.kind === 'connector') {
-      toggleConnector(capability.id);
-    } else if (capability.kind === 'mcp') {
-      toggleMcpServer(capability.id);
-    }
-  }, [toggleConnector, toggleMcpServer, toggleSkill]);
 
   const openCapabilitySheet = useCallback((capability: WorkbenchCapabilityRegistryItem) => {
     setActiveSheetTarget({
@@ -223,9 +210,9 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
 
   // showCapabilitySummary 已保证只在 Manual / 已手动选能力时为真，这里直接给有意义的已选/可选计数。
   const summaryParts: string[] = [];
-  if (shouldShowSkills) summaryParts.push(`Skills ${selectedSkillCount}/${skills.length}`);
-  if (shouldShowConnectors) summaryParts.push(`Connectors ${selectedConnectorCount}/${connectors.length}`);
-  if (shouldShowMcpServers) summaryParts.push(`MCP ${selectedMcpServerCount}/${mcpServers.length}`);
+  if (shouldShowSkills) summaryParts.push(t.inlineWorkbenchBar.skillsSummary.replace('{selected}', String(selectedSkillCount)).replace('{total}', String(skills.length)));
+  if (shouldShowConnectors) summaryParts.push(t.inlineWorkbenchBar.connectorsSummary.replace('{selected}', String(selectedConnectorCount)).replace('{total}', String(connectors.length)));
+  if (shouldShowMcpServers) summaryParts.push(t.inlineWorkbenchBar.mcpSummary.replace('{selected}', String(selectedMcpServerCount)).replace('{total}', String(mcpServers.length)));
   const summaryText = summaryParts.join(' · ');
 
   return (
@@ -242,7 +229,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
               {gridExpanded
                 ? <ChevronDown className="h-3 w-3 shrink-0" />
                 : <ChevronRight className="h-3 w-3 shrink-0" />}
-              <span className="truncate">{summaryText || 'Capabilities'}</span>
+              <span className="truncate">{summaryText || t.inlineWorkbenchBar.capabilities}</span>
             </button>
             <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border-muted bg-zinc-950/40">
               <button
@@ -253,9 +240,9 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
                     ? 'bg-zinc-700 text-zinc-100'
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
-                title="系统自动选择可用能力"
+                title={t.inlineWorkbenchBar.autoTitle}
               >
-                Auto
+                {t.inlineWorkbenchBar.auto}
               </button>
               <button
                 type="button"
@@ -265,32 +252,12 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
                     ? 'bg-zinc-700 text-zinc-100'
                     : 'text-zinc-500 hover:text-zinc-300'
                 }`}
-                title="手动限定本轮能力范围"
+                title={t.inlineWorkbenchBar.manualTitle}
               >
-                Manual
+                {t.inlineWorkbenchBar.manual}
               </button>
             </div>
           </div>
-
-          {selectedPreviewCapabilities.length > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {selectedPreviewCapabilities.map((capability) => (
-                <WorkbenchSelectablePill
-                  key={`selected:${capability.key}`}
-                  onClick={() => toggleCapability(capability)}
-                  tone={getCapabilityTone(capability)}
-                  selected
-                  dimmed={!capability.available}
-                  title={`${getWorkbenchCapabilityTitle(capability, { locale: 'zh' })}\n点击移出本轮范围`}
-                >
-                  {capability.label}
-                </WorkbenchSelectablePill>
-              ))}
-              {selectedPreviewOverflowCount > 0 && (
-                <span className="text-[11px] text-zinc-500">+{selectedPreviewOverflowCount}</span>
-              )}
-            </div>
-          )}
 
           {gridExpanded && (
             <div className="mt-2 space-y-2">
@@ -322,7 +289,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
                         </div>
                       ))
                     ) : (
-                      <span className="text-[11px] text-zinc-500">当前会话还没有 mounted skills。</span>
+                      <span className="text-[11px] text-zinc-500">{t.inlineWorkbenchBar.noMountedSkills}</span>
                     )}
                     {skillOverflowCount > 0 && (
                       <span className="text-[11px] text-zinc-500">+{skillOverflowCount}</span>

@@ -146,27 +146,6 @@ export function buildLeadingSlashCommandValue(
   return baseInput ? `/${command} ${baseInput} ` : `/${command} `;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-export function buildSkillToken(skillName: string): string {
-  return `<${skillName}>`;
-}
-
-export function buildInlineSkillTokenValue(value: string, skillName: string): string {
-  const token = buildSkillToken(skillName);
-  const match = getTrailingSlashToken(value);
-  const baseInput = match ? value.slice(0, match.start).trimEnd() : value.trimEnd();
-  const tokenBoundary = new RegExp(`(?:^|\\s)${escapeRegExp(token)}(?=\\s|$)`);
-
-  if (tokenBoundary.test(baseInput)) {
-    return baseInput.endsWith(' ') ? baseInput : `${baseInput} `;
-  }
-
-  return baseInput ? `${baseInput} ${token} ` : `${token} `;
-}
-
 function normalize(value: string | undefined): string {
   return (value || '').trim().toLowerCase();
 }

@@ -965,6 +965,22 @@ export const en: Translations = {
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）
 
   // Command palette (Cmd/Ctrl+K)
+  selectedCapabilityChips: {
+    removeAria: 'Remove capability: {name}',
+  },
+
+  inlineWorkbenchBar: {
+    skillsSummary: 'Skills {selected}/{total}',
+    connectorsSummary: 'Connectors {selected}/{total}',
+    mcpSummary: 'MCP servers {selected}/{total}',
+    capabilities: 'Capabilities',
+    auto: 'Auto',
+    manual: 'Manual',
+    autoTitle: 'Automatically select available capabilities',
+    manualTitle: 'Manually limit capabilities for this turn',
+    noMountedSkills: 'No skills are mounted for this session yet.',
+  },
+
   commandPalette: {
     ariaLabel: 'Command palette',
     searchPlaceholder: 'Search commands…',

@@ -344,6 +344,8 @@ export const zh = {
     historyPanelTitle: '设计历史',
     historyPanelEmpty: '生成或局部重绘后，每一步会作为可命名、可回滚的版本出现在这里',
     historyTotalSpend: '累计花费',
+    historyExpand: '展开设计历史',
+    historyCollapse: '收起设计历史',
     historyReferenceGroup: '参考图',
     historyStepGenerate: '生成',
     historyStepEdit: '局部重绘',

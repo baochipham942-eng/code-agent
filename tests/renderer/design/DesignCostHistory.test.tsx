@@ -17,12 +17,29 @@ const nodes: CanvasImageNode[] = [
   N({ id: 'node-C', createdAt: 300, parentId: 'node-A', prompt: '顶部加月/年切换', costCny: 0.14 }),
 ];
 
-const render = (ns: CanvasImageNode[]): string =>
+const render = (ns: CanvasImageNode[], collapsed = false): string =>
   renderToStaticMarkup(
-    React.createElement(DesignCostHistoryView, { nodes: ns, onSetChosen: () => {}, onRename: () => {} }),
+    React.createElement(DesignCostHistoryView, {
+      nodes: ns,
+      onSetChosen: () => {},
+      onRename: () => {},
+      collapsed,
+    }),
   );
 
 describe('DesignCostHistoryView', () => {
+  it('收起时只渲染标题与累计花费，不渲染时间线或参考图分组', () => {
+    const withReference: CanvasImageNode[] = [
+      ...nodes,
+      N({ id: 'ref1', createdAt: 50, role: 'reference', label: '参考截图甲' }),
+    ];
+    const html = render(withReference, true);
+    expect(html).toContain('设计历史');
+    expect(html).toContain('¥0.42');
+    expect(html).not.toContain('定价页骨架');
+    expect(html).not.toContain('参考图');
+  });
+
   it('展示每步命名、op、单次成本与累计花费（含已淘汰的真实花费）', () => {
     const html = render(nodes);
     expect(html).toContain('定价页骨架');

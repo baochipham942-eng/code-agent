@@ -647,9 +647,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         )}
         {seedComposer && (
           <SeedComposerCard
+            kind={seedComposer.kind}
             title={seedComposer.kind === 'team' ? t.seedComposer.teamTitle : t.seedComposer.roleTitle}
             placeholder={seedComposer.kind === 'team' ? t.seedComposer.teamPlaceholder : t.seedComposer.rolePlaceholder}
-            hint={agentEntries.length > 0 ? t.seedComposer.availableExpertsHint.replace('{count}', String(agentEntries.length)) : undefined}
             initialText={seedComposer.initialText}
             submitting={submittingSeedComposer}
             onSubmit={async (text) => {

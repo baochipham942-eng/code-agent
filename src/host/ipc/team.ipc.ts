@@ -29,6 +29,8 @@ export function registerTeamHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(IPC_DOMAINS.TEAM, async (_event, request: IPCRequest): Promise<IPCResponse> => {
     try {
       switch (request.action) {
+        case 'knownRoles':
+          return { success: true, data: await getTeamRecipeService().knownRoles() };
         case 'confirmDraft': {
           const { draftId } = (request.payload ?? {}) as DraftIdPayload;
           if (!draftId) return invalid('draftId is required');

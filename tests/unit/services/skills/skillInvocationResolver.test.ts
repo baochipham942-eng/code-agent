@@ -21,6 +21,12 @@ function skill(overrides: Partial<ParsedSkill> & Pick<ParsedSkill, 'name' | 'des
 }
 
 describe('skillInvocationResolver', () => {
+  it('建团队和建改角色都可查询权威专家名册', () => {
+    for (const name of ['create-team', 'create-role', 'edit-role']) {
+      expect(BUILTIN_SKILLS.find((skill) => skill.name === name)?.allowedTools).toContain('list_experts');
+    }
+  });
+
   // role-edit-flow 回归护栏：对话式改角色的种子 `/edit-role <roleId>` 必须确定性命中
   // edit-role 内置 skill（否则模型不进上下文 → propose_role 不可见 → 无确认卡，正是验收暴露的根因）。
   it('对话式改角色种子 /edit-role <roleId> 确定性命中 edit-role 内置 skill 并透传 roleId', () => {

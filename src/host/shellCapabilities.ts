@@ -368,6 +368,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.TEAM]: [
     'confirmDraft',
+    'knownRoles',
     'launchRecipe',
     'listDrafts',
     'recipeCreate',

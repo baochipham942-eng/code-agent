@@ -8,10 +8,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const seedComposerMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  invokeDomain: vi.fn(),
   toast: { info: vi.fn(), success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock('../../../src/renderer/services/ipcService', () => ({ invoke: seedComposerMocks.invoke }));
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  invoke: seedComposerMocks.invoke,
+  invokeDomain: seedComposerMocks.invokeDomain,
+  default: { invoke: seedComposerMocks.invoke, invokeDomain: seedComposerMocks.invokeDomain },
+}));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({ toast: seedComposerMocks.toast }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -62,7 +67,10 @@ function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatI
 }
 
 describe('建团队 / 建角色确认卡', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    seedComposerMocks.invokeDomain.mockResolvedValue([{ roleId: '研究员' }]);
+  });
   afterEach(() => cleanup());
 
   it('只有裸指令才认作"要弹卡"，带了内容的照常走发送', () => {
@@ -115,9 +123,9 @@ describe('建团队 / 建角色确认卡', () => {
     const onSubmit = vi.fn();
     render(
       <SeedComposerCard
+        kind="team"
         title="建一个团队"
         placeholder="这个团队要做什么？"
-        hint="本机现有 8 位专家可用"
         submitting={false}
         onSubmit={onSubmit}
         onDismiss={vi.fn()}
@@ -136,22 +144,25 @@ describe('建团队 / 建角色确认卡', () => {
     expect(onSubmit).toHaveBeenCalledWith('每周做行业简报');
   });
 
-  it('卡片：hint 传了就显示（取不到专家数时上层不传，整行不出现）', () => {
+  it('卡片：只展示 IPC 返回的非空权威专家数', async () => {
+    seedComposerMocks.invokeDomain.mockResolvedValue([{ roleId: '研究员' }, { roleId: '分析师' }]);
     const { unmount } = render(
       <SeedComposerCard
+        kind="team"
         title="建一个团队"
         placeholder="这个团队要做什么？"
-        hint="本机现有 8 位专家可用"
         submitting={false}
         onSubmit={vi.fn()}
         onDismiss={vi.fn()}
       />,
     );
-    expect(screen.getByText('本机现有 8 位专家可用')).toBeTruthy();
+    expect(await screen.findByText('本机现有 2 位专家可用')).toBeTruthy();
     unmount();
 
+    seedComposerMocks.invokeDomain.mockResolvedValue([]);
     render(
       <SeedComposerCard
+        kind="team"
         title="建一个团队"
         placeholder="这个团队要做什么？"
         submitting={false}
@@ -159,6 +170,23 @@ describe('建团队 / 建角色确认卡', () => {
         onDismiss={vi.fn()}
       />,
     );
-    expect(screen.queryByText('本机现有 8 位专家可用')).toBeNull();
+    await act(async () => {});
+    expect(screen.queryByText(/本机现有 .* 位专家可用/)).toBeNull();
+  });
+
+  it('卡片：专家 IPC 失败时不显示数量', async () => {
+    seedComposerMocks.invokeDomain.mockRejectedValue(new Error('IPC failed'));
+    render(
+      <SeedComposerCard
+        kind="team"
+        title="建一个团队"
+        placeholder="这个团队要做什么？"
+        submitting={false}
+        onSubmit={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+    await act(async () => {});
+    expect(screen.queryByText(/本机现有 .* 位专家可用/)).toBeNull();
   });
 });

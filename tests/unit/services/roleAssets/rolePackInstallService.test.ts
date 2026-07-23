@@ -37,10 +37,12 @@ vi.mock('../../../../src/host/services/roleAssets/roleAssetService', () => ({
 }));
 
 import {
+  getInstalledRolePackState,
   installRolePack,
   retryMissingSkills,
   uninstallRolePack,
 } from '../../../../src/host/services/roleAssets/rolePackInstallService';
+import { parseAgentMdVisual } from '../../../../src/host/agent/hybrid/agentMdLoader';
 
 const validAgent = (id: string, skills: string[]) => `---\nname: ${id}\nskills: [${skills.join(', ')}]\n---\nrole`;
 const entry = (id = '云专家', skills = ['s1', 's2', 's3']) => ({
@@ -86,7 +88,23 @@ describe('rolePackInstallService', () => {
     });
     const result = await installRolePack(pack.roleId);
     expect(result).toMatchObject({ success: true, installState: 'degraded', missingSkills: ['s3'] });
-    await expect(fs.readFile(path.join(state.configDir, 'agents', `${pack.roleId}.md`), 'utf8')).resolves.toBe(pack.agentMd);
+    const saved = await fs.readFile(path.join(state.configDir, 'agents', `${pack.roleId}.md`), 'utf8');
+    expect(parseAgentMdVisual(saved)).toEqual(pack.visual);
+  });
+
+  it('persists every cloud role visual field into agent frontmatter', async () => {
+    const pack = entry('岚析', ['s1']);
+    pack.visual = {
+      icon: 'ChartNoAxesCombined', category: 'research', displayName: '岚析', profession: '增长分析师',
+      tags: ['增长', 'SEO', '留存'], quickPrompts: ['分析本周增长变化', '找出留存下滑原因'],
+    };
+    state.entries.set(pack.roleId, pack); state.skills.set('s1', { name: 's1' });
+    state.install.mockResolvedValue({ installedSkills: ['s1'] });
+
+    await installRolePack(pack.roleId);
+
+    const saved = await fs.readFile(path.join(state.configDir, 'agents', `${pack.roleId}.md`), 'utf8');
+    expect(parseAgentMdVisual(saved)).toEqual(pack.visual);
   });
 
   it('仅 skill 不可解析问题时按 code 退化安装，不拒绝整包', async () => {
@@ -123,10 +141,10 @@ describe('rolePackInstallService', () => {
     state.install.mockResolvedValue({ installedSkills: ['s1'] });
     await installRolePack(pack.roleId);
     const definitionPath = path.join(state.configDir, 'agents', `${pack.roleId}.md`);
-    expect(await fs.readFile(definitionPath, 'utf8')).toBe(pack.agentMd);
+    expect(parseAgentMdVisual(await fs.readFile(definitionPath, 'utf8'))).toEqual(pack.visual);
     pack.agentMd = validAgent(pack.roleId, ['s1']) + '\nupgraded'; pack.packVersion = '2.0.0';
     await installRolePack(pack.roleId);
-    expect(await fs.readFile(definitionPath, 'utf8')).toBe(pack.agentMd);
+    expect(parseAgentMdVisual(await fs.readFile(definitionPath, 'utf8'))).toEqual(pack.visual);
     await fs.writeFile(definitionPath, 'user edit', 'utf8');
     pack.agentMd += '\nnew';
     const result = await installRolePack(pack.roleId);
@@ -150,5 +168,15 @@ describe('rolePackInstallService', () => {
     const result = await installRolePack('数据分析师');
     expect(result).toMatchObject({ success: false });
     expect(state.install).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a newly installed visual-enriched definition as locally modified', async () => {
+    const pack = entry('视觉哈希', ['s1']);
+    state.entries.set(pack.roleId, pack); state.skills.set('s1', { name: 's1' });
+    state.install.mockResolvedValue({ installedSkills: ['s1'] });
+
+    await installRolePack(pack.roleId);
+
+    await expect(getInstalledRolePackState(pack.roleId)).resolves.toEqual({ locallyModified: false });
   });
 });

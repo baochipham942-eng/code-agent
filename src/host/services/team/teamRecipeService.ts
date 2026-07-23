@@ -10,6 +10,8 @@ export interface KnownTeamRole {
   roleId: string;
   displayName: string;
   description: string;
+  /** 职业（如「内容主理人」）；名册里跟在花名后，让模型和用户都知道这人是干什么的 */
+  profession?: string;
 }
 
 export class TeamRecipeService {
@@ -42,6 +44,7 @@ export class TeamRecipeService {
           roleId,
           displayName: agent?.name || visual?.displayName || roleId,
           description: agent?.description || '',
+          profession: agent?.profession ?? visual?.profession,
         };
       });
   }

@@ -8,6 +8,12 @@ import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord, SwarmRunStatus } from '@shared/contract/swarmTrace';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { AgentWorkRecordDialog } from '../swarm/AgentWorkRecordDialog';
+import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
+
+/** 头像 hover 提示：花名 + 职业，查不到职业就只给花名 */
+function memberTitle(name: string, profession?: string): string {
+  return profession ? `${name} · ${profession}` : name;
+}
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
   return {
@@ -37,6 +43,7 @@ export const SessionAgentIdentityBar: React.FC<{ sessionId: string | null }> = (
   const [persistedRunStatus, setPersistedRunStatus] = useState<SwarmRunStatus | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<SwarmAgentState | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<SwarmRunAgentRecord | null>(null);
+  const agentEntries = useAgentRegistryStore((state) => state.entries);
 
   const teamAgents = swarmSessionId === sessionId && agents.length > 1 ? agents : [];
   const hasRealtimeTeam = teamAgents.length > 0;
@@ -84,7 +91,7 @@ export const SessionAgentIdentityBar: React.FC<{ sessionId: string | null }> = (
         <div data-testid="session-team-identity" className="mx-4 mt-2 flex items-center gap-2 self-start rounded-lg border border-violet-900/60 bg-violet-950/20 px-2.5 py-1.5">
           <span className="text-xs font-medium text-zinc-100">{sessionTitle || t.expert.sessionIdentity.team}</span>
           <span className="flex -space-x-1.5">
-            {displayedAgents.map((agent, index) => <button /* ds-allow:button: 团队身份条头像需提供稳定的成员工作记录入口 */ key={agent.id} type="button" onClick={() => openWorkRecord(agent, hasRealtimeTeam ? null : persistedAgents[index])} className="relative rounded-full transition-transform hover:z-10 hover:scale-110" title={agent.name || agent.role}><RoleInitialAvatar roleId={agent.role || agent.id} name={agent.name || agent.role} className="h-6 w-6 border border-zinc-900 text-[10px]" /></button>)}
+            {displayedAgents.map((agent, index) => <button /* ds-allow:button: 团队身份条头像需提供稳定的成员工作记录入口 */ key={agent.id} type="button" onClick={() => openWorkRecord(agent, hasRealtimeTeam ? null : persistedAgents[index])} className="relative rounded-full transition-transform hover:z-10 hover:scale-110" title={memberTitle(agent.name || agent.role, agentEntries.find((entry) => entry.id === (agent.role || agent.id))?.profession)}><RoleInitialAvatar roleId={agent.role || agent.id} name={agent.name || agent.role} className="h-6 w-6 border border-zinc-900 text-[10px]" /></button>)}
           </span>
           <span className="text-[11px] text-zinc-400">{completed ? t.expert.sessionIdentity.completed : t.expert.sessionIdentity.working}</span>
         </div>

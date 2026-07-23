@@ -4,6 +4,7 @@ import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
+import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
 import { RoleInitialAvatar } from '../expert/RoleInitialAvatar';
 import { Modal } from '../../primitives/Modal';
 
@@ -22,6 +23,10 @@ export const AgentWorkRecordDialog: React.FC<{
 }> = ({ agent, record, loading = false, onBack }) => {
   const { t } = useI18n();
   const openWorkspacePreview = useAppStore((state) => state.openWorkspacePreview);
+  // 副标题优先显示职业（「内容主理人」比裸角色 id 更像人话），查不到才回落角色 id
+  const roleId = agent.role || agent.id;
+  const subtitle = useAgentRegistryStore((state) => state.entries).find((entry) => entry.id === roleId)?.profession
+    ?? agent.role;
   const output = record?.finalOutput ?? agent.finalOutput;
   const task = record?.dispatchedTask ?? agent.dispatchedTask;
   const tokens = record ? record.tokensIn + record.tokensOut : (agent.tokenUsage?.input ?? 0) + (agent.tokenUsage?.output ?? 0);
@@ -33,8 +38,8 @@ export const AgentWorkRecordDialog: React.FC<{
     <Modal isOpen onClose={onBack} title={t.expert.workRecord.title} size="xl" className="max-h-[85vh]" footer={<button /* ds-allow:button: subagent 工作记录的唯一底部返回动作 */ type="button" onClick={onBack} className="rounded-md bg-zinc-800 px-3 py-1.5 text-xs text-zinc-100 hover:bg-zinc-700">{t.expert.workRecord.backToChat}</button>}>
       <section data-testid="agent-work-record">
         <header className="flex items-center gap-3 border-b border-zinc-800 px-1 pb-3">
-          <RoleInitialAvatar roleId={agent.role || agent.id} name={agent.name || agent.role} />
-          <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold text-zinc-100">{agent.name || agent.id}</h2><p className="truncate text-xs text-zinc-400">{agent.role}</p></div>
+          <RoleInitialAvatar roleId={roleId} name={agent.name || agent.role} />
+          <div className="min-w-0 flex-1"><h2 className="truncate text-sm font-semibold text-zinc-100">{agent.name || agent.id}</h2><p className="truncate text-xs text-zinc-400">{subtitle}</p></div>
         </header>
         <div className="space-y-4 overflow-y-auto py-4 text-sm">
           {loading ? <p className="text-zinc-400">{t.expert.workRecord.loading}</p> : <>

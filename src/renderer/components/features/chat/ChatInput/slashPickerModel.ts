@@ -53,6 +53,8 @@ export interface SlashPickerCandidate {
   group: SlashCandidateGroup;
   actionKind: SlashCandidateAction;
   label: string;
+  /** 跟在 label 后的次要信息（专家的职业）；缺省时不占位 */
+  sublabel?: string;
   description: string;
   slashText: string;
   searchText: string;
@@ -251,6 +253,7 @@ export function createAgentCandidates(
     group: 'agent',
     actionKind: 'select-agent',
     label: option.name,
+    sublabel: option.profession,
     description: option.description,
     slashText: `/agent ${option.token}`,
     effectLabel: option.id

@@ -24,6 +24,12 @@ export interface ReminderContext {
   currentMode: string;
   hasError: boolean;
   lastToolResult?: string;
+  /**
+   * 本轮激活的 skill 名（无 skill 时缺省）。
+   * 内容生成类提醒靠它避开 authoring skill 流程——那些流程自带访谈规则，
+   * 被「先出稿不要先问」压住会退化成纯文本追问。
+   */
+  activeSkillName?: string;
 }
 
 /**

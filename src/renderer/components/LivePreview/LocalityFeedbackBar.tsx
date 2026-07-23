@@ -19,14 +19,18 @@ type Props = {
   locator?: never;
   /** 选中位置的可读标签，如 "第 3 页" / "单元格 B7" */
   locationLabel: string;
+  /** 消息成功发出后通知选择面清理选中态。 */
+  onSubmitted?: () => void;
 } | {
   anchor?: never;
   locator: PresentationArtifactLocator;
   /** 选中位置的可读标签，如 "第 3 页" / "单元格 B7" */
   locationLabel: string;
+  /** 消息成功发出后通知选择面清理选中态。 */
+  onSubmitted?: () => void;
 };
 
-export const LocalityFeedbackBar: React.FC<Props> = ({ anchor, locator, locationLabel }) => {
+export const LocalityFeedbackBar: React.FC<Props> = ({ anchor, locator, locationLabel, onSubmitted }) => {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const sendPrompt = useMessageActionStore((s) => s.sendPrompt);
@@ -44,10 +48,11 @@ export const LocalityFeedbackBar: React.FC<Props> = ({ anchor, locator, location
         : buildLocalityFeedbackMessage(anchor, feedback);
       await sendPrompt(message, { localityAnchor });
       setText('');
+      onSubmitted?.();
     } finally {
       setSending(false);
     }
-  }, [text, sending, sendPrompt, anchor, locator]);
+  }, [text, sending, sendPrompt, anchor, locator, onSubmitted]);
 
   return (
     <div className="flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/[0.06] px-3 py-2">

@@ -2,7 +2,19 @@
 // 内容生成提醒 - PPT / 数据处理 / 文档 / 图像 / 视频
 // ============================================================================
 
-import type { ReminderDefinition } from './types';
+import type { ReminderContext, ReminderDefinition } from './types';
+
+/**
+ * 「建角色 / 建团队 / 改角色」这类 authoring skill 自带访谈规则（该问什么、怎么问）。
+ * 内容生成提醒里的「先出稿、不要用 AskUserQuestion 先问」是给写稿任务定的，
+ * 压到这些流程上会把该弹的选项卡压成纯文本追问（2026-07-23 实测：
+ * `/create-team 写一篇微信推文` 命中 isDocumentTask，模型连发两轮纯文本追问）。
+ */
+const AUTHORING_SKILL_NAMES = new Set(['create-team', 'create-role', 'edit-role']);
+
+function inAuthoringSkillFlow(context: ReminderContext): boolean {
+  return context.activeSkillName !== undefined && AUTHORING_SKILL_NAMES.has(context.activeSkillName);
+}
 
 /**
  * 内容生成与任务类型选择提醒（Priority 1）
@@ -33,7 +45,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 10 页 PPT 最多 1-2 张流程图，大部分页面用文字列表即可
 </system-reminder>`,
     tokens: 350,
-    shouldInclude: (ctx) => ctx.taskFeatures.isPPTTask ? 1.0 : 0,
+    shouldInclude: (ctx) => ctx.taskFeatures.isPPTTask && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },
@@ -83,7 +95,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 无遗留占位符文本
 </system-reminder>`,
     tokens: 215,
-    shouldInclude: (ctx) => ctx.taskFeatures.isDocumentTask ? 1.0 : 0,
+    shouldInclude: (ctx) => ctx.taskFeatures.isDocumentTask && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },

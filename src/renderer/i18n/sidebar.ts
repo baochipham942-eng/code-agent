@@ -68,7 +68,7 @@ export const sidebarZh = {
       automationEmpty: '按计划自动跑，结果回来给你过目',
       automationPending: '{count} 条待过目',
       library: '资料库',
-      librarySubtitle: '项目资产 · 可 pin 进对话',
+      librarySubtitle: '任务产出与上传的文件，可带进对话',
       capabilityHub: '能力中心',
       capabilityHubSubtitle: '专家 · 技能 · 连接器',
     },

@@ -356,11 +356,16 @@ export const DeliverableCardList: React.FC<Props> = ({ cards, className = 'mt-2'
                       key={secondaryActionKey(action)}
                       type="button"
                       onClick={() => void runSecondaryAction(action, card)}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded text-zinc-500 hover:bg-surface-hover hover:text-zinc-200"
+                      className={`inline-flex h-6 items-center justify-center rounded text-zinc-500 hover:bg-surface-hover hover:text-zinc-200 ${
+                        action.kind === 'archive-to-library' ? 'gap-1 px-1.5 text-cyan-300 hover:text-cyan-100' : 'w-6'
+                      }`}
                       title={action.reason || secondaryActionLabel(action)}
                       aria-label={`${secondaryActionLabel(action)}: ${card.title}`}
                     >
                       {secondaryIcon(action)}
+                      {action.kind === 'archive-to-library' && (
+                        <span className="text-[11px]">{secondaryActionLabel(action)}</span>
+                      )}
                     </button>
                   ))}
                 </div>

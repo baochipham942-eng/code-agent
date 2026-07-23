@@ -44,7 +44,7 @@ describe('SidebarCapabilityZone', () => {
     listJobs.mockResolvedValue([]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
     const entry = screen.getByTestId('sidebar-capability-library');
     expect(entry.textContent).toContain('资料库');
-    expect(entry.textContent).toContain('项目资产');
+    expect(entry.textContent).toContain('可带进对话');
     expect(useAppStore.getState().showLibraryPanel).toBe(false);
     entry.click();
     expect(useAppStore.getState().showLibraryPanel).toBe(true);

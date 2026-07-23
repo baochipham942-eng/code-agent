@@ -214,6 +214,7 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
   if (shouldShowConnectors) summaryParts.push(t.inlineWorkbenchBar.connectorsSummary.replace('{selected}', String(selectedConnectorCount)).replace('{total}', String(connectors.length)));
   if (shouldShowMcpServers) summaryParts.push(t.inlineWorkbenchBar.mcpSummary.replace('{selected}', String(selectedMcpServerCount)).replace('{total}', String(mcpServers.length)));
   const summaryText = summaryParts.join(' · ');
+  const hasSelectedCapabilities = selectedCapabilities.length > 0;
 
   return (
     <div className="mb-2 rounded-xl border border-border-muted bg-surface-subtle px-3 py-1.5">
@@ -225,11 +226,16 @@ export const InlineWorkbenchBar: React.FC<InlineWorkbenchBarProps> = ({
               onClick={() => setGridExpanded((v) => !v)}
               className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
               aria-expanded={gridExpanded}
+              aria-label={gridExpanded
+                ? t.inlineWorkbenchBar.collapseCapabilitiesAria
+                : t.inlineWorkbenchBar.expandCapabilitiesAria}
             >
               {gridExpanded
                 ? <ChevronDown className="h-3 w-3 shrink-0" />
                 : <ChevronRight className="h-3 w-3 shrink-0" />}
-              <span className="truncate">{summaryText || t.inlineWorkbenchBar.capabilities}</span>
+              {!hasSelectedCapabilities && (
+                <span className="truncate">{summaryText || t.inlineWorkbenchBar.capabilities}</span>
+              )}
             </button>
             <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border-muted bg-zinc-950/40">
               <button

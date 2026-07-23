@@ -963,6 +963,8 @@ export const zh = {
     connectorsSummary: '连接器 {selected}/{total}',
     mcpSummary: 'MCP 服务 {selected}/{total}',
     capabilities: '能力',
+    expandCapabilitiesAria: '展开能力列表',
+    collapseCapabilitiesAria: '收起能力列表',
     auto: '自动',
     manual: '手动',
     autoTitle: '系统自动选择可用能力',

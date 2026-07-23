@@ -103,6 +103,44 @@ export function updateAgentMdVisual(content: string, visual: RoleVisual): string
   return `${opening}${newline}${frontmatter}${closing}${body}`;
 }
 
+export interface AgentMdEquipment {
+  skills: string[];
+  tools: string[];
+  model: ModelTier;
+  maxIterations: number;
+}
+
+/** 只改装备层白名单，保留其它 frontmatter 字段的顺序、未知 key 和正文原文。 */
+export function updateAgentMdEquipment(content: string, equipment: AgentMdEquipment): string {
+  const match = content.match(/^(---)(\r?\n)([\s\S]*?)(\r?\n---)([\s\S]*)$/);
+  if (!match) throw new Error('Invalid agent definition: missing frontmatter');
+  const [, opening, newline, rawFrontmatter, closing, body] = match;
+  let frontmatter = rawFrontmatter;
+  const replacements: Array<[string, string]> = [
+    ['skills', block('skills', equipment.skills, newline)],
+    ['tools', block('tools', equipment.tools, newline)],
+    ['model', `model: ${equipment.model}`],
+    ['max-iterations', `max-iterations: ${equipment.maxIterations}`],
+  ];
+  for (const [key, replacement] of replacements) {
+    const expression = new RegExp(`(^|\\r?\\n)${key}:.*(?:\\r?\\n[ \\t]+-.*)*`, 'm');
+    if (expression.test(frontmatter)) {
+      frontmatter = frontmatter.replace(expression, (_matched, prefix: string) => replacement ? `${prefix}${replacement}` : '');
+    } else if (replacement) {
+      frontmatter += `${frontmatter ? newline : ''}${replacement}`;
+    }
+  }
+  frontmatter = frontmatter.replace(/(?:\r?\n){3,}/g, `${newline}${newline}`);
+  return `${opening}${newline}${frontmatter}${closing}${body}`;
+}
+
+/** 只替换 frontmatter 之后的正文，frontmatter（含换行风格）逐字保留。 */
+export function updateAgentMdBody(content: string, body: string): string {
+  const match = content.match(/^(---\r?\n[\s\S]*?\r?\n---)(\r?\n)[\s\S]*$/);
+  if (!match) throw new Error('Invalid agent definition: missing frontmatter');
+  return `${match[1]}${match[2]}${body}`;
+}
+
 /**
  * Parse a single agent .md file.
  * Returns null if the file has no valid frontmatter.

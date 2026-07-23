@@ -40,6 +40,17 @@ export const expertZh = {
         automation: '效率自动化', development: '开发工程',
       },
     },
+    roleDetail: {
+      modelTier: '模型档位',
+      maxIterations: '最大迭代次数',
+      skills: '技能',
+      tools: '工具',
+      saveDefinition: '保存正文',
+      restoreFactory: '还原出厂',
+      confirmRestore: '确认还原',
+      cancel: '取消',
+      restoreWarning: '会覆盖当前定义，不影响角色记忆与履历。',
+    },
   },
 };
 
@@ -80,6 +91,17 @@ export const expertEn: typeof expertZh = {
         'content-marketing': 'Content & marketing', product: 'Product', research: 'Research',
         automation: 'Automation', development: 'Development',
       },
+    },
+    roleDetail: {
+      modelTier: 'Model tier',
+      maxIterations: 'Maximum iterations',
+      skills: 'Skills',
+      tools: 'Tools',
+      saveDefinition: 'Save content',
+      restoreFactory: 'Restore factory defaults',
+      confirmRestore: 'Confirm restore',
+      cancel: 'Cancel',
+      restoreWarning: 'This will overwrite the current definition and will not affect role memories or history.',
     },
   },
 };

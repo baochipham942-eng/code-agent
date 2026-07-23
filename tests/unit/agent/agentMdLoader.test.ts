@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { parseAgentMd, parseAgentMdVisual, updateAgentMdVisual } from '../../../src/host/agent/hybrid/agentMdLoader';
+import { parseAgentMd, parseAgentMdVisual, updateAgentMdBody, updateAgentMdEquipment, updateAgentMdVisual } from '../../../src/host/agent/hybrid/agentMdLoader';
 
 describe('parseAgentMd', () => {
   it('should return null for content without frontmatter', () => {
@@ -149,5 +149,21 @@ describe('parseAgentMd', () => {
     });
     expect(saved).toContain('unknown-key: keep-me');
     expect(saved.slice(saved.indexOf('---\n', 4) + 4)).toBe('正文必须逐字保留，包含中文逗号，和换行。');
+  });
+
+  it('updates equipment in place without moving unknown frontmatter or touching body', () => {
+    const original = ['---', 'name: 自建专家', 'unknown-key: keep-me', 'skills: [old]', 'tools: [Read]', 'model: fast', 'max-iterations: 5', 'future-key: preserve', '---', '正文逐字保留。'].join('\n');
+    const saved = updateAgentMdEquipment(original, { skills: ['research'], tools: ['Read', 'WebSearch'], model: 'powerful', maxIterations: 42 });
+    expect(saved).toContain('unknown-key: keep-me\nskills:\n  - research\ntools:\n  - Read\n  - WebSearch\nmodel: powerful\nmax-iterations: 42\nfuture-key: preserve');
+    expect(saved.endsWith('---\n正文逐字保留。')).toBe(true);
+    expect(parseAgentMd(saved, '自建专家.md')).toMatchObject({ skills: ['research'], tools: ['Read', 'WebSearch'], model: 'powerful', maxIterations: 42 });
+  });
+
+  it('updates body only and leaves frontmatter byte-for-byte unchanged', () => {
+    const original = ['---', 'name: 自建专家', 'unknown-key: keep-me', 'tools: [Read]', '---', '旧正文\n第二行'].join('\n');
+    const saved = updateAgentMdBody(original, '新正文\n第二行');
+    expect(saved).toBe('---\nname: 自建专家\nunknown-key: keep-me\ntools: [Read]\n---\n新正文\n第二行');
+    // 变异守卫：若正文写入走完整 serializer，这个精确 frontmatter 断言会先红。
+    expect(saved.slice(0, saved.indexOf('---', 4) + 3)).toBe(original.slice(0, original.indexOf('---', 4) + 3));
   });
 });

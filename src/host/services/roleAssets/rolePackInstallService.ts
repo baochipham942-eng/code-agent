@@ -14,7 +14,7 @@ import type { RolePackEntry } from '../../../shared/contract/rolePackRegistry';
 import { BUILTIN_ROLES, validateBuiltinRolePack, type BuiltinRoleDefinition } from './builtinRoles';
 import { ensureRoleAssetDirs } from './roleAssetService';
 import { getRolePackRegistryService } from './rolePackRegistryService';
-import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
+import { parseAgentMd, updateAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
 
 const logger = createLogger('RolePackInstallService');
 const ROLE_PACKS_FILE = 'role-packs.json';
@@ -67,11 +67,15 @@ export async function getInstalledRolePackState(roleId: string): Promise<{ local
   return { locallyModified: currentHash !== null && currentHash !== record.installedAgentMdHash };
 }
 
+function agentMdWithVisual(entry: RolePackEntry): string {
+  return updateAgentMdVisual(entry.agentMd, entry.visual);
+}
+
 /** 还原云包时只取经签名 registry 验证过的原始 agentMd；拿不到就明确失败。 */
 export async function getRolePackFactoryDefinition(roleId: string): Promise<{ agentMd: string } | null> {
   if (!(await loadRecords())[roleId]) return null;
   const entry = await getRolePackRegistryService().getEntry(roleId);
-  return entry ? { agentMd: entry.agentMd } : null;
+  return entry ? { agentMd: agentMdWithVisual(entry) } : null;
 }
 
 function rolePacksPath(): string {
@@ -173,9 +177,10 @@ async function installEntry(
   let installedAgentMdHash = previous?.installedAgentMdHash ?? '';
   let locallyModified = false;
   if (!currentHash || previous?.installedAgentMdHash === currentHash) {
+    const content = agentMdWithVisual(entry);
     await fs.mkdir(path.dirname(agentPath), { recursive: true });
-    await fs.writeFile(agentPath, entry.agentMd, 'utf8');
-    installedAgentMdHash = hash(entry.agentMd);
+    await fs.writeFile(agentPath, content, 'utf8');
+    installedAgentMdHash = hash(content);
   } else {
     locallyModified = true;
   }

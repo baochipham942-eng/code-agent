@@ -5,14 +5,7 @@
 import React from 'react';
 import { Check, Monitor, Plug, Plus, ShieldAlert } from 'lucide-react';
 import type { McpCatalogPayload, RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
-import {
-  getAlmaFeaturedMcpServers,
-  groupRecommendedMcpServersByCategory,
-} from '@shared/constants/mcpCatalog';
-import {
-  getAlmaMcpRecommendationPolicy,
-  type AlmaRecommendationPolicyTier,
-} from '@shared/constants/almaRecommendationPolicy';
+import { groupRecommendedMcpServersByCategory } from '@shared/constants/mcpCatalog';
 import { Button } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -66,21 +59,6 @@ interface McpServerCardProps {
   onEnableBuiltin: (serverId: string) => void;
 }
 
-function getRecommendationTierClasses(tier: AlmaRecommendationPolicyTier): string {
-  switch (tier) {
-    case 'default_visible':
-      return 'bg-emerald-500/15 text-emerald-300';
-    case 'conditional':
-      return 'bg-amber-500/15 text-amber-300';
-    case 'not_default':
-      return 'bg-zinc-700 text-zinc-300';
-    case 'unsupported':
-      return 'bg-red-500/10 text-red-300';
-    default:
-      return 'bg-zinc-700 text-zinc-300';
-  }
-}
-
 const McpServerCard: React.FC<McpServerCardProps> = ({
   entry,
   action,
@@ -91,38 +69,18 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
   onConnectWithConfig,
   onEnableBuiltin,
 }) => {
-  const policy = entry.officialFeatured ? getAlmaMcpRecommendationPolicy(entry) : null;
-
   return (
     <div className="bg-zinc-800 rounded-lg border border-zinc-700 p-3 hover:border-zinc-600 transition-colors flex flex-col gap-2">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <h5 className="text-sm font-medium text-zinc-200 truncate">{entry.name}</h5>
-          {entry.badge && (
-            <span className="shrink-0 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-400">
-              {entry.badge}
-            </span>
-          )}
           {entry.chinaDirect && (
             <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-400">
               {labels.chinaDirect}
             </span>
           )}
-          {entry.officialFeatured && (
-            <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
-              {labels.officialFeatured}
-            </span>
-          )}
-          {policy && (
-            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${getRecommendationTierClasses(policy.tier)}`}>
-              {policy.label}
-            </span>
-          )}
         </div>
         <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{entry.description}</p>
-        {policy?.reason && (
-          <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">{policy.reason}</p>
-        )}
       </div>
       <div className="flex items-center justify-between gap-2 mt-auto">
         <span className="text-[10px] text-zinc-500 truncate">
@@ -197,9 +155,6 @@ const ComputerUseCard: React.FC<ComputerUseCardProps> = ({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <h5 className="text-sm font-medium text-zinc-100">{labels.title}</h5>
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
-            {labels.almaBadge}
-          </span>
           <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-300">
             {labels.highPrivilegeBadge}
           </span>
@@ -241,12 +196,7 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
 }) => {
   const { t } = useI18n();
   const discoverText = t.settings.mcp.discover;
-  const featuredServers = getAlmaFeaturedMcpServers(catalog);
-  const featuredServerIds = new Set(featuredServers.map((server) => server.id));
-  const categoryGroups = groupRecommendedMcpServersByCategory({
-    ...catalog,
-    servers: catalog.servers.filter((server) => !featuredServerIds.has(server.id)),
-  });
+  const categoryGroups = groupRecommendedMcpServersByCategory(catalog);
 
   return (
     <div className="space-y-4">
@@ -257,32 +207,6 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
         labels={discoverText.computerUse}
         onOpenComputerUsePanel={onOpenComputerUsePanel}
       />
-
-      {featuredServers.length > 0 && (
-        <div className="space-y-2">
-          <div>
-            <h4 className="text-sm font-medium text-zinc-200">{discoverText.featuredTitle}</h4>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              {discoverText.featuredDescription}
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {featuredServers.map((entry) => (
-              <McpServerCard
-                key={entry.id}
-                entry={entry}
-                action={getEntryAction(entry, existingServerIds, enabledServerIds)}
-                canManageMcp={canManageMcp}
-                isLoading={actionLoading === entry.id}
-                labels={discoverText}
-                onQuickConnect={onQuickConnect}
-                onConnectWithConfig={onConnectWithConfig}
-                onEnableBuiltin={onEnableBuiltin}
-              />
-            ))}
-          </div>
-        </div>
-      )}
 
       <div>
         <h4 className="text-sm font-medium text-zinc-200">{discoverText.browseTitle}</h4>

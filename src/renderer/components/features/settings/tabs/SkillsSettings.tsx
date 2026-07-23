@@ -54,7 +54,7 @@ export const SkillsSettings: React.FC = () => {
   const settingsCapabilityFocus = useAppStore((state) => state.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((state) => state.clearSettingsCapabilityFocus);
   // 视图状态
-  const [activeTab, setActiveTab] = useState<SkillsViewTab>('installed');
+  const [activeTab, setActiveTab] = useState<SkillsViewTab>('discover');
 
   // 数据状态
   const [libraries, setLibraries] = useState<LocalSkillLibrary[]>([]);
@@ -477,7 +477,7 @@ export const SkillsSettings: React.FC = () => {
       )}
 
       {/* Tab 切换 + 刷新 */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-end gap-3">
         <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
           {([
             ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
@@ -486,6 +486,8 @@ export const SkillsSettings: React.FC = () => {
             <button
               key={tab}
               type="button"
+              role="tab"
+              aria-selected={activeTab === tab}
               onClick={() => setActiveTab(tab)}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 activeTab === tab

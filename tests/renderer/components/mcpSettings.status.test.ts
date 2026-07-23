@@ -260,6 +260,7 @@ describe('MCPSettings status', () => {
     expect(html).toContain(`3${mcpText.management.countResourceSuffix}`);
     expect(html).toContain(mcpText.trustSummary.approvalNotice);
     expect(html).toContain('查看 github 详情');
+    expect(html).not.toContain('Alma');
   });
 
   it('summarizes MCP trust boundaries without exposing token values', () => {

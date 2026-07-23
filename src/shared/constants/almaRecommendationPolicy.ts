@@ -8,7 +8,8 @@ import type {
   AlmaPluginRecommendationTier,
 } from './almaPluginRegistry';
 
-export type AlmaRecommendationPolicyTier =
+// UI 侧 Alma 展示已整体下架（ADR-049 §收窄），此类型只剩模块内使用，不再对外导出
+type AlmaRecommendationPolicyTier =
   | 'default_visible'
   | 'conditional'
   | 'not_default'

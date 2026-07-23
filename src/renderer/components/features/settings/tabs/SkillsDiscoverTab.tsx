@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import { AlertCircle, CheckCircle2, CircleDashed, Info, Plus, Search, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Plus, Search, ShieldCheck, X } from 'lucide-react';
 import type {
   RecommendedSkillEntry,
   SkillCatalogPayload,
@@ -13,17 +13,7 @@ import type {
 } from '@shared/contract/skillRepository';
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
 import type { SkillRegistryListItem, SkillRegistryRiskTier } from '@shared/contract/skillRegistry';
-import {
-  ALMA_BUNDLED_SKILL_MAPPINGS,
-  type AlmaBundledSkillMapping,
-  type AlmaBundledSkillRecommendation,
-  findRecommendedRepository,
-  groupRecommendedSkillsByCategory,
-} from '@shared/constants/skillCatalog';
-import {
-  getAlmaSkillRecommendationPolicy,
-  type AlmaRecommendationPolicyTier,
-} from '@shared/constants/almaRecommendationPolicy';
+import { findRecommendedRepository, groupRecommendedSkillsByCategory, normalizeSkillCatalogPayload } from '@shared/constants/skillCatalog';
 import { Button, Input } from '../../../primitives';
 import { isWebMode } from '../../../../utils/platform';
 import { useI18n } from '../../../../hooks/useI18n';
@@ -85,38 +75,6 @@ export function getBundleMissingRepoIds(
     .map((skill) => skill.repoId)
     .filter((repoId) => repoId !== BUILTIN_REPO_ID && !installedRepoIds.has(repoId));
   return [...new Set(missing)];
-}
-
-function getAlmaMappingClasses(
-  tier: AlmaRecommendationPolicyTier,
-  recommendation: AlmaBundledSkillRecommendation,
-): string {
-  if (recommendation === 'covered') {
-    return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
-  }
-  switch (recommendation) {
-    case 'default_visible':
-      return 'border-blue-500/20 bg-blue-500/10 text-blue-300';
-    case 'conditional':
-      return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
-    default:
-      return tier === 'unsupported'
-        ? 'border-red-500/10 bg-red-500/10 text-red-300'
-        : 'border-zinc-700 bg-zinc-800 text-zinc-400';
-  }
-}
-
-function getAlmaMappingIcon(recommendation: AlmaBundledSkillRecommendation): React.ReactNode {
-  switch (recommendation) {
-    case 'covered':
-      return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />;
-    case 'default_visible':
-      return <Info className="h-3.5 w-3.5 text-blue-300" />;
-    case 'conditional':
-      return <ShieldAlert className="h-3.5 w-3.5 text-amber-300" />;
-    default:
-      return <CircleDashed className="h-3.5 w-3.5 text-zinc-500" />;
-  }
 }
 
 const REGISTRY_RISK_CLASSES: Record<SkillRegistryRiskTier, string> = {
@@ -189,39 +147,11 @@ const RegistryEntryCard: React.FC<{
   );
 };
 
-const AlmaBundledSkillCard: React.FC<{
-  mapping: AlmaBundledSkillMapping;
-  labels: SkillsDiscoverLabels;
-}> = ({ mapping, labels }) => {
-  const policy = getAlmaSkillRecommendationPolicy(mapping);
-
-  return (
-    <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-3">
-      <div className="flex items-start gap-2">
-        <div className="mt-0.5">{getAlmaMappingIcon(mapping.recommendation)}</div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h5 className="truncate text-sm font-medium text-zinc-200">{mapping.displayName}</h5>
-            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${getAlmaMappingClasses(policy.tier, mapping.recommendation)}`}>
-              {labels.almaMappingLabels[mapping.recommendation]}
-            </span>
-          </div>
-          <div className="mt-0.5 truncate text-[11px] font-mono text-zinc-500">{mapping.name}</div>
-          <p className="mt-1 text-xs leading-relaxed text-zinc-400">{policy.reason}</p>
-          <div className="mt-2 rounded border border-white/[0.06] bg-white/[0.03] px-2 py-1 text-[11px] text-zinc-500">
-            {mapping.codeAgentSurface}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   registryItems,
   registryError,
   onInstallRegistryEntry,
-  catalog,
+  catalog: rawCatalog,
   recommendedRepos,
   installedRepoIds,
   installedSkillNames,
@@ -243,6 +173,8 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
 }) => {
   const { t } = useI18n();
   const discoverText = t.settings.skills.discover;
+  // 云端 catalog 可能半截返回；发现页是默认落地 tab，缺字段不能让整页崩
+  const catalog = normalizeSkillCatalogPayload(rawCatalog);
   const categoryGroups = groupRecommendedSkillsByCategory(catalog);
 
   // 推荐 skill 的安装动作 = 安装其来源仓库
@@ -281,21 +213,6 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
             </div>
           )
         )}
-      </div>
-
-      {/* Alma bundled skills 对标 */}
-      <div className="space-y-3">
-        <div>
-          <h4 className="text-sm font-medium text-zinc-200">{discoverText.almaTitle}</h4>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            {discoverText.almaDescription}
-          </p>
-        </div>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          {ALMA_BUNDLED_SKILL_MAPPINGS.map((mapping) => (
-            <AlmaBundledSkillCard key={mapping.name} mapping={mapping} labels={discoverText} />
-          ))}
-        </div>
       </div>
 
       {/* 角色场景包 */}

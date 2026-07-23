@@ -8,7 +8,7 @@
 // - action 'deleteMemory'   -> 删除一条角色记忆
 // - action 'updateMemory'   -> 编辑一条角色记忆（覆盖写）
 // - action 'writeProjectMemory' -> 写一条项目层记忆（资料库归档摘要；同名产物覆盖写）
-// - action 'setProactivity' -> 设置角色主动等级（写 settings + 立即同步 cadence cron）
+// - action 'setProactivity' -> 设置角色主动性（写 settings + 立即同步 cadence cron）
 // - action 'listDrafts'     -> 列出待确认的角色草稿（对话式建角色）
 // - action 'confirmDraft'   -> 确认草稿：写 agents/<id>.md + 建 roles/<id>/（过安全闸）
 // - action 'rejectDraft'    -> 放弃草稿：删草稿目录
@@ -26,6 +26,7 @@ import type {
   RolePanelDetail,
   RolePanelEntry,
   RoleBoundCronJob,
+  RoleProactivityConfig,
   RoleProactivityLevel,
   RoleVisual,
 } from '../../shared/contract/roleAssets';
@@ -126,6 +127,7 @@ interface WriteProjectMemoryPayload {
 interface SetProactivityPayload extends RoleIdPayload {
   level?: string;
   cadence?: string;
+  quietHours?: RoleProactivityConfig['quietHours'];
 }
 
 interface UpdateVisualPayload extends RoleIdPayload {
@@ -285,15 +287,28 @@ async function handleRestoreFactory(roleId: string): Promise<void> {
 }
 
 /**
- * 设置角色主动等级：写入 settings.roleAssets.proactivity.roles[roleId]（最高优先级），
+ * 设置角色主动性：写入 settings.roleAssets.proactivity.roles[roleId]（最高优先级），
  * 然后立即同步 cadence cron（开 → 注册闹钟；关 → 删除闹钟），不用等重启。
  */
-async function handleSetProactivity(roleId: string, level: RoleProactivityLevel, cadence?: string) {
+async function handleSetProactivity(
+  roleId: string,
+  level: RoleProactivityLevel,
+  cadence?: string,
+  quietHours?: RoleProactivityConfig['quietHours'],
+) {
   const { getConfigService } = await import('../services/core/configService');
   await getConfigService().updateSettings({
     roleAssets: {
       proactivity: {
-        roles: { [roleId]: { level, ...(cadence ? { cadence } : {}) } },
+        roles: {
+          [roleId]: {
+            level,
+            ...(cadence ? { cadence } : {}),
+            // null 要写进去（mergeSettings 只对非 null 对象递归，null 直接覆盖 = 清除）；
+            // undefined 才是"本次不动这个字段"。
+            ...(quietHours !== undefined ? { quietHours } : {}),
+          },
+        },
       },
     },
   });
@@ -411,16 +426,26 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
         }
 
         case 'setProactivity': {
-          const { roleId, level, cadence } = (payload ?? {}) as SetProactivityPayload;
+          const { roleId, level, cadence, quietHours } = (payload ?? {}) as SetProactivityPayload;
           if (!roleId || !level || !PROACTIVITY_LEVELS.has(level)) {
             return {
               success: false,
               error: { code: 'INVALID_ARGS', message: 'roleId and level (silent|daily|realtime) are required' },
             };
           }
+          if (quietHours && !(
+            /^([01]\d|2[0-3]):[0-5]\d$/.test(quietHours.start)
+            && /^([01]\d|2[0-3]):[0-5]\d$/.test(quietHours.end)
+            && quietHours.start !== quietHours.end
+          )) {
+            return {
+              success: false,
+              error: { code: 'INVALID_ARGS', message: 'quietHours must contain distinct start/end values in HH:mm format' },
+            };
+          }
           return {
             success: true,
-            data: await handleSetProactivity(roleId, level as RoleProactivityLevel, cadence),
+            data: await handleSetProactivity(roleId, level as RoleProactivityLevel, cadence, quietHours),
           };
         }
 

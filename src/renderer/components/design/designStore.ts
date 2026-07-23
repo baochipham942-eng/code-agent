@@ -1,6 +1,6 @@
 // 设计工作区状态（Kun 借鉴）。表单 + 生成状态 + 预览 + 可折叠历史。
 // 持久化表单/历史/当前选中（刷新可恢复）；预览内容与运行态不持久（transient）。
-// 派发逻辑在 useDesignGeneration hook，本 store 只持有状态。
+// 本 store 只持有状态；全屏设计表单退役后，派发由画布侧的 useDesignCanvasGeneration 承担。
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DesignAspectRatio, DesignOutputType, DesignSurface, DesignVideoMode } from './designTypes';

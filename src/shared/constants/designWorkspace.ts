@@ -32,9 +32,6 @@ export const DESIGN_DEVICE_PRESETS = [
 
 export type DesignDeviceId = (typeof DESIGN_DEVICE_PRESETS)[number]['id'];
 
-/** 原型版本快照存放的子目录（在每个 run 目录下）。每次生成/续编完成快照一份。 */
-export const DESIGN_VERSIONS_SUBDIR = 'versions';
-
 /** variant spine 落盘文件名（每个 run 目录一份，持有 proto 版本的 pin/discard 状态）。 */
 export const DESIGN_SPINE_FILE = 'spine.json';
 

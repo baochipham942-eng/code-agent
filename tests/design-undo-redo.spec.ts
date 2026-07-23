@@ -16,16 +16,18 @@ test('设计画布 Cmd+Z 撤销 / Cmd+Shift+Z 重做（真实 listener）', asyn
   await page.goto('/');
   await expect(page.locator('.h-screen')).toBeVisible({ timeout: 20_000 });
 
-  // workspaceModeStore 在 App 启动即加载（非 lazy）；designStore/canvasStore 在 lazy 的
-  // DesignWorkspace chunk 里,要先切设计模式触发 lazy load 才出现。
-  await page.waitForFunction(() => !!(window as any).__neoWorkspaceModeStore, null, { timeout: 15_000 });
-  await page.evaluate(() => (window as any).__neoWorkspaceModeStore.getState().setWorkspaceMode('design'));
+  // 从普通会话的 workbench 入口打开画布 tab。
+  const newSessionBtn = page.getByRole('button', { name: '新会话' });
+  await expect(newSessionBtn).toBeVisible({ timeout: 15_000 });
+  await newSessionBtn.click();
+  await expect(page.locator('[data-session-id][aria-current="true"]').first()).toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Show task panel' }).click();
+  const canvasEntry = page.getByTestId('open-design-canvas');
+  await expect(canvasEntry).toBeEnabled();
+  await canvasEntry.click();
+  await expect(page.getByTestId('design-canvas-tab')).toBeVisible({ timeout: 15_000 });
 
-  // 设计 chunk 加载后 designStore 钩子出现 → 设 mockup 输出让 DesignCanvas 挂载。
-  await page.waitForFunction(() => !!(window as any).__neoDesignStore, null, { timeout: 15_000 });
-  await page.evaluate(() => (window as any).__neoDesignStore.getState().setOutputType('mockup'));
-
-  // 等画布 store 钩子 + konva canvas 渲染出来（证明 DesignCanvas 真挂载了,listener attach）。
+  // 等画布 store 钩子 + konva canvas 渲染出来（证明 DesignCanvas 真挂载了，listener attach）。
   await page.waitForFunction(() => !!(window as any).__neoDesignCanvasStore, null, { timeout: 15_000 });
   await expect(page.locator('canvas').first()).toBeVisible({ timeout: 15_000 });
 

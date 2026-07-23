@@ -547,7 +547,14 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     name: 'memory',
     shortDescription: '统一记忆工具：存储和搜索长期记忆',
     tags: ['memory', 'search'],
-    aliases: ['remember', 'store', 'save', 'recall', 'memory_store', 'memory_search'],
+    aliases: ['remember', 'store', 'save', 'recall', 'memory_store'],
+    source: 'builtin',
+  },
+  {
+    name: 'memory_search',
+    shortDescription: '全文检索本机记忆库（历史 OCR 文字 / 照片归档 / 压缩落下的知识）',
+    tags: ['memory', 'search'],
+    aliases: ['search memory', 'find screenshot', '搜记忆', '找截图', '找含某文字的图'],
     source: 'builtin',
   },
   {

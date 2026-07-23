@@ -175,6 +175,19 @@ describe('ExpertPanel', () => {
     });
   });
 
+  it('我的配方为空时给出空态引导，而不是把分区标题当正文重复一遍', async () => {
+    listTeamRecipes.mockResolvedValue([]);
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    const empty = screen.getByTestId('team-my-recipes-empty');
+    expect(empty.textContent).toContain('复制为我的');
+    // 变异守卫：若空态退回渲染 t.team.myRecipes，这条会红（标题文案不含"复制为我的"）
+    expect(empty.textContent).not.toBe('我的配方');
+  });
+
   it('组队区渲染出厂配方和我的配方，卡片按 lead 显示正确档位', async () => {
     listTeamRecipes.mockResolvedValue([makeRecipe()]);
     listRoles.mockResolvedValue([makeEntry()]);

@@ -34,6 +34,7 @@ import {
   type ParsedGoalCommand,
 } from './parseGoalCommand';
 import { shouldOpenGoalConfirm } from './goalConfirm';
+import { buildSeedComposerCommand, getBareSeedComposerKind, type SeedComposerKind } from './SeedComposerCard';
 import { getAgentCommandToken, parseAgentSlashCommand } from './agentCommand';
 import { shouldClearComposerAfterSend } from './utils';
 
@@ -81,6 +82,7 @@ export interface UseChatInputSubmitParams {
   /** 打开 /goal 安静确认卡（initialGoal = 用户自然语言原话，空串 = 引导态） */
   openGoalConfirm: (initialGoal: string) => void;
   closeGoalConfirm: () => void;
+  openSeedComposer: (kind: SeedComposerKind) => void;
   setActiveAgentId: (id: string | null) => void;
 }
 
@@ -121,6 +123,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setScheduleComposerOpen,
     openGoalConfirm,
     closeGoalConfirm,
+    openSeedComposer,
     setActiveAgentId,
   } = params;
 
@@ -231,9 +234,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
   // P3-18: ! prefix executes shell command directly
-  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean }) => {
+  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
     e?.preventDefault();
-    const trimmedValue = value.trim();
+    const trimmedValue = (opts?.content ?? value).trim();
     let contentToSend = trimmedValue;
     let preferredAgentIdOverride: string | null | undefined;
     let selectedAgentOverride: ComposerAgentSelection | null | undefined;
@@ -335,6 +338,15 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
       const parsed = normalizeGoalCommand(rawParsed, t);
       await startGoalRun(parsed, trimmedValue);
+      return;
+    }
+
+    const seedComposerKind = getBareSeedComposerKind(trimmedValue);
+    if (seedComposerKind) {
+      setValue('');
+      setScheduleComposerOpen(false);
+      closeGoalConfirm();
+      openSeedComposer(seedComposerKind);
       return;
     }
 
@@ -476,5 +488,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     }
   };
 
-  return { handleSubmit, runScheduleCreation, startGoalRun };
+  const submitSeedComposer = useCallback((kind: SeedComposerKind, text: string) => (
+    handleSubmit(undefined, { content: buildSeedComposerCommand(kind, text) })
+  ), [handleSubmit]);
+
+  return { handleSubmit, runScheduleCreation, startGoalRun, submitSeedComposer };
 }

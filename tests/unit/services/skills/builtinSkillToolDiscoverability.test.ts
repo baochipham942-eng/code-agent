@@ -20,17 +20,19 @@ import { CORE_TOOLS, DEFERRED_TOOLS_META, resolveToolAlias } from '../../../../s
 import { BUILTIN_SKILLS } from '../../../../src/host/services/skills/builtinSkillsData';
 
 /**
- * 存量未登记名单（2026-07-23 建门时的实况，**只许变短**）：
- * - read_xlsx / read_pdf / http_request：真工具，但没进发现索引（与 list_experts 同病，待逐条立项）
- * - ocr_search / memory_search / photo_archive：**本仓找不到对应 schema**，疑似技能里的幽灵工具名，待产品拍板
+ * 存量未登记名单（**只许变短**）。
+ *
+ * 2026-07-23 建门时 6 条；同日清掉 5 条——read_xlsx / read_pdf / http_request 在 tools/modules 下，
+ * ocr_search / photo_archive 在 plugins/builtin 下，都是真工具，只是漏了发现索引。
+ *
+ * 剩下的 `memory_search` 是**真空，不是漏登记**：全仓没有这个工具，它只作为 `memory` 那条 meta 的
+ * alias 字符串存在，而 `memory` 本身也没有同名 protocol tool（真实记忆工具是 MemoryRead /
+ * MemoryWrite / EpisodicRecall，没有一个能按文本搜 memories 表）。引用方不止这两个 skill——
+ * `ocr_search` 插件的描述里也写着"再用 memory_search 检索"。要么补一个搜 memories 表的工具，
+ * 要么改写这三处文案，属产品决策，待拍板后再清。
  */
 const KNOWN_UNDISCOVERABLE = new Set([
-  'read_xlsx',
-  'read_pdf',
-  'http_request',
-  'ocr_search',
   'memory_search',
-  'photo_archive',
 ]);
 
 function discoverableToolNames(): Set<string> {

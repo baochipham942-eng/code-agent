@@ -10,7 +10,6 @@ import { isWebMode, isTauriMode } from '../utils/platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
-import { WorkspaceModeSwitch } from './design/WorkspaceModeSwitch';
 import { pickNativeDirectory } from '../services/tauriPluginFacade';
 export const TitleBar: React.FC = () => {
   const {
@@ -90,9 +89,8 @@ export const TitleBar: React.FC = () => {
         </button>
         <SessionActionsMenu />
       </div>
-      {/* Right: 工作区切换器（与设计页表头位置一致，统一放右）+ Task Panel toggle */}
+      {/* Right: Task Panel toggle */}
       <div className="flex items-center gap-2">
-        <WorkspaceModeSwitch />
         <IconButton
           icon={isTaskTabOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
           aria-label={isTaskTabOpen ? 'Hide task panel' : 'Show task panel'}

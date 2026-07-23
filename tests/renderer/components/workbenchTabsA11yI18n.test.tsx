@@ -80,14 +80,12 @@ describe('WorkbenchTabs 顶栏按钮 a11y + i18n（en 态无硬编码中文）',
     expect(container.querySelector('button[title="关闭"]')).toBeNull();
   });
 
-  it('画布与媒介表单两枚 icon-only 按钮具备 aria-label 与 title', () => {
+  it('画布 icon-only 按钮具备 aria-label 与 title', () => {
     useSessionStore.setState({ currentSessionId: 's1' });
     const { getByTestId } = render(<WorkbenchTabs />);
-    for (const id of ['open-design-canvas', 'open-design-legacy-form']) {
-      const btn = getByTestId(id);
-      expect(btn.getAttribute('aria-label')).toBeTruthy();
-      expect(btn.getAttribute('title')).toBeTruthy();
-    }
+    const btn = getByTestId('open-design-canvas');
+    expect(btn.getAttribute('aria-label')).toBeTruthy();
+    expect(btn.getAttribute('title')).toBeTruthy();
   });
 });
 

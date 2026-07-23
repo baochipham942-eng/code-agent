@@ -187,7 +187,9 @@ export function useDesignCanvasGeneration(): {
     const form = useDesignStore.getState();
     const canvas = useDesignCanvasStore.getState();
     const outputType = form.outputType;
-    if (outputType === 'prototype') return; // 由 useDesignGeneration 处理
+    // 网页原型不再走这条本地直出链路：全屏设计表单退役后，原型由 agent 直接写文件，
+    // 产出后经统一的 surface intent 自动开预览（圈选改稿走静态预览的定点反馈）。
+    if (outputType === 'prototype') return;
     if (outputType === 'video') return; // 视频走 generateVideo，非文生图
     if (outputType === 'slides') return; // 演示稿走厚版独立链路（二期），非文生图
 

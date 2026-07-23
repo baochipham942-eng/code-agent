@@ -12,6 +12,7 @@ import { useSkillStore } from '../../../../stores/skillStore';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import { useI18n } from '../../../../hooks/useI18n';
+import type { SeedComposerKind } from './SeedComposerCard';
 import { type SkillRecommendationView } from './CapabilitySuggestionStrip';
 import type { SlashCommand } from './SlashCommandPopover';
 import {
@@ -37,6 +38,8 @@ export interface UseChatInputSlashCommandsParams {
   setPendingPromptCommand: React.Dispatch<React.SetStateAction<ComposerPromptCommandSelection | null>>;
   setPendingAgentSelection: React.Dispatch<React.SetStateAction<ComposerAgentSelection | null>>;
   setActiveAgentId: (id: string | null) => void;
+  /** 打开「建团队 / 建角色」就地确认卡（这两个 skill 是对话流程，不是本轮能力）。 */
+  openSeedComposer: (kind: SeedComposerKind) => void;
 }
 
 /**
@@ -62,6 +65,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     setPendingPromptCommand,
     setPendingAgentSelection,
     setActiveAgentId,
+    openSeedComposer,
   } = params;
 
   const setSelectedSkillIds = useComposerStore((state) => state.setSelectedSkillIds);
@@ -232,6 +236,15 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
       return;
     }
 
+    // create-team / create-role 也是内置 skill，因此会出现在技能候选里。但它们是**对话流程**，
+    // 不是"本轮挂个能力"：按技能选中只会加一枚芯片、把输入框清空，用户永远碰不到确认卡
+    // （2026-07-23 客户端 dogfood 实测）。这里改成直接开卡，和命令候选、手打裸指令三条路一致。
+    if (cmd.actionKind === 'select-skill' && (cmd.skillName === 'create-team' || cmd.skillName === 'create-role')) {
+      setValue('');
+      openSeedComposer(cmd.skillName === 'create-team' ? 'team' : 'role');
+      return;
+    }
+
     if (cmd.actionKind === 'select-skill' && cmd.skillName) {
       const recommendation = skillRecommendations.find((item) => item.skillName === cmd.skillName);
       void selectSkillForCurrentTurn({
@@ -263,6 +276,7 @@ export function useChatInputSlashCommands(params: UseChatInputSlashCommandsParam
     capabilityItems,
     focusComposer,
     openAgentCommand,
+    openSeedComposer,
     selectSkillForCurrentTurn,
     selectWorkbenchCapabilityForCurrentTurn,
     setActiveAgentId,

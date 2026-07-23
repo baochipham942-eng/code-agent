@@ -4,8 +4,8 @@
 import { useEffect } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
-import { useAppStore } from '../stores/appStore';
-import { useSessionStore } from '../stores/sessionStore';
+import { openSurfaceForArtifact } from '../services/surfaceIntentDispatcher';
+import { decideSurfaceIntent } from '../utils/surfaceIntent';
 
 /**
  * 是否允许打开预览（fail-closed）：
@@ -17,8 +17,13 @@ export function shouldOpenPreview(
   payloadSessionId: string | undefined,
   currentSessionId: string | null | undefined,
 ): boolean {
-  if (!payloadSessionId) return true;
-  return payloadSessionId === currentSessionId;
+  return decideSurfaceIntent({
+    artifact: { kind: 'file-preview', filePath: '<preview>' },
+    artifactSessionId: payloadSessionId,
+    currentSessionId,
+    hasAutoFocusedThisTurn: false,
+    userSwitchedAwayThisTurn: false,
+  }) !== null;
 }
 
 export function useOpenPreviewBridge(): void {
@@ -27,9 +32,10 @@ export function useOpenPreviewBridge(): void {
       IPC_CHANNELS.WORKSPACE_OPEN_PREVIEW,
       (payload: { filePath: string; sessionId?: string }) => {
         if (!payload?.filePath) return;
-        const currentSessionId = useSessionStore.getState().currentSessionId;
-        if (!shouldOpenPreview(payload.sessionId, currentSessionId)) return;
-        useAppStore.getState().openPreview(payload.filePath);
+        openSurfaceForArtifact({
+          artifact: { kind: 'file-preview', filePath: payload.filePath },
+          artifactSessionId: payload.sessionId,
+        });
       },
     );
     return unsubscribe;

@@ -20,8 +20,8 @@ import { isExhausted } from '@shared/contract/designAutonomy';
 import { estimateImageCostCny } from '@shared/media/imageCost';
 import { useDesignAutonomyStore } from './designAutonomyStore';
 import { useDesignStore } from './designStore';
-import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import { openSurfaceForArtifact } from '../../services/surfaceIntentDispatcher';
 
 function makeGenId(): (kind: string, index: number) => string {
   // index 入 id 防同批/同毫秒碰撞（crypto 不可用的兜底路径也唯一）。
@@ -95,7 +95,10 @@ export function useCanvasProposalReview(): CanvasProposalReview {
         }
       }
       // UX：agent 操作画布即自动展开+聚焦设计画布 tab，用户无需手动切 tab 才看到提议/产物。
-      useAppStore.getState().openWorkbenchTab('design-canvas', { source: 'auto' });
+      openSurfaceForArtifact({
+        artifact: { kind: 'design-canvas' },
+        artifactSessionId: request.sessionId,
+      });
       // ADR-027：有活跃信封 ∧ 非破坏性 → 自动应用（不弹人闸）；否则走 026 逐步人审批。
       const env = useDesignAutonomyStore.getState().envelope;
       if (decideProposalHandling(request, env) === 'auto') {

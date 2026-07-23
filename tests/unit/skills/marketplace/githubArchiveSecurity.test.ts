@@ -2,7 +2,13 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import JSZip from 'jszip';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const loggerMocks = vi.hoisted(() => ({ warn: vi.fn() }));
+
+vi.mock('../../../../src/host/services/infra/logger', () => ({
+  createLogger: () => ({ warn: loggerMocks.warn }),
+}));
 
 import { extractZipSafely } from '../../../../src/host/skills/marketplace/githubArchiveSecurity';
 
@@ -45,7 +51,7 @@ describe('GitHub archive extraction security', () => {
     expect(stat.mode & 0o7777).toBe(0o755);
   });
 
-  it('rejects UNIX symlink entries before writing archive contents', async () => {
+  it('skips UNIX symlink entries while extracting safe files and warning', async () => {
     const zip = new JSZip();
     zip.file('plugin/SKILL.md', 'safe');
     zip.file('plugin/latest', 'SKILL.md', {
@@ -53,9 +59,11 @@ describe('GitHub archive extraction security', () => {
     });
     const archive = await zip.generateAsync({ type: 'nodebuffer', platform: 'UNIX' });
 
-    await expect(extractZipSafely(archive, destDir)).rejects.toThrow(
-      'Symbolic link zip entry rejected: plugin/latest',
-    );
-    await expect(fs.stat(destDir)).rejects.toMatchObject({ code: 'ENOENT' });
+    const result = await extractZipSafely(archive, destDir);
+
+    expect(await fs.readFile(path.join(destDir, 'plugin/SKILL.md'), 'utf-8')).toBe('safe');
+    await expect(fs.lstat(path.join(destDir, 'plugin/latest'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(result.skippedSymlinkEntries).toEqual(['plugin/latest']);
+    expect(loggerMocks.warn).toHaveBeenCalledWith('Skipping symbolic link zip entry', { entry: 'plugin/latest' });
   });
 });

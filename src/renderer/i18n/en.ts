@@ -974,6 +974,8 @@ export const en: Translations = {
     connectorsSummary: 'Connectors {selected}/{total}',
     mcpSummary: 'MCP servers {selected}/{total}',
     capabilities: 'Capabilities',
+    expandCapabilitiesAria: 'Expand capability list',
+    collapseCapabilitiesAria: 'Collapse capability list',
     auto: 'Auto',
     manual: 'Manual',
     autoTitle: 'Automatically select available capabilities',

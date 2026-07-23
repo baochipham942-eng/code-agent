@@ -545,6 +545,8 @@ export function StaticHtmlPreview({
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="static-html-preview">
       <div className="flex shrink-0 items-center justify-end border-b border-zinc-700 bg-zinc-800 px-3 py-1.5">
+        {/* ds-allow:start 圈选开关是 aria-pressed 双态描边按钮，Button primitive 无对应 variant；
+            且与本预览工具栏其余按钮同为紧凑裸 button，混用会撑坏排版 */}
         <button
           type="button"
           onClick={toggleSelectionMode}
@@ -559,6 +561,7 @@ export function StaticHtmlPreview({
           <MousePointerClick className="h-3.5 w-3.5" />
           <span>{pv.selectElement}</span>
         </button>
+        {/* ds-allow:end */}
       </div>
       <iframe
         ref={iframeRef}
@@ -579,6 +582,7 @@ export function StaticHtmlPreview({
               onSubmitted={clearSelection}
             />
           </div>
+          {/* ds-allow:start 反馈栏尾部的取消动作，Button sm 的固定 padding 会顶高整条栏 */}
           <button
             type="button"
             onClick={clearSelection}
@@ -586,6 +590,7 @@ export function StaticHtmlPreview({
           >
             {pv.clearSelection}
           </button>
+          {/* ds-allow:end */}
         </div>
       )}
     </div>

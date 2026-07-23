@@ -89,7 +89,7 @@ export function buildUniqueCssSelector(element: Element): string {
   return selector;
 }
 
-export function getVisibleElementText(element: Element): string | undefined {
+function getVisibleElementText(element: Element): string | undefined {
   const renderedText = 'innerText' in element && typeof element.innerText === 'string'
     ? element.innerText
     : element.textContent;
@@ -125,6 +125,8 @@ export function attachHtmlLocalitySelection(
 ): HtmlLocalitySelectionController {
   const style = doc.createElement('style');
   style.setAttribute(STYLE_ATTRIBUTE, '');
+  // ds-allow:start 注入进被预览页面的圈选样式：目标页有自己的 CSS，不用 !important 会被它盖掉，
+  // 高亮和 crosshair 就失效了。样式只活在 srcdoc 文档里，不进本应用的设计系统。
   style.textContent = `
     html, body, body * {
       cursor: crosshair !important;
@@ -134,6 +136,7 @@ export function attachHtmlLocalitySelection(
       outline-offset: 2px !important;
     }
   `;
+  // ds-allow:end
   (doc.head || doc.documentElement).appendChild(style);
 
   let selectedElement: Element | null = null;

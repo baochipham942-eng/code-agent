@@ -366,11 +366,14 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'start',
   ],
   [IPC_DOMAINS.TEAM]: [
+    'confirmDraft',
     'launchRecipe',
+    'listDrafts',
     'recipeCreate',
     'recipeDelete',
     'recipeList',
     'recipeUpdate',
+    'rejectDraft',
   ],
   [IPC_DOMAINS.UPDATE]: [
     'check',

@@ -129,6 +129,7 @@ import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
 import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
 import { historySchema } from './lightMemory/history.schema';
 import { proposeRoleSchema } from './roleAuthoring/proposeRole.schema';
+import { proposeTeamRecipeSchema } from './teamAuthoring/proposeTeamRecipe.schema';
 import { exitRoleFlowSchema } from './roleAuthoring/exitRoleFlow.schema';
 
 // planning/
@@ -663,6 +664,10 @@ export function registerMigratedTools(
   registry.register(
     exitRoleFlowSchema,
     async () => (await import('./roleAuthoring/exitRoleFlow')).exitRoleFlowModule,
+  );
+  registry.register(
+    proposeTeamRecipeSchema,
+    async () => (await import('./teamAuthoring/proposeTeamRecipe')).proposeTeamRecipeModule,
   );
 
   // network (2): ppt_generate / ppt_edit

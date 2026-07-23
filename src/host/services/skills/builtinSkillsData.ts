@@ -1488,6 +1488,40 @@ end tell
     loaded: true,
   },
   {
+    name: 'create-team',
+    description:
+      '对话式创建一个团队配方：一句话描述需求或提供现有流程文档，提取专家分工后起草，用户确认才保存。' +
+      '触发词：建配方、组个团队、创建团队、把流程变成团队、资料转配方、create team。',
+    promptContent: `你现在进入「建团队配方」流程。用户可以用一句话描述要组什么团队，也可以给现成的文档、流程或提示词；你负责短访谈、提取角色分工，然后起草确认卡。
+
+## 两条输入路径
+
+1. 一句话建团队：只补足目的、分工和是否需要主理人这几个关键信息；能判断就不要追问。
+2. 资料转化：先读用户提供的文件或正文，提取有几个角色、各自做什么、谁统筹。把资料里的具体项目或主题替换为 \`{topic}\`，再起草配方。
+
+## 调用 propose_team_recipe
+
+- \`lead\` 有值 = 专家团：主理人汇总成员结论并定稿。
+- 省略 \`lead\` = 专家小组：成员各自独立作答，不合并。
+- \`members\` 每人必须有现有本机 \`roleId\` 和含 \`{topic}\` 的 \`taskTemplate\`。
+- 若资料中的岗位本机没有对应专家，绝不静默省掉；工具会返回明确名单。告诉用户可换成已有专家，或先建这个角色后再继续。
+- 草稿不会自动保存。工具成功后让用户在确认卡上确认，或继续说修改意见；不得代替用户确认。
+
+## 红线
+
+- 不从跑过的会话反推配方；只转化用户明确提供的资料。
+- 不编辑 dependsOn、分享或导出配方。
+- 不自动入库。`,
+    basePath: '',
+    allowedTools: ['propose_team_recipe', 'ask_user_question', 'read_file', 'glob', 'grep'],
+    strictToolset: false,
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    loaded: true,
+  },
+  {
     name: 'edit-role',
     description:
       '对话式修改一个已存在的持久化角色（改它的描述、工具白名单或系统提示词）。先读取现有定义，访谈要改什么，重新起草让用户确认。' +

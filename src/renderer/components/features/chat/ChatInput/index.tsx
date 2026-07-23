@@ -43,6 +43,7 @@ import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { ComboSkillCard } from './ComboSkillCard';
 import { SkillDraftNotifications } from './SkillDraftCard';
 import { RoleDraftNotifications } from './RoleDraftCard';
+import { TeamRecipeDraftNotifications } from './TeamRecipeDraftCard';
 import { startCreateRoleChat } from '../../../../utils/startCreateRoleChat';
 import { computeSlashMenuValue } from '../../../../utils/composerShortcuts';
 import { useSkillRecommendations } from './useSkillRecommendations';
@@ -695,6 +696,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
         <SkillDraftNotifications />
         <RoleDraftNotifications />
+        <TeamRecipeDraftNotifications />
 
         {/* Suggestion Bar - show when input is empty */}
         {value.trim().length === 0 && suggestions.length > 0 && (

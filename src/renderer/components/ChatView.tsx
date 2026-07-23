@@ -25,6 +25,8 @@ import { useTurnProjection } from '../hooks/useTurnProjection';
 import { useTurnExecutionClarity } from '../hooks/useTurnExecutionClarity';
 import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
 import { NewSessionWelcome } from './features/chat/NewSessionWelcome';
+import { MemberConversationView } from './features/expert/MemberConversationView';
+import { useMemberViewStore } from '../stores/memberViewStore';
 export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
@@ -37,7 +39,6 @@ import { SwarmInlineMonitor } from './features/swarm/SwarmInlineMonitor';
 import { WorkflowInlineMonitor } from './features/workflow/WorkflowInlineMonitor';
 import { WorkflowLaunchCard } from './features/workflow/WorkflowLaunchCard';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
-import { SessionAgentIdentityBar } from './features/expert/SessionAgentIdentityBar';
 import { LocalBridgePrompt } from './features/chat/LocalBridgePrompt';
 import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
 import { DirectoryPickerModal } from './features/chat/DirectoryPickerModal';
@@ -91,6 +92,7 @@ export async function handleQueuedSteerOutcome(
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
+  const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const {
@@ -713,8 +715,6 @@ export const ChatView: React.FC = () => {
       <div className="flex-1 min-h-0 flex flex-col min-w-0">
         {/* Task Status Bar - 显示多任务状态 */}
         <TaskStatusBar className="shrink-0 mx-4 mt-2" />
-        <SessionAgentIdentityBar sessionId={currentSessionId} />
-
         {/* Todo Progress Panel 已移至右侧 TaskInfo 面板 */}
 
         {/* In-session search bar (Cmd+F) */}
@@ -743,9 +743,11 @@ export const ChatView: React.FC = () => {
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
-        {/* Messages - Turn-based trace view */}
+        {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话） */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          {projection.turns.length === 0 ? (
+          {viewingMemberId ? (
+            <MemberConversationView sessionId={currentSessionId} />
+          ) : projection.turns.length === 0 ? (
             // 仅在「已确定当前会话 + 非加载中」时才渲染空状态默认页。
             // 冷启动初始化（currentSessionId 尚为 null）或会话切换异步加载期间
             // 渲染空白占位，避免闪现"新会话"默认页（见 switchSession/initializeSessionStore）。

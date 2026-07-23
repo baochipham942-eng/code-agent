@@ -99,7 +99,7 @@ export const DiffEvidenceOverlay: React.FC<{
 };
 
 // 标注重绘模型下拉（cap 过滤）：仅列声明 annotEdit 能力的视觉模型，与 key 可用性求交，
-// 未配置 key 的灰显。可用性经 listVisualImageModels IPC 拉取（与 ImageModelPicker 同源）。
+// 未配置 key 的灰显。可用性经 listVisualImageModels IPC 拉取。
 export const AnnotModelSelect: React.FC<{ value: string; onChange: (id: string) => void }> = ({
   value,
   onChange,

@@ -27,11 +27,6 @@ export function prototypeExportName(ts: number): string {
   return `neo-prototype-${ts}.html`;
 }
 
-/** 原型 PDF 导出文件名（带时间戳避免覆盖）。 */
-export function prototypePdfExportName(ts: number): string {
-  return `neo-prototype-${ts}.pdf`;
-}
-
 /** 设计稿/信息图 PDF 导出文件名（带时间戳避免覆盖）。 */
 export function imagePdfExportName(ts: number): string {
   return `neo-design-${ts}.pdf`;
@@ -54,13 +49,6 @@ export type DesignVideoMode = 't2v' | 'i2v';
 
 /** 出图尺寸比例（映射到通义万相 size，见 imageGenerationService）。 */
 export type DesignAspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
-export const DESIGN_ASPECT_RATIOS: readonly DesignAspectRatio[] = [
-  '1:1',
-  '16:9',
-  '9:16',
-  '4:3',
-  '3:4',
-];
 
 /** 设计上下文，注入 prompt 以约束品牌/语气并规避 AI 默认审美。 */
 export type DesignContextInput = {
@@ -156,7 +144,7 @@ export function buildPrototypePrompt(input: BuildPrototypePromptInput): string {
 }
 
 /** 圈选到的原型元素定位信息（来自预览 iframe 注入脚本的 postMessage）。 */
-export type PrototypeSelection = {
+type PrototypeSelection = {
   /** 元素标签名（小写），如 button / h1。 */
   tag?: string;
   /** 元素可见文案（截断）。 */

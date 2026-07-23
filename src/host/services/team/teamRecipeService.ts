@@ -1,11 +1,16 @@
 import crypto from 'crypto';
 import { getDatabase } from '../core/databaseService';
 import { TeamRecipeRepository, type StoredTeamRecipe } from '../core/repositories/TeamRecipeRepository';
-import { BUILTIN_ROLE_IDS, listPersistentRoles } from '../roleAssets';
+import { BUILTIN_ROLE_IDS, getBuiltinRoleVisual, listPersistentRoles } from '../roleAssets';
 import { listAllAgents } from '../../agent/agentRegistry';
 import { validateTeamRecipe, type TeamRecipe } from '@shared/contract/teamRecipe';
 
 export type TeamRecipeWrite = Omit<TeamRecipe, 'id'>;
+export interface KnownTeamRole {
+  roleId: string;
+  displayName: string;
+  description: string;
+}
 
 export class TeamRecipeService {
   private get repo(): TeamRecipeRepository {
@@ -15,12 +20,30 @@ export class TeamRecipeService {
   }
 
   async knownRoleIds(): Promise<Set<string>> {
-    const resolvableAgentIds = new Set(listAllAgents().map((agent) => agent.id));
+    return new Set((await this.knownRoles()).map((role) => role.roleId));
+  }
+
+  async knownRoles(): Promise<KnownTeamRole[]> {
+    const agents = listAllAgents();
+    const resolvableAgentIds = new Set(agents.map((agent) => agent.id));
     const persistentRoleIds = await listPersistentRoles();
-    return new Set([
-      ...BUILTIN_ROLE_IDS,
-      ...persistentRoleIds.filter((roleId) => resolvableAgentIds.has(roleId)),
-    ]);
+    const roleIds = new Set([...BUILTIN_ROLE_IDS, ...persistentRoleIds.filter((roleId) => resolvableAgentIds.has(roleId))]);
+    const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
+    const builtinRoleIds = new Set(BUILTIN_ROLE_IDS);
+    return [...roleIds]
+      .sort((left, right) => {
+        const builtinOrder = Number(builtinRoleIds.has(right)) - Number(builtinRoleIds.has(left));
+        return builtinOrder || left.localeCompare(right);
+      })
+      .map((roleId) => {
+        const agent = agentsById.get(roleId);
+        const visual = getBuiltinRoleVisual(roleId);
+        return {
+          roleId,
+          displayName: agent?.name || visual?.displayName || roleId,
+          description: agent?.description || '',
+        };
+      });
   }
 
   list(): StoredTeamRecipe[] {

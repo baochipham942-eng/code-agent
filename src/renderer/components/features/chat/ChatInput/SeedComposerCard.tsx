@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Loader2, Target, X } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
+import { IPC_DOMAINS } from '@shared/ipc';
+import ipcService from '../../../../services/ipcService';
 
 export type SeedComposerKind = 'team' | 'role';
 
 interface SeedComposerCardProps {
+  kind: SeedComposerKind;
   title: string;
   placeholder: string;
-  hint?: string;
   submitting: boolean;
   onSubmit: (text: string) => void;
   onDismiss: () => void;
@@ -24,9 +26,9 @@ export function getBareSeedComposerKind(raw: string): SeedComposerKind | null {
 }
 
 export const SeedComposerCard: React.FC<SeedComposerCardProps> = ({
+  kind,
   title,
   placeholder,
-  hint,
   submitting,
   onSubmit,
   onDismiss,
@@ -34,7 +36,24 @@ export const SeedComposerCard: React.FC<SeedComposerCardProps> = ({
 }) => {
   const { t } = useI18n();
   const [text, setText] = useState(initialText);
+  const [expertCount, setExpertCount] = useState<number | null>(null);
   const canStart = text.trim().length > 0 && !submitting;
+
+  useEffect(() => {
+    let active = true;
+    const loadKnownRoles = async () => {
+      try {
+        const roles = await ipcService.invokeDomain<unknown>(IPC_DOMAINS.TEAM, 'knownRoles');
+        if (active && Array.isArray(roles) && roles.length > 0) setExpertCount(roles.length);
+      } catch {
+        // fail closed: 不显示未验证的专家数量
+      }
+    };
+    void loadKnownRoles();
+    return () => { active = false; };
+  }, [kind]);
+
+  const hint = expertCount === null ? undefined : t.seedComposer.availableExpertsHint.replace('{count}', String(expertCount));
   const submit = () => {
     if (canStart) onSubmit(text.trim());
   };

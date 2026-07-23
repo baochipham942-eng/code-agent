@@ -130,6 +130,7 @@ import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
 import { historySchema } from './lightMemory/history.schema';
 import { proposeRoleSchema } from './roleAuthoring/proposeRole.schema';
 import { proposeTeamRecipeSchema } from './teamAuthoring/proposeTeamRecipe.schema';
+import { listExpertsSchema } from './teamAuthoring/listExperts.schema';
 import { exitRoleFlowSchema } from './roleAuthoring/exitRoleFlow.schema';
 
 // planning/
@@ -668,6 +669,10 @@ export function registerMigratedTools(
   registry.register(
     proposeTeamRecipeSchema,
     async () => (await import('./teamAuthoring/proposeTeamRecipe')).proposeTeamRecipeModule,
+  );
+  registry.register(
+    listExpertsSchema,
+    async () => (await import('./teamAuthoring/listExperts')).listExpertsModule,
   );
 
   // network (2): ppt_generate / ppt_edit

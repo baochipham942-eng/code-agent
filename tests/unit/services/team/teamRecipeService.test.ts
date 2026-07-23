@@ -8,6 +8,7 @@ import { applySchema } from '../../../../src/host/services/core/database/schema'
 let rawDb: BetterSqlite3.Database;
 const roleAssetsMock = vi.hoisted(() => ({
   listPersistentRoles: vi.fn<() => Promise<string[]>>(),
+  getBuiltinRoleVisual: vi.fn(),
 }));
 const agentRegistryMock = vi.hoisted(() => ({
   listAllAgents: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('../../../../src/host/services/core/databaseService', () => ({
 vi.mock('../../../../src/host/services/roleAssets', () => ({
   BUILTIN_ROLE_IDS: ['牧之', '溯真'],
   listPersistentRoles: roleAssetsMock.listPersistentRoles,
+  getBuiltinRoleVisual: roleAssetsMock.getBuiltinRoleVisual,
 }));
 vi.mock('../../../../src/host/agent/agentRegistry', () => ({
   listAllAgents: agentRegistryMock.listAllAgents,
@@ -50,6 +52,7 @@ describe('TeamRecipeService', () => {
     rawDb = db;
     service = new TeamRecipeService();
     roleAssetsMock.listPersistentRoles.mockResolvedValue([]);
+    roleAssetsMock.getBuiltinRoleVisual.mockReturnValue(undefined);
     agentRegistryMock.listAllAgents.mockReturnValue([{ id: '牧之' }, { id: '溯真' }]);
   });
 
@@ -89,5 +92,22 @@ describe('TeamRecipeService', () => {
     }, 200);
 
     expect(updated).toMatchObject({ id: created.id, createdAt: 100, updatedAt: 200, name: '更新后的配方' });
+  });
+
+  it('权威名册和校验 id 集合完全对账，内置角色即使没有展示信息也保留', async () => {
+    roleAssetsMock.listPersistentRoles.mockResolvedValue(['我的分析师', '未解析角色']);
+    agentRegistryMock.listAllAgents.mockReturnValue([
+      { id: '牧之', name: '牧之专家', description: '统筹工作' },
+      { id: '溯真' },
+      { id: '我的分析师', name: '我的分析师', description: '分析数据' },
+    ]);
+
+    const roles = await service.knownRoles();
+    const ids = await service.knownRoleIds();
+
+    expect(new Set(roles.map((role) => role.roleId))).toEqual(ids);
+    expect(roles.map((role) => role.roleId)).toEqual(expect.arrayContaining(['牧之', '溯真', '我的分析师']));
+    expect(roles).toContainEqual({ roleId: '溯真', displayName: '溯真', description: '' });
+    expect(roles).not.toContainEqual(expect.objectContaining({ roleId: '未解析角色' }));
   });
 });

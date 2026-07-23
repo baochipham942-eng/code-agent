@@ -1440,6 +1440,7 @@ end tell
 ## 你的工作方式
 
 你是「角色架构师」。不要让用户去填表或勾工具清单——由你访谈、起草、解释，用户只需自然语言描述和确认。
+需要知道已有角色时，可调用 \`list_experts\` 查询本机名册。
 
 ### 1. 访谈（简短，1-2 轮，不要盘问）
 先问清楚关键的几点（能从用户已说的话推断就不要再问）：
@@ -1478,7 +1479,7 @@ end tell
 - 不要硬塞工具：最小够用，高权限工具要向用户说明。
 - 访谈要短：用户烦被盘问，能推断就别问。`,
     basePath: '',
-    allowedTools: ['propose_role', 'exit_role_flow', 'ask_user_question', 'read_file', 'glob', 'grep'],
+    allowedTools: ['propose_role', 'exit_role_flow', 'list_experts', 'ask_user_question', 'read_file', 'glob', 'grep'],
     // 严格工具集：只暴露上面这些工具，隐藏 core 的 Edit/Write，逼模型走 propose_role 确认卡
     strictToolset: true,
     disableModelInvocation: false,
@@ -1499,6 +1500,10 @@ end tell
 1. 一句话建团队：只补足目的、分工和是否需要主理人这几个关键信息；能判断就不要追问。
 2. 资料转化：先读用户提供的文件或正文，提取有几个角色、各自做什么、谁统筹。把资料里的具体项目或主题替换为 \`{topic}\`，再起草配方。
 
+## 先取权威专家名册
+
+先调用 \`list_experts\` 拿本机可用专家名册；不要用 Bash 或 Glob 去翻 \`~/.code-agent/\` 猜角色。名册之外的岗位表示本机没有对应专家，按下面的红线告诉用户可换成已有专家，或先建角色。
+
 ## 调用 propose_team_recipe
 
 - \`lead\` 有值 = 专家团：主理人汇总成员结论并定稿。
@@ -1513,7 +1518,7 @@ end tell
 - 不编辑 dependsOn、分享或导出配方。
 - 不自动入库。`,
     basePath: '',
-    allowedTools: ['propose_team_recipe', 'ask_user_question', 'read_file', 'glob', 'grep'],
+    allowedTools: ['list_experts', 'propose_team_recipe', 'ask_user_question', 'read_file', 'glob', 'grep'],
     strictToolset: false,
     disableModelInvocation: false,
     userInvocable: true,
@@ -1532,6 +1537,7 @@ end tell
 ## 你的工作方式
 
 你是「角色架构师」。由你读现状、访谈、起草、解释，用户只需自然语言描述要改什么并确认。
+需要知道已有角色时，可调用 \`list_experts\` 查询本机名册。
 
 ### 1. 先载入现有定义（必做）
 要修改的角色名由本次调用的参数给出（消息末尾的 "User provided arguments: <角色名>"；若没有则看用户消息里点名的角色）。
@@ -1563,7 +1569,7 @@ end tell
 - 不支持改名：editingRoleId 必须等于 roleId，想改名直接告诉用户本期不支持。
 - 严禁自动落盘：你只负责读现状 + 起草（propose_role），确认由用户在卡片上完成。`,
     basePath: '',
-    allowedTools: ['propose_role', 'exit_role_flow', 'read_file', 'ask_user_question', 'glob', 'grep'],
+    allowedTools: ['propose_role', 'exit_role_flow', 'list_experts', 'read_file', 'ask_user_question', 'glob', 'grep'],
     // 严格工具集：只暴露上面这些工具，隐藏 core 的 Edit/Write，逼模型走 propose_role 确认卡
     strictToolset: true,
     disableModelInvocation: false,

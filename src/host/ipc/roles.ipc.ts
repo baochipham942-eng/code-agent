@@ -44,9 +44,15 @@ import {
   rejectRoleDraft,
 } from '../services/roleAssets';
 import { listAllAgents } from '../agent/agentRegistry';
-import { parseAgentMdVisual, updateAgentMdVisual } from '../agent/hybrid/agentMdLoader';
+import { parseAgentMd, parseAgentMdVisual, updateAgentMdBody, updateAgentMdEquipment, updateAgentMdVisual, type AgentMdEquipment } from '../agent/hybrid/agentMdLoader';
 import { getAgentsMdDir } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
+import { BUILTIN_ROLES } from '../services/roleAssets/builtinRoles';
+import { getInstalledRolePackState, getRolePackFactoryDefinition } from '../services/roleAssets/rolePackInstallService';
+import { BUILTIN_SKILLS } from '../services/skills/builtinSkillsData';
+import { getSkillRepositoryService } from '../services/skills/skillRepositoryService';
+import { TOOL_ALIASES } from '../services/toolSearch/deferredTools';
+import { getProtocolRegistry } from '../tools/protocolRegistry';
 
 const logger = createLogger('RolesIPC');
 
@@ -84,6 +90,8 @@ interface SetProactivityPayload extends RoleIdPayload {
 interface UpdateVisualPayload extends RoleIdPayload {
   visual?: RoleVisual;
 }
+interface UpdateEquipmentPayload extends RoleIdPayload { equipment?: AgentMdEquipment; }
+interface UpdateDefinitionBodyPayload extends RoleIdPayload { body?: string; }
 
 interface DraftIdPayload {
   draftId?: string;
@@ -157,6 +165,26 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     resolveRoleProactivityConfig(roleId),
   ]);
 
+  const parsed = definition ? parseAgentMd(definition, `${roleId}.md`) : null;
+  const skillRepository = getSkillRepositoryService();
+  await skillRepository.initialize();
+  const availableSkills = [...new Set([
+    ...BUILTIN_SKILLS.map((skill) => skill.name),
+    ...skillRepository.getAllSkills().filter((skill) => skill.enabled).map((skill) => skill.name),
+  ])].sort();
+  // Protocol registry 是当前已注册的真实集合；TOOL_ALIASES 是 subagent 装配时实际调用的兼容名真源，
+  // 两者合并后才不会把已有 legacy frontmatter 工具误判为无效。
+  const availableTools = [...new Set([
+    ...getProtocolRegistry().getSchemas().map((tool) => tool.name),
+    ...Object.keys(TOOL_ALIASES),
+  ])].sort();
+  const packState = builtinRoleIdSet.has(roleId) ? null : await getInstalledRolePackState(roleId);
+  const factory = builtinRoleIdSet.has(roleId)
+    ? { agentMd: BUILTIN_ROLES.find((role) => role.id === roleId)?.agentMd }
+    : packState ? await getRolePackFactoryDefinition(roleId) : null;
+  const restore = builtinRoleIdSet.has(roleId)
+    ? { available: Boolean(factory?.agentMd) }
+    : packState ? { available: Boolean(factory?.agentMd), ...(!factory?.agentMd ? { disabledReason: '当前无法取得云端出厂定义' } : {}) } : undefined;
   return {
     roleId,
     definition,
@@ -172,6 +200,9 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     proactivity,
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
     isBuiltin: builtinRoleIdSet.has(roleId),
+    ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
+    ...(packState ? { locallyModified: packState.locallyModified } : {}),
+    ...(restore ? { restore } : {}),
   };
 }
 
@@ -181,6 +212,35 @@ async function handleUpdateVisual(roleId: string, visual: RoleVisual): Promise<R
   await fs.writeFile(definitionPath, updateAgentMdVisual(definition, visual), 'utf-8');
   // 内置角色仍返回编译内 visual，写回只保存用户的定义修改，不改其产品身份。
   return resolveVisual(roleId);
+}
+
+async function handleUpdateEquipment(roleId: string, equipment: AgentMdEquipment): Promise<void> {
+  if (!['fast', 'balanced', 'powerful'].includes(equipment.model) || !Number.isInteger(equipment.maxIterations) || equipment.maxIterations < 1 || equipment.maxIterations > 200) {
+    throw new Error('Invalid equipment configuration');
+  }
+  const definitionPath = path.join(getAgentsMdDir().user, `${roleId}.md`);
+  const definition = await fs.readFile(definitionPath, 'utf-8');
+  const detail = await handleDetail(roleId);
+  const validSkills = new Set(detail.equipment?.availableSkills ?? []);
+  const validTools = new Set(detail.equipment?.availableTools ?? []);
+  if (equipment.skills.some((skill) => !validSkills.has(skill)) || equipment.tools.some((tool) => !validTools.has(tool))) {
+    throw new Error('Equipment includes an unavailable skill or tool');
+  }
+  await fs.writeFile(definitionPath, updateAgentMdEquipment(definition, equipment), 'utf-8');
+}
+
+async function handleUpdateDefinitionBody(roleId: string, body: string): Promise<void> {
+  const definitionPath = path.join(getAgentsMdDir().user, `${roleId}.md`);
+  const definition = await fs.readFile(definitionPath, 'utf-8');
+  await fs.writeFile(definitionPath, updateAgentMdBody(definition, body), 'utf-8');
+}
+
+async function handleRestoreFactory(roleId: string): Promise<void> {
+  const builtin = BUILTIN_ROLES.find((role) => role.id === roleId);
+  const definition = builtin?.agentMd ?? (await getRolePackFactoryDefinition(roleId))?.agentMd;
+  if (!definition) throw new Error('Factory definition is unavailable');
+  const definitionPath = path.join(getAgentsMdDir().user, `${roleId}.md`);
+  await fs.writeFile(definitionPath, definition, 'utf-8');
 }
 
 /**
@@ -323,6 +383,27 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
             return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and visual are required' } };
           }
           return { success: true, data: await handleUpdateVisual(roleId, visual) };
+        }
+
+        case 'updateEquipment': {
+          const { roleId, equipment } = (payload ?? {}) as UpdateEquipmentPayload;
+          if (!roleId || !equipment) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and equipment are required' } };
+          await handleUpdateEquipment(roleId, equipment);
+          return { success: true, data: { updated: true } };
+        }
+
+        case 'updateDefinitionBody': {
+          const { roleId, body } = (payload ?? {}) as UpdateDefinitionBodyPayload;
+          if (!roleId || typeof body !== 'string') return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and body are required' } };
+          await handleUpdateDefinitionBody(roleId, body);
+          return { success: true, data: { updated: true } };
+        }
+
+        case 'restoreFactory': {
+          const { roleId } = (payload ?? {}) as RoleIdPayload;
+          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+          await handleRestoreFactory(roleId);
+          return { success: true, data: { restored: true } };
         }
 
         // --- 对话式建角色：草稿队列（role-creation-flow） ---

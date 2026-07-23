@@ -98,6 +98,7 @@ import {
   listScopedMemories,
 } from '../../../src/host/services/roleAssets/roleAssetService';
 import type { RolePanelDetail, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
+import { BUILTIN_ROLES } from '../../../src/host/services/roleAssets/builtinRoles';
 
 // 捕获注册的 handler，模拟 ipcHost
 type Handler = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
@@ -303,6 +304,51 @@ describe('roles.ipc (domain:roles)', () => {
       expect(saved).toContain('tags:\n  - 增长\n  - 实验');
       expect(saved).toContain('quick-prompts:\n  - 帮我看增长，给建议');
       expect(saved.slice(saved.indexOf('---\n', 4) + 4)).toBe(body);
+    });
+  });
+
+  describe('E6-3 装备 / 正文 / 出厂还原', () => {
+    it('装备保存保留未知 frontmatter 和正文，正文保存不触碰 frontmatter', async () => {
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir, { recursive: true });
+      const definitionPath = path.join(agentsDir, '自定义角色.md');
+      const frontmatter = '---\nname: 自定义角色\nunknown-key: keep\nskills: [old]\ntools: [Read]\nmodel: fast\nmax-iterations: 3\n---';
+      await fs.writeFile(definitionPath, `${frontmatter}\n旧正文`, 'utf8');
+
+      const equipment = await invoke('updateEquipment', { roleId: '自定义角色', equipment: { skills: ['commit'], tools: ['Read'], model: 'powerful', maxIterations: 22 } });
+      expect(equipment.success).toBe(true);
+      const afterEquipment = await fs.readFile(definitionPath, 'utf8');
+      expect(afterEquipment).toContain('unknown-key: keep');
+      expect(afterEquipment).toContain('skills:\n  - commit');
+      expect(afterEquipment.endsWith('\n旧正文')).toBe(true);
+
+      const body = await invoke('updateDefinitionBody', { roleId: '自定义角色', body: '新正文\n第二行' });
+      expect(body.success).toBe(true);
+      const afterBody = await fs.readFile(definitionPath, 'utf8');
+      expect(afterBody.slice(0, afterBody.indexOf('---', 4) + 3)).toBe(afterEquipment.slice(0, afterEquipment.indexOf('---', 4) + 3));
+      expect(afterBody.endsWith('新正文\n第二行')).toBe(true);
+    });
+
+    it('内置角色还原逐字回到 BUILTIN_ROLES，且不动记忆履历；自建角色不提供还原入口', async () => {
+      const role = BUILTIN_ROLES[0]!;
+      const agentsDir = path.join(mockConfigDir.dir, 'agents');
+      await fs.mkdir(agentsDir, { recursive: true });
+      await fs.writeFile(path.join(agentsDir, `${role.id}.md`), `${role.agentMd}\n本地改动`, 'utf8');
+      await ensureRoleAssetDirs(role.id);
+      await writeScopedMemory({ scope: 'role', roleId: role.id }, { filename: 'keep.md', name: '保留', description: '使用痕迹', content: '不可删除' });
+      await appendRoleHistory(role.id, { date: '2026-07-23', artifactLabel: '合作记录', artifactRef: '-', summary: '已经合作过' });
+
+      const restore = await invoke('restoreFactory', { roleId: role.id });
+      expect(restore.success).toBe(true);
+      expect(await fs.readFile(path.join(agentsDir, `${role.id}.md`), 'utf8')).toBe(role.agentMd);
+      expect((await listScopedMemories({ scope: 'role', roleId: role.id })).map((item) => item.filename)).toContain('keep.md');
+      const builtinDetail = await invoke<RolePanelDetail>('detail', { roleId: role.id });
+      expect(builtinDetail.data?.restore?.available).toBe(true);
+
+      const customDetail = await invoke<RolePanelDetail>('detail', { roleId: '自定义角色' });
+      expect(customDetail.data?.restore).toBeUndefined();
+      // 变异守卫：若把自建角色也标记为可还原，这条断言应直接红。
+      expect(customDetail.data?.restore?.available).not.toBe(true);
     });
   });
 

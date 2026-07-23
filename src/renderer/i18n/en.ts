@@ -851,6 +851,16 @@ export const en: Translations = {
     defaultPauseConditions: 'Pause when credentials, payment, production data, destructive actions, or scope expansion are needed, or after 2 consecutive failed verifications without new evidence.',
   },
 
+  seedComposer: {
+    teamTitle: 'Create team',
+    roleTitle: 'Create role',
+    teamPlaceholder: 'Describe in one sentence what the team should solve',
+    rolePlaceholder: 'Describe in one sentence what the role should handle',
+    availableExpertsHint: '{count} local experts available',
+    cancel: 'Cancel',
+    start: 'Start',
+  },
+
   // /goal 生命周期通知卡片
   goalNotice: {
     startPrefix: 'Goal started: ',

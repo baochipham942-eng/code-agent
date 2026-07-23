@@ -64,6 +64,7 @@ import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
 import { GoalConfirmCard } from './GoalConfirmCard';
+import { SeedComposerCard, type SeedComposerKind } from './SeedComposerCard';
 import { buildVerifyCandidates } from './goalConfirm';
 import { readWorkspaceFile } from '../../../design/designFiles';
 import {
@@ -195,6 +196,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [goalConfirm, setGoalConfirm] = useState<{ initialGoal: string } | null>(null);
   const [goalVerifyCandidates, setGoalVerifyCandidates] = useState<string[]>([]);
   const [submittingGoal, setSubmittingGoal] = useState(false);
+  const [seedComposer, setSeedComposer] = useState<{ kind: SeedComposerKind; initialText: string } | null>(null);
+  const [submittingSeedComposer, setSubmittingSeedComposer] = useState(false);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const debugDraftAppliedRef = useRef(false);
@@ -205,6 +208,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     return () => {
       window.removeEventListener('app:openCommandPalette', handleOpenCommandPalette);
     };
+  }, []);
+
+  useEffect(() => {
+    const handleOpenSeedComposer = (event: Event) => {
+      const kind = (event as CustomEvent<{ kind?: SeedComposerKind }>).detail?.kind;
+      if (kind === 'team' || kind === 'role') setSeedComposer({ kind, initialText: '' });
+    };
+    window.addEventListener('app:openSeedComposer', handleOpenSeedComposer);
+    return () => window.removeEventListener('app:openSeedComposer', handleOpenSeedComposer);
   }, []);
 
   // /goal 确认卡打开时探测项目 package.json scripts 作为验证命令候选
@@ -531,7 +543,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, [inputPlaceholder, isProcessing, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
-  const { handleSubmit, runScheduleCreation, startGoalRun } = useChatInputSubmit({
+  const { handleSubmit, runScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({
     value,
     attachments,
     voiceInputContext,
@@ -558,6 +570,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setScheduleComposerOpen,
     openGoalConfirm: (initialGoal: string) => setGoalConfirm({ initialGoal }),
     closeGoalConfirm: () => setGoalConfirm(null),
+    openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
     setActiveAgentId,
   });
 
@@ -631,6 +644,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               if (!ok) setGoalConfirm({ initialGoal: parsed.goal });
             }}
             onDismiss={() => setGoalConfirm(null)}
+          />
+        )}
+        {seedComposer && (
+          <SeedComposerCard
+            title={seedComposer.kind === 'team' ? t.seedComposer.teamTitle : t.seedComposer.roleTitle}
+            placeholder={seedComposer.kind === 'team' ? t.seedComposer.teamPlaceholder : t.seedComposer.rolePlaceholder}
+            hint={agentEntries.length > 0 ? t.seedComposer.availableExpertsHint.replace('{count}', String(agentEntries.length)) : undefined}
+            initialText={seedComposer.initialText}
+            submitting={submittingSeedComposer}
+            onSubmit={async (text) => {
+              setSubmittingSeedComposer(true);
+              await submitSeedComposer(seedComposer.kind, text);
+              setSubmittingSeedComposer(false);
+              setSeedComposer(null);
+            }}
+            onDismiss={() => setSeedComposer(null)}
           />
         )}
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}

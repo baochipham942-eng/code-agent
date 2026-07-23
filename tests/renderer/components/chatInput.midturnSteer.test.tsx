@@ -54,6 +54,7 @@ function makeParams(overrides: Partial<UseChatInputSubmitParams> = {}): UseChatI
     setScheduleComposerOpen: vi.fn(),
     openGoalConfirm: vi.fn(),
     closeGoalConfirm: vi.fn(),
+    openSeedComposer: vi.fn(),
     setActiveAgentId: vi.fn(),
     ...overrides,
   };

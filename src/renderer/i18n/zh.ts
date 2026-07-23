@@ -839,6 +839,16 @@ export const zh = {
     defaultPauseConditions: '需要凭证、付费、生产数据、破坏性操作、范围扩大，或连续 2 轮验证失败且没有新证据时暂停。',
   },
 
+  seedComposer: {
+    teamTitle: '创建团队',
+    roleTitle: '创建角色',
+    teamPlaceholder: '用一句话说明团队要解决什么问题',
+    rolePlaceholder: '用一句话说明角色要负责什么',
+    availableExpertsHint: '本机现有 {count} 位专家可用',
+    cancel: '取消',
+    start: '开始',
+  },
+
   // /goal 生命周期通知卡片
   goalNotice: {
     startPrefix: '开启目标：',

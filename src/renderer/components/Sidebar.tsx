@@ -733,6 +733,7 @@ export const Sidebar: React.FC = () => {
                 key={group.key}
                 group={group}
                 projectMetaById={projectMetaById}
+                setProjectMetaById={setProjectMetaById}
                 hasSearchFilters={hasSearchFilters}
                 expandedWorkspaces={expandedWorkspaces}
                 collapsingWorkspaces={collapsingWorkspaces}

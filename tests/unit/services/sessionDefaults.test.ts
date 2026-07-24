@@ -60,4 +60,21 @@ describe('resolveSessionDefaultModelConfig', () => {
     expect(config.provider).toBe('claude');
     expect(config.model).toBe('claude-opus-4-7');
   });
+
+  it('P1a: 无参数解析取 settings.models（复数，运行真源），忽略 settings.model（单数旧字段）', () => {
+    // 会话记录路径改为无参数调用，与运行路径 resolveModelConfig 同源。旧代码把单数
+    // settings.model 当 args 传进来会覆盖复数默认，导致记录的模型≠实际运行（真机 dogfood P1a）。
+    settingsState.settings.models.defaultProvider = 'xiaomi';
+    (settingsState.settings as Record<string, unknown>).model = {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+    };
+
+    const config = resolveSessionDefaultModelConfig();
+
+    expect(config.provider).toBe('xiaomi');
+    expect(config.model).toBe('mimo-v2.5-pro');
+
+    delete (settingsState.settings as Record<string, unknown>).model;
+  });
 });

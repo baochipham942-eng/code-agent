@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ---------------------------------------------------------------------------
 // WorkbenchTabs —— 设计 Surface 会话化改造 Task 4：
-//  A) 聊天 workbench bar 里的「设计画布」入口按钮：
+//  A) 空态 / 新视图列表里的「设计画布」入口：
 //     点击 → markSessionDesignActive(currentSessionId) + openWorkbenchTab('design-canvas')；
 //     currentSessionId 为空时按钮 disabled，不触发任何动作。
 //  B) design-canvas tab 渲染正式标签（i18n），而非 getFileName fallback。
@@ -49,7 +49,7 @@ afterEach(() => {
   useDesignCanvasStore.setState({ markSessionDesignActive: realMarkSessionDesignActive });
 });
 
-describe('WorkbenchTabs 设计画布入口按钮', () => {
+describe('WorkbenchTabs 设计画布入口', () => {
   it('有当前会话时点击 → markSessionDesignActive + openWorkbenchTab(design-canvas)', () => {
     const markFn = vi.fn();
     const openFn = vi.fn();
@@ -58,13 +58,13 @@ describe('WorkbenchTabs 设计画布入口按钮', () => {
     useAppStore.setState({ openWorkbenchTab: openFn });
 
     const { getByTestId } = render(<WorkbenchTabs />);
-    const btn = getByTestId('open-design-canvas') as HTMLButtonElement;
+    const btn = getByTestId('open-workbench-view-design-canvas') as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
 
     fireEvent.click(btn);
 
     expect(markFn).toHaveBeenCalledWith('s1');
-    expect(openFn).toHaveBeenCalledWith('design-canvas');
+    expect(openFn).toHaveBeenCalledWith('design-canvas', { source: 'user' });
   });
 
   it('无当前会话时按钮 disabled，点击不触发任何动作', () => {
@@ -75,7 +75,7 @@ describe('WorkbenchTabs 设计画布入口按钮', () => {
     useAppStore.setState({ openWorkbenchTab: openFn });
 
     const { getByTestId } = render(<WorkbenchTabs />);
-    const btn = getByTestId('open-design-canvas') as HTMLButtonElement;
+    const btn = getByTestId('open-workbench-view-design-canvas') as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
 
     fireEvent.click(btn);
@@ -89,11 +89,7 @@ describe('WorkbenchTabs design-canvas tab 正式标签', () => {
   it('design-canvas tab 渲染 i18n 正式标签而非文件名 fallback', () => {
     useAppStore.setState({ workbenchTabs: ['design-canvas'], activeWorkbenchTab: 'design-canvas' });
     const { container } = render(<WorkbenchTabs />);
-    // 正式标签出现
     expect(container.textContent).toContain('设计画布');
-    // 不出现 getFileName('design-canvas') 的 fallback（即原样字符串作为唯一标签）
-    // 正式标签恰好也是中文，这里通过断言 tab 元素 title 不为路径来加强
-    const tab = container.querySelector('[title="设计画布"], [title*="设计"]');
-    expect(tab).toBeTruthy();
+    expect(container.querySelector('[title="设计画布"], [title*="设计"]')).toBeTruthy();
   });
 });

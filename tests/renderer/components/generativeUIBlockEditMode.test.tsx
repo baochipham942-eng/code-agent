@@ -231,3 +231,69 @@ describe('属性面板改文字 / 字号 / 颜色', () => {
     expect(screen.queryByTestId('generative-ui-selection-bar')).toBeNull();
   });
 });
+
+describe('导出为 .html 文件', () => {
+  it('点导出触发一次带 .html 文件名的下载，内容是独立页面', () => {
+    const createURL = vi.fn((_blob: Blob) => 'blob:xyz');
+    const revokeURL = vi.fn();
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = createURL as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL = revokeURL as unknown as typeof URL.revokeObjectURL;
+    const clicked: HTMLAnchorElement[] = [];
+    const origClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) { clicked.push(this); };
+
+    try {
+      render(<GenerativeUIBlock code={'<html><head><title>季度复盘</title></head><body><h1>图</h1></body></html>'} />);
+      fireEvent.click(screen.getByTestId('generative-ui-export'));
+
+      expect(clicked).toHaveLength(1);
+      expect(clicked[0].download).toMatch(/^季度复盘_\d{4}-\d{2}-\d{2}\.html$/);
+      // Blob 用独立页面构建，不含 iframe 专用注入
+      const blob = createURL.mock.calls[0]![0];
+      expect(blob.type).toContain('text/html');
+      expect(revokeURL).toHaveBeenCalled();
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+      HTMLAnchorElement.prototype.click = origClick;
+    }
+  });
+
+  it('导出的是用户改过的版本，不是模型原稿', () => {
+    // jsdom 的 Blob.text() 未实现，改成 spy 构造函数拿到原始字符串
+    const parts: string[] = [];
+    const RealBlob = globalThis.Blob;
+    class SpyBlob extends RealBlob {
+      constructor(bits: BlobPart[], opts?: BlobPropertyBag) {
+        super(bits, opts);
+        parts.push(bits.map(String).join(''));
+      }
+    }
+    globalThis.Blob = SpyBlob as unknown as typeof Blob;
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (() => 'blob:xyz') as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL = (() => {}) as unknown as typeof URL.revokeObjectURL;
+    const origClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {};
+
+    try {
+      render(<GenerativeUIBlock code={CODE} />);
+      enterEditAndSelect('h1');
+      fireEvent.change(screen.getByTestId('generative-ui-text-input'), { target: { value: 'Q3 复盘' } });
+      fireEvent.click(editToggle()); // 退出编辑
+
+      fireEvent.click(screen.getByTestId('generative-ui-export'));
+      const exported = parts.at(-1)!;
+      expect(exported).toContain('Q3 复盘');
+      expect(exported).not.toContain('季度复盘');
+    } finally {
+      globalThis.Blob = RealBlob;
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+      HTMLAnchorElement.prototype.click = origClick;
+    }
+  });
+});

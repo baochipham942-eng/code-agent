@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { memo, useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
-import { Sparkles, Code2, Copy, Check, ExternalLink, MousePointerClick } from 'lucide-react';
+import { Sparkles, Code2, Copy, Check, ExternalLink, MousePointerClick, Download } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
 import {
@@ -15,6 +15,8 @@ import {
   applyHtmlElementEdit,
   buildEditSrcdoc,
   buildPreviewSrcdoc,
+  buildStandaloneHtml,
+  extractHtmlTitle,
   EDIT_SANDBOX,
   PREVIEW_SANDBOX,
   type HtmlElementEdit,
@@ -255,13 +257,29 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
     setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
   }, [code]);
 
+  // 丢去浏览器：用独立页面（含用户编辑、去掉 iframe 专用的 CSP/高度脚本），不是预览 srcdoc
   const handleOpen = useCallback(() => {
-    const blob = new Blob([srcdoc], { type: 'text/html' });
+    const blob = new Blob([buildStandaloneHtml(activeCode)], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
-    // Clean up after a delay
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [srcdoc]);
+  }, [activeCode]);
+
+  // 导出成一个能发出去的 .html 文件（抄 ExportModal 的 Blob 下载）
+  const handleExport = useCallback(() => {
+    const title = extractHtmlTitle(activeCode) || t.generativeUI.generativeUI;
+    const safe = title.replace(/[^a-zA-Z0-9一-龥]/g, '_').slice(0, 60);
+    const filename = `${safe}_${new Date().toISOString().split('T')[0]}.html`;
+    const blob = new Blob([buildStandaloneHtml(activeCode)], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [activeCode, t.generativeUI.generativeUI]);
 
   // Fallback: empty code
   if (!code.trim()) {
@@ -323,6 +341,14 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
                 <span>{t.generativeUI.copy}</span>
               </>
             )}
+          </button>
+          <button
+            onClick={handleExport}
+            data-testid="generative-ui-export"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{t.generativeUI.exportHtml}</span>
           </button>
           <button
             onClick={handleOpen}

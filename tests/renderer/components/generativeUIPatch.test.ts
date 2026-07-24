@@ -4,6 +4,8 @@ import {
   applyHtmlElementEdit,
   buildEditSrcdoc,
   isTextEditable,
+  buildStandaloneHtml,
+  extractHtmlTitle,
   SANDBOX_TEXT_COLOR,
 } from '../../../src/renderer/components/features/chat/MessageBubble/generativeUIDocument';
 import { readElementStyle } from '../../../src/renderer/components/features/chat/MessageBubble/GenerativeUIEditPanel';
@@ -209,5 +211,26 @@ describe('属性面板读当前值', () => {
     document.body.innerHTML = '<p style="font-size: 15.6px">x</p><span>y</span>';
     expect(readElementStyle(document.querySelector('p')!).fontSize).toBe(16);
     expect(readElementStyle(document.querySelector('span')!).fontSize).toBeGreaterThan(0);
+  });
+});
+
+describe('导出独立 HTML', () => {
+  it('保留暗色样式与模型脚本，去掉 iframe 专用的 CSP 和高度上报脚本', () => {
+    const code = '<!DOCTYPE html><html><head><script>window.anim=1</script></head><body><h1>图</h1></body></html>';
+    const out = buildStandaloneHtml(code);
+    expect(out).toContain('#18181b');          // 暗色样式留着，否则白底浅字一片糊
+    expect(out).toContain('window.anim=1');     // 模型自己的脚本留着，导出是真页面动效该跑
+    expect(out).not.toContain('Content-Security-Policy'); // 脱离 iframe，CSP 只剩噪音
+    expect(out).not.toContain('generative-ui-resize');    // 高度上报脚本无意义
+  });
+
+  it('用户编辑标记随内容一起带出去，不特殊处理', () => {
+    const code = '<div><h1>标题</h1></div>\n<!-- neo:user-edited 2026-07-24 fields=text -->';
+    expect(buildStandaloneHtml(code)).toContain('neo:user-edited');
+  });
+
+  it('取 <title> 作文件名，无 title 返回 null', () => {
+    expect(extractHtmlTitle('<html><head><title>季度复盘</title></head></html>')).toBe('季度复盘');
+    expect(extractHtmlTitle('<div>没有标题</div>')).toBeNull();
   });
 });

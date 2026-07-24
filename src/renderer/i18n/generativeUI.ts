@@ -29,6 +29,7 @@ export const generativeUIZh = {
     patchFailed: '这一块的位置对不上了，请重新点选。',
     editStreamingHint: '正在生成，生成完再编辑',
     editConflict: '这个产物刚更新过，你上次的改动没保存。请重新编辑。',
+    exportHtml: '导出',
     // DocumentBlock
     document: '文档',
     paragraphUnit: '段',
@@ -82,6 +83,7 @@ export const generativeUIEn = {
     patchFailed: "This block can't be located any more. Please select it again.",
     editStreamingHint: 'Still generating — edit once it finishes',
     editConflict: 'This artifact was just updated; your last change was not saved. Please edit again.',
+    exportHtml: 'Export',
     // DocumentBlock
     document: 'Document',
     paragraphUnit: 'paragraphs',

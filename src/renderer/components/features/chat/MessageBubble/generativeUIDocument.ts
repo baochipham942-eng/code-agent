@@ -159,3 +159,21 @@ export function buildPreviewSrcdoc(code: string): string {
 export function buildEditSrcdoc(code: string): string {
   return wrap(stripScripts(code), `${CSP_META}${INJECTED_STYLES}`, '');
 }
+
+/**
+ * 导出成一个双击就能看、能发给同事的独立 .html 文件。
+ * 相比预览 srcdoc 减两样：CSP meta（脱离 iframe 只剩噪音）、高度上报脚本
+ * （window.parent 在独立页面里没有意义）。INJECTED_STYLES 必须留——prompt 让模型
+ * 按暗色主题配色，不带样式导出就是白底浅字一片糊。模型自己的 <script> 保留，
+ * 导出的是真页面，动效该照跑。用户手工编辑的 <!-- neo:user-edited --> 注释随内容带出去。
+ */
+export function buildStandaloneHtml(code: string): string {
+  return wrap(code, INJECTED_STYLES, '');
+}
+
+/** 取产物的 <title> 作导出文件名；没有就返回 null，让调用方兜底。 */
+export function extractHtmlTitle(code: string): string | null {
+  const match = code.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = match?.[1]?.trim();
+  return title ? title : null;
+}

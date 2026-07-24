@@ -83,7 +83,7 @@ export function replaceGenerativeUiFence(
   const regex = fenceRegex();
   let index = 0;
   let replaced = false;
-  const next = content.replace(regex, (whole: string, _body: string, matchOffset: number) => {
+  const next = content.replace(regex, (whole: string) => {
     if (index++ !== ordinal) return whole;
     replaced = true;
     // 保住原 fence 的开合语法，只换中间正文

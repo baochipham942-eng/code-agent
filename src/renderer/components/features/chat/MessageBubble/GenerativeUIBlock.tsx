@@ -114,7 +114,6 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
   const touchedFieldsRef = useRef<Set<string>>(new Set());
   const { t } = useI18n();
 
-  const canPersist = Boolean(messageId && sessionId);
   const activeCode = draftCode ?? code;
   const srcdoc = buildPreviewSrcdoc(activeCode);
 
@@ -178,11 +177,12 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
    * 中间被人动过，host 会 fail-closed 返回 conflict。
    */
   const persistDraft = useCallback(async (base: string, draft: string) => {
-    if (!canPersist || draft === base) return;
+    // 直接判 messageId/sessionId（而非 canPersist），顺带让 TS narrow 掉 undefined
+    if (!messageId || !sessionId || draft === base) return;
     try {
       const result = await generativeUIClient.persistHtmlEdit({
-        sessionId: sessionId!,
-        messageId: messageId!,
+        sessionId,
+        messageId,
         sourceOrdinal,
         baseHash: hashGenerativeUiBody(base),
         newCode: stripEditMarker(draft),
@@ -197,7 +197,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({
       // 写库失败：不谎报成功，回到真源，让用户重来
       setDraftCode(null);
     }
-  }, [canPersist, sessionId, messageId, sourceOrdinal]);
+  }, [sessionId, messageId, sourceOrdinal]);
 
   // 副作用不能塞进 setEditing 的 updater——StrictMode 下 updater 会跑两遍，
   // 落库就会发两次。从闭包读 editing（已在 deps 里），在 updater 外面做。

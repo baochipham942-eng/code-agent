@@ -239,6 +239,7 @@ function stopServer(server: Server | null): Promise<void> {
 function startAppHost(
   port: number,
   fakeBinDir: string,
+  dataDir: string,
   catalog: { url: string; publicKeysJson: string },
 ): { child: ChildProcessByStdio<null, Readable, Readable>; output: () => string } {
   let logs = '';
@@ -251,7 +252,9 @@ function startAppHost(
       WEB_PORT: String(port),
       CODE_AGENT_ENABLE_DEV_API: 'true',
       CODE_AGENT_E2E: '1',
+      CODE_AGENT_DATA_DIR: dataDir,
       CODE_AGENT_WORKING_DIR: process.cwd(),
+      CODE_AGENT_RENDERER_HOT_UPDATE: 'false',
       CODE_AGENT_AGENT_ENGINE_MODEL_CATALOG_URL: catalog.url,
       CODE_AGENT_CONTROL_PLANE_PUBLIC_KEYS: catalog.publicKeysJson,
       NODE_ENV: 'development',
@@ -423,31 +426,43 @@ async function selectSmokeSessionInSidebar(page: Page, session: SessionLike): Pr
 
 async function openEngineSelector(page: Page): Promise<void> {
   await dismissApiKeySetupIfVisible(page);
-  const trigger = page.locator('button[aria-label="切换模型"]').last();
-  await trigger.scrollIntoViewIfNeeded().catch(() => undefined);
-  await trigger.click({ timeout: 5_000 });
-  await page.locator('button[title*="Native"]').first().waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByRole('button', { name: '用户菜单', exact: true }).click({ timeout: 5_000 });
+  await page.getByRole('button', { name: '设置', exact: true }).click({ timeout: 5_000 });
+  const settingsDialog = page.getByRole('dialog', { name: '设置', exact: true });
+  await settingsDialog.waitFor({ state: 'visible', timeout: 10_000 });
+  const advanced = settingsDialog.getByRole('button', { name: '高级', exact: true });
+  if (await advanced.getAttribute('aria-expanded') !== 'true') {
+    await advanced.click({ timeout: 5_000 });
+  }
+  await settingsDialog.getByRole('button', { name: '执行引擎', exact: true }).click({ timeout: 5_000 });
+  await settingsDialog.locator('[data-engine-kind="native"]').waitFor({ state: 'visible', timeout: 10_000 });
 }
 
 async function readEngineButtons(page: Page): Promise<Array<{ text: string; title: string }>> {
-  return page.evaluate(() => Array.from(document.querySelectorAll<HTMLButtonElement>('button[title]'))
-    .map((button) => ({
-      text: button.innerText.trim(),
-      title: button.getAttribute('title') || '',
+  return page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('[data-engine-kind]'))
+    .map((row) => ({
+      text: row.innerText.trim(),
+      title: row.getAttribute('data-engine-kind') || '',
     }))
-    .filter((button) =>
-      button.title.includes('Native')
-      || button.title.includes('Codex CLI')
-      || button.title.includes('Claude Code')
-    ));
+    .filter((row) => ['native', 'codex_cli', 'claude_code'].includes(row.title)));
 }
 
 function findEngineButton(buttons: Array<{ text: string; title: string }>, label: string): boolean {
-  return buttons.some((button) => button.title.includes(label));
+  const kind = label === 'Native'
+    ? 'native'
+    : label === 'Codex CLI'
+      ? 'codex_cli'
+      : 'claude_code';
+  return buttons.some((button) => button.title === kind);
 }
 
 async function clickEngine(page: Page, label: 'Native' | 'Codex CLI' | 'Claude Code'): Promise<void> {
-  const button = page.locator(`button[title*="${label}"]`).first();
+  const kind = label === 'Native'
+    ? 'native'
+    : label === 'Codex CLI'
+      ? 'codex_cli'
+      : 'claude_code';
+  const button = page.locator(`[data-engine-kind="${kind}"] button`).last();
   await button.waitFor({ state: 'visible', timeout: 10_000 });
   if (!await button.isEnabled().catch(() => false)) {
     const title = await button.getAttribute('title').catch(() => '');
@@ -460,12 +475,13 @@ async function waitForTriggerEngine(page: Page, shortLabel: 'Agent Neo' | 'Codex
   const trigger = page.locator('button[aria-label="切换模型"]').last();
   const start = Date.now();
   let lastTexts: string[] = [];
+  const triggerLabel = shortLabel === 'Agent Neo' ? 'Neo' : shortLabel;
 
   while (Date.now() - start < 10_000) {
     lastTexts = await page.evaluate(() => Array.from(
       document.querySelectorAll<HTMLButtonElement>('button[aria-label="切换模型"]'),
     ).map((button) => button.innerText || button.textContent || ''));
-    if (lastTexts.some((text) => text.includes(shortLabel))) {
+    if (lastTexts.some((text) => text.includes(triggerLabel))) {
       return trigger.innerText({ timeout: 1_000 });
     }
     await page.waitForTimeout(250);
@@ -504,11 +520,12 @@ async function main(): Promise<void> {
   await ensureBuild(hasFlag(args, 'skip-build'));
 
   const fakeBinDir = createFakeExternalEngineBin();
+  const appDataDir = mkdtempSync(join(tmpdir(), 'code-agent-agent-engine-smoke-data-'));
   const appPort = getNumberOption(args, 'port') || await getFreePort();
   const catalogPort = await getFreePort();
   const fakeCatalog = await createFakeSignedCatalogServer(catalogPort);
   const baseUrl = `http://127.0.0.1:${appPort}`;
-  const appHost = startAppHost(appPort, fakeBinDir, fakeCatalog);
+  const appHost = startAppHost(appPort, fakeBinDir, appDataDir, fakeCatalog);
   let chromeSession: Awaited<ReturnType<typeof launchSystemChromeSession>> | null = null;
   let page: Page | null = null;
   let smokeSessionId: string | null = null;
@@ -539,6 +556,18 @@ async function main(): Promise<void> {
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await waitForAppReady(page);
 
+    await invokeDomain(page, 'domain:folderTrust', 'set', {
+      workingDirectory: process.cwd(),
+      state: 'trusted',
+      decidedBy: 'agent-engine-selector-smoke',
+    });
+    const engineSettings = await invokeDomain<{
+      models?: {
+        agentEngines?: Partial<Record<AgentEngineKind, { defaultModel?: string }>>;
+      };
+    }>(page, 'domain:settings', 'get', {});
+    const expectedCodexModel = engineSettings.models?.agentEngines?.codex_cli?.defaultModel;
+    const expectedClaudeModel = engineSettings.models?.agentEngines?.claude_code?.defaultModel;
     const smokeSession = await createSmokeSession(page, process.cwd());
     smokeSessionId = smokeSession.id;
     await selectEngineViaDomain(page, smokeSession.id, 'codex_cli');
@@ -582,11 +611,11 @@ async function main(): Promise<void> {
     if (!codexEngine.cwd || !claudeEngine.cwd) {
       failures.push('External engine metadata missing cwd.');
     }
-    if (codexEngine.model !== 'smoke-codex') {
-      failures.push(`Codex CLI model mismatch: ${codexEngine.model || 'missing'}`);
+    if (!codexEngine.model || (expectedCodexModel && codexEngine.model !== expectedCodexModel)) {
+      failures.push(`Codex CLI model mismatch: expected=${expectedCodexModel || 'configured model'} actual=${codexEngine.model || 'missing'}`);
     }
-    if (claudeEngine.model !== 'smoke-sonnet') {
-      failures.push(`Claude Code model mismatch: ${claudeEngine.model || 'missing'}`);
+    if (!claudeEngine.model || (expectedClaudeModel && claudeEngine.model !== expectedClaudeModel)) {
+      failures.push(`Claude Code model mismatch: expected=${expectedClaudeModel || 'configured model'} actual=${claudeEngine.model || 'missing'}`);
     }
 
     if (consoleErrors.length > 0) {
@@ -689,6 +718,7 @@ async function main(): Promise<void> {
     }
     if (!hasFlag(args, 'keep-server')) {
       await stopProcess(appHost.child);
+      rmSync(appDataDir, { recursive: true, force: true });
     }
     rmSync(fakeBinDir, { recursive: true, force: true });
     await stopServer(fakeCatalog.server).catch(() => undefined);

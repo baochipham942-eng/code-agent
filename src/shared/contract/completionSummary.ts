@@ -31,6 +31,10 @@ export interface CompletionSummaryVerificationEvidence {
 }
 
 export interface CompletionSummaryDirtyState {
+  sourceId?: string;
+  sourceRole?: 'primary' | 'additional';
+  sourceAccess?: 'read_only' | 'read_write';
+  repositoryRoot?: string;
   checkedAt: number;
   gitBranch?: string | null;
   headCommit?: string | null;
@@ -76,6 +80,14 @@ export interface CompletionSummaryRecord {
   commands: CompletionSummaryCommand[];
   verificationEvidence: CompletionSummaryVerificationEvidence[];
   dirtyState?: CompletionSummaryDirtyState;
+  dirtyStates?: CompletionSummaryDirtyState[];
+  changedFilesBySource?: Array<{
+    sourceId: string;
+    sourceRole: 'primary' | 'additional';
+    sourceAccess: 'read_only' | 'read_write';
+    files: string[];
+  }>;
+  workspaceScopeVersion?: string;
   commitIds: string[];
   risks: string[];
   blockers: string[];

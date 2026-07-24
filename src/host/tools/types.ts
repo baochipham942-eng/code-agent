@@ -12,6 +12,7 @@ import type {
   WorkbenchToolScope,
 } from '../../shared/contract/conversationEnvelope';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
+import type { WorkspaceScope } from '../../shared/contract/project';
 
 export interface Tool extends ToolDefinition {
   execute: (
@@ -27,6 +28,7 @@ export interface ToolContext {
   turnId?: string;
   /** Immutable authorization/artifact boundary for a run-scoped executor. */
   workspace?: string;
+  workspaceScope?: WorkspaceScope;
   workingDirectory: string;
 
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;

@@ -3,6 +3,7 @@ import type { RuntimeContext } from './runtimeContext';
 import type { ArtifactRepairGuard, ArtifactRepairGuardPhase } from './artifactState';
 import { inferArtifactRepairIssueCodesFromText } from './artifactRepairSpec';
 import { getUserConfigDir } from '../../config/configPaths';
+import { isPathWithinRoot } from '../../runtime/workspaceScope';
 
 export type { ArtifactRepairGuard };
 
@@ -13,7 +14,7 @@ export type { ArtifactRepairGuard };
 export function isDesignDraftWorkingDir(workingDirectory: string | null | undefined): boolean {
   if (!workingDirectory) return false;
   const designRoot = join(getUserConfigDir(), 'design');
-  return workingDirectory === designRoot || workingDirectory.startsWith(`${designRoot}/`);
+  return isPathWithinRoot(workingDirectory, designRoot);
 }
 
 // Route A: the repair tool set never narrows by read/block counters.

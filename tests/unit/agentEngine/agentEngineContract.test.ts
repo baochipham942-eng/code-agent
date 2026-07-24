@@ -17,6 +17,7 @@ import {
 } from '../../../src/host/services/agentEngine/agentEngineTiming';
 import { normalizeVersionOutput as normalizeRegistryVersionOutput } from '../../../src/host/services/agentEngine/agentEngineRegistry';
 import type { Session } from '../../../src/shared/contract/session';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 describe('Agent Engine contract', () => {
   it('defaults old sessions to native', () => {
@@ -239,6 +240,21 @@ describe('Agent Engine launch policy', () => {
       makeSession({ workingDirectory: workspaceRoot }),
       selected,
     ).model).toBe('sonnet');
+  });
+
+  it('fails closed when an external Engine cannot express multiple Project Sources', async () => {
+    const docs = path.join(tempDir, 'docs');
+    await fs.mkdir(docs);
+    const scope = createWorkspaceScope('proj-multi', [
+      { sourceId: 'primary', path: workspaceRoot, role: 'primary', access: 'read_write' },
+      { sourceId: 'docs', path: docs, role: 'additional', access: 'read_only' },
+    ]);
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot }),
+      { kind: 'codex_cli', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'manual' },
+      workspaceRoot,
+      scope,
+    )).toThrow(/multiple Source roots/);
   });
 
   it('rejects workspace-write external engine selection in the current release', () => {

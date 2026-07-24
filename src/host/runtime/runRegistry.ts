@@ -39,7 +39,7 @@ import {
 } from '../agent/autoAgentDurableRuntime';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import type { NativeRecoveryDescriptor } from './nativeRecoveryHost';
+import { isNativeRecoveryDescriptor, type NativeRecoveryDescriptor } from './nativeRecoveryHost';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
 
 const HEARTBEAT_TRANSIENT_RETRY_WINDOWS = 2;
@@ -289,6 +289,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         root: workspace,
         cwd,
         fingerprint: createHash('sha256').update(workspace).digest('hex'),
+        scope: handle.context.workspaceScope,
       },
       logicalOperationId: input.logicalOperationId,
       operationId,
@@ -358,6 +359,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         root: workspace,
         cwd: path.resolve(handle.context.cwd),
         fingerprint: createHash('sha256').update(workspace).digest('hex'),
+        scope: handle.context.workspaceScope,
       },
       logicalOperationId: input.logicalOperationId,
       operationId,
@@ -579,10 +581,15 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     }
     const existing = this.handlesByRunId.get(runId);
     if (existing) return existing;
+    const recoveredDescriptor = plan.checkpoint?.state;
+    const workspaceScope = isNativeRecoveryDescriptor(recoveredDescriptor)
+      ? recoveredDescriptor.workspace.scope
+      : undefined;
     const context = createRunContext({
       runId,
       sessionId: plan.envelope.sessionId,
       workspace,
+      workspaceScope,
       cwd,
       createdAt: plan.envelope.createdAt,
     });

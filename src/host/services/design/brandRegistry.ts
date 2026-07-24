@@ -23,6 +23,7 @@ import {
   type BrandMeta,
   type BrandRegistryIndex,
 } from '../../../shared/contract/brandContract';
+import { isPathWithinRoot } from '../../runtime/workspaceScope';
 
 const INDEX_FILE = 'index.json';
 const BRAND_FILE = 'brand.json';
@@ -50,7 +51,7 @@ function assertSafeBrandId(id: string): void {
   }
   const root = path.resolve(brandsRoot());
   const dir = path.resolve(brandsRoot(), id);
-  if (dir !== root && !dir.startsWith(root + path.sep)) {
+  if (!isPathWithinRoot(dir, root)) {
     throw new Error(`品牌 id 越界（解析路径逃出 brands 目录）：${id}`);
   }
 }

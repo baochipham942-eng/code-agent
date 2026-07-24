@@ -18,6 +18,7 @@ export function createSubagentToolRuntime(input: {
       runId: context.runId,
       sessionId: input.sessionId,
       workspace: context.workspace,
+      workspaceScope: context.workspaceScope,
       cwd: context.cwd,
     })
     : undefined;

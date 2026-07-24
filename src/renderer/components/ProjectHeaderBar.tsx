@@ -22,6 +22,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Settings2,
   Table2,
   Target,
   UserPlus,
@@ -29,7 +30,7 @@ import {
   X,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { ProjectArtifact, ProjectDetail, ProjectGoal } from '@shared/contract/project';
+import type { ProjectArtifact, ProjectDetail, ProjectGoal, ProjectSourceGitState } from '@shared/contract/project';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import ipcService from '../services/ipcService';
 import { RoleIcon } from './features/shared/RoleIcon';
@@ -38,6 +39,7 @@ import {
   addProjectRole,
   getProjectArtifacts,
   getProjectDetail,
+  getProjectSourceGitStates,
   removeProjectRole,
   renameProject,
   setProjectStatus,
@@ -46,6 +48,8 @@ import {
 import { useSessionStore } from '../stores/sessionStore';
 import { useUIStore } from '../stores/uiStore';
 import { createLogger } from '../utils/logger';
+import { ProjectSettingsDialog } from './ProjectSettingsDialog';
+import { useI18n } from '../hooks/useI18n';
 
 const logger = createLogger('ProjectHeaderBar');
 
@@ -76,6 +80,7 @@ const ARTIFACT_ICON: Partial<Record<ProjectArtifact['kind'], React.ComponentType
 };
 
 export const ProjectHeaderBar: React.FC = () => {
+  const { t } = useI18n();
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const sessions = useSessionStore((s) => s.sessions);
   const showToast = useUIStore((s) => s.showToast);
@@ -93,6 +98,8 @@ export const ProjectHeaderBar: React.FC = () => {
   const [addingGoal, setAddingGoal] = useState(false);
   const [roleOptions, setRoleOptions] = useState<RolePanelEntry[]>([]);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sourceGitStates, setSourceGitStates] = useState<ProjectSourceGitState[]>([]);
 
   const refresh = useCallback(async () => {
     if (!projectId) {
@@ -101,9 +108,24 @@ export const ProjectHeaderBar: React.FC = () => {
       return;
     }
     try {
-      const [d, a] = await Promise.all([getProjectDetail(projectId), getProjectArtifacts(projectId)]);
-      setDetail(d);
+      const [d, a, gitStatesResult] = await Promise.all([
+        getProjectDetail(projectId),
+        getProjectArtifacts(projectId),
+        getProjectSourceGitStates(projectId)
+          .then((states) => ({ states, error: null }))
+          .catch((error: unknown) => ({ states: [] as ProjectSourceGitState[], error })),
+      ]);
+      // Older bridge fixtures and persisted pre-migration detail payloads may omit sources.
+      setDetail({ ...d, sources: d.sources ?? [] });
       setArtifacts(a);
+      setSourceGitStates(gitStatesResult.states);
+      if (gitStatesResult.error) {
+        logger.warn('加载 Source Git 状态失败', {
+          err: gitStatesResult.error instanceof Error
+            ? gitStatesResult.error.message
+            : String(gitStatesResult.error),
+        });
+      }
     } catch (err) {
       logger.warn('加载项目详情失败', { err: err instanceof Error ? err.message : String(err) });
     }
@@ -254,6 +276,9 @@ export const ProjectHeaderBar: React.FC = () => {
             title="点击改名"
           >
             <span className="truncate">{detail.project.name}</span>
+            <span className="shrink-0 text-[10px] font-normal text-zinc-500">
+              {detail.sources.length} Source{detail.sources.length === 1 ? '' : 's'}
+            </span>
             <Pencil className="h-3 w-3 shrink-0 text-zinc-500 opacity-0 group-hover:opacity-100" />
           </button>
         )}
@@ -276,6 +301,15 @@ export const ProjectHeaderBar: React.FC = () => {
           title={detail.project.status === 'archived' ? '恢复项目' : '归档项目'}
         >
           <Archive className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="shrink-0 text-zinc-500 hover:text-zinc-300"
+          title={t.sidebarProject.settings.title}
+          aria-label={t.sidebarProject.settings.title}
+        >
+          <Settings2 className="h-3.5 w-3.5" />
         </button>
       </div>
 
@@ -387,6 +421,41 @@ export const ProjectHeaderBar: React.FC = () => {
 
           {/* 项目维度产物（跨 session 聚合） */}
           <section>
+            <div className="mb-1 font-medium text-zinc-400">Source Git / Review</div>
+            <div className="space-y-1">
+              {detail.sources.map((source) => {
+                const gitState = sourceGitStates.find((state) => state.sourceId === source.id);
+                return (
+                  <div key={source.id} className="grid gap-1 rounded border border-zinc-800 px-2 py-1 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span className="max-w-[42%] truncate text-zinc-300">{source.path}</span>
+                      <span className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">
+                        {source.role === 'primary' ? 'Primary' : source.access === 'read_only' ? '只读' : '读写'}
+                      </span>
+                      <span className="ml-auto truncate text-zinc-500">
+                        {gitState?.isRepository
+                          ? `${gitState.branch ?? 'detached'} · ${gitState.headSha?.slice(0, 8) ?? 'no HEAD'} · ${gitState.dirtyFiles?.length ?? 0} changed`
+                          : '非 Git Source'}
+                      </span>
+                    </div>
+                    {gitState?.dirtyFiles && gitState.dirtyFiles.length > 0 && (
+                      <ul className="grid gap-0.5 border-l border-amber-500/30 pl-2 text-[10px] text-amber-200/80">
+                        {gitState.dirtyFiles.slice(0, 4).map((filePath) => (
+                          <li key={filePath} className="truncate">{filePath}</li>
+                        ))}
+                        {gitState.dirtyFiles.length > 4 && (
+                          <li className="text-zinc-500">+{gitState.dirtyFiles.length - 4} more</li>
+                        )}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* 项目维度产物（跨 session 聚合） */}
+          <section>
             <div className="mb-1 font-medium text-zinc-400">项目产物 <span className="text-zinc-600">（跨 {detail.sessionIds.length} 会话）</span></div>
             {artifacts.length === 0 ? (
               <p className="text-[11px] text-zinc-600">暂无产物</p>
@@ -407,6 +476,12 @@ export const ProjectHeaderBar: React.FC = () => {
           </section>
         </div>
       )}
+      <ProjectSettingsDialog
+        projectId={projectId}
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={() => { void refresh(); }}
+      />
     </div>
   );
 };

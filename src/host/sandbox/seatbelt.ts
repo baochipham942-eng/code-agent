@@ -45,6 +45,8 @@ export interface SeatbeltConfig {
   customEnv: Record<string, string>;
   /** Working directory */
   workingDirectory?: string;
+  /** Legacy default grants cwd write; multi-root callers disable it and pass explicit writePaths. */
+  allowWorkingDirectoryWrite?: boolean;
   /** Timeout in milliseconds */
   timeout?: number;
   /** Custom Seatbelt profile (overrides generated profile) */
@@ -118,6 +120,7 @@ const DEFAULT_CONFIG: SeatbeltConfig = {
   ],
   customEnv: {},
   timeout: SANDBOX_TIMEOUTS.DEFAULT,
+  allowWorkingDirectoryWrite: true,
 };
 
 // ----------------------------------------------------------------------------
@@ -175,7 +178,9 @@ export function generateProfile(config: SeatbeltConfig): string {
 
   const writeRoots = new Set<string>();
   writeRoots.add(realPath(process.env.TMPDIR || os.tmpdir() || '/tmp'));
-  if (config.workingDirectory) writeRoots.add(realPath(config.workingDirectory));
+  if (config.workingDirectory && config.allowWorkingDirectoryWrite !== false) {
+    writeRoots.add(realPath(config.workingDirectory));
+  }
   for (const p of config.writePaths) writeRoots.add(realPath(p));
 
   for (const p of writeRoots) {

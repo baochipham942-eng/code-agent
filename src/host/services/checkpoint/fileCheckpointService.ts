@@ -29,7 +29,8 @@ export class FileCheckpointService {
   async createCheckpoint(
     sessionId: string,
     messageId: string,
-    filePath: string
+    filePath: string,
+    attribution?: { sourceId?: string; workspaceScopeVersion?: string },
   ): Promise<string | null> {
     const dbService = getDatabase();
     if (!dbService.isReady) {
@@ -75,9 +76,22 @@ export class FileCheckpointService {
       const createdAt = Date.now();
 
       db.prepare(`
-        INSERT INTO file_checkpoints (id, session_id, message_id, file_path, original_content, file_existed, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, sessionId, messageId, absolutePath, originalContent, fileExisted ? 1 : 0, createdAt);
+        INSERT INTO file_checkpoints (
+          id, session_id, message_id, file_path, source_id, workspace_scope_version,
+          original_content, file_existed, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        sessionId,
+        messageId,
+        absolutePath,
+        attribution?.sourceId ?? null,
+        attribution?.workspaceScopeVersion ?? null,
+        originalContent,
+        fileExisted ? 1 : 0,
+        createdAt,
+      );
 
       logger.debug('Checkpoint created', { id, sessionId, messageId, filePath: absolutePath, fileExisted });
       return id;
@@ -228,7 +242,8 @@ export class FileCheckpointService {
 
     try {
       const rows = db.prepare(`
-        SELECT id, session_id, message_id, file_path, original_content, file_existed, created_at
+        SELECT id, session_id, message_id, file_path, source_id, workspace_scope_version,
+               original_content, file_existed, created_at
         FROM file_checkpoints
         WHERE session_id = ?
         ORDER BY created_at DESC
@@ -237,6 +252,8 @@ export class FileCheckpointService {
         session_id: string;
         message_id: string;
         file_path: string;
+        source_id: string | null;
+        workspace_scope_version: string | null;
         original_content: string | null;
         file_existed: number;
         created_at: number;
@@ -247,6 +264,8 @@ export class FileCheckpointService {
         sessionId: row.session_id,
         messageId: row.message_id,
         filePath: row.file_path,
+        sourceId: row.source_id ?? undefined,
+        workspaceScopeVersion: row.workspace_scope_version ?? undefined,
         originalContent: row.original_content,
         fileExisted: row.file_existed === 1,
         createdAt: row.created_at,

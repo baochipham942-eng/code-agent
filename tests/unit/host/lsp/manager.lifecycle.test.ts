@@ -156,7 +156,7 @@ describe('LSPServer', () => {
     });
 
     const ready = new Promise<void>((r) => server.once('ready', r));
-    await server.start('/tmp/ws');
+    await server.start('/tmp/ws', ['/tmp/ws', '/tmp/docs']);
     await ready;
 
     expect(mocks.ensureInstalled).toHaveBeenCalledWith(
@@ -170,6 +170,11 @@ describe('LSPServer', () => {
     expect(server.getState()).toBe('ready');
     // initialize request was written
     expect(proc.written.some((w) => w.includes('"method":"initialize"'))).toBe(true);
+    expect(proc.written.some((w) =>
+      w.includes('"workspaceFolders"')
+      && w.includes('file:///tmp/ws')
+      && w.includes('file:///tmp/docs')
+    )).toBe(true);
   });
 
   it('start rejects when already started', async () => {

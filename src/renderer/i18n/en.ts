@@ -954,14 +954,18 @@ export const en: Translations = {
   // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
   workbenchTabs: {
     openPanel: 'Open panel',
+    overviewLabel: 'Overview',
+    overviewTitle: 'Task progress and deliverables',
+    overviewProgressLabel: 'Task progress',
+    overviewArtifactsLabel: 'Deliverables',
     filesLabel: 'Files',
     filesTitle: 'File browser',
-    contextLabel: 'Context',
-    contextTitle: 'Context usage and sources',
-    skillsTitle: 'Session Skills',
-    assetsTitle: 'Workspace Assets',
-    auditTitle: 'Replay / session quality audit',
-    projectCollabTitle: 'Project collaboration',
+    browserLabel: 'Browser',
+    browserTitle: 'Live web preview',
+    browserEmpty: 'No live page is open',
+    browserEmptyHint: 'Start Live Preview from the session menu to open a URL here.',
+    previewLabel: 'Preview',
+    previewTitle: 'Open the latest file deliverable',
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）

@@ -29,3 +29,29 @@ export const FEISHU_READONLY_TOOLS = [
   'calendar.v4.calendarEvent.list',
   'calendar.v4.freebusy.list',
 ] as const;
+
+/**
+ * 业务事件监听（external_event 自动化）：在 agent 型 cron 任务的 action.context 里携带，
+ * 让任务知道自己盯的是飞书哪个数据源。搭配 S4 的 trackChanges 快照做跨运行变化检测。
+ * 检测本身走 agent prompt 调飞书 MCP + 对比上轮 <cron_snapshot>，这里只存"盯什么"。
+ */
+export const EXTERNAL_WATCH = {
+  /** action.context 里携带监听配置的键；有它即派生 SessionAutomationType='external_event'。 */
+  CONTEXT_KEY: 'externalWatch',
+  SOURCE_CALENDAR: 'feishu-calendar',
+  SOURCE_TABLE: 'feishu-table',
+  /**
+   * 有【新】冲突/变更时 agent 在回复里打的标记；无此标记 = 无新料 = 安静（不进待过目收件箱）。
+   * 与 <cron_snapshot>（存当前全量状态供下轮对比）分开：alert 只在"这次比上次多出东西"时出现。
+   */
+  ALERT_TAG_PATTERN: /<cron_alert>\s*([\s\S]*?)\s*<\/cron_alert>/i,
+} as const;
+
+export interface ExternalWatchConfig {
+  source: typeof EXTERNAL_WATCH.SOURCE_CALENDAR | typeof EXTERNAL_WATCH.SOURCE_TABLE;
+  /** 日历冲突：用户必给。应用身份枚举不到用户新建的日历，calendar_id 只能显式配置。 */
+  calendarId?: string;
+  /** 表格行变更：多维表格 app_token + table_id。 */
+  baseAppToken?: string;
+  tableId?: string;
+}

@@ -31,6 +31,7 @@ const SESSION_ROW_CAP = 5;
 export interface SidebarProjectGroupProps {
   group: SidebarDerivedSessions['workspaceGroupedSessions'][number];
   projectMetaById: SidebarDerivedSessions['projectMetaById'];
+  setProjectMetaById: SidebarDerivedSessions['setProjectMetaById'];
   hasSearchFilters: boolean;
   expandedWorkspaces: Parameters<typeof isWorkspaceExpanded>[0];
   collapsingWorkspaces: Record<string, boolean>;
@@ -63,6 +64,7 @@ export interface SidebarProjectGroupProps {
 export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   group,
   projectMetaById,
+  setProjectMetaById,
   hasSearchFilters,
   expandedWorkspaces,
   collapsingWorkspaces,
@@ -262,10 +264,20 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       </div>
       {detailsExpanded && !group.isUncategorized && (
         <SidebarProjectDetail
+          projectId={group.projectId}
           meta={projectMeta}
           fallbackSessionCount={group.sessions.length}
           onOpenArtifactSession={handleOpenProjectArtifactSession}
           onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, group.path); }}
+          onMetaChange={(update) => {
+            if (!group.projectId) return;
+            setProjectMetaById((current) => {
+              const next = update(current[group.projectId!]);
+              return next
+                ? { ...current, [group.projectId!]: next }
+                : current;
+            });
+          }}
         />
       )}
       {drawerOpen && !group.isUncategorized && (

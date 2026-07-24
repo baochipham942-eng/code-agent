@@ -133,6 +133,7 @@ const appState = {
 const authState = {
   user: null as AuthUser | null,
   isAuthenticated: false,
+  isLoading: false,
   setShowAuthModal: vi.fn(),
   signOut: vi.fn(async () => {}),
 };
@@ -195,6 +196,7 @@ import { Sidebar } from '../../../src/renderer/components/Sidebar';
 describe('Sidebar session metadata', () => {
   beforeEach(() => {
     authState.user = null;
+    authState.isLoading = false;
     sessionUiState.searchQuery = '';
     sessionUiState.sessionStatusFilter = 'all';
     sessionUiState.trajectoryTierFilter = 'all';
@@ -259,6 +261,22 @@ describe('Sidebar session metadata', () => {
     expect(html).not.toContain('按状态筛选会话');
     expect(html).toContain('data-testid="sidebar-search-trigger"');
     expect(html).toContain('aria-label="搜索会话"');
+  });
+
+  it('waits for auth resolution before rendering the complete header action cluster', () => {
+    authState.user = { id: 'admin-1', email: 'admin@example.com', isAdmin: true };
+    authState.isLoading = true;
+
+    const pendingHtml = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(pendingHtml).not.toContain('data-testid="sidebar-search-trigger"');
+    expect(pendingHtml).not.toContain('按状态筛选会话');
+
+    authState.isLoading = false;
+    const resolvedHtml = renderToStaticMarkup(React.createElement(Sidebar));
+
+    expect(resolvedHtml).toContain('data-testid="sidebar-search-trigger"');
+    expect(resolvedHtml).toContain('按状态筛选会话');
   });
 
   it('supports the background-only quick filter', () => {

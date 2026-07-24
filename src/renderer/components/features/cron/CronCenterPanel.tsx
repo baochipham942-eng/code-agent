@@ -4,6 +4,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { CronJobList } from './CronJobList';
 import { AutomationReviewInbox } from './AutomationReviewInbox';
+import { CronFeaturedTemplates } from './CronFeaturedTemplates';
 import { CronJobDetail } from './CronJobDetail';
 import { CronJobEditor } from './CronJobEditor';
 import { WebModeBanner } from '../settings/WebModeBanner';
@@ -81,6 +82,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       )}
 
       <AutomationReviewInbox />
+      <CronFeaturedTemplates />
 
       <div className="grid min-h-0 flex-1 grid-cols-[360px_1fr] overflow-hidden">
         <CronJobList />

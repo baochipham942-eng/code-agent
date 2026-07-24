@@ -301,11 +301,90 @@ describe('ExpertPanel', () => {
     await waitFor(() => expect(screen.getByTestId('role-detail-page-牧之')).toBeTruthy());
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
     expect(screen.getByText('用户偏好')).toBeTruthy();
-    expect(screen.getByText('整理了需求评审稿')).toBeTruthy();
+    const records = screen.getByTestId('role-detail-records-tab');
+    const trainingSummary = screen.getByTestId('role-training-summary');
+    expect(records.firstElementChild).toBe(trainingSummary);
+    expect(screen.getByTestId('role-training-summary-rounds').textContent).toContain('1');
+    expect(screen.getByTestId('role-training-summary-memories').textContent).toContain('1');
+    expect(within(screen.getByTestId('role-training-summary-latest')).getByText('整理了需求评审稿')).toBeTruthy();
+    expect(screen.getAllByText('整理了需求评审稿')).toHaveLength(2);
     expect(screen.getByTestId('role-bindings-section')).toBeTruthy();
     expect(screen.getByTestId('role-bound-automations-empty').textContent).toContain('这个角色还没有绑定的自动化');
 
-    expect(screen.getByTestId('role-detail-records-tab')).toBeTruthy();
+    expect(records).toBeTruthy();
+  });
+
+  it('新角色的调教积累渲染明确空态节点', async () => {
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'detail') {
+        return Promise.resolve(makeRoleDetail({ memories: [], history: [] }));
+      }
+      if (action === 'listBoundCronJobs' || action === 'listBindings') return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    render(<RoleDetailPage roleId="牧之" />);
+    fireEvent.click(screen.getByTestId('role-detail-tab-records'));
+
+    const empty = await screen.findByTestId('role-training-summary-empty');
+    expect(empty.textContent).toContain('还没有协作履历');
+    expect(empty.parentElement).toBe(screen.getByTestId('role-training-summary'));
+  });
+
+  it('免打扰时段沿用角色主动性设置接口保存完整配置', async () => {
+    render(<RoleDetailPage roleId="牧之" />);
+    fireEvent.click(screen.getByTestId('role-detail-tab-records'));
+
+    const start = await screen.findByTestId('role-quiet-hours-start');
+    const end = screen.getByTestId('role-quiet-hours-end');
+    fireEvent.change(start, { target: { value: '23:00' } });
+    fireEvent.change(end, { target: { value: '07:30' } });
+    fireEvent.click(screen.getByTestId('role-quiet-hours-save'));
+
+    await waitFor(() => {
+      expect(invokeDomain).toHaveBeenCalledWith(
+        expect.anything(),
+        'setProactivity',
+        {
+          roleId: '牧之',
+          level: 'silent',
+          quietHours: { start: '23:00', end: '07:30' },
+        },
+      );
+    });
+  });
+
+  it('已设免打扰时才出现关闭按钮，点它显式传 null 清除（省略字段会被深合并保留）', async () => {
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'detail') {
+        return Promise.resolve(makeRoleDetail({
+          proactivity: { level: 'daily', quietHours: { start: '22:00', end: '08:00' } },
+        }));
+      }
+      if (action === 'listBoundCronJobs' || action === 'listBindings') return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    render(<RoleDetailPage roleId="牧之" />);
+    fireEvent.click(screen.getByTestId('role-detail-tab-records'));
+
+    fireEvent.click(await screen.findByTestId('role-quiet-hours-clear'));
+
+    await waitFor(() => {
+      expect(invokeDomain).toHaveBeenCalledWith(
+        expect.anything(),
+        'setProactivity',
+        { roleId: '牧之', level: 'daily', quietHours: null },
+      );
+    });
+  });
+
+  it('未设免打扰时不渲染关闭按钮', async () => {
+    render(<RoleDetailPage roleId="牧之" />);
+    fireEvent.click(screen.getByTestId('role-detail-tab-records'));
+
+    await screen.findByTestId('role-quiet-hours-save');
+    expect(screen.queryByTestId('role-quiet-hours-clear')).toBeNull();
   });
 
   it('独立详情页的四个 tab 都可切换，关闭回到能力中心专家 tab', async () => {

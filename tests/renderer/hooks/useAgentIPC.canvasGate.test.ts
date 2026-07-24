@@ -2,11 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { withCanvasSnapshotContext } from '../../../src/renderer/hooks/agent/useAgentIPC';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
-import { useWorkspaceModeStore } from '../../../src/renderer/stores/workspaceModeStore';
 import type { CanvasNode } from '../../../src/renderer/components/design/designCanvasTypes';
 
-// R1（设计 Surface 会话化）：画布注入闸从全局 workspaceMode 解绑，改为 per-session
-// 设计激活（isSessionDesignActive）。这组测试只验证「闸门逻辑」——设计会话 + 画布非空才注入，
+// R1（设计 Surface 会话化）：画布注入闸使用 per-session 设计激活（isSessionDesignActive）。
+// 这组测试只验证「闸门逻辑」——设计会话 + 画布非空才注入，
 // 不污染普通编码会话。
 
 function makeNode(id: string): CanvasNode {
@@ -74,8 +73,7 @@ describe('withCanvasSnapshotContext per-session gate', () => {
     expect(result?.canvasSnapshot).toBeUndefined();
   });
 
-  it('no longer depends on workspaceMode: injects when session is design-active even if workspaceMode is "code"', () => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'code' });
+  it('injects when the session is design-active and owns a non-empty canvas', () => {
     setDesignActive('s1', true);
     useDesignCanvasStore.setState({ nodes: [makeNode('n1')], connectors: [], shapes: [], ownerSessionId: 's1' });
 

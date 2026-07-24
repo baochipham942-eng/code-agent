@@ -4,7 +4,6 @@ import { useDesignCanvasStore } from '../../../src/renderer/components/design/de
 import type { CanvasNode, DesignCanvasDoc } from '../../../src/renderer/components/design/designCanvasTypes';
 import { DEFAULT_CAMERA } from '../../../src/renderer/components/design/designCanvasTypes';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
-import { useWorkspaceModeStore } from '../../../src/renderer/stores/workspaceModeStore';
 import type { ConversationEnvelopeContext } from '../../../src/shared/contract/conversationEnvelope';
 
 const node = (id: string, overrides: Partial<CanvasNode> = {}): CanvasNode => ({
@@ -37,7 +36,6 @@ function activateDesignSession(sessionId: string): void {
 
 describe('useAgentIPC design handoff context', () => {
   afterEach(() => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'code' });
     useDesignCanvasStore.setState({
       runDir: null,
       nodes: [],
@@ -52,7 +50,6 @@ describe('useAgentIPC design handoff context', () => {
   });
 
   it('builds hidden Design->Code handoff from the selected variant and absolute canvas bounds', () => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'design' });
     activateDesignSession('design-session');
     loadCanvas('/tmp/design-run', [
       node('reference', { role: 'reference', createdAt: 1 }),
@@ -158,8 +155,7 @@ describe('useAgentIPC design handoff context', () => {
     ]);
   });
 
-  it('injects designCodeHandoff for an agentic design session while workspaceMode remains code', () => {
-    useWorkspaceModeStore.setState({ workspaceMode: 'code' });
+  it('injects designCodeHandoff for an agentic design session', () => {
     activateDesignSession('agentic-design-session');
     loadCanvas('/tmp/design-run', [node('selected-v2', { chosen: true })]);
 

@@ -10,7 +10,6 @@ import { isWebMode, isTauriMode } from '../utils/platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
-import { WorkspaceModeSwitch } from './design/WorkspaceModeSwitch';
 import { pickNativeDirectory } from '../services/tauriPluginFacade';
 export const TitleBar: React.FC = () => {
   const {
@@ -22,7 +21,7 @@ export const TitleBar: React.FC = () => {
     openWorkbenchTab,
     closeWorkbenchTab,
   } = useAppStore();
-  const isTaskTabOpen = workbenchTabs.includes('task');
+  const isOverviewOpen = workbenchTabs.includes('overview');
   const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   // 当前消息发送用的工作目录（composerStore）优先，fallback 到全局 appStore.workingDirectory
@@ -90,13 +89,12 @@ export const TitleBar: React.FC = () => {
         </button>
         <SessionActionsMenu />
       </div>
-      {/* Right: 工作区切换器（与设计页表头位置一致，统一放右）+ Task Panel toggle */}
+      {/* Right: Task Panel toggle */}
       <div className="flex items-center gap-2">
-        <WorkspaceModeSwitch />
         <IconButton
-          icon={isTaskTabOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
-          aria-label={isTaskTabOpen ? 'Hide task panel' : 'Show task panel'}
-          onClick={() => (isTaskTabOpen ? closeWorkbenchTab('task') : openWorkbenchTab('task'))}
+          icon={isOverviewOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
+          aria-label={isOverviewOpen ? 'Hide overview' : 'Show overview'}
+          onClick={() => (isOverviewOpen ? closeWorkbenchTab('task') : openWorkbenchTab('task'))}
           variant="ghost"
           size="md"
         />

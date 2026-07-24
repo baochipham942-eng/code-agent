@@ -1,18 +1,14 @@
 // ============================================================================
 // WorkbenchTabs - Unified tab bar for the right workbench panel
 // ============================================================================
-// Mixes pinned tabs ('task', 'skills') with per-file preview tabs. Click to
+// Mixes fixed workbench views with per-file preview tabs. Click to
 // activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, ListTodo, Sparkles, FolderTree, Eye, Activity, ShieldCheck, Palette, LayoutTemplate } from 'lucide-react';
-import { useAppStore, type WorkbenchTabId } from '../stores/appStore';
+import { X, Plus, LayoutDashboard, FolderTree, Globe2, Palette } from 'lucide-react';
+import { useAppStore, type WorkbenchViewId } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { useWorkspaceModeStore } from '../stores/workspaceModeStore';
 import { useI18n } from '../hooks/useI18n';
-import { useDisclosure } from '../hooks/useDisclosure';
-import { useWorkspacePreviewModel } from '../hooks/useWorkspacePreviewModel';
-import { useWorkbenchPresetStore } from '../stores/workbenchPresetStore';
 import { useDesignCanvasStore } from './design/designCanvasStore';
 import { saveCanvasDoc } from './design/designCanvasPersistence';
 import { ConfirmDialog } from './composites/ConfirmDialog';
@@ -25,7 +21,7 @@ function getFileName(path: string): string {
 }
 
 interface TabMeta {
-  id: WorkbenchTabId;
+  id: WorkbenchViewId;
   label: string;
   title: string; // tooltip
   isDirty: boolean;
@@ -39,16 +35,12 @@ export const WorkbenchTabs: React.FC = () => {
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
-  const { isStandard } = useDisclosure();
-  const workspacePreviewItems = useWorkspacePreviewModel();
-  const savedPresetCount = useWorkbenchPresetStore((s) => s.presets.length);
-  const savedRecipeCount = useWorkbenchPresetStore((s) => s.recipes.length);
 
-  // "+" 按钮的 popover 状态：列出未打开的 Task/Skills/Files 让用户重开
+  // "+" 按钮的 popover 状态：列出未打开的固定视图让用户重开
   const [addOpen, setAddOpen] = useState(false);
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
   const addRef = useRef<HTMLDivElement | null>(null);
-  const tabRefs = useRef(new Map<WorkbenchTabId, HTMLButtonElement>());
+  const tabRefs = useRef(new Map<WorkbenchViewId, HTMLButtonElement>());
   useEffect(() => {
     if (!addOpen) return;
     const onMouseDown = (e: MouseEvent) => {
@@ -64,50 +56,33 @@ export const WorkbenchTabs: React.FC = () => {
   }, [addOpen]);
 
   // 已开 tab 永远要显示；空 workbench 时也要保留 "+" 让用户能开第一个。
-  const hasTask = workbenchTabs.includes('task');
-  const hasSkills = workbenchTabs.includes('skills');
+  const hasOverview = workbenchTabs.includes('overview');
   const hasFiles = workbenchTabs.includes('files');
-  const hasWorkspacePreview = workbenchTabs.includes('workspace-preview');
-  const hasContext = workbenchTabs.includes('context');
-  const hasAudit = workbenchTabs.includes('audit');
-  const canAddAny =
-    !hasTask ||
-    (!hasSkills && isStandard) ||
-    !hasFiles ||
-    !hasWorkspacePreview ||
-    !hasContext ||
-    !hasAudit;
+  const hasBrowser = workbenchTabs.includes('browser');
+  const canAddAny = !hasOverview || !hasFiles || !hasBrowser;
 
   const metas: TabMeta[] = workbenchTabs.map((id) => {
-    if (id === 'task') {
-      return { id, label: t.taskPanel.title, title: t.taskPanel.title, isDirty: false };
-    }
-    if (id === 'skills') {
-      return { id, label: 'Skills', title: t.workbenchTabs.skillsTitle, isDirty: false };
+    if (id === 'overview') {
+      return {
+        id,
+        label: t.workbenchTabs.overviewLabel,
+        title: t.workbenchTabs.overviewTitle,
+        isDirty: false,
+      };
     }
     if (id === 'files') {
       return { id, label: t.workbenchTabs.filesLabel, title: t.workbenchTabs.filesTitle, isDirty: false };
     }
-    if (id === 'workspace-preview') {
-      const count = workspacePreviewItems.length + savedPresetCount + savedRecipeCount;
+    if (id === 'browser') {
       return {
         id,
-        label: count > 0 ? `Assets ${count}` : 'Assets',
-        title: t.workbenchTabs.assetsTitle,
+        label: t.workbenchTabs.browserLabel,
+        title: t.workbenchTabs.browserTitle,
         isDirty: false,
       };
     }
-    if (id === 'context') {
-      return { id, label: t.workbenchTabs.contextLabel, title: t.workbenchTabs.contextTitle, isDirty: false };
-    }
-    if (id === 'audit') {
-      return { id, label: 'Audit', title: t.workbenchTabs.auditTitle, isDirty: false };
-    }
     if (id === 'design-canvas') {
       return { id, label: t.design.canvasTabLabel, title: t.design.canvasTabLabel, isDirty: false };
-    }
-    if (id === 'project-collab') {
-      return { id, label: 'Neo', title: t.workbenchTabs.projectCollabTitle, isDirty: false };
     }
     const path = id.slice(PREVIEW_PREFIX.length);
     const previewTab = previewTabs.find((p) => p.path === path);
@@ -224,23 +199,6 @@ export const WorkbenchTabs: React.FC = () => {
         <Palette className="w-3 h-3 text-fuchsia-400/80" />
       </button>
 
-      {/* 「网页/演示稿/视频」入口 — 按需打开旧全屏表单（这四类媒介的唯一生成入口，
-          会话化收口后从「切到设计自动弹」降级为这里按需开）。仅有当前会话时可点。 */}
-      <button
-        type="button"
-        data-testid="open-design-legacy-form"
-        disabled={!currentSessionId}
-        onClick={() => {
-          if (!currentSessionId) return;
-          useWorkspaceModeStore.getState().setDesignFormOpen(true);
-        }}
-        className="flex items-center justify-center w-6 h-6 flex-shrink-0 ml-0.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-zinc-500 disabled:hover:bg-transparent"
-        title={t.design.openLegacyFormHint}
-        aria-label={t.design.openLegacyForm}
-      >
-        <LayoutTemplate className="w-3 h-3 text-sky-400/80" />
-      </button>
-
       {/* "+" 按钮 — 关掉的 tab 从这里重新开。在 scroll 容器外，popover 才不被 overflow 切 */}
       {canAddAny && (
         <div ref={addRef} className="relative flex-shrink-0 ml-0.5">
@@ -255,24 +213,14 @@ export const WorkbenchTabs: React.FC = () => {
           </button>
           {addOpen && (
             <div className="absolute right-0 top-full mt-1 z-40 w-36 rounded-md border border-zinc-700 bg-zinc-900 p-1 shadow-xl">
-              {!hasTask && (
+              {!hasOverview && (
                 <button
                   type="button"
-                  onClick={() => { openWorkbenchTab('task'); setAddOpen(false); }}
+                  onClick={() => { openWorkbenchTab('overview'); setAddOpen(false); }}
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
                 >
-                  <ListTodo className="w-3.5 h-3.5" />
-                  {t.taskPanel.title}
-                </button>
-              )}
-              {!hasSkills && isStandard && (
-                <button
-                  type="button"
-                  onClick={() => { openWorkbenchTab('skills'); setAddOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-purple-400/80" />
-                  Skills
+                  <LayoutDashboard className="w-3.5 h-3.5 text-cyan-400/80" />
+                  {t.workbenchTabs.overviewLabel}
                 </button>
               )}
               {!hasFiles && (
@@ -285,34 +233,14 @@ export const WorkbenchTabs: React.FC = () => {
                   {t.workbenchTabs.filesLabel}
                 </button>
               )}
-              {!hasWorkspacePreview && (
+              {!hasBrowser && (
                 <button
                   type="button"
-                  onClick={() => { openWorkbenchTab('workspace-preview'); setAddOpen(false); }}
+                  onClick={() => { openWorkbenchTab('browser'); setAddOpen(false); }}
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
                 >
-                  <Eye className="w-3.5 h-3.5 text-cyan-400/80" />
-                  Assets
-                </button>
-              )}
-              {!hasContext && (
-                <button
-                  type="button"
-                  onClick={() => { openWorkbenchTab('context'); setAddOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                >
-                  <Activity className="w-3.5 h-3.5 text-emerald-400/80" />
-                  {t.workbenchTabs.contextLabel}
-                </button>
-              )}
-              {!hasAudit && (
-                <button
-                  type="button"
-                  onClick={() => { openWorkbenchTab('audit'); setAddOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-sky-400/80" />
-                  Audit
+                  <Globe2 className="w-3.5 h-3.5 text-emerald-400/80" />
+                  {t.workbenchTabs.browserLabel}
                 </button>
               )}
             </div>

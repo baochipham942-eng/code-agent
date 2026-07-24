@@ -26,6 +26,7 @@ import { hasNeedsInputForSession } from '../utils/sessionNeedsInput';
 import { canAccessFeature } from '../utils/accessControl';
 import { buildSessionReplayContext } from '../utils/sessionReplayContext';
 import { openSessionReplayEvidenceTarget } from '../utils/openSessionReplayEvidence';
+import { OPEN_SESSION_REPLAY_EVENT } from '../utils/workbenchViews';
 import { copyPathToClipboard, openExternalLink } from '../utils/platform';
 import ipcService from '../services/ipcService';
 import { IconButton } from './primitives';
@@ -208,6 +209,14 @@ export const SessionActionsMenu: React.FC = () => {
       showToast('error', sam.replayOpenFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
     }
   }, [canOpenReplay, close, currentSession, currentSessionId, showToast]);
+
+  useEffect(() => {
+    const handleDeepLink = () => {
+      void handleOpenReplay();
+    };
+    window.addEventListener(OPEN_SESSION_REPLAY_EVENT, handleDeepLink);
+    return () => window.removeEventListener(OPEN_SESSION_REPLAY_EVENT, handleDeepLink);
+  }, [handleOpenReplay]);
 
   const handleOpenReplayEvidence = useCallback(async (
     evidence: typeof replayDialogContext.evidence[number],

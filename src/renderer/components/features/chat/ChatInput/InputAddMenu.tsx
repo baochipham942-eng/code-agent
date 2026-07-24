@@ -3,10 +3,12 @@
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Image as ImageIcon, SlashSquare, Brain, BookOpen, Bot, ChevronRight, Plug, Sparkles } from 'lucide-react';
+import { Plus, Image as ImageIcon, SlashSquare, Brain, BookOpen, Bot, ChevronRight, Plug, Sparkles, UsersRound } from 'lucide-react';
 import { useModeStore } from '../../../../stores/modeStore';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
+import { useComposerStore } from '../../../../stores/composerStore';
+import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { InteractionMode } from '../../../../../shared/contract/agent';
 import type { SessionMemoryMode } from '../../../../../shared/contract';
@@ -48,7 +50,7 @@ export const InputAddMenu: React.FC<Props> = ({
 }) => {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [submenu, setSubmenu] = useState<'experts' | 'skills' | 'connectors' | null>(null);
+  const [submenu, setSubmenu] = useState<'experts' | 'teams' | 'skills' | 'connectors' | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,6 +62,11 @@ export const InputAddMenu: React.FC<Props> = ({
   const activeAgentId = useAppStore((s) => s.activeAgentId);
   const setActiveAgentId = useAppStore((s) => s.setActiveAgentId);
   const openCapabilityHub = useAppStore((s) => s.openCapabilityHub);
+  const recipes = useTeamRecipeStore((s) => s.recipes);
+  const recipesLoaded = useTeamRecipeStore((s) => s.isLoaded);
+  const refreshRecipes = useTeamRecipeStore((s) => s.refresh);
+  const selectedTeamRecipeId = useComposerStore((s) => s.selectedTeamRecipeId);
+  const setSelectedTeamRecipeId = useComposerStore((s) => s.setSelectedTeamRecipeId);
   const modeOptions = buildModeOptions(t.inputAddMenu.modeHints);
 
   const closeMenu = () => {
@@ -75,6 +82,13 @@ export const InputAddMenu: React.FC<Props> = ({
     description: item.kind === 'skill' ? item.description : item.kind === 'connector' ? item.detail || item.capabilities.join(' · ') : item.error,
     selected: item.selected,
   }));
+  const teamItems: InputAddSubmenuItem[] = recipes.map((recipe) => ({
+    id: recipe.id,
+    label: recipe.name,
+    sublabel: recipe.lead ? t.inputAddMenu.teamLeadPrefix.replace('{lead}', recipe.lead.roleId) : undefined,
+    description: recipe.description,
+    selected: recipe.id === selectedTeamRecipeId,
+  }));
   const expertItems: InputAddSubmenuItem[] = expertEntries.map((entry) => ({
     id: entry.id,
     label: entry.name || entry.id,
@@ -82,6 +96,10 @@ export const InputAddMenu: React.FC<Props> = ({
     description: entry.description,
     selected: entry.id === activeAgentId,
   }));
+
+  useEffect(() => {
+    if (open && !recipesLoaded) void refreshRecipes();
+  }, [open, recipesLoaded, refreshRecipes]);
 
   useEffect(() => {
     if (!open) return;
@@ -152,6 +170,7 @@ export const InputAddMenu: React.FC<Props> = ({
           <div className="border-t border-zinc-700/60 mt-1 pt-1">
             {([
               ['experts', Bot, t.inputAddMenu.expertsLabel],
+              ['teams', UsersRound, t.inputAddMenu.teamsLabel],
               ['skills', Sparkles, t.inputAddMenu.skillsLabel],
               ['connectors', Plug, t.inputAddMenu.connectorsLabel],
             ] as const).map(([kind, Icon, label]) => (
@@ -170,10 +189,14 @@ export const InputAddMenu: React.FC<Props> = ({
                   <div className="absolute bottom-0 left-full ml-1 z-40">
                     <InputAddSubmenu
                       scope={kind}
-                      items={kind === 'experts' ? expertItems : capabilityItems(kind === 'skills' ? skills : connectors)}
+                      items={kind === 'experts' ? expertItems : kind === 'teams' ? teamItems : capabilityItems(kind === 'skills' ? skills : connectors)}
                       onSelect={(item) => {
                         if (kind === 'experts') {
                           setActiveAgentId(item.id);
+                          focusComposer();
+                        } else if (kind === 'teams') {
+                          // 选中只是预选：成员条先把名单铺出来，真启动等发第一句话
+                          setSelectedTeamRecipeId(item.id === selectedTeamRecipeId ? null : item.id);
                           focusComposer();
                         } else {
                           const capability = (kind === 'skills' ? skills : connectors).find((entry) => entry.id === item.id);
@@ -182,9 +205,10 @@ export const InputAddMenu: React.FC<Props> = ({
                         closeMenu();
                       }}
                       footerActions={[{
-                        label: kind === 'experts' ? t.inputAddMenu.manageExperts : kind === 'skills' ? t.inputAddMenu.manageSkills : t.inputAddMenu.manageConnectors,
+                        label: kind === 'experts' ? t.inputAddMenu.manageExperts : kind === 'teams' ? t.inputAddMenu.manageTeams : kind === 'skills' ? t.inputAddMenu.manageSkills : t.inputAddMenu.manageConnectors,
                         onClick: () => {
-                          openCapabilityHub(kind);
+                          // 团队和专家同属能力中心的「专家」tab
+                          openCapabilityHub(kind === 'teams' ? 'experts' : kind);
                           closeMenu();
                         },
                       }]}

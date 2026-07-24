@@ -20,6 +20,10 @@ import { useLoopStore } from '../../../../stores/loopStore';
 import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
 import { loopClient } from '../../../../services/loopClient';
 import { invoke } from '../../../../services/ipcService';
+import { useComposerStore } from '../../../../stores/composerStore';
+import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
+import { launchTeamRecipe } from '../../../../utils/launchTeamRecipe';
+import { launchRecipe } from '../../../../services/teamClient';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { buildAutomationNoticeMessage, formatCronScheduleLabel, formatLoopIntervalLabel } from '../automationNotice';
 import type { InputAreaRef } from './InputArea';
@@ -240,6 +244,28 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     let contentToSend = trimmedValue;
     let preferredAgentIdOverride: string | null | undefined;
     let selectedAgentOverride: ComposerAgentSelection | null | undefined;
+
+    // 预选了团队配方：这句话就是主题，发送即启动整个团队（不走普通对话链路）
+    const pendingRecipeId = useComposerStore.getState().selectedTeamRecipeId;
+    if (pendingRecipeId && trimmedValue) {
+      const recipe = useTeamRecipeStore.getState().recipes.find((item) => item.id === pendingRecipeId);
+      if (recipe) {
+        addToInputHistory(trimmedValue);
+        setValue('');
+        useComposerStore.getState().setSelectedTeamRecipeId(null);
+        const result = currentSessionId
+          ? await launchRecipe(currentSessionId, recipe.id, trimmedValue)
+          : await launchTeamRecipe(recipe.id, recipe.name, trimmedValue);
+        if (!result.ok) {
+          // 启动失败要把话还给用户，别让他重打一遍
+          setValue(trimmedValue);
+          toast.error(result.error || t.chatInputSubmit.teamRecipeLaunchFailed);
+        }
+        return;
+      }
+      // 配方已被删掉：清掉预选，这句话按普通消息发出去
+      useComposerStore.getState().setSelectedTeamRecipeId(null);
+    }
 
     const compactCommand = parseCompactCommand(trimmedValue);
     if (compactCommand) {

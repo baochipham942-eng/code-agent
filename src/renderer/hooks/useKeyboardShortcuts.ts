@@ -188,7 +188,6 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     closeWorkbenchTab,
     setTaskPanelTab,
     setShowCapturePanel,
-    setShowBrowserSurfacePanel,
     setShowComputerUsePanel,
     setShowFileExplorer,
     openWorkspacePreview,
@@ -380,10 +379,10 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
 
         case 'statusRail.toggle':
           logger.info('Shortcut: Toggle StatusRail');
-          if (workbenchTabs.includes('task')) {
-            closeWorkbenchTab('task');
+          if (workbenchTabs.includes('overview')) {
+            closeWorkbenchTab('overview');
           } else {
-            openWorkbenchTab('task');
+            openWorkbenchTab('overview');
             setTaskPanelTab('monitor');
           }
           return true;
@@ -420,7 +419,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           return true;
 
         case 'browser.open':
-          setShowBrowserSurfacePanel(true);
+          openWorkbenchTab('browser');
           return true;
 
         case 'computerUse.open':
@@ -428,12 +427,11 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
           return true;
 
         case 'replay.open':
-          openWorkbenchTab('task');
-          setTaskPanelTab('monitor');
+          openWorkbenchTab('audit');
           return true;
 
         case 'reviewQueue.open':
-          openWorkbenchTab('task');
+          openWorkbenchTab('overview');
           setTaskPanelTab('orchestration');
           return true;
 
@@ -500,7 +498,6 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
       closeWorkbenchTab,
       setTaskPanelTab,
       setShowCapturePanel,
-      setShowBrowserSurfacePanel,
       setShowComputerUsePanel,
       setShowFileExplorer,
       openWorkspacePreview,

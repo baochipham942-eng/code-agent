@@ -3,15 +3,12 @@
 // spine.json = 各版本的 pin/discard 状态。两者经 reconcile 合并成一份 VariantSpine。
 import { DESIGN_SPINE_FILE } from '@shared/constants';
 import {
-  deserializeSpine,
-  serializeSpine,
   activeVariants,
   pinnedInGroup,
   pinVariant,
   type VariantSpine,
 } from './variantSpine';
 import { makeProtoVariant, protoGroupId } from './variantAdapters';
-import { readWorkspaceFile, writeWorkspaceFile, listVersions } from './designFiles';
 import type { DesignVersion } from './designFiles';
 
 export function protoSpinePath(runDir: string): string {
@@ -42,19 +39,4 @@ export function reconcileProtoSpine(
     if (latest) next = pinVariant(next, latest.id);
   }
   return next;
-}
-
-/** 读 spine.json + 与磁盘版本对账，返回合并后的 spine（不落盘，由调用方按需保存）。 */
-export async function loadProtoSpine(
-  runDir: string,
-  versions?: DesignVersion[],
-): Promise<VariantSpine> {
-  const raw = await readWorkspaceFile(protoSpinePath(runDir));
-  const vers = versions ?? (await listVersions(runDir));
-  return reconcileProtoSpine(deserializeSpine(raw), vers, runDir);
-}
-
-/** 把 spine 落盘到 run 目录的 spine.json。 */
-export async function saveProtoSpine(runDir: string, spine: VariantSpine): Promise<void> {
-  await writeWorkspaceFile(protoSpinePath(runDir), serializeSpine(spine));
 }

@@ -9,6 +9,7 @@ const projectClient = vi.hoisted(() => ({
   addProjectRole: vi.fn(),
   getProjectArtifacts: vi.fn(),
   getProjectDetail: vi.fn(),
+  getProjectSourceGitStates: vi.fn(),
   removeProjectRole: vi.fn(),
   renameProject: vi.fn(),
   setProjectStatus: vi.fn(),
@@ -55,6 +56,7 @@ describe('ProjectHeaderBar write failure feedback', () => {
     vi.clearAllMocks();
     projectClient.getProjectDetail.mockResolvedValue(detail);
     projectClient.getProjectArtifacts.mockResolvedValue([]);
+    projectClient.getProjectSourceGitStates.mockResolvedValue([]);
     invokeDomain.mockResolvedValue([{ roleId: 'reviewer', icon: 'user' }]);
   });
 

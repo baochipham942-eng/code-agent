@@ -109,6 +109,8 @@ export class AgentLoop {
       // Goal 模式：轮次上限用契约的 maxTurns（通常 > 默认 30），否则走默认
       maxIterations: config.maxIterations ?? config.goalContract?.maxTurns ?? getMaxIterations(),
       workingDirectory: config.workingDirectory,
+      projectConfigDirectory: config.projectConfigDirectory ?? config.workingDirectory,
+      workspaceScope: config.workspaceScope,
       isDefaultWorkingDirectory: config.isDefaultWorkingDirectory ?? true,
       // Every loop needs a stable execution identity even on legacy desktop
       // entry points that have not adopted RunRegistry yet.

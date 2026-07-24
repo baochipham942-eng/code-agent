@@ -362,7 +362,9 @@ describe('desktop queued input drain persistence', () => {
     await Promise.race([
       cancelledInferenceReady,
       new Promise<never>((_resolve, reject) => {
-        setTimeout(() => reject(new Error('cancelled run did not reach ModelRouter inference')), 5_000);
+        // Loading the real orchestrator now also resolves an immutable Project Source
+        // snapshot before inference; cold CI/worktree module loading can exceed 5s.
+        setTimeout(() => reject(new Error('cancelled run did not reach ModelRouter inference')), 20_000);
       }),
     ]);
     await manager.cancelTask(sessionId);

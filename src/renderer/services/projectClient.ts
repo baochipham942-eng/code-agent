@@ -14,7 +14,9 @@ import type {
   ProjectGoal,
   ProjectGoalStatus,
   ProjectRoleLink,
+  ProjectSourceGitState,
   ProjectStatus,
+  UpdateProjectInput,
 } from '@shared/contract/project';
 import type { ArtifactIssue, ArtifactIssueStatus } from '@shared/contract/productClosure';
 import ipcService from './ipcService';
@@ -25,6 +27,14 @@ export async function listProjects(includeArchived = false): Promise<Project[]> 
 
 export async function getProjectDetail(projectId: string): Promise<ProjectDetail> {
   return ipcService.invokeDomain<ProjectDetail>(IPC_DOMAINS.PROJECT, 'detail', { projectId });
+}
+
+export async function getProjectSourceGitStates(projectId: string): Promise<ProjectSourceGitState[]> {
+  return ipcService.invokeDomain<ProjectSourceGitState[]>(IPC_DOMAINS.PROJECT, 'gitStates', { projectId });
+}
+
+export async function updateProject(input: UpdateProjectInput): Promise<ProjectDetail> {
+  return ipcService.invokeDomain<ProjectDetail>(IPC_DOMAINS.PROJECT, 'updateProject', input);
 }
 
 export async function getProjectArtifacts(projectId: string, limit?: number): Promise<ProjectArtifact[]> {
@@ -53,6 +63,10 @@ export async function setProjectDescription(projectId: string, description: stri
 
 export async function setProjectStatus(projectId: string, status: ProjectStatus): Promise<Project> {
   return ipcService.invokeDomain<Project>(IPC_DOMAINS.PROJECT, 'setStatus', { projectId, status });
+}
+
+export async function deleteProject(projectId: string): Promise<{ deleted: boolean }> {
+  return ipcService.invokeDomain<{ deleted: boolean }>(IPC_DOMAINS.PROJECT, 'deleteProject', { projectId });
 }
 
 export async function addProjectGoal(

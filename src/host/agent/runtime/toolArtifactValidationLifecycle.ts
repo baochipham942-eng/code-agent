@@ -16,6 +16,7 @@ import { validateGameArtifact, type GameArtifactValidationOptions } from './game
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import type { RuntimeContext } from './runtimeContext';
+import { isPathWithinRoot } from '../../runtime/workspaceScope';
 import {
   buildArtifactRepairInstruction,
   buildRepairTargetLostValidationFailure,
@@ -52,7 +53,7 @@ type HandleModifiedArtifactValidationArgs = {
 // 用「已知上下文（目录）」而非「猜内容」来判定，可靠且不动游戏识别启发式。
 function isDesignDraftArtifact(absolutePath: string): boolean {
   const designRoot = join(getUserConfigDir(), 'design');
-  return absolutePath === designRoot || absolutePath.startsWith(`${designRoot}/`);
+  return isPathWithinRoot(absolutePath, designRoot);
 }
 
 export async function handleModifiedArtifactValidation({

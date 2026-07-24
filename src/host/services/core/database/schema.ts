@@ -462,12 +462,16 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       session_id TEXT NOT NULL,
       message_id TEXT NOT NULL,
       file_path TEXT NOT NULL,
+      source_id TEXT,
+      workspace_scope_version TEXT,
       original_content TEXT,
       file_existed INTEGER NOT NULL,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
+  safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN source_id TEXT`, logger);
+  safeAlter(db, `ALTER TABLE file_checkpoints ADD COLUMN workspace_scope_version TEXT`, logger);
 
   // Session Events 表 (完整 SSE 事件日志，用于评测分析)
   db.exec(`
@@ -1006,9 +1010,36 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       archived_at INTEGER
     )
   `);
+  safeAlter(db, `ALTER TABLE projects ADD COLUMN source_revision INTEGER NOT NULL DEFAULT 0`, logger);
+  // Multi-Source Projects allow the same canonical path to belong to different Projects.
+  // Drop the legacy global uniqueness; per-Project Source uniqueness lives on project_sources.
+  db.exec(`DROP INDEX IF EXISTS idx_projects_workspace_key`);
   db.exec(
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_workspace_key ON projects(workspace_key) WHERE workspace_key IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_projects_workspace_key ON projects(workspace_key) WHERE workspace_key IS NOT NULL`,
   );
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_sources (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      canonical_path TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('primary', 'additional')),
+      access TEXT NOT NULL CHECK (access IN ('read_only', 'read_write')),
+      trust_state TEXT NOT NULL CHECK (trust_state IN ('trusted', 'blocked')),
+      identity_dev TEXT,
+      identity_ino TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      UNIQUE(project_id, canonical_path)
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_project_sources_project ON project_sources(project_id)`);
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_project_sources_single_primary
+    ON project_sources(project_id) WHERE role = 'primary'
+  `);
 
   // Project Goals 表 — 一个项目多个并行 goal，各自带状态
   db.exec(`

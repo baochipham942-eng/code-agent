@@ -1,4 +1,5 @@
 import type { PendingOperation } from '../../shared/contract/durableRun';
+import type { WorkspaceScope } from '../../shared/contract/project';
 import type { RunRehydrationPlan } from './durableRunStores';
 import type { RunRegistry } from './runRegistry';
 import type { DurableEngineRecoveryHandler } from './durableRecoveryDispatcher';
@@ -11,7 +12,7 @@ export interface NativeRecoveryDescriptor {
   sourceMessageId: string;
   provider: string;
   model: string;
-  workspace: { root: string; cwd: string; fingerprint: string };
+  workspace: { root: string; cwd: string; fingerprint: string; scope?: WorkspaceScope };
   logicalOperationId: string;
   operationId: string;
   phase: 'before_model_dispatch' | 'after_model_dispatch' | 'tool_dispatched' | 'approval_waiting';
@@ -37,6 +38,8 @@ export interface NativeRecoveryHostPorts {
     | { ok: true; root: string; cwd: string; fingerprint: string }
     | { ok: false; reason: string }
   >;
+  /** Resolve the current Project scope so recovery cannot silently regain or retain stale permissions. */
+  resolveWorkspaceScopeVersion?(projectId: string): Promise<string | null>;
   model: {
     dispatchPrepared(input: NativeRecoveryOperationInput): Promise<NativeRecoveryResultEvidence>;
     queryResult(input: NativeRecoveryOperationInput & { providerOperationId: string }): Promise<NativeRecoveryResultEvidence | null>;
@@ -114,6 +117,14 @@ export class NativeRecoveryHost {
       || resolvedWorkspace.cwd !== descriptor.workspace.cwd
       || resolvedWorkspace.fingerprint !== descriptor.workspace.fingerprint) {
       return this.review(plan, now, resolvedWorkspace.ok ? 'native_workspace_drift' : resolvedWorkspace.reason);
+    }
+    if (descriptor.workspace.scope) {
+      const currentScopeVersion = await this.ports.resolveWorkspaceScopeVersion?.(
+        descriptor.workspace.scope.projectId,
+      );
+      if (!currentScopeVersion || currentScopeVersion !== descriptor.workspace.scope.version) {
+        return this.review(plan, now, 'native_workspace_scope_drift');
+      }
     }
     const operation = plan.pendingOperations.find((candidate) => candidate.operationId === descriptor.operationId);
     if (!operation) return this.review(plan, now, 'native_operation_missing');

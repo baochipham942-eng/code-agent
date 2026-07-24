@@ -27,6 +27,7 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '../../../shared/contract/conversationEnvelope';
+import type { WorkspaceScope } from '../../../shared/contract/project';
 import type { TurnTraceRecorder } from './turnTrace';
 import type { TurnState } from './turnState';
 import type { ControlState } from './controlState';
@@ -58,6 +59,8 @@ export interface RuntimeContext {
   readonly modelRouter: ModelRouter;
   readonly maxIterations: number;
   readonly workingDirectory: string;
+  readonly projectConfigDirectory?: string;
+  readonly workspaceScope?: WorkspaceScope;
   readonly isDefaultWorkingDirectory: boolean;
   readonly runId?: string;
   readonly runTraceContext?: RunTraceContext;

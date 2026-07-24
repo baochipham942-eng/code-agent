@@ -61,6 +61,7 @@ export interface ProtocolContextInput {
   runId?: string;
   sessionId?: string;
   workspace?: string;
+  workspaceScope?: import('../../../shared/contract/project').WorkspaceScope;
   workingDirectory: string;
   abortSignal?: AbortSignal;
   legacyCtx: LegacyToolContext;
@@ -121,6 +122,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     runId: input.runId,
     sessionId: input.sessionId ?? 'protocol-unknown',
     workspace: input.workspace,
+    workspaceScope: input.workspaceScope ?? input.legacyCtx.workspaceScope,
     workingDir: input.workingDirectory,
     abortSignal: input.abortSignal ?? new AbortController().signal,
     agentId,

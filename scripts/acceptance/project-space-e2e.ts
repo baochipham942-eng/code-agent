@@ -16,6 +16,9 @@
 //   AC5 角色入驻：addRole/removeRole → detail.roles 增删
 //   AC6 改名/归档：rename + setStatus archived → 反映；list 默认不含 archived
 //   AC7 记忆接管：~/.code-agent/projects/<key>/meta.json 写入了 projectId（只换索引）
+//   AC8 Multi-Source：旧 workspace 自动成为单一 Primary，Additional 默认只读
+//   AC9 原子编辑：提升读写与切换 Primary 增加 revision，Session cwd 不变
+//   AC10 删除安全：移除 Source 不删除磁盘目录
 // ============================================================================
 
 import { spawn, type ChildProcessByStdio } from 'child_process';
@@ -171,6 +174,16 @@ async function projectApi<T = unknown>(server: StartedServer, action: string, pa
   return json.data as T;
 }
 
+async function trustFolder(server: StartedServer, workingDirectory: string): Promise<void> {
+  const response = await fetch(`${server.baseUrl}/api/domain/folderTrust/set`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${server.token}` },
+    body: JSON.stringify({ payload: { workingDirectory, state: 'trusted', decidedBy: 'acceptance' } }),
+  });
+  const json = await response.json() as { success?: boolean; error?: unknown };
+  if (!json.success) throw new Error(`folderTrust/set failed: ${JSON.stringify(json.error)}`);
+}
+
 async function createSession(server: StartedServer, workingDirectory: string, title: string): Promise<string> {
   const response = await fetch(`${server.baseUrl}/api/sessions`, {
     method: 'POST',
@@ -203,7 +216,8 @@ function check(label: string, cond: boolean, detail?: string): void {
 }
 
 interface ProjectDetail {
-  project: { id: string; name: string; status: string; workspaceKey?: string | null };
+  project: { id: string; name: string; status: string; workspaceKey?: string | null; sourceRevision?: number };
+  sources: Array<{ id: string; path: string; canonicalPath: string; role: string; access: string; trustState: string }>;
   goals: Array<{ id: string; status: string; goal: string }>;
   roles: Array<{ roleId: string }>;
   sessionIds: string[];
@@ -215,9 +229,11 @@ async function main(): Promise<void> {
   const dataDir = path.join(fakeHome, 'data');
   const workspaceA = path.join(fakeHome, 'work-alpha');
   const workspaceB = path.join(fakeHome, 'work-beta');
+  const workspaceC = path.join(fakeHome, 'work-docs');
   await mkdir(dataDir, { recursive: true });
   await mkdir(workspaceA, { recursive: true });
   await mkdir(workspaceB, { recursive: true });
+  await mkdir(workspaceC, { recursive: true });
 
   console.log(`[setup] fakeHome=${fakeHome}`);
   const server = await startServer({ fakeHome, dataDir, workspace: workspaceA });
@@ -289,8 +305,8 @@ async function main(): Promise<void> {
 
     // AC7 记忆接管：meta.json 写入 projectId
     console.log('\nAC7 项目记忆接管（meta.json projectId）');
-    // 项目记忆目录在 getUserConfigDir() = ~/.code-agent（HOME=fakeHome），与 sqlite dataDir 分离
-    const metaPath = path.join(fakeHome, '.code-agent', 'projects', keyA, 'meta.json');
+    // web acceptance 显式设置 CODE_AGENT_DATA_DIR；项目记忆与 sqlite 都必须隔离在该目录。
+    const metaPath = path.join(dataDir, 'projects', keyA, 'meta.json');
     let metaOk = false;
     let metaDetail = '';
     try {
@@ -301,6 +317,47 @@ async function main(): Promise<void> {
       metaDetail = `read ${metaPath} failed: ${err instanceof Error ? err.message : String(err)}`;
     }
     check('meta.json 写入了 projectId（记忆文件不动，只换索引）', metaOk, metaDetail);
+
+    console.log('\nAC8 Multi-Source 默认权限');
+    detail = await projectApi<ProjectDetail>(server, 'detail', { projectId });
+    check('旧 workspace 自动回填为单一 Primary', detail.sources.length === 1
+      && detail.sources[0].role === 'primary'
+      && detail.sources[0].access === 'read_write');
+    await trustFolder(server, workspaceC);
+    detail = await projectApi<ProjectDetail>(server, 'addSource', {
+      projectId,
+      revision: detail.project.sourceRevision ?? 0,
+      path: workspaceC,
+    });
+    const docsSource = detail.sources.find((source) => source.path === workspaceC);
+    check('Additional Source 默认只读', docsSource?.role === 'additional' && docsSource.access === 'read_only');
+
+    console.log('\nAC9 revision 与显式读写授权');
+    const revisionAfterAdd = detail.project.sourceRevision ?? 0;
+    detail = await projectApi<ProjectDetail>(server, 'updateSourceAccess', {
+      projectId,
+      revision: revisionAfterAdd,
+      sourceId: docsSource!.id,
+      access: 'read_write',
+    });
+    check('显式提升后 Additional 为读写', detail.sources.find((source) => source.id === docsSource!.id)?.access === 'read_write');
+    check('每次原子编辑 revision 单调增加', (detail.project.sourceRevision ?? 0) === revisionAfterAdd + 1);
+    check('历史 Session 仍归属原项目且未被改写', detail.sessionIds.includes(sA1) && detail.sessionIds.includes(sA2));
+
+    console.log('\nAC10 Source 删除不删除磁盘');
+    detail = await projectApi<ProjectDetail>(server, 'removeSource', {
+      projectId,
+      revision: detail.project.sourceRevision ?? 0,
+      sourceId: docsSource!.id,
+    });
+    check('Source 关系已移除', !detail.sources.some((source) => source.id === docsSource!.id));
+    let sourceDirectoryStillExists = true;
+    try {
+      await access(workspaceC);
+    } catch {
+      sourceDirectoryStillExists = false;
+    }
+    check('Source 磁盘目录仍存在', sourceDirectoryStillExists);
   } finally {
     await stopServer(server);
   }

@@ -193,6 +193,7 @@ export class LSPServer extends EventEmitter {
   >();
   private messageBuffer = '';
   private workspaceRoot = '';
+  private workspaceFolders: string[] = [];
   private restartCount = 0;
 
   private openDocuments = new Map<
@@ -210,12 +211,13 @@ export class LSPServer extends EventEmitter {
     this.config = config;
   }
 
-  async start(workspaceRoot: string): Promise<void> {
+  async start(workspaceRoot: string, workspaceFolders: string[] = [workspaceRoot]): Promise<void> {
     if (this.state !== 'stopped') {
       throw new Error(`Server already started (state: ${this.state})`);
     }
 
     this.workspaceRoot = workspaceRoot;
+    this.workspaceFolders = Array.from(new Set(workspaceFolders));
     this.state = 'initializing';
 
     try {
@@ -274,12 +276,10 @@ export class LSPServer extends EventEmitter {
           },
           workspace: { symbol: {}, workspaceFolders: true },
         },
-        workspaceFolders: [
-          {
-            uri: pathToFileURL(workspaceRoot).href,
-            name: path.basename(workspaceRoot),
-          },
-        ],
+        workspaceFolders: this.workspaceFolders.map((folder) => ({
+          uri: pathToFileURL(folder).href,
+          name: path.basename(folder),
+        })),
       });
 
       this.sendNotification('initialized', {});
@@ -323,7 +323,7 @@ export class LSPServer extends EventEmitter {
 
     setTimeout(async () => {
       try {
-        await this.start(this.workspaceRoot);
+        await this.start(this.workspaceRoot, this.workspaceFolders);
       } catch (err) {
         console.error(`[LSP] ${this.config.name} restart failed:`, err);
       }
@@ -493,13 +493,15 @@ export class LSPServerManager extends EventEmitter {
   private servers = new Map<string, LSPServer>();
   private serverConfigs: LSPServerConfig[] = [];
   private workspaceRoot: string;
+  private workspaceFolders: string[];
   private state: 'initializing' | 'ready' | 'failed' = 'initializing';
   private diagnosticsCache = new Map<string, LSPDiagnostic[]>();
   private installFailures = new Map<string, LSPInstallFailure>();
 
-  constructor(workspaceRoot: string) {
+  constructor(workspaceRoot: string, workspaceFolders: string[] = [workspaceRoot]) {
     super();
     this.workspaceRoot = workspaceRoot;
+    this.workspaceFolders = Array.from(new Set(workspaceFolders));
   }
 
   registerServer(config: LSPServerConfig): void {
@@ -523,7 +525,7 @@ export class LSPServerManager extends EventEmitter {
         });
 
         try {
-          await server.start(this.workspaceRoot);
+          await server.start(this.workspaceRoot, this.workspaceFolders);
           this.servers.set(config.name, server);
         } catch (err) {
           if (err instanceof LSPInstallError) {
@@ -780,12 +782,15 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
 
 let globalManager: LSPServerManager | null = null;
 
-export async function initializeLSPManager(workspaceRoot: string): Promise<LSPServerManager> {
+export async function initializeLSPManager(
+  workspaceRoot: string,
+  workspaceFolders: string[] = [workspaceRoot],
+): Promise<LSPServerManager> {
   if (globalManager) {
     await globalManager.shutdown();
   }
 
-  globalManager = new LSPServerManager(workspaceRoot);
+  globalManager = new LSPServerManager(workspaceRoot, workspaceFolders);
 
   for (const config of defaultLSPConfigs) {
     globalManager.registerServer(config);

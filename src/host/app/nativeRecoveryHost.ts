@@ -3,6 +3,7 @@ import path from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { getDatabase } from '../services/core/databaseService';
 import type { NativeRecoveryHostPorts } from '../runtime/nativeRecoveryHost';
+import { getProjectService } from '../services/project/projectService';
 
 export function createApplicationNativeRecoveryPorts(): NativeRecoveryHostPorts {
   return {
@@ -17,6 +18,13 @@ export function createApplicationNativeRecoveryPorts(): NativeRecoveryHostPorts 
         return { ok: true, root: path.resolve(root), cwd: path.resolve(cwd), fingerprint };
       } catch {
         return { ok: false, reason: 'native_workspace_unavailable' };
+      }
+    },
+    async resolveWorkspaceScopeVersion(projectId) {
+      try {
+        return getProjectService().getWorkspaceScope(projectId)?.version ?? null;
+      } catch {
+        return null;
       }
     },
     model: {

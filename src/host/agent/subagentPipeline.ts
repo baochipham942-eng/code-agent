@@ -19,6 +19,7 @@ import {
   getBudgetService,
 } from '../services/core/budgetService';
 import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
+import { isPathWithinRoot } from '../runtime/workspaceScope';
 
 const logger = createLogger('SubagentPipeline');
 
@@ -380,7 +381,7 @@ export class SubagentPipeline {
 
       // For write/execute/network, check if path is in working directory
       if (request.path) {
-        const inWorkingDir = request.path.startsWith(context.workingDirectory);
+        const inWorkingDir = isPathWithinRoot(request.path, context.workingDirectory);
         if (inWorkingDir) {
           return { allowed: true, warnings };
         }

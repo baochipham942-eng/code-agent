@@ -6,6 +6,7 @@ import React, { useState, useCallback } from 'react';
 import { Server, Terminal, Globe, Code, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { Modal, ModalFooter, Input } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
+import { MCP_SECRET_REF_PREFIX } from '@shared/constants';
 
 // ============================================================================
 // Types
@@ -23,10 +24,15 @@ export interface McpServerConfig {
   headers?: Record<string, string>;
 }
 
+export interface McpServerSaveSecrets {
+  secretEnvKeys: string[];
+  secretHeaderKeys: string[];
+}
+
 interface McpServerEditorProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (config: McpServerConfig) => void;
+  onSave: (config: McpServerConfig, secrets?: McpServerSaveSecrets) => void;
   /** 打开时预填的配置（推荐 MCP 一键连接入口使用） */
   initialConfig?: Partial<McpServerConfig>;
 }
@@ -61,6 +67,60 @@ export function isSensitiveMcpCredentialKey(key: string): boolean {
   return SENSITIVE_MCP_KEY_PATTERN.test(key.trim());
 }
 
+function isMcpSecretReference(value: string): boolean {
+  return value.startsWith(MCP_SECRET_REF_PREFIX);
+}
+
+function getMcpServerSaveSecrets(config: McpServerConfig): McpServerSaveSecrets | undefined {
+  const secretEnvKeys = Object.entries(config.env || {})
+    .filter(([key, value]) => isSensitiveMcpCredentialKey(key) && !isMcpSecretReference(value))
+    .map(([key]) => key);
+  const secretHeaderKeys = Object.entries(config.headers || {})
+    .filter(([key, value]) => isSensitiveMcpCredentialKey(key) && !isMcpSecretReference(value))
+    .map(([key]) => key);
+
+  if (secretEnvKeys.length === 0 && secretHeaderKeys.length === 0) {
+    return undefined;
+  }
+
+  return { secretEnvKeys, secretHeaderKeys };
+}
+
+function retainSavedSecretReferences(
+  nextEntries: Record<string, string> | undefined,
+  currentEntries: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!nextEntries || !currentEntries) {
+    return nextEntries;
+  }
+
+  let retainedEntries = nextEntries;
+  for (const [key, currentValue] of Object.entries(currentEntries)) {
+    if (isMcpSecretReference(currentValue) && nextEntries[key] === '') {
+      if (retainedEntries === nextEntries) {
+        retainedEntries = { ...nextEntries };
+      }
+      retainedEntries[key] = currentValue;
+    }
+  }
+  return retainedEntries;
+}
+
+function redactSecretReferences(
+  entries: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!entries) {
+    return entries;
+  }
+
+  return Object.fromEntries(
+    Object.entries(entries).map(([key, value]) => [
+      key,
+      isMcpSecretReference(value) ? '' : value,
+    ]),
+  );
+}
+
 // ============================================================================
 // Sub-components
 // ============================================================================
@@ -74,6 +134,15 @@ const KeyValueEditor: React.FC<{
 }> = ({ label, text, entries, onChange }) => {
   const pairs = Object.entries(entries);
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(() => new Set());
+  const savedSecretReferences = React.useRef(new Map<string, string>());
+
+  React.useEffect(() => {
+    for (const [key, value] of Object.entries(entries)) {
+      if (isMcpSecretReference(value)) {
+        savedSecretReferences.current.set(key, value);
+      }
+    }
+  }, [entries]);
 
   const handleAdd = () => {
     onChange({ ...entries, '': '' });
@@ -82,6 +151,7 @@ const KeyValueEditor: React.FC<{
   const handleRemove = (key: string) => {
     const next = { ...entries };
     delete next[key];
+    savedSecretReferences.current.delete(key);
     onChange(next);
   };
 
@@ -89,6 +159,11 @@ const KeyValueEditor: React.FC<{
     const next: Record<string, string> = {};
     for (const [k, v] of Object.entries(entries)) {
       next[k === oldKey ? newKey : k] = v;
+    }
+    const savedReference = savedSecretReferences.current.get(oldKey);
+    if (savedReference) {
+      savedSecretReferences.current.delete(oldKey);
+      savedSecretReferences.current.set(newKey, savedReference);
     }
     onChange(next);
   };
@@ -107,7 +182,11 @@ const KeyValueEditor: React.FC<{
   };
 
   const handleValueChange = (key: string, value: string) => {
-    onChange({ ...entries, [key]: value });
+    const savedReference = savedSecretReferences.current.get(key);
+    onChange({
+      ...entries,
+      [key]: value === '' && savedReference ? savedReference : value,
+    });
   };
 
   return (
@@ -131,6 +210,7 @@ const KeyValueEditor: React.FC<{
         const sensitive = isSensitiveMcpCredentialKey(key);
         const revealKey = key || rowKey;
         const revealed = revealedKeys.has(revealKey);
+        const savedReference = isMcpSecretReference(value);
         return (
           <div key={idx} className="flex items-center gap-2">
             <input
@@ -142,15 +222,20 @@ const KeyValueEditor: React.FC<{
             />
             <div className="flex-1 flex items-center gap-1">
               <input
-                type={sensitive && !revealed ? 'password' : 'text'}
-                value={value}
+                type={(sensitive || savedReference) && !revealed ? 'password' : 'text'}
+                value={savedReference ? '' : value}
                 onChange={(e) => handleValueChange(key, e.target.value)}
-                placeholder="Value"
+                placeholder={savedReference ? '••••••••' : 'Value'}
                 autoComplete="off"
                 spellCheck={false}
                 className="min-w-0 flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-hidden focus:border-zinc-500"
               />
-              {sensitive && (
+              {savedReference && (
+                <span className="shrink-0 text-[11px] text-emerald-400">
+                  {text.savedCredentialHint}
+                </span>
+              )}
+              {sensitive && !savedReference && (
                 <button
                   type="button"
                   onClick={() => toggleReveal(key, rowKey)}
@@ -219,10 +304,10 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
     if (c.type === 'stdio') {
       obj.command = c.command || '';
       if (c.args && c.args.length > 0) obj.args = c.args;
-      if (c.env && Object.keys(c.env).length > 0) obj.env = c.env;
+      if (c.env && Object.keys(c.env).length > 0) obj.env = redactSecretReferences(c.env);
     } else {
       obj.url = c.url || '';
-      if (c.headers && Object.keys(c.headers).length > 0) obj.headers = c.headers;
+      if (c.headers && Object.keys(c.headers).length > 0) obj.headers = redactSecretReferences(c.headers);
     }
     return JSON.stringify(obj, null, 2);
   }, []);
@@ -241,9 +326,9 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
           type: parsed.type || 'stdio',
           command: parsed.command || '',
           args: parsed.args || [],
-          env: parsed.env || {},
+          env: retainSavedSecretReferences(parsed.env, config.env) || {},
           url: parsed.url || '',
-          headers: parsed.headers || {},
+          headers: retainSavedSecretReferences(parsed.headers, config.headers) || {},
         });
         setJsonError(null);
       } catch {
@@ -263,29 +348,39 @@ export const McpServerEditor: React.FC<McpServerEditorProps> = ({
     return true;
   }, [config]);
 
+  const saveConfig = useCallback((nextConfig: McpServerConfig) => {
+    const secrets = getMcpServerSaveSecrets(nextConfig);
+    if (secrets) {
+      onSave(nextConfig, secrets);
+    } else {
+      onSave(nextConfig);
+    }
+  }, [onSave]);
+
   const handleSave = useCallback(() => {
     // If in JSON mode, parse first
     if (viewMode === 'json') {
       try {
         const parsed = JSON.parse(jsonText) as McpServerConfig;
-        onSave({
+        const nextConfig: McpServerConfig = {
           name: parsed.name || '',
           type: parsed.type || 'stdio',
           command: parsed.command,
           args: parsed.args,
-          env: parsed.env,
+          env: retainSavedSecretReferences(parsed.env, config.env),
           url: parsed.url,
-          headers: parsed.headers,
-        });
+          headers: retainSavedSecretReferences(parsed.headers, config.headers),
+        };
+        saveConfig(nextConfig);
       } catch {
         setJsonError(editorText.jsonSaveError);
         return;
       }
     } else {
-      onSave(config);
+      saveConfig(config);
     }
     handleClose();
-  }, [viewMode, jsonText, config, onSave, handleClose]);
+  }, [viewMode, jsonText, config, saveConfig, handleClose, editorText.jsonSaveError]);
 
   const updateConfig = useCallback(<K extends keyof McpServerConfig>(key: K, value: McpServerConfig[K]) => {
     setConfig((prev) => ({ ...prev, [key]: value }));

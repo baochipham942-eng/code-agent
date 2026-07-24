@@ -66,6 +66,16 @@ export function getRoleMemoriesDir(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.MEMORIES_SUBDIR);
 }
 
+/** 用户对这位专家的期望：roles/<roleId>/USER.md */
+export function getRoleUserExpectationPath(roleId: string): string {
+  return path.join(getRoleDir(roleId), ROLE_ASSETS.USER_EXPECTATION_FILENAME);
+}
+
+/** 这位专家的行为准则：roles/<roleId>/SOUL.md */
+export function getRoleSoulPath(roleId: string): string {
+  return path.join(getRoleDir(roleId), ROLE_ASSETS.SOUL_FILENAME);
+}
+
 /** 角色工作履历：roles/<roleId>/history.md */
 export function getRoleHistoryPath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.HISTORY_FILENAME);

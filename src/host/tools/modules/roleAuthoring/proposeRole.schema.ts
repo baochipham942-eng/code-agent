@@ -50,6 +50,14 @@ export const proposeRoleSchema: ToolSchema = {
           'The role system prompt (markdown). Describe its expertise, working principles, and output format. ' +
           'This is the body of agents/<roleId>.md after frontmatter.',
       },
+      userExpectation: {
+        type: 'string',
+        description:
+          'The user\'s OWN words about why they want this expert and what they want it to get done, ' +
+          'lightly cleaned up but not rewritten into your voice (e.g. "我想要一个数据分析师，查数画图给结论一条龙"). ' +
+          'Saved as the expert\'s "what you want" note and injected into its prompt on every run; the user can edit it later. ' +
+          'Omit only if the user never said what they wanted it for.',
+      },
       editingRoleId: {
         type: 'string',
         description:

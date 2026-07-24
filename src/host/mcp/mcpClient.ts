@@ -62,6 +62,7 @@ import type { McpTaskCapability, McpTaskProtocol } from './mcpDurableTask';
 import { registerElicitationHandler } from './mcpElicitation';
 import { createOAuthProviderForServer } from './mcpOAuthProvider';
 import { getMcpOAuthCoordinator } from './mcpOAuthCoordinator';
+import { resolveServerConfigSecrets } from './mcpSecretResolver';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
   DEFAULT_MCP_SERVERS as _DEFAULT_MCP_SERVERS,
@@ -421,9 +422,8 @@ export class MCPClient extends EventEmitter {
         return;
       }
 
-      // 外部服务器（Stdio/SSE/HTTP Streamable）。远程服务首次连接偶发
-      // fetch failed 时重建 transport 做一次有界重试；认证错误不会重试。
-      const maxAttempts = isStdioConfig(config) ? 1 : undefined;
+      // 外部服务器远程连接 fetch failed 时重建 transport 做一次有界重试；认证错误不会重试。
+      const transportConfig = resolveServerConfigSecrets(config);
       const connected = await retryTransientRemoteMCPConnection(async (attemptNumber) => {
         // Prefer the native fetch path. If it hits a transient network failure,
         // rebuild once through the configured proxy instead of forcing every MCP
@@ -434,7 +434,7 @@ export class MCPClient extends EventEmitter {
         const authProvider = isHttpStreamableConfig(config) && config.auth === 'oauth' && serverIdentity
           ? createOAuthProviderForServer(config, serverIdentity)
           : undefined;
-        const { transport, connectTimeout } = createTransport(config, {
+        const { transport, connectTimeout } = createTransport(transportConfig, {
           useProxy: attemptNumber > 1,
           ...(authProvider ? { authProvider } : {}),
         });
@@ -444,7 +444,7 @@ export class MCPClient extends EventEmitter {
         registerElicitationHandler(client, config.name);
 
         try {
-          await connectWithTimeout(client, transport, config, connectTimeout);
+          await connectWithTimeout(client, transport, transportConfig, connectTimeout);
           await this.registry.discoverCapabilities(config.name, client);
           return { client, transport };
         } catch (error) {
@@ -457,7 +457,7 @@ export class MCPClient extends EventEmitter {
           throw error;
         }
       }, {
-        ...(maxAttempts ? { maxAttempts } : {}),
+        ...(isStdioConfig(config) ? { maxAttempts: 1 } : {}),
         onRetry: (error, nextAttempt) => {
           logger.warn(`Transient MCP connection failure for ${config.name}; retrying`, {
             nextAttempt,

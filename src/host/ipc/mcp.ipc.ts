@@ -17,6 +17,8 @@ import { getMcpOAuthCoordinator } from '../mcp/mcpOAuthCoordinator';
 import { ensureConfigDir, getMcpConfigPath, pathExists } from '../config';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getCloudConfigService } from '../services/cloud';
+import { getConfigService } from '../services/core/configService';
+import { extractSecrets } from '../mcp/secretRef';
 
 const BLOCKED_STDIO_COMMANDS = new Set([
   'rm',
@@ -305,10 +307,44 @@ export async function removeMcpSettingsServerDraftConfig(
 
 async function handleAddServer(payload: unknown, workingDirectory: string): Promise<unknown> {
   const payloadRecord = asRecord(payload, 'payload');
-  const serverConfig = normalizeMcpSettingsServerConfig(payloadRecord.config ?? payloadRecord);
+  let serverConfig = normalizeMcpSettingsServerConfig(payloadRecord.config ?? payloadRecord);
   const existing = getMCPClient().getServerState(serverConfig.name);
   if (existing) {
     throw new Error(`MCP server "${serverConfig.name}" already exists`);
+  }
+
+  const secretEnvKeys = optionalStringArray(payloadRecord.secretEnvKeys, 'secretEnvKeys') || [];
+  const secretHeaderKeys = optionalStringArray(payloadRecord.secretHeaderKeys, 'secretHeaderKeys') || [];
+  const integrationId = `mcp_${serverConfig.name}`;
+  const extractedSecrets: Record<string, string> = {};
+
+  if ((serverConfig.type === undefined || serverConfig.type === 'stdio') && serverConfig.env) {
+    const { sanitized, extracted } = extractSecrets(
+      serverConfig.env,
+      secretEnvKeys,
+      integrationId,
+    );
+    if (sanitized !== serverConfig.env) {
+      serverConfig = { ...serverConfig, env: sanitized };
+    }
+    Object.assign(extractedSecrets, extracted);
+  } else if (
+    (serverConfig.type === 'sse' || serverConfig.type === 'http-streamable')
+    && serverConfig.headers
+  ) {
+    const { sanitized, extracted } = extractSecrets(
+      serverConfig.headers,
+      secretHeaderKeys,
+      integrationId,
+    );
+    if (sanitized !== serverConfig.headers) {
+      serverConfig = { ...serverConfig, headers: sanitized };
+    }
+    Object.assign(extractedSecrets, extracted);
+  }
+
+  if (Object.keys(extractedSecrets).length > 0) {
+    await getConfigService().setIntegration(integrationId, extractedSecrets);
   }
 
   const persisted = await persistMcpSettingsServerConfig(workingDirectory, serverConfig);

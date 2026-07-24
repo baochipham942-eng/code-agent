@@ -5,6 +5,7 @@ const ensureConfigDirMock = vi.fn();
 const pathExistsMock = vi.fn();
 const readFileMock = vi.fn();
 const writeFileMock = vi.fn();
+const setIntegrationMock = vi.hoisted(() => vi.fn());
 const mcpClientMock = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getTools: vi.fn(),
@@ -43,6 +44,12 @@ vi.mock('../../../src/host/mcp/mcpOAuthCoordinator', () => ({
 
 vi.mock('../../../src/host/services/core/secureStorage', () => ({
   getSecureStorage: () => secureStorageMock,
+}));
+
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({
+    setIntegration: setIntegrationMock,
+  }),
 }));
 
 vi.mock('../../../src/host/context/contextHealthService', () => ({
@@ -86,6 +93,8 @@ beforeEach(() => {
   pathExistsMock.mockReset();
   readFileMock.mockReset();
   writeFileMock.mockReset();
+  setIntegrationMock.mockReset();
+  setIntegrationMock.mockResolvedValue(undefined);
 
   getMcpConfigPathMock.mockReturnValue({
     new: '/tmp/work/.code-agent/mcp.json',
@@ -102,7 +111,9 @@ beforeEach(() => {
 
 async function invokeMcpAction(action: string, payload?: unknown) {
   const ipcMain = { handle: vi.fn() };
-  registerMcpHandlers(ipcMain as never);
+  registerMcpHandlers(ipcMain as never, {
+    getWorkingDirectory: () => '/tmp/work',
+  });
   const handler = ipcMain.handle.mock.calls[0][1] as (_event: unknown, request: { action: string; payload?: unknown }) => Promise<unknown>;
   return handler({}, { action, payload });
 }
@@ -219,6 +230,84 @@ describe('mcp.ipc settings add helpers', () => {
     await expect(persistMcpSettingsServerConfig('/tmp/work', config))
       .rejects.toThrow('already exists');
     expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it('stores marked env secrets and persists only references', async () => {
+    const fakeSecret = 'SENSITIVE_PERSISTED_SECRET_91ca';
+    const response = await invokeMcpAction('addServer', {
+      config: {
+        name: 'feishu',
+        type: 'stdio',
+        command: 'npx',
+        env: {
+          APP_ID: 'cli_app_id',
+          APP_SECRET: fakeSecret,
+        },
+      },
+      secretEnvKeys: ['APP_SECRET'],
+    }) as { success: boolean };
+
+    expect(response.success).toBe(true);
+    expect(setIntegrationMock).toHaveBeenCalledWith('mcp_feishu', {
+      APP_SECRET: fakeSecret,
+    });
+    expect(writeFileMock).toHaveBeenCalledOnce();
+    const persistedContent = String(writeFileMock.mock.calls[0][1]);
+    expect(persistedContent).toContain('secureref:mcp_feishu.APP_SECRET');
+    expect(persistedContent).not.toContain(fakeSecret);
+    expect(persistedContent).toContain('cli_app_id');
+    expect(mcpClientMock.addServer).toHaveBeenCalledWith(expect.objectContaining({
+      env: {
+        APP_ID: 'cli_app_id',
+        APP_SECRET: 'secureref:mcp_feishu.APP_SECRET',
+      },
+      scope: 'runtime',
+    }));
+  });
+
+  it('keeps env values unchanged when no secret key list is provided', async () => {
+    const fakeSecret = 'legacy-plaintext-secret';
+    const response = await invokeMcpAction('addServer', {
+      config: {
+        name: 'legacy',
+        type: 'stdio',
+        command: 'npx',
+        env: {
+          API_KEY: fakeSecret,
+        },
+      },
+    }) as { success: boolean };
+
+    expect(response.success).toBe(true);
+    expect(setIntegrationMock).not.toHaveBeenCalled();
+    const persistedContent = String(writeFileMock.mock.calls[0][1]);
+    expect(persistedContent).toContain(fakeSecret);
+    expect(persistedContent).not.toContain('secureref:');
+  });
+
+  it('stores marked header secrets while preserving public headers', async () => {
+    const fakeSecret = 'remote-header-secret';
+    const response = await invokeMcpAction('addServer', {
+      config: {
+        name: 'remote_docs',
+        type: 'http',
+        url: 'https://example.com/mcp',
+        headers: {
+          'X-Client-Id': 'public-client-id',
+          Authorization: fakeSecret,
+        },
+      },
+      secretHeaderKeys: ['Authorization'],
+    }) as { success: boolean };
+
+    expect(response.success).toBe(true);
+    expect(setIntegrationMock).toHaveBeenCalledWith('mcp_remote_docs', {
+      Authorization: fakeSecret,
+    });
+    const persistedContent = String(writeFileMock.mock.calls[0][1]);
+    expect(persistedContent).toContain('secureref:mcp_remote_docs.Authorization');
+    expect(persistedContent).not.toContain(fakeSecret);
+    expect(persistedContent).toContain('public-client-id');
   });
 
   it('summarizes OAuth server state with token presence without leaking token contents', async () => {

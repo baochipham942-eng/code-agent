@@ -21,6 +21,7 @@ import type {
   InProcessMCPServerInterface,
 } from './types';
 import { CUA_DRIVER_SERVER_NAME } from './types';
+import { normalizeMcpToolArgs } from './mcpArgsNormalize';
 import { isCuaStateV2Enabled } from './cuaStateConfig';
 import { CUA_READONLY_TOOLS } from './cuaSessionLock';
 import {
@@ -509,6 +510,11 @@ export class MCPToolRegistry {
       serverName: legacyMatch[1],
       toolName: legacyMatch[2],
     };
+  }
+
+  /** 派发前对 MCP 工具入参做确定性归一化（抹平模型的已知参数姿势坑）。非命中工具原样透传。 */
+  normalizeToolArgs(serverName: string, toolName: string, args: Record<string, unknown>): Record<string, unknown> {
+    return normalizeMcpToolArgs(serverName, toolName, args);
   }
 
   // --------------------------------------------------------------------------

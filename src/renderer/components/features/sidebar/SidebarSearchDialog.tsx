@@ -86,7 +86,7 @@ export const SidebarSearchDialog: React.FC<SidebarSearchDialogProps> = ({
       <div onKeyDown={handleKeyDown}>
         <Input
           ref={inputRef}
-          type="search"
+          type="text"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={sb.searchPlaceholder}

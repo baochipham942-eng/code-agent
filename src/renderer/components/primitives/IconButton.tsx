@@ -117,7 +117,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         {loading ? (
           <Loader2 className={`${iconSize} animate-spin`} />
         ) : (
-          <span className={iconSize}>{icon}</span>
+          <span className={`${iconSize} [&>svg]:h-full [&>svg]:w-full`}>{icon}</span>
         )}
       </button>
     );

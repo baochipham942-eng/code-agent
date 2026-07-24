@@ -76,6 +76,9 @@ describe('SidebarSearchDialog', () => {
     expect(screen.queryByText('命中 4 条消息')).not.toBeNull();
     expect(screen.queryByRole('button', { name: '当前项目' })).not.toBeNull();
     expect(screen.queryByRole('button', { name: '全部' })).not.toBeNull();
+    expect(
+      screen.getByRole('textbox', { name: '搜索会话标题与消息内容' }).getAttribute('type'),
+    ).toBe('text');
   });
 
   it('selects a session and conditionally removes the dialog from the DOM', async () => {
@@ -129,7 +132,7 @@ describe('SidebarSearchDialog', () => {
       />,
     );
 
-    const input = screen.getByRole('searchbox');
+    const input = screen.getByRole('textbox', { name: '搜索会话标题与消息内容' });
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
 

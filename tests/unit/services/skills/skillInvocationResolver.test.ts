@@ -242,10 +242,12 @@ describe('skillInvocationResolver', () => {
   });
 
   // 隔离验证否定回看：只测 alias 提取本身，不牵涉词边界匹配。
+  // 用 "/" 分隔的关键词列表（与 design-brief 真实描述同构），确保 zzzcanary
+  // 会被拆分成独立 token，而不是和后面的中文尾巴粘成一个长 alias。
   it('negation lookbehind alone strips triggers from a negated description clause', () => {
     const negated = skill({
       name: 'negation-only-tool',
-      description: '一些说明。不要因为用户提到 zzzcanary 等关键词就自动触发。',
+      description: '一些说明。不要因为用户提到 abc/zzzcanary/def 等关键词就自动触发。',
     });
 
     const aliases = getSkillInvocationAliases(negated).map((alias) => alias.value);

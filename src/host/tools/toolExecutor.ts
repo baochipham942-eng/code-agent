@@ -32,6 +32,7 @@ import {
   resolveSessionPermissionMode,
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
+import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON } from './externalSideEffect';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
@@ -689,6 +690,12 @@ export class ToolExecutor {
             readOnlyForcesConfirmation,
             sessionPermissionMode,
           });
+          // B1: EXTERNAL 风险类打标进 decisionTrace（result='allow'，不改变审批结果，仅供
+          // B2 无人值守停车 / B4 target 授权与审计消费）。此处入 traceBuilder 覆盖 deny/ask 路径；
+          // approve 路径另建 builder（见下），故其单独补一条。
+          if (classification.external) {
+            traceBuilder.addStep('permission_classifier', EXTERNAL_SIDE_EFFECT_TRACE_RULE, 'allow', EXTERNAL_SIDE_EFFECT_TRACE_REASON);
+          }
           if (classification.decision === 'approve') {
             logger.info('Auto-approved by classifier', {
               tool: executionToolName,
@@ -697,16 +704,22 @@ export class ToolExecutor {
               cached: classification.cached,
             });
             needsUserApproval = false;
-            const trace = classification.traceStep
-              ? createTraceBuilder(executionToolName)
-                .addStep(
+            let trace: import('../../shared/contract/decisionTrace').DecisionTrace | undefined;
+            if (classification.external || classification.traceStep) {
+              const approveTrace = createTraceBuilder(executionToolName);
+              if (classification.external) {
+                approveTrace.addStep('permission_classifier', EXTERNAL_SIDE_EFFECT_TRACE_RULE, 'allow', EXTERNAL_SIDE_EFFECT_TRACE_REASON);
+              }
+              if (classification.traceStep) {
+                approveTrace.addStep(
                   classification.traceStep.layer,
                   classification.traceStep.rule,
                   classification.traceStep.result,
                   classification.traceStep.reason,
-                )
-                .build('allow')
-              : undefined;
+                );
+              }
+              trace = approveTrace.build('allow');
+            }
             recordDecision(executionToolName, params, 'auto-approve', classification.reason || 'classifier', permStartTime, trace);
           } else if (classification.decision === 'deny') {
             // Collect trace step from classifier

@@ -16,6 +16,7 @@ import type {
   ProjectRoleLink,
   ProjectSource,
   ProjectSourceAccess,
+  ProjectSourceGitState,
   ProjectStatus,
   UpdateProjectInput,
 } from '@shared/contract/project';
@@ -32,6 +33,10 @@ export async function getProjectDetail(projectId: string): Promise<ProjectDetail
 
 export async function getProjectSources(projectId: string): Promise<ProjectSource[]> {
   return ipcService.invokeDomain<ProjectSource[]>(IPC_DOMAINS.PROJECT, 'sources', { projectId });
+}
+
+export async function getProjectSourceGitStates(projectId: string): Promise<ProjectSourceGitState[]> {
+  return ipcService.invokeDomain<ProjectSourceGitState[]>(IPC_DOMAINS.PROJECT, 'gitStates', { projectId });
 }
 
 export async function updateProject(input: UpdateProjectInput): Promise<ProjectDetail> {

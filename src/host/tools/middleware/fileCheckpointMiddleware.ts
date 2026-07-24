@@ -3,6 +3,8 @@
 import { getFileCheckpointService } from '../../services/checkpoint';
 import { createLogger } from '../../services/infra/logger';
 import path from 'node:path';
+import type { WorkspaceScope } from '../../../shared/contract/project';
+import { resolveWorkspacePath } from '../../runtime/workspaceScope';
 
 const logger = createLogger('FileCheckpointMiddleware');
 
@@ -15,6 +17,7 @@ const FILE_WRITE_TOOLS = ['write_file', 'append_file', 'edit_file', 'Write', 'Ap
 export interface CheckpointContext {
   sessionId: string;
   messageId: string;
+  workspaceScope?: WorkspaceScope;
 }
 
 export type CheckpointContextProvider = () => CheckpointContext | null;
@@ -50,7 +53,13 @@ export async function createFileCheckpointIfNeeded(
 
   try {
     const service = getFileCheckpointService();
-    await service.createCheckpoint(context.sessionId, context.messageId, filePath);
+    const match = context.workspaceScope
+      ? resolveWorkspacePath(context.workspaceScope, filePath, 'read_write')
+      : undefined;
+    await service.createCheckpoint(context.sessionId, context.messageId, filePath, {
+      sourceId: match?.root.sourceId,
+      workspaceScopeVersion: context.workspaceScope?.version,
+    });
   } catch (error) {
     // 检查点失败不应阻止工具执行
     logger.error('Failed to create checkpoint', { error, toolName, filePath });

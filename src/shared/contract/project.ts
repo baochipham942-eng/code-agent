@@ -173,6 +173,8 @@ export interface UpdateProjectInput {
   name: string;
   description?: string | null;
   sources: ProjectSourceInput[];
+  /** User-confirmed removals whose current Git working tree is dirty. */
+  confirmedDirtySourceIds?: string[];
 }
 
 /** 新建目标入参 */

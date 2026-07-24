@@ -28,6 +28,7 @@ import {
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
+import { isPathWithinRoot } from '../runtime/workspaceScope';
 
 /**
  * ADR-008 Phase 3: 通过 EventBus 发布 plan review 事件
@@ -202,7 +203,7 @@ export class PlanApprovalGate {
 
     // Check for writes outside working directory
     if (workingDirectory && request.path) {
-      if (!request.path.startsWith(workingDirectory)) {
+      if (!isPathWithinRoot(request.path, workingDirectory)) {
         reasons.push(`Write outside working directory: ${request.path}`);
       }
     }

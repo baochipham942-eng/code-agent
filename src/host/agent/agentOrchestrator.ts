@@ -959,6 +959,13 @@ export class AgentOrchestrator {
           ? this.workingDirectory
           : workspaceScope.primaryRoot)
         : this.workingDirectory;
+      if (workspaceScope) {
+        this.initializeLSP(
+          workspaceScope.primaryRoot,
+          workspaceScope.roots.map((root) => root.path),
+        );
+        this.updateSkillWatcher(workspaceScope.primaryRoot);
+      }
       const runContext = sessionId
         ? createRunContext({
           runId: nativeRunId,
@@ -985,6 +992,7 @@ export class AgentOrchestrator {
       memoryMode: sessionMemoryMode,
       suppressedMemoryEntryIds,
       workingDirectory: runWorkingDirectory,
+      projectConfigDirectory: workspaceScope?.primaryRoot ?? runWorkingDirectory,
       workspaceScope,
       isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
       toolScope,
@@ -1175,14 +1183,14 @@ export class AgentOrchestrator {
   // LSP & SkillWatcher (async, non-blocking)
   // --------------------------------------------------------------------------
 
-  private initializeLSP(workspaceRoot: string): void {
+  private initializeLSP(workspaceRoot: string, workspaceFolders: string[] = [workspaceRoot]): void {
     import('../lsp').then(async ({ initializeLSPManager, getLSPManager }) => {
       try {
         const existingManager = getLSPManager();
         if (existingManager) {
           logger.debug('LSP manager already exists, reinitializing for new workspace');
         }
-        await initializeLSPManager(workspaceRoot);
+        await initializeLSPManager(workspaceRoot, workspaceFolders);
         logger.info('LSP initialized for workspace:', workspaceRoot);
       } catch (error) {
         logger.warn('LSP initialization failed (non-blocking)', { error });

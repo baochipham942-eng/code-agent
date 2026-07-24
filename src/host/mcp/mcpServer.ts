@@ -13,8 +13,9 @@ import {
 import { logCollector, type LogEntry, type LogLevel, type LogSource, type LogStatus } from './logCollector.js';
 import { promises as fsp } from 'node:fs';
 import { homedir } from 'node:os';
-import { join as pathJoin, resolve as pathResolve, sep as pathSep } from 'node:path';
+import { join as pathJoin, resolve as pathResolve } from 'node:path';
 import { CONFIG_DIR_NEW } from '../config/configPaths.js';
+import { isPathWithinRoot } from '../runtime/workspaceScope.js';
 
 // Log Bridge URL for fetching logs from running Electron app
 const LOG_BRIDGE_URL = 'http://127.0.0.1:51820';
@@ -550,7 +551,7 @@ export class CodeAgentMCPServer {
           // 路径穿越防护：显式 path 必须落在 appshots 目录内。
           const resolveInsideDir = (p: string): string | null => {
             const resolved = pathResolve(p);
-            return resolved === appshotsRoot || resolved.startsWith(appshotsRoot + pathSep) ? resolved : null;
+            return isPathWithinRoot(resolved, appshotsRoot) ? resolved : null;
           };
 
           let fileNames: string[];

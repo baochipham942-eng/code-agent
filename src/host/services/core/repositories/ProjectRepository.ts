@@ -351,6 +351,15 @@ export class ProjectRepository {
     return rows.map((r) => r.id as string);
   }
 
+  hasRunningSessions(projectId: string): boolean {
+    const row = this.db.prepare(`
+      SELECT 1 AS present FROM sessions
+      WHERE project_id = ? AND is_deleted = 0 AND status IN ('running', 'queued', 'waiting')
+      LIMIT 1
+    `).get(projectId) as SQLiteRow | undefined;
+    return Boolean(row);
+  }
+
   /** 项目下的 session（含标题，用于产物列表标注来源），按更新时间倒序 */
   listProjectSessions(projectId: string): Array<{ id: string; title: string; updatedAt: number; workingDirectory?: string | null }> {
     const rows = this.db

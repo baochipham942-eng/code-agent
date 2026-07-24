@@ -19,6 +19,7 @@ import { RM_FLAGS_REQUIRED, RM_HEAD } from '../security/rmFlagPattern';
 import { checkCommandPolicy } from './modules/shell/commandPolicy';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
+import { isPathWithinRoot } from '../runtime/workspaceScope';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -583,9 +584,8 @@ export class PermissionClassifier {
     // W2: 写入临时目录 → approve (no traceStep)
     const tmpRoot = resolveCanonicalRunPath(os.tmpdir());
     if (
-      resolved === tmpRoot ||
-      resolved.startsWith(tmpRoot + path.sep) ||
-      (process.platform !== 'win32' && (resolved === '/tmp' || resolved.startsWith('/tmp/')))
+      isPathWithinRoot(resolved, tmpRoot) ||
+      (process.platform !== 'win32' && isPathWithinRoot(resolved, '/tmp'))
     ) {
       return {
         decision: 'approve',

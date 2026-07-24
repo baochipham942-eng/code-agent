@@ -942,7 +942,11 @@ export class ToolExecutor {
         if (!effectiveSessionId) return null;
         // messageId 从 context 中获取，如果没有则使用工具调用 ID
         const messageId = options.currentToolCallId || `msg_${Date.now()}`;
-        return { sessionId: effectiveSessionId, messageId };
+        return {
+          sessionId: effectiveSessionId,
+          messageId,
+          workspaceScope: this.runContext?.workspaceScope,
+        };
       }, this.executionCwd);
 
       // Execute the tool via protocol resolver
@@ -1068,6 +1072,24 @@ export class ToolExecutor {
     tool: ToolDefinition,
     params: Record<string, unknown>
   ): PermissionRequestData {
+    const sourceAttribution = (rawPath?: unknown): Record<string, unknown> => {
+      if (!this.runContext) return {};
+      const candidate = typeof rawPath === 'string' && rawPath.trim()
+        ? (nodePath.isAbsolute(rawPath)
+          ? nodePath.resolve(rawPath)
+          : nodePath.resolve(this.executionCwd, rawPath))
+        : this.executionCwd;
+      const match = resolveWorkspacePath(this.runContext.workspaceScope, candidate, 'read');
+      if (!match) return { workspaceScopeVersion: this.runContext.workspaceScope.version };
+      return {
+        projectId: this.runContext.workspaceScope.projectId,
+        sourceId: match.root.sourceId,
+        sourceRole: match.root.role,
+        sourceAccess: match.root.access,
+        relativePathWithinSource: match.relativePath,
+        workspaceScopeVersion: this.runContext.workspaceScope.version,
+      };
+    };
     switch (tool.name) {
       case 'bash':
       case 'Bash':
@@ -1076,7 +1098,10 @@ export class ToolExecutor {
             ? 'dangerous_command'
             : 'command',
           tool: tool.name,
-          details: { command: params.command },
+          details: {
+            command: params.command,
+            ...sourceAttribution(params.working_directory),
+          },
           reason: 'Execute shell command',
           reasonCode: PermissionRequestReason.ShellHighRisk,
           boundary: {
@@ -1090,7 +1115,7 @@ export class ToolExecutor {
         return {
           type: 'file_read',
           tool: tool.name,
-          details: { path: params.file_path },
+          details: { path: params.file_path, ...sourceAttribution(params.file_path) },
           boundary: {
             id: this.getFileBoundaryId(params.file_path, false),
             reason: '读取文件内容用于完成当前任务。',
@@ -1105,6 +1130,7 @@ export class ToolExecutor {
           details: {
             path: params.file_path,
             contentLength: (params.content as string)?.length || 0,
+            ...sourceAttribution(params.file_path),
           },
           reasonCode: this.fileWriteReasonCode(params.file_path),
           boundary: {
@@ -1122,6 +1148,7 @@ export class ToolExecutor {
             path: params.file_path,
             contentLength: (params.content as string)?.length || 0,
             final: params.final === true,
+            ...sourceAttribution(params.file_path),
           },
           reasonCode: this.fileWriteReasonCode(params.file_path),
           boundary: {
@@ -1139,6 +1166,7 @@ export class ToolExecutor {
             path: params.file_path,
             oldString: params.old_string,
             newString: params.new_string,
+            ...sourceAttribution(params.file_path),
           },
           reasonCode: this.fileWriteReasonCode(params.file_path),
           boundary: {
@@ -1260,7 +1288,7 @@ export class ToolExecutor {
       : nodePath.resolve(this.executionCwd, requestedDirectory);
     if (!resolveWorkspacePath(this.runContext.workspaceScope, candidate, 'read')) {
       return {
-        error: `Run ${this.runContext.runId} cannot execute outside Project Sources: ${candidate}`,
+        error: `Run ${this.runContext.runId} cannot execute outside workspace Project Sources: ${candidate}`,
       };
     }
 

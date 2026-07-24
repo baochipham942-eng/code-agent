@@ -184,7 +184,9 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   const artifactRepairMode = isArtifactRepairMode(ctx);
   // 项目级 / 全局级 SYSTEM.md 加载(Pi 借鉴 ④):每轮加载,IO 成本小
   // 不命中文件时 EMPTY_RESULT,行为完全跟改造前一致
-  const projectSystemPrompt = loadProjectSystemPrompt(ctx.runtime.workingDirectory || '');
+  const projectSystemPrompt = loadProjectSystemPrompt(
+    ctx.runtime.projectConfigDirectory || ctx.runtime.workingDirectory || '',
+  );
   const cacheKey = buildDynamicPromptCacheKey(ctx, userQuery, artifactRepairMode, projectSystemPrompt);
   const cache = getRuntimeAssemblyCache(ctx);
   const cached = cache.dynamicPrompt;

@@ -15,6 +15,7 @@ import type {
   LibraryListOptions,
   SessionContextPin,
 } from '@shared/contract/library';
+import { isPathWithinRoot } from '../../runtime/workspaceScope';
 
 const logger = createLogger('LibraryService');
 
@@ -188,7 +189,7 @@ export class LibraryService {
     if (removed && item.kind === 'upload') {
       const root = path.join(getUserConfigDir(), 'library');
       const resolved = path.resolve(item.pathOrUri);
-      if (resolved.startsWith(root + path.sep)) {
+      if (isPathWithinRoot(resolved, root) && resolved !== path.resolve(root)) {
         try {
           fs.unlinkSync(resolved);
         } catch (error) {

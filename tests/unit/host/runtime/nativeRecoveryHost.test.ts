@@ -80,6 +80,35 @@ describe('NativeRecoveryHost production recovery', () => {
     expect(ports.approval.read).toHaveBeenCalledWith('approval-1');
     expect(registry.terminalDurable).not.toHaveBeenCalled();
   });
+
+  it('fails closed when the persisted multi-source scope no longer matches the Project', async () => {
+    const pending = operation({ status: 'prepared' });
+    const recoveryPlan = plan(pending);
+    const descriptor = recoveryPlan.checkpoint!.state as NativeRecoveryDescriptor;
+    descriptor.workspace.scope = {
+      projectId: 'project-1',
+      primaryRoot: '/repo',
+      roots: [{
+        sourceId: 'primary',
+        path: '/repo',
+        role: 'primary',
+        access: 'read_write',
+        identityDev: '1',
+        identityIno: '2',
+      }],
+      version: 'scope-v1',
+    };
+    const { handler, ports, registry } = fixture({
+      resolveWorkspaceScopeVersion: vi.fn(async () => 'scope-v2'),
+    });
+
+    await expect(handler.recover(recoveryPlan, 10)).resolves.toMatchObject({
+      status: 'requires_review',
+      reason: 'native_workspace_scope_drift',
+    });
+    expect(ports.model.dispatchPrepared).not.toHaveBeenCalled();
+    expect(registry.terminalDurable).not.toHaveBeenCalled();
+  });
 });
 
 describe('NativeRecoveryHost interrupted goal run (P0 false-completion止血)', () => {

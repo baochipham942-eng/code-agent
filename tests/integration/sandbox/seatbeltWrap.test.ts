@@ -74,6 +74,40 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     expect(fs.existsSync(path.join(projectDir, 'in-project.txt'))).toBe(true);
   });
 
+  it('多根矩阵：Additional 只读可读不可写，显式读写根可写', async () => {
+    const docsDir = fs.mkdtempSync(path.join(process.cwd(), '.sbx-docs-'));
+    const toolsDir = fs.mkdtempSync(path.join(process.cwd(), '.sbx-tools-'));
+    fs.writeFileSync(path.join(docsDir, 'requirements.md'), 'requirements-ok');
+    const legal = wrapCommandForSandbox(
+      `cat ${JSON.stringify(path.join(docsDir, 'requirements.md'))} && echo ok > ${JSON.stringify(path.join(toolsDir, 'generated.txt'))}`,
+      {
+        workingDirectory: projectDir,
+        readOnlyRoots: [docsDir],
+        readWriteRoots: [projectDir, toolsDir],
+      },
+    );
+    const legalResult = await run(legal.command, projectDir);
+    legal.cleanup();
+    expect(legalResult.code).toBe(0);
+    expect(legalResult.stdout).toContain('requirements-ok');
+    expect(fs.readFileSync(path.join(toolsDir, 'generated.txt'), 'utf8')).toContain('ok');
+
+    const denied = wrapCommandForSandbox(
+      `echo blocked > ${JSON.stringify(path.join(docsDir, 'blocked.txt'))}`,
+      {
+        workingDirectory: projectDir,
+        readOnlyRoots: [docsDir],
+        readWriteRoots: [projectDir, toolsDir],
+      },
+    );
+    const deniedResult = await run(denied.command, projectDir);
+    denied.cleanup();
+    expect(deniedResult.code).not.toBe(0);
+    expect(fs.existsSync(path.join(docsDir, 'blocked.txt'))).toBe(false);
+    fs.rmSync(docsDir, { recursive: true, force: true });
+    fs.rmSync(toolsDir, { recursive: true, force: true });
+  });
+
   it('敏感 home 文件读取被拒，但工作区 .env 仍可读', async () => {
     const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sbx-home-'));
     const originalHome = process.env.HOME;

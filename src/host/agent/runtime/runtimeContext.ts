@@ -59,6 +59,7 @@ export interface RuntimeContext {
   readonly modelRouter: ModelRouter;
   readonly maxIterations: number;
   readonly workingDirectory: string;
+  readonly projectConfigDirectory?: string;
   readonly workspaceScope?: WorkspaceScope;
   readonly isDefaultWorkingDirectory: boolean;
   readonly runId?: string;

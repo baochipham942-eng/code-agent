@@ -1,4 +1,4 @@
-import { basename, isAbsolute, resolve, sep } from 'node:path';
+import { basename, isAbsolute, resolve } from 'node:path';
 import type { ToolExecutionResult } from '../types';
 import type {
   SurfaceEvidenceCardV1,
@@ -14,6 +14,7 @@ import { surfaceProofService } from '../../services/surfaceExecution/SurfaceProo
 import { finalizeDeferredBrowserActionProof } from '../vision/browserActionFinalize';
 import { persistBase64ImageMetadata } from './base64ImageArtifacts';
 import { isBrowserScopedComputerUseAction } from '../../../shared/utils/browserComputerActionCatalog';
+import { isPathWithinRoot } from '../../runtime/workspaceScope';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -45,9 +46,7 @@ interface TrustedOutputCandidate {
 }
 
 function withinDirectory(path: string, directory: string): boolean {
-  const candidate = resolve(path);
-  const root = resolve(directory);
-  return candidate === root || candidate.startsWith(`${root}${sep}`);
+  return isPathWithinRoot(resolve(path), resolve(directory));
 }
 
 function trustedOutputCandidates(
@@ -123,7 +122,7 @@ function trustedFramePath(
   const artifactRoot = resolve(input.workingDirectory, '.code-agent/artifacts/images');
   if (persisted
     && metadata.imageBase64Persisted === true
-    && (resolve(persisted) === artifactRoot || resolve(persisted).startsWith(`${artifactRoot}${sep}`))) {
+    && isPathWithinRoot(resolve(persisted), artifactRoot)) {
     return persisted;
   }
   const artifacts: unknown[] = Array.isArray(metadata.artifacts) ? metadata.artifacts : [];

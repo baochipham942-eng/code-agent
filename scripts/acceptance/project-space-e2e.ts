@@ -305,8 +305,8 @@ async function main(): Promise<void> {
 
     // AC7 记忆接管：meta.json 写入 projectId
     console.log('\nAC7 项目记忆接管（meta.json projectId）');
-    // 项目记忆目录在 getUserConfigDir() = ~/.code-agent（HOME=fakeHome），与 sqlite dataDir 分离
-    const metaPath = path.join(fakeHome, '.code-agent', 'projects', keyA, 'meta.json');
+    // web acceptance 显式设置 CODE_AGENT_DATA_DIR；项目记忆与 sqlite 都必须隔离在该目录。
+    const metaPath = path.join(dataDir, 'projects', keyA, 'meta.json');
     let metaOk = false;
     let metaDetail = '';
     try {

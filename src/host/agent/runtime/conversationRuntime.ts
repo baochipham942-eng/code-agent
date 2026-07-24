@@ -172,7 +172,9 @@ export class ConversationRuntime {
     if (this.flowState.userHooksInitialized) return;
 
     if (!this.ctx.hookManager && this.ctx.enableHooks) {
-      const hookWorkingDirectory = this.ctx.workingDirectory?.trim() || process.cwd();
+      const hookWorkingDirectory = this.ctx.projectConfigDirectory?.trim()
+        || this.ctx.workingDirectory?.trim()
+        || process.cwd();
       this.ctx.hookManager = createHookManager({
         workingDirectory: hookWorkingDirectory,
         onTrigger: (entry) => {

@@ -74,6 +74,16 @@ describe('ProjectRepository', () => {
     expect(repo.getProject(p.id)?.name).toBe('alpha');
   });
 
+  it('允许同一 workspace path 属于不同 Project', () => {
+    const key = getProjectKey('/work/shared');
+    const first = { ...makeRow('/work/shared', key, NOW), id: 'proj_first' };
+    const second = { ...makeRow('/work/shared', key, NOW + 1), id: 'proj_second' };
+    repo.upsertProject(first);
+    repo.upsertProject(second);
+    expect(repo.getProject(first.id)?.workspaceKey).toBe(key);
+    expect(repo.getProject(second.id)?.workspaceKey).toBe(key);
+  });
+
   it('多 goal 并行：一个项目可挂多条 active goal', () => {
     const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
     repo.upsertProject(p);

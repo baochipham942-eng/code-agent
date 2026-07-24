@@ -21,6 +21,7 @@ import type {
   ManagedBrowserProfileResolution,
   ManagedBrowserProxyInput,
 } from './types';
+import { isPathWithinRoot } from '../../../runtime/workspaceScope';
 
 export const MANAGED_BROWSER_PERSISTENT_PROFILE_ID = 'managed-browser-profile';
 export const MANAGED_BROWSER_ARTIFACT_DIR = 'screenshots';
@@ -447,7 +448,7 @@ export function sanitizeManagedBrowserId(value: string): string {
 function isPathInsideRoot(targetPath: string, rootPath: string): boolean {
   const target = path.resolve(targetPath);
   const root = path.resolve(rootPath);
-  return target !== root && target.startsWith(`${root}${path.sep}`);
+  return target !== root && isPathWithinRoot(target, root);
 }
 
 export function redactBrowserWorkbenchTraceParams(toolName: string, params: Record<string, unknown>): Record<string, unknown> {

@@ -184,6 +184,8 @@ export interface RolePanelDetail {
     model: 'fast' | 'balanced' | 'powerful';
     /** 指定的具体模型；缺省表示跟随档位。 */
     modelOverride?: { provider: string; model: string };
+    /** 审批松紧档；缺省表示跟随通用设置。 */
+    permissionPreset?: 'strict' | 'development' | 'ci';
     maxIterations: number;
     availableSkills: string[];
     availableTools: string[];

@@ -246,7 +246,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
     isBuiltin: builtinRoleIdSet.has(roleId),
     personalization: readRolePersonalization(roleId),
-    ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
+    ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), ...(parsed.permissionPreset ? { permissionPreset: parsed.permissionPreset } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
     ...(packState ? { locallyModified: packState.locallyModified } : {}),
     ...(restore ? { restore } : {}),
   };
@@ -263,6 +263,11 @@ async function handleUpdateVisual(roleId: string, visual: RoleVisual): Promise<R
 async function handleUpdateEquipment(roleId: string, equipment: AgentMdEquipment): Promise<void> {
   if (!['fast', 'balanced', 'powerful'].includes(equipment.model) || !Number.isInteger(equipment.maxIterations) || equipment.maxIterations < 1 || equipment.maxIterations > 200) {
     throw new Error('Invalid equipment configuration');
+  }
+  // 只接受三个合法档位或显式清除；不认的值一律拒绝，避免把脏值写进 frontmatter。
+  const preset = equipment.permissionPreset;
+  if (preset != null && !['strict', 'development', 'ci'].includes(preset)) {
+    throw new Error('Invalid permission preset');
   }
   // 指定模型只校验形状；provider 是否可用交给路由层兜底（用户后来删了 key 也不该让保存失败）。
   const override = equipment.modelOverride;
@@ -535,10 +540,10 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
         }
 
         case 'rolePackInstall': {
-          const { roleId } = (payload ?? {}) as RoleIdPayload;
+          const { roleId, acceptElevation, elevationReviewed } = (payload ?? {}) as RoleIdPayload & { acceptElevation?: boolean; elevationReviewed?: boolean };
           if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
           const { installRolePack } = await import('../services/roleAssets/rolePackInstallService');
-          return { success: true, data: await installRolePack(roleId) };
+          return { success: true, data: await installRolePack(roleId, { acceptElevation, elevationReviewed }) };
         }
 
         case 'rolePackUninstall': {

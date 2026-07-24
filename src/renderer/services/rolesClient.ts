@@ -25,6 +25,8 @@ export interface RolePackActionResult {
   installState?: 'complete' | 'degraded';
   missingSkills?: string[];
   locallyModified?: boolean;
+  /** 命中提权判据且用户尚未过目；UI 据此弹确认卡 */
+  elevation?: { looseMode: boolean; bashTool: boolean };
 }
 
 export async function listRoles(): Promise<RolePanelEntry[]> {
@@ -35,8 +37,11 @@ export async function listRolePacks(): Promise<RolePackListItem[]> {
   return ipcService.invokeDomain<RolePackListItem[]>(IPC_DOMAINS.ROLES, 'rolePackList');
 }
 
-export async function installRolePack(roleId: string): Promise<RolePackActionResult> {
-  return ipcService.invokeDomain<RolePackActionResult>(IPC_DOMAINS.ROLES, 'rolePackInstall', { roleId });
+export async function installRolePack(
+  roleId: string,
+  options?: { acceptElevation?: boolean; elevationReviewed?: boolean },
+): Promise<RolePackActionResult> {
+  return ipcService.invokeDomain<RolePackActionResult>(IPC_DOMAINS.ROLES, 'rolePackInstall', { roleId, ...options });
 }
 
 export async function uninstallRolePack(roleId: string): Promise<RolePackActionResult> {

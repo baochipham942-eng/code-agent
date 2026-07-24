@@ -14,7 +14,7 @@ import type { RolePackEntry } from '../../../shared/contract/rolePackRegistry';
 import { BUILTIN_ROLES, validateBuiltinRolePack, type BuiltinRoleDefinition } from './builtinRoles';
 import { ensureRoleAssetDirs } from './roleAssetService';
 import { getRolePackRegistryService } from './rolePackRegistryService';
-import { parseAgentMd, updateAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
+import { parseAgentMd, updateAgentMdEquipment, updateAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
 
 const logger = createLogger('RolePackInstallService');
 const ROLE_PACKS_FILE = 'role-packs.json';
@@ -36,6 +36,8 @@ interface InstalledRolePackRecord {
   installedAt: string;
   publisher: string;
   locallyModified?: boolean;
+  /** 用户装包时选了「按包声明装」（接受了提权）；还原出厂据此决定要不要再剥一次。 */
+  elevationAccepted?: boolean;
 }
 
 type InstalledRolePacksFile = Record<string, InstalledRolePackRecord>;
@@ -47,6 +49,8 @@ export interface RolePackActionResult {
   missingSkills?: string[];
   locallyModified?: boolean;
   reason?: string;
+  /** 命中提权判据且用户尚未过目；renderer 据此弹确认卡，不当作失败。 */
+  elevation?: { looseMode: boolean; bashTool: boolean };
 }
 
 export interface RolePackListItem {
@@ -71,11 +75,55 @@ function agentMdWithVisual(entry: RolePackEntry): string {
   return updateAgentMdVisual(entry.agentMd, entry.visual);
 }
 
+/** frontmatter 是否**显式**声明了 tools（省略 tools 会走 parseAgentMd 的默认 6 件集，含 Bash 但那是基线不是声明）。 */
+function declaresToolsExplicitly(agentMd: string): boolean {
+  const frontmatter = agentMd.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? '';
+  return /^tools:/m.test(frontmatter);
+}
+
+/**
+ * 云包提权检测。两条真提权：放手档（ci）、**显式声明** Bash（影响范围无法预估）。
+ * 关键：没声明 tools 的包会继承默认工具集（本就含 Bash），那是每个内置角色的基线，不算提权——
+ * 只有包主动把 Bash 写进 tools 才算。Write/Edit/联网不算：标准档下它们受工作目录与审批闸约束。
+ */
+export function detectRolePackElevation(
+  agentMd: string,
+  roleId: string,
+): { looseMode: boolean; bashTool: boolean } | null {
+  const parsed = parseAgentMd(agentMd, `${roleId}.md`);
+  if (!parsed) return null;
+  const looseMode = parsed.permissionPreset === 'ci';
+  const bashTool = declaresToolsExplicitly(agentMd) && parsed.tools.includes('Bash');
+  return looseMode || bashTool ? { looseMode, bashTool } : null;
+}
+
+/**
+ * 把提权项降回安全默认：档位回到跟随通用设置；只有**显式声明** Bash 时才从声明里剔除它
+ * （没声明 tools 的包不改 tools，免得把基线里默认给的 Bash 也悄悄拿掉）。其它字段与正文原样保留。
+ */
+export function stripRolePackElevation(agentMd: string, roleId: string): string {
+  const parsed = parseAgentMd(agentMd, `${roleId}.md`);
+  if (!parsed) return agentMd;
+  const toolsDeclared = declaresToolsExplicitly(agentMd);
+  return updateAgentMdEquipment(agentMd, {
+    skills: parsed.skills ?? [],
+    tools: toolsDeclared ? parsed.tools.filter((tool) => tool !== 'Bash') : parsed.tools,
+    model: parsed.model,
+    modelOverride: parsed.modelOverride ?? null,
+    maxIterations: parsed.maxIterations,
+    permissionPreset: null,
+  });
+}
+
 /** 还原云包时只取经签名 registry 验证过的原始 agentMd；拿不到就明确失败。 */
 export async function getRolePackFactoryDefinition(roleId: string): Promise<{ agentMd: string } | null> {
-  if (!(await loadRecords())[roleId]) return null;
+  const record = (await loadRecords())[roleId];
+  if (!record) return null;
   const entry = await getRolePackRegistryService().getEntry(roleId);
-  return entry ? { agentMd: agentMdWithVisual(entry) } : null;
+  if (!entry) return null;
+  const raw = agentMdWithVisual(entry);
+  // 当初装的是剥后版本，还原也必须还原到剥后版本，否则一还原又提权。
+  return { agentMd: record.elevationAccepted ? raw : stripRolePackElevation(raw, roleId) };
 }
 
 function rolePacksPath(): string {
@@ -129,6 +177,7 @@ async function installEntry(
   entry: RolePackEntry,
   existing?: InstalledRolePackRecord,
   preserved: { registryNames: string[]; skillNames: Iterable<string> } = { registryNames: [], skillNames: [] },
+  options?: { acceptElevation?: boolean; elevationReviewed?: boolean },
 ): Promise<RolePackActionResult> {
   const installedSkills: string[] = [];
   const missingSkills: string[] = [];
@@ -177,7 +226,19 @@ async function installEntry(
   let installedAgentMdHash = previous?.installedAgentMdHash ?? '';
   let locallyModified = false;
   if (!currentHash || previous?.installedAgentMdHash === currentHash) {
-    const content = agentMdWithVisual(entry);
+    const raw = agentMdWithVisual(entry);
+    const elevation = detectRolePackElevation(raw, entry.roleId);
+    // 已过目 = 用户在确认卡上做过选择（按安全默认装 / 按声明装），或上次装时已接受过提权。
+    const reviewed = options?.acceptElevation === true
+      || options?.elevationReviewed === true
+      || previous?.elevationAccepted === true;
+    if (elevation && !reviewed) {
+      // 不落任何盘，交给 renderer 弹确认卡；用户选安全默认会带 elevationReviewed=true 再来一次。
+      return { success: false, roleId: entry.roleId, elevation };
+    }
+    // 保留提权项的两种情形：本次显式「按声明装」，或上次装时已接受过（升级/重试不该悄悄剥回）。
+    const keepElevation = options?.acceptElevation === true || previous?.elevationAccepted === true;
+    const content = keepElevation ? raw : stripRolePackElevation(raw, entry.roleId);
     await fs.mkdir(path.dirname(agentPath), { recursive: true });
     await fs.writeFile(agentPath, content, 'utf8');
     installedAgentMdHash = hash(content);
@@ -195,6 +256,8 @@ async function installEntry(
     installedAt: new Date().toISOString(),
     publisher: entry.publisher,
     ...(locallyModified ? { locallyModified: true } : {}),
+    // 本次按声明装则记 true；升级/重试沿用上次的选择；选安全默认则清掉。
+    ...((options?.acceptElevation === true || (options?.acceptElevation === undefined && previous?.elevationAccepted === true)) ? { elevationAccepted: true } : {}),
   };
   await ensureRoleAssetDirs(entry.roleId);
   await saveRecords(records);
@@ -202,14 +265,17 @@ async function installEntry(
 }
 
 /** Install or upgrade by roleId only; never trust a renderer-provided entry body. */
-export async function installRolePack(roleId: string): Promise<RolePackActionResult> {
+export async function installRolePack(
+  roleId: string,
+  options?: { acceptElevation?: boolean; elevationReviewed?: boolean },
+): Promise<RolePackActionResult> {
   if (BUILTIN_ROLES.some((role) => role.id === roleId)) {
     return { success: false, roleId, reason: '编译内内置角色 id 优先，拒绝云端角色包覆盖' };
   }
   const entry = await getRolePackRegistryService().getEntry(roleId);
   if (!entry) return { success: false, roleId, reason: '未找到角色包 registry 条目' };
   const records = await loadRecords();
-  return installEntry(entry, records[roleId]);
+  return installEntry(entry, records[roleId], undefined, options);
 }
 
 /** Retry only the missing registry entries recorded for a degraded installed pack. */
@@ -228,6 +294,8 @@ export async function retryMissingSkills(roleId: string): Promise<RolePackAction
     { ...entry, skills: entry.skills.filter((skill) => record.missingSkills.includes(skill.registryName)) },
     record,
     { registryNames: record.installedSkills, skillNames: preservedSkillNames },
+    // 重试是对已安装包的操作，不该再弹提权确认；是否保留提权由 record.elevationAccepted 决定。
+    { elevationReviewed: true },
   );
 }
 

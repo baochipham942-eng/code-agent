@@ -35,6 +35,7 @@ import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
 import { RoleBasicTab } from './RoleBasicTab';
 import { RoleEquipmentTab } from './RoleEquipmentTab';
 import { RoleModelTab } from './RoleModelTab';
+import { RoleSecurityTab } from './RoleSecurityTab';
 import { RolePersonalizationTab } from './RolePersonalizationTab';
 import { RoleRecordsTab } from './RoleRecordsTab';
 
@@ -89,7 +90,7 @@ async function updateRoleVisual(roleId: string, visual: RoleVisual): Promise<Rol
 
 type Equipment = NonNullable<RolePanelDetail["equipment"]>;
 
-async function updateRoleEquipment(roleId: string, equipment: Pick<Equipment, "skills" | "tools" | "model" | "maxIterations"> & { modelOverride?: Equipment["modelOverride"] | null }): Promise<void> {
+async function updateRoleEquipment(roleId: string, equipment: Pick<Equipment, "skills" | "tools" | "model" | "maxIterations"> & { modelOverride?: Equipment["modelOverride"] | null; permissionPreset?: Equipment["permissionPreset"] | null }): Promise<void> {
   await ipcService.invokeDomain(IPC_DOMAINS.ROLES, "updateEquipment", { roleId, equipment });
 }
 
@@ -171,6 +172,24 @@ const ModelEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: () 
     equipment={equipment}
     onSave={async (next) => {
       await updateRoleEquipment(roleId, { skills: equipment.skills, tools: equipment.tools, maxIterations: equipment.maxIterations, ...next });
+      onSaved();
+    }}
+  />
+);
+
+/** 安全页保存时把技能页与模型页的字段原样带回，避免改档位把它们冲掉。 */
+const SecurityEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: () => void }> = ({ roleId, equipment, onSaved }) => (
+  <RoleSecurityTab
+    equipment={equipment}
+    onSave={async (next) => {
+      await updateRoleEquipment(roleId, {
+        skills: equipment.skills,
+        tools: equipment.tools,
+        model: equipment.model,
+        modelOverride: equipment.modelOverride ?? null,
+        maxIterations: equipment.maxIterations,
+        ...next,
+      });
       onSaved();
     }}
   />
@@ -637,8 +656,8 @@ export interface RoleDetailPageProps {
   roleId: string;
 }
 
-type RoleDetailTab = 'basic' | 'personalization' | 'skills' | 'model' | 'records';
-const ROLE_DETAIL_TABS: readonly RoleDetailTab[] = ['basic', 'personalization', 'skills', 'model', 'records'];
+type RoleDetailTab = 'basic' | 'personalization' | 'skills' | 'model' | 'security' | 'records';
+const ROLE_DETAIL_TABS: readonly RoleDetailTab[] = ['basic', 'personalization', 'skills', 'model', 'security', 'records'];
 
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   const { t } = useI18n();
@@ -689,6 +708,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
           {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{expertText.visual.builtinNotice}</p> : null} /> : null}
           {tab === 'skills' && detail.equipment ? <RoleEquipmentTab><SkillsEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /></RoleEquipmentTab> : null}
           {tab === 'model' && detail.equipment ? <ModelEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
+          {tab === 'security' && detail.equipment ? <SecurityEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           {tab === 'personalization' ? <RolePersonalizationTab key={roleId} roleId={roleId} personalization={detail.personalization} onSaved={loadDetail} identityEditor={<DefinitionEditor roleId={roleId} definition={detail.definition} restore={detail.restore} onSaved={loadDetail} />} /> : null}
           {tab === 'records' ? <RoleRecordsTab>
           <RoleTrainingSummary detail={detail} />

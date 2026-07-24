@@ -38,6 +38,11 @@ export interface CoreAgentConfig {
   modelOverride?: { provider: string; model: string };
   maxIterations: number;
   readonly: boolean;
+  /**
+   * 每专家的审批松紧档（frontmatter `permission-override`）。
+   * 缺省表示跟随通用设置；下游经 toFullAgentConfig → security.permissionPreset 生效。
+   */
+  permissionPreset?: 'strict' | 'development' | 'ci';
   /** 角色主动性配置（frontmatter proactivity-level / proactivity-cadence，内部文档 §4） */
   proactivity?: RoleProactivityConfig;
   /** 展示层字段，写在 agent.md 的扁平 frontmatter，不参与 prompt 解释。 */

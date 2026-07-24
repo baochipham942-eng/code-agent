@@ -89,6 +89,13 @@ export interface RecommendedMcpServerEntry {
   badge?: string;
   /** 国内可直连（不需要代理） */
   chinaDirect?: boolean;
+  /**
+   * 连接器显式声明为「只读」的工具（裸工具名，如 'calendar.v4.calendarEvent.list'）。
+   * 由我方声明、不信第三方 server 自报的 readOnlyHint——伪声明只读的写工具无法借此提权。
+   * 无人值守（async_agent）会话里，这些工具免交互审批直接放行，避免只读拉数据被 60s-deny 拖死。
+   * 运行时工具名 = `mcp__<id>__<把点换成下划线的工具名>`。
+   */
+  readOnlyTools?: string[];
   /** 是否来自官方/上游 registry 的 featured 推荐 */
   officialFeatured?: boolean;
   /** featured 来源说明，用于 UI 区分“官方精选”和本地 curated */

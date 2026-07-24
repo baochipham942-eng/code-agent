@@ -339,6 +339,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       useAppStore.getState().setWorkingDirectory(previewSession?.workingDirectory ?? null);
       // per-session agent 选择随会话切换同步（S3：消灭全局 activeAgentId 跨会话残留）
       useAppStore.getState().syncActiveAgentForSession(sessionId);
+      useAppStore.getState().syncWorkbenchForSession(sessionId);
       set({
         currentSessionId: sessionId,
         messages: [],
@@ -456,6 +457,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             await get().switchSession(newSessions[0].id);
           } else {
             useAppStore.getState().syncActiveAgentForSession(null);
+            useAppStore.getState().syncWorkbenchForSession(null);
             set({ sessions: newSessions, currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
           }
         } else {
@@ -486,6 +488,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               await get().switchSession(newSessions[0].id);
             } else {
               useAppStore.getState().syncActiveAgentForSession(null);
+              useAppStore.getState().syncWorkbenchForSession(null);
               set({ sessions: newSessions, currentSessionId: null, messages: [], todos: [], sessionTasks: [], streamSnapshot: null });
             }
           } else {
@@ -960,6 +963,7 @@ function clearSessionStateForAuthChange(): void {
   useAppStore.getState().setWorkingDirectory(null);
   useAppStore.getState().setContextHealth(null);
   useAppStore.getState().syncActiveAgentForSession(null);
+  useAppStore.getState().syncWorkbenchForSession(null);
   useSessionStore.setState({
     sessions: [],
     currentSessionId: null,

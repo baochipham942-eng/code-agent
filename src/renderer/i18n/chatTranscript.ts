@@ -260,6 +260,11 @@ livePreview: {
   loadFailedSummary: '预览没加载出来',
   loadFailedSuggestion: '试试刷新页面，或让 agent 重新生成一次预览。',
   cspLabel: '生效 CSP',
+  addressLabel: '网页地址',
+  refresh: '刷新',
+  testBridge: '测试 bridge',
+  openExternal: '在默认浏览器打开',
+  loadingPage: '正在加载中…',
 }
 };
 
@@ -523,5 +528,10 @@ livePreview: {
   loadFailedSummary: "The preview didn't load",
   loadFailedSuggestion: 'Try refreshing the page, or ask the agent to regenerate the preview.',
   cspLabel: 'Effective CSP',
+  addressLabel: 'Web address',
+  refresh: 'Refresh',
+  testBridge: 'Test bridge',
+  openExternal: 'Open in default browser',
+  loadingPage: 'Loading…',
 }
 };

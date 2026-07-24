@@ -15,6 +15,7 @@ import { ChartBlock, isChartSpecSource } from './ChartBlock';
 import { GenerativeUIBlock } from './GenerativeUIBlock';
 import { GenerativeUIHost } from '../GenerativeUI/GenerativeUIHost';
 import { neoUIOrdinalAtOffset } from '../GenerativeUI/sourceOrdinal';
+import { generativeUiOrdinalAtOffset } from '@shared/generativeUIEdit';
 import { SpreadsheetBlock } from './SpreadsheetBlock';
 import { DocumentBlock } from './DocumentBlock';
 import { shouldRenderStreamingContentAsMarkdown, useThrottledStreamingContent } from '../../../../hooks/useThrottledStreamingContent';
@@ -131,7 +132,15 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
             return <ChartBlock spec={codeContent} />;
           }
           if (language === 'generative_ui') {
-            return <GenerativeUIBlock code={codeContent} />;
+            return (
+              <GenerativeUIBlock
+                code={codeContent}
+                messageId={messageId}
+                sessionId={mediaContext?.sessionId}
+                sourceOrdinal={generativeUiOrdinalAtOffset(filteredContent, node?.position?.start.offset)}
+                isStreaming={isStreaming}
+              />
+            );
           }
           if (language === 'neo_ui') {
             return (

@@ -53,6 +53,7 @@ import { readCuratedRegistry } from './curatedCapabilityRegistry';
 import {
   normalizeMcpSettingsServerConfig,
   persistMcpSettingsServerConfig,
+  updateMcpServerEnabledInConfigFiles,
   removeMcpSettingsServerDraftConfig,
 } from '../../ipc/mcp.ipc';
 import { resolveInstallDraftConfig } from './capabilityDraftResolver';
@@ -1015,6 +1016,8 @@ class CapabilityCenterService {
   private async setMcpEnabled(id: string, enabled: boolean): Promise<void> {
     const serverName = decodeCapabilityId(id, 'mcp');
     await getMCPClient().setServerEnabled(serverName, enabled);
+    // 持久化 enabled（连接器住 user scope），否则重启读回旧值 → 飞书重启变 disabled、Tool not found。
+    await updateMcpServerEnabledInConfigFiles(serverName, enabled);
     if (!enabled) {
       getContextHealthService().clearMcpServerAcrossSessions(serverName);
     }

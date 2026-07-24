@@ -131,6 +131,9 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
     requiredCredentials: ['APP_ID', 'APP_SECRET'],
     badge: '飞书官方',
     chinaDirect: true,
+    // 全 6 个都是只读（LARK_TOOLS 已锁死只读集，server 只能暴露这些）。
+    // 无人值守 cron 里免审批放行，否则读日历/表格会撞 60s 交互权限门被拖死。
+    readOnlyTools: [...FEISHU_READONLY_TOOLS],
   },
 
   // ---- 数据与表格 ----

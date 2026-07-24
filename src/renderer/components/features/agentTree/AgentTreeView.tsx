@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -20,6 +20,7 @@ import type {
 } from '@shared/contract/agentTree';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 
 interface AgentTreeSnapshotViewProps {
   snapshot: AgentTreeSnapshot;
@@ -259,40 +260,24 @@ export const AgentTreeSnapshotView: React.FC<AgentTreeSnapshotViewProps> = ({
   );
 };
 
-export const AgentTreeView: React.FC = () => {
+export interface AgentTreeViewProps {
+  snapshot?: AgentTreeSnapshot | null;
+}
+
+export const AgentTreeView: React.FC<AgentTreeViewProps> = ({ snapshot: providedSnapshot }) => {
   const { currentSessionId } = useSessionStore();
-  const [snapshot, setSnapshot] = useState<AgentTreeSnapshot | null>(null);
+  const { snapshot: loadedSnapshot, refresh } = useAgentTreeSnapshot(
+    currentSessionId,
+    providedSnapshot === undefined,
+  );
+  const snapshot = providedSnapshot === undefined ? loadedSnapshot : providedSnapshot;
   const [worktreeReviews, setWorktreeReviews] = useState<Record<string, AgentWorktreeReview | undefined>>({});
   const [loadingReviewIds, setLoadingReviewIds] = useState<Set<string>>(() => new Set());
 
   const loadSnapshot = useCallback(async () => {
-    try {
-      const next = await ipcService.invokeDomain<AgentTreeSnapshot>(
-        IPC_DOMAINS.AGENT,
-        'getTree',
-        currentSessionId ? { sessionId: currentSessionId } : undefined,
-      );
-      setSnapshot(next);
-    } catch {
-      setSnapshot(null);
-    }
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    let disposed = false;
-    const load = async () => {
-      if (disposed) return;
-      await loadSnapshot();
-    };
-    void load();
-    const interval = window.setInterval(() => {
-      void load();
-    }, 3000);
-    return () => {
-      disposed = true;
-      window.clearInterval(interval);
-    };
-  }, [loadSnapshot]);
+    if (providedSnapshot !== undefined) return;
+    await refresh();
+  }, [providedSnapshot, refresh]);
 
   const handleReviewWorktree = useCallback(async (agentId: string) => {
     setLoadingReviewIds((prev) => new Set(prev).add(agentId));

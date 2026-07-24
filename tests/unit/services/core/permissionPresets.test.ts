@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getPresetConfig, isPathTrusted } from '../../../../src/host/services/core/permissionPresets';
+import { getPresetConfig, isCommandBlocked, isPathTrusted } from '../../../../src/host/services/core/permissionPresets';
 
 describe('getPresetConfig autoApprove（子 agent 权限档）', () => {
   it('development 放开 network（研究型子 agent 联网调研），write/execute 仍受控', () => {
@@ -72,5 +72,22 @@ describe('isPathTrusted', () => {
     it('rejects traversal escapes', () => {
       expect(isPathTrusted('C:\\Users\\me\\project\\..\\other', ['C:\\Users\\me\\project'], 'win32')).toBe(false);
     });
+  });
+});
+
+describe('ci 档（详情页「放手」）保留硬门', () => {
+  it('四类全自动批准', () => {
+    const config = getPresetConfig('ci');
+    expect(config.autoApprove).toEqual({ read: true, write: true, execute: true, network: true });
+  });
+
+  it('硬毙命令仍然拦得住', () => {
+    const config = getPresetConfig('ci');
+    expect(isCommandBlocked('rm -rf /', config.blockedCommands)).toBe(true);
+    expect(isCommandBlocked('sudo rm -rf /var', config.blockedCommands)).toBe(true);
+  });
+
+  it('危险命令仍要二次确认', () => {
+    expect(getPresetConfig('ci').confirmDangerousCommands).toBe(true);
   });
 });

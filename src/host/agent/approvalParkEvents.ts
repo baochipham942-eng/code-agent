@@ -8,14 +8,15 @@
 
 import { EventEmitter } from 'node:events';
 
-export interface ApprovalParkedEvent {
+// ponytail: 事件 payload 只在本文件的 EventEmitter 泛型里用；B3 落地要跨模块消费时再加 export。
+interface ApprovalParkedEvent {
   id: string;
   sessionId: string | null;
   tool: string;
   riskClass?: string | null;
 }
 
-export interface ApprovalResolvedEvent {
+interface ApprovalResolvedEvent {
   id: string;
   sessionId: string | null;
   status: 'approved' | 'rejected';

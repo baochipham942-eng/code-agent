@@ -558,6 +558,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'memory_amend',
+    shortDescription: '纠正或遗忘本机记忆库里的一条记录（按 [#id] 定向）',
+    tags: ['memory', 'search'],
+    aliases: ['correct memory', 'forget memory', '纠正记忆', '忘记这条', '记错了'],
+    source: 'builtin',
+  },
+  {
     name: 'code_index',
     shortDescription: '索引代码库',
     tags: ['memory', 'search'],

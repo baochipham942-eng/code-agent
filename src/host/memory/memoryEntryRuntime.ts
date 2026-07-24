@@ -247,7 +247,7 @@ function renderPackedMemoryBlock(items: PackedMemoryItem[]): string {
   return [
     '<memory-pack>',
     ...items.map((item, index) => [
-      `- [${index + 1}] ${item.title}`,
+      `- [${index + 1}] ${item.title}${item.source.memoryId ? ` [#${item.source.memoryId}]` : ''}`,
       `  id: ${item.entryId}`,
       `  kind: ${item.kind}; scope: ${item.scope}; score: ${Math.round(item.score)}`,
       `  source: ${item.source.label || item.source.filePath || item.source.memoryId || item.source.kind}`,

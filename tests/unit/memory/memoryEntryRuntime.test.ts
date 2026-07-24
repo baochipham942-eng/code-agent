@@ -499,6 +499,20 @@ The left menu should keep common daily actions visible.
     expect(db.searchMemories).not.toHaveBeenCalled();
   });
 
+  it('renders a [#id] handle carrying the raw MemoryRecord id for db-only entries (memory_amend target)', async () => {
+    const db = {
+      listMemories: vi.fn(() => [
+        record({ id: 'mem-target', content: 'Correct me if wrong.', summary: 'target summary', metadata: {} }),
+      ] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn(),
+    };
+
+    const packed = await packMemoryEntries({ maxItems: 5, perItemCharLimit: 200, totalCharBudget: 600 }, db);
+
+    expect(packed.block).toContain('[#mem-target]');
+  });
+
   it('exports v2 bundles and dry-runs import diffs before writing anything', async () => {
     await fs.writeFile(path.join(memDir, 'project-rule.md'), `---
 name: Project Rule

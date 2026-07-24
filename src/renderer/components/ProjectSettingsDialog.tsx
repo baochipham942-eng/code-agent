@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, FolderPlus, Loader2, Settings2, Trash2, X } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { ProjectDetail, ProjectSourceGitState, ProjectSourceInput } from '@shared/contract/project';
@@ -10,6 +11,8 @@ import {
   updateProject,
 } from '../services/projectClient';
 import { useI18n } from '../hooks/useI18n';
+import { isWebMode } from '../utils/platform';
+import { Z_LAYERS } from '../styles/zLayers';
 
 export interface ProjectSettingsDialogProps {
   projectId: string;
@@ -44,6 +47,7 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [gitStates, setGitStates] = useState<ProjectSourceGitState[]>([]);
   const [confirmedDirtySourceIds, setConfirmedDirtySourceIds] = useState<string[]>([]);
+  const [sourcePath, setSourcePath] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -72,10 +76,12 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
   }, [open, projectId]);
 
   const primary = useMemo(() => sources.find((source) => source.role === 'primary'), [sources]);
+  const usesManualSourcePath = isWebMode() || window.__CODE_AGENT_HTTP_BRIDGE__ === true;
   if (!open) return null;
 
-  const addFolder = async (): Promise<void> => {
-    const selected = await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
+  const addFolder = async (manualPath?: string): Promise<void> => {
+    const selected = manualPath?.trim()
+      || await ipcService.invokeDomain<string | null>(IPC_DOMAINS.WORKSPACE, 'selectDirectory');
     if (!selected) return;
     await ipcService.invokeDomain(IPC_DOMAINS.FOLDER_TRUST, 'set', {
       workingDirectory: selected,
@@ -86,6 +92,7 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
       ...current,
       { path: selected, role: 'additional', access: 'read_only', trustState: 'trusted' },
     ]);
+    setSourcePath('');
   };
 
   const save = async (): Promise<void> => {
@@ -156,8 +163,14 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label={copy.title}>
+  return createPortal(
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-black/60 p-4"
+      style={{ zIndex: Z_LAYERS.projectSettingsModal }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={copy.title}
+    >
       <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl">
         <header className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
           <Settings2 className="h-4 w-4 text-violet-300" />
@@ -179,9 +192,29 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
                 <h3 className="font-medium text-zinc-200">{copy.sourceFolders}</h3>
                 <p className="text-[11px] text-zinc-500">{copy.sourcePolicy}</p>
               </div>
-              <button type="button" onClick={() => { void addFolder(); }} className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800">
-                <FolderPlus className="h-3.5 w-3.5" /> {copy.addFolder}
-              </button>
+              {usesManualSourcePath ? (
+                <div className="flex min-w-0 items-center gap-1">
+                  <input
+                    aria-label={copy.sourcePathAria}
+                    placeholder={copy.sourcePathPlaceholder}
+                    value={sourcePath}
+                    onChange={(event) => setSourcePath(event.target.value)}
+                    className="min-w-0 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100"
+                  />
+                  <button
+                    type="button"
+                    disabled={!sourcePath.trim()}
+                    onClick={() => { void addFolder(sourcePath); }}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+                  >
+                    <FolderPlus className="h-3.5 w-3.5" /> {copy.addFolder}
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => { void addFolder(); }} className="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2 py-1 text-zinc-300 hover:bg-zinc-800">
+                  <FolderPlus className="h-3.5 w-3.5" /> {copy.addFolder}
+                </button>
+              )}
             </div>
             {sources.map((source, index) => (
               <div key={source.id ?? `${source.path}-${index}`} data-testid="project-source-row" className="grid gap-2 rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
@@ -235,6 +268,7 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };

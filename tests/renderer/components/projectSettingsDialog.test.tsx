@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   updateProject: vi.fn(),
   deleteProject: vi.fn(),
   invokeDomain: vi.fn(),
+  isWebMode: vi.fn(),
 }));
 
 vi.mock('../../../src/renderer/services/projectClient', () => ({
@@ -27,6 +28,10 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: en, language: 'en' }),
+}));
+
+vi.mock('../../../src/renderer/utils/platform', () => ({
+  isWebMode: mocks.isWebMode,
 }));
 
 import { ProjectSettingsDialog } from '../../../src/renderer/components/ProjectSettingsDialog';
@@ -67,6 +72,7 @@ function detail(): ProjectDetail {
 describe('ProjectSettingsDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isWebMode.mockReturnValue(false);
     mocks.getProjectDetail.mockResolvedValue(detail());
     mocks.getProjectSourceGitStates.mockResolvedValue([]);
     mocks.updateProject.mockImplementation(async (input) => ({
@@ -92,7 +98,8 @@ describe('ProjectSettingsDialog', () => {
   it('renders English copy and adds an Additional Source as read-only by default', async () => {
     render(<ProjectSettingsDialog projectId="project-1" open onClose={() => undefined} />);
 
-    expect(await screen.findByRole('dialog', { name: 'Edit project' })).toBeTruthy();
+    const dialog = await screen.findByRole('dialog', { name: 'Edit project' });
+    expect(dialog.parentElement).toBe(document.body);
     fireEvent.click(screen.getByRole('button', { name: /Add folder/i }));
 
     await waitFor(() => expect(screen.getAllByTestId('project-source-row')).toHaveLength(2));
@@ -116,5 +123,22 @@ describe('ProjectSettingsDialog', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('revision conflict');
     expect(name.value).toBe('Neo changed');
     expect(screen.getByRole('dialog', { name: 'Edit project' })).toBeTruthy();
+  });
+
+  it('accepts an explicit Source path in web mode', async () => {
+    mocks.isWebMode.mockReturnValue(true);
+    render(<ProjectSettingsDialog projectId="project-1" open onClose={() => undefined} />);
+    await screen.findByRole('dialog', { name: 'Edit project' });
+
+    fireEvent.change(screen.getByLabelText('Source folder path'), {
+      target: { value: '/repo/web-docs' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add folder' }));
+
+    await waitFor(() => expect(screen.getAllByTestId('project-source-row')).toHaveLength(2));
+    expect((screen.getByLabelText('Source access /repo/web-docs') as HTMLSelectElement).value).toBe('read_only');
+    expect(mocks.invokeDomain).toHaveBeenCalledWith(expect.anything(), 'set', expect.objectContaining({
+      workingDirectory: '/repo/web-docs',
+    }));
   });
 });

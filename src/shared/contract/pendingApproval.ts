@@ -39,6 +39,19 @@ export interface ToolApprovalPayload {
   riskClass?: string | null;
 }
 
+/** 收件箱「等待批准的操作」分组的行数据（B2）。id=requestId，回传 permissionResponse 用。 */
+export interface ParkedApprovalInboxItem {
+  id: string;
+  sessionId: string | null;
+  tool: string;
+  displayTool?: string;
+  /** epoch ms，UI 算等待时长 */
+  requestedAt: number;
+  /** pending=可批准/拒绝；orphaned=应用重启后过期，灰态不可操作 */
+  status: 'pending' | 'orphaned';
+  riskClass?: string | null;
+}
+
 /**
  * 持久化状态机：
  *   pending  - 等待 coordinator 决定

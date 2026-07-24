@@ -328,6 +328,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'countPendingReview',
     'getSessionSummary',
     'listBySession',
+    'listParkedApprovals',
     'listPendingReview',
     'markReviewed',
     'summarizeSessions',

@@ -16,8 +16,11 @@ type Row = {
   updated_at: number;
 };
 
+type ParkedRow = { id: string; kind: string; status: string; payloadJson: string; submittedAt: number; coordinatorId: string | null };
+
 const state = vi.hoisted(() => ({
   rows: new Map<string, Row>(),
+  parkedRows: new Map<string, ParkedRow>(),
   messages: [] as Array<{ sessionId: string; message: unknown }>,
   taskStarts: [] as Array<{ sessionId: string; message: string; clientMessageId?: string }>,
   broadcasts: [] as Array<{ channel: string; data: unknown }>,
@@ -84,6 +87,23 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
         },
       }),
     }),
+    getPendingApprovalRepo: () => ({
+      listByKindAndStatus: (kind: string, status: string) =>
+        [...state.parkedRows.values()]
+          .filter((row) => row.kind === kind && row.status === status)
+          .map((row) => ({
+            id: row.id,
+            kind: row.kind,
+            status: row.status,
+            payloadJson: row.payloadJson,
+            submittedAt: row.submittedAt,
+            coordinatorId: row.coordinatorId,
+            agentId: null,
+            agentName: null,
+            resolvedAt: null,
+            feedback: null,
+          })),
+    }),
   }),
 }));
 
@@ -130,6 +150,7 @@ import { SessionAutomationService } from '../../../src/host/services/sessionAuto
 describe('SessionAutomationService', () => {
   beforeEach(() => {
     state.rows.clear();
+    state.parkedRows.clear();
     state.messages = [];
     state.taskStarts = [];
     state.broadcasts = [];
@@ -367,6 +388,43 @@ describe('SessionAutomationService', () => {
     expect(created?.data).toMatchObject({
       sessionId: 'session-1',
       message: { id: 'automation:created:cron:job-1', isMeta: true },
+    });
+  });
+
+  describe('listParkedApprovals (B2)', () => {
+    it('id 原样返回（= requestId），拿去 permissionResponse 能命中内存 pending', () => {
+      // 停车行 id = parkApproval 写入时的 requestId；listParkedApprovals 不得改写 id，
+      // 否则收件箱回传 permissionResponse 会命中不了内存 pending。
+      state.parkedRows.set('perm_req_abc', {
+        id: 'perm_req_abc',
+        kind: 'tool_approval',
+        status: 'pending',
+        submittedAt: 1000,
+        coordinatorId: 'session-xyz',
+        payloadJson: JSON.stringify({ sessionId: 'session-xyz', tool: 'mail_send', requestedAt: 1000, riskClass: 'external' }),
+      });
+
+      const items = new SessionAutomationService().listParkedApprovals();
+      expect(items).toHaveLength(1);
+      expect(items[0].id).toBe('perm_req_abc'); // 恒等，回传 permissionResponse 的 requestId
+      expect(items[0].sessionId).toBe('session-xyz');
+      expect(items[0].tool).toBe('mail_send');
+      expect(items[0].riskClass).toBe('external');
+      expect(items[0].status).toBe('pending');
+    });
+
+    it('orphaned 行进列表但标灰态（不可操作）', () => {
+      state.parkedRows.set('perm_orph', {
+        id: 'perm_orph',
+        kind: 'tool_approval',
+        status: 'orphaned',
+        submittedAt: 500,
+        coordinatorId: 'session-1',
+        payloadJson: JSON.stringify({ sessionId: 'session-1', tool: 'bash', requestedAt: 500 }),
+      });
+      const items = new SessionAutomationService().listParkedApprovals();
+      expect(items).toHaveLength(1);
+      expect(items[0].status).toBe('orphaned');
     });
   });
 });

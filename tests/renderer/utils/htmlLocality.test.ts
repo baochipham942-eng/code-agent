@@ -69,10 +69,11 @@ describe('HTML locality document lifecycle', () => {
     clickInDocument(button);
     expect(controller.getSelectedElement()).toBe(button);
     expect(button.hasAttribute('data-code-agent-locality-selected')).toBe(true);
-    expect(onSelectionChange).toHaveBeenLastCalledWith(expect.objectContaining({
-      tag: 'button',
-      text: '开始规划行程',
-    }));
+    // 第二参是活元素本身：所见即所得的修改要直接改它
+    expect(onSelectionChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tag: 'button', text: '开始规划行程' }),
+      button,
+    );
 
     controller.destroy();
     expect(controller.getSelectedElement()).toBeNull();

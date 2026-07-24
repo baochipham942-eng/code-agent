@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- orchestration compatibility surface; split tracked separately */
 // ============================================================================
 // Agent Orchestrator - Main controller for the AI agent
 // ============================================================================

@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- legacy database facade pending modular extraction */
 // ============================================================================
 // Database Service - SQLite 数据持久化层（薄门面，委托给 Repository）
 // ============================================================================

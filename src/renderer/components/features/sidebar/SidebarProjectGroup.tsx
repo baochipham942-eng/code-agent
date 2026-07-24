@@ -270,11 +270,12 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           onOpenArtifactSession={handleOpenProjectArtifactSession}
           onStartGoal={(goal) => { void handleStartProjectGoal(goal, group.key, group.path); }}
           onMetaChange={(update) => {
-            if (!group.projectId) return;
+            const projectId = group.projectId;
+            if (!projectId) return;
             setProjectMetaById((current) => {
-              const next = update(current[group.projectId!]);
+              const next = update(current[projectId]);
               return next
-                ? { ...current, [group.projectId!]: next }
+                ? { ...current, [projectId]: next }
                 : current;
             });
           }}

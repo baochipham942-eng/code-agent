@@ -1,14 +1,16 @@
 // ============================================================================
-// ToolHeader - Tool name + params + duration (no icon, no LoadingDots)
+// ToolHeader - Humanized step sentence (shortDescription, or humanizeToolStep
+// fallback) + duration (no icon, no LoadingDots)
 // Status is expressed by parent StatusIndicator
 // ============================================================================
 
 import React from 'react';
 import type { ToolCall } from '@shared/contract';
-import { formatParams, formatDuration, getToolDisplayName } from './utils';
+import { formatDuration } from './utils';
 import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
+import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { TargetContextIcon } from './TargetContextIcon';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useI18n } from '../../../../../hooks/useI18n';
@@ -54,18 +56,18 @@ export function ToolHeader({ toolCall, status }: Props) {
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const { t } = useI18n();
-  // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示，
-  // 同时屏蔽 params 副标题以避免语义重复；没有时 fallback 到原有渲染。
-  // feature flag 关闭时强制 fallback，便于 A/B 对比。
-  const hasShortDesc = isSemanticToolUIEnabled()
-    && typeof toolCall.shortDescription === 'string'
-    && toolCall.shortDescription.trim().length > 0;
-  const displayName = hasShortDesc
-    ? toolCall.shortDescription!.trim()
-    : getToolDisplayName(toolCall.name);
+  // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示；
+  // 没有时 fallback 到 humanizeToolStep 合成的人话句子（读取了 xxx.md / 运行了命令 xxx），
+  // 而不是裸露 "Read"/"Bash" 这类工具名——两条路径都已经是完整句子，不再需要
+  // 单独的 params 副标题（避免语义重复）。
+  const displayName = humanizeToolStep(
+    toolCall.name,
+    toolCall.arguments as Record<string, unknown> | undefined,
+    t,
+    toolCall.shortDescription,
+  );
   const statusLabel = getToolStatusLabel(toolCall, status, t);
   const writeFilePath = getWriteFilePath(toolCall);
-  const params = hasShortDesc || writeFilePath ? '' : formatParams(toolCall);
   const duration = toolCall.result?.duration;
 
   // feature flag 关闭时不展示 target icon（与 shortDescription gating 同步）
@@ -107,11 +109,6 @@ export function ToolHeader({ toolCall, status }: Props) {
         >
           {writeFileName}
         </button>
-      )}
-
-      {/* Parameters summary */}
-      {params && (
-        <span className="text-zinc-500 truncate">{params}</span>
       )}
 
       {/* Duration - right aligned. 毫秒级耗时对非程序员是噪音，只在有感知意义时才显示 */}

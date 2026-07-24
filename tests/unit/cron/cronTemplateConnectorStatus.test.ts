@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CRON_TEMPLATES,
   getMissingTemplateConnectors,
   getTemplateConnectorStatuses,
 } from '../../../src/renderer/components/features/cron/cronTemplates';
+
+describe('CRON_TEMPLATES 里真实的连接器依赖标注', () => {
+  it('只有两个飞书监听模板声明 lark 依赖，其余模板不声明', () => {
+    const withDeps = CRON_TEMPLATES
+      .filter((template) => (template.requiredConnectors?.length ?? 0) > 0)
+      .map((template) => ({ id: template.id, requiredConnectors: template.requiredConnectors }));
+    expect(withDeps).toEqual([
+      { id: 'feishu-calendar-conflict', requiredConnectors: ['lark'] },
+      { id: 'feishu-table-change', requiredConnectors: ['lark'] },
+    ]);
+  });
+});
 
 describe('getTemplateConnectorStatuses', () => {
   it('无依赖模板返回空数组', () => {

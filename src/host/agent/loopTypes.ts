@@ -55,6 +55,8 @@ export interface AgentLoopConfig {
   memoryMode?: import('../../shared/contract/session').SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];
   workingDirectory: string;
+  /** Primary Source owns executable Project configuration. */
+  projectConfigDirectory?: string;
   workspaceScope?: import('../../shared/contract/project').WorkspaceScope;
   isDefaultWorkingDirectory?: boolean;
   structuredOutput?: StructuredOutputConfig;

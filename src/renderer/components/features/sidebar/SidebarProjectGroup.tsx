@@ -186,8 +186,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         {!group.isUncategorized && (
           <button
             type="button"
-            aria-label={`编辑项目 ${summary.displayName}`}
-            title="编辑项目"
+            aria-label={`${p.settings.title} ${summary.displayName}`}
+            title={p.settings.title}
             onClick={() => setSettingsOpen(true)}
             className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
           >

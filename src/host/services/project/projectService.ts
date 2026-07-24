@@ -9,6 +9,7 @@
 
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
+import { accessSync, constants as fsConstants } from 'fs';
 import { getDatabase } from '../core/databaseService';
 import type { ProjectRepository } from '../core/repositories';
 import { getProjectKey } from '../roleAssets/roleAssetPaths';
@@ -40,8 +41,10 @@ import {
   canonicalizeWorkspacePath,
   createWorkspaceScope,
   workspacePathIdentity,
+  resolveWorkspacePath,
 } from '../../runtime/workspaceScope';
 import { evaluateFolderTrust } from '../../security/folderTrustService';
+import { getProjectSourceGitStates } from '../git/gitStatusService';
 
 const logger = createLogger('ProjectService');
 
@@ -395,7 +398,7 @@ export class ProjectService {
       trustState: 'trusted',
     }, now));
     // 接管项目记忆目录的 key（写 meta.json projectId，记忆文件不动）
-    void linkProjectIdToMeta(dir, project.id).catch((err) =>
+    await linkProjectIdToMeta(dir, project.id).catch((err) =>
       logger.warn('[ProjectService] linkProjectIdToMeta failed:', err instanceof Error ? err.message : String(err)),
     );
     return project;
@@ -437,9 +440,17 @@ export class ProjectService {
     const repo = this.repo();
     const project = repo.getProject(projectId);
     if (!project) return undefined;
+    const sources = repo.listSources(projectId).map((source) => {
+      const identity = workspacePathIdentity(source.canonicalPath);
+      const identityValid = identity.dev !== null
+        && identity.ino !== null
+        && identity.dev === (source.identityDev ?? null)
+        && identity.ino === (source.identityIno ?? null);
+      return identityValid ? source : { ...source, trustState: 'blocked' as const };
+    });
     return {
       project,
-      sources: repo.listSources(projectId),
+      sources,
       goals: repo.listGoals(projectId),
       roles: repo.listRoles(projectId),
       sessionIds: repo.listSessionIds(projectId),
@@ -459,6 +470,8 @@ export class ProjectService {
       const identity = workspacePathIdentity(source.canonicalPath);
       if (
         source.trustState !== 'trusted'
+        || identity.dev === null
+        || identity.ino === null
         || identity.dev !== (source.identityDev ?? null)
         || identity.ino !== (source.identityIno ?? null)
       ) {
@@ -488,9 +501,18 @@ export class ProjectService {
     for (const sourceInput of input.sources) {
       const existing = sourceInput.id ? existingById.get(sourceInput.id) : undefined;
       const source = buildSource(input.projectId, sourceInput, now, existing);
-      const trust = await evaluateFolderTrust(source.canonicalPath);
-      if (trust.state !== 'trusted' || trust.identityChanged) {
-        throw new Error(`Folder Trust is required for Source: ${source.path}`);
+      const isUnchangedTrustedSource = !!existing
+        && existing.canonicalPath === source.canonicalPath
+        && existing.trustState === 'trusted'
+        && existing.identityDev !== null
+        && existing.identityIno !== null
+        && existing.identityDev === source.identityDev
+        && existing.identityIno === source.identityIno;
+      if (!isUnchangedTrustedSource) {
+        const trust = await evaluateFolderTrust(source.canonicalPath);
+        if (trust.state !== 'trusted' || trust.identityChanged) {
+          throw new Error(`Folder Trust is required for Source: ${source.path}`);
+        }
       }
       source.trustState = 'trusted';
       sources.push(source);
@@ -499,7 +521,28 @@ export class ProjectService {
       throw new Error('Duplicate Project Source path.');
     }
     assertNonOverlappingRoots(sources.map((source) => ({ sourceId: source.id, path: source.canonicalPath })));
+    const retainedIds = new Set(sources.map((source) => source.id));
+    const removed = Array.from(existingById.values()).filter((source) => !retainedIds.has(source.id));
+    if (removed.length > 0) {
+      if (repo.hasRunningSessions(input.projectId)) {
+        throw new Error('Cannot remove a Project Source while this Project has a running task.');
+      }
+      const currentScope = this.getWorkspaceScope(input.projectId);
+      const gitStates = currentScope ? await getProjectSourceGitStates(currentScope) : [];
+      const dirtyRemoved = removed.find((source) =>
+        gitStates.find((state) => state.sourceId === source.id)?.dirtyFiles?.length
+        && !input.confirmedDirtySourceIds?.includes(source.id)
+      );
+      if (dirtyRemoved) {
+        throw new Error(`Cannot remove Source with uncommitted changes: ${dirtyRemoved.path}`);
+      }
+    }
     const primary = sources.find((source) => source.role === 'primary')!;
+    try {
+      accessSync(primary.canonicalPath, fsConstants.R_OK | fsConstants.W_OK);
+    } catch {
+      throw new Error(`Primary Source must exist and be writable: ${primary.path}`);
+    }
     const updated = repo.replaceProjectSources({
       ...current,
       name: input.name.trim(),
@@ -508,7 +551,7 @@ export class ProjectService {
       workspaceKey: getProjectKey(primary.canonicalPath),
       updatedAt: now,
     }, sources, input.revision);
-    void linkProjectIdToMeta(primary.canonicalPath, current.id).catch((error) =>
+    await linkProjectIdToMeta(primary.canonicalPath, current.id).catch((error) =>
       logger.warn('[ProjectService] linkProjectIdToMeta after Primary switch failed:', error),
     );
     return {
@@ -529,7 +572,20 @@ export class ProjectService {
     const repo = this.repo();
     if (!repo.getProject(projectId)) return [];
     const sessions = repo.listProjectSessions(projectId);
-    return buildProjectArtifacts(sessions, (sessionId) => db.getMessages(sessionId), limit);
+    const artifacts = buildProjectArtifacts(sessions, (sessionId) => db.getMessages(sessionId), limit);
+    let scope: WorkspaceScope | undefined;
+    try {
+      scope = this.getWorkspaceScope(projectId);
+    } catch {
+      scope = undefined;
+    }
+    return scope
+      ? artifacts.map((artifact) => {
+        if (!artifact.path || !path.isAbsolute(artifact.path!)) return artifact;
+        const source = resolveWorkspacePath(scope!, artifact.path!, 'read');
+        return source ? { ...artifact, sourceId: source.root.sourceId } : artifact;
+      })
+      : artifacts;
   }
 
   renameProject(projectId: string, name: string, now: number): Project | undefined {

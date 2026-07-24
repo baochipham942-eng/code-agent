@@ -99,6 +99,38 @@ suite('bubblewrap wrapCommand 真实隔离', () => {
     }
   });
 
+  it('多根矩阵：ro-bind Additional 与 bind 可写 Source', async () => {
+    const docsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bwrap-docs-'));
+    const toolsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bwrap-tools-'));
+    fs.writeFileSync(path.join(docsDir, 'requirements.md'), 'requirements-ok');
+    const legal = wrapCommandForSandbox(
+      `cat ${JSON.stringify(path.join(docsDir, 'requirements.md'))} && echo ok > ${JSON.stringify(path.join(toolsDir, 'generated.txt'))}`,
+      {
+        workingDirectory: projectDir,
+        readOnlyRoots: [docsDir],
+        readWriteRoots: [projectDir, toolsDir],
+      },
+    );
+    const legalResult = await run(legal.command, projectDir);
+    legal.cleanup();
+    expect(legalResult.code).toBe(0);
+
+    const denied = wrapCommandForSandbox(
+      `echo blocked > ${JSON.stringify(path.join(docsDir, 'blocked.txt'))}`,
+      {
+        workingDirectory: projectDir,
+        readOnlyRoots: [docsDir],
+        readWriteRoots: [projectDir, toolsDir],
+      },
+    );
+    const deniedResult = await run(denied.command, projectDir);
+    denied.cleanup();
+    expect(deniedResult.code).not.toBe(0);
+    expect(fs.existsSync(path.join(docsDir, 'blocked.txt'))).toBe(false);
+    fs.rmSync(docsDir, { recursive: true, force: true });
+    fs.rmSync(toolsDir, { recursive: true, force: true });
+  });
+
   it('allowNetwork=true 时允许 localhost HTTP 请求', async () => {
     const server = http.createServer((_req, res) => res.end('sandbox-net-ok'));
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

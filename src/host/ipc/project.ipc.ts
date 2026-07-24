@@ -31,6 +31,7 @@ import {
 } from '../../shared/contract/project';
 import type { ArtifactIssue, ArtifactIssueStatus } from '../../shared/contract/productClosure';
 import { createLogger } from '../services/infra/logger';
+import { getProjectSourceGitStates } from '../services/git/gitStatusService';
 
 const logger = createLogger('ProjectIPC');
 
@@ -117,6 +118,13 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           const { projectId } = (payload ?? {}) as SourcesPayload;
           if (!projectId) return invalid('projectId is required');
           return { success: true, data: svc.listSources(projectId) };
+        }
+
+        case 'gitStates': {
+          const { projectId } = (payload ?? {}) as SourcesPayload;
+          if (!projectId) return invalid('projectId is required');
+          const scope = svc.getWorkspaceScope(projectId);
+          return { success: true, data: scope ? await getProjectSourceGitStates(scope) : [] };
         }
 
         case 'updateProject': {

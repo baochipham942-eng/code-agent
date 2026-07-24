@@ -6,6 +6,8 @@ export interface FileCheckpoint {
   sessionId: string;
   messageId: string;
   filePath: string;
+  sourceId?: string;
+  workspaceScopeVersion?: string;
   originalContent: string | null;  // null 表示文件原本不存在
   fileExisted: boolean;
   createdAt: number;

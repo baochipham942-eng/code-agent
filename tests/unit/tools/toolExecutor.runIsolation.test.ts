@@ -22,6 +22,7 @@ import { ToolExecutor, type ExecuteOptions } from '../../../src/host/tools/toolE
 import type { PermissionRequestData, ToolExecutionResult } from '../../../src/host/tools/types';
 import type { ToolContext as ProtocolToolContext, ToolSchema } from '../../../src/host/protocol/tools';
 import type { SwarmRunScope } from '../../../src/shared/contract/swarm';
+import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 
 const preApprovedRunTools = new Set(['Bash', 'Write']);
 
@@ -161,6 +162,48 @@ describe('ToolExecutor per-run workspace isolation', () => {
     expect(resultText(readAfterWriteA)).not.toContain('rewritten-by-b');
     expect(resultText(readAfterWriteB)).toContain('rewritten-by-b');
     expect(resultText(readAfterWriteB)).not.toContain('rewritten-by-a');
+  });
+
+  it('allows Additional reads while fail-closing native writes to a read-only Source', async () => {
+    const primary = path.join(tempRoot, 'primary');
+    const docs = path.join(tempRoot, 'docs');
+    await Promise.all([fs.mkdir(primary), fs.mkdir(docs)]);
+    await fs.writeFile(path.join(docs, 'requirements.md'), 'read me\n');
+    const workspaceScope = createWorkspaceScope('proj-multi', [
+      { sourceId: 'primary', path: primary, role: 'primary', access: 'read_write' },
+      { sourceId: 'docs', path: docs, role: 'additional', access: 'read_only' },
+    ]);
+    const run = createRunContext({
+      runId: 'run-multi',
+      sessionId: 'session-multi',
+      workspace: primary,
+      workspaceScope,
+      cwd: docs,
+    });
+    const executor = baseExecutor.forRun(run);
+
+    const read = await executor.execute(
+      'Read',
+      { file_path: path.join(docs, 'requirements.md') },
+      executionOptions(run),
+    );
+    expect(read).toMatchObject({ success: true });
+    expect(resultText(read)).toContain('read me');
+
+    const write = await executor.execute(
+      'Write',
+      { file_path: path.join(docs, 'blocked.md'), content: 'blocked\n' },
+      executionOptions(run),
+    );
+    expect(write).toMatchObject({
+      success: false,
+      metadata: expect.objectContaining({
+        code: 'PROJECT_SOURCE_READ_ONLY',
+        sourceId: 'docs',
+        workspaceScopeVersion: workspaceScope.version,
+      }),
+    });
+    await expect(fs.access(path.join(docs, 'blocked.md'))).rejects.toThrow();
   });
 
   it('uses cwd for relative targets while retaining workspace as the boundary', async () => {

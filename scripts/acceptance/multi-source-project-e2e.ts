@@ -1,8 +1,7 @@
 #!/usr/bin/env npx tsx
 
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { quote } from 'shell-quote';
@@ -35,7 +34,9 @@ async function runShell(command: string, cwd: string): Promise<number> {
 }
 
 async function main(): Promise<void> {
-  const base = await mkdtemp(path.join(os.tmpdir(), 'neo-multi-source-acceptance-'));
+  // Seatbelt intentionally grants the system TMPDIR for tool internals, so filesystem
+  // permission acceptance roots must live outside TMPDIR to exercise real write denial.
+  const base = await mkdtemp(path.join(process.cwd(), '.neo-multi-source-acceptance-'));
   const primary = path.join(base, 'primary');
   const docs = path.join(base, 'docs');
   const tools = path.join(base, 'tools');
@@ -66,6 +67,19 @@ async function main(): Promise<void> {
       && !resolver.canWrite(path.join(docs, 'blocked.txt')));
     check('显式读写 Additional 可写', resolver.canWrite(path.join(tools, 'generated.txt')));
     check('未加入目录保持 external', !resolver.canRead(path.join(external, 'secret.txt')));
+
+    const docsLink = path.join(base, 'docs-link');
+    await symlink(docs, docsLink);
+    const symlinkScope = createWorkspaceScope('proj_symlink', [
+      { sourceId: 'primary', path: primary, role: 'primary', access: 'read_write' },
+      { sourceId: 'docs-link', path: docsLink, role: 'additional', access: 'read_only' },
+    ]);
+    await unlink(docsLink);
+    await symlink(external, docsLink);
+    check(
+      'Source symlink retarget 后 fail-closed',
+      !new WorkspaceScopeResolver(symlinkScope).canRead(path.join(docsLink, 'secret.txt')),
+    );
 
     const oldRun = createRunContext({
       runId: 'run-old',

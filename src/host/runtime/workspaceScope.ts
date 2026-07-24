@@ -122,7 +122,13 @@ export function resolveWorkspacePath(
   candidate: string,
   requiredAccess: ProjectSourceAccess | 'read' = 'read',
 ): WorkspacePathMatch | undefined {
-  const canonicalPath = canonicalizeWorkspacePath(candidate);
+  let canonicalPath: string;
+  try {
+    canonicalPath = canonicalizeWorkspacePath(candidate);
+  } catch {
+    // Malformed or excessively deep symlink chains are outside the trusted scope.
+    return undefined;
+  }
   const root = scope.roots.find((entry) => isPathWithinRoot(canonicalPath, entry.path));
   if (!root) return undefined;
   if (requiredAccess === 'read_write' && root.access !== 'read_write') return undefined;

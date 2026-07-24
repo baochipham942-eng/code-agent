@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, writeFile } from 'fs/promises';
+import { mkdtemp, mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import { runGoalEvidenceGate } from '../../../../src/host/agent/runtime/goalEvidenceGate';
 import { GOAL_MODE } from '../../../../src/shared/constants/agent';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
@@ -136,6 +137,46 @@ describe('runGoalEvidenceGate（闸0 公开证据自证）', () => {
     expect(result.verdict).toBe('pass');
     expect(result.reason).toContain('workspace hygiene warning');
     expect(result.reason).toContain('stray-notes.md');
+  });
+
+  it('为每个发生变更的 Source repo 记录独立 HEAD 证据', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'evidence-gate-multi-repo-'));
+    const roots = [path.join(dir, 'primary'), path.join(dir, 'additional')];
+    for (const root of roots) {
+      await mkdir(root, { recursive: true });
+      execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+      execFileSync('git', ['config', 'user.name', 'Agent Neo Test'], { cwd: root });
+      execFileSync('git', ['config', 'user.email', 'neo@example.invalid'], { cwd: root });
+      await writeFile(path.join(root, 'tracked.txt'), 'base\n', 'utf8');
+      execFileSync('git', ['add', 'tracked.txt'], { cwd: root });
+      execFileSync('git', ['commit', '-m', 'base'], { cwd: root, stdio: 'ignore' });
+      await writeFile(path.join(root, 'tracked.txt'), 'changed\n', 'utf8');
+    }
+    const ctx = makeCtx({
+      workingDirectory: roots[0],
+      messages: [{
+        id: 'm1', role: 'assistant', content: '', timestamp: 1,
+        toolCalls: [{ id: 't1', name: 'Bash', arguments: { command: 'npm test' } }],
+      }],
+      workspaceScope: {
+        projectId: 'project-1',
+        primaryRoot: roots[0],
+        roots: [
+          { sourceId: 'primary', path: roots[0], role: 'primary', access: 'read_write' },
+          { sourceId: 'additional', path: roots[1], role: 'additional', access: 'read_write' },
+        ],
+        version: 'scope-v1',
+      },
+    });
+
+    const result = runGoalEvidenceGate(ctx, makeCall({ commands: ['npm test'] }));
+
+    expect(result.verdict).toBe('pass');
+    expect(result.evidenceRefs.filter((evidence) => evidence.kind === 'diff').map((evidence) => evidence.ref))
+      .toEqual(expect.arrayContaining([
+        expect.stringContaining('source:primary'),
+        expect.stringContaining('source:additional'),
+      ]));
   });
 
   it('打回预算用尽 → exhausted_release 放行进闸1/闸2', () => {

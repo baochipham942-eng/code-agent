@@ -77,12 +77,20 @@ function buildCronAgentPrompt(
   enabled: boolean,
   now: Date = new Date(),
 ): string {
-  // 注入当前时间锚点：LLM 默认拿训练期日期，会把「今天/明天」算成过去时间（真机 dogfood
-  // 抓到 DeepSeek 把飞书日历"今天"算成 2025 年 + 错时区）。cron.ipc.ts 生成路径早有此锚点，
-  // agent 执行路径补齐——对所有时间敏感的定时任务都有用，不只飞书告警。
+  // 注入当前时间锚点：LLM 默认拿训练期日期，会把「今天/明天」算成过去时间。
+  // 真机 dogfood(2026-07-24)证明「只给 ISO 时间」不够：GLM-5 认出了今天日期，却仍把
+  // 本地当天 epoch 算成 2025 年、错时区——模型的 epoch 算术不可信。所以直接把算好的
+  // 当天/次日本地 00:00 的 Unix 秒喂给它，让它照抄不换算。
+  // ponytail: 用机器本地时区（目标用户=Asia/Shanghai）；跨时区 cron 需按 job 时区算，届时接 tz 库。
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const todayEpoch = Math.floor(startOfDay.getTime() / 1000);
+  const tomorrowEpoch = todayEpoch + 86400;
+  const localDate = `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`;
   const timeAnchor =
-    `【当前时间】${now.toISOString()}（UTC；本地默认时区 Asia/Shanghai）。`
-    + '涉及「今天/明天/本周」等相对时间时，以此为基准换算成绝对时间，不要用你训练时的日期。';
+    `【当前时间】${now.toISOString()}（UTC）。今天本地日期是 ${localDate}。`
+    + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
+    + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
+    + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
   if (!enabled) return [prompt, '', timeAnchor].join('\n');
 
   const hasSnapshot = typeof snapshot === 'string' && Boolean(snapshot.trim());

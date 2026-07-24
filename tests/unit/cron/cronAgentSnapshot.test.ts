@@ -146,6 +146,9 @@ describe('CronService agent run snapshot wiring', () => {
     const [sentPrompt] = agentState.sendMessage.mock.calls[0] as [string, unknown, unknown];
     expect(sentPrompt).toContain('检查网页');
     expect(sentPrompt).toContain('【当前时间】'); // 时间锚点对所有 cron agent 任务都注入
+    // P1b-v2：直接给算好的当天 epoch（10 位 Unix 秒），不让模型自己换算年份（dogfood 证明它算错）
+    expect(sentPrompt).toContain('Unix 秒');
+    expect(sentPrompt).toMatch(/今天本地 00:00 = \d{10}/);
     expect(sentPrompt).not.toContain('回复末尾请用 <cron_snapshot>'); // 未开追踪不要求吐快照
     expect(sentPrompt).not.toContain('<previous_snapshot>');
     expect(updateJob).not.toHaveBeenCalled();

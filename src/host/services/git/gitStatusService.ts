@@ -2,12 +2,15 @@
 // Git Status Service - 自动刷新 Git 状态到渲染进程
 // ============================================================================
 
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { AppWindow } from '../../platform';
 import { createLogger } from '../infra/logger';
+import type { ProjectSourceGitState, WorkspaceScope } from '../../../shared/contract/project';
+import { canonicalizeWorkspacePath } from '../../runtime/workspaceScope';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const logger = createLogger('GitStatusService');
 
 // 需要触发 git 状态刷新的工具（修改文件的工具）
@@ -113,6 +116,44 @@ class GitStatusService {
       this.pendingRefresh = null;
     }
   }
+}
+
+export async function getProjectSourceGitStates(scope: WorkspaceScope): Promise<ProjectSourceGitState[]> {
+  return Promise.all(scope.roots.map(async (root): Promise<ProjectSourceGitState> => {
+    try {
+      const repositoryRootResult = await execFileAsync(
+        'git',
+        ['rev-parse', '--show-toplevel'],
+        { cwd: root.path, timeout: 5000 },
+      );
+      const repositoryRoot = canonicalizeWorkspacePath(repositoryRootResult.stdout.trim());
+      if (repositoryRoot !== canonicalizeWorkspacePath(root.path)) {
+        return { sourceId: root.sourceId, isRepository: false };
+      }
+      const [head, branch, status, counts] = await Promise.all([
+        execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, timeout: 5000 }),
+        execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repositoryRoot, timeout: 5000 }),
+        execFileAsync('git', ['status', '--porcelain'], { cwd: repositoryRoot, timeout: 5000 }),
+        execFileAsync('git', ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'], {
+          cwd: repositoryRoot,
+          timeout: 5000,
+        }).catch(() => ({ stdout: '0 0' })),
+      ]);
+      const [behind = 0, ahead = 0] = counts.stdout.trim().split(/\s+/).map(Number);
+      return {
+        sourceId: root.sourceId,
+        isRepository: true,
+        repositoryRoot,
+        headSha: head.stdout.trim(),
+        branch: branch.stdout.trim(),
+        dirtyFiles: status.stdout.split('\n').filter(Boolean).map((line) => line.slice(3).trim()),
+        ahead,
+        behind,
+      };
+    } catch {
+      return { sourceId: root.sourceId, isRepository: false };
+    }
+  }));
 }
 
 // Singleton

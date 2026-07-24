@@ -55,6 +55,7 @@ export interface AgentLoopConfig {
   memoryMode?: import('../../shared/contract/session').SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];
   workingDirectory: string;
+  workspaceScope?: import('../../shared/contract/project').WorkspaceScope;
   isDefaultWorkingDirectory?: boolean;
   structuredOutput?: StructuredOutputConfig;
   /** 启用步骤分解执行模式（针对 DeepSeek 等在多步骤任务中容易遗漏步骤的模型） */

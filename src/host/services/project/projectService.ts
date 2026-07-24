@@ -29,8 +29,19 @@ import {
   type ProjectGoal,
   type ProjectGoalStatus,
   type ProjectRoleLink,
+  type ProjectSource,
+  type ProjectSourceInput,
   type ProjectStatus,
+  type UpdateProjectInput,
+  type WorkspaceScope,
 } from '../../../shared/contract/project';
+import {
+  assertNonOverlappingRoots,
+  canonicalizeWorkspacePath,
+  createWorkspaceScope,
+  workspacePathIdentity,
+} from '../../runtime/workspaceScope';
+import { evaluateFolderTrust } from '../../security/folderTrustService';
 
 const logger = createLogger('ProjectService');
 
@@ -327,6 +338,30 @@ function buildProjectRow(workspacePath: string, key: string, now: number): Proje
     createdAt: now,
     updatedAt: now,
     archivedAt: null,
+    sourceRevision: 0,
+  };
+}
+
+function buildSource(
+  projectId: string,
+  input: ProjectSourceInput,
+  now: number,
+  existing?: ProjectSource,
+): ProjectSource {
+  const canonicalPath = canonicalizeWorkspacePath(input.path);
+  const identity = workspacePathIdentity(canonicalPath);
+  return {
+    id: input.id ?? existing?.id ?? shortId('psrc'),
+    projectId,
+    path: path.resolve(input.path),
+    canonicalPath,
+    role: input.role,
+    access: input.role === 'primary' ? 'read_write' : input.access,
+    trustState: input.trustState ?? existing?.trustState ?? 'blocked',
+    identityDev: identity.dev,
+    identityIno: identity.ino,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
   };
 }
 
@@ -346,10 +381,19 @@ export class ProjectService {
     const key = getProjectKey(dir);
     const repo = this.repo();
     const existing = repo.getProjectByWorkspaceKey(key);
-    if (existing) return existing;
+    if (existing) {
+      if (repo.listSources(existing.id).length === 0) repo.backfillProjectSources(now);
+      return existing;
+    }
 
     const project = buildProjectRow(dir, key, now);
     repo.upsertProject(project);
+    repo.upsertSource(buildSource(project.id, {
+      path: dir,
+      role: 'primary',
+      access: 'read_write',
+      trustState: 'trusted',
+    }, now));
     // 接管项目记忆目录的 key（写 meta.json projectId，记忆文件不动）
     void linkProjectIdToMeta(dir, project.id).catch((err) =>
       logger.warn('[ProjectService] linkProjectIdToMeta failed:', err instanceof Error ? err.message : String(err)),
@@ -370,6 +414,7 @@ export class ProjectService {
       createdAt: now,
       updatedAt: now,
       archivedAt: null,
+      sourceRevision: 0,
     };
     repo.upsertProject(unsorted);
     return unsorted;
@@ -377,7 +422,10 @@ export class ProjectService {
 
   /** D4 启动迁移归桶：把存量无 project_id 的 session 按 workspace 自动归桶。返回归桶数。 */
   backfillSessions(now: number): number {
-    return this.repo().backfillSessions(now, (workspacePath, key) => buildProjectRow(workspacePath, key, now));
+    const repo = this.repo();
+    const count = repo.backfillSessions(now, (workspacePath, key) => buildProjectRow(workspacePath, key, now));
+    repo.backfillProjectSources(now);
+    return count;
   }
 
   listProjects(includeArchived = false): Project[] {
@@ -391,9 +439,84 @@ export class ProjectService {
     if (!project) return undefined;
     return {
       project,
+      sources: repo.listSources(projectId),
       goals: repo.listGoals(projectId),
       roles: repo.listRoles(projectId),
       sessionIds: repo.listSessionIds(projectId),
+    };
+  }
+
+  listSources(projectId: string): ProjectSource[] {
+    return this.repo().listSources(projectId);
+  }
+
+  getWorkspaceScope(projectId: string): WorkspaceScope | undefined {
+    const project = this.repo().getProject(projectId);
+    if (!project || project.id === UNSORTED_PROJECT_ID) return undefined;
+    const sources = this.repo().listSources(projectId);
+    if (sources.length === 0) return undefined;
+    for (const source of sources) {
+      const identity = workspacePathIdentity(source.canonicalPath);
+      if (
+        source.trustState !== 'trusted'
+        || identity.dev !== (source.identityDev ?? null)
+        || identity.ino !== (source.identityIno ?? null)
+      ) {
+        throw new Error(`Project Source trust identity changed: ${source.path}`);
+      }
+    }
+    return createWorkspaceScope(projectId, sources.map((source) => ({
+      sourceId: source.id,
+      path: source.canonicalPath,
+      role: source.role,
+      access: source.access,
+      identityDev: source.identityDev,
+      identityIno: source.identityIno,
+    })));
+  }
+
+  async updateProject(input: UpdateProjectInput, now: number): Promise<ProjectDetail | undefined> {
+    const repo = this.repo();
+    const current = repo.getProject(input.projectId);
+    if (!current || current.id === UNSORTED_PROJECT_ID) return undefined;
+    if (!input.name.trim()) throw new Error('Project name is required.');
+    const primaryCount = input.sources.filter((source) => source.role === 'primary').length;
+    if (primaryCount !== 1) throw new Error('Project requires exactly one Primary source.');
+
+    const existingById = new Map(repo.listSources(input.projectId).map((source) => [source.id, source]));
+    const sources: ProjectSource[] = [];
+    for (const sourceInput of input.sources) {
+      const existing = sourceInput.id ? existingById.get(sourceInput.id) : undefined;
+      const source = buildSource(input.projectId, sourceInput, now, existing);
+      const trust = await evaluateFolderTrust(source.canonicalPath);
+      if (trust.state !== 'trusted' || trust.identityChanged) {
+        throw new Error(`Folder Trust is required for Source: ${source.path}`);
+      }
+      source.trustState = 'trusted';
+      sources.push(source);
+    }
+    if (new Set(sources.map((source) => source.canonicalPath)).size !== sources.length) {
+      throw new Error('Duplicate Project Source path.');
+    }
+    assertNonOverlappingRoots(sources.map((source) => ({ sourceId: source.id, path: source.canonicalPath })));
+    const primary = sources.find((source) => source.role === 'primary')!;
+    const updated = repo.replaceProjectSources({
+      ...current,
+      name: input.name.trim(),
+      description: input.description?.trim() || undefined,
+      workspacePath: primary.canonicalPath,
+      workspaceKey: getProjectKey(primary.canonicalPath),
+      updatedAt: now,
+    }, sources, input.revision);
+    void linkProjectIdToMeta(primary.canonicalPath, current.id).catch((error) =>
+      logger.warn('[ProjectService] linkProjectIdToMeta after Primary switch failed:', error),
+    );
+    return {
+      project: updated,
+      sources: repo.listSources(input.projectId),
+      goals: repo.listGoals(input.projectId),
+      roles: repo.listRoles(input.projectId),
+      sessionIds: repo.listSessionIds(input.projectId),
     };
   }
 
@@ -428,6 +551,18 @@ export class ProjectService {
     if (!repo.getProject(projectId)) return undefined;
     repo.setProjectStatus(projectId, status, now, status === 'archived' ? now : null);
     return repo.getProject(projectId);
+  }
+
+  deleteProject(projectId: string, now: number): boolean {
+    if (projectId === UNSORTED_PROJECT_ID) return false;
+    const repo = this.repo();
+    if (!repo.getProject(projectId)) return false;
+    const unsorted = this.ensureUnsorted(now);
+    for (const sessionId of repo.listSessionIds(projectId)) {
+      repo.assignSessionProject(sessionId, unsorted.id);
+    }
+    repo.deleteSources(projectId);
+    return repo.softDeleteProject(projectId, now);
   }
 
   // --- goals ---

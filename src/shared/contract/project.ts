@@ -26,6 +26,53 @@ export interface Project {
   createdAt: number;
   updatedAt: number;
   archivedAt?: number | null;
+  /** Monotonic revision for atomic source edits and immutable run snapshots. */
+  sourceRevision?: number;
+}
+
+export type ProjectSourceRole = 'primary' | 'additional';
+export type ProjectSourceAccess = 'read_only' | 'read_write';
+export type ProjectSourceTrustState = 'trusted' | 'blocked';
+
+export interface ProjectSource {
+  id: string;
+  projectId: string;
+  path: string;
+  canonicalPath: string;
+  role: ProjectSourceRole;
+  access: ProjectSourceAccess;
+  trustState: ProjectSourceTrustState;
+  identityDev?: string | null;
+  identityIno?: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WorkspaceRoot {
+  sourceId: string;
+  path: string;
+  access: ProjectSourceAccess;
+  role: ProjectSourceRole;
+  identityDev?: string | null;
+  identityIno?: string | null;
+}
+
+export interface WorkspaceScope {
+  projectId: string;
+  primaryRoot: string;
+  roots: readonly WorkspaceRoot[];
+  version: string;
+}
+
+export interface ProjectSourceGitState {
+  sourceId: string;
+  isRepository: boolean;
+  repositoryRoot?: string;
+  headSha?: string;
+  branch?: string;
+  dirtyFiles?: string[];
+  ahead?: number;
+  behind?: number;
 }
 
 export interface ProjectGoal {
@@ -49,6 +96,7 @@ export interface ProjectRoleLink {
 /** 项目详情聚合（中心视图数据源） */
 export interface ProjectDetail {
   project: Project;
+  sources: ProjectSource[];
   goals: ProjectGoal[];
   roles: ProjectRoleLink[];
   sessionIds: string[];
@@ -97,6 +145,7 @@ export interface ProjectArtifact {
   toolCallId?: string;
   toolName?: string;
   previewItemId?: string;
+  sourceId?: string;
 }
 
 /** 保留项目 ID：无 workspace 的存量会话归入此项目 */
@@ -108,6 +157,22 @@ export interface CreateProjectInput {
   name: string;
   workspacePath?: string | null;
   description?: string;
+}
+
+export interface ProjectSourceInput {
+  id?: string;
+  path: string;
+  role: ProjectSourceRole;
+  access: ProjectSourceAccess;
+  trustState?: ProjectSourceTrustState;
+}
+
+export interface UpdateProjectInput {
+  projectId: string;
+  revision: number;
+  name: string;
+  description?: string | null;
+  sources: ProjectSourceInput[];
 }
 
 /** 新建目标入参 */

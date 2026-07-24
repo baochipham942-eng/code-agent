@@ -24,7 +24,10 @@ import { getProjectService } from '../services/project/projectService';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 import {
   type ProjectGoalStatus,
+  type ProjectSourceAccess,
+  type ProjectSourceInput,
   type ProjectStatus,
+  type UpdateProjectInput,
 } from '../../shared/contract/project';
 import type { ArtifactIssue, ArtifactIssueStatus } from '../../shared/contract/productClosure';
 import { createLogger } from '../services/infra/logger';
@@ -72,6 +75,17 @@ interface ArtifactIssuesPayload {
   status?: ArtifactIssueStatus;
   limit?: number;
 }
+interface SourcesPayload {
+  projectId?: string;
+}
+interface UpdateProjectPayload extends Partial<UpdateProjectInput> {}
+interface SourceMutationPayload {
+  projectId?: string;
+  revision?: number;
+  sourceId?: string;
+  path?: string;
+  access?: ProjectSourceAccess;
+}
 
 function invalid(message: string): IPCResponse {
   return { success: false, error: { code: 'INVALID_ARGS', message } };
@@ -97,6 +111,79 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           if (!projectId) return invalid('projectId is required');
           const detail = svc.getProjectDetail(projectId);
           return detail ? { success: true, data: detail } : notFound('project not found');
+        }
+
+        case 'sources': {
+          const { projectId } = (payload ?? {}) as SourcesPayload;
+          if (!projectId) return invalid('projectId is required');
+          return { success: true, data: svc.listSources(projectId) };
+        }
+
+        case 'updateProject': {
+          const update = (payload ?? {}) as UpdateProjectPayload;
+          if (
+            !update.projectId
+            || typeof update.revision !== 'number'
+            || !update.name
+            || !Array.isArray(update.sources)
+          ) {
+            return invalid('projectId, revision, name and sources are required');
+          }
+          const updated = await svc.updateProject(update as UpdateProjectInput, now);
+          return updated ? { success: true, data: updated } : notFound('project not found');
+        }
+
+        case 'addSource':
+        case 'updateSourceAccess':
+        case 'setPrimarySource':
+        case 'removeSource': {
+          const mutation = (payload ?? {}) as SourceMutationPayload;
+          if (!mutation.projectId || typeof mutation.revision !== 'number') {
+            return invalid('projectId and revision are required');
+          }
+          const detail = svc.getProjectDetail(mutation.projectId);
+          if (!detail) return notFound('project not found');
+          let sources: ProjectSourceInput[] = detail.sources.map((source) => ({
+            id: source.id,
+            path: source.path,
+            role: source.role,
+            access: source.access,
+            trustState: source.trustState,
+          }));
+          if (action === 'addSource') {
+            if (!mutation.path) return invalid('path is required');
+            sources.push({ path: mutation.path, role: 'additional', access: 'read_only' });
+          } else {
+            if (!mutation.sourceId) return invalid('sourceId is required');
+            const target = sources.find((source) => source.id === mutation.sourceId);
+            if (!target) return notFound('source not found');
+            if (action === 'updateSourceAccess') {
+              if (mutation.access !== 'read_only' && mutation.access !== 'read_write') {
+                return invalid('access is required');
+              }
+              if (target.role === 'primary' && mutation.access !== 'read_write') {
+                return invalid('Primary source must remain read_write');
+              }
+              target.access = mutation.access;
+            } else if (action === 'setPrimarySource') {
+              sources = sources.map((source) => ({
+                ...source,
+                role: source.id === mutation.sourceId ? 'primary' : 'additional',
+                access: source.id === mutation.sourceId ? 'read_write' : source.access,
+              }));
+            } else {
+              if (target.role === 'primary') return invalid('Primary source cannot be removed');
+              sources = sources.filter((source) => source.id !== mutation.sourceId);
+            }
+          }
+          const updated = await svc.updateProject({
+            projectId: mutation.projectId,
+            revision: mutation.revision,
+            name: detail.project.name,
+            description: detail.project.description,
+            sources,
+          }, now);
+          return updated ? { success: true, data: updated } : notFound('project not found');
         }
 
         case 'artifacts': {
@@ -148,6 +235,12 @@ export function registerProjectHandlers(ipcMain: IpcMain): void {
           }
           const updated = svc.setProjectStatus(projectId, status as ProjectStatus, now);
           return updated ? { success: true, data: updated } : notFound('project not found');
+        }
+
+        case 'deleteProject': {
+          const { projectId } = (payload ?? {}) as DetailPayload;
+          if (!projectId) return invalid('projectId is required');
+          return { success: true, data: { deleted: svc.deleteProject(projectId, now) } };
         }
 
         case 'addGoal': {

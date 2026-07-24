@@ -3,6 +3,8 @@ import * as path from 'path';
 import type { AgentEngineDescriptor, AgentEnginePermissionProfile, AgentEngineSessionMetadata, ExternalAgentEngineKind } from '../../../shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import type { Session } from '../../../shared/contract/session';
+import type { WorkspaceScope } from '../../../shared/contract/project';
+import { resolveWorkspacePath } from '../../runtime/workspaceScope';
 
 export function assertWorkspaceCwd(cwd: string, workspaceRoot: string): string {
   const resolvedCwd = realpathOrThrow(cwd, 'cwd');
@@ -90,6 +92,7 @@ export function resolveExternalEngineLaunch(
   session: Session | null | undefined,
   engine: AgentEngineSessionMetadata,
   requestedCwd?: string | null,
+  workspaceScope?: WorkspaceScope,
 ): { cwd: string; workspaceRoot: string; permissionProfile: 'read_only'; model?: string } {
   assertExternalEngineSessionAllowed(session);
 
@@ -101,7 +104,13 @@ export function resolveExternalEngineLaunch(
   }
 
   const permissionProfile = assertReadOnlyExternalProfile(engine.permissionProfile);
-  const workspaceRoot = session.workingDirectory?.trim();
+  if (workspaceScope && workspaceScope.roots.length > 1) {
+    throw new Error(
+      `${engine.kind} cannot safely express this Project's multiple Source roots. `
+      + 'Switch to Neo or remove Additional Sources before starting a new external Engine run.',
+    );
+  }
+  const workspaceRoot = workspaceScope?.primaryRoot ?? session.workingDirectory?.trim();
   if (!workspaceRoot) {
     throw new Error('External Agent Engine requires a selected workspace root.');
   }
@@ -110,7 +119,11 @@ export function resolveExternalEngineLaunch(
     assertWorkspaceCwd(engine.cwd, workspaceRoot);
   }
 
-  const cwd = assertWorkspaceCwd(requestedCwd?.trim() || engine.cwd || workspaceRoot, workspaceRoot);
+  const requested = requestedCwd?.trim() || engine.cwd || workspaceRoot;
+  const cwd = workspaceScope
+    ? (resolveWorkspacePath(workspaceScope, requested, 'read')?.canonicalPath
+      ?? (() => { throw new Error(`Agent Engine cwd must stay inside Project Sources: ${requested}`); })())
+    : assertWorkspaceCwd(requested, workspaceRoot);
   return {
     cwd,
     workspaceRoot: assertWorkspaceCwd(workspaceRoot, workspaceRoot),

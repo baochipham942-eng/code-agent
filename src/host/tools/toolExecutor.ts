@@ -33,6 +33,7 @@ import {
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
+import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
 import { prepareNativeToolCheckpoint } from './nativeToolCheckpoint';
 import { annotateToolExecution, requestPermissionWithTelemetry } from './toolExecutionTelemetry';
@@ -317,6 +318,39 @@ export class ToolExecutor {
     const executionToolName = toolDef.name;
     const policyToolName = normalizeToolName(executionToolName);
 
+    if (this.runContext && toolDef.permissionLevel === 'write' && !isBashToolName(policyToolName)) {
+      const rawTarget = [
+        params.file_path,
+        params.path,
+        params.output_path,
+        params.outputPath,
+        params.notebook_path,
+        params.document_path,
+        params.presentation_path,
+      ].find((value) => typeof value === 'string' && value.trim()) as string | undefined;
+      const target = rawTarget
+        ? (nodePath.isAbsolute(rawTarget)
+          ? nodePath.resolve(rawTarget)
+          : nodePath.resolve(this.executionCwd, rawTarget))
+        : this.executionCwd;
+      const readableMatch = resolveWorkspacePath(this.runContext.workspaceScope, target, 'read');
+      if (readableMatch && readableMatch.root.access !== 'read_write') {
+        return {
+          success: false,
+          error: `Project Source is read-only: ${readableMatch.root.path}`,
+          metadata: {
+            code: 'PROJECT_SOURCE_READ_ONLY',
+            projectId: this.runContext.workspaceScope.projectId,
+            sourceId: readableMatch.root.sourceId,
+            sourceRole: readableMatch.root.role,
+            sourceAccess: readableMatch.root.access,
+            relativePathWithinSource: readableMatch.relativePath,
+            workspaceScopeVersion: this.runContext.workspaceScope.version,
+          },
+        };
+      }
+    }
+
     annotateToolExecution({
       toolCallId: options.currentToolCallId,
       toolName: executionToolName,
@@ -394,6 +428,7 @@ export class ToolExecutor {
       runId: effectiveRunId, turnId: options.turnId,
       sessionId: effectiveSessionId,
       workspace: this.workspaceRoot,
+      workspaceScope: this.runContext?.workspaceScope,
       workingDirectory: this.executionCwd,
       requestPermission: this.requestPermission,
       abortSignal: options.abortSignal,
@@ -1188,7 +1223,12 @@ export class ToolExecutor {
     const resolvedPath = nodePath.isAbsolute(filePath)
       ? nodePath.resolve(filePath)
       : nodePath.resolve(this.executionCwd, filePath);
-    const inWorkspace = isRunPathInsideWorkspace(resolvedPath, workspace);
+    const match = this.runContext
+      ? resolveWorkspacePath(this.runContext.workspaceScope, resolvedPath, isWrite ? 'read_write' : 'read')
+      : undefined;
+    const inWorkspace = this.runContext
+      ? Boolean(match)
+      : isRunPathInsideWorkspace(resolvedPath, workspace);
 
     if (inWorkspace) return isWrite ? 'file.project_write' : 'file.project_read';
     return isWrite ? 'file.external_write' : 'file.external_read';
@@ -1218,9 +1258,9 @@ export class ToolExecutor {
     const candidate = nodePath.isAbsolute(requestedDirectory)
       ? nodePath.resolve(requestedDirectory)
       : nodePath.resolve(this.executionCwd, requestedDirectory);
-    if (!isRunPathInsideWorkspace(candidate, this.workspaceRoot)) {
+    if (!resolveWorkspacePath(this.runContext.workspaceScope, candidate, 'read')) {
       return {
-        error: `Run ${this.runContext.runId} cannot execute outside workspace: ${candidate}`,
+        error: `Run ${this.runContext.runId} cannot execute outside Project Sources: ${candidate}`,
       };
     }
 

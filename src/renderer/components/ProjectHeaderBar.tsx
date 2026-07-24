@@ -22,6 +22,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Settings2,
   Table2,
   Target,
   UserPlus,
@@ -46,6 +47,7 @@ import {
 import { useSessionStore } from '../stores/sessionStore';
 import { useUIStore } from '../stores/uiStore';
 import { createLogger } from '../utils/logger';
+import { ProjectSettingsDialog } from './ProjectSettingsDialog';
 
 const logger = createLogger('ProjectHeaderBar');
 
@@ -93,6 +95,7 @@ export const ProjectHeaderBar: React.FC = () => {
   const [addingGoal, setAddingGoal] = useState(false);
   const [roleOptions, setRoleOptions] = useState<RolePanelEntry[]>([]);
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!projectId) {
@@ -277,6 +280,15 @@ export const ProjectHeaderBar: React.FC = () => {
         >
           <Archive className="h-3.5 w-3.5" />
         </button>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="shrink-0 text-zinc-500 hover:text-zinc-300"
+          title="项目设置"
+          aria-label="项目设置"
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+        </button>
       </div>
 
       {/* 摘要行（折叠时） */}
@@ -407,6 +419,12 @@ export const ProjectHeaderBar: React.FC = () => {
           </section>
         </div>
       )}
+      <ProjectSettingsDialog
+        projectId={projectId}
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={() => { void refresh(); }}
+      />
     </div>
   );
 };

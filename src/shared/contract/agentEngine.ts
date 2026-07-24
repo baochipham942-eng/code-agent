@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ModelCapability } from './model';
+import type { WorkspaceScope } from './project';
 
 export type AgentEngineKind = 'native' | 'codex_cli' | 'claude_code' | 'mimo_code' | 'kimi_code';
 
@@ -140,6 +141,7 @@ export interface AgentEngineRunRequest {
   model?: string;
   permissionProfile?: AgentEnginePermissionProfile;
   clientMessageId?: string;
+  workspaceScope?: WorkspaceScope;
 }
 
 export interface AgentEngineRunResult {

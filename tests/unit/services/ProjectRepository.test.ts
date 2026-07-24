@@ -176,6 +176,49 @@ describe('ProjectRepository', () => {
     expect(repo.getProject(p.id)?.description).toBeUndefined();
     expect(repo.getProject(p.id)?.updatedAt).toBe(NOW + 2);
   });
+
+  it('旧 Project 幂等回填为单一 Primary source', () => {
+    const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
+    repo.upsertProject(p);
+    expect(repo.backfillProjectSources(NOW)).toBe(1);
+    expect(repo.backfillProjectSources(NOW + 1)).toBe(0);
+    expect(repo.listSources(p.id)).toEqual([
+      expect.objectContaining({
+        projectId: p.id,
+        role: 'primary',
+        access: 'read_write',
+        trustState: 'trusted',
+      }),
+    ]);
+  });
+
+  it('原子替换 Sources 校验 revision 且数据库约束只允许一个 Primary', () => {
+    const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
+    repo.upsertProject(p);
+    repo.backfillProjectSources(NOW);
+    const primary = repo.listSources(p.id)[0];
+    const updated = repo.replaceProjectSources(
+      { ...p, name: 'multi', updatedAt: NOW + 1 },
+      [
+        primary,
+        {
+          id: 'psrc_docs',
+          projectId: p.id,
+          path: '/work/docs',
+          canonicalPath: '/work/docs',
+          role: 'additional',
+          access: 'read_only',
+          trustState: 'trusted',
+          createdAt: NOW + 1,
+          updatedAt: NOW + 1,
+        },
+      ],
+      0,
+    );
+    expect(updated.sourceRevision).toBe(1);
+    expect(repo.listSources(p.id)).toHaveLength(2);
+    expect(() => repo.replaceProjectSources(updated, repo.listSources(p.id), 0)).toThrow(/revision/i);
+  });
 });
 
 describe('buildProjectArtifacts（跨 session 产物聚合）', () => {

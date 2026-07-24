@@ -95,8 +95,12 @@ export interface SandboxedCommand {
  * 命令包装选项（面向调用方的精简入参）
  */
 export interface SandboxWrapOptions {
-  /** 工作目录，授予读写权并作为 cwd */
+  /** Process cwd. It is writable only when present in readWriteRoots. */
   workingDirectory: string;
+  /** Project roots mounted/readable without write permission. */
+  readOnlyRoots?: string[];
+  /** Project roots allowed for writes. */
+  readWriteRoots?: string[];
   /** 是否放行网络（bypass 档默认 true） */
   allowNetwork?: boolean;
 }
@@ -282,6 +286,8 @@ export class SandboxManager {
     }
 
     const resolved = path.resolve(opts.workingDirectory);
+    const readOnlyRoots = (opts.readOnlyRoots ?? []).map((root) => path.resolve(root));
+    const readWriteRoots = (opts.readWriteRoots ?? [resolved]).map((root) => path.resolve(root));
     const allowNetwork = opts.allowNetwork ?? false;
 
     switch (this.platform) {
@@ -289,8 +295,10 @@ export class SandboxManager {
         // seatbelt 读放开，仅锁写：工作目录交给 writePaths（generateProfile 内做 realpath）
         const wrapped = getSeatbelt().wrapCommand(command, {
           allowNetwork,
-          writePaths: [resolved],
+          readPaths: readOnlyRoots,
+          writePaths: readWriteRoots,
           workingDirectory: resolved,
+          allowWorkingDirectoryWrite: false,
         });
         return { ...wrapped, platform: 'darwin' };
       }
@@ -300,8 +308,8 @@ export class SandboxManager {
         const dev = Bubblewrap.createPreset('development');
         const wrapped = getBubblewrap().wrapCommand(command, {
           allowNetwork,
-          readOnlyPaths: dev.readOnlyPaths,
-          readWritePaths: [resolved],
+          readOnlyPaths: [...(dev.readOnlyPaths ?? []), ...readOnlyRoots],
+          readWritePaths: readWriteRoots,
           workingDirectory: resolved,
         });
         return { ...wrapped, platform: 'linux' };

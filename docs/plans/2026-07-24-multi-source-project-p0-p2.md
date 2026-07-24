@@ -1,11 +1,11 @@
 # Agent Neo Multi-Source Project P0-P2 实施计划
 
-> 状态：ready for implementation  
-> 计划日期：2026-07-24  
-> 目标仓库：`/Users/linchen/Downloads/ai/code-agent`  
-> 实施分支：`codex/multi-source-project`  
-> 基线：`origin/main@af33d10c6`  
-> 范围约束：P0、P1、P2 均属于本次开发与验证范围，不允许完成 P0 后提前收口。  
+> 状态：ready for implementation
+> 计划日期：2026-07-24
+> 目标仓库：`/Users/linchen/Downloads/ai/code-agent`
+> 实施分支：`codex/multi-source-project`
+> 基线：`origin/main@af33d10c6`
+> 范围约束：P0、P1、P2 均属于本次开发与验证范围，不允许完成 P0 后提前收口。
 > 发布边界：本次只做本地开发、验证和本地提交；未经用户明确授权，不 push、不创建 PR、不合并、不发布、不部署。
 
 ## 1. 产品判断
@@ -718,4 +718,3 @@ npm run acceptance:session-persistence
 6. 多仓 Git 状态、diff、completion 和 Goal evidence 不漏仓。
 7. 定向测试、全量测试、构建和真实 E2E 均通过。
 8. 未 push、未 PR、未发布、未部署。
-

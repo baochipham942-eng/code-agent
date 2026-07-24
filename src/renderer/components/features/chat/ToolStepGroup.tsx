@@ -10,7 +10,7 @@ import type { ToolCall, ToolLiveOutput } from '@shared/contract';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { summarizeTool } from './MessageBubble/ToolCallDisplay/summarizers';
 import { computeBashPreviewLines } from './MessageBubble/ToolCallDisplay/bashOutputPreview';
-import { buildStepLabel, buildSingleToolLabel } from '../../../utils/toolStepGrouping';
+import { humanizeToolGroupLabel, humanizeToolStep } from '../../../utils/humanizeToolStep';
 import {
   formatToolDuration,
   isAutoLoadedRetry,
@@ -38,17 +38,18 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
   const label = useMemo(() => {
     if (nodes.length === 1) {
       const tc = nodes[0].toolCall;
-      if (tc) return buildSingleToolLabel(
+      if (tc) return humanizeToolStep(
         tc.name,
         tc.args as Record<string, unknown> | undefined,
+        t,
         tc.shortDescription,
       );
     }
     const names = nodes
       .map((n) => n.toolCall?.name)
       .filter((x): x is string => !!x);
-    return buildStepLabel(names);
-  }, [nodes]);
+    return humanizeToolGroupLabel(names, t);
+  }, [nodes, t]);
 
   const status = useMemo<'streaming' | 'partial' | 'error' | 'ok'>(() => {
     let hasError = false;

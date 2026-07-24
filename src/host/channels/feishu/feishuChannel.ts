@@ -649,6 +649,54 @@ export class FeishuChannel extends BaseChannelPlugin {
     return { success: true, messageId: initial.messageId };
   }
 
+  /**
+   * 把已发出的交互卡片原地更新成一段纯文本卡片（B3：审批 resolved 后去掉按钮、显示结论）。
+   * 用 im.message.patch 更新 interactive 消息，避免旧卡片按钮继续可点（点了也幂等 no-op）。
+   */
+  async updateCard(messageId: string, text: string): Promise<SendMessageResult> {
+    if (!this.client) {
+      return { success: false, error: 'Channel not connected' };
+    }
+    try {
+      const card = this.buildCardContent(text);
+      const response = await this.client.im.message.patch({
+        path: { message_id: messageId },
+        data: { content: JSON.stringify(card) },
+      });
+      if (response.code === 0) {
+        return { success: true, messageId };
+      }
+      return { success: false, error: response.msg || 'Failed to update card' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error(`Failed to update ${this.meta.name} card`, { error: message });
+      return { success: false, error: message };
+    }
+  }
+
+  /**
+   * 从入站请求体里抽出卡片按钮回传的 value 字符串（B3）。命中返回 value（可能为空串），
+   * 非卡片动作返回 undefined。兼容旧版卡片回调（顶层 action）与卡片 2.0 事件。
+   */
+  private extractCardActionValue(
+    bodyRecord: Record<string, unknown>,
+    eventType: string | undefined,
+    eventPayload: Record<string, unknown> | undefined,
+  ): string | undefined {
+    // 旧版消息卡片回调：{ action: { value: { action: '<str>' }, tag: 'button' }, token, ... }
+    const legacyAction = readRecordField(bodyRecord, 'action');
+    // 卡片 2.0：{ header: { event_type: 'card.action.trigger' }, event: { action: { value: {...} } } }
+    const v2Action = eventType === 'card.action.trigger' && eventPayload
+      ? readRecordField(eventPayload, 'action')
+      : undefined;
+    const action = legacyAction ?? v2Action;
+    if (!action) return undefined;
+    const value = readRecordField(action, 'value');
+    if (!value) return undefined;
+    // 我方按钮把编码串放在 value.action；缺失时返回空串仍算「卡片动作」（避免误落进消息分支）。
+    return readStringField(value, 'action') ?? '';
+  }
+
   private buildCardContent(text: string, buttons?: Array<{ text: string; value: string }>): FeishuCardContent {
     const elements: FeishuCardElement[] = [
       {
@@ -728,6 +776,24 @@ export class FeishuChannel extends BaseChannelPlugin {
         if (bodyType === 'url_verification' || challenge) {
           logger.info(`${this.meta.name} URL verification`, { challenge });
           res.json({ challenge });
+          return;
+        }
+
+        // 卡片按钮回传（B3 审批回批）。两种形态都在此收口：
+        //   - 旧版消息卡片回调：顶层 action.value.action（本 relay 发的就是旧版卡片）
+        //   - 卡片 2.0 事件：header.event_type==='card.action.trigger' + event.action.value.action
+        // 状态变更类回调：配了 verificationToken 就校验（旧版回调带 token 字段）。
+        const cardActionValue = this.extractCardActionValue(bodyRecord, eventType, eventPayload);
+        if (cardActionValue !== undefined) {
+          const token = readStringField(bodyRecord, 'token');
+          if (this.feishuConfig?.verificationToken && token !== this.feishuConfig.verificationToken) {
+            logger.warn(`${this.meta.name} card action rejected: token mismatch`);
+            res.status(401).json({ code: -1, msg: 'invalid token' });
+            return;
+          }
+          logger.info(`${this.meta.name} card action received`);
+          this.emit('card_action', { value: cardActionValue });
+          res.json({}); // 旧版卡片回调可回卡片/toast 更新；这里由 resolved 事件统一更新，回空即可
           return;
         }
 

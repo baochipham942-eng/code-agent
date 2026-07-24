@@ -286,6 +286,11 @@ export class ChannelManager extends EventEmitter {
       this.updateAccountStatus(accountId, 'error', summary);
     });
 
+    // 卡片按钮回传（B3 审批回批）：透传给上层 relay，带上是哪个账号发来的。
+    channel.on('card_action', (payload: { value?: string }) => {
+      this.emit('card_action', accountId, payload);
+    });
+
     try {
       // 初始化并连接
       await channel.initialize(account.config);
@@ -437,6 +442,13 @@ export class ChannelManager extends EventEmitter {
    */
   setMessageHandler(handler: ChannelMessageHandler): void {
     this.messageHandler = handler;
+  }
+
+  /**
+   * 获取已连接的通道实例（B3 relay 需要 FeishuChannel 专属的 sendCard/updateCard）。
+   */
+  getActiveChannel(accountId: string): IChannelPlugin | undefined {
+    return this.activeChannels.get(accountId);
   }
 
   /**

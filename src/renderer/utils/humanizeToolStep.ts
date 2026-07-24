@@ -182,12 +182,14 @@ export function humanizeToolStep(
       return target ? h.webFetch.replace('{target}', target) : h.webFetchFallback;
     }
     case 'mcpChannel': {
-      const mcp = parseMcpName(name)!;
+      const mcp = parseMcpName(name);
+      if (!mcp) return h.fallback.replace('{name}', name);
       const channel = h.channelNames[mcp.server] || mcp.server;
       return h.channelMessage.replace('{channel}', channel);
     }
     case 'mcp': {
-      const mcp = parseMcpName(name)!;
+      const mcp = parseMcpName(name);
+      if (!mcp) return h.fallback.replace('{name}', name);
       return h.mcpTool.replace('{server}', mcp.server).replace('{tool}', mcp.tool);
     }
     case 'subagentSpawn': {
@@ -267,11 +269,8 @@ export function humanizeToolGroupLabel(toolNames: string[], t: Translations): st
   const order: GroupBucket[] = [];
   for (const name of toolNames) {
     const bucket = groupBucketFor(classifyToolName(name));
-    if (!counts.has(bucket)) {
-      counts.set(bucket, 0);
-      order.push(bucket);
-    }
-    counts.set(bucket, counts.get(bucket)! + 1);
+    if (!counts.has(bucket)) order.push(bucket);
+    counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
   }
 
   const g = t.toolStepHumanize.group;

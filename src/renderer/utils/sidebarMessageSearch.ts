@@ -26,6 +26,7 @@ export interface SidebarMessageSearchHitGroup {
   sessionId: string;
   bestHit: SidebarMessageSearchHit;
   hits: SidebarMessageSearchHit[];
+  totalHitCount: number;
 }
 
 export function stripSearchHighlightMarkers(snippet: string): string {
@@ -165,6 +166,7 @@ export function buildSidebarMessageSearchHitGroups(
         sessionId,
         bestHit: sortedHits[0],
         hits: sortedHits,
+        totalHitCount: hits.length,
       }];
     }),
   );

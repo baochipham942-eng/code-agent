@@ -141,6 +141,7 @@ describe('sidebarMessageSearch', () => {
     ]);
     expect(groups['session-1'].hits[0].snippet).toBe('best match');
     expect(groups['session-1'].hits[1].messagePositionLabel).toBe('消息 3');
+    expect(groups['session-1'].totalHitCount).toBe(4);
   });
 
   it('resolves the current project search session ids by project id first', () => {

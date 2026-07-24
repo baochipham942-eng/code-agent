@@ -255,9 +255,10 @@ describe('Sidebar session metadata', () => {
 
   it('hides the status filter entry for non-admin users (D-10)', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
-    // 普通用户只留搜索框，连筛选图标都不渲染。
+    // 普通用户不渲染管理员筛选，但头部搜索入口必须保留。
     expect(html).not.toContain('按状态筛选会话');
-    expect(html).toContain('搜索会话…'); // 搜索框仍在
+    expect(html).toContain('data-testid="sidebar-search-trigger"');
+    expect(html).toContain('aria-label="搜索会话"');
   });
 
   it('supports the background-only quick filter', () => {
@@ -336,8 +337,6 @@ describe('Sidebar session metadata', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
     expect(html).toContain('Session Native Workspace');
-    expect(html).toContain('当前项目');
-    expect(html).toContain('全部');
     expect(html).toContain('aria-label="在 code-agent 新建会话"');
     // PR#287 后搜索命中不再渲染"N 命中"计数 chip（命中以片段行展示）
     expect(html).not.toContain('命中');

@@ -16,7 +16,6 @@ import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
 import { useWorkflowStore } from '../stores/workflowStore';
 import {
   MessageSquare,
-  Plus,
   Loader2,
   User,
   Settings,
@@ -25,7 +24,6 @@ import {
   ChevronDown,
   Trash2,
   Search,
-  X,
   ChevronRight,
   FlaskConical,
   Clock3,
@@ -43,7 +41,7 @@ import {
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useUIStore } from '../stores/uiStore';
-import { UndoToast } from './primitives';
+import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
 import { type SidebarProjectDrawerSession } from './features/sidebar/SidebarProjectDrawer';
@@ -67,6 +65,9 @@ import { useSidebarDerivedSessions } from './features/sidebar/useSidebarDerivedS
 import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionActions';
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
+import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
+import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
+import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import {
   buildSessionStatusFilterOptions,
   buildSessionStatusFilterLabels,
@@ -308,6 +309,7 @@ export const Sidebar: React.FC = () => {
     setSearchScope,
     messageSearchHitsBySessionId,
     messageSearchLoading,
+    searchResultSessions,
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
     mergeTrajectoryQualitySummary,
@@ -355,6 +357,9 @@ export const Sidebar: React.FC = () => {
   const [expandedProjectDetails, setExpandedProjectDetails] = useState<Record<string, boolean>>({});
   const [projectDrawerKey, setProjectDrawerKey] = useState<string | null>(null);
   const [collapsingWorkspaces, setCollapsingWorkspaces] = useState<Record<string, boolean>>({});
+  // Keep new local state after the legacy Sidebar state sequence; several renderer tests
+  // intentionally inject historical context/review state by hook index.
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const collapseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(
@@ -481,7 +486,6 @@ export const Sidebar: React.FC = () => {
     trajectoryTierFilter !== 'all' || trajectoryFailureFilter !== 'all' || trajectoryReviewFilter !== 'all';
   const hasSearchFilters = Boolean(searchQuery.trim()) || sessionStatusFilter !== 'all' || hasActiveTrajectoryFilter;
   const canSearchCurrentProject = currentProjectSearchSessionIds.size > 0;
-  const showSearchScopeControls = Boolean(searchQuery.trim()) && canSearchCurrentProject;
   const activeTrajectoryFilterLabel = [
     trajectoryTierFilter !== 'all' ? trajectoryTierFilter : null,
     trajectoryReviewFilter !== 'all' ? buildTrajectoryReviewFilterLabels(t)[trajectoryReviewFilter] : null,
@@ -623,96 +627,69 @@ export const Sidebar: React.FC = () => {
     handleArchiveSession,
   };
 
+  const closeSearchDialog = () => {
+    setSearchDialogOpen(false);
+    setSearchQuery('');
+  };
+
+  const handleSelectSearchSession = async (sessionId: string) => {
+    try {
+      if (sessionId !== currentSessionId) {
+        await switchSession(sessionId);
+      }
+    } finally {
+      closeSearchDialog();
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: h-12 to align with TitleBar on the right */}
       <div className="h-12 px-3 flex items-center justify-between gap-2 flex-shrink-0">
-        {/* New Chat — 纯对话，不继承项目上下文（项目会话走各项目组 + 按钮） */}
-        <button
-          onClick={handleNewChat}
-          disabled={isCreatingSession || creatingWorkspaceKey !== null}
-          title={sb.newChatTitle}
-          className="flex min-w-0 flex-1 items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
-        >
-          <span className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center">
-            {creatingSessionMode === 'current' ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Plus className="w-3.5 h-3.5 stroke-[2]" />
-            )}
-          </span>
-          <span className="text-sm font-normal">{sb.newChat}</span>
-        </button>
-
-        {/* 状态筛选：仅管理员可见，收成一个图标 + 下拉（不再平铺一整排 tab） */}
-        {canOpenSessionReplay && (
-          <SidebarStatusFilterDropdown
-            statusFilterOpen={statusFilterOpen}
-            setStatusFilterOpen={setStatusFilterOpen}
-            statusFilterRef={statusFilterRef}
-            visibleStatusFilterOptions={visibleStatusFilterOptions}
-            sessionStatusFilter={sessionStatusFilter}
-            setSessionStatusFilter={setSessionStatusFilter}
-            trajectoryTierFilter={trajectoryTierFilter}
-            setTrajectoryTierFilter={setTrajectoryTierFilter}
-            trajectoryFailureFilter={trajectoryFailureFilter}
-            setTrajectoryFailureFilter={setTrajectoryFailureFilter}
-            trajectoryReviewFilter={trajectoryReviewFilter}
-            setTrajectoryReviewFilter={setTrajectoryReviewFilter}
-            hasActiveTrajectoryFilter={hasActiveTrajectoryFilter}
-            hasActiveStatusDropdownFilter={hasActiveStatusDropdownFilter}
-            activeStatusFilterLabel={activeStatusFilterLabel}
+        <NeoBrandMark />
+        <div className="flex items-center gap-1">
+          <IconButton
+            type="button"
+            variant="ghost"
+            size="md"
+            icon={<Search />}
+            aria-label={sb.openSearch}
+            data-testid="sidebar-search-trigger"
+            onClick={() => {
+              setSearchQuery('');
+              setSearchDialogOpen(true);
+            }}
           />
-        )}
+          {/* 状态筛选：仅管理员可见；搜索入口对所有人可见。 */}
+          {canOpenSessionReplay && (
+            <SidebarStatusFilterDropdown
+              statusFilterOpen={statusFilterOpen}
+              setStatusFilterOpen={setStatusFilterOpen}
+              statusFilterRef={statusFilterRef}
+              visibleStatusFilterOptions={visibleStatusFilterOptions}
+              sessionStatusFilter={sessionStatusFilter}
+              setSessionStatusFilter={setSessionStatusFilter}
+              trajectoryTierFilter={trajectoryTierFilter}
+              setTrajectoryTierFilter={setTrajectoryTierFilter}
+              trajectoryFailureFilter={trajectoryFailureFilter}
+              setTrajectoryFailureFilter={setTrajectoryFailureFilter}
+              trajectoryReviewFilter={trajectoryReviewFilter}
+              setTrajectoryReviewFilter={setTrajectoryReviewFilter}
+              hasActiveTrajectoryFilter={hasActiveTrajectoryFilter}
+              hasActiveStatusDropdownFilter={hasActiveStatusDropdownFilter}
+              activeStatusFilterLabel={activeStatusFilterLabel}
+            />
+          )}
+        </div>
       </div>
 
-      {/* Search Box */}
+      {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。 */}
       <div className="px-2 pb-1 flex-shrink-0">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={sb.searchPlaceholder}
-            className="w-full pl-8 pr-7 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-zinc-600 transition-colors"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-400"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-        <div className="mt-1 flex items-center gap-1 overflow-x-auto scrollbar-none">
-          {showSearchScopeControls && (
-            <>
-              {[
-                { id: 'current-project' as const, label: sb.scopeCurrentProject },
-                { id: 'all' as const, label: sb.scopeAll },
-              ].map((option) => {
-                const active = effectiveSearchScope === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setSearchScope(option.id)}
-                    className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${active ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200' : 'border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/60 hover:text-zinc-300'}`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-              <span className="h-4 w-px shrink-0 bg-zinc-800" />
-            </>
-          )}
-          {/* 状态筛选已移到顶部「新会话」右侧的筛选图标下拉（仅管理员）。这里只保留搜索范围 + 搜索状态。 */}
-          {messageSearchLoading && searchQuery.trim() && (
-            <span className="shrink-0 px-1 text-[11px] text-zinc-600">{sb.searchingMessagesShort}</span>
-          )}
-        </div>
+        <SidebarNewTaskRow
+          onClick={handleNewChat}
+          disabled={isCreatingSession || creatingWorkspaceKey !== null}
+          loading={creatingSessionMode === 'current'}
+        />
       </div>
 
       {/* 能力区：自动化 / 专家 / 资料库（三件套，逐批点亮） */}
@@ -731,7 +708,7 @@ export const Sidebar: React.FC = () => {
               <MessageSquare className="w-6 h-6 text-zinc-500" />
             </div>
             <p className="text-sm text-zinc-400 mb-1">{sb.noSessions}</p>
-            <p className="text-xs text-zinc-500">{sb.startNewChat}</p>
+            <p className="text-xs text-zinc-500">{sb.startNewTask}</p>
           </div>
         ) : filteredSessions.length === 0 && hasSearchFilters ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-4">
@@ -1010,6 +987,21 @@ export const Sidebar: React.FC = () => {
           </button>
         )}
       </div>
+
+      <SidebarSearchDialog
+        isOpen={searchDialogOpen}
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        onClose={closeSearchDialog}
+        sessions={searchResultSessions}
+        currentSessionId={currentSessionId}
+        messageSearchHitsBySessionId={messageSearchHitsBySessionId}
+        messageSearchLoading={messageSearchLoading}
+        effectiveSearchScope={effectiveSearchScope}
+        setSearchScope={setSearchScope}
+        canSearchCurrentProject={canSearchCurrentProject}
+        onSelectSession={handleSelectSearchSession}
+      />
 
       {/* Replay 摘要 */}
       {replayDialog && (

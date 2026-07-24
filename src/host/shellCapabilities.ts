@@ -289,6 +289,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'updateMemory',
     'updateEquipment',
     'updateDefinitionBody',
+    'updatePersonalization',
     'updateVisual',
     'restoreFactory',
     'writeProjectMemory',

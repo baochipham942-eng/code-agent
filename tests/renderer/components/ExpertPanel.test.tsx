@@ -114,6 +114,7 @@ function makeRoleDetail(overrides: Partial<RolePanelDetail> = {}): RolePanelDeta
     proactivity: { level: 'silent' },
     visual: { displayName: '牧之', profession: '资深产品经理', icon: 'ClipboardList', category: 'product', tags: ['需求梳理', 'PRD 撰写'], quickPrompts: ['我有个产品想法，帮我梳理成需求清单'] },
     isBuiltin: true,
+    personalization: { userExpectation: '', soul: '' },
     equipment: { skills: ['research'], tools: ['Read'], model: 'balanced', maxIterations: 20, availableSkills: ['research', 'xlsx'], availableTools: ['Read', 'WebSearch'] },
     restore: { available: true },
     ...overrides,
@@ -393,8 +394,8 @@ describe('ExpertPanel', () => {
     await waitFor(() => expect(screen.getByTestId('role-detail-basic-tab')).toBeTruthy());
     fireEvent.click(screen.getByTestId('role-detail-tab-skills'));
     expect(screen.getByTestId('role-detail-equipment-tab')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('role-detail-tab-persona'));
-    expect(screen.getByTestId('role-detail-persona-tab')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('role-detail-tab-personalization'));
+    expect(screen.getByTestId('role-detail-personalization-tab')).toBeTruthy();
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
     expect(screen.getByTestId('role-detail-records-tab')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '关闭' }));
@@ -483,10 +484,21 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('role-model-tier-powerful'));
     await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateEquipment', expect.objectContaining({ roleId: '自定义专家', equipment: expect.objectContaining({ skills: ['research'], model: 'powerful', modelOverride: null }) })));
 
-    fireEvent.click(screen.getByTestId('role-detail-tab-persona'));
+    fireEvent.click(screen.getByTestId('role-detail-tab-personalization'));
     fireEvent.change(screen.getByTestId('role-definition-body'), { target: { value: '新的角色正文' } });
     fireEvent.click(screen.getByTestId('role-definition-save'));
     await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateDefinitionBody', { roleId: '自定义专家', body: '新的角色正文' }));
+
+    // 「你的期望」「行为准则」各自只提交自己那一段，别把另一段用同屏旧值盖掉
+    fireEvent.click(screen.getByTestId('role-personalization-segment-expectation'));
+    fireEvent.change(screen.getByTestId('role-personalization-expectation'), { target: { value: '要能直接汇报' } });
+    fireEvent.click(screen.getByTestId('role-personalization-save-expectation'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updatePersonalization', { roleId: '自定义专家', userExpectation: '要能直接汇报' }));
+
+    fireEvent.click(screen.getByTestId('role-personalization-segment-soul'));
+    fireEvent.change(screen.getByTestId('role-personalization-soul'), { target: { value: '别猜数' } });
+    fireEvent.click(screen.getByTestId('role-personalization-save-soul'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updatePersonalization', { roleId: '自定义专家', soul: '别猜数' }));
   });
 
   it('云包角色在本地改过时显示不会被更新覆盖的提示', async () => {
@@ -504,7 +516,7 @@ describe('ExpertPanel', () => {
     render(<RoleDetailPage roleId="云端产品顾问" />);
     // 「本地已改过」提示在基本信息 tab；「还原出厂」随人设正文一起住在人设 tab
     await waitFor(() => expect(screen.getByTestId('role-locally-modified').textContent).toContain('后续更新不会覆盖'));
-    fireEvent.click(screen.getByTestId('role-detail-tab-persona'));
+    fireEvent.click(screen.getByTestId('role-detail-tab-personalization'));
     expect((await screen.findByTestId('role-restore-factory') as HTMLButtonElement).disabled).toBe(true);
   });
 

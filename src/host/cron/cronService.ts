@@ -6,7 +6,12 @@ import { Cron } from 'croner';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { CRON_GUARDRAILS, DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import {
+  CRON_AGENT_SNAPSHOT,
+  CRON_GUARDRAILS,
+  DEFAULT_MODELS,
+  DEFAULT_PROVIDER,
+} from '../../shared/constants';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -56,6 +61,48 @@ export function computeCronFireJitterMs(
 /** 契约里的 startAt/endAt（string|number）转 Date，供 croner 原生窗口选项使用。 */
 function scheduleBoundToDate(value: string | number): Date {
   return new Date(typeof value === 'number' ? value : Date.parse(value));
+}
+
+/**
+ * 只有开了变化追踪的任务才包装 prompt；没开的任务原样发送，行为完全不变。
+ *
+ * 首次运行（还没有旧快照）同样要带上「输出快照标记」这句——否则模型根本不知道
+ * 要吐标记，第一次必然拿不到快照，就只能退而求其次拿整段回答顶替，
+ * 于是把一坨叙述性文字当成状态注回下一轮。
+ */
+function buildCronAgentPrompt(prompt: string, snapshot: unknown, enabled: boolean): string {
+  if (!enabled) return prompt;
+
+  const hasSnapshot = typeof snapshot === 'string' && Boolean(snapshot.trim());
+  return [
+    prompt,
+    ...(hasSnapshot
+      ? [
+        '',
+        '上次运行看到的快照：',
+        '<previous_snapshot>',
+        snapshot as string,
+        '</previous_snapshot>',
+        '',
+        '请把上面的快照和本次看到的内容对比，这次只需要说明变化。',
+      ]
+      : []),
+    '',
+    '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。',
+  ].join('\n');
+}
+
+function truncateUtf8Snapshot(snapshot: string): { value: string; truncated: boolean } {
+  const bytes = Buffer.from(snapshot, 'utf8');
+  if (bytes.length <= CRON_AGENT_SNAPSHOT.MAX_BYTES) {
+    return { value: snapshot, truncated: false };
+  }
+
+  let end = CRON_AGENT_SNAPSHOT.MAX_BYTES;
+  while (end > 0 && (bytes[end] & 0b1100_0000) === 0b1000_0000) {
+    end -= 1;
+  }
+  return { value: bytes.subarray(0, end).toString('utf8'), truncated: true };
 }
 
 // ============================================================================
@@ -684,26 +731,54 @@ export class CronService implements Disposable {
           tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
         }
         const agentRunOptions = await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory);
+        const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
+        const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
 
         let result: unknown;
         try {
           result = await orchestrator.sendMessage(
-            action.prompt,
+            buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled),
             undefined,
             agentRunOptions,
           );
 
+          const messages = orchestrator.getMessages();
+          const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
+          const finalAssistantText = lastAssistant?.content.trim() ?? '';
+          const snapshotMatch = finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN);
+          // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
+          // 当成状态存下来，下一轮再原样注回提示词。
+          const snapshotToPersist = snapshotTrackingEnabled ? snapshotMatch?.[1]?.trim() : undefined;
+          if (snapshotToPersist) {
+            const boundedSnapshot = truncateUtf8Snapshot(snapshotToPersist);
+            if (boundedSnapshot.truncated) {
+              console.warn(
+                `[CronService] Agent snapshot exceeded ${CRON_AGENT_SNAPSHOT.MAX_BYTES} UTF-8 bytes; truncated`,
+              );
+            }
+            const latestDefinition = this.jobs.get(definition.id)?.definition;
+            const latestAction = latestDefinition?.action.type === 'agent'
+              ? latestDefinition.action
+              : action;
+            await this.updateJob(definition.id, {
+              action: {
+                ...latestAction,
+                context: {
+                  ...latestAction.context,
+                  [CRON_AGENT_SNAPSHOT.CONTEXT_KEY]: boundedSnapshot.value,
+                },
+              },
+            });
+          }
+
           if (action.libraryProjectId) {
             try {
               const { getLibraryService } = await import('../services/library/libraryService');
-              const messages = orchestrator.getMessages();
-              const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
-              const text = lastAssistant?.content.trim() ?? '';
-              if (text) {
+              if (finalAssistantText) {
                 getLibraryService().archiveText({
                   projectId: action.libraryProjectId,
                   title: definition.name,
-                  text,
+                  text: finalAssistantText,
                   tags: ['定稿'],
                   sourceSessionId: cronSession.id,
                   sourceRoleId: action.roleId,

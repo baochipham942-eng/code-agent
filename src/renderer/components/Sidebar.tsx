@@ -652,7 +652,11 @@ export const Sidebar: React.FC = () => {
             type="button"
             variant="ghost"
             size="md"
-            icon={<Search />}
+            // 与右侧筛选钮尺寸对齐：筛选是 h-8 w-8 容器 + h-4 w-4 图标。lucide 图标自带
+            // width/height=24 属性，只靠 IconButton 外层 span 的 w-4 h-4 收不住（会撑破），
+            // 必须显式给图标本身 h-4 w-4。
+            className="h-8 w-8"
+            icon={<Search className="h-4 w-4" />}
             aria-label={sb.openSearch}
             data-testid="sidebar-search-trigger"
             onClick={() => {

@@ -109,6 +109,10 @@ export const ROLE_ASSETS = {
   HISTORY_FILENAME: 'history.md',
   /** 专家默认资料架绑定文件名（Batch 3 E3） */
   BINDINGS_FILENAME: 'bindings.json',
+  /** 用户对这位专家的期望（建专家时那句原话，可编辑）：roles/<roleId>/USER.md */
+  USER_EXPECTATION_FILENAME: 'USER.md',
+  /** 这位专家的行为准则（专家级，留空则不注入）：roles/<roleId>/SOUL.md */
+  SOUL_FILENAME: 'SOUL.md',
   /** 项目目录元数据文件名（记录原始 workspace 路径，P0-2 迁移用） */
   META_FILENAME: 'meta.json',
   /** 项目 key 的 hash 截断长度 */
@@ -157,6 +161,21 @@ export const ROLE_PROACTIVITY = {
   FALLBACK_DECISION: 'report',
   /** 醒来履历条目的产出摘要截断字符数 */
   HISTORY_SUMMARY_MAX_CHARS: 200,
+} as const;
+
+/** Agent 型定时任务跨运行快照（存放在 action.context 共享袋中）。 */
+export const CRON_AGENT_SNAPSHOT = {
+  /**
+   * action.context 中的开关键。变化追踪按任务选择加入——
+   * 全局套用会让 heartbeat 和一堆与变化无关的任务被平白要求吐快照并落库。
+   */
+  ENABLED_KEY: 'trackChanges',
+  /** action.context 中的快照键。 */
+  CONTEXT_KEY: 'lastRunSnapshot',
+  /** 最终 assistant 消息里的快照标记。 */
+  TAG_PATTERN: /<cron_snapshot>\s*([\s\S]*?)\s*<\/cron_snapshot>/i,
+  /** 快照落库与下次提示词注入的 UTF-8 字节上限。 */
+  MAX_BYTES: 8 * 1024,
 } as const;
 
 /** GAP-005: 经验沉淀管线（learningPipeline → failure journal / skill 草稿） */

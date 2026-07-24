@@ -19,6 +19,7 @@ import { scanSkillContent } from '../../security/skillContentGuard';
 import { createLogger } from '../infra/logger';
 import { isSafeRoleId } from './roleAssetPaths';
 import { ensureRoleAssetDirs, isPersistentRole } from './roleAssetService';
+import { writeRolePersonalization } from './rolePersonalization';
 
 const logger = createLogger('RoleDraftQueue');
 
@@ -41,6 +42,8 @@ export interface RoleDraftMeta {
   tools: string[];
   /** 系统提示词（agent 定义正文） */
   systemPrompt: string;
+  /** 用户对这位专家的期望（访谈里那句原话）；确认时落成 roles/<roleId>/USER.md */
+  userExpectation?: string;
   /** 草稿来源 */
   origin: RoleDraftOrigin;
   /** 起草会话 id */
@@ -150,6 +153,7 @@ export async function enqueueRoleDraft(input: {
   category?: SkillCategory;
   tools?: string[];
   systemPrompt: string;
+  userExpectation?: string;
   sessionId: string;
   timestamp?: number;
   /** 有值 = 对话式改已有角色（覆盖该角色定义，绝不动其记忆/履历） */
@@ -202,6 +206,7 @@ export async function enqueueRoleDraft(input: {
     category: input.category,
     tools,
     systemPrompt: input.systemPrompt,
+    ...(input.userExpectation?.trim() ? { userExpectation: input.userExpectation.trim() } : {}),
     origin: 'conversational',
     sessionId: input.sessionId,
     createdAt,
@@ -283,6 +288,11 @@ export async function confirmRoleDraft(
     // 角色资产骨架（roles/<roleId>/ MEMORY.md + memories/ + history.md），幂等。
     // 改已有时这是 no-op（目录与索引已存在），不会重置用户积累的记忆/履历。
     await ensureRoleAssetDirs(meta.roleId);
+    // 建专家时那句原话落成「你的期望」。只在新建时写：改已有角色不该冲掉
+    // 用户后来在详情页编辑过的内容。
+    if (!isEdit && meta.userExpectation?.trim()) {
+      writeRolePersonalization(meta.roleId, { userExpectation: meta.userExpectation.trim() });
+    }
     await fs.rm(draftDir, { recursive: true, force: true });
 
     logger.info('Role draft confirmed and installed', { id, roleId: meta.roleId, isEdit, agentMdPath });

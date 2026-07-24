@@ -82,18 +82,19 @@ export function isExternalSideEffectTool(toolName: string): boolean {
 // = 授权面失控/提权）。每个 external 工具在这里显式登记一个提取器；没登记的（哪怕 external）
 // 一律不具资格。exec/写文件等非 external 工具永远走不到这里（调用方先过 isExternalSideEffectTool）。
 
-/** 归一化一组收件人/目标为稳定精确串：去空、去重、排序后 join。集合不同即不同 target。 */
-function normalizeTargetSet(value: unknown): string | null {
-  const list = Array.isArray(value)
+/** 展开一个收件人字段（数组或逗号/换行/分号分隔串）为去空后的地址列表。 */
+function toRecipientList(value: unknown): string[] {
+  const raw = Array.isArray(value)
     ? value
     : typeof value === 'string'
       ? value.split(/[,\n;]/)
       : [];
-  const items = [...new Set(
-    list
-      .map((item) => (typeof item === 'string' ? item.trim() : ''))
-      .filter(Boolean),
-  )].sort();
+  return raw.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean);
+}
+
+/** 归一化一组收件人/目标为稳定精确串：去空、去重、排序后 join。集合不同即不同 target。 */
+function normalizeTargetSet(...values: unknown[]): string | null {
+  const items = [...new Set(values.flatMap(toRecipientList))].sort();
   return items.length > 0 ? items.join(',') : null;
 }
 
@@ -117,8 +118,10 @@ function readScalarField(params: Record<string, unknown>, key: string): string |
 function extractNativeTarget(toolName: string, params: Record<string, unknown>): string | null {
   switch (toolName) {
     case 'mail_send':
-      // 收件人集合（to）为 target；cc/bcc 不纳入 key（面向「发给谁」，cc 变体不该各自铸权）。
-      return normalizeTargetSet(params.to);
+      // 🔴 target 必须涵盖「所有实际会收到这封邮件的地址」= to ∪ cc ∪ bcc。漏掉任一都成提权
+      // 漏洞：铸「永远允许发 to=[老板]」后，偷偷加 bcc=[外部人] 就能复用同一规则把邮件抄送出去。
+      // attachments 不是收件人，不纳入。收件人集合不同 → target 不同 → 必重新审批。
+      return normalizeTargetSet(params.to, params.cc, params.bcc);
     default:
       return null;
   }

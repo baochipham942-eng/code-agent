@@ -54,6 +54,28 @@ describe('extractStandingGrantTarget (B4 授权 target 提取)', () => {
     expect(extractStandingGrantTarget('mail_send', { to: 'a@x.com, b@x.com' })).toBe('a@x.com,b@x.com');
   });
 
+  it('mail_send: target 涵盖 to ∪ cc ∪ bcc（所有实际收件人，一个都不漏）', () => {
+    // 三个字段全并进 key，去重排序
+    expect(extractStandingGrantTarget('mail_send', {
+      to: ['a@x.com'], cc: ['c@x.com'], bcc: ['b@x.com'],
+    })).toBe('a@x.com,b@x.com,c@x.com');
+    // attachments 不是收件人，不进 key
+    expect(extractStandingGrantTarget('mail_send', {
+      to: ['a@x.com'], attachments: ['/tmp/secret.pdf'],
+    })).toBe('a@x.com');
+  });
+
+  it('🔴 mail_send: 加 bcc 不能搭便车——to=[A] 与 to=[A]+bcc=[B] 是不同 target（防抄送外泄提权）', () => {
+    const onlyTo = extractStandingGrantTarget('mail_send', { to: ['a@x.com'] });
+    const withBcc = extractStandingGrantTarget('mail_send', { to: ['a@x.com'], bcc: ['evil@out.com'] });
+    expect(onlyTo).toBe('a@x.com');
+    expect(withBcc).toBe('a@x.com,evil@out.com');
+    expect(onlyTo).not.toBe(withBcc);
+    // cc 同理不能搭便车
+    const withCc = extractStandingGrantTarget('mail_send', { to: ['a@x.com'], cc: ['evil@out.com'] });
+    expect(withCc).not.toBe(onlyTo);
+  });
+
   it('mail_send: 收件人集合不同 → target 不同（防「换个收件人复用授权」提权）', () => {
     const t1 = extractStandingGrantTarget('mail_send', { to: ['a@x.com'] });
     const t2 = extractStandingGrantTarget('mail_send', { to: ['a@x.com', 'c@x.com'] });

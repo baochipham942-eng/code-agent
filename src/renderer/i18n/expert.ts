@@ -159,6 +159,15 @@ export const expertZh = {
       saving: '保存中…',
       save: '保存',
     },
+    rolePackElevation: {
+      title: '这位专家想要额外的权限',
+      description: '装之前先看一眼——你可以按安全默认装，之后随时到专家的「安全」页放开。',
+      looseMode: '想在任何位置自己动手，不来问你',
+      bashTool: '想能自己运行你电脑上的命令',
+      installSafe: '按安全默认装',
+      installAsDeclared: '按它要的装',
+      cancel: '取消',
+    },
   },
 };
 
@@ -318,6 +327,15 @@ export const expertEn: typeof expertZh = {
       ],
       saving: 'Saving…',
       save: 'Save',
+    },
+    rolePackElevation: {
+      title: 'This expert is asking for extra permissions',
+      description: 'Take a look before installing — you can install with safe defaults and open things up later on the expert\'s Security page.',
+      looseMode: 'Wants to work anywhere on its own without asking you',
+      bashTool: 'Wants to run commands on your computer',
+      installSafe: 'Install with safe defaults',
+      installAsDeclared: 'Install as requested',
+      cancel: 'Cancel',
     },
   },
 };

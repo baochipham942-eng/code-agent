@@ -540,10 +540,10 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
         }
 
         case 'rolePackInstall': {
-          const { roleId } = (payload ?? {}) as RoleIdPayload;
+          const { roleId, acceptElevation, elevationReviewed } = (payload ?? {}) as RoleIdPayload & { acceptElevation?: boolean; elevationReviewed?: boolean };
           if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
           const { installRolePack } = await import('../services/roleAssets/rolePackInstallService');
-          return { success: true, data: await installRolePack(roleId) };
+          return { success: true, data: await installRolePack(roleId, { acceptElevation, elevationReviewed }) };
         }
 
         case 'rolePackUninstall': {

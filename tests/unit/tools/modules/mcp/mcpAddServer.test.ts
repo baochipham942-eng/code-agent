@@ -28,6 +28,7 @@ const ensureConfigDirMock = vi.fn();
 const pathExistsMock = vi.fn();
 const fsReadFileMock = vi.fn();
 const fsWriteFileMock = vi.fn();
+const setIntegrationMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => getMCPClientMock(),
@@ -37,6 +38,10 @@ vi.mock('../../../../../src/host/config', () => ({
   getMcpConfigPath: (...args: unknown[]) => getMcpConfigPathMock(...args),
   ensureConfigDir: (...args: unknown[]) => ensureConfigDirMock(...args),
   pathExists: (...args: unknown[]) => pathExistsMock(...args),
+}));
+
+vi.mock('../../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ setIntegration: setIntegrationMock }),
 }));
 
 vi.mock('fs/promises', () => ({
@@ -110,6 +115,8 @@ beforeEach(() => {
   pathExistsMock.mockReset();
   fsReadFileMock.mockReset();
   fsWriteFileMock.mockReset();
+  setIntegrationMock.mockReset();
+  setIntegrationMock.mockResolvedValue(undefined);
 
   // Default: new mcp.json layout, no existing files
   getMcpConfigPathMock.mockReturnValue({
@@ -565,6 +572,122 @@ describe('mcpAddServerModule (native)', () => {
       const writtenPayload = JSON.parse(fsWriteFileMock.mock.calls[0][1]);
       expect(writtenPayload.mcpServers).toHaveLength(2);
       expect(writtenPayload.mcpServers[1].name).toBe('new-one');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Secret extraction (tool path — model-invoked, no UI-supplied key list)
+  // ---------------------------------------------------------------------------
+  describe('secret extraction', () => {
+    it('extracts sensitive stdio env keys into SecureStorage and persists only a reference', async () => {
+      const fakeSecret = 'SENSITIVE_TOOLPATH_SECRET_a1b2';
+      const client = makeMockClient({
+        getServerState: vi.fn()
+          .mockReturnValueOnce(undefined)
+          .mockReturnValueOnce({ status: 'connected', toolCount: 1 }),
+      });
+      getMCPClientMock.mockReturnValue(client);
+
+      const result = await run({
+        name: 'feishu',
+        type: 'stdio',
+        command: 'npx',
+        env: { APP_ID: 'cli_app_id', API_KEY: fakeSecret },
+      });
+
+      expect(result.ok).toBe(true);
+      expect(setIntegrationMock).toHaveBeenCalledWith('mcp_feishu', { API_KEY: fakeSecret });
+      expect(fsWriteFileMock).toHaveBeenCalledOnce();
+      const persistedContent = String(fsWriteFileMock.mock.calls[0][1]);
+      expect(persistedContent).toContain('secureref:mcp_feishu.API_KEY');
+      expect(persistedContent).not.toContain(fakeSecret);
+      expect(persistedContent).toContain('cli_app_id');
+      expect(fsWriteFileMock.mock.invocationCallOrder[0]).toBeLessThan(
+        setIntegrationMock.mock.invocationCallOrder[0],
+      );
+      // mcpClient must still get the raw secret to actually connect
+      expect(client.addServer).toHaveBeenCalledWith(expect.objectContaining({
+        env: { APP_ID: 'cli_app_id', API_KEY: fakeSecret },
+      }));
+    });
+
+    it('extracts sensitive remote header keys while leaving public headers readable', async () => {
+      const fakeSecret = 'remote-header-secret';
+      const client = makeMockClient({
+        getServerState: vi.fn()
+          .mockReturnValueOnce(undefined)
+          .mockReturnValueOnce({ status: 'connected', toolCount: 1 }),
+      });
+      getMCPClientMock.mockReturnValue(client);
+
+      const result = await run({
+        name: 'remote_docs',
+        type: 'http',
+        url: 'https://mcp.example.com/mcp',
+        headers: { 'X-Client-Id': 'public-client-id', Authorization: fakeSecret },
+      });
+
+      expect(result.ok).toBe(true);
+      expect(setIntegrationMock).toHaveBeenCalledWith('mcp_remote_docs', { Authorization: fakeSecret });
+      const persistedContent = String(fsWriteFileMock.mock.calls[0][1]);
+      expect(persistedContent).toContain('secureref:mcp_remote_docs.Authorization');
+      expect(persistedContent).not.toContain(fakeSecret);
+      expect(persistedContent).toContain('public-client-id');
+      expect(client.addServer).toHaveBeenCalledWith(expect.objectContaining({
+        headers: { 'X-Client-Id': 'public-client-id', Authorization: fakeSecret },
+      }));
+    });
+
+    it('leaves env unchanged when no key looks like a credential', async () => {
+      const client = makeMockClient();
+      getMCPClientMock.mockReturnValue(client);
+
+      const result = await run({
+        name: 'public_server',
+        type: 'stdio',
+        command: 'npx',
+        env: { BASE_URL: 'https://api.example.test' },
+      });
+
+      expect(result.ok).toBe(true);
+      expect(setIntegrationMock).not.toHaveBeenCalled();
+      const persistedContent = String(fsWriteFileMock.mock.calls[0][1]);
+      expect(persistedContent).toContain('https://api.example.test');
+      expect(persistedContent).not.toContain('secureref:');
+    });
+
+    it('does not treat *_MODE config enums as credentials', async () => {
+      const client = makeMockClient();
+      getMCPClientMock.mockReturnValue(client);
+
+      const result = await run({
+        name: 'lark',
+        type: 'stdio',
+        command: 'npx',
+        env: { LARK_TOKEN_MODE: 'tenant_access_token' },
+      });
+
+      expect(result.ok).toBe(true);
+      expect(setIntegrationMock).not.toHaveBeenCalled();
+      const persistedContent = String(fsWriteFileMock.mock.calls[0][1]);
+      expect(persistedContent).toContain('tenant_access_token');
+      expect(persistedContent).not.toContain('secureref:');
+    });
+
+    it('does not orphan a secret in SecureStorage when persistence fails', async () => {
+      const client = makeMockClient();
+      getMCPClientMock.mockReturnValue(client);
+      fsWriteFileMock.mockRejectedValue(new Error('EACCES'));
+
+      const result = await run({
+        name: 'flaky_secret',
+        type: 'stdio',
+        command: 'npx',
+        env: { API_KEY: 'must-not-be-orphaned' },
+      });
+
+      expect(result.ok).toBe(true); // tool still succeeds session-only (persist failure path)
+      expect(setIntegrationMock).not.toHaveBeenCalled();
     });
   });
 

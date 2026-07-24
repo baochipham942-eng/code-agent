@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isExternalSideEffectTool } from '../../../src/host/tools/externalSideEffect';
+import { isExternalSideEffectTool, extractStandingGrantTarget } from '../../../src/host/tools/externalSideEffect';
 
 describe('isExternalSideEffectTool (EXTERNAL 风险类判据)', () => {
   it('flags native send tools (mail_send) as external', () => {
@@ -43,5 +43,58 @@ describe('isExternalSideEffectTool (EXTERNAL 风险类判据)', () => {
 
   it('does NOT flag mail_draft (saved locally, not sent — v1 conservative omission)', () => {
     expect(isExternalSideEffectTool('mail_draft')).toBe(false);
+  });
+});
+
+describe('extractStandingGrantTarget (B4 授权 target 提取)', () => {
+  it('mail_send: 归一化 to 收件人集合（去空/去重/排序）为精确串', () => {
+    expect(extractStandingGrantTarget('mail_send', { to: ['b@x.com', 'a@x.com'] })).toBe('a@x.com,b@x.com');
+    // 去重 + 去空白 + 顶层字符串（逗号分隔）也归一
+    expect(extractStandingGrantTarget('mail_send', { to: ['a@x.com', ' a@x.com ', ''] })).toBe('a@x.com');
+    expect(extractStandingGrantTarget('mail_send', { to: 'a@x.com, b@x.com' })).toBe('a@x.com,b@x.com');
+  });
+
+  it('mail_send: 收件人集合不同 → target 不同（防「换个收件人复用授权」提权）', () => {
+    const t1 = extractStandingGrantTarget('mail_send', { to: ['a@x.com'] });
+    const t2 = extractStandingGrantTarget('mail_send', { to: ['a@x.com', 'c@x.com'] });
+    expect(t1).not.toBe(t2);
+  });
+
+  it('mail_send: 无 to → null（不具铸权资格）', () => {
+    expect(extractStandingGrantTarget('mail_send', { subject: 'hi' })).toBeNull();
+  });
+
+  it('IM send: receive_id + receive_id_type 组成 target（嵌套 data 或摊平都取到）', () => {
+    expect(extractStandingGrantTarget('mcp__lark__im_v1_message_create', {
+      params: { receive_id_type: 'chat_id' },
+      data: { receive_id: 'oc_C1', msg_type: 'text' },
+    })).toBe('chat_id:oc_C1');
+    // 模型摊平到顶层
+    expect(extractStandingGrantTarget('mcp__feishu__send_message', {
+      receive_id: 'ou_u1', receive_id_type: 'open_id',
+    })).toBe('open_id:ou_u1');
+    // 同一 id 不同 id_type → 不同 target（绝不跨类型复用）
+    const asChat = extractStandingGrantTarget('mcp__lark__im_v1_message_create', { data: { receive_id: 'X' }, params: { receive_id_type: 'chat_id' } });
+    const asOpen = extractStandingGrantTarget('mcp__lark__im_v1_message_create', { data: { receive_id: 'X' }, params: { receive_id_type: 'open_id' } });
+    expect(asChat).not.toBe(asOpen);
+  });
+
+  it('IM send: 无 receive_id → null（提取不到即不具资格，回退每次询问）', () => {
+    expect(extractStandingGrantTarget('mcp__slack__chat_postMessage', { text: 'hi' })).toBeNull();
+  });
+
+  it('非 external / 无登记提取器的工具 → null（exec/写文件/未知 external 永远没资格）', () => {
+    expect(extractStandingGrantTarget('Bash', { command: 'ls' })).toBeNull();
+    expect(extractStandingGrantTarget('Write', { file_path: '/etc/hosts', content: 'x' })).toBeNull();
+    // external 但未登记提取器（如未来新增未适配的 IM read）→ null
+    expect(extractStandingGrantTarget('mcp__lark__im_chat_list', {})).toBeNull();
+  });
+
+  it('模型无法通过 args 自铸权：附带伪造授权字段一律被忽略（no-self-grant）', () => {
+    // 模型在 args 里塞 standingGrant/allowForever 等字段，提取器只认真实 target 字段，
+    // 这些伪造字段完全不参与、也不能凭空造出 target。
+    expect(extractStandingGrantTarget('Bash', { command: 'ls', standingGrant: true, allowForever: 'yes' })).toBeNull();
+    // mail_send 即便带伪造字段，target 仍只由 to 决定
+    expect(extractStandingGrantTarget('mail_send', { to: ['a@x.com'], grant: 'forever' })).toBe('a@x.com');
   });
 });

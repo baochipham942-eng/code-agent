@@ -33,6 +33,20 @@ export interface SessionAutomationNextStageConfig {
   goal?: string;
 }
 
+/**
+ * B4 target 粒度长期授权规则。人工在停车审批卡点「每次都允许发 <target>」铸造，挂在
+ * 该 automation 上（随 automation 归档/删除即撤权）。匹配 = (tool, target) 精确串，
+ * 无 glob 无前缀模糊：target 不同必仍走审批（防 URL 变体/路径穿越绕过提权）。
+ */
+export interface StandingGrant {
+  /** 工具内部名（精确匹配，如 mail_send / mcp__lark__im.v1.message.create） */
+  tool: string;
+  /** 授权目标精确串（白名单）——不同即须重新审批 */
+  target: string;
+  /** 铸造时间戳（epoch ms） */
+  grantedAt: number;
+}
+
 export interface SessionAutomationConfig extends Record<string, unknown> {
   createdVia?: string;
   sourceMessageId?: string;
@@ -40,6 +54,8 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
   nextStage?: SessionAutomationNextStageConfig;
   /** 最近一次成功运行的待过目标记；用户过目/归档后清除。recurring 任务记录保持 active，靠它进待审收件箱。 */
   pendingReview?: { resultSessionId?: string; at: number };
+  /** B4：本 automation 上人工铸造的 target 粒度长期授权规则。删/archive 即失效（消费时按 status 钳制）。 */
+  standingGrants?: StandingGrant[];
 }
 
 export interface SessionAutomationRecord {

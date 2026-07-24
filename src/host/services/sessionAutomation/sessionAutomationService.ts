@@ -15,6 +15,7 @@ import type {
   SessionAutomationStatus,
   SessionAutomationSummaryItem,
   SessionAutomationType,
+  StandingGrant,
   UpsertSessionAutomationInput,
 } from '../../../shared/contract';
 import type { ParkedApprovalInboxItem, ToolApprovalPayload } from '../../../shared/contract/pendingApproval';
@@ -291,6 +292,66 @@ export class SessionAutomationService {
     return row ? rowToRecord(row) : null;
   }
 
+  /** 按 source_ref_id 解析（跨 type；cron 定义 id 全局唯一），优先最近更新的一条。 */
+  getBySourceRefId(sourceRefId: string): SessionAutomationRecord | null {
+    const db = getDb();
+    if (!db || !sourceRefId) return null;
+    const row = db.prepare(`
+      SELECT * FROM session_automations
+      WHERE source_ref_id = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `).get(sourceRefId) as SessionAutomationRow | undefined;
+    return row ? rowToRecord(row) : null;
+  }
+
+  // --------------------------------------------------------------------------
+  // B4 target 粒度长期授权
+  // --------------------------------------------------------------------------
+
+  /**
+   * 会话 → 触发它的 automation。cron/heartbeat 运行会话的 origin.id = automation sourceRefId
+   * （见 cronService.createSession），据此把 ephemeral 的每轮运行会话解析回常驻 automation 记录。
+   * 走同步 DB getSession（只取会话行 origin，不载消息），供权限热路径低成本调用。
+   */
+  private resolveAutomationForSession(sessionId?: string | null): SessionAutomationRecord | null {
+    if (!sessionId) return null;
+    const originId = getDatabase().getSession(sessionId)?.origin?.id;
+    return originId ? this.getBySourceRefId(originId) : null;
+  }
+
+  /**
+   * B4 消费：本次 (tool, target) 调用是否命中该会话所属 automation 上铸造的长期授权规则。
+   * 只认 ACTIVE_STATUSES（active/running/paused）——归档/取消/删除即失效（撤权靠状态钳制，
+   * 不需删规则）。精确串匹配，无 glob。命中仅代表「可免这一层询问」，绝不越过更高优先级
+   * 的 deny/policy 硬门（调用方在分类器 deny 之后、真人询问之前才查此函数）。
+   */
+  matchStandingGrant(sessionId: string | null | undefined, tool: string, target: string): boolean {
+    const record = this.resolveAutomationForSession(sessionId);
+    if (!record || !ACTIVE_STATUSES.has(record.status)) return false;
+    return (record.config?.standingGrants ?? []).some((g) => g.tool === tool && g.target === target);
+  }
+
+  /**
+   * B4 铸造：把 (tool, target) 规则写到该会话所属 automation 的 config。仅人工在停车审批卡点
+   * 触发（no-self-grant）。幂等（已存在同 (tool,target) 不重复写）。automation 不可解析或已非
+   * active 时不铸造（返回 false）。grantedAt 由调用方传入（仓储层时间戳纪律）。
+   */
+  mintStandingGrant(sessionId: string | null | undefined, tool: string, target: string, grantedAt: number): boolean {
+    const db = getDb();
+    if (!db) return false;
+    const record = this.resolveAutomationForSession(sessionId);
+    if (!record || !ACTIVE_STATUSES.has(record.status)) return false;
+    const config = { ...(record.config ?? {}) };
+    const grants: StandingGrant[] = [...(config.standingGrants ?? [])];
+    if (grants.some((g) => g.tool === tool && g.target === target)) return true;
+    grants.push({ tool, target, grantedAt });
+    config.standingGrants = grants;
+    db.prepare('UPDATE session_automations SET config_json = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(config), Date.now(), record.id);
+    return true;
+  }
+
   listBySessionIds(sessionIds: string[]): SessionAutomationRecord[] {
     const db = getDb();
     const ids = [...new Set(sessionIds.filter(Boolean))];
@@ -397,6 +458,7 @@ export class SessionAutomationService {
         requestedAt: payload.requestedAt ?? row.submittedAt,
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,
+        standingGrantTarget: payload.standingGrantTarget ?? null,
       };
     });
   }

@@ -21,6 +21,7 @@ import { ToolExecutor } from '../tools/toolExecutor';
 import type { ExecutionTopology } from '../permissions';
 import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOnlyTools';
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
+import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { getConfirmationGate } from './confirmationGate';
 import { getPermissionModeManager } from '../permissions/modes';
 import { approvalParkEvents } from './approvalParkEvents';
@@ -81,6 +82,11 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
 const logger = createLogger('AgentOrchestrator');
+
+/** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
+function isApproveResponse(response: PermissionResponse): boolean {
+  return response === 'allow' || response === 'allow_session' || response === 'allow_standing';
+}
 
 interface PendingSteerMessage {
   content: string;
@@ -474,7 +480,7 @@ export class AgentOrchestrator {
     if (!pending) return;
     const repo = this.getPendingApprovalRepo();
     if (repo) {
-      const status = response === 'allow' || response === 'allow_session' ? 'approved' : 'rejected';
+      const status = isApproveResponse(response) ? 'approved' : 'rejected';
       let changes: number;
       try {
         changes = repo.resolve({
@@ -494,8 +500,36 @@ export class AgentOrchestrator {
       }
       approvalParkEvents.emit('resolved', { id, sessionId: pending.request.sessionId ?? null, status });
     }
+    // B4 铸权：仅当人工在停车审批卡点「每次都允许发 <target>」（allow_standing）且赢得裁决后，
+    // 把 (tool, target) 长期授权规则写到该会话所属 automation。target 从审批请求透传字段取，
+    // 模型侧无任何入口（no-self-grant）。铸造失败（automation 不可解析/已归档）不影响本次放行。
+    if (response === 'allow_standing') {
+      this.mintStandingGrantFromRequest(pending.request);
+    }
     this.pendingPermissions.delete(id);
     pending.resolve(response);
+  }
+
+  /** B4：从审批请求解析 target 并在其会话所属 automation 上铸造长期授权规则（幂等、fail-safe）。 */
+  private mintStandingGrantFromRequest(request: PermissionRequest): void {
+    const target = request.details?.standingGrantTarget;
+    if (typeof target !== 'string' || !target) {
+      logger.warn('allow_standing without a standing-grant target; nothing to mint', { tool: request.tool });
+      return;
+    }
+    try {
+      const minted = getSessionAutomationService().mintStandingGrant(
+        request.sessionId ?? null,
+        request.tool,
+        target,
+        Date.now(),
+      );
+      if (!minted) {
+        logger.info('Standing grant not minted (no active automation for session)', { tool: request.tool });
+      }
+    } catch (err) {
+      logger.warn('Standing grant mint failed', err);
+    }
   }
 
   /**
@@ -758,7 +792,7 @@ export class AgentOrchestrator {
           if (response === 'allow_session' && fullRequest.sessionId) {
             getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
           }
-          resolve(response === 'allow' || response === 'allow_session');
+          resolve(isApproveResponse(response));
         },
         request: fullRequest,
       });
@@ -788,7 +822,7 @@ export class AgentOrchestrator {
           if (response === 'allow_session' && fullRequest.sessionId) {
             getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
           }
-          resolve(response === 'allow' || response === 'allow_session');
+          resolve(isApproveResponse(response));
         },
         request: fullRequest,
       });
@@ -804,6 +838,8 @@ export class AgentOrchestrator {
           ?? fullRequest.details?.filePath
           ?? fullRequest.details?.url,
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
+        // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
+        standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
       };
       try {
         repo.insert({

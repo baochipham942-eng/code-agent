@@ -47,6 +47,11 @@ export interface PermissionRequest {
     newContent?: string;
     server?: string;
     toolName?: string;
+    /**
+     * B4：external 工具的授权 target 精确串（收件人/频道 id 等）。由 toolExecutor 在需人工审批时
+     * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。
+     */
+    standingGrantTarget?: string;
     /** E2: 确认门控预览信息 */
     preview?: {
       type: 'diff' | 'command' | 'network' | 'generic';
@@ -69,7 +74,10 @@ export interface PermissionRequest {
 }
 
 // 权限响应（兼容旧版）
-export type PermissionResponse = 'allow' | 'allow_session' | 'deny';
+// - allow_standing（B4）：批准本次 + 在该 automation 上铸造 (工具, target) 长期授权规则。
+//   仅停车审批（无人值守 automation）+ external+有 target 时可用；铸造由人工点击触发，
+//   模型侧无任何入口（no-self-grant）。
+export type PermissionResponse = 'allow' | 'allow_session' | 'allow_standing' | 'deny';
 
 // ============================================================================
 // Permission Request Reason (enumerated, traceable, i18n-able)

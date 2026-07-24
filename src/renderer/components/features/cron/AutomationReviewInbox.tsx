@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
-import { Check, Inbox, MessageSquareText, ShieldAlert, X } from 'lucide-react';
+import { Check, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -98,21 +98,34 @@ export const AutomationReviewInbox: React.FC = () => {
           <div className="space-y-1.5">
             {parked.map((item) => {
               const isOrphaned = item.status === 'orphaned';
+              const isExternal = item.riskClass === 'external';
+              // A4 作用域提示：external 动作离开本机（暖色边框强调）；有 target 时点名去向。
+              // 非 external 审批卡不变（不加 scopeNote、不换边框）。
+              const scopeNote = isExternal
+                ? cc.parkedScopeExternal.replace('{target}', item.standingGrantTarget ?? (item.displayTool ?? item.tool))
+                : null;
+              // B4 铸权入口：仅 external + 能确定性提取 target 时出现（模型侧无入口）。
+              const canMintStanding = isExternal && !!item.standingGrantTarget;
               return (
                 <div
                   key={item.id}
-                  className={`flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 ${isOrphaned ? 'opacity-50' : ''}`}
+                  className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border ${isExternal ? 'border-orange-500/40 bg-orange-500/[0.03]' : 'border-zinc-800 bg-zinc-950/50'} px-3 py-2 ${isOrphaned ? 'opacity-50' : ''}`}
                   data-testid="parked-approval-item"
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 truncate text-sm text-zinc-200">
                       {item.displayTool ?? item.tool}
-                      {item.riskClass === 'external' && (
+                      {isExternal && (
                         <span className="shrink-0 rounded bg-orange-500/15 px-1.5 py-0.5 text-[10px] text-orange-300">
                           {cc.parkedExternalBadge}
                         </span>
                       )}
                     </div>
+                    {scopeNote && (
+                      <div className="truncate text-[11px] text-orange-300/80" data-testid="parked-scope-note">
+                        {scopeNote}
+                      </div>
+                    )}
                     <div className="text-[11px] text-zinc-500">
                       {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt))}
                     </div>
@@ -128,6 +141,18 @@ export const AutomationReviewInbox: React.FC = () => {
                         <Check className="h-3.5 w-3.5" />
                         {cc.parkedApprove}
                       </button>
+                      {canMintStanding && (
+                        <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
+                          onClick={() => handleResolveParked(item, 'allow_standing')}
+                          disabled={busyId === item.id}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-amber-400 transition-colors hover:bg-amber-500/10 hover:text-amber-300 disabled:opacity-50"
+                          data-testid="parked-always-allow"
+                          title={cc.parkedAlwaysAllow.replace('{target}', item.standingGrantTarget ?? '')}
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          {cc.parkedAlwaysAllow.replace('{target}', item.standingGrantTarget ?? '')}
+                        </button>
+                      )}
                       <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
                         onClick={() => handleResolveParked(item, 'deny')}
                         disabled={busyId === item.id}

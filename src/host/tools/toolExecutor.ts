@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- centralized permission executor requires atomic review */
 // ============================================================================
 // Tool Executor - Executes tools with permission handling
 // ============================================================================

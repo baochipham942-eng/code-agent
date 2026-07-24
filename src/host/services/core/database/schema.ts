@@ -1,4 +1,5 @@
  
+/* eslint-disable max-lines -- append-only schema compatibility surface */
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyTelemetrySchema } from './schemaTelemetry';
 import { safeAlter, type Logger } from './schemaHelpers';

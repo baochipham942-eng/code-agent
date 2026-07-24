@@ -79,7 +79,7 @@ interface ArtifactIssuesPayload {
 interface SourcesPayload {
   projectId?: string;
 }
-interface UpdateProjectPayload extends Partial<UpdateProjectInput> {}
+type UpdateProjectPayload = Partial<UpdateProjectInput>;
 interface SourceMutationPayload {
   projectId?: string;
   revision?: number;

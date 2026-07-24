@@ -64,6 +64,7 @@ export interface SidebarDerivedSessions {
   allowedSearchSessionIds: Set<string>;
   messageSearchHitsBySessionId: Record<string, SidebarMessageSearchHitGroup>;
   messageSearchLoading: boolean;
+  searchResultSessions: SessionWithMeta[];
   reviewItemsBySessionId: Record<string, AdminReviewQueueItem[]>;
   trajectoryQualityBySessionId: Record<string, AgentTrajectorySessionQualitySummary>;
   mergeTrajectoryQualitySummary: (sessionId: string, summary: AgentTrajectorySessionQualitySummary) => void;
@@ -145,12 +146,20 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
 
   const [searchScope, setSearchScope] = useState<SidebarSearchScope>('current-project');
   const effectiveSearchScope = resolveSidebarSearchScope(searchScope, currentProjectSearchSessionIds);
+  const searchableSessions = useMemo(
+    () => sessions.filter((session) => session.status !== 'archived'),
+    [sessions],
+  );
   const allowedSearchSessionIds = useMemo(
     () =>
       effectiveSearchScope === 'current-project'
-        ? currentProjectSearchSessionIds
-        : new Set(sessions.map((session) => session.id)),
-    [currentProjectSearchSessionIds, effectiveSearchScope, sessions],
+        ? new Set(
+            searchableSessions
+              .filter((session) => currentProjectSearchSessionIds.has(session.id))
+              .map((session) => session.id),
+          )
+        : new Set(searchableSessions.map((session) => session.id)),
+    [currentProjectSearchSessionIds, effectiveSearchScope, searchableSessions],
   );
 
   const [messageSearchHitsBySessionId, setMessageSearchHitsBySessionId] = useState<
@@ -305,6 +314,41 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     trajectoryQualityBySessionId,
     trajectoryReviewFilter,
     trajectoryTierFilter,
+  ]);
+
+  const searchResultSessions = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return searchableSessions
+      .filter((session) => allowedSearchSessionIds.has(session.id))
+      .filter((session) => {
+        if (!query || messageSearchHitsBySessionId[session.id]) {
+          return true;
+        }
+        const status = getSessionStatusPresentation({
+          backgroundSession: backgroundSessionMap.get(session.id),
+          runtime: sessionRuntimes.get(session.id),
+          taskState: sessionStates[session.id],
+          messageCount: session.messageCount,
+          turnCount: session.turnCount,
+          sessionStatus: session.status,
+          hasNeedsInput: hasNeedsInputForSession(session.id),
+        });
+        return buildSessionSearchText({
+          session,
+          snapshot: session.workbenchSnapshot,
+          status,
+        }).includes(query);
+      })
+      .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
+  }, [
+    allowedSearchSessionIds,
+    backgroundSessionMap,
+    hasNeedsInputForSession,
+    messageSearchHitsBySessionId,
+    searchQuery,
+    sessionRuntimes,
+    searchableSessions,
+    sessionStates,
   ]);
 
   const trajectoryQualityCandidateSessionIds = useMemo(
@@ -525,6 +569,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     allowedSearchSessionIds,
     messageSearchHitsBySessionId,
     messageSearchLoading,
+    searchResultSessions,
     reviewItemsBySessionId,
     trajectoryQualityBySessionId,
     mergeTrajectoryQualitySummary,

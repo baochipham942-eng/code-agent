@@ -656,7 +656,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     if (!configService) throw new Error('Services not initialized');
 
     const sessionManager = getSessionManager();
-    const settings = configService.getSettings();
     const hasExplicitWorkingDirectory = Object.prototype.hasOwnProperty.call(config ?? {}, 'workingDirectory');
     const requestedWorkingDirectory = typeof config?.workingDirectory === 'string'
       ? config.workingDirectory.trim()
@@ -672,16 +671,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     const session = await sessionManager.createSession({
       title: config?.title || 'New Session',
-      modelConfig: resolveSessionDefaultModelConfig({
-        provider: settings.model?.provider,
-        model: settings.model?.model,
-        temperature: settings.model?.temperature,
-        maxTokens: settings.model?.maxTokens,
-	      }),
-	      workingDirectory,
-	      engine: config?.engine ? requestedEngine : undefined,
-	      metadata: config?.metadata,
-	    });
+      // 无参数：走 settings.models（复数）解析，与运行路径 resolveModelConfig 同源。
+      // 旧代码传 settings.model（单数，旧字段）会覆盖正确的复数默认，导致记录的模型≠实际运行。
+      modelConfig: resolveSessionDefaultModelConfig(),
+      workingDirectory,
+      engine: config?.engine ? requestedEngine : undefined,
+      metadata: config?.metadata,
+    });
 
     sessionManager.setCurrentSession(session.id);
     this._setCurrentSessionId(session.id);
@@ -734,22 +730,15 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async deleteSession(sessionId: string): Promise<void> {
     const sessionManager = getSessionManager();
-    const configService = this.getConfigService();
     const currentSessionId = this._getCurrentSessionId();
 
     await sessionManager.deleteSession(sessionId);
 
     if (sessionId === currentSessionId) {
-      const settings = configService!.getSettings();
-
       const newSession = await sessionManager.createSession({
         title: 'New Session',
-        modelConfig: resolveSessionDefaultModelConfig({
-          provider: settings.model?.provider,
-          model: settings.model?.model,
-          temperature: settings.model?.temperature,
-          maxTokens: settings.model?.maxTokens,
-        }),
+        // 无参数：走 settings.models（复数）解析，与运行同源（见 createSession 注释）。
+        modelConfig: resolveSessionDefaultModelConfig(),
       });
 
       sessionManager.setCurrentSession(newSession.id);

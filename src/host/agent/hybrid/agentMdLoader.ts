@@ -36,6 +36,17 @@ function modelTierValue(value: unknown): ModelTier | undefined {
   return value === 'fast' || value === 'balanced' || value === 'powerful' ? value : undefined;
 }
 
+/**
+ * `model-override: <provider>/<model>` → 结构化。按第一个斜杠切分，
+ * 因为模型名本身可能带斜杠（如 openrouter 的 `anthropic/claude-x`）。
+ */
+function modelOverrideValue(value: unknown): { provider: string; model: string } | undefined {
+  const raw = stringValue(value);
+  const slash = raw ? raw.indexOf('/') : -1;
+  if (!raw || slash <= 0 || slash === raw.length - 1) return undefined;
+  return { provider: raw.slice(0, slash).trim(), model: raw.slice(slash + 1).trim() };
+}
+
 function proactivityLevelValue(value: unknown): RoleProactivityLevel | undefined {
   return value === 'silent' || value === 'daily' || value === 'realtime' ? value : undefined;
 }
@@ -107,6 +118,8 @@ export interface AgentMdEquipment {
   skills: string[];
   tools: string[];
   model: ModelTier;
+  /** 指定具体模型；缺省或留空表示跟随 model 档位（写回时会删掉这行）。 */
+  modelOverride?: { provider: string; model: string } | null;
   maxIterations: number;
 }
 
@@ -120,6 +133,10 @@ export function updateAgentMdEquipment(content: string, equipment: AgentMdEquipm
     ['skills', block('skills', equipment.skills, newline)],
     ['tools', block('tools', equipment.tools, newline)],
     ['model', `model: ${equipment.model}`],
+    // 空串会让下面的替换逻辑删掉这一行 —— 取消指定模型即回到档位。
+    ['model-override', equipment.modelOverride
+      ? `model-override: ${scalar(equipment.modelOverride.provider)}/${scalar(equipment.modelOverride.model)}`
+      : ''],
     ['max-iterations', `max-iterations: ${equipment.maxIterations}`],
   ];
   for (const [key, replacement] of replacements) {
@@ -170,6 +187,9 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     inputs: nonEmptyStringArrayValue(frontmatter.inputs),
     outputs: nonEmptyStringArrayValue(frontmatter.outputs),
     model: modelTierValue(frontmatter.model) || 'balanced',
+    ...(modelOverrideValue(frontmatter['model-override'])
+      ? { modelOverride: modelOverrideValue(frontmatter['model-override']) }
+      : {}),
     maxIterations: numberValue(frontmatter['max-iterations']) || 30,
     readonly: booleanValue(frontmatter.readonly) ?? false,
     ...(proactivityLevel

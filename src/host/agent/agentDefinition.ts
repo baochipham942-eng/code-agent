@@ -353,7 +353,7 @@ export function getSubagentModelConfig(agentId: string): { provider: ModelProvid
     throw new Error(`Invalid agent ID: "${agentId}". Valid IDs: ${fallback}`);
   }
 
-  return resolveTierModelConfig(tier, MODEL_CONFIG[tier], getTierResolutionSettingsSafe());
+  return resolveTierModelConfig(tier, MODEL_CONFIG[tier], getTierResolutionSettingsSafe(), resolved?.modelOverride);
 }
 
 /** 从 configService 取档位解析所需的 settings 切片；不可用（测试/CLI）返回 undefined → 沿用内置默认 */

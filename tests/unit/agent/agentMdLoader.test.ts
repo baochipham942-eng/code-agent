@@ -159,6 +159,24 @@ describe('parseAgentMd', () => {
     expect(parseAgentMd(saved, '自建专家.md')).toMatchObject({ skills: ['research'], tools: ['Read', 'WebSearch'], model: 'powerful', maxIterations: 42 });
   });
 
+  it('写入/清除指定模型：往返不丢，清除时删掉整行而不是留空值', () => {
+    const original = ['---', 'name: 自建专家', 'model: fast', 'max-iterations: 5', '---', '正文。'].join('\n');
+    const pinned = updateAgentMdEquipment(original, { skills: [], tools: [], model: 'fast', modelOverride: { provider: 'deepseek', model: 'deepseek-v4-pro' }, maxIterations: 5 });
+    expect(pinned).toContain('model-override: deepseek/deepseek-v4-pro');
+    expect(parseAgentMd(pinned, '自建专家.md')).toMatchObject({ model: 'fast', modelOverride: { provider: 'deepseek', model: 'deepseek-v4-pro' } });
+
+    const cleared = updateAgentMdEquipment(pinned, { skills: [], tools: [], model: 'fast', modelOverride: null, maxIterations: 5 });
+    expect(cleared).not.toContain('model-override');
+    expect(parseAgentMd(cleared, '自建专家.md')?.modelOverride).toBeUndefined();
+    // 变异守卫：档位行不能被 model-override 的正则误伤
+    expect(cleared).toContain('model: fast');
+  });
+
+  it('模型名自带斜杠时按第一个斜杠切分 provider', () => {
+    const content = ['---', 'name: 自建专家', 'model-override: openrouter/anthropic/claude-x', '---', '正文。'].join('\n');
+    expect(parseAgentMd(content, '自建专家.md')?.modelOverride).toEqual({ provider: 'openrouter', model: 'anthropic/claude-x' });
+  });
+
   it('updates body only and leaves frontmatter byte-for-byte unchanged', () => {
     const original = ['---', 'name: 自建专家', 'unknown-key: keep-me', 'tools: [Read]', '---', '旧正文\n第二行'].join('\n');
     const saved = updateAgentMdBody(original, '新正文\n第二行');

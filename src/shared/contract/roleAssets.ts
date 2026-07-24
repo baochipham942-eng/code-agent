@@ -180,6 +180,8 @@ export interface RolePanelDetail {
     skills: string[];
     tools: string[];
     model: 'fast' | 'balanced' | 'powerful';
+    /** 指定的具体模型；缺省表示跟随档位。 */
+    modelOverride?: { provider: string; model: string };
     maxIterations: number;
     availableSkills: string[];
     availableTools: string[];

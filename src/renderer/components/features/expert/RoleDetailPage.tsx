@@ -34,6 +34,7 @@ import { useAppStore } from "../../../stores/appStore";
 import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
 import { RoleBasicTab } from './RoleBasicTab';
 import { RoleEquipmentTab } from './RoleEquipmentTab';
+import { RoleModelTab } from './RoleModelTab';
 import { RolePersonaTab } from './RolePersonaTab';
 import { RoleRecordsTab } from './RoleRecordsTab';
 
@@ -88,7 +89,7 @@ async function updateRoleVisual(roleId: string, visual: RoleVisual): Promise<Rol
 
 type Equipment = NonNullable<RolePanelDetail["equipment"]>;
 
-async function updateRoleEquipment(roleId: string, equipment: Pick<Equipment, "skills" | "tools" | "model" | "maxIterations">): Promise<void> {
+async function updateRoleEquipment(roleId: string, equipment: Pick<Equipment, "skills" | "tools" | "model" | "maxIterations"> & { modelOverride?: Equipment["modelOverride"] | null }): Promise<void> {
   await ipcService.invokeDomain(IPC_DOMAINS.ROLES, "updateEquipment", { roleId, equipment });
 }
 
@@ -138,30 +139,42 @@ const BoundAutomationsSection: React.FC<{ jobs?: RoleBoundCronJob[] }> = ({ jobs
   </SettingsSection>;
 };
 
-const EquipmentEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: () => void }> = ({ roleId, equipment, onSaved }) => {
+/** 技能页只管 技能/工具/迭代上限；模型档位与指定模型搬去模型页，保存时原样带回不丢。 */
+const SkillsEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: () => void }> = ({ roleId, equipment, onSaved }) => {
   const { t } = useI18n();
   const text = t.expert.roleDetail;
-  const [draft, setDraft] = useState(() => ({ skills: equipment.skills, tools: equipment.tools, model: equipment.model, maxIterations: equipment.maxIterations }));
+  const skillsText = t.expert.roleSkills;
+  const [draft, setDraft] = useState(() => ({ skills: equipment.skills, tools: equipment.tools, maxIterations: equipment.maxIterations }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toggle = (key: "skills" | "tools", value: string) => setDraft((current) => ({ ...current, [key]: current[key].includes(value) ? current[key].filter((item) => item !== value) : [...current[key], value] }));
   const save = async () => {
     setBusy(true); setError(null);
-    try { await updateRoleEquipment(roleId, draft); onSaved(); }
+    try { await updateRoleEquipment(roleId, { ...draft, model: equipment.model, modelOverride: equipment.modelOverride ?? null }); onSaved(); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
-  return <SettingsSection title="装备" description="从当前机器真实可用的技能和工具中选择，避免写入无效名称。">
+  return <SettingsSection title={skillsText.title} description={skillsText.description}>
     <div data-testid="role-equipment-editor" className="space-y-4">
-      <label className="block space-y-1 text-xs text-zinc-400"><span>{text.modelTier}</span><select data-testid="role-equipment-model" value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value as Equipment["model"] })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200"><option value="fast">fast</option><option value="balanced">balanced</option><option value="powerful">powerful</option></select></label>
       <label className="block space-y-1 text-xs text-zinc-400"><span>{text.maxIterations}</span><input data-testid="role-equipment-max-iterations" type="number" min={1} max={200} value={draft.maxIterations} onChange={(event) => setDraft({ ...draft, maxIterations: Math.max(1, Math.min(200, Number(event.target.value) || 1)) })} className="w-full rounded border border-zinc-700 bg-zinc-950/70 px-2 py-1.5 text-sm text-zinc-200" /></label>
       <fieldset><legend className="mb-1 text-xs text-zinc-400">{text.skills}</legend><div className="grid max-h-40 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableSkills.map((skill) => <label key={skill} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.skills.includes(skill)} onChange={() => toggle("skills", skill)} />{skill}</label>)}</div></fieldset>
       <fieldset><legend className="mb-1 text-xs text-zinc-400">{text.tools}</legend><div className="grid max-h-48 grid-cols-2 gap-1 overflow-auto rounded border border-zinc-800 p-2">{equipment.availableTools.map((tool) => <label key={tool} className="flex items-center gap-1.5 text-xs text-zinc-300"><input type="checkbox" checked={draft.tools.includes(tool)} onChange={() => toggle("tools", tool)} />{tool}</label>)}</div></fieldset>
-      <button /* ds-allow:button: 装备表单的紧凑保存按钮，Button primitive 会改变布局 */ data-testid="role-equipment-save" type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50">{busy ? "保存中…" : "保存装备"}</button>
+      <button /* ds-allow:button: 技能表单的紧凑保存按钮，Button primitive 会改变布局 */ data-testid="role-equipment-save" type="button" disabled={busy} onClick={() => void save()} className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs text-emerald-200 disabled:opacity-50">{busy ? skillsText.saving : skillsText.save}</button>
       {error ? <div className="text-xs text-red-400">{error}</div> : null}
     </div>
   </SettingsSection>;
 };
+
+/** 模型页保存时把技能页那几项原样带回，避免改模型把技能勾选冲掉。 */
+const ModelEditor: React.FC<{ roleId: string; equipment: Equipment; onSaved: () => void }> = ({ roleId, equipment, onSaved }) => (
+  <RoleModelTab
+    equipment={equipment}
+    onSave={async (next) => {
+      await updateRoleEquipment(roleId, { skills: equipment.skills, tools: equipment.tools, maxIterations: equipment.maxIterations, ...next });
+      onSaved();
+    }}
+  />
+);
 
 const DefinitionEditor: React.FC<{ roleId: string; definition: string | null; restore?: RolePanelDetail["restore"]; onSaved: () => void }> = ({ roleId, definition, restore, onSaved }) => {
   const { t } = useI18n();
@@ -624,7 +637,8 @@ export interface RoleDetailPageProps {
   roleId: string;
 }
 
-type RoleDetailTab = 'basic' | 'equipment' | 'persona' | 'records';
+type RoleDetailTab = 'basic' | 'persona' | 'skills' | 'model' | 'records';
+const ROLE_DETAIL_TABS: readonly RoleDetailTab[] = ['basic', 'persona', 'skills', 'model', 'records'];
 
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   const { t } = useI18n();
@@ -663,7 +677,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
         description={detail?.visual.profession || roleText.detail.subtitle}
         onClose={closeDetail}
         closeLabel={t.common.close}
-        actions={<div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">{(['basic', 'equipment', 'persona', 'records'] as const).map((key) => <button /* ds-allow:button: 详情页内部 tab 使用语义分段控件 */ key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`role-detail-tab-${key}`} onClick={() => setTab(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>{expertText.detailTabs[key]}</button>)}</div>}
+        actions={<div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">{ROLE_DETAIL_TABS.map((key) => <button /* ds-allow:button: 详情页内部 tab 使用语义分段控件 */ key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`role-detail-tab-${key}`} onClick={() => setTab(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>{expertText.detailTabs[key]}</button>)}</div>}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-5">
       {loading ? (
@@ -673,7 +687,8 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
       {detail ? (
         <>
           {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{expertText.visual.builtinNotice}</p> : null} /> : null}
-          {tab === 'equipment' && detail.equipment ? <RoleEquipmentTab><EquipmentEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /></RoleEquipmentTab> : null}
+          {tab === 'skills' && detail.equipment ? <RoleEquipmentTab><SkillsEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /></RoleEquipmentTab> : null}
+          {tab === 'model' && detail.equipment ? <ModelEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           {tab === 'persona' ? <RolePersonaTab><DefinitionEditor key={roleId} roleId={roleId} definition={detail.definition} restore={detail.restore} onSaved={loadDetail} /></RolePersonaTab> : null}
           {tab === 'records' ? <RoleRecordsTab>
           <RoleTrainingSummary detail={detail} />

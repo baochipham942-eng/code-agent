@@ -30,7 +30,11 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { WebModeBanner } from '../WebModeBanner';
 import { LocalBridgeSection } from '../sections/localBridge';
 import { NativeConnectorsSection } from '../sections';
-import { McpServerEditor, type McpServerConfig } from '../McpServerEditor';
+import {
+  McpServerEditor,
+  type McpServerConfig,
+  type McpServerSaveSecrets,
+} from '../McpServerEditor';
 import { McpDiscoverTab } from './McpDiscoverTab';
 import type { McpCatalogPayload, RecommendedMcpServerEntry } from '@shared/contract/mcpCatalog';
 import {
@@ -254,10 +258,17 @@ export const MCPSettings: React.FC = () => {
     }
   };
 
-  const handleAddServer = useCallback(async (config: McpServerConfig) => {
+  const handleAddServer = useCallback(async (
+    config: McpServerConfig,
+    secrets?: McpServerSaveSecrets,
+  ) => {
     if (!canManageMcp) return;
     try {
-      const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'addServer', { config });
+      const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'addServer', {
+        config,
+        ...(secrets?.secretEnvKeys.length ? { secretEnvKeys: secrets.secretEnvKeys } : {}),
+        ...(secrets?.secretHeaderKeys.length ? { secretHeaderKeys: secrets.secretHeaderKeys } : {}),
+      });
       if (result?.success) {
         setMessage({
           type: 'success',

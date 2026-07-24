@@ -291,6 +291,51 @@ async function persistUserMcpSettingsServerConfig(
   return persistMcpServerConfigToPath(configPath, 'servers', serverConfig);
 }
 
+/**
+ * 把「启用/禁用」持久化到承载该 server 的 scoped 配置文件。
+ * setServerEnabled 只改内存，不落盘，重启后读回旧 enabled 值——飞书连接器启用后重启
+ * 变回 disabled、报 Tool not found（真机 dogfood 2026-07-24 实证）就是这个断链。
+ * 扫 user（连接器默认落这，见 ADR-051）+ 可选 project/local，命中即改 enabled 字段回写。
+ * 返回是否在任一文件里改到（builtin/cloud server 不在文件里，返回 false 不算错）。
+ */
+export async function updateMcpServerEnabledInConfigFiles(
+  serverName: string,
+  enabled: boolean,
+  workingDirectory?: string,
+): Promise<boolean> {
+  const paths = getMcpScopedConfigPaths(workingDirectory);
+  const candidates = [paths.user, paths.project, paths.local].filter(
+    (p): p is string => Boolean(p),
+  );
+  let updated = false;
+  for (const configPath of candidates) {
+    let config: Record<string, unknown>;
+    try {
+      config = JSON.parse(await fs.readFile(configPath, 'utf-8')) as Record<string, unknown>;
+    } catch {
+      continue; // 文件不存在/不可读/非法 JSON → 跳过该 scope
+    }
+    let dirty = false;
+    for (const key of ['servers', 'mcpServers'] as const) {
+      const servers = config[key];
+      if (!Array.isArray(servers)) continue;
+      for (const server of servers) {
+        if (server && typeof server === 'object' && (server as { name?: unknown }).name === serverName) {
+          updated = true;
+          if ((server as { enabled?: unknown }).enabled !== enabled) {
+            (server as { enabled?: boolean }).enabled = enabled;
+            dirty = true;
+          }
+        }
+      }
+    }
+    if (dirty) {
+      await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+    }
+  }
+  return updated;
+}
+
 export async function removeMcpSettingsServerDraftConfig(
   workingDirectory: string,
   serverName: string,
@@ -418,8 +463,14 @@ async function handleGetServerStates(): Promise<unknown> {
   return getMCPClient().getServerStates().map(summarizeMcpServerState);
 }
 
-async function handleSetServerEnabled(serverName: string, enabled: boolean): Promise<void> {
+async function handleSetServerEnabled(
+  serverName: string,
+  enabled: boolean,
+  workingDirectory?: string,
+): Promise<void> {
   await getMCPClient().setServerEnabled(serverName, enabled);
+  // 持久化 enabled，否则重启读回旧值（飞书启用后重启变回 disabled → Tool not found）。
+  await updateMcpServerEnabledInConfigFiles(serverName, enabled, workingDirectory);
   // 被禁用后跨 session 清掉 bySource.mcp[serverName] 占用，让 ContextPanel UI 立即反映
   if (!enabled) {
     getContextHealthService().clearMcpServerAcrossSessions(serverName);
@@ -512,7 +563,7 @@ export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandle
         }
         case 'setServerEnabled': {
           const payload = request.payload as { serverName: string; enabled: boolean };
-          await handleSetServerEnabled(payload.serverName, payload.enabled);
+          await handleSetServerEnabled(payload.serverName, payload.enabled, options.getWorkingDirectory?.());
           data = { success: true };
           break;
         }

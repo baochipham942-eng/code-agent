@@ -47,6 +47,18 @@ describe('LivePreviewDiagnosticStrip — 诊断条两层人话化', () => {
       expect(html).not.toContain(variant);
     }
   });
+
+  it('browser mode 可在诊断条内突出默认浏览器打开动作', () => {
+    const html = renderToStaticMarkup(
+      <LivePreviewDiagnosticStrip
+        frameError="iframe onError"
+        cspSnippet="n/a"
+        onOpenExternal={() => {}}
+      />,
+    );
+    expect(html).toContain('在默认浏览器打开');
+    expect(html).toContain('bg-amber-300');
+  });
 });
 
 // 接线钉子：只单测 LivePreviewDiagnosticStrip 本身，钉不住 LivePreviewFrame 的

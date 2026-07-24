@@ -459,3 +459,30 @@ export function extractNeoUIRawSpecs(content: string): Array<{ rawSpec: string; 
   }
   return specs;
 }
+
+// ---------------------------------------------------------------------------
+// HTML 产物人工编辑的持久化（S5 P3）——与 neo_ui 声明式实例是两套东西
+// ---------------------------------------------------------------------------
+
+export interface GenerativeUiEditPersistRequest {
+  sessionId: string;
+  messageId: string;
+  /** 消息里第几个 generative_ui fence（与渲染侧 ordinal 同源） */
+  sourceOrdinal: number;
+  /** 用户开始编辑时那份正文的哈希，用来和库里当前值对账 */
+  baseHash: string;
+  /** 改完的 HTML 正文（不含编辑标记，host 会自己贴新鲜的） */
+  newCode: string;
+  /** 这次动过的属性，仅供模型参考 */
+  fields: string[];
+}
+
+type GenerativeUiEditPersistReason =
+  | 'conflict'
+  | 'ordinal_out_of_range'
+  | 'message_not_found';
+
+export interface GenerativeUiEditPersistResult {
+  persisted: boolean;
+  reason?: GenerativeUiEditPersistReason;
+}

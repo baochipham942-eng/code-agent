@@ -202,6 +202,11 @@ export class ToolExecutor {
     this.executionTopology = topology;
   }
 
+  /** 当前执行拓扑。requestPermission 用它判断无人值守场景下能否免审批放行只读 MCP 工具。 */
+  getExecutionTopology(): ExecutionTopology {
+    return this.executionTopology;
+  }
+
   /** Create an executor whose workspace/cwd cannot be changed after construction. */
   forRun(runContext: RunContext, dispatchTool?: ToolExecutionDelegate): ToolExecutor {
     const executor = new ToolExecutor({

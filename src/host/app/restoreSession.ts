@@ -60,12 +60,9 @@ export async function initializeSession(
 
     const session = await sessionManager.createSession({
       title: 'New Session',
-      modelConfig: resolveSessionDefaultModelConfig({
-        provider: settings.model?.provider,
-        model: settings.model?.model,
-        temperature: settings.model?.temperature,
-        maxTokens: settings.model?.maxTokens,
-      }),
+      // 无参数：走 settings.models（复数）解析，与运行路径 resolveModelConfig 同源。
+      // 旧代码传 settings.model（单数，旧字段）会覆盖正确的复数默认，导致记录的模型≠实际运行。
+      modelConfig: resolveSessionDefaultModelConfig(),
       workingDirectory,
     });
     sessionManager.setCurrentSession(session.id);

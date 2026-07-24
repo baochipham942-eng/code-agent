@@ -4,7 +4,7 @@ import type {
   CronJobAction,
   CronJobDefinition,
 } from '../../../src/shared/contract/cron';
-import { CRON_AGENT_SNAPSHOT } from '../../../src/shared/constants';
+import { CRON_AGENT_SNAPSHOT, EXTERNAL_WATCH } from '../../../src/shared/constants';
 
 const dbState = vi.hoisted(() => ({
   savedRows: [] as unknown[][],
@@ -137,13 +137,20 @@ beforeEach(() => {
 });
 
 describe('CronService agent run snapshot wiring', () => {
-  it('没开变化追踪的任务：prompt 原样发送，也不落任何快照', async () => {
+  it('没开变化追踪的任务：不注入快照对比要求，但仍带当前时间锚点，也不落任何快照', async () => {
     const { service, definition, updateJob } = await runAgentAction(
       { heartbeatTask: true },
       '本次结果\n<cron_snapshot>就算吐了标记也不该被存</cron_snapshot>',
     );
 
-    expect(agentState.sendMessage).toHaveBeenCalledWith('检查网页', undefined, undefined);
+    const [sentPrompt] = agentState.sendMessage.mock.calls[0] as [string, unknown, unknown];
+    expect(sentPrompt).toContain('检查网页');
+    expect(sentPrompt).toContain('【当前时间】'); // 时间锚点对所有 cron agent 任务都注入
+    // P1b-v2：直接给算好的当天 epoch（10 位 Unix 秒），不让模型自己换算年份（dogfood 证明它算错）
+    expect(sentPrompt).toContain('Unix 秒');
+    expect(sentPrompt).toMatch(/今天本地 00:00 = \d{10}/);
+    expect(sentPrompt).not.toContain('回复末尾请用 <cron_snapshot>'); // 未开追踪不要求吐快照
+    expect(sentPrompt).not.toContain('<previous_snapshot>');
     expect(updateJob).not.toHaveBeenCalled();
     expect(service.getJob(definition.id)?.action).toMatchObject({
       type: 'agent',
@@ -151,20 +158,16 @@ describe('CronService agent run snapshot wiring', () => {
     });
   });
 
-  it('开了追踪但还没有旧快照：首次也必须带上输出标记的要求', async () => {
+  it('开了追踪但还没有旧快照：首次也必须带上输出标记的要求和时间锚点', async () => {
     // 首次不给这句，模型不知道要吐标记，第一次必然拿不到快照，
     // 变化追踪就永远起不来（或被迫拿整段回答顶替）。
     await runAgentAction({ [CRON_AGENT_SNAPSHOT.ENABLED_KEY]: true }, '本次结果');
 
-    expect(agentState.sendMessage).toHaveBeenCalledWith(
-      [
-        '检查网页',
-        '',
-        '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。',
-      ].join('\n'),
-      undefined,
-      undefined,
-    );
+    const [sentPrompt] = agentState.sendMessage.mock.calls[0] as [string, unknown, unknown];
+    expect(sentPrompt).toContain('检查网页');
+    expect(sentPrompt).toContain('【当前时间】');
+    expect(sentPrompt).toContain('回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。');
+    expect(sentPrompt).not.toContain('<previous_snapshot>'); // 首次无旧快照
   });
 
   it('开了追踪但模型没吐标记：不拿整段回答顶替', async () => {
@@ -187,22 +190,13 @@ describe('CronService agent run snapshot wiring', () => {
       '本次结果',
     );
 
-    expect(agentState.sendMessage).toHaveBeenCalledWith(
-      [
-        '检查网页',
-        '',
-        '上次运行看到的快照：',
-        '<previous_snapshot>',
-        '标题 A\n状态：开放',
-        '</previous_snapshot>',
-        '',
-        '请把上面的快照和本次看到的内容对比，这次只需要说明变化。',
-        '',
-        '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。',
-      ].join('\n'),
-      undefined,
-      undefined,
-    );
+    const [sentPrompt] = agentState.sendMessage.mock.calls[0] as [string, unknown, unknown];
+    expect(sentPrompt).toContain('检查网页');
+    expect(sentPrompt).toContain('【当前时间】');
+    expect(sentPrompt).toContain('上次运行看到的快照：');
+    expect(sentPrompt).toContain('<previous_snapshot>\n标题 A\n状态：开放\n</previous_snapshot>');
+    expect(sentPrompt).toContain('请把上面的快照和本次看到的内容对比，这次只需要说明变化。');
+    expect(sentPrompt).toContain('回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。');
   });
 
   it('从最后一条 assistant 消息提取快照，经 updateJob 写回并在 cleanup 前完成', async () => {
@@ -294,5 +288,50 @@ describe('CronService agent run snapshot wiring', () => {
     expect(warn).toHaveBeenCalledWith(
       `[CronService] Agent snapshot exceeded ${CRON_AGENT_SNAPSHOT.MAX_BYTES} UTF-8 bytes; truncated`,
     );
+  });
+});
+
+describe('CronService external_event 无变化则安静门', () => {
+  const watchContext = {
+    [CRON_AGENT_SNAPSHOT.ENABLED_KEY]: true,
+    [EXTERNAL_WATCH.CONTEXT_KEY]: { source: EXTERNAL_WATCH.SOURCE_CALENDAR, calendarId: 'cal-1' },
+  };
+
+  async function runAndGetResult(
+    context: Record<string, unknown> | undefined,
+    finalAssistantText: string,
+  ): Promise<Record<string, unknown>> {
+    const service = new CronService();
+    const definition = makeDefinition(context);
+    const harness = service as unknown as CronServiceHarness;
+    harness.jobs.set(definition.id, { definition });
+    agentState.getMessages.mockReturnValue([assistantMessage(finalAssistantText)]);
+    const result = await harness.executeAction(definition, definition.action, undefined, 'exec-watch');
+    return result as Record<string, unknown>;
+  }
+
+  it('监听任务无 <cron_alert>：结果整成 skipped，供 isSkippedResult 门挡住收件箱', async () => {
+    const result = await runAndGetResult(
+      watchContext,
+      '本次无新增冲突。\n<cron_snapshot>冲突对：无</cron_snapshot>',
+    );
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe('no_new_event');
+  });
+
+  it('监听任务有 <cron_alert>：不 skipped，正常进待过目', async () => {
+    const result = await runAndGetResult(
+      watchContext,
+      '<cron_alert>周会 15:00-16:00 与 评审 15:30-16:30 时间冲突</cron_alert>\n<cron_snapshot>冲突对：周会×评审</cron_snapshot>',
+    );
+    expect(result.skipped).toBeUndefined();
+  });
+
+  it('普通 agent 任务即使无 alert 标记也永不被静音', async () => {
+    const result = await runAndGetResult(
+      { heartbeatTask: true },
+      '这只是一次普通心跳，没有任何标记。',
+    );
+    expect(result.skipped).toBeUndefined();
   });
 });

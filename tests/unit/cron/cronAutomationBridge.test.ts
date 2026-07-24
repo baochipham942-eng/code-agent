@@ -179,6 +179,20 @@ describe('getCronAutomationType', () => {
     ).toBe('heartbeat');
   });
 
+  it('is external_event for an agent action carrying externalWatch, taking priority over heartbeat', () => {
+    expect(
+      getCronAutomationType(
+        def({ action: { type: 'agent', agentType: 'a', prompt: 'p', context: { externalWatch: { source: 'feishu-calendar', calendarId: 'c1' } } } })
+      )
+    ).toBe('external_event');
+    // externalWatch 优先级高于 heartbeatTask
+    expect(
+      getCronAutomationType(
+        def({ action: { type: 'agent', agentType: 'a', prompt: 'p', context: { externalWatch: { source: 'feishu-table' }, heartbeatTask: true } } })
+      )
+    ).toBe('external_event');
+  });
+
   it('is cron otherwise', () => {
     expect(getCronAutomationType(def())).toBe('cron');
     expect(

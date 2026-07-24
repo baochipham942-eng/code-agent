@@ -150,6 +150,7 @@ describe('SidebarProjectGroup Neo badge', () => {
           latestActivityAt: 1700000000000,
         }}
         projectMetaById={{ p1: { name: 'code-agent' } }}
+        setProjectMetaById={vi.fn()}
         hasSearchFilters={false}
         expandedWorkspaces={{}}
         collapsingWorkspaces={{}}

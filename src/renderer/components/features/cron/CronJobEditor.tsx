@@ -8,13 +8,20 @@ import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
 import { Textarea } from '../../primitives/Textarea';
 import { useCronStore } from '../../../stores/cronStore';
+import { useAppStore } from '../../../stores/appStore';
+import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
 import {
   buildCronJobInput,
   buildDraftFromJob,
   createDefaultCronJobDraft,
   type CronJobDraft,
 } from './types';
-import { CRON_TEMPLATES, type CronTemplate } from './cronTemplates';
+import {
+  CRON_TEMPLATES,
+  getMissingTemplateConnectors,
+  getTemplateConnectorStatuses,
+  type CronTemplate,
+} from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
 import { useI18n } from '../../../hooks/useI18n';
 
@@ -41,6 +48,16 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
   const { t } = useI18n();
   const cc = t.cronCenter;
   const { createJob, updateJob } = useCronStore();
+  const openSettingsTab = useAppStore((state) => state.openSettingsTab);
+  const mcpServerStates = useMcpServerStates();
+  const connectedConnectorIds = useMemo(
+    () => new Set(
+      mcpServerStates
+        .filter((server) => server.status === 'connected')
+        .map((server) => server.config.name),
+    ),
+    [mcpServerStates],
+  );
   const [draft, setDraft] = useState<CronJobDraft>(createDefaultCronJobDraft());
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
@@ -187,21 +204,39 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
         size="lg"
       >
         <div className="grid grid-cols-2 gap-3">
-          {CRON_TEMPLATES.map((tpl) => (
-            <button
-              key={tpl.id}
-              onClick={() => handlePickTemplate(tpl)}
-              className="group rounded-xl border border-zinc-800 bg-zinc-950/50 p-4 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-900/60"
-            >
-              <div className="mb-2 text-2xl">{tpl.emoji}</div>
-              <div className="text-sm font-medium text-zinc-200 group-hover:text-zinc-100">
-                {tpl.name}
-              </div>
-              <div className="mt-1 text-xs text-zinc-500 group-hover:text-zinc-400">
-                {tpl.description}
-              </div>
-            </button>
-          ))}
+          {CRON_TEMPLATES.map((tpl) => {
+            const connectorStatuses = getTemplateConnectorStatuses(tpl, connectedConnectorIds);
+            return (
+              <button
+                key={tpl.id}
+                onClick={() => handlePickTemplate(tpl)}
+                className="group rounded-xl border border-zinc-800 bg-zinc-950/50 p-4 text-left transition-colors hover:border-zinc-600 hover:bg-zinc-900/60"
+              >
+                <div className="mb-2 text-2xl">{tpl.emoji}</div>
+                <div className="text-sm font-medium text-zinc-200 group-hover:text-zinc-100">
+                  {tpl.name}
+                </div>
+                <div className="mt-1 text-xs text-zinc-500 group-hover:text-zinc-400">
+                  {tpl.description}
+                </div>
+                {connectorStatuses.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {connectorStatuses.map((status) => (
+                      <span key={status.id} className="inline-flex items-center gap-1 text-[11px]">
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${status.connected ? 'bg-emerald-400' : 'bg-zinc-600'}`}
+                          aria-hidden="true"
+                        />
+                        <span className={status.connected ? 'text-emerald-300' : 'text-zinc-500'}>
+                          {status.label}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
         <div className="mt-4 flex items-center justify-center gap-4 text-xs">
           <button /* ds-allow:button: 同上，纯文本次级链接 */
@@ -265,6 +300,33 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, onClo
               <div className="text-xs text-zinc-500">{selectedTemplate.description}</div>
             </div>
           </div>
+
+          {(() => {
+            const missingConnectors = getMissingTemplateConnectors(
+              getTemplateConnectorStatuses(selectedTemplate, connectedConnectorIds),
+            );
+            if (missingConnectors.length === 0) return null;
+            return (
+              <div
+                className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+                data-testid="cron-template-connector-gate-hint"
+              >
+                <span>
+                  {cc.connectorNeededHint.replace(
+                    '{name}',
+                    missingConnectors.map((status) => status.label).join('、'),
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => openSettingsTab('mcp')}
+                  className="underline decoration-dotted hover:text-amber-200"
+                >
+                  {cc.connectorConnectAction}
+                </button>
+              </div>
+            );
+          })()}
 
           {selectedTemplate.fields.map((field) => (
             <FormField key={field.key} label={field.label} required={field.required}>

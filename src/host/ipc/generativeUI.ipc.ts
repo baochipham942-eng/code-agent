@@ -1,11 +1,13 @@
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type {
+  GenerativeUiEditPersistRequest,
   NeoUIApplyEventRequest,
   NeoUIResolveInstanceRequest,
   NeoUIResolveManifestRequest,
 } from '../../shared/contract/generativeUI';
 import { getGenerativeUIService } from '../services/generativeUI/generativeUIService';
+import { persistGenerativeUiEdit } from '../services/generativeUI/generativeUIEditPersistence';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('GenerativeUIIPC');
@@ -40,6 +42,20 @@ export function registerGenerativeUIHandlers(ipcMain: IpcMain): void {
             return invalid('event identity is required');
           }
           return { success: true, data: service.applyEvent(payload.event) };
+        }
+        case 'persistHtmlEdit': {
+          const payload = request.payload as GenerativeUiEditPersistRequest | undefined;
+          if (
+            !payload?.sessionId
+            || !payload.messageId
+            || !Number.isInteger(payload.sourceOrdinal)
+            || typeof payload.baseHash !== 'string'
+            || typeof payload.newCode !== 'string'
+            || !Array.isArray(payload.fields)
+          ) {
+            return invalid('sessionId, messageId, sourceOrdinal, baseHash, newCode and fields are required');
+          }
+          return { success: true, data: await persistGenerativeUiEdit(payload) };
         }
         case 'resolveManifest': {
           const payload = request.payload as NeoUIResolveManifestRequest | undefined;

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   invokeDomain: vi.fn(),
   addLibraryItem: vi.fn(),
+  getProjectArtifacts: vi.fn(),
   setSelectedId: vi.fn(),
 }));
 
@@ -67,8 +68,8 @@ vi.mock('../../../src/renderer/services/libraryClient', () => ({
   addLibraryItem: mocks.addLibraryItem,
 }));
 
-vi.mock('../../../src/renderer/components/ProjectHeaderBar', () => ({
-  default: () => null,
+vi.mock('../../../src/renderer/services/projectClient', () => ({
+  getProjectArtifacts: mocks.getProjectArtifacts,
 }));
 
 vi.mock('../../../src/renderer/components/QuestionFormPreview', () => ({
@@ -100,9 +101,10 @@ vi.mock('../../../src/renderer/components/workspacePreview/parts', async () => {
   };
 });
 
-const { WorkspacePreviewPanel } = await import(
+const { WorkspacePreviewPanel, dedupeProjectArtifacts, projectArtifactDisplayTitle } = await import(
   '../../../src/renderer/components/WorkspacePreviewPanel'
 );
+const { zh } = await import('../../../src/renderer/i18n/zh');
 
 beforeEach(() => {
   mocks.invoke.mockReset();
@@ -111,6 +113,8 @@ beforeEach(() => {
   mocks.invokeDomain.mockResolvedValue({ success: true });
   mocks.addLibraryItem.mockReset();
   mocks.addLibraryItem.mockResolvedValue({ title: 'plan.md' });
+  mocks.getProjectArtifacts.mockReset();
+  mocks.getProjectArtifacts.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -119,6 +123,38 @@ afterEach(() => {
 });
 
 describe('WorkspacePreviewPanel restore confirmation', () => {
+  it('uses friendly generated-artifact titles, truncates prompts, and deduplicates by kind plus title', () => {
+    const labels = zh.sidebarProject.artifactKind;
+    const longPrompt = '请根据本次用户研究结果生成一份覆盖信息架构、关键流程、异常场景和验收证据的完整交互方案';
+    const artifacts = [
+      { id: 'mermaid-1', sessionId: 'session-1', kind: 'mermaid' as const, title: 'graph TD; A-->B', createdAt: 3 },
+      { id: 'mermaid-2', sessionId: 'session-2', kind: 'mermaid' as const, title: 'graph LR; C-->D', createdAt: 2 },
+      { id: 'doc-1', sessionId: 'session-1', kind: 'document' as const, title: longPrompt, createdAt: 1 },
+      { id: 'doc-2', sessionId: 'session-2', kind: 'document' as const, title: longPrompt, createdAt: 0 },
+    ];
+
+    expect(projectArtifactDisplayTitle(artifacts[0], labels)).toBe('图示');
+    expect(projectArtifactDisplayTitle(artifacts[2], labels)).toBe(`${longPrompt.slice(0, 40)}…`);
+    expect(dedupeProjectArtifacts(artifacts, labels).map((artifact) => artifact.id)).toEqual([
+      'mermaid-1',
+      'doc-1',
+    ]);
+  });
+
+  it('keeps project artifacts collapsed and does not fetch them on first render', async () => {
+    render(<WorkspacePreviewPanel />);
+
+    expect(
+      screen.getByRole('button', { name: '项目全部产物 · 1 会话' }).getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(mocks.getProjectArtifacts).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '项目全部产物 · 1 会话' }));
+
+    await waitFor(() => expect(mocks.getProjectArtifacts).toHaveBeenCalledTimes(1));
+    expect(mocks.getProjectArtifacts).toHaveBeenCalledWith('project-1');
+  });
+
   it('archives file preview items with the current session context', async () => {
     render(<WorkspacePreviewPanel />);
 

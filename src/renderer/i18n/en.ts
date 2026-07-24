@@ -24,11 +24,13 @@ import { teamEn } from './team';
 import { knowledgeMemoryEn } from './knowledgeMemory';
 import { rolePackEn } from './rolePack';
 import { expertEn } from './expert';
+import { generativeUIEn } from './generativeUI';
 import { capabilityHubEn } from './capabilityHub';
 import { workbenchTabsEn } from './workbenchTabs';
 
 export const en: Translations = {
   ...capabilityHubEn,
+  ...generativeUIEn,
   ...workbenchTabsEn,
   // Common
   common: {
@@ -740,44 +742,6 @@ export const en: Translations = {
     saveHint: 'Press Cmd/Ctrl + Enter to save',
   },
 
-  // Generative UI Components
-  generativeUI: {
-    // Common actions
-    copy: 'Copy',
-    copied: 'Copied!',
-    // ChartBlock
-    chart: 'Chart',
-    // GenerativeUIBlock
-    generativeUI: 'Generative UI',
-    source: 'Source',
-    open: 'Open',
-    loading: 'Loading...',
-    // DocumentBlock
-    document: 'Document',
-    paragraphUnit: 'paragraphs',
-    wordUnit: 'words',
-    listItem: 'List Item',
-    paragraph: 'Paragraph',
-    rewrite: 'Rewrite',
-    simplify: 'Simplify',
-    restyle: 'Restyle',
-    insertAfter: 'Insert After',
-    // SpreadsheetBlock
-    spreadsheet: 'Spreadsheet',
-    rowUnit: 'rows',
-    columnUnit: 'cols',
-    selected: 'Selected',
-    columns: 'columns',
-    sum: 'Sum',
-    avg: 'Avg',
-    range: 'Range',
-    visualize: 'Visualize',
-    pivot: 'Pivot Table',
-    filterAnalysis: 'Filter',
-    sort: 'Sort',
-    clickToSelect: 'Click to select, Cmd+click for multi-select',
-    total: 'total',
-  },
 
   // Question Form (design brief collection)
   questionForm: {

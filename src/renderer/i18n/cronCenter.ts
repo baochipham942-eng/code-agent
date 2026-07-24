@@ -99,6 +99,11 @@ export const cronCenterZh = {
     fromTemplate: '从模板创建',
     manualConfig: '手动配置',
     backToSimple: '返回',
+    // 模板连接器依赖状态
+    connectorConnected: '已连接',
+    connectorNotConnected: '未连接',
+    connectorNeededHint: '需要先连接 {name}',
+    connectorConnectAction: '去连接',
     // 执行状态（键 = CronJobStatus + none）
     status: {
       pending: '待执行',
@@ -203,6 +208,10 @@ export const cronCenterEn: typeof cronCenterZh = {
     fromTemplate: 'From a template',
     manualConfig: 'Manual setup',
     backToSimple: 'Back',
+    connectorConnected: 'Connected',
+    connectorNotConnected: 'Not connected',
+    connectorNeededHint: 'Connect {name} first',
+    connectorConnectAction: 'Connect',
     status: {
       pending: 'Pending',
       running: 'Running',

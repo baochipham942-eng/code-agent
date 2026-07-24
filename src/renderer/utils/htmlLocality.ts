@@ -121,7 +121,12 @@ export function htmlLocalityLocationLabel(
  */
 export function attachHtmlLocalitySelection(
   doc: Document,
-  onSelectionChange: (selection: HtmlElementSelection | null) => void,
+  /**
+   * 第二参是被选中的活元素本身。要对它做所见即所得的修改就得拿到它，
+   * 而 controller 是 attach 返回之后才拿得到的，回调里读不到。
+   * 只关心描述的调用方照旧只声明第一个参数即可。
+   */
+  onSelectionChange: (selection: HtmlElementSelection | null, element: Element | null) => void,
 ): HtmlLocalitySelectionController {
   const style = doc.createElement('style');
   style.setAttribute(STYLE_ATTRIBUTE, '');
@@ -144,7 +149,7 @@ export function attachHtmlLocalitySelection(
   const clear = () => {
     selectedElement?.removeAttribute(SELECTED_ATTRIBUTE);
     selectedElement = null;
-    onSelectionChange(null);
+    onSelectionChange(null, null);
   };
 
   const handleClick = (event: MouseEvent) => {
@@ -162,7 +167,7 @@ export function attachHtmlLocalitySelection(
     selectedElement?.removeAttribute(SELECTED_ATTRIBUTE);
     selectedElement = target;
     selectedElement.setAttribute(SELECTED_ATTRIBUTE, '');
-    onSelectionChange(describeHtmlElement(selectedElement));
+    onSelectionChange(describeHtmlElement(selectedElement), selectedElement);
   };
 
   doc.addEventListener('click', handleClick, true);

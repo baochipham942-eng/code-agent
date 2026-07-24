@@ -58,6 +58,7 @@ export function getCronAutomationType(
   definition: CronJobDefinition,
   action: CronJobAction = definition.action,
 ): SessionAutomationType {
+  if (action.type === 'agent' && action.context?.externalWatch) return 'external_event';
   return action.type === 'agent' && action.context?.heartbeatTask ? 'heartbeat' : 'cron';
 }
 

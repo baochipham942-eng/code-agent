@@ -1,5 +1,7 @@
 import { IPC_DOMAINS } from '@shared/ipc';
 import type {
+  GenerativeUiEditPersistRequest,
+  GenerativeUiEditPersistResult,
   NeoUIApplyEventRequest,
   NeoUIEventResultV1,
   NeoUIResolveInstanceRequest,
@@ -10,6 +12,9 @@ import type {
 import ipcService from './ipcService';
 
 export const generativeUIClient = {
+  persistHtmlEdit(request: GenerativeUiEditPersistRequest): Promise<GenerativeUiEditPersistResult> {
+    return ipcService.invokeDomain(IPC_DOMAINS.GENERATIVE_UI, 'persistHtmlEdit', request);
+  },
   resolveInstance(request: NeoUIResolveInstanceRequest): Promise<NeoUIResolveInstanceResult> {
     return ipcService.invokeDomain(IPC_DOMAINS.GENERATIVE_UI, 'resolveInstance', request);
   },

@@ -58,6 +58,11 @@ export const INTERACTION_TIMEOUTS = {
   CONFIRM_ACTION: 60_000,
   /** 权限请求超时 */
   PERMISSION: 60_000,
+  /**
+   * 无人值守停车审批的兜底超时（B2）：无人值守会话的工具审批不再走 60s deny，
+   * 改为停车挂起等人应答；24h 无人应答则兜底 deny，防内存 Promise 永久泄漏。
+   */
+  PARKED_APPROVAL: 86_400_000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
   /**

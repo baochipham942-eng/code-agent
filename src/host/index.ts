@@ -185,9 +185,12 @@ app.whenReady().then(async () => {
       try {
         const planOrphans = planApprovalGate.attachPersistence(pendingApprovalRepo);
         const launchOrphans = launchApprovalGate.attachPersistence(pendingApprovalRepo);
-        if (planOrphans + launchOrphans > 0) {
+        // B2: 无人值守停车审批（tool_approval）无跨重启续跑，启动时把上次残留的 pending
+        // 行打成 orphaned，收件箱据此显示「已过期（应用重启）」，不留悬挂 pending。
+        const toolApprovalOrphans = pendingApprovalRepo.markPendingAsOrphaned('tool_approval', Date.now()).length;
+        if (planOrphans + launchOrphans + toolApprovalOrphans > 0) {
           logger.warn(
-            `Orphaned approvals from previous process: ${planOrphans} plan(s) + ${launchOrphans} launch(es)`,
+            `Orphaned approvals from previous process: ${planOrphans} plan(s) + ${launchOrphans} launch(es) + ${toolApprovalOrphans} tool approval(s)`,
           );
         }
       } catch (err) {

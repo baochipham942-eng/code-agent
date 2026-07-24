@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,8 +75,22 @@ function findPackageLocations(resourcePath: string): PackageLocation[] {
 
 function isWithinRepo(candidatePath: string): boolean {
   const relativePath = relative(repoRoot, candidatePath);
-  return relativePath === ''
-    || (!isAbsolute(relativePath) && relativePath !== '..' && !relativePath.startsWith(`..${sep}`));
+  if (
+    relativePath === ''
+    || (!isAbsolute(relativePath) && relativePath !== '..' && !relativePath.startsWith(`..${sep}`))
+  ) {
+    return true;
+  }
+  try {
+    const installedRoot = realpathSync(join(repoRoot, 'node_modules'));
+    const installedRelative = relative(installedRoot, candidatePath);
+    return installedRelative === ''
+      || (!isAbsolute(installedRelative)
+        && installedRelative !== '..'
+        && !installedRelative.startsWith(`..${sep}`));
+  } catch {
+    return false;
+  }
 }
 
 function resolveInstalledPackage(packageName: string, anchorDir: string): string | null {

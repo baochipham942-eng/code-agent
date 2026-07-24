@@ -36,6 +36,8 @@ export const Z_LAYERS = {
   drawer: 1900,
   /** UndoToast 撤销提示条。现状与 drawer 同档（历史遗留，非刻意设计），保留。 */
   undoToast: 1900,
+  /** Project Settings 从侧栏或项目头部打开，必须压过项目抽屉。 */
+  projectSettingsModal: 1950,
   /** SessionContextMenu 右键菜单。 */
   contextMenu: 2000,
   /** Toast 全局提示。 */

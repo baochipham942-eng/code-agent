@@ -9,11 +9,13 @@
 
 import { statSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
+import { execFileSync } from 'child_process';
 import type { ToolCall } from '../../../shared/contract';
 import { GOAL_MODE } from '../../../shared/constants/agent';
 import { makeEvidenceRef, type EvidenceRef } from '../../../shared/contract/evidence';
 import { evaluateWorkspaceHygiene } from './workspaceHygiene';
 import type { RuntimeContext } from './runtimeContext';
+import { canonicalizeWorkspacePath } from '../../runtime/workspaceScope';
 
 /** 2d: goal evidence gate 打回计数（ADR-038 批2d，owner=goalEvidenceGate） */
 export interface GoalEvidenceGateState { bounces: number; }
@@ -84,6 +86,43 @@ function commandWasExecuted(claimed: string, executed: string[]): boolean {
   return executed.some((cmd) => cmd.includes(normalized) || normalized.includes(cmd));
 }
 
+function collectChangedRepositoryEvidence(ctx: RuntimeContext): EvidenceRef[] {
+  if (!ctx.workspaceScope) return [];
+  return ctx.workspaceScope.roots.flatMap((root) => {
+    try {
+      const repositoryRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+        cwd: root.path,
+        encoding: 'utf8',
+        timeout: 2_000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (canonicalizeWorkspacePath(repositoryRoot) !== canonicalizeWorkspacePath(root.path)) return [];
+      const status = execFileSync('git', ['status', '--porcelain'], {
+        cwd: root.path,
+        encoding: 'utf8',
+        timeout: 2_000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (!status) return [];
+      const head = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: root.path,
+        encoding: 'utf8',
+        timeout: 2_000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      return [makeEvidenceRef({
+        kind: 'diff',
+        ref: `source:${root.sourceId} repo:${repositoryRoot} head:${head}`,
+        source: 'goal-evidence-gate',
+        digest: head,
+        state: 'read',
+      })];
+    } catch {
+      return [];
+    }
+  });
+}
+
 /**
  * 闸0 主入口。核验三类证据（有什么核什么，全部命中才 pass）：
  * 1. 模型自报 deliverables → 逐个 fs 核验文件存在
@@ -139,6 +178,7 @@ export function runGoalEvidenceGate(
       }
     }
   }
+  evidenceRefs.push(...collectChangedRepositoryEvidence(ctx));
 
   const nothingClaimed = filesToVerify.length === 0 && claimed.commands.length === 0;
   if (nothingClaimed) {

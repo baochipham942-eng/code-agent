@@ -14,7 +14,7 @@ export const expertZh = {
     configure: '配置角色',
     refresh: '刷新',
     createExpert: '新建专家',
-    detailTabs: { basic: '基本信息', persona: '人设', skills: '技能', model: '模型', records: '记录' },
+    detailTabs: { basic: '基本信息', personalization: '个性化', skills: '技能', model: '模型', security: '安全', records: '记录' },
     loadFailed: '专家列表加载失败',
     empty: '还没有专家。重启应用会自动安装预设专家，或到设置里新建角色。',
     memoryCount: '{count} 条记忆',
@@ -99,6 +99,27 @@ export const expertZh = {
       automationCron: 'Cron · {expression}',
       automationUnits: { seconds: '秒', minutes: '分钟', hours: '小时', days: '天' },
     },
+    rolePersonalization: {
+      save: '保存',
+      saving: '保存中…',
+      segments: {
+        identity: {
+          title: '我是谁',
+          description: '这位专家的本职设定：擅长什么、怎么干活、产出长什么样。',
+          placeholder: '',
+        },
+        expectation: {
+          title: '你的期望',
+          description: '你当初为什么要这位专家、希望 TA 帮你做成什么。这段会一直跟着 TA 走。',
+          placeholder: '例：我想要一个数据分析师，查数、画图、给结论一条龙，把原始数据变成管理层看得懂的东西。',
+        },
+        soul: {
+          title: '行为准则',
+          description: '只对这位专家生效的做事规矩。留空就跟随全局设定。',
+          placeholder: '例：结论先行，先给判断再讲依据；不确定的地方直接说不确定，别猜。',
+        },
+      },
+    },
     roleSkills: {
       title: '技能与工具',
       description: '从这台机器上真实可用的技能和工具里挑，勾了才允许这位专家用。',
@@ -118,6 +139,35 @@ export const expertZh = {
       overrideEmpty: '还没有可用的模型。先到能力中心配好模型服务，这里就会出现。',
       overrideClear: '取消指定，回到自动挑选',
     },
+    roleSecurity: {
+      title: '授权方式',
+      description: '这位专家动手之前，哪些事要先问过你。',
+      modeFollow: '跟随通用设置',
+      modeFollowHint: '和其他专家一样，用你在通用设置里定的那套。',
+      modeCustom: '为这位专家单独设置',
+      presets: {
+        strict: { label: '严格', hint: '每一步都先问过你再做。' },
+        development: { label: '标准', hint: '查资料、上网自己来；在这次工作的文件夹里改东西也自己来。动文件夹以外的东西会先问你。' },
+        ci: { label: '放手', hint: '不管在哪儿都自己动手，不来打断你。危险操作还是会拦下来。' },
+      },
+      floorTitle: '无论怎么设，这些都拦得住',
+      floorItems: [
+        '删除整个磁盘、格式化这类会造成不可挽回后果的命令。',
+        '你在通用设置里明确禁止过的操作。',
+        '这位专家用不了的工具——那是「技能」页管的，来这儿之前先去那边看看。',
+      ],
+      saving: '保存中…',
+      save: '保存',
+    },
+    rolePackElevation: {
+      title: '这位专家想要额外的权限',
+      description: '装之前先看一眼——你可以按安全默认装，之后随时到专家的「安全」页放开。',
+      looseMode: '想在任何位置自己动手，不来问你',
+      bashTool: '想能自己运行你电脑上的命令',
+      installSafe: '按安全默认装',
+      installAsDeclared: '按它要的装',
+      cancel: '取消',
+    },
   },
 };
 
@@ -133,7 +183,7 @@ export const expertEn: typeof expertZh = {
     configure: 'Configure role',
     refresh: 'Refresh',
     createExpert: 'New expert',
-    detailTabs: { basic: 'Basic', persona: 'Persona', skills: 'Skills', model: 'Model', records: 'Records' },
+    detailTabs: { basic: 'Basic', personalization: 'Personalization', skills: 'Skills', model: 'Model', security: 'Security', records: 'Records' },
     loadFailed: 'Failed to load experts',
     empty: 'No experts yet. Preset experts are installed automatically after restarting the app, or create a role in settings.',
     memoryCount: '{count} memories',
@@ -218,6 +268,27 @@ export const expertEn: typeof expertZh = {
       automationCron: 'Cron · {expression}',
       automationUnits: { seconds: 'seconds', minutes: 'minutes', hours: 'hours', days: 'days' },
     },
+    rolePersonalization: {
+      save: 'Save',
+      saving: 'Saving…',
+      segments: {
+        identity: {
+          title: 'Who they are',
+          description: 'What this expert specializes in, how they work, and what their output looks like.',
+          placeholder: '',
+        },
+        expectation: {
+          title: 'What you want',
+          description: 'Why you wanted this expert and what you want them to get done. It stays with them.',
+          placeholder: 'e.g. I want a data analyst who queries, charts, and concludes end to end, turning raw data into something leadership can read.',
+        },
+        soul: {
+          title: 'Ground rules',
+          description: 'Rules that apply to this expert only. Leave empty to follow the global settings.',
+          placeholder: 'e.g. Lead with the conclusion, then the evidence. Say when you are unsure instead of guessing.',
+        },
+      },
+    },
     roleSkills: {
       title: 'Skills and tools',
       description: 'Pick from what is actually available on this machine. Only what you check here is allowed.',
@@ -236,6 +307,35 @@ export const expertEn: typeof expertZh = {
       overrideDescription: 'Pin this expert to one model. Once picked, smart selection above no longer applies.',
       overrideEmpty: 'No models available yet. Set up a model service in the Capability Hub and they will show up here.',
       overrideClear: 'Clear and go back to smart selection',
+    },
+    roleSecurity: {
+      title: 'How this expert asks',
+      description: 'Which things this expert checks with you before doing them.',
+      modeFollow: 'Follow general settings',
+      modeFollowHint: 'Same as every other expert — whatever you set in general settings.',
+      modeCustom: 'Set this expert separately',
+      presets: {
+        strict: { label: 'Careful', hint: 'Checks with you before every single step.' },
+        development: { label: 'Standard', hint: 'Looks things up and goes online on its own, and edits files inside the folder you are working in. Anything outside that folder, it asks first.' },
+        ci: { label: 'Hands off', hint: 'Works on its own wherever it needs to, without interrupting you. Dangerous actions are still stopped.' },
+      },
+      floorTitle: 'These are always stopped, whatever you choose',
+      floorItems: [
+        'Commands that cannot be undone, like wiping a whole disk.',
+        'Anything you explicitly forbade in general settings.',
+        'Tools this expert does not have — that is what the Skills page is for.',
+      ],
+      saving: 'Saving…',
+      save: 'Save',
+    },
+    rolePackElevation: {
+      title: 'This expert is asking for extra permissions',
+      description: 'Take a look before installing — you can install with safe defaults and open things up later on the expert\'s Security page.',
+      looseMode: 'Wants to work anywhere on its own without asking you',
+      bashTool: 'Wants to run commands on your computer',
+      installSafe: 'Install with safe defaults',
+      installAsDeclared: 'Install as requested',
+      cancel: 'Cancel',
     },
   },
 };

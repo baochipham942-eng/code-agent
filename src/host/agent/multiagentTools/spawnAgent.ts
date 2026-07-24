@@ -34,6 +34,7 @@ import {
   getAgentMaxBudget,
 } from '../agentDefinition';
 import { SUBAGENT_SUFFIXES, type CoreAgentId, isCoreAgent } from '../hybrid/coreAgents';
+import { isToolWriteReadonlyRole } from '../routingToolPolicy';
 import { SWARM_STATUS_REPORT_SUFFIX, parseStatusReport } from './statusReport';
 import {
   SubagentContextBuilder,
@@ -296,10 +297,9 @@ export async function executeSpawnAgent(
     }
 
     // 过滤子代理禁用工具（子不启子、不问用户等）
-    // P3: explorer/reviewer 额外禁用写工具（工具层面强制 readonly）
-    const READONLY_ROLES = ['explorer', 'explore', 'reviewer'];
-    const isReadonlyRole = role && READONLY_ROLES.includes(role.toLowerCase());
-    const disabledTools = isReadonlyRole
+    // P3: 工具写只读角色额外禁用写工具（工具层面强制 readonly）。判定走单一真源
+    // isToolWriteReadonlyRole：内置策展集 ∪ 自定义 agent 声明的 readonly。
+    const disabledTools = isToolWriteReadonlyRole(role, agentConfig)
       ? guard.getReadonlyDisabledTools()
       : guard.getDisabledTools();
     tools = tools.filter(t => !disabledTools.includes(t));
@@ -801,7 +801,8 @@ async function executeParallelAgents(
   // Disabled tools lists
   const disabledTools = guard.getDisabledTools();
   const readonlyDisabledTools = guard.getReadonlyDisabledTools();
-  const READONLY_ROLES = ['explorer', 'explore', 'reviewer'];
+  // 工具写只读的角色名（供审批卡显示 writeAccess，与下面的工具过滤同一判定，避免两处口径不一）。
+  const toolReadonlyRoleNames = new Set<string>();
 
   const tasks: AgentTask[] = agents.map((agent, index) => {
     const agentConfig = getPredefinedAgent(agent.role);
@@ -829,8 +830,9 @@ async function executeParallelAgents(
     }
 
     // SpawnGuard: filter disabled tools (P2 + P3 readonly enforcement)
-    const roleLower = agent.role.toLowerCase();
-    const isReadonly = READONLY_ROLES.includes(roleLower);
+    // 工具写只读判定走单一真源，与单发路径 (site 1) 共用同一 helper。
+    const isReadonly = isToolWriteReadonlyRole(agent.role, agentConfig);
+    if (isReadonly) toolReadonlyRoleNames.add(agent.role.toLowerCase());
     const toolsToDisable = isReadonly ? readonlyDisabledTools : disabledTools;
     tools = tools.filter(t => !toolsToDisable.includes(t));
 
@@ -929,7 +931,7 @@ async function executeParallelAgents(
       controller: durableController,
       scope: runScope,
       tasks,
-      readonlyRoles: READONLY_ROLES,
+      readonlyRoles: [...toolReadonlyRoleNames],
       abortSignal: context.abortSignal,
     });
   } catch (error) {

@@ -119,6 +119,7 @@ class ProtocolToolResolver implements ToolResolver {
         runId: ctx.runId,
         sessionId: (ctx as { sessionId?: string }).sessionId,
         workspace: ctx.workspace,
+        workspaceScope: ctx.workspaceScope,
         workingDirectory: ctx.workingDirectory,
         legacyCtx: ctx,
         abortSignal: ctx.abortSignal,

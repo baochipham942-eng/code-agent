@@ -4,6 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import type { Message } from '../../shared/contract';
 import type { AgentApplicationService, SwitchModelParams } from '../../shared/contract/appService';
 import type {
   CrossSessionSearchOptions,
@@ -16,11 +17,19 @@ import {
   type AdminReviewQueueItem,
 } from '../../shared/contract/productClosure';
 import { getDefaultSearchManager } from '../session/search';
+import {
+  getDefaultCache,
+  type CachedMessage,
+} from '../session/localCache';
+import { createLogger } from '../services/infra/logger';
 import { assertAdminAccess } from './adminGuard';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
 
 /** Inline stub — old memoryTriggerService removed */
 type SessionMemoryContext = unknown;
+
+const logger = createLogger('SessionIPC');
+const CROSS_SESSION_SEARCH_MESSAGE_LIMIT = 500;
 
 // ----------------------------------------------------------------------------
 // Public Registration
@@ -211,13 +220,83 @@ function listReviewItemsBySession(payload: SessionReviewItemsRequest): Record<st
 // Helper: Cross-session search
 // ----------------------------------------------------------------------------
 
-async function performCrossSessionSearch(
+function isCacheableMessage(
+  message: Message,
+): message is Message & { role: CachedMessage['role'] } {
+  return message.role === 'user' || message.role === 'assistant' || message.role === 'system';
+}
+
+async function hydrateCrossSessionSearchCache(sessionIds: string[]): Promise<void> {
+  const cache = getDefaultCache();
+  const missingSessionIds = Array.from(new Set(sessionIds))
+    .filter((sessionId) => !cache.getSession(sessionId));
+
+  if (missingSessionIds.length === 0) {
+    return;
+  }
+
+  let database: ReturnType<typeof import('../services/core/databaseService').getDatabase>;
+  try {
+    const { getDatabase } = await import('../services/core/databaseService');
+    database = getDatabase();
+  } catch (error) {
+    logger.warn('Failed to access database for cross-session search hydration', {
+      sessionIds: missingSessionIds,
+      error,
+    });
+    return;
+  }
+
+  if (!database.isReady) {
+    logger.warn('Skipping cross-session search hydration because database is not ready', {
+      sessionIds: missingSessionIds,
+    });
+    return;
+  }
+
+  for (const sessionId of missingSessionIds) {
+    try {
+      const messages = database.getMessages(sessionId, CROSS_SESSION_SEARCH_MESSAGE_LIMIT);
+      const cachedMessages: CachedMessage[] = messages
+        .filter(isCacheableMessage)
+        .map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          timestamp: message.timestamp,
+          metadata: message.metadata as Record<string, unknown> | undefined,
+          toolCalls: message.toolCalls,
+          toolResults: message.toolResults,
+        }));
+      const startedAt = cachedMessages[0]?.timestamp ?? Date.now();
+
+      cache.setSession({
+        sessionId,
+        messages: cachedMessages,
+        startedAt,
+        lastActivityAt: cachedMessages[cachedMessages.length - 1]?.timestamp ?? startedAt,
+        totalTokens: 0,
+      });
+    } catch (error) {
+      logger.warn('Failed to hydrate session for cross-session search', {
+        sessionId,
+        error,
+      });
+    }
+  }
+}
+
+export async function performCrossSessionSearch(
   query: string,
   options: CrossSessionSearchOptions | undefined,
   getAppService: () => AgentApplicationService
 ): Promise<CrossSessionSearchResults> {
   if (!query.trim()) {
     return { query, totalMatches: 0, sessionsWithMatches: 0, results: [], searchTime: 0, truncated: false };
+  }
+
+  if (options?.sessionIds && options.sessionIds.length > 0) {
+    await hydrateCrossSessionSearchCache(options.sessionIds);
   }
 
   const searchManager = getDefaultSearchManager();

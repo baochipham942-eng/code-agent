@@ -186,7 +186,9 @@ export const App: React.FC = () => {
   // 响应式：窄屏先把横向空间让给聊天和右侧状态面板。
   const windowWidth = useWindowWidth();
   const isNarrowViewport = windowWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH;
-  const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH && workbenchTabs.length > 0;
+  // 宽屏右栏壳常驻：关闭最后一个视图后仍要挂载 Codex 式空态启动器。
+  // 窄屏继续只在确有可展示内容时临时占用聊天区。
+  const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH;
   const isPreviewActive = typeof activeWorkbenchTab === 'string' && activeWorkbenchTab.startsWith('preview:');
   const showNarrowWorkbench =
     !showWorkbench &&
@@ -817,12 +819,14 @@ export const App: React.FC = () => {
   const renderWorkbenchContent = () => (
     <div className="flex flex-col h-full bg-zinc-900">
       <WorkbenchTabs />
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <WorkbenchViewContent
-          activeView={activeWorkbenchTab}
-          onCloseFiles={() => setShowFileExplorer(false)}
-        />
-      </div>
+      {activeWorkbenchTab && (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <WorkbenchViewContent
+            activeView={activeWorkbenchTab}
+            onCloseFiles={() => setShowFileExplorer(false)}
+          />
+        </div>
+      )}
     </div>
   );
 

@@ -178,6 +178,7 @@ export const Sidebar: React.FC = () => {
   const {
     user,
     isAuthenticated,
+    isLoading: isAuthLoading,
     setShowAuthModal,
     signOut,
     sessionTrustState,
@@ -647,40 +648,43 @@ export const Sidebar: React.FC = () => {
       {/* Header: h-12 to align with TitleBar on the right */}
       <div className="h-12 px-3 flex items-center justify-between gap-2 flex-shrink-0">
         <NeoBrandMark />
-        <div className="flex items-center gap-1">
-          <IconButton
-            type="button"
-            variant="ghost"
-            size="md"
-            icon={<Search />}
-            aria-label={sb.openSearch}
-            data-testid="sidebar-search-trigger"
-            onClick={() => {
-              setSearchQuery('');
-              setSearchDialogOpen(true);
-            }}
-          />
-          {/* 状态筛选：仅管理员可见；搜索入口对所有人可见。 */}
-          {canOpenSessionReplay && (
-            <SidebarStatusFilterDropdown
-              statusFilterOpen={statusFilterOpen}
-              setStatusFilterOpen={setStatusFilterOpen}
-              statusFilterRef={statusFilterRef}
-              visibleStatusFilterOptions={visibleStatusFilterOptions}
-              sessionStatusFilter={sessionStatusFilter}
-              setSessionStatusFilter={setSessionStatusFilter}
-              trajectoryTierFilter={trajectoryTierFilter}
-              setTrajectoryTierFilter={setTrajectoryTierFilter}
-              trajectoryFailureFilter={trajectoryFailureFilter}
-              setTrajectoryFailureFilter={setTrajectoryFailureFilter}
-              trajectoryReviewFilter={trajectoryReviewFilter}
-              setTrajectoryReviewFilter={setTrajectoryReviewFilter}
-              hasActiveTrajectoryFilter={hasActiveTrajectoryFilter}
-              hasActiveStatusDropdownFilter={hasActiveStatusDropdownFilter}
-              activeStatusFilterLabel={activeStatusFilterLabel}
+        {!isAuthLoading && (
+          <div className="flex items-center gap-1">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="md"
+              className="h-8 w-8"
+              icon={<Search className="h-4 w-4" />}
+              aria-label={sb.openSearch}
+              data-testid="sidebar-search-trigger"
+              onClick={() => {
+                setSearchQuery('');
+                setSearchDialogOpen(true);
+              }}
             />
-          )}
-        </div>
+            {/* 状态筛选：仅管理员可见；搜索入口对所有人可见。 */}
+            {canOpenSessionReplay && (
+              <SidebarStatusFilterDropdown
+                statusFilterOpen={statusFilterOpen}
+                setStatusFilterOpen={setStatusFilterOpen}
+                statusFilterRef={statusFilterRef}
+                visibleStatusFilterOptions={visibleStatusFilterOptions}
+                sessionStatusFilter={sessionStatusFilter}
+                setSessionStatusFilter={setSessionStatusFilter}
+                trajectoryTierFilter={trajectoryTierFilter}
+                setTrajectoryTierFilter={setTrajectoryTierFilter}
+                trajectoryFailureFilter={trajectoryFailureFilter}
+                setTrajectoryFailureFilter={setTrajectoryFailureFilter}
+                trajectoryReviewFilter={trajectoryReviewFilter}
+                setTrajectoryReviewFilter={setTrajectoryReviewFilter}
+                hasActiveTrajectoryFilter={hasActiveTrajectoryFilter}
+                hasActiveStatusDropdownFilter={hasActiveStatusDropdownFilter}
+                activeStatusFilterLabel={activeStatusFilterLabel}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。 */}

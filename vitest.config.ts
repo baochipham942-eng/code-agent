@@ -50,6 +50,9 @@ export default defineConfig({
         lines: 39,
       },
     },
+    // The suite contains several real browser/native-runtime tests; allowing Vitest
+    // to use every host core starves them past their deterministic 30s timeout.
+    maxWorkers: 2,
     testTimeout: 30000,
     hookTimeout: 10000,
   },

@@ -76,6 +76,7 @@ import {
 import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine';
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { RunRegistry } from '../runtime/runRegistry';
+import { getProjectService } from '../services/project/projectService';
 import {
   projectDurableRunToSessionPayload,
   type DurableRunReadService,
@@ -394,8 +395,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         });
       }
     }
+    const externalWorkspaceScope = session?.projectId
+      ? getProjectService().getWorkspaceScope(session.projectId)
+      : undefined;
     if (engine.kind === 'codex_cli') {
-      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model, { strict: true });
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
@@ -414,7 +418,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       return;
     }
     if (engine.kind === 'claude_code') {
-      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model, { strict: true });
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
@@ -433,7 +437,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       return;
     }
     if (engine.kind === 'mimo_code') {
-      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', launch.model);
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
@@ -452,7 +456,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       return;
     }
     if (engine.kind === 'kimi_code') {
-      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory);
+      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('kimi_code', launch.model);
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });

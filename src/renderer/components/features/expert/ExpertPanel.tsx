@@ -116,6 +116,7 @@ export const ExpertPanel: React.FC = () => {
   const [selectedRecipe, setSelectedRecipe] = useState<{ recipe: TeamRecipe; editable: boolean } | null>(null);
   const [confirmingRecipeDelete, setConfirmingRecipeDelete] = useState<string | null>(null);
   const [recipeTopic, setRecipeTopic] = useState('');
+  const [pendingElevation, setPendingElevation] = useState<{ roleId: string; looseMode: boolean; bashTool: boolean } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -170,6 +171,26 @@ export const ExpertPanel: React.FC = () => {
     setBusyRolePackId(roleId);
     try {
       const result = await action(roleId);
+      if (!result.success) toast.error(t.rolePack.actionFailed);
+      await loadRolePacks();
+      setEntries(await listRoles());
+    } catch {
+      toast.error(t.rolePack.actionFailed);
+    } finally {
+      setBusyRolePackId(null);
+    }
+  };
+
+  // 云包安装单独走一条：命中提权判据时不当作失败，而是弹确认卡让用户过目。
+  const installWithElevation = async (roleId: string, options?: { acceptElevation?: boolean; elevationReviewed?: boolean }) => {
+    setBusyRolePackId(roleId);
+    try {
+      const result = await installRolePack(roleId, options);
+      if (result.elevation) {
+        setPendingElevation({ roleId, ...result.elevation });
+        return;
+      }
+      setPendingElevation(null);
       if (!result.success) toast.error(t.rolePack.actionFailed);
       await loadRolePacks();
       setEntries(await listRoles());
@@ -346,10 +367,32 @@ export const ExpertPanel: React.FC = () => {
                 error={rolePacksError}
                 busyRoleId={busyRolePackId}
                 onRetryLoad={() => { void loadRolePacks(); }}
-                onInstall={(roleId) => { void runRolePackAction(roleId, installRolePack); }}
+                onInstall={(roleId) => { void installWithElevation(roleId); }}
                 onUninstall={(roleId) => { void runRolePackAction(roleId, uninstallRolePack); }}
                 onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
               />
+            ) : null}
+
+            {pendingElevation ? (
+              <div data-testid="role-pack-elevation-confirm" className="mt-3 rounded-lg border border-amber-700/60 bg-amber-500/5 p-4">
+                <div className="text-sm text-amber-100">{t.expert.rolePackElevation.title}</div>
+                <p className="mt-1 text-xs text-zinc-400">{t.expert.rolePackElevation.description}</p>
+                <ul className="mt-2 space-y-1 text-xs text-zinc-300">
+                  {pendingElevation.looseMode ? <li>· {t.expert.rolePackElevation.looseMode}</li> : null}
+                  {pendingElevation.bashTool ? <li>· {t.expert.rolePackElevation.bashTool}</li> : null}
+                </ul>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button variant="primary" size="sm" data-testid="role-pack-elevation-safe" onClick={() => { void installWithElevation(pendingElevation.roleId, { elevationReviewed: true }); }}>
+                    {t.expert.rolePackElevation.installSafe}
+                  </Button>
+                  <Button variant="secondary" size="sm" data-testid="role-pack-elevation-accept" onClick={() => { void installWithElevation(pendingElevation.roleId, { acceptElevation: true }); }}>
+                    {t.expert.rolePackElevation.installAsDeclared}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setPendingElevation(null)}>
+                    {t.expert.rolePackElevation.cancel}
+                  </Button>
+                </div>
+              </div>
             ) : null}
 
             {tab === 'discover' && !loading && shown.length === 0 ? (

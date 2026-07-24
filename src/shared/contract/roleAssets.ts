@@ -175,6 +175,8 @@ export interface RolePanelDetail {
   visual: RoleVisual;
   /** 内置角色也允许写入个人展示偏好，但产品更新不会再覆盖这份定义。 */
   isBuiltin: boolean;
+  /** 每专家一份的两段可编辑正文；没设置过就是空串。 */
+  personalization: { userExpectation: string; soul: string };
   /** 装备层当前生效配置及由 host 解析出的本机可选项。 */
   equipment?: {
     skills: string[];
@@ -182,6 +184,8 @@ export interface RolePanelDetail {
     model: 'fast' | 'balanced' | 'powerful';
     /** 指定的具体模型；缺省表示跟随档位。 */
     modelOverride?: { provider: string; model: string };
+    /** 审批松紧档；缺省表示跟随通用设置。 */
+    permissionPreset?: 'strict' | 'development' | 'ci';
     maxIterations: number;
     availableSkills: string[];
     availableTools: string[];

@@ -74,6 +74,16 @@ describe('ProjectRepository', () => {
     expect(repo.getProject(p.id)?.name).toBe('alpha');
   });
 
+  it('允许同一 workspace path 属于不同 Project', () => {
+    const key = getProjectKey('/work/shared');
+    const first = { ...makeRow('/work/shared', key, NOW), id: 'proj_first' };
+    const second = { ...makeRow('/work/shared', key, NOW + 1), id: 'proj_second' };
+    repo.upsertProject(first);
+    repo.upsertProject(second);
+    expect(repo.getProject(first.id)?.workspaceKey).toBe(key);
+    expect(repo.getProject(second.id)?.workspaceKey).toBe(key);
+  });
+
   it('多 goal 并行：一个项目可挂多条 active goal', () => {
     const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
     repo.upsertProject(p);
@@ -175,6 +185,49 @@ describe('ProjectRepository', () => {
     repo.setProjectDescription(p.id, null, NOW + 2);
     expect(repo.getProject(p.id)?.description).toBeUndefined();
     expect(repo.getProject(p.id)?.updatedAt).toBe(NOW + 2);
+  });
+
+  it('旧 Project 幂等回填为单一 Primary source', () => {
+    const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
+    repo.upsertProject(p);
+    expect(repo.backfillProjectSources(NOW)).toBe(1);
+    expect(repo.backfillProjectSources(NOW + 1)).toBe(0);
+    expect(repo.listSources(p.id)).toEqual([
+      expect.objectContaining({
+        projectId: p.id,
+        role: 'primary',
+        access: 'read_write',
+        trustState: 'trusted',
+      }),
+    ]);
+  });
+
+  it('原子替换 Sources 校验 revision 且数据库约束只允许一个 Primary', () => {
+    const p = makeRow('/work/alpha', getProjectKey('/work/alpha'), NOW);
+    repo.upsertProject(p);
+    repo.backfillProjectSources(NOW);
+    const primary = repo.listSources(p.id)[0];
+    const updated = repo.replaceProjectSources(
+      { ...p, name: 'multi', updatedAt: NOW + 1 },
+      [
+        primary,
+        {
+          id: 'psrc_docs',
+          projectId: p.id,
+          path: '/work/docs',
+          canonicalPath: '/work/docs',
+          role: 'additional',
+          access: 'read_only',
+          trustState: 'trusted',
+          createdAt: NOW + 1,
+          updatedAt: NOW + 1,
+        },
+      ],
+      0,
+    );
+    expect(updated.sourceRevision).toBe(1);
+    expect(repo.listSources(p.id)).toHaveLength(2);
+    expect(() => repo.replaceProjectSources(updated, repo.listSources(p.id), 0)).toThrow(/revision/i);
   });
 });
 

@@ -8,6 +8,7 @@ import { discoverAgentFilesCached } from '../../context/agentsDiscovery';
 import { createLogger } from '../../services/infra/logger';
 import { getContextHealthService } from '../../context/contextHealthService';
 import { estimateTokens } from '../../context/tokenEstimator';
+import { isPathWithinRoot } from '../../runtime/workspaceScope';
 
 const logger = createLogger('AgentsHooks');
 const MAX_AGENT_FILES_TO_INJECT = 12;
@@ -89,7 +90,7 @@ export async function sessionStartAgentsInjectHook(
       if (depth > maxDepth) return false;
 
       // 检查是否是父目录
-      const isParent = !file.absolutePath.startsWith(workingDirectory);
+      const isParent = !isPathWithinRoot(file.absolutePath, workingDirectory);
       if (isParent && !includeParents) return false;
 
       return true;

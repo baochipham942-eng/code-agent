@@ -570,7 +570,8 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const permissionModeManager = getPermissionModeManager();
     const shouldSandbox = OS_SANDBOX.ENABLED
       && (permissionModeManager.getModeForSession(ctx.sessionId) === 'bypassPermissions'
-        || permissionModeManager.isUnattendedSession(ctx.sessionId));
+        || permissionModeManager.isUnattendedSession(ctx.sessionId)
+        || (ctx.workspaceScope?.roots.length ?? 0) > 1);
     let sandboxCleanup: (() => void) | undefined;
     /** shouldSandbox 时把命令包装成带沙箱前缀的 shell 命令，否则原样返回 */
     const applySandbox = (cmd: string): { ok: true; command: string } | { ok: false; error: string } => {
@@ -578,6 +579,12 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       try {
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
+          readOnlyRoots: ctx.workspaceScope?.roots
+            .filter((root) => root.access === 'read_only')
+            .map((root) => root.path),
+          readWriteRoots: ctx.workspaceScope?.roots
+            .filter((root) => root.access === 'read_write')
+            .map((root) => root.path),
           allowNetwork: resolveSandboxNetworkPolicy({
             command: cmd,
             redline: ctx.executionIntent?.redline === true,

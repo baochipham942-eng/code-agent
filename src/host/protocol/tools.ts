@@ -21,6 +21,7 @@ import type {
   WorkbenchToolScope,
 } from '@shared/contract/conversationEnvelope';
 import type { SwarmRunScope } from '@shared/contract/swarm';
+import type { WorkspaceScope } from '@shared/contract/project';
 import type { AgentEvent } from './events';
 
 // ----------------------------------------------------------------------------
@@ -97,6 +98,7 @@ export interface ToolContext {
   readonly sessionId: string;
   /** Immutable authorization/artifact boundary for this run. */
   readonly workspace?: string;
+  readonly workspaceScope?: WorkspaceScope;
   readonly workingDir: string;
   readonly abortSignal: AbortSignal;
 

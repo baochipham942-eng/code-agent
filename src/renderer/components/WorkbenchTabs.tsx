@@ -1,19 +1,70 @@
 // ============================================================================
-// WorkbenchTabs - Unified tab bar for the right workbench panel
+// WorkbenchTabs - Empty-state launcher and single-select view switcher
 // ============================================================================
-// Mixes fixed workbench views with per-file preview tabs. Click to
-// activate, X or middle-click to close. Dirty indicator shown on preview tabs.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Plus, LayoutDashboard, FolderTree, Globe2, Palette } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  FileText,
+  FolderTree,
+  Globe2,
+  LayoutDashboard,
+  Palette,
+  Plus,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
+import {
+  formatShortcutForDisplay,
+  getKeybindingAccelerator,
+  type KeybindingActionId,
+} from '@shared/keybindings';
 import { useAppStore, type WorkbenchViewId } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useI18n } from '../hooks/useI18n';
+import { useKeybindingsSettings } from '../hooks/useKeybindingsSettings';
 import { useDesignCanvasStore } from './design/designCanvasStore';
 import { saveCanvasDoc } from './design/designCanvasPersistence';
 import { ConfirmDialog } from './composites/ConfirmDialog';
+import { IconButton } from './primitives/IconButton';
 
 const PREVIEW_PREFIX = 'preview:';
+
+type LaunchableWorkbenchViewId = Exclude<WorkbenchViewId, `preview:${string}`>;
+
+interface LaunchableViewDefinition {
+  id: LaunchableWorkbenchViewId;
+  icon: LucideIcon;
+  iconClassName: string;
+  keybindingActionId?: KeybindingActionId;
+}
+
+const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
+  {
+    id: 'overview',
+    icon: LayoutDashboard,
+    iconClassName: 'text-cyan-400/80',
+    keybindingActionId: 'statusRail.toggle',
+  },
+  {
+    id: 'files',
+    icon: FolderTree,
+    iconClassName: 'text-amber-400/80',
+    keybindingActionId: 'files.attach',
+  },
+  {
+    id: 'browser',
+    icon: Globe2,
+    iconClassName: 'text-emerald-400/80',
+    keybindingActionId: 'browser.open',
+  },
+  {
+    id: 'design-canvas',
+    icon: Palette,
+    iconClassName: 'text-fuchsia-400/80',
+  },
+];
 
 function getFileName(path: string): string {
   const last = path.split('/').pop();
@@ -23,9 +74,89 @@ function getFileName(path: string): string {
 interface TabMeta {
   id: WorkbenchViewId;
   label: string;
-  title: string; // tooltip
+  title: string;
+  icon: LucideIcon;
+  iconClassName: string;
   isDirty: boolean;
 }
+
+interface WorkbenchViewLauncherProps {
+  openedViews: WorkbenchViewId[];
+  canOpenDesignCanvas: boolean;
+  mode: 'empty' | 'popover';
+  onOpen: (id: LaunchableWorkbenchViewId) => void;
+}
+
+const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
+  openedViews,
+  canOpenDesignCanvas,
+  mode,
+  onOpen,
+}) => {
+  const { t } = useI18n();
+  const { keybindings, platform } = useKeybindingsSettings();
+  const availableViews = LAUNCHABLE_VIEWS.filter((view) => !openedViews.includes(view.id));
+
+  const labelFor = (id: LaunchableWorkbenchViewId): string => {
+    if (id === 'overview') return t.workbenchTabs.overviewLabel;
+    if (id === 'files') return t.workbenchTabs.filesLabel;
+    if (id === 'browser') return t.workbenchTabs.browserLabel;
+    return t.design.canvasTabLabel;
+  };
+
+  return (
+    <div
+      data-testid={mode === 'empty' ? 'workbench-empty-launcher' : 'workbench-view-launcher-panel'}
+      className={mode === 'empty'
+        ? 'flex h-full flex-1 items-center justify-center px-8 py-10'
+        : 'w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-2 shadow-xl'}
+    >
+      <div className={mode === 'empty' ? 'w-full max-w-md' : 'w-full'}>
+        {mode === 'empty' && (
+          <h2 className="mb-4 px-3 text-sm font-medium text-zinc-300">
+            {t.workbenchTabs.emptyTitle}
+          </h2>
+        )}
+        <div className="space-y-1" role="list" aria-label={t.workbenchTabs.availableViews}>
+          {availableViews.map((view) => {
+            const Icon = view.icon;
+            const accelerator = view.keybindingActionId
+              ? getKeybindingAccelerator(keybindings, view.keybindingActionId, platform)
+              : null;
+            const shortcut = accelerator
+              ? formatShortcutForDisplay(accelerator, platform)
+              : null;
+            const isDisabled = view.id === 'design-canvas' && !canOpenDesignCanvas;
+            return (
+              <div key={view.id} role="listitem">
+                <button /* ds-allow:button: Codex 式整行视图入口，Button primitive 的居中动作布局不适配 */
+                  type="button"
+                  data-testid={`open-workbench-view-${view.id}`}
+                  disabled={isDisabled}
+                  onClick={() => onOpen(view.id)}
+                  className={`flex w-full items-center gap-3 rounded-lg text-left text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 ${
+                    mode === 'empty' ? 'px-4 py-3 text-sm' : 'px-3 py-2 text-xs'
+                  }`}
+                >
+                  <Icon className={`h-4 w-4 flex-shrink-0 ${view.iconClassName}`} />
+                  <span className="min-w-0 flex-1 truncate">{labelFor(view.id)}</span>
+                  {shortcut && (
+                    <kbd
+                      data-testid={`workbench-shortcut-${view.id}`}
+                      className="flex-shrink-0 rounded border border-zinc-700 bg-zinc-950/70 px-1.5 py-0.5 font-sans text-[11px] text-zinc-500"
+                    >
+                      {shortcut}
+                    </kbd>
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const WorkbenchTabs: React.FC = () => {
   const { t } = useI18n();
@@ -35,31 +166,32 @@ export const WorkbenchTabs: React.FC = () => {
   const closeWorkbenchTab = useAppStore((s) => s.closeWorkbenchTab);
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
-
-  // "+" 按钮的 popover 状态：列出未打开的固定视图让用户重开
-  const [addOpen, setAddOpen] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const [launcherOpen, setLauncherOpen] = useState(false);
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
-  const addRef = useRef<HTMLDivElement | null>(null);
-  const tabRefs = useRef(new Map<WorkbenchViewId, HTMLButtonElement>());
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
-    if (!addOpen) return;
-    const onMouseDown = (e: MouseEvent) => {
-      if (!addRef.current?.contains(e.target as Node)) setAddOpen(false);
+    if (!selectorOpen && !launcherOpen) return;
+    const onMouseDown = (event: MouseEvent) => {
+      if (!toolbarRef.current?.contains(event.target as Node)) {
+        setSelectorOpen(false);
+        setLauncherOpen(false);
+      }
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAddOpen(false); };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSelectorOpen(false);
+        setLauncherOpen(false);
+      }
+    };
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKeyDown);
     };
-  }, [addOpen]);
-
-  // 已开 tab 永远要显示；空 workbench 时也要保留 "+" 让用户能开第一个。
-  const hasOverview = workbenchTabs.includes('overview');
-  const hasFiles = workbenchTabs.includes('files');
-  const hasBrowser = workbenchTabs.includes('browser');
-  const canAddAny = !hasOverview || !hasFiles || !hasBrowser;
+  }, [launcherOpen, selectorOpen]);
 
   const metas: TabMeta[] = workbenchTabs.map((id) => {
     if (id === 'overview') {
@@ -67,28 +199,74 @@ export const WorkbenchTabs: React.FC = () => {
         id,
         label: t.workbenchTabs.overviewLabel,
         title: t.workbenchTabs.overviewTitle,
+        icon: LayoutDashboard,
+        iconClassName: 'text-cyan-400/80',
         isDirty: false,
       };
     }
     if (id === 'files') {
-      return { id, label: t.workbenchTabs.filesLabel, title: t.workbenchTabs.filesTitle, isDirty: false };
+      return {
+        id,
+        label: t.workbenchTabs.filesLabel,
+        title: t.workbenchTabs.filesTitle,
+        icon: FolderTree,
+        iconClassName: 'text-amber-400/80',
+        isDirty: false,
+      };
     }
     if (id === 'browser') {
       return {
         id,
         label: t.workbenchTabs.browserLabel,
         title: t.workbenchTabs.browserTitle,
+        icon: Globe2,
+        iconClassName: 'text-emerald-400/80',
         isDirty: false,
       };
     }
     if (id === 'design-canvas') {
-      return { id, label: t.design.canvasTabLabel, title: t.design.canvasTabLabel, isDirty: false };
+      return {
+        id,
+        label: t.design.canvasTabLabel,
+        title: t.design.canvasTabLabel,
+        icon: Palette,
+        iconClassName: 'text-fuchsia-400/80',
+        isDirty: false,
+      };
     }
     const path = id.slice(PREVIEW_PREFIX.length);
-    const previewTab = previewTabs.find((p) => p.path === path);
-    const isDirty = previewTab ? previewTab.content !== previewTab.savedContent : false;
-    return { id, label: getFileName(path), title: path, isDirty };
+    const previewTab = previewTabs.find((preview) => preview.path === path);
+    return {
+      id,
+      label: getFileName(path),
+      title: path,
+      icon: FileText,
+      iconClassName: 'text-zinc-400',
+      isDirty: previewTab ? previewTab.content !== previewTab.savedContent : false,
+    };
   });
+
+  const activeMeta = metas.find((meta) => meta.id === activeWorkbenchTab) ?? metas[0] ?? null;
+  const ActiveIcon = activeMeta?.icon;
+  const canAddAny = LAUNCHABLE_VIEWS.some((view) => !workbenchTabs.includes(view.id));
+
+  const openView = (id: LaunchableWorkbenchViewId) => {
+    if (id === 'design-canvas') {
+      if (!currentSessionId) return;
+      useDesignCanvasStore.getState().markSessionDesignActive(currentSessionId);
+      const canvasState = useDesignCanvasStore.getState();
+      if (
+        canvasState.ownerSessionId
+        && canvasState.ownerSessionId !== currentSessionId
+        && canvasState.runDir
+      ) {
+        void saveCanvasDoc(canvasState.runDir, canvasState.toDoc());
+      }
+      useDesignCanvasStore.getState().claimCanvasForSession(currentSessionId);
+    }
+    openWorkbenchTab(id, { source: 'user' });
+    setLauncherOpen(false);
+  };
 
   const requestClose = (meta: TabMeta) => {
     if (meta.isDirty) {
@@ -98,168 +276,138 @@ export const WorkbenchTabs: React.FC = () => {
     closeWorkbenchTab(meta.id);
   };
 
+  if (metas.length === 0) {
+    return (
+      <WorkbenchViewLauncher
+        openedViews={workbenchTabs}
+        canOpenDesignCanvas={Boolean(currentSessionId)}
+        mode="empty"
+        onOpen={openView}
+      />
+    );
+  }
+
+  const selectView = (id: WorkbenchViewId) => {
+    openWorkbenchTab(id, { source: 'user' });
+    setSelectorOpen(false);
+  };
+
   return (
     <>
-    <div className="flex items-center px-2 py-1 border-b border-zinc-700 bg-zinc-900">
-      {/* tabs 自己滚动；[+] 不在滚动区里，popover 才能 escape overflow 弹出来 */}
-      <div role="tablist" className="flex items-center gap-0.5 overflow-x-auto scrollbar-none flex-1 min-w-0">
-      {metas.map((meta) => {
-        const isActive = meta.id === activeWorkbenchTab;
-        return (
-          <div
-            key={meta.id}
-            onMouseDown={(e) => {
-              if (e.button === 1) {
-                e.preventDefault();
-                requestClose(meta);
-              }
-            }}
-            className={`group flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors max-w-[160px] flex-shrink-0 ${
-              isActive
-                ? 'bg-zinc-800 text-zinc-100'
-                : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60'
-            }`}
-            title={meta.title}
-          >
-            <button
-              ref={(element) => {
-                if (element) tabRefs.current.set(meta.id, element);
-                else tabRefs.current.delete(meta.id);
-              }}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              tabIndex={isActive ? 0 : -1}
-              onClick={() => openWorkbenchTab(meta.id, { source: 'user' })}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  openWorkbenchTab(meta.id, { source: 'user' });
-                  return;
-                }
-                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-                event.preventDefault();
-                const offset = event.key === 'ArrowRight' ? 1 : -1;
-                const currentIndex = metas.findIndex((item) => item.id === meta.id);
-                const next = metas[(currentIndex + offset + metas.length) % metas.length];
-                if (!next) return;
-                openWorkbenchTab(next.id, { source: 'user' });
-                tabRefs.current.get(next.id)?.focus();
-              }}
-              className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-            >
-              <span className="truncate">{meta.label}</span>
-              {meta.isDirty && (
-                <span className="text-amber-400 text-[10px] leading-none" title="未保存">●</span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                requestClose(meta);
-              }}
-              className={`flex-shrink-0 p-0.5 rounded hover:bg-zinc-700 transition-opacity ${
-                isActive ? 'opacity-70 hover:opacity-100' : 'opacity-0 group-hover:opacity-70 hover:opacity-100'
-              }`}
-              title={t.common.close}
-              aria-label={t.common.close}
-            >
-              <X className="w-2.5 h-2.5" />
-            </button>
-          </div>
-        );
-      })}
-
-      </div>{/* end scroll inner */}
-
-      {/* 「设计画布」入口 — 标记当前会话为设计会话 + 打开 design-canvas tab，让用户边对话边看画布 */}
-      <button
-        type="button"
-        data-testid="open-design-canvas"
-        disabled={!currentSessionId}
-        onClick={() => {
-          if (!currentSessionId) return;
-          useDesignCanvasStore.getState().markSessionDesignActive(currentSessionId);
-          // M1-R2.c：真·跨会话认领前先把当前画布兜底落盘（claim 会清空旧画布 + 置 runDir=null，
-          // 不落盘则未保存的手动编辑静默丢失）。仅真·跨会话（owner 非空且非当前）才需，沿用本仓
-          // 「编辑后落盘」的 fire-and-forget 写法；no-op / 无主认领分支不重置不丢数据，无需落盘。
-          const cs = useDesignCanvasStore.getState();
-          if (cs.ownerSessionId && cs.ownerSessionId !== currentSessionId && cs.runDir) {
-            void saveCanvasDoc(cs.runDir, cs.toDoc());
-          }
-          // 认领画布属主：当前会话非属主则重置画布（防上个设计会话内容残留泄漏）。
-          useDesignCanvasStore.getState().claimCanvasForSession(currentSessionId);
-          openWorkbenchTab('design-canvas');
-        }}
-        className="flex items-center justify-center w-6 h-6 flex-shrink-0 ml-0.5 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-zinc-500 disabled:hover:bg-transparent"
-        title={t.design.openCanvasHint}
-        aria-label={t.design.openCanvas}
+      <div
+        ref={toolbarRef}
+        data-testid="workbench-view-selector"
+        className="relative flex items-center gap-1.5 border-b border-zinc-700 bg-zinc-900 px-2 py-1.5"
       >
-        <Palette className="w-3 h-3 text-fuchsia-400/80" />
-      </button>
-
-      {/* "+" 按钮 — 关掉的 tab 从这里重新开。在 scroll 容器外，popover 才不被 overflow 切 */}
-      {canAddAny && (
-        <div ref={addRef} className="relative flex-shrink-0 ml-0.5">
-          <button
+        <div className="relative min-w-0 flex-1">
+          <button /* ds-allow:button: 单选器触发器需保留当前视图图标、脏状态与下拉箭头，Button primitive 布局不适配 */
             type="button"
-            onClick={() => setAddOpen((v) => !v)}
-            className="flex items-center justify-center w-6 h-6 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors"
-            title={t.workbenchTabs.openPanel}
-            aria-label={t.workbenchTabs.openPanel}
+            aria-haspopup="listbox"
+            aria-expanded={selectorOpen}
+            aria-label={t.workbenchTabs.chooseView}
+            title={activeMeta?.title}
+            onClick={() => {
+              setSelectorOpen((open) => !open);
+              setLauncherOpen(false);
+            }}
+            className="flex h-7 min-w-0 max-w-56 items-center gap-2 rounded-md px-2 text-xs text-zinc-200 hover:bg-zinc-800"
           >
-            <Plus className="w-3 h-3" />
+            {activeMeta && ActiveIcon && (
+              <>
+                <ActiveIcon className={`h-3.5 w-3.5 flex-shrink-0 ${activeMeta.iconClassName}`} />
+                <span className="truncate">{activeMeta.label}</span>
+                {activeMeta.isDirty && (
+                  <span className="text-[10px] leading-none text-amber-400" title="未保存">●</span>
+                )}
+              </>
+            )}
+            <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
           </button>
-          {addOpen && (
-            <div className="absolute right-0 top-full mt-1 z-40 w-36 rounded-md border border-zinc-700 bg-zinc-900 p-1 shadow-xl">
-              {!hasOverview && (
-                <button
-                  type="button"
-                  onClick={() => { openWorkbenchTab('overview'); setAddOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                >
-                  <LayoutDashboard className="w-3.5 h-3.5 text-cyan-400/80" />
-                  {t.workbenchTabs.overviewLabel}
-                </button>
-              )}
-              {!hasFiles && (
-                <button
-                  type="button"
-                  onClick={() => { openWorkbenchTab('files'); setAddOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                >
-                  <FolderTree className="w-3.5 h-3.5 text-amber-400/80" />
-                  {t.workbenchTabs.filesLabel}
-                </button>
-              )}
-              {!hasBrowser && (
-                <button
-                  type="button"
-                  onClick={() => { openWorkbenchTab('browser'); setAddOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                >
-                  <Globe2 className="w-3.5 h-3.5 text-emerald-400/80" />
-                  {t.workbenchTabs.browserLabel}
-                </button>
-              )}
+
+          {selectorOpen && (
+            <div
+              role="listbox"
+              aria-label={t.workbenchTabs.openViews}
+              className="absolute left-0 top-full z-40 mt-1 w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-1.5 shadow-xl"
+            >
+              {metas.map((meta) => {
+                const Icon = meta.icon;
+                const isActive = meta.id === activeMeta?.id;
+                return (
+                  <button /* ds-allow:button: listbox option 采用整行单选布局，Button primitive 的动作按钮形态不适配 */
+                    key={meta.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isActive}
+                    title={meta.title}
+                    onClick={() => selectView(meta.id)}
+                    className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors ${
+                      isActive
+                        ? 'bg-zinc-800 text-zinc-100'
+                        : 'text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200'
+                    }`}
+                  >
+                    <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${meta.iconClassName}`} />
+                    <span className="min-w-0 flex-1 truncate">{meta.label}</span>
+                    {meta.isDirty && <span className="text-[10px] leading-none text-amber-400">●</span>}
+                    {isActive && <Check className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" />}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
-      )}
-    </div>
-    <ConfirmDialog
-      isOpen={pendingClose !== null}
-      title="关闭未保存的文件？"
-      message={pendingClose ? `${pendingClose.label} 的修改尚未保存，关闭后这些修改会丢失。` : ''}
-      variant="danger"
-      confirmText="关闭且不保存"
-      onCancel={() => setPendingClose(null)}
-      onConfirm={() => {
-        if (pendingClose) closeWorkbenchTab(pendingClose.id);
-        setPendingClose(null);
-      }}
-    />
+
+        {canAddAny && (
+          <div className="relative flex-shrink-0">
+            <IconButton
+              size="sm"
+              variant="ghost"
+              icon={<Plus />}
+              aria-label={t.workbenchTabs.openPanel}
+              title={t.workbenchTabs.openPanel}
+              onClick={() => {
+                setLauncherOpen((open) => !open);
+                setSelectorOpen(false);
+              }}
+            />
+            {launcherOpen && (
+              <div className="absolute right-0 top-full z-40 mt-1">
+                <WorkbenchViewLauncher
+                  openedViews={workbenchTabs}
+                  canOpenDesignCanvas={Boolean(currentSessionId)}
+                  mode="popover"
+                  onOpen={openView}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeMeta && (
+          <IconButton
+            size="sm"
+            variant="ghost"
+            icon={<X />}
+            aria-label={t.workbenchTabs.closeCurrentView}
+            title={t.workbenchTabs.closeCurrentView}
+            onClick={() => requestClose(activeMeta)}
+          />
+        )}
+      </div>
+
+      <ConfirmDialog
+        isOpen={pendingClose !== null}
+        title="关闭未保存的文件？"
+        message={pendingClose ? `${pendingClose.label} 的修改尚未保存，关闭后这些修改会丢失。` : ''}
+        variant="danger"
+        confirmText="关闭且不保存"
+        onCancel={() => setPendingClose(null)}
+        onConfirm={() => {
+          if (pendingClose) closeWorkbenchTab(pendingClose.id);
+          setPendingClose(null);
+        }}
+      />
     </>
   );
 };

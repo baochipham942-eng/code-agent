@@ -144,7 +144,10 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [currentSessionId, sessions],
   );
 
-  const [searchScope, setSearchScope] = useState<SidebarSearchScope>('current-project');
+  // 默认全局：搜索从常驻输入框改成放大镜弹窗后，它是一个「全局搜索入口」——
+  // 默认只搜当前项目会让人以为搜不到（正文命中的会话若在别的项目下就不出现）。
+  // 想收窄仍可在弹窗里点「本项目」。
+  const [searchScope, setSearchScope] = useState<SidebarSearchScope>('all');
   const effectiveSearchScope = resolveSidebarSearchScope(searchScope, currentProjectSearchSessionIds);
   const searchableSessions = useMemo(
     () => sessions.filter((session) => session.status !== 'archived'),

@@ -109,3 +109,6 @@ export const PORTS = {
 /** macOS 原生连接器 id（仅枚举可用值，默认不自动启用）*/
 export const NATIVE_CONNECTOR_IDS = ['calendar', 'mail', 'reminders', 'photos'] as const;
 export type NativeConnectorId = typeof NATIVE_CONNECTOR_IDS[number];
+
+/** MCP 配置中指向 SecureStorage integration 槽的凭据引用前缀。 */
+export const MCP_SECRET_REF_PREFIX = 'secureref:';

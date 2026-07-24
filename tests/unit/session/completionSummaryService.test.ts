@@ -157,6 +157,51 @@ describe('completionSummaryService', () => {
     }
   });
 
+  it('groups changed files and Git HEAD state for every Project Source', async () => {
+    const primary = await makeGitWorkdir();
+    const additional = await makeGitWorkdir();
+    try {
+      const ctx = makeRuntimeContext(primary, []);
+      (ctx as { workspaceScope?: unknown }).workspaceScope = {
+        projectId: 'project-1',
+        primaryRoot: primary,
+        roots: [
+          { sourceId: 'primary', path: primary, role: 'primary', access: 'read_write' },
+          { sourceId: 'additional', path: additional, role: 'additional', access: 'read_write' },
+        ],
+        version: 'scope-v1',
+      };
+      (ctx as { nudgeManager: unknown }).nudgeManager = {
+        getModifiedFiles: () => new Set([
+          path.join(primary, 'src', 'a.ts'),
+          path.join(additional, 'src', 'a.ts'),
+        ]),
+      };
+
+      const record = await buildCompletionSummaryRecord({
+        ctx,
+        status: 'completed',
+        iterations: 1,
+        userMessage: 'Multi repo delivery',
+      });
+
+      expect(record.workspaceScopeVersion).toBe('scope-v1');
+      expect(record.dirtyStates).toEqual(expect.arrayContaining([
+        expect.objectContaining({ sourceId: 'primary', isDirty: true, headCommit: expect.stringMatching(/^[a-f0-9]{40}$/) }),
+        expect.objectContaining({ sourceId: 'additional', isDirty: true, headCommit: expect.stringMatching(/^[a-f0-9]{40}$/) }),
+      ]));
+      expect(record.changedFilesBySource).toEqual(expect.arrayContaining([
+        expect.objectContaining({ sourceId: 'primary', files: [path.join(primary, 'src', 'a.ts')] }),
+        expect.objectContaining({ sourceId: 'additional', files: [path.join(additional, 'src', 'a.ts')] }),
+      ]));
+    } finally {
+      await Promise.all([
+        rm(primary, { recursive: true, force: true }),
+        rm(additional, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
   it('persists completion records as append-only JSONL', async () => {
     const workingDirectory = await makeGitWorkdir();
     try {

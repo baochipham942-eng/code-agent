@@ -113,6 +113,9 @@ describe('seedMemoryInjector', () => {
     expect(block).toContain('Approved memory');
     expect(block).toContain('Regular memory');
     expect(block).not.toContain('Ignored memory');
+    // 每条记忆带 [#id] 稳定句柄，供 memory_amend 定向纠错/遗忘
+    expect(block).toContain('[#mem-approved]');
+    expect(block).toContain('[#mem-regular]');
     expect(mocks.db.listMemories).toHaveBeenNthCalledWith(1, {
       category: 'knowledge_inbox_decision',
       projectPath: '/repo/code-agent',

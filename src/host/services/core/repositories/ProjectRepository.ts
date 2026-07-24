@@ -419,12 +419,13 @@ export class ProjectRepository {
       const keyCache = new Map<string, string>(); // workspacePath → projectId
       for (const row of orphans) {
         const dir = ((row.working_directory as string) || (row.workspace as string) || '').trim();
+        const cachedProjectId = keyCache.get(dir);
         let projectId: string;
         if (!dir) {
           ensureUnsorted();
           projectId = UNSORTED_PROJECT_ID;
-        } else if (keyCache.has(dir)) {
-          projectId = keyCache.get(dir)!;
+        } else if (cachedProjectId !== undefined) {
+          projectId = cachedProjectId;
         } else {
           const key = getProjectKey(dir);
           const existing = this.getProjectByWorkspaceKey(key);

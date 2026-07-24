@@ -537,7 +537,10 @@ export class ProjectService {
         throw new Error(`Cannot remove Source with uncommitted changes: ${dirtyRemoved.path}`);
       }
     }
-    const primary = sources.find((source) => source.role === 'primary')!;
+    const primary = sources.find((source) => source.role === 'primary');
+    if (!primary) {
+      throw new Error('Project must contain exactly one Primary Source.');
+    }
     try {
       accessSync(primary.canonicalPath, fsConstants.R_OK | fsConstants.W_OK);
     } catch {
@@ -579,13 +582,13 @@ export class ProjectService {
     } catch {
       scope = undefined;
     }
-    return scope
-      ? artifacts.map((artifact) => {
-        if (!artifact.path || !path.isAbsolute(artifact.path!)) return artifact;
-        const source = resolveWorkspacePath(scope!, artifact.path!, 'read');
-        return source ? { ...artifact, sourceId: source.root.sourceId } : artifact;
-      })
-      : artifacts;
+    if (!scope) return artifacts;
+    return artifacts.map((artifact) => {
+      const artifactPath = artifact.path;
+      if (!artifactPath || !path.isAbsolute(artifactPath)) return artifact;
+      const source = resolveWorkspacePath(scope, artifactPath, 'read');
+      return source ? { ...artifact, sourceId: source.root.sourceId } : artifact;
+    });
   }
 
   renameProject(projectId: string, name: string, now: number): Project | undefined {

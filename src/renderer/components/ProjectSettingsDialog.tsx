@@ -122,12 +122,13 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
 
   const remove = (index: number): void => {
     const source = sources[index];
-    const dirty = source.id
-      ? gitStates.find((state) => state.sourceId === source.id)?.dirtyFiles?.length
+    const sourceId = source.id;
+    const dirty = sourceId
+      ? gitStates.find((state) => state.sourceId === sourceId)?.dirtyFiles?.length
       : 0;
     if (dirty && !window.confirm(copy.removeDirtyConfirm.replace('{path}', source.path))) return;
-    if (dirty && source.id) {
-      setConfirmedDirtySourceIds((current) => [...new Set([...current, source.id!])]);
+    if (dirty && sourceId) {
+      setConfirmedDirtySourceIds((current) => [...new Set([...current, sourceId])]);
     }
     setSources((current) => current.filter((_, sourceIndex) => sourceIndex !== index));
   };

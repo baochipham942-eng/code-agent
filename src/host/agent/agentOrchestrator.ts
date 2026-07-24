@@ -1195,7 +1195,7 @@ export class AgentOrchestrator {
       } catch (error) {
         logger.warn('LSP initialization failed (non-blocking)', { error });
       }
-    }).catch((error) => {
+    }).catch((error: unknown) => {
       logger.warn('Failed to import LSP module', { error });
     });
   }
@@ -1211,7 +1211,7 @@ export class AgentOrchestrator {
       } catch (error) {
         logger.warn('SkillWatcher update failed (non-blocking)', { error });
       }
-    }).catch((error) => {
+    }).catch((error: unknown) => {
       logger.warn('Failed to import skills module', { error });
     });
   }

@@ -259,9 +259,13 @@ export async function buildCompletionSummaryRecord(input: BuildCompletionSummary
   const changedFiles = collectChangedFiles(ctx);
   const visibleFinalAnswer = getVisibleFinalAnswer(ctx.messages);
   const dirtyState = await readGitDirtyState(ctx.workingDirectory);
-  const dirtyStates = ctx.workspaceScope
-    ? (await getProjectSourceGitStates(ctx.workspaceScope)).map((state) => {
-      const root = ctx.workspaceScope!.roots.find((entry) => entry.sourceId === state.sourceId)!;
+  const workspaceScope = ctx.workspaceScope;
+  const dirtyStates = workspaceScope
+    ? (await getProjectSourceGitStates(workspaceScope)).map((state) => {
+      const root = workspaceScope.roots.find((entry) => entry.sourceId === state.sourceId);
+      if (!root) {
+        throw new Error(`Git state references unknown Project Source: ${state.sourceId}`);
+      }
       return {
         sourceId: state.sourceId,
         sourceRole: root.role,
@@ -276,13 +280,13 @@ export async function buildCompletionSummaryRecord(input: BuildCompletionSummary
       } satisfies CompletionSummaryDirtyState;
     })
     : undefined;
-  const changedFilesBySource = ctx.workspaceScope
-    ? ctx.workspaceScope.roots.map((root) => ({
+  const changedFilesBySource = workspaceScope
+    ? workspaceScope.roots.map((root) => ({
       sourceId: root.sourceId,
       sourceRole: root.role,
       sourceAccess: root.access,
       files: changedFiles.filter((filePath) =>
-        resolveWorkspacePath(ctx.workspaceScope!, filePath, 'read')?.root.sourceId === root.sourceId
+        resolveWorkspacePath(workspaceScope, filePath, 'read')?.root.sourceId === root.sourceId
       ),
     })).filter((group) => group.files.length > 0)
     : undefined;

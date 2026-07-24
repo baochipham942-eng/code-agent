@@ -14,10 +14,13 @@
 
 const CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data: blob:;">`;
 
+/** 沙箱页面的正文色。属性面板读不出颜色时拿它兜底，两处必须是同一个值。 */
+export const SANDBOX_TEXT_COLOR = '#e4e4e7'; // ds-allow:viz 沙箱 iframe 内文档的内容色，非本应用 UI 样式，无对应 token
+
 const INJECTED_STYLES = `<style>
 body {
   margin: 0; padding: 16px;
-  background: #18181b; color: #e4e4e7;
+  background: #18181b; color: ${SANDBOX_TEXT_COLOR};
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 14px;
 }
@@ -61,20 +64,87 @@ function wrap(code: string, head: string, bodyTail: string): string {
   return `<!DOCTYPE html><html><head>${head}</head><body>${code}${bodyTail}</body></html>`;
 }
 
-/**
- * 剥掉所有 <script>。用 DOMParser 而不是正则——正则挡不住 `<script >`、
- * 属性里带 `</script` 的字符串这类写法，而模型什么都写得出来。
- */
-export function stripScripts(code: string): string {
+/** 源码文档：不带任何注入，就是补丁要打上去的那一份。 */
+function parseSource(code: string): { doc: Document; isFullDocument: boolean } {
   const isFullDocument = /<html/i.test(code);
   const doc = new DOMParser().parseFromString(
     isFullDocument ? code : `<!DOCTYPE html><html><head></head><body>${code}</body></html>`,
     'text/html',
   );
+  return { doc, isFullDocument };
+}
+
+function serializeSource(doc: Document, isFullDocument: boolean): string {
+  if (!isFullDocument) return doc.body.innerHTML;
+  // documentElement.outerHTML 不含 doctype，原文有就补回去
+  const doctype = doc.doctype ? `<!DOCTYPE ${doc.doctype.name}>` : '';
+  return `${doctype}${doc.documentElement.outerHTML}`;
+}
+
+/**
+ * 剥掉所有 <script>。用 DOMParser 而不是正则——正则挡不住 `<script >`、
+ * 属性里带 `</script` 的字符串这类写法，而模型什么都写得出来。
+ */
+export function stripScripts(code: string): string {
+  const { doc, isFullDocument } = parseSource(code);
   for (const script of Array.from(doc.querySelectorAll('script'))) {
     script.remove();
   }
-  return isFullDocument ? doc.documentElement.outerHTML : doc.body.innerHTML;
+  return serializeSource(doc, isFullDocument);
+}
+
+/** 飞书演示的三项，一项都不多。 */
+export interface HtmlElementEdit {
+  selector: string;
+  text?: string;
+  /** px */
+  fontSize?: number;
+  /** #rrggbb */
+  color?: string;
+}
+
+type HtmlEditFailure =
+  | 'selector_missed'
+  | 'text_target_has_children';
+
+export type HtmlEditResult =
+  | { ok: true; code: string }
+  | { ok: false; reason: HtmlEditFailure };
+
+/** 只含文本的元素才允许改文字；有子元素时改 textContent 会把整棵子树抹掉。 */
+export function isTextEditable(element: Element): boolean {
+  return element.children.length === 0;
+}
+
+/**
+ * 把一次元素级修改打进源码。
+ *
+ * 刻意不做 DOM 序列化回写整页——`buildPreviewSrcdoc` 往文档里塞了 CSP / 样式 /
+ * 高度上报脚本，序列化渲染态会把这些烙进模型的源码里。这里只在**源码文档**上
+ * 改目标元素的文本或内联 style，其余节点一个不碰。
+ *
+ * fail-closed：选择器命不中就报 selector_missed，不静默改错元素——那是用户
+ * （非程序员）永远发现不了的一类错。
+ */
+export function applyHtmlElementEdit(code: string, edit: HtmlElementEdit): HtmlEditResult {
+  const { doc, isFullDocument } = parseSource(code);
+  // DOMParser 造出来的文档没有浏览上下文，defaultView 是 null，
+  // 所以不能用 `instanceof doc.defaultView.HTMLElement` 判类型。
+  const target = doc.querySelector(edit.selector) as HTMLElement | null;
+  if (!target?.style) return { ok: false, reason: 'selector_missed' };
+
+  if (edit.text !== undefined) {
+    if (!isTextEditable(target)) return { ok: false, reason: 'text_target_has_children' };
+    target.textContent = edit.text;
+  }
+  if (edit.fontSize !== undefined) {
+    target.style.fontSize = `${edit.fontSize}px`;
+  }
+  if (edit.color !== undefined) {
+    target.style.color = edit.color;
+  }
+
+  return { ok: true, code: serializeSource(doc, isFullDocument) };
 }
 
 export function buildPreviewSrcdoc(code: string): string {

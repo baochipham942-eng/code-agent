@@ -22,6 +22,11 @@ export const generativeUIZh = {
     selectHint: '点页面上任意一块，选中它。',
     selectionNoText: '（这一块没有文字）',
     clearSelection: '取消选中',
+    textLabel: '文字',
+    textNotEditable: '这一块里还有别的内容，点更具体的那一块才能改文字',
+    fontSizeLabel: '字号',
+    colorLabel: '颜色',
+    patchFailed: '这一块的位置对不上了，请重新点选。',
     // DocumentBlock
     document: '文档',
     paragraphUnit: '段',
@@ -68,6 +73,11 @@ export const generativeUIEn = {
     selectHint: 'Click any part of the page to select it.',
     selectionNoText: '(no text in this element)',
     clearSelection: 'Clear selection',
+    textLabel: 'Text',
+    textNotEditable: 'This block contains other elements — pick a more specific one to edit its text',
+    fontSizeLabel: 'Size',
+    colorLabel: 'Color',
+    patchFailed: "This block can't be located any more. Please select it again.",
     // DocumentBlock
     document: 'Document',
     paragraphUnit: 'paragraphs',

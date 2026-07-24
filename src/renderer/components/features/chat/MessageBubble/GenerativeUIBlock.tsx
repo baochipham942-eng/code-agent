@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { memo, useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
-import { Sparkles, Code2, Copy, Check, ExternalLink, MousePointerClick, X } from 'lucide-react';
+import { Sparkles, Code2, Copy, Check, ExternalLink, MousePointerClick } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { useI18n } from '../../../../hooks/useI18n';
 import {
@@ -12,11 +12,14 @@ import {
   type HtmlLocalitySelectionController,
 } from '../../../../utils/htmlLocality';
 import {
+  applyHtmlElementEdit,
   buildEditSrcdoc,
   buildPreviewSrcdoc,
   EDIT_SANDBOX,
   PREVIEW_SANDBOX,
+  type HtmlElementEdit,
 } from './generativeUIDocument';
+import { GenerativeUIEditPanel } from './GenerativeUIEditPanel';
 
 // Prism 语法高亮按需动态加载,只在用户点开"查看源码"时才下载。
 const LazyPrismCodeBlock = lazy(() => import('./PrismCodeBlock'));
@@ -78,6 +81,14 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
   const [iframeHeight, setIframeHeight] = useState(MIN_IFRAME_HEIGHT);
   const [loaded, setLoaded] = useState(false);
   const [selection, setSelection] = useState<HtmlElementSelection | null>(null);
+  const [selectedElement, setSelectedElement] = useState<Element | null>(null);
+  // 用户改过之后的源码。null = 没改过，跟着外部 code 走（模型重新生成时自然更新）。
+  // 一旦改过就以 draft 为准；持久化是 P3 的事，本片只活在本次会话里。
+  const [draftCode, setDraftCode] = useState<string | null>(null);
+  // 进编辑态时把源码钉住：srcdoc 一变 iframe 就重载，选中态会当场丢掉，
+  // 改完字号就没法接着改颜色。所见即所得靠直接改 iframe 里的 DOM，不靠重载。
+  const [editBaseCode, setEditBaseCode] = useState<string | null>(null);
+  const [patchError, setPatchError] = useState(false);
   // 两态各持一个 ref：共用一个的话，切换时 React 会在挂载新 iframe 之后
   // 才把旧 iframe 的 ref 置空，ref 变 null，预览态的高度上报就再也对不上 source 了。
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
@@ -85,7 +96,8 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
   const controllerRef = useRef<HtmlLocalitySelectionController | null>(null);
   const { t } = useI18n();
 
-  const srcdoc = buildPreviewSrcdoc(code);
+  const activeCode = draftCode ?? code;
+  const srcdoc = buildPreviewSrcdoc(activeCode);
 
   // Listen for height messages from iframe
   useEffect(() => {
@@ -107,6 +119,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
     controllerRef.current?.destroy();
     controllerRef.current = null;
     setSelection(null);
+    setSelectedElement(null);
   }, []);
 
   // 编辑态同源，点选监听由父窗口直接挂到 iframe 文档上；高度也直接量，
@@ -121,7 +134,10 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
       Math.min(MAX_IFRAME_HEIGHT, doc.body.scrollHeight),
     ));
     setLoaded(true);
-    controllerRef.current = attachHtmlLocalitySelection(doc, setSelection);
+    controllerRef.current = attachHtmlLocalitySelection(doc, (next, element) => {
+      setSelection(next);
+      setSelectedElement(element);
+    });
   }, [detachSelection]);
 
   // srcdoc 换了就是换了一个 document，旧监听/节点引用必须先释放，onLoad 再挂新的
@@ -133,10 +149,45 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
 
   // 解除选中交给上面那个 [code, editing] effect —— 它两个方向都覆盖，这里再调一次是冗余
   const toggleEditing = useCallback(() => {
-    setEditing((current) => !current);
+    setEditing((current) => {
+      // 进编辑态才钉源码；退出时松开，下次进来以最新的 draft 为基准
+      setEditBaseCode(current ? null : (draftCode ?? code));
+      return !current;
+    });
     setShowSource(false);
     setLoaded(false);
-  }, []);
+    setPatchError(false);
+  }, [code, draftCode]);
+
+  /**
+   * 一次属性修改走两步，顺序不能反：**先算补丁，成了才改 DOM**。
+   * 反过来的话补丁失败时 iframe 已经变了、源码没变，两边就分叉了——
+   * 用户看到改动生效，实际存下去的是旧的。
+   */
+  const applyEdit = useCallback((edit: Omit<HtmlElementEdit, 'selector'>) => {
+    const element = controllerRef.current?.getSelectedElement();
+    if (!element || !selection) return;
+
+    const result = applyHtmlElementEdit(activeCode, { ...edit, selector: selection.selector });
+    if (!result.ok) {
+      setPatchError(true);
+      return;
+    }
+    setPatchError(false);
+    setDraftCode(result.code);
+
+    // 所见即所得：直接改 iframe 里那个元素，不重载
+    const live = element as HTMLElement;
+    if (edit.text !== undefined) live.textContent = edit.text;
+    if (edit.fontSize !== undefined) live.style.fontSize = `${edit.fontSize}px`;
+    if (edit.color !== undefined) live.style.color = edit.color;
+
+    const doc = live.ownerDocument;
+    setIframeHeight(Math.max(
+      MIN_IFRAME_HEIGHT,
+      Math.min(MAX_IFRAME_HEIGHT, doc.body.scrollHeight),
+    ));
+  }, [activeCode, selection]);
 
   const handleCopy = useCallback(async () => {
     await navigator.clipboard.writeText(code);
@@ -221,7 +272,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
 
       {/* Content: Source or Preview */}
       {showSource ? (
-        <SourceView code={code} />
+        <SourceView code={activeCode} />
       ) : (
         <div className="relative">
           {!loaded && (
@@ -234,7 +285,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
               key="edit"
               ref={editIframeRef}
               sandbox={EDIT_SANDBOX}
-              srcDoc={buildEditSrcdoc(code)}
+              srcDoc={buildEditSrcdoc(editBaseCode ?? activeCode)}
               style={{ height: `${iframeHeight}px`, minHeight: `${MIN_IFRAME_HEIGHT}px`, maxHeight: `${MAX_IFRAME_HEIGHT}px` }}
               className="w-full border-0 bg-zinc-900"
               title={t.generativeUI.generativeUI}
@@ -257,26 +308,23 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
         </div>
       )}
 
-      {/* 选中回显。P1 只读——属性面板是 P2。 */}
-      {editing && !showSource && selection && (
+      {/* 选中后给属性面板：文字 / 字号 / 颜色。key 换元素时重建输入框，
+          避免用 effect 回灌把正在输入的内容冲掉。 */}
+      {editing && !showSource && selection && selectedElement && (
+        <GenerativeUIEditPanel
+          key={selection.selector}
+          element={selectedElement}
+          tag={selection.tag}
+          onApply={applyEdit}
+          onClear={() => controllerRef.current?.clear()}
+        />
+      )}
+      {editing && !showSource && patchError && (
         <div
-          className="flex items-center gap-2 px-4 py-2 border-t border-zinc-700 bg-zinc-950/60"
-          data-testid="generative-ui-selection-bar"
+          className="px-4 py-2 border-t border-amber-500/20 bg-amber-500/5 text-[11px] text-amber-200"
+          data-testid="generative-ui-patch-error"
         >
-          <span className="shrink-0 rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[11px] text-cyan-200">
-            {`<${selection.tag}>`}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-xs text-zinc-300">
-            {selection.text || t.generativeUI.selectionNoText}
-          </span>
-          <button
-            onClick={() => controllerRef.current?.clear()}
-            className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-            title={t.generativeUI.clearSelection}
-            aria-label={t.generativeUI.clearSelection}
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          {t.generativeUI.patchFailed}
         </div>
       )}
       {editing && !showSource && !selection && (

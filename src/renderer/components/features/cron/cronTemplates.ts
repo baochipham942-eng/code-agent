@@ -1,3 +1,4 @@
+import { CRON_AGENT_SNAPSHOT } from '@shared/constants/memory';
 import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
 
@@ -120,6 +121,8 @@ export const CRON_TEMPLATES: CronTemplate[] = [
         agentPrompt:
           `请查看 ${v.url} 的内容有没有更新，重点留意新增内容、重要改动和需要我关注的信息。` +
           '如果有变化，请简要说明变了什么、为什么值得关注；如果没有变化，也请直接告诉我。',
+        // 开变化追踪：不开的话它每次只能把当前全量内容报一遍，说不出「变了什么」
+        agentContextText: JSON.stringify({ [CRON_AGENT_SNAPSHOT.ENABLED_KEY]: true }, null, 2),
         ...cron,
       });
     },

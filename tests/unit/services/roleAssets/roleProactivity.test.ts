@@ -113,6 +113,18 @@ import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
 const RESEARCHER = '研究员';
 const TODAY = new Date().toISOString().slice(0, 10);
 
+/**
+ * 把假时钟冻到 TODAY 当天的指定时刻。
+ *
+ * 不要写死某个日期：履历是按 TODAY（真实时钟）播种的，而 wakeRole 数「今天醒了几次」
+ * 用的是当前时钟。两者一旦跨天错开，预算护栏就数到 0 而静默失效——测试会在写死的
+ * 那天绿、第二天开始红。
+ */
+function freezeClockAt(hhmm: string): void {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(`${TODAY}T${hhmm}:00`));
+}
+
 /** 让 mock 会话管理器返回一次"模型醒来产出" */
 function primeWakeRun(decision: string, sessionId = 'wake-session-1'): void {
   mockSessionManager.createSession.mockResolvedValue({ id: sessionId, workingDirectory: undefined });
@@ -253,8 +265,7 @@ describe('roleProactivity', () => {
 
   describe('wakeRole 醒来循环', () => {
     it('出厂默认（silent，无任何配置）下醒来被跳过，不烧 token', async () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date(2026, 6, 23, 23, 0));
+      freezeClockAt('23:00');
       try {
         mockSettings.value = {
           roleAssets: {
@@ -282,8 +293,7 @@ describe('roleProactivity', () => {
     });
 
     it('免打扰时段内的 cadence 醒来直接丢弃，不跑模型', async () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date(2026, 6, 23, 23, 0));
+      freezeClockAt('23:00');
       try {
         mockSettings.value = {
           roleAssets: {
@@ -428,8 +438,7 @@ describe('roleProactivity', () => {
     });
 
     it('预算护栏：当天醒来次数达上限 → skipped', async () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date(2026, 6, 23, 23, 0));
+      freezeClockAt('23:00');
       try {
         mockSettings.value = {
           roleAssets: {

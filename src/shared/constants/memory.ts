@@ -163,6 +163,21 @@ export const ROLE_PROACTIVITY = {
   HISTORY_SUMMARY_MAX_CHARS: 200,
 } as const;
 
+/** Agent 型定时任务跨运行快照（存放在 action.context 共享袋中）。 */
+export const CRON_AGENT_SNAPSHOT = {
+  /**
+   * action.context 中的开关键。变化追踪按任务选择加入——
+   * 全局套用会让 heartbeat 和一堆与变化无关的任务被平白要求吐快照并落库。
+   */
+  ENABLED_KEY: 'trackChanges',
+  /** action.context 中的快照键。 */
+  CONTEXT_KEY: 'lastRunSnapshot',
+  /** 最终 assistant 消息里的快照标记。 */
+  TAG_PATTERN: /<cron_snapshot>\s*([\s\S]*?)\s*<\/cron_snapshot>/i,
+  /** 快照落库与下次提示词注入的 UTF-8 字节上限。 */
+  MAX_BYTES: 8 * 1024,
+} as const;
+
 /** GAP-005: 经验沉淀管线（learningPipeline → failure journal / skill 草稿） */
 export const LEARNING_PIPELINE = {
   // 注：原 telemetry n-gram 成功蒸馏（SUCCESS_PATTERN_THRESHOLD / SUCCESS_SEQUENCE_*）已废弃移除，

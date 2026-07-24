@@ -40,6 +40,17 @@ function toChannelSender(value: unknown): ChannelSender {
   return { id: 'api', name: 'API' };
 }
 
+/**
+ * 群聊出站回帖加发起人前缀，便于多人共用同一 bot 时区分回给谁；
+ * 私聊不加；发起人名字缺失/为空时降级为不加前缀，绝不阻断发送。
+ */
+export function withSenderAttribution(message: ChannelMessage, text: string): string {
+  if (message.context.chatType !== 'group') return text;
+  const name = message.sender?.name?.trim();
+  if (!name) return text;
+  return `[${name}] ${text}`;
+}
+
 function toChannelContext(value: unknown): ChannelContext {
   if (
     isRecord(value) &&
@@ -309,6 +320,8 @@ export class ChannelAgentBridge {
   ): Promise<void> {
     // 收集响应
     let fullResponse = '';
+    // 出站文本统一在这一处加发起人前缀，覆盖成功/兜底/失败三条 sendText 路径
+    const send = (text: string) => responseCallback.sendText(withSenderAttribution(message, text));
     try {
       await this.startTyping(responseCallback);
       // 记录发送前的消息数量，用于识别新的回复
@@ -345,10 +358,10 @@ export class ChannelAgentBridge {
       logCollector.log('agent', 'INFO', `[Channel] Sending response (length: ${fullResponse.length})`);
       await this.stopTyping(responseCallback);
       if (fullResponse) {
-        const result = await responseCallback.sendText(fullResponse);
+        const result = await send(fullResponse);
         logCollector.log('agent', 'INFO', `[Channel] Response sent: success=${result.success}, error=${result.error || 'none'}`);
       } else {
-        const result = await responseCallback.sendText('处理完成，但没有生成响应。');
+        const result = await send('处理完成，但没有生成响应。');
         logCollector.log('agent', 'INFO', `[Channel] Default response sent: success=${result.success}`);
       }
     } catch (error) {
@@ -356,7 +369,7 @@ export class ChannelAgentBridge {
       const { summary, retryHint } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       const channelSummary = summarizeChannelError(error).message;
       logCollector.log('agent', 'ERROR', `[Channel] Error: ${errorMsg}`);
-      await responseCallback.sendText(`处理失败: ${summary || channelSummary}${retryHint ? `\n${retryHint}` : ''}`);
+      await send(`处理失败: ${summary || channelSummary}${retryHint ? `\n${retryHint}` : ''}`);
     } finally {
       await this.stopTyping(responseCallback);
     }

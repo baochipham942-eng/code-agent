@@ -209,6 +209,38 @@ describe('skillInvocationResolver', () => {
     expect(resolveSkillInvocationFromSkills('将我的龙虾升级到最新版本', [lobster])?.skill.name).toBe('lobster');
   });
 
+  // skill-alias 词边界回归：description 里的否定声明（"不要因为用户提到 page 等关键词就
+  // 自动触发"）不应被解析成正面触发别名，且拉丁别名不应子串命中标识符（page_size）。
+  it('does not treat a design-brief-style negated keyword list as trigger aliases', () => {
+    const designBrief = skill({
+      name: 'design-brief',
+      description:
+        '生成结构化设计简报。【仅手动触发】仅在用户明确说 `/design-brief`、"写设计简报" 时调用。' +
+        '不要因为用户提到 plan/feature/page/landing/UI direction 等关键词就自动触发。',
+    });
+
+    const aliases = getSkillInvocationAliases(designBrief).map((alias) => alias.value);
+    expect(aliases).not.toContain('page');
+    expect(aliases).not.toContain('plan');
+    expect(aliases).not.toContain('feature');
+    expect(aliases).not.toContain('landing');
+
+    expect(resolveSkillInvocationFromSkills('把 page_size 参数改成 50', [designBrief])).toBeNull();
+  });
+
+  it('/design-brief 仍确定性命中 design-brief skill', () => {
+    const designBrief = skill({
+      name: 'design-brief',
+      description:
+        '生成结构化设计简报。【仅手动触发】仅在用户明确说 `/design-brief`、"写设计简报" 时调用。' +
+        '不要因为用户提到 plan/feature/page/landing/UI direction 等关键词就自动触发。',
+    });
+
+    expect(resolveSkillInvocationFromSkills('/design-brief 做个 onboarding 流程', [designBrief])?.skill.name).toBe(
+      'design-brief',
+    );
+  });
+
   it('does not bind ambiguous aliases to an arbitrary skill', () => {
     const first = skill({ name: 'first-tool', description: '用于共享入口。', aliases: ['共享'] });
     const second = skill({ name: 'second-tool', description: '用于共享入口。', aliases: ['共享'] });

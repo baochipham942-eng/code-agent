@@ -564,3 +564,62 @@ describe('mcp.ipc settings add helpers', () => {
     expect(mcpClientMock.disconnect).not.toHaveBeenCalled();
   });
 });
+
+describe('setServerEnabled 持久化（P0b：重启不再丢启用状态）', () => {
+  it('把 enabled 写回承载该 server 的配置文件，不动兄弟条目', async () => {
+    readFileMock.mockResolvedValue(JSON.stringify({
+      servers: [
+        { name: 'lark', type: 'stdio', command: 'npx', enabled: false },
+        { name: 'other', type: 'stdio', command: 'npx', enabled: true },
+      ],
+    }));
+
+    const response = await invokeMcpAction('setServerEnabled', { serverName: 'lark', enabled: true }) as {
+      success: boolean;
+    };
+
+    expect(response).toMatchObject({ success: true });
+    expect(mcpClientMock.setServerEnabled).toHaveBeenCalledWith('lark', true);
+    expect(writeFileMock).toHaveBeenCalledTimes(1);
+    const written = JSON.parse(String(writeFileMock.mock.calls[0][1])) as {
+      servers: Array<{ name: string; enabled: boolean }>;
+    };
+    expect(written.servers.find((s) => s.name === 'lark')?.enabled).toBe(true);
+    expect(written.servers.find((s) => s.name === 'other')?.enabled).toBe(true);
+  });
+
+  it('enabled 已是目标值时不重复写文件', async () => {
+    readFileMock.mockResolvedValue(JSON.stringify({
+      servers: [{ name: 'lark', type: 'stdio', command: 'npx', enabled: true }],
+    }));
+
+    await invokeMcpAction('setServerEnabled', { serverName: 'lark', enabled: true });
+
+    expect(mcpClientMock.setServerEnabled).toHaveBeenCalledWith('lark', true);
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it('server 不在任何配置文件里（builtin/cloud）不写文件也不报错', async () => {
+    readFileMock.mockResolvedValue(JSON.stringify({
+      servers: [{ name: 'other', type: 'stdio', command: 'npx', enabled: true }],
+    }));
+
+    const response = await invokeMcpAction('setServerEnabled', { serverName: 'memory', enabled: false }) as {
+      success: boolean;
+    };
+
+    expect(response).toMatchObject({ success: true });
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it('配置文件不存在/不可读时静默跳过，不报错', async () => {
+    readFileMock.mockRejectedValue(new Error('ENOENT'));
+
+    const response = await invokeMcpAction('setServerEnabled', { serverName: 'lark', enabled: true }) as {
+      success: boolean;
+    };
+
+    expect(response).toMatchObject({ success: true });
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+});

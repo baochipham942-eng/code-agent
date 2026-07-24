@@ -17,6 +17,7 @@ import { useMessageActionStore } from '../../stores/messageActionStore';
 import { invokeDomain } from '../../services/ipcService';
 import { TweakPanel } from './TweakPanel';
 import { useI18n } from '../../hooks/useI18n';
+import { normalizeBrowserUrl } from '../../utils/browserUrl';
 
 interface Props {
   tabId: string;
@@ -65,9 +66,14 @@ export function isTrustedLivePreviewBridgeEvent(
 // 诊断条：frameError 原文（bridge 定位失败/CSP 拒绝/超时等六种工程报错）+
 // CSP snippet 对非程序员用户是黑话。第一层固定人话摘要+建议，原文和 CSP
 // 进「查看详情」折叠（复用 systemError 域的折叠按钮键，同一套交互）。
-export const LivePreviewDiagnosticStrip: React.FC<{ frameError: string; cspSnippet: string }> = ({
+export const LivePreviewDiagnosticStrip: React.FC<{
+  frameError: string;
+  cspSnippet: string;
+  onOpenExternal?: () => void;
+}> = ({
   frameError,
   cspSnippet,
+  onOpenExternal,
 }) => {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -86,6 +92,16 @@ export const LivePreviewDiagnosticStrip: React.FC<{ frameError: string; cspSnipp
           {expanded ? t.systemError.hideDetails : t.systemError.viewDetails}
         </button>
       </div>
+      {onOpenExternal && (
+        <button
+          type="button"
+          onClick={onOpenExternal}
+          className="inline-flex items-center gap-1.5 rounded bg-amber-300 px-2.5 py-1 font-medium text-zinc-950 hover:bg-amber-200"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          {t.livePreview.openExternal}
+        </button>
+      )}
       {expanded && (
         <div className="space-y-0.5 font-mono text-amber-300/80">
           <div>⚠ {frameError}</div>
@@ -97,6 +113,7 @@ export const LivePreviewDiagnosticStrip: React.FC<{ frameError: string; cspSnipp
 };
 
 export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
+  const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const setSelectedElement = useAppStore((s) => s.setSelectedElement);
   const jumpToFileLine = useAppStore((s) => s.jumpToFileLine);
@@ -112,6 +129,8 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
     const tab = s.previewTabs.find((t) => t.id === tabId);
     return tab?.devServerSessionId ?? null;
   });
+  const openLivePreview = useAppStore((s) => s.openLivePreview);
+  const isBrowserMode = !devServerSessionId;
   const expectedOrigin = useMemo(() => getLivePreviewOrigin(devServerUrl), [devServerUrl]);
 
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -171,7 +190,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   // 6 秒没 bridge ready 就提示诊断信息。放宽到 6s 是因为 Tauri WKWebView 下
   // iframe reload → bridge inject → postMessage 链路偶尔比 Chrome 慢，3s 会误报。
   useEffect(() => {
-    if (bridgeReady) return;
+    if (isBrowserMode || bridgeReady) return;
     const timer = setTimeout(() => {
       if (!bridgeReady && frameLoaded) {
         setFrameError(
@@ -184,7 +203,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
       }
     }, 6000);
     return () => clearTimeout(timer);
-  }, [bridgeReady, frameLoaded]);
+  }, [bridgeReady, frameLoaded, isBrowserMode]);
 
   const resolveAndSetSelectedElement = useCallback(async (info: SelectedElementInfo) => {
     try {
@@ -221,6 +240,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
 
   // 监听 iframe 发来的 bridge 消息
   useEffect(() => {
+    if (isBrowserMode) return;
     const handler = (e: MessageEvent) => {
       if (!isTrustedLivePreviewBridgeEvent(e, iframeRef.current?.contentWindow, expectedOrigin)) return;
       const msg = e.data;
@@ -262,7 +282,7 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [expectedOrigin, tabId, resolveAndSetSelectedElement, setSelectedElement]);
+  }, [expectedOrigin, tabId, resolveAndSetSelectedElement, setSelectedElement, isBrowserMode]);
 
   const handleRefresh = useCallback(() => {
     // 通过 React state 推 refreshNonce 变更 iframeSrc（受控），让 iframe 重新 load。
@@ -280,6 +300,12 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   const handleOpenExternal = useCallback(() => {
     window.open(devServerUrl, '_blank', 'noopener');
   }, [devServerUrl]);
+
+  const handleNavigate = useCallback(() => {
+    const normalizedUrl = normalizeBrowserUrl(urlInput);
+    if (!normalizedUrl) return;
+    openLivePreview(normalizedUrl);
+  }, [openLivePreview, urlInput]);
 
   const handlePing = useCallback(() => {
     if (!expectedOrigin) {
@@ -300,43 +326,71 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
   return (
     <div className="flex flex-col h-full bg-zinc-900">
       {/* 地址栏 */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700 bg-zinc-800">
-        <span
-          className={`w-2 h-2 rounded-full ${bridgeReady ? 'bg-emerald-400' : 'bg-zinc-500'}`}
-          title={bridgeReady ? 'Bridge connected' : 'Waiting for bridge...'}
-        />
+      <form
+        className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700 bg-zinc-800"
+        onSubmit={(event) => {
+          event.preventDefault();
+          handleNavigate();
+        }}
+      >
+        {!isBrowserMode && (
+          <span
+            data-testid="live-preview-bridge-status"
+            className={`w-2 h-2 rounded-full ${bridgeReady ? 'bg-emerald-400' : 'bg-zinc-500'}`}
+            title={bridgeReady ? 'Bridge connected' : 'Waiting for bridge...'}
+          />
+        )}
         <input
           type="text"
-          readOnly
           value={urlInput}
+          onChange={(event) => setUrlInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            handleNavigate();
+          }}
+          aria-label={t.livePreview.addressLabel}
           className="flex-1 px-2 py-1 text-xs bg-zinc-900 text-zinc-300 border border-zinc-700 rounded font-mono"
         />
         <button
+          type="button"
           onClick={handleRefresh}
           className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
-          title="刷新"
+          title={t.livePreview.refresh}
         >
           <RefreshCw className="w-4 h-4" />
         </button>
+        {!isBrowserMode && (
+          <button
+            type="button"
+            data-testid="live-preview-element-tools"
+            onClick={handlePing}
+            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
+            title={t.livePreview.testBridge}
+          >
+            <Target className="w-4 h-4" />
+          </button>
+        )}
         <button
-          onClick={handlePing}
-          className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
-          title="测试 bridge"
-        >
-          <Target className="w-4 h-4" />
-        </button>
-        <button
+          type="button"
           onClick={handleOpenExternal}
-          className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
-          title="在默认浏览器打开"
+          className={`p-1.5 rounded ${
+            isBrowserMode && frameError
+              ? 'bg-amber-300 text-zinc-950 hover:bg-amber-200'
+              : 'hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200'
+          }`}
+          title={t.livePreview.openExternal}
         >
           <ExternalLink className="w-4 h-4" />
         </button>
-      </div>
+      </form>
 
       {/* 选中提示条 + 定点反馈留言框 */}
-      {displayFile && selectedElement && (
-        <div className="border-b border-primary-500/30 bg-primary-500/10">
+      {!isBrowserMode && displayFile && selectedElement && (
+        <div
+          data-testid="live-preview-selection-bar"
+          className="border-b border-primary-500/30 bg-primary-500/10"
+        >
           <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-primary-200 font-mono">
             <span className="text-primary-400">selected</span>
             <span className="text-zinc-400">&lt;{selectedElement.tag}&gt;</span>
@@ -386,7 +440,13 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
       )}
 
       {/* 诊断条 */}
-      {frameError && <LivePreviewDiagnosticStrip frameError={frameError} cspSnippet={cspSnippet} />}
+      {frameError && (
+        <LivePreviewDiagnosticStrip
+          frameError={frameError}
+          cspSnippet={cspSnippet}
+          onOpenExternal={isBrowserMode ? handleOpenExternal : undefined}
+        />
+      )}
 
       {/* iframe + TweakPanel 抽屉（V2-B） */}
       <div className="flex-1 flex overflow-hidden">
@@ -407,16 +467,18 @@ export const LivePreviewFrame: React.FC<Props> = ({ tabId, devServerUrl }) => {
           />
           {!frameLoaded && !frameError && (
             <div className="absolute inset-0 flex items-center justify-center bg-white text-zinc-400 text-sm">
-              正在加载中… {devServerUrl}
+              {t.livePreview.loadingPage} {devServerUrl}
             </div>
           )}
         </div>
-        {selectedElement && (
-          <TweakPanel
-            selected={selectedElement}
-            collapsed={tweakCollapsed}
-            onToggleCollapsed={() => setTweakCollapsed((v) => !v)}
-          />
+        {!isBrowserMode && selectedElement && (
+          <div data-testid="live-preview-tweak-panel">
+            <TweakPanel
+              selected={selectedElement}
+              collapsed={tweakCollapsed}
+              onToggleCollapsed={() => setTweakCollapsed((v) => !v)}
+            />
+          </div>
         )}
       </div>
     </div>

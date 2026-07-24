@@ -35,6 +35,15 @@ export function replaceSessionMessagesProjection(
   enforceSessionCacheLimit();
 }
 
+/**
+ * 丢弃某会话的消息投影缓存，下次 loadSessionHistoryForRun 会从 DB 重新 seed。
+ * HTML 产物人工编辑落库后必须调它——否则下一轮 /run 读的是旧投影，模型看不到
+ * 用户的修改，照旧版重新生成（崩法 A）。
+ */
+export function invalidateSessionMessagesProjection(sessionId: string): void {
+  sessionMessages.delete(sessionId);
+}
+
 export function seedSessionMessagesFromPersisted(
   sessionId: string,
   messages: Message[],

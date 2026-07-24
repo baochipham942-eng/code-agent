@@ -19,6 +19,7 @@ import { SYSTEM_PROMPT } from '../prompts/builder';
 import { applyProviderVariant } from '../prompts/providerVariants';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { ExecutionTopology } from '../permissions';
+import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOnlyTools';
 import { getConfirmationGate } from './confirmationGate';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
@@ -634,6 +635,18 @@ export class AgentOrchestrator {
     }
 
     if (!forceConfirm && settings.permissions.autoApprove[permissionLevel]) {
+      return true;
+    }
+
+    // 无人值守（async_agent）会话：连接器显式声明为只读的 MCP 工具免交互审批直接放行。
+    // 否则读飞书日历/表格会撞下面的 60s 交互门、无人应答被 deny，无人值守 cron 永远跑不完
+    // （真机 dogfood 2026-07-24 实证）。判据是我方 catalog 声明，不信第三方 server 自报。
+    if (
+      !forceConfirm
+      && this.toolExecutor.getExecutionTopology() === 'async_agent'
+      && isUnattendedAllowedReadOnlyTool(request.tool)
+    ) {
+      logger.info(`[Unattended] Auto-approving declared read-only MCP tool: ${request.tool}`);
       return true;
     }
 

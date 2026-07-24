@@ -46,6 +46,7 @@ import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createBackgroundRouter } from './routes/background';
 import { createAdminReviewQueueRouter } from './routes/adminReviewQueue';
+import { wireGenerativeUiEditProjectionInvalidation } from './helpers/generativeUiEditWiring';
 
 type WebSupabaseBinding = SupabaseAgentBinding & SupabaseSessionBinding;
 
@@ -112,6 +113,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
   } = deps;
 
   const app = express();
+
+  // HTML 产物人工编辑落库后让 web 消息投影失效（dogfood 抓到的崩法 A 根因）
+  wireGenerativeUiEditProjectionInvalidation();
 
   // CORS — restrict to known origins
   app.use(corsMiddleware);

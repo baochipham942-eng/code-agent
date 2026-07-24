@@ -193,6 +193,7 @@ export async function executeCreateSession(
       useAppStore.getState().setWorkingDirectory(newSessionWithMeta.workingDirectory ?? null);
       // 新会话继承 draft 期（无会话时）的 agent 选择，其余情况从 per-session map 读取
       useAppStore.getState().syncActiveAgentForSession(session.id, { inheritCurrent: !previousSessionId });
+      useAppStore.getState().syncWorkbenchForSession(session.id);
       set({
         sessions: [newSessionWithMeta, ...get().sessions],
         currentSessionId: session.id,

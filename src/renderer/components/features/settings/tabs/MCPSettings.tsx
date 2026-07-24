@@ -266,6 +266,7 @@ export const MCPSettings: React.FC = () => {
     try {
       const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'addServer', {
         config,
+        scope: 'user',
         ...(secrets?.secretEnvKeys.length ? { secretEnvKeys: secrets.secretEnvKeys } : {}),
         ...(secrets?.secretHeaderKeys.length ? { secretHeaderKeys: secrets.secretHeaderKeys } : {}),
       });

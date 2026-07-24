@@ -14,7 +14,13 @@ import {
 } from '../mcp/mcpClient';
 import { McpOAuthProvider } from '../mcp/mcpOAuthProvider';
 import { getMcpOAuthCoordinator } from '../mcp/mcpOAuthCoordinator';
-import { ensureConfigDir, getMcpConfigPath, pathExists } from '../config';
+import {
+  ensureConfigDir,
+  ensureUserConfigDir,
+  getMcpConfigPath,
+  getMcpScopedConfigPaths,
+  pathExists,
+} from '../config';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getCloudConfigService } from '../services/cloud';
 import { getConfigService } from '../services/core/configService';
@@ -44,6 +50,9 @@ type McpServerStateSummary = MCPServerState & {
   authMode?: 'oauth';
   hasOAuthTokens?: boolean;
 };
+
+type McpSettingsServerScope = 'user' | 'project';
+type McpSettingsConfigKey = 'servers' | 'mcpServers';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -87,6 +96,12 @@ function optionalStringMap(value: unknown, label: string): Record<string, string
     }
   }
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function readMcpSettingsServerScope(value: unknown): McpSettingsServerScope {
+  if (value === undefined) return 'project';
+  if (value === 'user' || value === 'project') return value;
+  throw new Error("scope must be 'user' or 'project'");
 }
 
 function readRequiredString(record: Record<string, unknown>, key: string, message: string): string {
@@ -225,7 +240,7 @@ export async function persistMcpSettingsServerConfig(
   ]);
 
   let configPath: string;
-  let configKey: 'servers' | 'mcpServers';
+  let configKey: McpSettingsConfigKey;
 
   if (newExists) {
     configPath = mcpPaths.new;
@@ -239,6 +254,14 @@ export async function persistMcpSettingsServerConfig(
     configKey = 'servers';
   }
 
+  return persistMcpServerConfigToPath(configPath, configKey, serverConfig);
+}
+
+export async function persistMcpServerConfigToPath(
+  configPath: string,
+  configKey: McpSettingsConfigKey,
+  serverConfig: MCPServerConfig,
+): Promise<{ filePath: string }> {
   let config: Record<string, unknown>;
   try {
     const content = await fs.readFile(configPath, 'utf-8');
@@ -258,6 +281,14 @@ export async function persistMcpSettingsServerConfig(
   config[configKey] = servers;
   await fs.writeFile(configPath, JSON.stringify(config, null, 2));
   return { filePath: configPath };
+}
+
+async function persistUserMcpSettingsServerConfig(
+  serverConfig: MCPServerConfig,
+): Promise<{ filePath: string }> {
+  const configPath = getMcpScopedConfigPaths().user;
+  await ensureUserConfigDir();
+  return persistMcpServerConfigToPath(configPath, 'servers', serverConfig);
 }
 
 export async function removeMcpSettingsServerDraftConfig(
@@ -305,7 +336,11 @@ export async function removeMcpSettingsServerDraftConfig(
   throw new Error(`Disabled MCP draft "${serverName}" was not found in MCP config`);
 }
 
-async function handleAddServer(payload: unknown, workingDirectory: string): Promise<unknown> {
+async function handleAddServer(
+  payload: unknown,
+  workingDirectory: string | undefined,
+  scope: McpSettingsServerScope,
+): Promise<unknown> {
   const payloadRecord = asRecord(payload, 'payload');
   let serverConfig = normalizeMcpSettingsServerConfig(payloadRecord.config ?? payloadRecord);
   const existing = getMCPClient().getServerState(serverConfig.name);
@@ -343,11 +378,21 @@ async function handleAddServer(payload: unknown, workingDirectory: string): Prom
     Object.assign(extractedSecrets, extracted);
   }
 
+  let persisted: { filePath: string };
+  if (scope === 'user') {
+    persisted = await persistUserMcpSettingsServerConfig(serverConfig);
+  } else {
+    // project scope 必须有工作目录（调用点已挡一次，这里再守一次做类型收窄，避免非空断言）
+    if (!workingDirectory) {
+      throw new Error('Working directory is unavailable');
+    }
+    persisted = await persistMcpSettingsServerConfig(workingDirectory, serverConfig);
+  }
+
   if (Object.keys(extractedSecrets).length > 0) {
     await getConfigService().setIntegration(integrationId, extractedSecrets);
   }
 
-  const persisted = await persistMcpSettingsServerConfig(workingDirectory, serverConfig);
   getMCPClient().addServer({ ...serverConfig, scope: 'runtime' });
   return {
     serverName: serverConfig.name,
@@ -456,11 +501,13 @@ export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandle
           data = await handleGetServerStates();
           break;
         case 'addServer': {
+          const payload = asRecord(request.payload, 'payload');
+          const scope = readMcpSettingsServerScope(payload.scope);
           const workingDirectory = options.getWorkingDirectory?.();
-          if (!workingDirectory) {
+          if (scope === 'project' && !workingDirectory) {
             throw new Error('Working directory is unavailable');
           }
-          data = await handleAddServer(request.payload, workingDirectory);
+          data = await handleAddServer(payload, workingDirectory, scope);
           break;
         }
         case 'setServerEnabled': {

@@ -112,6 +112,7 @@
 | 046 | Surface Execution V1：Browser/Computer 统一 owner-aware 执行运行时 | accepted |
 | 047 | 组队配方采用主理人编排，确定性 coordinator 作为降级路径 | accepted |
 | 050 | MCP 配置里的凭据引用（`secureref:`） | accepted |
+| 051 | 能力中心连接器持久化到用户级，不绑工作目录 | accepted |
 
 > **ADR-040 执行状态（2026-07-18）**：Word / PPT / Excel locator、共享 picker、generated-PPT resolver 与隐私安全 telemetry 已随 #377/#385 合入 `main`。Poppler `26.07.0` 双原生架构候选由 run `29412794021` 产出并发布到项目控制的不可变 OSS 前缀，`config/poppler-sidecar.lock.json` 已为 `ready`，Poppler promotion stop-ship 已解除；正式版本仍需走常规签名、公证、DMG 与安装版验收。
 

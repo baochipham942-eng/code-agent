@@ -590,6 +590,7 @@ export const zhSettingsModels = {
         empty: '暂无条目',
         hideSensitive: '隐藏敏感值',
         showSensitive: '显示敏感值',
+        savedCredentialHint: '已保存 · 留空即保留',
         jsonError: 'JSON 格式错误',
         jsonSaveError: 'JSON 格式错误，无法保存',
         cancel: '取消',
@@ -605,7 +606,7 @@ export const zhSettingsModels = {
         argsPlaceholder: '例如: -y, @modelcontextprotocol/server-filesystem, /tmp',
         env: '环境变量',
         headers: '请求头',
-        jsonHint: 'JSON 视图会显示原始 env/header，只用于粘贴配置或诊断。',
+        jsonHint: 'JSON 视图会显示原始 env/header；已保存凭据保持留空，除非填入新值，否则继续保留。',
       },
     },
     plugins: {

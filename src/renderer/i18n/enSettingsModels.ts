@@ -590,6 +590,7 @@ export const enSettingsModels = {
         empty: 'No entries yet',
         hideSensitive: 'Hide sensitive value',
         showSensitive: 'Show sensitive value',
+        savedCredentialHint: 'Saved · leave blank to keep',
         jsonError: 'Invalid JSON format',
         jsonSaveError: 'Invalid JSON format, cannot save',
         cancel: 'Cancel',
@@ -605,7 +606,7 @@ export const enSettingsModels = {
         argsPlaceholder: 'e.g. -y, @modelcontextprotocol/server-filesystem, /tmp',
         env: 'Environment variables',
         headers: 'Request headers',
-        jsonHint: 'JSON view shows raw env/header values and is only for pasting config or diagnostics.',
+        jsonHint: 'JSON view shows raw env/header values; saved credentials stay blank and are kept unless replaced.',
       },
     },
     plugins: {

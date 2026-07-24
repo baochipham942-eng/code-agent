@@ -123,14 +123,17 @@ describe('Sidebar new session button', () => {
 
   it('does not switch into the loading spinner just because the session list is loading', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
-    const newSessionButtonHtml = html.match(/<button[^>]*>.*?新会话<\/span><\/button>/)?.[0] ?? '';
+    const newTaskButtonHtml = html.match(/<button[^>]*data-testid="sidebar-new-task"[^>]*>.*?<\/button>/)?.[0] ?? '';
 
-    expect(html).toContain('新会话');
-    // D-11: 新会话默认纯对话不继承上下文；独立「空白」入口已下线。
-    expect(html).toContain('新建会话（纯对话，不继承项目上下文）');
+    expect(html).toContain('data-testid="neo-brand-mark"');
+    expect(html).toContain('新任务');
+    // 新任务默认纯对话不继承上下文；独立「空白」入口已下线。
+    expect(html).toContain('新建任务（纯对话，不继承项目上下文）');
+    expect(html).toContain('开始一段新的协作');
     expect(html).not.toContain('新建空白会话，不继承项目上下文');
-    expect(newSessionButtonHtml).toContain('lucide-plus');
-    expect(newSessionButtonHtml).not.toContain('lucide-loader-circle');
+    expect(newTaskButtonHtml).toContain('lucide-plus');
+    expect(newTaskButtonHtml).not.toContain('lucide-loader-circle');
+    expect(html).toContain('data-testid="sidebar-search-trigger"');
   });
 
   it('shows a persistent update entry at the lower sidebar for optional app updates', () => {

@@ -20,6 +20,8 @@ import {
   type HtmlElementEdit,
 } from './generativeUIDocument';
 import { GenerativeUIEditPanel } from './GenerativeUIEditPanel';
+import { generativeUIClient } from '../../../../services/generativeUIClient';
+import { hashGenerativeUiBody, stripEditMarker } from '@shared/generativeUIEdit';
 
 // Prism 语法高亮按需动态加载,只在用户点开"查看源码"时才下载。
 const LazyPrismCodeBlock = lazy(() => import('./PrismCodeBlock'));
@@ -74,7 +76,19 @@ const SourceView = memo(function SourceView({ code }: { code: string }) {
   );
 });
 
-export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { code: string }) {
+export const GenerativeUIBlock = memo(function GenerativeUIBlock({
+  code,
+  messageId,
+  sessionId,
+  sourceOrdinal = 0,
+  isStreaming = false,
+}: {
+  code: string;
+  messageId?: string;
+  sessionId?: string;
+  sourceOrdinal?: number;
+  isStreaming?: boolean;
+}) {
   const [showSource, setShowSource] = useState(false);
   const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -83,19 +97,22 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
   const [selection, setSelection] = useState<HtmlElementSelection | null>(null);
   const [selectedElement, setSelectedElement] = useState<Element | null>(null);
   // 用户改过之后的源码。null = 没改过，跟着外部 code 走（模型重新生成时自然更新）。
-  // 一旦改过就以 draft 为准；持久化是 P3 的事，本片只活在本次会话里。
   const [draftCode, setDraftCode] = useState<string | null>(null);
   // 进编辑态时把源码钉住：srcdoc 一变 iframe 就重载，选中态会当场丢掉，
   // 改完字号就没法接着改颜色。所见即所得靠直接改 iframe 里的 DOM，不靠重载。
   const [editBaseCode, setEditBaseCode] = useState<string | null>(null);
   const [patchError, setPatchError] = useState(false);
+  const [conflict, setConflict] = useState(false);
   // 两态各持一个 ref：共用一个的话，切换时 React 会在挂载新 iframe 之后
   // 才把旧 iframe 的 ref 置空，ref 变 null，预览态的高度上报就再也对不上 source 了。
   const previewIframeRef = useRef<HTMLIFrameElement>(null);
   const editIframeRef = useRef<HTMLIFrameElement>(null);
   const controllerRef = useRef<HtmlLocalitySelectionController | null>(null);
+  // 这次编辑动过哪些属性——贴进编辑标记供模型参考
+  const touchedFieldsRef = useRef<Set<string>>(new Set());
   const { t } = useI18n();
 
+  const canPersist = Boolean(messageId && sessionId);
   const activeCode = draftCode ?? code;
   const srcdoc = buildPreviewSrcdoc(activeCode);
 
@@ -147,17 +164,60 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
 
   useEffect(() => () => detachSelection(), [detachSelection]);
 
-  // 解除选中交给上面那个 [code, editing] effect —— 它两个方向都覆盖，这里再调一次是冗余
+  // 外部 code 变了（持久化回灌 / 模型重新生成 / 云同步）→ draft 作废，跟上新的真源。
+  // 持久化成功后我们自己写的那次也走这里，draft 归零、新 code 成为新基准。
+  useEffect(() => {
+    setDraftCode(null);
+  }, [code]);
+
+  /**
+   * 把 draft 写回三处（DB + 活跃 orchestrator + 编辑标记）。在退出编辑态时调。
+   * baseHash 用 editBaseCode——用户就是从它开始改的；库里当前值和它对不上说明
+   * 中间被人动过，host 会 fail-closed 返回 conflict。
+   */
+  const persistDraft = useCallback(async (base: string, draft: string) => {
+    if (!canPersist || draft === base) return;
+    try {
+      const result = await generativeUIClient.persistHtmlEdit({
+        sessionId: sessionId!,
+        messageId: messageId!,
+        sourceOrdinal,
+        baseHash: hashGenerativeUiBody(base),
+        newCode: stripEditMarker(draft),
+        fields: [...touchedFieldsRef.current],
+      });
+      if (!result.persisted) {
+        // 对账没过——库里那份已经不是用户改的基准了。放弃本次 draft，回到真源。
+        if (result.reason === 'conflict') setConflict(true);
+        setDraftCode(null);
+      }
+    } catch {
+      // 写库失败：不谎报成功，回到真源，让用户重来
+      setDraftCode(null);
+    }
+  }, [canPersist, sessionId, messageId, sourceOrdinal]);
+
+  // 副作用不能塞进 setEditing 的 updater——StrictMode 下 updater 会跑两遍，
+  // 落库就会发两次。从闭包读 editing（已在 deps 里），在 updater 外面做。
   const toggleEditing = useCallback(() => {
-    setEditing((current) => {
-      // 进编辑态才钉源码；退出时松开，下次进来以最新的 draft 为基准
-      setEditBaseCode(current ? null : (draftCode ?? code));
-      return !current;
-    });
+    if (editing) {
+      // 退出编辑：把这次的改动落库
+      if (editBaseCode !== null && draftCode !== null) {
+        void persistDraft(editBaseCode, draftCode);
+      }
+      setEditBaseCode(null);
+      setEditing(false);
+    } else {
+      // 进入编辑：钉住当前源码作基准，清空本次动过的属性
+      setEditBaseCode(draftCode ?? code);
+      touchedFieldsRef.current = new Set();
+      setConflict(false);
+      setEditing(true);
+    }
     setShowSource(false);
     setLoaded(false);
     setPatchError(false);
-  }, [code, draftCode]);
+  }, [editing, code, draftCode, editBaseCode, persistDraft]);
 
   /**
    * 一次属性修改走两步，顺序不能反：**先算补丁，成了才改 DOM**。
@@ -178,9 +238,9 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
 
     // 所见即所得：直接改 iframe 里那个元素，不重载
     const live = element as HTMLElement;
-    if (edit.text !== undefined) live.textContent = edit.text;
-    if (edit.fontSize !== undefined) live.style.fontSize = `${edit.fontSize}px`;
-    if (edit.color !== undefined) live.style.color = edit.color;
+    if (edit.text !== undefined) { live.textContent = edit.text; touchedFieldsRef.current.add('text'); }
+    if (edit.fontSize !== undefined) { live.style.fontSize = `${edit.fontSize}px`; touchedFieldsRef.current.add('font-size'); }
+    if (edit.color !== undefined) { live.style.color = edit.color; touchedFieldsRef.current.add('color'); }
 
     const doc = live.ownerDocument;
     setIframeHeight(Math.max(
@@ -220,16 +280,27 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
           <button
             onClick={toggleEditing}
             aria-pressed={editing}
+            disabled={isStreaming && !editing}
+            title={isStreaming && !editing ? t.generativeUI.editStreamingHint : undefined}
             data-testid="generative-ui-edit-toggle"
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 transition-all text-xs ${
-              editing ? 'text-cyan-300 bg-zinc-700' : 'text-zinc-400 hover:text-zinc-200'
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all text-xs disabled:opacity-40 disabled:cursor-not-allowed ${
+              editing ? 'text-cyan-300 bg-zinc-700' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
             }`}
           >
             <MousePointerClick className="w-3.5 h-3.5" />
             <span>{editing ? t.generativeUI.exitEdit : t.generativeUI.edit}</span>
           </button>
           <button
-            onClick={() => { setShowSource(s => !s); setEditing(false); detachSelection(); }}
+            onClick={() => {
+              // 切到源码视图前，先把没落库的编辑落了，别静默丢
+              if (editing && editBaseCode !== null && draftCode !== null) {
+                void persistDraft(editBaseCode, draftCode);
+              }
+              setShowSource(s => !s);
+              setEditing(false);
+              setEditBaseCode(null);
+              detachSelection();
+            }}
             className={`flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 transition-all text-xs ${
               showSource ? 'text-violet-400 bg-zinc-700' : 'text-zinc-400 hover:text-zinc-200'
             }`}
@@ -267,6 +338,16 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
       {editing && !showSource && (
         <div className="px-4 py-1.5 bg-cyan-500/5 border-b border-cyan-500/20 text-[11px] text-cyan-200/80">
           {t.generativeUI.editHint}
+        </div>
+      )}
+
+      {/* 对账没过：库里那份已经不是用户改的基准（云同步 / 另一处编辑），修改没落库 */}
+      {conflict && !editing && (
+        <div
+          className="px-4 py-2 border-b border-amber-500/20 bg-amber-500/5 text-[11px] text-amber-200"
+          data-testid="generative-ui-conflict"
+        >
+          {t.generativeUI.editConflict}
         </div>
       )}
 

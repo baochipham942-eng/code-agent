@@ -226,7 +226,25 @@ vi.mock('../../../src/renderer/components/features/settings/sections/localBridge
 }));
 
 vi.mock('../../../src/renderer/components/features/settings/McpServerEditor', () => ({
-  McpServerEditor: () => null,
+  McpServerEditor: (props: {
+    isOpen: boolean;
+    onSave: (
+      config: { name: string; type: 'stdio'; command: string },
+      secrets?: { secretEnvKeys: string[]; secretHeaderKeys: string[] },
+    ) => void;
+  }) => props.isOpen
+    ? React.createElement(
+      'button',
+      {
+        type: 'button',
+        onClick: () => props.onSave(
+          { name: 'secret-server', type: 'stdio', command: 'node' },
+          { secretEnvKeys: ['X'], secretHeaderKeys: [] },
+        ),
+      },
+      'mock-save-secret-server',
+    )
+    : null,
 }));
 
 import { MCPSettings, getMcpTrustSummary } from '../../../src/renderer/components/features/settings/tabs/MCPSettings';
@@ -316,6 +334,27 @@ describe('MCPSettings status', () => {
         IPC_DOMAINS.MCP,
         'signOutServer',
         { serverName: 'notion' },
+      );
+    });
+  });
+
+  it('passes secret keys from McpServerEditor into the addServer payload', async () => {
+    render(React.createElement(MCPSettings));
+    fireEvent.click(screen.getByText(mcpText.management.addServer));
+    fireEvent.click(screen.getByText('mock-save-secret-server'));
+
+    await waitFor(() => {
+      expect(mockDomainInvoke).toHaveBeenCalledWith(
+        IPC_DOMAINS.MCP,
+        'addServer',
+        {
+          config: {
+            name: 'secret-server',
+            type: 'stdio',
+            command: 'node',
+          },
+          secretEnvKeys: ['X'],
+        },
       );
     });
   });

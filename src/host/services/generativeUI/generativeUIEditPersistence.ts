@@ -28,6 +28,17 @@ import { createLogger } from '../infra/logger';
 
 const logger = createLogger('GenerativeUIEditPersistence');
 
+/**
+ * web /run 路径读的是 webSessionStore 的消息投影缓存，不是 orchestrator 也不是直接 DB。
+ * 而所有桌面发行版实际都跑 Tauri+webServer 这条路。所以落库后除了回灌 orchestrator，
+ * 还必须让 web 投影失效——否则下一轮模型读旧投影，看不到用户的修改（崩法 A）。
+ * 用注入 hook 而非 host→web import，保持分层：web 启动时把失效函数登记进来。
+ */
+let invalidateWebProjection: ((sessionId: string) => void) | null = null;
+export function setGenerativeUiEditProjectionInvalidator(fn: (sessionId: string) => void): void {
+  invalidateWebProjection = fn;
+}
+
 /** 当天日期，贴进编辑标记。抽出来只为可测（测试注入固定日期）。 */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -41,7 +52,15 @@ export async function persistGenerativeUiEdit(
   const sessionManager = getSessionManager();
 
   const messages = await sessionManager.getMessages(sessionId);
-  const message = messages.find((item) => item.id === messageId);
+  // 主键：renderer 传的 messageId。但流式刚生成的消息，renderer 的 id 可能还没和
+  // DB id 对齐（dogfood 抓到：fresh 消息 id ≠ DB id → find 落空 → 编辑静默丢）。
+  // 兜底：用 baseHash 内容寻址——它就是用户编辑那段 fence 的哈希，唯一定位到消息。
+  const byId = messages.find((item) => item.id === messageId);
+  const message = byId ?? messages.find((item) => {
+    if (item.role !== 'assistant') return false;
+    const body = extractGenerativeUiFenceBody(item.content, sourceOrdinal);
+    return body !== null && hashGenerativeUiBody(body) === baseHash;
+  });
   if (!message) return { persisted: false, reason: 'message_not_found' };
 
   const currentBody = extractGenerativeUiFenceBody(message.content, sourceOrdinal);
@@ -61,9 +80,12 @@ export async function persistGenerativeUiEdit(
 
   // 1) + 2)：updateMessage 写库并同步会话缓存；setSessionContext 回灌活跃 orchestrator，
   // 让当前会话下一轮模型读到新版。缺第二步就是那个「悄悄改回去」的崩法。
-  await sessionManager.updateMessage(messageId, { content: replaced.content });
+  // 用 message.id（DB 真 id），不用传进来的 messageId——后者在 fresh 流式消息上可能是旧的。
+  await sessionManager.updateMessage(message.id, { content: replaced.content });
   const fresh = await sessionManager.getMessages(sessionId);
   getTaskManager().setSessionContext(sessionId, fresh);
+  // web /run 的真正上下文来源，别漏——这是 dogfood 抓到的崩法 A 根因
+  invalidateWebProjection?.(sessionId);
 
   return { persisted: true };
 }

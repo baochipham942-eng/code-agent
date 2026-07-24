@@ -756,6 +756,32 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // agent_wakes - agent 自发挂起-续跑的持久化台账（self-wake）
+  // 落 SQLite 而不是内存/JSON：pending 的醒来必须扛得住重启，否则「等 3 小时后再看」
+  // 这类挂起在应用重启后就静默消失，用户永远等不到那次续跑。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_wakes (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      due_at INTEGER,
+      job_id TEXT,
+      event_name TEXT,
+      reason TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      fired_at INTEGER
+    )
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_agent_wakes_pending
+    ON agent_wakes (status, due_at)
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_agent_wakes_session
+    ON agent_wakes (session_id, status)
+  `);
+
   // queued_inputs - queued next-turn input durable ledger (ADR-044 D1)
   db.exec(`
     CREATE TABLE IF NOT EXISTS queued_inputs (

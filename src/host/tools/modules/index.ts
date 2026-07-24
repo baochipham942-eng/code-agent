@@ -129,6 +129,8 @@ import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
 import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
 import { memorySearchSchema } from './lightMemory/memorySearch.schema';
 import { memoryAmendSchema } from './lightMemory/memoryAmend.schema';
+// selfwake/
+import { sleepUntilSchema, wakeOnEventSchema, wakeOnSchema } from './selfwake/selfWake.schema';
 import { historySchema } from './lightMemory/history.schema';
 import { proposeRoleSchema } from './roleAuthoring/proposeRole.schema';
 import { proposeTeamRecipeSchema } from './teamAuthoring/proposeTeamRecipe.schema';
@@ -661,6 +663,20 @@ export function registerMigratedTools(
   registry.register(
     memoryAmendSchema,
     async () => (await import('./lightMemory/memoryAmend')).memoryAmendModule,
+  );
+
+  // selfwake (3): agent 自发挂起-续跑
+  registry.register(
+    sleepUntilSchema,
+    async () => (await import('./selfwake/selfWake')).sleepUntilModule,
+  );
+  registry.register(
+    wakeOnSchema,
+    async () => (await import('./selfwake/selfWake')).wakeOnModule,
+  );
+  registry.register(
+    wakeOnEventSchema,
+    async () => (await import('./selfwake/selfWake')).wakeOnEventModule,
   );
   registry.register(
     historySchema,

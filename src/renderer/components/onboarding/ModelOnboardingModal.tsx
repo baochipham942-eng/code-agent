@@ -1,15 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { Brain, CheckCircle, KeyRound, Loader2, ShieldCheck } from 'lucide-react';
+import { Brain, CalendarClock, CheckCircle, KeyRound, Loader2, MessageSquarePlus, Plug, ShieldCheck } from 'lucide-react';
 import type { AppSettings, ModelConfig, ModelProvider } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { getProviderInfo } from '@shared/constants';
 import { Button, Input, Modal } from '../primitives';
 import ipcService from '../../services/ipcService';
+import { useI18n } from '../../hooks/useI18n';
+import { useMcpServerStates } from '../../hooks/useMcpServerStates';
+import { useAppStore } from '../../stores/appStore';
 import {
   buildOnboardingModelSelection,
+  getOnboardingConnectorCards,
   getOnboardingProviderCards,
   ONBOARDING_RELAY_CARD,
+  ONBOARDING_STEPS,
   type OnboardingDiscoveredModel,
+  type OnboardingStep,
 } from './modelOnboarding';
 
 interface ProviderTestResult {
@@ -56,6 +62,19 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
   const [status, setStatus] = useState<StepStatus>('idle');
   const [message, setMessage] = useState('选择 Provider 后填写 API Key。');
   const [discoveredCount, setDiscoveredCount] = useState<number | null>(null);
+  const { t } = useI18n();
+  const text = t.onboarding;
+  const [step, setStep] = useState<OnboardingStep>('model');
+  const [savedConfig, setSavedConfig] = useState<ModelConfig | null>(null);
+  const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
+  const openSettingsTab = useAppStore((state) => state.openSettingsTab);
+  const mcpServerStates = useMcpServerStates();
+  const connectorCards = useMemo(
+    () => getOnboardingConnectorCards(new Set(
+      mcpServerStates.filter((server) => server.status === 'connected').map((server) => server.config.name),
+    )),
+    [mcpServerStates],
+  );
 
   const selectedCard = selectedProvider === ONBOARDING_RELAY_CARD.id
     ? ONBOARDING_RELAY_CARD
@@ -66,6 +85,12 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
     ? customBaseUrl.trim().replace(/\/+$/, '')
     : getProviderInfo(selectedProvider)?.endpoint || '';
   const isBusy = status === 'testing' || status === 'discovering' || status === 'saving';
+
+  /** 漏斗终点：把模型配置交给 App（关弹窗），需要时顺手把自动化面板打开。 */
+  const finish = ({ openAutomation }: { openAutomation: boolean }) => {
+    if (savedConfig) onComplete(savedConfig);
+    if (openAutomation) setShowCronCenter(true);
+  };
 
   const handleSave = async () => {
     const trimmedKey = apiKey.trim();
@@ -149,7 +174,9 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
 
       setStatus('ready');
       setMessage(`已连接 ${selectedCard?.name || selectedProvider} / ${selection.modelConfig.model}。`);
-      onComplete(selection.modelConfig);
+      // 模型已落盘，但漏斗还没走完：接着问「你平时在哪干活」，别把人丢进空白对话。
+      setSavedConfig(selection.modelConfig);
+      setStep('connectors');
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : '保存失败，请稍后重试。');
@@ -171,50 +198,69 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       }
       footer={
         <div className="flex w-full items-center justify-between gap-3">
-          <div className="text-xs text-zinc-500">
-            API Key 只保存在本机安全存储里。
-          </div>
+          <div className="text-xs text-zinc-500">{text.keyStaysLocal}</div>
           <div className="flex items-center gap-2">
-            {onSkip && (
-              <Button
-                variant="ghost"
-                onClick={onSkip}
-                disabled={isBusy}
-              >
-                跳过，稍后在设置里配置
-              </Button>
+            {step === 'model' && (
+              <>
+                {onSkip && (
+                  <Button
+                    variant="ghost"
+                    onClick={onSkip}
+                    disabled={isBusy}
+                  >
+                    跳过，稍后在设置里配置
+                  </Button>
+                )}
+                <Button
+                  onClick={handleSave}
+                  loading={isBusy}
+                  disabled={!apiKey.trim() || (isRelay && !endpoint)}
+                  leftIcon={status === 'ready' ? <CheckCircle className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                >
+                  测试并保存
+                </Button>
+              </>
             )}
-            <Button
-              onClick={handleSave}
-              loading={isBusy}
-              disabled={!apiKey.trim() || (isRelay && !endpoint)}
-              leftIcon={status === 'ready' ? <CheckCircle className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
-            >
-              测试并保存
-            </Button>
+            {step === 'connectors' && (
+              <>
+                <Button variant="ghost" data-testid="onboarding-connectors-skip" onClick={() => setStep('done')}>
+                  {text.connectorsSkip}
+                </Button>
+                <Button data-testid="onboarding-connectors-next" onClick={() => setStep('done')}>
+                  {text.connectorsNext}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       }
     >
-      <div className="space-y-5">
-        <div className="grid gap-2 text-xs text-zinc-400 sm:grid-cols-3">
-          {[
-            ['1', '注册', '已完成'],
-            ['2', '配置模型', '当前步骤'],
-            ['3', '进入聊天区', '保存后自动前往'],
-          ].map(([index, title, caption]) => (
-            <div key={index} className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-800 text-[11px] text-zinc-200">
-                  {index}
-                </span>
-                <span className="font-medium text-zinc-200">{title}</span>
+      {/* 固定高度：三步切换时下方内容不跳，非程序员不会以为「点错了」 */}
+      <div className="min-h-[560px] space-y-5">
+        <div className="grid gap-2 text-xs text-zinc-400 sm:grid-cols-3" data-testid="onboarding-stepper">
+          {ONBOARDING_STEPS.map((id, index) => {
+            const title = id === 'model' ? text.stepModel : id === 'connectors' ? text.stepConnectors : text.stepDone;
+            const active = id === step;
+            const done = ONBOARDING_STEPS.indexOf(step) > index;
+            return (
+              <div
+                key={id}
+                data-testid={`onboarding-step-${id}`}
+                data-active={active ? 'true' : 'false'}
+                className={`rounded-lg border px-3 py-2 ${active ? 'border-blue-400/60 bg-blue-500/10' : 'border-zinc-800 bg-zinc-950/40'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] ${done ? 'bg-emerald-500/20 text-emerald-200' : 'bg-zinc-800 text-zinc-200'}`}>
+                    {done ? '✓' : index + 1}
+                  </span>
+                  <span className={`font-medium ${active ? 'text-zinc-100' : 'text-zinc-300'}`}>{title}</span>
+                </div>
               </div>
-              <div className="mt-1 text-[11px] text-zinc-500">{caption}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
+        {step === 'model' && (<>
         <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
           <div className="flex items-start gap-3">
             <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-blue-300" />
@@ -371,6 +417,78 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
             </div>
           </div>
         </section>
+        </>)}
+
+        {step === 'connectors' && (
+          <section className="space-y-3" data-testid="onboarding-connectors">
+            <div>
+              <h3 className="text-sm font-medium text-zinc-200">{text.connectorsTitle}</h3>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-500">{text.connectorsDescription}</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {connectorCards.map((card) => (
+                <div
+                  key={card.id}
+                  data-testid={`onboarding-connector-${card.id}`}
+                  data-connected={card.connected ? 'true' : 'false'}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+                      <Plug className="h-4 w-4 text-zinc-400" />
+                      {card.name}
+                    </span>
+                    {card.connected ? (
+                      <span className="rounded border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-200">
+                        {text.connectorConnected}
+                      </span>
+                    ) : (
+                      <Button size="sm" variant="secondary" onClick={() => openSettingsTab('mcp')}>
+                        {text.connectorConnect}
+                      </Button>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-500">{card.description}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {step === 'done' && (
+          <section className="space-y-4" data-testid="onboarding-done">
+            <div>
+              <h3 className="text-sm font-medium text-zinc-200">{text.doneTitle}</h3>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-500">{text.doneDescription}</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button /* ds-allow:button: 完成页的两张大号 CTA 卡，Button primitive 撑不出这个形态 */
+                type="button"
+                data-testid="onboarding-cta-automation"
+                onClick={() => finish({ openAutomation: true })}
+                className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-4 text-left transition hover:border-blue-400/60 hover:bg-blue-500/10"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+                  <CalendarClock className="h-4 w-4 text-blue-300" />
+                  {text.doneAutomationCta}
+                </span>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{text.doneAutomationHint}</p>
+              </button>
+              <button /* ds-allow:button: 同上，与左侧 CTA 对称 */
+                type="button"
+                data-testid="onboarding-cta-start"
+                onClick={() => finish({ openAutomation: false })}
+                className="rounded-lg border border-zinc-800 bg-zinc-950/30 p-4 text-left transition hover:border-blue-400/60 hover:bg-blue-500/10"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+                  <MessageSquarePlus className="h-4 w-4 text-emerald-300" />
+                  {text.doneStartCta}
+                </span>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{text.doneStartHint}</p>
+              </button>
+            </div>
+          </section>
+        )}
       </div>
     </Modal>
   );

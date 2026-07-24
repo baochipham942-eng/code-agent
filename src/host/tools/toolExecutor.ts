@@ -8,6 +8,7 @@ import type { ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
 import { PermissionRequestReason } from '../../shared/contract/permission';
 import { getToolCache } from '../services/infra/toolCache';
+import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
@@ -32,7 +33,7 @@ import {
   resolveSessionPermissionMode,
   resolveToolPermissionClassification,
 } from './toolPermissionClassification';
-import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON } from './externalSideEffect';
+import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { isDangerousCommand, sanitizeToolParams, toolMatchesPatternSet, truncateToolOutput } from './toolExecutorHelpers';
@@ -664,6 +665,11 @@ export class ToolExecutor {
     if (toolDef.requiresPermission && (guardFabricForcesApproval || policyForcesConfirmation || boundaryViolation || readOnlyForcesConfirmation || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
+      // B4：external 工具的授权 target 精确串（取不到=null，不具铸权资格）。一次算好，
+      // 供下面的长期授权消费判定，以及需人工审批时透传给停车审批卡（铸权入口）。
+      const standingGrantTarget = isExternalSideEffectTool(executionToolName)
+        ? extractStandingGrantTarget(executionToolName, params)
+        : null;
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
       if (guardFabricTraceStep) {
@@ -761,9 +767,33 @@ export class ToolExecutor {
         }
       }
 
+      // B4 target 粒度长期授权消费：external 工具 + 可确定性提取 target + 命中该会话所属
+      // automation 上人工铸造的 (tool, target) 规则 → 免这一层询问（等价 session 记忆的持久版，
+      // 但按 target 精确、挂 automation、随其归档失效）。绝不越 deny：分类器 deny 已在上面 return；
+      // 任一强制确认门（guardFabric/policy/boundary/readOnly）在此让路——与 session 记忆同规矩，
+      // 只把「普通询问」降为放行，不碰任何硬门。
+      if (
+        needsUserApproval
+        && standingGrantTarget
+        && !guardFabricForcesApproval
+        && !policyForcesConfirmation
+        && !boundaryViolation
+        && !readOnlyForcesConfirmation
+        && getSessionAutomationService().matchStandingGrant(effectiveSessionId, executionToolName, standingGrantTarget)
+      ) {
+        needsUserApproval = false;
+        const grantTrace = createTraceBuilder(executionToolName);
+        grantTrace.addStep('permission_classifier', 'standing_grant', 'allow', `长期授权命中：${executionToolName} → ${standingGrantTarget}`);
+        recordDecision(executionToolName, params, 'auto-approve', `standing_grant:${standingGrantTarget}`, permStartTime, grantTrace.build('allow'));
+      }
+
       if (needsUserApproval) {
       const permissionRequest = this.buildPermissionRequest(toolDef, params);
       permissionRequest.sessionId = effectiveSessionId;
+      // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
+      if (standingGrantTarget) {
+        permissionRequest.details.standingGrantTarget = standingGrantTarget;
+      }
 
       // B1 readOnly（审出 HIGH）：最终审批层的自动放行捷径（agentOrchestrator 的
       // devModeAutoApprove / autoApprove[level]、renderer PermissionCard 的

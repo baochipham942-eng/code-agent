@@ -73,3 +73,88 @@ export function isExternalSideEffectTool(toolName: string): boolean {
   }
   return false;
 }
+
+// ============================================================================
+// B4 target 提取：只有能确定性提取 target 的 external 工具才有铸权资格
+// ============================================================================
+// 铸权铁律（逐条守）：target 是白名单精确串，无 glob 无前缀模糊——提取不到就返回 null
+// （该调用不具备铸权资格，回退每次询问）。绝不猜字段：宁可漏（回退询问）不可错（错字段
+// = 授权面失控/提权）。每个 external 工具在这里显式登记一个提取器；没登记的（哪怕 external）
+// 一律不具资格。exec/写文件等非 external 工具永远走不到这里（调用方先过 isExternalSideEffectTool）。
+
+/** 展开一个收件人字段（数组或逗号/换行/分号分隔串）为去空后的地址列表。 */
+function toRecipientList(value: unknown): string[] {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[,\n;]/)
+      : [];
+  return raw.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean);
+}
+
+/** 归一化一组收件人/目标为稳定精确串：去空、去重、排序后 join。集合不同即不同 target。 */
+function normalizeTargetSet(...values: unknown[]): string | null {
+  const items = [...new Set(values.flatMap(toRecipientList))].sort();
+  return items.length > 0 ? items.join(',') : null;
+}
+
+/**
+ * 从入参里取一个标量目标字段。lark-mcp 形如 { params:{receive_id_type}, data:{receive_id} }，
+ * 模型也常把它们摊平到顶层——顶层、data.<key>、params.<key> 三处都探（先到先得）。
+ */
+function readScalarField(params: Record<string, unknown>, key: string): string | null {
+  const pick = (obj: unknown): string | null => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+    const v = (obj as Record<string, unknown>)[key];
+    return typeof v === 'string' && v.trim() ? v.trim() : null;
+  };
+  return pick(params) ?? pick(params.data) ?? pick(params.params);
+}
+
+/**
+ * 逐工具白名单式 target 提取器。key = 归一化工具名（native）或 MCP 工具名后缀匹配。
+ * 每条只处理它认得的入参形状，取不到返回 null。
+ */
+function extractNativeTarget(toolName: string, params: Record<string, unknown>): string | null {
+  switch (toolName) {
+    case 'mail_send':
+      // 🔴 target 必须涵盖「所有实际会收到这封邮件的地址」= to ∪ cc ∪ bcc。漏掉任一都成提权
+      // 漏洞：铸「永远允许发 to=[老板]」后，偷偷加 bcc=[外部人] 就能复用同一规则把邮件抄送出去。
+      // attachments 不是收件人，不纳入。收件人集合不同 → target 不同 → 必重新审批。
+      return normalizeTargetSet(params.to, params.cc, params.bcc);
+    default:
+      return null;
+  }
+}
+
+/**
+ * IM 出站发送的 target = 收件人/频道 id。lark-mcp@0.5.1 的 im.v1.message.create 入参
+ * 形如 { params:{receive_id_type}, data:{receive_id,...} }，模型常摊平——两处都探。
+ * 把 receive_id_type 纳入 key：同一 id 在 open_id/chat_id 语义不同，绝不跨类型复用授权。
+ * ponytail: 仅认 receive_id 这一约定字段；其它 IM server（slack/telegram）字段不同、
+ * 当前无人值守下也不可达，先不登记（漏 = 回退询问，安全）。
+ */
+function extractMessagingTarget(tool: string, params: Record<string, unknown>): string | null {
+  const receiveId = readScalarField(params, 'receive_id');
+  if (!receiveId) return null;
+  const idType = readScalarField(params, 'receive_id_type');
+  return idType ? `${idType}:${receiveId}` : receiveId;
+}
+
+/**
+ * 提取一个 external 工具调用的授权 target 精确串，取不到返回 null（不具铸权资格）。
+ * 调用方必须先确认 isExternalSideEffectTool(toolName)——本函数不重复判 external，
+ * 只负责「这个 external 工具的 target 怎么取」。
+ */
+export function extractStandingGrantTarget(
+  toolName: string,
+  params: Record<string, unknown>,
+): string | null {
+  const native = extractNativeTarget(normalizeToolName(toolName), params);
+  if (native) return native;
+  const mcp = parseMcpToolName(toolName);
+  if (mcp && MESSAGING_MCP_SERVERS.has(mcp.server.toLowerCase()) && MESSAGING_SEND_PATTERN.test(mcp.tool)) {
+    return extractMessagingTarget(mcp.tool, params);
+  }
+  return null;
+}

@@ -37,6 +37,11 @@ export interface ToolApprovalPayload {
   displayAction?: string;
   /** B1 对外风险类（EXTERNAL 等），null 表示未分类 */
   riskClass?: string | null;
+  /**
+   * B4 授权目标精确串（收件人/频道 id 等）。仅当工具是 external 且能确定性提取 target 时非空；
+   * 有它 = 该行可铸造 target 粒度长期授权（收件箱审批卡出「每次都允许发 <target>」按钮）。
+   */
+  standingGrantTarget?: string | null;
 }
 
 /** 收件箱「等待批准的操作」分组的行数据（B2）。id=requestId，回传 permissionResponse 用。 */
@@ -50,6 +55,8 @@ export interface ParkedApprovalInboxItem {
   /** pending=可批准/拒绝；orphaned=应用重启后过期，灰态不可操作 */
   status: 'pending' | 'orphaned';
   riskClass?: string | null;
+  /** B4 授权目标精确串；非空 = 可铸造 target 粒度长期授权（出「每次都允许发 <target>」按钮） */
+  standingGrantTarget?: string | null;
 }
 
 /**

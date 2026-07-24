@@ -176,10 +176,35 @@ export function createStdioMCPEnv(
     allowed[key] = sourceEnv[key];
   }
 
-  return sanitizeEnv({
+  const combined = {
     ...allowed,
     ...extra,
-  });
+  };
+  const noProxyHosts = combined.MCP_NO_PROXY_HOSTS;
+  delete combined.MCP_NO_PROXY_HOSTS;
+
+  // 为 chinaDirect 类 server 提供通用的 stdio 子进程代理绕过机制。
+  if (noProxyHosts) {
+    const seen = new Set<string>();
+    const mergedNoProxy = [combined.NO_PROXY, combined.no_proxy, noProxyHosts]
+      .flatMap((value) => value?.split(',') ?? [])
+      .map((value) => value.trim())
+      .filter((value) => {
+        if (!value) return false;
+        const normalized = value.toLowerCase();
+        if (seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      })
+      .join(',');
+
+    combined.NO_PROXY = mergedNoProxy;
+    if (combined.no_proxy !== undefined) {
+      combined.no_proxy = mergedNoProxy;
+    }
+  }
+
+  return sanitizeEnv(combined);
 }
 
 /**

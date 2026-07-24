@@ -12,6 +12,13 @@ import type {
   McpCategoryMeta,
   RecommendedMcpServerEntry,
 } from '../contract/mcpCatalog';
+import {
+  FEISHU_CALENDAR_MIN_PAGE_SIZE,
+  FEISHU_DEFAULT_DOMAIN,
+  FEISHU_DEFAULT_HOST,
+  FEISHU_READONLY_TOOLS,
+  LARK_MCP_PINNED_VERSION,
+} from './feishu';
 
 // ----------------------------------------------------------------------------
 // 用途分类
@@ -105,16 +112,20 @@ export const RECOMMENDED_MCP_SERVERS: RecommendedMcpServerEntry[] = [
   {
     id: 'lark',
     name: '飞书',
-    description: '飞书文档、消息、日历、多维表格',
+    description: `飞书多维表格与日历（只读）。需先在飞书开放平台建自建应用、开多维表格与日历的只读权限、启用机器人能力（日历接口的必要条件）、创建版本并发布，再把应用加进目标表格的协作者。日历要监听哪一本需自己提供日历 ID（应用身份列不出你新建的日历），取日程时每次至少取 ${FEISHU_CALENDAR_MIN_PAGE_SIZE} 条。`,
     category: 'office-collab',
     builtin: false,
     connection: {
       type: 'stdio',
       command: 'npx',
-      args: ['-y', '@larksuiteoapi/lark-mcp', 'mcp'],
+      args: ['-y', `@larksuiteoapi/lark-mcp@${LARK_MCP_PINNED_VERSION}`, 'mcp', '-l', 'zh'],
       env: {
         APP_ID: '',
         APP_SECRET: '',
+        LARK_TOKEN_MODE: 'tenant_access_token',
+        LARK_TOOLS: FEISHU_READONLY_TOOLS.join(','),
+        LARK_DOMAIN: FEISHU_DEFAULT_DOMAIN,
+        MCP_NO_PROXY_HOSTS: FEISHU_DEFAULT_HOST,
       },
     },
     requiredCredentials: ['APP_ID', 'APP_SECRET'],

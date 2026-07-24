@@ -907,7 +907,9 @@ export class MCPClient extends EventEmitter {
 
     const invoke = async (): Promise<ToolResult> => {
       try {
-        const result = await this.callToolInternal(toolCallId, serverName, toolName, args, options);
+        // 派发前把模型的已知参数姿势坑焊成确定性（如飞书 field.list 的 path 重嵌）。
+        // callTool 是唯一 chokepoint，所有调用路径都经此；非命中工具原样透传。
+        const result = await this.callToolInternal(toolCallId, serverName, toolName, this.registry.normalizeToolArgs(serverName, toolName, args), options);
         try {
           if (spanId) {
             const cancelled = result.metadata?.cancelledByRun === true || /cancel|abort/i.test(result.error ?? '');

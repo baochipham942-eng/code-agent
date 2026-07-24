@@ -84,7 +84,7 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
   });
 
   it('adds an external_side_effect step to the decision trace for mail_send', async () => {
-    const requestPermission = vi.fn(async () => true);
+    const requestPermission = vi.fn(async (_req: unknown) => true);
     const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
     executor.setAuditEnabled(false);
 
@@ -97,7 +97,7 @@ describe('ToolExecutor EXTERNAL 风险类打标进 decisionTrace', () => {
   });
 
   it('does NOT add an external step for a plain outside-workspace Write', async () => {
-    const requestPermission = vi.fn(async () => true);
+    const requestPermission = vi.fn(async (_req: unknown) => true);
     const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
     executor.setAuditEnabled(false);
 

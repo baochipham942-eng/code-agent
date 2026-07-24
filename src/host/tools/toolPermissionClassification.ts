@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
+import { isExternalSideEffectTool } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
 
@@ -75,12 +76,15 @@ export async function resolveToolPermissionClassification(input: {
   readOnlyForcesConfirmation: boolean;
   sessionPermissionMode: PermissionMode;
 }): Promise<ClassificationResult> {
+  // B1: EXTERNAL 风险类打标，与三分支决策正交、不改变审批结果。所有出口都带上，供 B2/B4/审计消费。
+  const external = isExternalSideEffectTool(input.executionToolName);
   if (input.policyForcesConfirmation) {
     return {
       decision: 'ask',
       reason: `Tool "${input.executionToolName}" requires confirmation by policy (tools.always_confirm)`,
       confidence: 1,
       cached: false,
+      external,
       traceStep: createTraceStep(
         'policy_enforcer',
         'tools.always_confirm',
@@ -96,6 +100,7 @@ export async function resolveToolPermissionClassification(input: {
       reason: `Tool "${input.executionToolName}" is outside skill "${input.boundaryViolation.skillName}" allowed-tools boundary (${input.boundaryViolation.allowedTools.join(', ')})`,
       confidence: 1,
       cached: false,
+      external,
       traceStep: createTraceStep(
         'permission_classifier',
         'skill.allowed-tools-boundary',
@@ -134,5 +139,5 @@ export async function resolveToolPermissionClassification(input: {
       traceStep: createTraceStep('permission_classifier', 'permission_mode_auto_approve', 'allow', reason, input.permStartTime),
     };
   }
-  return classification;
+  return { ...classification, external };
 }

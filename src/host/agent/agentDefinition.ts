@@ -88,7 +88,9 @@ function toFullAgentConfig(core: CoreAgentConfig): FullAgentConfig {
       maxIterations: core.maxIterations,
     },
     security: {
-      permissionPreset: 'development',
+      // 每专家的审批松紧档（详情页「安全」页 / agent.md 的 permission-override）。
+      // 缺省回落 development，与本行改造前的行为逐字一致。
+      permissionPreset: core.permissionPreset ?? 'development',
     },
     coordination: {
       layer: core.readonly ? 'exploration' : 'execution',

@@ -228,7 +228,7 @@ export const LibraryPanel: React.FC = () => {
         onClose={() => setShowLibraryPanel(false)}
         closeLabel={t.common.close}
         actions={section === 'items' ? (
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <select
               value={scope}
               onChange={(e) => setScope(e.target.value)}
@@ -255,11 +255,12 @@ export const LibraryPanel: React.FC = () => {
               placeholder={t.library.searchPlaceholder}
               aria-label={t.library.searchPlaceholder}
               data-testid="library-search"
-              className="h-8 w-52 text-xs"
+              className="h-8 w-40 min-w-0 text-xs"
             />
             <Button
               variant="ghost"
               size="sm"
+              className="shrink-0 whitespace-nowrap"
               onClick={() => void load()}
               disabled={loading}
               leftIcon={<RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />}
@@ -270,6 +271,7 @@ export const LibraryPanel: React.FC = () => {
               variant="primary"
               size="sm"
               data-testid="library-upload"
+              className="shrink-0 whitespace-nowrap"
               onClick={() => fileInputRef.current?.click()}
               loading={uploading}
               leftIcon={uploading ? undefined : <Upload className="h-3.5 w-3.5" />}

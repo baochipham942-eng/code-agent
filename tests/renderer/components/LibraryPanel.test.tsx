@@ -67,6 +67,20 @@ beforeEach(() => {
 });
 
 describe('LibraryPanel', () => {
+  it('keeps the single-line header actions compact and the upload label unbroken', async () => {
+    listLibraryItems.mockResolvedValue([]);
+    render(<LibraryPanel />);
+
+    const search = await screen.findByTestId('library-search');
+    const upload = screen.getByTestId('library-upload');
+
+    expect(search.classList.contains('w-40')).toBe(true);
+    expect(search.classList.contains('min-w-0')).toBe(true);
+    expect(upload.classList.contains('shrink-0')).toBe(true);
+    expect(upload.classList.contains('whitespace-nowrap')).toBe(true);
+    expect(upload.textContent).toBe('上传文件');
+  });
+
   it('空库渲染空态文案', async () => {
     listLibraryItems.mockResolvedValue([]);
     render(<LibraryPanel />);

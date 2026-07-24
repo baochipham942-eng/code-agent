@@ -178,6 +178,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   ],
   [IPC_DOMAINS.GENERATIVE_UI]: [
     'applyEvent',
+    'persistHtmlEdit',
     'resolveInstance',
     'resolveManifest',
   ],

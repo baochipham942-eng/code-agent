@@ -57,7 +57,16 @@ describe('sessionStore activeAgentId per-session sync', () => {
       isLoadingOlder: false,
       sessionDesignBriefs: new Map(),
     });
-    useAppStore.setState({ activeAgentId: null, activeAgentSessionKey: null });
+    useAppStore.setState({
+      activeAgentId: null,
+      activeAgentSessionKey: null,
+      previewTabs: [],
+      activePreviewTabId: null,
+      workbenchTabs: [],
+      activeWorkbenchTab: null,
+      workbenchBySession: {},
+      workbenchSessionKey: null,
+    });
 
     mockDomainInvoke.mockImplementation(async (_domain: string, op: string, params?: { sessionId?: string }) => {
       if (op === 'load') return makeSession(params?.sessionId || 'session-a');
@@ -75,6 +84,24 @@ describe('sessionStore activeAgentId per-session sync', () => {
 
     await useSessionStore.getState().switchSession('session-b');
     expect(useAppStore.getState().activeAgentId).toBeNull();
+  });
+
+  it('switchSession 同步 per-session workbench 视图', async () => {
+    await useSessionStore.getState().switchSession('session-a');
+    useAppStore.getState().openWorkbenchTab('overview');
+    useAppStore.getState().openWorkbenchTab('browser');
+
+    await useSessionStore.getState().switchSession('session-b');
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: [],
+      activeWorkbenchTab: null,
+    });
+
+    await useSessionStore.getState().switchSession('session-a');
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: ['overview', 'browser'],
+      activeWorkbenchTab: 'browser',
+    });
   });
 
   it('deleteSession 清理该会话的持久化选择', async () => {
@@ -96,10 +123,16 @@ describe('sessionStore activeAgentId per-session sync', () => {
     localStorage.setItem(SESSION_MAP_KEY, JSON.stringify({ 'session-only': 'coder' }));
     await useSessionStore.getState().switchSession('session-only');
     expect(useAppStore.getState().activeAgentId).toBe('coder');
+    useAppStore.getState().openWorkbenchTab('overview');
 
     await useSessionStore.getState().deleteSession('session-only');
 
     expect(useSessionStore.getState().currentSessionId).toBeNull();
     expect(useAppStore.getState().activeAgentId).toBeNull();
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: [],
+      activeWorkbenchTab: null,
+      workbenchSessionKey: null,
+    });
   });
 });

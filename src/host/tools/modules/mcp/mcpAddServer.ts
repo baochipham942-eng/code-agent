@@ -40,6 +40,9 @@ import {
 } from '../../../mcp/mcpClient';
 import { getMcpConfigPath, ensureConfigDir, pathExists } from '../../../config';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
+import { extractSecrets } from '../../../mcp/secretRef';
+import { getConfigService } from '../../../services/core/configService';
+import { isSensitiveMcpCredentialKey } from '../../../../shared/security/mcpSecretKeys';
 import { mcpAddServerSchema as schema } from './mcpAddServer.schema';
 
 // ----------------------------------------------------------------------------
@@ -409,10 +412,39 @@ export async function executeMcpAddServer(
     } as MCPStdioServerConfig;
   }
 
+  // ── Extract secrets before persisting：serverConfig 保留原始值供 mcpClient 连接用，
+  //    落盘的是 sanitized 版本（敏感 env/header 值替换为 secureref: 引用）。
+  //    敏感键判定复用 isSensitiveMcpCredentialKey（renderer MCP 编辑器同款，ADR-050/051）。
+  const integrationId = `mcp_${name}`;
+  let configToPersist: MCPServerConfig = serverConfig;
+  let extractedSecrets: Record<string, string> = {};
+
+  if (serverConfig.type === 'stdio' && serverConfig.env) {
+    const secretKeys = Object.keys(serverConfig.env).filter(isSensitiveMcpCredentialKey);
+    const { sanitized, extracted } = extractSecrets(serverConfig.env, secretKeys, integrationId);
+    if (sanitized !== serverConfig.env) {
+      configToPersist = { ...serverConfig, env: sanitized };
+      extractedSecrets = extracted;
+    }
+  } else if (
+    (serverConfig.type === 'sse' || serverConfig.type === 'http-streamable')
+    && serverConfig.headers
+  ) {
+    const secretKeys = Object.keys(serverConfig.headers).filter(isSensitiveMcpCredentialKey);
+    const { sanitized, extracted } = extractSecrets(serverConfig.headers, secretKeys, integrationId);
+    if (sanitized !== serverConfig.headers) {
+      configToPersist = { ...serverConfig, headers: sanitized };
+      extractedSecrets = extracted;
+    }
+  }
+
   // ── Persist configuration（fs 写入，不走 ConfigService）──
-  const persistResult = await persistMCPConfig(ctx.workingDir, serverConfig, ctx.logger);
+  const persistResult = await persistMCPConfig(ctx.workingDir, configToPersist, ctx.logger);
   if (!persistResult.success) {
     ctx.logger.warn('Failed to persist MCP config:', persistResult.error);
+  } else if (Object.keys(extractedSecrets).length > 0) {
+    // ADR-051：persist 成功后再写 SecureStorage，persist 失败则不留孤儿密钥
+    await getConfigService().setIntegration(integrationId, extractedSecrets);
   }
 
   // ── Add server to client（singleton 状态变更，abort 后不回滚）──

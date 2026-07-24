@@ -1006,9 +1006,33 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       archived_at INTEGER
     )
   `);
+  safeAlter(db, `ALTER TABLE projects ADD COLUMN source_revision INTEGER NOT NULL DEFAULT 0`, logger);
   db.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_workspace_key ON projects(workspace_key) WHERE workspace_key IS NOT NULL`,
   );
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_sources (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      canonical_path TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('primary', 'additional')),
+      access TEXT NOT NULL CHECK (access IN ('read_only', 'read_write')),
+      trust_state TEXT NOT NULL CHECK (trust_state IN ('trusted', 'blocked')),
+      identity_dev TEXT,
+      identity_ino TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      UNIQUE(project_id, canonical_path)
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_project_sources_project ON project_sources(project_id)`);
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_project_sources_single_primary
+    ON project_sources(project_id) WHERE role = 'primary'
+  `);
 
   // Project Goals 表 — 一个项目多个并行 goal，各自带状态
   db.exec(`

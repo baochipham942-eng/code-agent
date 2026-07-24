@@ -15,8 +15,16 @@ import {
   type ProjectGoal,
   type ProjectGoalStatus,
   type ProjectRoleLink,
+  type ProjectSource,
+  type ProjectSourceAccess,
+  type ProjectSourceRole,
+  type ProjectSourceTrustState,
   type ProjectStatus,
 } from '../../../../shared/contract/project';
+import {
+  canonicalizeWorkspacePath,
+  workspacePathIdentity,
+} from '../../../runtime/workspaceScope';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -31,6 +39,23 @@ function rowToProject(row: SQLiteRow): Project {
     createdAt: row.created_at as number,
     updatedAt: row.updated_at as number,
     archivedAt: (row.archived_at as number) ?? null,
+    sourceRevision: Number(row.source_revision ?? 0),
+  };
+}
+
+function rowToSource(row: SQLiteRow): ProjectSource {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    path: row.path as string,
+    canonicalPath: row.canonical_path as string,
+    role: row.role as ProjectSourceRole,
+    access: row.access as ProjectSourceAccess,
+    trustState: row.trust_state as ProjectSourceTrustState,
+    identityDev: (row.identity_dev as string | null) ?? null,
+    identityIno: (row.identity_ino as string | null) ?? null,
+    createdAt: row.created_at as number,
+    updatedAt: row.updated_at as number,
   };
 }
 
@@ -55,8 +80,8 @@ export class ProjectRepository {
 
   upsertProject(p: Project): void {
     this.db.prepare(`
-      INSERT INTO projects (id, name, workspace_path, workspace_key, status, description, is_deleted, created_at, updated_at, archived_at)
-      VALUES (@id, @name, @workspace_path, @workspace_key, @status, @description, 0, @created_at, @updated_at, @archived_at)
+      INSERT INTO projects (id, name, workspace_path, workspace_key, status, description, is_deleted, created_at, updated_at, archived_at, source_revision)
+      VALUES (@id, @name, @workspace_path, @workspace_key, @status, @description, 0, @created_at, @updated_at, @archived_at, @source_revision)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         workspace_path = excluded.workspace_path,
@@ -64,7 +89,8 @@ export class ProjectRepository {
         status = excluded.status,
         description = excluded.description,
         updated_at = excluded.updated_at,
-        archived_at = excluded.archived_at
+        archived_at = excluded.archived_at,
+        source_revision = excluded.source_revision
     `).run({
       id: p.id,
       name: p.name,
@@ -75,7 +101,126 @@ export class ProjectRepository {
       created_at: p.createdAt,
       updated_at: p.updatedAt,
       archived_at: p.archivedAt ?? null,
+      source_revision: p.sourceRevision ?? 0,
     });
+  }
+
+  // --- project_sources ---
+
+  upsertSource(source: ProjectSource): void {
+    this.db.prepare(`
+      INSERT INTO project_sources (
+        id, project_id, path, canonical_path, role, access, trust_state,
+        identity_dev, identity_ino, created_at, updated_at
+      ) VALUES (
+        @id, @project_id, @path, @canonical_path, @role, @access, @trust_state,
+        @identity_dev, @identity_ino, @created_at, @updated_at
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        path = excluded.path,
+        canonical_path = excluded.canonical_path,
+        role = excluded.role,
+        access = excluded.access,
+        trust_state = excluded.trust_state,
+        identity_dev = excluded.identity_dev,
+        identity_ino = excluded.identity_ino,
+        updated_at = excluded.updated_at
+    `).run({
+      id: source.id,
+      project_id: source.projectId,
+      path: source.path,
+      canonical_path: source.canonicalPath,
+      role: source.role,
+      access: source.access,
+      trust_state: source.trustState,
+      identity_dev: source.identityDev ?? null,
+      identity_ino: source.identityIno ?? null,
+      created_at: source.createdAt,
+      updated_at: source.updatedAt,
+    });
+  }
+
+  listSources(projectId: string): ProjectSource[] {
+    return (this.db.prepare(`
+      SELECT * FROM project_sources
+      WHERE project_id = ?
+      ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END, created_at ASC
+    `).all(projectId) as SQLiteRow[]).map(rowToSource);
+  }
+
+  getSource(sourceId: string): ProjectSource | undefined {
+    const row = this.db.prepare('SELECT * FROM project_sources WHERE id = ?').get(sourceId) as SQLiteRow | undefined;
+    return row ? rowToSource(row) : undefined;
+  }
+
+  deleteSources(projectId: string): void {
+    this.db.prepare('DELETE FROM project_sources WHERE project_id = ?').run(projectId);
+  }
+
+  replaceProjectSources(
+    project: Project,
+    sources: readonly ProjectSource[],
+    expectedRevision: number,
+  ): Project {
+    const run = this.db.transaction(() => {
+      const current = this.getProject(project.id);
+      if (!current) throw new Error('Project not found.');
+      if ((current.sourceRevision ?? 0) !== expectedRevision) {
+        throw new Error(`Project Sources changed; expected revision ${expectedRevision}.`);
+      }
+      this.db.prepare('DELETE FROM project_sources WHERE project_id = ?').run(project.id);
+      for (const source of sources) this.upsertSource(source);
+      this.db.prepare(`
+        UPDATE projects
+        SET name = ?, description = ?, workspace_path = ?, workspace_key = ?,
+            source_revision = source_revision + 1, updated_at = ?
+        WHERE id = ?
+      `).run(
+        project.name,
+        project.description ?? null,
+        project.workspacePath ?? null,
+        project.workspaceKey ?? null,
+        project.updatedAt,
+        project.id,
+      );
+      return this.getProject(project.id)!;
+    });
+    return run();
+  }
+
+  backfillProjectSources(now: number): number {
+    const rows = this.db.prepare(`
+      SELECT p.id, p.workspace_path, p.created_at
+      FROM projects p
+      WHERE p.id != ? AND COALESCE(TRIM(p.workspace_path), '') != ''
+        AND NOT EXISTS (
+          SELECT 1 FROM project_sources s
+          WHERE s.project_id = p.id AND s.role = 'primary'
+        )
+    `).all(UNSORTED_PROJECT_ID) as SQLiteRow[];
+    if (rows.length === 0) return 0;
+    const run = this.db.transaction(() => {
+      for (const row of rows) {
+        const originalPath = String(row.workspace_path);
+        const canonicalPath = canonicalizeWorkspacePath(originalPath);
+        const identity = workspacePathIdentity(canonicalPath);
+        this.upsertSource({
+          id: `psrc_${String(row.id).replace(/^proj_/, '').slice(0, 12)}_primary`,
+          projectId: String(row.id),
+          path: originalPath,
+          canonicalPath,
+          role: 'primary',
+          access: 'read_write',
+          trustState: 'trusted',
+          identityDev: identity.dev,
+          identityIno: identity.ino,
+          createdAt: Number(row.created_at ?? now),
+          updatedAt: now,
+        });
+      }
+      return rows.length;
+    });
+    return run();
   }
 
   getProject(id: string): Project | undefined {

@@ -20,6 +20,8 @@ import type {
   ToolCall,
   ToolResult,
 } from '../../shared/contract';
+import { resolveWorkspacePath } from '../runtime/workspaceScope';
+import { getProjectSourceGitStates } from '../services/git/gitStatusService';
 
 const execFileAsync = promisify(execFile);
 
@@ -257,6 +259,33 @@ export async function buildCompletionSummaryRecord(input: BuildCompletionSummary
   const changedFiles = collectChangedFiles(ctx);
   const visibleFinalAnswer = getVisibleFinalAnswer(ctx.messages);
   const dirtyState = await readGitDirtyState(ctx.workingDirectory);
+  const dirtyStates = ctx.workspaceScope
+    ? (await getProjectSourceGitStates(ctx.workspaceScope)).map((state) => {
+      const root = ctx.workspaceScope!.roots.find((entry) => entry.sourceId === state.sourceId)!;
+      return {
+        sourceId: state.sourceId,
+        sourceRole: root.role,
+        sourceAccess: root.access,
+        repositoryRoot: state.repositoryRoot,
+        checkedAt: endedAt,
+        gitBranch: state.branch ?? null,
+        headCommit: state.headSha ?? null,
+        isDirty: Boolean(state.dirtyFiles?.length),
+        changedFiles: state.dirtyFiles ?? [],
+        ...(!state.isRepository ? { error: 'not-a-git-repository' } : {}),
+      } satisfies CompletionSummaryDirtyState;
+    })
+    : undefined;
+  const changedFilesBySource = ctx.workspaceScope
+    ? ctx.workspaceScope.roots.map((root) => ({
+      sourceId: root.sourceId,
+      sourceRole: root.role,
+      sourceAccess: root.access,
+      files: changedFiles.filter((filePath) =>
+        resolveWorkspacePath(ctx.workspaceScope!, filePath, 'read')?.root.sourceId === root.sourceId
+      ),
+    })).filter((group) => group.files.length > 0)
+    : undefined;
   const idSeed = `${ctx.sessionId}:${ctx.stats.traceId}:${endedAt}:${input.status}`;
 
   return {
@@ -281,6 +310,9 @@ export async function buildCompletionSummaryRecord(input: BuildCompletionSummary
     commands,
     verificationEvidence: collectVerificationEvidence(commands),
     dirtyState,
+    dirtyStates,
+    changedFilesBySource,
+    workspaceScopeVersion: ctx.workspaceScope?.version,
     commitIds: [],
     risks: collectRisks(input, commands),
     blockers: collectBlockers(input),

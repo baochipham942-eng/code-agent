@@ -65,8 +65,10 @@ import { runDeepResearch } from './orchestrator/researchRunner';
 import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
 import { setSessionTodos, syncTodosToSessionTasks } from './todoParser';
 import { resolveNeoTagModelIntent } from '../services/project/neoTagModelIntentResolver';
-import type { RunHandle } from '../runtime/runContext';
+import { createRunContext, type RunHandle } from '../runtime/runContext';
 import type { RunRegistry } from '../runtime/runRegistry';
+import { getProjectService } from '../services/project/projectService';
+import { resolveWorkspacePath } from '../runtime/workspaceScope';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -948,12 +950,30 @@ export class AgentOrchestrator {
     const nativeRunId = `run-${generateMessageId()}`;
     let registeredRun: RunHandle | undefined;
     try {
+      const runSession = sessionId ? await getSessionManager().getSession(sessionId) : undefined;
+      const workspaceScope = runSession?.projectId
+        ? getProjectService().getWorkspaceScope(runSession.projectId)
+        : undefined;
+      const runWorkingDirectory = workspaceScope
+        ? (resolveWorkspacePath(workspaceScope, this.workingDirectory, 'read')
+          ? this.workingDirectory
+          : workspaceScope.primaryRoot)
+        : this.workingDirectory;
+      const runContext = sessionId
+        ? createRunContext({
+          runId: nativeRunId,
+          sessionId,
+          workspace: workspaceScope?.primaryRoot ?? runWorkingDirectory,
+          workspaceScope,
+          cwd: runWorkingDirectory,
+        })
+        : undefined;
       this.agentLoop = new AgentLoop({
       // provider 变体（roadmap 2.4）：默认主提示词按 provider 家族追加纪律段落
       // （Claude 系 Git 安全 / GPT 国产系自治坚持）；agent 路由自带 prompt 时不动
       systemPrompt,
       modelConfig: effectiveModelConfig,
-      toolExecutor: this.toolExecutor,
+      toolExecutor: runContext ? this.toolExecutor.forRun(runContext) : this.toolExecutor,
       messages: this.messages,
       onEvent: dagAwareOnEvent,
       planningService: this.planningService,
@@ -964,7 +984,8 @@ export class AgentOrchestrator {
       requestedAgentId,
       memoryMode: sessionMemoryMode,
       suppressedMemoryEntryIds,
-      workingDirectory: this.workingDirectory,
+      workingDirectory: runWorkingDirectory,
+      workspaceScope,
       isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
       toolScope,
       executionIntent,
@@ -994,7 +1015,9 @@ export class AgentOrchestrator {
         ? await startRunPreferringDurable(this.runRegistry, {
             runId: nativeRunId,
             sessionId,
-            workspace: this.workingDirectory,
+            workspace: runContext!.workspace,
+            workspaceScope,
+            cwd: runContext!.cwd,
           })
         : undefined;
       await registeredRun?.attach(this.agentLoop);

@@ -3,12 +3,20 @@ import { randomUUID } from 'node:crypto';
 import { lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import type { MessageAttachment, MessageMetadata } from '../../shared/contract';
 import type { RunTraceContext } from '../telemetry/runTraceContext';
+import type { WorkspaceScope } from '../../shared/contract/project';
+import {
+  createWorkspaceScope,
+  isPathWithinRoot,
+  resolveWorkspacePath,
+} from './workspaceScope';
 
 export interface RunContext {
   readonly runId: string;
   readonly sessionId: string;
   /** Authorization, persistence, and artifact boundary for this run. */
   readonly workspace: string;
+  /** Immutable Project Source snapshot. Legacy single-root runs receive a synthetic scope. */
+  readonly workspaceScope: WorkspaceScope;
   /** Default process and relative-path directory for this run. */
   readonly cwd: string;
   readonly createdAt: number;
@@ -18,6 +26,7 @@ export interface CreateRunContextInput {
   runId?: string;
   sessionId: string;
   workspace: string;
+  workspaceScope?: WorkspaceScope;
   cwd?: string;
   createdAt?: number;
 }
@@ -120,14 +129,7 @@ export function resolveCanonicalRunPath(input: string, symlinkDepth = 0): string
 }
 
 export function isRunPathInsideWorkspace(candidate: string, workspace: string): boolean {
-  try {
-    const canonicalCandidate = resolveCanonicalRunPath(candidate);
-    const canonicalWorkspace = resolveCanonicalRunPath(workspace);
-    const relative = path.relative(canonicalWorkspace, canonicalCandidate);
-    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-  } catch {
-    return false;
-  }
+  return isPathWithinRoot(candidate, workspace);
 }
 
 export function createRunContext(input: CreateRunContextInput): RunContext {
@@ -139,21 +141,34 @@ export function createRunContext(input: CreateRunContextInput): RunContext {
   // Freeze the resolved filesystem targets, not caller-provided symlink text.
   // Otherwise a workspace symlink could be retargeted while a run is active and
   // silently move every downstream policy/artifact/resolver boundary.
-  const workspace = resolveCanonicalRunPath(
-    requireIdentifier(input.workspace, 'workspace'),
-  );
+  const requestedWorkspace = resolveCanonicalRunPath(requireIdentifier(input.workspace, 'workspace'));
+  const workspaceScope = input.workspaceScope ?? createWorkspaceScope('legacy', [{
+    sourceId: 'legacy-primary',
+    path: requestedWorkspace,
+    role: 'primary',
+    access: 'read_write',
+  }]);
+  const workspace = workspaceScope.primaryRoot;
   const cwd = resolveCanonicalRunPath(input.cwd?.trim() || workspace);
-  if (!isRunPathInsideWorkspace(cwd, workspace)) {
-    throw new Error(`Run cwd must stay inside workspace: ${cwd}`);
+  if (!resolveWorkspacePath(workspaceScope, cwd, 'read')) {
+    throw new Error(`Run cwd must stay inside workspace Project Sources: ${cwd}`);
   }
 
-  return Object.freeze({
+  const context = {
     runId,
     sessionId,
     workspace,
     cwd,
     createdAt: input.createdAt ?? Date.now(),
+  } as RunContext;
+  // Preserve the legacy enumerable shape for durable serializers and strict callers.
+  Object.defineProperty(context, 'workspaceScope', {
+    value: workspaceScope,
+    enumerable: false,
+    writable: false,
+    configurable: false,
   });
+  return Object.freeze(context);
 }
 
 class AttachedRunHandle implements RunHandle {

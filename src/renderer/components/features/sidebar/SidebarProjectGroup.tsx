@@ -8,6 +8,7 @@ import {
   PanelRightOpen,
   Plus,
   ScrollText,
+  Settings2,
 } from 'lucide-react';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import {
@@ -22,6 +23,7 @@ import { SidebarSessionItem, type SidebarSessionItemSharedProps } from './Sideba
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 import type { SidebarSessionActions } from './useSidebarSessionActions';
 import { useI18n } from '../../../hooks/useI18n';
+import { ProjectSettingsDialog } from '../../ProjectSettingsDialog';
 
 /** 单个分组默认最多平铺多少条会话，超出折叠成「展开全部」。同工作空间历史过多时避免长列表淹没侧栏。 */
 const SESSION_ROW_CAP = 5;
@@ -96,6 +98,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   } = sessionItemProps;
 
   const [showAllRows, setShowAllRows] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const IconComponent = group.isUncategorized ? MessageSquareText : Folder;
   const projectMeta = group.projectId ? projectMetaById[group.projectId] : undefined;
   const summary = buildSidebarProjectSummary({
@@ -183,6 +186,17 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         {!group.isUncategorized && (
           <button
             type="button"
+            aria-label={`编辑项目 ${summary.displayName}`}
+            title="编辑项目"
+            onClick={() => setSettingsOpen(true)}
+            className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {!group.isUncategorized && (
+          <button
+            type="button"
             aria-label={p.openConsole.replace('{name}', summary.displayName)}
             title={p.openConsole.replace('{name}', summary.displayName)}
             aria-pressed={drawerOpen ? 'true' : 'false'}
@@ -236,8 +250,15 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
               <Plus className="h-3.5 w-3.5" />
             )}
           </button>
-        )}
-        </div>
+      )}
+      {group.projectId && (
+        <ProjectSettingsDialog
+          projectId={group.projectId}
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+    </div>
       </div>
       {detailsExpanded && !group.isUncategorized && (
         <SidebarProjectDetail

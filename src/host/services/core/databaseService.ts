@@ -208,6 +208,10 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.captureRepo = new CaptureRepository(this.db);
       this.experimentRepo = new ExperimentRepository(this.db);
       this.projectRepo = new ProjectRepository(this.db);
+      const projectSourcesMigrated = this.projectRepo.backfillProjectSources(Date.now());
+      if (projectSourcesMigrated > 0) {
+        logger.info(`[DatabaseService] backfilled ${projectSourcesMigrated} Project Primary sources`);
+      }
       this.swarmTraceRepo = createSwarmTraceRepo(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
       new GenerativeUIRepository(this.db).markOpenManifestsOrphaned(Date.now());

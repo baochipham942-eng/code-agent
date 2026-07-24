@@ -71,6 +71,7 @@
     "acceptance:posthog-dashboards:dry-run": "python3 scripts/observability/posthog-dashboards.py --dry-run",
     "acceptance:posthog-live-event": "python3 scripts/acceptance/posthog-live-event-smoke.py",
     "acceptance:session-persistence": "npm run build:web && npx tsx scripts/acceptance/session-persistence-smoke.ts",
+    "acceptance:multi-source-project": "npx tsx scripts/acceptance/multi-source-project-e2e.ts",
     "acceptance:pause-resume": "npm run build:web && npm_config_cache=/tmp/code-agent-npm-cache npx tsx scripts/acceptance/pause-resume-smoke.ts",
     "acceptance:admin-review-queue": "npm run build:web && npm_config_cache=/tmp/code-agent-npm-cache npx tsx scripts/acceptance/admin-review-queue-smoke.ts",
     "acceptance:manual-compact": "npm run build:web && npx tsx scripts/acceptance/manual-compact-smoke.ts",

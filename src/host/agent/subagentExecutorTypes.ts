@@ -11,6 +11,7 @@ import type {
   ConversationExecutionIntent,
   WorkbenchToolScope,
 } from '../../shared/contract/conversationEnvelope';
+import type { WorkspaceScope } from '../../shared/contract/project';
 
 export interface SubagentConfig {
   name: string;
@@ -133,6 +134,7 @@ export interface SubagentExecutionContext {
   executionTopology?: ExecutionTopology;
   sessionId: string;
   workspace?: string;
+  workspaceScope?: WorkspaceScope;
   cwd: string;
   modelConfig: ModelConfig;
   resolver: SubagentToolResolverPort;

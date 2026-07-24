@@ -271,6 +271,11 @@ export interface AppState {
   // Retired WorkbenchTabId values are accepted by actions as deep-link aliases.
   workbenchTabs: WorkbenchViewId[];
   activeWorkbenchTab: WorkbenchViewId | null;
+  workbenchBySession: Record<string, {
+    tabs: WorkbenchViewId[];
+    active: WorkbenchViewId | null;
+  }>;
+  workbenchSessionKey: string | null;
   taskWorkbenchOpenSource: WorkbenchOpenSource | null;
   taskWorkbenchActivityActive: boolean;
 
@@ -381,6 +386,7 @@ export interface AppState {
   setActivePreviewTab: (id: string) => void;
 
   // Unified workbench actions.
+  syncWorkbenchForSession: (sessionId: string | null) => void;
   openWorkbenchTab: (id: WorkbenchTabId, options?: OpenWorkbenchTabOptions) => void;
   closeWorkbenchTab: (id: WorkbenchTabId) => void;
   setActiveWorkbenchTab: (id: WorkbenchTabId | null) => void;
@@ -517,6 +523,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // Initial workbench — empty until the user opens a tab or live task activity appears.
   workbenchTabs: [],
   activeWorkbenchTab: null,
+  workbenchBySession: {},
+  workbenchSessionKey: null,
   taskWorkbenchOpenSource: null,
   taskWorkbenchActivityActive: false,
   workbenchHighlight: null,
@@ -968,6 +976,35 @@ export const useAppStore = create<AppState>()((set, get) => ({
         t.id === id ? { ...t, savedContent: t.content } : t,
       ),
     }));
+  },
+
+  syncWorkbenchForSession: (sessionId) => {
+    const state = get();
+    const workbenchBySession = state.workbenchSessionKey
+      ? {
+          ...state.workbenchBySession,
+          [state.workbenchSessionKey]: {
+            tabs: [...state.workbenchTabs],
+            active: state.activeWorkbenchTab,
+          },
+        }
+      : state.workbenchBySession;
+    const restored = sessionId ? workbenchBySession[sessionId] : undefined;
+    const workbenchTabs = (restored?.tabs ?? []).filter((view) => (
+      !isPreviewWorkbenchView(view)
+      || state.previewTabs.some((tab) => tab.kind !== 'liveDev' && view === `preview:${tab.path}`)
+    ));
+    const restoredActive = restored?.active ?? null;
+    const activeWorkbenchTab = restoredActive && !workbenchTabs.includes(restoredActive)
+      ? workbenchTabs[0] ?? null
+      : restoredActive;
+
+    set({
+      workbenchBySession,
+      workbenchTabs,
+      activeWorkbenchTab,
+      workbenchSessionKey: sessionId,
+    });
   },
 
   ...createWorkbenchActions({

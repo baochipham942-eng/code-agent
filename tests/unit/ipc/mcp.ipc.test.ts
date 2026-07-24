@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getMcpConfigPathMock = vi.fn();
+const getMcpScopedConfigPathsMock = vi.fn();
 const ensureConfigDirMock = vi.fn();
+const ensureUserConfigDirMock = vi.fn();
 const pathExistsMock = vi.fn();
 const readFileMock = vi.fn();
 const writeFileMock = vi.fn();
@@ -60,7 +62,9 @@ vi.mock('../../../src/host/context/contextHealthService', () => ({
 
 vi.mock('../../../src/host/config', () => ({
   getMcpConfigPath: (...args: unknown[]) => getMcpConfigPathMock(...args),
+  getMcpScopedConfigPaths: (...args: unknown[]) => getMcpScopedConfigPathsMock(...args),
   ensureConfigDir: (...args: unknown[]) => ensureConfigDirMock(...args),
+  ensureUserConfigDir: (...args: unknown[]) => ensureUserConfigDirMock(...args),
   pathExists: (...args: unknown[]) => pathExistsMock(...args),
 }));
 
@@ -89,7 +93,9 @@ beforeEach(() => {
   secureStorageMock.set.mockClear();
   secureStorageMock.delete.mockClear();
   getMcpConfigPathMock.mockReset();
+  getMcpScopedConfigPathsMock.mockReset();
   ensureConfigDirMock.mockReset();
+  ensureUserConfigDirMock.mockReset();
   pathExistsMock.mockReset();
   readFileMock.mockReset();
   writeFileMock.mockReset();
@@ -100,7 +106,11 @@ beforeEach(() => {
     new: '/tmp/work/.code-agent/mcp.json',
     legacy: '/tmp/work/.claude/settings.json',
   });
+  getMcpScopedConfigPathsMock.mockReturnValue({
+    user: '/tmp/user-data/mcp.json',
+  });
   ensureConfigDirMock.mockResolvedValue('/tmp/work/.code-agent');
+  ensureUserConfigDirMock.mockResolvedValue('/tmp/user-data');
   pathExistsMock.mockResolvedValue(false);
   readFileMock.mockRejectedValue(new Error('ENOENT'));
   writeFileMock.mockResolvedValue(undefined);
@@ -109,10 +119,14 @@ beforeEach(() => {
   coordinatorMock.cancelFlowForServerIdentity.mockReturnValue(false);
 });
 
-async function invokeMcpAction(action: string, payload?: unknown) {
+async function invokeMcpAction(
+  action: string,
+  payload?: unknown,
+  workingDirectory: string | null = '/tmp/work',
+) {
   const ipcMain = { handle: vi.fn() };
   registerMcpHandlers(ipcMain as never, {
-    getWorkingDirectory: () => '/tmp/work',
+    getWorkingDirectory: () => workingDirectory ?? undefined,
   });
   const handler = ipcMain.handle.mock.calls[0][1] as (_event: unknown, request: { action: string; payload?: unknown }) => Promise<unknown>;
   return handler({}, { action, payload });
@@ -232,6 +246,77 @@ describe('mcp.ipc settings add helpers', () => {
     expect(writeFileMock).not.toHaveBeenCalled();
   });
 
+  it('persists user-scoped servers to the user config without touching the working directory', async () => {
+    const response = await invokeMcpAction('addServer', {
+      scope: 'user',
+      config: {
+        name: 'global_docs',
+        type: 'stdio',
+        command: 'npx',
+      },
+    }, '/Applications/Agent Neo.app/Contents/Resources') as {
+      success: boolean;
+      data?: { configPath: string };
+    };
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        configPath: '/tmp/user-data/mcp.json',
+      },
+    });
+    expect(getMcpScopedConfigPathsMock).toHaveBeenCalledWith();
+    expect(ensureUserConfigDirMock).toHaveBeenCalledOnce();
+    expect(getMcpConfigPathMock).not.toHaveBeenCalled();
+    expect(ensureConfigDirMock).not.toHaveBeenCalled();
+    expect(writeFileMock).toHaveBeenCalledWith(
+      '/tmp/user-data/mcp.json',
+      expect.any(String),
+    );
+  });
+
+  it('persists user-scoped servers when no working directory is available', async () => {
+    const response = await invokeMcpAction('addServer', {
+      scope: 'user',
+      config: {
+        name: 'no_project',
+        type: 'stdio',
+        command: 'npx',
+      },
+    }, null) as { success: boolean; error?: { message: string } };
+
+    expect(response.success).toBe(true);
+    expect(response.error?.message).not.toBe('Working directory is unavailable');
+    expect(writeFileMock).toHaveBeenCalledWith(
+      '/tmp/user-data/mcp.json',
+      expect.any(String),
+    );
+  });
+
+  it.each([
+    ['explicit project scope', 'project'],
+    ['default project scope', undefined],
+  ])('keeps %s persistence in the working directory', async (_label, scope) => {
+    const response = await invokeMcpAction('addServer', {
+      ...(scope ? { scope } : {}),
+      config: {
+        name: scope ? 'explicit_project' : 'default_project',
+        type: 'stdio',
+        command: 'npx',
+      },
+    }) as { success: boolean; data?: { configPath: string } };
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        configPath: '/tmp/work/.code-agent/mcp.json',
+      },
+    });
+    expect(getMcpConfigPathMock).toHaveBeenCalledWith('/tmp/work');
+    expect(ensureConfigDirMock).toHaveBeenCalledWith('/tmp/work');
+    expect(ensureUserConfigDirMock).not.toHaveBeenCalled();
+  });
+
   it('stores marked env secrets and persists only references', async () => {
     const fakeSecret = 'SENSITIVE_PERSISTED_SECRET_91ca';
     const response = await invokeMcpAction('addServer', {
@@ -252,6 +337,9 @@ describe('mcp.ipc settings add helpers', () => {
       APP_SECRET: fakeSecret,
     });
     expect(writeFileMock).toHaveBeenCalledOnce();
+    expect(writeFileMock.mock.invocationCallOrder[0]).toBeLessThan(
+      setIntegrationMock.mock.invocationCallOrder[0],
+    );
     const persistedContent = String(writeFileMock.mock.calls[0][1]);
     expect(persistedContent).toContain('secureref:mcp_feishu.APP_SECRET');
     expect(persistedContent).not.toContain(fakeSecret);
@@ -263,6 +351,36 @@ describe('mcp.ipc settings add helpers', () => {
       },
       scope: 'runtime',
     }));
+  });
+
+  it('does not store extracted secrets when persistence fails for a duplicate server', async () => {
+    pathExistsMock.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    readFileMock.mockResolvedValue(JSON.stringify({
+      servers: [{
+        name: 'duplicate_secret',
+        type: 'stdio',
+        command: 'npx',
+        enabled: false,
+      }],
+    }));
+
+    const response = await invokeMcpAction('addServer', {
+      config: {
+        name: 'duplicate_secret',
+        type: 'stdio',
+        command: 'npx',
+        env: {
+          APP_SECRET: 'must-not-be-orphaned',
+        },
+      },
+      secretEnvKeys: ['APP_SECRET'],
+    }) as { success: boolean; error?: { message: string } };
+
+    expect(response.success).toBe(false);
+    expect(response.error?.message).toContain('already exists');
+    expect(setIntegrationMock).not.toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
+    expect(mcpClientMock.addServer).not.toHaveBeenCalled();
   });
 
   it('keeps env values unchanged when no secret key list is provided', async () => {

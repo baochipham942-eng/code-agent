@@ -64,7 +64,9 @@ const EMPTY_CONFIG: McpServerConfig = {
 const SENSITIVE_MCP_KEY_PATTERN = /(api[-_]?key|authorization|bearer|token|secret|password|passwd|credential|private[-_]?key)/i;
 
 export function isSensitiveMcpCredentialKey(key: string): boolean {
-  return SENSITIVE_MCP_KEY_PATTERN.test(key.trim());
+  const normalizedKey = key.trim();
+  // *_MODE 保存的是认证方式等配置枚举（如 LARK_TOKEN_MODE），不是可写入密钥库的凭据。
+  return !/_MODE$/i.test(normalizedKey) && SENSITIVE_MCP_KEY_PATTERN.test(normalizedKey);
 }
 
 function isMcpSecretReference(value: string): boolean {

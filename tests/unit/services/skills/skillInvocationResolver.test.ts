@@ -241,6 +241,31 @@ describe('skillInvocationResolver', () => {
     );
   });
 
+  // 隔离验证否定回看：只测 alias 提取本身，不牵涉词边界匹配。
+  it('negation lookbehind alone strips triggers from a negated description clause', () => {
+    const negated = skill({
+      name: 'negation-only-tool',
+      description: '一些说明。不要因为用户提到 zzzcanary 等关键词就自动触发。',
+    });
+
+    const aliases = getSkillInvocationAliases(negated).map((alias) => alias.value);
+    expect(aliases).not.toContain('zzzcanary');
+  });
+
+  // 隔离验证词边界：alias 来自 metadata（不经过否定回看），单独测子串误伤。
+  it('word boundary alone prevents a short latin alias from matching inside an identifier', () => {
+    const shortAlias = skill({
+      name: 'short-alias-tool',
+      description: 'no trigger words here.',
+      metadata: { aliases: 'page' },
+    });
+
+    expect(resolveSkillInvocationFromSkills('把 page_size 参数改成 50', [shortAlias])).toBeNull();
+    expect(resolveSkillInvocationFromSkills('把 page 参数改一下', [shortAlias])?.skill.name).toBe(
+      'short-alias-tool',
+    );
+  });
+
   it('does not bind ambiguous aliases to an arbitrary skill', () => {
     const first = skill({ name: 'first-tool', description: '用于共享入口。', aliases: ['共享'] });
     const second = skill({ name: 'second-tool', description: '用于共享入口。', aliases: ['共享'] });

@@ -5,14 +5,19 @@
 // ============================================================================
 
 import React from 'react';
+import type { AgentTreeSnapshot } from '@shared/contract/agentTree';
 import { TaskMonitor } from './TaskMonitor';
 import { AgentTreeView } from '../features/agentTree/AgentTreeView';
 
-export const TaskPanel: React.FC = () => {
+export interface TaskPanelProps {
+  agentTreeSnapshot?: AgentTreeSnapshot | null;
+}
+
+export const TaskPanel: React.FC<TaskPanelProps> = ({ agentTreeSnapshot }) => {
   return (
     <div className="w-full h-full bg-zinc-900 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        <AgentTreeView />
+        <AgentTreeView snapshot={agentTreeSnapshot} />
         <TaskMonitor />
       </div>
     </div>

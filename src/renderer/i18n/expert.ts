@@ -14,7 +14,7 @@ export const expertZh = {
     configure: '配置角色',
     refresh: '刷新',
     createExpert: '新建专家',
-    detailTabs: { basic: '基本信息', persona: '人设', skills: '技能', model: '模型', records: '记录' },
+    detailTabs: { basic: '基本信息', personalization: '个性化', skills: '技能', model: '模型', records: '记录' },
     loadFailed: '专家列表加载失败',
     empty: '还没有专家。重启应用会自动安装预设专家，或到设置里新建角色。',
     memoryCount: '{count} 条记忆',
@@ -99,6 +99,27 @@ export const expertZh = {
       automationCron: 'Cron · {expression}',
       automationUnits: { seconds: '秒', minutes: '分钟', hours: '小时', days: '天' },
     },
+    rolePersonalization: {
+      save: '保存',
+      saving: '保存中…',
+      segments: {
+        identity: {
+          title: '我是谁',
+          description: '这位专家的本职设定：擅长什么、怎么干活、产出长什么样。',
+          placeholder: '',
+        },
+        expectation: {
+          title: '你的期望',
+          description: '你当初为什么要这位专家、希望 TA 帮你做成什么。这段会一直跟着 TA 走。',
+          placeholder: '例：我想要一个数据分析师，查数、画图、给结论一条龙，把原始数据变成管理层看得懂的东西。',
+        },
+        soul: {
+          title: '行为准则',
+          description: '只对这位专家生效的做事规矩。留空就跟随全局设定。',
+          placeholder: '例：结论先行，先给判断再讲依据；不确定的地方直接说不确定，别猜。',
+        },
+      },
+    },
     roleSkills: {
       title: '技能与工具',
       description: '从这台机器上真实可用的技能和工具里挑，勾了才允许这位专家用。',
@@ -133,7 +154,7 @@ export const expertEn: typeof expertZh = {
     configure: 'Configure role',
     refresh: 'Refresh',
     createExpert: 'New expert',
-    detailTabs: { basic: 'Basic', persona: 'Persona', skills: 'Skills', model: 'Model', records: 'Records' },
+    detailTabs: { basic: 'Basic', personalization: 'Personalization', skills: 'Skills', model: 'Model', records: 'Records' },
     loadFailed: 'Failed to load experts',
     empty: 'No experts yet. Preset experts are installed automatically after restarting the app, or create a role in settings.',
     memoryCount: '{count} memories',
@@ -217,6 +238,27 @@ export const expertEn: typeof expertZh = {
       automationAt: 'One-time · {time}',
       automationCron: 'Cron · {expression}',
       automationUnits: { seconds: 'seconds', minutes: 'minutes', hours: 'hours', days: 'days' },
+    },
+    rolePersonalization: {
+      save: 'Save',
+      saving: 'Saving…',
+      segments: {
+        identity: {
+          title: 'Who they are',
+          description: 'What this expert specializes in, how they work, and what their output looks like.',
+          placeholder: '',
+        },
+        expectation: {
+          title: 'What you want',
+          description: 'Why you wanted this expert and what you want them to get done. It stays with them.',
+          placeholder: 'e.g. I want a data analyst who queries, charts, and concludes end to end, turning raw data into something leadership can read.',
+        },
+        soul: {
+          title: 'Ground rules',
+          description: 'Rules that apply to this expert only. Leave empty to follow the global settings.',
+          placeholder: 'e.g. Lead with the conclusion, then the evidence. Say when you are unsure instead of guessing.',
+        },
+      },
     },
     roleSkills: {
       title: 'Skills and tools',

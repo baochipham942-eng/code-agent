@@ -53,6 +53,7 @@ import { parseAgentMd, parseAgentMdVisual, updateAgentMdBody, updateAgentMdEquip
 import { getAgentsMdDir } from '../config/configPaths';
 import { createLogger } from '../services/infra/logger';
 import { BUILTIN_ROLES } from '../services/roleAssets/builtinRoles';
+import { readRolePersonalization, writeRolePersonalization } from '../services/roleAssets/rolePersonalization';
 import { getInstalledRolePackState, getRolePackFactoryDefinition } from '../services/roleAssets/rolePackInstallService';
 import { BUILTIN_SKILLS } from '../services/skills/builtinSkillsData';
 import { getSkillRepositoryService } from '../services/skills/skillRepositoryService';
@@ -135,6 +136,7 @@ interface UpdateVisualPayload extends RoleIdPayload {
 }
 interface UpdateEquipmentPayload extends RoleIdPayload { equipment?: AgentMdEquipment; }
 interface UpdateDefinitionBodyPayload extends RoleIdPayload { body?: string; }
+interface UpdatePersonalizationPayload extends RoleIdPayload { userExpectation?: string; soul?: string; }
 
 interface DraftIdPayload {
   draftId?: string;
@@ -243,6 +245,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     proactivity,
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
     isBuiltin: builtinRoleIdSet.has(roleId),
+    personalization: readRolePersonalization(roleId),
     ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
     ...(packState ? { locallyModified: packState.locallyModified } : {}),
     ...(restore ? { restore } : {}),
@@ -473,6 +476,20 @@ export function registerRolesHandlers(ipcMain: IpcMain): void {
           const { roleId, body } = (payload ?? {}) as UpdateDefinitionBodyPayload;
           if (!roleId || typeof body !== 'string') return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId and body are required' } };
           await handleUpdateDefinitionBody(roleId, body);
+          return { success: true, data: { updated: true } };
+        }
+
+        case 'updatePersonalization': {
+          const { roleId, userExpectation, soul } = (payload ?? {}) as UpdatePersonalizationPayload;
+          if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+          if (userExpectation === undefined && soul === undefined) return { success: false, error: { code: 'INVALID_ARGS', message: 'nothing to update' } };
+          if ((userExpectation !== undefined && typeof userExpectation !== 'string') || (soul !== undefined && typeof soul !== 'string')) {
+            return { success: false, error: { code: 'INVALID_ARGS', message: 'userExpectation and soul must be strings' } };
+          }
+          writeRolePersonalization(roleId, {
+            ...(userExpectation !== undefined ? { userExpectation } : {}),
+            ...(soul !== undefined ? { soul } : {}),
+          });
           return { success: true, data: { updated: true } };
         }
 

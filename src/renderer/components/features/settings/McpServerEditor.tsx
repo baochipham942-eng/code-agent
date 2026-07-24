@@ -7,6 +7,7 @@ import { Server, Terminal, Globe, Code, Plus, Trash2, Eye, EyeOff } from 'lucide
 import { Modal, ModalFooter, Input } from '../../primitives';
 import { useI18n } from '../../../hooks/useI18n';
 import { MCP_SECRET_REF_PREFIX } from '@shared/constants';
+import { isSensitiveMcpCredentialKey } from '@shared/security/mcpSecretKeys';
 
 // ============================================================================
 // Types
@@ -61,13 +62,9 @@ const EMPTY_CONFIG: McpServerConfig = {
   headers: {},
 };
 
-const SENSITIVE_MCP_KEY_PATTERN = /(api[-_]?key|authorization|bearer|token|secret|password|passwd|credential|private[-_]?key)/i;
-
-export function isSensitiveMcpCredentialKey(key: string): boolean {
-  const normalizedKey = key.trim();
-  // *_MODE 保存的是认证方式等配置枚举（如 LARK_TOKEN_MODE），不是可写入密钥库的凭据。
-  return !/_MODE$/i.test(normalizedKey) && SENSITIVE_MCP_KEY_PATTERN.test(normalizedKey);
-}
+// isSensitiveMcpCredentialKey 定义已下沉到 @shared/security/mcpSecretKeys（host 侧
+// mcp_add_server 工具同款判定），此处重新导出以保持既有 import 面不变。
+export { isSensitiveMcpCredentialKey };
 
 function isMcpSecretReference(value: string): boolean {
   return value.startsWith(MCP_SECRET_REF_PREFIX);

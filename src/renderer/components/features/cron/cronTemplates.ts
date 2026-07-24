@@ -148,7 +148,7 @@ export const CRON_TEMPLATES: CronTemplate[] = [
         actionType: 'agent',
         agentType: 'default',
         agentPrompt:
-          `请用飞书日历工具查看日历 ${v.calendarId} 今天的日程（start_time 取今天本地时区的 00:00，end_time 取当天 24:00，page_size 至少 50），` +
+          `请用飞书日历工具查看日历 ${v.calendarId} 今天的日程（start_time 取今天本地时区的 00:00，end_time 取当天 24:00，分页条数不少于 50——飞书日历接口的下限就是 50，取少了会报错），` +
           '两两比对是否有时间重叠的冲突。' +
           '把当前所有冲突对的简短签名（两个日程的标题加时间）用 <cron_snapshot>…</cron_snapshot> 包住，供下次对比。' +
           '只有当出现【上次没有、这次新增】的冲突时，才用 <cron_alert>…</cron_alert> 包住这条新冲突的说明（谁和谁、什么时间撞了）；' +

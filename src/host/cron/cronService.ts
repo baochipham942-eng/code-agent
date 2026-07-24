@@ -71,12 +71,25 @@ function scheduleBoundToDate(value: string | number): Date {
  * 要吐标记，第一次必然拿不到快照，就只能退而求其次拿整段回答顶替，
  * 于是把一坨叙述性文字当成状态注回下一轮。
  */
-function buildCronAgentPrompt(prompt: string, snapshot: unknown, enabled: boolean): string {
-  if (!enabled) return prompt;
+function buildCronAgentPrompt(
+  prompt: string,
+  snapshot: unknown,
+  enabled: boolean,
+  now: Date = new Date(),
+): string {
+  // 注入当前时间锚点：LLM 默认拿训练期日期，会把「今天/明天」算成过去时间（真机 dogfood
+  // 抓到 DeepSeek 把飞书日历"今天"算成 2025 年 + 错时区）。cron.ipc.ts 生成路径早有此锚点，
+  // agent 执行路径补齐——对所有时间敏感的定时任务都有用，不只飞书告警。
+  const timeAnchor =
+    `【当前时间】${now.toISOString()}（UTC；本地默认时区 Asia/Shanghai）。`
+    + '涉及「今天/明天/本周」等相对时间时，以此为基准换算成绝对时间，不要用你训练时的日期。';
+  if (!enabled) return [prompt, '', timeAnchor].join('\n');
 
   const hasSnapshot = typeof snapshot === 'string' && Boolean(snapshot.trim());
   return [
     prompt,
+    '',
+    timeAnchor,
     ...(hasSnapshot
       ? [
         '',

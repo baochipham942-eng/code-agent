@@ -21,9 +21,12 @@ describe('飞书日程冲突监听模板', () => {
     });
   });
 
-  it('prompt 守住硬口径：当天 00:00 起点 + page_size≥50，且不调 field.list', () => {
+  it('prompt 守住硬口径：当天 00:00 起点 + 分页下限 50，且不含英文 page、不调 field.list', () => {
     expect(draft.agentPrompt).toContain('00:00');
-    expect(draft.agentPrompt).toMatch(/page_size 至少 50/);
+    expect(draft.agentPrompt).toMatch(/分页条数不少于 50/);
+    // P2：英文 "page"（如 page_size）会被 skill-alias 匹配器拿子串误撞 design-brief，
+    // 用中文「分页」措辞绕开，模型从工具 schema 认 page_size 参数即可。
+    expect(draft.agentPrompt).not.toMatch(/page/i);
     expect(draft.agentPrompt).not.toMatch(/field\.list|appTableField/);
   });
 

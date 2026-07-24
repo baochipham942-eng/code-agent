@@ -66,6 +66,26 @@ export const INJECTION_PATTERNS: InjectionPattern[] = [
   },
 
   // =========================================================================
+  // Agent 运行时控制标签伪装 (instruction_override)
+  // 子代理消费外部数据/网页后可能把伪造的宿主控制标签抄进自己的最终产出，
+  // 借"看起来像系统消息"骗父 Agent 当真指令执行（对齐 Agent SDK 的 control-tag
+  // imitation 防护）。只匹配尖括号包裹的标签本体，不匹配散文里提到标签名，
+  // 降低对"讨论这个攻击手法"类正常产出的误伤。
+  // =========================================================================
+  {
+    pattern: /<\/?(?:system-reminder|automated_reminder|function_results?|task-notification)>/i,
+    type: 'instruction_override',
+    severity: 'high',
+    description: '伪造 Agent 运行时控制标签（system-reminder/function_results 等）',
+  },
+  {
+    pattern: /<\/?(?:tool_result|tool_use)[ >]/i,
+    type: 'instruction_override',
+    severity: 'high',
+    description: '伪造工具调用/结果标签诱导父 Agent 当真指令执行',
+  },
+
+  // =========================================================================
   // 角色劫持 (jailbreak_attempt)
   // =========================================================================
   {

@@ -76,7 +76,8 @@ export const ProjectSettingsDialog: React.FC<ProjectSettingsDialogProps> = ({
   }, [open, projectId]);
 
   const primary = useMemo(() => sources.find((source) => source.role === 'primary'), [sources]);
-  const usesManualSourcePath = isWebMode() || window.__CODE_AGENT_HTTP_BRIDGE__ === true;
+  const usesManualSourcePath = isWebMode()
+    || (typeof window !== 'undefined' && window.__CODE_AGENT_HTTP_BRIDGE__ === true);
   if (!open) return null;
 
   const addFolder = async (manualPath?: string): Promise<void> => {

@@ -9,6 +9,7 @@ const projectClient = vi.hoisted(() => ({
   addProjectRole: vi.fn(),
   getProjectArtifacts: vi.fn(),
   getProjectDetail: vi.fn(),
+  getProjectSourceGitStates: vi.fn(),
   removeProjectRole: vi.fn(),
   renameProject: vi.fn(),
   setProjectStatus: vi.fn(),
@@ -55,6 +56,7 @@ describe('ProjectHeaderBar 角色 picker 行渲染 description', () => {
     vi.clearAllMocks();
     projectClient.getProjectDetail.mockResolvedValue(detail);
     projectClient.getProjectArtifacts.mockResolvedValue([]);
+    projectClient.getProjectSourceGitStates.mockResolvedValue([]);
   });
 
   afterEach(cleanup);

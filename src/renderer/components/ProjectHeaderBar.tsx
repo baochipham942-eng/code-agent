@@ -115,7 +115,8 @@ export const ProjectHeaderBar: React.FC = () => {
           .then((states) => ({ states, error: null }))
           .catch((error) => ({ states: [] as ProjectSourceGitState[], error })),
       ]);
-      setDetail(d);
+      // Older bridge fixtures and persisted pre-migration detail payloads may omit sources.
+      setDetail({ ...d, sources: d.sources ?? [] });
       setArtifacts(a);
       setSourceGitStates(gitStatesResult.states);
       if (gitStatesResult.error) {

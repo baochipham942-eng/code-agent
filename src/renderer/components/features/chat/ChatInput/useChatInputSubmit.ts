@@ -166,7 +166,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         },
       });
       if (currentSessionId) {
-        const automationType = job.action.type === 'agent' && job.action.context?.heartbeatTask ? 'heartbeat' : 'cron';
+        const automationType = job.action.type === 'agent'
+          ? (job.action.context?.externalWatch ? 'external_event'
+            : job.action.context?.heartbeatTask ? 'heartbeat' : 'cron')
+          : 'cron';
         useSessionStore.getState().addMessage(buildAutomationNoticeMessage({
           automationId: `${automationType}:${job.id}`,
           automationType,

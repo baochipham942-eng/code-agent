@@ -2,7 +2,7 @@
 // Session Automation — 会话级自动化闭环契约
 // ============================================================================
 
-export type SessionAutomationType = 'cron' | 'heartbeat' | 'loop' | 'role_wake' | 'goal_phase';
+export type SessionAutomationType = 'cron' | 'heartbeat' | 'loop' | 'role_wake' | 'goal_phase' | 'external_event';
 
 export type SessionAutomationStatus =
   | 'active'

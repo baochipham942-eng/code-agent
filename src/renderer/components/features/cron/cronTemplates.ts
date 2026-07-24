@@ -1,4 +1,5 @@
 import { CRON_AGENT_SNAPSHOT } from '@shared/constants/memory';
+import { EXTERNAL_WATCH, type ExternalWatchConfig } from '@shared/constants/feishu';
 import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
 
@@ -123,6 +124,73 @@ export const CRON_TEMPLATES: CronTemplate[] = [
           '如果有变化，请简要说明变了什么、为什么值得关注；如果没有变化，也请直接告诉我。',
         // 开变化追踪：不开的话它每次只能把当前全量内容报一遍，说不出「变了什么」
         agentContextText: JSON.stringify({ [CRON_AGENT_SNAPSHOT.ENABLED_KEY]: true }, null, 2),
+        ...cron,
+      });
+    },
+  },
+  {
+    id: 'feishu-calendar-conflict',
+    name: '飞书日程冲突监听',
+    emoji: '📅',
+    description: '盯住某个飞书日历，出现时间冲突就提醒',
+    scheduleLabel: '每天 09:00（可调整）',
+    fields: [
+      { key: 'calendarId', label: '日历 ID', placeholder: '飞书日历的 calendar_id（分享链接或调试台里取）', required: true },
+      { key: 'schedule', label: '查看频率', placeholder: '例如：每天 9:00、每 2 小时' },
+    ],
+    generate: (v) => {
+      const cron = parseFriendlySchedule(v.schedule);
+      const externalWatch: ExternalWatchConfig = { source: EXTERNAL_WATCH.SOURCE_CALENDAR, calendarId: v.calendarId };
+      return makeDraft({
+        name: '飞书日程冲突监听',
+        description: `盯住飞书日历 ${v.calendarId}，出现时间冲突就提醒`,
+        tagsText: '飞书, 日程, 冲突',
+        actionType: 'agent',
+        agentType: 'default',
+        agentPrompt:
+          `请用飞书日历工具查看日历 ${v.calendarId} 今天的日程。start_time 用上文给出的「今天本地 00:00」的 Unix 秒、end_time 用「次日本地 00:00」的 Unix 秒，直接照抄别自己换算；分页条数不少于 50（飞书日历接口下限就是 50，取少了会报错）。` +
+          '两两比对是否有时间重叠的冲突。' +
+          '把当前所有冲突对的简短签名（两个日程的标题加时间）用 <cron_snapshot>…</cron_snapshot> 包住，供下次对比。' +
+          '只有当出现【上次没有、这次新增】的冲突时，才用 <cron_alert>…</cron_alert> 包住这条新冲突的说明（谁和谁、什么时间撞了）；' +
+          '如果没有新增冲突，就不要输出 <cron_alert>，直接说一句本次无新增冲突即可。',
+        agentContextText: JSON.stringify({
+          [CRON_AGENT_SNAPSHOT.ENABLED_KEY]: true,
+          [EXTERNAL_WATCH.CONTEXT_KEY]: externalWatch,
+        }, null, 2),
+        ...cron,
+      });
+    },
+  },
+  {
+    id: 'feishu-table-change',
+    name: '飞书表格行变更监听',
+    emoji: '📊',
+    description: '盯住某张多维表格，有行新增或改动就提醒',
+    scheduleLabel: '每天 09:00（可调整）',
+    fields: [
+      { key: 'baseAppToken', label: 'Base App Token', placeholder: '多维表格的 app_token', required: true },
+      { key: 'tableId', label: '数据表 ID', placeholder: 'table_id（tbl 开头）', required: true },
+      { key: 'schedule', label: '查看频率', placeholder: '例如：每天 9:00' },
+    ],
+    generate: (v) => {
+      const cron = parseFriendlySchedule(v.schedule);
+      const externalWatch: ExternalWatchConfig = { source: EXTERNAL_WATCH.SOURCE_TABLE, baseAppToken: v.baseAppToken, tableId: v.tableId };
+      return makeDraft({
+        name: '飞书表格行变更监听',
+        description: `盯住多维表格 ${v.tableId} 的行变更`,
+        tagsText: '飞书, 多维表格, 变更',
+        actionType: 'agent',
+        agentType: 'default',
+        agentPrompt:
+          `请用飞书多维表格的记录搜索工具（appTableRecord.search，app_token=${v.baseAppToken}、table_id=${v.tableId}）取回当前记录，` +
+          '对每条记录用它的 record_id 和字段内容做一个简短指纹（record_id 对应字段内容摘要）。' +
+          '把所有记录的指纹用 <cron_snapshot>…</cron_snapshot> 包住，供下次对比。' +
+          '与上次快照对比，找出【新增的行】和【字段变了的行】。' +
+          '只有当确有新增或改动时，才用 <cron_alert>…</cron_alert> 包住变更说明（哪几行、变了什么）；没有就不要输出 <cron_alert>，直接说一句本次无变更即可。',
+        agentContextText: JSON.stringify({
+          [CRON_AGENT_SNAPSHOT.ENABLED_KEY]: true,
+          [EXTERNAL_WATCH.CONTEXT_KEY]: externalWatch,
+        }, null, 2),
         ...cron,
       });
     },

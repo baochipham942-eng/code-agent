@@ -247,6 +247,33 @@ vi.mock('../../../src/renderer/components/features/settings/McpServerEditor', ()
     : null,
 }));
 
+vi.mock('../../../src/renderer/components/features/settings/tabs/McpDiscoverTab', () => ({
+  McpDiscoverTab: (props: {
+    onQuickConnect: (entry: {
+      id: string;
+      name: string;
+      description: string;
+      category: string;
+      builtin: boolean;
+      connection: { type: 'stdio'; command: string };
+    }) => void;
+  }) => React.createElement(
+    'button',
+    {
+      type: 'button',
+      onClick: () => props.onQuickConnect({
+        id: 'quick-server',
+        name: 'Quick Server',
+        description: 'Quick server fixture',
+        category: 'dev-tools',
+        builtin: false,
+        connection: { type: 'stdio', command: 'npx' },
+      }),
+    },
+    'mock-quick-connect',
+  ),
+}));
+
 import { MCPSettings, getMcpTrustSummary } from '../../../src/renderer/components/features/settings/tabs/MCPSettings';
 
 describe('MCPSettings status', () => {
@@ -353,7 +380,33 @@ describe('MCPSettings status', () => {
             type: 'stdio',
             command: 'node',
           },
+          scope: 'user',
           secretEnvKeys: ['X'],
+        },
+      );
+    });
+  });
+
+  it('passes user scope through the quick-connect addServer path', async () => {
+    render(React.createElement(MCPSettings));
+    fireEvent.click(screen.getByText(mcpText.tabs.discover));
+    fireEvent.click(screen.getByText('mock-quick-connect'));
+
+    await waitFor(() => {
+      expect(mockDomainInvoke).toHaveBeenCalledWith(
+        IPC_DOMAINS.MCP,
+        'addServer',
+        {
+          config: {
+            name: 'quick-server',
+            type: 'stdio',
+            command: 'npx',
+            args: undefined,
+            env: undefined,
+            url: undefined,
+            headers: undefined,
+          },
+          scope: 'user',
         },
       );
     });

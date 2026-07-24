@@ -1,5 +1,6 @@
 import { CRON_AGENT_SNAPSHOT } from '@shared/constants/memory';
 import { EXTERNAL_WATCH, type ExternalWatchConfig } from '@shared/constants/feishu';
+import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
 import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
 
@@ -23,7 +24,38 @@ export interface CronTemplate {
   scheduleLabel: string;
   featured?: boolean;
   fields: TemplateField[];
+  /** 依赖的连接器 id（对齐 mcpCatalog RECOMMENDED_MCP_SERVERS.id，如 'lark'），只给真有依赖的模板填 */
+  requiredConnectors?: string[];
   generate: (values: Record<string, string>) => CronJobDraft;
+}
+
+// ── Connector dependency status ─────────────────────────────────────
+
+export interface TemplateConnectorStatus {
+  id: string;
+  label: string;
+  connected: boolean;
+}
+
+/**
+ * connectedConnectorIds 由调用方从 useMcpServerStates 派生（status === 'connected' 的 config.name 集合），
+ * 这里保持纯函数不耦合 React hook，方便单测。
+ */
+export function getTemplateConnectorStatuses(
+  template: Pick<CronTemplate, 'requiredConnectors'>,
+  connectedConnectorIds: ReadonlySet<string>,
+): TemplateConnectorStatus[] {
+  return (template.requiredConnectors || []).map((id) => ({
+    id,
+    label: findRecommendedMcpServer(id)?.name || id,
+    connected: connectedConnectorIds.has(id),
+  }));
+}
+
+export function getMissingTemplateConnectors(
+  statuses: TemplateConnectorStatus[],
+): TemplateConnectorStatus[] {
+  return statuses.filter((status) => !status.connected);
 }
 
 // ── Helper ──────────────────────────────────────────────────────────
@@ -134,6 +166,7 @@ export const CRON_TEMPLATES: CronTemplate[] = [
     emoji: '📅',
     description: '盯住某个飞书日历，出现时间冲突就提醒',
     scheduleLabel: '每天 09:00（可调整）',
+    requiredConnectors: ['lark'],
     fields: [
       { key: 'calendarId', label: '日历 ID', placeholder: '飞书日历的 calendar_id（分享链接或调试台里取）', required: true },
       { key: 'schedule', label: '查看频率', placeholder: '例如：每天 9:00、每 2 小时' },
@@ -167,6 +200,7 @@ export const CRON_TEMPLATES: CronTemplate[] = [
     emoji: '📊',
     description: '盯住某张多维表格，有行新增或改动就提醒',
     scheduleLabel: '每天 09:00（可调整）',
+    requiredConnectors: ['lark'],
     fields: [
       { key: 'baseAppToken', label: 'Base App Token', placeholder: '多维表格的 app_token', required: true },
       { key: 'tableId', label: '数据表 ID', placeholder: 'table_id（tbl 开头）', required: true },

@@ -379,15 +379,26 @@ function isProviderUsable(provider: string, settings: TierResolutionSettings): b
  * - balanced：内置标准推荐（需用户配了 key）→ 用户默认模型
  * - 无 settings（测试/CLI 环境）：沿用内置默认，行为不变
  *
+ * override（专家详情页「指定具体模型」）优先于档位，但同样要过 provider 可用性检查：
+ * 用户后来删了那家 key，专家不会因此瘫掉，而是回落到档位解析。
+ *
  * 核心保证：分发给任何用户都不会因为"没配某个特定厂商的 key"而让 subagent 直接坏掉。
  */
 export function resolveTierModelConfig(
   tier: 'fast' | 'balanced' | 'powerful',
   builtinDefault: { provider: string; model: string },
   settings: TierResolutionSettings | undefined,
+  override?: { provider: string; model: string },
 ): { provider: ModelProvider; model: string } {
   if (!settings) {
     return builtinDefault as { provider: ModelProvider; model: string };
+  }
+
+  if (override) {
+    if (isProviderUsable(override.provider, settings)) {
+      return override as { provider: ModelProvider; model: string };
+    }
+    logger.info(`[ModelDecision] 指定模型 ${override.provider}/${override.model} 的 provider 未配置，回落到档位 ${tier}`);
   }
 
   const userDefault = {

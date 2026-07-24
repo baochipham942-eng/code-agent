@@ -423,6 +423,20 @@ describe('resolveTierModelConfig — 角色档位解析', () => {
     expect(result.model).toBe('llama-3.3-70b');
   });
 
+  it('指定具体模型：provider 已配 → 压过档位', async () => {
+    const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
+    const result = resolveTierModelConfig('fast', BUILTIN_FAST, userSettings, { provider: 'deepseek', model: 'deepseek-v4-pro' });
+    expect(result.provider).toBe('deepseek');
+    expect(result.model).toBe('deepseek-v4-pro');
+  });
+
+  it('指定具体模型：provider 后来被删/停用 → 回落档位而不是瘫掉', async () => {
+    const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
+    const result = resolveTierModelConfig('fast', BUILTIN_FAST, userSettings, { provider: 'groq', model: 'llama-3.3-70b' });
+    expect(result.provider).toBe('zhipu');
+    expect(result.model).toBe('glm-4-flash');
+  });
+
   it('无 settings（测试/CLI 环境）→ 沿用内置默认，行为不变', async () => {
     const { resolveTierModelConfig } = await import('../../../src/host/model/modelDecision');
     const result = resolveTierModelConfig('fast', BUILTIN_FAST, undefined);

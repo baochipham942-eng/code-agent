@@ -312,7 +312,7 @@ describe('ExpertPanel', () => {
     useAppStore.getState().openExpertRoleDetail('牧之');
     render(<RoleDetailPage roleId="牧之" />);
     await waitFor(() => expect(screen.getByTestId('role-detail-basic-tab')).toBeTruthy());
-    fireEvent.click(screen.getByTestId('role-detail-tab-equipment'));
+    fireEvent.click(screen.getByTestId('role-detail-tab-skills'));
     expect(screen.getByTestId('role-detail-equipment-tab')).toBeTruthy();
     fireEvent.click(screen.getByTestId('role-detail-tab-persona'));
     expect(screen.getByTestId('role-detail-persona-tab')).toBeTruthy();
@@ -390,14 +390,19 @@ describe('ExpertPanel', () => {
     fireEvent.click(screen.getByTestId('expert-detail-自定义专家'));
     cleanup();
     render(<RoleDetailPage roleId="自定义专家" />);
-    fireEvent.click(screen.getByTestId('role-detail-tab-equipment'));
+    fireEvent.click(screen.getByTestId('role-detail-tab-skills'));
     await waitFor(() => expect(screen.getByTestId('role-equipment-editor')).toBeTruthy());
     expect(screen.queryByTestId('role-restore-factory')).toBeNull();
 
+    // 技能页只改技能；档位归模型页，保存时必须原样带回（否则换技能会把模型选择冲掉）
     fireEvent.click(screen.getByLabelText('xlsx'));
-    fireEvent.change(screen.getByTestId('role-equipment-model'), { target: { value: 'powerful' } });
     fireEvent.click(screen.getByTestId('role-equipment-save'));
-    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateEquipment', expect.objectContaining({ roleId: '自定义专家', equipment: expect.objectContaining({ skills: ['research', 'xlsx'], model: 'powerful' }) })));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateEquipment', expect.objectContaining({ roleId: '自定义专家', equipment: expect.objectContaining({ skills: ['research', 'xlsx'], model: 'balanced' }) })));
+
+    fireEvent.click(screen.getByTestId('role-detail-tab-model'));
+    await waitFor(() => expect(screen.getByTestId('role-model-tier-powerful')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('role-model-tier-powerful'));
+    await waitFor(() => expect(invokeDomain).toHaveBeenCalledWith(expect.anything(), 'updateEquipment', expect.objectContaining({ roleId: '自定义专家', equipment: expect.objectContaining({ skills: ['research'], model: 'powerful', modelOverride: null }) })));
 
     fireEvent.click(screen.getByTestId('role-detail-tab-persona'));
     fireEvent.change(screen.getByTestId('role-definition-body'), { target: { value: '新的角色正文' } });

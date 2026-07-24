@@ -241,7 +241,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     proactivity,
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
     isBuiltin: builtinRoleIdSet.has(roleId),
-    ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
+    ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
     ...(packState ? { locallyModified: packState.locallyModified } : {}),
     ...(restore ? { restore } : {}),
   };
@@ -258,6 +258,11 @@ async function handleUpdateVisual(roleId: string, visual: RoleVisual): Promise<R
 async function handleUpdateEquipment(roleId: string, equipment: AgentMdEquipment): Promise<void> {
   if (!['fast', 'balanced', 'powerful'].includes(equipment.model) || !Number.isInteger(equipment.maxIterations) || equipment.maxIterations < 1 || equipment.maxIterations > 200) {
     throw new Error('Invalid equipment configuration');
+  }
+  // 指定模型只校验形状；provider 是否可用交给路由层兜底（用户后来删了 key 也不该让保存失败）。
+  const override = equipment.modelOverride;
+  if (override != null && !(typeof override.provider === 'string' && override.provider.trim() && typeof override.model === 'string' && override.model.trim())) {
+    throw new Error('Invalid model override');
   }
   const definitionPath = path.join(getAgentsMdDir().user, `${roleId}.md`);
   const definition = await fs.readFile(definitionPath, 'utf-8');

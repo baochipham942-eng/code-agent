@@ -14,7 +14,7 @@ export const expertZh = {
     configure: '配置角色',
     refresh: '刷新',
     createExpert: '新建专家',
-    detailTabs: { basic: '基本信息', equipment: '装备', persona: '人设', records: '记录' },
+    detailTabs: { basic: '基本信息', persona: '人设', skills: '技能', model: '模型', records: '记录' },
     loadFailed: '专家列表加载失败',
     empty: '还没有专家。重启应用会自动安装预设专家，或到设置里新建角色。',
     memoryCount: '{count} 条记忆',
@@ -64,7 +64,6 @@ export const expertZh = {
       },
     },
     roleDetail: {
-      modelTier: '模型档位',
       maxIterations: '最大迭代次数',
       skills: '技能',
       tools: '工具',
@@ -89,6 +88,25 @@ export const expertZh = {
       automationCron: 'Cron · {expression}',
       automationUnits: { seconds: '秒', minutes: '分钟', hours: '小时', days: '天' },
     },
+    roleSkills: {
+      title: '技能与工具',
+      description: '从这台机器上真实可用的技能和工具里挑，勾了才允许这位专家用。',
+      save: '保存',
+      saving: '保存中…',
+    },
+    roleModel: {
+      tierTitle: '智能选择',
+      tierDescription: '按任务轻重自动挑模型。不确定选哪个就用这个，换了模型服务也不用回来改。',
+      tiers: {
+        fast: { label: '轻快', hint: '简单活儿，出得快、花得少' },
+        balanced: { label: '均衡', hint: '日常默认，速度和质量都顾到' },
+        powerful: { label: '强力', hint: '硬骨头交给它，慢一些但更靠谱' },
+      },
+      overrideTitle: '指定具体模型',
+      overrideDescription: '想让这位专家固定用某个模型就在这里选。选了就不再走上面的自动挑选。',
+      overrideEmpty: '还没有可用的模型。先到能力中心配好模型服务，这里就会出现。',
+      overrideClear: '取消指定，回到自动挑选',
+    },
   },
 };
 
@@ -104,7 +122,7 @@ export const expertEn: typeof expertZh = {
     configure: 'Configure role',
     refresh: 'Refresh',
     createExpert: 'New expert',
-    detailTabs: { basic: 'Basic', equipment: 'Equipment', persona: 'Persona', records: 'Records' },
+    detailTabs: { basic: 'Basic', persona: 'Persona', skills: 'Skills', model: 'Model', records: 'Records' },
     loadFailed: 'Failed to load experts',
     empty: 'No experts yet. Preset experts are installed automatically after restarting the app, or create a role in settings.',
     memoryCount: '{count} memories',
@@ -154,7 +172,6 @@ export const expertEn: typeof expertZh = {
       },
     },
     roleDetail: {
-      modelTier: 'Model tier',
       maxIterations: 'Maximum iterations',
       skills: 'Skills',
       tools: 'Tools',
@@ -178,6 +195,25 @@ export const expertEn: typeof expertZh = {
       automationAt: 'One-time · {time}',
       automationCron: 'Cron · {expression}',
       automationUnits: { seconds: 'seconds', minutes: 'minutes', hours: 'hours', days: 'days' },
+    },
+    roleSkills: {
+      title: 'Skills and tools',
+      description: 'Pick from what is actually available on this machine. Only what you check here is allowed.',
+      save: 'Save',
+      saving: 'Saving…',
+    },
+    roleModel: {
+      tierTitle: 'Smart selection',
+      tierDescription: 'Picks a model based on how heavy the task is. Use this if you are unsure — it keeps working when you switch model services.',
+      tiers: {
+        fast: { label: 'Light', hint: 'Simple work, fast and cheap' },
+        balanced: { label: 'Balanced', hint: 'Everyday default, speed and quality' },
+        powerful: { label: 'Strong', hint: 'Hard problems, slower but more reliable' },
+      },
+      overrideTitle: 'Pick a specific model',
+      overrideDescription: 'Pin this expert to one model. Once picked, smart selection above no longer applies.',
+      overrideEmpty: 'No models available yet. Set up a model service in the Capability Hub and they will show up here.',
+      overrideClear: 'Clear and go back to smart selection',
     },
   },
 };

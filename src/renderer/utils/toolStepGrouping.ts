@@ -4,12 +4,6 @@
 // ============================================================================
 
 import type { TraceNode } from '@shared/contract/trace';
-import { isSemanticToolUIEnabled } from './featureFlags';
-
-interface VerbNoun {
-  verb: 'Explored' | 'Ran' | 'Searched' | 'Used';
-  noun: string;
-}
 
 // Edit/Write 由 TurnDiffSummary 独立渲染，不进 step label
 const DIFF_OWNED_TOOLS = new Set([
@@ -20,63 +14,6 @@ const DIFF_OWNED_TOOLS = new Set([
   'write_file',
   'NotebookEdit',
 ]);
-
-// 工具名 → (verb, noun) 分类
-const TOOL_VERB_MAP: Record<string, VerbNoun> = {
-  Read: { verb: 'Explored', noun: 'file' },
-  Glob: { verb: 'Explored', noun: 'search' },
-  Grep: { verb: 'Explored', noun: 'search' },
-  LS: { verb: 'Explored', noun: 'list' },
-  list_directory: { verb: 'Explored', noun: 'list' },
-  Bash: { verb: 'Ran', noun: 'command' },
-  bash: { verb: 'Ran', noun: 'command' },
-  WebSearch: { verb: 'Searched', noun: 'query' },
-  WebFetch: { verb: 'Searched', noun: 'page' },
-};
-
-function classifyTool(name: string): VerbNoun {
-  return TOOL_VERB_MAP[name] ?? { verb: 'Used', noun: 'tool' };
-}
-
-function pluralize(noun: string, n: number): string {
-  if (n === 1) return noun;
-  if (/(sh|ch|x|s|z)$/.test(noun)) return noun + 'es';
-  return noun + 's';
-}
-
-/**
- * 把一组工具调用聚合成 "Explored 2 files, 2 lists, ran 1 command" 这种字符串
- */
-export function buildStepLabel(toolNames: string[]): string {
-  // verb → (noun → count)
-  const byVerb = new Map<string, Map<string, number>>();
-  const verbOrder: string[] = [];
-
-  for (const name of toolNames) {
-    const { verb, noun } = classifyTool(name);
-    let nounMap = byVerb.get(verb);
-    if (!nounMap) {
-      nounMap = new Map();
-      byVerb.set(verb, nounMap);
-      verbOrder.push(verb);
-    }
-    nounMap.set(noun, (nounMap.get(noun) || 0) + 1);
-  }
-
-  const parts: string[] = [];
-  let first = true;
-  for (const verb of verbOrder) {
-    const nounMap = byVerb.get(verb)!;
-    const nouns = Array.from(nounMap.entries()).map(
-      ([noun, count]) => `${count} ${pluralize(noun, count)}`
-    );
-    const verbStr = first ? verb : verb.toLowerCase();
-    parts.push(`${verbStr} ${nouns.join(', ')}`);
-    first = false;
-  }
-
-  return parts.join(', ');
-}
 
 // ============================================================================
 // 节点分组：把相邻的非 Edit/Write 工具调用合成 tool_group
@@ -151,111 +88,6 @@ export function groupAdjacentToolCalls(nodes: TraceNode[]): DisplayNode[] {
   flush();
 
   return result;
-}
-
-/**
- * 单个工具调用的 inline label — 带关键参数预览
- * 例如 "Ran ls src/"、"Read index.tsx"、"Searched TODO"
- */
-const SINGLE_TOOL_VERB: Record<string, string> = {
-  Bash: '运行',
-  bash: '运行',
-  Read: '读取',
-  Grep: '搜索',
-  Glob: '匹配',
-  LS: '列出',
-  list_directory: '列出',
-  WebSearch: '搜索网页',
-  WebFetch: '抓取',
-  browser_action: '浏览器',
-  computer_use: '电脑操作',
-};
-
-const ARG_PREVIEW_MAX = 80;
-
-function takePreview(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  const trimmed = value.trim().replace(/\s+/g, ' ');
-  if (trimmed.length <= ARG_PREVIEW_MAX) return trimmed;
-  return trimmed.slice(0, ARG_PREVIEW_MAX) + '…';
-}
-
-function shortenPath(path: string): string {
-  if (!path) return '';
-  // 绝对路径取最后两段，避免 /Users/linchen/Downloads/ai/code-agent/src/.../file 占满
-  const segments = path.split('/').filter(Boolean);
-  if (segments.length <= 2) return path;
-  return '.../' + segments.slice(-2).join('/');
-}
-
-function buildActionPreview(toolLabel: string, args: Record<string, unknown>): string {
-  const action = takePreview(args.action);
-  if (!action) return toolLabel;
-
-  const rawAction = typeof args.action === 'string' ? args.action : '';
-  const isTypingAction = rawAction === 'type' || rawAction === 'smart_type';
-  const target = takePreview(
-    isTypingAction
-      ? args.selector ?? args.targetApp ?? args.role ?? args.name
-      : args.selector ?? args.url ?? args.text ?? args.key ?? args.role ?? args.targetApp,
-  );
-
-  return target ? `${toolLabel} ${action} ${target}` : `${toolLabel} ${action}`;
-}
-
-export function buildSingleToolLabel(
-  name: string,
-  args: Record<string, unknown> | undefined,
-  shortDescription?: string,
-): string {
-  // 模型若提供了 shortDescription（产品视角语义标签），直接用它作为聚合行的标签，
-  // 比机械拼接的 "Ran ls src/" 更接近"在干什么"。feature flag 关闭时强制 fallback。
-  if (
-    isSemanticToolUIEnabled()
-    && typeof shortDescription === 'string'
-    && shortDescription.trim().length > 0
-  ) {
-    return shortDescription.trim();
-  }
-  const verb = SINGLE_TOOL_VERB[name];
-  const a = args || {};
-  let preview = '';
-
-  switch (name) {
-    case 'Bash':
-    case 'bash':
-      preview = takePreview(a.command);
-      break;
-    case 'Read':
-      preview = shortenPath(takePreview(a.file_path ?? a.path));
-      break;
-    case 'Grep':
-      preview = takePreview(a.pattern);
-      break;
-    case 'Glob':
-      preview = takePreview(a.pattern);
-      break;
-    case 'LS':
-    case 'list_directory':
-      preview = shortenPath(takePreview(a.path));
-      break;
-    case 'WebSearch':
-      preview = takePreview(a.query);
-      break;
-    case 'WebFetch':
-      preview = takePreview(a.url);
-      break;
-    case 'browser_action':
-    case 'computer_use':
-      return buildActionPreview(verb, a);
-    default:
-      break;
-  }
-
-  if (verb && preview) return `${verb} ${preview}`;
-  if (verb) return verb;
-  // mcp__*, Task, 未识别的 tool：显示 tool name
-  return `Called ${name}`;
 }
 
 /**

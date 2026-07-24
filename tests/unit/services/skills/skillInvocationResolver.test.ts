@@ -209,6 +209,65 @@ describe('skillInvocationResolver', () => {
     expect(resolveSkillInvocationFromSkills('将我的龙虾升级到最新版本', [lobster])?.skill.name).toBe('lobster');
   });
 
+  // skill-alias 词边界回归：description 里的否定声明（"不要因为用户提到 page 等关键词就
+  // 自动触发"）不应被解析成正面触发别名，且拉丁别名不应子串命中标识符（page_size）。
+  it('does not treat a design-brief-style negated keyword list as trigger aliases', () => {
+    const designBrief = skill({
+      name: 'design-brief',
+      description:
+        '生成结构化设计简报。【仅手动触发】仅在用户明确说 `/design-brief`、"写设计简报" 时调用。' +
+        '不要因为用户提到 plan/feature/page/landing/UI direction 等关键词就自动触发。',
+    });
+
+    const aliases = getSkillInvocationAliases(designBrief).map((alias) => alias.value);
+    expect(aliases).not.toContain('page');
+    expect(aliases).not.toContain('plan');
+    expect(aliases).not.toContain('feature');
+    expect(aliases).not.toContain('landing');
+
+    expect(resolveSkillInvocationFromSkills('把 page_size 参数改成 50', [designBrief])).toBeNull();
+  });
+
+  it('/design-brief 仍确定性命中 design-brief skill', () => {
+    const designBrief = skill({
+      name: 'design-brief',
+      description:
+        '生成结构化设计简报。【仅手动触发】仅在用户明确说 `/design-brief`、"写设计简报" 时调用。' +
+        '不要因为用户提到 plan/feature/page/landing/UI direction 等关键词就自动触发。',
+    });
+
+    expect(resolveSkillInvocationFromSkills('/design-brief 做个 onboarding 流程', [designBrief])?.skill.name).toBe(
+      'design-brief',
+    );
+  });
+
+  // 隔离验证否定回看：只测 alias 提取本身，不牵涉词边界匹配。
+  // 用 "/" 分隔的关键词列表（与 design-brief 真实描述同构），确保 zzzcanary
+  // 会被拆分成独立 token，而不是和后面的中文尾巴粘成一个长 alias。
+  it('negation lookbehind alone strips triggers from a negated description clause', () => {
+    const negated = skill({
+      name: 'negation-only-tool',
+      description: '一些说明。不要因为用户提到 abc/zzzcanary/def 等关键词就自动触发。',
+    });
+
+    const aliases = getSkillInvocationAliases(negated).map((alias) => alias.value);
+    expect(aliases).not.toContain('zzzcanary');
+  });
+
+  // 隔离验证词边界：alias 来自 metadata（不经过否定回看），单独测子串误伤。
+  it('word boundary alone prevents a short latin alias from matching inside an identifier', () => {
+    const shortAlias = skill({
+      name: 'short-alias-tool',
+      description: 'no trigger words here.',
+      metadata: { aliases: 'page' },
+    });
+
+    expect(resolveSkillInvocationFromSkills('把 page_size 参数改成 50', [shortAlias])).toBeNull();
+    expect(resolveSkillInvocationFromSkills('把 page 参数改一下', [shortAlias])?.skill.name).toBe(
+      'short-alias-tool',
+    );
+  });
+
   it('does not bind ambiguous aliases to an arbitrary skill', () => {
     const first = skill({ name: 'first-tool', description: '用于共享入口。', aliases: ['共享'] });
     const second = skill({ name: 'second-tool', description: '用于共享入口。', aliases: ['共享'] });

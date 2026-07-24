@@ -19,6 +19,10 @@ const DESCRIPTION_TRIGGER_PATTERNS = [
   /(?:当用户(?:明确)?(?:提到|说|要求|需要|询问|问到)|用户(?:提到|说到)|适用于|用于)([^。.\n]+)/gi,
   /(?:Triggers?|Use when)(?:[^:：。.\n]*)[:：]?\s*([^。.\n]+)/gi,
 ];
+// 否定回看窗口：命中「不要/别/禁止/避免」等否定词就跳过该句，避免把反面声明
+// （"不要因为用户提到 X 就自动触发"）解析成正面触发别名。
+const NEGATION_LOOKBEHIND_CHARS = 15;
+const NEGATION_LOOKBEHIND_PATTERN = /(?:不要|不是|别|禁止|避免|无需|不需要|并非|而非)[^。.\n]*$/;
 const GENERIC_ALIAS_STOPWORDS = new Set([
   'user',
   'users',
@@ -74,6 +78,27 @@ export interface SkillInvocationContext {
 
 function normalizeText(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const LATIN_ALIAS_PATTERN_CACHE = new Map<string, RegExp>();
+
+// CJK 别名无天然分词边界，维持子串匹配；纯拉丁别名子串匹配会误伤标识符
+// （"page" 命中 "page_size"），改用词边界匹配，下划线/数字算作词内字符。
+function aliasAppearsInMessage(normalizedMessage: string, normalizedAlias: string): boolean {
+  if (!normalizedAlias) return false;
+  if (hasCjk(normalizedAlias)) {
+    return normalizedMessage.includes(normalizedAlias);
+  }
+  let pattern = LATIN_ALIAS_PATTERN_CACHE.get(normalizedAlias);
+  if (!pattern) {
+    pattern = new RegExp(`(?<![a-z0-9_])${escapeRegExp(normalizedAlias)}(?![a-z0-9_])`);
+    LATIN_ALIAS_PATTERN_CACHE.set(normalizedAlias, pattern);
+  }
+  return pattern.test(normalizedMessage);
 }
 
 function uniq(values: string[]): string[] {
@@ -133,6 +158,9 @@ function descriptionTriggerAliases(description: string): string[] {
   const aliases: string[] = [];
   for (const pattern of DESCRIPTION_TRIGGER_PATTERNS) {
     for (const match of description.matchAll(pattern)) {
+      const matchIndex = match.index ?? 0;
+      const preceding = description.slice(Math.max(0, matchIndex - NEGATION_LOOKBEHIND_CHARS), matchIndex);
+      if (NEGATION_LOOKBEHIND_PATTERN.test(preceding)) continue;
       const segment = match[1] ?? '';
       const firstClause = segment.split(/(?:时|的时候|场景|，|。|\.)/)[0] ?? segment;
       for (const token of firstClause.split(ALIAS_SPLIT_PATTERN)) {
@@ -243,7 +271,7 @@ export function resolveSkillInvocationFromSkills(
   for (const skill of userInvocableSkills) {
     for (const alias of getSkillInvocationAliases(skill)) {
       const normalizedAlias = normalizeText(alias.value);
-      if (!normalizedMessage.includes(normalizedAlias)) continue;
+      if (!aliasAppearsInMessage(normalizedMessage, normalizedAlias)) continue;
 
       const score = aliasScore(alias.source, normalizedMessage === normalizedAlias, alias.value);
       if (score < 0.8) continue;

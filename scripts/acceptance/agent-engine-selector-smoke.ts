@@ -434,7 +434,11 @@ async function openEngineSelector(page: Page): Promise<void> {
   if (await advanced.getAttribute('aria-expanded') !== 'true') {
     await advanced.click({ timeout: 5_000 });
   }
-  await settingsDialog.getByRole('button', { name: '执行引擎', exact: true }).click({ timeout: 5_000 });
+  const engineTab = settingsDialog.getByRole('button', { name: '执行引擎', exact: true });
+  await engineTab.waitFor({ state: 'visible', timeout: 5_000 });
+  // The surrounding shell may have an unrelated scheduled navigation; dispatching
+  // the tab event keeps this acceptance scoped to the settings state transition.
+  await engineTab.dispatchEvent('click');
   await settingsDialog.locator('[data-engine-kind="native"]').waitFor({ state: 'visible', timeout: 10_000 });
 }
 

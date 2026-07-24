@@ -4,7 +4,7 @@ import type {
   CronJobAction,
   CronJobDefinition,
 } from '../../../src/shared/contract/cron';
-import { CRON_AGENT_SNAPSHOT } from '../../../src/shared/constants';
+import { CRON_AGENT_SNAPSHOT, EXTERNAL_WATCH } from '../../../src/shared/constants';
 
 const dbState = vi.hoisted(() => ({
   savedRows: [] as unknown[][],
@@ -294,5 +294,50 @@ describe('CronService agent run snapshot wiring', () => {
     expect(warn).toHaveBeenCalledWith(
       `[CronService] Agent snapshot exceeded ${CRON_AGENT_SNAPSHOT.MAX_BYTES} UTF-8 bytes; truncated`,
     );
+  });
+});
+
+describe('CronService external_event 无变化则安静门', () => {
+  const watchContext = {
+    [CRON_AGENT_SNAPSHOT.ENABLED_KEY]: true,
+    [EXTERNAL_WATCH.CONTEXT_KEY]: { source: EXTERNAL_WATCH.SOURCE_CALENDAR, calendarId: 'cal-1' },
+  };
+
+  async function runAndGetResult(
+    context: Record<string, unknown> | undefined,
+    finalAssistantText: string,
+  ): Promise<Record<string, unknown>> {
+    const service = new CronService();
+    const definition = makeDefinition(context);
+    const harness = service as unknown as CronServiceHarness;
+    harness.jobs.set(definition.id, { definition });
+    agentState.getMessages.mockReturnValue([assistantMessage(finalAssistantText)]);
+    const result = await harness.executeAction(definition, definition.action, undefined, 'exec-watch');
+    return result as Record<string, unknown>;
+  }
+
+  it('监听任务无 <cron_alert>：结果整成 skipped，供 isSkippedResult 门挡住收件箱', async () => {
+    const result = await runAndGetResult(
+      watchContext,
+      '本次无新增冲突。\n<cron_snapshot>冲突对：无</cron_snapshot>',
+    );
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe('no_new_event');
+  });
+
+  it('监听任务有 <cron_alert>：不 skipped，正常进待过目', async () => {
+    const result = await runAndGetResult(
+      watchContext,
+      '<cron_alert>周会 15:00-16:00 与 评审 15:30-16:30 时间冲突</cron_alert>\n<cron_snapshot>冲突对：周会×评审</cron_snapshot>',
+    );
+    expect(result.skipped).toBeUndefined();
+  });
+
+  it('普通 agent 任务即使无 alert 标记也永不被静音', async () => {
+    const result = await runAndGetResult(
+      { heartbeatTask: true },
+      '这只是一次普通心跳，没有任何标记。',
+    );
+    expect(result.skipped).toBeUndefined();
   });
 });

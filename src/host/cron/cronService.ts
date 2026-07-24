@@ -11,6 +11,7 @@ import {
   CRON_GUARDRAILS,
   DEFAULT_MODELS,
   DEFAULT_PROVIDER,
+  EXTERNAL_WATCH,
 } from '../../shared/constants';
 import type {
   CronJobDefinition,
@@ -733,6 +734,10 @@ export class CronService implements Disposable {
         const agentRunOptions = await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory);
         const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
         const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
+        // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
+        // 只对这类任务生效；普通 agent 任务 hasAlert 恒 true，永不被静音。
+        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
+        let hasAlert = !isExternalWatch;
 
         let result: unknown;
         try {
@@ -749,6 +754,9 @@ export class CronService implements Disposable {
           // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
           // 当成状态存下来，下一轮再原样注回提示词。
           const snapshotToPersist = snapshotTrackingEnabled ? snapshotMatch?.[1]?.trim() : undefined;
+          if (isExternalWatch) {
+            hasAlert = EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText);
+          }
           if (snapshotToPersist) {
             const boundedSnapshot = truncateUtf8Snapshot(snapshotToPersist);
             if (boundedSnapshot.truncated) {
@@ -810,7 +818,15 @@ export class CronService implements Disposable {
           }
         }
 
-        return { agentType: action.agentType, prompt: action.prompt, result, sessionId: cronSession.id };
+        // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，
+        // 让它不进待过目收件箱、不写会话回流（快照已在上面照常写回）。
+        return {
+          agentType: action.agentType,
+          prompt: action.prompt,
+          result,
+          sessionId: cronSession.id,
+          ...(isExternalWatch && !hasAlert ? { skipped: true, reason: 'no_new_event' } : {}),
+        };
       }
 
       case 'webhook': {

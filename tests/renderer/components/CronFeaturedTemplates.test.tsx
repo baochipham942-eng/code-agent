@@ -81,13 +81,15 @@ afterEach(() => {
 });
 
 describe('cowork cron templates', () => {
-  it('只保留约定的 4 张模板，并移除旧开发运维模板 id', () => {
+  it('只保留约定的办公+飞书监听模板，并移除旧开发运维模板 id', () => {
     const templateIds = CRON_TEMPLATES.map((template) => template.id);
     expect(templateIds).toEqual([
       'daily-lookahead',
       'daily-review',
       'weekly-review',
       'web-change-watch',
+      'feishu-calendar-conflict',
+      'feishu-table-change',
     ]);
     for (const id of DELETED_TEMPLATE_IDS) {
       expect(templateIds).not.toContain(id);

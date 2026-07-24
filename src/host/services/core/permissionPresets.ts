@@ -91,12 +91,11 @@ export const PERMISSION_PRESETS: Record<Exclude<PermissionPreset, 'custom'>, Per
   },
 
   /**
-   * CI 模式 - 完全信任
-   * - 所有操作自动批准
-   * - 无阻止命令（CI 环境由 pipeline 控制）
-   * - 用于自动化测试和部署
+   * CI 模式 - 四类操作全部自动批准，不受工作目录限制。
+   * 专家详情「安全」页的「放手」档映射到这里。
    *
-   * 警告：仅在受控的 CI 环境中使用
+   * 「全自动批准」只作用于审批闸：硬毙清单与危险命令二次确认照旧生效——
+   * 用户能让专家少问几句，但不能让它做绝对禁止的事。
    */
   ci: {
     autoApprove: {
@@ -105,10 +104,18 @@ export const PERMISSION_PRESETS: Record<Exclude<PermissionPreset, 'custom'>, Per
       execute: true,
       network: true,
     },
-    blockedCommands: [], // CI 环境由 pipeline 权限控制
+    blockedCommands: [
+      'rm -rf /',
+      'rm -rf ~',
+      'rm -rf /*',
+      'sudo rm',
+      ':(){:|:&};:',
+      'mkfs',
+      'dd if=/dev/',
+    ],
     trustProjectDirectory: true,
     trustedDirectories: [], // CI 中通常整个 workspace 都可信
-    confirmDangerousCommands: false,
+    confirmDangerousCommands: true,
   },
 };
 

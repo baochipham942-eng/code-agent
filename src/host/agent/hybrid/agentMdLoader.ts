@@ -36,6 +36,13 @@ function modelTierValue(value: unknown): ModelTier | undefined {
   return value === 'fast' || value === 'balanced' || value === 'powerful' ? value : undefined;
 }
 
+/** 详情页「安全」页可选的三档。刻意不含 'custom'：getPresetConfig 对它返回 strict 拷贝，暴露只会制造困惑。 */
+type RolePermissionPreset = 'strict' | 'development' | 'ci';
+
+function permissionPresetValue(value: unknown): RolePermissionPreset | undefined {
+  return value === 'strict' || value === 'development' || value === 'ci' ? value : undefined;
+}
+
 /**
  * `model-override: <provider>/<model>` → 结构化。按第一个斜杠切分，
  * 因为模型名本身可能带斜杠（如 openrouter 的 `anthropic/claude-x`）。
@@ -121,6 +128,8 @@ export interface AgentMdEquipment {
   /** 指定具体模型；缺省或留空表示跟随 model 档位（写回时会删掉这行）。 */
   modelOverride?: { provider: string; model: string } | null;
   maxIterations: number;
+  /** 审批松紧档；缺省或 null 表示跟随通用设置（写回时会删掉这行）。 */
+  permissionPreset?: RolePermissionPreset | null;
 }
 
 /** 只改装备层白名单，保留其它 frontmatter 字段的顺序、未知 key 和正文原文。 */
@@ -138,6 +147,7 @@ export function updateAgentMdEquipment(content: string, equipment: AgentMdEquipm
       ? `model-override: ${scalar(equipment.modelOverride.provider)}/${scalar(equipment.modelOverride.model)}`
       : ''],
     ['max-iterations', `max-iterations: ${equipment.maxIterations}`],
+    ['permission-override', equipment.permissionPreset ? `permission-override: ${equipment.permissionPreset}` : ''],
   ];
   for (const [key, replacement] of replacements) {
     const expression = new RegExp(`(^|\\r?\\n)${key}:.*(?:\\r?\\n[ \\t]+-.*)*`, 'm');
@@ -192,6 +202,9 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
       : {}),
     maxIterations: numberValue(frontmatter['max-iterations']) || 30,
     readonly: booleanValue(frontmatter.readonly) ?? false,
+    ...(permissionPresetValue(frontmatter['permission-override'])
+      ? { permissionPreset: permissionPresetValue(frontmatter['permission-override']) }
+      : {}),
     ...(proactivityLevel
       ? { proactivity: { level: proactivityLevel, ...(proactivityCadence ? { cadence: proactivityCadence } : {}) } }
       : {}),

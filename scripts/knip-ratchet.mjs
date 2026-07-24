@@ -21,7 +21,7 @@
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
-const BASELINE_MAX = 2698;
+const BASELINE_MAX = 2697;
 const KNIP_VERSION = '6.24.0';
 
 const result = spawnSync(

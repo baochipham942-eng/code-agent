@@ -185,3 +185,33 @@ describe('parseAgentMd', () => {
     expect(saved.slice(0, saved.indexOf('---', 4) + 3)).toBe(original.slice(0, original.indexOf('---', 4) + 3));
   });
 });
+
+describe('permission-override frontmatter', () => {
+  const withOverride = (value: string) =>
+    `---\nname: researcher\ndescription: d\npermission-override: ${value}\n---\n正文`;
+
+  it('解析三个合法档位', () => {
+    expect(parseAgentMd(withOverride('strict'), 'researcher.md')?.permissionPreset).toBe('strict');
+    expect(parseAgentMd(withOverride('development'), 'researcher.md')?.permissionPreset).toBe('development');
+    expect(parseAgentMd(withOverride('ci'), 'researcher.md')?.permissionPreset).toBe('ci');
+  });
+
+  it('非法值与缺省都视为未设置', () => {
+    expect(parseAgentMd(withOverride('custom'), 'researcher.md')?.permissionPreset).toBeUndefined();
+    expect(parseAgentMd(withOverride('bogus'), 'researcher.md')?.permissionPreset).toBeUndefined();
+    expect(parseAgentMd('---\nname: r\ndescription: d\n---\n正文', 'r.md')?.permissionPreset).toBeUndefined();
+  });
+
+  it('写回：设置档位新增一行，传 null 删掉该行', () => {
+    const base = '---\nname: r\ndescription: d\nmodel: balanced\nmax-iterations: 30\n---\n正文';
+    const equipment = { skills: [], tools: ['Read'], model: 'balanced' as const, modelOverride: null, maxIterations: 30 };
+
+    const set = updateAgentMdEquipment(base, { ...equipment, permissionPreset: 'strict' });
+    expect(set).toContain('permission-override: strict');
+    expect(set).toContain('正文');
+
+    const cleared = updateAgentMdEquipment(set, { ...equipment, permissionPreset: null });
+    expect(cleared).not.toContain('permission-override');
+    expect(cleared).toContain('正文');
+  });
+});

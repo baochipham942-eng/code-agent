@@ -37,12 +37,15 @@ vi.mock('../../../../src/host/services/roleAssets/roleAssetService', () => ({
 }));
 
 import {
+  detectRolePackElevation,
   getInstalledRolePackState,
+  getRolePackFactoryDefinition,
   installRolePack,
   retryMissingSkills,
+  stripRolePackElevation,
   uninstallRolePack,
 } from '../../../../src/host/services/roleAssets/rolePackInstallService';
-import { parseAgentMdVisual } from '../../../../src/host/agent/hybrid/agentMdLoader';
+import { parseAgentMd, parseAgentMdVisual } from '../../../../src/host/agent/hybrid/agentMdLoader';
 
 const validAgent = (id: string, skills: string[]) => `---\nname: ${id}\nskills: [${skills.join(', ')}]\n---\nrole`;
 const entry = (id = '云专家', skills = ['s1', 's2', 's3']) => ({
@@ -178,5 +181,86 @@ describe('rolePackInstallService', () => {
     await installRolePack(pack.roleId);
 
     await expect(getInstalledRolePackState(pack.roleId)).resolves.toEqual({ locallyModified: false });
+  });
+});
+
+describe('云包提权检测（纯函数）', () => {
+  const pack = (frontmatter: string) => `---\nname: r\ndescription: d\nmodel: balanced\nmax-iterations: 30\n${frontmatter}---\n正文`;
+
+  it('放手档触发确认', () => {
+    expect(detectRolePackElevation(pack('permission-override: ci\n'), 'r')).toEqual({ looseMode: true, bashTool: false });
+  });
+
+  it('声明 Bash 工具触发确认', () => {
+    expect(detectRolePackElevation(pack('tools:\n  - Read\n  - Bash\n'), 'r')).toEqual({ looseMode: false, bashTool: true });
+  });
+
+  it('Write/Edit/联网工具不算提权', () => {
+    expect(detectRolePackElevation(pack('tools:\n  - Read\n  - Write\n  - Edit\n  - WebSearch\n'), 'r')).toBeNull();
+  });
+
+  it('普通包不触发', () => {
+    expect(detectRolePackElevation(pack('tools:\n  - Read\n'), 'r')).toBeNull();
+  });
+
+  it('剥离后档位回到跟随通用设置且不含 Bash，正文与其它字段不变', () => {
+    const stripped = stripRolePackElevation(pack('permission-override: ci\ntools:\n  - Read\n  - Bash\n'), 'r');
+    const parsed = parseAgentMd(stripped, 'r.md');
+    expect(parsed?.permissionPreset).toBeUndefined();
+    expect(parsed?.tools).toEqual(['Read']);
+    expect(parsed?.maxIterations).toBe(30);
+    expect(stripped).toContain('正文');
+    expect(detectRolePackElevation(stripped, 'r')).toBeNull();
+  });
+});
+
+describe('提权包安装流程', () => {
+  beforeEach(async () => {
+    state.configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'role-pack-elev-'));
+    state.entries.clear(); state.skills.clear(); vi.clearAllMocks();
+    state.ensure.mockResolvedValue(undefined);
+  });
+  afterEach(async () => fs.rm(state.configDir, { recursive: true, force: true }));
+
+  // agentMd 显式声明 Bash → 提权；带一个 skill，避免撞「skill 均未安装成功」的兜底拒绝。
+  const elevatedPack = (id = '提权专家') => ({
+    roleId: id, agentMd: `---\nname: ${id}\nskills: [s1]\ntools:\n  - Read\n  - Bash\n---\nrole`, packVersion: '1.0.0',
+    publisher: 'Neo', reviewedAt: '2026-07-22',
+    visual: { icon: 'Bot', category: 'research', displayName: id, profession: '专家', tags: ['a'], quickPrompts: ['go'] },
+    skills: [{ registryName: 's1' }],
+  });
+  const seedElevated = (id?: string) => {
+    const pack = elevatedPack(id); state.entries.set(pack.roleId, pack); state.skills.set('s1', { name: 's1' });
+    state.install.mockResolvedValue({ installedSkills: ['s1'] });
+    return pack;
+  };
+  const installedAgentMd = async (roleId: string) =>
+    fs.readFile(path.join(state.configDir, 'agents', `${roleId}.md`), 'utf-8');
+
+  it('未过目时返回 elevation 且不落盘', async () => {
+    const pack = seedElevated();
+    const result = await installRolePack(pack.roleId);
+    expect(result.elevation).toEqual({ looseMode: false, bashTool: true });
+    expect(result.success).toBe(false);
+    await expect(installedAgentMd(pack.roleId)).rejects.toThrow();
+  });
+
+  it('选安全默认（elevationReviewed）装成功且剥掉 Bash', async () => {
+    const pack = seedElevated();
+    const result = await installRolePack(pack.roleId, { elevationReviewed: true });
+    expect(result.success).toBe(true);
+    expect(parseAgentMd(await installedAgentMd(pack.roleId), `${pack.roleId}.md`)?.tools).toEqual(['Read']);
+    // 还原出厂也必须是剥后版本
+    const factory = await getRolePackFactoryDefinition(pack.roleId);
+    expect(parseAgentMd(factory?.agentMd ?? '', `${pack.roleId}.md`)?.tools).toEqual(['Read']);
+  });
+
+  it('选按声明装（acceptElevation）保留 Bash，还原出厂也保留', async () => {
+    const pack = seedElevated();
+    const result = await installRolePack(pack.roleId, { acceptElevation: true });
+    expect(result.success).toBe(true);
+    expect(parseAgentMd(await installedAgentMd(pack.roleId), `${pack.roleId}.md`)?.tools).toEqual(['Read', 'Bash']);
+    const factory = await getRolePackFactoryDefinition(pack.roleId);
+    expect(parseAgentMd(factory?.agentMd ?? '', `${pack.roleId}.md`)?.tools).toEqual(['Read', 'Bash']);
   });
 });

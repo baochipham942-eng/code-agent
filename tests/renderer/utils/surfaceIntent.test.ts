@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   decideSurfaceIntent,
   findNewCurrentTurnPreviewArtifacts,
+  surfaceIntentViewForWorkbenchTab,
 } from '../../../src/renderer/utils/surfaceIntent';
 import {
   requestSurfaceIntent,
@@ -162,7 +163,7 @@ describe('surface intent unified decision', () => {
       artifact: { kind: 'swarm-monitor' } as const,
       assertState: () => {
         expect(useAppStore.getState()).toMatchObject({
-          activeWorkbenchTab: 'task',
+          activeWorkbenchTab: 'overview',
           taskPanelTab: 'monitor',
         });
       },
@@ -188,5 +189,21 @@ describe('surface intent unified decision', () => {
       currentSessionId: 'session-a',
       turnId: 'turn-2',
     })).toEqual({ view: 'task-monitor' });
+  });
+
+  it.each([
+    ['overview', 'overview'],
+    ['files', 'files'],
+    ['browser', 'browser'],
+    ['design-canvas', 'canvas'],
+    ['preview:/tmp/report.pdf', 'preview'],
+    ['task', 'overview'],
+    ['workspace-preview', 'overview'],
+    ['skills', 'other'],
+    ['context', 'other'],
+    ['audit', 'other'],
+    ['project-collab', 'other'],
+  ] as const)('maps workbench tab %s to surface intent view %s', (tabId, expectedView) => {
+    expect(surfaceIntentViewForWorkbenchTab(tabId)).toBe(expectedView);
   });
 });

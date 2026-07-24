@@ -943,14 +943,18 @@ export const zh = {
 
   workbenchTabs: {
     openPanel: '打开面板',
+    overviewLabel: '概览',
+    overviewTitle: '任务进程与产物',
+    overviewProgressLabel: '任务进程',
+    overviewArtifactsLabel: '产物',
     filesLabel: '文件',
     filesTitle: '文件浏览器',
-    contextLabel: '上下文',
-    contextTitle: '上下文占用与来源拆分',
-    skillsTitle: '会话 Skills',
-    assetsTitle: '工作区 Assets',
-    auditTitle: 'Replay / 会话质量审计',
-    projectCollabTitle: '项目合作',
+    browserLabel: '浏览器',
+    browserTitle: '网页实时预览',
+    browserEmpty: '还没有打开网页',
+    browserEmptyHint: '从会话菜单启动 Live Preview 后，URL 会在这里打开。',
+    previewLabel: '预览',
+    previewTitle: '打开最近的文件产物',
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）

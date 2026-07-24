@@ -4,7 +4,23 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Search, X, Settings, FileText, Trash2, FolderOpen, Plus, Archive, Keyboard, HelpCircle, BarChart2 } from 'lucide-react';
+import {
+  Search,
+  X,
+  Settings,
+  FileText,
+  Trash2,
+  FolderOpen,
+  Plus,
+  Archive,
+  Keyboard,
+  HelpCircle,
+  BarChart2,
+  LayoutDashboard,
+  Globe2,
+  Palette,
+  Eye,
+} from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import {
@@ -63,6 +79,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     showWorkspace,
     setSidebarCollapsed,
     sidebarCollapsed,
+    openWorkbenchTab,
+    previewTabs,
   } = useAppStore();
 
   const {
@@ -71,6 +89,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     archiveSession,
     currentSessionId,
   } = useSessionStore();
+  const latestFilePreview = useMemo(
+    () => previewTabs
+      .filter((tab) => tab.kind !== 'liveDev')
+      .reduce<typeof previewTabs[number] | null>(
+        (latest, tab) => (!latest || tab.lastActivatedAt > latest.lastActivatedAt ? tab : latest),
+        null,
+      ),
+    [previewTabs],
+  );
   // 定义所有可用命令
   const allCommands: Command[] = useMemo(() => [
     // Session commands
@@ -133,6 +160,46 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       category: 'view',
       action: () => setShowWorkspace(!showWorkspace),
     },
+    {
+      id: 'open-workbench-overview',
+      label: t.workbenchTabs.overviewLabel,
+      description: t.workbenchTabs.overviewTitle,
+      icon: <LayoutDashboard className="w-4 h-4" />,
+      category: 'view',
+      action: () => openWorkbenchTab('overview'),
+    },
+    {
+      id: 'open-workbench-files',
+      label: t.workbenchTabs.filesLabel,
+      description: t.workbenchTabs.filesTitle,
+      icon: <FolderOpen className="w-4 h-4" />,
+      category: 'view',
+      action: () => openWorkbenchTab('files'),
+    },
+    {
+      id: 'open-workbench-browser',
+      label: t.workbenchTabs.browserLabel,
+      description: t.workbenchTabs.browserTitle,
+      icon: <Globe2 className="w-4 h-4" />,
+      category: 'view',
+      action: () => openWorkbenchTab('browser'),
+    },
+    {
+      id: 'open-workbench-canvas',
+      label: t.design.canvasTabLabel,
+      description: t.design.openCanvasHint,
+      icon: <Palette className="w-4 h-4" />,
+      category: 'view',
+      action: () => openWorkbenchTab('design-canvas'),
+    },
+    ...(latestFilePreview ? [{
+      id: 'open-workbench-preview',
+      label: t.workbenchTabs.previewLabel,
+      description: t.workbenchTabs.previewTitle,
+      icon: <Eye className="w-4 h-4" />,
+      category: 'view' as const,
+      action: () => openWorkbenchTab(`preview:${latestFilePreview.path}`),
+    }] : []),
     // Settings commands
     {
       id: 'open-settings',
@@ -177,6 +244,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     showWorkspace,
     setSidebarCollapsed,
     sidebarCollapsed,
+    openWorkbenchTab,
+    latestFilePreview,
     t,
   ]);
 

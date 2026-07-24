@@ -33,7 +33,13 @@ import {
   writeActiveAgentSessionMap,
 } from './activeAgentSessionMap';
 import { noteSurfaceIntentNavigation } from '../services/surfaceIntentRuntime';
-import { surfaceIntentViewForWorkbenchTab } from '../utils/surfaceIntent';
+import {
+  isPreviewWorkbenchView,
+  type PreviewWorkbenchViewId,
+  type WorkbenchTabId,
+  type WorkbenchViewId,
+} from '../utils/workbenchViews';
+import { createWorkbenchActions } from './workbenchActions';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
 // 在 store 模块顶层引入 ipcService（store 是大量被 import 的模块，链路尽量短）
@@ -61,6 +67,7 @@ type CloudUIStrings = {
 export type { SettingsTab } from '../utils/settingsTabs';
 export type TaskPanelTab = 'monitor' | 'orchestration';
 export type { CapabilityHubTab } from '../utils/settingsTabs';
+export type { WorkbenchTabId, WorkbenchViewId } from '../utils/workbenchViews';
 
 // Preview tab — one per opened file (kind === 'file') or live dev server (kind === 'liveDev')
 export interface PreviewTab {
@@ -112,10 +119,6 @@ const nextSettingsMemoryFocusNonce = () => ++_settingsMemoryFocusTick;
 let _settingsCapabilityFocusTick = 0;
 const nextSettingsCapabilityFocusNonce = () => ++_settingsCapabilityFocusTick;
 
-// Unified right-workbench tab identity.
-// Preview tabs embed their file path after the 'preview:' prefix.
-// 'context' tab — ContextPanel 容器，挂 ContextHealthPanel 并展示 bySource 二级拆分
-export type WorkbenchTabId = 'task' | 'skills' | 'files' | 'workspace-preview' | 'context' | 'audit' | 'design-canvas' | 'project-collab' | `preview:${string}`;
 export type WorkbenchOpenSource = 'user' | 'auto';
 
 export interface OpenWorkbenchTabOptions {
@@ -142,11 +145,7 @@ export interface SettingsCapabilityFocus {
   nonce: number;
 }
 
-const PREVIEW_PREFIX = 'preview:';
 const GLOBAL_PERMISSION_REQUEST_SESSION_ID = 'global';
-const isPreviewWorkbenchId = (id: WorkbenchTabId): id is `preview:${string}` =>
-  id.startsWith(PREVIEW_PREFIX);
-const previewPathOf = (id: `preview:${string}`): string => id.slice(PREVIEW_PREFIX.length);
 
 /** /goal 自治模式的前端运行态（per-session，由 SSE goal_* 事件驱动）。 */
 export interface GoalRunState {
@@ -184,7 +183,7 @@ export interface PendingProjectGoalChatSeed {
   goal: GoalRunInput;
 }
 
-interface AppState {
+export interface AppState {
   // UI State
   showSettings: boolean;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
@@ -268,9 +267,10 @@ interface AppState {
   activePreviewTabId: string | null;
   selectedWorkspacePreviewId: string | null;
 
-  // Unified right workbench — tab order & active view across Task/Skills/Preview.
-  workbenchTabs: WorkbenchTabId[];
-  activeWorkbenchTab: WorkbenchTabId | null;
+  // Unified right workbench — only the five canonical view categories are stored.
+  // Retired WorkbenchTabId values are accepted by actions as deep-link aliases.
+  workbenchTabs: WorkbenchViewId[];
+  activeWorkbenchTab: WorkbenchViewId | null;
   taskWorkbenchOpenSource: WorkbenchOpenSource | null;
   taskWorkbenchActivityActive: boolean;
 
@@ -366,7 +366,11 @@ interface AppState {
   openPreview: (filePath: string, options?: OpenWorkbenchTabOptions) => void;
   openWorkspacePreview: (itemId?: string | null, options?: OpenWorkbenchTabOptions) => void;
   setSelectedWorkspacePreviewId: (itemId: string | null) => void;
-  openLivePreview: (devServerUrl: string, devServerSessionId?: string) => void;
+  openLivePreview: (
+    devServerUrl: string,
+    devServerSessionId?: string,
+    options?: OpenWorkbenchTabOptions,
+  ) => void;
   /** V2-A: 打开/关闭 dev server launcher 模态 */
   openDevServerLauncher: () => void;
   closeDevServerLauncher: () => void;
@@ -695,7 +699,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   openExpertRoleDetail: (roleId) => set({ ...FULLSCREEN_PANELS_CLOSED, expertDetailRoleId: roleId }),
 
   openPreview: (filePath, options) => {
-    noteSurfaceIntentNavigation('file-preview', options?.source ?? 'user');
+    noteSurfaceIntentNavigation('preview', options?.source ?? 'user');
     // Resolve relative paths against workingDirectory
     let resolved = filePath;
     if (filePath && !filePath.startsWith('/')) {
@@ -703,8 +707,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (wd) resolved = `${wd}/${filePath}`;
     }
     set((state) => {
-      const newWorkbenchId: WorkbenchTabId = `preview:${resolved}`;
-      const existing = state.previewTabs.find((t) => t.path === resolved);
+      const newWorkbenchId: PreviewWorkbenchViewId = `preview:${resolved}`;
+      const existing = state.previewTabs.find((t) => t.kind !== 'liveDev' && t.path === resolved);
       if (existing) {
         return {
           ...state,
@@ -743,8 +747,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (carried.length >= MAX_PREVIEW_TABS) {
         const oldest = carried.reduce((a, b) => (a.lastActivatedAt <= b.lastActivatedAt ? a : b));
         carried = carried.filter((t) => t.id !== oldest.id);
-        const evictedWorkbenchId: WorkbenchTabId = `preview:${oldest.path}`;
-        workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
+        if (oldest.kind === 'liveDev') {
+          if (!carried.some((candidate) => candidate.kind === 'liveDev')) {
+            workbenchCarried = workbenchCarried.filter((view) => view !== 'browser');
+          }
+        } else {
+          const evictedWorkbenchId: PreviewWorkbenchViewId = `preview:${oldest.path}`;
+          workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
+        }
       }
       return {
         ...state,
@@ -756,21 +766,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
   openWorkspacePreview: (itemId = null, options) => {
-    noteSurfaceIntentNavigation('workspace-preview', options?.source ?? 'user');
+    noteSurfaceIntentNavigation('overview', options?.source ?? 'user');
     set((state) => ({
       ...state,
       selectedWorkspacePreviewId: itemId ?? state.selectedWorkspacePreviewId,
-      workbenchTabs: state.workbenchTabs.includes('workspace-preview')
+      workbenchTabs: state.workbenchTabs.includes('overview')
         ? state.workbenchTabs
-        : [...state.workbenchTabs, 'workspace-preview'],
-      activeWorkbenchTab: 'workspace-preview',
+        : [...state.workbenchTabs, 'overview'],
+      activeWorkbenchTab: 'overview',
+      // An artifact now owns the shared overview, so task activity ending must
+      // not auto-close the artifact section with it.
+      taskWorkbenchOpenSource: null,
     }));
   },
   setSelectedWorkspacePreviewId: (itemId) => set({ selectedWorkspacePreviewId: itemId }),
-  openLivePreview: (devServerUrl, devServerSessionId) => {
-    // 以 URL 作为唯一 key，沿用 preview: 前缀的 WorkbenchTabId 机制
+  openLivePreview: (devServerUrl, devServerSessionId, options) => {
+    noteSurfaceIntentNavigation('browser', options?.source ?? 'user');
     set((state) => {
-      const newWorkbenchId: WorkbenchTabId = `preview:${devServerUrl}`;
       const existing = state.previewTabs.find((t) => t.kind === 'liveDev' && t.path === devServerUrl);
       if (existing) {
         return {
@@ -786,10 +798,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
                 }
               : t,
           ),
-          workbenchTabs: state.workbenchTabs.includes(newWorkbenchId)
+          workbenchTabs: state.workbenchTabs.includes('browser')
             ? state.workbenchTabs
-            : [...state.workbenchTabs, newWorkbenchId],
-          activeWorkbenchTab: newWorkbenchId,
+            : [...state.workbenchTabs, 'browser'],
+          activeWorkbenchTab: 'browser',
         };
       }
       const id = `ptab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -811,15 +823,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (carried.length >= MAX_PREVIEW_TABS) {
         const oldest = carried.reduce((a, b) => (a.lastActivatedAt <= b.lastActivatedAt ? a : b));
         carried = carried.filter((t) => t.id !== oldest.id);
-        const evictedWorkbenchId: WorkbenchTabId = `preview:${oldest.path}`;
-        workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
+        if (oldest.kind !== 'liveDev') {
+          const evictedWorkbenchId: PreviewWorkbenchViewId = `preview:${oldest.path}`;
+          workbenchCarried = workbenchCarried.filter((w) => w !== evictedWorkbenchId);
+        }
       }
       return {
         ...state,
         previewTabs: [...carried, tab],
         activePreviewTabId: id,
-        workbenchTabs: [...workbenchCarried, newWorkbenchId],
-        activeWorkbenchTab: newWorkbenchId,
+        workbenchTabs: workbenchCarried.includes('browser')
+          ? workbenchCarried
+          : [...workbenchCarried, 'browser'],
+        activeWorkbenchTab: 'browser',
       };
     });
   },
@@ -848,9 +864,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((state) => ({
       previewTabs: [],
       activePreviewTabId: null,
-      workbenchTabs: state.workbenchTabs.filter((w) => !isPreviewWorkbenchId(w)),
-      activeWorkbenchTab: isPreviewWorkbenchId(state.activeWorkbenchTab ?? 'task')
-        ? (state.workbenchTabs.find((w) => !isPreviewWorkbenchId(w)) ?? null)
+      workbenchTabs: state.workbenchTabs.filter((w) => !isPreviewWorkbenchView(w) && w !== 'browser'),
+      activeWorkbenchTab: isPreviewWorkbenchView(state.activeWorkbenchTab) || state.activeWorkbenchTab === 'browser'
+        ? (state.workbenchTabs.find((w) => !isPreviewWorkbenchView(w) && w !== 'browser') ?? null)
         : state.activeWorkbenchTab,
     }));
   },
@@ -859,12 +875,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const closing = state.previewTabs.find((t) => t.id === id);
       // V2-A: 关掉这个 tab 对应的 dev server（如果是 Code Agent 自起的）
       fireStopDevServer(closing?.devServerSessionId);
-      const closingWorkbenchId: WorkbenchTabId | null = closing
-        ? `preview:${closing.path}`
-        : null;
       const nextTabs = state.previewTabs.filter((t) => t.id !== id);
+      const closingWorkbenchId: WorkbenchViewId | null = closing
+        ? closing.kind === 'liveDev'
+          ? 'browser'
+          : `preview:${closing.path}`
+        : null;
+      const hasRemainingLivePreview = nextTabs.some((tab) => tab.kind === 'liveDev');
       const nextWorkbench = closingWorkbenchId
-        ? state.workbenchTabs.filter((w) => w !== closingWorkbenchId)
+        ? state.workbenchTabs.filter((view) => (
+            view !== closingWorkbenchId || (view === 'browser' && hasRemainingLivePreview)
+          ))
         : state.workbenchTabs;
 
       if (nextTabs.length === 0) {
@@ -884,13 +905,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
       }
 
       let nextActiveId = state.activePreviewTabId;
-      let nextActiveWorkbench: WorkbenchTabId | null = state.activeWorkbenchTab;
+      let nextActiveWorkbench: WorkbenchViewId | null = state.activeWorkbenchTab;
       if (state.activePreviewTabId === id) {
         const survivor = nextTabs.reduce((a, b) =>
           a.lastActivatedAt >= b.lastActivatedAt ? a : b,
         );
         nextActiveId = survivor.id;
-        nextActiveWorkbench = `preview:${survivor.path}`;
+        nextActiveWorkbench = survivor.kind === 'liveDev'
+          ? 'browser'
+          : `preview:${survivor.path}`;
       }
       return {
         ...state,
@@ -910,7 +933,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
         previewTabs: state.previewTabs.map((t) =>
           t.id === id ? { ...t, lastActivatedAt: nextPreviewTabTick() } : t,
         ),
-        activeWorkbenchTab: target ? (`preview:${target.path}` as WorkbenchTabId) : state.activeWorkbenchTab,
+        activeWorkbenchTab: target
+          ? target.kind === 'liveDev'
+            ? 'browser'
+            : `preview:${target.path}`
+          : state.activeWorkbenchTab,
       };
     });
   },
@@ -943,83 +970,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
   },
 
-  openWorkbenchTab: (id, options) => {
-    noteSurfaceIntentNavigation(surfaceIntentViewForWorkbenchTab(id), options?.source ?? 'user');
-    set((state) => {
-      const taskWorkbenchOpenSource = id === 'task'
-        ? options?.source === 'auto' && state.taskWorkbenchOpenSource === 'user'
-          ? 'user'
-          : options?.source ?? 'user'
-        : state.taskWorkbenchOpenSource;
-
-      if (state.workbenchTabs.includes(id)) {
-        return { ...state, activeWorkbenchTab: id, taskWorkbenchOpenSource };
-      }
-      return {
-        ...state,
-        workbenchTabs: [...state.workbenchTabs, id],
-        activeWorkbenchTab: id,
-        taskWorkbenchOpenSource,
-      };
-    });
-  },
-  closeWorkbenchTab: (id) => {
-    // A preview workbench tab is a view onto a file-backed PreviewTab. Closing
-    // it should also evict that PreviewTab so content/dirty state does not
-    // linger invisibly; delegate to closePreviewTab, which already handles the
-    // workbench mirror + activePreviewTabId fallback.
-    if (isPreviewWorkbenchId(id)) {
-      const path = previewPathOf(id);
-      const match = get().previewTabs.find((t) => t.path === path);
-      if (match) {
-        get().closePreviewTab(match.id);
-        return;
-      }
-      // No backing previewTab (shouldn't normally happen); fall through to
-      // the generic workbench cleanup so we at least remove the stale entry.
-    }
-    set((state) => {
-      const nextTabs = state.workbenchTabs.filter((t) => t !== id);
-      let nextActive: WorkbenchTabId | null = state.activeWorkbenchTab;
-      if (state.activeWorkbenchTab === id) {
-        if (nextTabs.length === 0) {
-          nextActive = null;
-        } else {
-          // Prefer the most-recently-activated preview among remaining; else first pinned.
-          const remainingPreviews = nextTabs.filter(isPreviewWorkbenchId);
-          if (remainingPreviews.length > 0) {
-            const byPath = new Map(state.previewTabs.map((pt) => [pt.path, pt]));
-            const survivor = remainingPreviews
-              .map((wid) => byPath.get(previewPathOf(wid)))
-              .filter((t): t is PreviewTab => !!t)
-              .reduce<PreviewTab | null>(
-                (best, t) => (!best || t.lastActivatedAt > best.lastActivatedAt ? t : best),
-                null,
-              );
-            nextActive = survivor ? (`preview:${survivor.path}` as WorkbenchTabId) : nextTabs[0];
-          } else {
-            nextActive = nextTabs[0];
-          }
-        }
-      }
-      return {
-        ...state,
-        workbenchTabs: nextTabs,
-        activeWorkbenchTab: nextActive,
-        ...(id === 'task' ? { taskWorkbenchOpenSource: null } : {}),
-      };
-    });
-  },
-  setActiveWorkbenchTab: (id) => set((state) => ({
-    activeWorkbenchTab: id,
-    taskWorkbenchOpenSource: id === 'task' ? 'user' : state.taskWorkbenchOpenSource,
-  })),
+  ...createWorkbenchActions({
+    set,
+    get,
+    nextPreviewTabTick,
+    stopDevServer: fireStopDevServer,
+  }),
 
   syncTaskWorkbenchForActivity: (hasActivity) => {
     const state = get();
 
     if (hasActivity) {
-      if (!state.taskWorkbenchActivityActive && !state.workbenchTabs.includes('task')) {
+      if (!state.taskWorkbenchActivityActive && !state.workbenchTabs.includes('overview')) {
         state.openWorkbenchTab('task', { source: 'auto' });
         set({ taskWorkbenchActivityActive: true, taskPanelTab: 'monitor' });
         return;
@@ -1030,7 +992,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return;
     }
 
-    if (state.taskWorkbenchOpenSource === 'auto' && state.workbenchTabs.includes('task')) {
+    if (state.taskWorkbenchOpenSource === 'auto' && state.workbenchTabs.includes('overview')) {
       state.closeWorkbenchTab('task');
     }
     if (state.taskWorkbenchActivityActive) {

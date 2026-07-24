@@ -335,5 +335,3 @@ export const SkillsPanel: React.FC = () => {
     </div>
   );
 };
-
-export default SkillsPanel;

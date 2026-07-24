@@ -124,5 +124,3 @@ export const ContextPanel: React.FC = () => {
     </div>
   );
 };
-
-export default ContextPanel;

@@ -1,12 +1,13 @@
 import {
   decideSurfaceIntent,
+  surfaceIntentViewForDecision,
   type SurfaceArtifact,
   type SurfaceIntentDecision,
   type SurfaceIntentView,
 } from '../utils/surfaceIntent';
 
 interface SurfaceTurnState {
-  autoFocusedView: SurfaceIntentDecision['view'] | null;
+  autoFocusedView: SurfaceIntentView | null;
   userSwitchedAway: boolean;
 }
 
@@ -74,7 +75,7 @@ export function requestSurfaceIntent(input: {
     userSwitchedAwayThisTurn: state.userSwitchedAway,
   });
   if (decision) {
-    state.autoFocusedView = decision.view;
+    state.autoFocusedView = surfaceIntentViewForDecision(decision);
   }
   return decision;
 }

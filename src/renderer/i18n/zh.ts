@@ -24,9 +24,11 @@ import { knowledgeMemoryZh } from './knowledgeMemory';
 import { rolePackZh } from './rolePack';
 import { expertZh } from './expert';
 import { capabilityHubZh } from './capabilityHub';
+import { workbenchTabsZh } from './workbenchTabs';
 
 export const zh = {
   ...capabilityHubZh,
+  ...workbenchTabsZh,
   // Common
   common: {
     save: '保存',
@@ -939,22 +941,6 @@ export const zh = {
     installedAndMounted: '已安装并挂载',
     installFailedPrefix: '安装失败: ',
     mountFailedPrefix: '挂载失败: ',
-  },
-
-  workbenchTabs: {
-    openPanel: '打开面板',
-    overviewLabel: '概览',
-    overviewTitle: '任务进程与产物',
-    overviewProgressLabel: '任务进程',
-    overviewArtifactsLabel: '产物',
-    filesLabel: '文件',
-    filesTitle: '文件浏览器',
-    browserLabel: '浏览器',
-    browserTitle: '网页实时预览',
-    browserEmpty: '还没有打开网页',
-    browserEmptyHint: '从会话菜单启动 Live Preview 后，URL 会在这里打开。',
-    previewLabel: '预览',
-    previewTitle: '打开最近的文件产物',
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）

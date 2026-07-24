@@ -1,26 +1,25 @@
 // @vitest-environment jsdom
-// ---------------------------------------------------------------------------
-// WorkbenchTabs —— 顶栏 icon-only 按钮可发现性 + i18n（UI 审计 #9 收尾）：
-//  A) 「+」按钮 aria-label/tooltip 走 i18n，en 态不再是硬编码中文「打开面板」；
-//  B) 「+」弹出菜单条目（任务/文件/上下文）en 态渲染英文标签；
-//  C) files / browser tab 的 label 与 title 走 i18n。
-// 画布/媒介表单两枚按钮已有 aria-label+title（design.* 键），此处一并断言存在。
-// ---------------------------------------------------------------------------
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, fireEvent, cleanup } from '@testing-library/react';
 import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  createDefaultKeybindingsSettings,
+  formatShortcutForDisplay,
+  KEYBINDING_DEFINITIONS,
+  type KeybindingsSettings,
+} from '../../../src/shared/keybindings';
 
-vi.mock('../../../src/renderer/hooks/useDisclosure', () => ({
-  useDisclosure: () => ({ isStandard: true }),
+const keybindingsRuntime = vi.hoisted(() => ({
+  keybindings: null as KeybindingsSettings | null,
+  platform: 'darwin' as const,
 }));
-vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
-  useWorkspacePreviewModel: () => [],
+
+vi.mock('../../../src/renderer/hooks/useKeybindingsSettings', () => ({
+  useKeybindingsSettings: () => ({
+    keybindings: keybindingsRuntime.keybindings,
+    platform: keybindingsRuntime.platform,
+  }),
 }));
-vi.mock('../../../src/renderer/stores/workbenchPresetStore', () => {
-  const useWorkbenchPresetStore = (selector: (s: { presets: unknown[]; recipes: unknown[] }) => unknown) =>
-    selector({ presets: [], recipes: [] });
-  return { useWorkbenchPresetStore };
-});
 
 import { WorkbenchTabs } from '../../../src/renderer/components/WorkbenchTabs';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -28,119 +27,149 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 
+const realOpenWorkbenchTab = useAppStore.getState().openWorkbenchTab;
+
 beforeEach(() => {
   vi.restoreAllMocks();
-  useAppStore.setState({ workbenchTabs: [], activeWorkbenchTab: null, previewTabs: [], language: 'en' });
+  keybindingsRuntime.keybindings = createDefaultKeybindingsSettings('darwin');
+  useAppStore.setState({
+    workbenchTabs: [],
+    activeWorkbenchTab: null,
+    previewTabs: [],
+    language: 'en',
+    openWorkbenchTab: realOpenWorkbenchTab,
+  });
   useSessionStore.setState({ currentSessionId: null });
 });
 
 afterEach(() => {
   cleanup();
-  useAppStore.setState({ language: 'zh' });
+  vi.restoreAllMocks();
+  useAppStore.setState({ language: 'zh', openWorkbenchTab: realOpenWorkbenchTab });
   useSessionStore.setState({ currentSessionId: null });
 });
 
-describe('WorkbenchTabs 顶栏按钮 a11y + i18n（en 态无硬编码中文）', () => {
-  it('「+」按钮 aria-label 走 i18n：en 态为英文，且不是「打开面板」', () => {
-    const { container } = render(<WorkbenchTabs />);
-    const addBtn = container.querySelector(`[aria-label="${en.workbenchTabs.openPanel}"]`);
-    expect(addBtn).toBeTruthy();
-    expect(container.querySelector('[aria-label="打开面板"]')).toBeNull();
+describe('WorkbenchTabs empty-state launcher', () => {
+  it('conditionally renders the full launcher and opens a selected view', () => {
+    render(<WorkbenchTabs />);
+
+    expect(screen.getByTestId('workbench-empty-launcher')).toBeTruthy();
+    expect(screen.queryByTestId('workbench-view-selector')).toBeNull();
+    expect(screen.getByTestId('open-workbench-view-overview')).toBeTruthy();
+    expect(screen.getByTestId('open-workbench-view-files')).toBeTruthy();
+    expect(screen.getByTestId('open-workbench-view-browser')).toBeTruthy();
+    expect(screen.getByTestId('open-workbench-view-design-canvas')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('open-workbench-view-overview'));
+
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('overview');
+    expect(screen.queryByTestId('workbench-empty-launcher')).toBeNull();
+    expect(screen.getByTestId('workbench-view-selector')).toBeTruthy();
   });
 
-  it('「+」弹出菜单条目 en 态渲染英文（无「文件」「上下文」硬编码）', () => {
-    const { container, getByLabelText } = render(<WorkbenchTabs />);
-    fireEvent.click(getByLabelText(en.workbenchTabs.openPanel));
-    expect(container.textContent).toContain(en.workbenchTabs.overviewLabel);
-    expect(container.textContent).toContain(en.workbenchTabs.filesLabel);
-    expect(container.textContent).toContain(en.workbenchTabs.browserLabel);
-    expect(container.textContent).not.toContain('文件');
-    expect(container.textContent).not.toContain('上下文');
+  it('derives the displayed shortcut from the keybinding registry', () => {
+    const definition = KEYBINDING_DEFINITIONS.find(({ id }) => id === 'statusRail.toggle');
+    if (!definition) throw new Error('statusRail.toggle definition missing');
+    const mutableHotkeys = definition.defaultHotkeys as {
+      darwin: string | null;
+      win32: string | null;
+      linux: string | null;
+    };
+    const original = mutableHotkeys.darwin;
+    mutableHotkeys.darwin = 'Cmd+Shift+9';
+    keybindingsRuntime.keybindings = createDefaultKeybindingsSettings('darwin');
+
+    try {
+      render(<WorkbenchTabs />);
+      expect(screen.getByTestId('workbench-shortcut-overview').textContent).toBe(
+        formatShortcutForDisplay(mutableHotkeys.darwin, 'darwin'),
+      );
+    } finally {
+      mutableHotkeys.darwin = original;
+    }
   });
 
-  it('files / browser tab 的 label 与 title 走 i18n', () => {
-    useAppStore.setState({ workbenchTabs: ['files', 'browser'], activeWorkbenchTab: 'files' });
-    const { container } = render(<WorkbenchTabs />);
-    expect(container.textContent).toContain(en.workbenchTabs.filesLabel);
-    expect(container.textContent).toContain(en.workbenchTabs.browserLabel);
-    expect(container.querySelector(`[title="${en.workbenchTabs.filesTitle}"]`)).toBeTruthy();
-    expect(container.querySelector(`[title="${en.workbenchTabs.browserTitle}"]`)).toBeTruthy();
+  it('does not render shortcut chips for views without an enabled binding', () => {
+    render(<WorkbenchTabs />);
+
+    expect(screen.queryByTestId('workbench-shortcut-browser')).toBeNull();
+    expect(screen.queryByTestId('workbench-shortcut-design-canvas')).toBeNull();
   });
 
-  it('zh 态「+」按钮仍为中文 aria-label（键值对齐）', () => {
-    useAppStore.setState({ language: 'zh' });
-    const { container } = render(<WorkbenchTabs />);
-    expect(container.querySelector(`[aria-label="${zh.workbenchTabs.openPanel}"]`)).toBeTruthy();
-  });
-
-  it('tab 关闭按钮走 i18n：en 态 aria-label/title 为英文', () => {
+  it('uses the same launcher component from the new-view button', () => {
     useAppStore.setState({ workbenchTabs: ['overview'], activeWorkbenchTab: 'overview' });
-    const { container } = render(<WorkbenchTabs />);
-    const closeBtn = container.querySelector(`button[aria-label="${en.common.close}"]`);
-    expect(closeBtn).toBeTruthy();
-    expect(container.querySelector('button[title="关闭"]')).toBeNull();
-  });
+    render(<WorkbenchTabs />);
 
-  it('画布 icon-only 按钮具备 aria-label 与 title', () => {
-    useSessionStore.setState({ currentSessionId: 's1' });
-    const { getByTestId } = render(<WorkbenchTabs />);
-    const btn = getByTestId('open-design-canvas');
-    expect(btn.getAttribute('aria-label')).toBeTruthy();
-    expect(btn.getAttribute('title')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(en.workbenchTabs.openPanel));
+
+    expect(screen.getByTestId('workbench-view-launcher-panel')).toBeTruthy();
+    expect(screen.queryByTestId('open-workbench-view-overview')).toBeNull();
+    expect(screen.getByTestId('open-workbench-view-files')).toBeTruthy();
   });
 });
 
-describe('WorkbenchTabs keyboard interaction', () => {
-  it('exposes tab semantics and activates tabs with Enter and Space', () => {
-    useAppStore.setState({ workbenchTabs: ['overview', 'files'], activeWorkbenchTab: 'overview' });
-    const { getAllByRole, getByRole } = render(<WorkbenchTabs />);
-    const tabs = getAllByRole('tab');
+describe('WorkbenchTabs single-select switcher', () => {
+  it('renders the selector instead of the empty launcher and keeps exactly one active option', () => {
+    useAppStore.setState({
+      workbenchTabs: ['overview', 'files', 'browser'],
+      activeWorkbenchTab: 'overview',
+    });
+    render(<WorkbenchTabs />);
 
-    expect(getByRole('tablist')).toBeTruthy();
-    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
-    expect(tabs[0].getAttribute('tabindex')).toBe('0');
-    expect(tabs[1].getAttribute('aria-selected')).toBe('false');
-    expect(tabs[1].getAttribute('tabindex')).toBe('-1');
+    expect(screen.queryByTestId('workbench-empty-launcher')).toBeNull();
+    expect(screen.getByTestId('workbench-view-selector')).toBeTruthy();
 
-    fireEvent.keyDown(tabs[1], { key: 'Enter' });
+    fireEvent.click(screen.getByLabelText(en.workbenchTabs.chooseView));
+    let listbox = screen.getByRole('listbox', { name: en.workbenchTabs.openViews });
+    expect(within(listbox).getAllByRole('option')).toHaveLength(3);
+    expect(within(listbox).getAllByRole('option').filter(
+      (option) => option.getAttribute('aria-selected') === 'true',
+    )).toHaveLength(1);
+
+    fireEvent.click(within(listbox).getByRole('option', { name: en.workbenchTabs.filesLabel }));
     expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
 
-    fireEvent.keyDown(tabs[0], { key: ' ' });
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('overview');
+    fireEvent.click(screen.getByLabelText(en.workbenchTabs.chooseView));
+    listbox = screen.getByRole('listbox', { name: en.workbenchTabs.openViews });
+    const activeOptions = within(listbox).getAllByRole('option').filter(
+      (option) => option.getAttribute('aria-selected') === 'true',
+    );
+    expect(activeOptions).toHaveLength(1);
+    expect(activeOptions[0].textContent).toContain(en.workbenchTabs.filesLabel);
   });
 
-  it('moves focus and activation with Left and Right without disturbing close buttons', () => {
-    useAppStore.setState({ workbenchTabs: ['overview', 'files'], activeWorkbenchTab: 'overview' });
-    const { getAllByRole } = render(<WorkbenchTabs />);
-    const tabs = getAllByRole('tab');
+  it('marks selector navigation as user-originated for surface-intent suppression', () => {
+    const openWorkbenchTab = vi.fn();
+    useAppStore.setState({
+      workbenchTabs: ['overview', 'files'],
+      activeWorkbenchTab: 'overview',
+      openWorkbenchTab,
+    });
+    render(<WorkbenchTabs />);
 
-    tabs[0].focus();
-    fireEvent.keyDown(tabs[0], { key: 'ArrowRight' });
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
-    expect(document.activeElement).toBe(tabs[1]);
+    fireEvent.click(screen.getByLabelText(en.workbenchTabs.chooseView));
+    fireEvent.click(screen.getByRole('option', { name: en.workbenchTabs.filesLabel }));
 
-    fireEvent.keyDown(tabs[1], { key: 'ArrowLeft' });
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('overview');
-    expect(document.activeElement).toBe(tabs[0]);
+    expect(openWorkbenchTab).toHaveBeenCalledWith('files', { source: 'user' });
   });
 
-  it('preserves click activation, middle-click close, and isolated close-button clicks', () => {
-    useAppStore.setState({ workbenchTabs: ['overview', 'files'], activeWorkbenchTab: 'overview' });
-    const { getAllByLabelText, getAllByRole } = render(<WorkbenchTabs />);
+  it('closes the current view and conditionally returns to the full launcher', () => {
+    useAppStore.setState({
+      workbenchTabs: ['files'],
+      activeWorkbenchTab: 'files',
+    });
+    render(<WorkbenchTabs />);
 
-    fireEvent.click(getAllByRole('tab')[1]);
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
+    fireEvent.click(screen.getByLabelText(en.workbenchTabs.closeCurrentView));
 
-    fireEvent.click(getAllByLabelText(en.common.close)[1]);
-    expect(useAppStore.getState().workbenchTabs).toEqual(['overview']);
-
-    const remainingTab = getAllByRole('tab')[0];
-    fireEvent.mouseDown(remainingTab.parentElement!, { button: 1 });
     expect(useAppStore.getState().workbenchTabs).toEqual([]);
+    expect(useAppStore.getState().activeWorkbenchTab).toBeNull();
+    expect(screen.queryByTestId('workbench-view-selector')).toBeNull();
+    expect(screen.getByTestId('workbench-empty-launcher')).toBeTruthy();
   });
 });
 
-describe('WorkbenchTabs dirty preview confirmation', () => {
+describe('WorkbenchTabs compatibility behavior', () => {
   const dirtyPreview = {
     id: 'preview-1',
     path: '/tmp/example.ts',
@@ -151,37 +180,30 @@ describe('WorkbenchTabs dirty preview confirmation', () => {
     isLoaded: true,
   };
 
-  it('requires confirmation for close-button and middle-click closes of a dirty preview', () => {
+  it('keeps dirty-preview confirmation when closing the selected view', () => {
     useAppStore.setState({
       workbenchTabs: ['preview:/tmp/example.ts'],
       activeWorkbenchTab: 'preview:/tmp/example.ts',
       previewTabs: [dirtyPreview],
     });
-    const { getByLabelText, getByRole } = render(<WorkbenchTabs />);
+    render(<WorkbenchTabs />);
 
-    fireEvent.click(getByLabelText(en.common.close));
-    expect(getByRole('dialog')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(en.workbenchTabs.closeCurrentView));
+    expect(screen.getByRole('dialog')).toBeTruthy();
     expect(useAppStore.getState().workbenchTabs).toHaveLength(1);
 
-    fireEvent.click(getByRole('button', { name: en.common.cancel }));
-    expect(useAppStore.getState().workbenchTabs).toHaveLength(1);
-
-    fireEvent.mouseDown(getByRole('tab').parentElement!, { button: 1 });
-    expect(getByRole('dialog')).toBeTruthy();
-    fireEvent.click(getByRole('button', { name: /不保存/ }));
+    fireEvent.click(screen.getByRole('button', { name: /不保存/ }));
     expect(useAppStore.getState().workbenchTabs).toEqual([]);
   });
 
-  it('still closes clean previews immediately', () => {
-    useAppStore.setState({
-      workbenchTabs: ['preview:/tmp/example.ts'],
-      activeWorkbenchTab: 'preview:/tmp/example.ts',
-      previewTabs: [{ ...dirtyPreview, content: 'saved' }],
-    });
-    const { getByLabelText, queryByRole } = render(<WorkbenchTabs />);
+  it('keeps all new shell copy synchronized in Chinese and English', () => {
+    const { rerender } = render(<WorkbenchTabs />);
+    expect(screen.getByText(en.workbenchTabs.emptyTitle)).toBeTruthy();
+    expect(screen.queryByText(zh.workbenchTabs.emptyTitle)).toBeNull();
 
-    fireEvent.click(getByLabelText(en.common.close));
-    expect(queryByRole('dialog')).toBeNull();
-    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+    useAppStore.setState({ language: 'zh' });
+    rerender(<WorkbenchTabs />);
+    expect(screen.getByText(zh.workbenchTabs.emptyTitle)).toBeTruthy();
+    expect(screen.queryByText(en.workbenchTabs.emptyTitle)).toBeNull();
   });
 });

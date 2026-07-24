@@ -25,9 +25,11 @@ import { knowledgeMemoryEn } from './knowledgeMemory';
 import { rolePackEn } from './rolePack';
 import { expertEn } from './expert';
 import { capabilityHubEn } from './capabilityHub';
+import { workbenchTabsEn } from './workbenchTabs';
 
 export const en: Translations = {
   ...capabilityHubEn,
+  ...workbenchTabsEn,
   // Common
   common: {
     save: 'Save',
@@ -949,23 +951,6 @@ export const en: Translations = {
     installedAndMounted: 'Installed and mounted',
     installFailedPrefix: 'Install failed: ',
     mountFailedPrefix: 'Mount failed: ',
-  },
-
-  // Workbench 顶栏 tab 与按钮（WorkbenchTabs）
-  workbenchTabs: {
-    openPanel: 'Open panel',
-    overviewLabel: 'Overview',
-    overviewTitle: 'Task progress and deliverables',
-    overviewProgressLabel: 'Task progress',
-    overviewArtifactsLabel: 'Deliverables',
-    filesLabel: 'Files',
-    filesTitle: 'File browser',
-    browserLabel: 'Browser',
-    browserTitle: 'Live web preview',
-    browserEmpty: 'No live page is open',
-    browserEmptyHint: 'Start Live Preview from the session menu to open a URL here.',
-    previewLabel: 'Preview',
-    previewTitle: 'Open the latest file deliverable',
   },
 
   // Slash 命令面板内置条目（SlashCommandPopover 静态文案，按条目 id 组织）

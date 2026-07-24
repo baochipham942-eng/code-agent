@@ -41,6 +41,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
     const description = typeof args.description === 'string' ? args.description.trim() : '';
     const category = typeof args.category === 'string' ? (args.category as SkillCategory) : undefined;
     const tools = toStringArray(args.tools);
+    const userExpectation = typeof args.userExpectation === 'string' ? args.userExpectation.trim() : '';
     const editingRoleId =
       typeof args.editingRoleId === 'string' && args.editingRoleId.trim() ? args.editingRoleId.trim() : undefined;
 
@@ -67,6 +68,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
       category,
       tools,
       systemPrompt,
+      userExpectation,
       sessionId: ctx.sessionId,
       editingRoleId,
     });

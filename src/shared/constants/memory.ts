@@ -109,6 +109,10 @@ export const ROLE_ASSETS = {
   HISTORY_FILENAME: 'history.md',
   /** 专家默认资料架绑定文件名（Batch 3 E3） */
   BINDINGS_FILENAME: 'bindings.json',
+  /** 用户对这位专家的期望（建专家时那句原话，可编辑）：roles/<roleId>/USER.md */
+  USER_EXPECTATION_FILENAME: 'USER.md',
+  /** 这位专家的行为准则（专家级，留空则不注入）：roles/<roleId>/SOUL.md */
+  SOUL_FILENAME: 'SOUL.md',
   /** 项目目录元数据文件名（记录原始 workspace 路径，P0-2 迁移用） */
   META_FILENAME: 'meta.json',
   /** 项目 key 的 hash 截断长度 */

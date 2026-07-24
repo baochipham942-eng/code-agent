@@ -18,7 +18,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const BASELINE_ERROR_MAX = 0;
-const BASELINE_WARNING_MAX = 430;
+const BASELINE_WARNING_MAX = 427;
 const MAX_FINDINGS_TO_PRINT = 50;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

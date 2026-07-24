@@ -59,6 +59,7 @@ import {
   listAllAgents as registryListAllAgents,
 } from './agentRegistry';
 import { resolveTierModelConfig, type TierResolutionSettings } from '../model/modelDecision';
+import { appendRolePersonalization } from '../services/roleAssets/rolePersonalization';
 import { getConfigService } from '../services/core/configService';
 
 import type { FullAgentConfig } from '../../shared/contract/agentTypes';
@@ -217,7 +218,7 @@ export function getAgentsByLayer(layer: 'exploration' | 'planning' | 'execution'
  * agent.prompt 即可。自定义 agent（agentMd 加载的）没接 registry，原样返回。
  */
 export function getAgentPrompt(agent: FullAgentConfig): string {
-  return agent.prompt;
+  return appendRolePersonalization(agent.prompt, agent.id);
 }
 
 /**

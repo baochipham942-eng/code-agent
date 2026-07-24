@@ -17,6 +17,7 @@ import type {
   RolePanelDetail,
   RolePanelMemory,
   RoleBoundCronJob,
+  RoleProactivityConfig,
   RoleProactivityLevel,
   RoleVisual,
 } from "@shared/contract/roleAssets";
@@ -73,11 +74,11 @@ async function updateRoleMemory(
 
 async function setRoleProactivity(
   roleId: string,
-  level: RoleProactivityLevel,
+  config: RoleProactivityConfig,
 ): Promise<void> {
   await ipcService.invokeDomain(IPC_DOMAINS.ROLES, "setProactivity", {
     roleId,
-    level,
+    ...config,
   });
 }
 
@@ -414,7 +415,7 @@ const PROACTIVITY_LEVELS: RoleProactivityLevel[] = [
 
 const ProactivitySelector: React.FC<{
   roleId: string;
-  current: RoleProactivityLevel;
+  current: RoleProactivityConfig;
   onChanged: () => void;
 }> = ({ roleId, current, onChanged }) => {
   const { t } = useI18n();
@@ -422,11 +423,11 @@ const ProactivitySelector: React.FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const handleSelect = async (level: RoleProactivityLevel) => {
-    if (level === current || busy) return;
+    if (level === current.level || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await setRoleProactivity(roleId, level);
+      await setRoleProactivity(roleId, { ...current, level });
       onChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -439,7 +440,7 @@ const ProactivitySelector: React.FC<{
     <div className="space-y-2">
       {PROACTIVITY_LEVELS.map((level) => {
         const option = optionsText[level];
-        const selected = level === current;
+        const selected = level === current.level;
         return (
           <button /* ds-allow:button: 主动性等级单选卡，全宽左对齐含单选圈+多行，primitive 居中变体不兼容 */
             key={
@@ -470,6 +471,152 @@ const ProactivitySelector: React.FC<{
       })}
       {error ? <div className="text-xs text-red-400">{error}</div> : null}
     </div>
+  );
+};
+
+const QuietHoursEditor: React.FC<{
+  roleId: string;
+  current: RoleProactivityConfig;
+  onChanged: () => void;
+}> = ({ roleId, current, onChanged }) => {
+  const { t } = useI18n();
+  const text = t.settings.roles.detail;
+  const [start, setStart] = useState(current.quietHours?.start ?? "22:00");
+  const [end, setEnd] = useState(current.quietHours?.end ?? "08:00");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setStart(current.quietHours?.start ?? "22:00");
+    setEnd(current.quietHours?.end ?? "08:00");
+  }, [current.quietHours?.end, current.quietHours?.start]);
+
+  const valid = start.length === 5 && end.length === 5 && start !== end;
+  const unchanged = current.quietHours?.start === start && current.quietHours?.end === end;
+
+  const save = async (quietHours: RoleProactivityConfig["quietHours"]) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await setRoleProactivity(roleId, { ...current, quietHours });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      logger.error("Failed to set role quiet hours", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!valid || unchanged || busy) return;
+    await save({ start, end });
+  };
+
+  // 清除走显式 null：省略字段会被 settings 深合并保留，等于永远关不掉。
+  const handleClear = async () => {
+    if (!current.quietHours || busy) return;
+    await save(null);
+  };
+
+  return (
+    <div
+      data-testid="role-quiet-hours"
+      className="mt-4 border-t border-zinc-700/60 pt-4"
+    >
+      <div className="text-sm text-zinc-300">{text.quietHoursTitle}</div>
+      <p className="mt-1 text-xs text-zinc-500">{text.quietHoursDescription}</p>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="space-y-1 text-xs text-zinc-500">
+          <span className="block">{text.quietHoursStart}</span>
+          <input
+            data-testid="role-quiet-hours-start"
+            type="time"
+            value={start}
+            onChange={(event) => setStart(event.target.value)}
+            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-emerald-600"
+          />
+        </label>
+        <label className="space-y-1 text-xs text-zinc-500">
+          <span className="block">{text.quietHoursEnd}</span>
+          <input
+            data-testid="role-quiet-hours-end"
+            type="time"
+            value={end}
+            onChange={(event) => setEnd(event.target.value)}
+            className="rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-emerald-600"
+          />
+        </label>
+        <button /* ds-allow:button: 免打扰时段使用紧凑行内保存动作 */
+          data-testid="role-quiet-hours-save"
+          type="button"
+          disabled={!valid || unchanged || busy}
+          onClick={() => void handleSave()}
+          className="rounded-md bg-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {busy ? t.common.saving : text.quietHoursSave}
+        </button>
+        {current.quietHours ? (
+          <button /* ds-allow:button: 与保存并排的紧凑行内清除动作 */
+            data-testid="role-quiet-hours-clear"
+            type="button"
+            disabled={busy}
+            onClick={() => void handleClear()}
+            className="rounded-md px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {text.quietHoursClear}
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-2 text-xs text-zinc-500">
+        {current.quietHours
+          ? text.quietHoursActive
+              .replace("{start}", current.quietHours.start)
+              .replace("{end}", current.quietHours.end)
+          : text.quietHoursInactive}
+      </div>
+      {error ? <div className="mt-2 text-xs text-red-400">{error}</div> : null}
+    </div>
+  );
+};
+
+const RoleTrainingSummary: React.FC<{
+  detail: RolePanelDetail;
+}> = ({ detail }) => {
+  const { t } = useI18n();
+  const text = t.settings.roles.detail;
+  const latest = detail.history.at(-1)?.replace(/^- /, "");
+
+  return (
+    <section
+      data-testid="role-training-summary"
+      className="rounded-xl border border-zinc-700/70 bg-zinc-900/50 p-4"
+    >
+      <div className="text-sm font-medium text-zinc-200">{text.trainingSummaryTitle}</div>
+      {!latest ? (
+        <div
+          data-testid="role-training-summary-empty"
+          className="mt-3 rounded-lg border border-dashed border-zinc-700/70 px-3 py-4 text-center text-xs text-zinc-500"
+        >
+          {text.trainingSummaryEmpty}
+        </div>
+      ) : (
+        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,8rem)_minmax(0,8rem)_1fr]">
+          <div data-testid="role-training-summary-rounds" className="rounded-lg bg-zinc-950/60 px-3 py-2">
+            <div className="text-lg font-semibold text-zinc-100">{detail.history.length}</div>
+            <div className="text-xs text-zinc-500">{text.trainingRounds}</div>
+          </div>
+          <div data-testid="role-training-summary-memories" className="rounded-lg bg-zinc-950/60 px-3 py-2">
+            <div className="text-lg font-semibold text-zinc-100">{detail.memories.length}</div>
+            <div className="text-xs text-zinc-500">{text.trainingMemories}</div>
+          </div>
+          <div data-testid="role-training-summary-latest" className="min-w-0 rounded-lg bg-zinc-950/60 px-3 py-2">
+            <div className="text-xs text-zinc-500">{text.trainingLatest}</div>
+            <div className="mt-1 line-clamp-2 text-sm text-zinc-300">{latest}</div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 };
 
@@ -528,7 +675,9 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
           {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{expertText.visual.builtinNotice}</p> : null} /> : null}
           {tab === 'equipment' && detail.equipment ? <RoleEquipmentTab><EquipmentEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /></RoleEquipmentTab> : null}
           {tab === 'persona' ? <RolePersonaTab><DefinitionEditor key={roleId} roleId={roleId} definition={detail.definition} restore={detail.restore} onSaved={loadDetail} /></RolePersonaTab> : null}
-          {tab === 'records' ? <RoleRecordsTab><SettingsSection
+          {tab === 'records' ? <RoleRecordsTab>
+          <RoleTrainingSummary detail={detail} />
+          <SettingsSection
             title={roleText.detail.proactivityTitle}
             description={roleText.detail.proactivityDescription}
           >
@@ -537,7 +686,12 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
               <div className="min-w-0 flex-1">
                 <ProactivitySelector
                   roleId={roleId}
-                  current={detail.proactivity?.level ?? "silent"}
+                  current={detail.proactivity ?? { level: "silent" }}
+                  onChanged={loadDetail}
+                />
+                <QuietHoursEditor
+                  roleId={roleId}
+                  current={detail.proactivity ?? { level: "silent" }}
                   onChanged={loadDetail}
                 />
               </div>

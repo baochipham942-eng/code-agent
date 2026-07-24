@@ -105,6 +105,7 @@ import {
   inferAdvanceGoalProposalFromWake,
   resolveRoleProactivityConfig,
   cadenceForConfig,
+  isWithinQuietHours,
 } from '../../../../src/host/services/roleAssets/roleProactivity';
 import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
@@ -173,17 +174,41 @@ describe('roleProactivity', () => {
         roleAssets: {
           proactivity: {
             defaultLevel: 'daily',
-            roles: { [RESEARCHER]: { level: 'realtime', cadence: '0 0 */6 * * *' } },
+            roles: {
+              [RESEARCHER]: {
+                level: 'realtime',
+                cadence: '0 0 */6 * * *',
+                quietHours: { start: '22:00', end: '08:00' },
+              },
+            },
           },
         },
       };
       const config = await resolveRoleProactivityConfig(RESEARCHER);
       expect(config.level).toBe('realtime');
       expect(cadenceForConfig(config)).toBe('0 0 */6 * * *');
+      expect(config.quietHours).toEqual({ start: '22:00', end: '08:00' });
     });
 
     it('silent 档不产生 cadence', () => {
       expect(cadenceForConfig({ level: 'silent' })).toBeNull();
+    });
+
+    it('不跨零点免打扰时段：start 当刻算命中，end 当刻算结束', () => {
+      const quietHours = { start: '12:00', end: '14:00' };
+      expect(isWithinQuietHours(new Date(2026, 6, 23, 11, 59), quietHours)).toBe(false);
+      expect(isWithinQuietHours(new Date(2026, 6, 23, 12, 0), quietHours)).toBe(true);
+      expect(isWithinQuietHours(new Date(2026, 6, 23, 13, 59), quietHours)).toBe(true);
+      expect(isWithinQuietHours(new Date(2026, 6, 23, 14, 0), quietHours)).toBe(false);
+    });
+
+    it('跨零点免打扰时段：深夜和次日早晨命中，end 当刻算结束', () => {
+      const quietHours = { start: '22:00', end: '08:00' };
+      expect(isWithinQuietHours(new Date(2026, 6, 23, 21, 59), quietHours)).toBe(false);
+      expect(isWithinQuietHours(new Date(2026, 6, 23, 22, 0), quietHours)).toBe(true);
+      expect(isWithinQuietHours(new Date(2026, 6, 23, 23, 59), quietHours)).toBe(true);
+      expect(isWithinQuietHours(new Date(2026, 6, 24, 7, 59), quietHours)).toBe(true);
+      expect(isWithinQuietHours(new Date(2026, 6, 24, 8, 0), quietHours)).toBe(false);
     });
 
     it('解析四选一决策标记', () => {
@@ -228,15 +253,65 @@ describe('roleProactivity', () => {
 
   describe('wakeRole 醒来循环', () => {
     it('出厂默认（silent，无任何配置）下醒来被跳过，不烧 token', async () => {
-      mockSettings.value = {};
-      await seedProductHistory(RESEARCHER);
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 6, 23, 23, 0));
+      try {
+        mockSettings.value = {
+          roleAssets: {
+            proactivity: {
+              roles: {
+                [RESEARCHER]: {
+                  level: 'silent',
+                  quietHours: { start: '22:00', end: '08:00' },
+                },
+              },
+            },
+          },
+        };
+        await seedProductHistory(RESEARCHER);
 
-      const result = await wakeRole(RESEARCHER, 'cadence');
+        const result = await wakeRole(RESEARCHER, 'cadence');
 
-      expect(result.status).toBe('skipped');
-      expect(result.skipReason).toBe('silent_level');
-      expect(mockOrchestrator.sendMessage).not.toHaveBeenCalled();
-      expect(mockSessionManager.createSession).not.toHaveBeenCalled();
+        expect(result.status).toBe('skipped');
+        expect(result.skipReason).toBe('silent_level');
+        expect(mockOrchestrator.sendMessage).not.toHaveBeenCalled();
+        expect(mockSessionManager.createSession).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('免打扰时段内的 cadence 醒来直接丢弃，不跑模型', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 6, 23, 23, 0));
+      try {
+        mockSettings.value = {
+          roleAssets: {
+            proactivity: {
+              roles: {
+                [RESEARCHER]: {
+                  level: 'daily',
+                  quietHours: { start: '22:00', end: '08:00' },
+                },
+              },
+            },
+          },
+        };
+        await seedProductHistory(RESEARCHER);
+
+        const result = await wakeRole(RESEARCHER, 'cadence');
+
+        expect(result).toEqual({
+          roleId: RESEARCHER,
+          trigger: 'cadence',
+          status: 'skipped',
+          skipReason: 'quiet_hours',
+        });
+        expect(mockOrchestrator.sendMessage).not.toHaveBeenCalled();
+        expect(mockSessionManager.createSession).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('cadence 醒来完整循环：实例化 → 跑实例 → 决策 → 履历（单测版 E2E AC2）', async () => {
@@ -353,22 +428,40 @@ describe('roleProactivity', () => {
     });
 
     it('预算护栏：当天醒来次数达上限 → skipped', async () => {
-      await seedProductHistory(RESEARCHER);
-      // 预埋 MAX_WAKES_PER_DAY 条今天的醒来记录
-      for (let i = 0; i < ROLE_PROACTIVITY.MAX_WAKES_PER_DAY; i++) {
-        await appendRoleHistory(RESEARCHER, {
-          date: TODAY,
-          artifactLabel: `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(cadence)`,
-          artifactRef: '-',
-          summary: `第 ${i + 1} 次醒来`,
-        });
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 6, 23, 23, 0));
+      try {
+        mockSettings.value = {
+          roleAssets: {
+            proactivity: {
+              roles: {
+                [RESEARCHER]: {
+                  level: 'daily',
+                  quietHours: { start: '22:00', end: '08:00' },
+                },
+              },
+            },
+          },
+        };
+        await seedProductHistory(RESEARCHER);
+        // 预埋 MAX_WAKES_PER_DAY 条今天的醒来记录
+        for (let i = 0; i < ROLE_PROACTIVITY.MAX_WAKES_PER_DAY; i++) {
+          await appendRoleHistory(RESEARCHER, {
+            date: TODAY,
+            artifactLabel: `${ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX}(cadence)`,
+            artifactRef: '-',
+            summary: `第 ${i + 1} 次醒来`,
+          });
+        }
+
+        const result = await wakeRole(RESEARCHER, 'cadence');
+
+        expect(result.status).toBe('skipped');
+        expect(result.skipReason).toContain('daily_budget_exceeded');
+        expect(mockOrchestrator.sendMessage).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
       }
-
-      const result = await wakeRole(RESEARCHER, 'cadence');
-
-      expect(result.status).toBe('skipped');
-      expect(result.skipReason).toContain('daily_budget_exceeded');
-      expect(mockOrchestrator.sendMessage).not.toHaveBeenCalled();
     });
 
     it('非持久化角色（cron job 指向已删除的角色）醒来直接抛错，不重建目录', async () => {

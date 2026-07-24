@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useComposerNoticeStore } from '../../../../stores/composerNoticeStore';
 import { Check, UsersRound, X, Loader2 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
@@ -27,6 +28,13 @@ export const TeamRecipeDraftNotifications: React.FC = () => {
     });
     return () => { unsubscribe?.(); };
   }, []);
+
+  // 确认卡是阻塞性决策，占住输入框上方那一格（成员条会据此收成极窄摘要）
+  useEffect(() => {
+    const setNotice = useComposerNoticeStore.getState().setNotice;
+    setNotice('team-recipe-draft', drafts.length > 0);
+    return () => setNotice('team-recipe-draft', false);
+  }, [drafts.length]);
   return drafts.length ? <TeamRecipeDraftCard drafts={drafts} onResolved={(id) => setDrafts((current) => current.filter((draft) => draft.id !== id))} onDismiss={() => setDrafts([])} /> : null;
 };
 

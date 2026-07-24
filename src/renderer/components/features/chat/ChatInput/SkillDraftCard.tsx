@@ -5,6 +5,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
+import { useComposerNoticeStore } from '../../../../stores/composerNoticeStore';
 import { FlaskConical, Check, X, Loader2 } from 'lucide-react';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
@@ -48,6 +49,13 @@ export const SkillDraftNotifications: React.FC = () => {
     });
     return () => { unsubscribe?.(); };
   }, []);
+
+  // 确认卡是阻塞性决策，占住输入框上方那一格（成员条会据此收成极窄摘要）
+  useEffect(() => {
+    const setNotice = useComposerNoticeStore.getState().setNotice;
+    setNotice('skill-draft', drafts.length > 0);
+    return () => setNotice('skill-draft', false);
+  }, [drafts.length]);
 
   if (drafts.length === 0) return null;
 

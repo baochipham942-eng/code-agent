@@ -12,6 +12,8 @@ const appState = vi.hoisted(() => ({
   showWorkspace: false,
   setSidebarCollapsed: vi.fn(),
   sidebarCollapsed: false,
+  openWorkbenchTab: vi.fn(),
+  previewTabs: [],
   contextHealth: null,
   modelConfig: { provider: 'test', model: 'test' },
 }));

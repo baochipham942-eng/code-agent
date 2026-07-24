@@ -7,10 +7,11 @@ export type SurfaceArtifact =
   | { kind: 'swarm-monitor' };
 
 export type SurfaceIntentView =
-  | 'workspace-preview'
-  | 'file-preview'
-  | 'design-canvas'
-  | 'task-monitor'
+  | 'overview'
+  | 'files'
+  | 'browser'
+  | 'canvas'
+  | 'preview'
   | 'other';
 
 export type SurfaceIntentDecision =
@@ -71,11 +72,20 @@ export function deriveSurfaceIntentTurnId(messages: Message[]): string {
 }
 
 export function surfaceIntentViewForWorkbenchTab(tabId: string | null): SurfaceIntentView {
-  if (tabId === 'workspace-preview') return 'workspace-preview';
-  if (tabId?.startsWith('preview:')) return 'file-preview';
-  if (tabId === 'design-canvas') return 'design-canvas';
-  if (tabId === 'task') return 'task-monitor';
+  if (tabId === 'overview' || tabId === 'task' || tabId === 'workspace-preview') return 'overview';
+  if (tabId === 'files') return 'files';
+  if (tabId === 'browser') return 'browser';
+  if (tabId?.startsWith('preview:')) return 'preview';
+  if (tabId === 'design-canvas') return 'canvas';
   return 'other';
+}
+
+export function surfaceIntentViewForDecision(
+  decision: SurfaceIntentDecision,
+): SurfaceIntentView {
+  if (decision.view === 'workspace-preview' || decision.view === 'task-monitor') return 'overview';
+  if (decision.view === 'file-preview') return 'preview';
+  return 'canvas';
 }
 
 interface PreviewArtifactCandidate {

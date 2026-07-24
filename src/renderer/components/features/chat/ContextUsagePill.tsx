@@ -11,6 +11,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
+import { OPEN_CONTEXT_HEALTH_EVENT } from '../../../utils/workbenchViews';
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -48,6 +49,12 @@ export const ContextUsagePill: React.FC = () => {
   const succeedCompaction = useContextCompactionStore((s) => s.succeed);
   const failCompaction = useContextCompactionStore((s) => s.fail);
   const clearCompaction = useContextCompactionStore((s) => s.clear);
+
+  useEffect(() => {
+    const handleDeepLink = () => setOpen(true);
+    window.addEventListener(OPEN_CONTEXT_HEALTH_EVENT, handleDeepLink);
+    return () => window.removeEventListener(OPEN_CONTEXT_HEALTH_EVENT, handleDeepLink);
+  }, []);
 
   useEffect(() => {
     if (!open) return;

@@ -365,7 +365,9 @@ export function formatActionSummary(job: CronJobDefinition): string {
     case 'tool':
       return `${job.action.toolName}()`;
     case 'agent':
-      return `${job.action.agentType} agent`;
+      // agentType 是自由文本标签（'default' / 'heartbeat'），不是注册表键，执行链只用 roleId+prompt。
+      // 直接显示它等于往列表里种一行 "default agent" 这种没信息量的开发者字串。
+      return job.action.prompt;
     case 'webhook':
       return `${job.action.method} ${job.action.url}`;
     case 'ipc':

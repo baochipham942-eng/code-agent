@@ -21,7 +21,7 @@ export const TitleBar: React.FC = () => {
     openWorkbenchTab,
     closeWorkbenchTab,
   } = useAppStore();
-  const isTaskTabOpen = workbenchTabs.includes('task');
+  const isOverviewOpen = workbenchTabs.includes('overview');
   const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   // 当前消息发送用的工作目录（composerStore）优先，fallback 到全局 appStore.workingDirectory
@@ -92,9 +92,9 @@ export const TitleBar: React.FC = () => {
       {/* Right: Task Panel toggle */}
       <div className="flex items-center gap-2">
         <IconButton
-          icon={isTaskTabOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
-          aria-label={isTaskTabOpen ? 'Hide task panel' : 'Show task panel'}
-          onClick={() => (isTaskTabOpen ? closeWorkbenchTab('task') : openWorkbenchTab('task'))}
+          icon={isOverviewOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
+          aria-label={isOverviewOpen ? 'Hide overview' : 'Show overview'}
+          onClick={() => (isOverviewOpen ? closeWorkbenchTab('task') : openWorkbenchTab('task'))}
           variant="ghost"
           size="md"
         />

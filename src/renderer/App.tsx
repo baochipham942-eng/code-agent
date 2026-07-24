@@ -21,15 +21,10 @@ import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { UpdateNotification } from './components/UpdateNotification';
 import { isDesktopShellMode, isTauriMode } from './utils/platform';
 // PermissionDialog moved to PermissionCard inline in ChatView
-import { TaskPanel } from './components/TaskPanel';
-import { SkillsPanel } from './components/SkillsPanel';
-import { PreviewPanel } from './components/PreviewPanel';
-import { WorkspacePreviewPanel } from './components/WorkspacePreviewPanel';
-import { ContextPanel } from './components/ContextPanel';
-import { ReplayAuditPanel } from './components/features/audit/ReplayAuditPanel';
-import { ProjectCollaborationPage, ProjectCollaborationPanel } from './components/features/projectCollaboration';
+import { ProjectCollaborationPage } from './components/features/projectCollaboration';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { WorkbenchTabs } from './components/WorkbenchTabs';
+import { WorkbenchViewContent } from './components/WorkbenchViewContent';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
 import { BackgroundSessionPanel } from './components/features/background';
 import { FullScreenPage } from './components/features/shared/FullScreenPage';
@@ -54,7 +49,6 @@ import { useBackgroundTaskSync } from './hooks/useBackgroundTaskSync';
 import { useOpenPreviewBridge } from './hooks/useOpenPreviewBridge';
 import { useArtifactSurfaceIntent } from './hooks/useArtifactSurfaceIntent';
 import { Group as PanelGroup, Panel, Separator as ResizeHandle } from 'react-resizable-panels';
-import { FileExplorerPanel } from './components/features/explorer/FileExplorerPanel';
 import { MemoFloater } from './components/features/memo/MemoFloater';
 import { useAppshots } from './hooks/useAppshots';
 import { useSurfaceExecutionPip } from './hooks/useSurfaceExecutionPip';
@@ -91,9 +85,6 @@ const SettingsModal = React.lazy(() => import('./components/SettingsModal').then
 })));
 const WorkflowPanel = React.lazy(() => import('./components/features/workflow/WorkflowPanel').then((module) => ({
   default: module.WorkflowPanel,
-})));
-const DesignCanvasTab = React.lazy(() => import('./components/design/DesignCanvasTab').then((module) => ({
-  default: module.DesignCanvasTab,
 })));
 const LabPage = React.lazy(() => import('./components/features/lab/LabPage').then((module) => ({
   default: module.LabPage,
@@ -200,7 +191,7 @@ export const App: React.FC = () => {
   const showNarrowWorkbench =
     !showWorkbench &&
     workbenchTabs.length > 0 &&
-    (isPreviewActive || activeWorkbenchTab === 'workspace-preview' || activeWorkbenchTab === 'audit' || activeWorkbenchTab === 'project-collab');
+    (isPreviewActive || activeWorkbenchTab === 'overview' || activeWorkbenchTab === 'browser');
   const appliedNarrowSidebarDefaultRef = useRef(false);
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
@@ -827,21 +818,10 @@ export const App: React.FC = () => {
     <div className="flex flex-col h-full bg-zinc-900">
       <WorkbenchTabs />
       <div className="flex-1 min-h-0 overflow-hidden">
-        {activeWorkbenchTab === 'task' && <TaskPanel />}
-        {activeWorkbenchTab === 'skills' && <SkillsPanel />}
-        {activeWorkbenchTab === 'files' && (
-          <FileExplorerPanel onClose={() => setShowFileExplorer(false)} />
-        )}
-        {activeWorkbenchTab === 'workspace-preview' && <WorkspacePreviewPanel />}
-        {activeWorkbenchTab === 'context' && <ContextPanel />}
-        {activeWorkbenchTab === 'audit' && <ReplayAuditPanel />}
-        {activeWorkbenchTab === 'project-collab' && <ProjectCollaborationPanel projectId={currentProjectId} />}
-        {activeWorkbenchTab === 'design-canvas' && (
-          <React.Suspense fallback={null}>
-            <DesignCanvasTab />
-          </React.Suspense>
-        )}
-        {isPreviewActive && <PreviewPanel />}
+        <WorkbenchViewContent
+          activeView={activeWorkbenchTab}
+          onCloseFiles={() => setShowFileExplorer(false)}
+        />
       </div>
     </div>
   );

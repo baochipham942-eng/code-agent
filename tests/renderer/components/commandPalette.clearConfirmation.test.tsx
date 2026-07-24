@@ -9,6 +9,7 @@ const appActions = vi.hoisted(() => ({
   setShowDAGPanel: vi.fn(),
   setShowWorkspace: vi.fn(),
   setSidebarCollapsed: vi.fn(),
+  openWorkbenchTab: vi.fn(),
 }));
 const sessionActions = vi.hoisted(() => ({
   createSession: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     showDAGPanel: false,
     showWorkspace: false,
     sidebarCollapsed: false,
+    previewTabs: [],
   }),
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -100,5 +102,19 @@ describe('CommandPalette clear-chat confirmation', () => {
     expect(screen.queryByRole('dialog', { name: '清空当前对话？' })).toBeNull();
     expect(sessionActions.createSession).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['概览', 'overview'],
+    ['文件', 'files'],
+    ['浏览器', 'browser'],
+    ['设计画布', 'design-canvas'],
+  ] as const)('opens the %s workbench view from the palette', (label, view) => {
+    render(<CommandPalette isOpen onClose={vi.fn()} />);
+
+    const labelNode = screen.getByText(label, { selector: '.text-sm' });
+    fireEvent.click(labelNode.closest('button') as HTMLButtonElement);
+
+    expect(appActions.openWorkbenchTab).toHaveBeenCalledWith(view);
   });
 });

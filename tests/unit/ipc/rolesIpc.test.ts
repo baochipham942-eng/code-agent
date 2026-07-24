@@ -503,6 +503,22 @@ describe('roles.ipc (domain:roles)', () => {
       expect(detail.data?.proactivity.level).toBe('silent');
     });
 
+    it('免打扰时段可以被显式 null 清除（省略字段会被深合并保留，等于永远关不掉）', async () => {
+      await ensureRoleAssetDirs('研究员');
+      await invoke('setProactivity', {
+        roleId: '研究员',
+        level: 'daily',
+        quietHours: { start: '22:00', end: '08:00' },
+      });
+      const set = await invoke<RolePanelDetail>('detail', { roleId: '研究员' });
+      expect(set.data?.proactivity.quietHours).toEqual({ start: '22:00', end: '08:00' });
+
+      await invoke('setProactivity', { roleId: '研究员', level: 'daily', quietHours: null });
+
+      const cleared = await invoke<RolePanelDetail>('detail', { roleId: '研究员' });
+      expect(cleared.data?.proactivity.quietHours ?? null).toBeNull();
+    });
+
     it('校验 level 取值', async () => {
       const res = await invoke('setProactivity', { roleId: '研究员', level: 'always-on' });
       expect(res.success).toBe(false);

@@ -122,6 +122,8 @@ export interface RoleProactivityConfig {
   level: RoleProactivityLevel;
   /** 自定义 cron 表达式（6 字段，croner）；不填用等级默认 */
   cadence?: string;
+  /** 免打扰时段（本地时间，24 小时制 "HH:mm"；允许跨零点）。显式传 null = 清除。 */
+  quietHours?: { start: string; end: string } | null;
 }
 
 /** settings.json 里的主动性配置（用户级覆盖，优先级高于角色 frontmatter） */
@@ -142,7 +144,7 @@ export type RoleWakeTrigger = 'cadence' | 'event';
 export interface RoleWakeResult {
   roleId: string;
   trigger: RoleWakeTrigger;
-  /** skipped = 预算护栏拦截（当天次数超限）或角色为 silent 档 */
+  /** skipped = silent 档、日预算或免打扰时段拦截 */
   status: 'completed' | 'skipped' | 'failed';
   /** status='skipped' 时的原因 */
   skipReason?: string;

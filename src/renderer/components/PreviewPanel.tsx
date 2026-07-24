@@ -26,7 +26,6 @@ import {
 
 const CodeEditor = lazy(() => import('./CodeEditor'));
 const CsvTable = lazy(() => import('./CsvTable'));
-const LivePreviewFrame = lazy(() => import('./LivePreview/LivePreviewFrame'));
 const MarkdownCore = lazy(() => import('./features/chat/MessageBubble/MarkdownCore'));
 
 const logger = createLogger('PreviewPanel');
@@ -850,25 +849,7 @@ export const PreviewPanel: React.FC = () => {
   };
 
   if (!activeTab) return null;
-
-  // Live dev server preview — 完全独立的渲染路径，绕开文件加载和编辑器逻辑
-  if (activeTab.kind === 'liveDev' && activeTab.devServerUrl) {
-    return (
-      <div
-        className={`flex flex-col bg-zinc-900 transition-all duration-300 ${
-          isMaximized ? 'fixed inset-0 z-50' : 'w-full h-full'
-        }`}
-      >
-        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">{pv.loadingLivePreview}</div>}>
-          <LivePreviewFrame
-            key={`${activeTab.id}:${activeTab.devServerUrl}`}
-            tabId={activeTab.id}
-            devServerUrl={activeTab.devServerUrl}
-          />
-        </Suspense>
-      </div>
-    );
-  }
+  if (activeTab.kind === 'liveDev') return null;
 
   return (
     <div

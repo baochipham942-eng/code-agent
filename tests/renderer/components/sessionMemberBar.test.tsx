@@ -21,6 +21,7 @@ import { SessionMemberBar, swarmRunAgentRecordToState } from '../../../src/rende
 import { useComposerStore } from '../../../src/renderer/stores/composerStore';
 import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
+import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
 
 const agents: SwarmRunAgentRecord[] = [
   { runId: 'run-1', agentId: 'researcher', name: '调研员', role: 'researcher', status: 'completed', startTime: 1, endTime: 4_001, durationMs: 4_000, tokensIn: 12, tokensOut: 34, toolCalls: 5, costUsd: 0.002, error: null, failureCategory: null, filesChanged: [], dispatchedTask: '核对数据', finalOutput: `${'完整持久化产出'.repeat(40)} 收尾证据` },
@@ -41,6 +42,7 @@ describe('SessionMemberBar', () => {
     useComposerStore.setState({ selectedTeamRecipeId: null });
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
+    useMemberViewStore.setState({ viewingMemberId: null });
   });
   afterEach(() => cleanup());
 
@@ -50,7 +52,7 @@ describe('SessionMemberBar', () => {
     expect(screen.queryByTestId('session-member-bar')).toBeNull();
   });
 
-  it('空内存时回灌最近团队 run，点成员打开完整工作记录', async () => {
+  it('空内存时回灌最近团队 run，点成员进入他的对话页', async () => {
     const detail: SwarmRunDetail = { run: { ...run, totalToolCalls: 11, parallelPeak: 2, errorSummary: null, aggregation: null, tags: [] }, agents, events: [] };
     invokeMock.mockImplementation((channel: string) => {
       if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([run]);
@@ -64,8 +66,8 @@ describe('SessionMemberBar', () => {
     expect(screen.getByTestId('member-pill-researcher')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('member-pill-researcher'));
-    expect(await screen.findByTestId('agent-work-record')).toBeTruthy();
-    expect(screen.getByTestId('agent-work-output').textContent).toContain('收尾证据');
+    // H4：点成员不再弹工作记录，而是把聊天区切成这位成员的对话（页面本体另有测试）
+    await waitFor(() => expect(useMemberViewStore.getState().viewingMemberId).toBe('researcher'));
   });
 
   it('实时团队优先，不读取持久化 run', async () => {

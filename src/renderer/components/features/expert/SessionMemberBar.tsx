@@ -18,8 +18,9 @@ import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
+import { useMemberViewStore } from '../../../stores/memberViewStore';
+import { useComposerNoticeStore, selectHasBlockingNotice } from '../../../stores/composerNoticeStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
-import { AgentWorkRecordDialog } from '../swarm/AgentWorkRecordDialog';
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
   return {
@@ -41,7 +42,7 @@ export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAg
 }
 
 /** 一颗 pill 要渲染的东西；standby=预选待命（没有状态徽标） */
-interface MemberPill {
+export interface MemberPill {
   key: string;
   roleId: string;
   name: string;
@@ -68,17 +69,17 @@ const StatusBadge: React.FC<{ status: MemberPill['status'] }> = ({ status }) => 
   return <span data-testid="member-status-failed" className="shrink-0 text-[11px] leading-none text-red-400">✕</span>;
 };
 
-export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
-  const { t } = useI18n();
-  const text = t.expert.memberBar;
+/**
+ * 本会话的团队成员（实时 swarm > 账本回灌 > 预选配方名单）。
+ * 成员条和成员对话页共用同一份解析，避免两处各抄一遍口径。
+ */
+export function useSessionMembers(sessionId: string | null): MemberPill[] {
   const agents = useSwarmStore((state) => state.agents);
   const swarmSessionId = useSwarmStore((state) => state.activeSessionId);
   const selectedTeamRecipeId = useComposerStore((state) => state.selectedTeamRecipeId);
   const recipes = useTeamRecipeStore((state) => state.recipes);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
   const [persistedAgents, setPersistedAgents] = useState<SwarmRunAgentRecord[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<SwarmAgentState | null>(null);
-  const [selectedRecord, setSelectedRecord] = useState<SwarmRunAgentRecord | null>(null);
 
   const teamAgents = swarmSessionId === sessionId && agents.length > 1 ? agents : [];
   const hasRealtimeTeam = teamAgents.length > 0;
@@ -133,9 +134,53 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
     }));
   }, [hasRealtimeTeam, teamAgents, persistedAgents, selectedTeamRecipeId, recipes, professionOf]);
 
+  return pills;
+}
+
+export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
+  const { t } = useI18n();
+  const text = t.expert.memberBar;
+  const pills = useSessionMembers(sessionId);
+  const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
+  const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
+  const blockedByNotice = useComposerNoticeStore(selectHasBlockingNotice);
+  const [expandedOverNotice, setExpandedOverNotice] = useState(false);
+
+  // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个
+  useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
+  // 确认卡收掉后回到常态，别把「展开」黏在下一次
+  useEffect(() => { if (!blockedByNotice) setExpandedOverNotice(false); }, [blockedByNotice]);
+
   if (pills.length === 0) return null;
 
   const standby = pills[0]?.status === 'standby';
+
+  // 确认卡是阻塞性决策，优先占位；成员条退成一行摘要而不是整条消失
+  // （WorkBuddy 的做法是直接吞掉，用户看不到成员也不知道为什么）
+  if (blockedByNotice && !expandedOverNotice) {
+    const running = pills.filter((pill) => pill.status === 'running').length;
+    const summary = standby
+      ? text.collapsedStandby.replace('{count}', String(pills.length))
+      : running > 0
+        ? text.collapsedWorking.replace('{count}', String(running))
+        : text.collapsedDone.replace('{count}', String(pills.length));
+    return (
+      <button /* ds-allow:button: 被确认卡挤掉时的一行摘要，点开恢复完整成员条 */
+        type="button"
+        data-testid="session-member-bar-collapsed"
+        onClick={() => setExpandedOverNotice(true)}
+        className="mb-1.5 flex w-full items-center gap-1.5 px-2 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
+      >
+        <span className="flex -space-x-1.5">
+          {pills.slice(0, 4).map((pill) => (
+            <RoleInitialAvatar key={pill.key} roleId={pill.roleId} name={pill.name} className="h-4 w-4 border border-zinc-900 text-[8px]" />
+          ))}
+        </span>
+        <span className="truncate">{summary}</span>
+        <span aria-hidden>›</span>
+      </button>
+    );
+  }
 
   return (
     <>
@@ -144,9 +189,12 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
           <button /* ds-allow:button: 成员条首位是回主对话的入口，与成员 pill 同构 */
             type="button"
             data-testid="member-pill-leader"
-            onClick={() => setSelectedAgent(null)}
+            data-selected={!viewingMemberId}
+            onClick={() => setViewingMemberId(null)}
             title={text.leaderTitle}
-            className="flex shrink-0 items-center gap-1.5 rounded-full border border-zinc-600 bg-zinc-800/80 py-1 pl-1 pr-2.5 text-left"
+            className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-left ${
+              viewingMemberId ? 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500' : 'border-zinc-400 bg-zinc-800'
+            }`}
           >
             <RoleInitialAvatar roleId="neo" name={text.leader} className="h-5 w-5 text-[10px]" />
             <span className="text-xs font-medium text-zinc-100">{text.leader}</span>
@@ -157,16 +205,19 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             key={pill.key}
             type="button"
             data-testid={`member-pill-${pill.roleId}`}
+            data-selected={viewingMemberId === pill.key}
             onClick={() => {
-              if (!pill.agent) return;
-              setSelectedAgent(pill.agent);
-              setSelectedRecord(pill.record ?? null);
+              // 待命态还没有对话可看；再点同一个人回主会话
+              if (pill.status === 'standby') return;
+              setViewingMemberId(viewingMemberId === pill.key ? null : pill.key);
             }}
             title={pill.profession ? `${pill.name} · ${pill.profession}` : pill.name}
             className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-left transition-colors ${
               pill.status === 'standby'
                 ? 'border-zinc-800 bg-zinc-900/60 text-zinc-500'
-                : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
+                : viewingMemberId === pill.key
+                  ? 'border-zinc-300 bg-zinc-800'
+                  : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
             }`}
           >
             <RoleInitialAvatar roleId={pill.roleId} name={pill.name} className="h-5 w-5 text-[10px]" />
@@ -180,7 +231,6 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
         ))}
         {standby && <span className="shrink-0 text-[11px] text-zinc-500">{text.standbyHint}</span>}
       </div>
-      {selectedAgent ? <AgentWorkRecordDialog agent={selectedAgent} record={selectedRecord} onBack={() => setSelectedAgent(null)} /> : null}
     </>
   );
 };

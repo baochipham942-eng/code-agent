@@ -12,6 +12,8 @@ describe('appStore workbench tabs', () => {
       taskWorkbenchOpenSource: null,
       taskWorkbenchActivityActive: false,
       taskPanelTab: 'monitor',
+      showCapabilityHub: false,
+      capabilityHubTab: 'experts',
       showProjectCollaborationPage: false,
       projectCollaborationPageProjectId: null,
       showKnowledgeMemoryPanel: false,
@@ -26,35 +28,41 @@ describe('appStore workbench tabs', () => {
     expect(state.activeWorkbenchTab).toBeNull();
   });
 
-  it('openWorkbenchTab appends a new tab and activates it', () => {
+  it('routes the legacy skills id to the capability center without adding a workbench tab', () => {
     useAppStore.getState().openWorkbenchTab('skills');
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['skills']);
-    expect(state.activeWorkbenchTab).toBe('skills');
+    expect(state.workbenchTabs).toEqual([]);
+    expect(state.activeWorkbenchTab).toBeNull();
+    expect(state.showCapabilityHub).toBe(true);
+    expect(state.capabilityHubTab).toBe('skills');
   });
 
-  it('openWorkbenchTab supports the replay audit tab', () => {
+  it('routes the legacy audit id to the SessionActions replay home', () => {
     useAppStore.getState().openWorkbenchTab('audit');
-
-    const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['audit']);
-    expect(state.activeWorkbenchTab).toBe('audit');
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
   });
 
-  it('openWorkbenchTab supports the project collaboration tab', () => {
+  it('routes the legacy context id to ContextHealth', () => {
+    useAppStore.getState().openWorkbenchTab('context');
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+  });
+
+  it('routes the legacy project collaboration id to its project page', () => {
     const { openWorkbenchTab, closeWorkbenchTab } = useAppStore.getState();
 
     openWorkbenchTab('project-collab');
     expect(useAppStore.getState()).toMatchObject({
-      workbenchTabs: ['project-collab'],
-      activeWorkbenchTab: 'project-collab',
+      workbenchTabs: [],
+      activeWorkbenchTab: null,
+      showProjectCollaborationPage: true,
     });
 
     closeWorkbenchTab('project-collab');
     expect(useAppStore.getState()).toMatchObject({
       workbenchTabs: [],
       activeWorkbenchTab: null,
+      showProjectCollaborationPage: false,
     });
   });
 
@@ -85,22 +93,22 @@ describe('appStore workbench tabs', () => {
   it('openWorkbenchTab on an already-open tab only re-activates (no duplicate)', () => {
     const { openWorkbenchTab, setActiveWorkbenchTab } = useAppStore.getState();
     openWorkbenchTab('task');
-    openWorkbenchTab('skills');
+    openWorkbenchTab('files');
     setActiveWorkbenchTab('task');
 
-    openWorkbenchTab('skills');
+    openWorkbenchTab('files');
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['task', 'skills']);
-    expect(state.activeWorkbenchTab).toBe('skills');
+    expect(state.workbenchTabs).toEqual(['overview', 'files']);
+    expect(state.activeWorkbenchTab).toBe('files');
   });
 
   it('openWorkspacePreview opens the workspace preview tab and tracks selected item', () => {
     useAppStore.getState().openWorkspacePreview('preview-item-1');
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['workspace-preview']);
-    expect(state.activeWorkbenchTab).toBe('workspace-preview');
+    expect(state.workbenchTabs).toEqual(['overview']);
+    expect(state.activeWorkbenchTab).toBe('overview');
     expect(state.selectedWorkspacePreviewId).toBe('preview-item-1');
   });
 
@@ -117,27 +125,27 @@ describe('appStore workbench tabs', () => {
   it('closeWorkbenchTab on active falls back to another pinned tab', () => {
     const { openWorkbenchTab, closeWorkbenchTab } = useAppStore.getState();
     openWorkbenchTab('task');
-    openWorkbenchTab('skills');
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('skills');
+    openWorkbenchTab('files');
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
 
-    closeWorkbenchTab('skills');
+    closeWorkbenchTab('files');
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['task']);
-    expect(state.activeWorkbenchTab).toBe('task');
+    expect(state.workbenchTabs).toEqual(['overview']);
+    expect(state.activeWorkbenchTab).toBe('overview');
   });
 
   it('closeWorkbenchTab on a non-active tab leaves active alone', () => {
     const { openWorkbenchTab, setActiveWorkbenchTab, closeWorkbenchTab } = useAppStore.getState();
     openWorkbenchTab('task');
-    openWorkbenchTab('skills');
+    openWorkbenchTab('files');
     setActiveWorkbenchTab('task');
 
-    closeWorkbenchTab('skills');
+    closeWorkbenchTab('files');
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['task']);
-    expect(state.activeWorkbenchTab).toBe('task');
+    expect(state.workbenchTabs).toEqual(['overview']);
+    expect(state.activeWorkbenchTab).toBe('overview');
   });
 
   it('closeWorkbenchTab on a preview also evicts the backing previewTab and promotes the next recent preview', () => {
@@ -176,8 +184,8 @@ describe('appStore workbench tabs', () => {
   it('openPreview on an already-open path re-activates without duplicating workbench entry', () => {
     const { openPreview, setActiveWorkbenchTab } = useAppStore.getState();
     openPreview('/tmp/a.md');
-    useAppStore.getState().openWorkbenchTab('skills');
-    setActiveWorkbenchTab('skills');
+    useAppStore.getState().openWorkbenchTab('files');
+    setActiveWorkbenchTab('files');
 
     openPreview('/tmp/a.md');
 
@@ -219,16 +227,16 @@ describe('appStore workbench tabs', () => {
   it('closePreview clears all preview entries but leaves pinned tabs intact', () => {
     const { openWorkbenchTab, openPreview, closePreview } = useAppStore.getState();
     openWorkbenchTab('task');
-    openWorkbenchTab('skills');
+    openWorkbenchTab('files');
     openPreview('/tmp/a.md');
     openPreview('/tmp/b.md');
 
     closePreview();
 
     const state = useAppStore.getState();
-    expect(state.workbenchTabs).toEqual(['task', 'skills']);
+    expect(state.workbenchTabs).toEqual(['overview', 'files']);
     // Active falls back to a pinned tab, not null.
-    expect(state.activeWorkbenchTab === 'task' || state.activeWorkbenchTab === 'skills').toBe(true);
+    expect(state.activeWorkbenchTab === 'overview' || state.activeWorkbenchTab === 'files').toBe(true);
   });
 
   it('auto-opens task workbench only while live activity is present', () => {
@@ -236,8 +244,8 @@ describe('appStore workbench tabs', () => {
 
     syncTaskWorkbenchForActivity(true);
     expect(useAppStore.getState()).toMatchObject({
-      workbenchTabs: ['task'],
-      activeWorkbenchTab: 'task',
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
       taskWorkbenchOpenSource: 'auto',
       taskWorkbenchActivityActive: true,
       taskPanelTab: 'monitor',
@@ -259,8 +267,8 @@ describe('appStore workbench tabs', () => {
     syncTaskWorkbenchForActivity(false);
 
     expect(useAppStore.getState()).toMatchObject({
-      workbenchTabs: ['task'],
-      activeWorkbenchTab: 'task',
+      workbenchTabs: ['overview'],
+      activeWorkbenchTab: 'overview',
       taskWorkbenchOpenSource: 'user',
     });
   });
@@ -277,7 +285,7 @@ describe('appStore workbench tabs', () => {
     syncTaskWorkbenchForActivity(false);
     syncTaskWorkbenchForActivity(true);
 
-    expect(useAppStore.getState().workbenchTabs).toEqual(['task']);
+    expect(useAppStore.getState().workbenchTabs).toEqual(['overview']);
   });
 
   it('setActivePreviewTab also syncs activeWorkbenchTab', () => {
@@ -289,6 +297,21 @@ describe('appStore workbench tabs', () => {
     setActivePreviewTab(aId);
 
     expect(useAppStore.getState().activeWorkbenchTab).toBe('preview:/tmp/a.md');
+  });
+
+  it('opens live URLs in the Browser view and keeps file artifacts in Preview', () => {
+    const { openLivePreview, openPreview } = useAppStore.getState();
+
+    openLivePreview('http://127.0.0.1:4173', 'server-1');
+    expect(useAppStore.getState()).toMatchObject({
+      workbenchTabs: ['browser'],
+      activeWorkbenchTab: 'browser',
+    });
+    expect(useAppStore.getState().workbenchTabs).not.toContain('preview:http://127.0.0.1:4173');
+
+    openPreview('/tmp/report.pdf');
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('preview:/tmp/report.pdf');
+    expect(useAppStore.getState().workbenchTabs).toEqual(['browser', 'preview:/tmp/report.pdf']);
   });
 
 });

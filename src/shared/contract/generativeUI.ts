@@ -477,7 +477,7 @@ export interface GenerativeUiEditPersistRequest {
   fields: string[];
 }
 
-export type GenerativeUiEditPersistReason =
+type GenerativeUiEditPersistReason =
   | 'conflict'
   | 'ordinal_out_of_range'
   | 'message_not_found';

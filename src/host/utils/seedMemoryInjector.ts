@@ -197,7 +197,10 @@ export async function buildPackedSeedMemory(options: {
 
 /**
  * Format a single memory record as a concise bullet point.
- * E.g.: "- [Preference]: User prefers TypeScript with strict mode"
+ * E.g.: "- [Preference] [#mem_123]: User prefers TypeScript with strict mode"
+ *
+ * The `[#<id>]` handle is the memory's MemoryRepository row id — a stable target
+ * for the memory_amend tool (update/forget) when the user says a memory is wrong.
  */
 function formatMemoryEntry(mem: MemoryRecord): string {
   const label = CATEGORY_LABELS[mem.category] || CATEGORY_LABELS[mem.type] || 'Memory';
@@ -210,5 +213,5 @@ function formatMemoryEntry(mem: MemoryRecord): string {
 
   // Truncation is handled by sanitizeMemoryContent()
 
-  return `- [${label}]: ${text}`;
+  return `- [${label}] [#${mem.id}]: ${text}`;
 }

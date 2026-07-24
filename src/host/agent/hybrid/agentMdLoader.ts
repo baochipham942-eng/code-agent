@@ -7,6 +7,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { parseExpertConnectors } from '../../../shared/contract/expertConnectors';
 import type { RoleProactivityLevel, RoleVisual } from '../../../shared/contract/roleAssets';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
 import type { CoreAgentConfig, CoreAgentId, ModelTier } from './types';
@@ -185,6 +186,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
   // 角色主动性（内部文档 §4）：扁平 key 适配 simple YAML parser
   const proactivityLevel = proactivityLevelValue(frontmatter['proactivity-level']);
   const proactivityCadence = stringValue(frontmatter['proactivity-cadence']);
+  const connectors = parseExpertConnectors(stringArrayValue(frontmatter.connectors));
 
   return {
     id: name as CoreAgentId,
@@ -200,6 +202,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     ...(modelOverrideValue(frontmatter['model-override'])
       ? { modelOverride: modelOverrideValue(frontmatter['model-override']) }
       : {}),
+    ...(connectors.length > 0 ? { connectors } : {}),
     maxIterations: numberValue(frontmatter['max-iterations']) || 30,
     readonly: booleanValue(frontmatter.readonly) ?? false,
     ...(permissionPresetValue(frontmatter['permission-override'])

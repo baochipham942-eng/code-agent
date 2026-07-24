@@ -978,35 +978,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
   },
 
-  syncWorkbenchForSession: (sessionId) => {
-    const state = get();
-    const workbenchBySession = state.workbenchSessionKey
-      ? {
-          ...state.workbenchBySession,
-          [state.workbenchSessionKey]: {
-            tabs: [...state.workbenchTabs],
-            active: state.activeWorkbenchTab,
-          },
-        }
-      : state.workbenchBySession;
-    const restored = sessionId ? workbenchBySession[sessionId] : undefined;
-    const workbenchTabs = (restored?.tabs ?? []).filter((view) => (
-      !isPreviewWorkbenchView(view)
-      || state.previewTabs.some((tab) => tab.kind !== 'liveDev' && view === `preview:${tab.path}`)
-    ));
-    const restoredActive = restored?.active ?? null;
-    const activeWorkbenchTab = restoredActive && !workbenchTabs.includes(restoredActive)
-      ? workbenchTabs[0] ?? null
-      : restoredActive;
-
-    set({
-      workbenchBySession,
-      workbenchTabs,
-      activeWorkbenchTab,
-      workbenchSessionKey: sessionId,
-    });
-  },
-
   ...createWorkbenchActions({
     set,
     get,

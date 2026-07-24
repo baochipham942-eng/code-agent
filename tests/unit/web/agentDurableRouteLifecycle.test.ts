@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEngineRunResult } from '../../../src/shared/contract/agentEngine';
-import type { RunHandle } from '../../../src/host/runtime/runContext';
+import { createRunContext, type RunHandle } from '../../../src/host/runtime/runContext';
 import type { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { ExternalEngineDurableLifecycle } from '../../../src/host/services/agentEngine';
 import { createAgentDurableRouteRunLifecycle } from '../../../src/web/routes/agentDurableRouteLifecycle';
@@ -13,13 +13,13 @@ const logger = {
 
 function createRunHandle(runId = 'run-1', sessionId = 'session-1'): RunHandle {
   return {
-    context: {
+    context: createRunContext({
       runId,
       sessionId,
       workspace: '/workspace',
       cwd: '/workspace',
       createdAt: 1,
-    },
+    }),
     isAttached: false,
     cancellationRequested: false,
     cancel: vi.fn(async () => undefined),

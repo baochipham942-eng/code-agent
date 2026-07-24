@@ -11,6 +11,7 @@ import type { AgentEventEnvelope } from '../../shared/contract';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getTaskManager } from '../task';
 import { initChannelAgentBridge } from '../channels/channelAgentBridge';
+import { initApprovalFeishuRelay } from '../channels/feishu/approvalFeishuRelay';
 import { getChannelManager } from '../channels';
 import { getMainWindow } from './window';
 import { EventBatcher } from '../agent/eventBatcher';
@@ -81,4 +82,7 @@ export function createAgentRuntime(configService: ConfigService, runRegistry?: R
     .catch((error) => {
       logger.error('Channel Agent Bridge failed to initialize (non-blocking)', error);
     });
+
+  // B3: 无人值守审批停车 → 飞书卡片镜像 + 按钮回批。订阅进程内事件，没配飞书零影响。
+  initApprovalFeishuRelay();
 }

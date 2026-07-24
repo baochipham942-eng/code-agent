@@ -3,6 +3,7 @@ import type {
   SessionAutomationRecord,
   SessionAutomationSessionSummary,
 } from '@shared/contract';
+import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import ipcService from './ipcService';
 
 export const sessionAutomationClient = {
@@ -42,6 +43,14 @@ export const sessionAutomationClient = {
     return ipcService.invokeDomain<number>(
       IPC_DOMAINS.SESSION_AUTOMATION,
       'countPendingReview',
+      {},
+    );
+  },
+
+  listParkedApprovals() {
+    return ipcService.invokeDomain<ParkedApprovalInboxItem[]>(
+      IPC_DOMAINS.SESSION_AUTOMATION,
+      'listParkedApprovals',
       {},
     );
   },

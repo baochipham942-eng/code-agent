@@ -17,6 +17,7 @@ import type {
   SessionAutomationType,
   UpsertSessionAutomationInput,
 } from '../../../shared/contract';
+import type { ParkedApprovalInboxItem, ToolApprovalPayload } from '../../../shared/contract/pendingApproval';
 import { getDatabase } from '../core/databaseService';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -363,6 +364,41 @@ export class SessionAutomationService {
 
   countPendingReview(): number {
     return this.listPendingReview().length;
+  }
+
+  /**
+   * 收件箱「等待批准的操作」分组数据（B2）：无人值守停车挂起的工具审批。
+   * pending 可操作，orphaned（应用重启后过期）灰态展示。id=requestId，
+   * 收件箱回传 permissionResponse 用同一 id 命中内存 pending。
+   */
+  listParkedApprovals(): ParkedApprovalInboxItem[] {
+    let repo;
+    try {
+      repo = getDatabase().getPendingApprovalRepo();
+    } catch {
+      return [];
+    }
+    const rows = [
+      ...repo.listByKindAndStatus('tool_approval', 'pending'),
+      ...repo.listByKindAndStatus('tool_approval', 'orphaned'),
+    ];
+    return rows.map((row) => {
+      let payload: Partial<ToolApprovalPayload> = {};
+      try {
+        payload = JSON.parse(row.payloadJson) as Partial<ToolApprovalPayload>;
+      } catch {
+        // 损坏 payload 用列兜底，不丢行
+      }
+      return {
+        id: row.id,
+        sessionId: payload.sessionId ?? row.coordinatorId,
+        tool: payload.tool ?? 'unknown',
+        displayTool: payload.displayTool,
+        requestedAt: payload.requestedAt ?? row.submittedAt,
+        status: row.status === 'orphaned' ? 'orphaned' : 'pending',
+        riskClass: payload.riskClass ?? null,
+      };
+    });
   }
 
   /** 用户过目：清 pendingReview 标记；一次性任务的 pending_review 状态转 archived。不写回流消息。 */

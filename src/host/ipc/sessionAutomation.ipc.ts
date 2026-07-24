@@ -47,6 +47,9 @@ export function registerSessionAutomationHandlers(): void {
         case 'listPendingReview': {
           return { success: true, data: service.listPendingReview() } satisfies IPCResponse;
         }
+        case 'listParkedApprovals': {
+          return { success: true, data: service.listParkedApprovals() } satisfies IPCResponse;
+        }
         case 'countPendingReview': {
           return { success: true, data: service.countPendingReview() } satisfies IPCResponse;
         }

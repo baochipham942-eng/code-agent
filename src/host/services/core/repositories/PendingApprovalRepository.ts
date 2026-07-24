@@ -88,15 +88,20 @@ export class PendingApprovalRepository {
   /**
    * 把 pending 行收尾为 approved / rejected / orphaned。
    * 不存在或已 resolved 的 id 静默忽略，保持调用方的 fire-and-forget 语义。
+   *
+   * 返回受影响行数（`WHERE status='pending'` 守卫下的 UPDATE changes）：
+   * B2 停车审批用它做 first-responder-wins 裁决——changes=0 表示该行已被
+   * 抢答/过期/orphaned，第二个应答口据此静默 no-op，不二次 resolve 内存 Promise。
    */
-  resolve(input: ResolvePendingApprovalInput): void {
-    this.db
+  resolve(input: ResolvePendingApprovalInput): number {
+    const info = this.db
       .prepare(
         `UPDATE pending_approvals
            SET status = ?, feedback = ?, resolved_at = ?
          WHERE id = ? AND status = 'pending'`,
       )
       .run(input.status, input.feedback, input.resolvedAt, input.id);
+    return info.changes;
   }
 
   private markPendingRowsAsOrphaned(whereClause: string, params: unknown[], now: number): PendingApprovalRecord[] {

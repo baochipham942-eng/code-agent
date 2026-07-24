@@ -192,6 +192,62 @@ describe('PendingApprovalRepository', () => {
       expect(rec!.feedback).toBe('first');
       expect(rec!.resolvedAt).toBe(500);
     });
+
+    // B2 first-responder-wins：resolve 返回 UPDATE changes 数，供停车审批做唯一裁决。
+    it('returns changes=1 on the winning resolve and 0 on the losing one', () => {
+      const first = repo.resolve({ id: 'plan_r', status: 'approved', feedback: 'first', resolvedAt: 500 });
+      const second = repo.resolve({ id: 'plan_r', status: 'rejected', feedback: 'second', resolvedAt: 700 });
+      expect(first).toBe(1);
+      expect(second).toBe(0);
+    });
+
+    it('returns changes=0 for a non-existent id', () => {
+      expect(repo.resolve({ id: 'nope', status: 'approved', feedback: null, resolvedAt: 1 })).toBe(0);
+    });
+  });
+
+  describe('tool_approval kind (B2)', () => {
+    beforeEach(() => {
+      repo.insert({
+        id: 'tool_1',
+        kind: 'tool_approval',
+        agentId: null,
+        agentName: null,
+        coordinatorId: 'session_x',
+        payload: { sessionId: 'session_x', tool: 'mail_send', type: 'network', riskClass: 'external' },
+        submittedAt: 100,
+      });
+    });
+
+    it('lists pending tool_approval rows separately from plan/launch', () => {
+      repo.insert({
+        id: 'plan_x',
+        kind: 'plan',
+        agentId: null,
+        agentName: null,
+        coordinatorId: null,
+        payload: {},
+        submittedAt: 90,
+      });
+      const pending = repo.listByKindAndStatus('tool_approval', 'pending');
+      expect(pending.map((r) => r.id)).toEqual(['tool_1']);
+    });
+
+    it('markPendingAsOrphaned(tool_approval) orphans only tool rows (restart semantics)', () => {
+      repo.insert({
+        id: 'plan_y',
+        kind: 'plan',
+        agentId: null,
+        agentName: null,
+        coordinatorId: null,
+        payload: {},
+        submittedAt: 90,
+      });
+      const orphans = repo.markPendingAsOrphaned('tool_approval', 9999);
+      expect(orphans.map((r) => r.id)).toEqual(['tool_1']);
+      expect(repo.getById('tool_1')!.status).toBe('orphaned');
+      expect(repo.getById('plan_y')!.status).toBe('pending'); // plan 不被误伤
+    });
   });
 
   describe('markAllPendingAsOrphaned', () => {

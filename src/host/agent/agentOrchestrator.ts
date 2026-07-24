@@ -20,7 +20,14 @@ import { applyProviderVariant } from '../prompts/providerVariants';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { ExecutionTopology } from '../permissions';
 import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOnlyTools';
+import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { getConfirmationGate } from './confirmationGate';
+import { getPermissionModeManager } from '../permissions/modes';
+import { approvalParkEvents } from './approvalParkEvents';
+import { notificationService } from '../services/infra/notificationService';
+import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
+import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
+import type { ToolApprovalPayload } from '../../shared/contract/pendingApproval';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import type { PlanningService } from '../planning';
@@ -99,7 +106,11 @@ export class AgentOrchestrator {
   private pendingPermissions: Map<string, {
     resolve: (response: PermissionResponse) => void;
     request: PermissionRequest;
+    /** B2: 无人值守停车挂起的审批（有 pending_approvals 行）。resolve 走 repo-changes 裁决口。 */
+    parked?: boolean;
   }> = new Map();
+  private readonly injectedPendingApprovalRepo?: PendingApprovalRepository;
+  private cachedPendingApprovalRepo: PendingApprovalRepository | null = null;
   private planningService?: PlanningService;
   private researchUserSettings: Partial<ResearchUserSettings> = {
     autoDetect: true,
@@ -131,6 +142,7 @@ export class AgentOrchestrator {
     this.getHomeDir = config.getHomeDir ?? (() => process.cwd());
     this.broadcastDAGEvent = config.broadcastDAGEvent;
     this.runRegistry = config.runRegistry;
+    this.injectedPendingApprovalRepo = config.pendingApprovalRepo;
 
     this.workingDirectory = this.initializeWorkDirectory();
     this.isDefaultWorkingDirectory = true;
@@ -437,25 +449,96 @@ export class AgentOrchestrator {
 
   handlePermissionResponse(requestId: string, response: PermissionResponse): void {
     const pending = this.pendingPermissions.get(requestId);
-    if (pending) {
-      pending.resolve(response);
-      this.pendingPermissions.delete(requestId);
+    if (!pending) return;
+    // B2: 停车挂起的审批走 repo-changes 裁决口（会话卡 / 收件箱两口共用）。
+    if (pending.parked) {
+      this.resolveParkedApproval(requestId, response);
+      return;
     }
+    pending.resolve(response);
+    this.pendingPermissions.delete(requestId);
+  }
+
+  /**
+   * B2 first-responder-wins 裁决口。会话内 permissionResponse 和收件箱 resolve 两个入口
+   * 都汇入这里：以 pending_approvals 的 UPDATE changes 数为唯一裁决——changes=0 表示
+   * 该行已被抢答/过期/orphaned，第二口静默 no-op，绝不二次 resolve 内存 Promise。
+   * 内存 Map delete 只在 repo 裁决赢了之后做。
+   */
+  resolveParkedApproval(
+    id: string,
+    response: PermissionResponse,
+    feedbackOverride?: string,
+  ): void {
+    const pending = this.pendingPermissions.get(id);
+    if (!pending) return;
+    const repo = this.getPendingApprovalRepo();
+    if (repo) {
+      const status = response === 'allow' || response === 'allow_session' ? 'approved' : 'rejected';
+      let changes: number;
+      try {
+        changes = repo.resolve({
+          id,
+          status,
+          feedback: feedbackOverride ?? null,
+          resolvedAt: Date.now(),
+        });
+      } catch (err) {
+        logger.warn(`Parked approval repo.resolve failed for ${id}`, err);
+        // repo 写失败按裁决未赢处理，不动内存 Promise，避免 DB/内存分叉。
+        return;
+      }
+      if (changes === 0) {
+        logger.info(`Parked approval ${id} already resolved/expired, ignoring second responder`);
+        return;
+      }
+      approvalParkEvents.emit('resolved', { id, sessionId: pending.request.sessionId ?? null, status });
+    }
+    this.pendingPermissions.delete(id);
+    pending.resolve(response);
   }
 
   /**
    * 解除所有挂起的权限请求。新消息到达 / 取消时调用：挂起的权限 Promise 若一直无人
    * resolve，会把 await 在 requestPermission 上的 agentLoop 冻结到 60s 超时（死锁）。
    * 统一以 'deny' 解除——安全侧默认不放行；模型在被拒后会按指令重新发起调用、重新弹卡。
+   *
+   * B2 取消收尾：停车挂起的审批必须同步 repo resolve('rejected')，否则取消后 DB 留下
+   * 孤儿 pending 行、收件箱永远挂着一条无对应 run 的待批准。
    */
   private drainPendingPermissions(response: PermissionResponse = 'deny'): void {
     if (this.pendingPermissions.size === 0) return;
     const count = this.pendingPermissions.size;
-    for (const { resolve } of this.pendingPermissions.values()) {
-      resolve(response);
+    const repo = this.getPendingApprovalRepo();
+    for (const [id, entry] of this.pendingPermissions.entries()) {
+      if (entry.parked && repo) {
+        try {
+          const changes = repo.resolve({ id, status: 'rejected', feedback: 'run cancelled', resolvedAt: Date.now() });
+          if (changes > 0) {
+            approvalParkEvents.emit('resolved', { id, sessionId: entry.request.sessionId ?? null, status: 'rejected' });
+          }
+        } catch (err) {
+          logger.warn(`Parked approval cancel-resolve failed for ${id}`, err);
+        }
+      }
+      entry.resolve(response);
     }
     this.pendingPermissions.clear();
     logger.info(`Drained ${count} pending permission(s)`, { response });
+  }
+
+  /** B2: 懒取停车审批持久化仓库。注入优先（测试），否则回退 DB 单例（生产）。 */
+  private getPendingApprovalRepo(): PendingApprovalRepository | null {
+    if (this.injectedPendingApprovalRepo) return this.injectedPendingApprovalRepo;
+    if (this.cachedPendingApprovalRepo) return this.cachedPendingApprovalRepo;
+    try {
+      const { getDatabase } = require('../services/core/databaseService') as typeof import('../services/core/databaseService');
+      this.cachedPendingApprovalRepo = getDatabase().getPendingApprovalRepo();
+      return this.cachedPendingApprovalRepo;
+    } catch (err) {
+      logger.warn('Pending approval repo unavailable, unattended approvals fall back to timeout deny', err);
+      return null;
+    }
   }
 
   setWorkingDirectory(path: string): void {
@@ -650,6 +733,16 @@ export class AgentOrchestrator {
       return true;
     }
 
+    // 无人值守会话（cron/heartbeat/channel）：审批不再走 60s deny，改为「停车挂起」，
+    // 写 pending_approvals 等收件箱/会话卡任一入口应答（B2）。判据与权限档钳制同源
+    // （markUnattendedSession）。repo 不可用时（DB 未就绪/测试）回退老 60s 路径。
+    const parkRepo = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId)
+      ? this.getPendingApprovalRepo()
+      : null;
+    if (parkRepo) {
+      return this.parkApproval(fullRequest, permissionLevel, parkRepo);
+    }
+
     const PERMISSION_TIMEOUT = 60000;
 
     return new Promise((resolve) => {
@@ -669,6 +762,81 @@ export class AgentOrchestrator {
         },
         request: fullRequest,
       });
+      this.onEvent({ type: 'permission_request', data: fullRequest });
+    });
+  }
+
+  /**
+   * B2 停车挂起：无人值守会话的审批请求写入 pending_approvals，内存仍登记 Promise 但
+   * 不设 60s 超时（改 24h 兜底防泄漏）。批准/拒绝走 resolveParkedApproval 裁决口。
+   */
+  private parkApproval(
+    fullRequest: PermissionRequest,
+    permissionLevel: string,
+    repo: PendingApprovalRepository,
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        logger.warn(`Parked approval ${fullRequest.id} expired after 24h backstop, denying`);
+        this.resolveParkedApproval(fullRequest.id, 'deny', 'parked approval expired');
+      }, INTERACTION_TIMEOUTS.PARKED_APPROVAL);
+
+      this.pendingPermissions.set(fullRequest.id, {
+        parked: true,
+        resolve: (response) => {
+          clearTimeout(timeoutId);
+          if (response === 'allow_session' && fullRequest.sessionId) {
+            getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
+          }
+          resolve(response === 'allow' || response === 'allow_session');
+        },
+        request: fullRequest,
+      });
+
+      const payload: ToolApprovalPayload = {
+        sessionId: fullRequest.sessionId ?? null,
+        tool: fullRequest.tool,
+        type: fullRequest.type,
+        permissionLevel,
+        requestedAt: fullRequest.timestamp,
+        argsSummary: fullRequest.details?.command
+          ?? fullRequest.details?.path
+          ?? fullRequest.details?.filePath
+          ?? fullRequest.details?.url,
+        riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
+      };
+      try {
+        repo.insert({
+          id: fullRequest.id,
+          kind: 'tool_approval',
+          agentId: null,
+          agentName: null,
+          coordinatorId: fullRequest.sessionId ?? null,
+          payload,
+          submittedAt: fullRequest.timestamp,
+        });
+      } catch (err) {
+        logger.warn(`Parked approval persist failed for ${fullRequest.id}`, err);
+      }
+
+      if (fullRequest.sessionId) {
+        try {
+          notificationService.notifyNeedsInput({
+            sessionId: fullRequest.sessionId,
+            title: '有操作等你批准',
+            body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
+          });
+        } catch (err) {
+          logger.warn('Parked approval notification failed', err);
+        }
+      }
+      approvalParkEvents.emit('parked', {
+        id: fullRequest.id,
+        sessionId: fullRequest.sessionId ?? null,
+        tool: fullRequest.tool,
+        riskClass: payload.riskClass,
+      });
+
       this.onEvent({ type: 'permission_request', data: fullRequest });
     });
   }

@@ -177,6 +177,9 @@ vi.mock('../../src/host/services/cloud/cloudConfigService', () => ({
 }));
 
 import { AgentOrchestrator } from '../../src/host/agent/agentOrchestrator';
+import { getPermissionModeManager } from '../../src/host/permissions/modes';
+import { approvalParkEvents } from '../../src/host/agent/approvalParkEvents';
+import type { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
 import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
 import type { ConfigService } from '../../src/host/services/core/configService';
 import type { AgentEvent, Message, MessageAttachment } from '../../src/shared/contract';
@@ -193,7 +196,10 @@ interface OrchestratorInternals {
   agentLoop: { steer: ReturnType<typeof vi.fn> } | null;
   isInterrupting: boolean;
   pendingSteerMessages: unknown[];
-  pendingPermissions: Map<string, { resolve: (r: string) => void }>;
+  pendingPermissions: Map<string, { resolve: (r: string) => void; parked?: boolean; request?: { sessionId?: string } }>;
+  requestPermission(request: { type: string; tool: string; sessionId?: string; details?: Record<string, unknown> }): Promise<boolean>;
+  resolveParkedApproval(id: string, response: string, feedbackOverride?: string): void;
+  drainPendingPermissions(response?: string): void;
 }
 function internals(o: AgentOrchestrator): OrchestratorInternals {
   return o as unknown as OrchestratorInternals;
@@ -642,6 +648,187 @@ describe('AgentOrchestrator', () => {
     it('agentOverrideId 全空白 → 视同无显式选择', async () => {
       const out = await internals(orchestrator).resolveTurnRouting('hello', undefined, '   ');
       expect(out.requestedAgentId).toBeUndefined();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // B2: 无人值守审批停车挂起
+  // --------------------------------------------------------------------------
+  describe('B2 无人值守审批停车挂起', () => {
+    // WHERE status='pending' 守卫 + changes 语义的内存版 fake，忠实映射真 repo 裁决口。
+    // 真 SQL 语义另在 PendingApprovalRepository.test.ts 覆盖。
+    function makeFakeRepo() {
+      const rows = new Map<string, { status: string; kind: string; feedback: string | null }>();
+      const insert = vi.fn((input: { id: string; kind: string }) => {
+        rows.set(input.id, { status: 'pending', kind: input.kind, feedback: null });
+      });
+      const resolve = vi.fn((input: { id: string; status: string; feedback: string | null }) => {
+        const row = rows.get(input.id);
+        if (!row || row.status !== 'pending') return 0;
+        row.status = input.status;
+        row.feedback = input.feedback;
+        return 1;
+      });
+      const markPendingAsOrphaned = vi.fn((kind: string) => {
+        const orphaned: Array<{ id: string; kind: string }> = [];
+        for (const [id, row] of rows) {
+          if (row.kind === kind && row.status === 'pending') {
+            row.status = 'orphaned';
+            orphaned.push({ id, kind });
+          }
+        }
+        return orphaned;
+      });
+      const repo = { insert, resolve, markPendingAsOrphaned } as unknown as PendingApprovalRepository;
+      return { repo, insert, resolve, markPendingAsOrphaned, rows };
+    }
+
+    let fake: ReturnType<typeof makeFakeRepo>;
+    let parkedOrch: AgentOrchestrator;
+    let unattendedSid: string;
+
+    beforeEach(() => {
+      fake = makeFakeRepo();
+      parkedOrch = new AgentOrchestrator({
+        configService: mockConfigService,
+        onEvent: mockOnEvent,
+        pendingApprovalRepo: fake.repo,
+      });
+      unattendedSid = `unattended-${Math.random().toString(36).slice(2)}`;
+      getPermissionModeManager().markUnattendedSession(unattendedSid);
+    });
+
+    const parkRequest = (sessionId: string) =>
+      internals(parkedOrch).requestPermission({
+        type: 'command',
+        tool: 'bash',
+        sessionId,
+        details: { command: 'echo external' },
+      });
+
+    // 短暂等待，确认 promise 未被 resolve（仍在停车）。
+    const isStillPending = async (p: Promise<boolean>) => {
+      const sentinel = Symbol('pending');
+      const race = await Promise.race([p, Promise.resolve(sentinel)]);
+      return race === sentinel;
+    };
+
+    it('无人值守：审批停车挂起而非 60s deny（写 pending_approvals + 内存登记 parked）', async () => {
+      const promise = parkRequest(unattendedSid);
+      expect(await isStillPending(promise)).toBe(true);
+      expect(fake.insert).toHaveBeenCalledTimes(1);
+      expect(fake.insert.mock.calls[0][0]).toMatchObject({ kind: 'tool_approval' });
+      const requestId = fake.insert.mock.calls[0][0].id as string;
+      const entry = internals(parkedOrch).pendingPermissions.get(requestId);
+      expect(entry?.parked).toBe(true);
+      // 收尾避免悬挂 promise
+      internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
+      expect(await promise).toBe(false);
+    });
+
+    it('有人值守：60s 交互路径不变，不写 pending_approvals', async () => {
+      const attendedSid = `attended-${Math.random().toString(36).slice(2)}`;
+      const promise = internals(parkedOrch).requestPermission({
+        type: 'command',
+        tool: 'bash',
+        sessionId: attendedSid,
+        details: { command: 'echo hi' },
+      });
+      expect(await isStillPending(promise)).toBe(true);
+      expect(fake.insert).not.toHaveBeenCalled();
+      const requestId = [...internals(parkedOrch).pendingPermissions.keys()][0];
+      const entry = internals(parkedOrch).pendingPermissions.get(requestId);
+      expect(entry?.parked).toBeFalsy();
+      parkedOrch.handlePermissionResponse(requestId, 'allow');
+      expect(await promise).toBe(true);
+    });
+
+    it('双口竞态：以 repo changes 为唯一裁决，第二口静默 no-op（不二次 resolve）', async () => {
+      const promise = parkRequest(unattendedSid);
+      await isStillPending(promise);
+      const requestId = fake.insert.mock.calls[0][0].id as string;
+
+      // 第一口：批准 → repo changes=1，赢裁决
+      parkedOrch.handlePermissionResponse(requestId, 'allow');
+      expect(await promise).toBe(true);
+      expect(fake.rows.get(requestId)?.status).toBe('approved');
+
+      // 第二口（抢答后到达）：即便手动残留一个内存项，repo changes=0 也不得二次 resolve
+      const secondResolve = vi.fn();
+      internals(parkedOrch).pendingPermissions.set(requestId, {
+        resolve: secondResolve,
+        parked: true,
+        request: { sessionId: unattendedSid },
+      });
+      internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
+      expect(secondResolve).not.toHaveBeenCalled();
+      expect(fake.rows.get(requestId)?.status).toBe('approved'); // 仍是第一口结果
+    });
+
+    it('取消收尾：drainPendingPermissions 同步 repo resolve(rejected) 不留孤儿', async () => {
+      const promise = parkRequest(unattendedSid);
+      await isStillPending(promise);
+      const requestId = fake.insert.mock.calls[0][0].id as string;
+      expect(fake.rows.get(requestId)?.status).toBe('pending');
+
+      internals(parkedOrch).drainPendingPermissions('deny');
+      expect(await promise).toBe(false);
+      const row = fake.rows.get(requestId);
+      expect(row?.status).toBe('rejected'); // 不再是 pending 孤儿
+      expect(row?.feedback).toBe('run cancelled');
+      expect(internals(parkedOrch).pendingPermissions.has(requestId)).toBe(false);
+    });
+
+    it('24h 兜底：无人应答超时 deny + repo rejected', async () => {
+      vi.useFakeTimers();
+      try {
+        const promise = parkRequest(unattendedSid);
+        const requestId = fake.insert.mock.calls[0][0].id as string;
+        vi.advanceTimersByTime(86_400_000);
+        expect(await promise).toBe(false);
+        expect(fake.rows.get(requestId)?.status).toBe('rejected');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('停车不阻塞他人：A 会话停车挂起时 B 会话审批照常完成', async () => {
+      const promiseA = parkRequest(unattendedSid);
+      await isStillPending(promiseA);
+
+      const attendedSid = `attended-${Math.random().toString(36).slice(2)}`;
+      const promiseB = internals(parkedOrch).requestPermission({
+        type: 'command',
+        tool: 'bash',
+        sessionId: attendedSid,
+        details: { command: 'echo B' },
+      });
+      const bId = [...internals(parkedOrch).pendingPermissions.keys()].find(
+        (k) => !internals(parkedOrch).pendingPermissions.get(k)?.parked,
+      )!;
+      parkedOrch.handlePermissionResponse(bId, 'allow');
+      expect(await promiseB).toBe(true);           // B 全程正常
+      expect(await isStillPending(promiseA)).toBe(true); // A 仍停车，未受影响
+
+      const aId = fake.insert.mock.calls[0][0].id as string;
+      internals(parkedOrch).resolveParkedApproval(aId, 'deny');
+      expect(await promiseA).toBe(false);
+    });
+
+    it('停车发内部 parked 事件（B3 挂点）', async () => {
+      const parkedSpy = vi.fn();
+      approvalParkEvents.on('parked', parkedSpy);
+      try {
+        const promise = parkRequest(unattendedSid);
+        await isStillPending(promise);
+        expect(parkedSpy).toHaveBeenCalledTimes(1);
+        expect(parkedSpy.mock.calls[0][0]).toMatchObject({ tool: 'bash', sessionId: unattendedSid });
+        const requestId = fake.insert.mock.calls[0][0].id as string;
+        internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
+        await promise;
+      } finally {
+        approvalParkEvents.off('parked', parkedSpy);
+      }
     });
   });
 });

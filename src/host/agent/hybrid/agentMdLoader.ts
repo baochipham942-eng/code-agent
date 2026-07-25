@@ -300,7 +300,7 @@ const logger = createLogger('AgentMdLoader');
  *
  * 注册表没起来时**不校验**并明说跳过了——空注册表下校验会把所有工具判成不存在。
  */
-export function reportUnknownAgentTools(agent: CoreAgentConfig, file: string): void {
+function reportUnknownAgentTools(agent: CoreAgentConfig, file: string): void {
   if (!hasProtocolToolRegistry()) {
     logger.debug('工具注册表未就绪，跳过 agent.md 工具名校验', { file });
     return;

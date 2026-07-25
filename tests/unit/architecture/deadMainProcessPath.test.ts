@@ -97,4 +97,24 @@ describe('死主进程路径（src/host/index.ts）', () => {
     expect(kickoff, `未调用 ${moduleName} 的入口函数：${consequence}`)
       .toMatch(callPattern);
   });
+
+  it('webServer.ts 真的注册了 Light Memory 整理 job', () => {
+    const webServer = readCode(SHIPPED_ENTRY);
+    expect(webServer, 'webServer 未 import webStartupMemoryJobs：记忆整理 job 在发行版里不会被创建')
+      .toMatch(/from\s+'\.\/webStartupMemoryJobs'/);
+    expect(webServer, 'webServer 未调用 registerMemoryConsolidationJob()：记忆只写不整理')
+      .toMatch(/\bregisterMemoryConsolidationJob\s*\(\s*\)/);
+  });
+
+  // dream / distill 是**有意**不接线（会无人值守自动花钱，属产品+成本判断）。
+  // 钉住这个"有意"：标记若被抹掉，下一个人会把它当成遗漏顺手接上，于是在用户不知情的
+  // 情况下开始烧钱。这是本门里唯一一条"防止别人把东西接上"的断言。
+  it.each([
+    'src/host/services/memory/dreamScheduler.ts',
+    'src/host/services/skills/distillScheduler.ts',
+  ])('%s 保留「有意未接线」标记', (file) => {
+    const source = read(file);
+    expect(source, `${file} 的「有意未接线」标记被删了。没有它，下一个人会把它当遗漏接上，导致无人值守的付费 LLM 调用。`)
+      .toContain('有意未接线');
+  });
 });

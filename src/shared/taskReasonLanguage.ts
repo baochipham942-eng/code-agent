@@ -8,9 +8,13 @@
 //   2. 用已有的 ErrorClassifier 推断语义类别，让 UI 用自己的 i18n 文案兜底，
 //      而不是把英文报错原样怼到用户脸上。
 // 原始文本不丢——它进 session_task_events 的 summary 供排错。
+//
+// 住在 shared/ 而不是 host/：run 卡片与 tool 卡片的阻塞原因在 renderer 侧投影时
+// 才拿到（runWorkbenchProjection），和任务轨走同一套清洗才不会一边说人话一边贴
+// stack trace。本文件无 host 依赖，只用 shared 的类型。
 // ============================================================================
 
-import type { TaskBlockedCategory } from '../../../shared/contract/planning';
+import type { TaskBlockedCategory } from './contract/planning';
 
 /** 展示用文本上限：一行提示的量级，超出说明模型在贴日志 */
 const MAX_DISPLAY_LENGTH = 160;

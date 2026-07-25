@@ -30,6 +30,7 @@ import { useMemberViewStore } from '../stores/memberViewStore';
 export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
+import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
@@ -740,6 +741,9 @@ export const ChatView: React.FC = () => {
             <span className="truncate">{channelSessionSource}</span>
           </div>
         )}
+
+        {/* 回会话追赶提示（A6）：离开期间产出变了什么，一句话 */}
+        <SessionRecapBanner sessionId={currentSessionId} />
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 

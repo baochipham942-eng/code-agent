@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Image, FileText, Clock3, CornerDownRight, X, UserPlus } from 'lucide-react';
+import { Image, FileText, UserPlus } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type {
   ComposerAgentSelection,
@@ -19,6 +19,7 @@ import { UI } from '@shared/constants';
 import { IPC_DOMAINS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
+import { QueuedRuntimeInputCard } from './QueuedRuntimeInputCard';
 import { InputAddMenu } from './InputAddMenu';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
@@ -735,6 +736,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           installingSkillName={installingSkillName}
         />
 
+        {/* 排队（引导）消息：输入框上方的独立卡片，不进输入框容器——进去会撑高输入区 */}
+        <QueuedRuntimeInputCard
+          items={queuedRuntimeInputs}
+          isProcessing={Boolean(isProcessing)}
+          onSend={onSendQueuedRuntimeInput}
+          onCancel={onCancelQueuedRuntimeInput}
+        />
+
         {/* Codex 风格融合：去掉明显边框 + 阴影，只用极弱 bg 区分输入区跟聊天内容 */}
         <div className="relative bg-white/[0.02] backdrop-blur-sm rounded-2xl focus-within:bg-white/[0.04] transition-colors duration-200">
           {/* 看某位成员时输入框整块封住：人只跟团长说话，不跟成员说话 */}
@@ -871,54 +880,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onAutocompleteKeyDown={handleAutocompleteKeyDown}
           />
           <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
-          {queuedRuntimeInputs.length > 0 && (
-            <div className="px-4 pb-2 -mt-1 space-y-1.5">
-              {queuedRuntimeInputs.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex justify-end"
-                >
-                  <div className="max-w-[86%]">
-                    <div className="mb-1 flex items-center justify-end gap-2 text-[11px] text-zinc-400">
-                      <CornerDownRight className="h-3.5 w-3.5" />
-                      <span>{t.chatInput.guidedBadge}</span>
-                      {item.attachmentsCount > 0 && (
-                        <span className="text-zinc-500">{t.chatInput.queuedAttachments.replace('{count}', String(item.attachmentsCount))}</span>
-                      )}
-                      {isProcessing ? (
-                        <span className="inline-flex items-center gap-1 text-zinc-500">
-                          <Clock3 className="h-3 w-3" />
-                          {t.chatInput.queuedWaiting}
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onSendQueuedRuntimeInput?.(item.id)}
-                          className="text-zinc-400 hover:text-zinc-200"
-                          title={t.chatInput.queuedSendNowTitle}
-                        >
-                          {t.chatInput.queuedSendNow}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => onCancelQueuedRuntimeInput?.(item.id)}
-                        className="inline-flex h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
-                        title={t.chatInput.queuedWithdrawTitle}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <div className="rounded-2xl bg-zinc-800/70 border border-white/[0.04] px-4 py-2.5 text-zinc-100 shadow-sm">
-                      <div className="leading-relaxed select-text">
-                        {item.content}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
           {/* 底部工具栏 */}
           <div className="flex items-center gap-1 px-3 pb-3">
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳 /命令 + 上传附件 + 交互模式 */}

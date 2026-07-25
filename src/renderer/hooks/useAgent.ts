@@ -34,6 +34,7 @@ import { useStreamingMessageAccumulatorStore, type StreamingMessageDelta } from 
 import { typedInvokeDomain } from '../services/typedInvoke';
 import { createLogger } from '../utils/logger';
 import { toast } from './useToast';
+import { useI18n } from './useI18n';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import { useAgentDerived } from './agent/useAgentDerived';
 import { useAgentEffects } from './agent/useAgentEffects';
@@ -106,6 +107,7 @@ export const useAgent = () => {
   const currentSessionTaskStatus = useTaskStore((state) => (
     currentSessionId ? state.sessionStates[currentSessionId]?.status : undefined
   ));
+  const { t } = useI18n();
 
   const {
     currentTurnMessageIdRef,
@@ -131,6 +133,24 @@ export const useAgent = () => {
     sessionId: currentSessionId,
     isBusy: isRuntimeBusyStatus(currentSessionTaskStatus),
   });
+
+  /**
+   * 排队消息「现在能不能发」的唯一判据，与 useAgentIPC.sendMessage 的排队/取消判定同源同序
+   * （先 cancelling 后 busy）。返回 null = 可发；返回字符串 = 不可发的人话原因。
+   */
+  const getQueuedSendBlockReason = useCallback((sessionId: string, id: string): string | null => {
+    if (queuedRuntimeInputSendInFlightRef.current.has(id)) {
+      return t.chatInput.queuedSendBlockedInFlight;
+    }
+    const status = useTaskStore.getState().sessionStates[sessionId]?.status;
+    if (status === 'cancelling') {
+      return t.chatInput.queuedSendBlockedCancelling;
+    }
+    if (useAppStore.getState().isSessionProcessing(sessionId) || isRuntimeBusyStatus(status)) {
+      return t.chatInput.queuedSendBlockedBusy;
+    }
+    return null;
+  }, [t]);
 
   const setQueuedRuntimeInputs = useCallback((
     updater: QueuedRuntimeInput[] | ((current: QueuedRuntimeInput[]) => QueuedRuntimeInput[]),
@@ -433,7 +453,18 @@ export const useAgent = () => {
 
   const sendQueuedRuntimeInput = useCallback(async (id: string) => {
     const queued = queuedRuntimeInputsRef.current.find((item) => item.id === id);
-    if (!queued || queuedRuntimeInputSendInFlightRef.current.has(id)) return;
+    if (!queued) return;
+
+    // 「能不能发」必须和 sendMessage 里「发出去会不会被重新排队」用同一套判据，
+    // 否则就是本文件历史上那个 bug：ChatView 的 effectiveIsProcessing 不含 'paused'，
+    // 按钮照显；sendMessage 的 isRuntimeBusyStatus 含 'paused'，点下去被重新排队——
+    // 而此时原条目已被 markSending 置成 'sending'，宿主又不恢复 sending 孤儿行，消息就没了。
+    // 判定放在 markSending 之前，任何一条不可发都出声说明，不静默 return。
+    const blockedReason = getQueuedSendBlockReason(queued.sessionId, id);
+    if (blockedReason) {
+      toast.info(blockedReason);
+      return;
+    }
 
     queuedRuntimeInputSendInFlightRef.current.add(id);
     try {
@@ -515,7 +546,7 @@ export const useAgent = () => {
     } finally {
       queuedRuntimeInputSendInFlightRef.current.delete(id);
     }
-  }, [addMessage, sendMessage, setQueuedRuntimeInputs]);
+  }, [addMessage, getQueuedSendBlockReason, sendMessage, setQueuedRuntimeInputs]);
 
   const dismissResearchDetected = useCallback(() => {
     setResearchDetected(null);

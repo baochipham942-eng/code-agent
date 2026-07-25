@@ -113,9 +113,10 @@ export const TOOL_ENVELOPE_CONVENTIONS = `## Tool Call Envelope（强制语义�
 
 ### 字段约定
 
-- **shortDescription** —— 一句话动词短语，**用户视角的产品语义**：
-  - ✅ "Open Baidu search Claude" / "Read MEMORY.md for Clash Verge config"
-  - ❌ "browser_click" / "Reading file"（不要用工具内部命名）
+- **shortDescription** —— 一句话动词短语，**用户视角的产品语义**，**必须用与用户对话相同的语言**
+  （它会直接显示在界面上给用户看，中文对话里出现英文短语等于没翻译）：
+  - ✅ "打开百度搜索 Claude" / "读取 MEMORY.md 里的 Clash Verge 配置"
+  - ❌ "browser_click" / "Reading file"（不要用工具内部命名，不要用与对话不同的语言）
 - **targetContext.kind** —— 取值：
   - \`app\`（Computer Use，label = app 名，iconHint = bundle_id）
   - \`browser\`（Browser Use，label = 页面标题/域名）

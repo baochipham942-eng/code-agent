@@ -70,29 +70,7 @@ describe('ToolCallDisplay keyboard interaction', () => {
     expect(container.querySelector('.group-focus-within\\:opacity-100')).toBeTruthy();
   });
 
-  it('keeps the nested Write file button isolated from row activation', () => {
-    const { getByTestId, getByTitle } = render(
-      <ToolCallDisplay
-        toolCall={makeToolCall({
-          name: 'Write',
-          arguments: { file_path: '/repo/output.txt' },
-          result: {
-            toolCallId: 'tool-1',
-            success: true,
-            output: 'Created file: /repo/output.txt',
-          },
-        })}
-        index={0}
-        total={1}
-      />,
-    );
-    const row = getByTestId('tool-call-row-Write');
-    const fileButton = getByTitle('/repo/output.txt');
-
-    fireEvent.click(fileButton);
-    fireEvent.keyDown(fileButton, { key: 'Enter' });
-
-    expect(openPreview).toHaveBeenCalledWith('/repo/output.txt');
-    expect(row.getAttribute('aria-expanded')).toBe('false');
-  });
+  // 原来这里还有一条「行尾 Write 文件名按钮不触发整行展开」的用例。那个按钮已经删了
+  // ——写入的文件名只由文件变更卡讲一遍（它带相对路径 + 增删行数 + diff + 撤销），
+  // 步骤行上再挂一个同名按钮是同一个文件名在一屏里的第三次出现。
 });

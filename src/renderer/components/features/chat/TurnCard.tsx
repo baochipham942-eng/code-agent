@@ -26,6 +26,7 @@ import {
 import { TraceNodeRenderer } from './TraceNodeRenderer';
 import { StreamingIndicator, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
+import { isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
 import { ToolStepGroup } from './ToolStepGroup';
 import {
   groupAdjacentToolCalls,
@@ -267,6 +268,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 return null;
               }
               if (node.subtype === 'skill_status') {
+                return null;
+              }
+              // 文件改动只由下方的文件变更卡讲一遍：卡片带相对路径 + 增删行数 + diff + 撤销，
+              // 节点流里那行工具步骤是纯重复（同一个文件名在一屏里出现三次）。
+              if (isFileChangeCardOwnedNode(node)) {
                 return null;
               }
               // Final text rendered below; skip here to avoid duplicate

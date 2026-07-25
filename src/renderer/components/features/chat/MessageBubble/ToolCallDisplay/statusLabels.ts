@@ -13,12 +13,17 @@ type StatusLabels = Translations['toolStatus']['default'];
 /**
  * Get the dynamic status label for a tool call.
  * Uses two-phase pending: _streaming → preparing, !_streaming → running.
+ *
+ * 成功且没有可报的结果数据时返回 null：步骤行主文案本身已经是一句过去时人话
+ * （「写入了 notes.md」），再前置一个「已创建」就是同一个动词讲两遍，且成败已由
+ * 左侧 StatusIndicator 的符号表达。带结果的状态词（找到 N 处 / 已读取 N 行 /
+ * 退出码 N）继续显示——那不是重复动词，是新信息。
  */
 export function getToolStatusLabel(
   toolCall: ToolCall,
   status: ToolStatus,
   t: Translations,
-): string {
+): string | null {
   const toolName = toolCall.name;
 
   const tools = t.toolStatus.tools as Record<string, StatusLabels | undefined>;
@@ -32,7 +37,7 @@ export function getToolStatusLabel(
     case 'pending':
       return toolCall._streaming ? labels.preparing : labels.running;
     case 'success':
-      return enrichCompletedLabel(toolCall, labels.completed, t);
+      return enrichCompletedLabel(toolCall, t);
     case 'error':
       if (isArtifactValidationFailureAfterWrite(toolCall)) {
         return t.toolStatus.writeValidationFailed;
@@ -53,12 +58,12 @@ function isArtifactValidationFailureAfterWrite(toolCall: ToolCall): boolean {
 }
 
 /**
- * Enrich the completed label with result data when available.
- * E.g., Grep → t.toolStatus.grepMatches, Glob → t.toolStatus.globFiles
+ * 从结果里抽出可报的数据做状态词（Grep → 找到 N 处匹配，Glob → 找到 N 个文件…）。
+ * 抽不出东西时返回 null —— 光秃秃的「已完成/已创建」不值得占一个视觉位置。
  */
-function enrichCompletedLabel(toolCall: ToolCall, defaultLabel: string, t: Translations): string {
+function enrichCompletedLabel(toolCall: ToolCall, t: Translations): string | null {
   const output = toolCall.result?.output;
-  if (!output || typeof output !== 'string') return defaultLabel;
+  if (!output || typeof output !== 'string') return null;
 
   const name = toolCall.name;
 
@@ -87,5 +92,5 @@ function enrichCompletedLabel(toolCall: ToolCall, defaultLabel: string, t: Trans
     }
   }
 
-  return defaultLabel;
+  return null;
 }

@@ -7,7 +7,7 @@
 // args.content_lines，这里优先采用它。
 // ============================================================================
 
-import type { TraceTurn } from '@shared/contract/trace';
+import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import { measureStreamingPerformanceTiming } from './streamingPerformanceMetrics';
 import { diffLinesWithFastPath } from './fastDiff';
 
@@ -27,8 +27,43 @@ function countNonEmptyLines(value: string): number {
   return value.split('\n').filter((line) => line !== '').length;
 }
 
+type ToolCallLike = NonNullable<TraceNode['toolCall']>;
+
+// 解析这次写入落在哪个文件上。对老会话 args 可能缺失，fallback 从 result 字符串解析。
+function resolveFileChangePath(tc: ToolCallLike): string | null {
+  const args = tc.args || {};
+  let filePath = (args.file_path ?? args.path) as string | undefined;
+
+  // Fallback: 从 result 字符串 "Created file: X" / "Updated file: X" 抽取路径
+  if (!filePath && typeof tc.result === 'string') {
+    const m = tc.result.match(/(?:Created|Updated) file:\s*(.+?)(?:\s+\(|\s*\n|$)/);
+    if (m) filePath = m[1].trim();
+  }
+  if (!filePath && typeof tc.outputPath === 'string') {
+    filePath = tc.outputPath;
+  }
+  return filePath || null;
+}
+
+/**
+ * 这个节点的文件改动是否已由本轮的文件变更卡（TurnDiffSummary）完整承担。
+ * 是 → 节点流里不再单独渲染它：否则「改了哪个文件」会在一屏里被讲三遍
+ * （工具步骤行 + 行尾文件名徽标 + 卡内路径行），而卡片是三者里唯一带
+ * 相对路径、增删行数、diff 与撤销的那个。
+ * 失败的写入、卡片解析不出路径的写入、以及 MultiEdit/NotebookEdit（卡片不聚合）
+ * 一律返回 false 继续显示——不能让一次真的失败静默消失。
+ * ponytail: 与 buildTurnFileChanges 共用路径解析，但不重复它的"空编辑跳过"判定
+ * （old===new 的编辑什么也没发生，卡片和节点流一起不显示是对的）。
+ */
+export function isFileChangeCardOwnedNode(node: TraceNode): boolean {
+  if (node.type !== 'tool_call' || !node.toolCall) return false;
+  const tc = node.toolCall;
+  if (!FILE_WRITE_TOOLS.includes(tc.name)) return false;
+  if (tc.success === false) return false;
+  return resolveFileChangePath(tc) !== null;
+}
+
 // 聚合 turn.nodes 里成功的 Edit/Write，按 filePath 合并。
-// 对老会话 args 可能缺失，fallback 从 result 字符串解析路径。
 export function buildTurnFileChanges(turn: TraceTurn): FileChange[] {
   return measureStreamingPerformanceTiming('stream.diff.summary_ms', () => {
   const byPath = new Map<string, FileChange>();
@@ -40,16 +75,7 @@ export function buildTurnFileChanges(turn: TraceTurn): FileChange[] {
     if (tc.success === false) continue;
 
     const args = tc.args || {};
-    let filePath = (args.file_path ?? args.path) as string | undefined;
-
-    // Fallback: 从 result 字符串 "Created file: X" / "Updated file: X" 抽取路径
-    if (!filePath && typeof tc.result === 'string') {
-      const m = tc.result.match(/(?:Created|Updated) file:\s*(.+?)(?:\s+\(|\s*\n|$)/);
-      if (m) filePath = m[1].trim();
-    }
-    if (!filePath && typeof tc.outputPath === 'string') {
-      filePath = tc.outputPath;
-    }
+    const filePath = resolveFileChangePath(tc);
     if (!filePath) continue;
 
     let oldText = '';

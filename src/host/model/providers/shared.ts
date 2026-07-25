@@ -215,7 +215,7 @@ const META_PROPERTY_SCHEMA = {
     shortDescription: {
       type: 'string',
       description:
-        '一句话动词短语，描述当前这次调用做什么（用户视角的产品语义）。例：好 "Open Baidu search Claude"，差 "browser_click"。不要用工具内部命名。',
+        '一句话动词短语，描述当前这次调用做什么（用户视角的产品语义）。会直接显示给用户，必须用与用户对话相同的语言。例：好 "打开百度搜索 Claude"，差 "browser_click"。不要用工具内部命名。',
     },
     targetContext: {
       type: 'object',

@@ -152,7 +152,7 @@ export const ContextUsagePill: React.FC = () => {
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         onFocus={() => setOpen(true)}
-        className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
+        className={`inline-flex h-8 items-center justify-center gap-1 rounded-lg px-1.5 text-xs tabular-nums transition-colors ${styles.text} ${styles.hoverBg}`}
         aria-label={ch.usageAriaLabel}
         title={ch.usageTitle
           .replace('{percent}', displayPct)
@@ -180,6 +180,9 @@ export const ContextUsagePill: React.FC = () => {
             className={`${styles.ring} transition-all duration-500`}
           />
         </svg>
+        {/* 折叠态原来只有环，百分比只在 hover 的 title 和展开面板里——一个没有刻度的
+            圆环读不出"用了多少"。补一个可读锚点，还没有第一轮数据时不占位。 */}
+        {hasData && <span data-testid="context-usage-percent">{displayPct}%</span>}
       </button>
 
       {open && (

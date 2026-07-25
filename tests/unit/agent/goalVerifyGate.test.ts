@@ -25,7 +25,10 @@ describe('runVerifyGate — spawnFailed 判别（本地执行环境 vs 验证不
   it('命令未解析（exit 127，shell 正常跑了只是命令不存在）→ spawnFailed:false', async () => {
     const result = await runVerifyGate('nonexistent-cmd-xyz-12345', process.cwd(), 5000);
     expect(result).toMatchObject({ pass: false, exitCode: 127, spawnFailed: false });
-    expect(result.output).toContain('command not found');
+    // 断 'not found' 而不是 bash 的 'command not found'：dash（ubuntu 的 /bin/sh）说的是
+    // '<cmd>: not found'。被测行为是「退出码 127 且不算 spawnFailed」，shell 用哪种方言说这句话
+    // 不是本用例的契约——为一句方言把整个文件挡在 PR 门外不划算（2026-07-25 ⑧ 第三轮）。
+    expect(result.output).toContain('not found');
   });
 
   it('超时 → spawnFailed:false（进程跑了，只是没在时限内结束）', async () => {

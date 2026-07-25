@@ -93,13 +93,15 @@ export async function bootstrapDesktopDerivedContext(
 
   if (result.workspaceContextBlock) {
     contextAssembly.injectSystemMessage(
-      `<workspace-activity-context>\n${result.workspaceContextBlock}\n</workspace-activity-context>`
+      `<workspace-activity-context>\n${result.workspaceContextBlock}\n</workspace-activity-context>`,
+      'workspace-activity',
     );
   }
 
   if (result.recoveredWorkHint) {
     contextAssembly.injectSystemMessage(
-      `<recovered-work-orchestration>\n${result.recoveredWorkHint}\n</recovered-work-orchestration>`
+      `<recovered-work-orchestration>\n${result.recoveredWorkHint}\n</recovered-work-orchestration>`,
+      'recovered-work',
     );
   }
 
@@ -122,13 +124,17 @@ export async function injectActivityContext(
     if (formatted.mode !== 'legacySeparate') return;
 
     if (formatted.screenMemoryBlock) {
-      contextAssembly.injectSystemMessage(`<screen-memory>\n${formatted.screenMemoryBlock}\n</screen-memory>`);
+      contextAssembly.injectSystemMessage(
+        `<screen-memory>\n${formatted.screenMemoryBlock}\n</screen-memory>`,
+        'screen-memory',
+      );
       logger.info('[AgentLoop] Activity screen-memory context injected at session start');
     }
 
     if (options.includeDesktopActivity && formatted.desktopActivityBlock) {
       contextAssembly.injectSystemMessage(
-        `<desktop-activity-context>\n${formatted.desktopActivityBlock}\n</desktop-activity-context>`
+        `<desktop-activity-context>\n${formatted.desktopActivityBlock}\n</desktop-activity-context>`,
+        'desktop-activity',
       );
       logger.info('[AgentLoop] Activity desktop context injected at session start');
     }
@@ -169,7 +175,10 @@ export async function injectSeedMemory(
         seedMemoryBlock = buildSeedMemoryBlock(ctx.workingDirectory);
       }
       if (seedMemoryBlock) {
-        contextAssembly.injectSystemMessage(`<seed-memory>\n${seedMemoryBlock}\n</seed-memory>`);
+        contextAssembly.injectSystemMessage(
+          `<seed-memory>\n${seedMemoryBlock}\n</seed-memory>`,
+          'seed-memory',
+        );
         recordMemoryInjectionTrace({
           blockType: 'seed-memory',
           trigger: 'session_start',

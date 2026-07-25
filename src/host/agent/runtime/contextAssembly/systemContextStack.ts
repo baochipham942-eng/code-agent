@@ -1,6 +1,9 @@
 // ContextAssembly - Persistent system context stack and context event ledger.
 import type { Message } from '../../../../shared/contract';
-import type { ContextEventRecord } from '../../../context/contextEventLedger';
+import type {
+  ContextEventRecord,
+  ContextInjectionSource,
+} from '../../../context/contextEventLedger';
 import { getSessionManager } from '../../../services';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
@@ -15,9 +18,19 @@ import {
 } from './shared';
 
 const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
+const CONTEXT_INJECTION_METADATA = Symbol.for('code-agent.contextAssembly.injectionMetadata');
 type ContextAssemblyPersistedMessage = Message & {
   [CONTEXT_ASSEMBLY_PERSISTED_MESSAGE]?: true;
 };
+type ContextInjectionMetadata = {
+  sources: ContextInjectionSource[];
+  layer: 'runtime_system_message' | 'hook_message_buffer' | 'persistent_system_context';
+};
+type ContextInjectionMessage = Message & {
+  [CONTEXT_INJECTION_METADATA]?: ContextInjectionMetadata;
+};
+
+const bufferedInjectionSources = new WeakMap<object, Set<ContextInjectionSource>>();
 
 function markMessagePersistedByContextAssembly(message: Message): void {
   Object.defineProperty(message, CONTEXT_ASSEMBLY_PERSISTED_MESSAGE, {
@@ -31,11 +44,39 @@ export function wasMessagePersistedByContextAssembly(message: Message): boolean 
   return (message as ContextAssemblyPersistedMessage)[CONTEXT_ASSEMBLY_PERSISTED_MESSAGE] === true;
 }
 
-export function injectSystemMessage(ctx: ContextAssemblyCtx, content: string, category?: string): void {
+function markMessageContextInjection(
+  message: Message,
+  sources: Iterable<ContextInjectionSource>,
+  layer: ContextInjectionMetadata['layer'],
+): void {
+  const uniqueSources = Array.from(new Set(sources));
+  Object.defineProperty(message, CONTEXT_INJECTION_METADATA, {
+    value: { sources: uniqueSources, layer },
+    enumerable: false,
+    configurable: true,
+  });
+}
+
+function getMessageContextInjection(message: Message): ContextInjectionMetadata | undefined {
+  return (message as ContextInjectionMessage)[CONTEXT_INJECTION_METADATA];
+}
+
+export function injectSystemMessage(
+  ctx: ContextAssemblyCtx,
+  content: string,
+  source: ContextInjectionSource,
+  category?: string,
+): void {
   const inferredCategory = category || ctx.inferBufferedSystemMessageCategory(content);
   if (inferredCategory) {
     // Buffer hook messages for later merging
     ctx.runtime.hookMessageBuffer.add(content, inferredCategory);
+    let sources = bufferedInjectionSources.get(ctx.runtime.hookMessageBuffer);
+    if (!sources) {
+      sources = new Set();
+      bufferedInjectionSources.set(ctx.runtime.hookMessageBuffer, sources);
+    }
+    sources.add(source);
     return;
   }
 
@@ -46,12 +87,15 @@ export function injectSystemMessage(ctx: ContextAssemblyCtx, content: string, ca
     content,
     timestamp: Date.now(),
   };
+  markMessageContextInjection(systemMessage, [source], 'runtime_system_message');
   ctx.runtime.messages.push(systemMessage);
   ctx.recordContextEventsForMessage(systemMessage);
 }
 
 export function flushHookMessageBuffer(ctx: ContextAssemblyCtx): void {
   const merged = ctx.runtime.hookMessageBuffer.flush();
+  const sources = bufferedInjectionSources.get(ctx.runtime.hookMessageBuffer);
+  bufferedInjectionSources.delete(ctx.runtime.hookMessageBuffer);
   if (merged) {
     const systemMessage: Message = {
       id: ctx.generateId(),
@@ -59,16 +103,33 @@ export function flushHookMessageBuffer(ctx: ContextAssemblyCtx): void {
       content: merged,
       timestamp: Date.now(),
     };
+    markMessageContextInjection(
+      systemMessage,
+      sources?.size ? sources : ['unattributed'],
+      'hook_message_buffer',
+    );
     ctx.runtime.messages.push(systemMessage);
     ctx.recordContextEventsForMessage(systemMessage);
     logger.debug(`[AgentLoop] Flushed ${ctx.runtime.hookMessageBuffer.size} buffered hook messages`);
   }
 }
 
-export function pushPersistentSystemContext(ctx: ContextAssemblyCtx, content: string): void {
+export function pushPersistentSystemContext(
+  ctx: ContextAssemblyCtx,
+  content: string,
+  source: ContextInjectionSource,
+): void {
   const normalized = normalizePersistentSystemContextKey(content);
   if (!normalized) return;
   const trimmed = content.trim();
+  const ledgerMessage: Message = {
+    id: ctx.generateId(),
+    role: 'system',
+    content: trimmed,
+    timestamp: Date.now(),
+  };
+  markMessageContextInjection(ledgerMessage, [source], 'persistent_system_context');
+  ctx.recordContextEventsForMessage(ledgerMessage);
 
   const existingIndex = ctx.runtime.contextHealth.persistentSystemContext.findIndex(
     (item) => normalizePersistentSystemContextKey(item) === normalized,
@@ -231,17 +292,33 @@ export function buildContextEventsForMessage(ctx: ContextAssemblyCtx, message: M
   const events: ContextEventRecord[] = [];
 
   if (message.role === 'system') {
-    events.push({
-      ...baseEvent,
-      category: message.compaction ? 'compression_survivor' : 'system_anchor',
-      action: message.compaction ? 'compressed' : 'added',
-      sourceKind: message.compaction ? 'compression_survivor' : 'system_anchor',
-      sourceDetail: message.compaction ? 'compaction_block' : 'system_message',
-      layer: message.compaction ? 'autocompact' : undefined,
-      reason: message.compaction
-        ? 'Compaction block retained in message history'
-        : 'System message injected into runtime context',
-    });
+    if (message.compaction) {
+      events.push({
+        ...baseEvent,
+        category: 'compression_survivor',
+        action: 'compressed',
+        sourceKind: 'compression_survivor',
+        sourceDetail: 'compaction_block',
+        layer: 'autocompact',
+        reason: 'Compaction block retained in message history',
+      });
+    } else {
+      const injection = getMessageContextInjection(message);
+      const sources = injection?.sources.length ? injection.sources : ['unattributed'] as const;
+      for (const source of sources) {
+        events.push({
+          ...baseEvent,
+          category: 'system_anchor',
+          action: 'added',
+          sourceKind: source,
+          sourceDetail: source,
+          layer: injection?.layer,
+          reason: source === 'unattributed'
+            ? 'System message has no context injection source metadata'
+            : `System context injected by ${source}`,
+        });
+      }
+    }
   } else {
     events.push({
       ...baseEvent,

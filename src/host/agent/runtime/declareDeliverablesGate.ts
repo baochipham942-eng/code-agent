@@ -70,7 +70,7 @@ export function handleDeclareDeliverablesGate(
       status: 'rejected',
       reason: validation.reason,
     });
-    contextAssembly.injectSystemMessage(buildRejectionMessage(validation.reason));
+    contextAssembly.injectSystemMessage(buildRejectionMessage(validation.reason), 'deliverables-gate');
     return 'continue';
   }
 
@@ -107,6 +107,6 @@ export function handleDeclareDeliverablesGate(
     '</deliverables-declared>',
   ].filter(Boolean).join('\n');
 
-  contextAssembly.injectSystemMessage(message);
+  contextAssembly.injectSystemMessage(message, 'deliverables-gate');
   return 'continue';
 }

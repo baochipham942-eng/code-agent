@@ -7,7 +7,10 @@ import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import { getContextWindow } from '../../shared/constants';
 import { getWarningLevel } from '../../shared/contract/contextHealth';
 import { generateMessageId } from '../../shared/utils/id';
-import type { ContextProvenanceCategory } from '../../shared/contract/contextView';
+import type {
+  ContextEventSourceKind,
+  ContextProvenanceCategory,
+} from '../../shared/contract/contextView';
 import { estimateTokens } from '../context/tokenEstimator';
 import type { ModelMessage as ProviderModelMessage } from '../model/types';
 import type { ModelRouter } from '../model/modelRouter';
@@ -43,7 +46,7 @@ export type RuntimeMessage = {
   observation?: {
     category?: ContextProvenanceCategory;
     sourceDetail?: string;
-    sourceKind?: 'message' | 'tool_result' | 'dependency_carry_over' | 'attachment' | 'compression_survivor' | 'system_anchor';
+    sourceKind?: ContextEventSourceKind;
     layer?: string;
     toolCallId?: string;
   };

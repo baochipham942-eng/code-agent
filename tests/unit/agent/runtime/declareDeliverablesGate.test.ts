@@ -61,9 +61,18 @@ describe('handleDeclareDeliverablesGate', () => {
     expect(ctx.artifact.declaredDeliverables?.declaredAtMs).toBeGreaterThanOrEqual(before);
     expect(ctx.artifact.declaredDeliverables?.declaredAtMs).toBeLessThanOrEqual(after);
     expect(injectSystemMessage).toHaveBeenCalledTimes(1);
-    expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('<deliverables-declared>'));
-    expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('dist/index.html'));
-    expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('draft'));
+    expect(injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('<deliverables-declared>'),
+      'deliverables-gate',
+    );
+    expect(injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('dist/index.html'),
+      'deliverables-gate',
+    );
+    expect(injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('draft'),
+      'deliverables-gate',
+    );
   });
 
   it('second valid call overrides the previous declaration and says so', () => {
@@ -88,9 +97,18 @@ describe('handleDeclareDeliverablesGate', () => {
     expect(result).toBe('continue');
     expect(ctx.artifact.declaredDeliverables?.finalArtifacts).toEqual(['new/index.html']);
     expect(ctx.artifact.declaredDeliverables?.scratchDir).toBe('new-draft');
-    expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('已覆盖之前的声明'));
-    expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('old/game.html'));
-    expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('new/index.html'));
+    expect(injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('已覆盖之前的声明'),
+      'deliverables-gate',
+    );
+    expect(injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('old/game.html'),
+      'deliverables-gate',
+    );
+    expect(injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('new/index.html'),
+      'deliverables-gate',
+    );
   });
 
   it.each([
@@ -115,7 +133,11 @@ describe('handleDeclareDeliverablesGate', () => {
     expect(ctx.artifact.declaredDeliverables).toBe(previous);
     expect(injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<deliverables-declaration-rejected>'),
+      'deliverables-gate',
     );
-    expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('final_artifacts'));
+    expect(injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('final_artifacts'),
+      'deliverables-gate',
+    );
   });
 });

@@ -76,6 +76,73 @@ export type ContextProvenanceAction =
   | 'excluded'
   | 'retained';
 
+export const CONTEXT_INJECTION_SOURCES = [
+  'unattributed',
+  'nudge',
+  'output-validation',
+  'tool-spam-hint',
+  'goal-gate',
+  'goal-progress',
+  'goal-checkpoint',
+  'artifact-repair',
+  'artifact-validation',
+  'artifact-write-guard',
+  'unavailable-tools',
+  'compression',
+  'deliverables-gate',
+  'preflight-guard',
+  'research-mode',
+  'adaptive-thinking',
+  'mode-reminder',
+  'plan-guidance',
+  'plan-stream',
+  'swarm-guidance',
+  'runtime-recovery',
+  'workspace-activity',
+  'recovered-work',
+  'screen-memory',
+  'desktop-activity',
+  'seed-memory',
+  'user-prompt-hook',
+  'session-start-hook',
+  'stop-hook',
+  'pre-tool-hook',
+  'post-tool-hook',
+  'post-tool-failure-hook',
+  'tool-blocked-by-hook',
+  'planning-hook',
+  'tool-call-repair',
+  'tool-schema-repair',
+  'tool-argument-repair',
+  'tool-policy-guard',
+  'truncation-recovery',
+  'delivery-critic',
+  'desktop-claim-guard',
+  'output-continuation',
+  'stagnation-guard',
+  'file-change-warning',
+  'file-consistency-guard',
+  'design-quality-review',
+  'security-warning',
+  'data-persistence-nudge',
+  'circuit-breaker',
+  'tool-failure-nudge',
+  'runtime-auto-continuation',
+  'parallel-execution-hint',
+  'complexity-hint',
+] as const;
+
+export type ContextInjectionSource = typeof CONTEXT_INJECTION_SOURCES[number];
+
+export type ContextEventSourceKind =
+  | 'message'
+  | 'tool_result'
+  | 'dependency_carry_over'
+  | 'attachment'
+  | 'compression_survivor'
+  | 'system_anchor'
+  | ContextInjectionSource;
+
 export type ContextProvenanceCategory =
   | 'recent_turn'
   | 'tool_result'

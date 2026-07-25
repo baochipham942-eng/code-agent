@@ -272,7 +272,8 @@ export async function handleModifiedArtifactValidation({
             repairSpec.issues.map((issue) => issue.code),
             ctx.scaffoldProfile?.repairInstructionStyle ?? 'full',
           ),
-        ].join('\n')
+        ].join('\n'),
+        'artifact-validation',
       );
       toolResult.success = false;
       toolResult.output = undefined;
@@ -318,7 +319,8 @@ export async function handleModifiedArtifactValidation({
           ...(appendFinalHint ? [appendFinalHint] : []),
           ...validation.checks.map((check, index) => `${index + 1}. ${check}`),
           '</artifact-validation-passed>',
-        ].join('\n')
+        ].join('\n'),
+        'artifact-validation',
       );
       await completePendingGoalAfterArtifactValidation({
         ctx,
@@ -379,6 +381,7 @@ async function completePendingGoalAfterArtifactValidation({
           gate.output || '(无输出)',
           '</goal-verify-failed>',
         ].join('\n'),
+        'goal-gate',
       );
       return;
     }
@@ -408,6 +411,7 @@ async function completePendingGoalAfterArtifactValidation({
           review.reason,
           '</goal-review-failed>',
         ].join('\n'),
+        'goal-gate',
       );
       return;
     }
@@ -421,5 +425,6 @@ async function completePendingGoalAfterArtifactValidation({
   ].filter(Boolean).join('、');
   contextAssembly.injectSystemMessage(
     `<goal-verified>\n${passedGates}，目标达成，结束本次 goal。\n</goal-verified>`,
+    'goal-gate',
   );
 }

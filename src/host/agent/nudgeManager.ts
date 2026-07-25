@@ -14,6 +14,7 @@ import { GoalTracker } from './goalTracker';
 import { getSessionTodos as getCurrentTodos } from './todoParser';
 import { getIncompleteTasks } from '../services/planning/taskStore';
 import { READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, type TaskProgressState } from './loopTypes';
+import type { ContextInjectionSource } from '../context/contextEventLedger';
 
 const logger = createLogger('NudgeManager');
 
@@ -32,7 +33,7 @@ export interface NudgeCheckContext {
   /** Lightweight task intent override for read-only nudges. */
   taskIntent?: ReadOnlyTaskIntent;
   /** Inject a system message into the conversation */
-  injectSystemMessage: (content: string) => void;
+  injectSystemMessage: (content: string, source: ContextInjectionSource) => void;
   /** Emit an agent event (notification, etc.) */
   onEvent: (event: { type: string; data: unknown }) => void;
   /** GoalTracker instance for F4 checks */
@@ -280,7 +281,7 @@ export class NudgeManager {
         this.readOnlyNudgeCount++;
         logger.debug(`[NudgeManager] Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
         logCollector.agent('INFO', `Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
-        ctx.injectSystemMessage(nudgeMessage);
+        ctx.injectSystemMessage(nudgeMessage, 'nudge');
         const notificationMessage = (ctx.taskIntent || this._readOnlyTaskIntent) === 'analysis'
           ? `检测到只读分析路径，提示收束证据 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...`
           : `检测到只读模式，提示继续执行修改 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...`;
@@ -332,7 +333,8 @@ export class NudgeManager {
           `- 未完成的 Todo 项会在工具执行后自动推进状态\n` +
           `- For Tasks: use TaskManager with action="update" and status="completed", status="cancelled" to abandon but keep visible, or status="deleted" to remove\n` +
           `Continue working on the remaining items NOW.\n` +
-          `</task-completion-check>`
+          `</task-completion-check>`,
+          'nudge',
         );
         ctx.onEvent({
           type: 'notification',
@@ -372,7 +374,8 @@ export class NudgeManager {
           `STOP! The following files were mentioned in the task but have not been modified:\n${fileList}\n\n` +
           `Modified files so far: ${Array.from(this.modifiedFiles).join(', ') || 'none'}\n\n` +
           `You MUST modify ALL required files before finishing. Continue working on the missing files NOW.\n` +
-          `</file-completion-check>`
+          `</file-completion-check>`,
+          'nudge',
         );
         ctx.onEvent({
           type: 'notification',
@@ -402,7 +405,8 @@ export class NudgeManager {
           `原始目标: ${summary.goal}\n` +
           `已执行工具: ${summary.completed.join(', ') || '无'}\n` +
           `尚未进行任何文件修改。请继续完成任务，或明确说明为什么要提前停止。\n` +
-          `</goal-completion-check>`
+          `</goal-completion-check>`,
+          'nudge',
         );
         ctx.onEvent({
           type: 'notification',
@@ -448,7 +452,8 @@ export class NudgeManager {
               `STOP! 用户要求了 ${this._extractedSubtasks.length} 个子任务，但以下子任务尚未在输出中体现:\n${subtaskList}\n\n` +
               `当前输出结构:\n${structureInfo}\n\n` +
               `请立即完成剩余子任务，确保每个子任务都有对应的 sheet 或数据输出。\n` +
-              `</subtask-completion-check>`
+              `</subtask-completion-check>`,
+              'nudge',
             );
             ctx.onEvent({
               type: 'notification',
@@ -480,7 +485,8 @@ export class NudgeManager {
           `<output-file-check>\n` +
           `STOP! 用户要求的输出文件不存在:\n${fileList}\n\n` +
           `你声称任务已完成，但这些文件在磁盘上并未找到。请立即生成这些文件。\n` +
-          `</output-file-check>`
+          `</output-file-check>`,
+          'nudge',
         );
         ctx.onEvent({
           type: 'notification',
@@ -514,7 +520,8 @@ export class NudgeManager {
             `输出目录中没有检测到任何数据文件（xlsx/csv/png）。\n` +
             `请立即用 bash 工具执行该脚本: python3 <脚本路径>\n` +
             `如果脚本执行出错，请修复错误后重新执行。\n` +
-            `</output-file-check>`
+            `</output-file-check>`,
+            'nudge',
           );
           return true;
         } else {
@@ -536,7 +543,7 @@ export class NudgeManager {
    */
   checkProgressState(
     toolsUsedInTurn: string[],
-    injectSystemMessage: (content: string) => void,
+    injectSystemMessage: (content: string, source: ContextInjectionSource) => void,
     options: { mutationToolPrompt?: string; taskIntent?: ReadOnlyTaskIntent } = {},
   ): void {
     const currentState = this.evaluateProgressState(toolsUsedInTurn);
@@ -545,10 +552,13 @@ export class NudgeManager {
       if (this.consecutiveExploringCount >= this.maxConsecutiveExploring) {
         logger.debug(`[NudgeManager] P2 Checkpoint: ${this.consecutiveExploringCount} consecutive exploring iterations, injecting nudge`);
         logCollector.agent('INFO', `P2 Checkpoint nudge: ${this.consecutiveExploringCount} exploring iterations`);
-        injectSystemMessage(this.generateExploringNudge(
-          options.mutationToolPrompt,
-          options.taskIntent || this._readOnlyTaskIntent,
-        ));
+        injectSystemMessage(
+          this.generateExploringNudge(
+            options.mutationToolPrompt,
+            options.taskIntent || this._readOnlyTaskIntent,
+          ),
+          'nudge',
+        );
         this.consecutiveExploringCount = 0;
       }
     } else {
@@ -564,7 +574,7 @@ export class NudgeManager {
    */
   checkPostForceExecute(
     workingDirectory: string,
-    injectSystemMessage: (content: string) => void,
+    injectSystemMessage: (content: string, source: ContextInjectionSource) => void,
   ): void {
     if (this.outputFileNudgeCount >= this.maxOutputFileNudges) return;
 
@@ -583,7 +593,8 @@ export class NudgeManager {
           `<output-file-check>\n` +
           `用户要求的输出文件尚未生成:\n${fileList}\n\n` +
           `请确保在完成任务前生成这些文件。\n` +
-          `</output-file-check>`
+          `</output-file-check>`,
+          'nudge',
         );
         return;
       }
@@ -606,7 +617,8 @@ export class NudgeManager {
             `<output-file-check>\n` +
             `你创建了 Python 脚本 (${scripts}) 但还没有成功执行它。\n` +
             `请用 bash 执行: python3 <脚本路径>\n` +
-            `</output-file-check>`
+            `</output-file-check>`,
+            'nudge',
           );
         }
       } catch { /* ignore readdir errors */ }
@@ -622,7 +634,7 @@ export class NudgeManager {
    * Returns true if validation was injected (caller should continue the loop).
    */
   runOutputValidation(
-    injectSystemMessage: (content: string) => void,
+    injectSystemMessage: (content: string, source: ContextInjectionSource) => void,
   ): boolean {
     // P7: Output structure validation
     if (!this._outputValidationDone) {
@@ -646,7 +658,8 @@ export class NudgeManager {
             `4. 去重是否用了 subset 参数指定主键列？\n` +
             `5. 阶梯累进计算（提成/税率）是否分段累加？\n` +
             `如有遗漏或问题，请立即修复。如全部满足，结束任务。\n` +
-            `</output-validation>`
+            `</output-validation>`,
+            'output-validation',
           );
           return true;
         }
@@ -672,7 +685,8 @@ export class NudgeManager {
           `<output-validation-enhanced>\n` +
           `系统深度检查发现以下问题：\n\n${issueList}\n\n` +
           `请立即修复上述问题后重新生成输出文件。\n` +
-          `</output-validation-enhanced>`
+          `</output-validation-enhanced>`,
+          'output-validation',
         );
         return true;
       } else {
@@ -702,7 +716,8 @@ export class NudgeManager {
         `当前输出文件: ${fileList || '无'}\n` +
         (structureInfo ? `当前输出结构:\n${structureInfo}\n\n` : '\n') +
         `逐条确认每项需求都有对应输出。如有遗漏，立即补充。如全部满足，结束任务。\n` +
-        `</requirement-verification>`
+        `</requirement-verification>`,
+        'output-validation',
       );
       return true;
     }

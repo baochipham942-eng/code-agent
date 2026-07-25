@@ -18,6 +18,10 @@ import { readDesignMdSummary } from '../../design/design-md-loader';
 import { getActiveBrandSync } from '../services/design/brandRegistry';
 import { brandContractToBriefProjection } from '../../shared/contract/brandContract';
 import { normalizeWorkbenchToolScope } from '../tools/workbenchToolScope';
+import { resolveAgent } from '../agent/agentRegistry';
+import { resolveSessionConnectorIds } from '../../shared/contract/expertConnectors';
+import { trackNode } from '../observability/posthogNode';
+import { POSTHOG_EVENTS } from '../../shared/observability/posthog-events';
 import { getConnectorRegistry } from '../connectors';
 import { buildSelfCritiquePromptSection } from '../prompts/selfCritique';
 import { formatCanvasSnapshotForPrompt } from '../../shared/contract/canvasProposal';
@@ -416,21 +420,55 @@ export function buildWorkbenchToolScope(
   });
 }
 
+/**
+ * 本轮「谁在说话」。ADR-052 选定方案 C：身份取自 turn，不建会话级绑定
+ * （会话可以同时有多个成员，「会话的当前专家」在团队态下本身不成立）。
+ *
+ * renderer 走 context.preferredAgentId（按会话持久化的 activeAgentId），
+ * cron / 子代理不经过 renderer，身份在 options.agentOverrideId —— 两条都要认，
+ * 只认前者的话收窄就漏掉最该收的无人值守路径。
+ */
+function resolveTurnRoleId(
+  options: AppServiceRunOptions | undefined,
+  context: ConversationEnvelopeContext | undefined,
+): { roleId: string | undefined; source: 'context' | 'options' | null } {
+  if (context?.preferredAgentId) return { roleId: context.preferredAgentId, source: 'context' };
+  if (options?.agentOverrideId) return { roleId: options.agentOverrideId, source: 'options' };
+  return { roleId: undefined, source: null };
+}
+
 export function withWorkbenchTurnSystemContext(
   options: AppServiceRunOptions | undefined,
   context?: ConversationEnvelopeContext,
 ): AppServiceRunOptions | undefined {
   const turnSystemContext = buildWorkbenchTurnSystemContext(context);
   const workbenchToolScope = buildWorkbenchToolScope(context);
+
+  const { roleId: turnRoleId, source: roleIdSource } = resolveTurnRoleId(options, context);
+  const expertConnectors = turnRoleId ? resolveAgent(turnRoleId)?.connectors : undefined;
+  trackNode(POSTHOG_EVENTS.EXPERT_SCOPE_IDENTITY, {
+    present: Boolean(turnRoleId),
+    source: roleIdSource,
+    declaredConnectors: expertConnectors?.length ?? 0,
+  });
+
+  const explicitConnectorIds = [
+    ...(options?.toolScope?.allowedConnectorIds || []),
+    ...(workbenchToolScope?.allowedConnectorIds || []),
+  ];
+  // 会话显式选过 → 以会话为准；没选过才落到专家声明的 core。
+  // 专家那支要过一次「连上了没」——声明了但没连的连接器过滤后为空 = 不收窄，
+  // 这是拍板口径「先宽后收」，不是把工具集锁成空集。
+  const allowedConnectorIds = explicitConnectorIds.length > 0
+    ? explicitConnectorIds
+    : getReadySelectedConnectorIds(resolveSessionConnectorIds({ expertConnectors }));
+
   const toolScope = normalizeWorkbenchToolScope({
     allowedSkillIds: [
       ...(options?.toolScope?.allowedSkillIds || []),
       ...(workbenchToolScope?.allowedSkillIds || []),
     ],
-    allowedConnectorIds: [
-      ...(options?.toolScope?.allowedConnectorIds || []),
-      ...(workbenchToolScope?.allowedConnectorIds || []),
-    ],
+    allowedConnectorIds,
     allowedMcpServerIds: [
       ...(options?.toolScope?.allowedMcpServerIds || []),
       ...(workbenchToolScope?.allowedMcpServerIds || []),

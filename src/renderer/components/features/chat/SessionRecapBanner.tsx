@@ -93,5 +93,3 @@ export const SessionRecapBanner: React.FC<{ sessionId: string | null }> = ({ ses
     </div>
   );
 };
-
-export default SessionRecapBanner;

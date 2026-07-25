@@ -9,12 +9,19 @@
 // 断开，第一条与第三条必红。
 // ============================================================================
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CompletionSummaryRecord, SessionTask } from '../../../src/shared/contract';
 import {
+  buildSessionRecap,
   collectRecapMaterial,
   formatRecapFallback,
 } from '../../../src/host/session/sessionRecapService';
+
+// 小模型不可用是常态（未配 key / 离线），降级必须静默且仍给得出东西
+vi.mock('../../../src/host/model/quickModel', () => ({
+  isQuickModelAvailable: () => false,
+  quickTask: async () => { throw new Error('should not be called when unavailable'); },
+}));
 
 function record(overrides: Partial<CompletionSummaryRecord> = {}): CompletionSummaryRecord {
   return {
@@ -95,5 +102,13 @@ describe('sessionRecapService 素材收集', () => {
     expect(text).toContain('1 项任务完成');
     expect(text).toContain('1 项卡住');
     expect(text).not.toMatch(/Error|Traceback|at .*:\d+:\d+/);
+  });
+
+  it('小模型不可用时静默降级成规则拼接，仍标 degraded', async () => {
+    const material = collectRecapMaterial([record()], [task()], 500);
+    const recap = await buildSessionRecap(material!);
+    expect(recap.degraded).toBe(true);
+    expect(recap.completedCount).toBe(1);
+    expect(recap.text).toContain('销售图表');
   });
 });

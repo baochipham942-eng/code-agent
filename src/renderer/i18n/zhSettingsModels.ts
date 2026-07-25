@@ -137,6 +137,8 @@ export const zhSettingsModels = {
         sourceBuiltin: '内置',
         verifiedBadge: '已验证',
         verifiedBadgeTitle: 'Neo 验证过这个模型能正常调用工具',
+        priceCoefTitle: '1.0x = {baseline} 刊例价 · 估算，非实际账单',
+        priceUnknownTitle: '该模型暂无权威刊例价——不做费用估算',
         unverifiedShort: '未验证',
         unverifiedGroup: '高级：未验证的模型',
         unverifiedHint: '这些模型没验证过工具调用。选了之后，让 Neo 干活可能中途失败或什么都不做——自担风险。',

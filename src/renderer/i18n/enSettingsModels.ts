@@ -137,6 +137,8 @@ export const enSettingsModels = {
         sourceBuiltin: 'Built-in',
         verifiedBadge: 'Verified',
         verifiedBadgeTitle: 'Neo has verified that this model calls tools reliably',
+        priceCoefTitle: '1.0x = {baseline} list price · estimate, not your bill',
+        priceUnknownTitle: 'No authoritative list price for this model — cost is not estimated',
         unverifiedShort: 'Unverified',
         unverifiedGroup: 'Advanced: unverified models',
         unverifiedHint: 'Tool calling is unverified for these models. Picking one means Neo may stall or do nothing mid-task — at your own risk.',

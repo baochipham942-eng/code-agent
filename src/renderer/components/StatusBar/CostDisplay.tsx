@@ -8,6 +8,7 @@ import type { CostDisplayProps } from './types';
 import type { BudgetAlertTone, BudgetStatusView } from '../../hooks/useBudgetStatus';
 import { useI18n } from '../../hooks/useI18n';
 import type { Translations } from '../../i18n';
+import { useStatusStore, type TurnCostInfo } from '../../stores/statusStore';
 
 /**
  * 格式化费用显示
@@ -55,6 +56,8 @@ export function buildCostTitle(
   t: Translations['statusBar'],
   cost: number,
   budget?: BudgetStatusView | null,
+  lastTurnCost?: TurnCostInfo | null,
+  unknownCostTurns = 0,
 ): string {
   // maxBudget <= 0 = 未设上限：只报花了多少，别显示 "$0.12 / $0.00 (0%)" 这种没意义的分母
   const base = budget?.enabled && budget.maxBudget > 0
@@ -63,18 +66,33 @@ export function buildCostTitle(
         .replace('{max}', `$${budget.maxBudget.toFixed(2)}`)
         .replace('{percent}', String(Math.round(budget.usagePercentage * 100)))
     : t.sessionCostTitle.replace('{cost}', `$${cost.toFixed(4)}`);
+  const lines = [base];
+  // 本轮估算行：有刊例价给 ≈$；无刊例价明说未知，不编数字（设计稿 §8.2）
+  if (lastTurnCost) {
+    lines.push(lastTurnCost.usd !== null
+      ? t.turnCostLine
+          .replace('{cost}', `$${lastTurnCost.usd.toFixed(4)}`)
+          .replace('{model}', lastTurnCost.modelId)
+      : t.turnCostUnknownLine.replace('{model}', lastTurnCost.modelId));
+  }
+  if (unknownCostTurns > 0) {
+    lines.push(t.unknownTurnsNote.replace('{count}', String(unknownCostTurns)));
+  }
   const saved = budget?.cacheSavings?.netSavedUsd ?? 0;
   if (saved >= 0.005) {
-    return `${base}\n${t.cacheSavedLine.replace('{saved}', `$${saved.toFixed(2)}`)}`;
+    lines.push(t.cacheSavedLine.replace('{saved}', `$${saved.toFixed(2)}`));
   }
-  return base;
+  lines.push(t.estimateDisclaimer);
+  return lines.join('\n');
 }
 
 export function CostDisplay({ cost, isStreaming, budget }: CostDisplayProps) {
   const { t } = useI18n();
+  const lastTurnCost = useStatusStore((s) => s.lastTurnCost);
+  const unknownCostTurns = useStatusStore((s) => s.unknownCostTurns);
   const colorClass = budgetCostColorClass(budget?.enabled ? budget.alertLevel : undefined);
   const displayCost = resolveDisplayCost(cost, budget);
-  const title = buildCostTitle(t.statusBar, displayCost, budget);
+  const title = buildCostTitle(t.statusBar, displayCost, budget, lastTurnCost, unknownCostTurns);
 
   return (
     <span

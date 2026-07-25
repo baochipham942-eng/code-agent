@@ -73,6 +73,10 @@ export const en: Translations = {
     sessionCostTitle: 'Session cost: {cost}',
     budgetUsageTitle: 'Budget usage: {cost} / {max} ({percent}%)',
     cacheSavedLine: 'Cache saved {saved}',
+    turnCostLine: 'Last turn ≈ {cost} · {model}',
+    turnCostUnknownLine: 'Last turn cost unknown ({model} has no list price)',
+    unknownTurnsNote: '{count} turn(s) with unknown price not included',
+    estimateDisclaimer: 'List-price estimate, not your bill',
   },
 
   folderTrust: {

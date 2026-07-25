@@ -553,5 +553,5 @@ export function ToolCallDisplayCompact({
 // Re-export types and utilities
 export type { ToolStatus } from './styles';
 export { getToolStatus, getStatusColor } from './styles';
-export { getToolIcon, formatParams, formatDuration, getToolDisplayName } from './utils';
+export { getToolIcon, formatParams, getToolDisplayName } from './utils';
 export { summarizeTool } from './summarizers';

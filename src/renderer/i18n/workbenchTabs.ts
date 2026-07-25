@@ -1,7 +1,14 @@
 export const workbenchTabsZh = {
   workbenchTabs: {
-    emptyTitle: '打开一个视图',
+    emptyTitle: '选一个要在这里看的东西',
     availableViews: '可打开的视图',
+    // 「视图」是内部词，光给名字看不出打开会得到什么——每项配一句它给你看什么
+    viewDescriptions: {
+      overview: '这次任务做到哪了，做出来的东西在这',
+      files: '工作目录里的文件',
+      browser: 'Neo 打开的网页',
+      designCanvas: '把想法摆成图，边看边改',
+    },
     chooseView: '选择当前视图',
     openViews: '已打开的视图',
     closeView: '关闭 {view}',
@@ -27,7 +34,13 @@ export const workbenchTabsZh = {
 
 export const workbenchTabsEn: typeof workbenchTabsZh = {
   workbenchTabs: {
-    emptyTitle: 'Open a view',
+    emptyTitle: 'Pick what to show here',
+    viewDescriptions: {
+      overview: 'Where this task stands, and what it produced',
+      files: 'Files in the working directory',
+      browser: 'Web pages Neo opened',
+      designCanvas: 'Lay ideas out visually and edit as you go',
+    },
     availableViews: 'Available views',
     chooseView: 'Choose current view',
     openViews: 'Open views',

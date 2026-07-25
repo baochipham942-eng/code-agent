@@ -11,6 +11,7 @@ import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
+import { userQuestionZh } from './userQuestion';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { labZh } from './lab';
@@ -865,6 +866,7 @@ export const zh = {
   ...cronCenterZh,
   ...previewWorkspaceZh,
   ...modalPrimitivesZh,
+  ...userQuestionZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
   ...labZh,

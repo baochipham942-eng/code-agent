@@ -12,6 +12,7 @@ import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
+import { userQuestionEn } from './userQuestion';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { labEn } from './lab';
@@ -876,6 +877,7 @@ export const en: Translations = {
   ...cronCenterEn,
   ...previewWorkspaceEn,
   ...modalPrimitivesEn,
+  ...userQuestionEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
   ...labEn,

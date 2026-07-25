@@ -117,10 +117,11 @@ export async function executeAskUserQuestion(
   }
   if (result.status === 'declined' || result.response?.declined === true) {
     onProgress?.({ stage: 'completing', percent: 100 });
-    ctx.logger.debug('AskUserQuestion declined', { requestId: result.response?.requestId });
+    const reason = result.response?.declined ? result.response.reason : undefined;
+    ctx.logger.debug('AskUserQuestion declined', { requestId: result.response?.requestId, reason });
     return {
       ok: true,
-      output: 'User declined to answer.',
+      output: reason ? `User declined to answer. Reason: ${reason}` : 'User declined to answer.',
     };
   }
 

@@ -19,8 +19,15 @@ const createTeamRecipe = vi.fn();
 const updateTeamRecipe = vi.fn();
 const deleteTeamRecipe = vi.fn();
 
+// ipcService 走全量 mock（真模块 import 期就要 window/Electron）。
+// on() 必须在：#671 让专家详情页挂上推荐连接器后，useMcpStatus 会订阅 MCP_EVENT
+// （useMcpStatus.ts:70），mock 里缺 on 就是 `default.on is not a function`。
+// 返回值当 unsubscribe 用，所以必须返回一个函数而不是 undefined。
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { invokeDomain: (...args: unknown[]) => invokeDomain(...args) },
+  default: {
+    invokeDomain: (...args: unknown[]) => invokeDomain(...args),
+    on: () => () => {},
+  },
 }));
 
 vi.mock('../../../src/renderer/services/libraryClient', () => ({

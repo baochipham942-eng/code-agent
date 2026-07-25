@@ -316,6 +316,10 @@ export class SessionAutomationService {
    */
   private resolveAutomationForSession(sessionId?: string | null): SessionAutomationRecord | null {
     if (!sessionId) return null;
+    // 与本服务其余方法同一道 DB 守卫：getSession 走 ensureDb，库没起来会抛。
+    // 这条路径挂在权限求值链上（matchStandingGrant），抛出去等于让一次工具调用直接炸；
+    // 库不可用时的正确答案是「查不到长期授权」→ 回落正常审批，而不是异常。
+    if (!getDb()) return null;
     const originId = getDatabase().getSession(sessionId)?.origin?.id;
     return originId ? this.getBySourceRefId(originId) : null;
   }

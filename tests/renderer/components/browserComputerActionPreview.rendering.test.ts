@@ -383,7 +383,9 @@ describe('browser/computer action preview rendering', () => {
     const expandedHtml = renderToStaticMarkup(
       React.createElement(ToolStepGroup, { nodes, defaultExpanded: true }),
     );
-    expect(expandedHtml).toContain('Computer');
+    // #654 起工具步骤显示人话（'电脑操作'）而非英文工具名（'Computer'）——
+    // 断言跟着改的是「展开后这一步仍认得出是谁干的」，不是放宽脱敏要求。
+    expect(expandedHtml).toContain('电脑操作');
     expect(expandedHtml).toContain('trace-computer-failure');
     expect(expandedHtml).toContain('智能输入 27 chars');
     expect(expandedHtml).not.toContain('app-host-secret@example.com');

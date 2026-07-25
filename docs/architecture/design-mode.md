@@ -76,7 +76,6 @@ designCanvasMask.ts        圈选→mask：worldRectToImageRegion(纯,求交裁�
 variantSpine.ts            T1 非破坏性 variant spine（无 React，可单测）：Variant/VariantSpine 模型(+ **UC: role**) +
                            append/pin/discard/restore + groupKey(=parentId??id 版本槽) + serialize/deserialize
 variantAdapters.ts         T1 适配层：canvasNodeToVariant(chosen→pinned，**UC: role 透传**) / makeProtoVariant / protoGroupId
-protoSpine.ts              T1 proto 侧 spine.json 落盘 + reconcileProtoSpine 与磁盘版本对账 + load/save
 variantHistory.ts          T2 undo/redo 纯逻辑：slotTimeline / currentVariant / previous|nextVariantId /
                            canUndo/canRedo（回滚=移主版指针，非破坏）
 designStore.ts             表单 + 原型运行态 + 历史（zustand persist；P1 加持久 imageModel + 标注重绘瞬时 annotMode/annotInstruction/annotModel）
@@ -85,12 +84,7 @@ annotComposite.ts          标注重绘合成（纯 composeAnnotOps 按原图分
 designFiles.ts             renderer 文件工具：readWorkspaceFile / writeWorkspaceFile / listVersions /
                            findRunHtml / readRunHtml / resolveDesignDir / readWorkspaceImageAsDataUrl /
                            exportPrototypePdf / exportImagePdf / exportCanvasPptx(CD-Parity §2/§4 IPC 封装)
-designPreviewInject.ts     proto 预览注入：injectPreviewStyle / injectThemeOverride(T6 换肤,PROTO_PALETTES
-                           5 套色板 hue-rotate) / injectSelectionScript / parseProtoSelectMessage /
-                           injectInlineEditScript + parseProtoTextEditMessage(CD-Parity §3) +
-                           PATH_FN_SOURCE(圈选/内联共用 path(),始终追加 :nth-child)
-inlineTextEdit.ts          就地文本编辑回写纯函数 applyTextEdit(CD-Parity §3)：零依赖 HTML tokenizer 自建轻量
-                           元素树(不用 DOMParser)，仅 LEAF 文本元素改 + HTML 转义防注入，可单测
+designPreviewInject.ts     proto 预览注入：仅 injectPreviewStyle（滚动条美化样式插进 <head>）
 designCanvasPersistence.ts canvas.json 读写 + ensureCanvasRun（生成/导入共用建 run）
 useDesignGeneration.ts     原型生成 hook（agent 编排 + 轮询 html + continueEdit）
 useDesignCanvasGeneration.ts 画布出图 hook：generate(文生图,带 model) + editRegion(局部重绘) + expand + removeWatermark + editByAnnotation(标注重绘,§5.8)
@@ -210,13 +204,11 @@ DesignCanvas.tsx 把交互与渲染拆成可测小模块，并补齐基础画布
 → 下载结果写盘 → 返回 {path} → 回读 → 新节点(挂 T1 spine) → addNode → saveCanvasDoc
 ```
 
-### 5.7 proto 运行时换肤（`injectThemeOverride`，T6，仅 proto）
-```
-proto 预览态选色板 → injectThemeOverride(html, paletteId) 往 srcDoc 注入一条 CSS：
-   :root{filter:hue-rotate(deg)} + 图片/视频/矢量反向 -deg（保 seed 真图原色）
-→ iframe 实时换肤，零重生成（5 套 PROTO_PALETTES）；导出/快照用 previewHtml 原文不含注入样式。
-   canvas 栅格 PNG 是图片像素，CSS filter 套不进去 → 不做。
-```
+### 5.7 proto 运行时换肤（已退役）
+
+T6 的运行时换肤（`injectThemeOverride` + 5 套 `PROTO_PALETTES` hue-rotate）唯一宿主是
+全屏设计表单 `DesignWorkspace.tsx`，随 #621 退役；实现于 2026-07-25 孤儿能力审计清除。
+详见 §5.11。
 
 ---
 
@@ -270,18 +262,16 @@ proto 预览态选色板 → injectThemeOverride(html, paletteId) 往 srcDoc 注
 - 矢量级（HTML）走 Playwright 文字可选体积小；栅格（画布/信息图/设计稿 PNG）走 pdfkit 纯 Node 零 chromium 依赖。
 - `imagePath` 来源经 `assertWithinDesignDir` 防越界读任意本地文件；`dataUrl` 由 renderer 直接传 base64。
 
-### 5.11 原型就地文本编辑（CD-Parity §3，`inlineTextEdit.ts` + `designPreviewInject.ts`）
-```
-开「就地编辑」模式 → injectInlineEditScript(html,true) 往预览 iframe 注入脚本
-   → hover 高亮 LEAF 文本元素（有子元素的容器一律跳过）→ click 设 contentEditable + 聚焦
-   → blur 取纯文本 + path() 算 selector → postMessage(PROTO_TEXT_EDIT_MESSAGE) 上报父侧
-→ DesignWorkspace.applyInlineEdit：parseProtoTextEditMessage 校验（不信 origin，认 source+type+本 iframe contentWindow）
-   → 读 *canonical* prototype.html 原文（非注入加工过的 srcDoc）→ applyTextEdit(canonical, selector, newText)
-   → 命中即 writeWorkspaceFile 回写 prototype.html + 刷 previewHtml；未命中/叶子限制 no-op → alert 提示
-```
-- `applyTextEdit`（纯函数可单测）：零依赖 HTML tokenizer 自建轻量元素树（不用 DOMParser——vitest 跑纯 node 无 DOMParser/jsdom），仅覆盖 `path()` 产出的 selector 语义（`#id` / `tag.class` / `tag:nth-child(n)`，` > ` 连接最多 6 层）；**仅改 LEAF 文本元素**（含子元素 no-op，防重复后代文本/吐畸形标签的 corruption）；HTML 转义防注入。
-- `path()` **始终追加 `:nth-child`**（不仅无 class 时）——同 tag 同 class 的兄弟靠位置区分，否则回写命中第一个改错元素；`PATH_FN_SOURCE` 在圈选/内联两段注入脚本共用，保证 selector 同源。
-- **写 canonical prototype.html，不写 srcDoc**；**就地改不建新 variant**（免 AI、零 token；想留档由用户手动「存版本」）；与圈选模式**互斥**（开内联即关圈选，反之亦然，物理隔离不同 guard 标志 + 不同消息类型）。
+### 5.11 原型就地文本编辑（已退役）
+
+圈选 + 就地文本编辑那套 `neo-design:*` postMessage 协议（`injectSelectionScript` /
+`injectInlineEditScript` / `parseProto*Message` / `applyTextEdit` / `PROTO_PALETTES` 换肤）
+的唯一宿主是全屏设计表单 `DesignWorkspace.tsx`，已随 **#621「退役全屏设计表单」** 删除。
+残留的实现于 **2026-07-25 孤儿能力审计**一并清除（`inlineTextEdit.ts` / `protoSpine.ts`
+整文件删除，`designPreviewInject.ts` 只保留 `injectPreviewStyle`）。
+
+**现行的 HTML 可视化编辑走另一条路**：S5（#642）的 htmlLocality + `applyHtmlElementEdit`
+补丁引擎，不经过本文件。两条 surface 各自演进，别把这一节的历史描述当成还在跑的东西。
 
 ### 5.12 PPTX 薄版（CD-Parity §4，`services/design/pptxExport.ts`）
 ```
@@ -607,11 +597,11 @@ Neo 自有的「前端产出 linter」——确定性源码规则，标记 AI �
 
 ## 14. 文件索引 + 测试
 
-**前端**：`src/renderer/components/design/*`（含 T1 `variantSpine/variantAdapters/protoSpine/VariantCompareView`、T2 `variantHistory/DesignCostHistory`、T3 `DesignImageEditOps`、T6 `designPreviewInject`、**P1 `ImageModelPicker`、标注重绘 `AnnotationLayer/annotComposite`、CD-Parity `BrandManager`(§1)/`DesignVersionUI`(版本 UI 抽出)/`inlineTextEdit`(§3)、UC `DesignImportButtons`(导入/参考图按钮组)/`DesignProtoHistory`(proto 统一历史+useProtoVersionActions)**）、`src/renderer/components/QuestionFormPreview.tsx`(T5)、`stores/workspaceModeStore.ts`、`i18n/{zh,en}.ts(design)`、`App.tsx:776`
+**前端**：`src/renderer/components/design/*`（含 T1 `variantSpine/variantAdapters/VariantCompareView`、T2 `variantHistory/DesignCostHistory`、T3 `DesignImageEditOps`、**P1 `ImageModelPicker`、标注重绘 `AnnotationLayer/annotComposite`、CD-Parity `BrandManager`(§1)/`DesignVersionUI`(版本 UI 抽出)、UC `DesignImportButtons`(导入/参考图按钮组)/`DesignProtoHistory`(proto 统一历史+useProtoVersionActions)**）、`src/renderer/components/QuestionFormPreview.tsx`(T5)、`stores/workspaceModeStore.ts`、`i18n/{zh,en}.ts(design)`、`App.tsx:776`
 **主进程**：`main/ipc/workspace.ipc.ts`(design actions：含 T3 `handleExpandDesignImage`/`handleRemoveWatermarkDesignImage`、T4 region-lock 接线、**P1 `handleListVisualImageModels`+`generateDesignImage` model 路由、标注重绘 `handleEditImageByAnnotation`、CD-Parity brand `handleListBrands`/`handleSaveBrand`/`handleDeleteBrand`/`handleSetActiveBrand`/`handleExtractBrandFromImage` + 导出 `handleExportPrototypePdf`/`handleExportImagePdf`/`handleExportCanvasPptx`**)、`main/ipc/workspaceSaveExport.ts`(CD-Parity §2/§4 `saveBinaryToDownloads` 落盘出口)、`main/services/design/{brandRegistry,brandExtract,pdfExport,pptxExport}.ts`(CD-Parity §1/§2/§4)、`main/app/workbenchTurnContext.ts`(CD-Parity §1 `enrichDesignBriefForPrompt` 品牌强制注入)、`main/services/media/imageGenerationService.ts`(T3 `expandImage`/`expandScalesForDirection`/`removeWatermark`、**P1 gptimage 分支+`getGptImageConfig`+`isSafeImageUrl`、标注重绘 `editImageByAnnotation`**)、`main/services/media/imageConsistency.ts`(T4 `runRegionLockGate`)、`main/prompts/questionForm.ts`(T5)、`main/prompts/selfCritique.ts`+`design/critique/prompt.ts`(CD-Parity §1 brandContract 注入点)、`main/plugins/builtin/imageCreation/imageGenerate.ts`、`main/quality/*`(T6 `slop-gray-image-placeholder` lint)、`main/shellCapabilities.ts`(WORKSPACE 能力登记)、`main/agent/runtime/toolExecutionEngine.ts:911`(质量 hook 触发)
 **共享/契约**：`shared/media/imageCost.ts`(T2)、`shared/constants/pricing.ts`(IMAGE_PRICING_CNY/DESIGN_IMAGE_MODELS/DESIGN_FLUX_MODEL)、**`shared/constants/visualModels.ts`(P1 视觉模型注册表 D1 单源)**、`shared/contract/imageConsistency.ts`(T4 RegionLockReport)、`shared/contract/designBrief.ts`(T5；CD-Parity §1 新增 `brandContract` 字段)、**`shared/contract/brandContract.ts`(CD-Parity §1 BrandContract + normalize + projection)**、`artifacts/question-form.ts`(T5)
 **常量**：`shared/constants/designWorkspace.ts`(含 `DESIGN_SPINE_FILE`、`REGION_LOCK.{EPSILON=8,DIFF_SUFFIX}`)、`shared/constants/providers.ts`(MODEL_API_ENDPOINTS.dashscope)
-**测试**：`tests/renderer/design/{variantSpine,variantAdapters,protoSpine,variantHistory,designPreviewInject,buildVariantNode,designStoreSpine,VariantCompareView,DesignCostHistory,DesignImageEditOps,designTypes,designCanvasTypes,designCanvasMask,designCanvasStore,designStore,imageModelPicker,annotationLayer,annotComposite,**DesignProtoHistory**}.test.*`（UC：`designCanvasTypes`+role/`variantAdapters`+role 透传/`DesignCostHistory`+role-aware 分组/`designStore`+compare FIFO/startEditing 清对比/`DesignProtoHistory` 渲染冒烟）、`tests/shared/constants/visualModels.test.ts`、`tests/unit/ipc/workspaceDesignImage.test.ts`(含 model 路由+listVisualImageModels+editImageByAnnotation+**UC 参考图 generateImageFromReference 路由/落盘/防 no-op**)、`tests/unit/services/media/imageGenerationService.test.ts`(含 gptimage+SSRF+editImageByAnnotation)、`tests/renderer/components/questionFormPreview.test.ts`、`tests/shared/media/imageCost.test.ts`、`tests/unit/main/services/media/imageConsistency.test.ts`、`tests/main/quality/designQuality.test.ts`
+**测试**：`tests/renderer/design/{variantSpine,variantAdapters,variantHistory,designPreviewInject,buildVariantNode,designStoreSpine,VariantCompareView,DesignCostHistory,DesignImageEditOps,designTypes,designCanvasTypes,designCanvasMask,designCanvasStore,designStore,imageModelPicker,annotationLayer,annotComposite,**DesignProtoHistory**}.test.*`（UC：`designCanvasTypes`+role/`variantAdapters`+role 透传/`DesignCostHistory`+role-aware 分组/`designStore`+compare FIFO/startEditing 清对比/`DesignProtoHistory` 渲染冒烟）、`tests/shared/constants/visualModels.test.ts`、`tests/unit/ipc/workspaceDesignImage.test.ts`(含 model 路由+listVisualImageModels+editImageByAnnotation+**UC 参考图 generateImageFromReference 路由/落盘/防 no-op**)、`tests/unit/services/media/imageGenerationService.test.ts`(含 gptimage+SSRF+editImageByAnnotation)、`tests/renderer/components/questionFormPreview.test.ts`、`tests/shared/media/imageCost.test.ts`、`tests/unit/main/services/media/imageConsistency.test.ts`、`tests/main/quality/designQuality.test.ts`
 > **测试基建坑**：react-konva→`konva/index-node` 在 node 测试环境 `require('canvas')` 崩溃 → `tests/__mocks__/react-konva.ts` stub + `vitest.config.ts` alias（同 keytar 范式）。
 
 ---

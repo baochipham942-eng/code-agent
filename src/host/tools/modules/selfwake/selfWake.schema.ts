@@ -59,8 +59,10 @@ export const wakeOnEventSchema: ToolSchema = {
   name: 'wake_on_event',
   description:
     'Park the current task until a named event happens, then continue automatically. '
-    + 'Use for "when X happens, do Y" work. Event names are the names of the user\'s automations — '
-    + 'the event fires when an automation with that name finishes a run. '
+    + 'Use for "when X happens, do Y" work. Event names are the names of the user\'s automations. '
+    + 'For a plain scheduled automation, the event fires every time it finishes a run. '
+    + 'For a business-event watcher (e.g. a calendar-conflict or table-change monitor), the event fires only '
+    + 'when the watcher actually finds something new — a quiet scheduled check with nothing to report does not fire it. '
     + 'This ends the current turn; nothing runs while you wait.',
   inputSchema: {
     type: 'object',

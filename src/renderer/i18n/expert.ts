@@ -168,6 +168,16 @@ export const expertZh = {
       saving: '保存中…',
       save: '保存',
     },
+    rolePackConsent: {
+      title: '装之前先看看这位专家能做什么',
+      description: '装上后它就能在你的电脑上按下面这些方式干活。看清楚再装。',
+      toolsDeclared: '它自己要了这些本事：{tools}',
+      toolsBaseline: '它没特别声明，用的是所有专家都有的基础本事：{tools}',
+      toolsNone: '（没有）',
+      connectors: '要连这些服务才能干活：{connectors}',
+      permissionPreset: '它想要的审批松紧档：{preset}',
+      install: '知道了，装',
+    },
     rolePackElevation: {
       title: '这位专家想要额外的权限',
       description: '装之前先看一眼——你可以按安全默认装，之后随时到专家的「安全」页放开。',
@@ -345,6 +355,16 @@ export const expertEn: typeof expertZh = {
       ],
       saving: 'Saving…',
       save: 'Save',
+    },
+    rolePackConsent: {
+      title: 'See what this expert can do before installing',
+      description: 'Once installed it can work on your computer in the ways listed below. Read them before you install.',
+      toolsDeclared: 'It asked for these abilities: {tools}',
+      toolsBaseline: 'It declared nothing special — it uses the baseline abilities every expert has: {tools}',
+      toolsNone: '(none)',
+      connectors: 'It needs these services connected: {connectors}',
+      permissionPreset: 'Approval strictness it wants: {preset}',
+      install: 'Got it, install',
     },
     rolePackElevation: {
       title: 'This expert is asking for extra permissions',

@@ -70,6 +70,24 @@ test('排队消息卡浮在输入框上方，且不在输入框容器内', async
   await page.reload();
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 15_000 });
 
+  // reload 后必须仍停在同一个会话上——排队项按会话 hydrate，换了会话就什么都不显示。
+  const restored = page.locator(`[data-session-id="${sessionId}"]`).first();
+  await expect(restored).toBeVisible({ timeout: 10_000 });
+  const restoredActive = await restored.getAttribute('aria-current');
+  if (restoredActive !== 'true') {
+    await restored.click();
+  }
+
+  const ledger = await page.evaluate(async (session) => {
+    const api = (window as unknown as {
+      codeAgentDomainAPI?: { invoke: (d: string, a: string, p: unknown) => Promise<unknown> };
+      domainAPI?: { invoke: (d: string, a: string, p: unknown) => Promise<unknown> };
+    });
+    const bridge = api.codeAgentDomainAPI ?? api.domainAPI;
+    return bridge?.invoke('domain:queuedInput', 'list', { sessionId: session, status: 'queued' });
+  }, sessionId!);
+  expect(JSON.stringify(ledger)).toContain(queuedId);
+
   const card = page.locator('[data-testid="queued-runtime-input-card"]');
   await expect(card).toBeVisible({ timeout: 10_000 });
 

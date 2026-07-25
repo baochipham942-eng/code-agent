@@ -50,6 +50,7 @@ import type {
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
 import { withWorkbenchTurnSystemContext } from './workbenchTurnContext';
+import { getPermissionModeManager } from '../permissions/modes';
 import {
   exportSessionToMarkdown,
   suggestExportFilename,
@@ -492,14 +493,36 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.options as AppServiceRunOptions | undefined,
       envelope.context,
     );
-    await tm.startTask(
-      resolvedSessionId,
-      envelope.content,
-      envelope.attachments,
-      toAgentRunOptions(options),
-      await this.getMessageMetadataWithLocator(envelope),
-      envelope.clientMessageId,
-    );
+
+    // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
+    // 必须挂在**主 agent 轮起点**——用户在输入框选中专家后说话，专家就是主 agent
+    // （preferredAgentId → agentOverrideId），不经过 subagentExecutor。
+    // PR #690 钩错成子 agent 那条路，真机 dogfood 因此判 NO-GO（两轮行为无差别）。
+    const turnRoleId = envelope.context?.preferredAgentId ?? options?.agentOverrideId ?? undefined;
+    let firstRunStrictSessionId: string | undefined;
+    if (turnRoleId) {
+      const { consumeFirstRunStrict } = await import('../services/roleAssets/rolePackInstallService');
+      if (await consumeFirstRunStrict(turnRoleId)) {
+        getPermissionModeManager().markFirstRunStrictSession(resolvedSessionId);
+        firstRunStrictSessionId = resolvedSessionId;
+      }
+    }
+
+    try {
+      await tm.startTask(
+        resolvedSessionId,
+        envelope.content,
+        envelope.attachments,
+        toAgentRunOptions(options),
+        await this.getMessageMetadataWithLocator(envelope),
+        envelope.clientMessageId,
+      );
+    } finally {
+      // 只钳这一轮：第二轮起回到会话自己的档（dogfood 明确要求两轮可见差别）。
+      if (firstRunStrictSessionId) {
+        getPermissionModeManager().clearFirstRunStrictSession(firstRunStrictSessionId);
+      }
+    }
   }
 
   cancel(

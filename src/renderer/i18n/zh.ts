@@ -843,6 +843,13 @@ export const zh = {
     degradedReasonPrefix: '最后一次验证：',
   },
 
+  // 回会话追赶提示（A6）：隔天/隔小时回来时的一句话产物变化摘要
+  sessionRecap: {
+    prefix: '你不在的时候：',
+    dismiss: '知道了',
+    dismissLabel: '关闭追赶提示',
+  },
+
   // /goal 运行进度状态条
   goalStatusBar: {
     runningPrefix: '目标进行中：',

@@ -8,7 +8,7 @@
 import type { UpdateTaskInput } from '../../../shared/contract/planning';
 import { validateTaskStatusEvidence } from '../../../shared/contract/planning';
 import { makeEvidenceRef } from '../../../shared/contract/evidence';
-import { describeTaskBlockedReason, sanitizeTaskEvidenceText } from './taskReasonLanguage';
+import { describeTaskBlockedReason, sanitizeTaskEvidenceText } from '../../../shared/taskReasonLanguage';
 
 export interface TaskEvidenceArgs {
   status?: unknown;

@@ -626,4 +626,60 @@ describe('runWorkbenchProjection', () => {
       status: 'in_progress',
     });
   });
+
+  // 依赖 A 后半截：run / tool 卡片此前把 raw 工具输出当 blockedReason 直接渲染。
+  // 这两条钉的是"非程序员不该看到报错原文"——断言机器噪音被置空且留下语义类别，
+  // 供 UI 用 taskBlockedReason 的人话兜底。把投影里的 describeBlocked 拆掉即红。
+  describe('阻塞原因过语义化清洗层', () => {
+    const failingToolProjection: TraceProjection = {
+      sessionId: 'session-blocked',
+      activeTurnIndex: 0,
+      turns: [
+        {
+          turnNumber: 1,
+          turnId: 'turn-blocked',
+          status: 'completed',
+          startTime: 100,
+          nodes: [
+            {
+              id: 'tool-fetch',
+              type: 'tool_call',
+              content: '',
+              timestamp: 120,
+              toolCall: {
+                id: 'tool-fetch',
+                name: 'WebFetch',
+                args: { url: 'https://example.com' },
+                result: 'AxiosError: Request failed with status code 403\n    at settle (/app/node_modules/axios/lib/core/settle.js:19:12)',
+                success: false,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    it('工具失败时不把 stack trace 交给 tool 卡片，只留类别', () => {
+      const [tool] = buildToolCapabilityViews(failingToolProjection);
+      expect(tool.label).toBe('WebFetch');
+      expect(tool.blockedReason).toBeUndefined();
+      expect(tool.blockedReasonCategory).toBe('permission');
+    });
+
+    it('决策轨同源同口径', () => {
+      const decision = buildLoopDecisionViews(failingToolProjection).at(-1);
+      expect(decision?.blockedReason).toBeUndefined();
+      expect(decision?.blockedReasonCategory).toBe('permission');
+    });
+
+    it('agent 写的人话原样留下并带上类别', () => {
+      const run = buildRunUiState({
+        projection,
+        sessionId: 'session-1',
+        sessionStatus: 'running',
+      });
+      expect(run.blockedReason).toBe('Skill not mounted for this turn');
+      expect(run.blockedReasonCategory).toBe('unknown');
+    });
+  });
 });

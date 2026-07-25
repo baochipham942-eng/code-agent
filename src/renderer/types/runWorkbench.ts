@@ -28,7 +28,9 @@ export interface RunUiState {
   phase: string;
   activeToolName?: string;
   waitingApprovalId?: string;
+  /** 已过语义化清洗的阻塞说明（ADR-050 依赖 A）；为空时用 blockedReasonCategory 兜底 */
   blockedReason?: string;
+  blockedReasonCategory?: TaskBlockedCategory;
   completionSignal?: string;
 }
 
@@ -39,6 +41,7 @@ export interface LoopDecisionView {
   reason: string;
   expectedNextAction?: string;
   blockedReason?: string;
+  blockedReasonCategory?: TaskBlockedCategory;
 }
 
 export type ToolCapabilitySource =
@@ -57,6 +60,7 @@ export interface ToolCapabilityView {
   callable: boolean;
   permissionLevel?: PermissionLevel | 'unknown';
   blockedReason?: string;
+  blockedReasonCategory?: TaskBlockedCategory;
   activatedForTurn: boolean;
 }
 

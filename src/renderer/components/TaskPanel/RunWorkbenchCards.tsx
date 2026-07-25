@@ -111,6 +111,8 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
   const { t } = useI18n();
   const { run, memoryActivities } = model;
   const isCompleted = run.status === 'completed';
+  const runBlockedHint = run.blockedReason
+    || (run.blockedReasonCategory ? t.taskPanel.taskBlockedReason[run.blockedReasonCategory] : null);
 
   return (
     <div className="space-y-1.5">
@@ -136,8 +138,9 @@ export const RunOverview = ({ model, onOpenMemory }: RunOverviewProps) => {
           {!isCompleted && (
             <div className="mt-1 truncate text-xs text-zinc-200">{run.phase}</div>
           )}
-          {run.blockedReason && (
-            <div className="mt-1 text-[11px] text-amber-300">{run.blockedReason}</div>
+          {/* 与任务轨同口径（ADR-050）：agent 的人话优先，判成 raw 日志时退回类别文案 */}
+          {runBlockedHint && (
+            <div className="mt-1 text-[11px] text-amber-300">{runBlockedHint}</div>
           )}
         </div>
       </div>
@@ -683,8 +686,12 @@ export const ToolDiscoverySummary = ({ tools }: { tools: ToolCapabilityView[] })
           <WorkbenchPill tone={sourceTone(tool.source)}>{tool.source}</WorkbenchPill>
           <div className="min-w-0 flex-1">
             <div className="truncate text-xs text-zinc-200">{tool.label}</div>
-            {tool.blockedReason && (
-              <div className="truncate text-[11px] text-amber-300">{tool.blockedReason}</div>
+            {/* 同上：工具失败原因也不把 raw 输出怼给用户 */}
+            {(tool.blockedReason || tool.blockedReasonCategory) && (
+              <div className="truncate text-[11px] text-amber-300">
+                {tool.blockedReason
+                  || (tool.blockedReasonCategory ? t.taskPanel.taskBlockedReason[tool.blockedReasonCategory] : '')}
+              </div>
             )}
           </div>
           <span className={`text-[10px] ${tool.callable ? 'text-emerald-300' : 'text-amber-300'}`}>

@@ -854,6 +854,13 @@ export const en: Translations = {
     degradedReasonPrefix: 'Last verification: ',
   },
 
+  // 回会话追赶提示（A6）：隔天/隔小时回来时的一句话产物变化摘要
+  sessionRecap: {
+    prefix: 'While you were away: ',
+    dismiss: 'Got it',
+    dismissLabel: 'Dismiss catch-up note',
+  },
+
   // /goal 运行进度状态条
   goalStatusBar: {
     runningPrefix: 'Goal in progress: ',

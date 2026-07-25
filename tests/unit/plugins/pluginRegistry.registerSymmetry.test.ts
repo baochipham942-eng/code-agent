@@ -79,7 +79,6 @@ async function getPluginApi(reg: PluginRegistry, pluginId: string): Promise<Plug
     state: 'inactive',
     entry,
     registeredTools: [],
-    registeredHooks: [],
   };
   // Bracket-access private map 仅为单测,生产代码绝不应这么用
   (reg as unknown as { plugins: Map<string, LoadedPlugin> }).plugins.set(pluginId, loadedPlugin);
@@ -95,6 +94,37 @@ async function getPluginApi(reg: PluginRegistry, pluginId: string): Promise<Plug
 describe('PluginRegistry registerTool / registerToolModule symmetry', () => {
   beforeEach(() => {
     resetProtocolRegistry();
+  });
+
+  it('8 个内置插件可加载、激活并卸载', async () => {
+    const reg = new PluginRegistry();
+    (reg as unknown as { loadBuiltinPlugins: () => void }).loadBuiltinPlugins();
+
+    const expectedIds = [
+      'builtin.imageProcess',
+      'builtin.audioProcessing',
+      'builtin.videoGeneration',
+      'builtin.imageCreation',
+      'builtin.musicGeneration',
+      'builtin.browserControl',
+      'builtin.computerUse',
+      'builtin.photoArchive',
+    ];
+    expect(reg.getPlugins().map((plugin) => plugin.manifest.id)).toEqual(expectedIds);
+
+    for (const pluginId of expectedIds) {
+      expect(await reg.activatePlugin(pluginId)).toBe(true);
+      const plugin = reg.getPlugin(pluginId);
+      expect(plugin?.state).toBe('active');
+      expect(plugin?.registeredTools.length).toBeGreaterThan(0);
+    }
+
+    for (const pluginId of expectedIds) {
+      expect(await reg.deactivatePlugin(pluginId)).toBe(true);
+      const plugin = reg.getPlugin(pluginId);
+      expect(plugin?.state).toBe('inactive');
+      expect(plugin?.registeredTools).toEqual([]);
+    }
   });
 
   it('registerTool 重复同名 → 第二次抛 "already registered"', async () => {

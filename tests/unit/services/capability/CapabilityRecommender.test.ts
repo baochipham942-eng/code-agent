@@ -66,7 +66,6 @@ function mkPlugin(
     rootPath: `builtin:${id}`,
     state,
     registeredTools: [],
-    registeredHooks: [],
   };
 }
 

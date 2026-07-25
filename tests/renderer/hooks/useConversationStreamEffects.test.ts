@@ -1174,3 +1174,62 @@ describe('applyConversationStreamEvent streaming accumulator', () => {
     });
   });
 });
+
+// ── 费用管线接线（stream_usage / model_decision → statusStore）───────────────
+import { useStatusStore } from '../../../src/renderer/stores/statusStore';
+
+function costStreamHarness() {
+  return {
+    state: { currentTurnMessageId: null, committedAssistantMessageIds: new Set<string>() },
+    actions: {
+      addMessage: vi.fn(),
+      appendStreamingMessageDelta: vi.fn(),
+      updateMessage: vi.fn(),
+      setMessages: vi.fn(),
+      getMessages: () => [] as Message[],
+      queueUpdate: (fn: () => void) => fn(),
+    },
+  };
+}
+
+describe('turn cost stream wiring', () => {
+  it('model_decision records the resolved model, stream_usage books the turn cost', () => {
+    useStatusStore.getState().resetSession();
+    const { state, actions } = costStreamHarness();
+
+    applyConversationStreamEvent(
+      {
+        type: 'model_decision',
+        sessionId: 's1',
+        data: {
+          requestedProvider: 'deepseek', requestedModel: 'deepseek-v4-pro',
+          resolvedProvider: 'deepseek', resolvedModel: 'deepseek-v4-pro',
+          reason: 'user-selected', billingMode: 'payg',
+        },
+      } as never,
+      state as never,
+      actions as never,
+    );
+    expect(useStatusStore.getState().currentTurnModel).toEqual({ provider: 'deepseek', model: 'deepseek-v4-pro' });
+
+    applyConversationStreamEvent(
+      { type: 'stream_usage', sessionId: 's1', data: { inputTokens: 1_000_000, outputTokens: 0 } } as never,
+      state as never,
+      actions as never,
+    );
+    const s = useStatusStore.getState();
+    expect(s.lastTurnCost?.usd).toBeGreaterThan(0);
+    expect(s.sessionCost).toBeGreaterThan(0);
+  });
+
+  it('stream_usage without token fields is ignored (no NaN bookkeeping)', () => {
+    useStatusStore.getState().resetSession();
+    const { state, actions } = costStreamHarness();
+    applyConversationStreamEvent(
+      { type: 'stream_usage', sessionId: 's1', data: {} } as never,
+      state as never,
+      actions as never,
+    );
+    expect(useStatusStore.getState().lastTurnCost).toBeNull();
+  });
+});

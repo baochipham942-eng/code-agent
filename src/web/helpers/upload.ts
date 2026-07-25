@@ -9,7 +9,7 @@ import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
 import { getUserDataPath } from '../../host/platform/appPaths';
 import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/managedBrowserHelpers';
-import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
+import { resolveNativeDesktopCandidateRoots } from '../../host/services/desktop/nativeDesktopService';
 
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 export const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'code-agent-uploads');
@@ -174,14 +174,16 @@ export function handleScreenshot(req: Request, res: Response): void {
   // Security: only serve image files from known screenshot directories.
   // 托管浏览器截图、appshots 用运行时真实目录做精确前缀判断（跨平台、零硬编码、防目录穿越），
   // 与各自服务同源（getUserDataPath + 子目录）。
-  // native-desktop 截图分布在多个候选 root（resolveDesktopRoot 探测），沿用目录段匹配，
-  // 但先 normalize 分隔符以兼容 Windows 反斜杠路径。
+  // native-desktop 截图分布在多个候选 root，清单与采集服务同源
+  // （resolveNativeDesktopCandidateRoots），同样做锚定前缀匹配——子串匹配会放行
+  // /tmp/x/native-desktop/screenshots/ 这类伪装路径。normalize 分隔符兼容 Windows。
   const userData = getUserDataPath();
   const normalized = resolved.replace(/\\/g, '/');
+  const nativeDesktopPrefixes = resolveNativeDesktopCandidateRoots()
+    .map((root) => `${path.join(root, 'native-desktop').replace(/\\/g, '/').replace(/\/+$/, '')}/`);
   const isScreenshotDir = isPathWithinBase(resolved, path.join(userData, MANAGED_BROWSER_ARTIFACT_DIR))
     || isPathWithinBase(resolved, path.join(userData, 'appshots'))
-    || normalized.includes('/native-desktop/screenshots/')
-    || normalized.includes(`/${CONFIG_DIR_NEW}/native-desktop/`);
+    || nativeDesktopPrefixes.some((prefix) => normalized.startsWith(prefix));
   const isImageExt = /\.(jpg|jpeg|png|webp|gif)$/i.test(resolved);
 
   if (!isScreenshotDir || !isImageExt) {

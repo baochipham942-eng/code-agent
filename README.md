@@ -69,7 +69,7 @@
 | 层级 | 选型 |
 |------|------|
 | 桌面框架 | Tauri 2.x (Rust) |
-| 前端 | React 18 + TypeScript 5.6 + Zustand 5 + Tailwind 3.4 |
+| 前端 | React 19 + TypeScript 6 + Zustand 5 + Tailwind 4 |
 | 构建 | esbuild（main/preload）+ Vite（renderer） |
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端 | Supabase + pgvector |

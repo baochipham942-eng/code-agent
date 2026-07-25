@@ -127,3 +127,6 @@ docs/specs/2026-05-31-runtime-consolidation-and-workflow.md
 
 # Tauri staged resources that must keep app bundles out of Spotlight/Launchpad
 .tauri-resources.noindex/
+
+# 费曼审计产物（本地研究材料，不进公开仓库）
+.feynman/

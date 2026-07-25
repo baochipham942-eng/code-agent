@@ -34,7 +34,7 @@ Agent Neo 是产品名，`code-agent` 是仓库历史名。这个文件主要给
 
 ## 技术栈
 
-- **框架**: Tauri 2.x + React 18 + TypeScript
+- **框架**: Tauri 2.x + React 19 + TypeScript
 - **构建**: esbuild (main/preload) + Vite (renderer)
 - **样式**: Tailwind CSS | **状态**: Zustand
 - **AI**: Kimi K2.5（主）, 智谱/DeepSeek/OpenAI（备）, Codex CLI（沙箱+交叉验证, MCP）

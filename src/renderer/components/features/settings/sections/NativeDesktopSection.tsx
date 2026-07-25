@@ -52,6 +52,7 @@ import {
   type NativeDesktopSectionProps,
 } from './nativeDesktopActivityModel';
 import { useI18n } from '../../../../hooks/useI18n';
+import { resolveScreenshotUrl } from '../../../../utils/resolveFileUrl';
 
 const MarkdownCore = lazy(() => import('../../chat/MessageBubble/MarkdownCore'));
 
@@ -74,7 +75,7 @@ const ScreenshotImage: React.FC<{ path: string; className?: string; onClick?: ()
   }
   return (
     <img
-      src={`/api/screenshot?path=${encodeURIComponent(path)}`}
+      src={resolveScreenshotUrl(path)}
       alt="Screenshot"
       className={`object-cover ${onClick ? 'cursor-pointer hover:brightness-110 transition-all' : ''} ${className || ''}`}
       onError={() => setError(true)}
@@ -89,7 +90,7 @@ const ScreenshotLightbox: React.FC<{ path: string; onClose: () => void }> = ({ p
       <X className="w-5 h-5" />
     </button>
     <img
-      src={`/api/screenshot?path=${encodeURIComponent(path)}`}
+      src={resolveScreenshotUrl(path)}
       alt="Screenshot"
       className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
       onClick={(e) => e.stopPropagation()}

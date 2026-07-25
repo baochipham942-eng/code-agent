@@ -3,6 +3,7 @@
 // ============================================================================
 // Extracted to break circular dependency between agentMdLoader ↔ coreAgents.
 
+import type { ExpertConnector } from '../../../shared/contract/expertConnectors';
 import type { RoleProactivityConfig, RoleVisual } from '../../../shared/contract/roleAssets';
 
 /**
@@ -43,6 +44,11 @@ export interface CoreAgentConfig {
    * 缺省表示跟随通用设置；下游经 toFullAgentConfig → security.permissionPreset 生效。
    */
   permissionPreset?: 'strict' | 'development' | 'ci';
+  /**
+   * 推荐连接器（frontmatter `connectors`，每行 `<id>|core|optional|理由`）。
+   * core 默认开、optional 默认关；会话里显式选过连接器时以会话为准。
+   */
+  connectors?: ExpertConnector[];
   /** 角色主动性配置（frontmatter proactivity-level / proactivity-cadence，内部文档 §4） */
   proactivity?: RoleProactivityConfig;
   /** 展示层字段，写在 agent.md 的扁平 frontmatter，不参与 prompt 解释。 */

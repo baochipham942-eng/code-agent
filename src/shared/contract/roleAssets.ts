@@ -159,6 +159,19 @@ export interface RoleWakeResult {
 }
 
 /** 角色详情（设计 §7：定义 / 记忆 / 履历 / 主动性） */
+/**
+ * 专家详情里展示的一条推荐连接器。
+ * 连接状态与「默认是否开」由 renderer 用现成的连接器状态 + resolveSessionConnectorIds 派生，
+ * 这里不重复一份，避免两处口径漂移。
+ */
+export interface RoleRecommendedConnector {
+  id: string;
+  /** 连接器目录里的中文名，查不到就退回 id */
+  label: string;
+  level: 'core' | 'optional';
+  reason?: string;
+}
+
 export interface RolePanelDetail {
   roleId: string;
   /** agents/<id>.md 原始内容（只读展示）；定义文件缺失时为 null */
@@ -177,6 +190,8 @@ export interface RolePanelDetail {
   isBuiltin: boolean;
   /** 每专家一份的两段可编辑正文；没设置过就是空串。 */
   personalization: { userExpectation: string; soul: string };
+  /** 专家在 agent.md 里声明的推荐连接器。没声明就没有这个字段。 */
+  recommendedConnectors?: RoleRecommendedConnector[];
   /** 装备层当前生效配置及由 host 解析出的本机可选项。 */
   equipment?: {
     skills: string[];

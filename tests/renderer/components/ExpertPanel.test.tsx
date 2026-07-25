@@ -657,7 +657,8 @@ describe('ExpertPanel', () => {
       elevation: null,
     });
 
-    expect(summary.textContent).toContain('严格——每一步都先问过你再做。');
+    // 档名走 permissionVocabulary 单一真源（会话档与专家档同一套词）
+    expect(summary.textContent).toContain('请求批准——每一步都先问过你再做。');
     expect(summary.textContent).not.toContain('strict');
   });
 

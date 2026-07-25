@@ -36,10 +36,10 @@ function switchButtonFor(modeName: string): HTMLButtonElement {
 describe('GeneralSettings permission mode confirmation', () => {
   it('sets the high-risk bypassPermissions mode only after explicit confirmation', async () => {
     render(<GeneralSettings />);
-    await screen.findByText('YOLO 模式');
+    await screen.findByText('完全访问权限');
     invoke.mockClear();
 
-    fireEvent.click(switchButtonFor('YOLO 模式'));
+    fireEvent.click(switchButtonFor('完全访问权限'));
 
     expect(screen.getByRole('dialog').textContent).toContain(
       '权限检查已跳过。Agent 可以直接执行文件写入、命令执行等操作，请只在可信隔离环境中使用。',
@@ -50,8 +50,8 @@ describe('GeneralSettings permission mode confirmation', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(invoke).not.toHaveBeenCalled();
 
-    fireEvent.click(switchButtonFor('YOLO 模式'));
-    fireEvent.click(screen.getByRole('button', { name: '启用 YOLO 模式' }));
+    fireEvent.click(switchButtonFor('完全访问权限'));
+    fireEvent.click(screen.getByRole('button', { name: '开启完全访问权限' }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
@@ -63,16 +63,16 @@ describe('GeneralSettings permission mode confirmation', () => {
 
   it('keeps low- and medium-risk mode switches immediate', async () => {
     render(<GeneralSettings />);
-    await screen.findByText('只读探索');
+    await screen.findByText('只读');
     invoke.mockClear();
 
-    fireEvent.click(switchButtonFor('只读探索'));
+    fireEvent.click(switchButtonFor('只读'));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.PERMISSION_SET_MODE, 'readOnly');
     });
     expect(screen.queryByRole('dialog')).toBeNull();
 
-    fireEvent.click(switchButtonFor('自动编辑'));
+    fireEvent.click(switchButtonFor('替我审批'));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(IPC_CHANNELS.PERMISSION_SET_MODE, 'acceptEdits');
     });

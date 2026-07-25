@@ -2,6 +2,8 @@
 // Settings namespace translations (zh/Core) — 纯平移拆分（债务门）
 // ============================================================================
 
+import { permissionVocabularyZh } from './permissionVocabulary';
+
 export const zhSettingsCore = {
     tabs: {
       general: '权限与安全',
@@ -187,25 +189,25 @@ export const zhSettingsCore = {
         highestPriorityPrefix: '最高优先级：',
         permissionModes: {
           default: {
-            title: '安全模式',
+            title: permissionVocabularyZh.ask,
             description: '执行写入、命令、网络操作前需要确认，适合日常工作。',
             operationScope: '写入 / 命令 / 网络前询问',
             riskLabel: '低风险',
           },
           readOnly: {
-            title: '只读探索',
+            title: permissionVocabularyZh.readOnly,
             description: '读取、列目录、搜索、只读联网直接通过；写入、命令执行和网络变更都需要确认，白名单也不放行（无法弹出确认的环境会直接拒绝）。',
             operationScope: '只读直通，写入 / 命令 / 网络变更必问',
             riskLabel: '低风险',
           },
           acceptEdits: {
-            title: '自动编辑',
+            title: permissionVocabularyZh.autoApprove,
             description: '自动接受文件编辑，命令和外部访问仍保留确认。',
             operationScope: '编辑自动通过，命令仍询问',
             riskLabel: '中风险',
           },
           bypassPermissions: {
-            title: 'YOLO 模式',
+            title: permissionVocabularyZh.fullAccess,
             description: '跳过所有权限检查，只适合完全可信的隔离环境。',
             operationScope: '跳过权限检查',
             riskLabel: '高风险',
@@ -254,10 +256,10 @@ export const zhSettingsCore = {
           switchable: '可切换',
         },
         bypassWarning: {
-          title: 'YOLO 模式已启用',
+          title: `已开启${permissionVocabularyZh.fullAccess}`,
           description: '权限检查已跳过。Agent 可以直接执行文件写入、命令执行等操作，请只在可信隔离环境中使用。',
-          confirmTitle: '启用 YOLO 模式？',
-          confirmAction: '启用 YOLO 模式',
+          confirmTitle: `开启${permissionVocabularyZh.fullAccess}？`,
+          confirmAction: `开启${permissionVocabularyZh.fullAccess}`,
         },
         inheritanceSection: {
           title: '子 Agent 权限继承',

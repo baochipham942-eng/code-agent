@@ -151,6 +151,7 @@ export class ConfigService implements IReadConfigService {
   private configWatcher: FSWatcher | null = null;
   private configWatchTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSelfWriteAt = 0;
+  private settingsUpdatedListeners: Array<(settings: AppSettings) => void> = [];
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
@@ -230,6 +231,21 @@ export class ConfigService implements IReadConfigService {
     this.applyUserPermissionRules();
   }
 
+  /** 订阅设置写入（updateSettings 与外部编辑热重载都会触发）。privacyGate 等运行时重放用。 */
+  onSettingsUpdated(listener: (settings: AppSettings) => void): void {
+    this.settingsUpdatedListeners.push(listener);
+  }
+
+  private notifySettingsUpdated(): void {
+    for (const listener of this.settingsUpdatedListeners) {
+      try {
+        listener(this.settings);
+      } catch (error) {
+        logger.warn('Settings-updated listener failed', { error: String(error) });
+      }
+    }
+  }
+
   /**
    * 从磁盘重新加载 config.json 到内存,并重跑会注入全局状态的 apply 函数。
    * 用于"外部直接编辑 config.json"后的热生效(API Key / 模型路由 / 权限 / 并发 / 代理
@@ -250,6 +266,7 @@ export class ConfigService implements IReadConfigService {
       this.applyUserPermissionRules();
       this.applyProviderConcurrencyOverrides();
       this.applyProviderProxyOverrides();
+      this.notifySettingsUpdated();
       logger.info('Config hot-reloaded from disk');
       return true;
     } catch (error) {
@@ -652,6 +669,8 @@ export class ConfigService implements IReadConfigService {
       this.applyProviderConcurrencyOverrides();
       this.applyProviderProxyOverrides();
     }
+
+    this.notifySettingsUpdated();
   }
 
   async setApiKey(provider: ModelProvider, apiKey: string): Promise<void> {

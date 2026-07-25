@@ -115,6 +115,11 @@ export class LangfuseService implements Disposable {
     return this.enabled && this.client !== null;
   }
 
+  /** 隐私开关（privacyGate）运行时启停；client 缺失时 isEnabled 仍为 false。 */
+  setEnabled(value: boolean): void {
+    this.enabled = value;
+  }
+
   /**
    * 关闭客户端，确保所有数据发送完成
    */

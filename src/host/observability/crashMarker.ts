@@ -54,10 +54,25 @@ function readRecentLogTail(): string | undefined {
 }
 
 let installed = false;
+let pendingUncleanExit: { startedAt?: number } | null = null;
+
+/**
+ * 把检测到的异常退出补报给 Sentry。由 privacyGate 装载后调用——检测必须在
+ * 进程入口做（要赶在写新标记之前），但上报必须等隐私开关生效，否则用户
+ * 关掉崩溃报告后启动期仍会漏发一发（2026-07-25 验收矩阵实抓）。
+ */
+export function flushPendingCrashReport(): void {
+  if (!pendingUncleanExit) return;
+  captureMessage('Previous session exited uncleanly (crash / kill / power loss)', 'error', {
+    tags: { surface: 'node', source: 'crash-marker' },
+    extra: { previousSessionStartedAt: pendingUncleanExit.startedAt, logTail: readRecentLogTail() },
+  });
+  pendingUncleanExit = null;
+}
 
 /**
  * 初始化崩溃标记。应在进程入口尽早调用（initSentryNode 之后）。
- * 1) 启动时若标记仍在 → 上次异常退出 → 上报 Sentry。
+ * 1) 启动时若标记仍在 → 上次异常退出 → 暂存，待 flushPendingCrashReport 上报。
  * 2) 写本次会话标记。
  * 3) 干净退出时移除标记。
  */
@@ -77,10 +92,7 @@ export function initCrashMarker(): void {
         /* 标记损坏也按异常退出处理 */
       }
       logger.error('Detected unclean exit from previous session', undefined, { startedAt });
-      captureMessage('Previous session exited uncleanly (crash / kill / power loss)', 'error', {
-        tags: { surface: 'node', source: 'crash-marker' },
-        extra: { previousSessionStartedAt: startedAt, logTail: readRecentLogTail() },
-      });
+      pendingUncleanExit = { startedAt };
     }
   } catch (err) {
     logger.warn('Crash marker detection failed', err);

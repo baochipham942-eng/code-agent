@@ -27,6 +27,7 @@ import {
 } from '../services/nativeCommandFacade';
 import { listenTauriEvent } from '../services/tauriPluginFacade';
 import { claimApprovalResponse, releaseApprovalResponse } from '../utils/approvalResponseGuard';
+import { claimDesignCanvasForSession } from '../components/design/designCanvasLaunch';
 
 const logger = createLogger('KeyboardShortcuts');
 
@@ -420,6 +421,17 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
 
         case 'browser.open':
           openWorkbenchTab('browser');
+          return true;
+
+        case 'files.open':
+          openWorkbenchTab('files');
+          return true;
+
+        case 'designCanvas.open':
+          // 认领必须先走：键盘打开的画布同样要归当前会话，否则 agent 提议被跨会话闸门拒掉。
+          if (!currentSessionId) return false;
+          claimDesignCanvasForSession(currentSessionId);
+          openWorkbenchTab('design-canvas');
           return true;
 
         case 'computerUse.open':

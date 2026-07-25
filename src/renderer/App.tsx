@@ -67,6 +67,7 @@ import { useWorkflowStore } from './stores/workflowStore';
 import { useBackgroundTaskStore } from './stores/backgroundTaskStore';
 import { tauriCheckForUpdate } from './utils/tauriUpdater';
 import { setSentryRendererContext } from './observability/sentryRenderer';
+import { applyRendererPrivacyFlags, resolvePrivacyFlags } from './observability/privacyFlags';
 import { signalRendererReady, RENDERER_READY_SETTLE_CAP_MS } from './utils/rendererReady';
 import { whenInitialSessionStateSettled } from './stores/sessionStore';
 import {
@@ -374,6 +375,8 @@ export const App: React.FC = () => {
   const loadActiveModelConfig = useCallback(async () => {
     try {
       const settings = await invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
+      // renderer 侧遥测通道跟随隐私开关（host 侧对应 privacyGate；boot 一次 + 设置页切换时重放）
+      applyRendererPrivacyFlags(resolvePrivacyFlags(settings));
       if (!settings?.models) return;
       const defaultProvider = (settings.models.defaultProvider || settings.models.default || DEFAULT_PROVIDER) as ModelProvider;
       const providerConfig = settings.models.providers?.[defaultProvider];

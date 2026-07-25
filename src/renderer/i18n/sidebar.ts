@@ -9,7 +9,6 @@ export const sidebarZh = {
     // 顶部 / 搜索
     newTask: '新任务',
     newTaskTitle: '新建任务（纯对话，不继承项目上下文）',
-    newTaskSubtitle: '开始一段新的协作',
     openSearch: '搜索会话',
     searchPlaceholder: '搜索会话…',
     searchDialogTitle: '搜索会话',
@@ -283,7 +282,6 @@ export const sidebarEn: typeof sidebarZh = {
   sidebar: {
     newTask: 'New task',
     newTaskTitle: 'New task (plain conversation, no project context)',
-    newTaskSubtitle: 'Start a new collaboration',
     openSearch: 'Search sessions',
     searchPlaceholder: 'Search sessions…',
     searchDialogTitle: 'Search sessions',

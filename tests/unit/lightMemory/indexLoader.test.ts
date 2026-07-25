@@ -132,12 +132,26 @@ describe('indexLoader', () => {
       expect(result).not.toBeNull();
 
       const resultLines = result!.split('\n');
-      // First 200 lines + truncation comment
-      expect(resultLines.length).toBe(202); // 200 content + empty line + comment line (joined as single string with \n\n)
-      expect(result).toContain('<!-- Truncated: INDEX.md exceeds budget; consolidation will compress on next run. -->');
+      // First 200 lines + truncation notice
+      expect(resultLines.length).toBe(202); // 200 content + empty line + notice line (joined as single string with \n\n)
+      // 截断提示必须对模型可见（不是 HTML 注释）且带确切省略行数——consolidation 仍是
+      // dry-run，截断是唯一真实处置，不能再谎称「稍后会自动压缩」
+      expect(result).toContain('本次省略了尾部 50 行');
+      expect(result).not.toContain('<!--');
+      expect(result).not.toContain('consolidation will compress');
       expect(result).toContain('Line 1');
       expect(result).toContain('Line 200');
       expect(result).not.toContain('Line 201');
+    });
+
+    it('reports the exact omitted line count in the truncation notice', async () => {
+      const memDir = path.join(tmpDir, 'memory');
+      await fs.mkdir(memDir, { recursive: true });
+      const lines = Array.from({ length: 337 }, (_, i) => `Line ${i + 1}`);
+      await fs.writeFile(path.join(memDir, 'INDEX.md'), lines.join('\n'), 'utf-8');
+
+      const result = await loadMemoryIndex();
+      expect(result).toContain('本次省略了尾部 137 行');
     });
 
     it('should not truncate INDEX.md with exactly 200 lines', async () => {

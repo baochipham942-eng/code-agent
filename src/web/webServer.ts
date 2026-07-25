@@ -50,6 +50,7 @@ import {
 } from './webCapabilityBootstrap';
 import { createQueuedInputStartupSweepGate } from './queuedInputStartupSweep';
 import { kickoffStartupRetention } from './webStartupRetention';
+import { registerMemoryConsolidationJob } from './webStartupMemoryJobs';
 import { setupWebLogBridge } from './webLogBridgeSetup';
 
 const logger = createLogger('WebServer');
@@ -645,6 +646,9 @@ async function initializeServices(): Promise<void> {
     const { syncCadenceJobs } = await import('../host/services/roleAssets/roleProactivity');
     const synced = await syncCadenceJobs();
     logger.info('Cron service initialized + role cadence jobs synced', synced);
+    // 同一处 web/main 路径分离修复：Light Memory 整理 job 的注册也只在死路径上，
+    // 发行版从未创建过它（记忆只写不整理）。仍按 DRY_RUN_DEFAULT 注册，详见该模块头注释。
+    await registerMemoryConsolidationJob();
   } catch (error) {
     logger.warn('Cron / role cadence init failed (non-blocking):', (error as Error).message);
   }

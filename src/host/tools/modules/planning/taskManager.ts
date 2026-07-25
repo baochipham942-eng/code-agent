@@ -234,7 +234,7 @@ async function executeTaskPlanReplace(
       preferredInProgressIds.add(item.id);
     }
     // 沿用旧状态的条目把旧证据一起带过来，否则重建后会出现「completed 但无证据」
-    if (previous && previous.status === item.status) {
+    if (previous?.status === item.status) {
       item.evidence = {
         ...(previous.evidenceRefs?.length ? { evidenceRefs: previous.evidenceRefs } : {}),
         ...(previous.blockedReason !== undefined ? { blockedReason: previous.blockedReason } : {}),

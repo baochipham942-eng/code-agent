@@ -62,15 +62,6 @@ function getTurnEventWindow(turn: TraceTurn, window: TurnWindow): TurnWindow {
   };
 }
 
-function truncateHookMessage(message: string | undefined): string | undefined {
-  const trimmed = message?.replace(/\s+/g, ' ').trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  return trimmed.length > 180 ? `${trimmed.slice(0, 177)}...` : trimmed;
-}
-
 function buildHookActivity(
   turn: TraceTurn,
   window: TurnWindow,
@@ -91,17 +82,23 @@ function buildHookActivity(
 
   const totalHooks = relevantEvents.reduce((sum, event) => sum + event.hookCount, 0);
   const blockedCount = relevantEvents.filter((event) => event.action === 'block').length;
-  const modifiedCount = relevantEvents.filter((event) => event.modified).length;
   const errorCount = relevantEvents.reduce((sum, event) => sum + (event.errorCount || 0), 0);
-  const durationMs = relevantEvents.reduce((sum, event) => sum + event.durationMs, 0);
-  const statusLabel = blockedCount > 0
-    ? `${blockedCount} 次阻止`
+  const events = Array.from(new Set(relevantEvents.map((event) => event.event)));
+  const names = Array.from(new Set(relevantEvents.flatMap((event) => event.names || [])));
+
+  // 摘要只说「哪个时机、是哪几个 hook」。耗时/命中数/改写次数是调试量，不上屏。
+  const head = events.length === 1 ? events[0] : `${events.length} 个时机`;
+  const tail = names.length > 0
+    ? names.join('、')
+    : `${totalHooks} 个 hook`;
+  const alert = blockedCount > 0
+    ? `拦下 ${blockedCount} 次 · `
     : errorCount > 0
-      ? `${errorCount} 个错误`
-      : '已放行';
+      ? `${errorCount} 个出错 · `
+      : '';
 
   return {
-    summary: `命中 ${totalHooks} 个 hook · ${statusLabel} · ${durationMs}ms${modifiedCount > 0 ? ` · ${modifiedCount} 次修改输入` : ''}`,
+    summary: `${alert}${head} · ${tail}`,
     items: relevantEvents.map((event) => ({
       timestamp: event.timestamp,
       event: event.event,
@@ -110,9 +107,9 @@ function buildHookActivity(
       durationMs: event.durationMs,
       sources: event.sources,
       hookType: event.hookType,
+      ...(event.names?.length ? { names: event.names } : {}),
       ...(event.modified ? { modified: true } : {}),
       ...(event.errorCount ? { errorCount: event.errorCount } : {}),
-      ...(truncateHookMessage(event.message) ? { message: truncateHookMessage(event.message) } : {}),
       ...(event.toolName ? { toolName: event.toolName } : {}),
       ...(event.matcher ? { matcher: event.matcher } : {}),
     })),

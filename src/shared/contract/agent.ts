@@ -265,6 +265,8 @@ export interface HookTriggerEventData {
   modified: boolean;
   sources: HookActivitySource[];
   hookType: HookActivityType;
+  /** 触发的 hook 各自的名字（配置里的 name，没写就退回脚本名）。 */
+  names?: string[];
   errorCount?: number;
   message?: string;
   sessionId?: string;

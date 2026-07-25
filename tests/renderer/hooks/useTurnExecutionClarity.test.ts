@@ -809,7 +809,7 @@ describe('buildTurnExecutionClarityProjection', () => {
     ]);
     const hookNode = enriched.turns[0]?.nodes[1];
     expect(hookNode?.turnTimeline?.kind).toBe('hook_activity');
-    expect(hookNode?.turnTimeline?.hookActivity?.summary).toContain('命中 3 个 hook');
+    expect(hookNode?.turnTimeline?.hookActivity?.summary).toContain('2 个时机');
     expect(hookNode?.turnTimeline?.hookActivity?.items.map((item) => item.event)).toEqual([
       'UserPromptSubmit',
       'PreToolUse',

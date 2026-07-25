@@ -462,6 +462,7 @@ function sessionTaskPersistentStatus(status: SessionTask['status']): TaskRecord[
   if (status === 'completed') return 'completed';
   if (status === 'cancelled') return 'cancelled';
   if (status === 'in_progress') return 'in_progress';
+  if (status === 'blocked') return 'blocked';
   return 'pending';
 }
 
@@ -576,6 +577,12 @@ function buildSessionTaskRecordFromSessionTasks(args: {
       status: blockedByIds.length > 0 ? 'blocked' as const : sessionTaskPersistentStatus(task.status),
       blockedByTitles: blockedByTitles.length > 0 ? blockedByTitles : undefined,
       blockedTaskTitles: blockedTaskTitles.length > 0 ? blockedTaskTitles : undefined,
+      ...(task.status === 'blocked'
+        ? {
+            blockedReason: task.blockedReason || undefined,
+            blockedReasonCategory: task.blockedReasonCategory,
+          }
+        : {}),
     };
   });
 

@@ -1,5 +1,6 @@
 import type { PermissionLevel } from '@shared/contract/tool';
 import type { LongTaskUiStatus } from '@shared/contract/productClosure';
+import type { TaskBlockedCategory } from '@shared/contract/planning';
 
 export type RunUiStatus =
   | 'planning'
@@ -69,6 +70,9 @@ export interface TaskRecord {
     status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
     blockedByTitles?: string[];
     blockedTaskTitles?: string[];
+    /** 已过语义化清洗的阻塞说明（ADR-050）；为空时用 blockedReasonCategory 的文案兜底 */
+    blockedReason?: string;
+    blockedReasonCategory?: TaskBlockedCategory;
   }>;
   ownerRunId?: string | null;
   sourceThreadId?: string | null;

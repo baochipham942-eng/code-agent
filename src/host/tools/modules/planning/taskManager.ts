@@ -23,8 +23,9 @@ import { executeTaskCreate } from './taskCreate';
 import { executeTaskGet } from './taskGet';
 import { executeTaskList } from './taskList';
 import { executeTaskUpdate } from './taskUpdate';
-import type { SessionTask, SessionTaskPriority, SessionTaskStatus } from '../../../../shared/contract/planning';
+import type { SessionTask, SessionTaskPriority, SessionTaskStatus, UpdateTaskInput } from '../../../../shared/contract/planning';
 import { clearTasks, createTask, listTasks, updateTask } from '../../../services/planning/taskStore';
+import { buildTaskEvidenceUpdates } from '../../../services/planning/taskEvidenceGate';
 
 type BatchAction = 'replace' | 'patch';
 
@@ -39,6 +40,9 @@ interface BatchTaskInput {
   priority?: unknown;
   owner?: unknown;
   metadata?: unknown;
+  completionEvidence?: unknown;
+  blockedReason?: unknown;
+  cancelReason?: unknown;
 }
 
 interface ProjectedTask {
@@ -50,10 +54,14 @@ interface ProjectedTask {
   priority: SessionTaskPriority;
   owner?: string;
   metadata: Record<string, unknown>;
+  /** 证据门产出的落盘字段（completed/blocked 必有，其余为空对象） */
+  evidence: Partial<UpdateTaskInput>;
   newInput?: BatchTaskInput;
 }
 
-const VALID_BATCH_STATUSES = new Set<SessionTaskStatus>(['pending', 'in_progress', 'completed', 'cancelled']);
+const VALID_BATCH_STATUSES = new Set<SessionTaskStatus>([
+  'pending', 'in_progress', 'completed', 'blocked', 'cancelled',
+]);
 const VALID_PRIORITIES = new Set<SessionTaskPriority>(['low', 'normal', 'high']);
 
 function readString(value: unknown): string | undefined {
@@ -88,24 +96,50 @@ function projectedFromExisting(task: SessionTask): ProjectedTask {
     priority: task.priority,
     owner: task.owner,
     metadata: { ...task.metadata },
+    evidence: {},
   };
 }
 
-function projectedFromInput(input: BatchTaskInput, index: number): ProjectedTask | string {
+/**
+ * 证据门（ADR-050）在批量路径上按「状态转移」触发：沿用旧状态的条目不算新声称，
+ * 只有真的把某条改成 completed/blocked 才要求证据。
+ */
+function evidenceForBatchItem(
+  input: BatchTaskInput,
+  status: SessionTaskStatus,
+  previousStatus: SessionTaskStatus | undefined,
+  label: string,
+): Partial<UpdateTaskInput> | string {
+  if (status === previousStatus) return {};
+  const result = buildTaskEvidenceUpdates({ ...input, status }, label);
+  return result.ok ? result.updates : `${label}: ${result.error}`;
+}
+
+function projectedFromInput(
+  input: BatchTaskInput,
+  index: number,
+  previousStatus?: SessionTaskStatus,
+): ProjectedTask | string {
   const subject = readString(input.subject) ?? readString(input.content);
   if (!subject) {
     return `tasks[${index}].subject is required and must be a string`;
   }
   const description = readString(input.description) ?? subject;
+  const status = normalizeStatus(input.status);
+  const evidence = evidenceForBatchItem(input, status, previousStatus, `tasks[${index}]`);
+  if (typeof evidence === 'string') {
+    return evidence;
+  }
   return {
     id: `__new_${index}`,
     subject,
     description,
     activeForm: readString(input.activeForm),
-    status: normalizeStatus(input.status),
+    status,
     priority: normalizePriority(input.priority),
     owner: readString(input.owner),
     metadata: readMetadata(input.metadata),
+    evidence,
     newInput: input,
   };
 }
@@ -143,7 +177,7 @@ function normalizeExactlyOneInProgress(
 }
 
 function taskUpdateFromProjection(before: SessionTask, after: ProjectedTask): Record<string, unknown> {
-  const updates: Record<string, unknown> = {};
+  const updates: Record<string, unknown> = { ...after.evidence };
   if (before.status !== after.status) updates.status = after.status;
   if (before.subject !== after.subject) updates.subject = after.subject;
   if (before.description !== after.description) updates.description = after.description;
@@ -179,21 +213,40 @@ async function executeTaskPlanReplace(
     return { ok: false, error: batch, code: 'INVALID_ARGS' };
   }
 
+  const sessionId = ctx.sessionId || 'default';
+  // replace 会清空重建，但同名任务的既有状态是「沿用」不是「新声称」——
+  // 拿清空前的快照做证据门的 previousStatus，否则每次重排计划都要重新举证。
+  const previousBySubject = new Map(
+    listTasks(sessionId).map((task) => [task.subject, task] as const),
+  );
+
   const projected: ProjectedTask[] = [];
   const preferredInProgressIds = new Set<string>();
   for (let index = 0; index < batch.length; index += 1) {
-    const item = projectedFromInput(batch[index], index);
+    const raw = batch[index];
+    const subject = readString(raw.subject) ?? readString(raw.content);
+    const previous = subject ? previousBySubject.get(subject) : undefined;
+    const item = projectedFromInput(raw, index, previous?.status);
     if (typeof item === 'string') {
       return { ok: false, error: item, code: 'INVALID_ARGS' };
     }
     if (item.status === 'in_progress') {
       preferredInProgressIds.add(item.id);
     }
+    // 沿用旧状态的条目把旧证据一起带过来，否则重建后会出现「completed 但无证据」
+    if (previous?.status === item.status) {
+      item.evidence = {
+        ...(previous.evidenceRefs?.length ? { evidenceRefs: previous.evidenceRefs } : {}),
+        ...(previous.blockedReason !== undefined ? { blockedReason: previous.blockedReason } : {}),
+        ...(previous.blockedReasonCategory
+          ? { blockedReasonCategory: previous.blockedReasonCategory }
+          : {}),
+      };
+    }
     projected.push(item);
   }
 
   const normalized = normalizeExactlyOneInProgress(projected, preferredInProgressIds);
-  const sessionId = ctx.sessionId || 'default';
   clearTasks(sessionId);
 
   const createdIds: string[] = [];
@@ -208,7 +261,7 @@ async function executeTaskPlanReplace(
     });
     createdIds.push(task.id);
     if (item.status !== 'pending') {
-      updateTask(sessionId, task.id, { status: item.status });
+      updateTask(sessionId, task.id, { ...item.evidence, status: item.status });
     }
   }
 
@@ -262,6 +315,10 @@ async function executeTaskPlanPatch(
     if (status === 'in_progress') {
       preferredInProgressIds.add(id);
     }
+    const evidence = evidenceForBatchItem(item, status, existing.status, `tasks[${index}] (#${id})`);
+    if (typeof evidence === 'string') {
+      return { ok: false, error: evidence, code: 'INVALID_ARGS' };
+    }
     projectedById.set(id, {
       ...existing,
       subject: readString(item.subject) ?? readString(item.content) ?? existing.subject,
@@ -270,6 +327,7 @@ async function executeTaskPlanPatch(
       status,
       owner: item.owner === undefined ? existing.owner : readString(item.owner),
       metadata: item.metadata === undefined ? existing.metadata : readMetadata(item.metadata),
+      evidence,
     });
   }
 
@@ -291,7 +349,7 @@ async function executeTaskPlanPatch(
       });
       changedIds.push(created.id);
       if (task.status !== 'pending') {
-        updateTask(sessionId, created.id, { status: task.status });
+        updateTask(sessionId, created.id, { ...task.evidence, status: task.status });
       }
       continue;
     }

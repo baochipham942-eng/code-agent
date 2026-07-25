@@ -19,16 +19,33 @@ export interface TodoItem {
 
 // 使用前缀避免与其他模块的 TaskStatus/TaskPriority 冲突
 // cancelled: 主动放弃但留痕可见（区别于 update status='deleted' 的物理删除）
-// blocked 不是持久状态，由 blockedBy 含未完成任务派生（见 taskList 的 blocked 检测）
-export type SessionTaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+// blocked: 卡在外部障碍上（拿不到权限/网站拒绝/缺信息），必须带 blockedReason。
+//   与 blockedBy 派生的"等前置任务"不同——后者仍是 pending，由 taskList 派生展示。
+export type SessionTaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
 export type SessionTaskPriority = 'low' | 'normal' | 'high';
+
+/**
+ * blocked 原因的语义分类（面向非程序员的展示层用它选文案，不直接暴露 raw error）。
+ * 由 host 侧 describeTaskBlockedReason() 从 agent 写的原始文本推断。
+ */
+export type TaskBlockedCategory =
+  | 'network'
+  | 'rate_limit'
+  | 'permission'
+  | 'resource'
+  | 'tool'
+  | 'model'
+  | 'logic'
+  /** 子代理结束时把没收口的任务交还主会话，等主会话核实后再收口 */
+  | 'handback'
+  | 'unknown';
 
 export interface SessionTask {
   id: string;              // 自动生成 "task-{timestamp}-{random}"
   subject: string;         // 祈使句 "Implement login"
   description: string;     // 详细描述
   activeForm: string;      // 进行时 "Implementing login"
-  status: SessionTaskStatus;      // pending | in_progress | completed | cancelled
+  status: SessionTaskStatus;      // pending | in_progress | completed | blocked | cancelled
   priority: SessionTaskPriority;  // low | normal | high
 
   // 依赖关系
@@ -37,6 +54,11 @@ export interface SessionTask {
 
   // 树状结构（roadmap 2.6）：子任务 id 形如 "1.1"、"1.1.2"，由父 id 派生
   parentTaskId?: string;
+
+  // 证据门（ADR-050）：completed 必须留 evidenceRefs，blocked 必须留可展示的原因
+  /** 已过语义化清洗、可直接展示给用户的阻塞说明；raw 原文只进事件日志 */
+  blockedReason?: string;
+  blockedReasonCategory?: TaskBlockedCategory;
 
   // 元数据
   owner?: string;          // Agent 名称（多 Agent 场景；subagent 创建的任务默认归 subagent）
@@ -96,6 +118,50 @@ export interface UpdateTaskInput {
   addBlockedBy?: string[];
   addBlocks?: string[];
   metadata?: Record<string, unknown>;
+  /** 已清洗的阻塞说明（写 blocked 时必填，改成其它状态时自动清空） */
+  blockedReason?: string;
+  blockedReasonCategory?: TaskBlockedCategory;
+  /** 追加的完成证据；写 completed 时必填 */
+  evidenceRefs?: EvidenceRef[];
+  /** 事件日志补充说明（done/blocked/abandoned 的原文，只进审计不进 UI） */
+  statusSummary?: string;
+}
+
+// ============================================================================
+// 证据门（ADR-050）
+//
+// maka task ledger 语义：completed/blocked 必须带证据，任务状态是 advisory —
+// 它记录 agent 声称做了什么，绝不 override 真实 filesystem/git/test 结果。
+// 所有写状态的工具入口（update / replace / patch）共用这一个校验，别按 action
+// 分别写——按名字枚举的门迟早漏一条路径。
+// ============================================================================
+
+export interface TaskEvidenceInput {
+  completionEvidence?: unknown;
+  blockedReason?: unknown;
+}
+
+function hasText(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * 校验状态转移所需的证据。返回 null 表示放行，返回字符串是给模型看的报错。
+ */
+export function validateTaskStatusEvidence(
+  status: unknown,
+  input: TaskEvidenceInput,
+): string | null {
+  if (status === 'completed' && !hasText(input.completionEvidence)) {
+    return 'status="completed" requires completionEvidence: state what you actually verified '
+      + '(command run and its result, file checked, page observed). '
+      + 'If a subagent reported success, verify it yourself first — a subagent report is not evidence.';
+  }
+  if (status === 'blocked' && !hasText(input.blockedReason)) {
+    return 'status="blocked" requires blockedReason: say what is blocking the task in plain language '
+      + '(e.g. "the site requires a login we do not have"), not a raw error dump.';
+  }
+  return null;
 }
 
 // Task Plan Types

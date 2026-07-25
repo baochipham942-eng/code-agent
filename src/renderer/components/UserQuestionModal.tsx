@@ -18,6 +18,23 @@ interface Props {
   onClose: () => void;
 }
 
+// 单选/多选项的选中指示圆点（不是按钮，故不走 primitives/Button）。
+// 预设选项行与"其他"自由文本行共用，避免同一处手搓色散在两地。
+const SelectionIndicator: React.FC<{ selected: boolean; multiSelect: boolean }> = ({
+  selected,
+  multiSelect,
+}) => (
+  <div
+    className={`mt-0.5 w-4 h-4 rounded ${
+      multiSelect ? 'rounded' : 'rounded-full'
+    } border-2 flex items-center justify-center ${
+      selected ? 'border-blue-500 bg-blue-500' : 'border-zinc-600'
+    }`}
+  >
+    {selected && <Check className="w-3 h-3 text-white" />}
+  </div>
+);
+
 export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
   const { t } = useI18n();
   // Store selected answers: header -> selected option label(s)
@@ -179,19 +196,10 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
                   }`}
                 >
                   <div className="flex items-start gap-3">
-                    <div
-                      className={`mt-0.5 w-4 h-4 rounded ${
-                        q.multiSelect ? 'rounded' : 'rounded-full'
-                      } border-2 flex items-center justify-center ${
-                        isSelected(q.header, option.label)
-                          ? 'border-blue-500 bg-blue-500'
-                          : 'border-zinc-600'
-                      }`}
-                    >
-                      {isSelected(q.header, option.label) && (
-                        <Check className="w-3 h-3 text-white" />
-                      )}
-                    </div>
+                    <SelectionIndicator
+                      selected={isSelected(q.header, option.label)}
+                      multiSelect={!!q.multiSelect}
+                    />
                     <div className="flex-1">
                       <div className="font-medium text-zinc-200 text-sm">
                         {option.label}
@@ -224,15 +232,10 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <div
-                    className={`mt-0.5 w-4 h-4 rounded ${
-                      q.multiSelect ? 'rounded' : 'rounded-full'
-                    } border-2 flex items-center justify-center ${
-                      otherActive[q.header] ? 'border-blue-500 bg-blue-500' : 'border-zinc-600'
-                    }`}
-                  >
-                    {otherActive[q.header] && <Check className="w-3 h-3 text-white" />}
-                  </div>
+                  <SelectionIndicator
+                    selected={!!otherActive[q.header]}
+                    multiSelect={!!q.multiSelect}
+                  />
                   <div className="flex-1">
                     <div className="font-medium text-zinc-200 text-sm">{t.userQuestion.other}</div>
                     {otherActive[q.header] && (

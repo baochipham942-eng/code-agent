@@ -10,7 +10,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelProvider } from '@shared/contract';
 import type { AgentEngineKind } from '@shared/contract/agentEngine';
 import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
-import { getProviderDisplayName } from '@shared/constants';
+import { getProviderDisplayName, isAgenticVerifiedModel } from '@shared/constants';
 import {
   buildRuntimeModelOptions,
   groupRuntimeModelOptionsByProvider,
@@ -19,7 +19,8 @@ import {
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
 import { toast } from '../../hooks/useToast';
-import { Brain, Sparkles, Zap, Code2, Settings, Star } from 'lucide-react';
+import { BadgeCheck, Brain, Sparkles, Zap, Code2, Settings, Star } from 'lucide-react';
+import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
 import { trackRenderer } from '../../observability/posthogRenderer';
@@ -126,6 +127,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthSnapshot>>({});
   const [modelSettings, setModelSettings] = useState<AppSettings | null>(null);
+  const { t } = useI18n();
+  const modelText = t.settings.model.models;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -661,6 +664,21 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                             >
                               <div className="flex items-center gap-1 flex-wrap">
                                 <span className="font-medium">{opt.label}</span>
+                                {isAgenticVerifiedModel(opt.model) ? (
+                                  <span
+                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-300"
+                                    title={modelText.verifiedBadgeTitle}
+                                  >
+                                    <BadgeCheck className="h-3 w-3" />
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded bg-amber-500/10 text-amber-300/90"
+                                    title={modelText.unverifiedHint}
+                                  >
+                                    {modelText.unverifiedShort}
+                                  </span>
+                                )}
                                 {opt.features.map((cap) => {
                                   const cfg = CAPABILITY_CONFIG[cap];
                                   if (!cfg) return null;

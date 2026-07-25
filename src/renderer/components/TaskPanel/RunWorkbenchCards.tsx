@@ -571,6 +571,11 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
   const unlocksHint = step.blockedTaskTitles?.length
     ? formatTemplate(t.taskPanel.taskDependencyUnlocks, { tasks: blockedTaskTitles ?? '' })
     : null;
+  // 卡住原因（ADR-050）：优先用 agent 写的人话，它被判定成 raw 日志时退回类别文案。
+  // 无论哪条路径，非程序员看到的都不是报错原文。
+  const stuckHint = step.blockedReasonCategory
+    ? step.blockedReason || t.taskPanel.taskBlockedReason[step.blockedReasonCategory]
+    : step.blockedReason || null;
 
   return (
     <div
@@ -602,6 +607,15 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
         }`}>
           {step.title}
         </span>
+        {stuckHint && (
+          <span
+            className="min-w-0 flex-shrink truncate rounded border border-red-400/20 bg-red-400/5 px-1 py-0.5 text-[10px] text-red-300/85"
+            data-testid="task-rail-step-blocked-reason"
+            title={stuckHint}
+          >
+            {stuckHint}
+          </span>
+        )}
         {waitingHint && (
           <span
             className="min-w-0 flex-shrink truncate rounded border border-amber-400/15 bg-amber-400/5 px-1 py-0.5 text-[10px] text-amber-300/80"

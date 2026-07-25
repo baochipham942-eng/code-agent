@@ -11,7 +11,6 @@
 // ============================================================================
 
 import type { TaskBlockedCategory } from '../../../shared/contract/planning';
-import { getErrorClassifier } from '../../errors/errorClassifier';
 
 /** 展示用文本上限：一行提示的量级，超出说明模型在贴日志 */
 const MAX_DISPLAY_LENGTH = 160;
@@ -42,11 +41,28 @@ function collapseWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * 类别识别只认英文机器特征——中文散文原因会落到 unknown，正是我们想要的：
+ * 认不出来就别猜，保留模型自己的话。
+ *
+ * 没有复用 src/host/errors/errorClassifier.ts：那整个 errors/ 模块目前是死代码
+ * （knip unused files），为了一次类别查表把 484 行无人维护的模式表拖进活引用图
+ * 不划算。这里只需要展示层用得上的这几类。
+ */
+const CATEGORY_PATTERNS: Array<[TaskBlockedCategory, RegExp]> = [
+  ['rate_limit', /\b429\b|rate.?limit|too many requests|quota/i],
+  ['permission', /\b40[13]\b|forbidden|unauthorized|permission denied|access denied|EACCES|requires? (?:a )?(?:login|sign.?in)/i],
+  ['resource', /\b404\b|not found|ENOENT|no such file/i],
+  ['network', /ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EHOSTUNREACH|getaddrinfo|fetch failed|network error|timed? ?out/i],
+  ['model', /context length|content policy|model (?:not available|overloaded)/i],
+  ['tool', /tool (?:not found|failed)|command not found|exit code [1-9]/i],
+];
+
 function toBlockedCategory(raw: string): TaskBlockedCategory {
-  // ErrorClassifier 的 category 枚举与 TaskBlockedCategory 同名同义，直接透传。
-  // 它的模式是英文的，中文散文原因会落到 unknown——正是我们想要的：
-  // 认不出来就别猜，保留模型自己的话。
-  return getErrorClassifier().classify(raw).category;
+  for (const [category, pattern] of CATEGORY_PATTERNS) {
+    if (pattern.test(raw)) return category;
+  }
+  return 'unknown';
 }
 
 export interface TaskBlockedReasonDescription {

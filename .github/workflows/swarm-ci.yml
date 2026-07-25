@@ -201,6 +201,12 @@ jobs:
         # CI 走 setup-node 的 npm 缓存。独立 step 便于失败归因。
         run: node scripts/knip-ratchet.mjs
 
+      - name: Knip production-reachability ratchet
+        # 第二 profile：entry 只放发行版入口（不含 tests/**），报"从生产入口完全走不到的
+        # 文件"。上一道门的 entry 含 tests，"有测试"恰是这类孤儿的伪装色——2026-07-25 孤儿
+        # 审计实测三个已确认孤儿喂给上一道门一个都没进网。基线见脚本头注。
+        run: node scripts/knip-production-ratchet.mjs
+
       - name: ESLint error/warning ratchet
         # errors / warnings 双独立基线棘轮；任一超基线即阻塞，清理后只能下调。
         run: node scripts/eslint-ratchet.mjs

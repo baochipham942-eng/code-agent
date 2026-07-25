@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/cli/index.ts",
+    "src/web/webServer.ts",
+    "src/host/mcp/mcp-server-entry.ts",
+    "src/renderer/index.tsx",
+    "packages/bridge/src/index.ts"
+  ],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignoreDependencies": [".*"],
+  "ignoreBinaries": [".*"]
+}

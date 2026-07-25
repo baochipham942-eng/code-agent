@@ -261,7 +261,15 @@ export interface AppSettings {
     publicKey: string;
     secretKey: string;
     baseUrl?: string;
+    /** 旧遥测开关字段：privacy.usageDataEnabled 缺省时作为兼容回退（见 shared/observability/privacyFlags.ts） */
     enabled?: boolean;
+  };
+  // 隐私开关（承诺 → 通道的映射统一在 host 侧 privacyGate，两个开关都必须真接线）
+  privacy?: {
+    /** 使用数据：LLM tracing（Langfuse）+ 产品分析（PostHog）+ fleet telemetry（Supabase）。缺省 = 开 */
+    usageDataEnabled?: boolean;
+    /** 崩溃报告：Sentry node + renderer。缺省 = 开 */
+    crashReportingEnabled?: boolean;
   };
   // 安全校验配置
   sanitization?: {

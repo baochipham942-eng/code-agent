@@ -435,6 +435,7 @@ async function initializeServices(): Promise<void> {
   const { initConfigService } = await import('../host/services/core/configService');
   const configService = initConfigService();
   await configService.initialize().then(() => logger.info('ConfigService initialized'));
+  (await import('../host/observability/privacyGate')).installPrivacyGate(configService);
   bootMark('configService');
 
   // Initialize before exposing runtime preparation; SSE does not require mainWindow.

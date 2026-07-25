@@ -49,3 +49,8 @@ export {
 
 export { SwarmLedgerRepository } from './SwarmLedgerRepository';
 export { DurableRunRepository } from './DurableRunRepository';
+export {
+  UsageLedgerRepository,
+  type UsageLedgerEntryInput,
+  type UsageLedgerEntry,
+} from './UsageLedgerRepository';

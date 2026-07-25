@@ -330,6 +330,7 @@ async function runMaxModeInference(
         model: entry.actualModel ?? requestConfig.model,
         provider: entry.actualProvider ?? requestConfig.provider,
         timestamp: Date.now(),
+        sessionId: ctx.runtime.sessionId,
       });
     }
   };

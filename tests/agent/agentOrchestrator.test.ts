@@ -874,5 +874,32 @@ describe('AgentOrchestrator', () => {
       internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
       await promise;
     });
+
+    // 扩权的失败方向必须是 fail-closed：拿不到停车台账时若回落常规路径，
+    // devModeAutoApprove 就会把「新增一个目录的访问权」顺带自动批了——
+    // 那正是这条分支要挡住的事，不能因为 DB 没就绪反而放行。
+    it('directory_access：拿不到停车台账时拒绝扩权，不回落到会被 devModeAutoApprove 放行的常规路径', async () => {
+      (mockConfigService.getSettings as ReturnType<typeof vi.fn>).mockReturnValue({
+        permissions: {
+          autoApprove: { read: true, write: true, execute: true, network: true },
+          devModeAutoApprove: true,
+        },
+      });
+      const noRepoOrch = new AgentOrchestrator({
+        configService: mockConfigService,
+        onEvent: mockOnEvent,
+      });
+      // 台账不可用（DB 未就绪）：getPendingApprovalRepo 返回 null 的那条路径
+      internals(noRepoOrch).getPendingApprovalRepo = () => null;
+
+      const granted = await internals(noRepoOrch).requestPermission({
+        type: 'directory_access',
+        tool: 'request_directory',
+        sessionId: `no-repo-${Math.random().toString(36).slice(2)}`,
+        details: { path: '/tmp/some-other-project', requestedAccess: 'read_write' },
+      });
+
+      expect(granted).toBe(false);
+    });
   });
 });

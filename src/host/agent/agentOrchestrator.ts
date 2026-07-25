@@ -748,9 +748,13 @@ export class AgentOrchestrator {
     // 决策窗口太短。repo 不可用时（DB 未就绪/测试）才回退到下面的常规路径。
     if (request.type === 'directory_access') {
       const dirRepo = this.getPendingApprovalRepo();
-      if (dirRepo) {
-        return this.parkApproval(fullRequest, getPermissionLevel(request.type), dirRepo, 'directory_access');
+      if (!dirRepo) {
+        // fail-closed：扩权的失败方向不能是放行。回落常规路径的话，devModeAutoApprove
+        // 会把「新增一个目录的访问权」顺带自动批了——那正是上面这段要挡住的事。
+        logger.warn('[Permission] 停车台账不可用，directory_access 扩权请求按 fail-closed 拒绝');
+        return false;
       }
+      return this.parkApproval(fullRequest, getPermissionLevel(request.type), dirRepo, 'directory_access');
     }
 
     const settings = this.configService.getSettings();

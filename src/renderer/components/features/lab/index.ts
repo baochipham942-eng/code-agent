@@ -1,1 +1,0 @@
-export { LabPage } from './LabPage';

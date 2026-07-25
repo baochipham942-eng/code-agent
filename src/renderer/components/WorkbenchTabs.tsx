@@ -24,8 +24,7 @@ import { useAppStore, type WorkbenchViewId } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useI18n } from '../hooks/useI18n';
 import { useKeybindingsSettings } from '../hooks/useKeybindingsSettings';
-import { useDesignCanvasStore } from './design/designCanvasStore';
-import { saveCanvasDoc } from './design/designCanvasPersistence';
+import { claimDesignCanvasForSession } from './design/designCanvasLaunch';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { IconButton } from './primitives/IconButton';
 
@@ -37,7 +36,9 @@ interface LaunchableViewDefinition {
   id: LaunchableWorkbenchViewId;
   icon: LucideIcon;
   iconClassName: string;
-  keybindingActionId?: KeybindingActionId;
+  // 必填：每个视图入口都要有「打开这个视图」的 action，新增视图时漏配会在这里编译报错，
+  // 而不是静默变成「别的视图有键、它没有」。
+  keybindingActionId: KeybindingActionId;
 }
 
 const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
@@ -51,7 +52,8 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
     id: 'files',
     icon: FolderTree,
     iconClassName: 'text-amber-400/80',
-    keybindingActionId: 'files.attach',
+    // 不是 files.attach——那是输入框的附件选择器（scope: 'composer'），不是「打开文件视图」。
+    keybindingActionId: 'files.open',
   },
   {
     id: 'browser',
@@ -63,6 +65,7 @@ const LAUNCHABLE_VIEWS: readonly LaunchableViewDefinition[] = [
     id: 'design-canvas',
     icon: Palette,
     iconClassName: 'text-fuchsia-400/80',
+    keybindingActionId: 'designCanvas.open',
   },
 ];
 
@@ -130,9 +133,7 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
         <div className="space-y-1" role="list" aria-label={t.workbenchTabs.availableViews}>
           {availableViews.map((view) => {
             const Icon = view.icon;
-            const accelerator = view.keybindingActionId
-              ? getKeybindingAccelerator(keybindings, view.keybindingActionId, platform)
-              : null;
+            const accelerator = getKeybindingAccelerator(keybindings, view.keybindingActionId, platform);
             const shortcut = accelerator
               ? formatShortcutForDisplay(accelerator, platform)
               : null;
@@ -264,16 +265,7 @@ export const WorkbenchTabs: React.FC = () => {
   const openView = (id: LaunchableWorkbenchViewId) => {
     if (id === 'design-canvas') {
       if (!currentSessionId) return;
-      useDesignCanvasStore.getState().markSessionDesignActive(currentSessionId);
-      const canvasState = useDesignCanvasStore.getState();
-      if (
-        canvasState.ownerSessionId
-        && canvasState.ownerSessionId !== currentSessionId
-        && canvasState.runDir
-      ) {
-        void saveCanvasDoc(canvasState.runDir, canvasState.toDoc());
-      }
-      useDesignCanvasStore.getState().claimCanvasForSession(currentSessionId);
+      claimDesignCanvasForSession(currentSessionId);
     }
     openWorkbenchTab(id, { source: 'user' });
     setMenuOpen(false);

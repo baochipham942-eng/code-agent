@@ -48,6 +48,8 @@ export type KeybindingActionId =
   | 'workspace.toggle'
   | 'statusRail.toggle'
   | 'browser.open'
+  | 'files.open'
+  | 'designCanvas.open'
   | 'computerUse.open'
   | 'replay.open'
   | 'reviewQueue.open'

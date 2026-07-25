@@ -519,6 +519,14 @@ export const enSettingsCore = {
           label: 'Open Browser view',
           description: 'Open the live web preview',
         },
+        'files.open': {
+          label: 'Open Files view',
+          description: 'Open the file tree in the right panel',
+        },
+        'designCanvas.open': {
+          label: 'Open Design Canvas',
+          description: 'Open the design canvas in the right panel',
+        },
         'computerUse.open': {
           label: 'Open Computer Use',
           description: 'Open the Computer Use workbench',

@@ -830,5 +830,49 @@ describe('AgentOrchestrator', () => {
         approvalParkEvents.off('parked', parkedSpy);
       }
     });
+
+    // request_directory 目录授权：这是新增 root 准入判定分支——不论 attended/unattended、
+    // 不论 devModeAutoApprove/autoApprove.write 开关，一律走停车挂起（kind='directory_access'）。
+    // 与上面 'command'/'bash' 的「有人值守走 60s 内联对话框」形成对照：目录授权不该走那条
+    // 短窗口路径，也不该被写权限的 auto-approve 顺带放行。
+    it('directory_access：有人值守也走停车挂起（不落 60s 交互路径）', async () => {
+      const attendedSid = `attended-${Math.random().toString(36).slice(2)}`;
+      const promise = internals(parkedOrch).requestPermission({
+        type: 'directory_access',
+        tool: 'request_directory',
+        sessionId: attendedSid,
+        details: { path: '/tmp/some-other-project', requestedAccess: 'read_only' },
+      });
+      expect(await isStillPending(promise)).toBe(true);
+      expect(fake.insert).toHaveBeenCalledTimes(1);
+      expect(fake.insert.mock.calls[0][0]).toMatchObject({ kind: 'directory_access' });
+      const requestId = fake.insert.mock.calls[0][0].id as string;
+      const entry = internals(parkedOrch).pendingPermissions.get(requestId);
+      expect(entry?.parked).toBe(true);
+      internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
+      expect(await promise).toBe(false);
+    });
+
+    it('directory_access：devModeAutoApprove=true 也不能绕过停车挂起', async () => {
+      (mockConfigService.getSettings as ReturnType<typeof vi.fn>).mockReturnValue({
+        permissions: {
+          autoApprove: { read: true, write: true, execute: true, network: true },
+          devModeAutoApprove: true,
+        },
+      });
+      const attendedSid = `attended-devmode-${Math.random().toString(36).slice(2)}`;
+      const promise = internals(parkedOrch).requestPermission({
+        type: 'directory_access',
+        tool: 'request_directory',
+        sessionId: attendedSid,
+        details: { path: '/tmp/some-other-project', requestedAccess: 'read_write' },
+      });
+      expect(await isStillPending(promise)).toBe(true);
+      expect(fake.insert).toHaveBeenCalledTimes(1);
+      expect(fake.insert.mock.calls[0][0]).toMatchObject({ kind: 'directory_access' });
+      const requestId = fake.insert.mock.calls[0][0].id as string;
+      internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
+      await promise;
+    });
   });
 });

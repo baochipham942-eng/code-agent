@@ -231,6 +231,11 @@ export class PermissionModeManager {
   private sessionModesLoaded = false;
   // 无人值守会话（cron/heartbeat 等 automation 来源）：权限档读取时强制钳到不高于 acceptEdits。
   private unattendedSessions: Set<string> = new Set();
+  /**
+   * 云货架专家的首跑会话：本轮一律最严档，不看会话自己选的档。
+   * 只在本轮有效（turn 结束即 clear），第二轮起回到会话档。
+   */
+  private firstRunStrictSessions: Set<string> = new Set();
 
   constructor(initialMode: PermissionMode = 'default') {
     this.currentMode = initialMode;
@@ -289,10 +294,30 @@ export class PermissionModeManager {
   getModeForSession(sessionId?: string): PermissionMode {
     this.ensureSessionModesLoaded();
     const base = (sessionId && this.sessionModes.get(sessionId)) || this.currentMode;
+    // 首跑钳制排在无人值守之前：两者都只收紧，先收到最严那档即可。
+    if (sessionId && this.firstRunStrictSessions.has(sessionId)) {
+      return clampFirstRunPermissionMode(base);
+    }
     if (sessionId && this.unattendedSessions.has(sessionId)) {
       return clampUnattendedPermissionMode(base);
     }
     return base;
+  }
+
+  /**
+   * 标记「这一轮是某个云货架专家的首跑」——档位钳到最严，用户能看见每一步审批。
+   *
+   * 主 agent 的档位单一真源就是本方法所在的 getModeForSession()。PR #690 曾把首跑钳制
+   * 钩在 subagentExecutor 上，而用户选中专家聊天时专家是主 agent，那条路根本不经过——
+   * 2026-07-25 真机 dogfood 因此判 NO-GO（两轮行为无差别、文件直接落盘）。
+   */
+  markFirstRunStrictSession(sessionId: string): void {
+    this.firstRunStrictSessions.add(sessionId);
+  }
+
+  /** 本轮结束即解除，第二轮起回到会话自己的档。 */
+  clearFirstRunStrictSession(sessionId: string): void {
+    this.firstRunStrictSessions.delete(sessionId);
   }
 
   /**
@@ -585,6 +610,16 @@ export function setPermissionMode(mode: PermissionMode, approved = false): boole
  */
 export function clampUnattendedPermissionMode(mode: PermissionMode): PermissionMode {
   return mode === 'bypassPermissions' ? 'acceptEdits' : mode;
+}
+
+/**
+ * 首跑钳制：把任何「有免确认」的档收到 readOnly（读通过、每一次写/执行都问用户）。
+ * 只收紧不放宽——已经更严的档（plan / readOnly）原样返回。
+ */
+export function clampFirstRunPermissionMode(mode: PermissionMode): PermissionMode {
+  return permissionModeAutoApproves(mode, 'write') || permissionModeAutoApproves(mode, 'execute')
+    ? 'readOnly'
+    : mode;
 }
 
 /**

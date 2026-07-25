@@ -20,6 +20,11 @@ concurrency:
   group: main-full-gate-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  # 失败时开 / 追评 issue —— 见 job 末尾的 "Announce failure" 步骤
+  issues: write
+
 jobs:
   full:
     name: Full typecheck + full vitest
@@ -67,3 +72,23 @@ jobs:
         env:
           CI: 'true'
           NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Announce failure (open or update the tracking issue)
+        # 2026-07-25 建。这道门是**检测型**的：红了不挡任何合并，也不通知任何人——
+        # 实测因此从 #636 起连红 15 个合并没人管。红色 check 挂在 main 上等人路过是不够的，
+        # 必须主动出声。同一个 marker 复用一条 issue（连红只追评论，不刷屏开新 issue）。
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER: main-full-gate-red
+        run: |
+          set -euo pipefail
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          BODY=$(printf 'main 全量门失败（这道门不挡合并，需要人来看）。\n\n- commit: `%s`\n- run: %s\n\n修好后请手动关闭本 issue；再次失败会在这里追评论而不是新开。' "${GITHUB_SHA}" "${RUN_URL}")
+          EXISTING=$(gh issue list --state open --search "${MARKER} in:title" --json number --jq '.[0].number // empty')
+          if [ -n "${EXISTING}" ]; then
+            gh issue comment "${EXISTING}" --body "${BODY}"
+            echo "commented on existing issue #${EXISTING}"
+          else
+            gh issue create --title "main 全量门红了（${MARKER}）" --body "${BODY}"
+          fi

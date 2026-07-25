@@ -161,6 +161,16 @@ jobs:
         # god-file 债务在 main 上红了都没人知道（2026-07-02 抓到 4 文件超线）。整套接入。
         run: npx vitest run tests/scripts --retry=1
 
+      - name: Main-chain vitest subset (agent / tools / ipc / services)
+        # 2026-07-25 建门。动机：全量 vitest 只在 push main 后的检测门里跑，PR 阶段完全
+        # 看不见——`main-full-gate` 因此从 #636 起连红 15 个合并没人管（5 套件：partial
+        # vi.mock 一加新导出就断 ×3、权限链上新增 DB 读未加守卫 ×1、人话改造后断言过期 ×1）。
+        #
+        # 这一步把**主链路**（agent 运行时 / 工具执行 / IPC / host services）纳入 PR 门：
+        # 662 文件 6415 用例，本机 ~187s，是全量 1802 文件的 37%。renderer 与其余长尾仍留给
+        # 检测门兜底（全量本机 ~377s，整包进 PR 门太贵）——这是明说的覆盖边界，不是以为跑全了。
+        run: npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services --retry=1
+
       - name: Knip dead-export ratchet
         # dead exports+types 棘轮（基线 2785，见 scripts/knip-ratchet.mjs 头注）。
         # knip 版本锁在脚本内（npx knip@<pin>），未入 devDependencies；本地实测 ~12s，

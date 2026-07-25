@@ -1,6 +1,10 @@
 // ============================================================================
 // Bootstrap - 服务初始化入口（thin orchestrator）
 //
+// ⚠️ DEAD PATH — 本文件只被 src/host/index.ts 调用，而那条 Electron main 路径
+// 不在任何发行版中执行（详见 src/host/index.ts 头注释）。
+// **新增后台服务请挂 src/web/webServer.ts。** 挂这里不会报错，只是永远不执行。
+//
 // 各阶段实现已拆分到独立模块：
 //   Phase 1: initCoreServices.ts — DB, config, logger, shell environment
 //   Phase 2: initBackgroundServices.ts — cron, telemetry, cloud, updates, MCP

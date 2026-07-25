@@ -697,6 +697,21 @@ async function initializeServices(): Promise<void> {
   }
   bootMark('agent-runtime');
 
+  // 10. 启动期保留清理（日志 + 数据库）。
+  // 与步骤 5/6/7/8/9 同类的 web/main 路径分离修复，且这次是"修复本身成了死代码"：
+  // logRetention 的头注释自陈它接上的是原本死掉的 AuditLogger.cleanup，dbRetention 的
+  // 头注释自陈 telemetry 表无 TTL 导致生产库涨到 377MB+（telemetry_events 62 万行占
+  // 163MB）—— 两者却都只在 Electron main 路径（app/bootstrap.ts:130/:138）启动，而所有
+  // 发行版跑的是本 webServer，于是发行版从未清理过，库一直在涨。
+  // fire-and-forget：dbRetention 的 VACUUM 会阻塞，不能进启动关键路径；失败只 warn。
+  void import('../host/services/infra/logRetention')
+    .then(({ runLogRetention }) => runLogRetention())
+    .catch((error) => logger.warn('Log retention failed (non-blocking):', (error as Error).message));
+  void import('../host/services/infra/dbRetention')
+    .then(({ runDbRetention }) => runDbRetention())
+    .catch((error) => logger.warn('DB retention failed (non-blocking):', (error as Error).message));
+  bootMark('retention-kickoff');
+
   logger.info('Backend services initialized');
 }
 

@@ -31,6 +31,23 @@ describe('keybindings registry', () => {
     });
   });
 
+  // 默认键撞车不会报错、只会静默失效：handleKeyDown 发现一个 accelerator 对应多个 action 就
+  // 直接忽略（只打一条 warn），两边的键都按不动。加视图默认键时这条门先红。
+  it('ships no two default-enabled shortcuts on the same accelerator', () => {
+    for (const platform of ['darwin', 'win32', 'linux'] as const) {
+      const settings = createDefaultKeybindingsSettings(platform);
+      const owners = new Map<string, string[]>();
+      for (const [actionId, binding] of Object.entries(settings.bindings)) {
+        if (!binding?.enabled || !binding.accelerator) continue;
+        const normalized = normalizeAccelerator(binding.accelerator, platform);
+        if (!normalized) continue;
+        owners.set(normalized, [...(owners.get(normalized) ?? []), actionId]);
+      }
+      const collisions = [...owners.entries()].filter(([, actionIds]) => actionIds.length > 1);
+      expect(collisions).toEqual([]);
+    }
+  });
+
   it('normalizes modifier order and symbols', () => {
     expect(normalizeAccelerator('Shift+Cmd+p', 'darwin')).toBe('Cmd+Shift+P');
     expect(normalizeAccelerator('⌘⇧P', 'darwin')).toBe('Cmd+Shift+P');

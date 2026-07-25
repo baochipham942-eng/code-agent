@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo } from 'react';
-import { Bot } from 'lucide-react';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
+import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 
 interface AgentChipProps {
   onOpenAgentCommand: () => void;
@@ -37,22 +37,24 @@ export const AgentChip: React.FC<AgentChipProps> = ({ onOpenAgentCommand }) => {
   return (
     <button
       type="button"
+      data-testid="chat-input-agent-chip"
       onClick={onOpenAgentCommand}
-      className={`
-        inline-flex h-8 max-w-[200px] items-center gap-1.5 rounded-lg px-2 text-xs font-medium
-        transition-colors
-        ${activeEntry
-          ? 'text-amber-300 hover:bg-amber-500/10 hover:text-amber-200'
-          : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300'}
-      `}
+      // 底栏这一行最该先看到的是"在跟谁协作"：头像 + 花名走主位权重（zinc-100/sm），
+      // 权限档、上下文环、模型芯片都比它弱一档。之前四样东西同权重并排，
+      // 用户读不出哪个是人、哪个是设置。
+      className="inline-flex h-8 max-w-[220px] items-center gap-1.5 rounded-lg px-1.5 text-sm font-medium text-zinc-100 transition-colors hover:bg-white/[0.06]"
       title={`${t.agentCommand.chipTitlePrefix}${activeEntry.profession ? `${activeEntry.name}（${activeEntry.profession}）` : activeEntry.name}${t.agentCommand.chipTitleSuffix}`}
       aria-label={t.agentCommand.chipAriaLabel}
     >
-      <Bot className="h-3.5 w-3.5 shrink-0" />
+      <RoleInitialAvatar
+        roleId={activeEntry.id}
+        name={activeEntry.name}
+        className="h-5 w-5 text-[10px]"
+      />
       {/* 花名是主体不许被挤没，职业先 truncate——用户只看花名不知道这专家是干什么的 */}
       <span className="shrink-0">{label}</span>
       {activeEntry.profession && (
-        <span className="min-w-0 truncate text-[10px] font-normal opacity-70">{activeEntry.profession}</span>
+        <span className="min-w-0 truncate text-[10px] font-normal text-zinc-500">{activeEntry.profession}</span>
       )}
     </button>
   );

@@ -109,6 +109,8 @@ type SessionDomainPayload = {
   workingDirectory?: string;
   userMessageId?: string;
   updates?: Partial<Session>;
+  /** getRecap：上次查看这个会话的时间戳，只追赶它之后收口的轮次 */
+  since?: number;
 };
 
 type SessionDomainIpcRequest = {
@@ -956,6 +958,20 @@ function registerHandlers(): void {
           }
           const { listTasks } = await import('../host/services/planning/taskStore');
           data = listTasks(sessionId);
+          break;
+        }
+        case 'getRecap': {
+          // A6 回会话追赶：与 session.ipc.ts 同一条服务，别在这里另起一套。
+          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
+          if (!sessionId) {
+            return {
+              success: false,
+              error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' },
+            };
+          }
+          const since = typeof payload?.since === 'number' ? payload.since : 0;
+          const { getSessionRecap } = await import('../host/session/sessionRecapService');
+          data = await getSessionRecap(sessionId, since);
           break;
         }
         case 'rewindToPrompt': {

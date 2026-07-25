@@ -1,5 +1,7 @@
 import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SessionTask, TaskProgressData, TodoItem } from '@shared/contract';
+import type { TaskBlockedCategory } from '@shared/contract/planning';
+import { describeTaskBlockedReason } from '@shared/taskReasonLanguage';
 import type { TurnTimelineNode } from '@shared/contract/turnTimeline';
 import type { ToolResult } from '@shared/contract/tool';
 import type {
@@ -90,6 +92,23 @@ function phaseFromStatus(status: RunUiStatus, taskProgress?: TaskProgressData | 
   return labels[status];
 }
 
+/**
+ * run / tool / decision 三条轨的阻塞原因来自 raw 工具输出（stack trace、API 响应体），
+ * 直接渲染就是把机器噪音怼给非程序员协作者看。统一过任务轨那套语义化清洗层：
+ * 认得出的人话留下，认不出的置空由 UI 用类别文案兜底。
+ */
+function describeBlocked(raw: string | undefined): {
+  blockedReason?: string;
+  blockedReasonCategory?: TaskBlockedCategory;
+} {
+  if (!raw?.trim()) return {};
+  const described = describeTaskBlockedReason(raw);
+  return {
+    blockedReason: described.reason || undefined,
+    blockedReasonCategory: described.category,
+  };
+}
+
 function firstBlockedReason(turn: TraceTurn | null): string | undefined {
   for (const timeline of getTimelineNodes(turn)) {
     if (timeline.tone === 'error' || timeline.tone === 'warning') {
@@ -129,7 +148,7 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     phase: phaseFromStatus(status, args.taskProgress),
     activeToolName: toolCall?.name,
     waitingApprovalId: args.pendingApprovalId || undefined,
-    blockedReason: firstBlockedReason(turn),
+    ...describeBlocked(firstBlockedReason(turn)),
     completionSignal: completionSignal(turn),
   };
 }
@@ -187,7 +206,7 @@ export function buildLoopDecisionViews(projection: TraceProjection): LoopDecisio
       action: result === undefined || node.toolCall._streaming ? '工具执行中' : '工具完成',
       reason: node.toolCall.shortDescription || node.toolCall.name,
       expectedNextAction: result === undefined ? '等待工具结果' : '汇总工具输出',
-      blockedReason: node.toolCall.success === false ? node.toolCall.result : undefined,
+      ...describeBlocked(node.toolCall.success === false ? node.toolCall.result : undefined),
     });
   }
 
@@ -226,7 +245,7 @@ export function buildToolCapabilityViews(projection: TraceProjection): ToolCapab
       source: getToolCapabilitySource(node.toolCall.name),
       callable: !resultFailed,
       permissionLevel: 'unknown',
-      blockedReason: resultFailed ? node.toolCall.result : undefined,
+      ...describeBlocked(resultFailed ? node.toolCall.result : undefined),
       activatedForTurn: true,
     });
   }

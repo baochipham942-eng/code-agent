@@ -276,6 +276,8 @@ export interface AppState {
     active: WorkbenchViewId | null;
   }>;
   workbenchSessionKey: string | null;
+  /** 右栏整栏收起。视图切换器模型下「关闭」的对象是整栏，不再是单个视图。 */
+  workbenchCollapsed: boolean;
   taskWorkbenchOpenSource: WorkbenchOpenSource | null;
   taskWorkbenchActivityActive: boolean;
 
@@ -390,6 +392,7 @@ export interface AppState {
   openWorkbenchTab: (id: WorkbenchTabId, options?: OpenWorkbenchTabOptions) => void;
   closeWorkbenchTab: (id: WorkbenchTabId) => void;
   setActiveWorkbenchTab: (id: WorkbenchTabId | null) => void;
+  setWorkbenchCollapsed: (collapsed: boolean) => void;
   syncTaskWorkbenchForActivity: (hasActivity: boolean) => void;
   setWorkbenchHighlight: (highlight: Omit<WorkbenchHighlight, 'nonce'> | null) => void;
   updatePreviewTabContent: (id: string, content: string) => void;
@@ -525,6 +528,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activeWorkbenchTab: null,
   workbenchBySession: {},
   workbenchSessionKey: null,
+  workbenchCollapsed: false,
   taskWorkbenchOpenSource: null,
   taskWorkbenchActivityActive: false,
   workbenchHighlight: null,
@@ -984,6 +988,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     nextPreviewTabTick,
     stopDevServer: fireStopDevServer,
   }),
+
+  setWorkbenchCollapsed: (collapsed) => set({ workbenchCollapsed: collapsed }),
 
   syncTaskWorkbenchForActivity: (hasActivity) => {
     const state = get();

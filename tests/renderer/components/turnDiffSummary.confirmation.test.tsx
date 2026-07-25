@@ -95,3 +95,31 @@ describe('TurnDiffSummary undo confirmation', () => {
     expect(toastError).toHaveBeenCalledWith(expect.stringContaining('disk busy'));
   });
 });
+
+// ----------------------------------------------------------------------------
+// 这张卡是一屏里唯一真的动了用户电脑的东西，所以它说的话要经得起看：
+// 新建的文件不能说成「已修改」，路径不能是一长条与本次改动无关的前缀。
+// ----------------------------------------------------------------------------
+describe('TurnDiffSummary 说人话', () => {
+  it('新建文件也说「已编辑」，不说「已修改」', async () => {
+    render(<TurnDiffSummary turn={turn} />);
+
+    await screen.findByRole('button', { name: '撤销' });
+    expect(document.body.textContent).toContain('已编辑 1 个文件');
+    expect(document.body.textContent).not.toContain('已修改');
+  });
+
+  it('路径相对当前工作目录显示，完整路径退到 title', async () => {
+    useSessionStore.setState({
+      currentSessionId: 'session-1',
+      sessions: [{ id: 'session-1', workingDirectory: '/tmp' }] as never,
+    });
+    render(<TurnDiffSummary turn={turn} />);
+
+    await screen.findByRole('button', { name: '撤销' });
+    const pathNode = screen.getByTitle('/tmp/example.ts');
+    expect(pathNode.textContent).toContain('example.ts');
+    // 工作目录前缀不该出现在正文里——它占满整行却与这次改动无关
+    expect(pathNode.textContent).not.toContain('/tmp/');
+  });
+});

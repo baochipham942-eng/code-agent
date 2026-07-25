@@ -1,3 +1,19 @@
+// ============================================================================
+// DreamScheduler — dream 记忆整理的 cron 注册
+//
+// ⚠️ 有意未接线（2026-07-25 产品判断，不是遗漏）。
+//
+// 唯一注册点是 app/initBackgroundServices.ts —— 那条不在任何发行版中执行的 Electron
+// main 路径（见 src/host/index.ts 头注释），所以发行版里这个 job 从未被创建过。
+// 同批的 dbRetention / logRetention / Light Memory consolidation 都已接到
+// src/web/webServer.ts，唯独 dream 与 distill 刻意留着不接：
+//
+//   它们会无人值守地自动发起 LLM 调用产生真实费用，属产品 + 成本判断而非接线判断。
+//   而"记忆整理"的核心诉求已由 Light Memory consolidation 覆盖（webStartupMemoryJobs.ts，
+//   带健康门：记忆规模小就跳过、不烧 token），dream 的增量价值尚未验证。
+//
+// 要接线请先拿到成本口径的明确许可，别当成"补一处遗漏"顺手接上。
+// ============================================================================
 import type { CronJobDefinition } from '../../../shared/contract/cron';
 
 export const DREAM_INTERVAL_DAYS = 7;

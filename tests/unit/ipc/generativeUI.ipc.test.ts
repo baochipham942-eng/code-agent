@@ -17,9 +17,16 @@ vi.mock('../../../src/host/services/generativeUI/generativeUIService', () => ({
   getGenerativeUIService: () => service,
 }));
 
-vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
-}));
+// 扩展式 mock：摊开真模块保住 logger/LogLevel 等导出，但 createLogger 与 logger
+// 两个真会写日志的出口都换成静默桩，测试既不刷屏也不落盘。
+vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => {
+  const silent = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+  return {
+    ...(await importOriginal<typeof import('../../../src/host/services/infra/logger')>()),
+    createLogger: silent,
+    logger: silent(),
+  };
+});
 
 import { registerGenerativeUIHandlers } from '../../../src/host/ipc/generativeUI.ipc';
 import { createDomainRouter } from '../../../src/web/routes/domain';

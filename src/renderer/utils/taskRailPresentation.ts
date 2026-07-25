@@ -8,6 +8,8 @@ export interface TaskRailStepView {
   originalIndex: number;
   blockedByTitles?: string[];
   blockedTaskTitles?: string[];
+  blockedReason?: string;
+  blockedReasonCategory?: TaskRecord['steps'][number]['blockedReasonCategory'];
 }
 
 export interface TaskRailDependencySummary {
@@ -107,6 +109,8 @@ function toStepViews(task: TaskRecord): TaskRailStepView[] {
       originalIndex: index,
       blockedByTitles: step.blockedByTitles,
       blockedTaskTitles: step.blockedTaskTitles,
+      blockedReason: step.blockedReason,
+      blockedReasonCategory: step.blockedReasonCategory,
     }))
     .filter((step) => step.title && !isUtilityStepTitle(step.title));
 }

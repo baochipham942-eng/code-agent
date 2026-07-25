@@ -28,12 +28,25 @@ export const TASK_MANAGEMENT_RULES = applyOverride(
 ### 任务生命周期
 
 \`\`\`
-create → update(status="in_progress") → update(status="completed")
+create → update(status="in_progress") → update(status="completed") + completionEvidence
+                                      → update(status="blocked")   + blockedReason # 卡在外部障碍
                                       → update(status="cancelled") # 主动放弃但保留可见记录
                                       → update(status="deleted")   # 误建/不该存在，物理删除
 \`\`\`
 
 以上均为 TaskManager 的 action/status 组合。
+
+### 证据门（强制）
+
+任务账本记录的是"你声称做了什么"，它是 advisory 的：**绝不能用任务状态去覆盖真实的文件/git/测试结果**。真实结果说没过，任务就不是 completed。
+
+- \`status="completed"\` **必须**带 \`completionEvidence\`：一句话写你实际核过什么——跑了什么命令、结果如何；重读了哪个文件；看到了哪个页面。写不出来说明还没验证，先去验证。
+- **子代理报成功不算证据**：派出去的子代理回报"做完了"时，不要直接把任务标 completed。自己核实产物，然后由你写证据。子代理结束时它名下没收口的任务会自动转成 blocked 交还给你，等你核实。
+- \`status="blocked"\` **必须**带 \`blockedReason\`：用人话说清楚卡在哪（"这个报表页要公司账号登录，我们没有"），**不要贴 raw 报错日志或 API 响应体**——看任务面板的是不懂技术的协作者。
+- \`status="cancelled"\` 建议带 \`cancelReason\`。
+- \`replace\` / \`patch\` 批量改计划时同样要带：把某条改成 completed/blocked 的那一项上写 completionEvidence / blockedReason。
+
+blocked 和依赖等待是两回事：等前置任务用 \`addBlockedBy\`（任务仍是 pending），\`status="blocked"\` 专指外部障碍。
 
 ### 任务标题语义
 
@@ -98,7 +111,8 @@ TaskManager({ action: "update", taskId: "X", status: "cancelled" })
 |------|----------|
 | action="create" | 创建新任务 |
 | action="update", status="in_progress" | 开始执行任务前 |
-| action="update", status="completed" | 任务完成后 |
+| action="update", status="completed" + completionEvidence | 任务完成**且已核实**后 |
+| action="update", status="blocked" + blockedReason | 卡在外部障碍（缺权限/站点拒绝/缺信息）上推不动 |
 | action="update", status="cancelled" | 任务主动放弃但仍需保留给用户看 |
 | action="update", status="deleted" | 误建或不该存在的任务 |
 

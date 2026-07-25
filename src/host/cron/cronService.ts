@@ -31,6 +31,8 @@ import {
   syncCronAutomationFromJob,
   recordCronAutomationArchived,
   recordCronAutomationExecution,
+  getCronAutomationType,
+  isSkippedResult,
   type ResolveRuntimeDefinition,
 } from './cronAutomationBridge';
 import {
@@ -667,20 +669,29 @@ export class CronService implements Disposable {
 
     // self-wake：唤醒等这个任务的会话——wake_on 按任务 id 等，wake_on_event 按任务名字等
     // （用户和模型说得出口的是名字，不是 id）。失败不影响本次执行结果。
-    void this.notifyWakeOnJobCompleted(definition.id, definition.name);
+    void this.notifyWakeOnJobCompleted(definition, execution);
 
     return execution;
   }
 
-  /** 通知 self-wake 台账：这个任务跑完了。动态 import 避免 cron → services 的加载期耦合。 */
-  private async notifyWakeOnJobCompleted(jobId: string, jobName: string): Promise<void> {
+  /**
+   * 通知 self-wake 台账：这个任务跑完了。动态 import 避免 cron → services 的加载期耦合。
+   *
+   * external_event（业务事件监听）任务是例外：它的"完成"是每次轮询 tick，不是业务事件本身——
+   * 真正的事件是 <cron_alert>（复用待过目收件箱同一条 skipped 判据，见 recordCronAutomationExecution）。
+   * 不按这个判据过滤，wake_on_event 会在安静的轮询 tick 上被反复叫醒，几轮就把每会话 20 次配额烧光，
+   * 跟"等业务事件发生"的语义完全对不上。普通任务保持原样：每次跑完都算数。
+   */
+  private async notifyWakeOnJobCompleted(definition: CronJobDefinition, execution: CronJobExecution): Promise<void> {
+    const isExternalWatch = getCronAutomationType(definition) === 'external_event';
+    if (isExternalWatch && (execution.status !== 'completed' || isSkippedResult(execution.result))) return;
     try {
       const { getWakeService } = await import('../services/wake/wakeService');
       const service = getWakeService();
-      await service.onJobCompleted(jobId);
-      if (jobName) await service.onEvent(jobName);
+      await service.onJobCompleted(definition.id);
+      if (definition.name) await service.onEvent(definition.name);
     } catch (err) {
-      console.error(`[CronService] wake_on notification failed for ${jobId}:`, err);
+      console.error(`[CronService] wake_on notification failed for ${definition.id}:`, err);
     }
   }
 

@@ -151,7 +151,9 @@ test('右栏概览有产物时：内容占满，切换器只在多产物时出�
   // ③ 动作不常驻：复制/归档这些都收在「⋯」里，元数据与版本收在「详情与版本」里
   await expect(page.getByRole('button', { name: '复制预览' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '归档到资料库: 第一版流程图' })).toHaveCount(0);
-  await expect(page.getByTestId('workspace-preview-overflow')).toBeVisible();
+  // 入口在、抽屉默认不展开（workspace-preview-overflow 是展开后的那层，不是入口按钮）
+  await expect(page.getByRole('button', { name: '更多操作' })).toBeVisible();
+  await expect(page.getByTestId('workspace-preview-overflow')).toHaveCount(0);
   await expect(page.getByTestId('workspace-preview-details-toggle')).toBeVisible();
 
   // ④ 第二个产物到了才出现切换器（计数只由它讲一次）

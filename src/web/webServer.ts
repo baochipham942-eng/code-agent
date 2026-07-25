@@ -333,11 +333,7 @@ import {
 import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 
 // Middleware
-import {
-  SERVER_AUTH_TOKEN,
-  exitIfE2EFlagRefused,
-  writeDevAuthToken,
-} from './middleware/auth';
+import { SERVER_AUTH_TOKEN, exitIfE2EFlagRefused, writeDevAuthToken } from './middleware/auth';
 
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
 import { getAppVersion } from '../host/platform';

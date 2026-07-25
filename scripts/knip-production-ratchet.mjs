@@ -24,7 +24,7 @@
 //     写明理由再调高（与本仓其他棘轮同一社会契约）。
 //   - 清理后手动调小，只降不升。
 //
-// 基线沿革：2026-07-25 建门，实测 132。
+// 基线沿革：2026-07-25 建门，实测 132；同日 #676 把 retention 接进 webServer 后降到 131，随即收紧。
 //
 // 用法：node scripts/knip-production-ratchet.mjs
 
@@ -32,7 +32,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import process from 'node:process';
 
-const BASELINE_MAX = 132;
+const BASELINE_MAX = 131;
 const KNIP_VERSION = '6.24.0';
 const CONFIG = 'knip.production.json';
 

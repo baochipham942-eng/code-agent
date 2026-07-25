@@ -32,6 +32,7 @@ import type { ToolResolver } from '../../dispatch/toolResolver';
 import { isSkillCommandAllowedByWorkbenchScope } from '../../workbenchToolScope';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { skillSchema as schema } from './skill.schema';
+import { getSkillContentCache, hashSkillContent } from '../../../telemetry/skillContentCache';
 import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 
 // ----------------------------------------------------------------------------
@@ -50,7 +51,15 @@ function handleInlineExecution(
   args: string | undefined,
   workingDirectory: string | undefined,
 ): SkillToolResult {
-  const statusMessage = `<command-message>Loading skill: ${skill.name}</command-message><command-name>${skill.name}</command-name>`;
+  // P2-1 provenance：内容 hash 随调用消息入会话/账本（skill 可被自改+热重载，
+  // 光记名字无法区分同名不同内容），全文按 hash 落 skill_content_cache 供回溯
+  const contentHash = hashSkillContent(skill.promptContent);
+  try {
+    getSkillContentCache().store(contentHash, skill.name, skill.promptContent);
+  } catch {
+    // 账本不可用不阻塞 skill 调用
+  }
+  const statusMessage = `<command-message>Loading skill: ${skill.name}</command-message><command-name>${skill.name}</command-name><command-content-hash>${contentHash}</command-content-hash>`;
 
   let promptContent = renderSkillContent(skill.promptContent, {
     arguments: args,

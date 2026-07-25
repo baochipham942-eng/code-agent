@@ -15,6 +15,7 @@ import type { TaskModelStrategySettings } from '../../shared/contract/settings';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
 import { isFallbackEligible, abortableSleep } from './providers/retryStrategy';
+import { getSettingsProviderBaseUrl } from './providers/providerResolution';
 import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
@@ -128,6 +129,11 @@ export class ModelRouter {
   // Provider Registry (new Provider interface, incremental migration)
   // --------------------------------------------------------------------------
 
+  // ⚠️ legacy 直连 Provider 路径（含 ClaudeProvider 实例化）kill date 2026-10-01：
+  // aiSdk 路径全量转正后整段退役。过渡期两个对齐点的守法（P2-3）：
+  //   baseUrl 判定 → 共用 providerResolution.getSettingsProviderBaseUrl（结构共享）；
+  //   Anthropic 缓存断点 → claudeProvider 与 aiSdkAdapter 各自实现，锚点由
+  //   tests/scripts/legacyRouterAlignment.test.ts 钉住（形状不同不硬抽共享）。
   private providers = new Map<string, Provider>([
     ['moonshot', new MoonshotProvider()],
     ['groq', new GroqProvider()],
@@ -901,8 +907,8 @@ export class ModelRouter {
     try {
       const providerConfig = getConfigService().getSettings().models?.providers?.[config.provider];
       if (providerConfig?.protocol === 'claude') return this.providers.get('claude');
-      // baseUrl 优先级与 aiSdk providerResolution 对齐：config.baseUrl > settings.baseUrl
-      if (providerConfig?.baseUrl || config.baseUrl) return this.providers.get('custom');
+      // baseUrl 判定与 aiSdk providerResolution 共用同一读取来源（P2-3 对齐点抽共享，勿再 inline 查）
+      if (config.baseUrl || getSettingsProviderBaseUrl(config.provider)) return this.providers.get('custom');
       return undefined;
     } catch {
       return config.baseUrl ? this.providers.get('custom') : undefined;

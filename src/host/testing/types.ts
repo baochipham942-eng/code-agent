@@ -954,6 +954,8 @@ export interface EvalBaseline {
     status: string;
     score: number;
     lastPassedAt?: number;
+    /** 该分数出自哪个模型（"provider/model"，取 run 级 environment——分数没有模型归因就没法跨基线对比） */
+    model?: string;
   }>;
   thresholds: {
     minPassRate: number;

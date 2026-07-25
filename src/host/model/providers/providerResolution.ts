@@ -119,8 +119,12 @@ function resolveBaseUrlRaw(config: ModelConfig): string {
   return config.baseUrl || getSettingsProviderBaseUrl(provider) || ENDPOINTS[provider] || '';
 }
 
-/** 用户设置里该 provider 配置的 baseUrl（动态 custom provider 的唯一端点来源）。 */
-function getSettingsProviderBaseUrl(provider: string): string | undefined {
+/**
+ * 用户设置里该 provider 配置的 baseUrl（动态 custom provider 的唯一端点来源）。
+ * legacy modelRouter.getDynamicCustomProvider 与本文件共用（P2-3 对齐点抽共享，
+ * 别再各自 inline 查 settings——两处一旦漂移，同一 provider 在两条路径会路由不一致）。
+ */
+export function getSettingsProviderBaseUrl(provider: string): string | undefined {
   try {
     return getConfigService().getSettings().models?.providers?.[provider]?.baseUrl;
   } catch {

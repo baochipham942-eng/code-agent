@@ -166,12 +166,18 @@ export class BaselineManager {
     const capabilityTotal = summary.total - summary.skipped - infraExcluded;
     const passRate = capabilityTotal > 0 ? summary.passed / capabilityTotal : 0;
 
+    // per-case 模型归因（费曼审计 P1-4 顺带项）：TestResult 尚无逐 case 模型字段，
+    // 先落 run 级 environment 的 provider/model——已足够把「这套分数是谁跑出来的」钉进基线
+    const runModel = summary.environment?.model
+      ? `${summary.environment.provider}/${summary.environment.model}`
+      : undefined;
     const caseResults: EvalBaseline['caseResults'] = {};
     for (const result of capabilityResults) {
       caseResults[result.testId] = {
         status: result.status,
         score: result.score,
         ...(result.status === 'passed' ? { lastPassedAt: result.endTime } : {}),
+        ...(runModel ? { model: runModel } : {}),
       };
     }
 

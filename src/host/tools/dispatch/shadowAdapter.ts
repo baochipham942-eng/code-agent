@@ -187,7 +187,7 @@ export function buildCanUseToolFromLegacy(
       return { allow: true };
     }
 
-    const type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' =
+    const type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access' =
       requestHint?.type ??
       (isDangerous
         ? 'dangerous_command'

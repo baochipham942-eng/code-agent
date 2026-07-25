@@ -199,6 +199,7 @@ interface OrchestratorInternals {
   pendingPermissions: Map<string, { resolve: (r: string) => void; parked?: boolean; request?: { sessionId?: string } }>;
   requestPermission(request: { type: string; tool: string; sessionId?: string; details?: Record<string, unknown> }): Promise<boolean>;
   resolveParkedApproval(id: string, response: string, feedbackOverride?: string): void;
+  getPendingApprovalRepo(): unknown;
   drainPendingPermissions(response?: string): void;
 }
 function internals(o: AgentOrchestrator): OrchestratorInternals {
@@ -829,6 +830,77 @@ describe('AgentOrchestrator', () => {
       } finally {
         approvalParkEvents.off('parked', parkedSpy);
       }
+    });
+
+    // request_directory 目录授权：这是新增 root 准入判定分支——不论 attended/unattended、
+    // 不论 devModeAutoApprove/autoApprove.write 开关，一律走停车挂起（kind='directory_access'）。
+    // 与上面 'command'/'bash' 的「有人值守走 60s 内联对话框」形成对照：目录授权不该走那条
+    // 短窗口路径，也不该被写权限的 auto-approve 顺带放行。
+    it('directory_access：有人值守也走停车挂起（不落 60s 交互路径）', async () => {
+      const attendedSid = `attended-${Math.random().toString(36).slice(2)}`;
+      const promise = internals(parkedOrch).requestPermission({
+        type: 'directory_access',
+        tool: 'request_directory',
+        sessionId: attendedSid,
+        details: { path: '/tmp/some-other-project', requestedAccess: 'read_only' },
+      });
+      expect(await isStillPending(promise)).toBe(true);
+      expect(fake.insert).toHaveBeenCalledTimes(1);
+      expect(fake.insert.mock.calls[0][0]).toMatchObject({ kind: 'directory_access' });
+      const requestId = fake.insert.mock.calls[0][0].id as string;
+      const entry = internals(parkedOrch).pendingPermissions.get(requestId);
+      expect(entry?.parked).toBe(true);
+      internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
+      expect(await promise).toBe(false);
+    });
+
+    it('directory_access：devModeAutoApprove=true 也不能绕过停车挂起', async () => {
+      (mockConfigService.getSettings as ReturnType<typeof vi.fn>).mockReturnValue({
+        permissions: {
+          autoApprove: { read: true, write: true, execute: true, network: true },
+          devModeAutoApprove: true,
+        },
+      });
+      const attendedSid = `attended-devmode-${Math.random().toString(36).slice(2)}`;
+      const promise = internals(parkedOrch).requestPermission({
+        type: 'directory_access',
+        tool: 'request_directory',
+        sessionId: attendedSid,
+        details: { path: '/tmp/some-other-project', requestedAccess: 'read_write' },
+      });
+      expect(await isStillPending(promise)).toBe(true);
+      expect(fake.insert).toHaveBeenCalledTimes(1);
+      expect(fake.insert.mock.calls[0][0]).toMatchObject({ kind: 'directory_access' });
+      const requestId = fake.insert.mock.calls[0][0].id as string;
+      internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
+      await promise;
+    });
+
+    // 扩权的失败方向必须是 fail-closed：拿不到停车台账时若回落常规路径，
+    // devModeAutoApprove 就会把「新增一个目录的访问权」顺带自动批了——
+    // 那正是这条分支要挡住的事，不能因为 DB 没就绪反而放行。
+    it('directory_access：拿不到停车台账时拒绝扩权，不回落到会被 devModeAutoApprove 放行的常规路径', async () => {
+      (mockConfigService.getSettings as ReturnType<typeof vi.fn>).mockReturnValue({
+        permissions: {
+          autoApprove: { read: true, write: true, execute: true, network: true },
+          devModeAutoApprove: true,
+        },
+      });
+      const noRepoOrch = new AgentOrchestrator({
+        configService: mockConfigService,
+        onEvent: mockOnEvent,
+      });
+      // 台账不可用（DB 未就绪）：getPendingApprovalRepo 返回 null 的那条路径
+      internals(noRepoOrch).getPendingApprovalRepo = () => null;
+
+      const granted = await internals(noRepoOrch).requestPermission({
+        type: 'directory_access',
+        tool: 'request_directory',
+        sessionId: `no-repo-${Math.random().toString(36).slice(2)}`,
+        details: { path: '/tmp/some-other-project', requestedAccess: 'read_write' },
+      });
+
+      expect(granted).toBe(false);
     });
   });
 });

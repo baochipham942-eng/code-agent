@@ -185,9 +185,11 @@ jobs:
         # 三处 exclude 是**平台性**排除，不是给业务代码开豁免。本 job 跑 ubuntu，而全量套件的
         # 绿色档案建立在 darwin（见 main-full-gate.yml 的 runs-on 注释：首跑 ubuntu 实测 10 个
         # 文件环境性红）。首跑本步实测正是这三类落在子集里（4 文件）：
-        #   modules/network/**            需要真 API key，无 key 时 401
         #   goalVerifyGate.test.ts        断言 shell 文案 'command not found'，dash 说的是 'not found'
-        # 这两类的业务覆盖没有丢，仍由 macos 上的 main-full-gate 全量门看着。
+        # 它的业务覆盖没有丢，仍由 macos 上的 main-full-gate 全量门看着。
+        #
+        # 2026-07-25 第二轮试摘：modules/network/**（当初理由「需要真 API key，无 key 时 401」）。
+        # 本 PR 的 CI 就是验证——红则退回排除并把**实际失败信息**写进注释，绿则说明理由已过期。
         #
         # 2026-07-25：runtime/browser/** 的排除已摘除。原因（当初写的"ubuntu 上退化成
         # self-started-chrome"）在 #672 给本 job 补装 Playwright chromium（见上一步）后不再成立——
@@ -195,7 +197,6 @@ jobs:
         # "主链路子集"这个名字越名不副实，所以逐条试摘、用真 CI 验，而不是留着好看。
         run: |
           npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services --retry=1 \
-            --exclude 'tests/unit/tools/modules/network/**' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 
       - name: Knip dead-export ratchet

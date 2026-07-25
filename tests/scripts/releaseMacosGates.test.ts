@@ -685,6 +685,18 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).not.toContain('\t');
   });
 
+  it('keeps tests/renderer inside the PR-gate vitest subset', () => {
+    // 2026-07-25：tests/renderer 此前不在 PR 门里，当天被三个 PR 连撞三次弄红 main
+    // （#663 棘轮 / #671 组件崩 / #681 i18n 断言过期），三次 PR 门都是绿的。
+    // 这条断言防的是"下次有人为了省 CI 时长把它悄悄摘掉"——摘可以，但要摘得见光。
+    const parsed = readWorkflow('.github/workflows/swarm-ci.yml');
+    const subsetStep = (parsed.jobs?.smoke?.steps ?? [])
+      .find((step) => step.name?.startsWith('Main-chain vitest subset'));
+
+    expect(subsetStep, 'Main-chain vitest subset step 不见了').toBeTruthy();
+    expect(subsetStep?.run).toContain('tests/renderer');
+  });
+
   it('keeps Vercel control-plane deployment automated and smoke-checked', () => {
     const workflowText = readRepoFile('.github/workflows/vercel-control-plane.yml');
     const workflow = readWorkflow('.github/workflows/vercel-control-plane.yml');

@@ -54,13 +54,14 @@ export const SidebarCapabilityZone: React.FC = () => {
     }
     return candidate;
   }, [enabledJobs]);
-  const subtitle = pendingCount > 0
-    ? cz.automationPending.replace('{count}', String(pendingCount))
-    : nextJob
-      ? cz.automationNext.replace('{time}', formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US')).replace('{name}', nextJob.name)
-      : enabledJobs.length > 0
-        ? cz.automationCount.replace('{count}', String(enabledJobs.length))
-        : cz.automationEmpty;
+  // 副标题只讲「计划」，待过目数量交给右侧角标——此前 pending 时副标题写「N 条待过目」
+  // 而角标同时显示 N，同一个数字讲了两遍，还把「下次运行」挤掉了。
+  const pendingLabel = cz.automationPending.replace('{count}', String(pendingCount));
+  const subtitle = nextJob
+    ? cz.automationNext.replace('{time}', formatNextRun(nextJob.at, language === 'zh' ? 'zh-CN' : 'en-US')).replace('{name}', nextJob.name)
+    : enabledJobs.length > 0
+      ? cz.automationCount.replace('{count}', String(enabledJobs.length))
+      : cz.automationEmpty;
 
   return (
     <div className="px-2 pb-1 flex-shrink-0" data-testid="sidebar-capability-zone">
@@ -69,16 +70,15 @@ export const SidebarCapabilityZone: React.FC = () => {
         type="button"
         onClick={() => openCapabilityHub('experts')}
         data-testid="sidebar-capability-hub"
+        // 「里面装了什么」移到悬浮提示：需要时问得到，不必占一行常驻
+        title={cz.capabilityHubSubtitle}
         className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
       >
-        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-violet-500/10">
-          <Boxes className="h-3.5 w-3.5 text-violet-400/90" />
+        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-zinc-800/80">
+          <Boxes className="h-3.5 w-3.5 text-zinc-400" />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-zinc-300 group-hover:text-zinc-100">
-            {cz.capabilityHub}
-          </span>
-          <span className="block truncate text-[11px] text-zinc-500">{cz.capabilityHubSubtitle}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
+          {cz.capabilityHub}
         </span>
         <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
@@ -87,16 +87,14 @@ export const SidebarCapabilityZone: React.FC = () => {
         type="button"
         onClick={() => setShowLibraryPanel(true)}
         data-testid="sidebar-capability-library"
+        title={cz.librarySubtitle}
         className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
       >
-        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-indigo-500/10">
-          <BookOpen className="h-3.5 w-3.5 text-indigo-400/90" />
+        <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-zinc-800/80">
+          <BookOpen className="h-3.5 w-3.5 text-zinc-400" />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-zinc-300 group-hover:text-zinc-100">
-            {cz.library}
-          </span>
-          <span className="block truncate text-[11px] text-zinc-500">{cz.librarySubtitle}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
+          {cz.library}
         </span>
         <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
@@ -106,15 +104,17 @@ export const SidebarCapabilityZone: React.FC = () => {
         data-testid="sidebar-capability-automation"
         className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
       >
-        <span className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-amber-500/10">
-          <Clock3 className="h-3.5 w-3.5 text-amber-400/90" />
+        <span className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-zinc-800/80">
+          <Clock3 className="h-3.5 w-3.5 text-zinc-400" />
           {runningCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-emerald-400" data-testid="sidebar-capability-automation-running" />}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm text-zinc-300 group-hover:text-zinc-100">{cz.automation}</span>
           <span className="block truncate text-[11px] text-zinc-500">{subtitle}</span>
         </span>
-        {pendingCount > 0 && <Badge className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300" data-testid="sidebar-capability-automation-pending">{pendingCount}</Badge>}
+        {/* 全栏唯一的两处彩色（这个角标 + running 圆点）= 要你处理的地方；
+            图标瓦片一律中性，颜色不再用来给四行分类。裸数字自己说不清是什么，读屏靠 aria-label。 */}
+        {pendingCount > 0 && <Badge className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300" data-testid="sidebar-capability-automation-pending" role="status" aria-label={pendingLabel} title={pendingLabel}>{pendingCount}</Badge>}
         <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
     </div>

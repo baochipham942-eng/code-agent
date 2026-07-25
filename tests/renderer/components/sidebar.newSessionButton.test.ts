@@ -129,7 +129,8 @@ describe('Sidebar new session button', () => {
     expect(html).toContain('新任务');
     // 新任务默认纯对话不继承上下文；独立「空白」入口已下线。
     expect(html).toContain('新建任务（纯对话，不继承项目上下文）');
-    expect(html).toContain('开始一段新的协作');
+    // 常驻副标题已删（左栏拥挤：说明性文字第一次有用、第一百次是噪音），只留 title 悬浮提示
+    expect(html).not.toContain('开始一段新的协作');
     expect(html).not.toContain('新建空白会话，不继承项目上下文');
     expect(newTaskButtonHtml).toContain('lucide-plus');
     expect(newTaskButtonHtml).not.toContain('lucide-loader-circle');

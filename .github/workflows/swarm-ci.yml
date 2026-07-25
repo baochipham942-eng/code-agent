@@ -188,12 +188,18 @@ jobs:
         #   runtime/browser/**            需要 in-app browser/Chromium，ubuntu 上退化成 self-started-chrome
         #   modules/network/**            需要真 API key，无 key 时 401
         #   goalVerifyGate.test.ts        断言 shell 文案 'command not found'，dash 说的是 'not found'
+        #   gameArtifactValidator.test.ts 同 browser 族根因（走 runtime/browser/visualSmoke），只是文件不住在那个目录
+        #
+        # ⚠️ 已知形状问题：真实边界是「依赖 browser runtime 的测试」，这里却按**路径**排除，
+        # 所以还会继续漏（gameArtifactValidator 就是漏出来的第一个）。正解是把这一步挪到
+        # macos runner（与 main-full-gate 同环境，绿色档案本来就建立在那儿），待拍板。
         # 这三类的业务覆盖没有丢，仍由 macos 上的 main-full-gate 全量门看着。
         run: |
           npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services --retry=1 \
             --exclude 'tests/unit/agent/runtime/browser/**' \
             --exclude 'tests/unit/tools/modules/network/**' \
-            --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
+            --exclude 'tests/unit/agent/goalVerifyGate.test.ts' \
+            --exclude 'tests/unit/agent/gameArtifactValidator.test.ts'
 
       - name: Knip dead-export ratchet
         # dead exports+types 棘轮（基线 2785，见 scripts/knip-ratchet.mjs 头注）。

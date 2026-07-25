@@ -37,7 +37,19 @@ function artifactTurnEvents(sessionId: string, turnId: string, artifact: Artifac
   return [
     { type: 'turn_start', sessionId, data: { turnId } },
     { type: 'stream_chunk', sessionId, data: { turnId, content: `已产出 ${artifact.title}。` } },
-    { type: 'message', sessionId, data: { id: turnId, turnId, content: `已产出 ${artifact.title}。`, artifacts: [artifact] } as AgentEvent['data'] },
+    {
+      type: 'message',
+      sessionId,
+      // Message 契约要求 role/timestamp；turnId 是 renderer 侧用来找落点的额外字段。
+      data: {
+        id: turnId,
+        role: 'assistant',
+        content: `已产出 ${artifact.title}。`,
+        timestamp: Date.now(),
+        artifacts: [artifact],
+        ...({ turnId } as Record<string, string>),
+      },
+    },
     { type: 'turn_end', sessionId, data: { turnId } },
     { type: 'agent_complete', sessionId, data: null },
   ];

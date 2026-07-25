@@ -123,7 +123,13 @@ export class BudgetService {
   constructor(config?: Partial<BudgetConfig>) {
     this.config = {
       enabled: config?.enabled ?? true,
-      maxBudget: config?.maxBudget ?? 10.0,
+      // 默认「没有上限」而不是 $10：生产（webServer 路径）从不调 initBudgetService，
+      // 于是 getBudgetService() 懒构造出来的就是这份默认值。此前默认 10 美元 = 每个
+      // 用户都在跑一条自己看不见也改不了的 24 小时硬顶（BudgetSettings 页已随 #685 删，
+      // settings.json 在启动时也不同步回运行时单例），撞顶表现为主循环中断 + BUDGET_EXCEEDED。
+      // enabled 保持 true —— 记账半边（成本数字 / 缓存节省 / usage_ledger）全靠它，
+      // 关掉会连带把这些一起停掉。上限交给显式配置：maxBudget <= 0 即「不设限」。
+      maxBudget: config?.maxBudget ?? 0,
       silentThreshold: config?.silentThreshold ?? 0.7,
       warningThreshold: config?.warningThreshold ?? 0.85,
       blockThreshold: config?.blockThreshold ?? 1.0,
@@ -512,6 +518,9 @@ export class BudgetService {
    */
   wouldExceedBudget(estimatedCost: number): boolean {
     if (!this.config.enabled) return false;
+    // maxBudget <= 0 = 未设上限。不加这条的话「0 上限」会让每次估算都判超，
+    // 语义正好反过来（checkBudget 那边已经是这个口径）。
+    if (this.config.maxBudget <= 0) return false;
     const currentCost = this.getCurrentCost();
     return (currentCost + estimatedCost) >= this.config.maxBudget;
   }

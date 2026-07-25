@@ -198,6 +198,15 @@ app.whenReady().then(async () => {
       }
     }
 
+    // self-wake：启动周期检查。上次进程留下的 pending 醒来（含已过期的）在第一次
+    // tick 就补送出去——挂起扛得住重启是这套机制的前提，不是加分项。
+    try {
+      const { getWakeService } = await import('./services/wake/wakeService');
+      getWakeService().start();
+    } catch (err) {
+      logger.warn('Wake service start failed:', err);
+    }
+
     registerSwarmServices({
       planApproval: planApprovalGate,
       launchApproval: launchApprovalGate,

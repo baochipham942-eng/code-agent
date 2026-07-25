@@ -268,6 +268,19 @@ export const CHECKPOINT_WRITER = {
   PROMPT_CONVERSATION_MAX_TOKENS: 24_000,
 } as const;
 
+/** agent 自发挂起-续跑（self-wake） */
+export const AGENT_WAKE = {
+  /**
+   * 单个会话累计能挂起多少次醒来。防的是「醒来→没解决→又挂起」的重试风暴和死循环：
+   * 挂起本身零成本，但每次醒来都真跑一轮模型，无上限就是无上限烧钱。
+   */
+  MAX_PER_SESSION: 20,
+  /** 到点检查间隔。醒来是「大概那个时候」的语义，不需要秒级精度。 */
+  TICK_INTERVAL_MS: 30_000,
+  /** 单次挂起最长等多久（30 天）。再长就该做成自动化任务而不是挂起一轮对话。 */
+  MAX_SLEEP_MS: 30 * 24 * 60 * 60 * 1000,
+} as const;
+
 /** 规划配置 */
 export const PLANNING = {
   /** 最大 TODO 数量 */

@@ -10,6 +10,7 @@ import {
   DEFAULT_CACHE_WRITE_PRICE_RATIO,
   type ModelPricingEntry,
 } from '../../../shared/constants';
+import { getDatabase } from './databaseService';
 
 const logger = createLogger('BudgetService');
 
@@ -71,6 +72,8 @@ export interface TokenUsage {
   model: string;
   provider: string;
   timestamp: number;
+  /** 归属会话（A7 用量账本落库用，非全部调用点都有） */
+  sessionId?: string;
 }
 
 // Pricing sourced from shared constants (per 1M tokens, USD)
@@ -202,6 +205,19 @@ export class BudgetService {
 
     const cost = this.calculateCost(usage);
     logger.debug(`Token usage recorded: ${usage.inputTokens} in / ${usage.outputTokens} out = $${cost.toFixed(4)}`);
+
+    // A7：per-request 落账本，best-effort——DatabaseService.appendUsageRecord 内部已
+    // fail-safe（db 未就绪/写入失败都吞错），这里不需要再包 try/catch。
+    getDatabase().appendUsageRecord({
+      sessionId: usage.sessionId,
+      model: usage.model,
+      provider: usage.provider,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+      cacheCreationTokens: usage.cacheCreationTokens,
+      recordedAt: usage.timestamp,
+    });
 
     this.maybeEmitAlert();
   }

@@ -22,7 +22,8 @@ export interface McpDiscoverTabProps {
   enabledServerIds: Set<string>;
   /** 是否允许管理 MCP 配置。普通登录用户也可以自助管理。 */
   canManageMcp: boolean;
-  actionLoading: string | null;
+  /** 正在安装/启用中的 entry id 集合（每个 entry 独立 loading，见 A5 stale-promise 修复） */
+  actionLoading: Set<string>;
   /** 免配置 server 一键连接 */
   onQuickConnect: (entry: RecommendedMcpServerEntry) => void;
   /** 需要凭证的 server：打开预填编辑器 */
@@ -227,7 +228,7 @@ export const McpDiscoverTab: React.FC<McpDiscoverTabProps> = ({
                 entry={entry}
                 action={getEntryAction(entry, existingServerIds, enabledServerIds)}
                 canManageMcp={canManageMcp}
-                isLoading={actionLoading === entry.id}
+                isLoading={actionLoading.has(entry.id)}
                 labels={discoverText}
                 onQuickConnect={onQuickConnect}
                 onConnectWithConfig={onConnectWithConfig}

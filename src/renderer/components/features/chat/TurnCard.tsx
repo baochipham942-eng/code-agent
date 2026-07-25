@@ -27,6 +27,7 @@ import { TraceNodeRenderer } from './TraceNodeRenderer';
 import { StreamingIndicator, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
+import { TurnFeedback } from './TurnFeedback';
 import { ToolStepGroup } from './ToolStepGroup';
 import {
   groupAdjacentToolCalls,
@@ -167,6 +168,17 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     [turn.nodes],
   );
   const thinkingSegments = useMemo(() => getTurnThinkingSegments(turn), [turn]);
+  // 投影层已经挑好了这一轮该被评价的那个节点（markFeedbackEligibleNodes），
+  // 这里只借它的 messageId 当锚点，判定逻辑不搬也不复制一份。
+  const feedbackAnchor = useMemo(() => {
+    if (isStreaming) return null;
+    const node = turn.nodes.find((item) => item.feedbackEligible === true);
+    const content = node?.content?.trim();
+    if (!node || !content) return null;
+    const messageId = node.messageId
+      || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
+    return { messageId, content };
+  }, [isStreaming, turn.nodes]);
 
   return (
     <div
@@ -177,12 +189,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       {showSeparator && (
         <div className="flex items-center gap-2 py-1.5">
           <div className="h-px flex-1 bg-zinc-800"></div>
-          <span className="text-[10px] text-zinc-500 shrink-0">
-            {stats.time}
-            {stats.duration !== null && stats.duration > 0
-              ? ` · ${formatTurnDuration(stats.duration)}`
-              : ''}
-          </span>
+          {/* 只说时间点。轮时长由下面折叠按钮那一处带「用时」标签地讲——
+              同一个数字在同一屏出现两次、其中一次还没有标签，正是第 17 条那个歧义。 */}
+          <span className="text-[10px] text-zinc-500 shrink-0">{stats.time}</span>
           <div className="h-px flex-1 bg-zinc-800"></div>
         </div>
       )}
@@ -224,7 +233,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             onClick={() => setUserExpanded(!expanded)}
             className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors py-0.5"
             aria-expanded={expanded}
-            title={expanded ? '折叠本轮' : '展开本轮'}
+            title={expanded ? t.turnCard.collapseTurn : t.turnCard.expandTurn}
           >
             {expanded ? (
               <ChevronDown className="w-3 h-3 flex-shrink-0 text-zinc-600" />
@@ -232,7 +241,10 @@ export const TurnCard: React.FC<TurnCardProps> = ({
               <ChevronRight className="w-3 h-3 flex-shrink-0 text-zinc-600" />
             )}
             <span>
-              用时 {stats.duration ? formatTurnDuration(stats.duration) : '—'}
+              {t.turnCard.workedFor.replace(
+                '{duration}',
+                stats.duration ? formatTurnDuration(stats.duration) : '—',
+              )}
             </span>
           </button>
         )}
@@ -336,6 +348,15 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
         {/* Turn-level aggregated diff card — always visible */}
         <TurnDiffSummary turn={turn} />
+
+        {/* 评价对象是这一轮的回答，所以位置在整轮最后——挂在正文节点里会插在答案和
+            它产出的文件卡之间，看起来像在给上面那一句话打分。 */}
+        {feedbackAnchor && (
+          <TurnFeedback
+            messageId={feedbackAnchor.messageId}
+            content={feedbackAnchor.content}
+          />
+        )}
       </div>
     </div>
   );

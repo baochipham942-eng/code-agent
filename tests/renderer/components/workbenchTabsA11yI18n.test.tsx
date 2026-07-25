@@ -68,6 +68,32 @@ describe('WorkbenchTabs empty-state launcher', () => {
     expect(screen.getByTestId('workbench-view-selector')).toBeTruthy();
   });
 
+  // 第 10 条：光给「设计画布」这个名字没人知道是什么，「打开一个视图」也是内部词。
+  // 每项配一句它给你看什么，中英同步。
+  it('每个视图都带一句说明它给你看什么', () => {
+    render(<WorkbenchTabs />);
+
+    const launcher = screen.getByTestId('workbench-empty-launcher');
+    expect(launcher.textContent).toContain(en.workbenchTabs.emptyTitle);
+    for (const description of Object.values(en.workbenchTabs.viewDescriptions)) {
+      expect(launcher.textContent).toContain(description);
+    }
+    // 说明必须真的是人话，不是把标签重复一遍
+    expect(en.workbenchTabs.viewDescriptions.designCanvas)
+      .not.toBe(zh.design.canvasTabLabel);
+  });
+
+  it('中文侧同样带说明，且不残留「打开一个视图」这种内部词', () => {
+    useAppStore.setState({ language: 'zh' });
+    render(<WorkbenchTabs />);
+
+    const launcher = screen.getByTestId('workbench-empty-launcher');
+    for (const description of Object.values(zh.workbenchTabs.viewDescriptions)) {
+      expect(launcher.textContent).toContain(description);
+    }
+    expect(launcher.textContent).not.toContain('打开一个视图');
+  });
+
   it('derives the displayed shortcut from the keybinding registry', () => {
     const definition = KEYBINDING_DEFINITIONS.find(({ id }) => id === 'statusRail.toggle');
     if (!definition) throw new Error('statusRail.toggle definition missing');

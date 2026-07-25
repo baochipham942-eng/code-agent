@@ -26,11 +26,8 @@ import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
 import { UI } from '@shared/constants';
-import { IPC_CHANNELS } from '@shared/ipc';
-import ipcService from '../../../services/ipcService';
-import { useSessionStore } from '../../../stores/sessionStore';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
 
@@ -333,22 +330,12 @@ const AssistantTextNode: React.FC<{
   isStreaming?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
 }> = ({ node, sessionId, isStreaming: turnStreaming, onStreamingDisplayUpdate }) => {
-  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const wasReportingStreamingDisplayRef = useRef(false);
   const [copied, setCopied] = useState(false);
   const [selectionCopy, setSelectionCopy] = useState<SelectionCopyState | null>(null);
-  const [feedbackRating, setFeedbackRating] = useState<1 | -1 | null>(null);
-  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const messageId = node.messageId || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
-  const canSubmitFeedback = Boolean(
-    node.feedbackEligible === true &&
-    !turnStreaming &&
-    currentSessionId &&
-    messageId &&
-    node.content?.trim(),
-  );
 
   const { displayContent, isAnimating } = useSmoothStreamingText({
     content: node.content || '',
@@ -391,30 +378,6 @@ const AssistantTextNode: React.FC<{
       setSelectionCopy(null);
     }, UI.COPY_FEEDBACK_DURATION);
   }, [selectionCopy]);
-
-  const handleFeedback = useCallback(async (rating: 1 | -1) => {
-    if (!currentSessionId || !messageId || feedbackSubmitting) return;
-    setFeedbackSubmitting(true);
-    setFeedbackRating(rating);
-    try {
-      await ipcService.invoke(IPC_CHANNELS.TELEMETRY_SUBMIT_FEEDBACK, {
-        sessionId: currentSessionId,
-        turnId: messageId,
-        messageId,
-        rating,
-        fullContent: rating === -1
-          ? {
-              messageId,
-              assistantResponse: node.content,
-            }
-          : undefined,
-      });
-    } catch {
-      setFeedbackRating(null);
-    } finally {
-      setFeedbackSubmitting(false);
-    }
-  }, [currentSessionId, feedbackSubmitting, messageId, node.content]);
 
   // 空壳守卫：空正文 + 无路由/质量信号 = 没有任何可渲染内容，整节点跳过，避免线性
   // trace 里出现无法解释的空白行。思考不在这里渲染——一个回合内所有思考段已经在
@@ -485,40 +448,6 @@ const AssistantTextNode: React.FC<{
         </div>
       )}
 
-      {canSubmitFeedback && (
-        <div className="mt-2 flex items-center justify-start gap-1">
-          <button
-            type="button"
-            onClick={() => handleFeedback(1)}
-            disabled={feedbackSubmitting}
-            className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
-              feedbackRating === 1
-                ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-                : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
-            }`}
-            title="标记有帮助"
-            aria-label="标记有帮助"
-            aria-pressed={feedbackRating === 1}
-          >
-            <ThumbsUp className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleFeedback(-1)}
-            disabled={feedbackSubmitting}
-            className={`inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
-              feedbackRating === -1
-                ? 'border-rose-400/30 bg-rose-400/10 text-rose-300'
-                : 'border-transparent text-zinc-500 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-zinc-300'
-            }`}
-            title="标记有问题"
-            aria-label="标记有问题"
-            aria-pressed={feedbackRating === -1}
-          >
-            <ThumbsDown className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
     </div>
   );
 };

@@ -6,14 +6,12 @@
 
 import React from 'react';
 import type { ToolCall } from '@shared/contract';
-import { formatDuration } from './utils';
 import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { TargetContextIcon } from './TargetContextIcon';
 import { useI18n } from '../../../../../hooks/useI18n';
-import { UI } from '@shared/constants';
 
 interface Props {
   toolCall: ToolCall;
@@ -49,7 +47,6 @@ export function ToolHeader({ toolCall, status }: Props) {
     toolCall.shortDescription,
   );
   const statusLabel = getToolStatusLabel(toolCall, status, t);
-  const duration = toolCall.result?.duration;
 
   // feature flag 关闭时不展示 target icon（与 shortDescription gating 同步）
   const showTargetIcon = isSemanticToolUIEnabled() && !!toolCall.targetContext?.kind;
@@ -77,12 +74,9 @@ export function ToolHeader({ toolCall, status }: Props) {
         {displayName}
       </span>
 
-      {/* Duration - right aligned. 毫秒级耗时对非程序员是噪音，只在有感知意义时才显示 */}
-      {duration !== undefined && status !== 'pending' && duration >= UI.TOOL_DURATION_MIN_VISIBLE_MS && (
-        <span className="ml-auto text-zinc-600 text-xs flex-shrink-0">
-          {formatDuration(duration)}
-        </span>
-      )}
+      {/* 单个工具的裸秒数已去掉：一屏里原来有轮级「用时 30s」和每工具「2.6s」两套
+          没说明关系的时间。「这段花了多久」由组头那一处回答（带 hover 说明），
+          单步毫秒对非程序员没有可操作性。 */}
     </div>
   );
 }

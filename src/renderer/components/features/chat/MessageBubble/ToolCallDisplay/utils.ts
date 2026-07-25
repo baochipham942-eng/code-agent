@@ -40,7 +40,6 @@ import {
   ZoomIn,
 } from 'lucide-react';
 import type { ToolCall } from '@shared/contract';
-export { formatDuration } from '../../../../../../shared/utils/format';
 
 // ============================================================================
 // Tool Icon Mapping

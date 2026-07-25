@@ -104,6 +104,15 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
     return t.design.canvasTabLabel;
   };
 
+  // 「设计画布」这种名字没人知道是什么，光靠标签选不出来
+  const descriptionFor = (id: LaunchableWorkbenchViewId): string => {
+    const d = t.workbenchTabs.viewDescriptions;
+    if (id === 'overview') return d.overview;
+    if (id === 'files') return d.files;
+    if (id === 'browser') return d.browser;
+    return d.designCanvas;
+  };
+
   return (
     <div
       data-testid={mode === 'empty' ? 'workbench-empty-launcher' : 'workbench-view-launcher-panel'}
@@ -140,7 +149,12 @@ const WorkbenchViewLauncher: React.FC<WorkbenchViewLauncherProps> = ({
                   }`}
                 >
                   <Icon className={`h-4 w-4 flex-shrink-0 ${view.iconClassName}`} />
-                  <span className="min-w-0 flex-1 truncate">{labelFor(view.id)}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{labelFor(view.id)}</span>
+                    <span className="block truncate text-[11px] font-normal text-zinc-500">
+                      {descriptionFor(view.id)}
+                    </span>
+                  </span>
                   {shortcut && (
                     <kbd
                       data-testid={`workbench-shortcut-${view.id}`}

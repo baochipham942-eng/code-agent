@@ -9,6 +9,7 @@ import {
   FileText,
   Image,
   LayoutGrid,
+  MoreHorizontal,
 } from 'lucide-react';
 import type { ProjectArtifact, ProjectArtifactKind } from '@shared/contract/project';
 import {
@@ -36,6 +37,8 @@ import { useSessionStore } from '../stores/sessionStore';
 import ipcService from '../services/ipcService';
 import { getProjectArtifacts } from '../services/projectClient';
 import { ConfirmDialog } from './composites/ConfirmDialog';
+import { DeliverableCardList } from './features/chat/MessageBubble/DeliverableCardList';
+import { buildDeliverableCardFromWorkspaceItem } from '../utils/deliverables';
 import {
   kindLabel,
   getPreviewItemText,
@@ -48,8 +51,6 @@ import {
   RevisionPanel,
   PreviewBody,
 } from './workspacePreview/parts';
-import { DeliverableCardList } from './features/chat/MessageBubble/DeliverableCardList';
-import { buildDeliverableCardFromWorkspaceItem } from '../utils/deliverables';
 
 type WorkspaceAssetDrawer = 'apps' | 'gallery' | 'feedback';
 
@@ -97,6 +98,30 @@ export function dedupeProjectArtifacts(
   return result;
 }
 
+function OverflowAction({
+  label,
+  icon,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <span className="shrink-0 text-zinc-400">{icon}</span>
+      <span className="min-w-0 truncate">{label}</span>
+    </button>
+  );
+}
+
 export const WorkspacePreviewPanel: React.FC = () => {
   const { t } = useI18n();
   const wp = t.previewWorkspace.workspacePreview;
@@ -127,18 +152,14 @@ export const WorkspacePreviewPanel: React.FC = () => {
   const [isRestoringRevision, setIsRestoringRevision] = useState(false);
   const [revisionActionError, setRevisionActionError] = useState<string | null>(null);
   const [revisionActionMessage, setRevisionActionMessage] = useState<string | null>(null);
-  const [sessionArtifactsExpanded, setSessionArtifactsExpanded] = useState(true);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [projectArtifactsExpanded, setProjectArtifactsExpanded] = useState(false);
   const [projectArtifacts, setProjectArtifacts] = useState<ProjectArtifact[]>([]);
   const [projectArtifactsLoading, setProjectArtifactsLoading] = useState(false);
   const [projectArtifactsError, setProjectArtifactsError] = useState<string | null>(null);
   const galleryItems = useMemo(() => items.filter(isGalleryItem), [items]);
-  const fileDeliverableCards = useMemo(
-    () => new Map(items
-      .filter((item) => Boolean(item.file?.path))
-      .map((item) => [item.id, buildDeliverableCardFromWorkspaceItem(item)])),
-    [items],
-  );
   const visibleProjectArtifacts = useMemo(
     () => dedupeProjectArtifacts(projectArtifacts, t.sidebarProject.artifactKind),
     [projectArtifacts, t.sidebarProject.artifactKind],
@@ -171,6 +192,12 @@ export const WorkspacePreviewPanel: React.FC = () => {
       setSelectedId(selected.id);
     }
   }, [selected, selectedId, setSelectedId]);
+
+  // 预览/复制/归档/删除四个动作挂在 deliverable 卡上，只为「当前产物」构造一张。
+  const selectedDeliverableCard = useMemo(
+    () => (selected?.file?.path ? buildDeliverableCardFromWorkspaceItem(selected) : null),
+    [selected],
+  );
 
   useEffect(() => {
     setIsRestoreConfirmationOpen(false);
@@ -377,140 +404,151 @@ export const WorkspacePreviewPanel: React.FC = () => {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-zinc-900">
-      <section className={`flex min-h-0 flex-col ${sessionArtifactsExpanded ? 'flex-1' : 'shrink-0'}`}>
-        <button
-          type="button"
-          aria-expanded={sessionArtifactsExpanded}
-          onClick={() => setSessionArtifactsExpanded((current) => !current)}
-          className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2 text-left"
-        >
-          {sessionArtifactsExpanded
-            ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
-            : <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />}
-          <Clipboard className="h-4 w-4 shrink-0 text-cyan-300" />
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
-            {wp.sessionArtifacts}
-          </span>
-          <span className="text-xs tabular-nums text-zinc-500">{items.length}</span>
-        </button>
+      {/* 右栏是产物本身，不是「关于产物的清单」。之前一屏里：会话产物折叠头 + 计数、
+          统计行 + 4 个工具栏按钮、文件小标题 + 同一个计数、常驻文件列表、选中项元数据、
+          版本区——十几个可点元素挤在内容上面，真正的内容拿剩下那点高度。
+          现在：一条 slim header（图标 + 产物名 + 切换 + ⋯），下面全是内容；
+          元数据与版本收进底部「详情与版本」，动作全进 ⋯。 */}
+      {items.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center px-6 text-center">
+          <div>
+            <Clipboard className="mx-auto h-8 w-8 text-zinc-600" />
+            <div className="mt-3 text-sm text-zinc-300">{wp.noPreviewableFiles}</div>
+            <div className="mt-1 text-xs leading-relaxed text-zinc-500">{wp.noArtifactsYet}</div>
+          </div>
+        </div>
+      ) : (
+        <section className="flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 py-2">
+            {selected && <KindIcon kind={selected.kind} />}
+            <span
+              className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100"
+              title={selected ? `${selected.title}\n${kindLabel(selected.kind)}${selected.source.label ? ` · ${selected.source.label}` : ''}` : undefined}
+            >
+              {selected?.title}
+            </span>
+            {/* 单产物时不给切换器：它是唯一那个，下拉里也只有它自己 */}
+            {items.length > 1 && (
+              <button
+                type="button"
+                data-testid="workspace-artifact-switcher"
+                aria-expanded={switcherOpen}
+                aria-label={wp.switchArtifact}
+                onClick={() => { setOverflowOpen(false); setSwitcherOpen((current) => !current); }}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-200"
+              >
+                <span className="tabular-nums">{wp.artifactCount.replace('{count}', String(items.length))}</span>
+                {switcherOpen
+                  ? <ChevronDown className="h-3 w-3" />
+                  : <ChevronRight className="h-3 w-3" />}
+              </button>
+            )}
+            <AssetToolbarButton
+              label={wp.moreActions}
+              icon={<MoreHorizontal className="h-4 w-4" />}
+              active={overflowOpen}
+              onClick={() => { setSwitcherOpen(false); setOverflowOpen((current) => !current); }}
+            />
+          </div>
 
-        {sessionArtifactsExpanded && (
-          <>
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2">
-              <div className="min-w-0 truncate text-xs text-zinc-500">
-                {wp.statsSummary
-                  .replace('{files}', String(items.length))
-                  .replace('{visuals}', String(galleryItems.length))
-                  .replace('{apps}', String(appAssetCount))}
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <AssetToolbarButton
-                  label={wp.promptAppsButton.replace('{count}', String(appAssetCount))}
-                  icon={<LayoutGrid className="h-4 w-4" />}
-                  count={appAssetCount}
-                  active={activeDrawer === 'apps'}
-                  onClick={() => setActiveDrawer((current) => (current === 'apps' ? null : 'apps'))}
+          {switcherOpen && (
+            <div className="max-h-56 shrink-0 space-y-2 overflow-y-auto border-b border-white/[0.06] p-3">
+              {items.map((item) => (
+                <PreviewListItem
+                  key={item.id}
+                  item={item}
+                  active={item.id === selected?.id}
+                  onSelect={() => { setSelectedId(item.id); setSwitcherOpen(false); }}
                 />
-                <AssetToolbarButton
-                  label={wp.galleryButton.replace('{count}', String(galleryItems.length))}
-                  icon={<Image className="h-4 w-4" />}
-                  count={galleryItems.length}
-                  active={activeDrawer === 'gallery'}
-                  onClick={() => setActiveDrawer((current) => (current === 'gallery' ? null : 'gallery'))}
-                />
-                <div className="mx-1 h-5 w-px bg-white/[0.08]" />
-                <AssetToolbarButton
-                  label={copied ? wp.copied : wp.copyPreview}
-                  icon={copied ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}
-                  disabled={!selected}
-                  onClick={copySelected}
-                />
-                <AssetToolbarButton
-                  label={wp.exportBundle}
-                  icon={<Archive className="h-4 w-4" />}
-                  disabled={!selected?.file?.path}
-                  onClick={exportSelectedBundle}
-                />
-              </div>
+              ))}
             </div>
+          )}
 
-            {items.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center px-6 text-center">
-                <div>
-                  <Clipboard className="mx-auto h-8 w-8 text-zinc-600" />
-                  <div className="mt-3 text-sm text-zinc-300">{wp.noPreviewableFiles}</div>
-                  <div className="mt-1 text-xs leading-relaxed text-zinc-500">{wp.noArtifactsYet}</div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <div className="shrink-0 border-b border-white/[0.06] p-3">
-                  <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-zinc-500">
-                    <span>{wp.filesHeader}</span>
-                    <span>{items.length}</span>
-                  </div>
-                  <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                    {items.map((item) => {
-                      const deliverableCard = fileDeliverableCards.get(item.id);
-                      return deliverableCard ? (
-                        <DeliverableCardList key={item.id} cards={[deliverableCard]} className="" />
-                      ) : (
-                        <PreviewListItem
-                          key={item.id}
-                          item={item}
-                          active={item.id === selected?.id}
-                          onSelect={() => setSelectedId(item.id)}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                  {selected && (
-                    <div className="space-y-3">
-                      <div className="flex items-start gap-2">
-                        <KindIcon kind={selected.kind} />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-semibold text-zinc-100">{selected.title}</div>
-                          <div className="mt-0.5 truncate text-xs text-zinc-500">
-                            {kindLabel(selected.kind)}
-                            {selected.source.label ? ` · ${selected.source.label}` : ''}
-                          </div>
-                          {selected.designBrief && (
-                            <>
-                              <DesignBriefBadge brief={selected.designBrief} />
-                              {selected.designBrief.references?.length ? (
-                                <div className="mt-2 space-y-1 text-[11px] leading-relaxed text-zinc-400">
-                                  {selected.designBrief.references.map((reference) => (
-                                    <div key={reference} className="rounded border border-white/[0.06] bg-white/[0.025] px-2 py-1">
-                                      {reference}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </>
-                          )}
+          {overflowOpen && (
+            <div
+              data-testid="workspace-preview-overflow"
+              className="shrink-0 border-b border-white/[0.06] p-2"
+            >
+              <OverflowAction
+                label={copied ? wp.copied : wp.copyPreview}
+                icon={copied ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <Copy className="h-3.5 w-3.5" />}
+                disabled={!selected}
+                onClick={() => { void copySelected(); }}
+              />
+              <OverflowAction
+                label={wp.exportBundle}
+                icon={<Archive className="h-3.5 w-3.5" />}
+                disabled={!selected?.file?.path}
+                onClick={() => { void exportSelectedBundle(); }}
+              />
+              <OverflowAction
+                label={wp.promptAppsButton.replace('{count}', String(appAssetCount))}
+                icon={<LayoutGrid className="h-3.5 w-3.5" />}
+                onClick={() => { setOverflowOpen(false); setActiveDrawer('apps'); }}
+              />
+              <OverflowAction
+                label={wp.galleryButton.replace('{count}', String(galleryItems.length))}
+                icon={<Image className="h-3.5 w-3.5" />}
+                onClick={() => { setOverflowOpen(false); setActiveDrawer('gallery'); }}
+              />
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {selected && <PreviewBody item={selected} />}
+          </div>
+
+          {selected && (
+            <div className="shrink-0 border-t border-white/[0.06]">
+              <button
+                type="button"
+                data-testid="workspace-preview-details-toggle"
+                aria-expanded={detailsOpen}
+                onClick={() => setDetailsOpen((current) => !current)}
+                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] text-zinc-500 hover:text-zinc-300"
+              >
+                {detailsOpen
+                  ? <ChevronDown className="h-3 w-3" />
+                  : <ChevronRight className="h-3 w-3" />}
+                {wp.detailsAndVersions}
+              </button>
+              {detailsOpen && (
+                <div className="max-h-[45%] space-y-3 overflow-y-auto px-3 pb-3">
+                  {/* 当前产物的元数据与四个动作（预览/复制/归档/删除）——之前每个文件行都常驻一份，
+                      现在只对当前那个、且要点开才出现。产物只有一个时这里也照样有，不依赖切换器。 */}
+                  {selectedDeliverableCard && (
+                    <DeliverableCardList cards={[selectedDeliverableCard]} className="" />
+                  )}
+                  {selected.designBrief && (
+                    <div>
+                      <DesignBriefBadge brief={selected.designBrief} />
+                      {selected.designBrief.references?.length ? (
+                        <div className="mt-2 space-y-1 text-[11px] leading-relaxed text-zinc-400">
+                          {selected.designBrief.references.map((reference) => (
+                            <div key={reference} className="rounded border border-white/[0.06] bg-white/[0.025] px-2 py-1">
+                              {reference}
+                            </div>
+                          ))}
                         </div>
-                      </div>
-                      <RevisionPanel
-                        items={items}
-                        selected={selected}
-                        currentSessionId={currentSessionId}
-                        isRestoring={isRestoringRevision}
-                        actionError={revisionActionError}
-                        actionMessage={revisionActionMessage}
-                        onSelect={setSelectedId}
-                        onRestore={requestRestoreSelectedCheckpoint}
-                      />
-                      <PreviewBody item={selected} />
+                      ) : null}
                     </div>
                   )}
+                  <RevisionPanel
+                    items={items}
+                    selected={selected}
+                    currentSessionId={currentSessionId}
+                    isRestoring={isRestoringRevision}
+                    actionError={revisionActionError}
+                    actionMessage={revisionActionMessage}
+                    onSelect={setSelectedId}
+                    onRestore={requestRestoreSelectedCheckpoint}
+                  />
                 </div>
-              </div>
-            )}
-          </>
-        )}
-      </section>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {currentProjectId && (
         <section className="shrink-0 border-t border-white/[0.08]">

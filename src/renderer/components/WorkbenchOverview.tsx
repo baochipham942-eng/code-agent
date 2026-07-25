@@ -32,9 +32,8 @@ export const WorkbenchOverview: React.FC = () => {
         aria-label={t.workbenchTabs.overviewArtifactsLabel}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <h2 className="shrink-0 px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-          {t.workbenchTabs.overviewArtifactsLabel}
-        </h2>
+        {/* 产物区不再顶一行「产物」小标题：下面那条 header 就写着产物名，它自己说明自己。
+            无障碍名仍由 section 的 aria-label 提供，没丢。 */}
         <div className="min-h-0 flex-1">
           <WorkspacePreviewPanel />
         </div>

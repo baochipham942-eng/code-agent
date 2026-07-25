@@ -19,14 +19,14 @@ describe('getToolStatusLabel — Bash exit code (P0 #4：去矛盾)', () => {
     expect(label).not.toContain('不可靠'); // 去掉与 success 自相矛盾的「判定可能不可靠」
   });
 
-  it('keeps the clean label when exit code is 0', () => {
-    const label = getToolStatusLabel(bash('ok', { exitCode: 0 }), 'success', zh);
-    expect(label).not.toContain('退出码');
+  // 退出码 0 / 未知时没有可报的结果数据 → 不给状态词（光秃秃的「已执行」与主文案
+  // 「运行了命令 make」是同一个动词讲两遍）
+  it('exit code 0：无状态词', () => {
+    expect(getToolStatusLabel(bash('ok', { exitCode: 0 }), 'success', zh)).toBeNull();
   });
 
-  it('keeps the clean label when exit code is unknown', () => {
-    const label = getToolStatusLabel(bash('ok'), 'success', zh);
-    expect(label).not.toContain('退出码');
+  it('exit code 未知：无状态词', () => {
+    expect(getToolStatusLabel(bash('ok'), 'success', zh)).toBeNull();
   });
 
   it('does not affect non-bash tools', () => {

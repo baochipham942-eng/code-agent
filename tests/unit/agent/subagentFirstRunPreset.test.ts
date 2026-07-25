@@ -11,7 +11,7 @@ vi.mock('../../../src/host/services/roleAssets/rolePackInstallService', () => ({
   consumeFirstRunStrict: consumeFirstRunStrictMock,
 }));
 
-import { resolveSubagentPreset } from '../../../src/host/agent/subagentExecutor';
+import { resolveSubagentPreset } from '../../../src/host/agent/subagentFirstRunPreset';
 
 describe('云货架专家首轮强制 strict', () => {
   beforeEach(() => {

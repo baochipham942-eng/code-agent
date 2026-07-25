@@ -2,8 +2,13 @@
 // Prompt Builder - Assembles system prompts
 // ============================================================================
 // Claude Code Style: 极简身份 + 内联规则 + 工具描述
-// 目标：<2000 tokens（对标 Claude Code 269 tokens 核心 + 工具描述）
+// 预算：SYSTEM_PROMPT_TOKEN_BUDGET（tests/scripts/promptBudget.test.ts 立门守住）。
+// 旧目标 <2000 是许愿值，2026-07-25 费曼审计实测 ~5761（getSoul 占近半），
+// 按现实改目标；收敛 soul 属产品质量决策，另立项后再降预算。
 // ============================================================================
+
+/** 系统提示词 token 预算上限（估算口径 = tokenEstimator.estimateTokens） */
+export const SYSTEM_PROMPT_TOKEN_BUDGET = 6400;
 
 import { getSoul } from './soulLoader';
 import { TOOLS_PROMPT } from './base';

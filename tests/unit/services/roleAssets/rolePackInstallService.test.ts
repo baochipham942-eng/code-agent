@@ -41,6 +41,7 @@ import {
   getInstalledRolePackState,
   getRolePackFactoryDefinition,
   installRolePack,
+  consumeFirstRunStrict,
   retryMissingSkills,
   stripRolePackElevation,
   uninstallRolePack,
@@ -263,6 +264,19 @@ describe('提权包安装流程', () => {
     // 过目后照常装
     const confirmed = await installRolePack(plain.roleId, { elevationReviewed: true });
     expect(confirmed.success).toBe(true);
+  });
+
+  // 首跑强制 strict：consume-on-use，第二轮起才按包声明的档位跑。
+  it('全新安装置位首跑 strict，consume 后不再置位；升级不重新置位', async () => {
+    const pack = seedElevated('首跑专家');
+    await installRolePack(pack.roleId, { acceptElevation: true });
+
+    expect(await consumeFirstRunStrict(pack.roleId)).toBe(true);
+    expect(await consumeFirstRunStrict(pack.roleId)).toBe(false);
+
+    // 升级/重装不该把用户已经看过一轮的专家重新按新装对待
+    await installRolePack(pack.roleId, { acceptElevation: true });
+    expect(await consumeFirstRunStrict(pack.roleId)).toBe(false);
   });
 
   it('未过目时返回 consent 且不落盘', async () => {

@@ -245,12 +245,22 @@ export class SubagentExecutor {
 
     // Create pipeline context
     const pipeline = getSubagentPipeline();
+    // 云货架装来的专家，第一轮强制 strict：不看包自己声明的档位。
+    // 第三方 prompt 就是注入面，先让用户在最严档下看它一轮怎么干活（consume-on-use，见 consumeFirstRunStrict）。
+    let effectivePreset = config.permissionPreset || 'development';
+    if (config.roleId) {
+      const { consumeFirstRunStrict } = await import('../services/roleAssets/rolePackInstallService');
+      if (await consumeFirstRunStrict(config.roleId)) {
+        logger.info(`[Subagent] ${config.roleId} 首次运行，本轮强制 strict 档（忽略包声明的 ${effectivePreset}）`);
+        effectivePreset = 'strict';
+      }
+    }
     const dynamicConfig: DynamicAgentConfig = {
       name: config.name,
       systemPrompt: effectiveSystemPrompt,
       tools: config.availableTools,
       maxIterations: config.maxIterations,
-      permissionPreset: config.permissionPreset || 'development',
+      permissionPreset: effectivePreset,
       maxBudget: config.maxBudget,
     };
     const pipelineContext = pipeline.createContext(

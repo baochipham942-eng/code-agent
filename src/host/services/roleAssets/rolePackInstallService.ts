@@ -39,6 +39,11 @@ interface InstalledRolePackRecord {
   locallyModified?: boolean;
   /** 用户装包时选了「按包声明装」（接受了提权）；还原出厂据此决定要不要再剥一次。 */
   elevationAccepted?: boolean;
+  /**
+   * 刚装上、还没跑过第一轮。第一轮强制 strict 档，不看包自己声明的档位——
+   * 第三方 prompt 就是注入面，先让用户在最严档下看它一轮怎么干活。
+   */
+  firstRunPending?: boolean;
 }
 
 type InstalledRolePacksFile = Record<string, InstalledRolePackRecord>;
@@ -67,6 +72,22 @@ export interface RolePackListItem {
   missingSkills?: string[];
   locallyModified?: boolean;
   hasUpdate: boolean;
+}
+
+/**
+ * 首跑强制 strict 的判据，consume-on-use：返回 true 表示这一轮要按 strict 跑，并立刻清位。
+ *
+ * ponytail: 在"开始跑"而不是"跑完"清位——第一轮中途崩掉会白白用掉这次强制档。
+ * 取舍理由：跑完才清需要贯穿整条执行链传递清位时机，而这一档的价值是"用户第一次见它干活时
+ * 别让它放手"，崩掉的那次本来也没干成什么。
+ */
+export async function consumeFirstRunStrict(roleId: string): Promise<boolean> {
+  const records = await loadRecords();
+  const record = records[roleId];
+  if (!record?.firstRunPending) return false;
+  records[roleId] = { ...record, firstRunPending: false };
+  await saveRecords(records);
+  return true;
 }
 
 export async function getInstalledRolePackState(roleId: string): Promise<{ locallyModified: boolean } | null> {
@@ -280,7 +301,10 @@ async function installEntry(
   }
 
   const installState: RolePackInstallState = missingSkills.length > 0 ? 'degraded' : 'complete';
+  // 全新安装才置位；升级/重试不重置（那不是"第一次见到这个专家"）。
+  const firstRunPending = previous === undefined ? { firstRunPending: true } : {};
   records[entry.roleId] = {
+    ...firstRunPending,
     packVersion: entry.packVersion,
     installedAgentMdHash,
     installState,

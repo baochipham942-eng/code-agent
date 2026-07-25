@@ -25,6 +25,9 @@ import { getContextHealthService } from '../context/contextHealthService';
 import { getCloudConfigService } from '../services/cloud';
 import { getConfigService } from '../services/core/configService';
 import { extractSecrets } from '../mcp/secretRef';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('MCP.ipc');
 
 const BLOCKED_STDIO_COMMANDS = new Set([
   'rm',
@@ -381,6 +384,44 @@ export async function removeMcpSettingsServerDraftConfig(
   throw new Error(`Disabled MCP draft "${serverName}" was not found in MCP config`);
 }
 
+/** 从一个已知配置文件里按名字摘掉一条 server 记录（找不到则原样返回 false，不算错）。 */
+async function removeMcpServerConfigFromPath(filePath: string, serverName: string): Promise<boolean> {
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(await fs.readFile(filePath, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  let dirty = false;
+  for (const key of ['servers', 'mcpServers'] as const) {
+    const servers = config[key];
+    if (!Array.isArray(servers)) continue;
+    const filtered = (servers as MCPServerConfig[]).filter((server) => server.name !== serverName);
+    if (filtered.length !== servers.length) {
+      config[key] = filtered;
+      dirty = true;
+    }
+  }
+  if (dirty) {
+    await fs.writeFile(filePath, JSON.stringify(config, null, 2));
+  }
+  return dirty;
+}
+
+/**
+ * 撤销一次 addServer：扫 user/project/local 全部候选配置文件摘除该条目 + 让运行时
+ * MCPClient 忘掉它。用于渲染层"取消"竞态下——旧的 addServer promise 在用户已取消后
+ * 才 resolve 成功，须把静默完成的写入连本带利地回滚，而不是留一个幽灵 server。
+ */
+async function handleRemoveServer(serverName: string, workingDirectory?: string): Promise<void> {
+  const paths = getMcpScopedConfigPaths(workingDirectory);
+  const candidates = [paths.user, paths.project, paths.local].filter((p): p is string => Boolean(p));
+  for (const configPath of candidates) {
+    await removeMcpServerConfigFromPath(configPath, serverName);
+  }
+  await getMCPClient().removeServer(serverName);
+}
+
 async function handleAddServer(
   payload: unknown,
   workingDirectory: string | undefined,
@@ -434,11 +475,20 @@ async function handleAddServer(
     persisted = await persistMcpSettingsServerConfig(workingDirectory, serverConfig);
   }
 
-  if (Object.keys(extractedSecrets).length > 0) {
-    await getConfigService().setIntegration(integrationId, extractedSecrets);
+  try {
+    if (Object.keys(extractedSecrets).length > 0) {
+      await getConfigService().setIntegration(integrationId, extractedSecrets);
+    }
+    getMCPClient().addServer({ ...serverConfig, scope: 'runtime' });
+  } catch (err) {
+    // 失败回滚（A5）：配置文件已经写入了这一条，但凭证/运行时注册没跟上——
+    // 留着就是"配置里有、MCPClient 不认得"的孤儿条目。回滚删掉刚写入的那条。
+    await removeMcpServerConfigFromPath(persisted.filePath, serverConfig.name).catch((rollbackErr) => {
+      logger.warn(`Failed to roll back MCP server config for "${serverConfig.name}" after add failure:`, rollbackErr);
+    });
+    throw err;
   }
 
-  getMCPClient().addServer({ ...serverConfig, scope: 'runtime' });
   return {
     serverName: serverConfig.name,
     enabled: false,
@@ -559,6 +609,12 @@ export function registerMcpHandlers(ipcMain: IpcMain, options: RegisterMcpHandle
             throw new Error('Working directory is unavailable');
           }
           data = await handleAddServer(payload, workingDirectory, scope);
+          break;
+        }
+        case 'removeServer': {
+          const payload = request.payload as { serverName: string };
+          await handleRemoveServer(payload.serverName, options.getWorkingDirectory?.());
+          data = { success: true };
           break;
         }
         case 'setServerEnabled': {

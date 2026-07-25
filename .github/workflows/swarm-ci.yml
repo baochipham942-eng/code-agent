@@ -173,14 +173,24 @@ jobs:
         # 保持同一手法，显式装。
         run: npx playwright install --with-deps chromium
 
-      - name: Main-chain vitest subset (agent / tools / ipc / services)
+      - name: Main-chain vitest subset (agent / tools / ipc / services / renderer)
         # 2026-07-25 建门。动机：全量 vitest 只在 push main 后的检测门里跑，PR 阶段完全
         # 看不见——`main-full-gate` 因此从 #636 起连红 15 个合并没人管（5 套件：partial
         # vi.mock 一加新导出就断 ×3、权限链上新增 DB 读未加守卫 ×1、人话改造后断言过期 ×1）。
         #
         # 这一步把**主链路**（agent 运行时 / 工具执行 / IPC / host services）纳入 PR 门：
-        # 618 文件 5892 用例，本机 ~186s。renderer 与其余长尾仍留给检测门兜底（全量本机
-        # ~377s，整包进 PR 门太贵）——这是明说的覆盖边界，不是以为跑全了。
+        # 618 文件 5892 用例，本机 ~186s。
+        #
+        # 2026-07-25 第三轮扩围：**tests/renderer 纳入**。原本的覆盖边界（"renderer 与其余
+        # 长尾留给检测门兜底"）在建门当天就被连撞三次——#663 手搓主操作色撞 primaryAction
+        # 棘轮、#671 ExpertPanel 因 useMcpStatus 订阅 MCP_EVENT 而 mock 缺 on 直接崩、
+        # #681 文案迁 i18n 后 mainTaskModelCopy 断言仍查源码字面量。三次 PR 门都是绿的，
+        # 三次都把 main 弄红，靠 push 后的检测门事后发现。
+        # 成本实测（本机 darwin）：tests/renderer 468 文件 2954 用例 89.9s，同机主链路子集
+        # 187.9s、CI 上 199s（比例 1.06）→ 推算 CI 上约 +95s。本 job 原 7m44s → 约 9m20s，
+        # 距 timeout-minutes: 15 仍有约 5.5 分钟余量。
+        # 其余长尾（tests/scripts 之外的 unit 子目录、security、integration 等）仍留给
+        # 检测门兜底——这依然是明说的覆盖边界，不是以为跑全了。
         #
         # 三处 exclude 是**平台性**排除，不是给业务代码开豁免。本 job 跑 ubuntu，而全量套件的
         # 绿色档案建立在 darwin（见 main-full-gate.yml 的 runs-on 注释：首跑 ubuntu 实测 10 个
@@ -200,7 +210,7 @@ jobs:
         # gameArtifactValidator 就是靠那次补装变绿的，且它从未被排除。排除列表越长，
         # "主链路子集"这个名字越名不副实，所以逐条试摘、用真 CI 验，而不是留着好看。
         run: |
-          npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services --retry=1 \
+          npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services tests/renderer --retry=1 \
             --exclude 'tests/unit/tools/modules/network/webSearch.test.ts' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 

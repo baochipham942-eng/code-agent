@@ -1,5 +1,5 @@
 import type { ModelConfig, ModelEntrySettings, ModelProvider, ModelProviderSettings } from '@shared/contract';
-import { DEFAULT_MODEL, MODEL, PROVIDER_MODELS_MAP, getProviderInfo } from '@shared/constants';
+import { DEFAULT_MODEL, MODEL, PROVIDER_MODELS_MAP, findRecommendedMcpServer, getProviderInfo } from '@shared/constants';
 import { getProviderRuntimeModels } from '@shared/modelRuntime';
 
 export interface OnboardingProviderCopy {
@@ -123,6 +123,45 @@ export const ONBOARDING_RELAY_CARD: OnboardingProviderCopy = {
   recommended: false,
   requiresBaseUrl: true,
 };
+
+/**
+ * onboarding 三步漏斗。cowork 的定位是「工具在哪工作就在哪」——只配一把模型密钥
+ * 就把人丢进空白对话，等于让非程序员自己想「那我现在能干什么」。
+ */
+export const ONBOARDING_STEPS = ['model', 'connectors', 'done'] as const;
+export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
+/**
+ * 步②展示的日常工具。刻意短：新用户面前放四张卡就够做完「这是我平时用的东西」这个判断，
+ * 全量目录在能力中心。id 对齐 mcpCatalog RECOMMENDED_MCP_SERVERS.id。
+ */
+export const ONBOARDING_CONNECTOR_IDS: readonly string[] = ['lark', 'notion', 'excel', 'github'];
+
+export interface OnboardingConnectorCard {
+  id: string;
+  name: string;
+  description: string;
+  connected: boolean;
+}
+
+/**
+ * 连接器卡片 + 当前连接状态。纯函数：连接态由调用方从 useMcpServerStates 派生，
+ * 与自动化模板卡（getTemplateConnectorStatuses）取的是同一口径，不另造一套状态源。
+ */
+export function getOnboardingConnectorCards(
+  connectedConnectorIds: ReadonlySet<string>,
+  ids: readonly string[] = ONBOARDING_CONNECTOR_IDS,
+): OnboardingConnectorCard[] {
+  return ids.map((id) => {
+    const entry = findRecommendedMcpServer(id);
+    return {
+      id,
+      name: entry?.name || id,
+      description: entry?.description || '',
+      connected: connectedConnectorIds.has(id),
+    };
+  });
+}
 
 export function getOnboardingProviderCards(): OnboardingProviderCopy[] {
   return ONBOARDING_OFFICIAL_PROVIDERS.map((id) => {

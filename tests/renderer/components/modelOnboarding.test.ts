@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ONBOARDING_CONNECTOR_IDS,
   ONBOARDING_OFFICIAL_PROVIDERS,
+  ONBOARDING_STEPS,
+  getOnboardingConnectorCards,
   ONBOARDING_RELAY_CARD,
   buildOnboardingModelSelection,
   getOnboardingProviderCards,
@@ -84,5 +87,25 @@ describe('model onboarding helpers', () => {
       baseUrl: 'https://api.deepseek.com/v1',
     });
     expect(selection.providerSettings.models?.['deepseek-v4-flash']?.enabled).toBe(true);
+  });
+});
+
+describe('onboarding 三步漏斗（C1）', () => {
+  it('三步的顺序是 模型 → 连接器 → 完成', () => {
+    expect([...ONBOARDING_STEPS]).toEqual(['model', 'connectors', 'done']);
+  });
+
+  it('步②的连接器卡片带上目录里的中文名和连接状态', () => {
+    const cards = getOnboardingConnectorCards(new Set(['lark']));
+
+    expect(cards.map((card) => card.id)).toEqual([...ONBOARDING_CONNECTOR_IDS]);
+    expect(cards.find((card) => card.id === 'lark')).toMatchObject({ connected: true });
+    expect(cards.filter((card) => card.connected)).toHaveLength(1);
+    expect(cards.every((card) => card.name.length > 0)).toBe(true);
+  });
+
+  it('目录里查不到的 id 退回用 id 显示，不至于渲染出空白卡', () => {
+    const cards = getOnboardingConnectorCards(new Set(), ['not-in-catalog']);
+    expect(cards[0]).toMatchObject({ id: 'not-in-catalog', name: 'not-in-catalog', connected: false });
   });
 });

@@ -1045,7 +1045,7 @@ export class ConfigService implements IReadConfigService {
   async setBudgetConfig(config: Partial<NonNullable<AppSettings['budget']>>): Promise<void> {
     this.settings.budget = {
       enabled: config.enabled ?? this.settings.budget?.enabled ?? true,
-      maxBudget: config.maxBudget ?? this.settings.budget?.maxBudget ?? 10.0,
+      maxBudget: config.maxBudget ?? this.settings.budget?.maxBudget ?? 0,
       silentThreshold: config.silentThreshold ?? this.settings.budget?.silentThreshold ?? 0.7,
       warningThreshold: config.warningThreshold ?? this.settings.budget?.warningThreshold ?? 0.85,
       blockThreshold: config.blockThreshold ?? this.settings.budget?.blockThreshold ?? 1.0,
@@ -1057,7 +1057,9 @@ export class ConfigService implements IReadConfigService {
   getBudgetConfig(): NonNullable<AppSettings['budget']> {
     return {
       enabled: this.settings.budget?.enabled ?? true,
-      maxBudget: this.settings.budget?.maxBudget ?? 10.0,
+      // 未配置 = 不设上限（0），与 BudgetService 构造默认同口径。
+      // 这里若留 10.0，setBudgetConfig 走一次就会把那条隐形硬顶又推回运行时单例。
+      maxBudget: this.settings.budget?.maxBudget ?? 0,
       silentThreshold: this.settings.budget?.silentThreshold ?? 0.7,
       warningThreshold: this.settings.budget?.warningThreshold ?? 0.85,
       blockThreshold: this.settings.budget?.blockThreshold ?? 1.0,

@@ -101,7 +101,7 @@ describe('Budget startup wiring — initBudgetService(getBudgetConfig())', () =>
     await configService.initialize();
 
     // 先有一个默认单例（模拟 getBudgetService 在 init 前被某处提前触发）
-    expect(budgetModule.getBudgetService().getConfig().maxBudget).toBe(10.0);
+    expect(budgetModule.getBudgetService().getConfig().maxBudget).toBe(0); // 未配置=不设上限
 
     budgetModule.initBudgetService(configService.getBudgetConfig());
 

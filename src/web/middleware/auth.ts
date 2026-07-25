@@ -197,6 +197,13 @@ export function shouldRefuseE2EFlag(env: NodeJS.ProcessEnv = process.env): boole
     && env.CODE_AGENT_COMPILE_WARMUP !== '1';
 }
 
+/** webServer 启动入口调用：命中即打日志并退出进程（fail-fast，不 listen）。 */
+export function exitIfE2EFlagRefused(env: NodeJS.ProcessEnv = process.env): void {
+  if (!shouldRefuseE2EFlag(env)) return;
+  logger.error('CODE_AGENT_E2E=1 is refused under the Tauri shell: it bypasses AuthService, telemetry gating and enables dev API routes. Unset it and restart.');
+  process.exit(1);
+}
+
 // ── Authentication ────────────────────────────────────────────────────────
 /** Constant-time token comparison to prevent timing attacks */
 function verifyToken(provided: string): boolean {

@@ -335,7 +335,7 @@ import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 // Middleware
 import {
   SERVER_AUTH_TOKEN,
-  shouldRefuseE2EFlag,
+  exitIfE2EFlagRefused,
   writeDevAuthToken,
 } from './middleware/auth';
 
@@ -1165,11 +1165,7 @@ async function runCompileWarmup(): Promise<never> {
 }
 
 async function main(): Promise<void> {
-  // 真实 Tauri 壳下硬拒 E2E flag（旁路 auth/telemetry/dev API）；warmup 路径在函数内豁免。
-  if (shouldRefuseE2EFlag(process.env)) {
-    console.error('[webServer] CODE_AGENT_E2E=1 is refused under the Tauri shell: it bypasses AuthService, telemetry gating and enables dev API routes. Unset it and restart.');
-    process.exit(1);
-  }
+  exitIfE2EFlagRefused(process.env);
   if (process.env.CODE_AGENT_COMPILE_WARMUP === '1') {
     await runCompileWarmup();
     return;

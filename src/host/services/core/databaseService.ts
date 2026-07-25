@@ -842,10 +842,6 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.truncateMessagesAfter(sessionId, messageId);
   }
-  truncateMessagesFrom(sessionId: string, messageId: string): number {
-    this.ensureDb();
-    return this.sessionRepo.truncateMessagesFrom(sessionId, messageId);
-  }
   saveTodos(sessionId: string, todos: TodoItem[], updatedAt?: number): void {
     this.ensureDb();
     this.sessionRepo.saveTodos(sessionId, todos, updatedAt);

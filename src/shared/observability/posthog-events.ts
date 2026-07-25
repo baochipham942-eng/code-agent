@@ -11,6 +11,8 @@ export const POSTHOG_EVENTS = {
   TOOL_USED: 'tool_used',
   TOOL_CALL_FAILED: 'tool_call_failed',
   TOOL_SCOPE_NARROWED: 'tool_scope_narrowed',
+  /** ADR-052 C：本轮有没有带上「谁在说话」的身份——用于统计漏传率，决定何时把 fallback 收紧 */
+  EXPERT_SCOPE_IDENTITY: 'expert_scope_identity',
   MODEL_SELECTED: 'model_selected',
   MODEL_DECISION: 'model_decision',
   MODEL_STRATEGY_RECOMMENDATION_FEEDBACK: 'model_strategy_recommendation_feedback',

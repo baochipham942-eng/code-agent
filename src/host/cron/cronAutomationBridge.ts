@@ -108,7 +108,8 @@ export function formatCronScheduleLabel(schedule: CronScheduleConfig): string {
   }
 }
 
-function isSkippedResult(result: unknown): boolean {
+/** 无新料的 external_event 运行整成 skipped 形状（见 cronService.ts executeAction）。 */
+export function isSkippedResult(result: unknown): boolean {
   return isRecord(result) && result.skipped === true;
 }
 

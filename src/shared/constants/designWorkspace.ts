@@ -32,9 +32,6 @@ export const DESIGN_DEVICE_PRESETS = [
 
 export type DesignDeviceId = (typeof DESIGN_DEVICE_PRESETS)[number]['id'];
 
-/** variant spine 落盘文件名（每个 run 目录一份，持有 proto 版本的 pin/discard 状态）。 */
-export const DESIGN_SPINE_FILE = 'spine.json';
-
 /**
  * 一致性锁定再编辑（T4）：局部重绘后校验"未选区域逐像素不变"的参数。
  * wanx2.1-imageedit 等扩散 inpaint 会系统性地轻微改写 mask 外区域（全局重压缩/色偏），

@@ -28,6 +28,7 @@ import {
   isDesktopDerivedSessionTask,
 } from '../../../desktop/desktopActivityUnderstandingService';
 import { updateTask, getTask, listTasks } from '../../../services/planning/taskStore';
+import { buildTaskEvidenceUpdates } from '../../../services/planning/taskEvidenceGate';
 import { taskUpdateSchema as schema } from './taskUpdate.schema';
 
 const VALID_DESKTOP_ACTIONS = ['accept', 'dismiss', 'snooze', 'reopen', 'supersede'] as const;
@@ -87,7 +88,12 @@ export async function executeTaskUpdate(
     };
   }
 
-  const updates: Record<string, unknown> = {};
+  const evidence = buildTaskEvidenceUpdates(args, `${schema.name}:${taskId}`);
+  if (!evidence.ok) {
+    return { ok: false, error: evidence.error, code: 'INVALID_ARGS' };
+  }
+
+  const updates: Record<string, unknown> = { ...evidence.updates };
   if (args.status !== undefined) updates.status = args.status;
   if (args.subject !== undefined) updates.subject = args.subject;
   if (args.description !== undefined) updates.description = args.description;
@@ -211,6 +217,8 @@ export async function executeTaskUpdate(
 
   const changes: string[] = [];
   if (args.status !== undefined) changes.push(`status → ${args.status}`);
+  if (evidence.updates.evidenceRefs?.length) changes.push('completion evidence recorded');
+  if (args.status === 'blocked') changes.push('blocked reason recorded');
   if (args.subject !== undefined) changes.push(`subject updated`);
   if (args.description !== undefined) changes.push(`description updated`);
   if (args.activeForm !== undefined) changes.push(`activeForm updated`);

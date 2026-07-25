@@ -1,5 +1,6 @@
 // Schema-only file (P1 Wave 3 — planning native migration)
 import type { ToolSchema } from '../../../protocol/tools';
+import { TASK_EVIDENCE_PROPERTIES, TASK_STATUS_DESCRIPTION } from './taskUpdate.schema';
 
 export const taskManagerSchema: ToolSchema = {
   name: 'TaskManager',
@@ -13,11 +14,18 @@ Actions:
 - replace: Replace the whole session task plan with tasks[]; exactly one open task is normalized to in_progress.
 - patch: Batch update/create session tasks with tasks[]; exactly one open task is normalized to in_progress.
 
+Evidence gate (applies to update, replace and patch alike):
+- status="completed" requires completionEvidence — what you actually verified. A subagent reporting success is not evidence; verify it yourself, then write the evidence.
+- status="blocked" requires blockedReason in plain language, not a raw error dump.
+- Task status is advisory. It records what the agent claims; it never overrides real filesystem/git/test results.
+
 Examples:
 - Create: { "action": "create", "subject": "Implement login", "description": "Add OAuth login flow" }
 - Get: { "action": "get", "taskId": "1" }
 - List: { "action": "list" }
 - Update status: { "action": "update", "taskId": "1", "status": "in_progress" }
+- Complete with evidence: { "action": "update", "taskId": "1", "status": "completed", "completionEvidence": "Ran npm test — 214 passed, 0 failed" }
+- Block: { "action": "update", "taskId": "1", "status": "blocked", "blockedReason": "The report page needs a company login we do not have" }
 - Replace plan: { "action": "replace", "tasks": [{ "subject": "Read code", "status": "in_progress" }, { "subject": "Patch code" }] }
 - Patch plan: { "action": "patch", "tasks": [{ "taskId": "1", "status": "completed" }, { "taskId": "2", "status": "in_progress" }] }
 - Cancel: { "action": "update", "taskId": "1", "status": "cancelled" }
@@ -64,11 +72,10 @@ Examples:
       // --- update only ---
       status: {
         type: 'string',
-        enum: ['pending', 'in_progress', 'completed', 'cancelled', 'deleted'],
-        description:
-          '[update] New status. Use "cancelled" to abandon but keep it visible; '
-          + 'use "deleted" to permanently remove the task.',
+        enum: ['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'deleted'],
+        description: `[update] ${TASK_STATUS_DESCRIPTION}`,
       },
+      ...TASK_EVIDENCE_PROPERTIES,
       owner: {
         type: 'string',
         description: '[create, update] Task owner (agent id). Tasks created inside a subagent default to that subagent; open tasks are handed back to the main session when the subagent finishes.',
@@ -111,9 +118,12 @@ Examples:
             activeForm: { type: 'string', description: 'Present continuous active form' },
             status: {
               type: 'string',
-              enum: ['pending', 'in_progress', 'completed', 'cancelled'],
-              description: 'Task status; batch operations normalize open tasks to exactly one in_progress',
+              enum: ['pending', 'in_progress', 'completed', 'blocked', 'cancelled'],
+              description:
+                'Task status; batch operations normalize open tasks to exactly one in_progress. '
+                + '"completed" requires completionEvidence and "blocked" requires blockedReason on the same item.',
             },
+            ...TASK_EVIDENCE_PROPERTIES,
             priority: {
               type: 'string',
               enum: ['low', 'normal', 'high'],

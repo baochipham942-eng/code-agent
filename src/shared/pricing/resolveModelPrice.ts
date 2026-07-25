@@ -29,16 +29,11 @@ export interface ModelPrice {
   updatedAt?: string;
 }
 
-export interface PriceOverrideEntry {
-  inputPerMTok: number;
-  outputPerMTok: number;
-}
-
-/** key 为 "<provider>/<modelId>" 全 id */
-export type PricingOverrides = Record<string, PriceOverrideEntry>;
+/** key 为 "<provider>/<modelId>" 全 id（S4 用户填价落地时随设置项一起转正为导出契约） */
+type PricingOverrides = Record<string, { inputPerMTok: number; outputPerMTok: number }>;
 
 /** 输入/输出混合权重（设计稿 §5.1 默认） */
-export const PRICE_BLEND = { in: 0.3, out: 0.7 } as const;
+const PRICE_BLEND = { in: 0.3, out: 0.7 } as const;
 
 /** 1.0x 基准锚点：目录内最常用中档国产模型（可被 settings.pricing.baselineModelId 覆盖） */
 export const PRICING_BASELINE_DEFAULT = { provider: 'deepseek', modelId: 'deepseek-v4-pro' } as const;
@@ -88,7 +83,7 @@ export function resolveModelPrice(
 }
 
 /** 混合单价；价缺失 → null（整项 unknown，不做半价计算） */
-export function blendedPerMTok(price: ModelPrice): number | null {
+function blendedPerMTok(price: ModelPrice): number | null {
   if (price.inputPerMTok === undefined || price.outputPerMTok === undefined) return null;
   return PRICE_BLEND.in * price.inputPerMTok + PRICE_BLEND.out * price.outputPerMTok;
 }

@@ -233,6 +233,21 @@ async function installEntry(
   preserved: { registryNames: string[]; skillNames: Iterable<string> } = { registryNames: [], skillNames: [] },
   options?: { acceptElevation?: boolean; elevationReviewed?: boolean },
 ): Promise<RolePackActionResult> {
+  // 强确认闸门必须在**任何副作用之前**。2026-07-25 真机 dogfood 抓到：闸门原本排在
+  // 技能安装循环之后，于是点安装 → 卡还没弹，技能已经在下载落盘；点取消只取消了角色登记，
+  // 插件已经装进机器 = 半安装状态。所以先问，再动手。
+  const consentPrevious = existing ?? (await loadRecords())[entry.roleId];
+  const reviewed = options?.acceptElevation === true
+    || options?.elevationReviewed === true
+    || consentPrevious !== undefined;
+  if (!reviewed) {
+    return {
+      success: false,
+      roleId: entry.roleId,
+      consent: buildRolePackConsent(agentMdWithVisual(entry), entry.roleId),
+    };
+  }
+
   const installedSkills: string[] = [];
   const missingSkills: string[] = [];
   const installedSkillNames = new Set<string>();

@@ -279,6 +279,19 @@ describe('提权包安装流程', () => {
     expect(await consumeFirstRunStrict(pack.roleId)).toBe(false);
   });
 
+  // dogfood 抓到的真形态：闸门原本排在技能安装循环之后，点安装 → 卡还没弹技能已落盘，
+  // 点取消只取消角色登记，插件留在机器上 = 半安装。所以闸门必须在**任何副作用之前**。
+  it('未过目时一个技能都不许装（不是只不写角色文件）', async () => {
+    const pack = seedElevated('半安装专家');
+
+    const result = await installRolePack(pack.roleId);
+
+    expect(result.success).toBe(false);
+    expect(result.consent).toBeTruthy();
+    expect(state.install).not.toHaveBeenCalled();
+    await expect(installedAgentMd(pack.roleId)).rejects.toThrow();
+  });
+
   it('未过目时返回 consent 且不落盘', async () => {
     const pack = seedElevated();
     const result = await installRolePack(pack.roleId);

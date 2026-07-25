@@ -62,7 +62,7 @@ describe('Item4① setBudgetConfig → runtime singleton sync', () => {
     const configService = new configModule.ConfigService();
     await configService.initialize();
 
-    expect(budgetModule.getBudgetService().getConfig().maxBudget).toBe(10.0);
+    expect(budgetModule.getBudgetService().getConfig().maxBudget).toBe(0); // 未配置=不设上限
 
     await applyBudgetUpdate(configService, budgetModule, { maxBudget: 33, warningThreshold: 0.5 });
 

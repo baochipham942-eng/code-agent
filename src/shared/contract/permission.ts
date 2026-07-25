@@ -20,7 +20,9 @@ export type PermissionType =
   | 'command'
   | 'dangerous_command'
   | 'network'
-  | 'mcp';
+  | 'mcp'
+  /** request_directory 工具：申请把工作区外的一个目录加为 Project Source */
+  | 'directory_access';
 
 // 审批级别
 export type ApprovalLevel =
@@ -52,6 +54,8 @@ export interface PermissionRequest {
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。
      */
     standingGrantTarget?: string;
+    /** directory_access：申请的访问档位（request_directory 工具透传） */
+    requestedAccess?: 'read_only' | 'read_write';
     /** E2: 确认门控预览信息 */
     preview?: {
       type: 'diff' | 'command' | 'network' | 'generic';

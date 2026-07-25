@@ -2,17 +2,21 @@
 // Pending Approval Persistence Types — ADR-010 #2
 // ============================================================================
 //
-// 用一张 `pending_approvals` 表统一持久化三类 gate 的中途状态：
-//   - kind = 'plan'          → PlanApprovalGate.pendingPlans
-//   - kind = 'launch'        → SwarmLaunchApprovalGate.requests
-//   - kind = 'tool_approval' → AgentOrchestrator 无人值守停车挂起（B2）
+// 用一张 `pending_approvals` 表统一持久化四类 gate 的中途状态：
+//   - kind = 'plan'             → PlanApprovalGate.pendingPlans
+//   - kind = 'launch'           → SwarmLaunchApprovalGate.requests
+//   - kind = 'tool_approval'    → AgentOrchestrator 无人值守停车挂起（B2）
+//   - kind = 'directory_access' → request_directory 工具的目录授权停车挂起
+//     （复用 B2 同一套停车/收件箱/first-responder-wins 机制，payload 复用
+//     ToolApprovalPayload；不论 attended/unattended 一律停车，见
+//     AgentOrchestrator.requestPermission 的 directory_access 分支）
 //
 // 进程崩溃后，重启时 hydrate 把 pending 行重新载入 gate 的内存 Map，
 // 但状态会被标成 'orphaned' —— 旧 promise resolver 已死，coordinator
 // 必须显式 retry 或 cancel 才能放行后续流程。
 // ============================================================================
 
-export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval';
+export type PendingApprovalKind = 'plan' | 'launch' | 'tool_approval' | 'directory_access';
 
 /**
  * kind='tool_approval' 停车行的 payload（B2）。无人值守会话的工具审批请求超时不再 deny，

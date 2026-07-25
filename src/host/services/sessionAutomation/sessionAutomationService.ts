@@ -446,6 +446,9 @@ export class SessionAutomationService {
     const rows = [
       ...repo.listByKindAndStatus('tool_approval', 'pending'),
       ...repo.listByKindAndStatus('tool_approval', 'orphaned'),
+      // directory_access（request_directory 工具）复用同一套 ToolApprovalPayload 形状与收件箱 UI。
+      ...repo.listByKindAndStatus('directory_access', 'pending'),
+      ...repo.listByKindAndStatus('directory_access', 'orphaned'),
     ];
     return rows.map((row) => {
       let payload: Partial<ToolApprovalPayload> = {};

@@ -4,6 +4,7 @@ import { generateMessageId } from '@shared/utils/id';
 import type { Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useStatusStore } from '../../../stores/statusStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
 import { applyRoutingDegradationSignal } from '../../../utils/routingDegradation';
 import { useAppStore } from '../../../stores/appStore';
@@ -217,6 +218,11 @@ export function applyConversationStreamEvent(
         const decisionData = normalizeModelDecisionPayload(event.data);
         if (!decisionData) break;
         if (isRecord(event.data) && getBooleanField(event.data, 'isMeta')) break;
+        // 本轮实际模型 → statusStore，供 stream_usage 的费用估算归因（该事件不带模型）
+        useStatusStore.getState().setCurrentTurnModel({
+          provider: decisionData.resolvedProvider,
+          model: decisionData.resolvedModel,
+        });
         const targetMessageId = decisionData.turnId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
@@ -236,6 +242,18 @@ export function applyConversationStreamEvent(
         const fallbackData = normalizeModelFallbackPayload(event.data);
         if (!fallbackData) break;
         actions.addMessage(buildModelFallbackNoticeMessage(fallbackData));
+      }
+      break;
+
+    // provider usage → 本轮费用估算（此前该事件只有 CLI 消费，桌面端直接丢弃）
+    case 'stream_usage':
+      {
+        const usage = isRecord(event.data) ? event.data : undefined;
+        const inputTokens = usage?.inputTokens;
+        const outputTokens = usage?.outputTokens;
+        if (typeof inputTokens === 'number' && typeof outputTokens === 'number') {
+          useStatusStore.getState().recordTurnUsage({ inputTokens, outputTokens });
+        }
       }
       break;
 
@@ -469,6 +487,7 @@ export const useConversationStreamEffects = ({
         case 'message_delta':
         case 'message_snapshot':
         case 'model_decision':
+        case 'stream_usage':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           if (!isCurrentSessionEvent) {

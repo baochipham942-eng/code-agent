@@ -2,6 +2,7 @@ import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, type CreateAppDeps } from '../../../src/web/app';
+import { SERVER_AUTH_TOKEN } from '../../../src/web/middleware/auth';
 import {
   getApplicationRunRegistry,
   resetApplicationRunRegistryForTests,
@@ -209,6 +210,44 @@ describe('web app assembly (createApp)', () => {
     expect(sseRouterIndex).toBeGreaterThan(-1);
     expect(sseRouterIndex).toBeGreaterThan(rateLimitIndex);
     expect(sseRouterIndex).toBeGreaterThan(authIndex);
+  });
+
+  // e2e 用 POST /api/dev/emit-agent-events 注入带产物的 assistant 消息（右栏概览那条 spec）。
+  // 上面的 devRouter.test 只钉了 isDevApiEnabled 这个谓词，钉不住「路由真的调了它」——
+  // 把 handler 里的门摘掉，那条测试照样绿。这条走真 HTTP 请求：没有 flag 必须 404，
+  // 有 flag 才进到 body 校验（400）。缝只在 e2e/显式 dev 开，生产构建拿不到。
+  it('gates the dev agent-event injection seam behind an explicit dev/E2E flag', async () => {
+    const app = createApp(buildDeps('/tmp/seam-assembly-dev-gate'));
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const originalE2E = process.env.CODE_AGENT_E2E;
+    const originalDevApi = process.env.CODE_AGENT_ENABLE_DEV_API;
+
+    // 带上真 token：没有 token 时 auth 先 401，两种 env 下都一样，摘掉路由里的门也不会红。
+    // 桌面端本来就持有 token，所以「已鉴权但没开 dev flag」才是这道门真正要挡的场景。
+    const post = (): Promise<Response> => fetch(`http://127.0.0.1:${port}/api/dev/emit-agent-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVER_AUTH_TOKEN}` },
+      body: JSON.stringify({ events: [{ type: 'turn_start', sessionId: 's1', data: { turnId: 't1' } }] }),
+    });
+
+    try {
+      delete process.env.CODE_AGENT_E2E;
+      delete process.env.CODE_AGENT_ENABLE_DEV_API;
+      expect((await post()).status).toBe(404);
+
+      process.env.CODE_AGENT_E2E = '1';
+      expect((await post()).status).not.toBe(404);
+    } finally {
+      if (originalE2E === undefined) delete process.env.CODE_AGENT_E2E;
+      else process.env.CODE_AGENT_E2E = originalE2E;
+      if (originalDevApi === undefined) delete process.env.CODE_AGENT_ENABLE_DEV_API;
+      else process.env.CODE_AGENT_ENABLE_DEV_API = originalDevApi;
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
   });
 
   it('can be mounted on http.createServer, answers /api/health, and shuts down cleanly', async () => {

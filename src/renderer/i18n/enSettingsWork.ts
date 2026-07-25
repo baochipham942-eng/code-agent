@@ -751,11 +751,16 @@ export const enSettingsWork = {
         diagnosticsLabel: 'Diagnostics: ',
       },
       telemetry: {
-        title: 'Usage telemetry',
-        description: 'Automatic telemetry only reports runtime metadata. Failure diagnostic packages and manual exports are separate boundaries and must be scrubbed before upload or export. After you turn this off, this device stops reporting to the cloud after restart.',
-        enabled: 'Telemetry reporting is on',
-        disabled: 'Telemetry reporting is off',
-        body: 'Uncheck to opt out. Metadata does not include full prompts or code content; diagnostic packages contain scrubbed payloads for troubleshooting.',
+        title: 'Data sharing',
+        description: 'Two independent switches, both take effect immediately and are honored by every reporting channel. Metadata never includes full prompts or code content. Both are on by default.',
+        usageData: {
+          label: 'Share usage data',
+          body: 'Product analytics, runtime trace metadata and fleet telemetry. Turn off to stop this device from reporting usage to the cloud.',
+        },
+        crashReports: {
+          label: 'Send crash reports',
+          body: 'Crash and error reports (scrubbed before upload — never contain source code, prompts or secrets). Helps us fix crashes you hit.',
+        },
       },
       status: {
         title: 'Status',

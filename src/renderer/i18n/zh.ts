@@ -72,6 +72,10 @@ export const zh = {
     sessionCostTitle: '会话成本: {cost}',
     budgetUsageTitle: '预算用量: {cost} / {max} ({percent}%)',
     cacheSavedLine: '缓存已省 {saved}',
+    turnCostLine: '本轮 ≈ {cost} · {model}',
+    turnCostUnknownLine: '本轮费用未知（{model} 无刊例价）',
+    unknownTurnsNote: '{count} 轮未知价未计入',
+    estimateDisclaimer: '刊例估算，非实际账单',
   },
 
   folderTrust: {

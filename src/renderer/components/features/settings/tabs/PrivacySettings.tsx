@@ -23,6 +23,7 @@ import {
   type AppSettings,
 } from '@shared/contract';
 import ipcService from '../../../../services/ipcService';
+import { applyRendererPrivacyFlags, resolvePrivacyFlags } from '../../../../observability/privacyFlags';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
@@ -96,10 +97,11 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   const [loading, setLoading] = useState(true);
   const logEndRef = useRef<HTMLDivElement | null>(null);
 
-  // 遥测（Langfuse）opt-out 开关。默认开启;enabled === false 才算关闭。
-  const [telemetryEnabled, setTelemetryEnabled] = useState(true);
-  const [telemetrySaving, setTelemetrySaving] = useState(false);
-  const langfuseCfgRef = useRef<NonNullable<AppSettings['langfuse']> | undefined>(undefined);
+  // 隐私两档开关（使用数据 / 崩溃报告）。写 settings.privacy.*，host 侧 privacyGate 统一接线。
+  const [usageDataEnabled, setUsageDataEnabled] = useState(true);
+  const [crashReportingEnabled, setCrashReportingEnabled] = useState(true);
+  const [privacySaving, setPrivacySaving] = useState(false);
+  const privacyCfgRef = useRef<NonNullable<AppSettings['privacy']> | undefined>(undefined);
 
   const refreshReady = useCallback(async () => {
     try {
@@ -136,32 +138,39 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
     return () => { cancelled = true; };
   }, [refreshStatus, refreshReady]);
 
-  // 加载遥测开关状态（desktop only）
+  // 加载隐私开关状态（desktop only）
   useEffect(() => {
     if (isWebMode()) return;
     (async () => {
       try {
         const s = await ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get');
-        langfuseCfgRef.current = s?.langfuse;
-        setTelemetryEnabled(s?.langfuse?.enabled !== false);
+        privacyCfgRef.current = s?.privacy;
+        const flags = resolvePrivacyFlags(s);
+        setUsageDataEnabled(flags.usageData);
+        setCrashReportingEnabled(flags.crashReporting);
       } catch {
         // ignore — 默认视为开启
       }
     })();
   }, []);
 
-  const handleTelemetryToggle = useCallback(async (next: boolean) => {
-    setTelemetrySaving(true);
-    setTelemetryEnabled(next); // 乐观更新
+  const handlePrivacyToggle = useCallback(async (
+    key: 'usageDataEnabled' | 'crashReportingEnabled',
+    next: boolean,
+  ) => {
+    const setLocal = key === 'usageDataEnabled' ? setUsageDataEnabled : setCrashReportingEnabled;
+    setPrivacySaving(true);
+    setLocal(next); // 乐观更新
     try {
-      // 浅合并:先 spread 现有 langfuse 配置,避免把 publicKey/secretKey 抹掉
-      const nextCfg = { ...(langfuseCfgRef.current ?? {}), enabled: next } as NonNullable<AppSettings['langfuse']>;
-      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { langfuse: nextCfg } as Partial<AppSettings>);
-      langfuseCfgRef.current = nextCfg;
+      const nextCfg = { ...(privacyCfgRef.current ?? {}), [key]: next };
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { privacy: nextCfg } as Partial<AppSettings>);
+      privacyCfgRef.current = nextCfg;
+      // renderer 侧通道立即生效（host 侧由 privacyGate 跟随 updateSettings 重放）
+      applyRendererPrivacyFlags(resolvePrivacyFlags({ privacy: nextCfg }));
     } catch {
-      setTelemetryEnabled(!next); // 回滚
+      setLocal(!next); // 回滚
     } finally {
-      setTelemetrySaving(false);
+      setPrivacySaving(false);
     }
   }, []);
 
@@ -316,26 +325,40 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         title={privacyText.telemetry.title}
         description={privacyText.telemetry.description}
       >
-        <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-primary-700"
-            checked={telemetryEnabled}
-            disabled={telemetrySaving}
-            onChange={(e) => handleTelemetryToggle(e.target.checked)}
-          />
-          <div className="flex items-center gap-2 text-sm">
-            <Activity className="h-4 w-4 text-zinc-400" />
-            <div>
-              <div className="text-zinc-200 font-medium">
-                {telemetryEnabled ? privacyText.telemetry.enabled : privacyText.telemetry.disabled}
-              </div>
-              <div className="text-xs text-zinc-400 mt-0.5">
-                {privacyText.telemetry.body}
+        <div className="space-y-2">
+          <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-primary-700"
+              checked={usageDataEnabled}
+              disabled={privacySaving}
+              onChange={(e) => handlePrivacyToggle('usageDataEnabled', e.target.checked)}
+            />
+            <div className="flex items-center gap-2 text-sm">
+              <Activity className="h-4 w-4 text-zinc-400" />
+              <div>
+                <div className="text-zinc-200 font-medium">{privacyText.telemetry.usageData.label}</div>
+                <div className="text-xs text-zinc-400 mt-0.5">{privacyText.telemetry.usageData.body}</div>
               </div>
             </div>
-          </div>
-        </label>
+          </label>
+          <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-primary-700"
+              checked={crashReportingEnabled}
+              disabled={privacySaving}
+              onChange={(e) => handlePrivacyToggle('crashReportingEnabled', e.target.checked)}
+            />
+            <div className="flex items-center gap-2 text-sm">
+              <ShieldCheck className="h-4 w-4 text-zinc-400" />
+              <div>
+                <div className="text-zinc-200 font-medium">{privacyText.telemetry.crashReports.label}</div>
+                <div className="text-xs text-zinc-400 mt-0.5">{privacyText.telemetry.crashReports.body}</div>
+              </div>
+            </div>
+          </label>
+        </div>
       </SettingsSection>
 
       <SettingsSection

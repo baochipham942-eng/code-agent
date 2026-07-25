@@ -51,7 +51,8 @@ describe('buildCostTitle', () => {
       budget({ cacheSavings: { cacheReadTokens: 9000, cacheCreationTokens: 0, netSavedUsd: 0.42 } }),
     );
     expect(title).toContain('$0.42');
-    expect(title.split('\n')).toHaveLength(2);
+    // 行序：预算行 + 缓存节省行 + 免责声明（恒为末行）
+    expect(title.split('\n')).toHaveLength(3);
   });
 
   it('omits cache-saved line for negligible savings', () => {
@@ -60,6 +61,27 @@ describe('buildCostTitle', () => {
       0.5,
       budget({ cacheSavings: { cacheReadTokens: 10, cacheCreationTokens: 0, netSavedUsd: 0.001 } }),
     );
-    expect(title.split('\n')).toHaveLength(1);
+    expect(title).not.toContain(zh.statusBar.cacheSavedLine.split('{saved}')[0].trim());
+    expect(title.split('\n')).toHaveLength(2);
+  });
+
+  it('always ends with the estimate disclaimer (刊例 ≠ 账单)', () => {
+    const title = buildCostTitle(zh.statusBar, 0.5, null);
+    expect(title.split('\n').at(-1)).toBe(zh.statusBar.estimateDisclaimer);
+  });
+
+  it('reports last-turn estimate with model, and unknown-price turns honestly', () => {
+    const known = buildCostTitle(zh.statusBar, 0.5, null, {
+      usd: 0.0123, source: 'catalog', modelId: 'deepseek-v4-pro', inputTokens: 1, outputTokens: 1,
+    });
+    expect(known).toContain('deepseek-v4-pro');
+    expect(known).toContain('$0.0123');
+
+    const unknown = buildCostTitle(zh.statusBar, 0, null, {
+      usd: null, source: 'unknown', modelId: 'my-relay-model', inputTokens: 1, outputTokens: 1,
+    }, 3);
+    expect(unknown).toContain('my-relay-model');
+    expect(unknown).toContain(zh.statusBar.unknownTurnsNote.replace('{count}', '3'));
+    expect(unknown).not.toContain('$NaN');
   });
 });

@@ -769,6 +769,39 @@ function collectCurrentTurnArtifacts(
   }
 }
 
+function hasPreviewablePayload(item: WorkspacePreviewItem): boolean {
+  const content = item.content;
+  return Boolean(
+    item.file
+    || content?.text
+    || content?.html
+    || content?.json
+    || content?.summary
+    || content?.diff
+    || content?.before !== undefined,
+  );
+}
+
+/**
+ * 同一个助手消息产物会被投影两遍：collectCurrentTurnArtifacts 从当轮 ownership 造一条
+ * kind='trace' 的**无内容**条目（priority 70），collectMessageArtifacts 再造一条带正文的
+ * （priority 40）。两者 dedup key 不同所以都留下，排序后无内容那条在前 → 右栏默认那一屏
+ * 显示「暂无预览内容」，切换器还把一个产物算成「共 2 个」。#706 的「默认那一屏是产物本身」
+ * 在真实路径上就是这么破的（组件单测 mock 掉了这一层，只有 e2e 会红）。
+ * 收尾丢掉「没内容、且已有同名带内容条目」的那条：讲同一件事就留会讲内容的那个。
+ */
+function dropContentlessDuplicates(items: WorkspacePreviewItem[]): WorkspacePreviewItem[] {
+  const titlesWithPayload = new Set(
+    items.filter(hasPreviewablePayload).map((item) => item.title),
+  );
+  if (titlesWithPayload.size === 0) return items;
+  return items.filter((item) => !(
+    item.kind === 'trace'
+    && !hasPreviewablePayload(item)
+    && titlesWithPayload.has(item.title)
+  ));
+}
+
 export function buildWorkspacePreviewItems(input: BuildWorkspacePreviewItemsInput): WorkspacePreviewItem[] {
   const items: WorkspacePreviewItem[] = [];
   const seen = new Set<string>();
@@ -779,7 +812,7 @@ export function buildWorkspacePreviewItems(input: BuildWorkspacePreviewItemsInpu
   collectToolOutputs(items, seen, messages, input.workingDirectory);
   collectMessageArtifacts(items, seen, messages);
 
-  return items
+  return dropContentlessDuplicates(items)
     .sort((left, right) => {
       const byPriority = (right.priority ?? 0) - (left.priority ?? 0);
       if (byPriority !== 0) return byPriority;

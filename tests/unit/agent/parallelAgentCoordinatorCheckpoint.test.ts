@@ -29,7 +29,9 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 
 const configDirState = vi.hoisted(() => ({ dir: '' }));
 
-vi.mock('../../../src/host/config/configPaths', () => ({
+// 扩展式 mock：只改这两个取目录的函数，其余导出（CONFIG_DIR_NEW 等）保持真值
+vi.mock('../../../src/host/config/configPaths', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/host/config/configPaths')>()),
   getUserConfigDir: () => configDirState.dir,
   getUserConfigDirLegacy: () => configDirState.dir,
 }));

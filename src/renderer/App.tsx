@@ -176,6 +176,7 @@ export const App: React.FC = () => {
     setShowOptionalUpdateModal,
     workbenchTabs,
     activeWorkbenchTab,
+    workbenchCollapsed,
     openWorkbenchTab,
     syncTaskWorkbenchForActivity,
     pendingPermissionRequest,
@@ -188,10 +189,12 @@ export const App: React.FC = () => {
   const isNarrowViewport = windowWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH;
   // 宽屏右栏壳常驻：关闭最后一个视图后仍要挂载 Codex 式空态启动器。
   // 窄屏继续只在确有可展示内容时临时占用聊天区。
-  const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH;
+  // 视图切换器模型：右栏只有「收起」和「显示某个面板」两态，用户收起后不因活动信号自己弹回。
+  const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH && !workbenchCollapsed;
   const isPreviewActive = typeof activeWorkbenchTab === 'string' && activeWorkbenchTab.startsWith('preview:');
   const showNarrowWorkbench =
-    !showWorkbench &&
+    !workbenchCollapsed &&
+    windowWidth < WORKBENCH_MIN_VISIBLE_WIDTH &&
     workbenchTabs.length > 0 &&
     (isPreviewActive || activeWorkbenchTab === 'overview' || activeWorkbenchTab === 'browser');
   const appliedNarrowSidebarDefaultRef = useRef(false);

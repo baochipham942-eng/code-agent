@@ -382,10 +382,9 @@ function getHookStatusText(activity: TurnHookActivity): string {
 }
 
 const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activity }) => {
-  // 默认展开：非程序员用户不需要多点一次才能看到钩子做了什么。
-  const [expanded, setExpanded] = useState(true);
-  const totalHooks = activity.items.reduce((sum, item) => sum + item.hookCount, 0);
-  const durationMs = activity.items.reduce((sum, item) => sum + item.durationMs, 0);
+  // 默认折叠：折叠行已经说清「哪个时机、是哪几个 hook」，展开是给想细看的人留的。
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
   const tone = getHookActivityTone(activity);
   const statusText = getHookStatusText(activity);
   const showStatus = tone !== 'success';
@@ -397,10 +396,12 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
         className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left text-zinc-500 transition-colors hover:text-zinc-300"
         onClick={() => setExpanded((value) => !value)}
         aria-expanded={expanded}
-        title={showStatus ? `${statusText} · ${durationMs}ms` : `${durationMs}ms`}
+        title={showStatus ? statusText : undefined}
       >
         <Anchor className="h-4 w-4 shrink-0" />
-        <span className="min-w-0 truncate font-medium">执行了 {totalHooks} 个钩子</span>
+        <span className="shrink-0 font-medium">{t.turnHooks.title}</span>
+        {/* 折叠态就说清「哪个时机、是哪几个 hook」——不展开也知道刚才动了什么 */}
+        <span className="min-w-0 truncate text-zinc-600">{activity.summary}</span>
         {showStatus && (
           <span className={`shrink-0 rounded px-1 py-px text-[11px] ${getHookIssueClass(tone)}`}>
             {statusText}
@@ -416,16 +417,11 @@ const HookExecutionBanner: React.FC<{ activity: TurnHookActivity }> = ({ activit
         <div className="ml-7 mt-1 space-y-1 text-[13px] leading-5 text-zinc-500">
           {activity.items.map((item, index) => {
             const label = HOOK_EVENT_LABELS[item.event] || item.event;
-            // 钩子实际注入/触发的内容类型：优先用钩子自己的输出消息（最贴近"注入了什么"），
-            // 没有消息时退回工具名或 matcher，作为能推出的最有用信息。
+            // 「是哪几个 hook」用配置里的 name（没写就退回脚本名），不再拿 hook 的输出原文顶替——
+            // 那份原文是任意内容，实测把整份记忆索引连 HTML 注释一起漏给了用户。
             // 来源(全局/项目)、可干预/仅观察对非程序员是噪音，连 hover tooltip 也不放。
-            const injectedContentLabel = item.message || item.toolName || item.matcher || undefined;
-            const title = [
-              item.matcher ? `matcher: ${item.matcher}` : undefined,
-              `${item.hookCount} 个 hook`,
-              `${item.durationMs}ms`,
-              item.message,
-            ].filter(Boolean).join(' · ');
+            const injectedContentLabel = (item.names || []).join('、') || item.toolName || item.matcher || undefined;
+            const title = injectedContentLabel;
             const itemStatus = getHookItemStatusText(item);
             return (
               <div
@@ -642,8 +638,8 @@ function getTurnRunStatus(turn: TraceTurn, t: Translations, streamingState?: Str
 function getTurnPhase(turn: TraceTurn): string | null {
   if (hasCancelledRunMarker(turn)) return '本轮已取消';
 
-  const routing = turn.nodes.find((node) => node.turnTimeline?.kind === 'routing_evidence')?.turnTimeline?.routingEvidence;
-  if (routing) return routing.summary;
+  // 这里曾经用路由摘要当轮次阶段（「已指定 岚析 执行」），既是内部审计口径，又跟
+  // 旁边的 Auto 徽章自相矛盾。阶段该说这一轮在做什么，落到下面的能力/工具描述。
 
   const scope = turn.nodes.find((node) => node.turnTimeline?.kind === 'capability_scope')?.turnTimeline?.capabilityScope;
   if (scope) {

@@ -584,7 +584,10 @@ const TurnTimelineNodeRenderer: React.FC<{ node: TraceNode; sessionId?: string }
     case 'blocked_capabilities':
       return <BlockedCapabilitiesNode timeline={node.turnTimeline} />;
     case 'routing_evidence':
-      return <RoutingEvidenceNode timeline={node.turnTimeline} />;
+      // 路由是调试证据，且每轮内容一样。异常时右侧任务面板已有「路由异常」卡（只在
+      // warning/error 显示），主对话流不再铺这张。节点本身保留——产物归属和工作台
+      // 投影都从它取数。
+      return null;
     case 'hook_activity':
       return <HookActivityNode timeline={node.turnTimeline} />;
     case 'skill_activity':
@@ -641,59 +644,6 @@ const BlockedCapabilitiesNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ 
   );
 };
 
-const RoutingEvidenceNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
-  const routing = timeline.routingEvidence;
-  // 调试证据：默认折叠步骤，只留摘要行；展开才看逐步状态点，与 Hook 横幅一致。
-  const [expanded, setExpanded] = useState(false);
-  if (!routing) return null;
-
-  return (
-    <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
-      <button
-        type="button"
-        className="mb-1 flex w-full items-center gap-2 text-left text-[11px] text-zinc-300 transition-colors hover:text-zinc-100"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-        title={expanded ? '收起 Routing 证据' : '展开 Routing 证据'}
-      >
-        <GitBranch className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
-        <span>Routing 证据</span>
-        <WorkbenchPill tone="info">{ROUTING_LABELS[routing.mode] || routing.mode}</WorkbenchPill>
-        {expanded ? (
-          <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
-        ) : (
-          <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
-        )}
-      </button>
-      <div className="text-xs text-zinc-100">{routing.summary}</div>
-      {expanded && routing.reason && (
-        <div className="mt-1 text-[11px] text-zinc-400">{routing.reason}</div>
-      )}
-      {expanded && (
-      <div className="mt-2 space-y-1">
-        {routing.steps.map((step, index) => (
-          <div key={`${routing.mode}-${index}-${step.status}`} className="flex items-start gap-2 text-[11px]">
-            <span className={`mt-[2px] h-1.5 w-1.5 rounded-full ${
-              step.tone === 'success'
-                ? 'bg-emerald-400'
-                : step.tone === 'warning'
-                  ? 'bg-amber-400'
-                  : step.tone === 'error'
-                    ? 'bg-red-400'
-                    : 'bg-sky-400'
-            }`} />
-            <div className="min-w-0">
-              <div className="text-zinc-200">{step.label}</div>
-              {step.detail && <div className="text-zinc-500">{step.detail}</div>}
-            </div>
-          </div>
-        ))}
-      </div>
-      )}
-    </div>
-  );
-};
-
 const HOOK_EVENT_LABELS: Record<string, string> = {
   PreToolUse: 'PreToolUse',
   PostToolUse: 'PostToolUse',
@@ -709,9 +659,15 @@ const HOOK_EVENT_LABELS: Record<string, string> = {
 };
 
 const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timeline }) => {
+  const { t } = useI18n();
+  const labels = t.turnHooks;
   const activity = timeline.hookActivity;
   const [expanded, setExpanded] = useState(false);
   if (!activity || activity.items.length === 0) return null;
+
+  const sourceLabel = (sources: Array<'global' | 'project'>): string => sources
+    .map((source) => (source === 'global' ? labels.sourceGlobal : labels.sourceProject))
+    .join('、');
 
   return (
     <div className={`rounded-lg border px-3 py-2 ${getTimelineContainerClass(timeline.tone)}`}>
@@ -720,11 +676,10 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
         className="mb-1 flex w-full items-center gap-2 text-left text-[11px] text-zinc-300 transition-colors hover:text-zinc-100"
         onClick={() => setExpanded((value) => !value)}
         aria-expanded={expanded}
-        title={expanded ? '收起 Hooks' : '展开 Hooks'}
+        title={expanded ? labels.collapse : labels.expand}
       >
         <Wrench className="h-3.5 w-3.5 shrink-0 text-sky-300" />
-        <span>Hooks</span>
-        <span className="text-zinc-500">{activity.items.length} 次触发</span>
+        <span>{labels.title}</span>
         {expanded ? (
           <ChevronDown className="ml-auto h-3.5 w-3.5 shrink-0 text-zinc-600" />
         ) : (
@@ -734,36 +689,28 @@ const HookActivityNode: React.FC<{ timeline: TurnTimelinePayload }> = ({ timelin
       <div className="text-xs text-zinc-100">{activity.summary}</div>
       {expanded && (
         <div className="mt-2 space-y-1.5">
-          {activity.items.map((item, index) => {
-            const hasError = (item.errorCount || 0) > 0;
-            const toneClass = item.action === 'block'
-              ? 'bg-red-400'
-              : hasError
-                ? 'bg-amber-400'
-                : item.modified
-                  ? 'bg-sky-400'
-                  : 'bg-emerald-400';
-            return (
-              <div key={`${item.event}-${item.toolName || 'event'}-${item.timestamp}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
-                <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${toneClass}`} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-zinc-200">{HOOK_EVENT_LABELS[item.event] || item.event}</span>
-                    {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
-                    <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>
-                      {item.action === 'block' ? '阻止' : '放行'}
-                    </WorkbenchPill>
-                    {item.modified && <WorkbenchPill tone="info">改写输入</WorkbenchPill>}
-                    {hasError && <WorkbenchPill tone="info">{item.errorCount} 个错误</WorkbenchPill>}
-                    <span className="text-zinc-600">{item.hookCount} hooks · {item.durationMs}ms</span>
-                  </div>
-                  {item.message && (
-                    <div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{item.message}</div>
+          {activity.items.map((item, index) => (
+            <div key={`${item.event}-${item.toolName || 'event'}-${item.timestamp}-${index}`} className="flex items-start gap-2 rounded-md bg-black/10 px-2.5 py-2 text-[11px]">
+              <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${
+                item.action === 'block' ? 'bg-red-400' : (item.errorCount || 0) > 0 ? 'bg-amber-400' : 'bg-emerald-400'
+              }`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-zinc-200">{(item.names || []).join('、') || labels.unnamed}</span>
+                  <WorkbenchPill tone="neutral">{HOOK_EVENT_LABELS[item.event] || item.event}</WorkbenchPill>
+                  {item.toolName && <WorkbenchPill tone="neutral">{item.toolName}</WorkbenchPill>}
+                  <WorkbenchPill tone={item.action === 'block' ? 'info' : 'mcp'}>
+                    {item.action === 'block' ? labels.blocked : labels.allowed}
+                  </WorkbenchPill>
+                  {(item.errorCount || 0) > 0 && (
+                    <WorkbenchPill tone="info">{labels.errored.replace('{count}', String(item.errorCount))}</WorkbenchPill>
                   )}
                 </div>
+                {/* 刻意到此为止：hook 的输出内容不上屏（契约层已无该字段），要看去日志。 */}
+                <div className="mt-1 text-zinc-600">{sourceLabel(item.sources)}</div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>

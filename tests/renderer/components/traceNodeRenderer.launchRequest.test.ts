@@ -690,7 +690,6 @@ describe('TraceNodeRenderer launch request', () => {
             durationMs: 4,
             sources: ['global'],
             hookType: 'observer',
-            message: 'prompt hook passed',
           },
           {
             timestamp: 502,
@@ -719,8 +718,6 @@ describe('TraceNodeRenderer launch request', () => {
     );
 
     expect(html).toContain('Hooks');
-    expect(html).toContain('2 次触发');
-    expect(html).toContain('命中 2 个 hook');
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain('UserPromptSubmit');
     expect(html).not.toContain('PreToolUse');

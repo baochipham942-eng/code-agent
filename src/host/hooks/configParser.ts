@@ -25,6 +25,11 @@ export type HookType = 'command' | 'prompt' | 'agent' | 'http';
 export interface HookDefinition {
   /** Hook type */
   type: HookType;
+  /**
+   * 给人看的名字，会显示在会话里的 Hooks 行（如「注入人格」）。
+   * 不写就退回脚本名——系统不去猜这个 hook 是干嘛的。
+   */
+  name?: string;
   /** For command hooks: the command/script to execute */
   command?: string;
   /** For prompt hooks: the prompt template */
@@ -295,7 +300,7 @@ function parseHooksObject(
  */
 // GAP-007: HookDefinition 已知字段清单（与接口定义同步）
 const KNOWN_HOOK_FIELDS = new Set([
-  'type', 'command', 'prompt', 'timeout', 'async', 'once',
+  'type', 'name', 'command', 'prompt', 'timeout', 'async', 'once',
   'agent', 'agentPrompt', 'url', 'headers', 'allowedEnvVars', 'if',
 ]);
 

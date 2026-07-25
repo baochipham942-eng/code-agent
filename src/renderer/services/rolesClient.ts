@@ -25,8 +25,14 @@ export interface RolePackActionResult {
   installState?: 'complete' | 'degraded';
   missingSkills?: string[];
   locallyModified?: boolean;
-  /** 命中提权判据且用户尚未过目；UI 据此弹确认卡 */
-  elevation?: { looseMode: boolean; bashTool: boolean };
+  /** 用户尚未过目这个包能干什么；UI 据此弹确认卡（强确认：每个包都要过这一关，不只提权包） */
+  consent?: {
+    tools: string[];
+    toolsDeclared: boolean;
+    connectors: Array<{ id: string; level: 'core' | 'optional'; reason?: string }>;
+    permissionPreset?: 'strict' | 'development' | 'ci';
+    elevation: { looseMode: boolean; bashTool: boolean } | null;
+  };
 }
 
 export async function listRoles(): Promise<RolePanelEntry[]> {

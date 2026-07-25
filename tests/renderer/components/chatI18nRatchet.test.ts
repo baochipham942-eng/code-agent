@@ -114,7 +114,6 @@ const MIGRATED: string[] = [
   'TaskPanel/SwarmDependencyMap.tsx',
   'UpdateNotification.tsx',
   'ForceUpdateModal.tsx',
-  'TokenWarning.tsx',
   'BudgetAlertNotice.tsx',
   'ProviderStatusNotice.tsx',
 ];

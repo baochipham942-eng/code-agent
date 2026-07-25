@@ -574,6 +574,93 @@ describe('ExpertPanel', () => {
     expect(screen.getByTestId('role-pack-upgrade-云端产品顾问').textContent).toContain('升级');
   });
 
+  // ==========================================================================
+  // 装包前的摘要卡：非程序员唯一的安全防线，措辞与「一项都不许漏」是硬要求
+  // ==========================================================================
+
+  async function openConsentCard(consent: Record<string, unknown>): Promise<HTMLElement> {
+    listRoles.mockResolvedValue([makeEntry()]);
+    listRolePacks.mockResolvedValue([makeRolePack()]);
+    installRolePack.mockResolvedValue({ success: false, roleId: '云端产品顾问', consent });
+    render(<ExpertPanel />);
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    await waitFor(() => expect(screen.getByTestId('role-pack-install-云端产品顾问')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('role-pack-install-云端产品顾问'));
+    return await waitFor(() => screen.getByTestId('role-pack-consent-summary'));
+  }
+
+  it('工具翻成按后果分组的人话，不把 Read/Write 这类原名甩给用户', async () => {
+    const summary = await openConsentCard({
+      tools: ['Read', 'Write', 'Glob', 'Grep', 'image_analyze', 'MemoryRead', 'TaskManager', 'WebSearch'],
+      toolsDeclared: true,
+      connectors: [],
+      elevation: null,
+    });
+
+    expect(summary.textContent).toContain('这个专家安装后可以使用以下能力');
+    expect(summary.textContent).toContain('文件：查看你电脑上的文件、在当前工作目录里新建和修改文件、按名字和内容查找文件');
+    expect(summary.textContent).toContain('图片：读取并分析图片');
+    expect(summary.textContent).toContain('记忆与任务：记住并回忆你告诉它的事、拆解并跟踪多步任务');
+    expect(summary.textContent).toContain('网络：联网搜索');
+    for (const raw of ['Read', 'Write', 'Glob', 'Grep', 'image_analyze', 'MemoryRead', 'TaskManager', 'WebSearch']) {
+      expect(summary.textContent).not.toContain(raw);
+    }
+  });
+
+  it('映射表没收录的工具名照样露出来——漏显示一项能力等于骗用户', async () => {
+    const summary = await openConsentCard({
+      tools: ['Read', 'quantum_teleport'],
+      toolsDeclared: true,
+      connectors: [],
+      elevation: null,
+    });
+
+    // 这条是本单的变异靶点：删掉渲染里的 unmapped 分支必须让它红。
+    expect(summary.textContent).toContain('其他能力：quantum_teleport');
+  });
+
+  it('没声明工具的包说清「基线也能改你的文件」，Bash 不因为是基线就被藏起来', async () => {
+    const summary = await openConsentCard({
+      tools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep'],
+      toolsDeclared: false,
+      connectors: [],
+      elevation: null,
+    });
+
+    expect(summary.textContent).toContain('这个专家没有额外申请能力');
+    expect(summary.textContent).toContain('命令：在你的电脑上运行命令');
+    expect(summary.textContent).toContain('在当前工作目录里新建和修改文件');
+  });
+
+  it('连接器显示产品名而不是技术 id，目录里查不到的退回 id 也不吞', async () => {
+    const summary = await openConsentCard({
+      tools: ['Read'],
+      toolsDeclared: true,
+      connectors: [
+        { id: 'lark', level: 'core', reason: '读你授权的多维表格' },
+        { id: 'not-in-catalog', level: 'optional' },
+      ],
+      elevation: null,
+    });
+
+    expect(summary.textContent).toContain('飞书（读你授权的多维表格）');
+    expect(summary.textContent).not.toContain('lark');
+    expect(summary.textContent).toContain('not-in-catalog');
+  });
+
+  it('权限档说结果，不把 strict/development/ci 吐给用户', async () => {
+    const summary = await openConsentCard({
+      tools: ['Read'],
+      toolsDeclared: true,
+      connectors: [],
+      permissionPreset: 'strict',
+      elevation: null,
+    });
+
+    expect(summary.textContent).toContain('严格——每一步都先问过你再做。');
+    expect(summary.textContent).not.toContain('strict');
+  });
+
   it('货架拉取失败只显示可重试空态，不暴露诊断码', async () => {
     listRoles.mockResolvedValue([makeEntry()]);
     listRolePacks.mockRejectedValue(new Error('public_keys_missing'));

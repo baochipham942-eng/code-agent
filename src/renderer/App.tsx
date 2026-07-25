@@ -747,7 +747,7 @@ export const App: React.FC = () => {
   }, []);
 
   const hasOpenSessionTask = sessionTasks.some((task) =>
-    task.status === 'pending' || task.status === 'in_progress'
+    task.status === 'pending' || task.status === 'in_progress' || task.status === 'blocked'
   );
   const hasOpenTodo = todos.some((todo) => todo.status !== 'completed');
   const hasVisiblePermissionRequest = Boolean(

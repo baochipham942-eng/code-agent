@@ -254,10 +254,13 @@ export function updateTask(
   // 事件日志（roadmap 2.6）：先比对变更，统一在持久化后追加
   const events: Array<{ kind: SessionTaskEventKind; summary?: string }> = [];
   if (updates.status && updates.status !== task.status) {
+    // statusSummary 是 agent 写的原文（证据/阻塞原因），只进审计日志不进 UI
+    const summary = updates.statusSummary;
     if (updates.status === 'in_progress') events.push({ kind: 'started' });
     else if (updates.status === 'pending' && task.status === 'in_progress') events.push({ kind: 'unstarted' });
-    else if (updates.status === 'completed') events.push({ kind: 'done' });
-    else if (updates.status === 'cancelled') events.push({ kind: 'abandoned' });
+    else if (updates.status === 'completed') events.push({ kind: 'done', summary });
+    else if (updates.status === 'blocked') events.push({ kind: 'blocked', summary });
+    else if (updates.status === 'cancelled') events.push({ kind: 'abandoned', summary });
   }
   if (updates.subject && updates.subject !== task.subject) {
     events.push({ kind: 'renamed', summary: updates.subject });
@@ -272,6 +275,21 @@ export function updateTask(
   // Update fields
   if (updates.status) task.status = updates.status as SessionTaskStatus;
   if (updates.subject) task.subject = updates.subject;
+  // 阻塞说明随状态走：离开 blocked 就清掉，否则会挂着一条早已解决的过期理由
+  if (updates.blockedReason !== undefined) {
+    task.blockedReason = updates.blockedReason || undefined;
+    task.blockedReasonCategory = updates.blockedReasonCategory;
+  } else if (updates.status && updates.status !== 'blocked') {
+    task.blockedReason = undefined;
+    task.blockedReasonCategory = undefined;
+  }
+  if (updates.evidenceRefs?.length) {
+    const known = new Set((task.evidenceRefs ?? []).map((ref) => ref.id));
+    task.evidenceRefs = [
+      ...(task.evidenceRefs ?? []),
+      ...updates.evidenceRefs.filter((ref) => !known.has(ref.id)),
+    ];
+  }
   if (updates.description) task.description = updates.description;
   if (updates.activeForm) task.activeForm = updates.activeForm;
   if (updates.owner !== undefined) task.owner = updates.owner;
@@ -327,20 +345,37 @@ export function updateTask(
 /**
  * Orphan 接管（roadmap 2.6）：subagent 结束时，名下未收口任务释放回主会话
  * （owner 清空），主循环 taskGate 据此继续督办。返回被接管的任务。
+ *
+ * 证据门（ADR-050）：子代理跑完不代表任务完成——它名下 in_progress 的任务此刻
+ * 已经没有执行者了，留在 in_progress 是假象。降级成 blocked/handback，主会话必须
+ * 自己核实后写证据才能 completed。已经是 blocked 的保留子代理写的原因。
  */
 export function adoptOrphanTasks(sessionId: string, owner: string): SessionTask[] {
   if (!owner) return [];
   const taskMap = getSessionTaskMap(sessionId);
   const adopted: SessionTask[] = [];
+  const handedBack: SessionTask[] = [];
   for (const task of taskMap.values()) {
     if (task.owner === owner && !isClosedTaskStatus(task.status)) {
       task.owner = undefined;
+      if (task.status === 'in_progress') {
+        task.status = 'blocked';
+        task.blockedReason = '';
+        task.blockedReasonCategory = 'handback';
+        handedBack.push(task);
+      }
       task.updatedAt = Date.now();
       adopted.push(task);
     }
   }
   if (adopted.length > 0) {
     persistTasks(sessionId);
+    for (const task of handedBack) {
+      recordTaskEvent(sessionId, task.id, 'blocked', {
+        summary: `subagent ${owner} finished without closing this task`,
+        actor: owner,
+      });
+    }
     for (const task of adopted) {
       recordTaskEvent(sessionId, task.id, 'orphan_adopted', { summary: `from ${owner}`, actor: owner });
     }

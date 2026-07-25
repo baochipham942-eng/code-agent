@@ -55,7 +55,7 @@ import { useAgent } from '../../../src/renderer/hooks/useAgent';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useTaskStore } from '../../../src/renderer/stores/taskStore';
-import type { TaskSessionStatus } from '../../../src/renderer/stores/taskStore';
+import type { SessionStatus } from '../../../src/renderer/stores/taskStore';
 
 function hostQueuedInput(): QueuedInput {
   return {
@@ -64,7 +64,7 @@ function hostQueuedInput(): QueuedInput {
     envelope: {
       content: '引导内容',
       sessionId: 'session-a',
-      context: { runtimeInput: { mode: 'guided', delivery: 'queued_next_turn' } },
+      context: { runtimeInput: { mode: 'supplement', delivery: 'queued_next_turn' } },
     },
     status: 'queued',
     retryCount: 0,
@@ -99,7 +99,7 @@ async function renderHydrated() {
   return hook;
 }
 
-function setSessionStatus(status: TaskSessionStatus, locallyProcessing = false): void {
+function setSessionStatus(status: SessionStatus, locallyProcessing = false): void {
   useAppStore.setState({
     isProcessing: locallyProcessing,
     processingSessionIds: new Set(locallyProcessing ? ['session-a'] : []),
@@ -123,7 +123,7 @@ describe('引导消息「发送」的可发判定与 sendMessage 同源', () => 
 
   // status='paused' 是 isRuntimeBusyStatus 里有、ChatView 的 effectiveIsProcessing 里没有的那一档，
   // 也就是「按钮显示但发不出去」的窗口本身。
-  it.each<[TaskSessionStatus]>([
+  it.each<[SessionStatus]>([
     ['paused'],
     ['cancelling'],
   ])('会话处于 %s 时不静默吞掉：不 markSending、条目留在原地、出声说明原因', async (status) => {

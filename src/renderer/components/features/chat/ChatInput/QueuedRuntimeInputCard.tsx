@@ -15,7 +15,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, Clock3, CornerDownRight, SendHorizontal, X } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 
-export interface QueuedRuntimeInputCardItem {
+interface QueuedRuntimeInputCardItem {
   id: string;
   content: string;
   attachmentsCount: number;

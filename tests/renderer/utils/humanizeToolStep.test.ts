@@ -119,8 +119,32 @@ describe('humanizeToolStep — per-category snapshots (zh)', () => {
     expect(humanizeToolStep('some_future_tool', {}, zh)).toBe('使用了 some_future_tool');
   });
 
-  it('shortDescription always wins when present, regardless of category', () => {
+  it('shortDescription wins over the template when it matches the UI language', () => {
     expect(humanizeToolStep('some_future_tool', {}, zh, '做了一件事')).toBe('做了一件事');
+  });
+});
+
+// 模型自写的 shortDescription 语种不受控（工具 schema 的示例本身就是英文），
+// 中文界面上原样上屏会被 CSS 截成半句英文。语种不一致时必须退回本地化模板。
+describe('humanizeToolStep — shortDescription 语种不符时退回模板', () => {
+  it('中文界面拒绝英文 shortDescription，走模板', () => {
+    expect(humanizeToolStep('Write', { file_path: 'gear.txt' }, zh, 'Create gear.txt with gear list'))
+      .toBe('写入了 gear.txt');
+  });
+
+  it('中文界面下未识别的工具也退回中文兜底', () => {
+    expect(humanizeToolStep('some_future_tool', {}, zh, 'Did something'))
+      .toBe('使用了 some_future_tool');
+  });
+
+  it('英文界面拒绝中文 shortDescription，走模板', () => {
+    expect(humanizeToolStep('Write', { file_path: 'gear.txt' }, en, '创建 gear.txt 齿轮清单'))
+      .toBe('Wrote gear.txt');
+  });
+
+  it('中英混排只要带汉字就算中文界面可用', () => {
+    expect(humanizeToolStep('Write', { file_path: 'gear.txt' }, zh, '打开 Baidu 搜索 Claude'))
+      .toBe('打开 Baidu 搜索 Claude');
   });
 });
 
@@ -130,6 +154,11 @@ describe('humanizeToolStep — en locale parity', () => {
     expect(humanizeToolStep('Bash', { command: 'ls src/' }, en)).toBe('Ran command ls src/');
     expect(humanizeToolStep('unknown_tool', {}, en)).toBe('Used unknown_tool');
     expect(humanizeToolStep('mcp__lark__im_v1_message_create', {}, en)).toBe('Sent a message in Lark');
+  });
+
+  it('英文界面仍接受英文 shortDescription', () => {
+    expect(humanizeToolStep('Bash', { command: 'ls src/' }, en, 'List the source directory'))
+      .toBe('List the source directory');
   });
 });
 

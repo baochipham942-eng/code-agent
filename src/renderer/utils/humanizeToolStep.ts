@@ -126,10 +126,25 @@ function buildActionSentence(verb: string, args: Record<string, unknown>): strin
   return target ? `${verb} ${action} ${target}` : `${verb} ${action}`;
 }
 
+const CJK_PATTERN = /[㐀-䶿一-鿿豈-﫿]/;
+
+/**
+ * shortDescription 是模型自写的自由文本，语种不受控（工具 schema 里给的示例本身
+ * 就是英文），实测会在中文界面上原样上屏、还被 CSS 截成半句英文。
+ * 语种与界面不一致时判定不可用，退回本地化模板。
+ * 判据从 t 自己取（拿一条已知译文当界面语种的样本），不新增参数——调用方漏传
+ * 就静默失去保护的门不算门。
+ * ponytail: 只按"有没有汉字"分两种字形，不做真正的语种识别；新增非拉丁语界面
+ * 时这里会把汉字描述判为不匹配，退模板，仍然安全。
+ */
+function matchesUiScript(text: string, t: Translations): boolean {
+  return CJK_PATTERN.test(t.toolStepHumanize.writeFallback) === CJK_PATTERN.test(text);
+}
+
 /**
  * 把单个工具调用合成一句步骤人话。模型自写的 shortDescription（产品视角语义标签）
- * 优先级最高——比机械模板更贴近"在干什么"；没有时按工具类目落到对应模板，
- * 未识别的工具兜底"使用了 <工具名>"（不裸露英文工具名之外的黑话）。
+ * 优先级最高——比机械模板更贴近"在干什么"；没有（或语种与界面不一致）时按工具
+ * 类目落到对应模板，未识别的工具兜底"使用了 <工具名>"（不裸露英文工具名之外的黑话）。
  */
 export function humanizeToolStep(
   name: string,
@@ -141,6 +156,7 @@ export function humanizeToolStep(
     isSemanticToolUIEnabled()
     && typeof shortDescription === 'string'
     && shortDescription.trim().length > 0
+    && matchesUiScript(shortDescription.trim(), t)
   ) {
     return shortDescription.trim();
   }

@@ -47,4 +47,33 @@ describe('ToolCallDisplay status labels', () => {
 
     expect(label).toBe('写入失败');
   });
+
+  // 步骤行主文案本身就是一句过去时人话（「写入了 notes.md」），成功态再前置一个
+  // 「已创建」就是同一个动词讲两遍，成败已由左侧 StatusIndicator 表达。
+  it('成功且无结果数据时不给状态词，避免与主文案的动词重复', () => {
+    const label = getToolStatusLabel(
+      makeWriteCall({
+        result: { toolCallId: 'write-1', success: true, output: 'Created file: /tmp/game.html' },
+      }),
+      'success',
+      zh,
+    );
+
+    expect(label).toBeNull();
+  });
+
+  it('成功且带结果数据时仍报数据——那不是重复动词而是新信息', () => {
+    const label = getToolStatusLabel(
+      {
+        id: 'grep-1',
+        name: 'Grep',
+        arguments: { pattern: 'TODO' },
+        result: { toolCallId: 'grep-1', success: true, output: 'Found 3 matches' },
+      },
+      'success',
+      zh,
+    );
+
+    expect(label).toBe('找到 3 处匹配');
+  });
 });

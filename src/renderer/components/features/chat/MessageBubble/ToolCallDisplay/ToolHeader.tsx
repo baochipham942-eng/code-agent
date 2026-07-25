@@ -12,7 +12,6 @@ import type { ToolStatus } from './styles';
 import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
 import { humanizeToolStep } from '../../../../../utils/humanizeToolStep';
 import { TargetContextIcon } from './TargetContextIcon';
-import { useAppStore } from '../../../../../stores/appStore';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { UI } from '@shared/constants';
 
@@ -37,24 +36,7 @@ function buildToolHeaderTitle(toolCall: ToolCall, displayName: string): string {
   return displayName;
 }
 
-function getWriteFilePath(toolCall: ToolCall): string | null {
-  if (toolCall.name !== 'Write') return null;
-  if (toolCall.result && !toolCall.result.success) return null;
-
-  const output = toolCall.result?.output;
-  if (typeof output === 'string' && output) {
-    const match = output.match(/(?:Created|Updated) file: (.+?)(?:\s+\(|\n|$)/);
-    if (match) return match[1].trim();
-  }
-
-  const args = (toolCall.arguments ?? {}) as Record<string, unknown>;
-  const filePath = args.file_path ?? args.path;
-  return typeof filePath === 'string' && filePath ? filePath : null;
-}
-
 export function ToolHeader({ toolCall, status }: Props) {
-  const openPreview = useAppStore((state) => state.openPreview);
-  const workingDirectory = useAppStore((state) => state.workingDirectory);
   const { t } = useI18n();
   // 模型若提供了 shortDescription（产品视角语义标签），优先作为主标题展示；
   // 没有时 fallback 到 humanizeToolStep 合成的人话句子（读取了 xxx.md / 运行了命令 xxx），
@@ -67,20 +49,18 @@ export function ToolHeader({ toolCall, status }: Props) {
     toolCall.shortDescription,
   );
   const statusLabel = getToolStatusLabel(toolCall, status, t);
-  const writeFilePath = getWriteFilePath(toolCall);
   const duration = toolCall.result?.duration;
 
   // feature flag 关闭时不展示 target icon（与 shortDescription gating 同步）
   const showTargetIcon = isSemanticToolUIEnabled() && !!toolCall.targetContext?.kind;
-  const writeFileName = writeFilePath?.split('/').pop() || writeFilePath;
-  const resolvedWritePath = writeFilePath && !writeFilePath.startsWith('/') && workingDirectory
-    ? `${workingDirectory}/${writeFilePath}`
-    : writeFilePath;
 
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0">
-      {/* Status label - dynamic per-tool text */}
-      <span className="text-zinc-500 text-xs flex-shrink-0">{statusLabel}</span>
+      {/* 状态词只在带结果数据时出现（getToolStatusLabel 成功且无数据时返回 null）：
+          否则与主文案的动词重复。成败由左侧 StatusIndicator 表达。 */}
+      {statusLabel && (
+        <span className="text-zinc-500 text-xs flex-shrink-0">{statusLabel}</span>
+      )}
 
       {/* Target context icon — 让用户一眼认出"在操作哪个 app/服务" */}
       {showTargetIcon && (
@@ -96,20 +76,6 @@ export function ToolHeader({ toolCall, status }: Props) {
       >
         {displayName}
       </span>
-
-      {writeFilePath && (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            if (resolvedWritePath) openPreview(resolvedWritePath);
-          }}
-          className="min-w-0 max-w-[260px] truncate text-xs font-mono text-zinc-400 transition-colors hover:text-emerald-400"
-          title={writeFilePath}
-        >
-          {writeFileName}
-        </button>
-      )}
 
       {/* Duration - right aligned. 毫秒级耗时对非程序员是噪音，只在有感知意义时才显示 */}
       {duration !== undefined && status !== 'pending' && duration >= UI.TOOL_DURATION_MIN_VISIBLE_MS && (

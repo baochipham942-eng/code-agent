@@ -18,6 +18,7 @@ import { resolvePrivacyFlags, type PrivacyFlags } from '../../shared/observabili
 import { createLogger } from '../services/infra/logger';
 import { setPostHogEnabled } from './posthogNode';
 import { setCrashReportingEnabled } from './sentryNode';
+import { flushPendingCrashReport } from './crashMarker';
 import { getTelemetryUploaderService } from '../telemetry/telemetryUploaderService';
 import { getLangfuseService } from '../services/infra/langfuseService';
 
@@ -35,6 +36,8 @@ export function applyPrivacyFlags(flags: PrivacyFlags): void {
 /** webServer 启动时调用：按当前设置立即接线，并跟随后续每次设置写入重放。 */
 export function installPrivacyGate(configService: ConfigService): void {
   applyPrivacyFlags(resolvePrivacyFlags(configService.getSettings()));
+  // 启动期暂存的 crash 检测此刻才上报——开关已生效，opt-out 用户一发都不会漏出去
+  flushPendingCrashReport();
   configService.onSettingsUpdated((settings: AppSettings) => {
     applyPrivacyFlags(resolvePrivacyFlags(settings));
   });

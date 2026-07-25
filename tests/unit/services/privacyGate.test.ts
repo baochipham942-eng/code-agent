@@ -6,6 +6,11 @@ const mocks = vi.hoisted(() => ({
   setCrashReportingEnabled: vi.fn(),
   uploaderSetEnabled: vi.fn(),
   langfuseSetEnabled: vi.fn(),
+  flushPendingCrashReport: vi.fn(),
+}));
+
+vi.mock('../../../src/host/observability/crashMarker', () => ({
+  flushPendingCrashReport: mocks.flushPendingCrashReport,
 }));
 
 vi.mock('../../../src/host/observability/posthogNode', () => ({
@@ -75,6 +80,10 @@ describe('applyPrivacyFlags', () => {
     installPrivacyGate(fakeConfigService as never);
 
     expect(mocks.setPostHogEnabled).toHaveBeenCalledWith(true);
+    // 启动期暂存的 crash 检测必须在开关生效后才补报（顺序：先 apply 再 flush）
+    expect(mocks.flushPendingCrashReport).toHaveBeenCalledTimes(1);
+    expect(mocks.flushPendingCrashReport.mock.invocationCallOrder[0])
+      .toBeGreaterThan(mocks.setCrashReportingEnabled.mock.invocationCallOrder[0]);
     expect(listeners).toHaveLength(1);
 
     listeners[0]({ privacy: { usageDataEnabled: false, crashReportingEnabled: false } } as AppSettings);

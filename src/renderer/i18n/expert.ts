@@ -2,6 +2,8 @@
 // 专家面板词条（features/expert）
 // ============================================================================
 
+import { permissionVocabularyEn, permissionVocabularyZh } from './permissionVocabulary';
+
 export const expertZh = {
   expert: {
     panelTitle: '专家',
@@ -155,9 +157,9 @@ export const expertZh = {
       modeFollowHint: '和其他专家一样，用你在通用设置里定的那套。',
       modeCustom: '为这位专家单独设置',
       presets: {
-        strict: { label: '严格', hint: '每一步都先问过你再做。' },
-        development: { label: '标准', hint: '查资料、上网自己来；在这次工作的文件夹里改东西也自己来。动文件夹以外的东西会先问你。' },
-        ci: { label: '放手', hint: '不管在哪儿都自己动手，不来打断你。危险操作还是会拦下来。' },
+        strict: { label: permissionVocabularyZh.ask, hint: '每一步都先问过你再做。' },
+        development: { label: permissionVocabularyZh.autoApprove, hint: '查资料、上网自己来；在这次工作的文件夹里改东西也自己来。动文件夹以外的东西会先问你。' },
+        ci: { label: permissionVocabularyZh.fullAccess, hint: '不管在哪儿都自己动手，不来打断你。危险操作还是会拦下来。' },
       },
       floorTitle: '无论怎么设，这些都拦得住',
       floorItems: [
@@ -367,9 +369,9 @@ export const expertEn: typeof expertZh = {
       modeFollowHint: 'Same as every other expert — whatever you set in general settings.',
       modeCustom: 'Set this expert separately',
       presets: {
-        strict: { label: 'Careful', hint: 'Checks with you before every single step.' },
-        development: { label: 'Standard', hint: 'Looks things up and goes online on its own, and edits files inside the folder you are working in. Anything outside that folder, it asks first.' },
-        ci: { label: 'Hands off', hint: 'Works on its own wherever it needs to, without interrupting you. Dangerous actions are still stopped.' },
+        strict: { label: permissionVocabularyEn.ask, hint: 'Checks with you before every single step.' },
+        development: { label: permissionVocabularyEn.autoApprove, hint: 'Looks things up and goes online on its own, and edits files inside the folder you are working in. Anything outside that folder, it asks first.' },
+        ci: { label: permissionVocabularyEn.fullAccess, hint: 'Works on its own wherever it needs to, without interrupting you. Dangerous actions are still stopped.' },
       },
       floorTitle: 'These are always stopped, whatever you choose',
       floorItems: [

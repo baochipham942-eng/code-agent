@@ -147,7 +147,10 @@ export const PermissionToggle: React.FC<PermissionToggleProps> = ({ disabled }) 
             >
               <span className="mt-0.5 shrink-0 text-zinc-300">{TIER_ICONS[tier]}</span>
               <span className="min-w-0">
-                <span className="block text-xs font-medium text-zinc-200">{modeTexts[tier].title}</span>
+                {/* 最危险的那档在菜单里也要一眼看出来——只靠文字时它跟其他三档同权重 */}
+                <span className={`block text-xs font-medium ${tier === 'bypassPermissions' ? 'text-amber-400' : 'text-zinc-200'}`}>
+                  {modeTexts[tier].title}
+                </span>
                 <span className="block text-[11px] leading-snug text-zinc-500">{modeTexts[tier].operationScope}</span>
               </span>
             </button>

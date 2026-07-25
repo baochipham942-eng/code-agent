@@ -2,6 +2,8 @@
 // Settings namespace translations (en/Core) — 纯平移拆分（债务门）
 // ============================================================================
 
+import { permissionVocabularyEn } from './permissionVocabulary';
+
 export const enSettingsCore = {
     tabs: {
       general: 'Permissions & security',
@@ -187,25 +189,25 @@ export const enSettingsCore = {
         highestPriorityPrefix: 'Highest priority: ',
         permissionModes: {
           default: {
-            title: 'Safe mode',
+            title: permissionVocabularyEn.ask,
             description: 'Ask before writes, commands, and network actions. Best for everyday work.',
             operationScope: 'Ask before writes / commands / network',
             riskLabel: 'Low risk',
           },
           readOnly: {
-            title: 'Read-only explore',
+            title: permissionVocabularyEn.readOnly,
             description: 'Reads, listing, search, and read-only web access pass through; every write, command execution, and mutating network call asks, allowlists included (environments without a confirmation UI deny instead).',
             operationScope: 'Reads pass, writes / commands / mutating network always ask',
             riskLabel: 'Low risk',
           },
           acceptEdits: {
-            title: 'Auto-edit',
+            title: permissionVocabularyEn.autoApprove,
             description: 'Accept file edits automatically while still confirming commands and external access.',
             operationScope: 'Edits auto-approved, commands still ask',
             riskLabel: 'Medium risk',
           },
           bypassPermissions: {
-            title: 'YOLO mode',
+            title: permissionVocabularyEn.fullAccess,
             description: 'Skip all permission checks. Use only in fully trusted isolated environments.',
             operationScope: 'Skip permission checks',
             riskLabel: 'High risk',
@@ -254,10 +256,10 @@ export const enSettingsCore = {
           switchable: 'Can switch',
         },
         bypassWarning: {
-          title: 'YOLO mode is enabled',
+          title: `${permissionVocabularyEn.fullAccess} is on`,
           description: 'Permission checks are skipped. The Agent can write files and run commands directly, so use this only in trusted isolated environments.',
-          confirmTitle: 'Enable YOLO mode?',
-          confirmAction: 'Enable YOLO mode',
+          confirmTitle: `Turn on ${permissionVocabularyEn.fullAccess}?`,
+          confirmAction: `Turn on ${permissionVocabularyEn.fullAccess}`,
         },
         inheritanceSection: {
           title: 'Sub-agent permission inheritance',

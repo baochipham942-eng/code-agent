@@ -18,6 +18,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { useMcpStatus } from '../../../../hooks/useMcpStatus';
+import { useStaleGuardedLoadingSet } from '../../../../hooks/useStaleGuardedLoadingSet';
 import { useWorkbenchInsights } from '../../../../hooks/useWorkbenchInsights';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import { useWorkbenchCapabilityQuickActionRunner } from '../../../../hooks/useWorkbenchCapabilityQuickActionRunner';
@@ -105,7 +106,13 @@ export const MCPSettings: React.FC = () => {
   const [signingOutServer, setSigningOutServer] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorInitialConfig, setEditorInitialConfig] = useState<Partial<McpServerConfig> | undefined>(undefined);
-  const [discoverActionLoading, setDiscoverActionLoading] = useState<string | null>(null);
+  // 每个 entry 独立 loading + 代际防陈旧覆盖（A5 stale-promise 修复，见 hook 注释）
+  const {
+    loading: discoverActionLoading,
+    begin: beginDiscoverAction,
+    end: endDiscoverAction,
+    isStale: isStaleDiscoverAction,
+  } = useStaleGuardedLoadingSet();
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖
   const [mcpCatalog, setMcpCatalog] = useState<McpCatalogPayload>(getBuiltinMcpCatalogPayload);
@@ -290,7 +297,7 @@ export const MCPSettings: React.FC = () => {
   /** 免配置 server 一键连接 */
   const handleQuickConnect = useCallback(async (entry: RecommendedMcpServerEntry) => {
     if (!canManageMcp || !entry.connection) return;
-    setDiscoverActionLoading(entry.id);
+    const generation = beginDiscoverAction(entry.id);
     try {
       await handleAddServer({
         name: entry.id,
@@ -301,11 +308,17 @@ export const MCPSettings: React.FC = () => {
         url: entry.connection.url,
         headers: entry.connection.headers,
       });
+      if (isStaleDiscoverAction(entry.id, generation)) {
+        // 这条 add 在同一 entry 的新一轮操作已经取代它之后才成功落地——
+        // 静默完成的写入会变成幽灵 server，主动撤销（A5 stale-promise 回滚）。
+        await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'removeServer', { serverName: entry.id }).catch(() => {});
+        return;
+      }
       await reloadMcpStatus();
     } finally {
-      setDiscoverActionLoading(null);
+      endDiscoverAction(entry.id, generation);
     }
-  }, [handleAddServer, reloadMcpStatus]);
+  }, [handleAddServer, reloadMcpStatus, beginDiscoverAction, endDiscoverAction, isStaleDiscoverAction]);
 
   /** 需要凭证的 server：打开预填编辑器让用户补凭证 */
   const handleConnectWithConfig = useCallback((entry: RecommendedMcpServerEntry) => {
@@ -325,13 +338,13 @@ export const MCPSettings: React.FC = () => {
   /** 内置 server 启用 */
   const handleEnableBuiltin = useCallback(async (serverId: string) => {
     if (!canManageMcp) return;
-    setDiscoverActionLoading(serverId);
+    const generation = beginDiscoverAction(serverId);
     try {
       await handleToggleServer(serverId, true);
     } finally {
-      setDiscoverActionLoading(null);
+      endDiscoverAction(serverId, generation);
     }
-  }, [handleToggleServer]);
+  }, [handleToggleServer, beginDiscoverAction, endDiscoverAction]);
 
   const openCapabilitySheet = useCallback((server: WorkbenchMcpRegistryItem) => {
     setActiveSheetTarget({

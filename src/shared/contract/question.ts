@@ -30,5 +30,7 @@ export type UserQuestionResponse =
   | {
       requestId: string;
       declined: true;
+      /** 用户取消回答时可选填写的原因，透传给模型 */
+      reason?: string;
       answers?: never;
     };

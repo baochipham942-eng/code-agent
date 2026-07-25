@@ -27,6 +27,7 @@ import { VoiceInputButton } from './VoiceInputButton';
 import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
 import { CostDisplay } from '../../../StatusBar/CostDisplay';
+import { useBudgetStatus } from '../../../../hooks/useBudgetStatus';
 import { useStatusStore } from '../../../../stores/statusStore';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
@@ -600,6 +601,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const modelConfig = useAppStore((s) => s.modelConfig);
   const sessionCost = useStatusStore((s) => s.sessionCost);
   const statusStreaming = useStatusStore((s) => s.isStreaming);
+  // CostDisplay 的预算感知渲染（cache-aware 成本口径 + 缓存节省 tooltip + 告警染色）此前
+  // 只有 StatusBar/index.tsx 传了这个 prop，而那个状态栏壳零消费——发行版里 ChatInput 是
+  // 唯一活着的挂载点却没传，导致成本取的是 renderer 自累计值（可能报少）、缓存节省一行
+  // 从未出现过。useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次。
+  const budgetStatus = useBudgetStatus(sessionCost, statusStreaming);
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
 
@@ -910,7 +916,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {/* 累计费用 — Context pill 左边 */}
             {sessionCost > 0 && (
               <span className="text-xs mr-1 tabular-nums">
-                <CostDisplay cost={sessionCost} isStreaming={statusStreaming} />
+                <CostDisplay cost={sessionCost} isStreaming={statusStreaming} budget={budgetStatus} />
               </span>
             )}
 

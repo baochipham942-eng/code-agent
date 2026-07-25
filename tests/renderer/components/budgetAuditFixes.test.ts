@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeBudgetStatus } from '../../../src/renderer/hooks/useBudgetStatus';
-import { sanitizeBudgetForm } from '../../../src/renderer/components/features/settings/tabs/BudgetSettings';
 
 describe('normalizeBudgetStatus — defensive clamping (audit F4)', () => {
   it('drops NaN / Infinity / negative values to safe defaults', () => {
@@ -59,23 +58,5 @@ describe('normalizeBudgetStatus — defensive clamping (audit F4)', () => {
       cacheSavings: { cacheReadTokens: Number.NaN, cacheCreationTokens: -1, netSavedUsd: Number.POSITIVE_INFINITY },
     })!;
     expect(bad.cacheSavings).toEqual({ cacheReadTokens: 0, cacheCreationTokens: 0, netSavedUsd: 0 });
-  });
-});
-
-describe('sanitizeBudgetForm — guard against useless/inverted config (audit F5)', () => {
-  it('forces maxBudget above 0', () => {
-    const out = sanitizeBudgetForm({ enabled: true, maxBudget: 0, warningThreshold: 0.85, blockThreshold: 1, resetPeriodHours: 24 });
-    expect(out.maxBudget).toBeGreaterThan(0);
-  });
-
-  it('lifts block threshold to at least the warning threshold (no inversion)', () => {
-    const out = sanitizeBudgetForm({ enabled: true, maxBudget: 10, warningThreshold: 0.85, blockThreshold: 0.5, resetPeriodHours: 24 });
-    expect(out.blockThreshold).toBeGreaterThanOrEqual(out.warningThreshold);
-  });
-
-  it('clamps thresholds and floors reset period to >= 1h', () => {
-    const out = sanitizeBudgetForm({ enabled: true, maxBudget: 10, warningThreshold: 1.5, blockThreshold: 2, resetPeriodHours: 0 });
-    expect(out.warningThreshold).toBeLessThanOrEqual(1);
-    expect(out.resetPeriodHours).toBeGreaterThanOrEqual(1);
   });
 });

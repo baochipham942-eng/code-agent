@@ -185,13 +185,16 @@ jobs:
         # 三处 exclude 是**平台性**排除，不是给业务代码开豁免。本 job 跑 ubuntu，而全量套件的
         # 绿色档案建立在 darwin（见 main-full-gate.yml 的 runs-on 注释：首跑 ubuntu 实测 10 个
         # 文件环境性红）。首跑本步实测正是这三类落在子集里（4 文件）：
-        #   runtime/browser/**            需要 in-app browser/Chromium，ubuntu 上退化成 self-started-chrome
         #   modules/network/**            需要真 API key，无 key 时 401
         #   goalVerifyGate.test.ts        断言 shell 文案 'command not found'，dash 说的是 'not found'
-        # 这三类的业务覆盖没有丢，仍由 macos 上的 main-full-gate 全量门看着。
+        # 这两类的业务覆盖没有丢，仍由 macos 上的 main-full-gate 全量门看着。
+        #
+        # 2026-07-25：runtime/browser/** 的排除已摘除。原因（当初写的"ubuntu 上退化成
+        # self-started-chrome"）在 #672 给本 job 补装 Playwright chromium（见上一步）后不再成立——
+        # gameArtifactValidator 就是靠那次补装变绿的，且它从未被排除。排除列表越长，
+        # "主链路子集"这个名字越名不副实，所以逐条试摘、用真 CI 验，而不是留着好看。
         run: |
           npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services --retry=1 \
-            --exclude 'tests/unit/agent/runtime/browser/**' \
             --exclude 'tests/unit/tools/modules/network/**' \
             --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 

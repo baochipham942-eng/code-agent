@@ -26,7 +26,6 @@ const MIGRATED: string[] = [
   'tabs/ProviderModelsSection.tsx',
   'tabs/ProviderDetailSections.tsx',
   'tabs/TaskStrategySettingsPanel.tsx',
-  'tabs/BudgetSettings.tsx',
   'tabs/SkillsSettings.tsx',
   'tabs/SkillsInstalledTab.tsx',
   'tabs/SkillsDiscoverTab.tsx',

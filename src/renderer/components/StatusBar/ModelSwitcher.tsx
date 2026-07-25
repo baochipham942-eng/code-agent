@@ -18,6 +18,12 @@ import {
   hasConfiguredRuntimeModels,
   type RuntimeModelOption,
 } from '@shared/modelRuntime';
+import {
+  PRICING_BASELINE_DEFAULT,
+  computeCoef,
+  formatCoefLabel,
+  resolveModelPrice,
+} from '@shared/pricing/resolveModelPrice';
 import { toast } from '../../hooks/useToast';
 import { BadgeCheck, Brain, Sparkles, Zap, Code2, Settings, Star } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
@@ -50,6 +56,15 @@ interface ModelSwitcherProps {
 }
 
 export const MODEL_OVERRIDE_CHANGE_EVENT = 'code-agent:model-override-change';
+
+// 相对倍率价签（设计稿 §8.1）：基准恒定，逐 option 纯函数求值即可，无需状态。
+const PRICE_BASELINE = resolveModelPrice(PRICING_BASELINE_DEFAULT.provider, PRICING_BASELINE_DEFAULT.modelId);
+
+export function getModelPriceBadge(provider: string, model: string): { label: string; known: boolean } {
+  const price = resolveModelPrice(provider, model);
+  const label = formatCoefLabel(computeCoef(price, PRICE_BASELINE));
+  return label ? { label, known: true } : { label: '—', known: false };
+}
 
 export interface ModelOverrideChangeDetail {
   sessionId: string;
@@ -692,6 +707,19 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
                                     </span>
                                   );
                                 })}
+                                {(() => {
+                                  const badge = getModelPriceBadge(opt.provider, opt.model);
+                                  return (
+                                    <span
+                                      className={`ml-auto text-[10px] tabular-nums ${badge.known ? 'text-zinc-400' : 'text-zinc-600'}`}
+                                      title={badge.known
+                                        ? modelText.priceCoefTitle.replace('{baseline}', PRICING_BASELINE_DEFAULT.modelId)
+                                        : modelText.priceUnknownTitle}
+                                    >
+                                      {badge.label}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               <span className="text-gray-500 text-[10px] inline-flex items-center gap-1">
                                 {rowHealthSummary && (

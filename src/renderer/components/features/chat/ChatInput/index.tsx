@@ -600,6 +600,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   const modelConfig = useAppStore((s) => s.modelConfig);
   const sessionCost = useStatusStore((s) => s.sessionCost);
+  const unknownCostTurns = useStatusStore((s) => s.unknownCostTurns);
   const statusStreaming = useStatusStore((s) => s.isStreaming);
   // CostDisplay 的预算感知渲染（cache-aware 成本口径 + 缓存节省 tooltip + 告警染色）此前
   // 只有 StatusBar/index.tsx 传了这个 prop，而那个状态栏壳零消费——发行版里 ChatInput 是
@@ -915,8 +916,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {/* 弹性空白 */}
             <div className="flex-1" />
 
-            {/* 累计费用 — Context pill 左边 */}
-            {sessionCost > 0 && (
+            {/* 累计费用 — Context pill 左边（有未知价轮次时也显示，tooltip 里说明未计入） */}
+            {(sessionCost > 0 || unknownCostTurns > 0) && (
               <span className="text-xs mr-1 tabular-nums">
                 <CostDisplay cost={sessionCost} isStreaming={statusStreaming} budget={budgetStatus} />
               </span>

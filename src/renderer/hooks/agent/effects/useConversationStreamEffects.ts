@@ -4,6 +4,7 @@ import { generateMessageId } from '@shared/utils/id';
 import type { Message, ToolCall } from '@shared/contract';
 import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useStatusStore } from '../../../stores/statusStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
 import { applyRoutingDegradationSignal } from '../../../utils/routingDegradation';
 import { useAppStore } from '../../../stores/appStore';
@@ -217,6 +218,11 @@ export function applyConversationStreamEvent(
         const decisionData = normalizeModelDecisionPayload(event.data);
         if (!decisionData) break;
         if (isRecord(event.data) && getBooleanField(event.data, 'isMeta')) break;
+        // 本轮实际模型 → statusStore，供 stream_usage 的费用估算归因（该事件不带模型）
+        useStatusStore.getState().setCurrentTurnModel({
+          provider: decisionData.resolvedProvider,
+          model: decisionData.resolvedModel,
+        });
         const targetMessageId = decisionData.turnId || state.currentTurnMessageId;
         const freshMsgs = getFreshMessages();
         const targetMessage = targetMessageId
@@ -373,6 +379,20 @@ export const useConversationStreamEffects = ({
           flushRef.current();
           flushStreamingMessages();
           return;
+
+        // provider usage → 本轮费用估算（此前该事件只有 CLI 消费，桌面端直接丢弃）
+        case 'stream_usage': {
+          logHandledEvent();
+          if (!isCurrentSessionEvent) return;
+          const usage = event.data as { inputTokens?: number; outputTokens?: number } | undefined;
+          if (typeof usage?.inputTokens === 'number' && typeof usage?.outputTokens === 'number') {
+            useStatusStore.getState().recordTurnUsage({
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+            });
+          }
+          return;
+        }
 
         // /goal 自治模式：进度 / 闸判定 / 终态（per-session 更新 appStore；终态在当前会话补一条生命周期消息）
         // 注：本文件的 event 是 loose 类型（data?: unknown），按 contract 的 AgentEvent 形状断言。

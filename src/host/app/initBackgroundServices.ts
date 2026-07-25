@@ -1,5 +1,16 @@
 // ============================================================================
 // Phase 2: Background Services - 窗口创建后异步执行，不阻塞用户交互
+//
+// ⚠️ DEAD PATH — 本文件的唯一调用链是 src/host/index.ts → app/bootstrap.ts，
+// 而那条 Electron main 路径不在任何发行版中执行（详见 src/host/index.ts 头注释）。
+//
+// **这里是最容易踩的坑**：文件名叫"后台服务初始化"，看起来就是该挂后台服务的地方，
+// 但挂进来的东西在发行版里从不执行，也不会有任何门报红。已知受害者：
+// telemetry 上传器 / Agent Registry / LogBridge（后来在 webServer 补了三次）、
+// dbRetention + logRetention（2026-07-25 补，此前生产库涨到 377MB+ 无人清理）。
+// 仍未接电的：modelValidator、promptService 云端下发、dream/distill 定时任务。
+//
+// **新增后台服务请挂 src/web/webServer.ts 的 initializeBackendServices。**
 // ============================================================================
 
 import { app, AppWindow } from '../platform';

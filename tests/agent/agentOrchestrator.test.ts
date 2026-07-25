@@ -199,6 +199,7 @@ interface OrchestratorInternals {
   pendingPermissions: Map<string, { resolve: (r: string) => void; parked?: boolean; request?: { sessionId?: string } }>;
   requestPermission(request: { type: string; tool: string; sessionId?: string; details?: Record<string, unknown> }): Promise<boolean>;
   resolveParkedApproval(id: string, response: string, feedbackOverride?: string): void;
+  getPendingApprovalRepo(): unknown;
   drainPendingPermissions(response?: string): void;
 }
 function internals(o: AgentOrchestrator): OrchestratorInternals {

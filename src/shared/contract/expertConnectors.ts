@@ -8,12 +8,10 @@
 // 的 requiredConnectors 同一套，别另起一套命名。
 // ============================================================================
 
-export type ExpertConnectorLevel = 'core' | 'optional';
-
 export interface ExpertConnector {
   id: string;
   /** core=不连就干不了活，默认开；optional=锦上添花，默认关 */
-  level: ExpertConnectorLevel;
+  level: 'core' | 'optional';
   /** 给人看的一句话：这个专家拿它来干什么 */
   reason?: string;
 }

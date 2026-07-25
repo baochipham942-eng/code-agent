@@ -154,3 +154,15 @@ describe('Gemini 审计 R1 修复', () => {
     expect(delta.newPasses).toEqual([]);
   });
 });
+
+describe('per-case 模型归因（费曼审计 P1-4 顺带项）', () => {
+  it('promote 给每个 caseResult 打上 provider/model', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'baseline-model-'));
+    const manager = new BaselineManager(root);
+    await manager.promote(makeSummary([makeResult({ testId: 'a' })]), 'sha-model');
+
+    const baseline = await manager.load();
+    expect(baseline?.caseResults['a']?.model).toBeTruthy();
+    expect(baseline?.caseResults['a']?.model).toContain('/');
+  });
+});

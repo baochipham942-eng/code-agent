@@ -167,9 +167,21 @@ jobs:
         # vi.mock 一加新导出就断 ×3、权限链上新增 DB 读未加守卫 ×1、人话改造后断言过期 ×1）。
         #
         # 这一步把**主链路**（agent 运行时 / 工具执行 / IPC / host services）纳入 PR 门：
-        # 662 文件 6415 用例，本机 ~187s，是全量 1802 文件的 37%。renderer 与其余长尾仍留给
-        # 检测门兜底（全量本机 ~377s，整包进 PR 门太贵）——这是明说的覆盖边界，不是以为跑全了。
-        run: npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services --retry=1
+        # 618 文件 5892 用例，本机 ~186s。renderer 与其余长尾仍留给检测门兜底（全量本机
+        # ~377s，整包进 PR 门太贵）——这是明说的覆盖边界，不是以为跑全了。
+        #
+        # 三处 exclude 是**平台性**排除，不是给业务代码开豁免。本 job 跑 ubuntu，而全量套件的
+        # 绿色档案建立在 darwin（见 main-full-gate.yml 的 runs-on 注释：首跑 ubuntu 实测 10 个
+        # 文件环境性红）。首跑本步实测正是这三类落在子集里（4 文件）：
+        #   runtime/browser/**            需要 in-app browser/Chromium，ubuntu 上退化成 self-started-chrome
+        #   modules/network/**            需要真 API key，无 key 时 401
+        #   goalVerifyGate.test.ts        断言 shell 文案 'command not found'，dash 说的是 'not found'
+        # 这三类的业务覆盖没有丢，仍由 macos 上的 main-full-gate 全量门看着。
+        run: |
+          npx vitest run tests/unit/agent tests/unit/ipc tests/unit/tools tests/unit/services --retry=1 \
+            --exclude 'tests/unit/agent/runtime/browser/**' \
+            --exclude 'tests/unit/tools/modules/network/**' \
+            --exclude 'tests/unit/agent/goalVerifyGate.test.ts'
 
       - name: Knip dead-export ratchet
         # dead exports+types 棘轮（基线 2785，见 scripts/knip-ratchet.mjs 头注）。

@@ -116,7 +116,7 @@ function declaresToolsExplicitly(agentMd: string): boolean {
  * 装包前给用户的人话摘要三源：声明的工具、声明的连接器、权限档。
  * 三源全部来自 agent.md frontmatter，不新造元数据（#671 的 connectors + #637 的 permission-override）。
  */
-export interface RolePackConsent {
+interface RolePackConsent {
   /** 实际会生效的工具集（显式声明则用声明，否则是内置基线）。 */
   tools: string[];
   /** 是否显式声明了 tools——没声明就是继承基线，摘要里要说清楚这点，别让用户以为是包主动要的。 */
@@ -129,7 +129,7 @@ export interface RolePackConsent {
   elevation: { looseMode: boolean; bashTool: boolean } | null;
 }
 
-export function buildRolePackConsent(agentMd: string, roleId: string): RolePackConsent {
+function buildRolePackConsent(agentMd: string, roleId: string): RolePackConsent {
   const parsed = parseAgentMd(agentMd, `${roleId}.md`);
   return {
     tools: parsed?.tools ?? [],

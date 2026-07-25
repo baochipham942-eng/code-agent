@@ -1,11 +1,12 @@
 export const workbenchTabsZh = {
   workbenchTabs: {
-    openPanel: '打开面板',
     emptyTitle: '打开一个视图',
     availableViews: '可打开的视图',
     chooseView: '选择当前视图',
     openViews: '已打开的视图',
-    closeCurrentView: '关闭当前视图',
+    closeView: '关闭 {view}',
+    collapsePanel: '收起面板',
+    expandPanel: '展开面板',
     overviewLabel: '概览',
     overviewTitle: '任务进程与产物',
     overviewProgressLabel: '任务进程',
@@ -26,12 +27,13 @@ export const workbenchTabsZh = {
 
 export const workbenchTabsEn: typeof workbenchTabsZh = {
   workbenchTabs: {
-    openPanel: 'Open panel',
     emptyTitle: 'Open a view',
     availableViews: 'Available views',
     chooseView: 'Choose current view',
     openViews: 'Open views',
-    closeCurrentView: 'Close current view',
+    closeView: 'Close {view}',
+    collapsePanel: 'Collapse panel',
+    expandPanel: 'Expand panel',
     overviewLabel: 'Overview',
     overviewTitle: 'Task progress and deliverables',
     overviewProgressLabel: 'Task progress',

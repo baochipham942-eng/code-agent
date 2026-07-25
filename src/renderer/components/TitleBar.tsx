@@ -11,17 +11,17 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { pickNativeDirectory } from '../services/tauriPluginFacade';
+import { useI18n } from '../hooks/useI18n';
 export const TitleBar: React.FC = () => {
+  const { t } = useI18n();
   const {
     sidebarCollapsed,
     setSidebarCollapsed,
     workingDirectory,
     setWorkingDirectory: setAppWorkingDirectory,
-    workbenchTabs,
-    openWorkbenchTab,
-    closeWorkbenchTab,
+    workbenchCollapsed,
+    setWorkbenchCollapsed,
   } = useAppStore();
-  const isOverviewOpen = workbenchTabs.includes('overview');
   const composerWorkingDirectory = useComposerStore((state) => state.workingDirectory);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   // 当前消息发送用的工作目录（composerStore）优先，fallback 到全局 appStore.workingDirectory
@@ -89,12 +89,12 @@ export const TitleBar: React.FC = () => {
         </button>
         <SessionActionsMenu />
       </div>
-      {/* Right: Task Panel toggle */}
+      {/* Right: 整个右栏的收起/展开。它管的是栏，不是「概览」这一个面板。 */}
       <div className="flex items-center gap-2">
         <IconButton
-          icon={isOverviewOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
-          aria-label={isOverviewOpen ? 'Hide overview' : 'Show overview'}
-          onClick={() => (isOverviewOpen ? closeWorkbenchTab('task') : openWorkbenchTab('task'))}
+          icon={workbenchCollapsed ? <PanelRight className="w-4 h-4" /> : <PanelRightClose className="w-4 h-4" />}
+          aria-label={workbenchCollapsed ? t.workbenchTabs.expandPanel : t.workbenchTabs.collapsePanel}
+          onClick={() => setWorkbenchCollapsed(!workbenchCollapsed)}
           variant="ghost"
           size="md"
         />

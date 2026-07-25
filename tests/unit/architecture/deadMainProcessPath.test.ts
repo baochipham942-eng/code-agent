@@ -19,6 +19,31 @@ import { describe, expect, it } from 'vitest';
 const root = process.cwd();
 const read = (file: string): string => readFileSync(path.join(root, file), 'utf8');
 
+/**
+ * 代码类断言必须排除注释行再匹配。
+ * 本门被自己的变异验证抓到两次假绿，都是这条的变体：
+ *   1) toContain('runDbRetention') 被改名 runDbRetention_MUTANT 骗过（子串匹配）；
+ *   2) 正则匹配到 `// kickoffStartupRetention();` 这行被注释掉的调用。
+ *
+ * 实现刻意保持"按行丢弃"而不是解析块注释：正则版 /\/\*[\s\S]*?\*\// 会把源码里
+ * '**\/*.ts' 这类 glob 字符串当成块注释起点，一路吃掉后面的真代码（实测把本门
+ * 自己弄红了）。
+ *
+ * 已知盲区（如实记下，不假装覆盖）：写成 `\/* kickoff(); *\/` 的块注释形态骗得过
+ * 本函数。取舍理由是真实的失效形态是整行注释掉或删掉，为覆盖块注释去写一个
+ * 半吊子 JS 解析器不划算。
+ */
+function dropCommentLines(source: string): string {
+  return source
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+    })
+    .join('\n');
+}
+const readCode = (file: string): string => dropCommentLines(read(file));
+
 const DEAD_PATH_FILES = [
   'src/host/index.ts',
   'src/host/app/bootstrap.ts',
@@ -39,7 +64,7 @@ describe('死主进程路径（src/host/index.ts）', () => {
   });
 
   it('src/host/index.ts 仍然不是任何 esbuild 构建入口（标记所声称的事实）', () => {
-    const config = read('esbuild.config.ts');
+    const config = readCode('esbuild.config.ts');
     const entries = [...config.matchAll(/entry:\s*'([^']+)'/g)].map((m) => m[1]);
 
     // 自检：解析没解出东西就该红，而不是"零命中=通过"地假绿
@@ -55,7 +80,7 @@ describe('死主进程路径（src/host/index.ts）', () => {
   // 断言用带词边界的「模块路径 + 调用」双要素，不用 toContain：子串匹配会被
   // runDbRetention_MUTANT 这类改名骗过去（本门首版实测就是这么假绿的）。
   it('webServer.ts 真的调了启动期保留清理（第一跳）', () => {
-    const webServer = read(SHIPPED_ENTRY);
+    const webServer = readCode(SHIPPED_ENTRY);
     expect(webServer, 'webServer 未 import webStartupRetention：启动期清理不会执行')
       .toMatch(/from\s+'\.\/webStartupRetention'/);
     expect(webServer, 'webServer 未调用 kickoffStartupRetention()：import 了但没调等于没接')
@@ -66,7 +91,7 @@ describe('死主进程路径（src/host/index.ts）', () => {
     ['logRetention', /\brunLogRetention\s*\(/, '审计日志清理在发行版里不会执行'],
     ['dbRetention', /\brunDbRetention\s*\(/, 'telemetry 表无 TTL，生产库会无限涨（实测 377MB+）'],
   ])('webStartupRetention.ts 真的调了 %s（第二跳）', (moduleName, callPattern, consequence) => {
-    const kickoff = read(RETENTION_KICKOFF);
+    const kickoff = readCode(RETENTION_KICKOFF);
     expect(kickoff, `未 import ${moduleName}：${consequence}`)
       .toMatch(new RegExp(`services/infra/${moduleName}['"]`));
     expect(kickoff, `未调用 ${moduleName} 的入口函数：${consequence}`)

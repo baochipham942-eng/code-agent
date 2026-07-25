@@ -23,7 +23,7 @@ import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOn
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { getConfirmationGate } from './confirmationGate';
-import { getPermissionModeManager } from '../permissions/modes';
+import { getPermissionModeManager, rolePermissionPresetToMode } from '../permissions/modes';
 import { approvalParkEvents } from './approvalParkEvents';
 import { notificationService } from '../services/infra/notificationService';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
@@ -53,6 +53,7 @@ import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 import { getPredefinedAgent } from './agentDefinition';
+import { resolveAgent as registryResolveAgent } from './agentRegistry';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { buildRoutingToolDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
@@ -1189,7 +1190,22 @@ export class AgentOrchestrator {
 
     const nativeRunId = `run-${generateMessageId()}`;
     let registeredRun: RunHandle | undefined;
+    let rolePresetSessionId: string | undefined;
     try {
+      // 本轮专家自带的审批档（详情页「安全」页写进 agent.md 的 permission-override）。
+      // 钩在这里而不是某个 startTask 入口：IPC / cron 主动性 / neoTag / sessionAutomation /
+      // idleWake 五个入口都汇到 runConversation，角色身份也是在上面 resolveTurnRouting 才定下来。
+      // 没显式设过档的角色（registry 里 permissionPreset 为 undefined）不写，保持「跟随通用设置」。
+      const turnRolePreset = sessionId && routingResolution
+        ? registryResolveAgent(routingResolution.agent.id)?.permissionPreset
+        : undefined;
+      if (sessionId && turnRolePreset) {
+        getPermissionModeManager().setRolePresetSession(
+          sessionId,
+          rolePermissionPresetToMode(turnRolePreset),
+        );
+        rolePresetSessionId = sessionId;
+      }
       const runSession = sessionId ? await getSessionManager().getSession(sessionId) : undefined;
       const workspaceScope = runSession?.projectId
         ? getProjectService().getWorkspaceScope(runSession.projectId)
@@ -1298,6 +1314,10 @@ export class AgentOrchestrator {
         }
       }
     } finally {
+      // 只钳这一轮：下一轮换成别的专家（或回到主会话）时回到会话自己的档。
+      if (rolePresetSessionId) {
+        getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
+      }
       if (registeredRun) this.runRegistry?.unregister(nativeRunId, registeredRun);
       this.lastSerializedCompressionState = this.agentLoop?.getSerializedCompressionState()
         ?? this.lastSerializedCompressionState;

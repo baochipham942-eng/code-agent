@@ -32,11 +32,10 @@ export const SidebarNewTaskRow: React.FC<SidebarNewTaskRowProps> = ({
           <Plus className="h-3.5 w-3.5 text-cyan-400/90" />
         )}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm text-zinc-300 group-hover:text-zinc-100">
-          {sb.newTask}
-        </span>
-        <span className="block truncate text-[11px] text-zinc-500">{sb.newTaskSubtitle}</span>
+      {/* 单行：「开始一段新的协作」这类说明性副标题第一次有用、第一百次是噪音，
+          真正有信息量的那句（不继承项目上下文）留在 title 悬浮提示里。 */}
+      <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
+        {sb.newTask}
       </span>
       <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
     </button>

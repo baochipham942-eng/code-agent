@@ -1,0 +1,41 @@
+export const onboardingZh = {
+  onboarding: {
+    stepModel: '选模型',
+    stepConnectors: '连上你的日常工具',
+    stepDone: '开始干活',
+    keyStaysLocal: '密钥只存在这台电脑上，不会上传。',
+    connectorsTitle: '连上你平时用的工具',
+    connectorsDescription: 'Neo 能直接读写这些地方的东西。现在连也行，以后在能力中心随时再连。',
+    connectorConnected: '已连接',
+    connectorConnect: '去连接',
+    connectorsSkip: '先不连，继续',
+    connectorsNext: '下一步',
+    doneTitle: '模型已就绪，可以开始了',
+    doneDescription: '给 Neo 一件真事做，或者先让它替你把一件重复的事排上日程。',
+    doneAutomationCta: '建你的第一个自动化',
+    doneAutomationHint: '比如「每天早上把昨天的数据汇总成一页」',
+    doneStartCta: '开始工作',
+    doneStartHint: '直接进对话，说一句你想要的产物',
+  },
+};
+
+export const onboardingEn = {
+  onboarding: {
+    stepModel: 'Pick a model',
+    stepConnectors: 'Connect your everyday tools',
+    stepDone: 'Start working',
+    keyStaysLocal: 'Your key stays on this machine and is never uploaded.',
+    connectorsTitle: 'Connect the tools you already work in',
+    connectorsDescription: 'Neo can read and write in these places directly. Connect now, or any time later from the Capability Hub.',
+    connectorConnected: 'Connected',
+    connectorConnect: 'Connect',
+    connectorsSkip: 'Skip for now',
+    connectorsNext: 'Next',
+    doneTitle: 'Your model is ready',
+    doneDescription: 'Give Neo something real to do, or let it put a recurring chore on a schedule for you.',
+    doneAutomationCta: 'Create your first automation',
+    doneAutomationHint: 'e.g. "every morning, summarise yesterday\'s numbers into one page"',
+    doneStartCta: 'Start working',
+    doneStartHint: 'Go straight to chat and describe what you want made',
+  },
+};

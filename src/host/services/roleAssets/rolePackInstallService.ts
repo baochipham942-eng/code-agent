@@ -11,6 +11,7 @@ import { getRemoteSkillRegistryService } from '../../skills/marketplace/remoteSk
 import { installFromRegistryEntry, uninstallPlugin } from '../../skills/marketplace/installService';
 import { SKILL_REGISTRY_MARKETPLACE_ID } from '../../../shared/contract/skillRegistry';
 import type { RolePackEntry } from '../../../shared/contract/rolePackRegistry';
+import type { ExpertConnector } from '../../../shared/contract/expertConnectors';
 import { BUILTIN_ROLES, validateBuiltinRolePack, type BuiltinRoleDefinition } from './builtinRoles';
 import { ensureRoleAssetDirs } from './roleAssetService';
 import { getRolePackRegistryService } from './rolePackRegistryService';
@@ -49,8 +50,12 @@ export interface RolePackActionResult {
   missingSkills?: string[];
   locallyModified?: boolean;
   reason?: string;
-  /** 命中提权判据且用户尚未过目；renderer 据此弹确认卡，不当作失败。 */
-  elevation?: { looseMode: boolean; bashTool: boolean };
+  /**
+   * 用户尚未过目这个包能干什么；renderer 据此弹确认卡，**不当作失败**。
+   * 强确认（2026-07-25 产品负责人拍板）：不只提权包，**每个包**装之前都要过这一关——
+   * 装之前用户根本不知道它能读文件、能发飞书、要连哪个连接器。
+   */
+  consent?: RolePackConsent;
 }
 
 export interface RolePackListItem {
@@ -86,6 +91,34 @@ function declaresToolsExplicitly(agentMd: string): boolean {
  * 关键：没声明 tools 的包会继承默认工具集（本就含 Bash），那是每个内置角色的基线，不算提权——
  * 只有包主动把 Bash 写进 tools 才算。Write/Edit/联网不算：标准档下它们受工作目录与审批闸约束。
  */
+/**
+ * 装包前给用户的人话摘要三源：声明的工具、声明的连接器、权限档。
+ * 三源全部来自 agent.md frontmatter，不新造元数据（#671 的 connectors + #637 的 permission-override）。
+ */
+export interface RolePackConsent {
+  /** 实际会生效的工具集（显式声明则用声明，否则是内置基线）。 */
+  tools: string[];
+  /** 是否显式声明了 tools——没声明就是继承基线，摘要里要说清楚这点，别让用户以为是包主动要的。 */
+  toolsDeclared: boolean;
+  /** #671 声明的推荐连接器（core 默认开 / optional 默认关）。 */
+  connectors: ExpertConnector[];
+  /** #637 的 per-role 权限档；缺省表示跟随通用设置。 */
+  permissionPreset?: 'strict' | 'development' | 'ci';
+  /** 命中提权判据时非空——UI 据此加重告警，普通包只是平铺摘要。 */
+  elevation: { looseMode: boolean; bashTool: boolean } | null;
+}
+
+export function buildRolePackConsent(agentMd: string, roleId: string): RolePackConsent {
+  const parsed = parseAgentMd(agentMd, `${roleId}.md`);
+  return {
+    tools: parsed?.tools ?? [],
+    toolsDeclared: declaresToolsExplicitly(agentMd),
+    connectors: parsed?.connectors ?? [],
+    ...(parsed?.permissionPreset ? { permissionPreset: parsed.permissionPreset } : {}),
+    elevation: detectRolePackElevation(agentMd, roleId),
+  };
+}
+
 export function detectRolePackElevation(
   agentMd: string,
   roleId: string,
@@ -227,14 +260,14 @@ async function installEntry(
   let locallyModified = false;
   if (!currentHash || previous?.installedAgentMdHash === currentHash) {
     const raw = agentMdWithVisual(entry);
-    const elevation = detectRolePackElevation(raw, entry.roleId);
-    // 已过目 = 用户在确认卡上做过选择（按安全默认装 / 按声明装），或上次装时已接受过提权。
+    // 已过目 = 用户在确认卡上做过选择（按安全默认装 / 按声明装），或这是对已装包的升级/重试。
     const reviewed = options?.acceptElevation === true
       || options?.elevationReviewed === true
-      || previous?.elevationAccepted === true;
-    if (elevation && !reviewed) {
-      // 不落任何盘，交给 renderer 弹确认卡；用户选安全默认会带 elevationReviewed=true 再来一次。
-      return { success: false, roleId: entry.roleId, elevation };
+      || previous !== undefined;
+    if (!reviewed) {
+      // 强确认：不落任何盘，先把「这个专家能干什么」交给 renderer 弹卡。
+      // 此前只有提权包才拦，普通包静默装——用户装完也不知道它能读文件、要连哪个连接器。
+      return { success: false, roleId: entry.roleId, consent: buildRolePackConsent(raw, entry.roleId) };
     }
     // 保留提权项的两种情形：本次显式「按声明装」，或上次装时已接受过（升级/重试不该悄悄剥回）。
     const keepElevation = options?.acceptElevation === true || previous?.elevationAccepted === true;

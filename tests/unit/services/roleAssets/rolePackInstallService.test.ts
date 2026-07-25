@@ -67,7 +67,7 @@ describe('rolePackInstallService', () => {
     const pack = entry(); state.entries.set(pack.roleId, pack);
     for (const skill of pack.skills) state.skills.set(skill.registryName, { name: skill.registryName });
     state.install.mockRejectedValue(new Error('down'));
-    const result = await installRolePack(pack.roleId);
+    const result = await installRolePack(pack.roleId, { elevationReviewed: true });
     expect(result.success).toBe(false); expect(result.reason).toBeTruthy();
     await expect(fs.access(path.join(state.configDir, 'agents', `${pack.roleId}.md`))).rejects.toThrow();
     expect(state.uninstall).not.toHaveBeenCalled();
@@ -76,7 +76,7 @@ describe('rolePackInstallService', () => {
   it('uninstalls skills written by this attempt when another bottom-line check fails', async () => {
     const pack = entry('坏定义', ['s1']); pack.agentMd = 'not frontmatter'; state.entries.set(pack.roleId, pack);
     state.skills.set('s1', { name: 's1' }); state.install.mockResolvedValue({ installedSkills: ['s1'] });
-    const result = await installRolePack(pack.roleId);
+    const result = await installRolePack(pack.roleId, { elevationReviewed: true });
     expect(result.success).toBe(false);
     expect(state.uninstall).toHaveBeenCalledWith(expect.stringContaining('s1@'), { scope: 'user' });
     await expect(fs.access(path.join(state.configDir, 'agents', `${pack.roleId}.md`))).rejects.toThrow();
@@ -89,7 +89,7 @@ describe('rolePackInstallService', () => {
       if (skill.name === 's3') throw new Error('down');
       return { installedSkills: [skill.name] };
     });
-    const result = await installRolePack(pack.roleId);
+    const result = await installRolePack(pack.roleId, { elevationReviewed: true });
     expect(result).toMatchObject({ success: true, installState: 'degraded', missingSkills: ['s3'] });
     const saved = await fs.readFile(path.join(state.configDir, 'agents', `${pack.roleId}.md`), 'utf8');
     expect(parseAgentMdVisual(saved)).toEqual(pack.visual);
@@ -104,7 +104,7 @@ describe('rolePackInstallService', () => {
     state.entries.set(pack.roleId, pack); state.skills.set('s1', { name: 's1' });
     state.install.mockResolvedValue({ installedSkills: ['s1'] });
 
-    await installRolePack(pack.roleId);
+    await installRolePack(pack.roleId, { elevationReviewed: true });
 
     const saved = await fs.readFile(path.join(state.configDir, 'agents', `${pack.roleId}.md`), 'utf8');
     expect(parseAgentMdVisual(saved)).toEqual(pack.visual);
@@ -118,7 +118,7 @@ describe('rolePackInstallService', () => {
       return { installedSkills: [skill.name] };
     });
 
-    await expect(installRolePack(pack.roleId)).resolves.toMatchObject({
+    await expect(installRolePack(pack.roleId, { elevationReviewed: true })).resolves.toMatchObject({
       success: true,
       installState: 'degraded',
       missingSkills: ['s2'],
@@ -132,7 +132,7 @@ describe('rolePackInstallService', () => {
       if (skill.name === 's3' && state.install.mock.calls.length <= 3) throw new Error('down');
       return { installedSkills: [skill.name] };
     });
-    await installRolePack(pack.roleId);
+    await installRolePack(pack.roleId, { elevationReviewed: true });
     state.install.mockClear(); state.install.mockResolvedValue({ installedSkills: ['s3'] });
     const result = await retryMissingSkills(pack.roleId);
     expect(result).toMatchObject({ success: true, installState: 'complete', missingSkills: [] });
@@ -142,15 +142,15 @@ describe('rolePackInstallService', () => {
   it('writes missing definitions, updates owned definitions, and refuses mutated local definitions', async () => {
     const pack = entry('覆盖专家', ['s1']); state.entries.set(pack.roleId, pack); state.skills.set('s1', { name: 's1' });
     state.install.mockResolvedValue({ installedSkills: ['s1'] });
-    await installRolePack(pack.roleId);
+    await installRolePack(pack.roleId, { elevationReviewed: true });
     const definitionPath = path.join(state.configDir, 'agents', `${pack.roleId}.md`);
     expect(parseAgentMdVisual(await fs.readFile(definitionPath, 'utf8'))).toEqual(pack.visual);
     pack.agentMd = validAgent(pack.roleId, ['s1']) + '\nupgraded'; pack.packVersion = '2.0.0';
-    await installRolePack(pack.roleId);
+    await installRolePack(pack.roleId, { elevationReviewed: true });
     expect(parseAgentMdVisual(await fs.readFile(definitionPath, 'utf8'))).toEqual(pack.visual);
     await fs.writeFile(definitionPath, 'user edit', 'utf8');
     pack.agentMd += '\nnew';
-    const result = await installRolePack(pack.roleId);
+    const result = await installRolePack(pack.roleId, { elevationReviewed: true });
     expect(result).toMatchObject({ success: true, locallyModified: true });
     expect(await fs.readFile(definitionPath, 'utf8')).toBe('user edit');
   });
@@ -178,7 +178,7 @@ describe('rolePackInstallService', () => {
     state.entries.set(pack.roleId, pack); state.skills.set('s1', { name: 's1' });
     state.install.mockResolvedValue({ installedSkills: ['s1'] });
 
-    await installRolePack(pack.roleId);
+    await installRolePack(pack.roleId, { elevationReviewed: true });
 
     await expect(getInstalledRolePackState(pack.roleId)).resolves.toEqual({ locallyModified: false });
   });
@@ -237,10 +237,38 @@ describe('提权包安装流程', () => {
   const installedAgentMd = async (roleId: string) =>
     fs.readFile(path.join(state.configDir, 'agents', `${roleId}.md`), 'utf-8');
 
-  it('未过目时返回 elevation 且不落盘', async () => {
+  // 强确认（2026-07-25 拍板）：此前只有提权包才拦，普通包静默装——
+  // 用户装完也不知道它能读文件、要连哪个连接器。现在每个包都要先过目。
+  it('普通包（零提权项）同样先返回 consent 摘要，不静默落盘', async () => {
+    const plain = {
+      roleId: '普通专家',
+      agentMd: '---\nname: 普通专家\nskills: [s1]\nconnectors:\n  - lark|core|发通知\n---\nrole',
+      packVersion: '1.0.0', publisher: 'Neo', reviewedAt: '2026-07-22',
+      visual: { icon: 'Bot', category: 'research', displayName: '普通专家', profession: '专家', tags: ['a'], quickPrompts: ['go'] },
+      skills: [{ registryName: 's1' }],
+    };
+    state.entries.set(plain.roleId, plain);
+    state.skills.set('s1', { name: 's1' });
+    state.install.mockResolvedValue({ installedSkills: ['s1'] });
+
+    const result = await installRolePack(plain.roleId);
+
+    expect(result.success).toBe(false);
+    expect(result.consent?.elevation).toBeNull();
+    // 摘要三源：工具（未显式声明 → 基线）、连接器、权限档
+    expect(result.consent?.toolsDeclared).toBe(false);
+    expect(result.consent?.connectors.map((c) => c.id)).toEqual(['lark']);
+    await expect(installedAgentMd(plain.roleId)).rejects.toThrow();
+
+    // 过目后照常装
+    const confirmed = await installRolePack(plain.roleId, { elevationReviewed: true });
+    expect(confirmed.success).toBe(true);
+  });
+
+  it('未过目时返回 consent 且不落盘', async () => {
     const pack = seedElevated();
     const result = await installRolePack(pack.roleId);
-    expect(result.elevation).toEqual({ looseMode: false, bashTool: true });
+    expect(result.consent?.elevation).toEqual({ looseMode: false, bashTool: true });
     expect(result.success).toBe(false);
     await expect(installedAgentMd(pack.roleId)).rejects.toThrow();
   });

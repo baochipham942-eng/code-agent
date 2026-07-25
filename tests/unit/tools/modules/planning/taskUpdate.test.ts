@@ -59,7 +59,7 @@ describe('task_update schema', () => {
     expect(taskUpdateModule.schema.allowInPlanMode).toBe(true);
     expect(taskUpdateModule.schema.inputSchema.required).toEqual(['taskId']);
     const props = taskUpdateModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
-    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'cancelled', 'deleted']);
+    expect(props.status.enum).toEqual(['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'deleted']);
     expect(props.desktopAction.enum).toEqual(['accept', 'dismiss', 'snooze', 'reopen', 'supersede']);
   });
 });
@@ -156,7 +156,9 @@ describe('task_update behavior', () => {
     updateTaskMock.mockReturnValue(undefined);
     const handler = await taskUpdateModule.createHandler();
     const result = await handler.execute(
-      { taskId: '1', status: 'completed' },
+      // completionEvidence 是证据门（ADR-050）的硬要求，这条用例测的是
+      // "证据齐了但 store 写失败" 才该报 DOMAIN_ERROR
+      { taskId: '1', status: 'completed', completionEvidence: 'ran the suite, all green' },
       makeCtx(),
       allowAll,
     );

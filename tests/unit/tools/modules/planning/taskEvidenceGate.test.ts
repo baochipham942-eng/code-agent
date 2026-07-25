@@ -68,7 +68,8 @@ function makeTask(id: string, overrides: Partial<SessionTask> = {}): SessionTask
 }
 
 async function run(args: Record<string, unknown>) {
-  return taskManagerModule.createHandler().execute(args, makeCtx(), allowAll);
+  const handler = await taskManagerModule.createHandler();
+  return handler.execute(args, makeCtx(), allowAll);
 }
 
 beforeEach(() => {
@@ -89,8 +90,10 @@ describe('证据门 — update 路径', () => {
     const result = await run({ action: 'update', taskId: '1', status: 'completed' });
 
     expect(result.ok).toBe(false);
-    expect(result.code).toBe('INVALID_ARGS');
-    expect(result.error).toContain('completionEvidence');
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('completionEvidence');
+    }
     expect(updateTaskMock).not.toHaveBeenCalled();
   });
 
@@ -123,7 +126,7 @@ describe('证据门 — update 路径', () => {
     const result = await run({ action: 'update', taskId: '1', status: 'blocked' });
 
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('blockedReason');
+    if (!result.ok) expect(result.error).toContain('blockedReason');
     expect(updateTaskMock).not.toHaveBeenCalled();
   });
 
@@ -212,8 +215,10 @@ describe('证据门 — 批量路径（模型绕行的最短路）', () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.code).toBe('INVALID_ARGS');
-    expect(result.error).toContain('completionEvidence');
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('completionEvidence');
+    }
     expect(updateTaskMock).not.toHaveBeenCalled();
   });
 
@@ -248,7 +253,7 @@ describe('证据门 — 批量路径（模型绕行的最短路）', () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('completionEvidence');
+    if (!result.ok) expect(result.error).toContain('completionEvidence');
     expect(clearTasksMock).not.toHaveBeenCalled();
   });
 
@@ -259,7 +264,7 @@ describe('证据门 — 批量路径（模型绕行的最短路）', () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('blockedReason');
+    if (!result.ok) expect(result.error).toContain('blockedReason');
   });
 
   it('replace 沿用同名任务的既有 completed 状态时不重复举证，并带上原证据', async () => {

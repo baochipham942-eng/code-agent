@@ -218,6 +218,20 @@ turnDiff: {
   newFileBadge: '新建',
 },
 
+// 会话里那行 Hooks：只说「哪个时机、是哪几个 hook、放行还是拦下」。
+// hook 的输出内容不在这里显示（契约层已无该字段）——它是任意文本，曾把整份记忆索引原文漏给用户。
+turnHooks: {
+  title: 'Hooks',
+  expand: '展开 Hooks',
+  collapse: '收起 Hooks',
+  allowed: '放行',
+  blocked: '拦下',
+  errored: '{count} 个出错',
+  unnamed: '未命名的 hook',
+  sourceGlobal: '你的全局设置',
+  sourceProject: '这个项目',
+},
+
 // 回合运行状态（TurnCard 顶部状态条 + 流式状态横幅）——两处消费同一套键，别建两套
 turnRun: {
   status: {
@@ -530,6 +544,18 @@ turnDiff: {
 },
 
 // Turn run status (TurnCard header chip + streaming state banner) — shared key set
+turnHooks: {
+  title: 'Hooks',
+  expand: 'Show hooks',
+  collapse: 'Hide hooks',
+  allowed: 'Allowed',
+  blocked: 'Blocked',
+  errored: '{count} failed',
+  unnamed: 'Unnamed hook',
+  sourceGlobal: 'your global settings',
+  sourceProject: 'this project',
+},
+
 turnRun: {
   status: {
     cancelling: 'Stopping…',

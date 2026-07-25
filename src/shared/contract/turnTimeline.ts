@@ -137,9 +137,12 @@ export interface TurnHookActivityItem {
   durationMs: number;
   sources: Array<'global' | 'project'>;
   hookType: 'decision' | 'observer';
+  /** 触发的 hook 各自的名字。会话里只显示到这一层。 */
+  names?: string[];
   modified?: boolean;
   errorCount?: number;
-  message?: string;
+  // 这里刻意没有 message：hook 的 stdout 是任意内容（实测漏过整份记忆索引原文），
+  // 渲染层拿不到它才是真正守得住的做法，加过滤守不住。要看原文去日志。
   toolName?: string;
   matcher?: string;
 }

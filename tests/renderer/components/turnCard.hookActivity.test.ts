@@ -94,7 +94,7 @@ describe('TurnCard hook activity', () => {
             timestamp: 120,
             tone: 'success',
             hookActivity: {
-              summary: '命中 2 个 hook · 已放行 · 12ms',
+              summary: '2 个时机 · 注入人格、记忆索引',
               items: [
                 {
                   timestamp: 110,
@@ -130,18 +130,15 @@ describe('TurnCard hook activity', () => {
 
     const html = renderToStaticMarkup(React.createElement(TurnCard, { turn }));
 
-    expect(html).toContain('执行了 2 个钩子');
-    // 默认展开：非程序员用户不用点开就能看到钩子做了什么
-    expect(html).toContain('aria-expanded="true"');
-    expect(html).toContain('用户提示提交');
-    expect(html).toContain('会话开始');
-    // 展开内容只保留「钩子类型 + 注入/触发的内容类型」两样，来源(全局/项目)与
-    // 可干预/仅观察机制黑话对非程序员是纯噪音，即使展开也不再展示为可见徽标
+    // 折叠行直接把摘要（哪个时机 · 是哪几个 hook）铺出来，不再只报一个数量
+    expect(html).toContain('Hooks');
+    expect(html).toContain('注入人格、记忆索引');
+    // 默认折叠：折叠行已说清「哪个时机、是哪几个 hook」，展开留给想细看的人
+    expect(html).toContain('aria-expanded="false"');
+    // 来源(全局/项目)与可干预/仅观察是机制黑话，对非程序员是纯噪音
     expect(html).not.toContain('全局+项目');
     expect(html).not.toContain('可干预');
     expect(html).not.toContain('仅观察');
-    // 没有 message 时退回能推出的最有用信息（这里是 matcher）
-    expect(html).toContain('Bash');
     expect(html).not.toContain('已放行');
   });
 });

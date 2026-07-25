@@ -25,6 +25,7 @@ import type {
 import type { MergedHookConfig, MergeStrategy } from './merger';
 import type { AICompletionFn } from './promptHook';
 
+import type { HookDefinition } from './configParser';
 import { loadAllHooksConfig } from './configParser';
 import { mergeHooks, getHooksForTool, getHooksForEvent } from './merger';
 import {
@@ -72,6 +73,8 @@ export interface TriggerHistoryEntry {
   modified: boolean;
   sources: HookActivitySource[];
   hookType: HookActivityType;
+  /** 触发的 hook 各自的名字（配置里的 name，没写就退回脚本名）。给会话里那行 Hooks 用。 */
+  names?: string[];
   errorCount?: number;
   message?: string;
   toolName?: string;
@@ -83,8 +86,22 @@ const MAX_TRIGGER_HISTORY = 50;
 interface HookActivityMetadata {
   sources: HookActivitySource[];
   hookType: HookActivityType;
+  names: string[];
   matcher?: string;
   toolName?: string;
+}
+
+/**
+ * 一个 hook 给人看的名字。优先用配置里显式写的 name——「这个 hook 是干嘛的」只有
+ * 配它的人知道，系统不从命令内容去猜。没写就退回可执行文件名，再退回类型。
+ */
+function hookDisplayName(hook: HookDefinition): string {
+  if (hook.name?.trim()) return hook.name.trim();
+  const token = hook.command?.trim().split(/\s+/).find((part) => part.includes('/') || part.includes('.'));
+  const basename = token?.split('/').pop();
+  if (basename) return basename;
+  if (hook.type === 'agent' && hook.agent) return hook.agent;
+  return hook.type;
 }
 
 function matcherLabel(config: MergedHookConfig): string | undefined {
@@ -108,6 +125,7 @@ function summarizeHookActivity(configs: MergedHookConfig[]): HookActivityMetadat
   return {
     sources,
     hookType: configs.some((config) => config.hookType === 'decision') ? 'decision' : 'observer',
+    names: Array.from(new Set(configs.flatMap((config) => config.hooks.map(hookDisplayName)))),
     ...(matchers.length > 0 ? { matcher: matchers.join(', ') } : {}),
   };
 }
@@ -661,6 +679,7 @@ export class HookManager {
       modified: !!result.modifiedInput,
       sources: metadata?.sources || [],
       hookType: metadata?.hookType || 'observer',
+      ...(metadata?.names?.length ? { names: metadata.names } : {}),
       ...(errorCount > 0 ? { errorCount } : {}),
       // GAP-015: trigger history 是观测日志（UI/导出可见），message 必须脱敏；
       // HookTriggerResult.message 本身（注入上下文用）不脱敏，保持功能不变

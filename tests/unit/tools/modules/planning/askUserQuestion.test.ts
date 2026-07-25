@@ -372,6 +372,27 @@ describe('AskUserQuestion renderer response', () => {
     if (result.ok) expect(result.output).toBe('User declined to answer.');
   });
 
+  it('declined 响应附 reason 时拼进 output，让模型看到取消原因', async () => {
+    getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
+    hasInteractiveRendererMock.mockReturnValue(true);
+
+    const handler = await askUserQuestionModule.createHandler();
+    const promise = handler.execute({ questions }, makeCtx(), allowAll);
+    await vi.waitFor(() => expect(sendMock).toHaveBeenCalledTimes(1));
+    const request = sendMock.mock.calls[0][1];
+
+    await responseHandlerRef.fn?.(
+      {},
+      { requestId: request.id, declined: true, reason: '现在不方便回答，稍后再说' },
+    );
+
+    const result = await promise;
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.output).toBe('User declined to answer. Reason: 现在不方便回答，稍后再说');
+    }
+  });
+
   it('旧 answers-only 响应仍按 answered 处理', async () => {
     getAllWindowsMock.mockReturnValue([{ webContents: { send: sendMock } }]);
     hasInteractiveRendererMock.mockReturnValue(true);

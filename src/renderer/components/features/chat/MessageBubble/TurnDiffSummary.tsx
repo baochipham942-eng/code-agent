@@ -30,6 +30,10 @@ type UndoState = 'idle' | 'done' | 'error';
 
 export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  // 会话自己的工作目录优先——多根/切目录时全局那个不一定是这轮改动所在的根
+  const workingDirectory = useSessionStore(
+    (s) => (s.sessions ?? []).find((session) => session.id === s.currentSessionId)?.workingDirectory ?? null,
+  );
   const { t } = useI18n();
 
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
@@ -131,20 +135,20 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
 
   return (
     <div className="mt-2 rounded-lg border border-zinc-700 bg-zinc-900/40 overflow-hidden">
-      {/* Header: N files changed +X -Y + Undo */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-800/40">
-        <span className="text-xs text-zinc-300">
-          {fileChanges.length > 1
-            ? t.turnDiff.filesChangedMany.replace('{count}', String(fileChanges.length))
-            : t.turnDiff.filesChangedOne}
-        </span>
-        {totalAdded > 0 && (
-          <span className="text-xs text-emerald-400">+{totalAdded}</span>
-        )}
-        {totalRemoved > 0 && (
-          <span className="text-xs text-rose-400">-{totalRemoved}</span>
-        )}
-        <div className="flex-1" />
+      {/* 标题一行说清「做了什么」，增删计数独占第二行——挤在标题右边时它像个编号，
+          单独一行才读得出是行数。这一屏里唯一真的动了用户电脑的东西，权重要给够。 */}
+      <div className="flex items-start gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-800/40">
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-zinc-200">
+            {t.turnDiff.filesEdited.replace('{count}', String(fileChanges.length))}
+          </div>
+          {(totalAdded > 0 || totalRemoved > 0) && (
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs">
+              {totalAdded > 0 && <span className="text-emerald-400">+{totalAdded}</span>}
+              {totalRemoved > 0 && <span className="text-rose-400">-{totalRemoved}</span>}
+            </div>
+          )}
+        </div>
         {undoState === 'idle' && (
           <button
             onClick={requestUndo}
@@ -196,10 +200,16 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn }) => {
       <div>
         {fileChanges.map((fc) => {
           const expanded = expandedFiles.has(fc.filePath);
-          const fileName = fc.filePath.split('/').pop() || fc.filePath;
-          const dirPath = fc.filePath.slice(
+          // 相对当前工作目录显示。绝对路径下九成字符是与本次改动无关的前缀，
+          // 目录/文件名的明暗分级被那段前缀吃掉，整条读起来就是一坨灰。
+          // 完整路径仍留在 title 里——那时它是补充信息，不再是重复。
+          const shownPath = workingDirectory && fc.filePath.startsWith(`${workingDirectory}/`)
+            ? fc.filePath.slice(workingDirectory.length + 1)
+            : fc.filePath;
+          const fileName = shownPath.split('/').pop() || shownPath;
+          const dirPath = shownPath.slice(
             0,
-            Math.max(0, fc.filePath.length - fileName.length - 1)
+            Math.max(0, shownPath.length - fileName.length - 1)
           );
           return (
             <div

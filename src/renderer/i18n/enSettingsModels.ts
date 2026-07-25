@@ -141,6 +141,7 @@ export const enSettingsModels = {
         unverifiedGroup: 'Advanced: unverified models',
         unverifiedHint: 'Tool calling is unverified for these models. Picking one means Neo may stall or do nothing mid-task — at your own risk.',
         contextLabel: 'Context',
+        effortSectionLabel: 'Thinking depth',
         setDefault: 'Set default',
         setDefaultSaving: 'Saving...',
         selectableLabel: 'In picker',

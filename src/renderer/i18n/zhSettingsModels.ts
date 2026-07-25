@@ -141,6 +141,8 @@ export const zhSettingsModels = {
         unverifiedGroup: '高级：未验证的模型',
         unverifiedHint: '这些模型没验证过工具调用。选了之后，让 Neo 干活可能中途失败或什么都不做——自担风险。',
         contextLabel: '上下文',
+        // 这一档从底栏收进面板里了，标题不能继续是英文 Effort
+        effortSectionLabel: '思考深度',
         setDefault: '设为默认',
         setDefaultSaving: '保存中…',
         selectableLabel: '进选择页',

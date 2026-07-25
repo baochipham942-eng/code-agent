@@ -54,12 +54,26 @@ describe('ContextUsagePill', () => {
     });
   });
 
-  it('renders as an icon-only persistent context control', () => {
+  // 原来这里钉的是「只有图标」。产品负责人拍板推翻：一个没有刻度的圆环读不出用了多少，
+  // 百分比只在 hover title 和展开面板里等于没有。折叠态必须有可读锚点。
+  it('折叠态给出可读的百分比锚点，不是一个光秃秃的环', () => {
     const html = renderToStaticMarkup(React.createElement(ContextUsagePill));
 
     expect(html).toContain('aria-label="上下文使用"');
     expect(html).toContain('82% 已用 · 82k/100k 标记');
-    expect(html).not.toContain('<span>82%</span>');
+    expect(html).toContain('data-testid="context-usage-percent"');
+    expect(html.replace(/<[^>]*>/g, ' ')).toContain('82%');
     expect(html).not.toContain('Context window');
+  });
+
+  it('还没有第一轮数据时不占位（不显示 0%）', () => {
+    const previous = pillMocks.appState.contextHealth;
+    pillMocks.appState.contextHealth = undefined as unknown as typeof previous;
+    try {
+      const html = renderToStaticMarkup(React.createElement(ContextUsagePill));
+      expect(html).not.toContain('data-testid="context-usage-percent"');
+    } finally {
+      pillMocks.appState.contextHealth = previous;
+    }
   });
 });

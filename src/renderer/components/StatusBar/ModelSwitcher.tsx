@@ -748,7 +748,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
             <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
               <Zap className="w-3 h-3" />
-              <span>Effort</span>
+              <span>{modelText.effortSectionLabel}</span>
             </div>
             <div className="flex flex-wrap gap-1">
               {effortOptions.map((opt) => (
@@ -793,28 +793,24 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         onClick={handleTriggerClick}
         aria-label="切换模型"
         aria-expanded={engine.kind === 'native' ? open : undefined}
+        // 弱一档（zinc-400/xs）：这行的主位是专家。「Neo」也从这里去掉——产品名跟模型名
+        // 并排会让用户以为 Neo 是个模型；外部引擎名（Codex/Claude Code）是真信息，留着。
+        // 思考档 / effort 收进点开后的面板：reasoning effort 对非程序员是纯噪音，
+        // 「低」在外面既看不懂也改不出所以然（hover title 里仍带着，需要时能查）。
         className={`
-          font-medium cursor-pointer truncate max-w-[260px]
+          cursor-pointer truncate max-w-[200px] text-xs
           hover:text-white transition-colors
-          ${isOverridden ? 'text-amber-400' : 'text-zinc-100'}
+          ${isOverridden ? 'text-amber-400' : 'text-zinc-400'}
         `}
         title={triggerTitle}
       >
-        <span className="text-zinc-400">{ENGINE_SHORT_LABEL[engine.kind] ?? 'Neo'}</span>
-        <span className="text-zinc-500 mx-1">·</span>
-        {displayLabel}
-        {!showModelSettingsPrompt && (
+        {engine.kind !== 'native' && (
           <>
-            <span className="text-zinc-500 ml-1">·</span>
-            {thinkingShortLabel && (
-              <>
-                <span className="text-zinc-400 ml-0.5">{thinkingShortLabel}</span>
-                <span className="text-zinc-500 ml-1">·</span>
-              </>
-            )}
-            <span className="text-zinc-400 ml-0.5">{selectedEffort.shortLabel}</span>
+            <span className="text-zinc-500">{ENGINE_SHORT_LABEL[engine.kind]}</span>
+            <span className="text-zinc-600 mx-1">·</span>
           </>
         )}
+        {displayLabel}
       </button>
       {menu && createPortal(menu, document.body)}
     </>

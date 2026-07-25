@@ -900,10 +900,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               onSelectCapability={selectWorkbenchCapabilityForCurrentTurn}
             />
 
+            {/* 专家在主位：用户是在跟「人」协作，这行最该先看到的是它（带头像）。
+                权限档紧跟其后并弱一档——它是"这次对话怎么放权"，是专家的属性而不是同级的另一样东西。 */}
+            <AgentChip onOpenAgentCommand={openAgentCommand} />
+
             {/* 运行权限模式 chip（高频，保留独立位置） */}
             <PermissionToggle disabled={disabled && !isProcessing} />
-
-            <AgentChip onOpenAgentCommand={openAgentCommand} />
 
             {/* C-6: 本会话记忆开关默认开启，已从底栏移入 InputAddMenu 二级菜单（低频功能不常驻） */}
 

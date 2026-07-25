@@ -27,6 +27,7 @@ export {
   type InsertPendingApprovalInput,
   type ResolvePendingApprovalInput,
 } from './PendingApprovalRepository';
+export { AgentWakeRepository } from './AgentWakeRepository';
 export {
   QueuedInputRepository,
   type EnqueueQueuedInputInput,

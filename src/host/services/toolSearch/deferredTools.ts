@@ -565,6 +565,27 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'sleep_until',
+    shortDescription: '把当前任务挂起到某个时间点，到点自动续跑（等待期不占资源）',
+    tags: ['planning'],
+    aliases: ['sleep', 'wait until', '等一会儿再做', '过一会儿继续', '到点再说'],
+    source: 'builtin',
+  },
+  {
+    name: 'wake_on',
+    shortDescription: '挂起当前任务，等某个自动化任务跑完再续跑',
+    tags: ['planning'],
+    aliases: ['wait for job', '等任务跑完', '等定时任务'],
+    source: 'builtin',
+  },
+  {
+    name: 'wake_on_event',
+    shortDescription: '挂起当前任务，等某个具名事件发生再续跑',
+    tags: ['planning'],
+    aliases: ['wait for event', '等事件', '等消息来了再做'],
+    source: 'builtin',
+  },
+  {
     name: 'code_index',
     shortDescription: '索引代码库',
     tags: ['memory', 'search'],

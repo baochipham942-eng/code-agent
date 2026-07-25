@@ -158,8 +158,3 @@ export function getWakeService(): WakeService {
   }
   return singleton;
 }
-
-/** 测试用：替换/清空单例。 */
-export function setWakeService(service: WakeService | null): void {
-  singleton = service;
-}

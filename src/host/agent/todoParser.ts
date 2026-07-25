@@ -297,13 +297,17 @@ function todoToTaskStatus(status: TodoStatus): SessionTask['status'] {
   return 'pending';
 }
 
-function isTerminalSessionTaskStatus(status: SessionTask['status']): boolean {
-  return status === 'completed' || status === 'cancelled';
+/**
+ * markdown todo 同步不得覆盖的状态：终态（completed/cancelled）之外还有 blocked——
+ * blocked 带着证据门写入的原因，一个复选框把它抹掉就等于凭空解除阻塞（ADR-050）。
+ */
+function isStickySessionTaskStatus(status: SessionTask['status']): boolean {
+  return status === 'completed' || status === 'cancelled' || status === 'blocked';
 }
 
 function shouldUpdateTaskFromTodo(task: SessionTask, todo: TodoItem): boolean {
   const nextStatus = todoToTaskStatus(todo.status);
-  if (task.status !== nextStatus && !isTerminalSessionTaskStatus(task.status)) {
+  if (task.status !== nextStatus && !isStickySessionTaskStatus(task.status)) {
     return true;
   }
   return task.subject !== todo.content || task.description !== todo.content || task.activeForm !== todo.activeForm;
@@ -345,7 +349,7 @@ export function syncTodosToSessionTasks(
     }
 
     const nextStatus = todoToTaskStatus(todo.status);
-    const status = isTerminalSessionTaskStatus(task.status) ? task.status : nextStatus;
+    const status = isStickySessionTaskStatus(task.status) ? task.status : nextStatus;
     const nextTask = updateTask(sessionId, task.id, {
       subject: todo.content,
       description: todo.content,

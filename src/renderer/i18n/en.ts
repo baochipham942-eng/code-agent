@@ -12,6 +12,7 @@ import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
 import { previewWorkspaceEn } from './previewWorkspace';
 import { modalPrimitivesEn } from './modalPrimitives';
+import { userQuestionEn } from './userQuestion';
 import { taskStatusPanelsEn } from './taskStatusPanels';
 import { noticesEn } from './notices';
 import { labEn } from './lab';
@@ -651,6 +652,17 @@ export const en: Translations = {
     taskProgressFallbackTitle: 'Task progress',
     taskDependencyWaiting: 'Waiting for {tasks}',
     taskDependencyUnlocks: 'Unlocks {tasks}',
+    taskBlockedReason: {
+      network: 'Could not reach the site or service',
+      rate_limit: 'The service is rate limiting us; needs a retry later',
+      permission: 'Access was refused — missing permission or a login',
+      resource: 'The file or page it needs is missing',
+      tool: 'A tool it needs did not work',
+      model: 'Something went wrong on the AI model side',
+      logic: 'The task\'s preconditions are not met',
+      handback: 'A sub-assistant finished; the main assistant needs to verify and continue',
+      unknown: 'Hit an obstacle it could not work around',
+    },
     taskDependencySummaryWaiting: '{count} waiting on dependencies',
     taskDependencySummaryUnlocking: '{count} unlocking follow-ups',
     taskDependencySummarySeparator: ' · ',
@@ -876,6 +888,7 @@ export const en: Translations = {
   ...cronCenterEn,
   ...previewWorkspaceEn,
   ...modalPrimitivesEn,
+  ...userQuestionEn,
   ...taskStatusPanelsEn,
   ...noticesEn,
   ...labEn,

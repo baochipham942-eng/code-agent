@@ -137,6 +137,7 @@ export class ContextAssembly {
       model: this.ctx.modelConfig.model,
       provider: this.ctx.modelConfig.provider,
       timestamp: Date.now(),
+      sessionId: this.ctx.sessionId,
     });
   }
 

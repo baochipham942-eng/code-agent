@@ -11,6 +11,7 @@ import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
 import { previewWorkspaceZh } from './previewWorkspace';
 import { modalPrimitivesZh } from './modalPrimitives';
+import { userQuestionZh } from './userQuestion';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
 import { labZh } from './lab';
@@ -639,6 +640,18 @@ export const zh = {
     taskProgressFallbackTitle: '任务进度',
     taskDependencyWaiting: '等待 {tasks}',
     taskDependencyUnlocks: '解锁 {tasks}',
+    // 任务卡住的原因（ADR-050 语义化翻译层）：模型贴的是 raw 报错时用这组人话兜底
+    taskBlockedReason: {
+      network: '连不上目标网站或服务',
+      rate_limit: '对方限制了访问频率，需要稍后再试',
+      permission: '目标拒绝访问，缺少权限或登录',
+      resource: '要用的文件或页面找不到',
+      tool: '需要的工具没能跑通',
+      model: 'AI 模型这一侧出了问题',
+      logic: '任务本身的前提条件不满足',
+      handback: '子助手结束了，等主助手核实后接着做',
+      unknown: '遇到了没能自动处理的障碍',
+    },
     taskDependencySummaryWaiting: '{count} 项等待前置',
     taskDependencySummaryUnlocking: '{count} 项解锁后续',
     taskDependencySummarySeparator: ' · ',
@@ -865,6 +878,7 @@ export const zh = {
   ...cronCenterZh,
   ...previewWorkspaceZh,
   ...modalPrimitivesZh,
+  ...userQuestionZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
   ...labZh,

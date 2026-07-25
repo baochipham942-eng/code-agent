@@ -673,6 +673,7 @@ export class SubagentExecutor {
           model: context.modelConfig.model,
           provider: context.modelConfig.provider,
           timestamp: Date.now(),
+          sessionId,
         });
 
         const persistTelemetryTurn = (assistantResponse: string, thinking?: string): void => {

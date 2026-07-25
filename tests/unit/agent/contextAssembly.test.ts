@@ -196,7 +196,10 @@ vi.mock('../../../src/host/context/compactModel', () => ({
   }),
 }));
 
-vi.mock('../../../src/shared/constants', () => ({
+// 扩展式 mock：先摊开真模块再覆盖需要打桩的项。整份替换的写法一加新常量就断
+// （#636 加 MCP_SECRET_REF_PREFIX 后本套件红了 15 个合并都没人发现）。
+vi.mock('../../../src/shared/constants', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/shared/constants')>()),
   DEFAULT_PROVIDER: 'mock',
   DEFAULT_MODEL: 'test-model',
   DEFAULT_MODELS: {},

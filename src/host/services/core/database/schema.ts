@@ -261,6 +261,26 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_swarm_run_ledger_run ON swarm_run_ledger (run_id, seq)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_swarm_run_ledger_session ON swarm_run_ledger (session_id, recorded_at)`);
 
+  // Usage Ledger（A7 · per-request 用量账本，append-only）——
+  // budgetService.usageHistory 是内存数组，进程重启即丢；DB 侧此前只有 sessions.last_token_usage
+  // 单列（覆盖式，只留最后一次）。本表逐条落 budgetService 归一化后的 TokenUsage，供排错/未来计费用。
+  // 只做基建不做展示页（非程序员对用量流水页无诉求）。只 INSERT/SELECT，永不 UPDATE/DELETE。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS usage_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      model TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      cache_read_tokens INTEGER,
+      cache_creation_tokens INTEGER,
+      recorded_at INTEGER NOT NULL
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_ledger_session ON usage_ledger (session_id, recorded_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_ledger_recorded ON usage_ledger (recorded_at)`);
+
   // Master Tasks 表 (用户级工作单元，跨 session 持久化；P0-c2)
   // status 列保留 TEXT 不加 CHECK，枚举校验由应用层 (src/shared/contract/task.ts) 负责
   db.exec(`

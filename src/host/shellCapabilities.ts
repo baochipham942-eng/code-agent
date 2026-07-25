@@ -209,6 +209,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'listTools',
     'reconnectServer',
     'refreshFromCloud',
+    'removeServer',
     'setServerEnabled',
     'signOutServer',
   ],

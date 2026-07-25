@@ -16,6 +16,7 @@ const mcpClientMock = vi.hoisted(() => ({
   getServerState: vi.fn(),
   getServerIdentity: vi.fn(),
   addServer: vi.fn(),
+  removeServer: vi.fn(),
   setServerEnabled: vi.fn(),
   reconnect: vi.fn(),
   disconnect: vi.fn(),
@@ -116,6 +117,7 @@ beforeEach(() => {
   writeFileMock.mockResolvedValue(undefined);
   mcpClientMock.getServerStates.mockReturnValue([]);
   mcpClientMock.disconnect.mockResolvedValue(undefined);
+  mcpClientMock.removeServer.mockResolvedValue(undefined);
   coordinatorMock.cancelFlowForServerIdentity.mockReturnValue(false);
 });
 
@@ -383,6 +385,39 @@ describe('mcp.ipc settings add helpers', () => {
     expect(mcpClientMock.addServer).not.toHaveBeenCalled();
   });
 
+  it('rolls back the persisted config file when secret storage fails after persist (A5 failure rollback)', async () => {
+    // 用一个真的会"记住写入"的假文件系统——因为回滚要读到刚才那次 persist 真写进去的内容,
+    // 静态 mockResolvedValue 队列表达不出"读回自己刚写的东西"这个时序。
+    const fakeFs = new Map<string, string>();
+    readFileMock.mockImplementation(async (path: string) => {
+      if (!fakeFs.has(path)) throw new Error('ENOENT');
+      return fakeFs.get(path)!;
+    });
+    writeFileMock.mockImplementation(async (path: string, content: string) => {
+      fakeFs.set(path, content);
+    });
+    setIntegrationMock.mockRejectedValueOnce(new Error('keychain unavailable'));
+
+    const response = await invokeMcpAction('addServer', {
+      scope: 'user',
+      config: { name: 'flaky_secret_server', type: 'stdio', command: 'npx', env: { TOKEN: 'shh' } },
+      secretEnvKeys: ['TOKEN'],
+    }) as { success: boolean; error?: { message: string } };
+
+    expect(response.success).toBe(false);
+    expect(response.error?.message).toContain('keychain unavailable');
+    expect(mcpClientMock.addServer).not.toHaveBeenCalled();
+
+    // 落盘发生过（persist 先于 setIntegration），但失败必须回滚——
+    // 最终文件内容不该再留着这条孤儿 server。
+    const finalContent = fakeFs.get('/tmp/user-data/mcp.json');
+    expect(finalContent).toBeDefined();
+    const parsed = JSON.parse(finalContent!) as { servers?: Array<{ name: string }> };
+    expect(parsed.servers ?? []).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'flaky_secret_server' }),
+    ]));
+  });
+
   it('keeps env values unchanged when no secret key list is provided', async () => {
     const fakeSecret = 'legacy-plaintext-secret';
     const response = await invokeMcpAction('addServer', {
@@ -621,5 +656,36 @@ describe('setServerEnabled 持久化（P0b：重启不再丢启用状态）', ()
 
     expect(response).toMatchObject({ success: true });
     expect(writeFileMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('removeServer（A5 · 渲染层 stale-promise 撤销用的撤销通道）', () => {
+  it('把 server 从配置文件里摘掉，并让运行时 MCPClient 忘掉它', async () => {
+    readFileMock.mockResolvedValue(JSON.stringify({
+      servers: [
+        { name: 'ghost', type: 'stdio', command: 'npx', enabled: false },
+        { name: 'keep', type: 'stdio', command: 'npx', enabled: false },
+      ],
+    }));
+
+    const response = await invokeMcpAction('removeServer', { serverName: 'ghost' }) as { success: boolean };
+
+    expect(response).toMatchObject({ success: true });
+    expect(writeFileMock).toHaveBeenCalledOnce();
+    const written = JSON.parse(String(writeFileMock.mock.calls[0][1])) as {
+      servers: Array<{ name: string }>;
+    };
+    expect(written.servers.map((s) => s.name)).toEqual(['keep']);
+    expect(mcpClientMock.removeServer).toHaveBeenCalledWith('ghost');
+  });
+
+  it('server 不在任何配置文件里（如从未真正落地）也不报错，仍尝试清运行时状态', async () => {
+    readFileMock.mockRejectedValue(new Error('ENOENT'));
+
+    const response = await invokeMcpAction('removeServer', { serverName: 'never_persisted' }) as { success: boolean };
+
+    expect(response).toMatchObject({ success: true });
+    expect(writeFileMock).not.toHaveBeenCalled();
+    expect(mcpClientMock.removeServer).toHaveBeenCalledWith('never_persisted');
   });
 });

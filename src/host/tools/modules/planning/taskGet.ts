@@ -108,6 +108,12 @@ export async function executeTaskGet(
       `  Active Form: ${task.activeForm}\n` +
       (task.parentTaskId ? `  Parent: #${task.parentTaskId}\n` : '') +
       (task.owner ? `  Owner: ${task.owner}\n` : '') +
+      (task.status === 'blocked'
+        ? `  Blocked Reason: ${task.blockedReason || `(${task.blockedReasonCategory ?? 'unknown'})`}\n`
+        : '') +
+      (task.evidenceRefs?.length
+        ? `  Evidence: ${task.evidenceRefs.map((ref) => ref.ref).join(' | ')}\n`
+        : '') +
       (blockedByInfo ? `${blockedByInfo}\n` : '') +
       (blocksInfo ? `${blocksInfo}\n` : '') +
       (metadataInfo ? `${metadataInfo}\n` : '') +

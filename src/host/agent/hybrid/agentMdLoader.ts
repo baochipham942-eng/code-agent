@@ -7,6 +7,14 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { createLogger } from '../../services/infra/logger';
+import { parseExpertConnectors } from '../../../shared/contract/expertConnectors';
+import {
+  describeUnknownTools,
+  findUnknownToolNames,
+  getKnownToolNames,
+  hasProtocolToolRegistry,
+} from '../../tools/knownToolNames';
 import type { RoleProactivityLevel, RoleVisual } from '../../../shared/contract/roleAssets';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
 import type { CoreAgentConfig, CoreAgentId, ModelTier } from './types';
@@ -185,6 +193,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
   // 角色主动性（内部文档 §4）：扁平 key 适配 simple YAML parser
   const proactivityLevel = proactivityLevelValue(frontmatter['proactivity-level']);
   const proactivityCadence = stringValue(frontmatter['proactivity-cadence']);
+  const connectors = parseExpertConnectors(stringArrayValue(frontmatter.connectors));
 
   return {
     id: name as CoreAgentId,
@@ -200,6 +209,7 @@ export function parseAgentMd(content: string, filename: string): CoreAgentConfig
     ...(modelOverrideValue(frontmatter['model-override'])
       ? { modelOverride: modelOverrideValue(frontmatter['model-override']) }
       : {}),
+    ...(connectors.length > 0 ? { connectors } : {}),
     maxIterations: numberValue(frontmatter['max-iterations']) || 30,
     readonly: booleanValue(frontmatter.readonly) ?? false,
     ...(permissionPresetValue(frontmatter['permission-override'])
@@ -285,6 +295,27 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
   return result;
 }
 
+const logger = createLogger('AgentMdLoader');
+
+/**
+ * 启动期工具名校验：agent.md 写错工具名此前静默丢弃（模型永远拿不到这件工具，
+ * 用户也看不出为什么），这里改成点名报错。
+ *
+ * 注册表没起来时**不校验**并明说跳过了——空注册表下校验会把所有工具判成不存在。
+ */
+function reportUnknownAgentTools(agent: CoreAgentConfig, file: string): void {
+  if (!hasProtocolToolRegistry()) {
+    logger.debug('工具注册表未就绪，跳过 agent.md 工具名校验', { file });
+    return;
+  }
+  const unknown = findUnknownToolNames(agent.tools, getKnownToolNames());
+  if (unknown.length === 0) return;
+  logger.error(describeUnknownTools(agent.name, unknown), {
+    file,
+    unknownTools: unknown.map((item) => item.name),
+  });
+}
+
 /**
  * Load all agent .md files from a directory.
  */
@@ -298,6 +329,7 @@ export async function loadAgentMdFiles(dir: string): Promise<CoreAgentConfig[]> 
     const content = await fs.readFile(filePath, 'utf-8');
     const agent = parseAgentMd(content, entry.name);
     if (agent) {
+      reportUnknownAgentTools(agent, filePath);
       agents.push(agent);
     }
   }

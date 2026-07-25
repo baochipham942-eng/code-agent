@@ -49,7 +49,11 @@ export async function executeTaskList(
 
   const taskSummaries = tasks.map((task) => {
     const statusIcon =
-      task.status === 'completed' ? '●' : task.status === 'in_progress' ? '◐' : task.status === 'cancelled' ? '⊘' : '○';
+      task.status === 'completed' ? '●'
+        : task.status === 'in_progress' ? '◐'
+          : task.status === 'cancelled' ? '⊘'
+            : task.status === 'blocked' ? '▲'
+              : '○';
 
     const openBlockers = task.blockedBy.filter((id) => {
       const blocker = tasks.find((t) => t.id === id);
@@ -59,21 +63,27 @@ export async function executeTaskList(
     const blockedInfo =
       openBlockers.length > 0 ? ` [blocked by: ${openBlockers.join(', ')}]` : '';
 
+    const stuckInfo = task.status === 'blocked'
+      ? ` [stuck: ${task.blockedReason || task.blockedReasonCategory || 'reason not recorded'}]`
+      : '';
+
     const ownerInfo = task.owner ? ` (@${task.owner})` : '';
 
-    return `${statusIcon} #${task.id}: ${task.subject}${ownerInfo}${blockedInfo}`;
+    return `${statusIcon} #${task.id}: ${task.subject}${ownerInfo}${blockedInfo}${stuckInfo}`;
   });
 
   const completed = tasks.filter((t) => t.status === 'completed').length;
   const inProgress = tasks.filter((t) => t.status === 'in_progress').length;
   const pending = tasks.filter((t) => t.status === 'pending').length;
   const cancelled = tasks.filter((t) => t.status === 'cancelled').length;
+  // blocked 计数合并两种来源：显式 blocked 态（外部障碍）与未完成的前置依赖
   const blocked = tasks.filter((t) => {
-    const openBlockers = t.blockedBy.filter((id) => {
+    if (isClosedTaskStatus(t.status)) return false;
+    if (t.status === 'blocked') return true;
+    return t.blockedBy.some((id) => {
       const blocker = tasks.find((bt) => bt.id === id);
       return blocker && !isClosedTaskStatus(blocker.status);
     });
-    return openBlockers.length > 0 && !isClosedTaskStatus(t.status);
   }).length;
 
   onProgress?.({ stage: 'completing', percent: 100 });

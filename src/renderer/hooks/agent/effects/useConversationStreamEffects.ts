@@ -245,6 +245,18 @@ export function applyConversationStreamEvent(
       }
       break;
 
+    // provider usage → 本轮费用估算（此前该事件只有 CLI 消费，桌面端直接丢弃）
+    case 'stream_usage':
+      {
+        const usage = isRecord(event.data) ? event.data : undefined;
+        const inputTokens = usage?.inputTokens;
+        const outputTokens = usage?.outputTokens;
+        if (typeof inputTokens === 'number' && typeof outputTokens === 'number') {
+          useStatusStore.getState().recordTurnUsage({ inputTokens, outputTokens });
+        }
+      }
+      break;
+
     case 'message':
       {
         const messageData = normalizeAssistantMessagePayload(event.data);
@@ -380,20 +392,6 @@ export const useConversationStreamEffects = ({
           flushStreamingMessages();
           return;
 
-        // provider usage → 本轮费用估算（此前该事件只有 CLI 消费，桌面端直接丢弃）
-        case 'stream_usage': {
-          logHandledEvent();
-          if (!isCurrentSessionEvent) return;
-          const usage = event.data as { inputTokens?: number; outputTokens?: number } | undefined;
-          if (typeof usage?.inputTokens === 'number' && typeof usage?.outputTokens === 'number') {
-            useStatusStore.getState().recordTurnUsage({
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
-            });
-          }
-          return;
-        }
-
         // /goal 自治模式：进度 / 闸判定 / 终态（per-session 更新 appStore；终态在当前会话补一条生命周期消息）
         // 注：本文件的 event 是 loose 类型（data?: unknown），按 contract 的 AgentEvent 形状断言。
         case 'goal_iteration': {
@@ -489,6 +487,7 @@ export const useConversationStreamEffects = ({
         case 'message_delta':
         case 'message_snapshot':
         case 'model_decision':
+        case 'stream_usage':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           if (!isCurrentSessionEvent) {

@@ -132,6 +132,8 @@ export function getPermissionLevel(type: PermissionRequest['type']): 'read' | 'w
       return 'execute';
     case 'network':
       return 'network';
+    case 'directory_access':
+      return 'write';
     default:
       return 'read';
   }

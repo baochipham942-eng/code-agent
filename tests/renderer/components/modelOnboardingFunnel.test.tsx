@@ -33,6 +33,9 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { ModelOnboardingModal } from '../../../src/renderer/components/onboarding/ModelOnboardingModal';
+import { onboardingZh } from '../../../src/renderer/i18n/onboarding';
+
+const text = onboardingZh.onboarding;
 
 function connected(name: string): MCPServerStateSummary {
   return { status: 'connected', config: { name } } as unknown as MCPServerStateSummary;
@@ -40,8 +43,8 @@ function connected(name: string): MCPServerStateSummary {
 
 /** 走完第一步：填 key → 测试并保存 → 落到步② */
 async function completeModelStep(): Promise<void> {
-  fireEvent.change(screen.getByPlaceholderText('粘贴该 Provider 的 API Key'), { target: { value: 'sk-test' } });
-  fireEvent.click(screen.getByText('测试并保存'));
+  fireEvent.change(screen.getByPlaceholderText(text.apiKeyPlaceholder), { target: { value: 'sk-test' } });
+  fireEvent.click(screen.getByText(text.testAndSaveButton));
   await waitFor(() => expect(screen.getByTestId('onboarding-connectors')).toBeTruthy());
 }
 
@@ -124,7 +127,7 @@ describe('跳过分支', () => {
     const onComplete = vi.fn();
     render(<ModelOnboardingModal onComplete={onComplete} onSkip={onSkip} />);
 
-    fireEvent.click(screen.getByText('跳过，稍后在设置里配置'));
+    fireEvent.click(screen.getByText(text.skipButton));
 
     expect(onSkip).toHaveBeenCalledTimes(1);
     expect(onComplete).not.toHaveBeenCalled();

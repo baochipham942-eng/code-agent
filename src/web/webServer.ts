@@ -335,6 +335,7 @@ import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 // Middleware
 import {
   SERVER_AUTH_TOKEN,
+  exitIfE2EFlagRefused,
   writeDevAuthToken,
 } from './middleware/auth';
 
@@ -1164,6 +1165,7 @@ async function runCompileWarmup(): Promise<never> {
 }
 
 async function main(): Promise<void> {
+  exitIfE2EFlagRefused(process.env);
   if (process.env.CODE_AGENT_COMPILE_WARMUP === '1') {
     await runCompileWarmup();
     return;

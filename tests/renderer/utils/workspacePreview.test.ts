@@ -505,6 +505,64 @@ describe('buildWorkspacePreviewItems', () => {
     });
   });
 
+  // e2e（workbench-overview-preview-first 的「有产物」那条）在真实链路上抓到的：当轮产出一个
+  // 助手产物时，ownership 会造一条同名的无内容 trace 条目、priority 70 压过带正文的 40，
+  // 右栏默认那一屏于是显示「暂无预览内容」，切换器还把一个产物算成两个。
+  it('drops the contentless current-turn duplicate so the默认那一屏 keeps the artifact body', () => {
+    const items = buildWorkspacePreviewItems({
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'assistant',
+          content: '',
+          timestamp: 100,
+          artifacts: [
+            { id: 'diagram-1', type: 'mermaid', title: '第一版流程图', content: 'graph TD; A-->B;', version: 1 },
+          ],
+        },
+      ],
+      currentTurnArtifacts: {
+        turnNumber: 1,
+        artifactOwnership: [
+          {
+            kind: 'artifact',
+            label: '第一版流程图',
+            ownerKind: 'assistant',
+            ownerLabel: 'Assistant',
+            sourceNodeId: 'msg-1-text',
+          },
+        ],
+      },
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: 'artifact:msg-1:diagram-1',
+      content: { text: 'graph TD; A-->B;' },
+    });
+  });
+
+  it('keeps a contentless current-turn artifact when nothing else carries that artifact', () => {
+    const items = buildWorkspacePreviewItems({
+      messages: [],
+      currentTurnArtifacts: {
+        turnNumber: 1,
+        artifactOwnership: [
+          {
+            kind: 'artifact',
+            label: '子代理产物',
+            ownerKind: 'assistant',
+            ownerLabel: 'Assistant',
+            sourceNodeId: 'node-9',
+          },
+        ],
+      },
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: 'trace', title: '子代理产物' });
+  });
+
   it('injects preview runtime before existing head scripts', () => {
     const srcdoc = buildWorkspacePreviewHtmlSrcdoc(
       '<html><head><script>localStorage.setItem("theme", "dark")</script></head><body><main>Draft</main></body></html>',

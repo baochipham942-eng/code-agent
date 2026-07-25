@@ -333,11 +333,7 @@ import {
 import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 
 // Middleware
-import {
-  SERVER_AUTH_TOKEN,
-  exitIfE2EFlagRefused,
-  writeDevAuthToken,
-} from './middleware/auth';
+import { SERVER_AUTH_TOKEN, exitIfE2EFlagRefused, writeDevAuthToken } from './middleware/auth';
 
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
 import { getAppVersion } from '../host/platform';
@@ -436,6 +432,7 @@ async function initializeServices(): Promise<void> {
   const { initConfigService } = await import('../host/services/core/configService');
   const configService = initConfigService();
   await configService.initialize().then(() => logger.info('ConfigService initialized'));
+  (await import('../host/observability/privacyGate')).installPrivacyGate(configService);
   bootMark('configService');
 
   // Initialize before exposing runtime preparation; SSE does not require mainWindow.

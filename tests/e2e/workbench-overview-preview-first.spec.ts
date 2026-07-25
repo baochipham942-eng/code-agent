@@ -1,6 +1,92 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import type { AgentEvent, Artifact } from '../../src/shared/contract';
 
-test.setTimeout(60_000);
+type RendererAgentEvent = AgentEvent & { sessionId?: string };
+
+test.setTimeout(90_000);
+
+async function getAuthToken(page: Page): Promise<string> {
+  const token = await page.evaluate(() =>
+    (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined,
+  );
+  expect(token, 'window.__CODE_AGENT_TOKEN__ missing — static.ts token injection broke').toBeTruthy();
+  return token!;
+}
+
+// 产物注入不另开测试缝：`POST /api/dev/emit-agent-events`（dev API 门控，生产构建拿不到）
+// 已经是走完整生产链路的那条缝——SSE → httpTransport → useAgent → sessionStore.messages
+// → useWorkspacePreviewModel → 右栏。给生产多开一个后门不如复用这一个。
+async function emitAgentEvents(
+  request: APIRequestContext,
+  token: string,
+  events: RendererAgentEvent[],
+): Promise<void> {
+  const response = await request.post('/api/dev/emit-agent-events', {
+    data: { events },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(
+    response.ok(),
+    `emit-agent-events failed: ${response.status()} ${await response.text()}`,
+  ).toBe(true);
+}
+
+// turn_start 先建出 assistant 占位消息（id = turnId），'message' 事件才有落点挂 artifacts——
+// 只发 'message' 会被 handler 静默丢弃（它只更新已存在的 assistant 消息）。
+function artifactTurnEvents(sessionId: string, turnId: string, artifact: Artifact): RendererAgentEvent[] {
+  return [
+    { type: 'turn_start', sessionId, data: { turnId } },
+    { type: 'stream_chunk', sessionId, data: { turnId, content: `已产出 ${artifact.title}。` } },
+    {
+      type: 'message',
+      sessionId,
+      // Message 契约要求 role/timestamp；turnId 是 renderer 侧用来找落点的额外字段。
+      data: {
+        id: turnId,
+        role: 'assistant',
+        content: `已产出 ${artifact.title}。`,
+        timestamp: Date.now(),
+        artifacts: [artifact],
+        ...({ turnId } as Record<string, string>),
+      },
+    },
+    { type: 'turn_end', sessionId, data: { turnId } },
+    { type: 'agent_complete', sessionId, data: null },
+  ];
+}
+
+async function createSessionAndGetId(page: Page): Promise<string> {
+  const newTask = page.getByTestId('sidebar-new-task');
+  await expect(newTask).toBeVisible({ timeout: 15_000 });
+  await newTask.click();
+  const activeSession = page.locator('[data-session-id][aria-current="true"]').first();
+  await expect(activeSession).toBeVisible({ timeout: 15_000 });
+  const sessionId = await activeSession.getAttribute('data-session-id');
+  expect(sessionId, 'active session id missing after creating an E2E session').toBeTruthy();
+  return sessionId!;
+}
+
+async function openOverviewView(page: Page): Promise<void> {
+  // 右栏默认收起（#700 的 workbenchCollapsed），先从标题栏展开
+  const expandPanel = page.getByRole('button', { name: '展开面板' });
+  await expandPanel.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+  if (await expandPanel.isVisible().catch(() => false)) {
+    await expandPanel.click();
+  }
+
+  // 空栏时是 workbench-empty-launcher，已有视图时走左上角的视图选择器
+  const emptyLauncher = page.getByTestId('workbench-empty-launcher');
+  const viewSelector = page.getByRole('button', { name: '选择当前视图' });
+  await expect(emptyLauncher.or(viewSelector)).toBeVisible({ timeout: 15_000 });
+  if (await viewSelector.isVisible().catch(() => false)) {
+    await viewSelector.click();
+  }
+  const openOverview = page.getByTestId('open-workbench-view-overview');
+  if (await openOverview.isVisible().catch(() => false)) {
+    await openOverview.click();
+  }
+  await expect(page.getByTestId('workbench-overview-view')).toBeVisible({ timeout: 10_000 });
+}
 
 // 首启三层遮罩（信任文件夹 → 连接模型 onboarding → 跳过后落在设置页），出现才点。
 // 与 design-canvas-conversational.e2e.spec.ts 同款，不复制会静默扑空。
@@ -26,29 +112,13 @@ async function waitForAppReady(page: Page): Promise<void> {
 // 右栏概览面板改成预览优先后，在真实渲染路径上确认：面板挂得上、旧的清单外壳确实没了。
 // 组件单测覆盖不到「外层还在不在」（App 门控只有 e2e 会红），这条补的就是那一层。
 //
-// 覆盖边界（写明而不是假装覆盖了）：fresh-home 没有产物，所以这里验的是空态 + 旧外壳
-// 已移除；「有产物时内容占满、元数据在详情里」由 workspacePreviewContentFirst 单测钉。
+// 覆盖边界（写明而不是假装覆盖了）：这条只验空态 + 旧外壳已移除；有产物那一屏由下面
+// 那条 spec 在真实链路上验（组件单测 workspacePreviewContentFirst 仍是判据的主力）。
 test('右栏概览是预览优先的形态，旧的清单外壳已移除', async ({ page }) => {
   await waitForAppReady(page);
-
-  // 右栏默认收起（#700 的 workbenchCollapsed），先从标题栏展开
-  const expandPanel = page.getByRole('button', { name: '展开面板' });
-  await expandPanel.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
-  if (await expandPanel.isVisible().catch(() => false)) {
-    await expandPanel.click();
-  }
-
-  // 空栏时是 workbench-empty-launcher，已有视图时走左上角的视图选择器
-  const emptyLauncher = page.getByTestId('workbench-empty-launcher');
-  const viewSelector = page.getByRole('button', { name: '选择当前视图' });
-  await expect(emptyLauncher.or(viewSelector)).toBeVisible({ timeout: 15_000 });
-  if (await viewSelector.isVisible().catch(() => false)) {
-    await viewSelector.click();
-  }
-  await page.getByTestId('open-workbench-view-overview').click();
+  await openOverviewView(page);
 
   const overview = page.getByTestId('workbench-overview-view');
-  await expect(overview).toBeVisible({ timeout: 10_000 });
 
   // 空态：说清楚没有产物，而不是给一堆按钮
   await expect(overview.getByText('暂无可预览文件')).toBeVisible({ timeout: 10_000 });
@@ -62,4 +132,53 @@ test('右栏概览是预览优先的形态，旧的清单外壳已移除', async
   await expect(page.getByTestId('workspace-preview-details-toggle')).toHaveCount(0);
 
   await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-preview-first.png' });
+});
+
+// 有产物那一屏：内容占满、切换器只在多产物时出现、动作不常驻。
+// 产物由 sessionStore.messages 推导，e2e 跑生产构建（window.__neoAppStore 只在 DEV 挂），
+// 所以从外部按真实事件链注入带 artifacts 的 assistant 消息，而不是往 store 里塞。
+test('右栏概览有产物时：内容占满，切换器只在多产物时出现，动作不常驻', async ({ page, request }) => {
+  await waitForAppReady(page);
+  const token = await getAuthToken(page);
+  const sessionId = await createSessionAndGetId(page);
+  await openOverviewView(page);
+
+  const overview = page.getByTestId('workbench-overview-view');
+  const firstMarker = `E2E_OVERVIEW_ARTIFACT_${Date.now()}`;
+  await emitAgentEvents(request, token, artifactTurnEvents(sessionId, `e2e-overview-turn-1-${Date.now()}`, {
+    id: 'e2e-artifact-alpha',
+    type: 'mermaid',
+    title: '第一版流程图',
+    content: `graph TD;\n  A[${firstMarker}] --> B[产物内容占满右栏];`,
+    version: 1,
+  }));
+
+  // ① 内容占满：产物正文本身出现在面板里（不是「关于产物的清单」）
+  await expect(overview.getByText(firstMarker)).toBeVisible({ timeout: 20_000 });
+  await expect(overview.getByText('暂无可预览文件')).toHaveCount(0);
+
+  // ② 单个产物不给切换器
+  await expect(page.getByTestId('workspace-artifact-switcher')).toHaveCount(0);
+
+  // ③ 动作不常驻：复制/归档这些都收在「⋯」里，元数据与版本收在「详情与版本」里
+  await expect(page.getByRole('button', { name: '复制预览' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '归档到资料库: 第一版流程图' })).toHaveCount(0);
+  // 入口在、抽屉默认不展开（workspace-preview-overflow 是展开后的那层，不是入口按钮）
+  await expect(page.getByRole('button', { name: '更多操作' })).toBeVisible();
+  await expect(page.getByTestId('workspace-preview-overflow')).toHaveCount(0);
+  await expect(page.getByTestId('workspace-preview-details-toggle')).toBeVisible();
+
+  // ④ 第二个产物到了才出现切换器（计数只由它讲一次）
+  await emitAgentEvents(request, token, artifactTurnEvents(sessionId, `e2e-overview-turn-2-${Date.now()}`, {
+    id: 'e2e-artifact-beta',
+    type: 'mermaid',
+    title: '第二版流程图',
+    content: 'graph TD;\n  C[第二个产物] --> D[切换器出现];',
+    version: 1,
+  }));
+  const switcher = page.getByTestId('workspace-artifact-switcher');
+  await expect(switcher).toBeVisible({ timeout: 20_000 });
+  await expect(switcher).toContainText('共 2 个');
+
+  await overview.screenshot({ path: 'tests/e2e/screenshots/workbench-overview-with-artifacts.png' });
 });

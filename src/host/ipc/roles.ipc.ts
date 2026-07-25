@@ -59,6 +59,7 @@ import { BUILTIN_SKILLS } from '../services/skills/builtinSkillsData';
 import { getSkillRepositoryService } from '../services/skills/skillRepositoryService';
 import { TOOL_ALIASES } from '../services/toolSearch/deferredTools';
 import { getProtocolRegistry } from '../tools/protocolRegistry';
+import { findRecommendedMcpServer } from '../../shared/constants/mcpCatalog';
 
 const logger = createLogger('RolesIPC');
 
@@ -246,6 +247,16 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
     isBuiltin: builtinRoleIdSet.has(roleId),
     personalization: readRolePersonalization(roleId),
+    ...(parsed?.connectors?.length
+      ? {
+          recommendedConnectors: parsed.connectors.map((connector) => ({
+            id: connector.id,
+            label: findRecommendedMcpServer(connector.id)?.name || connector.id,
+            level: connector.level,
+            ...(connector.reason ? { reason: connector.reason } : {}),
+          })),
+        }
+      : {}),
     ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), ...(parsed.permissionPreset ? { permissionPreset: parsed.permissionPreset } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
     ...(packState ? { locallyModified: packState.locallyModified } : {}),
     ...(restore ? { restore } : {}),

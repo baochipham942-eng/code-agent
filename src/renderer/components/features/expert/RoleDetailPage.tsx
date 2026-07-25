@@ -2,7 +2,7 @@
 // RoleDetailPage - 角色详情（设置页与专家面板共用）
 // ============================================================================
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlarmClock,
   Check,
@@ -19,6 +19,7 @@ import type {
   RoleBoundCronJob,
   RoleProactivityConfig,
   RoleProactivityLevel,
+  RoleRecommendedConnector,
   RoleVisual,
 } from "@shared/contract/roleAssets";
 import type { CronScheduleConfig } from "@shared/contract/cron";
@@ -27,6 +28,8 @@ import ipcService from "../../../services/ipcService";
 import { createLogger } from "../../../utils/logger";
 import { startEditRoleChat } from "../../../utils/startEditRoleChat";
 import { useI18n } from "../../../hooks/useI18n";
+import { useMcpServerStates } from "../../../hooks/useMcpServerStates";
+import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
 import { SettingsSection } from "../settings/SettingsLayout";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
@@ -138,6 +141,61 @@ const BoundAutomationsSection: React.FC<{ jobs?: RoleBoundCronJob[] }> = ({ jobs
       })}
     </div>}
   </SettingsSection>;
+};
+
+/**
+ * 专家声明的推荐连接器（只读）。连接状态取本机 MCP 连接态，「默认开/关」走
+ * resolveSessionConnectorIds 的同一口径——UI 不自己定义第二套规则。
+ */
+const RecommendedConnectors: React.FC<{ connectors?: RoleRecommendedConnector[] }> = ({ connectors }) => {
+  const { t } = useI18n();
+  const skillsText = t.expert.roleSkills;
+  const openSettingsTab = useAppStore((state) => state.openSettingsTab);
+  const mcpServerStates = useMcpServerStates();
+  const connectedIds = useMemo(
+    () => new Set(mcpServerStates.filter((server) => server.status === 'connected').map((server) => server.config.name)),
+    [mcpServerStates],
+  );
+  const defaultOnIds = useMemo(
+    () => new Set(resolveSessionConnectorIds({ expertConnectors: connectors })),
+    [connectors],
+  );
+  if (!connectors?.length) return null;
+  return (
+    <SettingsSection title={skillsText.connectorsTitle} description={skillsText.connectorsDescription}>
+      <ul data-testid="role-recommended-connectors" className="space-y-2">
+        {connectors.map((connector) => {
+          const connected = connectedIds.has(connector.id);
+          return (
+            <li key={connector.id} className="rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-zinc-100">{connector.label}</span>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] ${connector.level === 'core' ? 'bg-emerald-500/15 text-emerald-200' : 'bg-zinc-700/60 text-zinc-300'}`}>
+                  {connector.level === 'core' ? skillsText.connectorCore : skillsText.connectorOptional}
+                </span>
+                <span className="text-[10px] text-zinc-500">
+                  {defaultOnIds.has(connector.id) ? skillsText.connectorDefaultOn : skillsText.connectorDefaultOff}
+                </span>
+                <span className={`ml-auto text-[10px] ${connected ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  {connected ? skillsText.connectorConnected : skillsText.connectorMissing}
+                </span>
+                {!connected && (
+                  <button /* ds-allow:button: 列表行内的紧凑跳转，Button primitive 会撑高整行 */
+                    type="button"
+                    onClick={() => openSettingsTab('mcp')}
+                    className="rounded bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-300 transition-colors hover:text-zinc-100"
+                  >
+                    {skillsText.connectorGoConnect}
+                  </button>
+                )}
+              </div>
+              {connector.reason ? <p className="mt-1 text-xs text-zinc-500">{connector.reason}</p> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </SettingsSection>
+  );
 };
 
 /** 技能页只管 技能/工具/迭代上限；模型档位与指定模型搬去模型页，保存时原样带回不丢。 */
@@ -706,7 +764,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
       {detail ? (
         <>
           {tab === 'basic' ? <RoleBasicTab action={<button /* ds-allow:button: 对话式修改入口，紧凑辅助动作 */ type="button" onClick={() => void startEditRoleChat(roleId)} title={roleText.detail.editByChatTitle} className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/25"><MessageSquarePlus className="h-3.5 w-3.5" />{roleText.detail.editByChat}</button>} editor={<VisualEditor key={roleId} roleId={roleId} detail={detail} onSaved={loadDetail} />} notice={detail.locallyModified ? <p data-testid="role-locally-modified" className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{expertText.visual.builtinNotice}</p> : null} /> : null}
-          {tab === 'skills' && detail.equipment ? <RoleEquipmentTab><SkillsEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /></RoleEquipmentTab> : null}
+          {tab === 'skills' && detail.equipment ? <RoleEquipmentTab><SkillsEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /><RecommendedConnectors connectors={detail.recommendedConnectors} /></RoleEquipmentTab> : null}
           {tab === 'model' && detail.equipment ? <ModelEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           {tab === 'security' && detail.equipment ? <SecurityEditor key={roleId} roleId={roleId} equipment={detail.equipment} onSaved={loadDetail} /> : null}
           {tab === 'personalization' ? <RolePersonalizationTab key={roleId} roleId={roleId} personalization={detail.personalization} onSaved={loadDetail} identityEditor={<DefinitionEditor roleId={roleId} definition={detail.definition} restore={detail.restore} onSaved={loadDetail} />} /> : null}

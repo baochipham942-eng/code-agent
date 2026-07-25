@@ -25,7 +25,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
@@ -94,6 +94,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private projectRepo!: ProjectRepository;
   private swarmTraceRepo!: SwarmTraceRepo;
   private pendingApprovalRepo!: PendingApprovalRepository;
+  private agentWakeRepo!: AgentWakeRepository;
   private permissionDecisionRepo!: PermissionDecisionRepository;
   private toolExecutionEventRepo!: ToolExecutionEventRepository;
   private swarmLedgerRepo!: SwarmLedgerRepository;
@@ -215,6 +216,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       }
       this.swarmTraceRepo = createSwarmTraceRepo(this.db);
       this.pendingApprovalRepo = new PendingApprovalRepository(this.db);
+      this.agentWakeRepo = new AgentWakeRepository(this.db);
       new GenerativeUIRepository(this.db).markOpenManifestsOrphaned(Date.now());
       this.permissionDecisionRepo = new PermissionDecisionRepository(this.db);
       this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
@@ -1190,6 +1192,13 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   getPendingApprovalRepo(): PendingApprovalRepository {
     this.ensureDb();
     return this.pendingApprovalRepo;
+  }
+
+  // --- AgentWakeRepository ---
+  /** self-wake 台账：agent 自发挂起-续跑的持久化记录。 */
+  getAgentWakeRepo(): AgentWakeRepository {
+    this.ensureDb();
+    return this.agentWakeRepo;
   }
 
   // --- ProjectRepository ---

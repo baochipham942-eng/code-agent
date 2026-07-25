@@ -665,7 +665,23 @@ export class CronService implements Disposable {
       this.notifyAgentExecution(definition, execution);
     }
 
+    // self-wake：唤醒等这个任务的会话——wake_on 按任务 id 等，wake_on_event 按任务名字等
+    // （用户和模型说得出口的是名字，不是 id）。失败不影响本次执行结果。
+    void this.notifyWakeOnJobCompleted(definition.id, definition.name);
+
     return execution;
+  }
+
+  /** 通知 self-wake 台账：这个任务跑完了。动态 import 避免 cron → services 的加载期耦合。 */
+  private async notifyWakeOnJobCompleted(jobId: string, jobName: string): Promise<void> {
+    try {
+      const { getWakeService } = await import('../services/wake/wakeService');
+      const service = getWakeService();
+      await service.onJobCompleted(jobId);
+      if (jobName) await service.onEvent(jobName);
+    } catch (err) {
+      console.error(`[CronService] wake_on notification failed for ${jobId}:`, err);
+    }
   }
 
   /** 末尾连续失败次数（内存历史，最新在最后）。 */

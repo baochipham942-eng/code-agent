@@ -122,6 +122,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+// 右栏默认显示的是产物内容；当前产物的元数据、四个动作和版本区都收进了底部
+// 「详情与版本」——所以这些用例得先点开它，否则找不到按钮（这不是回归，是分层）。
+function openDetails() {
+  fireEvent.click(screen.getByTestId('workspace-preview-details-toggle'));
+}
+
 describe('WorkspacePreviewPanel restore confirmation', () => {
   it('uses friendly generated-artifact titles, truncates prompts, and deduplicates by kind plus title', () => {
     const labels = zh.sidebarProject.artifactKind;
@@ -157,7 +163,7 @@ describe('WorkspacePreviewPanel restore confirmation', () => {
 
   it('archives file preview items with the current session context', async () => {
     render(<WorkspacePreviewPanel />);
-
+    openDetails();
     fireEvent.click(screen.getByRole('button', { name: '归档到资料库: 项目方案' }));
 
     await waitFor(() => expect(mocks.addLibraryItem).toHaveBeenCalledWith({
@@ -176,7 +182,7 @@ describe('WorkspacePreviewPanel restore confirmation', () => {
 
   it('shows the consequence before restoring and does not call IPC directly', () => {
     render(<WorkspacePreviewPanel />);
-
+    openDetails();
     fireEvent.click(screen.getByRole('button', { name: 'Restore checkpoint' }));
 
     expect(mocks.invoke).not.toHaveBeenCalled();
@@ -186,7 +192,7 @@ describe('WorkspacePreviewPanel restore confirmation', () => {
 
   it('calls checkpoint rewind only after confirmation', async () => {
     render(<WorkspacePreviewPanel />);
-
+    openDetails();
     fireEvent.click(screen.getByRole('button', { name: 'Restore checkpoint' }));
     fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
 
@@ -199,7 +205,7 @@ describe('WorkspacePreviewPanel restore confirmation', () => {
 
   it('never calls checkpoint rewind after cancellation', () => {
     render(<WorkspacePreviewPanel />);
-
+    openDetails();
     fireEvent.click(screen.getByRole('button', { name: 'Restore checkpoint' }));
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 

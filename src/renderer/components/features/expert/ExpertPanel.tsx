@@ -11,6 +11,8 @@ import { RefreshCw, UserRound } from 'lucide-react';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import type { TeamRecipe } from '@shared/contract/teamRecipe';
 import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
+import { RECOMMENDED_MCP_SERVERS } from '@shared/constants/mcpCatalog';
+import { groupToolsForConsent } from '@shared/constants/toolConsentGroups';
 import type { RolePackActionResult } from '../../../services/rolesClient';
 import {
   installRolePack,
@@ -118,6 +120,18 @@ export const ExpertPanel: React.FC = () => {
   const [confirmingRecipeDelete, setConfirmingRecipeDelete] = useState<string | null>(null);
   const [recipeTopic, setRecipeTopic] = useState('');
   const [pendingConsent, setPendingConsent] = useState<({ roleId: string } & NonNullable<RolePackActionResult['consent']>) | null>(null);
+
+  const consentToolSummary = groupToolsForConsent(pendingConsent?.tools ?? []);
+  /** 连接器给用户看产品名（技术 id 只留在详情页）；目录里查不到就退回 id，别让一项依赖消失。 */
+  const describeConnector = (connector: { id: string; reason?: string }): string => {
+    const name = RECOMMENDED_MCP_SERVERS.find((server) => server.id === connector.id)?.name ?? connector.id;
+    return connector.reason ? `${name}（${connector.reason}）` : name;
+  };
+  /** 权限档说结果，不吐 strict/development/ci；复用「安全」页那套已经写成人话的档位描述。 */
+  const describePermissionPreset = (preset: 'strict' | 'development' | 'ci'): string => {
+    const entry = t.expert.roleSecurity.presets[preset] as { label: string; hint: string } | undefined;
+    return entry ? `${entry.label}——${entry.hint}` : preset;
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -388,16 +402,32 @@ export const ExpertPanel: React.FC = () => {
                   {/* 提权项加重在最前：它们是「比基线更放手」的部分 */}
                   {pendingConsent.elevation?.looseMode ? <li className="text-amber-200">· {t.expert.rolePackElevation.looseMode}</li> : null}
                   {pendingConsent.elevation?.bashTool ? <li className="text-amber-200">· {t.expert.rolePackElevation.bashTool}</li> : null}
-                  <li>· {(pendingConsent.toolsDeclared ? t.expert.rolePackConsent.toolsDeclared : t.expert.rolePackConsent.toolsBaseline)
-                    .replace('{tools}', pendingConsent.tools.join('、') || t.expert.rolePackConsent.toolsNone)}</li>
+                  <li>· {pendingConsent.tools.length === 0
+                    ? t.expert.rolePackConsent.toolsNone
+                    : (pendingConsent.toolsDeclared ? t.expert.rolePackConsent.toolsDeclared : t.expert.rolePackConsent.toolsBaseline)}</li>
+                  {consentToolSummary.groups.map(({ group, effects }) => (
+                    <li key={group} className="ml-3 text-zinc-400">
+                      {t.expert.rolePackConsent.toolGroups[group]}：
+                      {effects.map((effect) => t.expert.rolePackConsent.toolEffects[effect]).join('、')}
+                    </li>
+                  ))}
+                  {/* 映射表没收录的工具原样露出：漏显示一项能力等于骗用户，看不懂也好过看不见 */}
+                  {consentToolSummary.unmapped.length > 0 ? (
+                    <li className="ml-3 text-zinc-400">
+                      {t.expert.rolePackConsent.toolsOther}：{consentToolSummary.unmapped.join('、')}
+                    </li>
+                  ) : null}
                   {pendingConsent.connectors.length > 0 ? (
                     <li>· {t.expert.rolePackConsent.connectors.replace(
                       '{connectors}',
-                      pendingConsent.connectors.map((connector) => connector.id).join('、'),
+                      pendingConsent.connectors.map(describeConnector).join('、'),
                     )}</li>
                   ) : null}
                   {pendingConsent.permissionPreset ? (
-                    <li>· {t.expert.rolePackConsent.permissionPreset.replace('{preset}', pendingConsent.permissionPreset)}</li>
+                    <li>· {t.expert.rolePackConsent.permissionPreset.replace(
+                      '{preset}',
+                      describePermissionPreset(pendingConsent.permissionPreset),
+                    )}</li>
                   ) : null}
                 </ul>
                 <div className="mt-3 flex flex-wrap gap-2">

@@ -111,6 +111,9 @@ toolGroup: {
   summaryEmpty: '{count} 空结果',
   summaryCompleted: '{count} 完成',
   completedSteps: '已完成 {count} 步',
+  // 这一屏原来有两套没说明的时间（轮「用时 30s」vs 每个工具裸的「2.6s」）。
+  // 现在只剩轮级和组级两层，各自都带说明。
+  durationTitle: '这几步用时',
 },
 
 // 工具步骤人话化（humanizeToolStep.ts）——把工具名+参数合成一句中文步骤文案，
@@ -203,6 +206,15 @@ toolStatus: {
 },
 
 // 回合级文件变更卡（TurnDiffSummary）
+turnCard: {
+  workedFor: '用时 {duration}',
+  collapseTurn: '折叠本轮',
+  expandTurn: '展开本轮',
+},
+turnFeedback: {
+  helpful: '这一轮回答有帮助',
+  problem: '这一轮回答有问题',
+},
 turnDiff: {
   filesEdited: '已编辑 {count} 个文件',
   undo: '撤销',
@@ -435,6 +447,7 @@ toolGroup: {
   summaryEmpty: '{count} empty',
   summaryCompleted: '{count} completed',
   completedSteps: '{count} steps completed',
+  durationTitle: 'Time these steps took',
 },
 
 // Tool step humanization (humanizeToolStep.ts) — synthesizes a one-line, plain-language
@@ -528,6 +541,15 @@ toolStatus: {
 },
 
 // Turn-level file change card (TurnDiffSummary)
+turnCard: {
+  workedFor: 'Worked for {duration}',
+  collapseTurn: 'Collapse this turn',
+  expandTurn: 'Expand this turn',
+},
+turnFeedback: {
+  helpful: 'This answer was helpful',
+  problem: 'Something is wrong with this answer',
+},
 turnDiff: {
   filesEdited: 'Edited {count} file(s)',
   undo: 'Undo',

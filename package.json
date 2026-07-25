@@ -29,7 +29,7 @@
     "perf:long-session": "npx tsx scripts/perf/long-session-browser-smoke.ts",
     "perf:turn-content-visibility": "npx tsx scripts/perf/turn-content-visibility-browser-smoke.ts",
     "test:swarm:smoke": "vitest run tests/integration/swarm-chain/swarmChain.test.ts tests/renderer/stores/swarmStore.test.ts",
-    "test:swarm:e2e": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.e2e.config.ts && playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/swarm-chain.spec.ts",
+    "test:swarm:e2e": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.e2e.config.ts && playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/swarm-chain.spec.ts tests/e2e/design-canvas-conversational.e2e.spec.ts tests/e2e/workbench-overview-preview-first.spec.ts",
     "test:swarm:full": "npm run test:swarm:smoke && npm run test:swarm:e2e",
     "test:e2e:new-session": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.e2e.config.ts && playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/new-session.e2e.spec.ts",
     "test:e2e:design-canvas": "node scripts/verify-browser-runtime.mjs --config tests/e2e/playwright.e2e.config.ts && playwright test --config tests/e2e/playwright.e2e.config.ts tests/e2e/design-canvas-conversational.e2e.spec.ts",

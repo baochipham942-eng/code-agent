@@ -218,7 +218,12 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
           <span className="flex-shrink-0 rounded bg-white/[0.03] px-1.5 py-0.5 text-[10px] text-zinc-500">{t.toolGroup.outputCount.replace('{count}', String(outputCount))}</span>
         )}
         {totalDuration && (
-          <span className="flex-shrink-0 text-[10px] text-zinc-600">{totalDuration}</span>
+          <span
+            className="flex-shrink-0 text-[10px] text-zinc-600"
+            title={t.toolGroup.durationTitle}
+          >
+            {totalDuration}
+          </span>
         )}
       </button>
 

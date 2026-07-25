@@ -301,6 +301,10 @@ jobs:
       - name: Run smoke suite
         run: npm run test:swarm:smoke -- --retry=1
 
+      # e2e 从只跑 swarm-chain 扩到三条（+ design-canvas + workbench-overview）：
+      # 手动 spec 没有运行者必然腐烂——design-canvas 那条引用的 testid 和按钮标签在 main 上
+      # 早就不存在了，没人知道。三条共用同一次 playwright 调用，webServer 只起一次，
+      # 边际成本就是两条 spec 自己跑的那点时间，不再多付一遍构建。
       - name: Run swarm e2e suite
         env:
           CODE_AGENT_E2E: '1'

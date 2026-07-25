@@ -116,11 +116,35 @@ describe('WorkbenchTabs empty-state launcher', () => {
     }
   });
 
-  it('does not render shortcut chips for views without an enabled binding', () => {
+  // 这条替换了旧断言「does not render shortcut chips for views without an enabled binding」。
+  // 旧断言把「只有概览有键、浏览器/文件/设计画布静默无键」钉成了正确行为，正是 UI 债第 22 条
+  // 说的不一致；产品负责人推翻了「加功能不还债」的原判定，判据改成：默认配置下四个视图
+  // 要么都有键、要么都没有。视图清单从 DOM 现取，将来加第五个视图漏配默认键同样会红。
+  it('gives every launchable view a shortcut chip in the default config', () => {
     render(<WorkbenchTabs />);
 
-    expect(screen.queryByTestId('workbench-shortcut-browser')).toBeNull();
-    expect(screen.queryByTestId('workbench-shortcut-design-canvas')).toBeNull();
+    const rows = screen.getAllByTestId(/^open-workbench-view-/);
+    expect(rows).toHaveLength(4);
+    for (const row of rows) {
+      const viewId = (row.getAttribute('data-testid') ?? '').replace('open-workbench-view-', '');
+      expect(screen.getByTestId(`workbench-shortcut-${viewId}`).textContent).toBeTruthy();
+    }
+  });
+
+  it('reads the files row from the open-files action, not the attachment picker', () => {
+    // files.attach 是输入框的附件选择器（scope: 'composer'），本身留着别删；文件视图那行
+    // 曾经错挂在它上面。给两者配不同的键，指回 files.attach 就会红。
+    const settings = createDefaultKeybindingsSettings('darwin');
+    settings.bindings['files.attach'] = { enabled: true, accelerator: 'Cmd+Shift+7' };
+    keybindingsRuntime.keybindings = settings;
+
+    render(<WorkbenchTabs />);
+
+    const chip = screen.getByTestId('workbench-shortcut-files').textContent;
+    expect(chip).toBe(
+      formatShortcutForDisplay(settings.bindings['files.open']?.accelerator ?? null, 'darwin'),
+    );
+    expect(chip).not.toBe(formatShortcutForDisplay('Cmd+Shift+7', 'darwin'));
   });
 
   it('one popover serves both switching and adding — an unopened view is reachable from the header', () => {

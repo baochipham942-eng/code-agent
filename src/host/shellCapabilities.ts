@@ -315,6 +315,7 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'getMemoryContext',
     'getMessages',
     'getModelOverride',
+    'getRecap',
     'getSessionTasks',
     'import',
     'list',

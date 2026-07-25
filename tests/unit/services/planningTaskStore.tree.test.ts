@@ -141,6 +141,49 @@ describe('taskStore — tree ids / owner / events (roadmap 2.6)', () => {
     expect(kinds).toContain('orphan_adopted');
   });
 
+  // ADR-050 依赖 B：子代理跑完不等于任务完成。它名下 in_progress 的任务此刻已经
+  // 没有执行者，必须降级成 blocked 交还主会话核实，而不是带着 in_progress 漂回去。
+  it('hands a subagent blocked task back to the main session with its reason intact', async () => {
+    const taskStore = await import('../../../src/host/services/planning/taskStore');
+    const s = 'handback-session';
+    const owner = 'subagent_42_abc';
+
+    const stuck = taskStore.createTask(s, { subject: 'Scrape prices', description: 'p', owner });
+    taskStore.updateTask(s, stuck.id, {
+      status: 'blocked',
+      blockedReason: '目标网站需要登录',
+      blockedReasonCategory: 'permission',
+      statusSummary: 'HTTP 403 Forbidden',
+    });
+    const running = taskStore.createTask(s, { subject: 'Build table', description: 'b', owner });
+    taskStore.updateTask(s, running.id, { status: 'in_progress' });
+    const queued = taskStore.createTask(s, { subject: 'Send report', description: 'r', owner });
+
+    const adopted = taskStore.adoptOrphanTasks(s, owner);
+    expect(adopted.map((t) => t.id).sort()).toEqual([stuck.id, running.id, queued.id].sort());
+
+    // blocked 任务交还后仍是 blocked，原因不丢
+    const handedStuck = taskStore.getTask(s, stuck.id);
+    expect(handedStuck?.owner).toBeUndefined();
+    expect(handedStuck?.status).toBe('blocked');
+    expect(handedStuck?.blockedReason).toBe('目标网站需要登录');
+    expect(handedStuck?.blockedReasonCategory).toBe('permission');
+
+    // 无人接手的 in_progress 降级成 blocked/handback，主会话必须核实后才能收口
+    const handedRunning = taskStore.getTask(s, running.id);
+    expect(handedRunning?.status).toBe('blocked');
+    expect(handedRunning?.blockedReasonCategory).toBe('handback');
+
+    // 还没开工的保持 pending，不该被误标成卡住
+    expect(taskStore.getTask(s, queued.id)?.status).toBe('pending');
+
+    const blockedEvents = recordedEvents().filter(
+      (e) => e.kind === 'blocked' && e.taskId === running.id,
+    );
+    expect(blockedEvents).toHaveLength(1);
+    expect(blockedEvents[0].summary).toContain(owner);
+  });
+
   it('does not reuse a deleted child id (no event-history inheritance)', async () => {
     const taskStore = await import('../../../src/host/services/planning/taskStore');
     const s = 'tree-no-reuse';

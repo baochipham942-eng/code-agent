@@ -10,6 +10,10 @@ vi.mock('../../../src/host/services/infra/browser/managedBrowserHelpers', () => 
   MANAGED_BROWSER_ARTIFACT_DIR: 'screenshots',
 }));
 
+vi.mock('../../../src/host/services/desktop/nativeDesktopService', () => ({
+  resolveNativeDesktopCandidateRoots: () => ['/fake/userdata', '/fake/home/.code-agent'],
+}));
+
 import { handleScreenshot } from '../../../src/web/helpers/upload';
 
 function mockReq(path: string): Request {
@@ -55,13 +59,25 @@ describe('handleScreenshot whitelist', () => {
     expect(pipe).toHaveBeenCalledOnce();
   });
 
-  it('serves native-desktop screenshots using Windows backslash separators', () => {
+  it('serves native-desktop screenshots from a candidate root', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     const pipe = vi.fn();
     vi.spyOn(fs, 'createReadStream').mockReturnValue({ pipe } as unknown as fs.ReadStream);
 
     const res = mockRes();
-    handleScreenshot(mockReq('C:\\Users\\lin\\AppData\\code-agent\\native-desktop\\screenshots\\a.png'), res);
+    handleScreenshot(mockReq('/fake/home/.code-agent/native-desktop/screenshots/a.png'), res);
+
+    expect(res.statusCode).toBe(0);
+    expect(pipe).toHaveBeenCalledOnce();
+  });
+
+  it('serves native-desktop screenshots using backslash separators (Windows-style subpath)', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const pipe = vi.fn();
+    vi.spyOn(fs, 'createReadStream').mockReturnValue({ pipe } as unknown as fs.ReadStream);
+
+    const res = mockRes();
+    handleScreenshot(mockReq('/fake/userdata/native-desktop\\screenshots\\a.png'), res);
 
     expect(res.statusCode).toBe(0);
     expect(pipe).toHaveBeenCalledOnce();
@@ -70,6 +86,20 @@ describe('handleScreenshot whitelist', () => {
   it('denies paths outside any allowed screenshot dir', () => {
     const res = mockRes();
     handleScreenshot(mockReq('/etc/passwd.png'), res);
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('denies native-desktop lookalike dirs outside candidate roots', () => {
+    const res = mockRes();
+    handleScreenshot(mockReq('/tmp/x/native-desktop/screenshots/a.png'), res);
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('denies config-dir lookalike paths outside candidate roots', () => {
+    const res = mockRes();
+    handleScreenshot(mockReq('/tmp/evil/.code-agent/native-desktop/screenshots/a.png'), res);
 
     expect(res.statusCode).toBe(403);
   });

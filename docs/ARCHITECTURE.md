@@ -126,9 +126,9 @@
 |------|----------|
 | 桌面框架 | Tauri 2.x (Rust) |
 | Tauri 插件 | `plugin-updater` (自动更新) + `plugin-opener` (Finder reveal/open) + `plugin-dialog` (原生文件选择器) |
-| 前端框架 | React 18 + TypeScript 5.6 |
+| 前端框架 | React 19 + TypeScript 6 |
 | 状态管理 | Zustand 5 |
-| 样式 | Tailwind CSS 3.4 |
+| 样式 | Tailwind CSS 4 |
 | 构建 | esbuild (main) + Vite (renderer) |
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端存储 | Supabase + pgvector |
@@ -630,7 +630,7 @@ V2 的稳定口径是 **Vite-only MVP**：自动起 dev server + 点击源码定
 
 ```
 ┌─ Web 端（浏览器）─────────────────────────────┐
-│  React 18 + Vite                              │
+│  React 19 + Vite                              │
 │  ├── 云端功能 → webServer API                  │
 │  └── 本地功能 → Bridge (localhost:9527)         │
 └───────────────────────────────────────────────┘

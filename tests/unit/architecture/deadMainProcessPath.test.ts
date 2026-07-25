@@ -27,6 +27,7 @@ const DEAD_PATH_FILES = [
 
 const MAIN_PROCESS_ENTRY = 'src/host/index.ts';
 const SHIPPED_ENTRY = 'src/web/webServer.ts';
+const RETENTION_KICKOFF = 'src/web/webStartupRetention.ts';
 
 describe('死主进程路径（src/host/index.ts）', () => {
   it.each(DEAD_PATH_FILES)('%s 保留 DEAD PATH 标记与正确的改挂指引', (file) => {
@@ -49,16 +50,26 @@ describe('死主进程路径（src/host/index.ts）', () => {
       .not.toContain(MAIN_PROCESS_ENTRY);
   });
 
-  // 断言用带词边界的「模块 + 调用」双要素，不用 toContain：
-  // 子串匹配会被 runDbRetention_MUTANT 这类改名骗过去（本门首版实测假绿）。
+  // 接线是两跳（webServer → webStartupRetention → 两个 retention 模块），两跳都要钉，
+  // 断掉任一跳清理都不会执行。
+  // 断言用带词边界的「模块路径 + 调用」双要素，不用 toContain：子串匹配会被
+  // runDbRetention_MUTANT 这类改名骗过去（本门首版实测就是这么假绿的）。
+  it('webServer.ts 真的调了启动期保留清理（第一跳）', () => {
+    const webServer = read(SHIPPED_ENTRY);
+    expect(webServer, 'webServer 未 import webStartupRetention：启动期清理不会执行')
+      .toMatch(/from\s+'\.\/webStartupRetention'/);
+    expect(webServer, 'webServer 未调用 kickoffStartupRetention()：import 了但没调等于没接')
+      .toMatch(/\bkickoffStartupRetention\s*\(\s*\)/);
+  });
+
   it.each([
     ['logRetention', /\brunLogRetention\s*\(/, '审计日志清理在发行版里不会执行'],
     ['dbRetention', /\brunDbRetention\s*\(/, 'telemetry 表无 TTL，生产库会无限涨（实测 377MB+）'],
-  ])('发行版路径 webServer.ts 真的接了 %s', (moduleName, callPattern, consequence) => {
-    const webServer = read(SHIPPED_ENTRY);
-    expect(webServer, `webServer 未 import ${moduleName}：${consequence}`)
+  ])('webStartupRetention.ts 真的调了 %s（第二跳）', (moduleName, callPattern, consequence) => {
+    const kickoff = read(RETENTION_KICKOFF);
+    expect(kickoff, `未 import ${moduleName}：${consequence}`)
       .toMatch(new RegExp(`services/infra/${moduleName}['"]`));
-    expect(webServer, `webServer 未调用 ${moduleName} 的入口函数：${consequence}`)
+    expect(kickoff, `未调用 ${moduleName} 的入口函数：${consequence}`)
       .toMatch(callPattern);
   });
 });

@@ -49,6 +49,8 @@ import {
   type WebCapabilityBootstrapOptions,
 } from './webCapabilityBootstrap';
 import { createQueuedInputStartupSweepGate } from './queuedInputStartupSweep';
+import { kickoffStartupRetention } from './webStartupRetention';
+import { setupWebLogBridge } from './webLogBridgeSetup';
 
 const logger = createLogger('WebServer');
 
@@ -653,31 +655,8 @@ async function initializeServices(): Promise<void> {
   // Electron main 路径（initBackgroundServices.ts）执行，而所有发行版实际跑的是本 webServer
   // 路径 —— 不补这里，bridge 在发行版里从不启动，P3-A 只读工具（neo_list_tasks 等）以及现有
   // get_logs/get_status 的 bridge 拉取在发行版里全部失效。
-  try {
-    const { logBridge } = await import('../host/mcp/logBridge');
-    const { TaskStatusProvider } = await import('../host/mcp/taskStatusProvider');
-    const { getDatabase } = await import('../host/services/core/databaseService');
-    const { getProjectService } = await import('../host/services/project/projectService');
-    const { getTaskManager } = await import('../host/task/TaskManager');
-    logBridge.setTaskStatusProvider(
-      new TaskStatusProvider({
-        getSwarmRepo: () => {
-          try {
-            const db = getDatabase();
-            return db.isReady ? db.getSwarmTraceRepo() : null;
-          } catch {
-            return null;
-          }
-        },
-        getProjectService: () => getProjectService(),
-        getTaskManager: () => getTaskManager(),
-      }),
-    );
-    await logBridge.start();
-    logger.info('LogBridge started (web path) + P3-A task status provider registered');
-  } catch (error) {
-    logger.warn('LogBridge / task status provider init failed (non-blocking):', (error as Error).message);
-  }
+  // 实现在 webLogBridgeSetup.ts（原地抽出，行为不变）——本文件已到 max-lines 上限。
+  await setupWebLogBridge();
   bootMark('logbridge');
 
   // 9. 补 web 路径：初始化 TaskManager 单例（onAgentEvent/configService 注入）。
@@ -697,19 +676,9 @@ async function initializeServices(): Promise<void> {
   }
   bootMark('agent-runtime');
 
-  // 10. 启动期保留清理（日志 + 数据库）。
-  // 与步骤 5/6/7/8/9 同类的 web/main 路径分离修复，且这次是"修复本身成了死代码"：
-  // logRetention 的头注释自陈它接上的是原本死掉的 AuditLogger.cleanup，dbRetention 的
-  // 头注释自陈 telemetry 表无 TTL 导致生产库涨到 377MB+（telemetry_events 62 万行占
-  // 163MB）—— 两者却都只在 Electron main 路径（app/bootstrap.ts:130/:138）启动，而所有
-  // 发行版跑的是本 webServer，于是发行版从未清理过，库一直在涨。
-  // fire-and-forget：dbRetention 的 VACUUM 会阻塞，不能进启动关键路径；失败只 warn。
-  void import('../host/services/infra/logRetention')
-    .then(({ runLogRetention }) => runLogRetention())
-    .catch((error) => logger.warn('Log retention failed (non-blocking):', (error as Error).message));
-  void import('../host/services/infra/dbRetention')
-    .then(({ runDbRetention }) => runDbRetention())
-    .catch((error) => logger.warn('DB retention failed (non-blocking):', (error as Error).message));
+  // 10. 启动期保留清理（日志 + 数据库）。与步骤 5/6/7/8/9 同类的 web/main 路径分离修复，
+  // 且这次是"修复本身成了死代码"——细节见 webStartupRetention.ts 头注释。
+  kickoffStartupRetention();
   bootMark('retention-kickoff');
 
   logger.info('Backend services initialized');

@@ -7,7 +7,7 @@ globs: "src/**/*.ts,package.json,vite.config.*,esbuild.*"
 
 ## 构建
 
-- **框架**: Tauri 2.x + React 18 + TypeScript
+- **框架**: Tauri 2.x + React 19 + TypeScript
 - **构建工具**: esbuild (main/preload) + Vite (renderer)
 - **打包产物**: macOS DMG (~33MB)
 - **CLI 构建**: `npm run build:cli` 必须单独执行（`npm run build` 不含 CLI）

@@ -34,25 +34,29 @@ const DEFAULT_STATUS: DesktopCollectorStatus = {
   totalEventsWritten: 0,
 };
 
-export class NativeDesktopService {
-  private resolveCandidateRoots(): string[] {
-    const roots = new Set<string>();
-    const envRoot = process.env.CODE_AGENT_DATA_DIR;
-    const userData = app?.getPath?.('userData');
-    const home = os.homedir();
+/**
+ * native-desktop 数据可能落在的候选 root。web 层的 /api/screenshot 白名单
+ * （helpers/upload.ts）与本服务共用这份清单做锚定前缀匹配，别在那边另抄一份。
+ */
+export function resolveNativeDesktopCandidateRoots(): string[] {
+  const roots = new Set<string>();
+  const envRoot = process.env.CODE_AGENT_DATA_DIR;
+  const userData = app?.getPath?.('userData');
+  const home = os.homedir();
 
-    if (envRoot) roots.add(envRoot);
-    if (userData) roots.add(userData);
-    if (home) {
-      roots.add(getUserConfigDir());
-      roots.add(path.join(home, 'Library', 'Application Support', 'code-agent'));
-    }
-
-    return Array.from(roots);
+  if (envRoot) roots.add(envRoot);
+  if (userData) roots.add(userData);
+  if (home) {
+    roots.add(getUserConfigDir());
+    roots.add(path.join(home, 'Library', 'Application Support', 'code-agent'));
   }
 
+  return Array.from(roots);
+}
+
+export class NativeDesktopService {
   private resolveDesktopRoot(): string {
-    for (const root of this.resolveCandidateRoots()) {
+    for (const root of resolveNativeDesktopCandidateRoots()) {
       const candidate = path.join(root, 'native-desktop');
       if (fs.existsSync(candidate)) {
         return candidate;

@@ -7,6 +7,14 @@ function getBrowserAuthToken(): string | null {
   return typeof token === 'string' && token.trim().length > 0 ? token.trim() : null;
 }
 
+/** /api/screenshot 已收进鉴权（回的是用户屏幕真实画面），URL 必须带 query token（同 SSE 路径）。 */
+export function resolveScreenshotUrl(filePath: string): string {
+  const params = new URLSearchParams({ path: filePath });
+  const token = getBrowserAuthToken();
+  if (token) params.set('token', token);
+  return `/api/screenshot?${params.toString()}`;
+}
+
 export function resolveFileUrl(filePath: string): string {
   if (!filePath) return '';
 
@@ -27,8 +35,7 @@ export function resolveFileUrl(filePath: string): string {
     // normalize 分隔符以兼容 Windows 反斜杠路径。
     const normalized = filePath.replace(/\\/g, '/');
     if (normalized.includes(`/${CONFIG_DIR_NEW}/`)) {
-      const params = new URLSearchParams({ path: filePath });
-      return `/api/screenshot?${params.toString()}`;
+      return resolveScreenshotUrl(filePath);
     }
 
     const params = new URLSearchParams({ path: filePath });

@@ -10,6 +10,7 @@ import {
   authMiddleware,
   corsMiddleware,
   rateLimitMiddleware,
+  shouldRefuseE2EFlag,
 } from '../../../src/web/middleware/auth';
 
 let server: http.Server | undefined;
@@ -47,14 +48,23 @@ describe('authMiddleware', () => {
     await start(app);
   }
 
-  it('allows /health and /screenshot without a token', async () => {
+  it('allows /health without a token', async () => {
     await startAuthApp();
 
     const health = await fetch(`${baseUrl}/health`);
-    const screenshot = await fetch(`${baseUrl}/screenshot`);
-
     expect(health.status).toBe(200);
-    expect(screenshot.status).toBe(200);
+  });
+
+  it('requires a token for /screenshot (real screen content, not exempt)', async () => {
+    await startAuthApp();
+
+    const noToken = await fetch(`${baseUrl}/screenshot`);
+    expect(noToken.status).toBe(401);
+
+    const withToken = await fetch(
+      `${baseUrl}/screenshot?token=${encodeURIComponent(SERVER_AUTH_TOKEN)}`,
+    );
+    expect(withToken.status).toBe(200);
   });
 
   it('returns 401 when Authorization header is missing', async () => {
@@ -100,6 +110,31 @@ describe('authMiddleware', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+});
+
+describe('shouldRefuseE2EFlag', () => {
+  it('refuses E2E flag under the real Tauri shell (boot token present)', () => {
+    expect(shouldRefuseE2EFlag({
+      CODE_AGENT_E2E: '1',
+      CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token',
+    })).toBe(true);
+  });
+
+  it('allows E2E flag without the Tauri shell (Playwright/probe spawn node directly)', () => {
+    expect(shouldRefuseE2EFlag({ CODE_AGENT_E2E: '1' })).toBe(false);
+  });
+
+  it('exempts the compile warmup path spawned by the shell itself', () => {
+    expect(shouldRefuseE2EFlag({
+      CODE_AGENT_E2E: '1',
+      CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token',
+      CODE_AGENT_COMPILE_WARMUP: '1',
+    })).toBe(false);
+  });
+
+  it('ignores shell boot token when the E2E flag is off', () => {
+    expect(shouldRefuseE2EFlag({ CODE_AGENT_TAURI_BOOT_TOKEN: 'boot-token' })).toBe(false);
   });
 });
 

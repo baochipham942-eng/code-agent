@@ -182,6 +182,21 @@ import('../../host/services/infra/gracefulShutdown')
   })
   .catch(() => { /* gracefulShutdown 不可用就纯靠 .unref() 兜底 */ });
 
+// ── E2E flag refusal under the real Tauri shell ───────────────────────────
+/**
+ * CODE_AGENT_E2E=1 旁路 AuthService、telemetry uploader 和 dev API 路由
+ * （webServer.ts / webLocalAuth.ts / routes/dev.ts）。真实 Tauri 壳拉起时
+ * （CODE_AGENT_TAURI_BOOT_TOKEN 存在）必须硬拒，防止打包态被环境变量降级；
+ * compile warmup（COMPILE_WARMUP=1）是壳自己带着 E2E 拉起的合法路径（不
+ * listen、跑完即退），豁免。Playwright/probe 直接 node 起 server，无 boot
+ * token，不受影响。
+ */
+export function shouldRefuseE2EFlag(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_E2E === '1'
+    && Boolean(env.CODE_AGENT_TAURI_BOOT_TOKEN)
+    && env.CODE_AGENT_COMPILE_WARMUP !== '1';
+}
+
 // ── Authentication ────────────────────────────────────────────────────────
 /** Constant-time token comparison to prevent timing attacks */
 function verifyToken(provided: string): boolean {
@@ -192,8 +207,9 @@ function verifyToken(provided: string): boolean {
 }
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
-  // Health and screenshot endpoints are exempt from auth
-  if (req.path === '/health' || req.path === '/screenshot') {
+  // Health endpoint is exempt from auth. /screenshot 不豁免：它回的是用户屏幕真实画面，
+  // 且 <img> 加载不受 CORS 约束，任意网页可枚举读取；前端用 ?token= 走 query 鉴权（同 SSE）。
+  if (req.path === '/health') {
     next();
     return;
   }

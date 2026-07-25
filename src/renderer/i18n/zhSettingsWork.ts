@@ -751,11 +751,16 @@ export const zhSettingsWork = {
         diagnosticsLabel: '诊断: ',
       },
       telemetry: {
-        title: '使用数据上报（Telemetry）',
-        description: '自动遥测只上报运行轨迹元数据；失败诊断包和用户手动导出是单独边界，上传或导出前必须 scrub。关闭后本设备不再向云端上报，改动重启后生效。',
-        enabled: '已开启遥测上报',
-        disabled: '已关闭遥测上报',
-        body: '取消勾选即可 opt-out。metadata 不含完整 prompt/代码内容；诊断包会包含 scrub 后 payload，用于排障。',
+        title: '数据共享',
+        description: '两个独立开关，切换立即生效，所有上报通道统一遵守。上报的元数据不含完整对话内容或代码。默认均为开启。',
+        usageData: {
+          label: '共享使用数据',
+          body: '产品使用分析、运行轨迹元数据与设备遥测。关闭后本设备不再向云端上报使用情况。',
+        },
+        crashReports: {
+          label: '发送崩溃报告',
+          body: '崩溃与错误报告（上传前已脱敏——不含源码、对话内容或密钥），帮助我们修复你遇到的崩溃。',
+        },
       },
       status: {
         title: '状态',

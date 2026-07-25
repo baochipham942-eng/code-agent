@@ -75,6 +75,13 @@ export function registerSessionHandlers(
         case 'getSessionTasks':
           data = await requireAppService().getSessionTasks((payload as { sessionId: string }).sessionId);
           break;
+        case 'getRecap': {
+          // A6 回会话追赶：素材只来自产物快照 + 任务账本，不读消息流水。
+          const p = payload as { sessionId: string; since?: number };
+          const { getSessionRecap } = await import('../session/sessionRecapService');
+          data = await getSessionRecap(p.sessionId, typeof p.since === 'number' ? p.since : 0);
+          break;
+        }
         case 'rewindToPrompt': {
           const p = payload as { sessionId: string; userMessageId: string };
           data = await requireAppService().rewindToPrompt(p);

@@ -519,6 +519,14 @@ export const zhSettingsCore = {
           label: '打开浏览器视图',
           description: '打开网页实时预览',
         },
+        'files.open': {
+          label: '打开文件视图',
+          description: '打开右栏文件树视图',
+        },
+        'designCanvas.open': {
+          label: '打开设计画布',
+          description: '打开右栏设计画布视图',
+        },
         'computerUse.open': {
           label: '打开 Computer Use',
           description: '打开 Computer Use 工作台',

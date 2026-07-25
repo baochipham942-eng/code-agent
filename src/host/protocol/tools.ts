@@ -235,7 +235,7 @@ export interface ToolDecision {
 export interface CanUseToolRequestHint {
   readonly sessionId?: string;
   readonly forceConfirm?: boolean;
-  readonly type?: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command';
+  readonly type?: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command' | 'directory_access';
   readonly tool?: string;
   readonly details?: Record<string, unknown>;
   readonly reason?: string;

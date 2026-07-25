@@ -28,7 +28,7 @@ import { approvalParkEvents } from './approvalParkEvents';
 import { notificationService } from '../services/infra/notificationService';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
-import type { ToolApprovalPayload } from '../../shared/contract/pendingApproval';
+import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import type { PlanningService } from '../planning';
@@ -742,6 +742,21 @@ export class AgentOrchestrator {
       return true;
     }
 
+    // 目录访问是信任边界扩权（新增一整个 Project Source），不受 devMode/autoApprove-by-level
+    // 影响（那些开关是为读/写/执行类日常操作设的，不该顺带放行扩权决定）；也不论 attended/
+    // unattended 一律走 B2 停车挂起——60s 内联对话框对"要不要新增一个目录的访问权"这种
+    // 决策窗口太短。repo 不可用时（DB 未就绪/测试）才回退到下面的常规路径。
+    if (request.type === 'directory_access') {
+      const dirRepo = this.getPendingApprovalRepo();
+      if (!dirRepo) {
+        // fail-closed：扩权的失败方向不能是放行。回落常规路径的话，devModeAutoApprove
+        // 会把「新增一个目录的访问权」顺带自动批了——那正是上面这段要挡住的事。
+        logger.warn('[Permission] 停车台账不可用，directory_access 扩权请求按 fail-closed 拒绝');
+        return false;
+      }
+      return this.parkApproval(fullRequest, getPermissionLevel(request.type), dirRepo, 'directory_access');
+    }
+
     const settings = this.configService.getSettings();
     const permissionLevel = getPermissionLevel(request.type);
     const forceConfirm = request.forceConfirm === true;
@@ -808,6 +823,7 @@ export class AgentOrchestrator {
     fullRequest: PermissionRequest,
     permissionLevel: string,
     repo: PendingApprovalRepository,
+    kind: PendingApprovalKind = 'tool_approval',
   ): Promise<boolean> {
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
@@ -827,6 +843,7 @@ export class AgentOrchestrator {
         request: fullRequest,
       });
 
+      const isDirectoryAccess = kind === 'directory_access';
       const payload: ToolApprovalPayload = {
         sessionId: fullRequest.sessionId ?? null,
         tool: fullRequest.tool,
@@ -837,6 +854,12 @@ export class AgentOrchestrator {
           ?? fullRequest.details?.path
           ?? fullRequest.details?.filePath
           ?? fullRequest.details?.url,
+        // 目录授权卡直接给人话："访问 <path>（只读/读写）· <agent 理由>"，不用通用 tool 名。
+        displayTool: isDirectoryAccess
+          ? `目录访问：${fullRequest.details?.path ?? '(unknown path)'}（${
+              fullRequest.details?.requestedAccess === 'read_write' ? '读写' : '只读'
+            }）${fullRequest.reason ? `· ${fullRequest.reason}` : ''}`
+          : undefined,
         riskClass: isExternalSideEffectTool(fullRequest.tool) ? 'external' : null,
         // B4：external+可提取 target 时非空 → 收件箱审批卡出「每次都允许发 <target>」铸权入口。
         standingGrantTarget: fullRequest.details?.standingGrantTarget ?? null,
@@ -844,7 +867,7 @@ export class AgentOrchestrator {
       try {
         repo.insert({
           id: fullRequest.id,
-          kind: 'tool_approval',
+          kind,
           agentId: null,
           agentName: null,
           coordinatorId: fullRequest.sessionId ?? null,

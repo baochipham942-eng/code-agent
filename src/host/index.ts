@@ -201,9 +201,12 @@ app.whenReady().then(async () => {
         // B2: 无人值守停车审批（tool_approval）无跨重启续跑，启动时把上次残留的 pending
         // 行打成 orphaned，收件箱据此显示「已过期（应用重启）」，不留悬挂 pending。
         const toolApprovalOrphans = pendingApprovalRepo.markPendingAsOrphaned('tool_approval', Date.now()).length;
-        if (planOrphans + launchOrphans + toolApprovalOrphans > 0) {
+        // request_directory 停车挂起同理：内存 Promise 随进程重启丢失，DB 行必须一起标 orphaned，
+        // 否则收件箱会对一个已经无法真正生效的行渲染出可点的批准/拒绝按钮。
+        const directoryAccessOrphans = pendingApprovalRepo.markPendingAsOrphaned('directory_access', Date.now()).length;
+        if (planOrphans + launchOrphans + toolApprovalOrphans + directoryAccessOrphans > 0) {
           logger.warn(
-            `Orphaned approvals from previous process: ${planOrphans} plan(s) + ${launchOrphans} launch(es) + ${toolApprovalOrphans} tool approval(s)`,
+            `Orphaned approvals from previous process: ${planOrphans} plan(s) + ${launchOrphans} launch(es) + ${toolApprovalOrphans} tool approval(s) + ${directoryAccessOrphans} directory access(es)`,
           );
         }
       } catch (err) {

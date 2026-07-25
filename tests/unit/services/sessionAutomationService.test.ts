@@ -426,5 +426,36 @@ describe('SessionAutomationService', () => {
       expect(items).toHaveLength(1);
       expect(items[0].status).toBe('orphaned');
     });
+
+    it('directory_access 停车行（request_directory 工具）与 tool_approval 合并进同一列表', () => {
+      state.parkedRows.set('perm_dir', {
+        id: 'perm_dir',
+        kind: 'directory_access',
+        status: 'pending',
+        submittedAt: 2000,
+        coordinatorId: 'session-dir',
+        payloadJson: JSON.stringify({
+          sessionId: 'session-dir',
+          tool: 'request_directory',
+          displayTool: '目录访问：/tmp/other-project（只读）· 需要读取兄弟项目的配置',
+          requestedAt: 2000,
+          riskClass: null,
+        }),
+      });
+      state.parkedRows.set('perm_tool', {
+        id: 'perm_tool',
+        kind: 'tool_approval',
+        status: 'pending',
+        submittedAt: 1000,
+        coordinatorId: 'session-xyz',
+        payloadJson: JSON.stringify({ sessionId: 'session-xyz', tool: 'mail_send', requestedAt: 1000 }),
+      });
+      const items = new SessionAutomationService().listParkedApprovals();
+      expect(items).toHaveLength(2);
+      const dirItem = items.find((item) => item.id === 'perm_dir');
+      expect(dirItem?.tool).toBe('request_directory');
+      expect(dirItem?.displayTool).toContain('/tmp/other-project');
+      expect(dirItem?.status).toBe('pending');
+    });
   });
 });

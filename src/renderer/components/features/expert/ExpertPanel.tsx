@@ -11,6 +11,7 @@ import { RefreshCw, UserRound } from 'lucide-react';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
 import type { TeamRecipe } from '@shared/contract/teamRecipe';
 import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
+import type { RolePackActionResult } from '../../../services/rolesClient';
 import {
   installRolePack,
   listRolePacks,
@@ -116,7 +117,7 @@ export const ExpertPanel: React.FC = () => {
   const [selectedRecipe, setSelectedRecipe] = useState<{ recipe: TeamRecipe; editable: boolean } | null>(null);
   const [confirmingRecipeDelete, setConfirmingRecipeDelete] = useState<string | null>(null);
   const [recipeTopic, setRecipeTopic] = useState('');
-  const [pendingElevation, setPendingElevation] = useState<{ roleId: string; looseMode: boolean; bashTool: boolean } | null>(null);
+  const [pendingConsent, setPendingConsent] = useState<({ roleId: string } & NonNullable<RolePackActionResult['consent']>) | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -181,16 +182,17 @@ export const ExpertPanel: React.FC = () => {
     }
   };
 
-  // 云包安装单独走一条：命中提权判据时不当作失败，而是弹确认卡让用户过目。
+  // 云包安装单独走一条：未过目时不当作失败，而是弹摘要卡让用户看清这个专家能干什么。
+  // 强确认——每个包都要过这一关，不只提权包（装之前用户根本不知道它能读文件、要连哪个连接器）。
   const installWithElevation = async (roleId: string, options?: { acceptElevation?: boolean; elevationReviewed?: boolean }) => {
     setBusyRolePackId(roleId);
     try {
       const result = await installRolePack(roleId, options);
-      if (result.elevation) {
-        setPendingElevation({ roleId, ...result.elevation });
+      if (result.consent) {
+        setPendingConsent({ roleId, ...result.consent });
         return;
       }
-      setPendingElevation(null);
+      setPendingConsent(null);
       if (!result.success) toast.error(t.rolePack.actionFailed);
       await loadRolePacks();
       setEntries(await listRoles());
@@ -373,22 +375,41 @@ export const ExpertPanel: React.FC = () => {
               />
             ) : null}
 
-            {pendingElevation ? (
-              <div data-testid="role-pack-elevation-confirm" className="mt-3 rounded-lg border border-amber-700/60 bg-amber-500/5 p-4">
-                <div className="text-sm text-amber-100">{t.expert.rolePackElevation.title}</div>
-                <p className="mt-1 text-xs text-zinc-400">{t.expert.rolePackElevation.description}</p>
-                <ul className="mt-2 space-y-1 text-xs text-zinc-300">
-                  {pendingElevation.looseMode ? <li>· {t.expert.rolePackElevation.looseMode}</li> : null}
-                  {pendingElevation.bashTool ? <li>· {t.expert.rolePackElevation.bashTool}</li> : null}
+            {pendingConsent ? (
+              <div
+                data-testid="role-pack-consent-confirm"
+                className={`mt-3 rounded-lg border p-4 ${pendingConsent.elevation ? 'border-amber-700/60 bg-amber-500/5' : 'border-zinc-700 bg-white/[0.02]'}`}
+              >
+                <div className={`text-sm ${pendingConsent.elevation ? 'text-amber-100' : 'text-zinc-100'}`}>
+                  {pendingConsent.elevation ? t.expert.rolePackElevation.title : t.expert.rolePackConsent.title}
+                </div>
+                <p className="mt-1 text-xs text-zinc-400">{t.expert.rolePackConsent.description}</p>
+                <ul className="mt-2 space-y-1 text-xs text-zinc-300" data-testid="role-pack-consent-summary">
+                  {/* 提权项加重在最前：它们是「比基线更放手」的部分 */}
+                  {pendingConsent.elevation?.looseMode ? <li className="text-amber-200">· {t.expert.rolePackElevation.looseMode}</li> : null}
+                  {pendingConsent.elevation?.bashTool ? <li className="text-amber-200">· {t.expert.rolePackElevation.bashTool}</li> : null}
+                  <li>· {(pendingConsent.toolsDeclared ? t.expert.rolePackConsent.toolsDeclared : t.expert.rolePackConsent.toolsBaseline)
+                    .replace('{tools}', pendingConsent.tools.join('、') || t.expert.rolePackConsent.toolsNone)}</li>
+                  {pendingConsent.connectors.length > 0 ? (
+                    <li>· {t.expert.rolePackConsent.connectors.replace(
+                      '{connectors}',
+                      pendingConsent.connectors.map((connector) => connector.id).join('、'),
+                    )}</li>
+                  ) : null}
+                  {pendingConsent.permissionPreset ? (
+                    <li>· {t.expert.rolePackConsent.permissionPreset.replace('{preset}', pendingConsent.permissionPreset)}</li>
+                  ) : null}
                 </ul>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button variant="primary" size="sm" data-testid="role-pack-elevation-safe" onClick={() => { void installWithElevation(pendingElevation.roleId, { elevationReviewed: true }); }}>
-                    {t.expert.rolePackElevation.installSafe}
+                  <Button variant="primary" size="sm" data-testid="role-pack-elevation-safe" onClick={() => { void installWithElevation(pendingConsent.roleId, { elevationReviewed: true }); }}>
+                    {pendingConsent.elevation ? t.expert.rolePackElevation.installSafe : t.expert.rolePackConsent.install}
                   </Button>
-                  <Button variant="secondary" size="sm" data-testid="role-pack-elevation-accept" onClick={() => { void installWithElevation(pendingElevation.roleId, { acceptElevation: true }); }}>
-                    {t.expert.rolePackElevation.installAsDeclared}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setPendingElevation(null)}>
+                  {pendingConsent.elevation ? (
+                    <Button variant="secondary" size="sm" data-testid="role-pack-elevation-accept" onClick={() => { void installWithElevation(pendingConsent.roleId, { acceptElevation: true }); }}>
+                      {t.expert.rolePackElevation.installAsDeclared}
+                    </Button>
+                  ) : null}
+                  <Button variant="ghost" size="sm" onClick={() => setPendingConsent(null)}>
                     {t.expert.rolePackElevation.cancel}
                   </Button>
                 </div>

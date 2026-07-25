@@ -3,6 +3,7 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
+import { resolveSubagentPreset } from './subagentFirstRunPreset';
 import type { ToolCall } from '../../shared/contract';
 import { ModelRouter } from '../model/modelRouter';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../model/adapters/aiSdkAdapter';
@@ -245,12 +246,13 @@ export class SubagentExecutor {
 
     // Create pipeline context
     const pipeline = getSubagentPipeline();
+    const effectivePreset = await resolveSubagentPreset(config.permissionPreset, config.roleId);
     const dynamicConfig: DynamicAgentConfig = {
       name: config.name,
       systemPrompt: effectiveSystemPrompt,
       tools: config.availableTools,
       maxIterations: config.maxIterations,
-      permissionPreset: config.permissionPreset || 'development',
+      permissionPreset: effectivePreset,
       maxBudget: config.maxBudget,
     };
     const pipelineContext = pipeline.createContext(

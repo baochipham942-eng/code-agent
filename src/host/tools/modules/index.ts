@@ -15,6 +15,7 @@ import type { ToolRegistry } from '../registry';
 
 // file/
 import { listDirectorySchema } from './file/listDirectory.schema';
+import { requestDirectorySchema } from './file/requestDirectory.schema';
 import { multiEditSchema } from './file/multiEdit.schema';
 import { notebookEditSchema } from './file/notebookEdit.schema';
 import { readClipboardSchema } from './file/readClipboard.schema';
@@ -170,6 +171,11 @@ export function registerMigratedTools(
   registry.register(
     listDirectorySchema,
     async () => (await import('./file/listDirectory')).listDirectoryModule,
+  );
+
+  registry.register(
+    requestDirectorySchema,
+    async () => (await import('./file/requestDirectory')).requestDirectoryModule,
   );
 
   // multiEdit registers as 'Edit' (legacy 同名)

@@ -25,7 +25,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
@@ -97,6 +97,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private permissionDecisionRepo!: PermissionDecisionRepository;
   private toolExecutionEventRepo!: ToolExecutionEventRepository;
   private swarmLedgerRepo!: SwarmLedgerRepository;
+  private usageLedgerRepo!: UsageLedgerRepository;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
 
@@ -218,6 +219,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.permissionDecisionRepo = new PermissionDecisionRepository(this.db);
       this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
       this.swarmLedgerRepo = new SwarmLedgerRepository(this.db);
+      this.usageLedgerRepo = new UsageLedgerRepository(this.db);
       this.initializeDurableRunRepository(this.db);
       step('repos');
 
@@ -332,6 +334,33 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   /** 启动时从总账重建的崩溃现场快照（无则 null）。 */
   getLastRecoverySnapshot(): RecoverySnapshot | null {
     return this.lastRecoverySnapshot;
+  }
+
+  // --------------------------------------------------------------------------
+  // Usage Ledger（A7 · per-request 用量账本，append-only）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 追加一条 per-request 用量记录。**fail-safe**：db 未就绪或写入失败都静默吞错，
+   * 记账写入绝不能影响推理主链路（budgetService.recordUsage 的调用方在热路径上）。
+   */
+  appendUsageRecord(input: UsageLedgerEntryInput): void {
+    try {
+      if (!this.db || !this.usageLedgerRepo) return;
+      this.usageLedgerRepo.append(input);
+    } catch (err) {
+      logger.warn('[DatabaseService] appendUsageRecord failed (ignored):', err);
+    }
+  }
+
+  /** 某会话的 per-request 用量记录。fail-safe，失败返回空。 */
+  getUsageLedgerBySession(sessionId: string, limit = 500): UsageLedgerEntry[] {
+    if (!this.db || !this.usageLedgerRepo) return [];
+    try {
+      return this.usageLedgerRepo.getBySession(sessionId, limit);
+    } catch {
+      return [];
+    }
   }
 
   // --------------------------------------------------------------------------

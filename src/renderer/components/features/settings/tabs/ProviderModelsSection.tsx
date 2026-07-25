@@ -1,12 +1,12 @@
 import React from 'react';
-import { Brain, Code2, Eye, Gauge, RefreshCw, Search, Wrench } from 'lucide-react';
+import { BadgeCheck, Brain, Code2, Eye, Gauge, RefreshCw, Search, Wrench } from 'lucide-react';
 import { Button, Input, Toggle } from '../../../primitives';
 import type {
   ModelEntrySettings,
   ModelProvider,
   ModelThinkingCapabilityCatalog,
 } from '@shared/contract';
-import { CONTEXT_WINDOWS, MODEL_MAX_OUTPUT_TOKENS, normalizeModelId } from '@shared/constants';
+import { CONTEXT_WINDOWS, isAgenticVerifiedModel, MODEL_MAX_OUTPUT_TOKENS, normalizeModelId } from '@shared/constants';
 import {
   featuresFromModelMetadata,
   type RuntimeProviderModel,
@@ -77,6 +77,16 @@ function ModelRow({
           <span className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
             {model.source === 'discovered' ? modelText.sourceDiscovered : modelText.sourceBuiltin}
           </span>
+          {isAgenticVerifiedModel(model.id) && (
+            <span
+              data-testid={`model-verified-badge-${model.id}`}
+              title={modelText.verifiedBadgeTitle}
+              className="inline-flex items-center gap-1 rounded border border-emerald-400/40 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-emerald-200"
+            >
+              <BadgeCheck className="h-3 w-3" />
+              {modelText.verifiedBadge}
+            </span>
+          )}
         </div>
         {features.length > 0 && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -135,6 +145,20 @@ function ModelRow({
   );
 }
 
+/**
+ * 已验证工具调用的排前面直接可见，其余折进「高级」。
+ * 判定只走 isAgenticVerifiedModel 这一处，UI 不自带第二套口径。
+ */
+export function partitionByAgenticVerified(models: RuntimeProviderModel[]): {
+  verified: RuntimeProviderModel[];
+  unverified: RuntimeProviderModel[];
+} {
+  return {
+    verified: models.filter((model) => isAgenticVerifiedModel(model.id)),
+    unverified: models.filter((model) => !isAgenticVerifiedModel(model.id)),
+  };
+}
+
 export interface ProviderModelsSectionProps {
   hasApiKey: boolean;
   provider: ModelProvider;
@@ -181,6 +205,21 @@ export function ProviderModelsSection({
 }: ProviderModelsSectionProps) {
   const { t } = useI18n();
   const modelText = t.settings.model.models;
+  const { verified, unverified } = partitionByAgenticVerified(filteredCurrentModels);
+  const renderRow = (model: RuntimeProviderModel) => (
+    <ModelRow
+      key={model.id}
+      model={model}
+      provider={provider}
+      defaultSelection={defaultSelection}
+      settingDefaultModelId={settingDefaultModelId}
+      onSetDefaultModel={onSetDefaultModel}
+      onToggleModelEnabled={onToggleModelEnabled}
+      thinkingCapabilities={thinkingCapabilities}
+      modelSettings={modelSettings}
+      onThinkingChange={onThinkingChange}
+    />
+  );
   if (!hasApiKey) {
     return (
       <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/30 px-4 py-6 text-center text-xs text-zinc-500">
@@ -221,29 +260,33 @@ export function ProviderModelsSection({
         {modelText.selectionHint}
       </p>
 
-      {/* 模型列表 */}
+      {/* 模型列表：已验证的直接列出，未验证的折进「高级」 */}
       <div className="max-h-[420px] overflow-y-auto rounded-lg border border-zinc-800">
         {filteredCurrentModels.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-zinc-500">
             {modelText.noMatch}
           </div>
         ) : (
-          <div className="divide-y divide-zinc-800">
-            {filteredCurrentModels.map((model) => (
-              <ModelRow
-                key={model.id}
-                model={model}
-                provider={provider}
-                defaultSelection={defaultSelection}
-                settingDefaultModelId={settingDefaultModelId}
-                onSetDefaultModel={onSetDefaultModel}
-                onToggleModelEnabled={onToggleModelEnabled}
-                thinkingCapabilities={thinkingCapabilities}
-                modelSettings={modelSettings}
-                onThinkingChange={onThinkingChange}
-              />
-            ))}
-          </div>
+          <>
+            {verified.length > 0 && (
+              <div className="divide-y divide-zinc-800">
+                {verified.map((model) => renderRow(model))}
+              </div>
+            )}
+            {unverified.length > 0 && (
+              <details data-testid="provider-models-unverified" className="border-t border-zinc-800">
+                <summary className="cursor-pointer px-3 py-2 text-xs text-zinc-400 hover:text-zinc-200">
+                  {modelText.unverifiedGroup}（{unverified.length}）
+                </summary>
+                <p className="px-3 pb-2 text-[11px] leading-relaxed text-amber-300/80">
+                  {modelText.unverifiedHint}
+                </p>
+                <div className="divide-y divide-zinc-800 border-t border-zinc-800">
+                  {unverified.map((model) => renderRow(model))}
+                </div>
+              </details>
+            )}
+          </>
         )}
       </div>
     </ProviderDetailCard>

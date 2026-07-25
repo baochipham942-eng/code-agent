@@ -1,6 +1,6 @@
 import type { ModelProvider } from '../contract';
 import catalog from '../model-catalog.json';
-import { getContextWindow } from './defaults';
+import { getContextWindow, normalizeModelId } from './defaults';
 
 /** 模型配置 */
 export const MODEL = {
@@ -131,6 +131,38 @@ const MODEL_SCAFFOLD_TIERS: Record<string, ScaffoldTier> = Object.fromEntries(
 
 export function getModelScaffoldTier(modelId: string): ScaffoldTier {
   return MODEL_SCAFFOLD_TIERS[modelId] ?? 'standard';
+}
+
+/**
+ * 已验证工具调用（agentic）的模型集合 —— 刻意保持小。
+ *
+ * 只认两种证据，别加第三种来源：
+ *   ① 出厂默认模型（DEFAULT_MODELS 里跑主链路那几档 + AGENT_DEFAULT_MODEL）——产品自己天天在跑；
+ *   ② catalog 标注 `scaffoldTier: 'strong'` 的旗舰档。
+ *
+ * 不在集合里 **不等于不能用**：只是「我们没验过，出问题自担风险」。UI 据此把未验证的
+ * 折进「高级」并给风险提示，而不是禁用——非程序员配了不支持工具调用的模型时，
+ * 至少知道崩在哪，而不是对着一个静默失败的对话发呆。
+ *
+ * 视觉/快判档（vision / visionFast / quick）刻意不进：它们跑的是看图和意图分类，
+ * 不构成工具调用证据。
+ */
+export const VERIFIED_AGENTIC_MODELS: ReadonlySet<string> = new Set<string>([
+  DEFAULT_MODELS.chat,
+  DEFAULT_MODELS.code,
+  DEFAULT_MODELS.compact,
+  DEFAULT_MODELS.reasoning,
+  DEFAULT_MODELS.longContext,
+  DEFAULT_MODELS.unlimited,
+  AGENT_DEFAULT_MODEL.model,
+  ...Object.entries(MODEL_SCAFFOLD_TIERS)
+    .filter(([, tier]) => tier === 'strong')
+    .map(([modelId]) => modelId),
+]);
+
+/** 该模型是否已验证工具调用。openrouter 那种带前缀的 id 走 normalizeModelId 再查一次。 */
+export function isAgenticVerifiedModel(modelId: string): boolean {
+  return VERIFIED_AGENTIC_MODELS.has(modelId) || VERIFIED_AGENTIC_MODELS.has(normalizeModelId(modelId));
 }
 
 /** 视觉模型能力详情 */

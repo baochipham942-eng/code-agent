@@ -56,7 +56,8 @@ export function buildCostTitle(
   cost: number,
   budget?: BudgetStatusView | null,
 ): string {
-  const base = budget?.enabled
+  // maxBudget <= 0 = 未设上限：只报花了多少，别显示 "$0.12 / $0.00 (0%)" 这种没意义的分母
+  const base = budget?.enabled && budget.maxBudget > 0
     ? t.budgetUsageTitle
         .replace('{cost}', `$${cost.toFixed(2)}`)
         .replace('{max}', `$${budget.maxBudget.toFixed(2)}`)

@@ -41,6 +41,10 @@ export default defineConfig({
       // Enables /api/dev/emit-swarm-event for swarm-chain.spec.ts.
       // Benign for other specs — the route 404s unless this flag is set.
       CODE_AGENT_E2E: '1',
+      // 不关掉热更新，webServer 会优先 serve <数据目录>/renderer-cache/active（启动时从云端拉的
+      // bundle），把刚构建的本地 renderer 整个盖住 —— e2e 于是在测线上包而不是这次的改动。
+      // 2026-07-25 实测：新加的 data-testid 三轮找不到，DOM 里还是上一版的文案。
+      CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
       HOME: e2eHome,
       CODE_AGENT_HOME: e2eHome,
       CODE_AGENT_DATA_DIR: e2eDataDir,

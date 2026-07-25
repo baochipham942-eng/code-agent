@@ -50,6 +50,7 @@ import {
 } from './webCapabilityBootstrap';
 import { createQueuedInputStartupSweepGate } from './queuedInputStartupSweep';
 import { kickoffStartupRetention } from './webStartupRetention';
+import { kickoffCloudPrompts } from './webStartupCloudPrompts';
 import { registerMemoryConsolidationJob } from './webStartupMemoryJobs';
 import { setupWebLogBridge } from './webLogBridgeSetup';
 
@@ -683,6 +684,8 @@ async function initializeServices(): Promise<void> {
   // 10. 启动期保留清理（日志 + 数据库）。与步骤 5/6/7/8/9 同类的 web/main 路径分离修复，
   // 且这次是"修复本身成了死代码"——细节见 webStartupRetention.ts 头注释。
   kickoffStartupRetention();
+  // 云端 System Prompt 下发：默认关闭，详见 webStartupCloudPrompts.ts 头注释。
+  kickoffCloudPrompts();
   bootMark('retention-kickoff');
 
   logger.info('Backend services initialized');

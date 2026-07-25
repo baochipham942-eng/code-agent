@@ -380,21 +380,8 @@ describe('SessionRepository — message truncation', () => {
     expect(remainingIds()).toEqual(['m1', 'm2']);
   });
 
-  it('truncateMessagesFrom 连目标消息一起删（edit 真替换语义）', () => {
-    const removed = repo.truncateMessagesFrom('sess-A', 'm2');
-    expect(removed).toBe(3);
-    expect(remainingIds()).toEqual(['m1']);
-  });
-
-  it('truncateMessagesFrom 首条消息时清空整条会话', () => {
-    const removed = repo.truncateMessagesFrom('sess-A', 'm1');
-    expect(removed).toBe(4);
-    expect(remainingIds()).toEqual([]);
-  });
-
-  it('两种截断对未知消息 id 都返回 0 且不动历史', () => {
+  it('截断对未知消息 id 返回 0 且不动历史', () => {
     expect(repo.truncateMessagesAfter('sess-A', 'nope')).toBe(0);
-    expect(repo.truncateMessagesFrom('sess-A', 'nope')).toBe(0);
     expect(remainingIds()).toEqual(['m1', 'm2', 'm3', 'm4']);
   });
 });

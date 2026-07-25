@@ -118,6 +118,14 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+// 「立即发送」这颗按钮只在会话空闲时才渲染（ChatView 的 effectiveIsProcessing 为假），
+// 所以手动 drain 的用例必须在空闲态下跑；beforeEach 里的 running 态是给 hydration/自动排队
+// 用例准备的，在那个状态下点发送在真实 UI 里根本不可达。
+function goIdle(): void {
+  useAppStore.setState({ isProcessing: false, processingSessionIds: new Set() });
+  useTaskStore.setState({ sessionStates: { 'session-a': { status: 'idle' } } });
+}
+
 describe('useAgent queued input drain', () => {
   beforeEach(() => {
     typedInvokeDomainMock.mockReset();
@@ -140,6 +148,7 @@ describe('useAgent queued input drain', () => {
 
   it('does not send again when the host rejects markSending', async () => {
     mockDrainHost({ marked: false });
+    goIdle();
     const hook = await renderHydrated();
 
     await act(async () => {
@@ -190,6 +199,7 @@ describe('useAgent queued input drain', () => {
 
   it('requeues after 500ms with the retryCount returned by the host', async () => {
     mockDrainHost({ failureOutcome: { status: 'queued', retryCount: 3 } });
+    goIdle();
     sendMessageMock.mockRejectedValue(new Error('temporary send failure'));
     const hook = await renderHydrated();
     vi.useFakeTimers();
@@ -220,6 +230,7 @@ describe('useAgent queued input drain', () => {
 
   it('shows a terminal failed card with the host retryCount and never retries it', async () => {
     mockDrainHost({ failureOutcome: { status: 'failed', retryCount: 5 } });
+    goIdle();
     sendMessageMock.mockRejectedValue(new Error('permanent send failure'));
     const hook = await renderHydrated();
     vi.useFakeTimers();
@@ -245,6 +256,7 @@ describe('useAgent queued input drain', () => {
 
   it('reports a successful send outcome to the host', async () => {
     mockDrainHost();
+    goIdle();
     sendMessageMock.mockResolvedValue(undefined);
     const hook = await renderHydrated();
 
@@ -280,6 +292,7 @@ describe('useAgent queued input drain', () => {
       },
     );
     sendMessageMock.mockReturnValue(sendResponse.promise);
+    goIdle();
     const hook = renderHook(() => useAgent());
     act(() => {
       enqueueRuntimeInputFromHook(toRuntimeInput(input));

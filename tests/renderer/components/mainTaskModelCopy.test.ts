@@ -21,7 +21,10 @@ describe('main task model copy', () => {
   });
 
   it('uses main task model wording during first-run model onboarding', () => {
-    const source = readSource('src/renderer/components/onboarding/ModelOnboardingModal.tsx');
+    // #681 把这句文案从 ModelOnboardingModal.tsx 的硬编码迁进了 i18n，断言落点随之搬到
+    // i18n 文件。测试意图不变：首启引导保存时必须说「主任务模型」而不是「默认模型」——
+    // 「默认模型」会让用户以为改的是全局兜底，而这里设的是主任务用哪个模型。
+    const source = readSource('src/renderer/i18n/onboarding.ts');
 
     expect(source).toContain('正在保存主任务模型');
     expect(source).not.toContain('正在保存默认模型');

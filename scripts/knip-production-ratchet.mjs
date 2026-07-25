@@ -33,7 +33,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import process from 'node:process';
 
-const BASELINE_MAX = 90;
+const BASELINE_MAX = 79;
 const KNIP_VERSION = '6.24.0';
 const CONFIG = 'knip.production.json';
 

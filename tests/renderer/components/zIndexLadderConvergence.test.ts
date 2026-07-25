@@ -34,7 +34,6 @@ const SCOPED_FILES = [
   'components/ForceUpdateModal.tsx',
   'components/LivePreview/DevServerLauncher.tsx',
   'components/features/sidebar/SessionReplaySummaryDialog.tsx',
-  'components/StatusBar/AgentSwitcher.tsx',
   'components/StatusBar/ModelSwitcher.tsx',
 ];
 

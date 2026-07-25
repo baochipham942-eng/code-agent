@@ -81,7 +81,9 @@ jobs:
   smoke:
     name: Swarm smoke (unit + integration)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 15 而非 10：主链路子集 ~200s + 新增的 playwright 浏览器安装 ~1-2min，
+    # 原上限对满载 runner 已经偏紧（实测单轮跑到失败就用了 5m25s）。
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -160,6 +162,16 @@ jobs:
         # windowChromeContract / releaseMacosGates 等）此前不在任何 CI 套件里，
         # god-file 债务在 main 上红了都没人知道（2026-07-02 抓到 4 文件超线）。整套接入。
         run: npx vitest run tests/scripts --retry=1
+
+      - name: Install Playwright browsers
+        # 主链路子集里有真跑交互 smoke 的用例（gameArtifactValidator 等，走 playwright
+        # 启浏览器）。本 job 此前不装浏览器，全靠 runner 镜像里碰巧有匹配版本的缓存——
+        # 实测 #666 绿而 #665 连挂两次，失败信息是 browserType.launch: Executable
+        # doesn't exist at ~/.cache/ms-playwright/chromium_headless_shell-<build>。
+        # 即这道门当时是抽奖：跑不起浏览器时 runtimeChecks 为空，断言"有 runtime 证据"
+        # 反而落空，红得跟被测代码毫无关系。与本 workflow 的 full job / main-full-gate
+        # 保持同一手法，显式装。
+        run: npx playwright install --with-deps chromium
 
       - name: Main-chain vitest subset (agent / tools / ipc / services)
         # 2026-07-25 建门。动机：全量 vitest 只在 push main 后的检测门里跑，PR 阶段完全

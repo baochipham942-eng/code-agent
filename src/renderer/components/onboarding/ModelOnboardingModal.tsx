@@ -60,10 +60,10 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
   const [apiKey, setApiKey] = useState('');
   const [customBaseUrl, setCustomBaseUrl] = useState('');
   const [status, setStatus] = useState<StepStatus>('idle');
-  const [message, setMessage] = useState('选择 Provider 后填写 API Key。');
-  const [discoveredCount, setDiscoveredCount] = useState<number | null>(null);
   const { t } = useI18n();
   const text = t.onboarding;
+  const [message, setMessage] = useState(text.selectProviderPrompt);
+  const [discoveredCount, setDiscoveredCount] = useState<number | null>(null);
   const [step, setStep] = useState<OnboardingStep>('model');
   const [savedConfig, setSavedConfig] = useState<ModelConfig | null>(null);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
@@ -96,17 +96,17 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
     const trimmedKey = apiKey.trim();
     if (!trimmedKey) {
       setStatus('error');
-      setMessage('请先填写 API Key。');
+      setMessage(text.missingApiKey);
       return;
     }
     if (isRelay && !endpoint) {
       setStatus('error');
-      setMessage('请先填写中转站接口地址（如 https://example.com/v1）。');
+      setMessage(text.missingBaseUrl);
       return;
     }
 
     setStatus('testing');
-    setMessage('正在测试连接…');
+    setMessage(text.testingConnection);
     setDiscoveredCount(null);
 
     try {
@@ -118,12 +118,12 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
 
       if (!testResult?.success) {
         setStatus('error');
-        setMessage(formatProviderError(testResult, '连接失败，请检查 API Key 和网络。'));
+        setMessage(formatProviderError(testResult, text.connectionFailedFallback));
         return;
       }
 
       setStatus('discovering');
-      setMessage(`连接成功，延迟 ${testResult.latencyMs}ms，正在读取可用模型…`);
+      setMessage(text.connectedTestingModels.replace('{latencyMs}', String(testResult.latencyMs)));
 
       let discoveredModels: OnboardingDiscoveredModel[] = [];
       const discoverResult = await ipcService.invokeDomain<DiscoverModelsResult>(
@@ -141,12 +141,12 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       // 否则会落一个该站不存在的占位模型 ID（custom-model），聊天必报错。
       if (isRelay && discoveredModels.length === 0) {
         setStatus('error');
-        setMessage('无法从该中转站读取模型列表。请确认接口地址（通常以 /v1 结尾）和 Key 的分组权限。');
+        setMessage(text.relayNoModels);
         return;
       }
 
       setStatus('saving');
-      setMessage(discoveredModels.length > 0 ? '正在保存主任务模型…' : '正在保存内置推荐模型…');
+      setMessage(discoveredModels.length > 0 ? text.savingMainModel : text.savingBuiltinModel);
 
       const selection = buildOnboardingModelSelection({
         provider: selectedProvider,
@@ -173,13 +173,15 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
       } as Partial<AppSettings>);
 
       setStatus('ready');
-      setMessage(`已连接 ${selectedCard?.name || selectedProvider} / ${selection.modelConfig.model}。`);
+      setMessage(text.connectedSummary
+        .replace('{provider}', selectedCard?.name || selectedProvider)
+        .replace('{model}', selection.modelConfig.model));
       // 模型已落盘，但漏斗还没走完：接着问「你平时在哪干活」，别把人丢进空白对话。
       setSavedConfig(selection.modelConfig);
       setStep('connectors');
     } catch (error) {
       setStatus('error');
-      setMessage(error instanceof Error ? error.message : '保存失败，请稍后重试。');
+      setMessage(error instanceof Error ? error.message : text.saveFailedFallback);
     }
   };
 
@@ -187,7 +189,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
     <Modal
       isOpen={true}
       size="full"
-      title="连接模型"
+      title={text.modalTitle}
       closeOnBackdropClick={false}
       closeOnEsc={false}
       showCloseButton={false}
@@ -208,7 +210,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                     onClick={onSkip}
                     disabled={isBusy}
                   >
-                    跳过，稍后在设置里配置
+                    {text.skipButton}
                   </Button>
                 )}
                 <Button
@@ -217,7 +219,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                   disabled={!apiKey.trim() || (isRelay && !endpoint)}
                   leftIcon={status === 'ready' ? <CheckCircle className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
                 >
-                  测试并保存
+                  {text.testAndSaveButton}
                 </Button>
               </>
             )}
@@ -265,9 +267,9 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
           <div className="flex items-start gap-3">
             <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-blue-300" />
             <div>
-              <p className="text-sm text-zinc-200">账号已就绪，还需要连接一个模型才能开始对话。</p>
+              <p className="text-sm text-zinc-200">{text.introTitle}</p>
               <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                支持官方直连 Provider 和 OpenAI 兼容中转站。本地模型（Ollama）仍在设置里管理。
+                {text.introDescription}
               </p>
             </div>
           </div>
@@ -275,8 +277,8 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
 
         <section className="space-y-3">
           <div>
-            <h3 className="text-sm font-medium text-zinc-200">推荐配置</h3>
-            <p className="mt-1 text-xs text-zinc-500">大多数新用户从这里选一个就够了。</p>
+            <h3 className="text-sm font-medium text-zinc-200">{text.recommendedTitle}</h3>
+            <p className="mt-1 text-xs text-zinc-500">{text.recommendedDescription}</p>
           </div>
           <div className="grid gap-2 md:grid-cols-2">
             {recommendedCards.map((card) => (
@@ -286,7 +288,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 onClick={() => {
                   setSelectedProvider(card.id);
                   setStatus('idle');
-                  setMessage('选择 Provider 后填写 API Key。');
+                  setMessage(text.selectProviderPrompt);
                 }}
                 className={`rounded-lg border p-3 text-left transition ${
                   selectedProvider === card.id
@@ -309,7 +311,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
         </section>
 
         <section className="space-y-3">
-          <h3 className="text-sm font-medium text-zinc-200">更多官方 Provider</h3>
+          <h3 className="text-sm font-medium text-zinc-200">{text.moreProvidersTitle}</h3>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {moreCards.map((card) => (
               <button
@@ -318,7 +320,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 onClick={() => {
                   setSelectedProvider(card.id);
                   setStatus('idle');
-                  setMessage('选择 Provider 后填写 API Key。');
+                  setMessage(text.selectProviderPrompt);
                 }}
                 className={`rounded-lg border px-3 py-2 text-left transition ${
                   selectedProvider === card.id
@@ -334,13 +336,13 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
         </section>
 
         <section className="space-y-3">
-          <h3 className="text-sm font-medium text-zinc-200">中转站 / 自定义</h3>
+          <h3 className="text-sm font-medium text-zinc-200">{text.relaySectionTitle}</h3>
           <button
             type="button"
             onClick={() => {
               setSelectedProvider(ONBOARDING_RELAY_CARD.id);
               setStatus('idle');
-              setMessage('填写中转站接口地址和 API Key。');
+              setMessage(text.relaySelectPrompt);
             }}
             className={`w-full rounded-lg border p-3 text-left transition ${
               selectedProvider === ONBOARDING_RELAY_CARD.id
@@ -364,20 +366,20 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
             <p className="mt-1 text-xs leading-relaxed text-zinc-500">{selectedCard?.description}</p>
             {isRelay ? (
               <div className="mt-3">
-                <label className="mb-2 block text-sm font-medium text-zinc-200">接口地址（Base URL）</label>
+                <label className="mb-2 block text-sm font-medium text-zinc-200">{text.baseUrlLabel}</label>
                 <Input
                   value={customBaseUrl}
                   onChange={(event) => {
                     setCustomBaseUrl(event.target.value);
                     if (status === 'error') {
                       setStatus('idle');
-                      setMessage('填写中转站接口地址和 API Key。');
+                      setMessage(text.relaySelectPrompt);
                     }
                   }}
                   placeholder="https://example.com/v1"
                 />
                 <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-                  填到 /v1 为止，不要带 /chat/completions。
+                  {text.baseUrlHint}
                 </p>
               </div>
             ) : (
@@ -395,10 +397,10 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 setApiKey(event.target.value);
                 if (status === 'error') {
                   setStatus('idle');
-                  setMessage('选择 Provider 后填写 API Key。');
+                  setMessage(text.selectProviderPrompt);
                 }
               }}
-              placeholder="粘贴该 Provider 的 API Key"
+              placeholder={text.apiKeyPlaceholder}
               leftIcon={<KeyRound className="h-4 w-4" />}
             />
             <div className={`mt-2 flex items-center gap-2 text-xs ${
@@ -412,7 +414,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
               {isBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               <span>{message}</span>
               {discoveredCount !== null && status !== 'error' && (
-                <span className="text-zinc-500">已发现 {discoveredCount} 个模型</span>
+                <span className="text-zinc-500">{text.discoveredModelsCount.replace('{count}', String(discoveredCount))}</span>
               )}
             </div>
           </div>

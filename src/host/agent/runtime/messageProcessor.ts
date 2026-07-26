@@ -130,10 +130,7 @@ export class MessageProcessor {
           this.guardState.toolCallRetryCount++;
           logger.warn(`[AgentLoop] Detected text description of tool call: "${failedToolCallMatch.toolName}"`);
           logCollector.agent('WARN', `Model described tool call as text: ${failedToolCallMatch.toolName}`);
-          this.contextAssembly.injectSystemMessage(
-            this.ctx.antiPatternDetector.generateToolCallFormatError(failedToolCallMatch.toolName, response.content),
-            'tool-call-repair',
-          );
+          this.contextAssembly.injectSystemMessage(this.ctx.antiPatternDetector.generateToolCallFormatError(failedToolCallMatch.toolName, response.content), 'tool-call-repair');
           logger.debug(`[AgentLoop] Tool call retry ${this.guardState.toolCallRetryCount}/${this.ctx.maxToolCallRetries}`);
           return { response, wasForceExecuted, shouldContinue: true };
         }
@@ -252,10 +249,7 @@ export class MessageProcessor {
               retry: this.guardState.userStopHookBlockCount,
             });
             if (userStopResult.message) {
-              this.contextAssembly.injectSystemMessage(
-                `<stop-hook>\n${userStopResult.message}\n</stop-hook>`,
-                'stop-hook',
-              );
+              this.contextAssembly.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`, 'stop-hook');
             }
             return 'continue';
           }
@@ -270,10 +264,7 @@ export class MessageProcessor {
             data: { message: 'Stop hook 持续拦截已达重试上限，本次按完成处理' },
           });
         } else if (userStopResult.message) {
-          this.contextAssembly.injectSystemMessage(
-            `<stop-hook>\n${userStopResult.message}\n</stop-hook>`,
-            'stop-hook',
-          );
+          this.contextAssembly.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`, 'stop-hook');
         }
       } catch (error) {
         logger.error('[AgentLoop] User stop hook error:', error);
@@ -438,10 +429,7 @@ export class MessageProcessor {
           'output-continuation',
         );
       } else {
-        this.contextAssembly.injectSystemMessage(
-          this.buildTextContinuationPrompt(),
-          'output-continuation',
-        );
+        this.contextAssembly.injectSystemMessage(this.buildTextContinuationPrompt(), 'output-continuation');
       }
 
       this.runFinalizer.emitTaskProgress(
@@ -508,10 +496,7 @@ export class MessageProcessor {
         reason: desktopClaimGate.reason,
         sessionId: this.ctx.sessionId,
       });
-      this.contextAssembly.injectSystemMessage(
-        desktopClaimGate.repairPrompt,
-        'desktop-claim-guard',
-      );
+      this.contextAssembly.injectSystemMessage(desktopClaimGate.repairPrompt, 'desktop-claim-guard');
       return 'continue';
     }
 
@@ -734,10 +719,7 @@ export class MessageProcessor {
         const content = writeFileCall.arguments?.content as string;
         if (content) {
           logger.warn(`${writeFileCall.name} content length: ${content.length} chars - may be truncated!`);
-          this.contextAssembly.injectSystemMessage(
-            generateTruncationWarning(),
-            'truncation-recovery',
-          );
+          this.contextAssembly.injectSystemMessage(generateTruncationWarning(), 'truncation-recovery');
         }
       } else {
         // 检测截断的 bash heredoc
@@ -1038,10 +1020,7 @@ export class MessageProcessor {
           fingerprint: detection.sameFingerprint,
           matchCount: detection.matchCount,
         });
-        this.contextAssembly.injectSystemMessage(
-          buildStagnationHint(detection.matchCount),
-          'stagnation-guard',
-        );
+        this.contextAssembly.injectSystemMessage(buildStagnationHint(detection.matchCount), 'stagnation-guard');
         this.guardState.stagnationWarningEmitted = true;
       }
       // Hint 注入后仍重复 → 真止损,避免无谓烧 token。
@@ -1054,10 +1033,7 @@ export class MessageProcessor {
           fingerprint: detection.sameFingerprint,
           matchCount: detection.matchCount,
         });
-        this.contextAssembly.injectSystemMessage(
-          buildStagnationStopMessage(detection.matchCount, detection.sameFingerprint),
-          'stagnation-guard',
-        );
+        this.contextAssembly.injectSystemMessage(buildStagnationStopMessage(detection.matchCount, detection.sameFingerprint), 'stagnation-guard');
         this.ctx.onEvent({
           type: 'error',
           data: {
@@ -1085,10 +1061,7 @@ export class MessageProcessor {
           toolName: spam.toolName,
           count: spam.count,
         });
-        this.contextAssembly.injectSystemMessage(
-          buildToolSpamHint(spam.toolName!, spam.count),
-          'tool-spam-hint',
-        );
+        this.contextAssembly.injectSystemMessage(buildToolSpamHint(spam.toolName!, spam.count), 'tool-spam-hint');
         this.guardState.searchSpamWarningEmitted = true;
       }
     }

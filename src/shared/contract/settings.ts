@@ -14,6 +14,7 @@ import type { PermissionLevel } from './tool';
 import type { ContextCompressionConfig } from './contextHealth';
 import type { RoleProactivitySettings } from './roleAssets';
 import type { SpeechInputSettings } from './speech';
+import type { VoiceTurnDetectionConfig } from './voice';
 import type { KeybindingsSettings } from '../keybindings';
 
 export interface ModelEntrySettings {
@@ -140,6 +141,11 @@ export interface AppSettings {
     defaultImageModelId?: string;
     /** 默认视频生成模型 id */
     defaultVideoModelId?: string;
+  };
+  // 实时语音配置。全部可选，未配置 = 使用 Provider 默认安全档。
+  voice?: {
+    /** 上游断句策略；null 表示手动 commit 模式 */
+    turnDetection?: VoiceTurnDetectionConfig;
   };
   // API 超时配置
   timeouts?: {

@@ -1,5 +1,29 @@
 import type { SkillCategory } from './skillRepository';
 
+export const TEAM_LEAD_METADATA_KEY = 'teamLead';
+
+export interface PersistedTeamLead {
+  roleId: string;
+  recipeId: string;
+  setAt: number;
+}
+
+export function readPersistedTeamLead(
+  metadata: Record<string, unknown> | undefined,
+): PersistedTeamLead | null {
+  const raw = metadata?.[TEAM_LEAD_METADATA_KEY];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const marker = raw as Record<string, unknown>;
+  if (typeof marker.roleId !== 'string' || marker.roleId.length === 0) return null;
+  if (typeof marker.recipeId !== 'string' || marker.recipeId.length === 0) return null;
+  if (typeof marker.setAt !== 'number') return null;
+  return {
+    roleId: marker.roleId,
+    recipeId: marker.recipeId,
+    setAt: marker.setAt,
+  };
+}
+
 export interface TeamRecipeMember {
   /** member-local 唯一键，dependsOn 引用它（同角色多实例时区分）；缺省视为 roleId */
   id?: string;

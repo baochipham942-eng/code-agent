@@ -133,7 +133,13 @@ export const TaskStrategySettingsPanel: React.FC<TaskStrategySettingsPanelProps>
     <div className="space-y-4">
       <label className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2.5">
         <span className="min-w-0">
-          <span className="block text-sm font-medium text-zinc-200">{strategyText.toggleTitle}</span>
+          <span className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+            {strategyText.toggleTitle}
+            {/* 本面板改动即存（persistTaskStrategy 立即落盘），与下方 staged Provider 表单区分 */}
+            <span className="shrink-0 rounded border border-emerald-500/30 bg-emerald-500/10 px-1 text-[10px] font-normal text-emerald-200">
+              {strategyText.autoSaveBadge}
+            </span>
+          </span>
           <span className="block text-xs text-zinc-500">{strategyText.toggleDescription}</span>
         </span>
         <Toggle

@@ -67,6 +67,10 @@ type CloudUIStrings = {
 export type { SettingsTab } from '../utils/settingsTabs';
 export type TaskPanelTab = 'monitor' | 'orchestration';
 export type { CapabilityHubTab } from '../utils/settingsTabs';
+/** 「本机操作」整窗页的页内 tab：桌面操作 / 浏览器（2026-07-26 导航去重方案 9 合并页）。 */
+export type LocalOpsTab = 'desktop' | 'browser';
+// 评测中心（admin-only 整窗页）的顶层 tab：回放 / 验证 / 遥测 / 基准（v2 扩两 tab）。
+export type EvalCenterTab = 'replay' | 'validation' | 'telemetry' | 'benchmarks';
 export type { WorkbenchTabId, WorkbenchViewId } from '../utils/workbenchViews';
 
 // Preview tab — one per opened file (kind === 'file') or live dev server (kind === 'liveDev')
@@ -203,10 +207,16 @@ export interface AppState {
   /** activeAgentId 当前绑定的会话 id；null = draft（尚无会话）。 */
   activeAgentSessionKey: string | null;
   showCapturePanel: boolean;
-  showBrowserSurfacePanel: boolean;
   showDesktopPanel: boolean;
-  showComputerUsePanel: boolean;
-  showInAppValidationPanel: boolean;
+  /** 「本机操作」合并整窗页（桌面操作 + 浏览器，页内 tab 切换）。 */
+  showLocalOpsPanel: boolean;
+  /** 本机操作页当前 tab；openLocalOpsPanel 可带 tab 深链。 */
+  localOpsTab: LocalOpsTab;
+  /** 评测中心（admin-only）：回放 + 应用内验证的合并整窗页。 */
+  showEvalCenter: boolean;
+  evalCenterTab: EvalCenterTab;
+  /** 回放 tab 深链：会话行眼睛图标进入时预选会话，回放 tab 消费后经 clearEvalCenterReplayTarget 清空。 */
+  evalCenterReplaySessionId: string | null;
   pendingInAppValidationRequest: import('@shared/contract/browserInteraction').InAppValidationRequest | null;
   showProjectCollaborationPage: boolean;
   projectCollaborationPageProjectId: string | null;
@@ -332,10 +342,20 @@ export interface AppState {
   /** 清理某会话持久化的 agent 选择；onlyIfAgentId = 仅当存量选择等于该值才清（防误清用户新选择）。 */
   clearActiveAgentForSession: (sessionId: string, opts?: { onlyIfAgentId?: string }) => void;
   setShowCapturePanel: (show: boolean) => void;
-  setShowBrowserSurfacePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
+  setShowLocalOpsPanel: (show: boolean) => void;
+  /** 打开「本机操作」页并切到指定 tab（默认桌面）。 */
+  openLocalOpsPanel: (tab?: LocalOpsTab) => void;
+  /** @deprecated 合并页兼容 shim：打开 = 本机操作页·桌面 tab；关闭 = 关页。 */
   setShowComputerUsePanel: (show: boolean) => void;
-  setShowInAppValidationPanel: (show: boolean) => void;
+  /** @deprecated 合并页兼容 shim：打开 = 本机操作页·浏览器 tab；关闭 = 关页。 */
+  setShowBrowserSurfacePanel: (show: boolean) => void;
+  setShowEvalCenter: (show: boolean) => void;
+  /** 打开评测中心并切到指定 tab（默认回放）；replaySessionId 供回放 tab 预选会话。 */
+  openEvalCenter: (tab?: EvalCenterTab, replaySessionId?: string | null) => void;
+  /** 页内 tab 切换（不重置回放深链、不动互斥表）。 */
+  setEvalCenterTab: (tab: EvalCenterTab) => void;
+  clearEvalCenterReplayTarget: () => void;
   openProjectCollaborationPage: (projectId?: string | null) => void;
   closeProjectCollaborationPage: () => void;
   setPendingInAppValidationRequest: (
@@ -435,8 +455,8 @@ const FULLSCREEN_PANELS_CLOSED = {
   showLibraryPanel: false,
   showCapabilityHub: false,
   showCronCenter: false,
-  showComputerUsePanel: false,
-  showInAppValidationPanel: false,
+  showLocalOpsPanel: false,
+  showEvalCenter: false,
   showProjectCollaborationPage: false,
   expertDetailRoleId: null,
 } as const;
@@ -467,10 +487,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activeAgentId: null,
   activeAgentSessionKey: null,
   showCapturePanel: false, // Capture panel hidden by default
-  showBrowserSurfacePanel: false,
   showDesktopPanel: false,
-  showComputerUsePanel: false,
-  showInAppValidationPanel: false,
+  showLocalOpsPanel: false,
+  localOpsTab: 'desktop',
+  showEvalCenter: false,
+  evalCenterTab: 'replay', evalCenterReplaySessionId: null,
   pendingInAppValidationRequest: null,
   showProjectCollaborationPage: false,
   projectCollaborationPageProjectId: null,
@@ -634,10 +655,20 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
   },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
-  setShowBrowserSurfacePanel: (show) => set({ showBrowserSurfacePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
-  setShowComputerUsePanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showComputerUsePanel: show }),
-  setShowInAppValidationPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showInAppValidationPanel: show }),
+  setShowLocalOpsPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showLocalOpsPanel: show }),
+  openLocalOpsPanel: (tab) => set({
+    ...FULLSCREEN_PANELS_CLOSED,
+    showLocalOpsPanel: true,
+    localOpsTab: tab || 'desktop',
+  }),
+  // 旧入口（MCPSettings 连接器卡片、computerUse.open 快捷键）走 shim 进合并页，UI 不再直接引用旧开关。
+  setShowComputerUsePanel: (show) => (show ? get().openLocalOpsPanel('desktop') : get().setShowLocalOpsPanel(false)),
+  setShowBrowserSurfacePanel: (show) => (show ? get().openLocalOpsPanel('browser') : get().setShowLocalOpsPanel(false)),
+  setShowEvalCenter: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showEvalCenter: show }),
+  openEvalCenter: (tab, replaySessionId) => set({ ...FULLSCREEN_PANELS_CLOSED, showEvalCenter: true, showSettings: false, evalCenterTab: tab || 'replay', evalCenterReplaySessionId: replaySessionId ?? null }),
+  setEvalCenterTab: (tab) => set({ evalCenterTab: tab }),
+  clearEvalCenterReplayTarget: () => set({ evalCenterReplaySessionId: null }),
   openProjectCollaborationPage: (projectId) => set({
     ...FULLSCREEN_PANELS_CLOSED,
     showProjectCollaborationPage: true,

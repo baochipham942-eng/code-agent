@@ -8,10 +8,15 @@ import type { ApprovalLevel } from './types';
 
 interface ApprovalOptionsCompactProps {
   onApproval: (level: ApprovalLevel) => void;
-  isDangerous: boolean;
+  /**
+   * 隐藏「会话 / 始终」这类常驻授权，只留逐次允许。
+   * 危险操作要它，档位强制逐次确认（readOnly / 通话抬严）也要它——
+   * 但后者不该染成危险配色，所以这个开关与 isDangerous 分开传。
+   */
+  hideStandingGrants: boolean;
 }
 
-export function ApprovalOptionsCompact({ onApproval, isDangerous }: ApprovalOptionsCompactProps) {
+export function ApprovalOptionsCompact({ onApproval, hideStandingGrants }: ApprovalOptionsCompactProps) {
   return (
     <div className="border-t border-zinc-700 px-4 py-2.5">
       {/* 第一行: Allow once / Deny / Session */}
@@ -19,7 +24,7 @@ export function ApprovalOptionsCompact({ onApproval, isDangerous }: ApprovalOpti
         <button
           onClick={() => onApproval('once')}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-            isDangerous
+            hideStandingGrants
               ? 'text-orange-400 hover:bg-orange-500/20'
               : 'text-green-400 hover:bg-green-500/20'
           }`}
@@ -38,7 +43,7 @@ export function ApprovalOptionsCompact({ onApproval, isDangerous }: ApprovalOpti
           <kbd className="ml-1 px-1 py-0.5 rounded bg-zinc-600 text-zinc-400 text-2xs font-mono">n</kbd>
         </button>
 
-        {!isDangerous && (
+        {!hideStandingGrants && (
           <button
             onClick={() => onApproval('session')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-blue-400 hover:bg-blue-500/20 transition-colors"
@@ -53,7 +58,7 @@ export function ApprovalOptionsCompact({ onApproval, isDangerous }: ApprovalOpti
         <div className="flex-1" />
 
         {/* 第二行变为右侧: Always / Never */}
-        {!isDangerous && (
+        {!hideStandingGrants && (
           <button
             onClick={() => onApproval('always')}
             className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs text-purple-400 hover:bg-purple-500/20 transition-colors"

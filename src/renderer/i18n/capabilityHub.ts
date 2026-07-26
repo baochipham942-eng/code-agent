@@ -8,6 +8,7 @@ export const capabilityHubZh = {
     tabConnectors: '连接器',
     tabPlugins: '插件',
     tabInventory: '能力清单',
+    openPromptManager: '提示词',
   },
 };
 
@@ -21,5 +22,6 @@ export const capabilityHubEn = {
     tabConnectors: 'Connectors',
     tabPlugins: 'Plugins',
     tabInventory: 'Capability Inventory',
+    openPromptManager: 'Prompts',
   },
 };

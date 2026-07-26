@@ -20,7 +20,8 @@ import {
 
 /**
  * 需要关注但非运行中的状态，行尾显一个安静的小圆点（不是带文字的彩色 chip），
- * 颜色对齐 sessionPresentation 的语义色，保持「标题 + 时间」的克制版式。
+ * 颜色对齐 sessionPresentation 的语义色。状态点与时间二选一：有状态点时时间让位，
+ * 行尾同一时刻只讲一件事。
  */
 function getAttentionDotClassName(kind: string): string | null {
   switch (kind) {
@@ -66,7 +67,7 @@ export interface SidebarSessionItemProps {
   handleRenameSubmit: SidebarRowActions['handleRenameSubmit'];
   handleRenameKeyDown: SidebarRowActions['handleRenameKeyDown'];
   handleDoubleClick: SidebarRowActions['handleDoubleClick'];
-  handleOpenSessionReplay: SidebarRowActions['handleOpenSessionReplay'];
+  handleOpenSessionReplayInEvalCenter: SidebarRowActions['handleOpenSessionReplayInEvalCenter'];
   handleOpenSessionAssets: SidebarSessionActions['handleOpenSessionAssets'];
   handleOpenReplayEvidence: SidebarRowActions['handleOpenReplayEvidence'];
   handleSelectMessageSearchHit: SidebarSessionActions['handleSelectMessageSearchHit'];
@@ -105,7 +106,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   handleRenameSubmit,
   handleRenameKeyDown,
   handleDoubleClick,
-  handleOpenSessionReplay,
+  handleOpenSessionReplayInEvalCenter,
   handleOpenSessionAssets,
   handleSelectMessageSearchHit,
   handleArchiveSession,
@@ -205,17 +206,20 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : (
               <>
-                {attentionDotClass && (
+                {/* 状态点与时间二选一（2026-07-26 拍板）：有状态要传达时时间让位，
+                    行尾同一时刻只讲一件事，列表更聚焦。 */}
+                {attentionDotClass ? (
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
+                ) : (
+                  <span className="text-[11px] text-zinc-600 tabular-nums">{lastActiveLabel}</span>
                 )}
-                <span className="text-[11px] text-zinc-600 tabular-nums">{lastActiveLabel}</span>
               </>
             )}
           </span>
         )}
       </div>
 
-      {/* Hover 动作簇：Replay（管理员）/ 产物 / 归档 — 默认隐藏，覆盖右槽位置 */}
+      {/* Hover 动作簇：Replay（管理员，进评测中心回放 tab）/ 产物 / 归档 — 默认隐藏，覆盖右槽位置 */}
       {!multiSelectMode && !isRenaming && (
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100">
           {canOpenSessionReplay && sessionHasActivity && (
@@ -226,7 +230,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void handleOpenSessionReplay(session);
+                handleOpenSessionReplayInEvalCenter(session);
               }}
               className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
             >

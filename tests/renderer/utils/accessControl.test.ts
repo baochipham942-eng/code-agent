@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  canAccessAnyFeature,
+  ACCESS_CONTROL_REGISTRY,
   canAccessFeature,
   createAccessSubject,
 } from '../../../src/renderer/utils/accessControl';
@@ -13,17 +13,16 @@ describe('renderer access control registry', () => {
     expect(canAccessFeature('eval.reviewQueue', { isAdmin: true })).toBe(true);
   });
 
-  it('keeps user and invite management admin-only', () => {
-    expect(canAccessFeature('settings.users', { isAdmin: false })).toBe(false);
-    expect(canAccessFeature('settings.invites', { isAdmin: false })).toBe(false);
-    expect(canAccessAnyFeature(['settings.users', 'settings.invites'], { isAdmin: true })).toBe(true);
+  it('keeps prompt manager admin-only', () => {
+    expect(canAccessFeature('prompt.manager', { isAdmin: false })).toBe(false);
+    expect(canAccessFeature('prompt.manager', { isAdmin: true })).toBe(true);
   });
 
-  it('keeps raw governance settings admin-only', () => {
-    expect(canAccessFeature('settings.capabilities', { isAdmin: false })).toBe(false);
-    expect(canAccessFeature('settings.controlPlane', { isAdmin: false })).toBe(false);
-    expect(canAccessFeature('prompt.manager', { isAdmin: false })).toBe(false);
-    expect(canAccessAnyFeature(['settings.capabilities', 'settings.controlPlane', 'prompt.manager'], { isAdmin: true })).toBe(true);
+  it('管理组迁 admin-console 后不再注册 settings.users/invites/controlPlane/capabilities（2026-07 方案 9C）', () => {
+    expect(ACCESS_CONTROL_REGISTRY).not.toHaveProperty('settings.users');
+    expect(ACCESS_CONTROL_REGISTRY).not.toHaveProperty('settings.invites');
+    expect(ACCESS_CONTROL_REGISTRY).not.toHaveProperty('settings.controlPlane');
+    expect(ACCESS_CONTROL_REGISTRY).not.toHaveProperty('settings.capabilities');
   });
 
   it('opens plugins/hooks configuration to all users (Settings IA v2, 2026-07-03 拍板)', () => {

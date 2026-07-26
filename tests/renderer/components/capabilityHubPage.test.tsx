@@ -30,4 +30,15 @@ describe('CapabilityHubPage', () => {
     expect(screen.queryByTestId('capability-hub-tab-automation')).toBeNull();
     expect(screen.queryByTestId('capability-hub-tab-inventory')).toBeNull();
   });
+
+  it('提示词入口仅 admin 可见（2026-07 方案 9C 从用户菜单迁入）', () => {
+    useAuthStore.setState({ user: user(false) });
+    const { unmount } = render(<CapabilityHubPage />);
+    expect(screen.queryByTestId('capability-hub-open-prompts')).toBeNull();
+    unmount();
+
+    useAuthStore.setState({ user: user(true) });
+    render(<CapabilityHubPage />);
+    expect(screen.getByTestId('capability-hub-open-prompts')).toBeTruthy();
+  });
 });

@@ -1,5 +1,7 @@
 // ============================================================================
 // Turn Detail - 轮次详情面板
+// 2026-07-27 评测中心 v2：文案改走 i18n（t.telemetry.detail.*），
+// 随 EvalTelemetryTab 内嵌进评测中心「遥测」tab。
 // ============================================================================
 
 import React, { useState, useCallback } from 'react';
@@ -11,6 +13,7 @@ import type {
 } from '@shared/contract/telemetry';
 import { ChevronDown, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
 import ipcService from '../../../services/ipcService';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface TurnDetailProps {
   turn: TelemetryTurn;
@@ -50,6 +53,9 @@ const CollapsibleSection: React.FC<{
 };
 
 export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCalls }) => {
+  const { t } = useI18n();
+  const d = t.telemetry.detail;
+  const callsCount = t.telemetry.callsCount;
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [systemPromptLoading, setSystemPromptLoading] = useState(false);
 
@@ -64,22 +70,22 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
       if (result) {
         setSystemPrompt(result.content);
       } else {
-        setSystemPrompt(`系统提示词不可用 (hash: ${turn.systemPromptHash.substring(0, 16)}…)`);
+        setSystemPrompt(d.systemPromptUnavailable.replace('{hash}', turn.systemPromptHash.substring(0, 16)));
       }
     } catch {
-      setSystemPrompt('加载失败');
+      setSystemPrompt(d.systemPromptLoadFailed);
     } finally {
       setSystemPromptLoading(false);
     }
-  }, [turn.systemPromptHash, systemPrompt]);
+  }, [turn.systemPromptHash, systemPrompt, d]);
 
   return (
     <div className="space-y-2">
       {/* System Prompt */}
       {turn.systemPromptHash && (
         <CollapsibleSection
-          title="系统提示词"
-          badge={systemPromptLoading ? '加载中…' : `hash: ${turn.systemPromptHash.substring(0, 8)}…`}
+          title={d.systemPrompt}
+          badge={systemPromptLoading ? d.systemPromptLoading : `hash: ${turn.systemPromptHash.substring(0, 8)}…`}
           onToggle={loadSystemPrompt}
         >
           {systemPrompt ? (
@@ -88,14 +94,14 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
             </pre>
           ) : (
             <div className="text-xs text-zinc-500 text-center py-2">
-              {systemPromptLoading ? '加载中…' : '点击展开加载系统提示词'}
+              {systemPromptLoading ? d.systemPromptLoading : d.systemPromptExpand}
             </div>
           )}
         </CollapsibleSection>
       )}
 
       {/* User Prompt */}
-      <CollapsibleSection title="用户输入" badge={`${turn.userPromptTokens} tokens`} defaultOpen>
+      <CollapsibleSection title={d.userPrompt} badge={`${turn.userPromptTokens} tokens`} defaultOpen>
         <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
           {turn.userPrompt}
         </pre>
@@ -103,7 +109,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
 
       {/* Model Calls */}
       {modelCalls.length > 0 && (
-        <CollapsibleSection title="模型调用" badge={`${modelCalls.length} 次`}>
+        <CollapsibleSection title={d.modelCalls} badge={callsCount.replace('{n}', String(modelCalls.length))}>
           <div className="space-y-1">
             {modelCalls.map((mc) => (
               <div key={mc.id} className="flex items-center justify-between text-xs p-1.5 bg-zinc-900 rounded">
@@ -123,7 +129,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
 
       {/* Tool Calls */}
       {toolCalls.length > 0 && (
-        <CollapsibleSection title="工具调用" badge={`${toolCalls.length} 次`} defaultOpen>
+        <CollapsibleSection title={d.toolCalls} badge={callsCount.replace('{n}', String(toolCalls.length))} defaultOpen>
           <div className="space-y-1">
             {toolCalls.map((tc) => (
               <div key={tc.id} className="flex items-center justify-between text-xs p-1.5 bg-zinc-900 rounded">
@@ -134,7 +140,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
                     <XCircle className="w-3 h-3 text-red-400 shrink-0" />
                   )}
                   <span className="text-zinc-400 font-mono">{tc.name}</span>
-                  {tc.parallel && <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1 rounded">并行</span>}
+                  {tc.parallel && <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1 rounded">{d.parallelBadge}</span>}
                 </div>
                 <div className="flex items-center gap-2 text-zinc-500">
                   <span>{tc.durationMs}ms</span>
@@ -147,7 +153,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
 
       {/* Assistant Response */}
       {turn.assistantResponse && (
-        <CollapsibleSection title="助手回复" badge={`${turn.assistantResponseTokens} tokens`}>
+        <CollapsibleSection title={d.assistantResponse} badge={`${turn.assistantResponseTokens} tokens`}>
           <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
             {turn.assistantResponse}
           </pre>
@@ -156,7 +162,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
 
       {/* Thinking */}
       {turn.thinkingContent && (
-        <CollapsibleSection title="思考过程">
+        <CollapsibleSection title={d.thinking}>
           <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-32 overflow-y-auto italic">
             {turn.thinkingContent}
           </pre>
@@ -164,25 +170,25 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
       )}
 
       {/* Outcome */}
-      <CollapsibleSection title="结果评判" defaultOpen>
+      <CollapsibleSection title={d.outcome} defaultOpen>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="bg-zinc-900 p-2 rounded">
-            <span className="text-zinc-500">状态</span>
+            <span className="text-zinc-500">{d.outcomeStatus}</span>
             <p className="text-zinc-400 font-medium mt-0.5">{turn.outcome.status}</p>
           </div>
           <div className="bg-zinc-900 p-2 rounded">
-            <span className="text-zinc-500">置信度</span>
+            <span className="text-zinc-500">{d.outcomeConfidence}</span>
             <p className="text-zinc-400 font-medium mt-0.5">{(turn.outcome.confidence * 100).toFixed(0)}%</p>
           </div>
           <div className="bg-zinc-900 p-2 rounded">
-            <span className="text-zinc-500">工具成功率</span>
+            <span className="text-zinc-500">{d.outcomeToolSuccessRate}</span>
             <p className="text-zinc-400 font-medium mt-0.5">
               {(turn.outcome.signals.toolSuccessRate * 100).toFixed(0)}%
               ({turn.outcome.signals.toolCallCount} calls)
             </p>
           </div>
           <div className="bg-zinc-900 p-2 rounded">
-            <span className="text-zinc-500">错误/恢复</span>
+            <span className="text-zinc-500">{d.outcomeErrors}</span>
             <p className="text-zinc-400 font-medium mt-0.5">
               {turn.outcome.signals.errorCount} / {turn.outcome.signals.errorRecovered}
             </p>

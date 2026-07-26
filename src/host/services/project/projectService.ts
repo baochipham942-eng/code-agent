@@ -40,6 +40,7 @@ import {
   assertNonOverlappingRoots,
   canonicalizeWorkspacePath,
   createWorkspaceScope,
+  workspaceIdentityMatches,
   workspacePathIdentity,
   resolveWorkspacePath,
 } from '../../runtime/workspaceScope';
@@ -442,10 +443,7 @@ export class ProjectService {
     if (!project) return undefined;
     const sources = repo.listSources(projectId).map((source) => {
       const identity = workspacePathIdentity(source.canonicalPath);
-      const identityValid = identity.dev !== null
-        && identity.ino !== null
-        && identity.dev === (source.identityDev ?? null)
-        && identity.ino === (source.identityIno ?? null);
+      const identityValid = workspaceIdentityMatches(source, identity);
       return identityValid ? source : { ...source, trustState: 'blocked' as const };
     });
     return {
@@ -470,10 +468,7 @@ export class ProjectService {
       const identity = workspacePathIdentity(source.canonicalPath);
       if (
         source.trustState !== 'trusted'
-        || identity.dev === null
-        || identity.ino === null
-        || identity.dev !== (source.identityDev ?? null)
-        || identity.ino !== (source.identityIno ?? null)
+        || !workspaceIdentityMatches(source, identity)
       ) {
         throw new Error(`Project Source trust identity changed: ${source.path}`);
       }

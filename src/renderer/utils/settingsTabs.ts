@@ -23,9 +23,6 @@ export const SETTINGS_TAB_IDS = [
   'workspace',
   'automation',
   'appshots',
-  'users',
-  'invites',
-  'controlPlane',
   'cache',
   'capabilities',
   'plugins',
@@ -51,11 +48,13 @@ export type CapabilityHubTab =
   | 'plugins';
 
 // 能力中心是专家 / 技能 / 连接器 / 插件的唯一入口；SettingsTab id 仍保留给搜索和深链入口。
+// capabilities（旧能力治理 tab，管理组迁 admin-console 后下线）同样重定向进能力中心默认 tab。
 export const CAPABILITY_HUB_TAB_BY_SETTINGS_TAB: Partial<Record<SettingsTab, CapabilityHubTab>> = {
   roles: 'experts',
   skills: 'skills',
   mcp: 'connectors',
   plugins: 'plugins',
+  capabilities: 'experts',
 };
 
 /** `openSettingsTab(id)` 的落点：这些 id 保留着只是让老深链继续可用，落点未必还在设置页。 */
@@ -66,7 +65,7 @@ export type SettingsDeepLinkTarget =
 
 /**
  * 深链落点单点判定（ADR-049 §收窄）：自动化去独立的自动化面板，
- * 能力中心那四项去能力中心，其余照常开设置页。
+ * 能力中心那几项（含旧 capabilities 治理 tab）去能力中心，其余照常开设置页。
  * 放在 tab 注册表这里而不是 store 里，是为了让「id → 落点」只有一处可改——
  * 设置页搜索也走它，否则搜「自动化」会把 activeTab 设成一个已不存在的 tab。
  */
@@ -79,16 +78,17 @@ export function resolveSettingsDeepLink(tab: SettingsTab): SettingsDeepLinkTarge
 export const DEFAULT_SETTINGS_TAB: SettingsTab = 'model';
 
 // Settings IA 收敛（maka⑤批 v2 拍板 2026-07-03）：面向非程序员协作者，
-// 默认 5 组 19 项；技术项收进默认折叠的「高级」组（点开即用，不设开关）；
-// admin 项独立「管理」组（现有 canAccessSettingsTab 门控）。
+// 默认 5 组 19 项；技术项收进默认折叠的「高级」组（点开即用，不设开关）。
+// 2026-07 导航去重（方案 9C）：原 admin「管理」组（users/invites/controlPlane/capabilities）
+// 整体迁往独立 admin-console，桌面 app 不再提供——组定义删除，
+// users/invites/controlPlane 深链一并移除，capabilities 仅留 id 作深链重定向（进能力中心）。
 export type SettingsTabGroupId =
   | 'models'
   | 'basics'
   | 'work'
   | 'memory'
   | 'system'
-  | 'advanced'
-  | 'management';
+  | 'advanced';
 
 // 组标签单一真源在 i18n：t.settings.tabGroups（zh/en 对齐），此处不再维护文案副本
 
@@ -99,7 +99,6 @@ export const SETTINGS_TAB_GROUP_ORDER: SettingsTabGroupId[] = [
   'memory',
   'system',
   'advanced',
-  'management',
 ];
 
 /** 侧栏默认折叠的组（无权限语义，点组头展开） */
@@ -137,20 +136,13 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   hooks: 'advanced',
   appshots: 'advanced',
   cache: 'advanced',
-  // 管理（仅 admin）
-  users: 'management',
-  invites: 'management',
-  controlPlane: 'management',
-  capabilities: 'management',
+  // capabilities 仅作深链落点（重定向能力中心），不会出现在设置导航；组归属仅为注册表完整性
+  capabilities: 'advanced',
 };
 
-// v2 拍板：plugins/hooks 下放普通用户（自行配置），从门控表移除
-const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlledFeature>> = {
-  users: 'settings.users',
-  invites: 'settings.invites',
-  controlPlane: 'settings.controlPlane',
-  capabilities: 'settings.capabilities',
-};
+// 管理组迁 admin-console 后，设置页已无 admin 门控 tab（v2 拍板：plugins/hooks 下放普通用户）。
+// 映射表留空，canAccessSettingsTab 保留给深链/搜索过滤的统一调用口。
+const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlledFeature>> = {};
 
 export function canAccessSettingsTab(tab: SettingsTab, subject?: AccessSubject | null): boolean {
   const feature = SETTINGS_TAB_ACCESS_FEATURES[tab];

@@ -123,7 +123,9 @@ export function buildSidebarProjectSummary({
   }
 
   return {
-    displayName: group.isUncategorized ? '对话' : projectMeta?.name || group.name,
+    // 未分类组没有 projectMeta，displayName 落到 group.name——即 groupByWorkspace
+    // 由调用方按 i18n 传入的未分类组名（「快速对话」），这里不再硬编码。
+    displayName: projectMeta?.name || group.name,
     sessionCount: projectMeta?.sessionCount ?? group.sessions.length,
     unfinishedCount: needsInputCount + attentionCount + runningCount,
     needsInputCount,

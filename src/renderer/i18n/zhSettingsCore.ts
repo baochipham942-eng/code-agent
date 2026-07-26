@@ -36,9 +36,8 @@ export const zhSettingsCore = {
       hooks: 'Hook',
       appshots: '应用截图',
       cache: '数据与存储',
-      users: '用户管理',
-      invites: '邀请码管理',
-      controlPlane: '控制平面',
+      // users/invites/controlPlane 已随管理组迁 admin-console（2026-07 方案 9C）；
+      // capabilities 仅留 id 作深链重定向，不在设置导航出现
       capabilities: '能力中心',
     },
     tabGroups: {
@@ -48,10 +47,16 @@ export const zhSettingsCore = {
       memory: '记忆与隐私',
       system: '系统',
       advanced: '高级',
-      management: '用户管理',
     },
     modal: {
       loading: '加载中…',
+    },
+    unsavedChanges: {
+      badge: '未保存',
+      title: '有未保存的修改',
+      message: '「通用模型」里有尚未保存的 Provider 配置修改，离开后会被丢弃。',
+      discard: '丢弃修改',
+      stay: '继续编辑',
     },
     searchIndex: {
       permissionMode: '安全模式',
@@ -70,12 +75,6 @@ export const zhSettingsCore = {
       scheduledTasks: '定时任务',
       newTask: '新建任务',
       executionHistory: '执行历史',
-      registeredUsers: '注册用户',
-      userFields: '用户字段',
-      inviteManagement: '邀请码管理',
-      newInvite: '新建邀请码',
-      releaseAudit: '发布审计',
-      onlineVersionHash: '线上版本与 hash',
       modelProviders: '模型供应商',
       apiKey: 'API Key',
       modelSelection: '模型选择',
@@ -99,8 +98,6 @@ export const zhSettingsCore = {
       dataManagement: '数据管理',
       databaseSize: '数据库大小',
       clearCache: '清空缓存',
-      localCapabilityInventory: '本地能力库存',
-      capabilityAudit: 'Skill / MCP / Tool / Channel 审计',
       pluginMarketplace: '插件市场',
       pluginVisibility: '插件可见性',
       pluginPermissions: '插件权限',

@@ -74,3 +74,9 @@ E6-1 做角色详情页时的别扭正是这个病的症状：`RoleDetailPage` �
 
 - 自动化因「跑任务 ≠ 能力资产」摘回会话区独立入口，仍只有一个家。
 - 能力清单因「管理审计面 ≠ 能力，且不该给普通用户看」搬回设置页管理组，并保留 admin 门。
+
+## 2026-07-27 修订注记
+
+- `capabilities` 深链分流已改：不再打开设置页管理组，`appStore.openSettingsTab('capabilities')`
+  直接重定向能力中心；设置管理组同批迁入 admin-console（commit `d2ecd40ac`）。
+  上文「深链兼容」中「capabilities 打开设置页管理组」一句以本注记为准。

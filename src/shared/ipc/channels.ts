@@ -362,6 +362,8 @@ export const EVALUATION_CHANNELS = {
   RUN_HARNESS_COMPARISON: 'evaluation:run-harness-comparison',
   /** 列出已落 DB 的实验（含 config_json harness 维度，用于对比/轮询完成状态） */
   LIST_EXPERIMENTS: 'evaluation:list-experiments',
+  /** 只读加载单个实验 + 用例行（评测中心「基准」tab 回归对比用；裁剪 data_json 大字段） */
+  LOAD_EXPERIMENT: 'evaluation:load-experiment',
 } as const;
 
 /**

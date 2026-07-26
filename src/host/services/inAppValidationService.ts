@@ -1,7 +1,7 @@
 // ============================================================================
 // In-App Validation Service
 // ----------------------------------------------------------------------------
-// Main 进程驱动 renderer 端的 InAppValidationPanel 跑一段 step 脚本，
+// Main 进程驱动 renderer 端的 InAppValidationWorkspace（评测中心「验证」tab）跑一段 step 脚本，
 // 通过 broadcastToRenderer 发请求、监听 IPC invoke 拿回结果。
 // ============================================================================
 
@@ -27,8 +27,8 @@ const pending = new Map<string, PendingEntry>();
 /**
  * 请求 renderer panel 跑一段验证脚本。
  *
- * 注意：renderer 端的 InAppValidationPanel 必须挂载（或被 bridge 强制打开）才能执行；
- * 否则会一直没人响应直到 timeoutMs 后 reject。
+ * 注意：renderer 端由 useInAppValidationBridge 把请求引进评测中心「验证」tab 执行；
+ * 用户若选择保留手动编辑会立即收到 error reject，否则等 timeoutMs 后超时 reject。
  */
 export function runInAppValidation(
   html: string,

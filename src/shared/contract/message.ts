@@ -8,6 +8,7 @@ import type { ModelDecisionEventData } from './modelDecision';
 import type { TurnQualitySummary } from './turnQuality';
 import type { SessionAutomationMessageMetadata } from './sessionAutomation';
 import type { ArtifactLocatorV1 } from './artifactLocator';
+import type { VoiceCallSummary } from './voice';
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type MessageVisibility = 'active' | 'rewound';
@@ -234,6 +235,12 @@ export interface AgentTeamMessageMetadata {
 }
 
 export interface MessageMetadata {
+  /**
+   * 方案 §8.2 的用户输入来源；缺省视为 typed。
+   * 注意：Message 顶层 source 是系统生产者来源，这是另一条轴。
+   */
+  source?: 'voice' | 'dictation' | 'typed';
+  voiceCallSummary?: VoiceCallSummary;
   workbench?: WorkbenchMessageMetadata;
   skill?: SkillMessageMetadata;
   channel?: ChannelMessageMetadata;
@@ -291,4 +298,13 @@ export interface Message {
   metadata?: MessageMetadata;
   // Anthropic prompt cache 标记 — 在 fork 共享前缀时设置
   cache_control?: { type: 'ephemeral' };
+}
+
+/**
+ * 「这条消息是不是语音通话产生的」唯一判据（方案 §8.2）。
+ * Phase 0 权宜用过 `voice-` id 前缀，那不是识别依据——id 格式随时会变，
+ * 而消息可以由任何路径构造。判据只认 metadata.source。
+ */
+export function isVoiceInputMessage(message: Pick<Message, 'metadata'>): boolean {
+  return message.metadata?.source === 'voice';
 }

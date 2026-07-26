@@ -255,7 +255,7 @@ v0.16.74 新增 `HooksSettings`：位于"能力与连接"分组，调用 `domain
 | Workspace 设置 | `WorkspaceSettings` 管 recent directories、default open target、bridge/shell 状态和本地 workspace 行为 | `workspace.ipc.ts` + `settings.contract` |
 | Automation 设置 | `AutomationSettings` 把 cron/hook/自动化入口收进设置面，避免聊天页堆低频控制项 | `settingsTabs.ts` |
 | Data 设置 | `DataSettings` 展示 telemetry storage 与 collector health，保留调试快照/数据治理入口 | `telemetry.ipc.ts` + `data.ipc.ts` |
-| In-App Validation | `InAppValidationPanel` 在右侧面板展示 iframe、步骤执行、pass/fail 和错误；`useInAppValidationBridge()` 接收 main 发起的验证请求 | `inAppValidation.ipc.ts` + `browserInteraction` contract |
+| In-App Validation | `InAppValidationWorkspace` 在右侧面板展示 iframe、步骤执行、pass/fail 和错误；`useInAppValidationBridge()` 接收 main 发起的验证请求 | `inAppValidation.ipc.ts` + `browserInteraction` contract |
 | Browser Surface | `BrowserSurfacePanel` 从 Sidebar 打开，展示 managed browser/relay readiness 和当前浏览器工作面 | `desktop.ipc.ts` + `browserRelayService` |
 | Admin 管理页 | `UserDashboardSettings` 和 `InviteCodesSettings` 只对 admin 可见；前端 `accessControl` 只负责入口可见性，后端 IPC guard 才是硬边界 | `admin.ipc.ts` + `adminGuard` |
 | Update 设置 | `UpdateSettings` 展示 Tauri updater 状态；启动时只在需要处理的更新状态提示用户 | Tauri updater + `updatePrompt.ts` |

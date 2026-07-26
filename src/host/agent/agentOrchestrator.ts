@@ -28,6 +28,7 @@ import { approvalParkEvents } from './approvalParkEvents';
 import { notificationService } from '../services/infra/notificationService';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
+import type { PermissionDeliveryOutcome } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
@@ -370,7 +371,7 @@ export class AgentOrchestrator {
     logger.info('Interrupt and continue requested');
     const sessionManager = getSessionManager();
     const sessionId = this.sessionId ?? sessionManager.getCurrentSessionId();
-    const effectiveMessage = this.applyTurnSystemContext(newMessage, options);
+    const effectiveMessage = this.applyTurnSystemContext(newMessage, options, sessionId);
 
     if (this.isInterrupting) {
       logger.info('[AgentOrchestrator] Already interrupting, queuing message');
@@ -454,16 +455,32 @@ export class AgentOrchestrator {
     return { ...this.researchUserSettings };
   }
 
-  handlePermissionResponse(requestId: string, response: PermissionResponse): void {
+  handlePermissionResponse(requestId: string, response: PermissionResponse): PermissionDeliveryOutcome {
     const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return;
+    if (!pending) {
+      // 这条分支就是「用户点了『允许』，然后什么也没发生」的现场（2026-07-26 真机踩到）：
+      // 60s 交互门超时后条目已被删除，迟到的点击落进虚空——**两端都不可见**，
+      // 用户只看到「失败」，日志里一个字都没有，无从查起。
+      // 任何丢弃分支必须留痕，且要指名道姓说清是谁被丢了。
+      logger.warn('Permission response for unknown/expired request, dropped', {
+        requestId,
+        response,
+        knownRequestIds: [...this.pendingPermissions.keys()],
+      });
+      return 'unknown_request';
+    }
     // B2: 停车挂起的审批走 repo-changes 裁决口（会话卡 / 收件箱两口共用）。
     if (pending.parked) {
+      logger.info('Permission response delivered to parked approval', { requestId, response, tool: pending.request?.tool });
       this.resolveParkedApproval(requestId, response);
-      return;
+      return 'delivered';
     }
+    // 成功路径也要留痕：没有这条就无法区分「点击没到 host」和「到了但没生效」，
+    // 2026-07-26 那次排查整整卡在这个区分上。
+    logger.info('Permission response delivered', { requestId, response, tool: pending.request?.tool });
     pending.resolve(response);
     this.pendingPermissions.delete(requestId);
+    return 'delivered';
   }
 
   /**
@@ -786,9 +803,15 @@ export class AgentOrchestrator {
     // 无人值守会话（cron/heartbeat/channel）：审批不再走 60s deny，改为「停车挂起」，
     // 写 pending_approvals 等收件箱/会话卡任一入口应答（B2）。判据与权限档钳制同源
     // （markUnattendedSession）。repo 不可用时（DB 未就绪/测试）回退老 60s 路径。
-    const parkRepo = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId)
-      ? this.getPendingApprovalRepo()
-      : null;
+    //
+    // 语音派的 run 走同一条路（2026-07-26 真机）：D4 抬严的立论就是「用户在通话里
+    // 手不在键盘上、眼睛不在 diff 上，这姿态等于无人值守」——既然这么判定，审批就不能
+    // 要求他 60 秒内点一下。实测通话结束后 run 才请求审批，60s 必然超时自动拒绝，
+    // 而迟到的点击又落进静默丢弃分支，用户只看到「失败」且毫无线索。
+    // 判据与抬严同源（isLiveVoiceSession = 通话中 或 语音派的 run 还在飞）。
+    const needsParking = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId)
+      || getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
+    const parkRepo = needsParking ? this.getPendingApprovalRepo() : null;
     if (parkRepo) {
       return this.parkApproval(fullRequest, permissionLevel, parkRepo);
     }
@@ -946,7 +969,7 @@ export class AgentOrchestrator {
     try {
       const requirementsAnalyzer = getAgentRequirementsAnalyzer();
       const requirements = await requirementsAnalyzer.analyze(content, this.workingDirectory);
-      const executionContent = this.applyTurnSystemContext(content, options);
+      const executionContent = this.applyTurnSystemContext(content, options, sessionId);
 
       if (this.delegateMode && !requirements.needsAutoAgent) {
         logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
@@ -1330,13 +1353,39 @@ export class AgentOrchestrator {
   private applyTurnSystemContext(
     content: string,
     options?: AgentRunOptions,
+    sessionId?: string | null,
   ): string {
     const turnSystemContext = options?.turnSystemContext?.filter((item) => item.trim().length > 0) || [];
+    const liveVoiceNotice = this.buildLiveVoicePermissionNotice(sessionId ?? this.sessionId ?? undefined);
+    if (liveVoiceNotice) {
+      turnSystemContext.push(liveVoiceNotice);
+    }
     if (turnSystemContext.length === 0) {
       return content;
     }
 
     return `${turnSystemContext.join('\n\n')}\n\n<user_request>\n${content}\n</user_request>`;
+  }
+
+  /**
+   * D4 通话态钳档告知模型（2026-07-26 真机实录）：live-voice 会话把权限档钳严到
+   * readOnly 时，模型此前完全不知道自己被拦了什么——Write 被拒后接连换 Write→Write→
+   * Bash 三种写法白试，因为它只看到通用拒绝错误，猜不到根因是「通话中」。
+   * 这里把钳档事实和「等审批卡、别换写法重试」的行为指引直接注入这一轮的 system context，
+   * 与 buildWorkbenchTurnSystemContext 那批 workbench 偏好走同一个 turnSystemContext 数组、
+   * 同一套渲染方式，不另起机制。判据同源于 requestPermission 的停车分支（D4 单一真源）。
+   */
+  private buildLiveVoicePermissionNotice(sessionId?: string | null): string | null {
+    if (!sessionId) return null;
+    const manager = getPermissionModeManager();
+    if (!manager.isLiveVoiceSession(sessionId)) return null;
+    const mode = manager.getModeForSession(sessionId);
+    return [
+      '<live_voice_permission_notice>',
+      `当前处于实时语音通话中，权限档已临时抬严到 ${mode}：写入和执行类操作会挂起等待用户在审批卡上确认，不会被静默拒绝。`,
+      '不要因为一次尝试没有立即成功就反复更换写法重试，等待审批结果即可。',
+      '</live_voice_permission_notice>',
+    ].join('\n');
   }
 
   private async resolveAgentRouting(

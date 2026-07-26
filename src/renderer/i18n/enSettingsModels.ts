@@ -67,6 +67,7 @@ export const enSettingsModels = {
         toggleTitle: 'Enable automatic switching',
         toggleDescription: 'When enabled, fast / deep / vision tasks can use different models. When disabled, everything uses the default model.',
         toggleAriaLabel: 'Enable automatic model switching by task',
+        autoSaveBadge: 'Auto-saved',
         unavailableBadge: 'Unavailable',
         unavailableSuffix: ' (unavailable)',
         profiles: {
@@ -113,6 +114,7 @@ export const enSettingsModels = {
         saveConfig: 'Save configuration',
         saveHintPrefix: 'Save ',
         saveHintSuffix: ' connection, models, and advanced configuration.',
+        unsavedBadge: 'Unsaved changes',
       },
       connection: {
         title: 'Connection',
@@ -128,6 +130,7 @@ export const enSettingsModels = {
         storedApiKeyPlaceholder: '••••••••••••  Saved. Enter a new key to replace it',
         localNoApiKeyPlaceholder: 'Local models do not need an API Key',
         testConnection: 'Test connection',
+        testConnectionHint: 'Tests the endpoint and key currently being edited, including unsaved changes.',
         apiKeyStoredHint: 'API Key is encrypted and saved on this device.',
         localServiceHint: 'Using a local OpenAI-compatible service.',
       },
@@ -214,6 +217,8 @@ export const enSettingsModels = {
         providerAdded: 'Provider added. Click "Discover models" to fetch available models',
         modelIdRequired: 'Enter a model ID first',
         modelAdded: 'Model added to the current Provider',
+        configSaved: 'Provider configuration saved',
+        configSaveFailedPrefix: 'Failed to save configuration: ',
       },
     },
     visualModels: {

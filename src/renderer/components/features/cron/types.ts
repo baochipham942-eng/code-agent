@@ -9,6 +9,7 @@ import type {
   ToolAction,
   WebhookAction,
 } from '@shared/contract';
+import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '../../../utils/cronHumanize';
 
 export interface CronJobDraft {
   name: string;
@@ -321,14 +322,7 @@ export function formatDuration(ms?: number): string {
   return `${(ms / 60_000).toFixed(1)}m`;
 }
 
-const UNIT_LABELS: Record<string, string> = {
-  seconds: '秒',
-  minutes: '分钟',
-  hours: '小时',
-  days: '天',
-};
-
-export function formatScheduleSummary(job: CronJobDefinition): string {
+export function formatScheduleSummary(job: CronJobDefinition, lang: CronHumanLang = 'zh'): string {
   switch (job.schedule.type) {
     case 'at':
       return `一次性 · ${formatDateTime(job.schedule.datetime)}`;
@@ -336,26 +330,18 @@ export function formatScheduleSummary(job: CronJobDefinition): string {
       if ((job.schedule.unit as string) === 'weeks') {
         return `不支持的周间隔 · ${job.schedule.interval} weeks`;
       }
-      const unit = UNIT_LABELS[job.schedule.unit] || job.schedule.unit;
-      return `每 ${job.schedule.interval} ${unit}`;
+      return humanizeEverySchedule(job.schedule.interval, job.schedule.unit, lang);
     }
-    case 'cron':
+    case 'cron': {
+      const human = humanizeCronExpression(job.schedule.expression, lang);
+      if (human) return human;
       return job.schedule.timezone
         ? `${job.schedule.expression} · ${job.schedule.timezone}`
         : job.schedule.expression;
+    }
     default:
       return job.scheduleType;
   }
-}
-
-const SCHEDULE_TYPE_LABELS: Record<string, string> = {
-  at: '一次性',
-  every: '循环',
-  cron: 'Cron',
-};
-
-export function formatScheduleType(type: string): string {
-  return SCHEDULE_TYPE_LABELS[type] || type;
 }
 
 export function formatActionSummary(job: CronJobDefinition): string {

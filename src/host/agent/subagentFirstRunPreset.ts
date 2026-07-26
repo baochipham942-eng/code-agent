@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { PermissionPreset } from '../../shared/contract/permission';
+import { clampLiveVoicePermissionPreset, getPermissionModeManager } from '../permissions/modes';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('SubagentFirstRunPreset');
@@ -18,16 +19,33 @@ const logger = createLogger('SubagentFirstRunPreset');
  *
  * 抽成独立函数是为了让这条判定可测：它原本内联在 executeInternal 里，改坏了没有任何测试变红
  * （2026-07-25 变异验证实测的盲区）。
+ *
+ * D4（2026-07-26）：这里同时是子 agent 链的 **Live 语音抬严唯一钳制点**。
+ * `parentSessionId` 是必填而不是可选，就是为了让「忘记传会话身份」变成类型错误——
+ * 语音派发的 run 若走到子 agent 管线，档位必须和主 agent 链同样被抬严（#637 半边失效同款）。
  */
 export async function resolveSubagentPreset(
   declared: PermissionPreset | undefined,
   roleId: string | undefined,
+  parentSessionId: string | undefined,
 ): Promise<PermissionPreset> {
-  const preset = declared || 'development';
-  if (!roleId) return preset;
-  const { consumeFirstRunStrict } = await import('../services/roleAssets/rolePackInstallService');
-  if (!(await consumeFirstRunStrict(roleId))) return preset;
-  logger.info(`[Subagent] ${roleId} 首次运行，本轮强制 strict 档（忽略包声明的 ${preset}）`);
-  return 'strict';
+  const declaredOrDefault = declared || 'development';
+  const firstRunStrict = roleId
+    ? await (async () => {
+      const { consumeFirstRunStrict } = await import('../services/roleAssets/rolePackInstallService');
+      return consumeFirstRunStrict(roleId);
+    })()
+    : false;
+  if (firstRunStrict) {
+    logger.info(`[Subagent] ${roleId} 首次运行，本轮强制 strict 档（忽略包声明的 ${declaredOrDefault}）`);
+  }
+  const preset = firstRunStrict ? 'strict' : declaredOrDefault;
+
+  if (!getPermissionModeManager().isLiveVoiceSession(parentSessionId)) return preset;
+  const clamped = clampLiveVoicePermissionPreset(preset);
+  if (clamped !== preset) {
+    logger.info(`[Subagent] 实时语音通话中，档位由 ${preset} 抬严到 ${clamped}（D4）`);
+  }
+  return clamped;
 }
 

@@ -515,6 +515,7 @@ export const zhSettingsWork = {
         emptyPreview: '选择导入文件后会显示新增、更新、冲突和跳过项。',
       },
       files: {
+        pageTitle: '记忆',
         pageDescription: '管理文件式记忆、最近会话摘要和模型使用统计。删除文件属于敏感动作，仍保留确认。',
         loadFailed: '加载记忆失败',
         focusFoundPrefix: '已定位 ',
@@ -548,6 +549,13 @@ export const zhSettingsWork = {
         empty: '暂无记忆文件。AI 会在对话中自动创建记忆。',
         noMatches: '没有匹配的记忆文件',
         detailTitle: '文件详情',
+        detailLabels: {
+          name: '名称',
+          type: '类型',
+          updated: '更新时间',
+          chars: '字符数',
+          description: '描述',
+        },
         emptyContent: '(空)',
         summaryTitle: '文件摘要',
         diagnosticsTitle: '会话与模型统计',

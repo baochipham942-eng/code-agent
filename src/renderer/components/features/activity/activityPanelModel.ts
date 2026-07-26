@@ -15,9 +15,13 @@ import type {
 } from '../../../services/nativeDesktop';
 import type { ActivityContextPreview } from '../../../services/activityContext';
 import { redactActivityEvidence } from '../../../services/activityContext';
+import type { activityPanelZh } from '../../../i18n/activity';
 
 export type ActivityPanelMode = 'tauri' | 'web' | 'desktop';
 export type ActivityTone = 'ready' | 'idle' | 'blocked';
+
+/** Activity 面板词条（t.activityPanel）。zh/en 成对，见 i18n/activity.ts。 */
+export type ActivityPanelCopy = typeof activityPanelZh.activityPanel;
 
 export interface ActivityNativeSnapshot {
   collectorStatus?: NativeDesktopCollectorStatus | null;
@@ -61,22 +65,12 @@ export interface ActivityPanelModel {
   localEvidenceItems: ActivityPromptBoundaryItem[];
 }
 
-const SOURCE_LABELS: Record<ActivityContextSourceKind, string> = {
-  openchronicle: '自动屏幕记忆',
-  'tauri-native-desktop': '桌面活动',
-  audio: '音频/会议',
-  'screenshot-analysis': '截图分析',
-};
-
-const PROVIDER_STATE_LABELS: Record<ActivityProviderState, string> = {
-  running: '运行中',
-  starting: '启动中',
-  stopping: '停止中',
-  stopped: '已停止',
-  available: '可用',
-  unavailable: '不可用',
-  error: '异常',
-};
+const SOURCE_KIND_TO_COPY_KEY = {
+  openchronicle: 'openchronicle',
+  'tauri-native-desktop': 'tauriNativeDesktop',
+  audio: 'audio',
+  'screenshot-analysis': 'screenshotAnalysis',
+} as const;
 
 const SOURCE_ORDER: ActivityContextSourceKind[] = [
   'openchronicle',
@@ -85,17 +79,15 @@ const SOURCE_ORDER: ActivityContextSourceKind[] = [
   'screenshot-analysis',
 ];
 
-const EMPTY_CONTEXT_SUMMARY = '暂无可用屏幕上下文。';
-
 function compactText(value: string | null | undefined, maxChars = 140): string {
   const normalized = redactActivityEvidence(value || '').replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
   return normalized.length <= maxChars ? normalized : `${normalized.slice(0, Math.max(0, maxChars - 1))}…`;
 }
 
-function formatTime(ms?: number | null): string {
+function formatTime(ms: number | null | undefined, locale: string): string {
   if (!ms || !Number.isFinite(ms)) return '--:--';
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(locale, {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -129,31 +121,31 @@ function sourceItemCount(source?: ActivityContextSource | null): number {
   return source?.items?.length ?? 0;
 }
 
-function injectionDetailForSource(source: ActivityContextSource): string {
+function injectionDetailForSource(source: ActivityContextSource, copy: ActivityPanelCopy): string {
   if (source.source === 'openchronicle') {
-    return `进入 <screen-memory>，${source.maxChars} chars 上限，作为后台屏幕记忆。`;
+    return copy.injection.screenMemoryDetail.replace('{maxChars}', String(source.maxChars));
   }
-  return `非简单任务会进入 <desktop-activity-context>，${source.maxChars} chars 上限。`;
+  return copy.injection.desktopActivityDetail.replace('{maxChars}', String(source.maxChars));
 }
 
-function buildModeCopy(mode: ActivityPanelMode, shellLabel: string): Pick<ActivityPanelModel, 'modeLabel' | 'modeDetail' | 'modeTone'> {
+function buildModeCopy(mode: ActivityPanelMode, shellLabel: string, copy: ActivityPanelCopy): Pick<ActivityPanelModel, 'modeLabel' | 'modeDetail' | 'modeTone'> {
   if (mode === 'tauri') {
     return {
-      modeLabel: 'Tauri 桌面版',
-      modeDetail: '可以读取 ActivityContext、provider 状态，以及本机桌面事件/截图/音频的实时摘要。',
+      modeLabel: copy.modes.tauriLabel,
+      modeDetail: copy.modes.tauriDetail,
       modeTone: 'ready',
     };
   }
   if (mode === 'web') {
     return {
-      modeLabel: 'Web 降级',
-      modeDetail: '只展示后端返回的 ActivityContext；Tauri 本机事件、截图和音频实时状态不会直接读取。',
+      modeLabel: copy.modes.webLabel,
+      modeDetail: copy.modes.webDetail,
       modeTone: 'blocked',
     };
   }
   return {
-    modeLabel: shellLabel || '桌面版',
-    modeDetail: '可以展示 Activity provider 与 prompt 预览；Tauri Native Desktop 的本机事件读取不可用。',
+    modeLabel: shellLabel || copy.modes.desktopLabelFallback,
+    modeDetail: copy.modes.desktopDetail,
     modeTone: 'idle',
   };
 }
@@ -161,7 +153,9 @@ function buildModeCopy(mode: ActivityPanelMode, shellLabel: string): Pick<Activi
 function buildRecentSummary(args: {
   preview: ActivityContextPreview;
   native: ActivityNativeSnapshot;
+  copy: ActivityPanelCopy;
 }): Pick<ActivityPanelModel, 'recentHeadline' | 'recentDetail' | 'recentItems'> {
+  const { copy } = args;
   const events = [...args.native.recentEvents].sort((a, b) => b.capturedAtMs - a.capturedAtMs);
   if (events.length > 0) {
     const appCounts = new Map<string, number>();
@@ -176,22 +170,24 @@ function buildRecentSummary(args: {
     const screenshotCount = events.filter((event) => event.screenshotPath).length;
 
     return {
-      recentHeadline: `最近 ${events.length} 条桌面活动，最新在 ${events[0]?.appName || '未知应用'}。`,
+      recentHeadline: copy.recent.headline
+        .replace('{count}', String(events.length))
+        .replace('{app}', events[0]?.appName || copy.recent.unknownApp),
       recentDetail: [
-        topApps.length ? `高频应用：${topApps.join(' / ')}` : '',
-        screenshotCount > 0 ? `${screenshotCount} 张截图证据` : '',
-        analyzedCount > 0 ? `${analyzedCount} 条截图分析` : '',
-      ].filter(Boolean).join(' · ') || '已有桌面事件，但还没有更多摘要。',
+        topApps.length ? copy.recent.topApps.replace('{apps}', topApps.join(' / ')) : '',
+        screenshotCount > 0 ? copy.recent.screenshotEvidence.replace('{count}', String(screenshotCount)) : '',
+        analyzedCount > 0 ? copy.recent.analyzed.replace('{count}', String(analyzedCount)) : '',
+      ].filter(Boolean).join(' · ') || copy.recent.noMoreSummary,
       recentItems: events.slice(0, 5).map((event) => ({
         key: event.id,
-        timeLabel: formatTime(event.capturedAtMs),
+        timeLabel: formatTime(event.capturedAtMs, copy.dateLocale),
         title: compactText(event.windowTitle || event.browserTitle || event.appName, 90) || event.appName,
         detail: compactText(
           [
             event.appName,
             event.browserUrl,
-            event.analyzeText ? '有截图分析' : '',
-            event.screenshotPath ? '有截图证据' : '',
+            event.analyzeText ? copy.recent.hasAnalysis : '',
+            event.screenshotPath ? copy.recent.hasScreenshot : '',
           ].filter(Boolean).join(' · '),
           130,
         ),
@@ -200,17 +196,17 @@ function buildRecentSummary(args: {
   }
 
   const contextSummary = compactText(args.preview.recentContextSummary, 220);
-  if (contextSummary && contextSummary !== EMPTY_CONTEXT_SUMMARY) {
+  if (contextSummary && contextSummary !== copy.emptyPreview.summary) {
     return {
       recentHeadline: contextSummary,
-      recentDetail: '当前没有可直接读取的 Tauri 本机事件列表，先展示 ActivityContext 汇总。',
+      recentDetail: copy.recent.contextSummaryDetail,
       recentItems: [],
     };
   }
 
   return {
-    recentHeadline: '还没有可展示的近期活动。',
-    recentDetail: '没有 provider 数据时这里保持可读空态，不把页面留成空白。',
+    recentHeadline: copy.recent.emptyHeadline,
+    recentDetail: copy.recent.emptyDetail,
     recentItems: [],
   };
 }
@@ -219,7 +215,9 @@ function buildCapabilityRows(args: {
   providers: ActivityProviderDescriptor[];
   context?: ActivityContext | null;
   native: ActivityNativeSnapshot;
+  copy: ActivityPanelCopy;
 }): ActivityCapabilityRow[] {
+  const { copy } = args;
   const sources = sourceMap(args.context);
   const providers = providerMap(args.providers);
   const openchronicle = providers.get('openchronicle');
@@ -234,52 +232,62 @@ function buildCapabilityRows(args: {
     {
       key: 'activity-context',
       label: 'ActivityContext',
-      value: availableSourceCount > 0 ? `${availableSourceCount} 个来源可用` : '暂无上下文',
+      value: availableSourceCount > 0
+        ? copy.capability.sourcesAvailable.replace('{count}', String(availableSourceCount))
+        : copy.capability.noContext,
       detail: args.context
-        ? `token 预算约 ${args.context.tokenBudgetHint.targetTokens}，证据 ${args.context.evidenceRefs.length} 条。`
-        : '后端还没有返回统一上下文。',
+        ? copy.capability.tokenBudget
+          .replace('{tokens}', String(args.context.tokenBudgetHint.targetTokens))
+          .replace('{count}', String(args.context.evidenceRefs.length))
+        : copy.capability.contextNotReturned,
       tone: availableSourceCount > 0 ? 'ready' : 'idle',
     },
     {
       key: 'openchronicle',
-      label: '自动屏幕记忆',
-      value: openchronicle ? PROVIDER_STATE_LABELS[openchronicle.state] : '未返回 provider',
-      detail: openchronicle?.summary || sources.get('openchronicle')?.unavailableReason || '可由 OpenChronicle provider 提供后台记忆。',
+      label: copy.sources.openchronicle,
+      value: openchronicle ? copy.providerStates[openchronicle.state] : copy.provider.stateNotReturned,
+      detail: openchronicle?.summary || sources.get('openchronicle')?.unavailableReason || copy.capability.openchronicleFallback,
       tone: providerStateTone(openchronicle?.state) || sourceTone(sources.get('openchronicle')),
     },
     {
       key: 'native-desktop',
-      label: '桌面活动',
-      value: nativeProvider ? PROVIDER_STATE_LABELS[nativeProvider.state] : `${args.native.recentEvents.length} 条本机记录`,
-      detail: nativeProvider?.summary || sources.get('tauri-native-desktop')?.unavailableReason || 'Tauri 模式可读取最近桌面活动。',
+      label: copy.sources.tauriNativeDesktop,
+      value: nativeProvider
+        ? copy.providerStates[nativeProvider.state]
+        : copy.capability.nativeRecords.replace('{count}', String(args.native.recentEvents.length)),
+      detail: nativeProvider?.summary || sources.get('tauri-native-desktop')?.unavailableReason || copy.capability.nativeFallback,
       tone: nativeProvider ? providerStateTone(nativeProvider.state) : args.native.recentEvents.length > 0 ? 'ready' : 'idle',
     },
     {
       key: 'screenshot-analysis',
-      label: '截图分析',
-      value: screenshotSource?.status === 'available' || analyzedEvents > 0 ? '可用' : '暂无分析',
+      label: copy.sources.screenshotAnalysis,
+      value: screenshotSource?.status === 'available' || analyzedEvents > 0 ? copy.capability.available : copy.capability.noAnalysis,
       detail: analyzedEvents > 0
-        ? `${analyzedEvents} 条分析，${screenshotEvents} 张截图证据只留在本地。`
-        : screenshotSource?.unavailableReason || '有截图但没有分析时，只作为本地证据展示。',
+        ? copy.capability.analysisSummary
+          .replace('{analyzed}', String(analyzedEvents))
+          .replace('{screenshots}', String(screenshotEvents))
+        : screenshotSource?.unavailableReason || copy.capability.screenshotFallback,
       tone: screenshotSource?.status === 'available' || analyzedEvents > 0 ? 'ready' : 'idle',
     },
     {
       key: 'audio',
-      label: '音频/会议',
+      label: copy.sources.audio,
       value: audioSource?.status === 'available' || args.native.audioSegments.length > 0 || args.native.audioStatus?.capturing
-        ? '可用'
-        : '暂无会议上下文',
+        ? copy.capability.available
+        : copy.capability.noMeetingContext,
       detail: args.native.audioStatus?.capturing
-        ? `录音中，${args.native.audioStatus.totalSegments} 段，${args.native.audioStatus.captureMode === 'system-audio' ? '系统音频' : '麦克风'}。`
+        ? copy.capability.recording
+          .replace('{count}', String(args.native.audioStatus.totalSegments))
+          .replace('{mode}', args.native.audioStatus.captureMode === 'system-audio' ? copy.capability.modeSystemAudio : copy.capability.modeMicrophone)
         : args.native.audioSegments.length > 0
-          ? `${args.native.audioSegments.length} 段最近转录可作为上下文。`
-          : audioSource?.unavailableReason || '录音和会议转录保持显式可见，不自动启动采集。',
+          ? copy.capability.transcriptSegments.replace('{count}', String(args.native.audioSegments.length))
+          : audioSource?.unavailableReason || copy.capability.audioFallback,
       tone: audioSource?.status === 'available' || args.native.audioSegments.length > 0 || args.native.audioStatus?.capturing ? 'ready' : 'idle',
     },
   ];
 }
 
-function buildInjectionItems(context?: ActivityContext | null): ActivityPromptBoundaryItem[] {
+function buildInjectionItems(context: ActivityContext | null | undefined, copy: ActivityPanelCopy): ActivityPromptBoundaryItem[] {
   const sources = sourceMap(context);
   const items = SOURCE_ORDER
     .map((kind) => sources.get(kind))
@@ -287,16 +295,16 @@ function buildInjectionItems(context?: ActivityContext | null): ActivityPromptBo
     .filter(sourceHasPromptText)
     .map((source) => ({
       key: `inject:${source.source}`,
-      label: SOURCE_LABELS[source.source],
-      detail: injectionDetailForSource(source),
+      label: copy.sources[SOURCE_KIND_TO_COPY_KEY[source.source]],
+      detail: injectionDetailForSource(source, copy),
       tone: 'ready' as const,
     }));
 
   if (items.length > 0) return items;
   return [{
     key: 'inject:empty',
-    label: '暂无可注入内容',
-    detail: '当前 ActivityContext 没有可进入 prompt 的文本块。',
+    label: copy.injection.emptyLabel,
+    detail: copy.injection.emptyDetail,
     tone: 'idle',
   }];
 }
@@ -304,7 +312,9 @@ function buildInjectionItems(context?: ActivityContext | null): ActivityPromptBo
 function buildLocalEvidenceItems(args: {
   context?: ActivityContext | null;
   native: ActivityNativeSnapshot;
+  copy: ActivityPanelCopy;
 }): ActivityPromptBoundaryItem[] {
+  const { copy } = args;
   const sources = sourceMap(args.context);
   const evidenceCount = args.context?.evidenceRefs.length ?? 0;
   const screenshotCount = args.native.recentEvents.filter((event) => event.screenshotPath).length;
@@ -317,11 +327,11 @@ function buildLocalEvidenceItems(args: {
   if (evidenceCount > 0 || screenshotCount > 0 || audioPathCount > 0) {
     items.push({
       key: 'local:evidence',
-      label: '本地证据',
+      label: copy.localEvidence.evidenceLabel,
       detail: [
-        evidenceCount > 0 ? `${evidenceCount} 条 evidence ref` : '',
-        screenshotCount > 0 ? `${screenshotCount} 张截图文件只作本地证据` : '',
-        audioPathCount > 0 ? `${audioPathCount} 个音频文件路径不直接展开` : '',
+        evidenceCount > 0 ? copy.localEvidence.evidenceRefs.replace('{count}', String(evidenceCount)) : '',
+        screenshotCount > 0 ? copy.localEvidence.screenshotsLocal.replace('{count}', String(screenshotCount)) : '',
+        audioPathCount > 0 ? copy.localEvidence.audioPaths.replace('{count}', String(audioPathCount)) : '',
       ].filter(Boolean).join(' · '),
       tone: 'ready',
     });
@@ -330,8 +340,8 @@ function buildLocalEvidenceItems(args: {
   for (const source of unavailableSources) {
     items.push({
       key: `local:${source.source}`,
-      label: SOURCE_LABELS[source.source],
-      detail: compactText(source.unavailableReason, 150) || '该来源当前没有可注入内容，只保留状态说明。',
+      label: copy.sources[SOURCE_KIND_TO_COPY_KEY[source.source]],
+      detail: compactText(source.unavailableReason, 150) || copy.localEvidence.sourceUnavailableFallback,
       tone: 'idle',
     });
   }
@@ -339,8 +349,8 @@ function buildLocalEvidenceItems(args: {
   if (items.length > 0) return items;
   return [{
     key: 'local:empty',
-    label: '暂无本地证据',
-    detail: '没有截图、音频路径或 evidence ref；页面仍保留 provider 与降级说明。',
+    label: copy.localEvidence.emptyLabel,
+    detail: copy.localEvidence.emptyDetail,
     tone: 'idle',
   }];
 }
@@ -352,25 +362,28 @@ export function buildActivityPanelModel(args: {
   context?: ActivityContext | null;
   preview: ActivityContextPreview;
   native: ActivityNativeSnapshot;
+  copy: ActivityPanelCopy;
 }): ActivityPanelModel {
   return {
-    ...buildModeCopy(args.mode, args.shellLabel),
-    ...buildRecentSummary({ preview: args.preview, native: args.native }),
+    ...buildModeCopy(args.mode, args.shellLabel, args.copy),
+    ...buildRecentSummary({ preview: args.preview, native: args.native, copy: args.copy }),
     capabilityRows: buildCapabilityRows({
       providers: args.providers,
       context: args.context,
       native: args.native,
+      copy: args.copy,
     }),
-    injectionItems: buildInjectionItems(args.context),
+    injectionItems: buildInjectionItems(args.context, args.copy),
     localEvidenceItems: buildLocalEvidenceItems({
       context: args.context,
       native: args.native,
+      copy: args.copy,
     }),
   };
 }
 
-export function getActivitySourceLabel(kind: ActivityContextSourceKind): string {
-  return SOURCE_LABELS[kind];
+export function getActivitySourceLabel(kind: ActivityContextSourceKind, copy: ActivityPanelCopy): string {
+  return copy.sources[SOURCE_KIND_TO_COPY_KEY[kind]];
 }
 
 export function getActivitySourceItemCount(source?: ActivityContextSource | null): number {

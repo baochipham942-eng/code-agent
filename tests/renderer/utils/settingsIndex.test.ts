@@ -28,11 +28,6 @@ describe('settings search index', () => {
     expect(searchSettings(en.settings.searchIndex.browserToolMode).map((entry) => entry.tab)).toContain('workspace');
   });
 
-  it('covers capability center settings for admins', () => {
-    expect(searchSettings(zh.settings.searchIndex.localCapabilityInventory, { isAdmin: true }).map((entry) => entry.tab)).toContain('capabilities');
-    expect(searchSettings('MCP', { isAdmin: true }).map((entry) => entry.tab)).toContain('capabilities');
-  });
-
   it('covers plugin management settings for admins', () => {
     expect(searchSettings(zh.settings.searchIndex.pluginMarketplace, { isAdmin: true }).map((entry) => entry.tab)).toContain('plugins');
     expect(searchSettings(zh.settings.searchIndex.pluginVisibility, { isAdmin: true }).map((entry) => entry.tab)).toContain('plugins');
@@ -43,20 +38,11 @@ describe('settings search index', () => {
     expect(searchSettings(zh.settings.searchIndex.configScope).map((entry) => entry.tab)).toContain('workspace');
   });
 
-  it('covers user and invite management settings', () => {
-    expect(searchSettings(zh.settings.tabs.users, { isAdmin: true }).map((entry) => entry.tab)).toContain('users');
-    expect(searchSettings(zh.settings.searchIndex.registeredUsers, { isAdmin: true }).map((entry) => entry.tab)).toContain('users');
-    expect(searchSettings(zh.settings.searchIndex.inviteManagement, { isAdmin: true }).map((entry) => entry.tab)).toContain('invites');
-    expect(searchSettings(zh.settings.searchIndex.newInvite, { isAdmin: true }).map((entry) => entry.tab)).toContain('invites');
-    expect(searchSettings('control plane', { isAdmin: true }).map((entry) => entry.tab)).toContain('controlPlane');
-    expect(searchSettings(zh.settings.searchIndex.releaseAudit, { isAdmin: true }).map((entry) => entry.tab)).toContain('controlPlane');
-  });
-
-  it('hides admin-only settings from non-admin search results', () => {
-    expect(searchSettings(zh.settings.searchIndex.registeredUsers).map((entry) => entry.tab)).not.toContain('users');
-    expect(searchSettings(zh.settings.searchIndex.inviteManagement).map((entry) => entry.tab)).not.toContain('invites');
-    expect(searchSettings(zh.settings.searchIndex.releaseAudit).map((entry) => entry.tab)).not.toContain('controlPlane');
-    expect(searchSettings(zh.settings.searchIndex.localCapabilityInventory).map((entry) => entry.tab)).not.toContain('capabilities');
+  it('管理组迁 admin-console 后不再被搜索索引覆盖（2026-07 方案 9C）', () => {
+    expect(searchSettings('user management', { isAdmin: true })).toHaveLength(0);
+    expect(searchSettings('invite', { isAdmin: true })).toHaveLength(0);
+    expect(searchSettings('control plane', { isAdmin: true })).toHaveLength(0);
+    expect(searchSettings('capability center', { isAdmin: true })).toHaveLength(0);
   });
 
   it('keeps plugins/hooks searchable for non-admin users (Settings IA v2, 2026-07-03 拍板)', () => {

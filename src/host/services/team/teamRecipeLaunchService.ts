@@ -1,6 +1,11 @@
 import { TEAM_RECIPES } from '@shared/constants/teamRecipeCatalog';
 import { SERVICE_TIMEOUTS } from '@shared/constants/timeouts';
-import { validateTeamRecipe, type TeamRecipe } from '@shared/contract/teamRecipe';
+import {
+  TEAM_LEAD_METADATA_KEY,
+  validateTeamRecipe,
+  type PersistedTeamLead,
+  type TeamRecipe,
+} from '@shared/contract/teamRecipe';
 import type { MultiagentExecutionResult } from '../../agent/multiagentExecutionTypes';
 import { listAllAgents } from '../../agent/agentRegistry';
 import { launchAgentTeam } from '../../agent/multiagentTools/spawnAgent';
@@ -98,6 +103,31 @@ export function archiveTeamResult(
     });
   } catch (error) {
     console.warn('[TeamRecipe] 聚合产物归档失败（团队本身已完成）', error);
+  }
+}
+
+/**
+ * 会话级产品状态只写 metadata.teamLead，不整列替换 metadata，避免覆盖其它并发写入的 key。
+ * 这是组队主链路的附带记录：失败只报警，不阻断团队发起。
+ */
+async function persistTeamLead(input: ValidatedTeamRecipeLaunch): Promise<void> {
+  const lead = input.recipe.lead;
+  if (!lead) return;
+
+  const marker: PersistedTeamLead = {
+    roleId: lead.roleId,
+    recipeId: input.recipe.id,
+    setAt: Date.now(),
+  };
+  try {
+    const persisted = await getSessionManager().patchSessionMetadata(input.sessionId, {
+      [TEAM_LEAD_METADATA_KEY]: { ...marker },
+    });
+    if (!persisted) {
+      console.warn(`[TeamRecipe] 主理人记录写入失败：会话 ${input.sessionId} 不存在`);
+    }
+  } catch (error) {
+    console.warn('[TeamRecipe] 主理人记录写入失败（不阻断组队）', error);
   }
 }
 
@@ -302,6 +332,8 @@ export async function launchTeamRecipe(args: TeamRecipeLaunchInput): Promise<Lau
     session,
     workspace: session.workingDirectory ?? process.cwd(),
   };
+  await persistTeamLead(input);
+
   if (!recipe.lead) {
     console.warn('[TeamRecipe] 主理人降级：配方未配置 lead，走确定性组队路径');
     return launchTeamRecipeDeterministic(input);

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RolePanelDetail, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 import type { RolePackListItem } from '../../../src/renderer/services/rolesClient';
@@ -168,11 +168,11 @@ describe('ExpertPanel', () => {
     expect(screen.getByText('还没合作过')).toBeTruthy();
   });
 
-  it('默认停在发现，并始终提供有明显样式的新建专家入口', async () => {
+  it('默认停在「我的」，并始终提供有明显样式的新建专家入口', async () => {
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);
-    await waitFor(() => expect(screen.getByTestId('expert-tab-discover').getAttribute('aria-selected')).toBe('true'));
-    expect(screen.getByTestId('expert-tab-mine').getAttribute('aria-selected')).toBe('false');
+    await waitFor(() => expect(screen.getByTestId('expert-tab-mine').getAttribute('aria-selected')).toBe('true'));
+    expect(screen.getByTestId('expert-tab-discover').getAttribute('aria-selected')).toBe('false');
     const create = screen.getByTestId('expert-create-role');
     expect(create.textContent).toContain('新建专家');
     expect(create.className).toContain('bg-zinc-600');
@@ -395,7 +395,7 @@ describe('ExpertPanel', () => {
     expect(screen.queryByTestId('role-quiet-hours-clear')).toBeNull();
   });
 
-  it('独立详情页的四个 tab 都可切换，关闭回到能力中心专家 tab', async () => {
+  it('独立详情页的四个 tab 都可切换，「返回应用」回到能力中心专家 tab', async () => {
     useAppStore.getState().openExpertRoleDetail('牧之');
     render(<RoleDetailPage roleId="牧之" />);
     await waitFor(() => expect(screen.getByTestId('role-detail-basic-tab')).toBeTruthy());
@@ -405,7 +405,7 @@ describe('ExpertPanel', () => {
     expect(screen.getByTestId('role-detail-personalization-tab')).toBeTruthy();
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
     expect(screen.getByTestId('role-detail-records-tab')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回应用' }));
     expect(useAppStore.getState().showCapabilityHub).toBe(true);
     expect(useAppStore.getState().capabilityHubTab).toBe('experts');
   });
@@ -527,12 +527,14 @@ describe('ExpertPanel', () => {
     expect((await screen.findByTestId('role-restore-factory') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('空列表渲染空态', async () => {
+  it('「我的」空列表渲染引导空态，点按钮切到「发现」', async () => {
     listRoles.mockResolvedValue([]);
     render(<ExpertPanel />);
     await waitFor(() => {
-      expect(screen.getByText(/还没有专家/)).toBeTruthy();
+      expect(screen.getByText(/你的专家货架还是空的/)).toBeTruthy();
     });
+    fireEvent.click(screen.getByTestId('expert-empty-goto-discover'));
+    await waitFor(() => expect(screen.getByTestId('expert-tab-discover').getAttribute('aria-selected')).toBe('true'));
   });
 
   it('退化角色包在货架和「我的」专家卡显示不可用技能清单', async () => {
@@ -671,5 +673,54 @@ describe('ExpertPanel', () => {
     await waitFor(() => expect(screen.getByTestId('role-pack-load-error')).toBeTruthy());
     expect(screen.getByTestId('role-pack-load-error').textContent).not.toContain('public_keys_missing');
     expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+  });
+
+  it('分类 chips 按角色 category 推导，选中后过滤卡片、回「全部」恢复', async () => {
+    listRoles.mockResolvedValue([
+      makeEntry(),
+      makeEntry({ roleId: '溯真', displayName: '溯真', category: 'research', profession: '研究员', tags: ['调研'] }),
+      makeEntry({ roleId: '自建无分类', source: 'user', category: undefined, displayName: '阿问', tags: [] }),
+    ]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-category-chips')).toBeTruthy());
+    // chips = 全部 + 出现的分类（product/research）+ 无分类归「其他」
+    expect(screen.getByTestId('expert-category-chip-all')).toBeTruthy();
+    expect(screen.getByTestId('expert-category-chip-product')).toBeTruthy();
+    expect(screen.getByTestId('expert-category-chip-research')).toBeTruthy();
+    expect(screen.getByTestId('expert-category-chip-__uncategorized__')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('expert-category-chip-research'));
+    expect(screen.getByTestId('expert-category-chip-research').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByTestId('expert-card-牧之')).toBeNull();
+    expect(screen.queryByTestId('expert-card-自建无分类')).toBeNull();
+    expect(screen.getByTestId('expert-card-溯真')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('expert-category-chip-all'));
+    expect(screen.getByTestId('expert-card-牧之')).toBeTruthy();
+    expect(screen.getByTestId('expert-card-自建无分类')).toBeTruthy();
+  });
+
+  it('云货架加载超时换成可重试空态，「正在加载」不常驻；重试后回到加载态', async () => {
+    vi.useFakeTimers();
+    try {
+      listRoles.mockResolvedValue([makeEntry()]);
+      // 云货架挂起：promise 永不 settle
+      listRolePacks.mockReturnValue(new Promise(() => {}));
+      render(<ExpertPanel />);
+      // 冲刷列表加载的微任务
+      await act(async () => {});
+      fireEvent.click(screen.getByTestId('expert-tab-discover'));
+      expect(screen.queryByTestId('role-pack-load-timeout')).toBeNull();
+
+      await act(async () => { vi.advanceTimersByTime(9000); });
+      expect(screen.getByTestId('role-pack-load-timeout')).toBeTruthy();
+      expect(screen.queryByText('正在加载更多专家…')).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: '重试' }));
+      expect(screen.queryByTestId('role-pack-load-timeout')).toBeNull();
+      expect(screen.getByText('正在加载更多专家…')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -164,6 +164,16 @@ describe('CronCenterPanel featured templates', () => {
     }
   });
 
+  it('页首三格状态条取代 header 小字统计', () => {
+    render(<CronCenterPanel onClose={() => undefined} />);
+    expect(screen.getByTestId('cron-status-bar')).toBeTruthy();
+    expect(screen.getByTestId('cron-status-running')).toBeTruthy();
+    expect(screen.getByTestId('cron-status-pending')).toBeTruthy();
+    expect(screen.getByTestId('cron-status-rate')).toBeTruthy();
+    // 旧 header 统计（总任务/启用）已移除
+    expect(screen.queryByText(/总任务/)).toBeNull();
+  });
+
   it('点一次推荐卡就直接创建启用的 agent job', async () => {
     createJob.mockImplementation(async (input) => ({
       ...(input as object),

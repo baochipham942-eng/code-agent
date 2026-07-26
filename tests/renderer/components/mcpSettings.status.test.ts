@@ -337,6 +337,17 @@ describe('MCPSettings status', () => {
     expect(html).not.toContain(mcpText.management.reauthorize);
   });
 
+  it('默认落「已连接」，列表行头部状态点绿=connected、灰=其他态', () => {
+    mcpServers = [connectedGithubServer, disconnectedSlackServer];
+
+    render(React.createElement(MCPSettings));
+
+    const githubDot = screen.getByTestId('mcp-server-status-dot-github');
+    const slackDot = screen.getByTestId('mcp-server-status-dot-slack');
+    expect(githubDot.className).toContain('bg-emerald-400');
+    expect(slackDot.className).toContain('bg-zinc-600');
+  });
+
   it('shows OAuth authorization status and sign-out only for OAuth servers', () => {
     mcpServers = [oauthNotionServer, connectedGithubServer];
 

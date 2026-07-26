@@ -1,10 +1,18 @@
+// ============================================================================
+// CronFeaturedTemplates —— 自动化页首的推荐模板卡（一键开启，无需填写）。
+// 图标不用 emoji（渲染破损、风格漂移）：统一 lucide 图标 + 品牌瓦片
+// （--brand-primary color-mix 派生，与侧栏新任务/NeoBrandMark 同一配方）；
+// 「开启」是卡片唯一主操作，统一走 Button primitive 品牌主按钮。
+// ============================================================================
+
 import React, { useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
-import { Check, Loader2, Sparkles } from 'lucide-react';
+import { CalendarClock, CalendarRange, Check, ClipboardCheck, Sparkles, type LucideIcon } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useMcpServerStates } from '../../../hooks/useMcpServerStates';
 import { useI18n } from '../../../hooks/useI18n';
+import { Button } from '../../primitives/Button';
 import {
   FEATURED_CRON_TEMPLATES,
   getMissingTemplateConnectors,
@@ -13,6 +21,13 @@ import {
   type TemplateConnectorStatus,
 } from './cronTemplates';
 import { buildCronJobInput } from './types';
+
+/** 模板 id → lucide 图标；未登记的模板（测试桩、未来新增）回退 Sparkles */
+const TEMPLATE_ICONS: Record<string, LucideIcon> = {
+  'daily-lookahead': CalendarClock,
+  'daily-review': ClipboardCheck,
+  'weekly-review': CalendarRange,
+};
 
 function findExistingJob(
   template: CronTemplate,
@@ -62,7 +77,7 @@ export const CronFeaturedTemplates: React.FC = () => {
         await createJob(buildCronJobInput(template.generate({})));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '开启失败，请稍后重试');
+      setError(err instanceof Error ? err.message : cc.templateEnableFailed);
     } finally {
       setPendingId(null);
     }
@@ -76,8 +91,8 @@ export const CronFeaturedTemplates: React.FC = () => {
       <div className="mb-3 flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-amber-300" />
         <div>
-          <h3 className="text-sm font-medium text-zinc-100">推荐自动化</h3>
-          <p className="mt-0.5 text-xs text-zinc-500">无需填写，点一下即可按默认时间开始</p>
+          <h3 className="text-sm font-medium text-zinc-100">{cc.templatesTitle}</h3>
+          <p className="mt-0.5 text-xs text-zinc-500">{cc.templatesSubtitle}</p>
         </div>
       </div>
 
@@ -96,21 +111,31 @@ export const CronFeaturedTemplates: React.FC = () => {
           const cardStateClassName = isPending || isEnabled
             ? 'border-emerald-500/30 bg-emerald-500/5'
             : 'border-zinc-700/80 bg-zinc-900/80 hover:border-amber-400/50 hover:bg-zinc-900';
+          const TemplateIcon = TEMPLATE_ICONS[template.id] ?? Sparkles;
+          const enableLabel = isEnabled
+            ? cc.templateEnabled
+            : existingJob
+              ? cc.templateReenable
+              : cc.templateEnable;
 
           return (
             <div
               key={template.id}
-              className={`group flex min-h-24 flex-col gap-1.5 rounded-xl border p-3 transition-colors ${cardStateClassName}`}
+              className={`flex min-h-24 flex-col gap-1.5 rounded-xl border p-3 transition-colors ${cardStateClassName}`}
             >
-              <button /* ds-allow:button: 推荐自动化卡片承载多行信息，primitive 的居中动作按钮布局不适配 */
-                type="button"
-                onClick={() => handleEnable(template, existingJob)}
-                disabled={isPending || isEnabled}
-                aria-label={`${isEnabled ? '已开启' : '开启'}${template.name}`}
-                data-testid={`cron-featured-${template.id}`}
-                className="flex w-full items-center gap-3 text-left disabled:cursor-default"
-              >
-                <span className="text-2xl" aria-hidden="true">{template.emoji}</span>
+              <div className="flex w-full items-center gap-3">
+                {/* 品牌瓦片与侧栏新任务/NeoBrandMark 同一配方（--brand-primary color-mix 派生） */}
+                <span
+                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md"
+                  style={{
+                    color: 'var(--brand-primary)',
+                    background: 'color-mix(in srgb, var(--brand-primary) 18%, transparent)',
+                    boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 42%, transparent)',
+                  }}
+                  aria-hidden="true"
+                >
+                  <TemplateIcon className="h-5 w-5" />
+                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-zinc-100">{template.name}</span>
                   <span className="mt-1 block text-xs text-zinc-400">{template.description}</span>
@@ -118,22 +143,22 @@ export const CronFeaturedTemplates: React.FC = () => {
                     {template.scheduleLabel}
                   </span>
                 </span>
-                <span className="inline-flex shrink-0 items-center gap-1 text-xs text-zinc-300 group-hover:text-amber-200">
-                  {isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : isEnabled ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-300" />
-                      已开启
-                    </>
-                  ) : (
-                    existingJob ? '重新开启' : '开启'
-                  )}
-                </span>
-              </button>
+                <Button
+                  size="sm"
+                  variant={isEnabled ? 'secondary' : 'primary'}
+                  onClick={() => handleEnable(template, existingJob)}
+                  disabled={isEnabled}
+                  loading={isPending}
+                  leftIcon={isEnabled ? <Check className="h-3.5 w-3.5" /> : undefined}
+                  aria-label={`${enableLabel}${template.name}`}
+                  data-testid={`cron-featured-${template.id}`}
+                >
+                  {enableLabel}
+                </Button>
+              </div>
 
               {connectorStatuses.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 pl-9" data-testid={`cron-featured-${template.id}-connectors`}>
+                <div className="flex flex-wrap items-center gap-2 pl-12" data-testid={`cron-featured-${template.id}-connectors`}>
                   {connectorStatuses.map((status) => (
                     <span key={status.id} className="inline-flex items-center gap-1 text-[11px]">
                       <span
@@ -149,7 +174,7 @@ export const CronFeaturedTemplates: React.FC = () => {
               )}
 
               {gateHint?.templateId === template.id && (
-                <div className="flex flex-wrap items-center gap-1.5 pl-9 text-[11px] text-amber-300">
+                <div className="flex flex-wrap items-center gap-1.5 pl-12 text-[11px] text-amber-300">
                   <span>
                     {cc.connectorNeededHint.replace(
                       '{name}',
@@ -172,4 +197,3 @@ export const CronFeaturedTemplates: React.FC = () => {
     </section>
   );
 };
-

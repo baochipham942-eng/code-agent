@@ -1,18 +1,25 @@
+// ============================================================================
+// CronJobList —— 自动化中心左侧任务列表。
+// 副标题说人话：cron 表达式经 utils/cronHumanize 翻成「每天 08:30 / 工作日 15:00」，
+// 覆盖不了的形态回退原表达式；底部右侧触发源 chip（定时/一次性/循环/心跳/事件）
+// 语义对齐 contract 的 SessionAutomationType，由 getCronTriggerKind 推导。
+// ============================================================================
+
 import React, { useMemo } from 'react';
-import { Play, Plus, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { getCronTriggerKind } from '../../../utils/cronHumanize';
 import {
   formatDateTime,
   formatScheduleSummary,
-  formatScheduleType,
   getLatestExecutionStatus,
 } from './types';
 
 export const CronJobList: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const {
     jobs,
@@ -98,6 +105,7 @@ export const CronJobList: React.FC = () => {
               const latest = latestExecutions[job.id];
               const latestMeta = getLatestExecutionStatus(latest);
               const latestLabel = cc.status[latest?.status ?? 'none'];
+              const triggerKind = getCronTriggerKind(job);
               return (
                 <button /* ds-allow:button: 任务列表行（多行内容左对齐布局），primitive 是居中动作按钮形状不适配 */
                   key={job.id}
@@ -111,7 +119,9 @@ export const CronJobList: React.FC = () => {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium text-zinc-100">{job.name}</div>
-                      <div className="mt-1 text-xs text-zinc-500">{formatScheduleSummary(job)}</div>
+                      <div className="mt-1 text-xs text-zinc-500" data-testid="cron-job-schedule-summary">
+                        {formatScheduleSummary(job, language)}
+                      </div>
                       {job.enabled && job.nextRunAt != null && (
                         <div className="mt-0.5 text-xs text-zinc-500" data-testid="cron-job-next-run">
                           {cc.nextRun.replace('{time}', formatDateTime(job.nextRunAt))}
@@ -135,9 +145,12 @@ export const CronJobList: React.FC = () => {
                     <span className={`rounded-full px-2 py-1 ${latestMeta.className}`}>
                       {cc.latest.replace('{label}', latestLabel)}
                     </span>
-                    <span className="flex items-center gap-1 text-zinc-500">
-                      <Play className="h-3 w-3" />
-                      {formatScheduleType(job.scheduleType)}
+                    {/* 触发源 chip：信息性标识统一中性 zinc，彩色只留给「要你处理的地方」 */}
+                    <span
+                      className="rounded-full border border-zinc-700/70 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400"
+                      data-testid="cron-job-trigger-kind"
+                    >
+                      {cc.triggerKind[triggerKind]}
                     </span>
                   </div>
                 </button>

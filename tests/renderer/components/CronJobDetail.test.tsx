@@ -61,4 +61,17 @@ describe('CronJobDetail', () => {
     render(<CronJobDetail job={null} />);
     expect(screen.getByText('选择一个任务查看详情')).toBeTruthy();
   });
+
+  it('无描述时显示引导文案而不是「暂无描述」占位', () => {
+    render(<CronJobDetail job={makeJob({ description: undefined })} />);
+    expect(screen.getByTestId('cron-detail-description-guide').textContent).toContain(
+      '让 Neo 给这个任务写一句描述',
+    );
+  });
+
+  it('有描述时正常显示描述、不出现引导文案', () => {
+    render(<CronJobDetail job={makeJob({ description: '每天背 5 个单词' })} />);
+    expect(screen.getByText('每天背 5 个单词')).toBeTruthy();
+    expect(screen.queryByTestId('cron-detail-description-guide')).toBeNull();
+  });
 });

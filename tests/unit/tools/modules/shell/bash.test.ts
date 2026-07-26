@@ -143,6 +143,18 @@ describe('bashModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
     });
 
+    // validateToolArgs 放行了 `''`（对 type: string 的必填参数它是合法值），
+    // 「非空」这条语义要求得由工具自己兜。不兜的话会一路走到 spawn 抛
+    // ERR_INVALID_ARG_VALUE，最后报成 FS_ERROR——参数问题伪装成文件系统错误。
+    it('rejects an empty / whitespace-only command instead of failing as a misleading FS_ERROR', async () => {
+      const handler = await bashModule.createHandler();
+      for (const command of ['', '   ', '\n\t']) {
+        const result = await handler.execute({ command }, makeCtx(), allowAll);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      }
+    });
+
     it('rejects non-string command', async () => {
       const handler = await bashModule.createHandler();
       const result = await handler.execute({ command: 123 }, makeCtx(), allowAll);

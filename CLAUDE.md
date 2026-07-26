@@ -160,7 +160,9 @@ git tag -a v<version> -m "Release v<version>" && git push origin v<version>   # 
 HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev
 rm -rf ~/.code-agent-dev/renderer-cache/active   # dev 侧热更新缓存同样会盖住新包
 # 启动后判定跑在新包上：curl -s http://127.0.0.1:8181/ | grep -oE 'assets/index-[^"]*\.js'
-#   与 app 内 dist/renderer/index.html 引用一致才算；API key 自动回退读生产 ~/.code-agent/.env
+#   与 app 内 dist/renderer/index.html 引用一致才算
+# ⚠️ .env 读取是「命中第一个就停」：~/.code-agent-dev/.env 存在时不会回退读生产 ~/.code-agent/.env
+#   （2026-07-26 voice spike 实测；Dev 包要用的 key 必须复制进 ~/.code-agent-dev/.env）
 ```
 
 <details><summary>生产包覆盖安装（仅验签名/更新链路时用，会覆盖 /Applications 里的生产 app）</summary>

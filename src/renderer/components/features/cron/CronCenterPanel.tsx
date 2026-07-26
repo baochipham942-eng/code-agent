@@ -1,4 +1,15 @@
-import React, { useEffect, useMemo } from 'react';
+// ============================================================================
+// CronCenterPanel —— 自动化中心整页外壳。
+// 页首三格状态条（运行中 / 待过目 / 成功率）是全页状态锚点：数据复用
+// cronStore.stats（运行中=jobsByStatus.running、成功率=successRate）+
+// 收件箱回传的待过目数（与侧栏角标同一琥珀色视觉语言）。
+// 布局自上而下：状态条 → 待过目收件箱（独立卡片区）→ 推荐模板 → 任务列表+详情。
+// 布局契约（2026-07-27 UX 收尾 1.4）：页级横向 padding 统一 px-6（PageContent 契约），
+// 状态条卡片走统一卡片语言（rounded-lg border-zinc-800 bg-zinc-900/70）；
+// 底部列表+详情双栏为全 bleed 工作台区，padding 由页内面板自管。
+// ============================================================================
+
+import React, { useEffect, useMemo, useState } from 'react';
 import { Clock3 } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -14,10 +25,28 @@ interface CronCenterPanelProps {
   onClose: () => void;
 }
 
+const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; testId: string }> = ({
+  label,
+  value,
+  attention = false,
+  testId,
+}) => (
+  <div
+    className={`rounded-lg border px-4 py-3 ${
+      attention ? 'border-amber-500/30 bg-amber-500/10' : 'border-zinc-800 bg-zinc-900/70'
+    }`}
+    data-testid={testId}
+  >
+    <div className={`text-2xl font-semibold tabular-nums ${attention ? 'text-amber-300' : 'text-zinc-100'}`}>
+      {value}
+    </div>
+    <div className="mt-0.5 text-xs text-zinc-500">{label}</div>
+  </div>
+);
+
 export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
-  const automationText = t.settings.automation;
   const {
     jobs,
     stats,
@@ -29,6 +58,9 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     refresh,
     closeEditor,
   } = useCronStore();
+  // 待过目数由收件箱回传（同一条 listPendingReview 通道，语义与服务侧 countPendingReview 一致），
+  // 收件箱里「已过目」后状态条同步归零，不用再发一次 IPC。
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
 
   useEffect(() => {
     refresh();
@@ -52,6 +84,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     [jobs, editingJobId]
   );
 
+  const runningCount = stats?.jobsByStatus?.running ?? 0;
+
   return (
     <FullScreenPage testId="cron-center-panel">
       <FullScreenPageHeader
@@ -59,29 +93,36 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         title={cc.title}
         description={cc.subtitle}
         onClose={onClose}
-        closeLabel={cc.close}
-        actions={stats ? (
-          <div className="hidden items-center gap-2 text-xs text-zinc-400 xl:flex">
-          <span className="rounded-full bg-zinc-900 px-2.5 py-1">{cc.statTotal} {stats.totalJobs}</span>
-          <span className="rounded-full bg-zinc-900 px-2.5 py-1">{cc.statActive} {stats.activeJobs}</span>
-          <span className="rounded-full bg-zinc-900 px-2.5 py-1">{automationText.stats.totalExecutions} {stats.totalExecutions} ({stats.successfulExecutions}{automationText.stats.successfulExecutionsSuffix})</span>
-          <span className="rounded-full bg-zinc-900 px-2.5 py-1">{automationText.stats.failedExecutions} {stats.failedExecutions}</span>
-          <span className="rounded-full bg-zinc-900 px-2.5 py-1">
-            {cc.statRate} {stats.successRate.toFixed(0)}%
-          </span>
-          </div>
-        ) : null}
       />
+
+      <div className="grid shrink-0 grid-cols-3 gap-3 px-6 pt-4" data-testid="cron-status-bar">
+        <StatusTile
+          label={cc.statRunning}
+          value={stats ? String(runningCount) : '—'}
+          testId="cron-status-running"
+        />
+        <StatusTile
+          label={cc.statPendingReview}
+          value={String(pendingReviewCount)}
+          attention={pendingReviewCount > 0}
+          testId="cron-status-pending"
+        />
+        <StatusTile
+          label={cc.statRate}
+          value={stats ? `${stats.successRate.toFixed(0)}%` : '—'}
+          testId="cron-status-rate"
+        />
+      </div>
 
       <WebModeBanner />
 
       {error && (
-        <div className="border-b border-red-500/20 bg-red-500/10 px-5 py-2 text-sm text-red-300">
+        <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-2 text-sm text-red-300">
           {error}
         </div>
       )}
 
-      <AutomationReviewInbox />
+      <AutomationReviewInbox onPendingCountChange={setPendingReviewCount} />
       <CronFeaturedTemplates />
 
       <div className="grid min-h-0 flex-1 grid-cols-[360px_1fr] overflow-hidden">

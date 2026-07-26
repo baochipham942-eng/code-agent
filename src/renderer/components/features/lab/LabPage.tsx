@@ -1,6 +1,10 @@
 // ============================================================================
 // LabPage - 实验室主页面
 // 模型训练学习平台入口
+//
+// 布局例外登记（2026-07-27 UX 收尾 1.4）：主页 hero 图标与实验卡片的
+// rounded-2xl + 渐变是学习平台的游戏化视觉语言，与工具页 PageCard 卡片体系
+// （rounded-lg border-zinc-800 bg-zinc-900/70）刻意区分，ds-allow 标注在元素同行。
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -84,7 +88,7 @@ export const LabPage: React.FC = () => {
     <div className="flex-1 overflow-y-auto p-8">
       {/* Hero Section */}
       <div className="text-center mb-12">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 mb-4">
+        {/* ds-allow:layout hero 图标 rounded-2xl+渐变属学习平台游戏化视觉，登记例外（见文件头） */}<div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 mb-4">
           <FlaskConical className="w-8 h-8 text-emerald-400" />
         </div>
         <h1 className="text-2xl font-bold text-zinc-200 mb-2">{t.lab.heroTitle}</h1>
@@ -144,7 +148,6 @@ export const LabPage: React.FC = () => {
         title={currentLabTitle}
         description={currentLabDescription}
         onClose={() => setShowLab(false)}
-        closeLabel={t.lab.closeLabel}
       />
 
       {/* Content */}
@@ -169,7 +172,7 @@ const LabCardComponent: React.FC<{
   const isLocked = card.status === 'locked';
 
   return (
-    <button
+    <button /* ds-allow:button: Lab 实验卡片整块可点；rounded-2xl+渐变是学习平台游戏化视觉语言，登记例外不并入 PageCard（见文件头） */
       onClick={onClick}
       disabled={!isAvailable}
       className={`

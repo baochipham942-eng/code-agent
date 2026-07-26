@@ -1,5 +1,7 @@
 // ============================================================================
 // MCPSettings - MCP Server Status and Configuration Tab
+// （能力中心连接器 tab；默认落「已连接」。已连接列表每行头部带连接状态点：
+// 绿 = connected，灰 = 其他态，扫一眼就知道哪路连接器是活的）
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -589,6 +591,12 @@ export const MCPSettings: React.FC = () => {
                       >
                         <td className="px-3 py-3 align-middle">
                           <div className="flex min-w-0 items-center gap-3">
+                            {/* 连接状态点：绿=connected，灰=其他态；细节仍由状态列的徽章文案承担 */}
+                            <span
+                              data-testid={`mcp-server-status-dot-${server.id}`}
+                              aria-hidden="true"
+                              className={`h-2 w-2 flex-shrink-0 rounded-full ${server.lifecycle.connectionState === 'connected' ? 'bg-emerald-400' : 'bg-zinc-600'}`}
+                            />
                             {getStatusIcon(server.lifecycle.connectionState)}
                             <div className="min-w-0">
                               <div className="truncate text-sm font-medium text-zinc-200">{server.label}</div>

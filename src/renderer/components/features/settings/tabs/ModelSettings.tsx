@@ -3,13 +3,24 @@
 // Master-Detail 布局：左侧 Provider 列表（已可用 / 待添加 Key 分组）+ 右侧详情面板。
 // 详情面板三段式：① 连接 → ② 模型 → ③ 高级（折叠）。
 // 所有保存 / 测试 / 发现 / 新增 handler 与重构前完全一致，仅 UI 结构重组。
+//
+// 保存语义契约（2026-07 设置页 P0）：
+// - TaskStrategySettingsPanel（顶部「按任务自动切换」）改动即存，UI 标注「自动保存」，
+//   不参与 dirty 追踪。
+// - Provider 表单是 staged：连接 / 模型勾选 / 高级 / 新增 Provider 的修改只写本地
+//   state（config + providerConfigs），必须点底部「保存配置」才落盘。
+//   staged-dirty = 上述任一表单 handler 被调用且之后尚未保存成功；
+//   「发现模型」（非静默）与「新增 Provider」同样只写本地 state，也算 dirty；
+//   「设为默认模型」自身立即落盘，不算 dirty。
+// - dirty 通过 onDirtyChange 上报给 SettingsModal：由父层做切 tab / 关闭拦截与
+//   侧栏「未保存」徽标（本组件切 tab 即 unmount，拦截只能放父层）。
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Toggle } from '../../../primitives';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, ModelEntrySettings, ModelProvider, ModelProviderProtocol, ModelProviderSettings, TaskModelStrategySettings } from '@shared/contract';
-import { MODEL, UI, PROVIDER_MODELS, getProviderEndpointForProtocol, PROVIDER_CONCURRENCY_LIMITS } from '@shared/constants';
+import { MODEL, PROVIDER_MODELS, getProviderEndpointForProtocol, PROVIDER_CONCURRENCY_LIMITS } from '@shared/constants';
 import {
   buildProviderInfoFromSettings,
   getProviderIconPresets,
@@ -74,6 +85,8 @@ export type { ModelConfig };
 export interface ModelSettingsProps {
   config: ModelConfig;
   onChange: (config: ModelConfig) => void;
+  /** staged-dirty 上报：Provider 表单有未点「保存配置」落盘的修改时为 true（契约见文件头注释） */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 interface DefaultModelSelection {
@@ -85,12 +98,13 @@ interface DefaultModelSelection {
 // Component
 // ============================================================================
 
-export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }) => {
+export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, onDirtyChange }) => {
   const { t } = useI18n();
   const modelText = t.settings.model;
   const temperatureControl = useMemo(() => getModelTemperatureControl(config.model), [config.model]);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  // staged-dirty：Provider 表单有未保存修改（定义见文件头「保存语义契约」）
+  const [providerFormDirty, setProviderFormDirty] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
@@ -121,6 +135,14 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const [newProviderProtocol, setNewProviderProtocol] = useState<ModelProviderProtocol>('openai');
   // Master-Detail：右侧面板是否处于「新增 Provider」模式
   const [isAddingProvider, setIsAddingProvider] = useState(false);
+
+  // staged-dirty 上报：任一 staged 表单 handler 置位，保存成功复位；
+  // unmount（切 tab / 关闭设置）时通知父层清除徽标与拦截状态。
+  const markDirty = useCallback(() => setProviderFormDirty(true), []);
+  useEffect(() => {
+    onDirtyChange?.(providerFormDirty);
+  }, [providerFormDirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   // Build provider display list with i18n names where available
   const providers = useMemo(() => {
@@ -264,44 +286,50 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   }, [config, onChange, providerConfigs]);
 
   const handleApiKeyChange = useCallback((value: string) => {
+    markDirty();
     patchCurrentProviderConfig({
       apiKey: value,
       apiKeyConfigured: value.trim() ? true : currentProviderConfig?.apiKeyConfigured,
     });
     onChange({ ...config, apiKey: value });
-  }, [config, currentProviderConfig?.apiKeyConfigured, onChange, patchCurrentProviderConfig]);
+  }, [config, currentProviderConfig?.apiKeyConfigured, markDirty, onChange, patchCurrentProviderConfig]);
 
   const handleBaseUrlChange = useCallback((value: string) => {
+    markDirty();
     patchCurrentProviderConfig({ baseUrl: value });
     onChange({ ...config, baseUrl: value });
-  }, [config, onChange, patchCurrentProviderConfig]);
+  }, [config, markDirty, onChange, patchCurrentProviderConfig]);
 
   // 并发上限是 per-provider 设置（不属于活动 ModelConfig），只写 providerConfig，
   // 由 Save 时随 currentProviderConfig 一起持久化到 settings.models.providers。
   const handleMaxConcurrentChange = useCallback((value: number | undefined) => {
+    markDirty();
     patchCurrentProviderConfig({ maxConcurrent: value });
-  }, [patchCurrentProviderConfig]);
+  }, [markDirty, patchCurrentProviderConfig]);
   const handleProxyModeChange = useCallback((mode: ProxyMode) => {
+    markDirty();
     patchCurrentProviderConfig({ proxyMode: mode });
-  }, [patchCurrentProviderConfig]);
+  }, [markDirty, patchCurrentProviderConfig]);
   const defaultMaxConcurrent = PROVIDER_CONCURRENCY_LIMITS[config.provider]?.maxConcurrent;
 
   const handleResetOfficialEndpoint = useCallback(() => {
     if (!registryEndpoint) {
       return;
     }
+    markDirty();
     patchCurrentProviderConfig({ baseUrl: registryEndpoint });
     onChange({ ...config, baseUrl: registryEndpoint });
     toast.success(modelText.toast.officialEndpointRestored);
-  }, [config, modelText.toast.officialEndpointRestored, onChange, patchCurrentProviderConfig, registryEndpoint]);
+  }, [config, markDirty, modelText.toast.officialEndpointRestored, onChange, patchCurrentProviderConfig, registryEndpoint]);
 
   const handleDisplayNameChange = useCallback((value: string) => {
     if (isProviderIdentityManaged(currentProviderConfig)) {
       toast.warning(modelText.toast.managedNameWarning);
       return;
     }
+    markDirty();
     patchCurrentProviderConfig({ displayName: value });
-  }, [currentProviderConfig, modelText.toast.managedNameWarning, patchCurrentProviderConfig]);
+  }, [currentProviderConfig, markDirty, modelText.toast.managedNameWarning, patchCurrentProviderConfig]);
   const handleProviderIconChange = useCallback((value: string) => {
     if (isProviderIdentityManaged(currentProviderConfig)) {
       toast.warning(modelText.toast.managedIconWarning);
@@ -312,8 +340,9 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       toast.warning(describeProviderIconValidationError(result, modelText.helpers) ?? modelText.toast.invalidIconFallback);
       return;
     }
+    markDirty();
     patchCurrentProviderConfig({ icon: result.normalized });
-  }, [currentProviderConfig, modelText.helpers, modelText.toast.invalidIconFallback, modelText.toast.managedIconWarning, patchCurrentProviderConfig]);
+  }, [currentProviderConfig, markDirty, modelText.helpers, modelText.toast.invalidIconFallback, modelText.toast.managedIconWarning, patchCurrentProviderConfig]);
   const handleProviderIconImageUpload = useCallback(async (dataUrl: string) => {
     const result = await saveProviderIconAssetFromDataUrl({
       provider: config.provider,
@@ -323,10 +352,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     return result.icon;
   }, [config.provider, modelText.toast.iconSaved]);
   const handleProviderFavoriteChange = useCallback((favorite: boolean) => {
+    markDirty();
     patchCurrentProviderConfig({ favorite });
-  }, [patchCurrentProviderConfig]);
+  }, [markDirty, patchCurrentProviderConfig]);
 
   const handleProviderProtocolChange = useCallback((protocol: ModelProviderProtocol) => {
+    markDirty();
     patchCurrentProviderConfig({ protocol });
     if (config.provider === 'longcat') {
       const baseUrl = getProviderEndpointForProtocol(config.provider, protocol) || config.baseUrl;
@@ -335,7 +366,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       return;
     }
     onChange({ ...config, protocol });
-  }, [config, onChange, patchCurrentProviderConfig]);
+  }, [config, markDirty, onChange, patchCurrentProviderConfig]);
 
   const buildCurrentProviderConfigForSave = useCallback((modelId: string) => buildProviderConfigForSave({
     currentProviderConfig,
@@ -408,6 +439,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   }, [buildCurrentProviderConfigForSave, config, currentModels, modelText.toast.defaultModelSaveFailedPrefix, modelText.toast.defaultModelUpdated, modelText.unknownError, onChange, patchCurrentProviderConfig]);
 
   const handleToggleModelEnabled = useCallback((model: RuntimeProviderModel, enabled: boolean) => {
+    markDirty();
     patchCurrentModelSettings(model, { enabled });
     const nextModels = currentModels.map((item) =>
       item.id === model.id ? { ...item, enabled } : item
@@ -427,12 +459,11 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       capabilities: selectedModel?.capabilities ?? config.capabilities,
       maxTokens: selectedModel?.maxTokens ?? config.maxTokens,
     });
-  }, [config, currentEnabledModels.length, currentModels, onChange, patchCurrentModelSettings]);
+  }, [config, currentEnabledModels.length, currentModels, markDirty, onChange, patchCurrentModelSettings]);
 
   // Save config to backend
   const handleSave = async () => {
     setIsSaving(true);
-    setSaveStatus('idle');
     try {
       const providerConfigForSave = buildCurrentProviderConfigForSave(currentProviderConfig?.model || config.model);
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
@@ -472,11 +503,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         });
       }
       logger.info('Config saved', { provider: config.provider });
-      setSaveStatus('success');
-      setTimeout(() => setSaveStatus('idle'), UI.COPY_FEEDBACK_DURATION);
+      setProviderFormDirty(false);
+      // 保存反馈走全站统一 toast 通道（替代原按钮强制绿色 2 秒的硬 hack）
+      toast.success(modelText.toast.configSaved);
     } catch (error) {
       logger.error('Failed to save config', error);
-      setSaveStatus('error');
+      toast.error(modelText.toast.configSaveFailedPrefix + (error instanceof Error ? error.message : modelText.unknownError));
     } finally {
       setIsSaving(false);
     }
@@ -641,13 +673,16 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         });
       }
 
+      // 手动（非静默）发现把模型清单合入 staged 表单，随「保存配置」落盘，计为未保存修改；
+      // 静默发现（local 自动探测）只读本地清单，不打扰 dirty 状态。
+      if (!silent) markDirty();
       if (!silent) toast.success(`${modelText.toast.discoveredModelsPrefix}${result.models.length}${modelText.toast.discoveredModelsSuffix}`);
     } catch (error) {
       if (!silent) toast.error(modelText.toast.modelDiscoveryFailedPrefix + (error instanceof Error ? error.message : modelText.unknownError));
     } finally {
       setIsDiscovering(false);
     }
-  }, [config, currentEnabledModels, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, modelText.toast.discoveredModelsPrefix, modelText.toast.discoveredModelsSuffix, modelText.toast.modelDiscoveryFailed, modelText.toast.modelDiscoveryFailedPrefix, modelText.toast.noModelsReturned, modelText.toast.providerAddressRequired, modelText.unknownError, onChange]);
+  }, [config, currentEnabledModels, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, markDirty, modelText.toast.discoveredModelsPrefix, modelText.toast.discoveredModelsSuffix, modelText.toast.modelDiscoveryFailed, modelText.toast.modelDiscoveryFailedPrefix, modelText.toast.noModelsReturned, modelText.toast.providerAddressRequired, modelText.unknownError, onChange]);
 
   // 本地 Ollama：选中即自动发现已装模型，下拉框出厂预填，避免用户手敲出幽灵模型名。
   // 本地清单零成本、随时可读，静默发现（失败不弹错），每个 Provider 一个会话只跑一次。
@@ -695,6 +730,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   }, [settingsLoaded, providers, providerConfigs]);
 
   const handleAddProvider = useCallback(() => {
+    markDirty();
     const displayName = newProviderName.trim();
     const baseUrl = newProviderBaseUrl.trim().replace(/\/+$/, '');
     const apiKey = newProviderApiKey.trim();
@@ -750,7 +786,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setModelSearch('');
     setIsAddingProvider(false);
     toast.success(modelText.toast.providerAdded);
-  }, [config, modelText.toast.providerAdded, modelText.toast.providerAddressRequired, modelText.toast.providerNameRequired, newProviderApiKey, newProviderBaseUrl, newProviderName, newProviderProtocol, onChange, providerConfigs]);
+  }, [config, markDirty, modelText.toast.providerAdded, modelText.toast.providerAddressRequired, modelText.toast.providerNameRequired, newProviderApiKey, newProviderBaseUrl, newProviderName, newProviderProtocol, onChange, providerConfigs]);
 
   const handleAddManualModel = useCallback(() => {
     const modelId = manualModelId.trim();
@@ -759,6 +795,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       return;
     }
 
+    markDirty();
     const manualModel = buildManualModelSettings(modelId, manualModelLabel);
     setProviderConfigs((prev) => {
       const providerConfig = prev[config.provider] ?? { enabled: true };
@@ -789,7 +826,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setManualModelLabel('');
     setModelSearch('');
     toast.success(modelText.toast.modelAdded);
-  }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, modelText.toast.modelAdded, modelText.toast.modelIdRequired, onChange]);
+  }, [config, effectiveBaseUrl, effectiveProtocol, hasStoredApiKey, manualModelId, manualModelLabel, markDirty, modelText.toast.modelAdded, modelText.toast.modelIdRequired, onChange]);
 
   const providerTitle = currentProviderConfig?.displayName || selectedProviderRow?.name || config.provider;
   const providerIcon = normalizeProviderIcon(currentProviderConfig?.icon) || providerTitle.slice(0, 1).toUpperCase();
@@ -887,7 +924,10 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                     <span>{modelText.header.selectableLabel}</span>
                     <Toggle
                       checked={currentProviderConfig?.enabled !== false}
-                      onChange={(checked) => patchCurrentProviderConfig({ enabled: checked })}
+                      onChange={(checked) => {
+                        markDirty();
+                        patchCurrentProviderConfig({ enabled: checked });
+                      }}
                       aria-label={modelText.header.selectableAriaLabel}
                     />
                   </label>
@@ -961,6 +1001,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
                   onMaxConcurrentChange={handleMaxConcurrentChange}
                   onProxyModeChange={handleProxyModeChange}
                   onTemperatureChange={(temperature) => {
+                    markDirty();
                     patchCurrentProviderConfig({ temperature });
                     onChange({ ...config, temperature });
                   }}
@@ -969,15 +1010,20 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
               {/* ── 保存 ── */}
               <div className="flex flex-col gap-2 border-t border-zinc-800 pt-4">
+                {providerFormDirty && (
+                  <span className="inline-flex w-fit items-center rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-200">
+                    {modelText.header.unsavedBadge}
+                  </span>
+                )}
                 <Button
                   disabled={isWebMode()}
                   onClick={handleSave}
                   loading={isSaving}
                   size="lg"
-                  variant={saveStatus === 'error' ? 'danger' : 'primary'}
-                  className={`w-full ${saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}`}
+                  variant="primary"
+                  className="w-full"
                 >
-                  {isSaving ? t.common.saving : saveStatus === 'success' ? t.common.saved : saveStatus === 'error' ? t.common.error : modelText.header.saveConfig}
+                  {isSaving ? t.common.saving : modelText.header.saveConfig}
                 </Button>
                 <span className="text-xs text-zinc-500">
                   {modelText.header.saveHintPrefix}{providerTitle}{modelText.header.saveHintSuffix}

@@ -38,12 +38,11 @@ describe('SidebarCapabilityZone', () => {
       'sidebar-capability-automation',
     ]);
     expect(screen.queryByTestId('sidebar-expert-recent-strip')).toBeNull();
-    // 「里面装了什么」从常驻副标题降级成 title 悬浮提示：静态说明那两行不再各占两行，
-    // 只有自动化保留第二行——那是动态状态（下次运行/任务数/空态），不是说明文字。
+    // 三行全部单行：静态说明和动态状态（下次运行/任务数/空态引导）都收进 title 悬浮提示，
+    // 行内不再占第二行，节奏一致才有呼吸感。
     // 图标瓦片一律中性色：颜色只留给「要你处理的地方」，四行各一色等于没有重点。
     for (const row of rows) {
-      const isAutomation = row.dataset.testid === 'sidebar-capability-automation';
-      expect(row.querySelectorAll('span.block').length).toBe(isAutomation ? 2 : 0);
+      expect(row.querySelectorAll('span.block').length).toBe(0);
       expect(row.innerHTML).not.toMatch(/bg-(violet|indigo|amber|cyan)-500\/10/);
     }
     expect(screen.queryByText('专家 · 技能 · 连接器')).toBeNull();
@@ -61,20 +60,23 @@ describe('SidebarCapabilityZone', () => {
     expect(useAppStore.getState().showLibraryPanel).toBe(true);
     useAppStore.getState().setShowLibraryPanel(false);
   });
-  it('空态给出自动化引导', async () => {
+  it('空态引导收进自动化行悬浮提示', async () => {
     listJobs.mockResolvedValue([]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
-    expect(await screen.findByText('按计划自动跑，结果回来给你过目')).toBeTruthy();
+    expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title')).toBe('按计划自动跑，结果回来给你过目');
   });
-  it('显示下次运行时间和任务名', async () => {
+  it('行内右槽显示下次运行时间，任务名收进悬浮提示', async () => {
     listJobs.mockResolvedValue([makeJob({ nextRunAt: Date.now() + 3_600_000 })]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
-    // 连「下次 {time} · {name}」的整体格式一起钉，只验任务名会让时间渲染坏掉也不报
-    await waitFor(() => expect(screen.getByText(/下次 .+ · 英语单词/)).toBeTruthy());
+    const automation = screen.getByTestId('sidebar-capability-automation');
+    // 行内只留时间（今天 = HH:mm），完整「下次 {time} · {name}」在 title，两处一起钉
+    await waitFor(() => expect(automation.textContent).toMatch(/\d{2}:\d{2}/));
+    expect(automation.getAttribute('title')).toMatch(/下次 .+ · 英语单词/);
+    expect(automation.textContent).not.toContain('英语单词');
   });
-  it('显示启用任务数，禁用任务不参与计数', async () => {
+  it('启用任务数收进悬浮提示，禁用任务不参与计数', async () => {
     listJobs.mockResolvedValue([makeJob({ id: 'enabled', nextRunAt: undefined }), makeJob({ id: 'disabled', enabled: false, nextRunAt: undefined })]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);
-    expect(await screen.findByText('1 个任务')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('sidebar-capability-automation').getAttribute('title')).toBe('1 个任务'));
   });
-  it('running 圆点和待过目角标都属于自动化行，副标题继续讲计划、数量只由角标讲一次', async () => {
+  it('running 圆点和待过目角标都属于自动化行，计划信息走悬浮提示、数量只由角标讲一次', async () => {
     listJobs.mockResolvedValue([makeJob({ nextRunAt: Date.now() + 3_600_000 })]); getStats.mockResolvedValue(makeStats(1)); countPendingReview.mockResolvedValue(2); render(<SidebarCapabilityZone />);
     const automation = screen.getByTestId('sidebar-capability-automation');
     expect(await screen.findByTestId('sidebar-capability-automation-running')).toBeTruthy();
@@ -84,10 +86,10 @@ describe('SidebarCapabilityZone', () => {
     expect(screen.getByTestId('sidebar-capability-hub').contains(badge)).toBe(false);
     // 推翻旧断言「有待过目就压过下次运行」：那样副标题写「2 条待过目」、角标又显示 2，
     // 同一个数字讲两遍，还把唯一的计划信息挤掉了。现在角标讲数量（读屏靠 aria-label），
-    // 副标题继续讲计划。裸数字回到副标题里就会红。
+    // 计划走 title 悬浮提示，行内右槽只显时间。裸数字回到行内文本里就会红。
     expect(badge.getAttribute('aria-label')).toBe('2 条待过目');
     expect(screen.queryByText('2 条待过目')).toBeNull();
-    expect(screen.getByText(/下次 .+ · 英语单词/)).toBeTruthy();
+    expect(automation.getAttribute('title')).toMatch(/下次 .+ · 英语单词/);
   });
   it('能力中心入口仍打开专家 tab', () => {
     listJobs.mockResolvedValue([]); getStats.mockResolvedValue(makeStats(0)); render(<SidebarCapabilityZone />);

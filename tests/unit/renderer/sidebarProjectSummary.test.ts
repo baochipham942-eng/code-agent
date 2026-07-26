@@ -79,11 +79,11 @@ describe('buildSidebarProjectSummary', () => {
     expect(summary.latestActivityAt).toBe(100);
   });
 
-  it('uses a clearer display name for uncategorized blank sessions', () => {
+  it('uses the caller-supplied i18n group name for uncategorized blank sessions', () => {
     const summary = buildSidebarProjectSummary({
       group: {
         key: '__chats__',
-        name: '对话',
+        name: '快速对话',
         paths: [],
         isUncategorized: true,
         sessions: [makeSession({ id: 'blank' })],
@@ -95,7 +95,7 @@ describe('buildSidebarProjectSummary', () => {
       hasNeedsInputForSession: () => false,
     });
 
-    expect(summary.displayName).toBe('对话');
+    expect(summary.displayName).toBe('快速对话');
   });
 
   it('formats a scan-friendly project header line with active goal and multiple workspaces', () => {

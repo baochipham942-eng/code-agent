@@ -26,9 +26,6 @@ import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
 import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
-import { CostDisplay } from '../../../StatusBar/CostDisplay';
-import { useBudgetStatus } from '../../../../hooks/useBudgetStatus';
-import { useStatusStore } from '../../../../stores/statusStore';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
@@ -599,14 +596,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   });
 
   const modelConfig = useAppStore((s) => s.modelConfig);
-  const sessionCost = useStatusStore((s) => s.sessionCost);
-  const unknownCostTurns = useStatusStore((s) => s.unknownCostTurns);
-  const statusStreaming = useStatusStore((s) => s.isStreaming);
-  // CostDisplay 的预算感知渲染（cache-aware 成本口径 + 缓存节省 tooltip + 告警染色）此前
-  // 只有 StatusBar/index.tsx 传了这个 prop，而那个状态栏壳零消费——发行版里 ChatInput 是
-  // 唯一活着的挂载点却没传，导致成本取的是 renderer 自累计值（可能报少）、缓存节省一行
-  // 从未出现过。useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次。
-  const budgetStatus = useBudgetStatus(sessionCost, statusStreaming);
+  // 累计费用已收进 ContextUsagePill 的 hover 面板（底栏收敛拍板 2026-07-26）：
+  // 圆环 hover 展开时与上下文用量同面板展示，底栏不再常驻成本数字。
+  // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
 
@@ -916,12 +908,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {/* 弹性空白 */}
             <div className="flex-1" />
 
-            {/* 累计费用 — Context pill 左边（有未知价轮次时也显示，tooltip 里说明未计入） */}
-            {(sessionCost > 0 || unknownCostTurns > 0) && (
-              <span className="text-xs mr-1 tabular-nums">
-                <CostDisplay cost={sessionCost} isStreaming={statusStreaming} budget={budgetStatus} />
-              </span>
-            )}
+            {/* 累计费用：底栏不再常驻，收进 ContextUsagePill hover 面板（2026-07-26 底栏收敛） */}
 
             {/* B+ 移除: InteractionModeIndicator — 已收进 InputAddMenu 二级菜单 */}
 

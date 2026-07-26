@@ -18,6 +18,9 @@ export const workbenchTabsZh = {
     overviewTitle: '任务进程与产物',
     overviewProgressLabel: '任务进程',
     overviewArtifactsLabel: '产物',
+    // 概览空态：不摆空产物壳，告诉用户这里是任务现场；有最近任务现场摘要时挂「最近产物」预览
+    overviewEmptyNarrative: '运行中的任务会实时显示在这里',
+    overviewEmptyRecentLabel: '最近产物',
     filesLabel: '文件',
     filesTitle: '文件浏览器',
     browserLabel: '浏览器',
@@ -51,6 +54,8 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     overviewTitle: 'Task progress and deliverables',
     overviewProgressLabel: 'Task progress',
     overviewArtifactsLabel: 'Deliverables',
+    overviewEmptyNarrative: 'Running tasks show up here in real time',
+    overviewEmptyRecentLabel: 'Latest output',
     filesLabel: 'Files',
     filesTitle: 'File browser',
     browserLabel: 'Browser',

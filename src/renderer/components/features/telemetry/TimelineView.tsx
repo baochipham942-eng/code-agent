@@ -1,10 +1,12 @@
 // ============================================================================
 // Timeline View - 事件时间线
+// 2026-07-27 评测中心 v2：空态文案改走 i18n，随 EvalTelemetryTab 内嵌进评测中心。
 // ============================================================================
 
 import React from 'react';
 import type { TelemetryTimelineEvent } from '@shared/contract/telemetry';
 import { Wrench, MessageSquare, AlertTriangle, Zap, Info, Play, Square } from 'lucide-react';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface TimelineViewProps {
   events: TelemetryTimelineEvent[];
@@ -33,13 +35,14 @@ const EVENT_COLORS: Record<string, string> = {
 };
 
 export const TimelineView: React.FC<TimelineViewProps> = ({ events }) => {
+  const { t } = useI18n();
   const formatTime = (ts: number) => {
     const d = new Date(ts);
     return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}.${d.getMilliseconds().toString().padStart(3, '0')}`;
   };
 
   if (events.length === 0) {
-    return <div className="text-center text-zinc-500 text-sm py-8">暂无事件数据</div>;
+    return <div className="text-center text-zinc-500 text-sm py-8">{t.telemetry.emptyEvents}</div>;
   }
 
   return (

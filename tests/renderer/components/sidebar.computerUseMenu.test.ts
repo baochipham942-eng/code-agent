@@ -78,7 +78,9 @@ const appState = {
   setShowSettings: vi.fn(),
   openSettingsTab: vi.fn(),
   setShowPromptManager: vi.fn(),
+  showEvalCenter: false,
   setShowEvalCenter: vi.fn(),
+  openEvalCenter: vi.fn(),
   setWorkingDirectory: vi.fn(),
   showLab: false,
   setShowLab: vi.fn(),
@@ -163,14 +165,21 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).toContain('管理员');
     expect(html).toContain('常用');
     expect(html).toContain('活动');
-    expect(html).toContain('知识与记忆');
-    // 账号菜单里这项的真实文案是「高级定时任务」；原先断言的「自动化」其实命中的是
-    // 侧栏能力区那一行，随 ADR-049 收进能力中心后就没了——断言要钉菜单项本身。
-    expect(html).toContain('高级定时任务');
-    expect(html).toContain('提示词');
-    expect(html).toContain('用户管理');
-    expect(html).toContain('邀请码管理');
+    expect(html).toContain('本机操作');
+    // 2026-07 方案 9C：「Neo 协同」改名「协作请求（@neo）」
+    expect(html).toContain('协作请求（@neo）');
+    // 评测中心（2026-07 v1）：admin-only 菜单项
+    expect(html).toContain('评测中心');
     expect(html).toContain('高级工具');
+    expect(html).toContain('设置');
+    expect(html).toContain('退出登录');
+    // 方案 9C 移出的入口：知识与记忆并入资料库，高级定时任务走能力区/自动化面板，
+    // 提示词进能力中心，用户管理/邀请码迁 admin-console——admin 也不该再看到
+    expect(html).not.toContain('知识与记忆');
+    expect(html).not.toContain('高级定时任务');
+    expect(html).not.toContain('提示词');
+    expect(html).not.toContain('用户管理');
+    expect(html).not.toContain('邀请码管理');
     expect(html).not.toContain('模型训练');
     expect(html).not.toContain('时间与能力');
     expect(html).not.toContain('桌面采集');
@@ -190,6 +199,7 @@ describe('Sidebar account menu entry planning', () => {
 
     expect(memberHtml).not.toContain('用户管理');
     expect(memberHtml).not.toContain('邀请码管理');
+    expect(memberHtml).not.toContain('评测中心');
     expect(memberHtml).not.toContain('Computer Use');
     expect(memberHtml).not.toContain('In-App 验证');
   });

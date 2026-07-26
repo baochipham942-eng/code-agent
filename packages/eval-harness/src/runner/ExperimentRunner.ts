@@ -66,6 +66,8 @@ export interface CaseResult {
 
 export interface ExperimentResult {
   experimentId: string;
+  /** 数据集/套件标识（由 RunnerOptions.dataset 透传），持久化时用于实验命名 */
+  dataset?: string;
   cases: CaseResult[];
   overallPassRate: number;
   timestamp: string;
@@ -83,6 +85,8 @@ function median(values: number[]): number {
 export interface RunnerOptions {
   trialsPerCase?: number;
   maxConsecutiveFailures?: number;
+  /** 数据集/套件标识，透传到 ExperimentResult.dataset（持久化层实验命名用） */
+  dataset?: string;
   runAgent: (prompt: string) => Promise<string | AgentRunOutput>; // product under test
 }
 
@@ -90,6 +94,7 @@ export class ExperimentRunner extends EventEmitter {
   private trialsPerCase: number;
   private maxConsecutiveFailures: number;
   private runAgent: (prompt: string) => Promise<string | AgentRunOutput>;
+  private dataset?: string;
   private consecutiveFailures = 0;
 
   constructor(options: RunnerOptions) {
@@ -97,6 +102,7 @@ export class ExperimentRunner extends EventEmitter {
     this.trialsPerCase = options.trialsPerCase ?? 3;
     this.maxConsecutiveFailures = options.maxConsecutiveFailures ?? 5;
     this.runAgent = options.runAgent;
+    this.dataset = options.dataset;
   }
 
   private normalizeAgentOutput(output: string | AgentRunOutput): AgentRunOutput {
@@ -293,6 +299,7 @@ export class ExperimentRunner extends EventEmitter {
     const passedCount = caseResults.filter(c => c.passed).length;
     return {
       experimentId: id,
+      ...(this.dataset ? { dataset: this.dataset } : {}),
       cases: caseResults,
       overallPassRate: caseResults.length > 0 ? passedCount / caseResults.length : 0,
       timestamp: new Date().toISOString(),

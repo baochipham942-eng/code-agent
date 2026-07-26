@@ -2,6 +2,8 @@
 // Context View Types - shared observability + manual selection model
 // ============================================================================
 
+import { CONTEXT_LEDGER } from '../constants/agent';
+
 export type ContextSelectionMode = 'default' | 'pinned' | 'excluded' | 'retained';
 
 export type ContextSourceType =
@@ -141,7 +143,11 @@ export type ContextEventSourceKind =
   | 'attachment'
   | 'compression_survivor'
   | 'system_anchor'
+  | typeof CONTEXT_LEDGER.SOURCE_KIND[keyof typeof CONTEXT_LEDGER.SOURCE_KIND]
   | ContextInjectionSource;
+
+export type PromptLayerOutcome =
+  typeof CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME[keyof typeof CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME];
 
 export type ContextProvenanceCategory =
   | 'recent_turn'

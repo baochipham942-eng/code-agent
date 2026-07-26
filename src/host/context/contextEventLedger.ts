@@ -5,6 +5,7 @@ import { createLogger } from '../services/infra/logger';
 import type {
   ContextEventSourceKind,
   ContextInjectionSource,
+  PromptLayerOutcome,
   ContextProvenanceAction,
   ContextProvenanceCategory,
 } from '../../shared/contract/contextView';
@@ -22,12 +23,21 @@ export interface ContextEventRecord {
   sessionId: string;
   agentId?: string;
   messageId?: string;
+  invocationId?: string;
   category?: ContextProvenanceCategory;
   action?: ContextProvenanceAction;
   sourceKind?: ContextEventSourceKind;
   sourceDetail?: string;
   layer?: string;
   reason?: string;
+  sequence?: number;
+  chars?: number;
+  tokens?: number;
+  promptLayerOutcome?: PromptLayerOutcome;
+  toolNames?: string[];
+  schemaHash?: string;
+  model?: string;
+  provider?: string;
   timestamp: number;
 }
 
@@ -47,6 +57,7 @@ function buildEventId(event: Omit<ContextEventRecord, 'id'>): string {
     event.sessionId,
     event.agentId || 'global',
     event.messageId || 'session',
+    event.invocationId || 'no-invocation',
     event.category || 'uncategorized',
     event.action || 'added',
     event.sourceKind || 'message',

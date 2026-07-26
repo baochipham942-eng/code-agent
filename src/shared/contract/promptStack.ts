@@ -2,18 +2,15 @@
 // Prompt Stack Contract
 // ============================================================================
 
-export type PromptStackLayerId =
-  | 'substrate'
-  | 'dynamic'
-  | 'soul'
-  | 'tools'
-  | 'tool-envelope'
-  | 'remote-fragments'
-  | 'role-assets'
-  | 'project-profile'
-  | 'neo-tag'
-  | 'skills'
-  | 'unknown';
+import type { PromptLayerOutcome } from './contextView';
+
+export type PromptStackLayerId = string;
+
+export interface PromptStackSummaryRequest {
+  sessionId: string;
+  agentId?: string;
+  invocationId?: string;
+}
 
 export interface PromptStackLayerSummary {
   id: PromptStackLayerId;
@@ -21,15 +18,38 @@ export interface PromptStackLayerSummary {
   present: boolean;
   chars: number;
   tokens: number;
+  outcome: PromptLayerOutcome;
   note?: string;
 }
 
+export interface PromptStackToolSnapshot {
+  names: string[];
+  count: number;
+  schemaHash: string;
+}
+
+export interface PromptStackModelBinding {
+  model: string;
+  provider: string;
+}
+
+export interface PromptStackCompactionCheckpoint {
+  timestamp: number;
+  layer?: string;
+  operation?: string;
+}
+
 export interface PromptStackSummary {
+  sessionId?: string;
+  agentId?: string;
+  invocationId?: string;
+  recordedAt?: number;
   promptVersion: string;
   totalChars: number;
   totalTokens: number;
-  hasDynamicBoundary: boolean;
   layers: PromptStackLayerSummary[];
-  detectedCapabilities: string[];
+  activeTools?: PromptStackToolSnapshot;
+  modelBinding?: PromptStackModelBinding;
+  compactionCheckpoint?: PromptStackCompactionCheckpoint;
   warnings: string[];
 }

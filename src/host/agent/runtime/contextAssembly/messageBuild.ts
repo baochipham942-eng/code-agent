@@ -1,7 +1,7 @@
 // ContextAssembly - Model message construction and transcript projection.
 import type { Message } from '../../../../shared/contract';
 import type { ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
-import { getContextWindow, ACTIVE_TOOL_RESULT_PRUNE } from '../../../../shared/constants';
+import { getContextWindow, ACTIVE_TOOL_RESULT_PRUNE, CONTEXT_LEDGER } from '../../../../shared/constants';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';
 import {
@@ -52,7 +52,7 @@ import { estimateModelMessageTokens, estimateTokens } from '../../../context/tok
 import { CompressionState } from '../../../context/compressionState';
 import { getContextInterventionState } from '../../../context/contextInterventionState';
 import { applyInterventionsToMessages } from '../../../context/contextInterventionHelpers';
-import { getContextEventLedger } from '../../../context/contextEventLedger';
+import { getContextEventLedger, type ContextEventRecord } from '../../../context/contextEventLedger';
 import { getSystemPromptCache } from '../../../telemetry/systemPromptCache';
 import { applyProviderVariant } from '../../../prompts/providerVariants';
 import { logCollector } from '../../../mcp/logCollector.js';
@@ -76,9 +76,9 @@ import {
 } from './artifactRepairProjection';
 import {
   promptBudget,
-  appendPromptBlockWithinBudget,
-  trimPreambleBeforeRequiredArtifactBlock,
-  appendPromptBlockWithinBudgetWithStatus,
+  appendPromptBlockWithinBudget, recordBasePromptLayer, snapshotPromptLayerRecords,
+  trimPreambleBeforeRequiredArtifactBlock, restorePromptLayerRecords,
+  appendPromptBlockWithinBudgetWithStatus, flushPromptLayerRecords,
   REQUIRED_REPAIR_TRIM_CANDIDATES,
 } from './promptBudget';
 
@@ -122,6 +122,7 @@ type RuntimeAssemblyCache = {
     tokens: number;
     /** GAP-023: 该缓存 prompt 构建时被预算丢弃的块（缓存命中时恢复，保持可见化一致） */
     droppedBlocks?: string[];
+    promptLayers?: ContextEventRecord[];
   };
   compression?: {
     key: string;
@@ -196,6 +197,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     logger.debug('[ContextAssembly] dynamic system prompt cache hit', { tokens: cached.tokens });
     // GAP-023: 缓存命中时恢复该 prompt 构建时的丢弃记录，保持可见化与实际 prompt 一致
     ctx.runtime.contextHealth.restoreDroppedPromptBlocks([...(cached.droppedBlocks ?? [])]);
+    restorePromptLayerRecords(ctx, cached.promptLayers ?? []);
     return { systemPrompt: cached.prompt, turnContext: cached.turnContext };
   }
 
@@ -209,8 +211,9 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
   if (projectSystemPrompt.fullReplace !== null) {
     const fullPrompt = projectSystemPrompt.fullReplace;
     const tokens = estimateTokens(fullPrompt);
+    recordBasePromptLayer(ctx, fullPrompt, CONTEXT_LEDGER.BASE_SOURCE.FULL_REPLACE);
     if (tokens <= promptBudget(ctx)) {
-      cache.dynamicPrompt = { key: cacheKey, createdAt: now, prompt: fullPrompt, turnContext: '', tokens };
+      cache.dynamicPrompt = { key: cacheKey, createdAt: now, prompt: fullPrompt, turnContext: '', tokens, promptLayers: snapshotPromptLayerRecords(ctx) };
     } else {
       cache.dynamicPrompt = undefined;
       logger.warn(
@@ -344,6 +347,7 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
 
   systemPrompt = injectWorkingDirectoryContext(systemPrompt, ctx.runtime.workingDirectory, ctx.runtime.isDefaultWorkingDirectory);
   systemPrompt += buildRuntimeModeBlock();
+  recordBasePromptLayer(ctx, systemPrompt, projectSystemPrompt.custom === null ? CONTEXT_LEDGER.BASE_SOURCE.TASK : CONTEXT_LEDGER.BASE_SOURCE.PROJECT, appendedBlocks.values());
 
   // GAP-023: 注入块优先级排序 —— 能力发现类块（plugins / skills / deferred-tools）
   // 先于锦上添花块（session metadata / memory / recent conversations）追加。
@@ -718,6 +722,7 @@ ${deferredToolsSummary}
       tokens,
       // GAP-023: 缓存丢弃记录，命中时恢复
       droppedBlocks: [...(ctx.runtime.contextHealth.droppedPromptBlocks ?? [])],
+      promptLayers: snapshotPromptLayerRecords(ctx),
     };
   } else {
     cache.dynamicPrompt = undefined;
@@ -1160,5 +1165,6 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
     });
   }
 
+  flushPromptLayerRecords(ctx);
   return modelMessages;
 }

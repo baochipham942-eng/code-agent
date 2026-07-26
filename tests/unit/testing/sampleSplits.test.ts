@@ -12,6 +12,7 @@ import { mkdtemp } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import {
+  assertValidEvalSplits,
   splitHeldInOut,
   applySplitFilter,
   saveEvalSplits,
@@ -62,6 +63,7 @@ function splitFile(): EvalSplitFile {
     heldIn: ['a', 'b', 'c'],
     heldOut: ['d', 'e'],
     control: ['a', 'b'],
+    safety: ['s'],
     note: 'GAIA 为天然 held-out',
   };
 }
@@ -71,10 +73,29 @@ describe('applySplitFilter', () => {
     expect(applySplitFilter(undefined, splitFile(), 'held-in')).toEqual(['a', 'b', 'c']);
     expect(applySplitFilter(undefined, splitFile(), 'held-out')).toEqual(['d', 'e']);
     expect(applySplitFilter(undefined, splitFile(), 'control')).toEqual(['a', 'b']);
+    expect(applySplitFilter(undefined, splitFile(), 'safety')).toEqual(['s']);
   });
 
   it('显式 ids 与桶取交集（挡住把 held-out 混进日常迭代）', () => {
     expect(applySplitFilter(['a', 'd'], splitFile(), 'held-in')).toEqual(['a']);
+  });
+});
+
+describe('切分资产硬门', () => {
+  it('拒绝 held-out 混进 held-in', () => {
+    const file = splitFile();
+    file.heldIn.push('d');
+    expect(() => assertValidEvalSplits(file)).toThrow(/held-in\/held-out overlap.*d/);
+  });
+
+  it('拒绝红线 case 留在能力回归桶', () => {
+    const file = splitFile();
+    file.safety = [];
+    file.heldIn.push('s');
+    expect(() => assertValidEvalSplits(file, {
+      allCaseIds: ['a', 'b', 'c', 'd', 'e', 's'],
+      safetyCaseIds: ['s'],
+    })).toThrow(/redline ids outside safety.*s/);
   });
 });
 

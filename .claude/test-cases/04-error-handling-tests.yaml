@@ -6,6 +6,7 @@
 name: "错误处理能力测试"
 description: "测试 Agent 的错误处理和恢复能力"
 default_timeout: 60000
+default_max_cost_usd: 0.10
 tags:
   - errors
   - recovery

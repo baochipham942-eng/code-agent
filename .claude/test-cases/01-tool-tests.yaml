@@ -6,6 +6,7 @@
 name: "工具执行能力测试"
 description: "测试 Agent 的基础工具调用能力"
 default_timeout: 60000
+default_max_cost_usd: 0.10
 tags:
   - tools
   - basic

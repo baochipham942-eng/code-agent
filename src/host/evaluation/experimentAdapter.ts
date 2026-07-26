@@ -112,7 +112,7 @@ export class ExperimentAdapter {
     }
     // WP1-2：infra_excluded（429/超时/5xx/网络）在 canonical 层归 skipped
     // （不进能力分母），metadata.infraExcluded 保留可追溯性。
-    if (status === 'infra_excluded') {
+    if (status === 'infra_excluded' || status === 'cost_exceeded') {
       return 'skipped';
     }
     return 'error';
@@ -374,6 +374,13 @@ export class ExperimentAdapter {
           realAgentRun,
           ...(r.killedByTimeout ? { killedByTimeout: true } : {}),
           ...(r.status === 'infra_excluded' ? { infraExcluded: true } : {}),
+          ...(r.status === 'cost_exceeded'
+            ? {
+                costExceeded: true,
+                costUsd: r.costUsd,
+                costLimitUsd: r.costLimitUsd,
+              }
+            : {}),
           ...(r.variance !== undefined ? { variance: r.variance, stdDev: r.stdDev, unstable: r.unstable } : {}),
         },
       };

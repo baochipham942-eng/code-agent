@@ -22,6 +22,9 @@ function invalidRunReason(result: TestResult): string | null {
   if (result.status === 'infra_excluded') {
     return `infra_excluded（${result.failureReason ?? 'infra error'}）`;
   }
+  if (result.status === 'cost_exceeded') {
+    return `cost_exceeded（${result.failureReason ?? 'case cost limit exceeded'}）`;
+  }
   if (
     result.responses.length === 0 &&
     result.toolExecutions.length === 0 &&

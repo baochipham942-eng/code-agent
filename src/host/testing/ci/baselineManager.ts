@@ -8,8 +8,8 @@ import { CONFIG_DIR_NEW } from '../../config/configPaths';
 import { loadNoiseBand } from './noiseBand';
 import type { EvalBaseline, BaselineDelta, TestRunSummary, EvalRunMode } from '../types';
 
-/** 分母口径版本：2 = 能力分母排除 skipped 与 infra_excluded（与报告口径一致） */
-export const BASELINE_DENOMINATOR_VERSION = 2;
+/** 分母口径版本：3 = 能力分母排除 skipped / infra_excluded / cost_exceeded */
+export const BASELINE_DENOMINATOR_VERSION = 3;
 
 const DEFAULT_THRESHOLDS: EvalBaseline['thresholds'] = {
   minPassRate: 0.7,
@@ -67,7 +67,10 @@ export class BaselineManager {
     // 与 promote/报告同一 coalesce：显式 infraExcluded 优先（total 允许与 results 数组不一致）
     const currentInfraExcluded = current.infraExcluded
       ?? current.results.filter((r) => r.status === 'infra_excluded').length;
-    const currentCapabilityTotal = current.total - current.skipped - currentInfraExcluded;
+    const currentCostExceeded = current.costExceeded
+      ?? current.results.filter((result) => result.status === 'cost_exceeded').length;
+    const currentCapabilityTotal =
+      current.total - current.skipped - currentInfraExcluded - currentCostExceeded;
     const currentPassRate = currentCapabilityTotal > 0 ? current.passed / currentCapabilityTotal : 0;
     const passRateDelta = currentPassRate - baseline.globalMetrics.passRate;
     const scoreDelta = current.averageScore - baseline.globalMetrics.averageScore;
@@ -159,11 +162,16 @@ export class BaselineManager {
     // 写进基线，下次对账全是噪声。分母用 summary 计数（不用 results.length：
     // 调用方的 total 允许与 results 数组不完全一致，见 ci.mode.test 的构造）。
     const capabilityResults = summary.results.filter(
-      (r) => r.status !== 'infra_excluded' && r.status !== 'skipped',
+      (result) =>
+        result.status !== 'infra_excluded'
+        && result.status !== 'skipped'
+        && result.status !== 'cost_exceeded',
     );
     const infraExcluded = summary.infraExcluded
       ?? summary.results.filter((r) => r.status === 'infra_excluded').length;
-    const capabilityTotal = summary.total - summary.skipped - infraExcluded;
+    const costExceeded = summary.costExceeded
+      ?? summary.results.filter((result) => result.status === 'cost_exceeded').length;
+    const capabilityTotal = summary.total - summary.skipped - infraExcluded - costExceeded;
     const passRate = capabilityTotal > 0 ? summary.passed / capabilityTotal : 0;
 
     // per-case 模型归因（费曼审计 P1-4 顺带项）：TestResult 尚无逐 case 模型字段，

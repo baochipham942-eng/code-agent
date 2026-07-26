@@ -11,6 +11,7 @@ import {
   type ModelPricingEntry,
 } from '../../../shared/constants';
 import { getDatabase } from './databaseService';
+import { recordScopedCost } from './scopedCostLimit';
 
 const logger = createLogger('BudgetService');
 
@@ -202,6 +203,10 @@ export class BudgetService {
    * Record token usage from an API call
    */
   recordUsage(usage: TokenUsage): void {
+    // eval 的单 case hard cap 独立于全局 budget 开关：即使用户关闭全局告警，
+    // case 声明的上限仍必须 fail-closed，不能退化成只显示估算。
+    const cost = this.calculateCost(usage);
+    recordScopedCost(cost);
     if (!this.config.enabled) return;
 
     // Check if period needs reset
@@ -209,7 +214,6 @@ export class BudgetService {
 
     this.usageHistory.push(usage);
 
-    const cost = this.calculateCost(usage);
     logger.debug(`Token usage recorded: ${usage.inputTokens} in / ${usage.outputTokens} out = $${cost.toFixed(4)}`);
 
     // A7：per-request 落账本，best-effort——DatabaseService.appendUsageRecord 内部已

@@ -15,7 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { computeNoiseBand, saveNoiseBand, NOISE_BAND_LIMITS } from '../src/host/testing/ci/noiseBand';
 import { loadEvalSplits, applySplitFilter, type SplitBucket } from '../src/host/testing/ci/sampleSplits';
-import { getTestDirs } from '../src/host/config';
+import { getTestDirs } from '../src/host/config/configPaths';
 
 const HELP = `eval-noise-sweep — 重复 K 跑实测评测噪声带（付费！跑前确认预算）
 
@@ -40,7 +40,13 @@ function parseArgs(argv: string[]) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--runs' && i + 1 < args.length) runs = parseInt(args[++i], 10);
-    else if (arg === '--split' && i + 1 < args.length) split = args[++i] as SplitBucket;
+    else if (arg === '--split' && i + 1 < args.length) {
+      const value = args[++i];
+      if (!['held-in', 'held-out', 'control', 'safety'].includes(value)) {
+        throw new Error(`--split 必须是 held-in / held-out / control / safety，收到 ${value}`);
+      }
+      split = value as SplitBucket;
+    }
     else if (arg === '--ids' && i + 1 < args.length) ids = args[++i].split(',').map((s) => s.trim()).filter(Boolean);
     else if (arg === '--model' && i + 1 < args.length) model = args[++i];
     else if (arg === '--provider' && i + 1 < args.length) provider = args[++i];
@@ -72,6 +78,9 @@ async function main() {
   }
 
   const cwd = process.cwd();
+  if (split === 'safety') {
+    throw new Error('safety 红线 case 禁止进入 noise sweep；它们只能在 OS jail 下做单次安全验证');
+  }
   let ids = explicitIds;
   if (!ids) {
     const splits = await loadEvalSplits(cwd);

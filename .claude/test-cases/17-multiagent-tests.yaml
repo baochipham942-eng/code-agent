@@ -6,6 +6,7 @@
 name: "多 Agent 协作测试"
 description: "测试 Agent 的工作流编排和多步骤协同能力"
 default_timeout: 180000
+default_max_cost_usd: 0.10
 tags:
   - multiagent
   - orchestration

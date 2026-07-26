@@ -6,6 +6,7 @@
 name: "复杂工作流测试"
 description: "测试 Agent 在真实开发场景中的端到端能力"
 default_timeout: 180000
+default_max_cost_usd: 0.10
 tags:
   - workflow
   - complex

@@ -40,22 +40,14 @@ import { isProviderVariantDisabled } from '../prompts/providerVariants';
 import { OS_SANDBOX } from '../../shared/constants/sandbox';
 import { TEST_TIMEOUTS } from '../../shared/constants/timeouts';
 import { getSandboxManager } from '../sandbox';
+import { isRedlineCase } from './testCaseClassification';
+import { createScopedCostLimit, isScopedCostLimitExceeded } from '../services/core/scopedCostLimit';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
 
 /** Cases with stdDev above this threshold are marked unstable */
 const UNSTABLE_STDDEV_THRESHOLD = 0.2;
-
-/**
- * 红线/破坏性 case 判定（ADR-036 F3）：category=security 或 tags 含 redline/security。
- * category 在 YAML 里是自由字符串（loader 不校验枚举），故用 string 比较。
- */
-function isRedlineCase(tc: TestCase): boolean {
-  const category = tc.category as string | undefined;
-  const tags = tc.tags ?? [];
-  return category === 'security' || tags.includes('redline') || tags.includes('security');
-}
 
 /**
  * 当前 host 是否有会真正包住 bash 执行的 OS 级 jail。
@@ -418,8 +410,14 @@ export class TestRunner {
     const contributingSuites = suites.filter((s) => s.cases.some((c) => sortedCases.includes(c)));
     const datasetName = contributingSuites.length === 1 ? contributingSuites[0].name : undefined;
 
-    // skipped 与 infra_excluded 都不进能力分母（后者是环境噪声，WP1-2）
-    const nonSkipped = results.filter((r) => r.status !== 'skipped' && r.status !== 'infra_excluded');
+    // skipped / infra_excluded / cost_exceeded 都不进能力分母
+    // （infra_excluded 是环境噪声 WP1-2；cost_exceeded 是成本闸，都不是能力信号）
+    const nonSkipped = results.filter(
+      (result) =>
+        result.status !== 'skipped'
+        && result.status !== 'infra_excluded'
+        && result.status !== 'cost_exceeded',
+    );
     const avgScore = nonSkipped.length > 0
       ? nonSkipped.reduce((sum, r) => sum + r.score, 0) / nonSkipped.length
       : 0;
@@ -442,6 +440,7 @@ export class TestRunner {
       skipped: results.filter((r) => r.status === 'skipped').length,
       partial: results.filter((r) => r.status === 'partial').length,
       infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
+      costExceeded: results.filter((r) => r.status === 'cost_exceeded').length,
       averageScore: avgScore,
       results,
       environment: {
@@ -684,6 +683,15 @@ export class TestRunner {
       turnCount: 0,
       score: 0,
     };
+    const costLimit = testCase.max_cost_usd !== undefined
+      ? createScopedCostLimit(testCase.max_cost_usd)
+      : undefined;
+    if (testCase.max_cost_usd !== undefined) {
+      result.costLimitUsd = testCase.max_cost_usd;
+    }
+    const sendMessage = (prompt: string) => costLimit
+      ? costLimit.run(() => agent.sendMessage(prompt))
+      : agent.sendMessage(prompt);
     let completedExecution = false;
 
     logger.info('Running test', { testId: testCase.id });
@@ -770,7 +778,7 @@ export class TestRunner {
 
       // Send the test prompt (withTimeout 自动清理 timer)
       const agentResult = await withTimeout(
-        agent.sendMessage(testCase.prompt),
+        sendMessage(testCase.prompt),
         timeout,
         `Test timeout after ${timeout}ms`,
       );
@@ -820,7 +828,7 @@ export class TestRunner {
             throw new Error(`Test timeout after ${timeout}ms (budget exhausted before simulated user turn)`);
           }
           const simResult = await withTimeout(
-            agent.sendMessage(match.message!),
+            sendMessage(match.message!),
             remainingTime,
             `Simulated user turn timeout after ${timeout}ms`,
           );
@@ -855,7 +863,7 @@ export class TestRunner {
           if (remainingTime <= 0) break;
 
           const followUpResult = await withTimeout(
-            agent.sendMessage(followUp),
+            sendMessage(followUp),
             remainingTime,
             `Follow-up timeout after ${timeout}ms`,
           );
@@ -980,7 +988,11 @@ export class TestRunner {
       const message = error instanceof Error ? error.message : String(error);
       // WP1-2：429/超时/5xx/网络 → infra 桶，不算 agent 能力失败
       const killedByTimeout = /timeout after \d+ms/i.test(message);
-      if (isInfraExclusionError(message)) {
+      if (isScopedCostLimitExceeded(error)) {
+        result.status = 'cost_exceeded';
+        result.failureStage = 'cost_limit';
+        result.score = 0;
+      } else if (isInfraExclusionError(message)) {
         result.status = 'infra_excluded';
         result.failureStage = 'infra';
       } else {
@@ -1045,6 +1057,7 @@ export class TestRunner {
 
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
+      if (costLimit) result.costUsd = costLimit.getCostUsd();
 
       logger.info('Test completed', {
         testId: testCase.id,
@@ -1140,7 +1153,12 @@ export class TestRunner {
     results: TestResult[]
   ): TestRunSummary['performance'] {
     const durations = results
-      .filter((r) => r.status !== 'skipped' && r.status !== 'infra_excluded')
+      .filter(
+        (result) =>
+          result.status !== 'skipped'
+          && result.status !== 'infra_excluded'
+          && result.status !== 'cost_exceeded',
+      )
       .map((r) => r.duration);
 
     return {

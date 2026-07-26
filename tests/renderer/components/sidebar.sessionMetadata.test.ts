@@ -320,7 +320,7 @@ describe('Sidebar session metadata', () => {
     }
   });
 
-  it('keeps a collapsed current project visible with an explicit protection state', () => {
+  it('尊重显式收起：含当前会话的项目组照样收起，行隐藏、切换钮提供展开（2026-07-26 语义修正）', () => {
     sessionUiState.expandedWorkspaces = {
       '/repo/code-agent': false,
       '/repo/archive': false,
@@ -328,10 +328,11 @@ describe('Sidebar session metadata', () => {
 
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
-    expect(html).toContain('data-sidebar-group-phase="forced-expanded"');
-    expect(html).toContain('aria-label="code-agent 保持展开');
-    expect(html).toContain('保持展开');
-    expect(html).toContain('Session Native Workspace');
+    expect(html).not.toContain('data-sidebar-group-phase="forced-expanded"');
+    expect(html).toContain('data-sidebar-group-phase="collapsed"');
+    expect(html).toContain('aria-label="展开 code-agent"');
+    expect(html).not.toContain('保持展开');
+    expect(html).not.toContain('Session Native Workspace');
     expect(html).not.toContain('Finished Session');
   });
 
@@ -453,7 +454,7 @@ describe('Sidebar session metadata', () => {
     }
   });
 
-  it('keeps current and unfinished project groups visible even when persisted state says collapsed', () => {
+  it('收起含未完成会话的组后行隐藏，但分组头的未完成徽标仍在（信号不丢）', () => {
     sessionUiState.expandedWorkspaces = {
       '/repo/code-agent': false,
       '/repo/archive': false,
@@ -461,10 +462,10 @@ describe('Sidebar session metadata', () => {
 
     const html = renderToStaticMarkup(React.createElement(Sidebar));
 
-    expect(html).toContain('Session Native Workspace');
-    expect(html).toContain('data-sidebar-group-phase="forced-expanded"');
-    expect(html).toContain('当前会话所在项目保持展开');
-    expect(html).toContain('保持展开');
+    expect(html).not.toContain('Session Native Workspace');
+    expect(html).not.toContain('data-sidebar-group-phase="forced-expanded"');
+    expect(html).not.toContain('保持展开');
+    expect(html).toContain('sidebar-group-unfinished');
     expect(html).not.toContain('Finished Session');
     expect(html).not.toContain('Appshot 会话');
   });

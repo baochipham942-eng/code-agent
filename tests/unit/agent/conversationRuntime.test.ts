@@ -225,7 +225,10 @@ vi.mock('../../../src/host/agent/runtime/streamHandler', () => ({
   },
 }));
 
-vi.mock('../../../src/shared/constants', () => ({
+// 按名字枚举的 mock 会在 constants 每次新增导出时炸（连坐无关测试）。
+// spread 真实模块后只覆盖本测试要改的键。
+vi.mock('../../../src/shared/constants', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/shared/constants')>()),
   DEFAULT_MODELS: {},
   MODEL_MAX_TOKENS: {},
   CONTEXT_WINDOWS: {},

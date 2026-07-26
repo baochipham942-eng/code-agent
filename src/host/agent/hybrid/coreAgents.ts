@@ -14,7 +14,12 @@
 // ============================================================================
 
 import type { ModelProvider } from '../../../shared/contract/model';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared/constants';
+import {
+  DEFAULT_PROVIDER,
+  DEFAULT_MODEL,
+  DEFAULT_MODELS,
+  EXPLORE_AGENT_DESCRIPTION,
+} from '../../../shared/constants';
 import { loadAgentMdFiles } from './agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { applyOverride } from '../../prompts/registry';
@@ -285,7 +290,7 @@ Be constructive and specific. Focus on actionable feedback.
   explore: {
     id: 'explore',
     name: 'Explorer',
-    description: 'Searches code, web, and documents. Read-only operations.',
+    description: EXPLORE_AGENT_DESCRIPTION,
     prompt: applyOverride(
       { id: 'subagent.explore', category: 'Subagent', name: 'Explorer 子代理', description: '只读搜索 / 阅读 / 调研 子代理主 prompt' },
       `You are a research and exploration specialist. Your responsibilities:
@@ -312,6 +317,8 @@ Be constructive and specific. Focus on actionable feedback.
 - READ-ONLY: You search and read, NEVER modify files
 - Be thorough but efficient
 - Summarize findings clearly with file paths
+- Report conflicting evidence explicitly instead of selecting one source and presenting a single confident answer
+- Label uncertainty when evidence is incomplete; do not present inference as established fact
 - Suggest next steps if appropriate
 
 ## Task Management

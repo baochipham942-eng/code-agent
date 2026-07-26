@@ -70,6 +70,7 @@ import { formatChannelSessionSource } from './features/chat/chatViewSessionSourc
 import { submitSteerEnvelope } from './features/chat/chatViewSteer';
 import { collectDroppedAttachments } from './features/chat/ChatInput/utils';
 import { applyStreamingMessageDeltasToProjection } from '../utils/streamingProjectionOverlay';
+import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
 import { findSearchMatchForPendingJump } from '../utils/sessionSearchJump';
 import { buildProjectGoalChatStart } from '../utils/projectGoalChatSeed';
@@ -621,8 +622,8 @@ export const ChatView: React.FC = () => {
   // beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无关联，snapshot 里也没有任何
   // 字段指回原始用户消息——唯一可靠锚点是结构性推导：addMessage 一律无条件清空 streamSnapshot
   // (sessionStore.ts addMessage)，所以只要 streamSnapshot 还在，messages 数组末尾就不可能是
-  // 之后新增的消息；由于中断的助手回复从未落进 messages（只活在 ephemeral snapshot 里），
-  // 末位消息必然就是触发这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
+  // 之后新增的消息；跳过末尾合入的 recovery 消息（F4，id=snapshot.turnId）后，末位就是触发
+  // 这轮的用户消息。取不到（数组为空或末位不是 user）就不重试。
   const retryTurnMessage = deriveRetryTurnMessage(streamSnapshot, messages);
 
   // 对话式建角色：入口（能力中心 · 专家 / AgentSwitcher）起新会话后写入种子消息，
@@ -892,17 +893,22 @@ export const ChatView: React.FC = () => {
  * （streamHandler.ts beginTurn(generateMessageId())），跟触发它的用户消息 id 毫无
  * 关联，snapshot 里也没有任何字段指回原始用户消息——唯一可靠锚点是结构性推导：
  * addMessage 一律无条件清空 streamSnapshot（sessionStore.ts addMessage），所以只要
- * streamSnapshot 还在，messages 数组末尾就不可能是之后新增的消息；由于中断的助手
- * 回复从未落进 messages（只活在 ephemeral snapshot 里），末位消息必然就是触发这轮
- * 的用户消息。取不到（数组为空或末位不是 user）就返回 null，不重试。
+ * streamSnapshot 还在，messages 数组末尾就不可能有之后新增的消息；中断的助手回复
+ * 会以 id=snapshot.turnId 的 recovery 消息合入末尾（streamRecoveryMessage，F4），
+ * 跳过它之后，末位消息必然就是触发这轮的用户消息。取不到（数组为空或末位不是
+ * user）就返回 null，不重试。
  */
 export function deriveRetryTurnMessage(
   streamSnapshot: StreamRecoverySnapshot | null,
   messages: Message[],
 ): Message | null {
   if (!streamSnapshot || messages.length === 0) return null;
-  const last = messages[messages.length - 1];
-  return last.role === 'user' ? last : null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (isStreamRecoveryMessage(message, streamSnapshot.turnId)) continue;
+    return message.role === 'user' ? message : null;
+  }
+  return null;
 }
 
 export const StreamRecoveryBanner: React.FC<{

@@ -43,6 +43,8 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
         tc.args as Record<string, unknown> | undefined,
         t,
         tc.shortDescription,
+        // 已失败的调用不再用过去时肯定式，避免与状态词同屏矛盾（结果语义交给状态词）
+        tc.result !== undefined && tc.success === false,
       );
     }
     const names = nodes

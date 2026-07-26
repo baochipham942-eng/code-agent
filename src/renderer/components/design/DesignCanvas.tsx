@@ -891,9 +891,10 @@ export const DesignCanvas: React.FC<{ showErrorBar?: boolean }> = ({ showErrorBa
         })()}
 
       {visibleNodes.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-zinc-500">
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-sm text-zinc-500">
           <Palette className="h-6 w-6 text-zinc-600" />
-          <span>{t.design.canvasEmpty}</span>
+          {/* 窄栏下长文案会贴边溢出（2026-07-27 dogfood）：限宽 + 居中 + 行距 */}
+          <span className="max-w-[36ch] text-center leading-relaxed">{t.design.canvasEmpty}</span>
         </div>
       )}
 

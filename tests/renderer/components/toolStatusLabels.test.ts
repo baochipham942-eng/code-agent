@@ -12,6 +12,25 @@ function makeWriteCall(overrides: Partial<ToolCall> = {}): ToolCall {
   };
 }
 
+function makeMutationCall(name: string, overrides: Partial<ToolCall> = {}): ToolCall {
+  return {
+    id: `${name}-1`,
+    name,
+    arguments: { file_path: '/tmp/game.html' },
+    result: {
+      toolCallId: `${name}-1`,
+      success: false,
+      error: 'Artifact validation failed for /tmp/game.html.',
+      metadata: {
+        artifactValidation: {
+          failed: true,
+        },
+      },
+    },
+    ...overrides,
+  };
+}
+
 describe('ToolCallDisplay status labels', () => {
   it('distinguishes artifact validation failure after a successful file write', () => {
     const label = getToolStatusLabel(
@@ -46,6 +65,43 @@ describe('ToolCallDisplay status labels', () => {
       zh,    );
 
     expect(label).toBe('写入失败');
+  });
+
+  // host 验收门（toolArtifactRepairPolicy.isFileMutationTool）覆盖的不只 Write：
+  // Edit/edit_file/append_file/Append 写后验收失败同样被翻转成 success=false +
+  // metadata.artifactValidation.failed，状态词不能错报成「编辑失败」。
+  it('distinguishes artifact validation failure after a successful Edit', () => {
+    const label = getToolStatusLabel(makeMutationCall('Edit'), 'error', zh);
+
+    expect(label).toBe('已编辑，验收失败');
+  });
+
+  it('distinguishes artifact validation failure after a successful edit_file', () => {
+    const label = getToolStatusLabel(makeMutationCall('edit_file'), 'error', zh);
+
+    expect(label).toBe('已编辑，验收失败');
+  });
+
+  it('distinguishes artifact validation failure after a successful append_file', () => {
+    const label = getToolStatusLabel(makeMutationCall('append_file'), 'error', zh);
+
+    expect(label).toBe('已追加，验收失败');
+  });
+
+  it('keeps the normal Edit failure label for actual edit failures', () => {
+    const label = getToolStatusLabel(
+      makeMutationCall('Edit', {
+        result: {
+          toolCallId: 'Edit-1',
+          success: false,
+          error: 'old_string not found',
+        },
+      }),
+      'error',
+      zh,
+    );
+
+    expect(label).toBe('编辑失败');
   });
 
   // 步骤行主文案本身就是一句过去时人话（「写入了 notes.md」），成功态再前置一个

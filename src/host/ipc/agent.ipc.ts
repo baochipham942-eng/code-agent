@@ -13,6 +13,7 @@ import {
   type IPCResponse
 } from '../../shared/ipc';
 import type { PermissionResponse } from '../../shared/contract';
+import type { PermissionDeliveryOutcome } from '../../shared/contract/permission';
 import type { AgentApplicationService, AppServiceRunOptions } from '../../shared/contract/appService';
 import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
 import type {
@@ -82,10 +83,12 @@ async function handleCancel(
 async function handlePermissionResponse(
   getAppService: () => AgentApplicationService | null,
   payload: AgentPermissionResponseRequest
-): Promise<void> {
+): Promise<{ outcome: PermissionDeliveryOutcome }> {
   const appService = getAppService();
   if (!appService) throw new Error('Agent not initialized');
-  appService.handlePermissionResponse(payload.requestId, payload.response, payload.sessionId);
+  // outcome 回传给收件箱：'no_orchestrator'/'unknown_request' = 停车审批已失效转灰态
+  const outcome = appService.handlePermissionResponse(payload.requestId, payload.response, payload.sessionId);
+  return { outcome };
 }
 
 interface InterruptPayload {
@@ -134,9 +137,10 @@ export function registerAgentHandlers(
         case 'cancel':
           await handleCancel(getAppService, payload as AgentCancelRequest | undefined);
           return { success: true, data: null };
-        case 'permissionResponse':
-          await handlePermissionResponse(getAppService, payload as AgentPermissionResponseRequest);
-          return { success: true, data: null };
+        case 'permissionResponse': {
+          const delivery = await handlePermissionResponse(getAppService, payload as AgentPermissionResponseRequest);
+          return { success: true, data: delivery };
+        }
         case 'interrupt': {
           const outcome = await handleInterrupt(getAppService, payload as string | InterruptPayload | ConversationEnvelope);
           return { success: true, data: outcome };

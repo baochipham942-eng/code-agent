@@ -730,6 +730,7 @@ function registerHandlers(): void {
     const { persistAgentRun, getRecentAgentHistory } = require('../host/session/agentHistoryPersistence') as typeof import('../host/session/agentHistoryPersistence');
     const { installSwarmTraceWriter } = require('../host/agent/swarmTraceWriter') as typeof import('../host/agent/swarmTraceWriter');
     const { getDatabase } = require('../host/services/core/databaseService') as typeof import('../host/services/core/databaseService');
+    const { hydrateApprovalGatesAtBoot } = require('../host/agent/parkedApprovalHydration') as typeof import('../host/agent/parkedApprovalHydration');
     /* eslint-enable @typescript-eslint/no-require-imports */
 
     let swarmTraceRepo: SwarmTraceRepo | null = null;
@@ -749,13 +750,8 @@ function registerHandlers(): void {
 
     if (pendingApprovalRepo) {
       try {
-        const planOrphans = planApprovalGate.attachPersistence(pendingApprovalRepo);
-        const launchOrphans = launchApprovalGate.attachPersistence(pendingApprovalRepo);
-        if (planOrphans + launchOrphans > 0) {
-          logger.warn(
-            `Orphaned approvals from previous web process: ${planOrphans} plan(s) + ${launchOrphans} launch(es)`,
-          );
-        }
+        // plan/launch/parked(tool_approval+directory_access) 三类残留 pending 一站式 orphan
+        hydrateApprovalGatesAtBoot(pendingApprovalRepo);
       } catch (err) {
         logger.warn('PendingApproval hydration failed (web):', (err as Error).message);
       }
@@ -911,9 +907,23 @@ function registerHandlers(): void {
           });
           sm.setCurrentSession((data as { id: string }).id);
           break;
-        case 'load':
-          data = await sm.restoreSession(payload?.sessionId as string);
+        case 'load': {
+          const session = await sm.restoreSession(payload?.sessionId as string);
+          // 与桌面 IPC 的 agentAppService.loadSession 对齐：进行中的流式快照随 load
+          // 返回，renderer 切会话重水化时靠它把 partial 内容合回消息流（F4）。
+          if (session) {
+            const { loadStreamSnapshot } = await import('../host/session/streamSnapshot');
+            const streamSnapshot = loadStreamSnapshot({
+              workingDir: session.workingDirectory,
+              sessionId: session.id,
+            });
+            if (streamSnapshot?.sessionId === session.id) {
+              (session as { streamSnapshot?: unknown }).streamSnapshot = streamSnapshot;
+            }
+          }
+          data = session;
           break;
+        }
         case 'delete':
           await sm.deleteSession(payload?.sessionId as string);
           data = null;

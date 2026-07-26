@@ -333,7 +333,10 @@ describe('applyToolExecutionEvent', () => {
     }]);
   });
 
-  it('does not bind an ambiguous unindexed start to same-name streaming placeholders', () => {
+  it('binds an ambiguous unindexed start to the earliest same-name streaming placeholder (FIFO)', () => {
+    // 并发同名工具：host 按 tool_calls 数组序发 start，流式占位也是同序，
+    // FIFO 绑定最早的占位。拒绑会让真实 id 丢失，tool_call_end 永远匹配不上，
+    // 成功工具错报「已中断」。
     const firstCall: ToolCall = {
       id: 'pending-browser-1',
       name: 'browser_action',
@@ -363,7 +366,71 @@ describe('applyToolExecutionEvent', () => {
       deps,
     );
 
-    expect(state.messages[0].toolCalls).toEqual([firstCall, secondCall]);
+    expect(state.messages[0].toolCalls).toEqual([
+      { ...firstCall, id: 'ambiguous-browser', _streaming: false },
+      secondCall,
+    ]);
+  });
+
+  it('attaches both results for concurrent same-name tools via FIFO start binding', () => {
+    const firstCall: ToolCall = {
+      id: 'pending_0',
+      name: 'Read',
+      arguments: { file_path: 'a.txt' },
+      _streaming: true,
+    };
+    const secondCall: ToolCall = {
+      id: 'pending_1',
+      name: 'Read',
+      arguments: { file_path: 'b.txt' },
+      _streaming: true,
+    };
+    const { deps, state } = createHarness({
+      messages: [assistantMessage('turn-current', [firstCall, secondCall])],
+    });
+
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_start',
+        data: { id: 'real-1', name: 'Read', arguments: { file_path: 'a.txt' } },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_start',
+        data: { id: 'real-2', name: 'Read', arguments: { file_path: 'b.txt' } },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_end',
+        data: { toolCallId: 'real-1', success: true, output: 'contents of a' },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+    applyToolExecutionEvent(
+      {
+        type: 'tool_call_end',
+        data: { toolCallId: 'real-2', success: true, output: 'contents of b' },
+        sessionId: 'session-current',
+      },
+      deps,
+    );
+
+    expect(state.messages[0].toolCalls?.[0]).toMatchObject({
+      id: 'real-1',
+      result: { toolCallId: 'real-1', success: true },
+    });
+    expect(state.messages[0].toolCalls?.[1]).toMatchObject({
+      id: 'real-2',
+      result: { toolCallId: 'real-2', success: true },
+    });
+    expect(state.warnings).toEqual([]);
   });
 
   it('appends a first concrete call when the assistant turn has no toolCalls', () => {

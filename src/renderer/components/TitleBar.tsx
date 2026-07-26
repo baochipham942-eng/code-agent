@@ -5,7 +5,7 @@
 // ============================================================================
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRight } from 'lucide-react';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { useI18n } from '../hooks/useI18n';
@@ -31,15 +31,19 @@ export const TitleBar: React.FC = () => {
         />
         <SessionActionsMenu />
       </div>
-      {/* Right: 整个右栏的收起/展开。它管的是栏，不是「概览」这一个面板。 */}
+      {/* Right: 右栏收起态的展开入口。展开态的收起 affordance 在面板头
+          （WorkbenchTabs 收起按钮），顶栏不再叠一颗（2026-07-26 打磨批 D D5 去重）。
+          右栏没有全局快捷键（快捷键只覆盖左栏），收起/展开均走这两处按钮。 */}
       <div className="flex items-center gap-2">
-        <IconButton
-          icon={workbenchCollapsed ? <PanelRight className="w-4 h-4" /> : <PanelRightClose className="w-4 h-4" />}
-          aria-label={workbenchCollapsed ? t.workbenchTabs.expandPanel : t.workbenchTabs.collapsePanel}
-          onClick={() => setWorkbenchCollapsed(!workbenchCollapsed)}
-          variant="ghost"
-          size="md"
-        />
+        {workbenchCollapsed && (
+          <IconButton
+            icon={<PanelRight className="w-4 h-4" />}
+            aria-label={t.workbenchTabs.expandPanel}
+            onClick={() => setWorkbenchCollapsed(false)}
+            variant="ghost"
+            size="md"
+          />
+        )}
       </div>
     </div>
   );

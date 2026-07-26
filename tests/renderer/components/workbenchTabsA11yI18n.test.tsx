@@ -146,28 +146,13 @@ describe('WorkbenchTabs empty-state launcher', () => {
     );
     expect(chip).not.toBe(formatShortcutForDisplay('Cmd+Shift+7', 'darwin'));
   });
-
-  it('one popover serves both switching and adding — an unopened view is reachable from the header', () => {
-    useAppStore.setState({ workbenchTabs: ['overview'], activeWorkbenchTab: 'overview' });
-    render(<WorkbenchTabs />);
-
-    // 单一入口是本单的要害：分成「选择器」+「加号」两个入口时，用户在「概览 ∨」
-    // 里看不到浏览器/文件，就以为切不过去。
-    fireEvent.click(screen.getByLabelText(en.workbenchTabs.chooseView));
-
-    const menu = screen.getByTestId('workbench-view-menu');
-    expect(within(menu).getByRole('option', { name: new RegExp(en.workbenchTabs.overviewLabel) })).toBeTruthy();
-    expect(within(menu).getByTestId('workbench-view-launcher-panel')).toBeTruthy();
-    expect(within(menu).queryByTestId('open-workbench-view-overview')).toBeNull();
-
-    fireEvent.click(within(menu).getByTestId('open-workbench-view-files'));
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
-    expect(screen.queryByTestId('workbench-view-menu')).toBeNull();
-  });
 });
 
-describe('WorkbenchTabs single-select switcher', () => {
-  it('renders the selector instead of the empty launcher and keeps exactly one active option', () => {
+// D6（2026-07-26 打磨批 D，产品负责人拍板）：下拉切换器改 tab 条形态，
+// 对齐 FileExplorerPanel TabBar——已开视图平铺为 tab（当前高亮、hover 显 ×），
+// 「＋」弹出可打开视图列表。
+describe('WorkbenchTabs tab 条形态（D6）', () => {
+  it('已开视图平铺为 role=tab，恰好一个 aria-selected', () => {
     useAppStore.setState({
       workbenchTabs: ['overview', 'files', 'browser'],
       activeWorkbenchTab: 'overview',
@@ -175,28 +160,13 @@ describe('WorkbenchTabs single-select switcher', () => {
     render(<WorkbenchTabs />);
 
     expect(screen.queryByTestId('workbench-empty-launcher')).toBeNull();
-    expect(screen.getByTestId('workbench-view-selector')).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText(en.workbenchTabs.chooseView));
-    let listbox = screen.getByRole('listbox', { name: en.workbenchTabs.openViews });
-    expect(within(listbox).getAllByRole('option')).toHaveLength(3);
-    expect(within(listbox).getAllByRole('option').filter(
-      (option) => option.getAttribute('aria-selected') === 'true',
-    )).toHaveLength(1);
-
-    fireEvent.click(within(listbox).getByRole('option', { name: en.workbenchTabs.filesLabel }));
-    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
-
-    fireEvent.click(screen.getByLabelText(en.workbenchTabs.chooseView));
-    listbox = screen.getByRole('listbox', { name: en.workbenchTabs.openViews });
-    const activeOptions = within(listbox).getAllByRole('option').filter(
-      (option) => option.getAttribute('aria-selected') === 'true',
-    );
-    expect(activeOptions).toHaveLength(1);
-    expect(activeOptions[0].textContent).toContain(en.workbenchTabs.filesLabel);
+    const tablist = screen.getByRole('tablist', { name: en.workbenchTabs.openViews });
+    const tabs = within(tablist).getAllByRole('tab');
+    expect(tabs).toHaveLength(3);
+    expect(tabs.filter((tab) => tab.getAttribute('aria-selected') === 'true')).toHaveLength(1);
   });
 
-  it('marks selector navigation as user-originated for surface-intent suppression', () => {
+  it('点击 tab 直接切换（source: user），选中态跟随', () => {
     const openWorkbenchTab = vi.fn();
     useAppStore.setState({
       workbenchTabs: ['overview', 'files'],
@@ -205,10 +175,31 @@ describe('WorkbenchTabs single-select switcher', () => {
     });
     render(<WorkbenchTabs />);
 
-    fireEvent.click(screen.getByLabelText(en.workbenchTabs.chooseView));
-    fireEvent.click(screen.getByRole('option', { name: en.workbenchTabs.filesLabel }));
-
+    fireEvent.click(screen.getByTestId('workbench-tab-files'));
     expect(openWorkbenchTab).toHaveBeenCalledWith('files', { source: 'user' });
+  });
+
+  it('「＋」弹出可打开视图列表：不含已开视图，点开即加并收起弹层', () => {
+    useAppStore.setState({ workbenchTabs: ['overview'], activeWorkbenchTab: 'overview' });
+    render(<WorkbenchTabs />);
+
+    fireEvent.click(screen.getByLabelText(en.workbenchTabs.addView));
+    const menu = screen.getByTestId('workbench-view-menu');
+    expect(within(menu).getByTestId('workbench-view-launcher-panel')).toBeTruthy();
+    expect(within(menu).queryByTestId('open-workbench-view-overview')).toBeNull();
+
+    fireEvent.click(within(menu).getByTestId('open-workbench-view-files'));
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
+    expect(screen.queryByTestId('workbench-view-menu')).toBeNull();
+  });
+
+  it('全部视图都打开后不再渲染「＋」', () => {
+    useAppStore.setState({
+      workbenchTabs: ['overview', 'files', 'browser', 'design-canvas'],
+      activeWorkbenchTab: 'overview',
+    });
+    render(<WorkbenchTabs />);
+    expect(screen.queryByLabelText(en.workbenchTabs.addView)).toBeNull();
   });
 
   it('the header close button collapses the whole column instead of closing one view', () => {
@@ -227,15 +218,15 @@ describe('WorkbenchTabs single-select switcher', () => {
     expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
   });
 
-  it('closing a single view lives inside the popover and falls back to the launcher', () => {
+  it('tab 上的 × 关闭单个视图（含概览/文件等常驻视图），关完回空态启动器', () => {
     useAppStore.setState({
       workbenchTabs: ['files'],
       activeWorkbenchTab: 'files',
     });
     render(<WorkbenchTabs />);
 
-    fireEvent.click(screen.getByLabelText(en.workbenchTabs.chooseView));
-    fireEvent.click(screen.getByLabelText(
+    const tab = screen.getByTestId('workbench-tab-files');
+    fireEvent.click(within(tab).getByLabelText(
       en.workbenchTabs.closeView.replace('{view}', en.workbenchTabs.filesLabel),
     ));
 
@@ -244,6 +235,19 @@ describe('WorkbenchTabs single-select switcher', () => {
     expect(useAppStore.getState().workbenchCollapsed).toBe(false);
     expect(screen.queryByTestId('workbench-view-selector')).toBeNull();
     expect(screen.getByTestId('workbench-empty-launcher')).toBeTruthy();
+  });
+
+  it('hover 显 ×：关闭按钮默认 opacity-0、group-hover 现身（粘滞同 D3 判据）', () => {
+    useAppStore.setState({ workbenchTabs: ['files'], activeWorkbenchTab: 'files' });
+    render(<WorkbenchTabs />);
+
+    const tab = screen.getByTestId('workbench-tab-files');
+    const closeButton = within(tab).getByLabelText(
+      en.workbenchTabs.closeView.replace('{view}', en.workbenchTabs.filesLabel),
+    );
+    expect(closeButton.className).toContain('opacity-0');
+    expect(closeButton.className).toContain('group-hover:opacity-100');
+    expect(closeButton.className).not.toContain('group-focus-within');
   });
 });
 
@@ -266,8 +270,8 @@ describe('WorkbenchTabs compatibility behavior', () => {
     });
     render(<WorkbenchTabs />);
 
-    fireEvent.click(screen.getByLabelText(en.workbenchTabs.chooseView));
-    fireEvent.click(screen.getByLabelText(
+    const tab = screen.getByTestId('workbench-tab-preview:/tmp/example.ts');
+    fireEvent.click(within(tab).getByLabelText(
       en.workbenchTabs.closeView.replace('{view}', 'example.ts'),
     ));
     expect(screen.getByRole('dialog')).toBeTruthy();

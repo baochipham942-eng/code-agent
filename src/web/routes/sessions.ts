@@ -246,6 +246,16 @@ export function createSessionsRouter(deps: SessionsRouterDeps): Router {
             session,
             deps.getDurableRunReadService?.(),
           );
+          // 与桌面 IPC 的 agentAppService.loadSession 对齐：进行中的流式快照随 load 返回，
+          // renderer 切会话重水化时靠它把 partial 内容合回消息流（F4）。
+          const { loadStreamSnapshot } = await import('../../host/session/streamSnapshot');
+          const streamSnapshot = loadStreamSnapshot({
+            workingDir: session.workingDirectory,
+            sessionId: session.id,
+          });
+          if (streamSnapshot?.sessionId === session.id) {
+            sessionPayload.streamSnapshot = streamSnapshot;
+          }
           // DB 路径找到了会话但消息可能为空 — 用内存缓存补充
           const cachedMessages = getSessionMessagesProjection(sessionId);
           if (sessionPayload.messages.length === 0 && cachedMessages) {

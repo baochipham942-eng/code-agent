@@ -18,6 +18,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 
 function reviewResultSessionId(record: SessionAutomationRecord): string | undefined {
@@ -69,11 +70,20 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     if (item.status !== 'pending') return; // orphaned 不可操作
     setBusyId(item.id);
     try {
-      // 复用会话审批 IPC：同一 requestId 命中内存 pending，走 first-responder-wins 裁决口
-      await ipcService.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, item.id, response, item.sessionId ?? undefined);
-      load();
+      // 复用会话审批 IPC：同一 requestId 命中内存 pending，走 first-responder-wins 裁决口。
+      // 宿主已死（进程重启）时 host 会把行标 orphaned 并回报 outcome——必须告知用户，
+      // 不能让点击看起来「没反应」（2026-07-26 真机 D0）。
+      const result = (await ipcService.invoke(
+        IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, item.id, response, item.sessionId ?? undefined,
+      )) as { outcome?: string; orphaned?: boolean } | undefined;
+      if (result && (result.orphaned === true || (result.outcome && result.outcome !== 'delivered'))) {
+        toast.info(cc.parkedResolveStale);
+      }
+    } catch {
+      toast.error(cc.parkedResolveFailed);
     } finally {
       setBusyId(null);
+      load(); // 无论成败都刷新：orphaned 转灰态 / 失败恢复可点
     }
   };
 

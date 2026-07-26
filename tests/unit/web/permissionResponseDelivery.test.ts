@@ -40,7 +40,8 @@ function pendingIds(orchestrator: AgentOrchestrator): string[] {
 describe('审批响应投递链路（web 路径）', () => {
   let handlers: Map<string, Handler>;
   let pendingDevPermissions: Map<string, PendingDevPermissionRequest>;
-  let logger: { info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn> };
+  type LogFn = ReturnType<typeof vi.fn<(message: string, ...args: unknown[]) => void>>;
+  let logger: { info: LogFn; warn: LogFn };
   let taskManager: TaskManager;
   let currentSessionId: string | null;
 

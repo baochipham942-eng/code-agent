@@ -61,6 +61,23 @@ describe('voiceSessionService 互斥与挂断', () => {
     await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
   });
 
+  it('并发拨号只建一条上游连接（闸门必须早于 await）', async () => {
+    // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
+    connect.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { provider: 'qwen-omni', clientBootstrap: null, sendAudio, interrupt: vi.fn(), close };
+    });
+
+    const a = new FakeClient();
+    const b = new FakeClient();
+    await Promise.all([attachVoiceClient(a as never, 's1'), attachVoiceClient(b as never, 's2')]);
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(types(b)).toContain('VOICE_SESSION_BUSY');
+    a.close();
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
+  });
+
   it('挂断释放上游并允许续拨', async () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-1');

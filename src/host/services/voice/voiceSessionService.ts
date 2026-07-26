@@ -27,6 +27,9 @@ interface ActiveSession {
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
 // 多进程/多窗口场景真出现时再抬到共享状态。
 let active: ActiveSession | null = null;
+// 建上游连接是 await，闸门必须在 await 之前就合上：只看 active 的话，两路并发拨号
+// 会同时通过检查、各建一条上游连接（都在计费，其中一条永远无人释放）。
+let connecting = false;
 let sessionSeq = 0;
 
 export function getActiveVoiceSessionId(): string | null {
@@ -71,7 +74,7 @@ async function teardown(reason: string): Promise<void> {
  * 互斥：已有活跃通话时直接拒绝，不排队。
  */
 export async function attachVoiceClient(client: WsSocket, neoSessionId: string): Promise<void> {
-  if (active) {
+  if (active || connecting) {
     send(client, { type: 'error', code: 'VOICE_SESSION_BUSY', message: '已有一路通话在进行中' });
     client.close();
     return;
@@ -83,6 +86,16 @@ export async function attachVoiceClient(client: WsSocket, neoSessionId: string):
     client.close();
     return;
   }
+
+  connecting = true;
+  try {
+    await connectAndBind(client, neoSessionId, apiKey);
+  } finally {
+    connecting = false;
+  }
+}
+
+async function connectAndBind(client: WsSocket, neoSessionId: string, apiKey: string): Promise<void> {
 
   const id = `voice-${Date.now()}-${++sessionSeq}`;
   send(client, { type: 'state', state: 'connecting' });

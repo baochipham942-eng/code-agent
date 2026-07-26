@@ -32,6 +32,7 @@ import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceEx
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { ChatInput } from './features/chat/ChatInput';
+import { TranscriptPartialLine } from './features/voice/TranscriptPartialLine';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
 import type { ChatInputHandle } from './features/chat/ChatInput';
@@ -837,6 +838,9 @@ export const ChatView: React.FC = () => {
 
           {/* /goal 运行进度条（独立一行，仅 goal 运行中显示） */}
           <GoalStatusBar />
+
+          {/* 通话中 partial 字幕（final 由 host 落库后自然进消息流，§7.5） */}
+          <TranscriptPartialLine />
 
           {/* Input */}
           <ChatInput

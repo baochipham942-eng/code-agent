@@ -36,6 +36,17 @@ export const ToastContainer: React.FC = () => {
         >
           <span className="text-sm font-bold shrink-0 mt-0.5">{ICON_MAP[t.type]}</span>
           <span className="text-sm text-zinc-200 break-words">{t.message}</span>
+          {t.action && (
+            <button
+              onClick={() => {
+                t.action!.onClick();
+                removeToast(t.id);
+              }}
+              className="shrink-0 rounded border border-zinc-600 px-2 py-0.5 text-xs text-zinc-300 hover:border-zinc-400 hover:text-zinc-100"
+            >
+              {t.action.label}
+            </button>
+          )}
           <button
             onClick={() => removeToast(t.id)}
             className="ml-auto text-zinc-500 hover:text-zinc-300 shrink-0"

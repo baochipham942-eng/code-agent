@@ -7,11 +7,12 @@ import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
+const commitMock = vi.fn();
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
-  return { kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close };
+  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), close };
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
@@ -50,6 +51,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     connect.mockClear();
     close.mockClear();
     sendAudio.mockClear();
+    commitMock.mockClear();
     addMessageToSession.mockClear();
     lastOnEvent = null;
   });
@@ -75,7 +77,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
     connect.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return { kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close };
+      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), close };
     });
 
     const a = new FakeClient();
@@ -145,6 +147,17 @@ describe('voiceSessionService 互斥与挂断', () => {
     client.emit('message', Buffer.from(JSON.stringify({ type: 'interrupt' })), false);
 
     expect(sendAudio).toHaveBeenCalledTimes(1);
+    client.close();
+  });
+
+  it('commit 控制帧转发到 relay handle（PTT 手动提交路径）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'commit' })), false);
+
+    expect(commitMock).toHaveBeenCalledTimes(1);
+    expect(sendAudio).not.toHaveBeenCalled();
     client.close();
   });
 

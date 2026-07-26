@@ -24,7 +24,7 @@ export const zhSettingsCore = {
       skills: 'Skills',
       conversation: '上下文压缩',
       keybindings: '快捷键',
-      voiceInput: '语音输入',
+      voiceInput: '语音',
       workspace: '工作区',
       automation: '自动化',
       channels: '通道',

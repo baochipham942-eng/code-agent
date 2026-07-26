@@ -38,6 +38,12 @@ export const QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL = 'gummy-realtime-v1';
 export const QWEN_OMNI_REALTIME_VOICE = 'Tina';
 
 /**
+ * `qwen3.5-omni-flash-realtime` 实测可用音色白名单（2026-07-26 真机逐个合成验证）。
+ * 设置页音色选择器只能从这里出选项——音色枚举与模型强绑定，换模型必须重新真跑一遍。
+ */
+export const QWEN_OMNI_REALTIME_VOICE_WHITELIST = ['Tina', 'Ethan', 'Serena'] as const;
+
+/**
  * 显式写死 server_vad 默认值，是为了 ttfaPerceivedMs 能算得出静音窗。
  * 上游常见默认：threshold=0.5、prefix_padding_ms=300、silence_duration_ms=500。
  */
@@ -68,6 +74,3 @@ export const VOICE_SPAWN_TASK_MAX_ITERATIONS = 30;
 
 /** Renderer→Host 媒体面 WS 路径。 */
 export const VOICE_STREAM_WS_PATH = '/api/voice/stream';
-
-/** dev-only 入口开关的 localStorage 键。Phase 1 换成正式设置项后删除。 */
-export const VOICE_DEV_FLAG_KEY = 'code-agent:voice-spike';

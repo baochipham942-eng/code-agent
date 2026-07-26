@@ -11,13 +11,34 @@ import { QWEN_OMNI_REALTIME_MODEL, VOICE_SESSION_MAX_DURATION_MS } from '../../.
 import type { VoiceClientCommand, VoiceEvent, VoiceTransportHandle } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
+import { getConfigService } from '../core/configService';
 import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { resolveVoiceRouting } from './voiceRouting';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
+import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 
 const logger = createLogger('VoiceSession');
+
+/** 读设置页「实时通话」组；读不到一律 undefined（= 全部走默认），绝不让设置读写炸掉通话。 */
+function readVoiceLiveSettings(): VoiceLiveSettings | undefined {
+  try {
+    return getConfigService().getSettings().voice?.live;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 语言偏好走 instructions 而不是上游参数：DashScope 的 input_audio_transcription
+ * 语言参数本批未真机验证，不赌；在短人设后追加一句对话语言约束是验证过的路径。
+ */
+function withLanguageDirective(instructions: string, language: VoiceLiveSettings['language']): string {
+  if (language === 'zh') return `${instructions}\n请始终用中文与用户对话。`;
+  if (language === 'en') return `${instructions}\nAlways converse with the user in English.`;
+  return instructions;
+}
 
 interface ActiveSession {
   id: string;
@@ -143,12 +164,18 @@ async function connectAndBind(
   send(client, { type: 'state', state: 'connecting' });
 
   const routing = resolveVoiceRouting(requestedAgentId);
+  const liveSettings = readVoiceLiveSettings();
 
   let upstream: VoiceTransportHandle;
   try {
     upstream = await qwenOmniTransport.connect({
       apiKey,
-      config: { neoSessionId, instructions: routing.personaInstructions, tools: VOICE_TOOL_DEFINITIONS },
+      config: {
+        neoSessionId,
+        instructions: withLanguageDirective(routing.personaInstructions, liveSettings?.language),
+        tools: VOICE_TOOL_DEFINITIONS,
+        ...(liveSettings?.voiceId ? { voice: liveSettings.voiceId } : {}),
+      },
       onEvent: (event) => {
         send(client, event);
         if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text);
@@ -220,6 +247,9 @@ async function connectAndBind(
     }
     if (command.type === 'end') void teardown('client-end');
     else if (command.type === 'interrupt') upstream.interrupt();
+    // PTT/点按手动模式：Renderer 松开（或再点按）后提交这一轮。
+    // direct 形态的 commit 走它自己的 data channel，不经过 Host——这里没有它的分支是刻意的。
+    else if (command.type === 'commit' && upstream.kind === 'relay') upstream.commit();
   });
 
   client.on('close', () => {

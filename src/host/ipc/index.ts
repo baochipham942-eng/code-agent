@@ -43,7 +43,6 @@ import { registerLSPHandlers } from './lsp.ipc';
 import { registerBackgroundHandlers } from './background.ipc';
 import { registerBackgroundTaskLedgerHandlers } from './backgroundTaskLedger.ipc';
 import { registerQueuedInputHandlers } from './queuedInput.ipc';
-import { registerDiffHandlers } from './diff.ipc';
 import { registerSwarmHandlers } from './swarm.ipc';
 // 模块加载即自装 workflow EventBus → renderer 专用 bridge（P3a 进度树）；
 // registerWorkflowHandlers 注册启动审批 approve/reject 回传（P3b）。
@@ -221,9 +220,6 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
         : undefined;
     },
   });
-
-  // Diff handlers (变更追踪)
-  registerDiffHandlers();
 
   // Swarm handlers (Agent Teams P2P 通信)
   registerSwarmHandlers(getAppService);

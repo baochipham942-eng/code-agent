@@ -91,7 +91,6 @@ interface IPCResponse<T = unknown> {
 | `domain:planning` | planning.ipc.ts | 计划管理 |
 | `domain:data` | data.ipc.ts | 数据缓存与调试快照 |
 | `domain:task` | task.ipc.ts | 多任务并行 |
-| `domain:diff` | diff.ipc.ts | 变更追踪 |
 | `domain:error` | error.ipc.ts | 错误与诊断 |
 | `domain:cron` | cron.ipc.ts | 定时任务与心跳 |
 | `domain:loop` | loop.ipc.ts | 会话内循环 `/loop` 启停、状态查询；后台化后进 task ledger |

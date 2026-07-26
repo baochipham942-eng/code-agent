@@ -8,6 +8,7 @@ import type { AuthUser, AuthStatus } from '../../shared/contract';
 import { getAuthService } from '../services';
 import { getSecureStorage } from '../services/core/secureStorage';
 import { createLogger } from '../services/infra/logger';
+import { getPostHogDistinctId } from '../observability/posthogNode';
 
 const logger = createLogger('AuthIPC');
 
@@ -49,7 +50,11 @@ function getAuthIpcErrorMessage(error: unknown): string {
 }
 
 async function handleGetStatus(): Promise<AuthStatus> {
-  return getAuthService().getStatus();
+  const status = await getAuthService().getStatus();
+  return {
+    ...status,
+    analyticsDistinctId: status.user ? getPostHogDistinctId(status.user.id) : undefined,
+  };
 }
 
 async function handleSignInEmail(payload: { email: string; password: string }) {

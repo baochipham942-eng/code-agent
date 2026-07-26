@@ -4,7 +4,7 @@ import { EventEmitter } from 'events';
 
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
-const connect = vi.fn(async () => ({ provider: 'qwen-omni', clientBootstrap: null, sendAudio, interrupt: vi.fn(), close }));
+const connect = vi.fn(async () => ({ kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close }));
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
@@ -65,7 +65,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
     connect.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return { provider: 'qwen-omni', clientBootstrap: null, sendAudio, interrupt: vi.fn(), close };
+      return { kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close };
     });
 
     const a = new FakeClient();

@@ -142,7 +142,9 @@ async function connectAndBind(client: WsSocket, neoSessionId: string, apiKey: st
   client.on('message', (data: Buffer, isBinary: boolean) => {
     if (active?.id !== id) return;
     if (isBinary) {
-      upstream.sendAudio(data);
+      // direct 形态的媒体面不经 Host（Renderer 直连上游），这里收到二进制帧只能是
+      // 客户端接错了传输形态——丢弃比静默 no-op 转发更接近真相。
+      if (upstream.kind === 'relay') upstream.sendAudio(data);
       return;
     }
     let command: VoiceClientCommand;

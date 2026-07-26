@@ -137,8 +137,8 @@ export const qwenOmniTransport: VoiceTransport = {
     onEvent({ type: 'state', state: 'live' });
 
     return {
+      kind: 'relay',
       provider: 'qwen-omni',
-      clientBootstrap: null,
       sendAudio(frame: Buffer) {
         if (ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: frame.toString('base64') }));

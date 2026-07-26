@@ -7,11 +7,27 @@ import {
   buildMemoryInboxResolvePayload,
   hashInboxContent,
   KnowledgeInboxList,
+  KnowledgeMemoryContent,
+  KnowledgeMemoryPanel,
   LightMemoryHealthPanel,
   MemoryInjectionTraceList,
 } from '../../../src/renderer/components/features/knowledge/KnowledgeMemoryPanel';
 
 describe('KnowledgeMemoryPanel projections', () => {
+  it('入口形态保留 FullScreenPage 外壳，内容组件可独立嵌入（资料库「记忆」tab）', () => {
+    // 静态渲染不触发 useEffect，不会发起 memory IPC
+    const pageHtml = renderToStaticMarkup(React.createElement(KnowledgeMemoryPanel));
+    expect(pageHtml).toContain('knowledge-memory-panel');
+    expect(pageHtml).toContain('knowledge-memory-content');
+    expect(pageHtml).toContain('Knowledge / Memory');
+
+    const contentHtml = renderToStaticMarkup(React.createElement(KnowledgeMemoryContent));
+    expect(contentHtml).toContain('knowledge-memory-content');
+    // 嵌入形态不带整窗外壳
+    expect(contentHtml).not.toContain('knowledge-memory-panel"');
+    expect(contentHtml).not.toContain('返回应用');
+  });
+
   it('groups memory audit rows with source, purpose, and injection evidence', () => {
     const auditItems = buildAuditItems({
       projectPath: '/repo/code-agent',

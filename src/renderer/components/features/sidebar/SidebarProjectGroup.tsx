@@ -142,16 +142,18 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
   const drawerSessions = drawerOpen ? buildProjectDrawerSessions(group.sessions as SessionWithMeta[]) : [];
   return (
     <div
-      className="mb-2"
+      className="mb-2.5"
       data-sidebar-group-phase={expansionView.phase}
     >
       <div
         className="group sticky top-0 z-20 flex items-center gap-1.5 w-full px-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
         title={title}
       >
-        {/* 分组头对齐约定(2026-07-02 拍板)：图标+名称左对齐、整行垂直居中；
+        {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
             展开收起 chevron 不常驻，hover/聚焦时才出现在名称右侧(参考 Codex)；
-            未完成数右对齐，用"色球+数字"与会话行的状态圆点同一视觉语言，不用文字胶囊。 */}
+            未完成数右对齐，用"色球+数字"与会话行的状态圆点同一视觉语言，不用文字胶囊。
+            07-26 Codex 式分组：分组头升格（15px 图标 + 13px zinc-200 名称）作一等工作区，
+            会话行整体缩进，左侧让出一条 icon 列，组间距 10px。 */}
         <button
           type="button"
           title={expansionView.toggleTitle}
@@ -160,8 +162,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           onClick={() => handleToggleWorkspaceGroup(group.key, expansionView)}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
-          <IconComponent className="w-3 h-3 shrink-0 text-zinc-500" />
-          <span className="truncate text-xs font-medium text-zinc-400">{summary.displayName}</span>
+          <IconComponent className="w-[15px] h-[15px] shrink-0 text-zinc-400" />
+          <span className="truncate text-[13px] font-medium text-zinc-200">{summary.displayName}</span>
           <ChevronRight
             className={`w-3 h-3 shrink-0 text-zinc-500 transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 ${
               expanded ? 'rotate-90' : ''
@@ -338,7 +340,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         const canToggle = !hasSearchFilters && (hiddenCount > 0 || showAllRows);
         return (
           <div
-            className={expansionView.rowsClassName}
+            className={`${expansionView.rowsClassName} ml-[18px]`}
             data-sidebar-group-rows={group.key}
           >
             {group.sessions.length === 0 ? (

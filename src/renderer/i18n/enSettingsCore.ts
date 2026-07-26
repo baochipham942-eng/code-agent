@@ -36,9 +36,8 @@ export const enSettingsCore = {
       hooks: 'Hooks',
       appshots: 'App snapshots',
       cache: 'Data & storage',
-      users: 'User management',
-      invites: 'Invite codes',
-      controlPlane: 'Control plane',
+      // users/invites/controlPlane moved to the standalone admin console (2026-07 方案 9C);
+      // capabilities keeps its id only as a deep-link redirect, never shown in settings nav
       capabilities: 'Capability center',
     },
     tabGroups: {
@@ -48,10 +47,16 @@ export const enSettingsCore = {
       memory: 'Memory & privacy',
       system: 'System',
       advanced: 'Advanced',
-      management: 'User management',
     },
     modal: {
       loading: 'Loading…',
+    },
+    unsavedChanges: {
+      badge: 'Unsaved',
+      title: 'Unsaved changes',
+      message: 'The "General model" tab has Provider configuration changes that have not been saved. Leaving will discard them.',
+      discard: 'Discard changes',
+      stay: 'Keep editing',
     },
     searchIndex: {
       permissionMode: 'Safety mode',
@@ -70,12 +75,6 @@ export const enSettingsCore = {
       scheduledTasks: 'Scheduled tasks',
       newTask: 'New task',
       executionHistory: 'Execution history',
-      registeredUsers: 'Registered users',
-      userFields: 'User fields',
-      inviteManagement: 'Invite code management',
-      newInvite: 'New invite code',
-      releaseAudit: 'Release audit',
-      onlineVersionHash: 'Online version and hash',
       modelProviders: 'Model providers',
       apiKey: 'API Key',
       modelSelection: 'Model selection',
@@ -99,8 +98,6 @@ export const enSettingsCore = {
       dataManagement: 'Data management',
       databaseSize: 'Database size',
       clearCache: 'Clear cache',
-      localCapabilityInventory: 'Local capability inventory',
-      capabilityAudit: 'Skill / MCP / Tool / Channel audit',
       pluginMarketplace: 'Plugin marketplace',
       pluginVisibility: 'Plugin visibility',
       pluginPermissions: 'Plugin permissions',

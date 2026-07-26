@@ -128,7 +128,7 @@ FOR EACH toolCall:
 
 ## 2026-05-15 In-App HTML Validation Tool
 
-`validate_html_in_app` 把 HTML artifact 验收从外部脚本带回 Agent Neo 右侧工作面板。它是 vision 类 native ToolModule，执行时通过 main↔renderer IPC 请求 `InAppValidationPanel` 打开 sandboxed iframe，加载 HTML 后跑交互脚本和断言。
+`validate_html_in_app` 把 HTML artifact 验收从外部脚本带回 Agent Neo 右侧工作面板。它是 vision 类 native ToolModule，执行时通过 main↔renderer IPC 请求 `InAppValidationWorkspace` 打开 sandboxed iframe，加载 HTML 后跑交互脚本和断言。
 
 | 层 | 职责 | 文件 |
 |----|------|------|
@@ -136,7 +136,7 @@ FOR EACH toolCall:
 | Tool handler | 读取 inline HTML 或本地 HTML 文件，生成 requestId，调用 in-app validation service，返回逐步 pass/fail 汇总 | `src/host/tools/modules/vision/validateHtmlInApp.ts` |
 | Shared DSL | main 的 `visualSmoke` 和 renderer 的 In-App panel 共用 `BrowserInteractionStep` / `BrowserInteractionExpect` | `src/shared/contract/browserInteraction.ts` |
 | IPC / service | main 向 renderer 发验证请求，renderer 回传结果或错误 | `src/host/ipc/inAppValidation.ipc.ts`、`src/host/services/inAppValidationService.ts` |
-| Renderer panel | 右侧 iframe 面板展示 HTML、步骤状态、失败原因和用户可见的验证过程 | `src/renderer/components/features/inAppValidation/InAppValidationPanel.tsx` |
+| Renderer panel | 右侧 iframe 面板展示 HTML、步骤状态、失败原因和用户可见的验证过程 | `src/renderer/components/features/inAppValidation/InAppValidationWorkspace.tsx` |
 
 当前边界：
 - 面向自己生成或本地可控的 HTML artifact；公开网站会受 cross-origin、X-Frame-Options 和 `event.isTrusted=false` 限制。

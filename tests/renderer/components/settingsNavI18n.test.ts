@@ -62,7 +62,7 @@ describe('设置导航 i18n（settings.tabs / settings.tabGroups）', () => {
       access: { isAdmin: true },
     });
     expect(groups.map((g) => g.label)).toEqual([
-      '模型与能力', '基础偏好', '工作与协作', '记忆与隐私', '系统', '高级', '用户管理',
+      '模型与能力', '基础偏好', '工作与协作', '记忆与隐私', '系统', '高级',
     ]);
     const labelById = new Map(groups.flatMap((g) => g.tabs.map((tab) => [tab.id, tab.label] as const)));
     expect(labelById.get('search')).toBe('搜索源');

@@ -1,17 +1,22 @@
 // ============================================================================
 // Session Header - 会话遥测头部信息
+// 2026-07-27 评测中心 v2：文案改走 i18n（t.telemetry.header.*），
+// 随 EvalTelemetryTab 内嵌进评测中心「遥测」tab。
 // ============================================================================
 
 import React from 'react';
 import type { TelemetrySession } from '@shared/contract/telemetry';
 import { Activity, Clock, Cpu, AlertTriangle, CheckCircle } from 'lucide-react';
 import { formatDuration } from '../../../../shared/utils/format';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface SessionHeaderProps {
   session: TelemetrySession;
 }
 
 export const SessionHeader: React.FC<SessionHeaderProps> = ({ session }) => {
+  const { t } = useI18n();
+  const h = t.telemetry.header;
 
   const formatTokens = (n: number) => {
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -40,19 +45,19 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({ session }) => {
       </div>
 
       <div className="flex items-center gap-4 text-xs text-zinc-400">
-        <div className="flex items-center gap-1" title="轮次数">
+        <div className="flex items-center gap-1" title={h.turns}>
           <Activity className="w-3.5 h-3.5" />
           <span>{session.turnCount}</span>
         </div>
-        <div className="flex items-center gap-1" title="总 Token">
+        <div className="flex items-center gap-1" title={h.tokens}>
           <Cpu className="w-3.5 h-3.5" />
           <span>{formatTokens(session.totalTokens)}</span>
         </div>
-        <div className="flex items-center gap-1" title="时长">
+        <div className="flex items-center gap-1" title={h.duration}>
           <Clock className="w-3.5 h-3.5" />
           <span>{session.durationMs ? formatDuration(session.durationMs) : '--'}</span>
         </div>
-        <div className="flex items-center gap-1" title="工具成功率">
+        <div className="flex items-center gap-1" title={h.toolSuccessRate}>
           {session.toolSuccessRate >= 0.8 ? (
             <CheckCircle className="w-3.5 h-3.5 text-green-400" />
           ) : (

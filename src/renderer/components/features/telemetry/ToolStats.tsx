@@ -1,18 +1,23 @@
 // ============================================================================
 // Tool Stats - 工具使用统计
+// 2026-07-27 评测中心 v2：文案改走 i18n，随 EvalTelemetryTab 内嵌进评测中心。
 // ============================================================================
 
 import React from 'react';
 import type { TelemetryToolStat } from '@shared/contract/telemetry';
 import { CheckCircle, XCircle } from 'lucide-react';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface ToolStatsProps {
   stats: TelemetryToolStat[];
 }
 
 export const ToolStats: React.FC<ToolStatsProps> = ({ stats }) => {
+  const { t } = useI18n();
+  const tm = t.telemetry;
+
   if (stats.length === 0) {
-    return <div className="text-center text-zinc-500 text-sm py-8">暂无工具统计数据</div>;
+    return <div className="text-center text-zinc-500 text-sm py-8">{tm.emptyToolStats}</div>;
   }
 
   const maxCalls = Math.max(...stats.map(s => s.callCount));
@@ -28,7 +33,7 @@ export const ToolStats: React.FC<ToolStatsProps> = ({ stats }) => {
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-mono text-zinc-400">{stat.name}</span>
               <div className="flex items-center gap-3 text-[10px] text-zinc-500">
-                <span>{stat.callCount} 次</span>
+                <span>{tm.callsCount.replace('{n}', String(stat.callCount))}</span>
                 <span>avg {stat.avgDurationMs}ms</span>
               </div>
             </div>

@@ -36,6 +36,16 @@ vi.mock('../../../src/renderer/components/design/designFiles', () => ({
   extractBrandFromImage: (...args: unknown[]) => extractBrandFromImage(...(args as [])),
 }));
 
+// 记忆 tab 的嵌入内容在本测试里打桩：真实 KnowledgeMemoryContent 挂载即触发 memory IPC，
+// 嵌入行为由 knowledgeMemoryPanel.test.ts 与这里的 tab 切换断言共同覆盖。
+vi.mock('../../../src/renderer/components/features/knowledge/KnowledgeMemoryPanel', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/renderer/components/features/knowledge/KnowledgeMemoryPanel')>();
+  return {
+    ...actual,
+    KnowledgeMemoryContent: () => <div data-testid="knowledge-memory-content-stub" />,
+  };
+});
+
 import { LibraryPanel } from '../../../src/renderer/components/features/knowledge/LibraryPanel';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -48,6 +58,8 @@ function makeItem(overrides: Partial<LibraryItem> = {}): LibraryItem {
     kind: 'upload',
     pathOrUri: '/data/library/global/Brief.pdf',
     tags: ['素材'],
+    // 默认带来源会话，按推导口径落入「AI 生成」tab（默认 tab），减少各用例的先置点击
+    sourceSessionId: 'session_default',
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -129,22 +141,71 @@ describe('LibraryPanel', () => {
     expect(screen.queryByText('session_missing')).toBeNull();
   });
 
-  it('按 contract 推导类型选项，筛选后只显示对应条目', async () => {
+  it('类型 chips 按 contract 推导，点击后只显示对应条目', async () => {
     const { fireEvent } = await import('@testing-library/react');
     listLibraryItems.mockResolvedValue([
       makeItem({ id: 'upload', kind: 'upload', title: '上传条目' }),
       makeItem({ id: 'artifact', kind: 'artifact', title: '产物条目' }),
     ]);
     render(<LibraryPanel />);
-    const filter = await screen.findByTestId('library-kind-filter') as HTMLSelectElement;
-    expect(filter.querySelectorAll('option')).toHaveLength(LIBRARY_ITEM_KINDS.length + 1);
-    fireEvent.change(filter, { target: { value: 'artifact' } });
+    await screen.findByText('上传条目');
+    // chips 数量 = 全部 + LIBRARY_ITEM_KINDS
+    expect(screen.getByTestId('library-kind-chip-all')).toBeTruthy();
+    for (const kind of LIBRARY_ITEM_KINDS) {
+      expect(screen.getByTestId(`library-kind-chip-${kind}`)).toBeTruthy();
+    }
+    fireEvent.click(screen.getByTestId('library-kind-chip-artifact'));
     await screen.findByText('产物条目');
     expect(document.querySelector('[data-library-item="artifact"]')).toBeTruthy();
     expect(document.querySelector('[data-library-item="upload"]')).toBeNull();
   });
 
-  it('品牌套件作为并列分区列出真实品牌，且不改变资料条目的筛选和计数', async () => {
+  it('来源 tab 按推导口径分流：AI 生成 / 我的上传', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    listLibraryItems.mockResolvedValue([
+      makeItem({ id: 'lib_ai', title: '会话产物', kind: 'artifact', sourceSessionId: 'session_a' }),
+      makeItem({ id: 'lib_manual', title: '手动上传.pdf', kind: 'upload', sourceSessionId: undefined }),
+    ]);
+    render(<LibraryPanel />);
+
+    // 默认「AI 生成」tab：只显示会话产物
+    await screen.findByText('会话产物');
+    expect(screen.queryByText('手动上传.pdf')).toBeNull();
+
+    // 「我的上传」tab：只显示手动上传
+    fireEvent.click(screen.getByTestId('library-source-uploads'));
+    await screen.findByText('手动上传.pdf');
+    expect(screen.queryByText('会话产物')).toBeNull();
+  });
+
+  it('收藏 tab 是壳：固定空态「还没有收藏的资料」', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    listLibraryItems.mockResolvedValue([makeItem()]);
+    render(<LibraryPanel />);
+    await screen.findByText('Brief.pdf');
+
+    fireEvent.click(screen.getByTestId('library-source-favorites'));
+    await screen.findByText('还没有收藏的资料。');
+    expect(document.querySelector('[data-library-item]')).toBeNull();
+  });
+
+  it('「记忆」tab 嵌入 KnowledgeMemoryContent，并收起条目筛选行', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    listLibraryItems.mockResolvedValue([makeItem()]);
+    render(<LibraryPanel />);
+    await screen.findByText('Brief.pdf');
+
+    fireEvent.click(screen.getByTestId('library-tab-memory'));
+    await screen.findByTestId('knowledge-memory-content-stub');
+    expect(screen.queryByTestId('library-kind-chips')).toBeNull();
+    expect(screen.queryByTestId('library-item-list')).toBeNull();
+
+    // 点回来源 tab 恢复条目列表
+    fireEvent.click(screen.getByTestId('library-source-ai'));
+    await screen.findByText('Brief.pdf');
+  });
+
+  it('品牌套件从右侧次级入口进入，列出真实品牌且不改变资料条目筛选和计数', async () => {
     const { fireEvent } = await import('@testing-library/react');
     listLibraryItems.mockResolvedValue([makeItem()]);
     listBrands.mockResolvedValue({
@@ -154,28 +215,26 @@ describe('LibraryPanel', () => {
     render(<LibraryPanel />);
 
     await screen.findByText('Brief.pdf');
-    const filter = screen.getByTestId('library-kind-filter') as HTMLSelectElement;
-    expect(filter.querySelectorAll('option')).toHaveLength(LIBRARY_ITEM_KINDS.length + 1);
+    expect(screen.getByTestId('library-kind-chip-artifact')).toBeTruthy();
     expect(screen.getByText('1 条')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('tab', { name: '品牌套件' }));
+    fireEvent.click(screen.getByTestId('library-brands-entry'));
     expect(await screen.findByText('Porsche 数字品牌')).toBeTruthy();
     expect(listBrands).toHaveBeenCalledTimes(1);
     expect(listLibraryItems).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole('tab', { name: '资料条目' }));
+    fireEvent.click(screen.getByTestId('library-brands-back'));
     expect(await screen.findByText('Brief.pdf')).toBeTruthy();
-    expect((screen.getByTestId('library-kind-filter') as HTMLSelectElement).querySelectorAll('option'))
-      .toHaveLength(LIBRARY_ITEM_KINDS.length + 1);
+    expect(screen.getByTestId('library-kind-chip-artifact')).toBeTruthy();
     expect(screen.getByText('1 条')).toBeTruthy();
   });
 
-  it('从品牌套件分区新建品牌仍调用 saveBrand 契约', async () => {
+  it('从品牌套件入口新建品牌仍调用 saveBrand 契约', async () => {
     const { fireEvent } = await import('@testing-library/react');
     listLibraryItems.mockResolvedValue([]);
     render(<LibraryPanel />);
 
-    fireEvent.click(screen.getByRole('tab', { name: '品牌套件' }));
+    fireEvent.click(screen.getByTestId('library-brands-entry'));
     await waitFor(() => expect(listBrands).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: '新建品牌' }));
     fireEvent.change(screen.getByLabelText('品牌名称'), { target: { value: '资料库新品牌' } });
@@ -259,14 +318,14 @@ describe('LibraryPanel', () => {
     expect(screen.getByTestId('library-edit-save')).toHaveProperty('disabled', true);
   });
 
-  it('关闭按钮复位 appStore 面板开关', async () => {
+  it('「返回应用」按钮复位 appStore 面板开关', async () => {
     listLibraryItems.mockResolvedValue([]);
     useAppStore.getState().setShowLibraryPanel(true);
     render(<LibraryPanel />);
     await waitFor(() => {
       expect(screen.getByTestId('library-panel')).toBeTruthy();
     });
-    screen.getByLabelText('关闭').click();
+    screen.getByRole('button', { name: '返回应用' }).click();
     expect(useAppStore.getState().showLibraryPanel).toBe(false);
   });
 

@@ -65,7 +65,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
       <button
         type={type}
         onClick={onClick}
-        className={`${baseIconButtonClass} bg-zinc-100 text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_10px_24px_rgba(0,0,0,0.28)] hover:bg-white active:scale-95`}
+        className={`${baseIconButtonClass} bg-brand text-white shadow-[0_10px_24px_var(--brand-primary-glow)] hover:bg-brand-hover active:scale-95`}
         aria-label={t.chatInput.queueNextTurnAria}
         title={t.chatInput.queueNextTurnAria}
       >
@@ -117,7 +117,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
       onClick={onClick}
       className={`${baseIconButtonClass} disabled:cursor-not-allowed ${
         showActiveState
-          ? 'bg-zinc-100 text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_10px_24px_rgba(0,0,0,0.28)] hover:bg-white active:scale-95'
+          ? 'bg-brand text-white shadow-[0_10px_24px_var(--brand-primary-glow)] hover:bg-brand-hover active:scale-95'
           : 'bg-zinc-800/80 text-zinc-500 ring-1 ring-white/[0.04] opacity-70'
       }`}
       aria-label={t.chatInput.sendAria}

@@ -4,6 +4,7 @@ import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
+import { NeoBrandMark } from '../sidebar/NeoBrandMark';
 
 interface SuggestionItem {
   icon: React.ElementType;
@@ -16,31 +17,33 @@ interface SuggestionItem {
 
 // 新会话任务卡：一键直出可运行/可交互产物或真实 agent 产出，第一轮不追问、即见结果。
 // 文案（含 prompt 本体）随 UI 语言走 i18n：中文用户发中文 prompt，英文用户发英文 prompt。
+// 用色拍板（2026-07-26 空态品牌化）：首张推荐卡 = 品牌青（--brand-primary 派生），
+// 其余一律中性——此前的琥珀/蓝/紫/绿分类色让首屏像通用模板，品牌无处识别。
 export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
   return [
     {
       icon: Gamepad2,
       ...t.chat.suggestions.game,
-      accent: 'bg-amber-500/10 border-amber-500/20',
-      iconColor: 'text-amber-400',
+      accent: 'bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] border-[color-mix(in_srgb,var(--brand-primary)_30%,transparent)]',
+      iconColor: 'text-brand',
     },
     {
       icon: BarChart3,
       ...t.chat.suggestions.chart,
-      accent: 'bg-sky-500/10 border-sky-500/20',
-      iconColor: 'text-blue-400',
+      accent: 'bg-white/[0.03] border-white/[0.08]',
+      iconColor: 'text-zinc-400',
     },
     {
       icon: Search,
       ...t.chat.suggestions.briefing,
-      accent: 'bg-violet-500/10 border-violet-500/20',
-      iconColor: 'text-violet-400',
+      accent: 'bg-white/[0.03] border-white/[0.08]',
+      iconColor: 'text-zinc-400',
     },
     {
       icon: HardDrive,
       ...t.chat.suggestions.disk,
-      accent: 'bg-emerald-500/10 border-emerald-500/20',
-      iconColor: 'text-emerald-400',
+      accent: 'bg-white/[0.03] border-white/[0.08]',
+      iconColor: 'text-zinc-400',
     },
   ];
 }
@@ -69,6 +72,8 @@ export const NewSessionWelcome: React.FC<{
   return (
     <div className="h-full flex flex-col items-center justify-center px-6 py-12">
       <div className="w-full max-w-2xl animate-fade-in">
+        {/* 品牌标入场（2026-07-26 空态品牌化）：用户第一眼页面此前没有任何品牌触点 */}
+        <NeoBrandMark size={28} showWordmark={false} className="mb-4" />
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-zinc-100">{t.chat.welcomeTitle}</h1>

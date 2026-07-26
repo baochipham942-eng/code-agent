@@ -57,7 +57,8 @@ describe('SettingsModal screen memory tab visibility', () => {
       access: { isAdmin: true },
     });
 
-    // Settings IA v2（2026-07-03 拍板）：默认 5 组 + 高级折叠组 + admin 管理组
+    // Settings IA v2（2026-07-03 拍板）：默认 5 组 + 高级折叠组；
+    // 2026-07 方案 9C：admin 管理组迁 admin-console，设置页不再出现
     expect(groups.map((group) => group.label)).toEqual([
       '模型与能力',
       '基础偏好',
@@ -65,7 +66,6 @@ describe('SettingsModal screen memory tab visibility', () => {
       '记忆与隐私',
       '系统',
       '高级',
-      '用户管理',
     ]);
     expect(groups[0].tabs.map((tab) => tab.id)).toEqual([
       'model',
@@ -92,17 +92,26 @@ describe('SettingsModal screen memory tab visibility', () => {
       'appshots',
       'cache',
     ]);
-    // 管理组仅 admin
-    expect(groups[6].tabs.map((tab) => tab.id)).toEqual([
-      'users',
-      'invites',
-      'controlPlane',
-      'capabilities',
-    ]);
     expect(groups[4].tabs.map((tab) => tab.id)).toEqual([
       'update',
       'about',
     ]);
+  });
+
+  it('管理组 tab 对 admin 也不再出现（2026-07 方案 9C 迁 admin-console）', () => {
+    const groups = buildSettingsTabGroups({
+      t,
+      showScreenMemoryTab: true,
+      showUpdateTab: true,
+      hasOptionalUpdate: false,
+      access: { isAdmin: true },
+    });
+
+    expect(groups.map((group) => group.label)).not.toContain('用户管理');
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('users');
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('invites');
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('controlPlane');
+    expect(groups.flatMap((group) => group.tabs.map((tab) => tab.id))).not.toContain('capabilities');
   });
 
   it('hides user management tabs for non-admin users', () => {

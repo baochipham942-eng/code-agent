@@ -174,6 +174,8 @@ export const ProviderConnectionSection: React.FC<ProviderConnectionSectionProps>
               : connectionText.apiKeyHint
             : connectionText.localServiceHint}
         </p>
+        {/* 测试用的是当前编辑中的表单值（含未保存修改），与已落盘配置无关 */}
+        <p className="text-xs text-zinc-500">{connectionText.testConnectionHint}</p>
       </div>
     </ProviderDetailCard>
   );

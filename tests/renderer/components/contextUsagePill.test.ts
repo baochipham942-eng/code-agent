@@ -15,6 +15,11 @@ const pillMocks = vi.hoisted(() => ({
     setLanguage: vi.fn(),
     cloudUIStrings: undefined,
   },
+  statusState: {
+    sessionCost: 0,
+    unknownCostTurns: 0,
+    isStreaming: false,
+  },
   invoke: vi.fn(),
   refreshContextHealth: vi.fn(),
 }));
@@ -23,6 +28,14 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: (selector?: (state: typeof pillMocks.appState) => unknown) => (
     selector ? selector(pillMocks.appState) : pillMocks.appState
   ),
+}));
+
+vi.mock('../../../src/renderer/stores/statusStore', () => ({
+  useStatusStore: (selector: (state: typeof pillMocks.statusState) => unknown) => selector(pillMocks.statusState),
+}));
+
+vi.mock('../../../src/renderer/hooks/useBudgetStatus', () => ({
+  useBudgetStatus: () => null,
 }));
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
@@ -54,24 +67,27 @@ describe('ContextUsagePill', () => {
     });
   });
 
-  // 原来这里钉的是「只有图标」。产品负责人拍板推翻：一个没有刻度的圆环读不出用了多少，
-  // 百分比只在 hover title 和展开面板里等于没有。折叠态必须有可读锚点。
-  it('折叠态给出可读的百分比锚点，不是一个光秃秃的环', () => {
+  // 2026-07-26 底栏收敛拍板，推翻此前「折叠态必须有可读锚点」的决定：
+  // 圆环讲进度，精确百分比只在 hover title 和展开面板——底栏不再常驻任何数字。
+  it('折叠态只有一个圆环，百分比在 title 而不是常驻文本', () => {
     const html = renderToStaticMarkup(React.createElement(ContextUsagePill));
 
     expect(html).toContain('aria-label="上下文使用"');
     expect(html).toContain('82% 已用 · 82k/100k 标记');
-    expect(html).toContain('data-testid="context-usage-percent"');
-    expect(html.replace(/<[^>]*>/g, ' ')).toContain('82%');
+    expect(html).toContain('<svg');
+    expect(html).not.toContain('data-testid="context-usage-percent"');
+    // 文本内容（剥掉标签和属性）里不得再出现常驻百分比
+    expect(html.replace(/<[^>]*>/g, ' ')).not.toContain('82%');
     expect(html).not.toContain('Context window');
   });
 
-  it('还没有第一轮数据时不占位（不显示 0%）', () => {
+  it('还没有第一轮数据时圆环照常渲染，不显示 0%', () => {
     const previous = pillMocks.appState.contextHealth;
     pillMocks.appState.contextHealth = undefined as unknown as typeof previous;
     try {
       const html = renderToStaticMarkup(React.createElement(ContextUsagePill));
-      expect(html).not.toContain('data-testid="context-usage-percent"');
+      expect(html).toContain('<svg');
+      expect(html.replace(/<[^>]*>/g, ' ')).not.toContain('0%');
     } finally {
       pillMocks.appState.contextHealth = previous;
     }

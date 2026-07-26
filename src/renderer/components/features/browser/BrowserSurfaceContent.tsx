@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ExternalLink,
-  Globe,
   KeyRound,
   Loader2,
   PlugZap,
@@ -21,12 +20,7 @@ import { useWorkbenchBrowserSession } from '../../../hooks/useWorkbenchBrowserSe
 import { useLiveAgentPointer } from '../../../hooks/useLiveAgentPointer';
 import { buildBrowserWorkbenchStatusRows } from '../../../utils/workbenchPresentation';
 import ipcService from '../../../services/ipcService';
-import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { AgentPointerPreviewCard, AgentPointerTimelineList } from '../../workbench/AgentPointerOverlay';
-
-interface BrowserSurfacePanelProps {
-  onClose: () => void;
-}
 
 interface AccountRefreshResult {
   accountState: ManagedBrowserAccountStateSummary;
@@ -82,7 +76,9 @@ function getStatusClass(ready: boolean): string {
   return ready ? 'text-emerald-300' : 'text-amber-300';
 }
 
-export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClose }) => {
+// 浏览器操作内容组件：嵌进「本机操作」合并页（features/localOps/LocalOpsPage）的浏览器 tab，
+// 不再自带 FullScreenPage 外壳；页面标题与关闭由外层页头负责。
+export const BrowserSurfaceContent: React.FC = () => {
   const setBrowserSessionMode = useComposerStore((state) => state.setBrowserSessionMode);
   const browserSession = useWorkbenchBrowserSession();
   const [url, setUrl] = useState('https://www.google.com/');
@@ -276,15 +272,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
   }), [browserReady, browserSession.managedSession.activeTab?.title, browserSession.managedSession.activeTab?.url, browserSession.managedSession.lastTrace?.id, lastTracePointer, livePointer.event, livePointer.lastEvent]);
 
   return (
-    <FullScreenPage testId="browser-surface-panel">
-      <FullScreenPageHeader
-        icon={<Globe className="h-4 w-4 text-sky-300" />}
-        title="Browser Surface"
-        description="托管浏览器登录态、本机 profile Cookie 导入，以及 Chrome Relay（ADR-041）"
-        onClose={onClose}
-        closeLabel="关闭 Browser Surface"
-      />
-
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="browser-surface-content">
         <div className="flex-1 overflow-y-auto p-5">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
             <section className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
@@ -541,7 +529,7 @@ export const BrowserSurfacePanel: React.FC<BrowserSurfacePanelProps> = ({ onClos
             </div>
           )}
         </div>
-    </FullScreenPage>
+    </div>
   );
 };
 
@@ -582,5 +570,3 @@ const InfoMetric = ({ label, value }: { label: string; value: string }) => (
     <div className="mt-0.5 text-sm font-medium tabular-nums text-zinc-200">{value}</div>
   </div>
 );
-
-export default BrowserSurfacePanel;

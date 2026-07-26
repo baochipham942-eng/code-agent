@@ -1,6 +1,15 @@
 // ============================================================================
 // TaskManager - Multi-session task orchestration
 // Wave 5: 多任务并行支持
+// ----------------------------------------------------------------------------
+// session.status 回写契约（概览/侧栏数据源统一，2026-07-27）：
+// - 内存状态每次迁移都经 persistSessionState 落 sessions.status；
+//   崩溃重启时由 startupMaintenance 的 markCrashedActiveSessions 追认：
+//   running/paused/cancelling → interrupted、queued → orphaned。
+// - 失败终态落 'error' 后，finally 里的内存 idle 归位（释放任务槽）不得把
+//   DB 覆盖回 idle——否则重启后侧栏把失败会话误显示为「已完成」。
+// - 成功终态沿用 'idle' 约定（与 codex/kimi 引擎 adapter 一致），
+//   侧栏经 messageCount 兜底推导为「已完成」。
 // ============================================================================
 
 import { EventEmitter } from 'events';
@@ -18,6 +27,7 @@ import { DAG_CHANNELS } from '../../shared/ipc/channels';
 import { MessageDeltaAccumulator } from '../protocol/messageDeltaAccumulator';
 import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import type { ConversationModelSpec } from '../../shared/contract/conversationEnvelope';
+import type { SessionStatus as PersistedSessionStatus } from '../../shared/contract/session';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 
@@ -678,9 +688,10 @@ export class TaskManager extends EventEmitter {
       // Error is observable as its own state transition, but the session is
       // reusable only after the task slot has been released. Publish that
       // settled idle transition here so host-owned follow-up work cannot race
-      // the failed turn's finally cleanup.
+      // the failed turn's finally cleanup. DB 侧留住 'error'（persistStatus 覆盖），
+      // 崩溃追认之外的失败会话在重启后仍显示「出错」。
       if (this.sessionStates.get(sessionId)?.status === 'error') {
-        this.updateSessionState(sessionId, { status: 'idle' });
+        this.updateSessionState(sessionId, { status: 'idle' }, { persistStatus: 'error' });
       }
     }
   }
@@ -1049,21 +1060,29 @@ export class TaskManager extends EventEmitter {
 
   /**
    * 更新会话状态
+   *
+   * @param options.persistStatus DB 回写覆盖：内存状态与落库状态需要分离时使用。
+   *   目前唯一场景是失败终态——内存要归位 idle 释放任务槽，但 DB 必须留住 'error'，
+   *   让重启后的侧栏仍把该会话分类为「出错」而不是经 messageCount 兜底误显示「已完成」。
    */
-  private updateSessionState(sessionId: string, state: Partial<SessionState>): void {
+  private updateSessionState(
+    sessionId: string,
+    state: Partial<SessionState>,
+    options?: { persistStatus?: PersistedSessionStatus },
+  ): void {
     const current = this.sessionStates.get(sessionId) || { status: 'idle' as const };
     const newState = { ...current, ...state };
     this.sessionStates.set(sessionId, newState);
-    this.persistSessionState(sessionId, newState);
+    this.persistSessionState(sessionId, options?.persistStatus ?? newState.status);
     this.emitEvent('state_change', sessionId, newState);
   }
 
-  private persistSessionState(sessionId: string, state: SessionState): void {
+  private persistSessionState(sessionId: string, status: PersistedSessionStatus): void {
     try {
       const db = getDatabase();
       if (!db.isReady) return;
       db.updateSession(sessionId, {
-        status: state.status,
+        status,
         updatedAt: Date.now(),
       });
     } catch (error) {

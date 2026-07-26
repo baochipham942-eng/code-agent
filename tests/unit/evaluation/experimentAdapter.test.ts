@@ -495,4 +495,159 @@ describe('ExperimentAdapter canonical harness persistence', () => {
     expect(parsed.passRate).toBe(1);
     expect(parsed.skipped).toBe(1);
   });
+
+  it('includes sanitized dataset name in eval-harness experiment name', async () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const result: EvalHarnessExperimentResultLike = {
+      experimentId: 'eval-harness-ds',
+      timestamp: '2026-04-27T02:00:00.000Z',
+      dataset: 'My Suite / v2  beta',
+      overallPassRate: 1,
+      cases: [
+        {
+          caseId: 'c1',
+          medianScore: 90,
+          passed: true,
+          trials: [{ trialIndex: 0, score: 90, passed: true, durationMs: 10 }],
+        },
+      ],
+    };
+
+    await adapter.persistEvalHarnessResult(result);
+
+    expect(db.insertExperiment.mock.calls[0]?.[0].name).toBe('eval-harness-My-Suite-v2-beta-2026-04-27');
+  });
+
+  it('keeps legacy eval-harness-<date> name when dataset is missing or blank', async () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const result: EvalHarnessExperimentResultLike = {
+      experimentId: 'eval-harness-no-ds',
+      timestamp: '2026-04-27T02:00:00.000Z',
+      dataset: '   ',
+      overallPassRate: 1,
+      cases: [
+        {
+          caseId: 'c1',
+          medianScore: 90,
+          passed: true,
+          trials: [{ trialIndex: 0, score: 90, passed: true, durationMs: 10 }],
+        },
+      ],
+    };
+
+    await adapter.persistEvalHarnessResult(result);
+
+    expect(db.insertExperiment.mock.calls[0]?.[0].name).toBe('eval-harness-2026-04-27');
+  });
+
+  it('prefixes date-like dataset names so normalization does not strip them', async () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const result: EvalHarnessExperimentResultLike = {
+      experimentId: 'eval-harness-date-ds',
+      timestamp: '2026-04-27T02:00:00.000Z',
+      dataset: '2026-07-21',
+      overallPassRate: 1,
+      cases: [
+        {
+          caseId: 'c1',
+          medianScore: 90,
+          passed: true,
+          trials: [{ trialIndex: 0, score: 90, passed: true, durationMs: 10 }],
+        },
+      ],
+    };
+
+    await adapter.persistEvalHarnessResult(result);
+
+    expect(db.insertExperiment.mock.calls[0]?.[0].name).toBe('eval-harness-ds-2026-07-21-2026-04-27');
+  });
+
+  it('includes dataset name in bare test-runner experiment name', async () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const summary: TestRunSummary = {
+      runId: 'ds-run',
+      startTime: Date.parse('2026-04-27T01:00:00.000Z'),
+      endTime: Date.parse('2026-04-27T01:00:10.000Z'),
+      duration: 10000,
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      partial: 0,
+      averageScore: 1,
+      results: [
+        {
+          testId: 'case-a',
+          description: 'a',
+          status: 'passed',
+          duration: 1,
+          startTime: 1,
+          endTime: 2,
+          toolExecutions: [],
+          responses: [],
+          errors: [],
+          turnCount: 1,
+          score: 1,
+        },
+      ],
+      environment: { model: 'm', provider: 'mock', workingDirectory: '/tmp' },
+      performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
+      gitCommit: 'abc123',
+      dataset: 'smoke-suite',
+    };
+
+    await adapter.persistTestRun(summary);
+
+    expect(db.insertExperiment.mock.calls[0]?.[0].name).toBe('eval-smoke-suite-2026-04-27');
+  });
+
+  it('harness variant naming takes precedence over dataset name', async () => {
+    const db = createDbWriter();
+    const adapter = new ExperimentAdapter(db as any);
+    const summary: TestRunSummary = {
+      runId: 'ds-harness-run',
+      startTime: Date.parse('2026-06-02T01:00:00.000Z'),
+      endTime: Date.parse('2026-06-02T01:00:10.000Z'),
+      duration: 10000,
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      partial: 0,
+      averageScore: 1,
+      results: [
+        {
+          testId: 'case-a',
+          description: 'a',
+          status: 'passed',
+          duration: 1,
+          startTime: 1,
+          endTime: 2,
+          toolExecutions: [],
+          responses: [],
+          errors: [],
+          turnCount: 1,
+          score: 1,
+        },
+      ],
+      environment: { model: 'm', provider: 'mock', workingDirectory: '/tmp' },
+      performance: { avgResponseTime: 1, maxResponseTime: 1, totalToolCalls: 0, totalTurns: 1 },
+      gitCommit: 'abc123',
+      dataset: 'smoke-suite',
+      harness: {
+        name: 'compression-off',
+        contextCompression: false,
+        hooksEnabled: false,
+        toolMode: 'all',
+      },
+    };
+
+    await adapter.persistTestRun(summary);
+
+    expect(db.insertExperiment.mock.calls[0]?.[0].name).toBe('harness-compression-off-2026-06-02');
+  });
 });

@@ -515,6 +515,7 @@ export const enSettingsWork = {
         emptyPreview: 'Choose an import file to show new, updated, conflict, and skipped items.',
       },
       files: {
+        pageTitle: 'Memory',
         pageDescription: 'Manage file-based memory, recent session summaries, and model usage stats. File deletion is sensitive and still requires confirmation.',
         loadFailed: 'Failed to load memory',
         focusFoundPrefix: 'Located ',
@@ -548,6 +549,13 @@ export const enSettingsWork = {
         empty: 'No memory files yet. AI will create memory automatically during conversations.',
         noMatches: 'No matching memory files',
         detailTitle: 'File details',
+        detailLabels: {
+          name: 'Name',
+          type: 'Type',
+          updated: 'Updated',
+          chars: 'Chars',
+          description: 'Description',
+        },
         emptyContent: '(empty)',
         summaryTitle: 'File summary',
         diagnosticsTitle: 'Session and model stats',

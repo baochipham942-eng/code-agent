@@ -74,7 +74,6 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
         title="Workflow"
         description="Agent 执行流程、DAG 状态和节点关系"
         onClose={handleClose}
-        closeLabel="关闭 Workflow"
         actions={(
           <>
           {/* DAG 选择器（多个 DAG 时显示） */}

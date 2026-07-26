@@ -67,6 +67,7 @@ export const zhSettingsModels = {
         toggleTitle: '开启自动切换',
         toggleDescription: '开启后快速 / 深度 / 视觉任务可用不同模型；关闭则全部用默认模型。',
         toggleAriaLabel: '开启自动按任务切换模型',
+        autoSaveBadge: '自动保存',
         unavailableBadge: '不可用',
         unavailableSuffix: '（不可用）',
         profiles: {
@@ -113,6 +114,7 @@ export const zhSettingsModels = {
         saveConfig: '保存配置',
         saveHintPrefix: '保存 ',
         saveHintSuffix: ' 的连接、模型和高级配置。',
+        unsavedBadge: '有未保存修改',
       },
       connection: {
         title: '连接',
@@ -128,6 +130,7 @@ export const zhSettingsModels = {
         storedApiKeyPlaceholder: '••••••••••••  已保存，输入新密钥可替换',
         localNoApiKeyPlaceholder: '本地模型无需 API Key',
         testConnection: '测试连接',
+        testConnectionHint: '测的是当前编辑中的地址和密钥，未保存的修改也会被用于测试。',
         apiKeyStoredHint: 'API Key 已在本机加密保存。',
         localServiceHint: '使用本机 OpenAI-compatible 服务。',
       },
@@ -215,6 +218,8 @@ export const zhSettingsModels = {
         providerAdded: 'Provider 已添加，点击「发现模型」拉取可用模型',
         modelIdRequired: '请先填写模型 ID',
         modelAdded: '模型已加入当前 Provider',
+        configSaved: 'Provider 配置已保存',
+        configSaveFailedPrefix: '配置保存失败: ',
       },
     },
     visualModels: {

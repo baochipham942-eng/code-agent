@@ -1,9 +1,17 @@
 // ============================================================================
-// LibraryPanel - 资料库全屏页（Batch 2 L3）
+// LibraryPanel - 资料库全屏页（2026-07-26 导航去重方案 9）
 // ============================================================================
 //
-// 项目资产一等公民面：按作用域（全局/项目）列条目，上传文件入库，删除条目。
+// 项目资产一等公民面，页头结构：来源 tab × 类型 chips × 搜索。
+// - 顶行：来源 tab（AI 生成 / 我的上传 / 我的收藏）+ 最右「记忆」tab（并列内容切换），
+//   右侧搜索框 + 「品牌套件」次级入口（原 section tab 降级为入口按钮，不再是并列分区）。
+// - 次行：类型 chips = 全部 + LIBRARY_ITEM_KINDS（contract 推导，样式对齐原 kind filter）。
+// 「记忆」tab 放来源 tab 同一行最右而非来源序列内：来源 tab 是同一份条目列表的过滤维度，
+// 记忆是整页内容切换，语义不同类；视觉上仍共享一行 tab 带，避免再多开一条工具栏。
 // 带进对话在聊天输入区的 LibraryPinModal 里做，本页只管资产面。
+// 布局契约（2026-07-27 UX 收尾 1.4）：内容区走 PageContent（全宽 + px-6 py-4），
+// 两行工具带对齐同一横向节奏 px-6；「记忆」tab 内嵌 KnowledgeMemoryContent，
+// 用 PageContent 的 flex 容器形态（scroll/padding 关闭），布局由被嵌组件自管。
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronRight, FileText, Globe, Loader2, Package, Pencil, RefreshCw, Trash2, Upload } from 'lucide-react';
@@ -17,17 +25,35 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { PageContent } from '../shared/PageContent';
 import { Button } from '../../primitives/Button';
 import { IconButton } from '../../primitives/IconButton';
 import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
 import { Textarea } from '../../primitives/Textarea';
 import { BrandManager } from '../../design/BrandManager';
+import { KnowledgeMemoryContent } from './KnowledgeMemoryPanel';
 
 const GLOBAL_SCOPE = 'global';
 const closeEmbeddedBrandManager = () => undefined;
 
-type LibrarySection = 'items' | 'brands';
+// 来源维度：AI 生成 / 我的上传 / 我的收藏（favorites 暂为壳，见 deriveItemSource 注释）
+type LibrarySource = 'ai' | 'uploads' | 'favorites';
+// 页面视图：items = 条目列表；brands = 品牌套件管理（次级入口打开）；memory = 知识与记忆
+type LibraryView = 'items' | 'brands' | 'memory';
+
+/**
+ * 来源推导口径：LibraryItem contract（src/shared/contract/library.ts）暂无 origin/favorite
+ * 字段，renderer 侧按现有字段推导，不改主进程 schema：
+ * - AI 生成：带 sourceSessionId（任务/会话产出归档），或 kind 为 artifact/capture
+ *   （产物与采集天然来自 agent 流程）；
+ * - 我的上传：其余条目（手动上传的 upload、手动添加的 external_ref）；
+ * - 我的收藏：contract 无收藏字段，tab 先做壳，固定空态「还没有收藏的资料」。
+ */
+function deriveItemSource(item: LibraryItem): Exclude<LibrarySource, 'favorites'> {
+  if (item.sourceSessionId || item.kind === 'artifact' || item.kind === 'capture') return 'ai';
+  return 'uploads';
+}
 
 interface LibraryItemDraft {
   title: string;
@@ -83,7 +109,8 @@ export const LibraryPanel: React.FC = () => {
   const [search, setSearch] = useState('');
   const [updatedAtDescending, setUpdatedAtDescending] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [section, setSection] = useState<LibrarySection>('items');
+  const [view, setView] = useState<LibraryView>('items');
+  const [source, setSource] = useState<LibrarySource>('ai');
 
   const projectId = scope === GLOBAL_SCOPE ? null : scope;
   const sessionTitles = useMemo(() => new Map<string, string>(
@@ -101,6 +128,8 @@ export const LibraryPanel: React.FC = () => {
     const grouped = new Map<string, LibraryGroup>();
     const ungrouped: LibraryGroup = { id: 'ungrouped', name: t.library.ungrouped, items: [] };
     const visibleItems = items
+      // 收藏是壳：contract 无收藏字段，不过滤出任何条目，空态由渲染层兜底
+      .filter((item) => source !== 'favorites' && deriveItemSource(item) === source)
       .filter((item) => selectedKind === 'all' || item.kind === selectedKind)
       .filter((item) => matchesSearch(item, search))
       .sort((left, right) => updatedAtDescending ? right.updatedAt - left.updatedAt : left.updatedAt - right.updatedAt);
@@ -120,7 +149,7 @@ export const LibraryPanel: React.FC = () => {
       }
     }
     return [...grouped.values(), ...(ungrouped.items.length > 0 ? [ungrouped] : [])];
-  }, [items, search, selectedKind, sessionTitles, t.library.ungrouped, updatedAtDescending]);
+  }, [items, search, selectedKind, sessionTitles, source, t.library.ungrouped, updatedAtDescending]);
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroups((current) => {
@@ -226,8 +255,7 @@ export const LibraryPanel: React.FC = () => {
         title={t.library.panelTitle}
         description={t.library.panelDescription}
         onClose={() => setShowLibraryPanel(false)}
-        closeLabel={t.common.close}
-        actions={section === 'items' ? (
+        actions={view === 'items' ? (
           <div className="flex min-w-0 items-center gap-2">
             <select
               value={scope}
@@ -240,23 +268,6 @@ export const LibraryPanel: React.FC = () => {
                 <option key={project.id} value={project.id}>{project.name}</option>
               ))}
             </select>
-            <select
-              value={selectedKind}
-              onChange={(event) => setSelectedKind(event.target.value as LibraryItemKind | 'all')}
-              data-testid="library-kind-filter"
-              className="h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-300 outline-none focus:border-zinc-600"
-            >
-              <option value="all">{t.library.allTypes}</option>
-              {LIBRARY_ITEM_KINDS.map((kind) => <option key={kind} value={kind}>{kindLabels[kind]}</option>)}
-            </select>
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={t.library.searchPlaceholder}
-              aria-label={t.library.searchPlaceholder}
-              data-testid="library-search"
-              className="h-8 w-40 min-w-0 text-xs"
-            />
             <Button
               variant="ghost"
               size="sm"
@@ -292,43 +303,117 @@ export const LibraryPanel: React.FC = () => {
         ) : undefined}
       />
 
-      <div className="shrink-0 border-b border-zinc-800 px-5 py-2">
-        <div className="flex items-center gap-1" role="tablist" aria-label={t.library.sectionsLabel}>
-          <Button
-            type="button"
-            role="tab"
-            size="sm"
-            variant={section === 'items' ? 'secondary' : 'ghost'}
-            aria-selected={section === 'items'}
-            aria-controls="library-items-panel"
-            tabIndex={section === 'items' ? 0 : -1}
-            data-testid="library-section-items"
-            onClick={() => setSection('items')}
-          >
-            {t.library.itemsTab}
-          </Button>
-          <Button
-            type="button"
-            role="tab"
-            size="sm"
-            variant={section === 'brands' ? 'secondary' : 'ghost'}
-            aria-selected={section === 'brands'}
-            aria-controls="library-brands-panel"
-            tabIndex={section === 'brands' ? 0 : -1}
-            data-testid="library-section-brands"
-            onClick={() => setSection('brands')}
-          >
-            {t.library.brandKitsTab}
-          </Button>
+      {/* 顶行：来源 tab × 搜索 × 品牌套件入口；「记忆」并列 tab 在最右（见文件头注释） */}
+      <div className="shrink-0 border-b border-zinc-800 px-6 py-2">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1" role="tablist" aria-label={t.library.sectionsLabel}>
+            {(['ai', 'uploads', 'favorites'] as const).map((sourceKey) => (
+              <Button
+                key={sourceKey}
+                type="button"
+                role="tab"
+                size="sm"
+                variant={view === 'items' && source === sourceKey ? 'secondary' : 'ghost'}
+                aria-selected={view === 'items' && source === sourceKey}
+                aria-controls="library-items-panel"
+                tabIndex={view === 'items' && source === sourceKey ? 0 : -1}
+                data-testid={`library-source-${sourceKey}`}
+                onClick={() => { setSource(sourceKey); setView('items'); }}
+              >
+                {sourceKey === 'ai' ? t.library.sourceAi : sourceKey === 'uploads' ? t.library.sourceUploads : t.library.sourceFavorites}
+              </Button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-zinc-800" aria-hidden="true" />
+            <Button
+              type="button"
+              role="tab"
+              size="sm"
+              variant={view === 'memory' ? 'secondary' : 'ghost'}
+              aria-selected={view === 'memory'}
+              aria-controls="library-memory-panel"
+              tabIndex={view === 'memory' ? 0 : -1}
+              data-testid="library-tab-memory"
+              onClick={() => setView('memory')}
+            >
+              {t.library.memoryTab}
+            </Button>
+          </div>
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            {view === 'items' && (
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={t.library.searchPlaceholder}
+                aria-label={t.library.searchPlaceholder}
+                data-testid="library-search"
+                className="h-8 w-40 min-w-0 text-xs"
+              />
+            )}
+            {view === 'brands' ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 whitespace-nowrap"
+                data-testid="library-brands-back"
+                onClick={() => setView('items')}
+              >
+                {t.library.backToItems}
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 whitespace-nowrap"
+                data-testid="library-brands-entry"
+                onClick={() => setView('brands')}
+              >
+                {t.library.brandKitsTab}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
-      {section === 'items' ? (
-        <div id="library-items-panel" role="tabpanel" className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+      {/* 次行：类型 chips = 全部 + LIBRARY_ITEM_KINDS（contract 推导） */}
+      {view === 'items' && (
+        <div className="shrink-0 border-b border-zinc-800 px-6 py-2" aria-label={t.library.kindChipsLabel} data-testid="library-kind-chips">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={selectedKind === 'all' ? 'secondary' : 'ghost'}
+              aria-pressed={selectedKind === 'all'}
+              data-testid="library-kind-chip-all"
+              onClick={() => setSelectedKind('all')}
+            >
+              {t.library.allTypes}
+            </Button>
+            {LIBRARY_ITEM_KINDS.map((kind) => (
+              <Button
+                key={kind}
+                type="button"
+                size="sm"
+                variant={selectedKind === kind ? 'secondary' : 'ghost'}
+                aria-pressed={selectedKind === kind}
+                data-testid={`library-kind-chip-${kind}`}
+                onClick={() => setSelectedKind(kind)}
+              >
+                {kindLabels[kind]}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {view === 'items' ? (
+        <PageContent id="library-items-panel" role="tabpanel">
           {loading ? (
             <div className="flex items-center justify-center py-16 text-zinc-500">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
+          ) : source === 'favorites' ? (
+            // 收藏壳：contract 无收藏字段，固定空态，不展示任何条目
+            <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.favoritesEmpty}</div>
           ) : items.length === 0 ? (
             <div className="py-16 text-center text-sm text-zinc-500 leading-relaxed">{t.library.empty}</div>
           ) : groups.length === 0 ? (
@@ -382,11 +467,15 @@ export const LibraryPanel: React.FC = () => {
               </table>
             </div>
           )}
-        </div>
-      ) : (
-        <div id="library-brands-panel" role="tabpanel" className="flex-1 min-h-0 overflow-y-auto px-5 py-5">
+        </PageContent>
+      ) : view === 'brands' ? (
+        <PageContent id="library-brands-panel" role="tabpanel">
           <BrandManager isOpen onClose={closeEmbeddedBrandManager} presentation="inline" />
-        </div>
+        </PageContent>
+      ) : (
+        <PageContent id="library-memory-panel" role="tabpanel" scroll={false} padding={false}>
+          <KnowledgeMemoryContent />
+        </PageContent>
       )}
 
       <Modal

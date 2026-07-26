@@ -413,6 +413,11 @@ export class TestRunner {
     const endTime = Date.now();
     const genInfo = this.agent.getAgentInfo();
 
+    // 数据集名：本次 run 的 case 全部来自同一 suite 时落该 suite 名，
+    // 实验名随之带数据集标识（eval-<dataset>-<日期>）；跨 suite 混跑不落，保持旧格式
+    const contributingSuites = suites.filter((s) => s.cases.some((c) => sortedCases.includes(c)));
+    const datasetName = contributingSuites.length === 1 ? contributingSuites[0].name : undefined;
+
     // skipped 与 infra_excluded 都不进能力分母（后者是环境噪声，WP1-2）
     const nonSkipped = results.filter((r) => r.status !== 'skipped' && r.status !== 'infra_excluded');
     const avgScore = nonSkipped.length > 0
@@ -452,6 +457,7 @@ export class TestRunner {
       ...(this.aborted && this.abortReason ? { aborted: true, abortReason: this.abortReason } : {}),
       // GAP-017: harness 配置随 summary 落 DB（对照实验维度）
       ...(this.config.harness ? { harness: this.config.harness } : {}),
+      ...(datasetName ? { dataset: datasetName } : {}),
       // WP1-4: prompt 改动预测随 summary 落盘/DB，deltaReporter 对账
       ...(this.config.prediction ? { prediction: this.config.prediction } : {}),
     };

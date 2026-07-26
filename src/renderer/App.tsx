@@ -114,14 +114,11 @@ const AgentTeamPanel = React.lazy(() => import('./components/features/agentTeam'
 const ActivityPanel = React.lazy(() => import('./components/features/activity/ActivityPanel').then((module) => ({
   default: module.ActivityPanel,
 })));
-const BrowserSurfacePanel = React.lazy(() => import('./components/features/browser/BrowserSurfacePanel').then((module) => ({
-  default: module.BrowserSurfacePanel,
+const LocalOpsPage = React.lazy(() => import('./components/features/localOps/LocalOpsPage').then((module) => ({
+  default: module.LocalOpsPage,
 })));
-const ComputerUsePanel = React.lazy(() => import('./components/features/computerUse/ComputerUsePanel').then((module) => ({
-  default: module.ComputerUsePanel,
-})));
-const InAppValidationPanel = React.lazy(() => import('./components/features/inAppValidation/InAppValidationPanel').then((module) => ({
-  default: module.InAppValidationPanel,
+const EvalCenterPage = React.lazy(() => import('./components/features/evalCenter/EvalCenterPage').then((module) => ({
+  default: module.EvalCenterPage,
 })));
 
 async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
@@ -160,8 +157,8 @@ export const App: React.FC = () => {
     setShowAgentTeamPanel,
     selectedSwarmAgentId,
     showLab,
-    showComputerUsePanel,
-    showInAppValidationPanel,
+    showLocalOpsPanel,
+    showEvalCenter,
     showProjectCollaborationPage,
     projectCollaborationPageProjectId,
     closeProjectCollaborationPage,
@@ -169,8 +166,6 @@ export const App: React.FC = () => {
     showLibraryPanel,
     showActivityPanel,
     setShowActivityPanel,
-    showBrowserSurfacePanel,
-    setShowBrowserSurfacePanel,
     setShowSettings,
     setLanguage,
     setOptionalUpdateInfo,
@@ -880,13 +875,13 @@ export const App: React.FC = () => {
                 <React.Suspense fallback={null}>
                   <CronCenterPanel onClose={() => setShowCronCenter(false)} />
                 </React.Suspense>
-              ) : showComputerUsePanel ? (
+              ) : showLocalOpsPanel ? (
                 <React.Suspense fallback={null}>
-                  <ComputerUsePanel />
+                  <LocalOpsPage />
                 </React.Suspense>
-              ) : showInAppValidationPanel ? (
+              ) : showEvalCenter ? (
                 <React.Suspense fallback={null}>
-                  <InAppValidationPanel />
+                  <EvalCenterPage />
                 </React.Suspense>
               ) : (
                 <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">
@@ -1080,12 +1075,6 @@ export const App: React.FC = () => {
           projectId={visibleProjectCollaborationProjectId}
           onClose={closeProjectCollaborationPage}
         />
-      )}
-
-      {showBrowserSurfacePanel && (
-        <React.Suspense fallback={null}>
-          <BrowserSurfacePanel onClose={() => setShowBrowserSurfacePanel(false)} />
-        </React.Suspense>
       )}
 
       {showAgentTeamPanel && currentSessionId && swarmActiveRunId && swarmActiveSessionId === currentSessionId && (

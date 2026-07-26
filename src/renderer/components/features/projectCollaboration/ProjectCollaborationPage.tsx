@@ -26,7 +26,6 @@ export const ProjectCollaborationPage: React.FC<ProjectCollaborationPageProps> =
         title="Neo 协同"
         description={projectId ? `Project work cards · ${projectId}` : '所有 @neo topic'}
         onClose={onClose}
-        closeLabel="关闭 Neo 协同"
       />
       <div className="min-h-0 flex-1">
         <ProjectCollaborationPanel projectId={projectId} onOpenConversation={handleOpenConversation} />

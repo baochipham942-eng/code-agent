@@ -279,6 +279,47 @@ describe('TaskManager message event persistence', () => {
     expect(manager.getSessionState('session-cancel').status).toBe('idle');
   });
 
+  it('persists idle to DB after a successful run (aligned with engine adapters)', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({
+      configService: {} as never,
+      onAgentEvent: vi.fn(),
+    });
+    orchestratorMocks.sendMessage.mockResolvedValue(undefined);
+
+    await manager.startTask('session-success', 'quick task');
+
+    const persistedStatuses = dbState.db.updateSession.mock.calls.map(
+      (call) => (call[1] as { status?: string }).status,
+    );
+    expect(persistedStatuses).toEqual(['running', 'idle']);
+    expect(manager.getSessionState('session-success').status).toBe('idle');
+  });
+
+  it('keeps the failed terminal status in DB when the in-memory state settles back to idle', async () => {
+    const manager = new TaskManager({ maxConcurrentTasks: 1 });
+    manager.initialize({
+      configService: {} as never,
+      onAgentEvent: vi.fn(),
+    });
+    orchestratorMocks.sendMessage.mockRejectedValue(new Error('model exploded'));
+
+    await manager.startTask('session-failure', 'failing task');
+
+    // 内存归位 idle（任务槽释放，会话可复用）……
+    expect(manager.getSessionState('session-failure').status).toBe('idle');
+    // ……但 DB 必须留住 'error'，重启后侧栏才把该会话分类为「出错」而不是误显示「已完成」。
+    const persistedStatuses = dbState.db.updateSession.mock.calls.map(
+      (call) => (call[1] as { status?: string }).status,
+    );
+    expect(persistedStatuses).toEqual(['running', 'error', 'error']);
+    expect(persistedStatuses).not.toContain('idle');
+    expect(dbState.db.updateSession).toHaveBeenLastCalledWith(
+      'session-failure',
+      expect.objectContaining({ status: 'error' }),
+    );
+  });
+
   it('reflects pause and resume in TaskManager state', async () => {
     const manager = new TaskManager({ maxConcurrentTasks: 1 });
     manager.initialize({

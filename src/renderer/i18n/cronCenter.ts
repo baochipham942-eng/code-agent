@@ -1,8 +1,9 @@
 // ============================================================================
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
-// 注：types.ts 里的 formatScheduleSummary/formatActionSummary/UNIT_LABELS 等
-// 格式化函数文案暂未迁移（中文兜底），随创建流改造（A3）或收尾清扫批一并处理。
+// 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
+// （中文兜底）；调度摘要的人话翻译走 utils/cronHumanize.ts（zh/en 双份，随 lang 参数），
+// 不再往本文件塞词条。其余遗留随收尾清扫批一并处理。
 // ============================================================================
 
 export const cronCenterZh = {
@@ -10,8 +11,9 @@ export const cronCenterZh = {
     title: '自动化',
     subtitle: '按计划执行，结果回来给你过目',
     close: '关闭自动化面板',
-    statTotal: '总任务',
-    statActive: '启用',
+    // 页首三格状态条（数据：cronStore.stats + 收件箱待过目数）
+    statRunning: '运行中',
+    statPendingReview: '待过目',
     statRate: '成功率',
     loading: '正在加载任务…',
     // 列表
@@ -29,10 +31,18 @@ export const cronCenterZh = {
     disabled: '停用',
     latest: '最近: {label}',
     nextRun: '下次 {time}',
+    // 触发源 chip（键 = utils/cronHumanize 的 CronTriggerKind，语义对齐 SessionAutomationType）
+    triggerKind: {
+      cron: '定时',
+      at: '一次性',
+      every: '循环',
+      heartbeat: '心跳',
+      external_event: '事件',
+    },
     // 详情
     detailEmptyTitle: '选择一个任务查看详情',
     detailEmptySub: '也可以直接新建第一个任务',
-    noDescription: '暂无描述',
+    descriptionGuide: '让 Neo 给这个任务写一句描述',
     edit: '编辑',
     enable: '启用',
     disable: '停用',
@@ -94,6 +104,7 @@ export const cronCenterZh = {
     simpleCreateCta: '创建自动化',
     simpleCreateFailed: '创建失败',
     inboxTitle: '{count} 条待过目',
+    inboxAllClear: '都过目完了 ✓',
     inboxOpenResult: '查看结果',
     inboxMarkDone: '已过目',
     parkedTitle: '{count} 个操作等你批准',
@@ -108,6 +119,13 @@ export const cronCenterZh = {
     fromTemplate: '从模板创建',
     manualConfig: '手动配置',
     backToSimple: '返回',
+    // 推荐模板卡
+    templatesTitle: '推荐自动化',
+    templatesSubtitle: '无需填写，点一下即可按默认时间开始',
+    templateEnable: '开启',
+    templateEnabled: '已开启',
+    templateReenable: '重新开启',
+    templateEnableFailed: '开启失败，请稍后重试',
     // 模板连接器依赖状态
     connectorConnected: '已连接',
     connectorNotConnected: '未连接',
@@ -132,8 +150,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     title: 'Automations',
     subtitle: 'Runs on schedule, results come back for review',
     close: 'Close automations',
-    statTotal: 'Total',
-    statActive: 'Active',
+    statRunning: 'Running',
+    statPendingReview: 'To review',
     statRate: 'Success rate',
     loading: 'Loading tasks…',
     listTitle: 'Tasks',
@@ -150,9 +168,16 @@ export const cronCenterEn: typeof cronCenterZh = {
     disabled: 'Disabled',
     latest: 'Last: {label}',
     nextRun: 'Next {time}',
+    triggerKind: {
+      cron: 'Scheduled',
+      at: 'One-time',
+      every: 'Recurring',
+      heartbeat: 'Heartbeat',
+      external_event: 'Event',
+    },
     detailEmptyTitle: 'Select a task to view details',
     detailEmptySub: 'Or create your first task',
-    noDescription: 'No description',
+    descriptionGuide: 'Ask Neo to write a one-line description for this task',
     edit: 'Edit',
     enable: 'Enable',
     disable: 'Disable',
@@ -212,6 +237,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     simpleCreateCta: 'Create automation',
     simpleCreateFailed: 'Failed to create',
     inboxTitle: '{count} to review',
+    inboxAllClear: 'All reviewed ✓',
     inboxOpenResult: 'View result',
     inboxMarkDone: 'Done',
     parkedTitle: '{count} action(s) awaiting your approval',
@@ -226,6 +252,12 @@ export const cronCenterEn: typeof cronCenterZh = {
     fromTemplate: 'From a template',
     manualConfig: 'Manual setup',
     backToSimple: 'Back',
+    templatesTitle: 'Recommended automations',
+    templatesSubtitle: 'No setup — one click starts them on the default schedule',
+    templateEnable: 'Enable',
+    templateEnabled: 'On',
+    templateReenable: 'Re-enable',
+    templateEnableFailed: 'Failed to enable — please try again',
     connectorConnected: 'Connected',
     connectorNotConnected: 'Not connected',
     connectorNeededHint: 'Connect {name} first',

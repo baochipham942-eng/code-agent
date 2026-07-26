@@ -1,6 +1,12 @@
+// ============================================================================
+// CronJobDetail —— 自动化中心右侧任务详情。
+// 头部两行摘要（调度+下次运行 / 状态+动作）取代早期四磁贴；重试/超时等工程参数
+// 收在「高级参数」折叠区；无描述时显示引导文案（入口样式，不接功能）。
+// ============================================================================
+
 import React, { useEffect, useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
-import { Activity, ChevronRight, Pencil, Play, Power, Trash2 } from 'lucide-react';
+import { Activity, ChevronRight, Pencil, Play, Power, Sparkles, Trash2 } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import {
@@ -17,7 +23,7 @@ interface CronJobDetailProps {
 }
 
 export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const {
     executionsByJobId,
@@ -99,9 +105,20 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
                 {cc.latest.replace('{label}', latestLabel)}
               </span>
             </div>
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-              {job.description || cc.noDescription}
-            </p>
+            <div className="mt-2 max-w-3xl text-sm">
+              {job.description ? (
+                <p className="text-zinc-400">{job.description}</p>
+              ) : (
+                // 引导文案 + 入口样式（不接功能）：虚线描边 = 可补全的占位，不是报错
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-700 px-2.5 py-1 text-xs text-zinc-500"
+                  data-testid="cron-detail-description-guide"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  {cc.descriptionGuide}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-1">
@@ -137,15 +154,21 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-4">
-          <InfoCard label={cc.cardSchedule} value={formatScheduleSummary(job)} />
-          <InfoCard label={cc.cardAction} value={formatActionSummary(job)} />
-          <InfoCard
-            label={cc.cardNextRun}
-            value={job.enabled && job.nextRunAt != null ? formatDateTime(job.nextRunAt) : '—'}
-            testId="cron-detail-next-run"
-          />
-          <InfoCard label={cc.cardEnabledState} value={job.enabled ? cc.enabled : cc.disabled} />
+        {/* 四磁贴 → 两行摘要：调度+下次运行讲「什么时候跑」，状态+动作讲「跑什么」，
+            同一件事不再拆成四张卡各说一遍 */}
+        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/50 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-1.5">
+            <SummaryItem label={cc.cardSchedule} value={formatScheduleSummary(job, language)} />
+            <SummaryItem
+              label={cc.cardNextRun}
+              value={job.enabled && job.nextRunAt != null ? formatDateTime(job.nextRunAt) : '—'}
+              testId="cron-detail-next-run"
+            />
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-8 gap-y-1.5 border-t border-zinc-800/70 pt-2">
+            <SummaryItem label={cc.cardEnabledState} value={job.enabled ? cc.enabled : cc.disabled} />
+            <SummaryItem label={cc.cardAction} value={formatActionSummary(job)} />
+          </div>
         </div>
 
         <details className="mt-4 group" data-testid="cron-detail-advanced">
@@ -208,6 +231,14 @@ const InfoCard: React.FC<{ label: string; value: string; testId?: string }> = ({
   <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3" data-testid={testId}>
     <div className="text-xs text-zinc-500">{label}</div>
     <div className="mt-1 text-sm text-zinc-200">{value}</div>
+  </div>
+);
+
+// 摘要行内项：标签小字 + 值同行，值可截断（动作摘要可能是一整段 prompt）
+const SummaryItem: React.FC<{ label: string; value: string; testId?: string }> = ({ label, value, testId }) => (
+  <div className="flex min-w-0 items-baseline gap-2 text-sm" data-testid={testId}>
+    <span className="shrink-0 text-xs text-zinc-500">{label}</span>
+    <span className="truncate text-zinc-200">{value}</span>
   </div>
 );
 

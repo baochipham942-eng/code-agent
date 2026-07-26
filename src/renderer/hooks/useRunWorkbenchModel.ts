@@ -1,6 +1,19 @@
+// ============================================================================
+// useRunWorkbenchModel - 工作台任务/运行视图模型
+// ----------------------------------------------------------------------------
+// 跨会话任务卡数据源统一（2026-07-27，与侧栏同口径）：
+// - 状态分类唯一走 sessionPresentation.getSessionStatusPresentation 的
+//   kind/文案映射，不再自备一套 status→文案翻译；
+// - 标题按 sourceThreadId 从 sessionStore.sessions 查 DB 标题
+//   （getDisplaySessionTitle 归一），查不到才退回「会话 <id 前 8 位>」占位；
+// - DB session.status 由主进程 TaskManager 在 run 生命周期边界回写
+//   （崩溃由 markCrashedActiveSessions 追认 interrupted/orphaned），
+//   重启后概览与侧栏对同一会话的标题/状态分类/集合一致。
+// ============================================================================
+
 import { useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
-import { useSessionStore } from '../stores/sessionStore';
+import { useSessionStore, type SessionWithMeta } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useBackgroundTaskStore } from '../stores/backgroundTaskStore';
@@ -21,6 +34,11 @@ import {
   type LongTaskUiStatus,
 } from '@shared/contract/productClosure';
 import {
+  getDisplaySessionTitle,
+  getSessionStatusPresentation,
+  type SessionStatusKind,
+} from '../utils/sessionPresentation';
+import {
   buildLoopDecisionViews,
   buildMemoryActivityEvents,
   buildOutputArtifactViews,
@@ -29,36 +47,67 @@ import {
   buildToolCapabilityViews,
 } from '../utils/runWorkbenchProjection';
 
-function statusToTaskStatus(status: string): TaskRecord['status'] {
-  if (status === 'running' || status === 'queued' || status === 'paused') return 'in_progress';
-  if (status === 'error') return 'blocked';
-  return 'pending';
+/**
+ * SessionStatusKind（侧栏唯一分类器的 kind）→ TaskRecord 状态。
+ * 与侧栏显示保持一致：执行中类（live/background/approval/paused）都计 in_progress，
+ * error 计 blocked；done/incomplete/idle 在跨会话卡集合里不出现（入口已过滤），
+ * 仅作全函数兜底。
+ */
+function sessionStatusKindToTaskStatus(kind: SessionStatusKind): TaskRecord['status'] {
+  switch (kind) {
+    case 'live':
+    case 'background':
+    case 'approval':
+    case 'paused':
+      return 'in_progress';
+    case 'error':
+      return 'blocked';
+    case 'done':
+      return 'completed';
+    case 'incomplete':
+    case 'idle':
+    default:
+      return 'pending';
+  }
 }
 
 export function buildGlobalTaskRecords(args: {
   currentSessionId: string | null;
   sessionStates: ReturnType<typeof useTaskStore.getState>['sessionStates'];
+  /** sessionStore.sessions（DB 标题 + 持久化状态），按 sourceThreadId 反查 */
+  sessions?: ReadonlyArray<Pick<SessionWithMeta, 'id' | 'title' | 'status'>>;
 }): TaskRecord[] {
   return Object.entries(args.sessionStates)
     .filter(([sessionId, state]) => (
       sessionId !== args.currentSessionId
       && (state.status === 'running' || state.status === 'queued' || state.status === 'paused' || state.status === 'error')
     ))
-    .map(([sessionId, state]) => ({
-      id: `global:${sessionId}`,
-      scope: 'global' as const,
-      title: `会话 ${sessionId.slice(0, 8)}`,
-      status: statusToTaskStatus(state.status),
-      steps: [{
-        title: state.status === 'queued' && state.queuePosition !== undefined
-          ? `队列 #${state.queuePosition}`
-          : state.status,
-        status: statusToTaskStatus(state.status),
-      }],
-      ownerRunId: null,
-      sourceThreadId: sessionId,
-      resumeHint: state.error,
-    }));
+    .map(([sessionId, state]) => {
+      const session = args.sessions?.find((item) => item.id === sessionId);
+      // 与侧栏同一分类器：P1 内存信号优先，P2 落库 session.status 兜底
+      const presentation = getSessionStatusPresentation({
+        taskState: state,
+        sessionStatus: session?.status,
+      });
+      const status = sessionStatusKindToTaskStatus(presentation.kind);
+      return {
+        id: `global:${sessionId}`,
+        scope: 'global' as const,
+        title: session
+          ? getDisplaySessionTitle(session.title)
+          : `会话 ${sessionId.slice(0, 8)}`,
+        status,
+        steps: [{
+          title: state.status === 'queued' && state.queuePosition !== undefined
+            ? `队列 #${state.queuePosition}`
+            : presentation.label,
+          status,
+        }],
+        ownerRunId: null,
+        sourceThreadId: sessionId,
+        resumeHint: state.error,
+      };
+    });
 }
 
 function backgroundTaskStatusToTaskStatus(status: Task['status']): TaskRecord['status'] {

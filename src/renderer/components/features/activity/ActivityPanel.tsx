@@ -28,23 +28,28 @@ import {
   isTauriMode,
   isWebMode,
 } from '../../../utils/platform';
+import { useI18n } from '../../../hooks/useI18n';
 import {
   buildActivityPanelModel,
   getActivitySourceItemCount,
   getActivitySourceLabel,
   type ActivityNativeSnapshot,
+  type ActivityPanelCopy,
   type ActivityPanelMode,
   type ActivityTone,
 } from './activityPanelModel';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { PageCard, PageContent } from '../shared/PageContent';
 
-const EMPTY_PREVIEW: ActivityContextPreview = {
-  status: 'empty',
-  recentContextSummary: '暂无可用屏幕上下文。',
-  agentInjectionPreview: '暂无内容会注入 agent。',
-  sources: [],
-  evidence: [],
-};
+function buildEmptyPreview(copy: ActivityPanelCopy): ActivityContextPreview {
+  return {
+    status: 'empty',
+    recentContextSummary: copy.emptyPreview.summary,
+    agentInjectionPreview: copy.emptyPreview.injection,
+    sources: [],
+    evidence: [],
+  };
+}
 
 const EMPTY_NATIVE: ActivityNativeSnapshot = {
   collectorStatus: null,
@@ -72,9 +77,9 @@ function dotClass(tone: ActivityTone): string {
   return 'bg-zinc-500';
 }
 
-function formatGeneratedAt(ms?: number | null): string {
-  if (!ms) return '尚未生成';
-  return new Intl.DateTimeFormat('zh-CN', {
+function formatGeneratedAt(ms: number | null | undefined, copy: ActivityPanelCopy): string {
+  if (!ms) return copy.generatedAtFallback;
+  return new Intl.DateTimeFormat(copy.dateLocale, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -87,21 +92,7 @@ function sourceTone(status?: string | null): ActivityTone {
   return status === 'available' ? 'ready' : status === 'unavailable' ? 'blocked' : 'idle';
 }
 
-const Card: React.FC<{
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-}> = ({ title, icon, children, className = '' }) => (
-  <section className={`rounded-lg border border-zinc-800 bg-zinc-900/70 ${className}`}>
-    <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
-      <div className="text-zinc-500">{icon}</div>
-      <h2 className="text-sm font-medium text-zinc-100">{title}</h2>
-    </div>
-    <div className="p-4">{children}</div>
-  </section>
-);
-
+// 本地 Card 已退役（2026-07-27 UX 收尾 1.4）：统一走 PageCard 卡片语言。
 const Pill: React.FC<{ tone: ActivityTone; children: React.ReactNode }> = ({ tone, children }) => (
   <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] ${toneClass(tone)}`}>
     <span className={`h-1.5 w-1.5 rounded-full ${dotClass(tone)}`} />
@@ -109,16 +100,18 @@ const Pill: React.FC<{ tone: ActivityTone; children: React.ReactNode }> = ({ ton
   </span>
 );
 
-const LoadingLine: React.FC = () => (
+const LoadingLine: React.FC<{ text: string }> = ({ text }) => (
   <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-500">
-    正在读取 Activity 上下文…
+    {text}
   </div>
 );
 
 export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const { t } = useI18n();
+  const ap = t.activityPanel;
   const [providers, setProviders] = useState<ActivityProviderDescriptor[]>([]);
   const [context, setContext] = useState<ActivityContext | null>(null);
-  const [preview, setPreview] = useState<ActivityContextPreview>(EMPTY_PREVIEW);
+  const [preview, setPreview] = useState<ActivityContextPreview>(() => buildEmptyPreview(ap));
   const [native, setNative] = useState<ActivityNativeSnapshot>(EMPTY_NATIVE);
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
@@ -132,33 +125,33 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     const [providerResult, contextResult] = await Promise.all([
       ipcService.invokeDomain<ActivityProviderListResult>(IPC_DOMAINS.ACTIVITY, 'listProviders')
         .catch((error) => {
-          nextErrors.push(`provider 状态读取失败：${error instanceof Error ? error.message : String(error)}`);
+          nextErrors.push(ap.errors.providerReadFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
           return null;
         }),
       ipcService.invokeDomain<ActivityContext>(IPC_DOMAINS.ACTIVITY, 'getCurrentContext')
         .catch((error) => {
-          nextErrors.push(`ActivityContext 读取失败：${error instanceof Error ? error.message : String(error)}`);
+          nextErrors.push(ap.errors.contextReadFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
           return null;
         }),
     ]);
 
     setProviders(providerResult?.providers ?? []);
     setContext(contextResult);
-    setPreview(contextResult ? normalizeActivityContextResponse(contextResult) : EMPTY_PREVIEW);
+    setPreview(contextResult ? normalizeActivityContextResponse(contextResult) : buildEmptyPreview(ap));
 
     if (mode === 'tauri') {
       const now = Date.now();
       const [collectorStatus, recentEvents, audioStatus, audioSegments] = await Promise.all([
         getNativeDesktopCollectorStatus().catch((error) => {
-          nextErrors.push(`桌面采集状态读取失败：${error instanceof Error ? error.message : String(error)}`);
+          nextErrors.push(ap.errors.collectorStatusReadFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
           return null;
         }),
         listRecentNativeDesktopEvents(16).catch((error) => {
-          nextErrors.push(`最近桌面活动读取失败：${error instanceof Error ? error.message : String(error)}`);
+          nextErrors.push(ap.errors.recentEventsReadFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
           return [];
         }),
         getAudioCaptureStatus().catch((error) => {
-          nextErrors.push(`音频状态读取失败：${error instanceof Error ? error.message : String(error)}`);
+          nextErrors.push(ap.errors.audioStatusReadFailed.replace('{message}', error instanceof Error ? error.message : String(error)));
           return null;
         }),
         listAudioSegments(now - 24 * 60 * 60 * 1000, now).catch(() => []),
@@ -176,7 +169,7 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
 
     setErrors(nextErrors);
     setLoading(false);
-  }, [mode]);
+  }, [ap, mode]);
 
   useEffect(() => {
     refresh();
@@ -190,8 +183,9 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
       context,
       preview,
       native,
+      copy: ap,
     }),
-    [context, mode, native, preview, providers],
+    [ap, context, mode, native, preview, providers],
   );
 
   const sourceRows = useMemo(() => {
@@ -206,25 +200,26 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
       const source = bySource.get(kind);
       return {
         kind,
-        label: getActivitySourceLabel(kind),
+        label: getActivitySourceLabel(kind, ap),
         status: source?.status ?? 'missing',
         detail: source?.status === 'available'
-          ? `${getActivitySourceItemCount(source)} 条 item，confidence ${source.confidence.toFixed(2)}`
-          : source?.unavailableReason || '后端没有返回该来源。',
+          ? ap.preview.sourceItems
+            .replace('{count}', String(getActivitySourceItemCount(source)))
+            .replace('{confidence}', source.confidence.toFixed(2))
+          : source?.unavailableReason || ap.preview.sourceNotReturned,
         tone: sourceTone(source?.status),
       };
     });
-  }, [context]);
+  }, [ap, context]);
 
   return (
     <FullScreenPage testId="activity-panel">
       <FullScreenPageHeader
         icon={<Activity className="h-4 w-4 text-cyan-300" />}
         title="Activity"
-        description="观察、上下文、prompt 注入边界"
+        description={ap.header.description}
         badge={<Pill tone={model.modeTone}>{model.modeLabel}</Pill>}
         onClose={onClose}
-        closeLabel="关闭 Activity"
         actions={(
           <button
             type="button"
@@ -233,17 +228,16 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-60"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            刷新
+            {ap.header.refresh}
           </button>
         )}
       />
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <div className="mx-auto flex max-w-6xl flex-col gap-4">
+        <PageContent width="centered" innerClassName="gap-4">
             <div className={`rounded-lg border px-4 py-3 text-sm ${toneClass(model.modeTone)}`}>
               {model.modeDetail}
               {native.collectorStatus?.lastError ? (
-                <span className="ml-2 text-amber-200">采集器错误：{native.collectorStatus.lastError}</span>
+                <span className="ml-2 text-amber-200">{ap.collectorErrorPrefix}{native.collectorStatus.lastError}</span>
               ) : null}
             </div>
 
@@ -258,10 +252,10 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
               </div>
             )}
 
-            {loading ? <LoadingLine /> : null}
+            {loading ? <LoadingLine text={ap.loading} /> : null}
 
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-              <Card title="今天/最近发生了什么" icon={<Clock3 className="h-4 w-4" />}>
+              <PageCard title={ap.cards.recentTitle} icon={<Clock3 className="h-4 w-4" />}>
                 <div className="space-y-3">
                   <div>
                     <div className="text-base font-medium text-zinc-100">{model.recentHeadline}</div>
@@ -281,13 +275,13 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                     </div>
                   ) : (
                     <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-3 text-sm text-zinc-500">
-                      没有桌面事件列表时，Activity 会退回到统一上下文摘要。
+                      {ap.recent.fallbackSummaryNote}
                     </div>
                   )}
                 </div>
-              </Card>
+              </PageCard>
 
-              <Card title="当前会话可用哪些上下文" icon={<Database className="h-4 w-4" />}>
+              <PageCard title={ap.cards.capabilityTitle} icon={<Database className="h-4 w-4" />}>
                 <div className="grid gap-2">
                   {model.capabilityRows.map((row) => (
                     <div key={row.key} className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
@@ -299,22 +293,22 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                     </div>
                   ))}
                 </div>
-              </Card>
+              </PageCard>
             </div>
 
             <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-              <Card title="ActivityContext 当前预览" icon={<Sparkles className="h-4 w-4" />}>
+              <PageCard title={ap.cards.previewTitle} icon={<Sparkles className="h-4 w-4" />}>
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                    <span>生成：{formatGeneratedAt(context?.generatedAtMs || preview.capturedAtMs)}</span>
-                    <span>状态：{preview.status === 'ready' ? '可用' : '空态'}</span>
+                    <span>{ap.preview.generated}{formatGeneratedAt(context?.generatedAtMs || preview.capturedAtMs, ap)}</span>
+                    <span>{ap.preview.status}{preview.status === 'ready' ? ap.preview.statusReady : ap.preview.statusEmpty}</span>
                   </div>
                   <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-                    <div className="mb-1 text-[11px] text-zinc-600">最近上下文</div>
+                    <div className="mb-1 text-[11px] text-zinc-600">{ap.preview.recentContext}</div>
                     <div className="text-sm leading-relaxed text-zinc-300">{preview.recentContextSummary}</div>
                   </div>
                   <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-                    <div className="mb-1 text-[11px] text-zinc-600">将进入 agent 的文本预览</div>
+                    <div className="mb-1 text-[11px] text-zinc-600">{ap.preview.agentInjection}</div>
                     <div className="max-h-44 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
                       {preview.agentInjectionPreview}
                     </div>
@@ -322,14 +316,14 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                   <div className="flex flex-wrap gap-1.5">
                     {sourceRows.map((source) => (
                       <Pill key={source.kind} tone={source.tone}>
-                        {source.label}: {source.status === 'missing' ? '未返回' : source.status}
+                        {source.label}: {source.status === 'missing' ? ap.preview.sourceMissing : source.status}
                       </Pill>
                     ))}
                   </div>
                 </div>
-              </Card>
+              </PageCard>
 
-              <Card title="Provider 状态" icon={<Shield className="h-4 w-4" />}>
+              <PageCard title={ap.cards.providerTitle} icon={<Shield className="h-4 w-4" />}>
                 <div className="space-y-2">
                   {providers.length > 0 ? providers.map((provider) => (
                     <div key={provider.id} className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
@@ -349,23 +343,23 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                     </div>
                   )) : (
                     <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-3 text-sm text-zinc-500">
-                      provider 列表暂不可用，ActivityContext 预览仍可单独降级显示。
+                      {ap.provider.listUnavailable}
                     </div>
                   )}
                 </div>
-              </Card>
+              </PageCard>
             </div>
 
-            <Card title="哪些进入 prompt，哪些只是本地证据" icon={<FileText className="h-4 w-4" />}>
+            <PageCard title={ap.cards.boundaryTitle} icon={<FileText className="h-4 w-4" />}>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div>
-                  <div className="mb-2 text-xs font-medium text-zinc-500">会注入 agent</div>
+                  <div className="mb-2 text-xs font-medium text-zinc-500">{ap.boundary.injectSection}</div>
                   <div className="space-y-2">
                     {model.injectionItems.map((item) => (
                       <div key={item.key} className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-sm font-medium text-zinc-200">{item.label}</span>
-                          <Pill tone={item.tone}>{item.tone === 'ready' ? '进入 prompt' : '不注入'}</Pill>
+                          <Pill tone={item.tone}>{item.tone === 'ready' ? ap.boundary.injectPill : ap.boundary.noInjectPill}</Pill>
                         </div>
                         <div className="mt-1 text-xs leading-relaxed text-zinc-500">{item.detail}</div>
                       </div>
@@ -373,13 +367,13 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                   </div>
                 </div>
                 <div>
-                  <div className="mb-2 text-xs font-medium text-zinc-500">只作为本地证据</div>
+                  <div className="mb-2 text-xs font-medium text-zinc-500">{ap.boundary.localSection}</div>
                   <div className="space-y-2">
                     {model.localEvidenceItems.map((item) => (
                       <div key={item.key} className="rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-sm font-medium text-zinc-200">{item.label}</span>
-                          <Pill tone={item.tone}>{item.tone === 'ready' ? '本地保留' : '不可用'}</Pill>
+                          <Pill tone={item.tone}>{item.tone === 'ready' ? ap.boundary.localKeptPill : ap.boundary.unavailablePill}</Pill>
                         </div>
                         <div className="mt-1 text-xs leading-relaxed text-zinc-500">{item.detail}</div>
                       </div>
@@ -387,9 +381,8 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                   </div>
                 </div>
               </div>
-            </Card>
-          </div>
-        </main>
+            </PageCard>
+        </PageContent>
     </FullScreenPage>
   );
 };

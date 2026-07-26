@@ -48,6 +48,7 @@ import { IPC_CHANNELS } from './legacy-channels';
 
 import type { AgentMessageRequest, AgentCancelRequest, SessionExport, SearchResult, MemoryContextResult, MemoryStats, MCPStatus, MCPTool, MCPResource, ConnectorStatusSummary, CacheStats, DataStats, TaskItemIpc, TaskListStateIpc, TaskListEventIpc, CrossSessionSearchOptions, CrossSessionSearchResults, SessionReviewItemsRequest, AgentTrajectoryQualitySummariesRequest, AgentTrajectoryCollectionUpdateRequest } from './types';
 import type { AdminReviewQueueItem } from '../contract/productClosure';
+import type { EvalExperimentDetail, EvalExperimentListItem } from '../contract/evaluation';
 import type { AgentTrajectorySessionQualitySummary } from '../contract/agentTrajectory';
 
 // ----------------------------------------------------------------------------
@@ -376,6 +377,10 @@ export interface IpcInvokeHandlers {
   // Handoff proposals
   [IPC_CHANNELS.HANDOFF_LIST]: (payload?: ListHandoffProposalsInput) => Promise<HandoffProposal[]>;
   [IPC_CHANNELS.HANDOFF_UPDATE_STATUS]: (payload: UpdateHandoffProposalStatusInput) => Promise<HandoffProposal | null>;
+
+  // Evaluation experiments（评测实验只读查询，评测中心「基准」tab）
+  [IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS]: (payload?: { limit?: number }) => Promise<EvalExperimentListItem[]>;
+  [IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT]: (experimentId: string) => Promise<EvalExperimentDetail | null>;
 
   // Test Subset (数据集子集管理)
   [IPC_CHANNELS.SUBSET_SAVE]: (subset: { name: string; description?: string; caseIds: string[] }) => Promise<{ success: boolean; path: string }>;

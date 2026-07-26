@@ -330,7 +330,7 @@
 | **取消级联 / Shutdown Protocol** | `src/shared/contract/cancellation.ts` + `src/host/agent/shutdownProtocol.ts` + `src/host/agent/subagentExecutor.ts` | `CancellationReason` 区分 CASCADE/NON_CASCADE，四阶段 shutdown，idle watchdog，per-agent Stop UI |
 | **Agent Engine Adapters** | `src/shared/contract/agentEngine.ts` + `src/host/services/agentEngine/` + `src/host/ipc/agentEngine.ipc.ts` | Native / Codex CLI / Claude Code engine 元数据、检测、read-only 执行、历史导入和 task ledger 回带 |
 | **Capability Center** | `src/shared/contract/capability.ts` + `src/host/services/capabilities/` + `docs/capabilities/` | 本地能力货架，覆盖 skill、MCP template、workflow recipe、connector、agent engine，MCP draft 默认 disabled |
-| **In-App HTML Validation** | `src/shared/contract/browserInteraction.ts` + `src/host/tools/modules/vision/validateHtmlInApp.ts` + `InAppValidationPanel.tsx` | HTML artifact 在 app 内 iframe 中运行交互脚本和 expect 断言，形成用户可见的验证轨迹 |
+| **In-App HTML Validation** | `src/shared/contract/browserInteraction.ts` + `src/host/tools/modules/vision/validateHtmlInApp.ts` + `InAppValidationWorkspace.tsx` | HTML artifact 在 app 内 iframe 中运行交互脚本和 expect 断言，形成用户可见的验证轨迹 |
 | **Admin / Invite Management** | `src/host/ipc/adminGuard.ts` + `src/host/services/admin/` + `supabase/migrations/20260516000000_user_invite_management.sql` | 管理员用户 dashboard、邀请码管理、RLS/RPC admin guard |
 | **Conversation Automation Cards** | `ScheduleComposerCard` + `scheduleTemplates` + `LoopStatusBar` + `TaskStatusBar` | `/schedule` 空参模板创建，`/loop` 后台任务状态进入主聊天和 task rail |
 | **Role Authoring Drafts** | `roleDraftQueue` + `propose_role` + `RoleDraftCard` + `create-role/edit-role` builtin skills | 对话式创建/修改持久化角色，草稿隔离，用户确认后落盘 |

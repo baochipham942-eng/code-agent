@@ -26,7 +26,7 @@ vi.mock('../../../src/renderer/stores/composerStore', () => ({
 
 import { AbilityMenu } from '../../../src/renderer/components/features/chat/ChatInput/AbilityMenu';
 import { ConversationSettings } from '../../../src/renderer/components/features/settings/tabs/ConversationSettings';
-import { BrowserSurfacePanel } from '../../../src/renderer/components/features/browser/BrowserSurfacePanel';
+import { BrowserSurfaceContent } from '../../../src/renderer/components/features/browser/BrowserSurfaceContent';
 
 describe('AbilityMenu browser readiness', () => {
   beforeEach(() => {
@@ -125,12 +125,11 @@ describe('AbilityMenu browser readiness', () => {
     expect(html).not.toContain('接管系统 Chrome');
   });
 
-  it('renders BrowserSurfacePanel with managed browser and relay controls', () => {
+  it('renders BrowserSurfaceContent with managed browser and relay controls', () => {
     const html = renderToStaticMarkup(
-      React.createElement(BrowserSurfacePanel, { onClose: vi.fn() }),
+      React.createElement(BrowserSurfaceContent),
     );
 
-    expect(html).toContain('Browser Surface');
     expect(html).toContain('托管浏览器');
     expect(html).toContain('Chrome Relay');
     expect(html).toContain('登录态摘要');

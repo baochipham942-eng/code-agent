@@ -13,7 +13,6 @@ import {
   SquareMousePointer,
   ZapOff,
 } from 'lucide-react';
-import { useAppStore } from '../../../stores/appStore';
 import {
   getFrontmostDesktopContext,
   getNativeDesktopCapabilities,
@@ -45,7 +44,6 @@ import {
   type ComputerUseFailureExplanation,
   type ComputerUseTarget,
 } from '../../../utils/computerUseWorkbench';
-import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { AgentPointerPreviewCard, AgentPointerTimelineList } from '../../workbench/AgentPointerOverlay';
 
 type StatusTone = 'ready' | 'blocked' | 'warning' | 'neutral';
@@ -211,8 +209,10 @@ function createUnavailableSurfaceState(): ComputerSurfaceState {
   };
 }
 
-export const ComputerUsePanel: React.FC = () => {
-  const setShowComputerUsePanel = useAppStore((state) => state.setShowComputerUsePanel);
+// 桌面操作内容组件：嵌进「本机操作」合并页（features/localOps/LocalOpsPage）的桌面 tab，
+// 不再自带 FullScreenPage 外壳；页面标题与关闭由外层页头负责，原页头的「诊断」角标和刷新按钮
+// 收进左栏顶部的工具行。
+export const ComputerUseContent: React.FC = () => {
   const [nativeAvailable, setNativeAvailable] = useState(false);
   const [capabilities, setCapabilities] = useState<NativeDesktopCapabilities | null>(null);
   const [permissionSnapshot, setPermissionSnapshot] = useState<NativePermissionSnapshot | null>(null);
@@ -460,27 +460,7 @@ export const ComputerUsePanel: React.FC = () => {
   ]);
 
   return (
-    <FullScreenPage testId="computer-use-panel">
-      <FullScreenPageHeader
-        icon={<MousePointerClick className="h-4 w-4 text-cyan-300" />}
-        title="Computer Use"
-        description="桌面自动化行动前的权限、窗口、AX 证据和控制边界"
-        badge={<StatusPill label="诊断" tone="neutral" />}
-        onClose={() => setShowComputerUsePanel(false)}
-        closeLabel="关闭 Computer Use"
-        actions={(
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={refreshing}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
-          >
-            {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            刷新
-          </button>
-        )}
-      />
-
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="computer-use-content">
       {loading ? (
         <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -489,6 +469,18 @@ export const ComputerUsePanel: React.FC = () => {
       ) : (
         <div className="flex flex-1 min-h-0">
           <div className="w-[300px] shrink-0 border-r border-zinc-800 p-4 overflow-y-auto">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <StatusPill label="诊断" tone="neutral" />
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                disabled={refreshing}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-3 text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+              >
+                {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                刷新
+              </button>
+            </div>
             <div className="space-y-3">
               <BoundaryCard
                 icon={<Eye className="h-4 w-4" />}
@@ -840,6 +832,6 @@ export const ComputerUsePanel: React.FC = () => {
           </div>
         </div>
       )}
-    </FullScreenPage>
+    </div>
   );
 };

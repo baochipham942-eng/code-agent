@@ -572,7 +572,7 @@ export const MemoryTab: React.FC = () => {
 
   return (
     <SettingsPage
-      title="Light Memory"
+      title={memoryText.files.pageTitle}
       description={memoryText.files.pageDescription}
     >
       <div data-testid="memory-settings-tab" className="space-y-6">
@@ -931,25 +931,25 @@ export const MemoryTab: React.FC = () => {
               </div>
               <dl className="mt-3 space-y-2 text-xs">
                 <div className="flex justify-between gap-3">
-                  <dt className="text-zinc-500">Name</dt>
+                  <dt className="text-zinc-500">{memoryText.files.detailLabels.name}</dt>
                   <dd className="truncate text-zinc-300">{selectedFile.name}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-zinc-500">Type</dt>
+                  <dt className="text-zinc-500">{memoryText.files.detailLabels.type}</dt>
                   <dd className={getMemoryTypeConfig(selectedFile.type, memoryText.typeLabels).color}>
                     {getMemoryTypeConfig(selectedFile.type, memoryText.typeLabels).label}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-zinc-500">Updated</dt>
+                  <dt className="text-zinc-500">{memoryText.files.detailLabels.updated}</dt>
                   <dd className="text-zinc-300">{formatMemoryUpdatedAt(selectedFile.updatedAt, new Date(), memoryText.relativeDate, localeForLanguage(language))}</dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-zinc-500">Chars</dt>
+                  <dt className="text-zinc-500">{memoryText.files.detailLabels.chars}</dt>
                   <dd className="text-zinc-300">{selectedFile.content.length.toLocaleString()}</dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">Description</dt>
+                  <dt className="text-zinc-500">{memoryText.files.detailLabels.description}</dt>
                   <dd className="mt-1 text-zinc-300">{selectedFile.description || memoryText.files.noDescription}</dd>
                 </div>
               </dl>

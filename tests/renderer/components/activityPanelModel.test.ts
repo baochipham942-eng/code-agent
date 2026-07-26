@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityContext } from '../../../src/shared/contract/activityContext';
 import { buildActivityPanelModel } from '../../../src/renderer/components/features/activity/activityPanelModel';
+import { activityPanelEn, activityPanelZh } from '../../../src/renderer/i18n/activity';
 import type { ActivityContextPreview } from '../../../src/renderer/services/activityContext';
+
+const zhCopy = activityPanelZh.activityPanel;
+const enCopy = activityPanelEn.activityPanel;
 
 const preview: ActivityContextPreview = {
   capturedAtMs: 1_713_456_000_000,
@@ -127,6 +131,7 @@ describe('activity panel model', () => {
         audioStatus: null,
         audioSegments: [],
       },
+      copy: zhCopy,
     });
 
     expect(model.injectionItems.map((item) => item.label)).toEqual([
@@ -160,6 +165,7 @@ describe('activity panel model', () => {
         audioStatus: null,
         audioSegments: [],
       },
+      copy: zhCopy,
     });
 
     expect(model.modeLabel).toBe('Web 降级');
@@ -167,5 +173,34 @@ describe('activity panel model', () => {
     expect(model.capabilityRows).toHaveLength(5);
     expect(model.injectionItems[0]?.label).toBe('暂无可注入内容');
     expect(model.localEvidenceItems[0]?.label).toBe('暂无本地证据');
+  });
+
+  it('renders English copy when given the en dictionary', () => {
+    const model = buildActivityPanelModel({
+      mode: 'web',
+      shellLabel: 'Web',
+      providers: [],
+      context: null,
+      preview: {
+        capturedAtMs: null,
+        status: 'empty',
+        recentContextSummary: enCopy.emptyPreview.summary,
+        agentInjectionPreview: enCopy.emptyPreview.injection,
+        sources: [],
+        evidence: [],
+      },
+      native: {
+        collectorStatus: null,
+        recentEvents: [],
+        audioStatus: null,
+        audioSegments: [],
+      },
+      copy: enCopy,
+    });
+
+    expect(model.modeLabel).toBe('Web degraded');
+    expect(model.recentHeadline).toBe(enCopy.recent.emptyHeadline);
+    expect(model.injectionItems[0]?.label).toBe('Nothing to inject yet');
+    expect(model.localEvidenceItems[0]?.label).toBe('No local evidence yet');
   });
 });

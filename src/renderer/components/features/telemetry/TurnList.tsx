@@ -1,34 +1,19 @@
 // ============================================================================
 // Turn List - 轮次列表
+// 2026-07-27 评测中心 v2：文案改走 i18n（t.telemetry.*），意图标签词典收敛到
+// i18n/evalCenter.ts 的 telemetry.intents（原先与 OverviewTab 各存一份硬编码）。
 // ============================================================================
 
 import React from 'react';
 import type { TelemetryTurn } from '@shared/contract/telemetry';
 import { Wrench, MessageSquare, CheckCircle, AlertTriangle, XCircle, HelpCircle } from 'lucide-react';
+import { useI18n } from '../../../hooks/useI18n';
 
 interface TurnListProps {
   turns: TelemetryTurn[];
   selectedTurnId?: string;
   onSelectTurn: (turnId: string) => void;
 }
-
-const INTENT_LABELS: Record<string, string> = {
-  code_generation: '代码生成',
-  bug_fix: '修复 Bug',
-  code_review: '代码审查',
-  explanation: '解释',
-  refactoring: '重构',
-  file_operation: '文件操作',
-  search: '搜索',
-  conversation: '对话',
-  planning: '规划',
-  multi_step_task: '多步任务',
-  testing: '测试',
-  documentation: '文档',
-  configuration: '配置',
-  research: '研究',
-  unknown: '未知',
-};
 
 const INTENT_COLORS: Record<string, string> = {
   code_generation: 'bg-blue-500/20 text-blue-400',
@@ -50,6 +35,10 @@ const OutcomeIcon: React.FC<{ status: string }> = ({ status }) => {
 };
 
 export const TurnList: React.FC<TurnListProps> = ({ turns, selectedTurnId, onSelectTurn }) => {
+  const { t } = useI18n();
+  const tm = t.telemetry;
+  const intentLabels = tm.intents as Record<string, string>;
+
   return (
     <div className="space-y-1 overflow-y-auto max-h-[calc(100vh-300px)]">
       {turns.map((turn) => {
@@ -71,7 +60,7 @@ export const TurnList: React.FC<TurnListProps> = ({ turns, selectedTurnId, onSel
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-zinc-500">#{turn.turnNumber}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${intentColor}`}>
-                  {INTENT_LABELS[turn.intent.primary] ?? turn.intent.primary}
+                  {intentLabels[turn.intent.primary] ?? turn.intent.primary}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -89,7 +78,7 @@ export const TurnList: React.FC<TurnListProps> = ({ turns, selectedTurnId, onSel
             {toolCount > 0 && (
               <div className="flex items-center gap-1 mt-1 text-[10px] text-zinc-500">
                 <Wrench className="w-3 h-3" />
-                <span>{toolCount} 个工具</span>
+                <span>{tm.toolsCount.replace('{n}', String(toolCount))}</span>
                 {turn.totalInputTokens > 0 && (
                   <>
                     <span>·</span>
@@ -105,7 +94,7 @@ export const TurnList: React.FC<TurnListProps> = ({ turns, selectedTurnId, onSel
 
       {turns.length === 0 && (
         <div className="text-center text-zinc-500 text-sm py-8">
-          暂无轮次数据
+          {tm.emptyTurns}
         </div>
       )}
     </div>

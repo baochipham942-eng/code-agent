@@ -4,6 +4,8 @@ import {
   validateToolArgs,
 } from '../../../src/host/agent/runtime/toolArgsValidator';
 import type { JSONSchema, JSONSchemaProperty } from '../../../src/shared/contract';
+import { writeSchema } from '../../../src/host/tools/modules/file/write.schema';
+import { bashSchema } from '../../../src/host/tools/modules/shell/bash.schema';
 
 const props: Record<string, JSONSchemaProperty> = {
   path: { type: 'string', description: '文件绝对路径' },
@@ -55,5 +57,41 @@ describe('validateToolArgs — schema section unchanged (regression)', () => {
     expect(result.message).toContain('完整参数 schema：');
     expect(result.message).toContain('  - `path`: string (必填) — 文件绝对路径');
     expect(result.message).toContain('</tool-args-validation-error>');
+  });
+});
+
+// 2026-07-26 真机 trace 实证：模型对 Write 传了 content: ""（合法空文件意图），
+// 却被这里的旧逻辑（'' 等同 missing）打回「缺少必填参数 content」——模型的自我诊断
+// （"content 不接受空字符串"）是对的，是校验器的谓词错了，不是 Write 的 schema 错了。
+// 这两个 describe 用**真实生产 schema**（不是合成 schema）钉住修复覆盖到两个不同工具，
+// 证明改的是 validateToolArgs 里那一条共用谓词，不是 Write 的个案 patch。
+describe('validateToolArgs — empty string is a valid required value, not "missing" (regression for the 2026-07-26 Write bug)', () => {
+  it('Write: content: "" passes validation (真实生产 schema)', () => {
+    const result = validateToolArgs('Write', writeSchema.inputSchema, {
+      file_path: '/tmp/x.txt',
+      content: '',
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('Write: content key truly absent still reports missing (别把这条弄丢)', () => {
+    const result = validateToolArgs('Write', writeSchema.inputSchema, {
+      file_path: '/tmp/x.txt',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain('缺少必填参数 `content`');
+  });
+
+  it('Bash (另一个工具，证明修复是共用的): command: "" passes validation', () => {
+    const result = validateToolArgs('Bash', bashSchema.inputSchema, { command: '' });
+    expect(result.ok).toBe(true);
+  });
+
+  it('Bash: command key truly absent still reports missing', () => {
+    const result = validateToolArgs('Bash', bashSchema.inputSchema, {});
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain('缺少必填参数 `command`');
   });
 });

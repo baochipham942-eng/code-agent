@@ -56,9 +56,11 @@ export function summarizePromptStack(
   events: ReadonlyArray<ContextEventRecord>,
   request: Partial<PromptStackSummaryRequest> = {},
 ): PromptStackSummary {
-  const scopedEvents = request.sessionId
-    ? events.filter((event) => event.sessionId === request.sessionId)
-    : [...events];
+  const scopedEvents = events.filter((event) => {
+    if (request.sessionId && event.sessionId !== request.sessionId) return false;
+    if (!request.agentId) return !event.agentId;
+    return event.agentId === request.agentId || !event.agentId;
+  });
   const invocationId = selectInvocationId(scopedEvents, request.invocationId);
   const invocationEvents = invocationId
     ? scopedEvents.filter((event) => event.invocationId === invocationId)
@@ -113,6 +115,7 @@ export function summarizePromptStack(
     } : {}),
     ...(checkpointEvent ? {
       compactionCheckpoint: {
+        messageId: checkpointEvent.messageId,
         timestamp: checkpointEvent.timestamp,
         layer: checkpointEvent.layer,
         operation: checkpointEvent.sourceDetail?.split(':')[1],

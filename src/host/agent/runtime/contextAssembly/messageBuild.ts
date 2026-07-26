@@ -75,8 +75,7 @@ import {
   isArtifactRepairMode,
 } from './artifactRepairProjection';
 import {
-  promptBudget,
-  appendPromptBlockWithinBudget, recordBasePromptLayer, snapshotPromptLayerRecords,
+  promptBudget, appendPromptBlockWithinBudget, recordBasePromptLayer, snapshotPromptLayerRecords,
   trimPreambleBeforeRequiredArtifactBlock, restorePromptLayerRecords,
   appendPromptBlockWithinBudgetWithStatus, flushPromptLayerRecords,
   REQUIRED_REPAIR_TRIM_CANDIDATES,
@@ -213,7 +212,10 @@ async function buildCachedDynamicSystemPrompt(ctx: ContextAssemblyCtx): Promise<
     const tokens = estimateTokens(fullPrompt);
     recordBasePromptLayer(ctx, fullPrompt, CONTEXT_LEDGER.BASE_SOURCE.FULL_REPLACE);
     if (tokens <= promptBudget(ctx)) {
-      cache.dynamicPrompt = { key: cacheKey, createdAt: now, prompt: fullPrompt, turnContext: '', tokens, promptLayers: snapshotPromptLayerRecords(ctx) };
+      cache.dynamicPrompt = {
+        key: cacheKey, createdAt: now, prompt: fullPrompt, turnContext: '', tokens,
+        promptLayers: snapshotPromptLayerRecords(ctx),
+      };
     } else {
       cache.dynamicPrompt = undefined;
       logger.warn(

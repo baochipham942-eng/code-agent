@@ -4,6 +4,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/sha
 const mocks = vi.hoisted(() => ({
   currentUser: null as null | { id: string; email: string; isAdmin?: boolean },
   sessionVerified: false,
+  getCurrentPromptStackSummary: vi.fn(),
   registry: {
     listPrompts: vi.fn(),
     getPromptDetail: vi.fn(),
@@ -30,6 +31,10 @@ vi.mock('../../../src/host/prompts/promptIndex', () => ({}));
 
 vi.mock('../../../src/host/prompts/builder', () => ({
   SYSTEM_PROMPT: 'FULL SYSTEM PROMPT',
+}));
+
+vi.mock('../../../src/host/services/promptStack', () => ({
+  getCurrentPromptStackSummary: mocks.getCurrentPromptStackSummary,
 }));
 
 import { registerPromptHandlers } from '../../../src/host/ipc/prompt.ipc';
@@ -67,6 +72,15 @@ describe('prompt.ipc access control', () => {
       defaultText: 'default prompt',
       override: null,
       overridden: false,
+    });
+    mocks.getCurrentPromptStackSummary.mockReturnValue({
+      sessionId: 'session-ledger',
+      invocationId: 'turn-ledger',
+      promptVersion: 'test-version',
+      totalChars: 120,
+      totalTokens: 30,
+      layers: [],
+      warnings: [],
     });
   });
 
@@ -161,12 +175,20 @@ describe('prompt.ipc access control', () => {
     const ipc = makeFakeIpc();
     registerPromptHandlers(ipc as never);
 
-    const response = await ipc.invoke({ action: 'stackSummary' });
+    const response = await ipc.invoke({
+      action: 'stackSummary',
+      payload: { sessionId: 'session-ledger', invocationId: 'turn-ledger' },
+    });
 
     expect(response.success).toBe(true);
     expect(response.data).toMatchObject({
-      totalChars: 18,
-      hasDynamicBoundary: false,
+      sessionId: 'session-ledger',
+      invocationId: 'turn-ledger',
+      totalChars: 120,
+    });
+    expect(mocks.getCurrentPromptStackSummary).toHaveBeenCalledWith({
+      sessionId: 'session-ledger',
+      invocationId: 'turn-ledger',
     });
     expect(JSON.stringify(response.data)).not.toContain('FULL SYSTEM PROMPT');
   });

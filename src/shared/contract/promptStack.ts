@@ -34,6 +34,7 @@ export interface PromptStackModelBinding {
 }
 
 export interface PromptStackCompactionCheckpoint {
+  messageId?: string;
   timestamp: number;
   layer?: string;
   operation?: string;

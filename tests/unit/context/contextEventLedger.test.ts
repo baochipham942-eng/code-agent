@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { ContextEventLedger } from '../../../src/host/context/contextEventLedger';
 import { CompressionState } from '../../../src/host/context/compressionState';
+import { CONTEXT_LEDGER } from '../../../src/shared/constants';
 
 describe('ContextEventLedger', () => {
   let tempDir: string;
@@ -84,5 +85,64 @@ describe('ContextEventLedger', () => {
 
     expect(ledger.list('session-clear')).toHaveLength(0);
     expect(ledger.list('session-keep')).toHaveLength(1);
+  });
+
+  it('persists distinct invocation artifacts for prompt, tools, and model binding', () => {
+    const ledger = new ContextEventLedger(ledgerPath);
+    const timestamp = Date.now();
+    ledger.upsertEvents([
+      {
+        id: '',
+        sessionId: 'session-invocations',
+        agentId: 'agent-1',
+        invocationId: 'turn-1',
+        sourceKind: CONTEXT_LEDGER.SOURCE_KIND.PROMPT_LAYER,
+        sourceDetail: 'skills',
+        layer: 'skills',
+        chars: 40,
+        tokens: 10,
+        promptLayerOutcome: CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
+        timestamp,
+      },
+      {
+        id: '',
+        sessionId: 'session-invocations',
+        agentId: 'agent-1',
+        invocationId: 'turn-2',
+        sourceKind: CONTEXT_LEDGER.SOURCE_KIND.PROMPT_LAYER,
+        sourceDetail: 'skills',
+        layer: 'skills',
+        chars: 42,
+        tokens: 11,
+        promptLayerOutcome: CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
+        timestamp: timestamp + 1,
+      },
+      {
+        id: '',
+        sessionId: 'session-invocations',
+        agentId: 'agent-1',
+        invocationId: 'turn-2',
+        sourceKind: CONTEXT_LEDGER.SOURCE_KIND.TOOL_SCHEMA_SNAPSHOT,
+        toolNames: ['Read'],
+        schemaHash: 'schema-hash',
+        timestamp: timestamp + 2,
+      },
+      {
+        id: '',
+        sessionId: 'session-invocations',
+        agentId: 'agent-1',
+        invocationId: 'turn-2',
+        sourceKind: CONTEXT_LEDGER.SOURCE_KIND.MODEL_BINDING,
+        model: 'test-model',
+        provider: 'test-provider',
+        timestamp: timestamp + 2,
+      },
+    ]);
+
+    const events = new ContextEventLedger(ledgerPath).list('session-invocations', 'agent-1');
+
+    expect(events.filter((event) => event.layer === 'skills')).toHaveLength(2);
+    expect(events.find((event) => event.schemaHash === 'schema-hash')?.toolNames).toEqual(['Read']);
+    expect(events.find((event) => event.model === 'test-model')?.provider).toBe('test-provider');
   });
 });

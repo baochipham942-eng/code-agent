@@ -146,8 +146,9 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
       <span data-testid="voice-status" className={`shrink-0 text-xs ${STATE_COLOR[visual]}`}>
         {statusText}
       </span>
-      <ActiveExpertChip sessionId={sessionId} />
-      <WorkStrip />
+      {/* 错误态整行只留错误信息与结束按钮，别让「与 X 通话」和报错文案打架 */}
+      {visual !== 'error' && <ActiveExpertChip sessionId={sessionId} />}
+      {visual !== 'error' && <WorkStrip />}
 
       <span className="flex-1" />
 

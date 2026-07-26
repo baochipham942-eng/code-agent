@@ -12,9 +12,10 @@ export const voiceZh = {
       endTitle: '结束通话',
       mute: '静音',
       unmute: '取消静音',
-      confirmTitle: '开启实时语音',
-      confirmMessage: '在本会话开启实时语音并延续当前上下文？',
-      confirmAction: '开启通话',
+      confirmTitle: '开始实时通话',
+      confirmMessage: '延续当前会话的上下文继续对话，通话字幕和派发的任务都会进入消息流。',
+      confirmAction: '开始通话',
+      confirmPrivacy: '通话音频实时上传至语音服务用于识别与合成，默认不保留原始录音。',
       holdToTalk: '按住说话',
       releaseToSend: '松开即发送',
       tapToTalk: '点按说话',
@@ -49,9 +50,7 @@ export const voiceZh = {
     call: {
       summary: '通话摘要',
       duration: '时长',
-      model: '模型',
-      provider: 'Provider',
-      workItems: '派出的任务',
+      workItems: '派出任务',
       participants: '参与专家',
       minute: '分',
       second: '秒',
@@ -97,7 +96,6 @@ export const voiceZh = {
     transcript: {
       you: '你',
       assistant: '助手',
-      line: '{speaker}：{text}',
     },
     sourceBadge: '语音',
     echoHint: {
@@ -116,9 +114,10 @@ export const voiceEn: typeof voiceZh = {
       endTitle: 'End call',
       mute: 'Mute',
       unmute: 'Unmute',
-      confirmTitle: 'Start realtime voice',
-      confirmMessage: 'Start a realtime voice call in this session and continue with its context?',
+      confirmTitle: 'Start a live call',
+      confirmMessage: 'Continue this conversation by voice — live captions and dispatched tasks land in the message flow.',
       confirmAction: 'Start call',
+      confirmPrivacy: 'Call audio streams to the voice service for recognition and synthesis. Raw audio is not kept by default.',
       holdToTalk: 'Hold to talk',
       releaseToSend: 'Release to send',
       tapToTalk: 'Tap to talk',
@@ -153,8 +152,6 @@ export const voiceEn: typeof voiceZh = {
     call: {
       summary: 'Call summary',
       duration: 'Duration',
-      model: 'Model',
-      provider: 'Provider',
       workItems: 'Tasks dispatched',
       participants: 'Participants',
       minute: 'm',
@@ -201,7 +198,6 @@ export const voiceEn: typeof voiceZh = {
     transcript: {
       you: 'You',
       assistant: 'Assistant',
-      line: '{speaker}: {text}',
     },
     sourceBadge: 'Voice',
     echoHint: {

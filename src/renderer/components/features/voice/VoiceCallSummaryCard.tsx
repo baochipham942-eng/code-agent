@@ -2,8 +2,9 @@
 // VoiceCallSummaryCard —— 通话摘要卡（B3）
 //
 // 消费 metadata.voiceCallSummary（host 挂断时落库的唯一生产者，§7.5），
-// 展示时长 / 模型 / 任务数。参与专家列表依赖 VoiceWorkItem.assignee，
-// 那是 Phase 2 字段（§6.7.8），本批不展示。
+// 展示时长 / 任务数（>0 才显示——零值是噪音；原始模型 id 属开发者信息，
+// 不进用户 UI，产品负责人 2026-07-26 打回）。参与专家列表依赖
+// VoiceWorkItem.assignee，那是 Phase 2 字段（§6.7.8），本批不展示。
 // ============================================================================
 
 import React from 'react';
@@ -27,8 +28,9 @@ export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ 
         <span className="shrink-0 text-xs font-medium text-primary-300">{text.summary}</span>
         <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-zinc-400">
           <span>{text.duration} {duration}</span>
-          <span className="truncate">{text.model} {summary.conversationModel}</span>
-          <span>{text.workItems} {summary.workItemCount}</span>
+          {summary.workItemCount > 0 && (
+            <span>{text.workItems} {summary.workItemCount}</span>
+          )}
         </span>
       </div>
     </div>

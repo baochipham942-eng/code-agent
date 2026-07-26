@@ -21,10 +21,13 @@ export const TranscriptPartialLine: React.FC = () => {
   if (!speaker || !text) return null;
 
   return (
-    <div data-testid="voice-transcript-partial" className="mx-auto w-full max-w-3xl px-4 pb-1">
-      <div className="truncate text-xs text-zinc-500">
-        {t.voice.transcript.line.replace('{speaker}', speaker).replace('{text}', text)}
-        <span className="motion-safe:animate-pulse">…</span>
+    <div data-testid="voice-transcript-partial" className="mx-auto w-full max-w-3xl px-4 pb-1.5">
+      <div className="flex items-baseline gap-2 rounded-lg bg-zinc-800/60 px-3 py-1.5 text-xs">
+        <span className="shrink-0 font-medium text-zinc-300">{speaker}</span>
+        <span className="min-w-0 truncate text-zinc-400">
+          {text}
+          <span className="motion-safe:animate-pulse">…</span>
+        </span>
       </div>
     </div>
   );

@@ -12,7 +12,7 @@ import { AudioLines } from 'lucide-react';
 import { voiceCallBridge } from '../../../services/voiceCallBridge';
 import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { ConfirmDialog } from '../../composites/ConfirmDialog';
+import { VoiceStartDialog } from './VoiceStartDialog';
 import { useVoiceLiveAvailability } from './useVoiceLiveAvailability';
 
 export interface LiveVoiceButtonProps {
@@ -50,13 +50,8 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
         <AudioLines className="w-4 h-4" />
       </button>
 
-      <ConfirmDialog
+      <VoiceStartDialog
         isOpen={confirmOpen}
-        title={t.voice.live.confirmTitle}
-        message={t.voice.live.confirmMessage}
-        variant="info"
-        confirmText={t.voice.live.confirmAction}
-        cancelText={t.common.cancel}
         onConfirm={() => {
           setConfirmOpen(false);
           start();

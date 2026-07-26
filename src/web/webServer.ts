@@ -334,6 +334,7 @@ import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 
 // Middleware
 import { SERVER_AUTH_TOKEN, exitIfE2EFlagRefused, writeDevAuthToken } from './middleware/auth';
+import { attachVoiceStreamUpgrade } from './voiceStreamUpgrade';
 
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
 import { getAppVersion } from '../host/platform';
@@ -1212,6 +1213,10 @@ async function main(): Promise<void> {
   queuedInputStartupSweep.maybeRun();
 
   const server = http.createServer(app);
+
+  // 实时语音媒体面：Renderer ↔ Host 的 WS（二进制 = PCM 音频，文本 = 事件/控制）。
+  // 音频帧率高，走不了请求/响应式 IPC，所以单开一条 WS；鉴权复用同一个 server token。
+  attachVoiceStreamUpgrade(server);
 
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {

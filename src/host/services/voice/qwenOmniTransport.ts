@@ -55,6 +55,12 @@ function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
   }
 }
 
+/** session.updated 回显里是否真收下了工具。回显不带 tools 字段一律按「没收下」算。 */
+function upstreamAcceptedTools(event: UpstreamEvent): boolean {
+  const session = event.session as { tools?: unknown } | undefined;
+  return Array.isArray(session?.tools) && session.tools.length > 0;
+}
+
 function toUpstreamTurnDetection(config: VoiceTurnDetectionConfig): UpstreamTurnDetection {
   if (config === null) return null;
   if (config.type === 'semantic_vad') {
@@ -74,15 +80,16 @@ function toUpstreamTurnDetection(config: VoiceTurnDetectionConfig): UpstreamTurn
 export const qwenOmniTransport: VoiceTransport = {
   id: 'qwen-omni',
 
-  async connect({ apiKey, config, onEvent, onAudio }): Promise<VoiceTransportHandle> {
+  async connect({ apiKey, config, onEvent, onAudio, onToolCall }): Promise<VoiceTransportHandle> {
     const model = config.model ?? QWEN_OMNI_REALTIME_MODEL;
     const turnDetectionConfig = resolveTurnDetectionConfig();
     const upstreamTurnDetection = toUpstreamTurnDetection(turnDetectionConfig);
     const vadSilenceWindowMs = turnDetectionConfig?.type === 'server_vad'
       ? turnDetectionConfig.silenceDurationMs
       : undefined;
+    const registeredTools = onToolCall ? config.tools ?? [] : [];
     const url = `${QWEN_OMNI_REALTIME_WS_URL}?model=${encodeURIComponent(model)}`;
-    logger.info('connecting upstream', { model });
+    logger.info('connecting upstream', { model, toolCount: registeredTools.length });
 
     const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${apiKey}` } });
 
@@ -112,6 +119,8 @@ export const qwenOmniTransport: VoiceTransport = {
           input_audio_transcription: { model: QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL },
           turn_detection: upstreamTurnDetection,
           ...(config.instructions ? { instructions: config.instructions } : {}),
+          // 没接执行出口就不注册工具：告诉模型有工具却没人执行，比不给工具更糟。
+          ...(registeredTools.length ? { tools: registeredTools, tool_choice: 'auto' } : {}),
         },
       }),
     );
@@ -121,6 +130,21 @@ export const qwenOmniTransport: VoiceTransport = {
     let speechStoppedAt = 0;
     let ttfaModelMs: number | undefined;
     let ttfaPerceivedMs: number | undefined;
+
+    /**
+     * 工具结果回灌：写进对话项后必须再发一次 response.create，否则模型拿到结果也不开口。
+     * 执行失败不抛回上游——把失败文案当结果说出去，比通话卡死好。
+     */
+    async function handleToolCall(callId: string, name: string, args: string): Promise<void> {
+      const output = await onToolCall!({ callId, name, arguments: args })
+        .catch((err: unknown) => `工具执行失败：${err instanceof Error ? err.message : 'unknown'}`);
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: { type: 'function_call_output', call_id: callId, output },
+      }));
+      ws.send(JSON.stringify({ type: 'response.create' }));
+    }
 
     ws.on('message', (raw) => {
       const event = parseEvent(raw);
@@ -154,6 +178,21 @@ export const qwenOmniTransport: VoiceTransport = {
           break;
         case 'input_audio_buffer.speech_stopped':
           speechStoppedAt = Date.now();
+          break;
+        case 'session.updated':
+          // 静默降级留痕：上一代模型对 tools 是「收下不报错、回显 null」，
+          // 不告警的话现场只能看到「模型死活不肯派活」，查不到根因。
+          if (registeredTools.length && !upstreamAcceptedTools(event)) {
+            logger.warn('upstream dropped registered tools (model likely lacks function calling)', {
+              model,
+              sent: registeredTools.length,
+            });
+          }
+          break;
+        case 'response.function_call_arguments.done':
+          if (onToolCall && typeof event.call_id === 'string' && typeof event.name === 'string') {
+            void handleToolCall(event.call_id, event.name, typeof event.arguments === 'string' ? event.arguments : '{}');
+          }
           break;
         case 'response.done':
           onEvent({

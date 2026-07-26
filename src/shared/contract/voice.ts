@@ -24,6 +24,14 @@ export interface VoiceCallSummary {
   endedAt: number;
 }
 
+/** 注册给通话 brain 的窄工具（方案 §6.2 模式 A）。JSON Schema 直接透给上游。 */
+export interface VoiceToolDefinition {
+  type: 'function';
+  name: string;
+  description: string;
+  parameters: { type: 'object'; properties: Record<string, unknown>; required: string[] };
+}
+
 export interface VoiceSessionConfig {
   /** 绑定的 Neo 会话，字幕落到这条会话的消息流。 */
   neoSessionId: string;
@@ -31,6 +39,7 @@ export interface VoiceSessionConfig {
   voice?: string;
   language?: string;
   instructions?: string;
+  tools?: VoiceToolDefinition[];
 }
 
 /** Renderer 直连上游所需的建连材料。只有 direct 形态才有。 */
@@ -86,5 +95,11 @@ export interface VoiceTransport {
     onEvent: (event: VoiceEvent) => void;
     /** 下行助手音频 PCM16@24k 单声道。WebRTC 形态不会调用（音频不经 Host）。 */
     onAudio: (frame: Buffer) => void;
+    /**
+     * 上游 function call 的执行出口，返回的文本原样回灌给通话 brain。
+     * 未提供时 transport 不注册任何工具——「没接执行出口却把工具告诉模型」
+     * 会让模型调了个永远没有结果的工具，比不给工具更糟。
+     */
+    onToolCall?: (call: { callId: string; name: string; arguments: string }) => Promise<string>;
   }): Promise<VoiceTransportHandle>;
 }

@@ -179,6 +179,54 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('注册了窄工具时才发 tools；没接执行出口就一个都不发', async () => {
+    const withoutTools = await connectHandle(qwenOmniTransport);
+    const bare = readSessionUpdate(upstreams[upstreams.length - 1]).session as { tools?: unknown };
+    expect(bare.tools).toBeUndefined();
+    await withoutTools.close();
+
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+      onToolCall: async () => 'ok',
+    });
+    const withTools = readSessionUpdate(upstreams[upstreams.length - 1]).session as { tools?: Array<{ name: string }> };
+    expect(withTools.tools?.map((t) => t.name)).toEqual(['get_active_tasks']);
+    await handle.close();
+  });
+
+  // 上游 function_call 必须被执行并把结果回灌，再显式要一次回复——
+  // 只写回结果不发 response.create 的话，模型拿到了结果也不开口，现场表现是「通话卡住」。
+  it('function_call 交给执行出口，结果回灌后再要一次回复', async () => {
+    const onToolCall = vi.fn(async () => '当前没有进行中的任务。');
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+      onToolCall,
+    });
+    const upstream = upstreams[upstreams.length - 1];
+    const before = upstream.sent.length;
+
+    upstream.emit('message', JSON.stringify({
+      type: 'response.function_call_arguments.done',
+      call_id: 'call_1',
+      name: 'get_active_tasks',
+      arguments: '{}',
+    }));
+
+    await vi.waitFor(() => expect(upstream.sent.length).toBeGreaterThan(before + 1));
+    expect(onToolCall).toHaveBeenCalledWith({ callId: 'call_1', name: 'get_active_tasks', arguments: '{}' });
+    const emitted = upstream.sent.slice(before).map((raw) => JSON.parse(raw) as { type: string; item?: { call_id?: string; output?: string } });
+    expect(emitted[0].item).toMatchObject({ call_id: 'call_1', output: '当前没有进行中的任务。' });
+    expect(emitted[1].type).toBe('response.create');
+
+    await handle.close();
+  });
+
   it('direct adapter：kind=direct 且必须给出 clientBootstrap', async () => {
     const handle = await connectHandle(fakeDirectTransport);
 

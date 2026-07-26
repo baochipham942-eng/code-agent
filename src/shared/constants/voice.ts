@@ -14,8 +14,15 @@ import type { VoiceTurnDetectionConfig } from '../contract/voice';
  */
 export const QWEN_OMNI_REALTIME_WS_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime';
 
-/** 默认对话模型。plus/flash 见 https://help.aliyun.com/zh/model-studio/realtime */
-export const QWEN_OMNI_REALTIME_MODEL = 'qwen3-omni-flash-realtime';
+/**
+ * 默认对话模型。plus/flash 见 https://help.aliyun.com/zh/model-studio/realtime
+ *
+ * 2026-07-26 实测：**tools 支持按模型分化**——3.5 系接受 session.tools 并真发
+ * function_call；上一代 `qwen3-omni-flash-realtime` 会**静默丢弃** tools 字段
+ * （session.updated 回显 tools: null，不报错、不降级提示）。窄工具是语音指挥台的
+ * 前提，所以默认模型钉在 3.5 flash。换回上一代 = 通话只剩闲聊。
+ */
+export const QWEN_OMNI_REALTIME_MODEL = 'qwen3.5-omni-flash-realtime';
 
 /** 用户语音转写模型（input_audio_transcription），出字幕用。 */
 export const QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL = 'gummy-realtime-v1';
@@ -45,6 +52,12 @@ export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 
 /** 通话最长时长（ms），到点强制挂断，兜住忘记挂断导致的持续计费。 */
 export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
+
+/** get_current_file_summary 最多回几个文件路径，别把通话摘要撑成一屏。 */
+export const VOICE_RECENT_FILE_LIMIT = 8;
+
+/** 语音派发任务的迭代上限：通话场景的任务应该是小活，跑飞了要有个头。 */
+export const VOICE_SPAWN_TASK_MAX_ITERATIONS = 30;
 
 /** Renderer→Host 媒体面 WS 路径。 */
 export const VOICE_STREAM_WS_PATH = '/api/voice/stream';

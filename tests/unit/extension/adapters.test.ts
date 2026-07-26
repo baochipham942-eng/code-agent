@@ -220,7 +220,6 @@ function makeLoadedPlugin(
     rootPath,
     state,
     registeredTools: [],
-    registeredHooks: [],
   };
 }
 

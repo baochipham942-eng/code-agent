@@ -50,7 +50,6 @@ function makePlugin(
     rootPath: opts.rootPath ?? `~/.code-agent/plugins/${id}`,
     state: opts.state ?? 'active',
     registeredTools: [],
-    registeredHooks: [],
   };
 }
 

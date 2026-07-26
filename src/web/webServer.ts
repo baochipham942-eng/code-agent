@@ -53,6 +53,7 @@ import { kickoffStartupRetention } from './webStartupRetention';
 import { kickoffCloudPrompts } from './webStartupCloudPrompts';
 import { registerMemoryConsolidationJob } from './webStartupMemoryJobs';
 import { setupWebLogBridge } from './webLogBridgeSetup';
+import { kickoffWebStartupServices } from './webStartupServices';
 
 const logger = createLogger('WebServer');
 
@@ -655,6 +656,8 @@ async function initializeServices(): Promise<void> {
     logger.warn('Cron / role cadence init failed (non-blocking):', (error as Error).message);
   }
   bootMark('cron+cadence');
+
+  kickoffWebStartupServices(configService, { broadcastSSE, capabilityBootstrap });
 
   // 8. Log Bridge + P3-A 只读任务状态 provider。
   // 与步骤 5/6/7 同类的 web/main 路径分离修复：logBridge.start() + provider 注册此前只在

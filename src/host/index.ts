@@ -7,7 +7,7 @@
 // package.json main = dist/web/webServer.cjs；tauri.conf.json 只打包 dist/web/webServer.*。
 // 所有发行版跑的是 src/web/webServer.ts。
 //
-// **新增后台服务请挂 src/web/webServer.ts，不要挂这里或 app/initBackgroundServices.ts。**
+// **新增后台服务请挂 src/web/webStartupServices.ts，不要挂这里或 app/bootstrap.ts。**
 // 挂错地方不会报错、不会有测试变红，只是永远不执行——webServer.ts 里 :515/:617/:653 三处
 // 注释就是三次"发现挂错了再补一遍"的记录，2026-07-25 又补了第四次（dbRetention/logRetention，
 // 生产库因此涨到 377MB+ 无人清理）。

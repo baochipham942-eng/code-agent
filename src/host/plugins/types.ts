@@ -3,7 +3,6 @@
 // ============================================================================
 
 import type { Tool } from '../tools/types';
-import type { HookEvent } from '../protocol/events';
 import type { ToolModule } from '../protocol/tools';
 
 /**
@@ -130,10 +129,6 @@ export interface PluginAPI {
   getStorage: () => PluginStorage;
   /** Show notification */
   showNotification?: (title: string, body: string) => void;
-  /** Register an event hook */
-  registerHook: (registration: PluginHookRegistration) => void;
-  /** Unregister an event hook */
-  unregisterHook: (hookId: string) => void;
 
   // --------------------------------------------------------------------------
   // PluginAPI v2 扩展 — 见文件底部的类型定义和实现说明
@@ -141,7 +136,7 @@ export interface PluginAPI {
 
   /**
    * PluginAPI 版本号，用于插件运行时能力探测。
-   * v1 = 仅 tools/hooks/storage；v2 = 增加 api-key 取用、用户身份、常量投影、ToolModule 注册。
+   * v1 = 仅 tools/storage；v2 = 增加 api-key 取用、用户身份、常量投影、ToolModule 注册。
    */
   readonly pluginApiVersion: 2;
 
@@ -275,8 +270,6 @@ export interface LoadedPlugin {
   entry?: PluginEntry;
   /** Tools registered by this plugin */
   registeredTools: string[];
-  /** Hooks registered by this plugin */
-  registeredHooks: string[];
 }
 
 /**
@@ -286,83 +279,4 @@ export interface PluginLoadResult {
   success: boolean;
   plugin?: LoadedPlugin;
   error?: string;
-}
-
-// ----------------------------------------------------------------------------
-// Plugin Event Hook Types (HookManager Integration)
-// ----------------------------------------------------------------------------
-
-/**
- * Plugin hook registration - register hooks with HookManager
- */
-export interface PluginHookRegistration {
-  /** Unique hook ID (auto-generated if not provided) */
-  id?: string;
-  /** Event type to listen for */
-  event: HookEvent;
-  /** Tool name matcher for tool events (regex string or exact match) */
-  toolMatcher?: string;
-  /** Hook handler function */
-  handler: PluginHookHandler;
-  /** Priority (lower = earlier, default: 100) */
-  priority?: number;
-}
-
-/**
- * Plugin hook handler function
- */
-export type PluginHookHandler = (context: PluginHookContext) => Promise<PluginHookResult>;
-
-/**
- * Context passed to plugin hook handlers
- */
-export interface PluginHookContext {
-  /** Event type */
-  event: HookEvent;
-  /** Session ID */
-  sessionId: string;
-  /** Working directory */
-  workingDirectory: string;
-  /** Timestamp */
-  timestamp: number;
-  /** Tool name (for tool events) */
-  toolName?: string;
-  /** Tool input as object (for tool events) */
-  toolInput?: Record<string, unknown>;
-  /** Tool output (for PostToolUse) */
-  toolOutput?: string;
-  /** Error message (for failure events) */
-  errorMessage?: string;
-  /** User prompt (for UserPromptSubmit) */
-  prompt?: string;
-}
-
-/**
- * Result returned by plugin hook handlers
- */
-export interface PluginHookResult {
-  /** Whether to allow the action to proceed */
-  allow?: boolean;
-  /** Message to inject into context */
-  message?: string;
-  /** Modified tool input (for PreToolUse) */
-  modifiedInput?: Record<string, unknown>;
-}
-
-/**
- * Internal hook registration record
- */
-export interface RegisteredPluginHook {
-  /** Hook ID */
-  id: string;
-  /** Plugin ID */
-  pluginId: string;
-  /** Event type */
-  event: HookEvent;
-  /** Tool matcher */
-  toolMatcher?: string;
-  /** Handler function */
-  handler: PluginHookHandler;
-  /** Priority */
-  priority: number;
 }

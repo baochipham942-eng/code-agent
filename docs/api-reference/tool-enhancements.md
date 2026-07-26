@@ -187,36 +187,6 @@ if (result.modified) {
 
 ---
 
-### Background Task Persistence (`src/host/tools/backgroundTaskPersistence.ts`)
-
-Persists running background task information for recovery after restart.
-
-```typescript
-// TODO: Document when B4 is complete
-interface BackgroundTaskPersistence {
-  save(task: BackgroundTask): Promise<void>;
-  load(): Promise<BackgroundTask[]>;
-  remove(taskId: string): Promise<void>;
-  cleanup(): Promise<void>;
-}
-
-interface BackgroundTask {
-  id: string;
-  type: 'shell' | 'process' | 'agent';
-  command?: string;
-  pid?: number;
-  startTime: number;
-  workingDirectory: string;
-  sessionId: string;
-}
-```
-
-#### Storage Location
-
-Tasks are stored at `~/.code-agent/background-tasks.json`
-
----
-
 ## Integration with edit_file
 
 The edit_file tool integrates these enhancements:

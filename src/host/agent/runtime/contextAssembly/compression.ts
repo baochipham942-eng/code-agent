@@ -541,7 +541,8 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
           '<context-window-too-small>\n' +
           '上下文窗口太小，连续压缩后仍接近上限，已暂停自动压缩以免反复消耗 token。\n' +
           '请收窄当前任务范围、尽快收尾，或开启新会话继续。\n' +
-          '</context-window-too-small>'
+          '</context-window-too-small>',
+          'compression',
         );
       }
 
@@ -554,7 +555,8 @@ export async function checkAndAutoCompress(ctx: ContextAssemblyCtx): Promise<voi
           '1. 列出已完成的任务\n' +
           '2. 列出未完成的任务及原因\n' +
           '3. 给出后续建议\n' +
-          '</wrap-up>'
+          '</wrap-up>',
+          'compression',
         );
       }
     }

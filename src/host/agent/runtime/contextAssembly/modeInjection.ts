@@ -36,7 +36,7 @@ export function injectResearchModePrompt(ctx: ContextAssemblyCtx, _userMessage: 
   const skillPrompt = ctx.loadResearchSkillPrompt();
   const prompt = skillPrompt || `## 研究模式已激活\n\n用户的请求需要深入调研。请制定研究计划，从多个角度搜索，使用 web_fetch 深入抓取关键结果，最终形成结构化报告。\n\n报告要求：数据标注来源编号 [S1][S2]...，区分实证数据与趋势推断，至少执行 4 次不同角度的搜索。`;
 
-  ctx.pushPersistentSystemContext(prompt);
+  ctx.pushPersistentSystemContext(prompt, 'research-mode');
 
   // Engineering logic
   ctx.runtime.turn.enterResearchMode();
@@ -162,7 +162,7 @@ export async function maybeInjectThinking(
 
   try {
     const thinkingPrompt = ctx.generateThinkingPrompt(toolCalls, toolResults);
-    ctx.injectSystemMessage(thinkingPrompt);
+    ctx.injectSystemMessage(thinkingPrompt, 'adaptive-thinking');
 
     // 发送思考事件到 UI（可折叠显示）
     ctx.runtime.onEvent({

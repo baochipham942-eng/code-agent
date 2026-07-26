@@ -124,14 +124,28 @@ vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(() => '/tmp/code-agent-test'),
   },
+  AppWindow: { getAllWindows: vi.fn(() => []) },
 }));
 
 // Mock services
 vi.mock('../../src/host/services', () => ({
   getSessionManager: vi.fn(() => ({
     addMessage: vi.fn().mockResolvedValue(undefined),
+    addMessageToSession: vi.fn().mockResolvedValue(undefined),
+    getSession: vi.fn().mockResolvedValue({ id: 'test-session-id', messages: [] }),
     getCurrentSessionId: vi.fn().mockReturnValue('test-session-id'),
   })),
+}));
+
+// 专家审批档的门要看「AgentLoop 真跑那一刻的有效档位」，所以 loop 本身换成探针。
+// 本文件其余用例都不碰真 AgentLoop（orchestrator.agentLoop 一律是 null 或 stub）。
+const agentLoopProbe = vi.hoisted(() => ({ onRun: undefined as undefined | (() => void) }));
+vi.mock('../../src/host/agent/agentLoop', () => ({
+  AgentLoop: class {
+    async run(): Promise<void> { agentLoopProbe.onRun?.(); }
+    setEffortLevel(): void { /* noop */ }
+    getSerializedCompressionState(): undefined { return undefined; }
+  },
 }));
 
 // Mock logger
@@ -178,6 +192,7 @@ vi.mock('../../src/host/services/cloud/cloudConfigService', () => ({
 
 import { AgentOrchestrator } from '../../src/host/agent/agentOrchestrator';
 import { getPermissionModeManager } from '../../src/host/permissions/modes';
+import { setCustomAgentMapForTest } from '../../src/host/agent/agentRegistry';
 import { approvalParkEvents } from '../../src/host/agent/approvalParkEvents';
 import type { PendingApprovalRepository } from '../../src/host/services/core/repositories/PendingApprovalRepository';
 import { SteerRejectedError } from '../../src/host/agent/runtime/conversationRuntime';
@@ -901,6 +916,96 @@ describe('AgentOrchestrator', () => {
       });
 
       expect(granted).toBe(false);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 专家自带审批档（详情页「安全」页 / agent.md 的 permission-override）
+  // --------------------------------------------------------------------------
+  //
+  // PR #637 打通了档位的上游，但它的下游出口只有 subagentPipeline；用户在输入框选中专家
+  // 直接聊时专家是**主 agent**，那条路根本不经过（与 #690/#697 同源）。所以这条门必须钉
+  // 「AgentLoop 真跑那一刻主 agent 的有效档位」——只钉 preset→mode 映射表是假绿，
+  // 那证明的是「表对了」，不是「这条线在跑」。
+  describe('专家自带审批档钳制主 agent 这一轮', () => {
+    const ROLE_STRICT = 'role-preset-strict';
+    const ROLE_CI = 'role-preset-ci';
+    const SESSION = 'role-preset-session';
+
+    function registerRoles(): void {
+      const base = {
+        name: '', description: 'd', prompt: 'p', tools: ['Read'],
+        model: 'balanced' as const, maxIterations: 5, readonly: false, source: 'user' as const,
+      };
+      setCustomAgentMapForTest(new Map([
+        [ROLE_STRICT, { ...base, id: ROLE_STRICT as never, name: ROLE_STRICT, permissionPreset: 'strict' as const }],
+        [ROLE_CI, { ...base, id: ROLE_CI as never, name: ROLE_CI, permissionPreset: 'ci' as const }],
+      ]));
+    }
+
+    /** AgentLoop.run 执行**期间**的有效档位——钳制必须在这一刻生效，不是跑完才生效。 */
+    async function modeDuringRun(roleId: string): Promise<string | undefined> {
+      let seen: string | undefined;
+      agentLoopProbe.onRun = () => {
+        seen = getPermissionModeManager().getModeForSession(SESSION);
+      };
+      try {
+        await (orchestrator as unknown as {
+          runStandardAgentLoop(
+            content: string,
+            onEvent: (e: AgentEvent) => void,
+            modelConfig: unknown,
+            sessionId?: string,
+            executionContent?: string,
+            toolScope?: unknown,
+            executionIntent?: unknown,
+            options?: AgentRunOptions,
+          ): Promise<void>;
+        }).runStandardAgentLoop(
+          '干活', mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
+          SESSION, undefined, undefined, undefined,
+          { agentOverrideId: roleId } as AgentRunOptions,
+        );
+      } finally {
+        agentLoopProbe.onRun = undefined;
+      }
+      return seen;
+    }
+
+    beforeEach(() => {
+      registerRoles();
+    });
+
+    afterEach(() => {
+      setCustomAgentMapForTest(new Map());
+      getPermissionModeManager().clearRolePresetSession(SESSION);
+    });
+
+    it('「每步都问」档收紧到 readOnly，即使会话档是免确认的 bypassPermissions', async () => {
+      getPermissionModeManager().setSessionMode(SESSION, 'bypassPermissions', true);
+
+      expect(await modeDuringRun(ROLE_STRICT)).toBe('readOnly');
+      // 只钳这一轮：跑完回到会话自己的档
+      expect(getPermissionModeManager().getModeForSession(SESSION)).toBe('bypassPermissions');
+    });
+
+    it('「放手」档放宽到 bypassPermissions（角色档比会话档更具体，允许放宽是 2026-07-26 的拍板）', async () => {
+      getPermissionModeManager().setSessionMode(SESSION, 'readOnly', true);
+
+      expect(await modeDuringRun(ROLE_CI)).toBe('bypassPermissions');
+      expect(getPermissionModeManager().getModeForSession(SESSION)).toBe('readOnly');
+    });
+
+    it('没设过档的专家不动会话档（「跟随通用设置」）', async () => {
+      setCustomAgentMapForTest(new Map([
+        ['role-no-preset', {
+          id: 'role-no-preset' as never, name: 'role-no-preset', description: 'd', prompt: 'p',
+          tools: ['Read'], model: 'balanced' as const, maxIterations: 5, readonly: false, source: 'user' as const,
+        }],
+      ]));
+      getPermissionModeManager().setSessionMode(SESSION, 'acceptEdits', true);
+
+      expect(await modeDuringRun('role-no-preset')).toBe('acceptEdits');
     });
   });
 });

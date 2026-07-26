@@ -3,12 +3,9 @@
 //
 // src/host/model/modelValidator.ts 校验 PROVIDER_REGISTRY 与 DEFAULT_MODELS /
 // CONTEXT_WINDOWS / MODEL_PRICING_PER_1M / VISION_MODEL_CAPABILITIES 的一致性。
-// 它此前的唯一调用方是 app/initBackgroundServices.ts —— 那条不在任何发行版中执行的
-// Electron main 路径（见 src/host/index.ts 头注释），所以从来没跑过。
-//
-// 接回来时**没有接进启动期**，而是做成 CI 门。理由：它只 logger.warn、不改变任何行为，
-// 而 Neo 的用户默认是非程序员协作者，启动日志里的告警没有任何人会读到，等于接了个寂寞；
-// 这类元数据错误应该在 PR 阶段被挡住，而不是发到用户机器上打条日志。
+// 它曾经只挂在已删除的 app/initBackgroundServices.ts 死入口，因此发行版从未执行。
+// 现在由 webStartupServices 做非阻塞启动校验，同时保留本 CI 门：运行时只 warn，
+// PR 阶段仍应直接挡住元数据漂移。
 //
 // **它到底查什么（别高估）**：只查单向——四张常量表里的每个 key 必须在 PROVIDER_REGISTRY
 // 中注册。也就是说它防的是"模型从 registry 删了/改名了，价格表·上下文窗口表里留下孤条目"

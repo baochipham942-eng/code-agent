@@ -77,7 +77,7 @@ export class StreamHandler {
           this.ctx.messages = this.ctx.messages.filter(
             (m: Message) => !(m.role === 'system' && typeof m.content === 'string' && m.content.includes('<current-plan>'))
           );
-          this.contextAssembly.injectSystemMessage(planContext);
+          this.contextAssembly.injectSystemMessage(planContext, 'plan-stream');
           logger.debug(`[AgentLoop] Plan context injected at iteration ${iterations}`);
         }
       }
@@ -145,7 +145,7 @@ export class StreamHandler {
     // F1: Goal Re-Injection
     const goalCheckpoint = this.ctx.goalTracker.getGoalCheckpoint(iterations);
     if (goalCheckpoint) {
-      this.contextAssembly.injectSystemMessage(goalCheckpoint);
+      this.contextAssembly.injectSystemMessage(goalCheckpoint, 'goal-checkpoint');
       logger.debug(`[AgentLoop] Goal checkpoint injected at iteration ${iterations}`);
     }
   }

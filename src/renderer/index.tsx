@@ -1,6 +1,10 @@
 import { initTransport } from "./api";
 import { initSentryRenderer } from "./observability/sentryRenderer";
-import { initPostHogRenderer, trackRenderer } from "./observability/posthogRenderer";
+import {
+  initPostHogRenderer,
+  installPostHogIdentityListener,
+  trackRenderer,
+} from "./observability/posthogRenderer";
 import { POSTHOG_EVENTS } from "@shared/observability/posthog-events";
 
 // recon: 挂载耗时打点——本 mark 在全部 eager import 求值完成后执行，
@@ -13,6 +17,7 @@ initTransport();
 initSentryRenderer();
 // PostHog 产品行为埋点尽早初始化（无 VITE_POSTHOG_KEY 时 no-op）
 initPostHogRenderer();
+installPostHogIdentityListener();
 trackRenderer(POSTHOG_EVENTS.APP_OPENED);
 
 import React from 'react';

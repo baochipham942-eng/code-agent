@@ -10,8 +10,6 @@ import type {
   LoadedPlugin,
   PluginAPI,
   PluginStorage,
-  PluginHookRegistration,
-  RegisteredPluginHook,
   PluginApiKeyProvider,
   PluginConstantsNamespace,
   PluginRegisterToolModuleOptions,
@@ -162,7 +160,6 @@ const CONSTANTS_BUCKETS: Readonly<Record<PluginConstantsNamespace, Readonly<Reco
  * 插件能力：
  * - 注册自定义工具（Tool）
  * - 访问本地存储
- * - 订阅事件
  *
  * @example
  * ```typescript
@@ -179,10 +176,6 @@ const CONSTANTS_BUCKETS: Readonly<Record<PluginConstantsNamespace, Readonly<Reco
 export class PluginRegistry {
   private plugins: Map<string, LoadedPlugin> = new Map();
   private stopWatcher: (() => void) | null = null;
-
-  // Hook management
-  private registeredHooks: Map<string, RegisteredPluginHook> = new Map();
-  private hookIdCounter: number = 0;
 
   /**
    * Get all registered plugins
@@ -281,7 +274,6 @@ export class PluginRegistry {
         state: 'inactive',
         entry,
         registeredTools: [],
-        registeredHooks: [],
       };
       this.plugins.set(manifest.id, loadedPlugin);
       logger.info(`Loaded builtin plugin: ${manifest.id}`);
@@ -372,30 +364,6 @@ export class PluginRegistry {
       showNotification: (title, body) => {
         // TODO: Implement notifications
         logger.info(`[Notification] ${title}: ${body}`);
-      },
-
-      registerHook: (registration: PluginHookRegistration) => {
-        const hookId = registration.id || `${plugin.manifest.id}:hook:${++this.hookIdCounter}`;
-        const hook: RegisteredPluginHook = {
-          id: hookId,
-          pluginId: plugin.manifest.id,
-          event: registration.event,
-          toolMatcher: registration.toolMatcher,
-          handler: registration.handler,
-          priority: registration.priority ?? 100,
-        };
-        this.registeredHooks.set(hookId, hook);
-        plugin.registeredHooks.push(hookId);
-        logger.info(`Plugin ${plugin.manifest.id} registered hook: ${hookId} for event ${registration.event}`);
-      },
-
-      unregisterHook: (hookId: string) => {
-        this.registeredHooks.delete(hookId);
-        const idx = plugin.registeredHooks.indexOf(hookId);
-        if (idx !== -1) {
-          plugin.registeredHooks.splice(idx, 1);
-        }
-        logger.debug(`Plugin ${plugin.manifest.id} unregistered hook: ${hookId}`);
       },
 
       // ----------------------------------------------------------------------
@@ -532,12 +500,6 @@ export class PluginRegistry {
       }
       plugin.registeredTools = [];
 
-      // Unregister all hooks
-      for (const hookId of plugin.registeredHooks) {
-        this.registeredHooks.delete(hookId);
-      }
-      plugin.registeredHooks = [];
-
       plugin.state = 'inactive';
       logger.info(`Plugin deactivated: ${pluginId}`);
       return true;
@@ -638,11 +600,8 @@ export class PluginRegistry {
   // --------------------------------------------------------------------------
   // Plugin Management Methods
   // --------------------------------------------------------------------------
-  // 注:此前这里有 executeHooks / executePreToolUseHooks / executePostToolUseHooks /
-  // executeSessionStartHooks / executeSessionEndHooks / getRegisteredHooks 一组
-  // 方法,grep 全代码确认零外部调用方,删除(E2 低悬果)。Plugin 注册 hook 的入口
-  // (registerHook / 内部 registeredHooks Map / unregisterHook / 卸载清理)保留,
-  // 这是 PluginAPI 表面契约;后续 D2 union 设计阶段统一收口到 HookManager 时再清。
+  // Plugin hook 表面已删除：零消费者，且 HookManager 不支持 in-process handler。
+  // 将来若需插件拦截工具调用，需先给 HookManager 新增 in-process 执行器类型。
 
   /**
    * Reload a plugin

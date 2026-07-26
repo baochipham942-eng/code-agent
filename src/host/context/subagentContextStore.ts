@@ -1,5 +1,8 @@
 import type { Message } from '../../shared/contract';
-import type { ContextProvenanceCategory } from '../../shared/contract/contextView';
+import type {
+  ContextEventSourceKind,
+  ContextProvenanceCategory,
+} from '../../shared/contract/contextView';
 import type { SwarmAgentContextSnapshot } from '../../shared/contract/swarm';
 import { CompressionState } from './compressionState';
 import { getContextEventLedger } from './contextEventLedger';
@@ -12,7 +15,7 @@ export interface SubagentContextAnnotation {
   category?: ContextProvenanceCategory;
   sourceDetail?: string;
   agentId?: string;
-  sourceKind?: 'message' | 'tool_result' | 'dependency_carry_over' | 'attachment' | 'compression_survivor' | 'system_anchor';
+  sourceKind?: ContextEventSourceKind;
   layer?: string;
   toolCallId?: string;
 }

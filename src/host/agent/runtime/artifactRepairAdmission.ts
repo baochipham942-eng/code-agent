@@ -81,6 +81,7 @@ export async function maybeClearCompletedArtifactRepairGuardBeforeAdmission(
         'Static contract validation is not enough for this repair pass. Continue fixing the user-visible playability issue in the target artifact.',
         '</artifact-playability-repair-active>',
       ].join('\n'),
+      'artifact-repair',
     );
     return false;
   }
@@ -120,6 +121,7 @@ export async function maybeClearCompletedArtifactRepairGuardBeforeAdmission(
         'The repair guard has been cleared. Retry the user requested action with the full tool set if needed.',
         '</artifact-validation-passed>',
       ].join('\n'),
+      'artifact-validation',
     );
     ctx.artifact.markValidationPassed(guard.targetFile);
     ctx.control.clearForceFinalResponse();

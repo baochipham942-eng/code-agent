@@ -16,12 +16,11 @@ describe('durable recovery production startup ordering', () => {
     expect(source).toContain('durableRunRuntime?.shutdown()');
   });
 
-  it('Host bootstrap initializes background MCP dependencies before registering and dispatching recovery', () => {
+  it('dead Host bootstrap no longer depends on the removed background-service entry', () => {
     const source = readFileSync(path.join(root, 'src/host/app/bootstrap.ts'), 'utf8');
-    const background = source.indexOf('await initializeBackgroundInfra(configService)');
-    const runtime = source.indexOf('await initializeDurableRun({', background);
-    expect(background).toBeGreaterThan(0);
-    expect(runtime).toBeGreaterThan(background);
+    expect(source).not.toContain('initBackgroundServices');
+    expect(source).not.toContain('initializeBackgroundInfra');
+    expect(source).toContain('await initializeDurableRun({');
     expect(source).toContain('shutdownDurableRecovery');
   });
 

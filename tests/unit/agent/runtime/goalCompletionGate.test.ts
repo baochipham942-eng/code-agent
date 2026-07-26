@@ -187,12 +187,15 @@ describe('handleGoalCompletionGate — IMPOSSIBLE 主动止损 (roadmap 1.4)', (
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<goal-completed>'),
+      'goal-gate',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('verification status: not_run'),
+      'goal-gate',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('不标记为 fully verified'),
+      'goal-gate',
     );
   });
 });
@@ -353,6 +356,7 @@ describe('handleGoalCompletionGate — 闸1 验证基础设施故障（infraFail
     expect(goalMode.recordGateFailure).not.toHaveBeenCalled();
     expect(contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
       expect.stringContaining('<goal-verify-failed>'),
+      'goal-gate',
     );
   });
 

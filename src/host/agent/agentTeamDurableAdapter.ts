@@ -168,6 +168,14 @@ class Controller implements AgentTeamDurableController {
     await this.checkpoint('running');
   }
 
+  async markNodeWorktree(taskId: string, worktreeRef: string, now = Date.now()): Promise<void> {
+    const node = this.requireNode(taskId);
+    node.worktreeRef = worktreeRef;
+    this.state.worktreeRefs[taskId] = worktreeRef;
+    this.state.updatedAt = now;
+    await this.checkpoint('running');
+  }
+
   async markNodeTerminal(task: AgentTask, result: AgentTaskResult, now = Date.now()): Promise<void> {
     const node = this.requireNode(task.id);
     node.status = result.cancelled ? 'cancelled' : result.blocked ? 'blocked' : result.success ? 'completed' : 'failed';

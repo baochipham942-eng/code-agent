@@ -365,6 +365,7 @@ export async function executeSpawnAgent(
         try {
           worktreeInfo = await createAgentWorktree(agentId, cwd);
           cwd = worktreeInfo.worktreePath;
+          if (context.swarmRunScope) await getParallelAgentCoordinatorRegistry().get(context.swarmRunScope)?.recordTaskWorktree(context.agentId ?? '', worktreeInfo.worktreePath);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Unknown error';
           slotLease?.release();

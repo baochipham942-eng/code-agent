@@ -76,6 +76,7 @@ import {
 import type { AgentTeamDurableController, AgentTeamCheckpointState } from './agentTeamDurableTypes';
 import type { AgentTeamRecoveryDecision } from './agentTeamRecovery';
 import { restoreParallelAgentDurableState } from './parallelAgentDurableRecovery';
+import { createEmptyParallelAgentRecoveryRefs, resolveRecoveredTaskExecution } from './parallelAgentRecoveryRefs';
 import {
   DAGGraphSchedulerAdapter,
   GraphEventCompatibilityAdapter,
@@ -140,6 +141,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private activeGraphRunner?: GraphRunner;
   private graphCheckpoint?: GraphCheckpoint;
   private skipNextGraphCheckpoint = false;
+  private recoveryRefs = createEmptyParallelAgentRecoveryRefs();
 
   constructor(config: Partial<CoordinatorConfig> = {}, scope?: SwarmRunScope) {
     super();
@@ -397,6 +399,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
       throw new Error('Coordinator not initialized. Call initialize() first.');
     }
 
+    const recovered = await resolveRecoveredTaskExecution({ task, refs: this.recoveryRefs, cwd: executionContext.cwd, onWorktreeCreated: (worktreePath) => this.recordTaskWorktree(task.id, worktreePath) });
+    if (recovered.result) {
+      await this.durableController?.markNodeTerminal(task, recovered.result);
+      this.completedTasks.set(task.id, recovered.result);
+    }
+
     // Checkpoint hit: 成功节点短路，不重新执行（对称 autoAgentCoordinator）
     const cached = this.completedTasks.get(task.id);
     if (cached?.success) {
@@ -473,6 +481,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
         },
         context: {
           ...executionContext,
+          ...(recovered.worktreePath ? { cwd: recovered.worktreePath, worktreePath: recovered.worktreePath } : {}),
           agentId: task.id,
           parentToolUseId: executionContext.currentToolCallId,
           executionAgentId: task.id,
@@ -481,7 +490,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
           messageDrain: () => this.drainMessages(task.id),
           ackMessageDrain: () => this.ackDrainedMessages(task.id),
           onContextSnapshot: (snapshot) => { void onProgress?.(snapshot); },
-          hooks: executionContext.hooks,
         },
       });
       guard.register(task.id, task.role, task.task, executionPromise, taskAbortController, {
@@ -530,8 +538,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       await this.durableController?.markNodeTerminal(task, taskResult);
 
       this.completedTasks.set(task.id, taskResult);
-      this.abortControllers.delete(task.id);
-      this.runningTasks.delete(task.id);
+      this.abortControllers.delete(task.id); this.runningTasks.delete(task.id);
 
       this.schedulePersist();
 
@@ -545,8 +552,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       }
       guard.cancelDescendants(task.id, 'parent-cancel');
 
-      this.abortControllers.delete(task.id);
-      this.runningTasks.delete(task.id);
+      this.abortControllers.delete(task.id); this.runningTasks.delete(task.id);
 
       const failedResult: AgentTaskResult = {
         success: false,
@@ -783,8 +789,11 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.cancelled = restored.cancelled;
     this.cancelReason = restored.cancelReason;
     this.graphCheckpoint = restored.graphCheckpoint;
+    this.recoveryRefs = restored.recoveryRefs;
     if (ownerEpoch !== undefined) this.durableOwnerEpoch = ownerEpoch;
   }
+
+  recordTaskWorktree(taskId: string, worktreePath: string): Promise<void> { return this.durableController?.markNodeWorktree(taskId, worktreePath) ?? Promise.resolve(); }
 
   acceptsDurableOwnerEpoch(epoch: number): boolean {
     return this.durableOwnerEpoch === undefined || this.durableOwnerEpoch === epoch;

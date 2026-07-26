@@ -6,6 +6,8 @@ import { VOICE_DEV_FLAG_KEY } from '@shared/constants';
  * Phase 1 换成正式设置项时删掉。
  */
 export function isVoiceSpikeEnabled(): boolean {
+  // 打包态没有 devtools，localStorage 改不了，所以也认 host 按 .env 注入的全局。
+  if ((window as unknown as Record<string, unknown>).__CODE_AGENT_VOICE_SPIKE__ === true) return true;
   try {
     return window.localStorage.getItem(VOICE_DEV_FLAG_KEY) === '1';
   } catch {

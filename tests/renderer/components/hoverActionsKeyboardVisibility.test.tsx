@@ -111,9 +111,11 @@ describe('hover actions remain visible to keyboard users', () => {
       />,
     );
 
-    expect(html).toContain('focus-visible:opacity-100');
-    expect(html).toContain('group-focus-within:opacity-100');
-    expect(html).toContain('group-focus-within:opacity-0');
+    // D3（2026-07-26 打磨批 D）：键盘可及性改挂 group-focus-visible——Tab 聚焦命中
+    // :focus-visible 照常显现，鼠标点击残留的 :focus 不再让动作簇粘滞。
+    expect(html).toContain('group-focus-visible:opacity-100');
+    expect(html).toContain('group-focus-visible:opacity-0');
+    expect(html).not.toContain('group-focus-within');
     expect(count(html, 'focus-visible:ring-1')).toBe(2);
     expect(html).toContain('aria-label="归档会话 M2 键盘验收"');
   });

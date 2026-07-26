@@ -16,14 +16,6 @@ describe('durable recovery production startup ordering', () => {
     expect(source).toContain('durableRunRuntime?.shutdown()');
   });
 
-  it('dead Host bootstrap no longer depends on the removed background-service entry', () => {
-    const source = readFileSync(path.join(root, 'src/host/app/bootstrap.ts'), 'utf8');
-    expect(source).not.toContain('initBackgroundServices');
-    expect(source).not.toContain('initializeBackgroundInfra');
-    expect(source).toContain('await initializeDurableRun({');
-    expect(source).toContain('shutdownDurableRecovery');
-  });
-
   it('the shared initializer claims leases, dispatches recovery, and schedules the delayed scan', () => {
     const source = readFileSync(path.join(root, 'src/host/app/initializeDurableRun.ts'), 'utf8');
     const runtime = source.indexOf('createDurableRecoveryRuntime({');

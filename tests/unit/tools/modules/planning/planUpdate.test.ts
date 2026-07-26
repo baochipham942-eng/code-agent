@@ -226,6 +226,44 @@ describe('plan_update behavior', () => {
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
   });
 
+  it('desktop-derived plan step records lifecycle feedback on demand', async () => {
+    const desktopStep = {
+      id: 's1',
+      content: 'Review desktop issue',
+      status: 'pending',
+      metadata: { desktopTodoKey: 'desktop:k1' },
+    };
+    const planBefore = {
+      title: 'P',
+      phases: [{ id: 'ph', title: 'A', status: 'pending', steps: [desktopStep] }],
+      metadata: { totalSteps: 1, completedSteps: 0, blockedSteps: 0 },
+    };
+    const planAfter = {
+      ...planBefore,
+      phases: [{
+        ...planBefore.phases[0],
+        steps: [{ ...desktopStep, status: 'completed' }],
+      }],
+      metadata: { totalSteps: 1, completedSteps: 1, blockedSteps: 0 },
+    };
+    const service = makeMockService([planBefore, planAfter]);
+    const handler = await planUpdateModule.createHandler();
+
+    await handler.execute(
+      { stepContent: 'desktop issue', status: 'completed' },
+      makeCtx({ planningService: service } as unknown as Partial<ToolContext>),
+      allowAll,
+    );
+
+    expect(desktopActivityServiceMock.recordTodoFeedback).toHaveBeenCalledWith({
+      todoKey: 'desktop:k1',
+      status: 'completed',
+      sessionId: 'sess-1',
+      source: 'plan',
+      reason: 'plan_step_metadata',
+    });
+  });
+
   it('addNote 触发 mergePhaseNotes → updatePhaseNotes 调用 + 提示行', async () => {
     const planBefore = {
       title: 'P',

@@ -103,6 +103,23 @@ afterEach(async () => {
 });
 
 describe('recoveredWorkOrchestrator', () => {
+  it('refreshes desktop activity on demand before recovering work', async () => {
+    const planningService = await createTempPlanningService();
+
+    await recoverRecentWorkIntoPlanning({
+      planningService,
+      sessionId: 'session-refresh',
+      query: '',
+      refreshArtifacts: false,
+    });
+
+    expect(desktopMocks.ensureFreshData).toHaveBeenCalledWith(2 * 60 * 1000);
+    expect(desktopMocks.syncTodoCandidatesToTasks).toHaveBeenCalledWith(
+      'session-refresh',
+      { limit: 3, sinceHours: 24 },
+    );
+  });
+
   it('creates a workspace recovery phase when merged workspace activity is recovered into planning', async () => {
     const planningService = await createTempPlanningService();
 

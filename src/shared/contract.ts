@@ -93,9 +93,6 @@ export * from './contract/deliverable';
 // Swarm types (Agent Swarm 监控)
 export * from './contract/swarm';
 
-// Diff types (E3: 变更追踪)
-export * from './contract/diff';
-
 // Citation types (E1: 引用溯源)
 export * from './contract/citation';
 

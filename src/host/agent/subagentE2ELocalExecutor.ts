@@ -1,4 +1,4 @@
-import { setTimeout as delay } from 'timers/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import { AgentFailureCode, agentFailureCodeFromCancellationReason } from '../../shared/contract/agentFailure';
 import type { AgentMessage } from './spawnGuard';

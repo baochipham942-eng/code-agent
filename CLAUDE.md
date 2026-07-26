@@ -64,6 +64,7 @@ npm run build        # 构建
 npm run build:web    # Web 构建（Tauri 前端）
 npm run build:cli    # CLI 构建（独立于 build）
 npm run typecheck    # 类型检查
+npm run gates:local  # 按快到慢运行所有可在本机复现的 PR CI 门，并显式列出平台性排除
 cargo tauri dev      # 开发模式（需 HTTPS_PROXY=http://127.0.0.1:7897）
 cargo tauri build    # 打包 macOS（~33MB DMG）
 ```

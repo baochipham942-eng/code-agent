@@ -11,6 +11,7 @@ import { VOICE_SESSION_MAX_DURATION_MS } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceTransportHandle } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
+import { getSessionManager } from '../infra/sessionManager';
 import { qwenOmniTransport } from './qwenOmniTransport';
 
 const logger = createLogger('VoiceSession');
@@ -34,6 +35,25 @@ export function getActiveVoiceSessionId(): string | null {
 
 function send(client: WsSocket, event: VoiceEvent): void {
   if (client.readyState === client.OPEN) client.send(JSON.stringify(event));
+}
+
+/**
+ * final 字幕落到绑定会话的消息流。走 sessionManager 既有写入路径，不新造存储。
+ * 只落文本，不落音频（方案 §8.1）。
+ */
+async function persistTranscript(neoSessionId: string, role: 'user' | 'assistant', text: string): Promise<void> {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  try {
+    await getSessionManager().addMessageToSession(neoSessionId, {
+      id: `voice-${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role,
+      content: trimmed,
+      timestamp: Date.now(),
+    });
+  } catch (err) {
+    logger.warn('failed to persist transcript', { role, message: err instanceof Error ? err.message : 'unknown' });
+  }
 }
 
 async function teardown(reason: string): Promise<void> {
@@ -72,7 +92,11 @@ export async function attachVoiceClient(client: WsSocket, neoSessionId: string):
     upstream = await qwenOmniTransport.connect({
       apiKey,
       config: { neoSessionId },
-      onEvent: (event) => send(client, event),
+      onEvent: (event) => {
+        send(client, event);
+        if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text);
+        else if (event.type === 'assistant.transcript' && event.done) void persistTranscript(neoSessionId, 'assistant', event.text);
+      },
       onAudio: (frame) => {
         if (client.readyState === client.OPEN) client.send(frame, { binary: true });
       },

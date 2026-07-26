@@ -1,17 +1,23 @@
 // ============================================================================
-// WorkbenchTabs - Empty-state launcher and single-select view switcher
+// WorkbenchTabs - Empty-state launcher and tab-strip view switcher
+//
+// 形态（2026-07-26 打磨批 D D6，产品负责人拍板）：已开视图平铺为 tab 条，
+// 直接对齐 FileExplorerPanel 的 TabBar 现成样式（tab × ｜ ＋ ｜ 收起）：
+// - tab = 已开视图（当前高亮 bg-zinc-800），hover tab 显 ×（脏预览先确认）；
+// - 「＋」弹出可打开视图列表（复用 WorkbenchViewLauncher popover 形态）；
+// - 概览/文件等常驻视图可关语义沿用旧下拉（每个视图都可关，不新发明）；
+// - 右侧「收起面板」不动（D5 去重后的唯一收起 affordance）。
 // ============================================================================
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Check,
-  ChevronDown,
   FileText,
   FolderTree,
   Globe2,
   LayoutDashboard,
   Palette,
   PanelRightClose,
+  Plus,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -183,8 +189,7 @@ export const WorkbenchTabs: React.FC = () => {
   const openWorkbenchTab = useAppStore((s) => s.openWorkbenchTab);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const setWorkbenchCollapsed = useAppStore((s) => s.setWorkbenchCollapsed);
-  // 一个弹窗管两件事：切到已打开的面板 + 添加还没打开的面板。分成两个入口时
-  // 用户在「概览 ∨」里看不到别的面板，会以为切不过去。
+  // 「＋」弹出层只列还没打开的视图；切换/关闭都在 tab 条上直接完成。
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingClose, setPendingClose] = useState<TabMeta | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
@@ -259,7 +264,6 @@ export const WorkbenchTabs: React.FC = () => {
   });
 
   const activeMeta = metas.find((meta) => meta.id === activeWorkbenchTab) ?? metas[0] ?? null;
-  const ActiveIcon = activeMeta?.icon;
   const canAddAny = LAUNCHABLE_VIEWS.some((view) => !workbenchTabs.includes(view.id));
 
   const openView = (id: LaunchableWorkbenchViewId) => {
@@ -300,86 +304,68 @@ export const WorkbenchTabs: React.FC = () => {
       <div
         ref={toolbarRef}
         data-testid="workbench-view-selector"
-        className="relative flex items-center gap-1.5 border-b border-zinc-700 bg-zinc-900 px-2 py-1.5"
+        className="relative flex items-center gap-1 border-b border-zinc-700 bg-zinc-900 px-2 py-1.5"
       >
-        <div className="relative min-w-0 flex-1">
-          <button /* ds-allow:button: 单选器触发器需保留当前视图图标、脏状态与下拉箭头，Button primitive 布局不适配 */
-            type="button"
-            aria-haspopup="listbox"
-            aria-expanded={menuOpen}
-            aria-label={t.workbenchTabs.chooseView}
-            title={activeMeta?.title}
-            onClick={() => setMenuOpen((open) => !open)}
-            className="flex h-7 min-w-0 max-w-56 items-center gap-2 rounded-md px-2 text-xs text-zinc-200 hover:bg-zinc-800"
-          >
-            {activeMeta && ActiveIcon && (
-              <>
-                <ActiveIcon className={`h-3.5 w-3.5 flex-shrink-0 ${activeMeta.iconClassName}`} />
-                <span className="truncate">{activeMeta.label}</span>
-                {activeMeta.isDirty && (
-                  <span className="text-[10px] leading-none text-amber-400" title="未保存">●</span>
+        {/* tab 条：样式对齐 FileExplorerPanel TabBar（rounded-t 小 tab + hover × + ＋） */}
+        <div
+          role="tablist"
+          aria-label={t.workbenchTabs.openViews}
+          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none"
+        >
+          {metas.map((meta) => {
+            const Icon = meta.icon;
+            const isActive = meta.id === activeMeta?.id;
+            return (
+              <div
+                key={meta.id}
+                role="tab"
+                aria-selected={isActive}
+                tabIndex={0}
+                title={meta.title}
+                data-testid={`workbench-tab-${meta.id}`}
+                onClick={() => selectView(meta.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  selectView(meta.id);
+                }}
+                className={`group flex max-w-[140px] cursor-pointer items-center gap-1.5 rounded-t px-2 py-1 text-xs transition-colors ${
+                  isActive
+                    ? 'bg-zinc-800 text-zinc-200'
+                    : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300'
+                }`}
+              >
+                <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${meta.iconClassName}`} />
+                <span className="truncate">{meta.label}</span>
+                {meta.isDirty && (
+                  <span className="text-[10px] leading-none text-amber-400" title={t.workbenchTabs.unsavedChanges}>●</span>
                 )}
-              </>
-            )}
-            <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-zinc-500" />
-          </button>
-
-          {menuOpen && (
-            <div
-              data-testid="workbench-view-menu"
-              className="absolute left-0 top-full z-40 mt-1 w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-1.5 shadow-xl"
-            >
-              <div role="listbox" aria-label={t.workbenchTabs.openViews}>
-                {metas.map((meta) => {
-                  const Icon = meta.icon;
-                  const isActive = meta.id === activeMeta?.id;
-                  return (
-                    // wrapper 只做布局，role=presentation 保证 listbox 的 a11y 子项仍是 option 本身
-                    <div key={meta.id} role="presentation" className="flex items-center gap-1">
-                      <button /* ds-allow:button: listbox option 采用整行单选布局，Button primitive 的动作按钮形态不适配 */
-                        type="button"
-                        role="option"
-                        aria-selected={isActive}
-                        title={meta.title}
-                        onClick={() => selectView(meta.id)}
-                        className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs transition-colors ${
-                          isActive
-                            ? 'bg-zinc-800 text-zinc-100'
-                            : 'text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200'
-                        }`}
-                      >
-                        <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${meta.iconClassName}`} />
-                        <span className="min-w-0 flex-1 truncate">{meta.label}</span>
-                        {meta.isDirty && <span className="text-[10px] leading-none text-amber-400">●</span>}
-                        {isActive && <Check className="h-3.5 w-3.5 flex-shrink-0 text-cyan-400" />}
-                      </button>
-                      <IconButton
-                        size="sm"
-                        variant="ghost"
-                        icon={<X />}
-                        aria-label={t.workbenchTabs.closeView.replace('{view}', meta.label)}
-                        title={t.workbenchTabs.closeView.replace('{view}', meta.label)}
-                        onClick={() => {
-                          setMenuOpen(false);
-                          requestClose(meta);
-                        }}
-                      />
-                    </div>
-                  );
-                })}
+                <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
+                  type="button"
+                  aria-label={t.workbenchTabs.closeView.replace('{view}', meta.label)}
+                  title={t.workbenchTabs.closeView.replace('{view}', meta.label)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    requestClose(meta);
+                  }}
+                  className="flex-shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-zinc-700 focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
               </div>
-              {canAddAny && (
-                <>
-                  <div className="my-1 border-t border-zinc-800" />
-                  <WorkbenchViewLauncher
-                    openedViews={workbenchTabs}
-                    canOpenDesignCanvas={Boolean(currentSessionId)}
-                    mode="popover"
-                    onOpen={openView}
-                  />
-                </>
-              )}
-            </div>
+            );
+          })}
+          {canAddAny && (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              icon={<Plus />}
+              aria-label={t.workbenchTabs.addView}
+              title={t.workbenchTabs.addView}
+              aria-haspopup="true"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+            />
           )}
         </div>
 
@@ -391,6 +377,20 @@ export const WorkbenchTabs: React.FC = () => {
           title={t.workbenchTabs.collapsePanel}
           onClick={() => setWorkbenchCollapsed(true)}
         />
+
+        {menuOpen && (
+          <div
+            data-testid="workbench-view-menu"
+            className="absolute left-2 top-full z-40 mt-1 w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-1.5 shadow-xl"
+          >
+            <WorkbenchViewLauncher
+              openedViews={workbenchTabs}
+              canOpenDesignCanvas={Boolean(currentSessionId)}
+              mode="popover"
+              onOpen={openView}
+            />
+          </div>
+        )}
       </div>
 
       <ConfirmDialog

@@ -24,15 +24,19 @@ afterEach(() => {
 });
 
 describe('TitleBar 右栏开关', () => {
-  it('管的是整栏，不是「概览」这一个面板', () => {
+  it('展开态顶栏不再叠「收起」按钮（D5 去重）：收起 affordance 只在面板头', () => {
     render(<TitleBar />);
+    expect(screen.queryByLabelText(en.workbenchTabs.collapsePanel)).toBeNull();
+    expect(screen.queryByLabelText(en.workbenchTabs.expandPanel)).toBeNull();
+  });
 
-    fireEvent.click(screen.getByLabelText(en.workbenchTabs.collapsePanel));
-    expect(useAppStore.getState().workbenchCollapsed).toBe(true);
-    // 旧行为是往 workbenchTabs 里塞/删 overview；换成整栏开关后它不该再被动过。
-    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+  it('收起态顶栏留「展开」入口，点击展开整栏（不动 workbenchTabs）', () => {
+    useAppStore.setState({ workbenchCollapsed: true });
+    render(<TitleBar />);
 
     fireEvent.click(screen.getByLabelText(en.workbenchTabs.expandPanel));
     expect(useAppStore.getState().workbenchCollapsed).toBe(false);
+    // 旧行为是往 workbenchTabs 里塞/删 overview；换成整栏开关后它不该再被动过。
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
   });
 });

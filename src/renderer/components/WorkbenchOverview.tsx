@@ -39,19 +39,23 @@ export const WorkbenchOverview: React.FC = () => {
           aria-label={t.workbenchTabs.overviewTitle}
           className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center"
         >
-          <Activity className="h-8 w-8 text-zinc-600" />
-          <div className="mt-3 text-sm text-zinc-300">{t.workbenchTabs.overviewEmptyNarrative}</div>
-          {recentSnapshotSummary && (
-            <div
-              data-testid="workbench-overview-recent"
-              className="mt-4 w-full max-w-sm rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-left"
-            >
-              <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-                {t.workbenchTabs.overviewEmptyRecentLabel}
+          {/* 空态是一张卡（2026-07-26 打磨批 D D7）：叙事与「最近产物」同属一个
+              视觉体，产物块用分隔线收进卡内，不再两行孤立浮在叙事下方。 */}
+          <div className="w-full max-w-sm rounded-xl border border-white/[0.06] bg-white/[0.02] px-5 py-6">
+            <Activity className="mx-auto h-8 w-8 text-zinc-600" />
+            <div className="mt-3 text-sm text-zinc-300">{t.workbenchTabs.overviewEmptyNarrative}</div>
+            {recentSnapshotSummary && (
+              <div
+                data-testid="workbench-overview-recent"
+                className="mt-4 border-t border-white/[0.06] pt-3 text-left"
+              >
+                <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                  {t.workbenchTabs.overviewEmptyRecentLabel}
+                </div>
+                <div className="mt-1 text-xs leading-relaxed text-zinc-400">{recentSnapshotSummary}</div>
               </div>
-              <div className="mt-1 text-xs leading-relaxed text-zinc-400">{recentSnapshotSummary}</div>
-            </div>
-          )}
+            )}
+          </div>
         </section>
       </div>
     );

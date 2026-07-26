@@ -8,7 +8,7 @@ export const sidebarZh = {
   sidebar: {
     // 顶部 / 搜索
     newTask: '新任务',
-    newTaskTitle: '新建任务（纯对话，不继承项目上下文）',
+    // （原 newTaskTitle tooltip 已删：实现语义自嗨文案，2026-07-26 打磨批 D D2）
     // 当前工作目录行（顶栏目录 chip 退役后的唯一入口）
     currentDirectory: '当前目录',
     selectDirectory: '选择目录',
@@ -286,7 +286,6 @@ export const sidebarZh = {
 export const sidebarEn: typeof sidebarZh = {
   sidebar: {
     newTask: 'New task',
-    newTaskTitle: 'New task (plain conversation, no project context)',
     currentDirectory: 'Current directory',
     selectDirectory: 'Choose directory',
     selectDirectoryTitle: 'Choose working directory',

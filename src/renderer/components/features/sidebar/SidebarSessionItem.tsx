@@ -199,7 +199,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
 
         {/* 右槽：运行中 spinner / 否则 时间（hover 时淡出给操作让位） */}
         {!isRenaming && (
-          <span className="shrink-0 flex items-center gap-1.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
+          <span className="shrink-0 flex items-center gap-1.5 transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
             {surfaceExecutionSession ? (
               <SurfaceExecutionRunStatus session={surfaceExecutionSession} placement="sidebar" />
             ) : isRunning ? (
@@ -219,9 +219,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         )}
       </div>
 
-      {/* Hover 动作簇：Replay（管理员，进评测中心回放 tab）/ 产物 / 归档 — 默认隐藏，覆盖右槽位置 */}
+      {/* Hover 动作簇：Replay（管理员，进评测中心回放 tab）/ 产物 / 归档 — 默认隐藏，覆盖右槽位置。
+          显隐用 group-focus-visible 而非 group-focus-within（2026-07-26 打磨批 D D3）：
+          鼠标点击按钮后 Chrome 会留下 :focus（但不标 :focus-visible），focus-within
+          因此粘滞——鼠标移开后动作簇仍常驻；键盘 Tab 聚焦照样命中 focus-visible，
+          可及性不受损。 */}
       {!multiSelectMode && !isRenaming && (
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100">
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
           {canOpenSessionReplay && sessionHasActivity && (
             <button
               type="button"

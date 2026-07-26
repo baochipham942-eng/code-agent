@@ -28,6 +28,7 @@ import { approvalParkEvents } from './approvalParkEvents';
 import { notificationService } from '../services/infra/notificationService';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
+import type { PermissionDeliveryOutcome } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
@@ -454,23 +455,32 @@ export class AgentOrchestrator {
     return { ...this.researchUserSettings };
   }
 
-  handlePermissionResponse(requestId: string, response: PermissionResponse): void {
+  handlePermissionResponse(requestId: string, response: PermissionResponse): PermissionDeliveryOutcome {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) {
       // 这条分支就是「用户点了『允许』，然后什么也没发生」的现场（2026-07-26 真机踩到）：
       // 60s 交互门超时后条目已被删除，迟到的点击落进虚空——**两端都不可见**，
       // 用户只看到「失败」，日志里一个字都没有，无从查起。
       // 任何丢弃分支必须留痕，且要指名道姓说清是谁被丢了。
-      logger.warn('Permission response for unknown/expired request, dropped', { requestId, response });
-      return;
+      logger.warn('Permission response for unknown/expired request, dropped', {
+        requestId,
+        response,
+        knownRequestIds: [...this.pendingPermissions.keys()],
+      });
+      return 'unknown_request';
     }
     // B2: 停车挂起的审批走 repo-changes 裁决口（会话卡 / 收件箱两口共用）。
     if (pending.parked) {
+      logger.info('Permission response delivered to parked approval', { requestId, response, tool: pending.request.tool });
       this.resolveParkedApproval(requestId, response);
-      return;
+      return 'delivered';
     }
+    // 成功路径也要留痕：没有这条就无法区分「点击没到 host」和「到了但没生效」，
+    // 2026-07-26 那次排查整整卡在这个区分上。
+    logger.info('Permission response delivered', { requestId, response, tool: pending.request.tool });
     pending.resolve(response);
     this.pendingPermissions.delete(requestId);
+    return 'delivered';
   }
 
   /**

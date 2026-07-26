@@ -8,7 +8,7 @@ interface ScopedCostState {
 
 const scopedCostStorage = new AsyncLocalStorage<ScopedCostState>();
 
-export class ScopedCostLimitExceededError extends Error {
+class ScopedCostLimitExceededError extends Error {
   readonly code = 'EVAL_CASE_COST_LIMIT_EXCEEDED';
 
   constructor(

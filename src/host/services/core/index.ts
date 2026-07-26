@@ -49,8 +49,9 @@ export {
   type TokenUsage,
 } from './budgetService';
 
+// 错误类不外抛：调用方判定统一走 isScopedCostLimitExceeded 谓词，
+// 免得两条判据（instanceof / 谓词）各自漂移。
 export {
-  ScopedCostLimitExceededError,
   createScopedCostLimit,
   isScopedCostLimitExceeded,
 } from './scopedCostLimit';

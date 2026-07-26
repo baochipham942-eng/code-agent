@@ -96,7 +96,9 @@ function duplicates(ids: string[]): string[] {
  * - control 只能取自 held-in，不能泄露 held-out；
  * - 给出当前 case 集时，资产必须完整覆盖且不引用幽灵 id。
  */
-export function validateEvalSplits(
+// 不导出：对外只暴露 assertValidEvalSplits（fail-closed 的那个入口）。
+// 导出一个没人调的检查函数 = 假装有第二种用法，反而让人以为可以「只看不拦」。
+function validateEvalSplits(
   file: EvalSplitFile,
   expected?: { allCaseIds: string[]; safetyCaseIds: string[] },
 ): string[] {

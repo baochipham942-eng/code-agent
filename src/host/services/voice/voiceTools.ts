@@ -19,6 +19,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
 import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
+import { getPermissionModeManager } from '../../permissions/modes';
 
 const logger = createLogger('VoiceTools');
 
@@ -152,6 +153,15 @@ async function spawnTask(rawArguments: string, context: VoiceToolContext): Promi
 
   const workItemId = `voice-work-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   context.onWorkItem({ id: workItemId, title, status: 'queued' });
+
+  // D4 抬严必须罩住这个 run 的**整个生命周期**，不能随挂断解除。
+  // 2026-07-26 真机：用户说完就挂（这是常态），通话票一还、抬严没了，
+  // 同一个 run 后面几步直接按会话档 acceptEdits 落盘，一次确认都没弹。
+  // 所以派发前先为这个 run 单独取一张票，run 落地（成功/失败都算）才还。
+  const permissions = getPermissionModeManager();
+  const runHoldId = `run:${workItemId}`;
+  permissions.markLiveVoiceSession(context.neoSessionId, runHoldId);
+
   void orchestrator
     .sendMessage(prompt, undefined, { ...scopedOptions, mode: 'normal' })
     .catch((err: unknown) => {
@@ -160,7 +170,9 @@ async function spawnTask(rawArguments: string, context: VoiceToolContext): Promi
       // 派发失败必须回流：真机实测过一次「任务其实没跑起来，通话里却说已经做完了」，
       // fire-and-forget 不回流就等于对用户撒谎。
       context.onWorkItem({ id: workItemId, title, status: 'failed', detail });
-    });
+    })
+    // finally 而非 then：run 挂了也必须还票，否则会话永久卡在只读档。
+    .finally(() => permissions.clearLiveVoiceSession(context.neoSessionId, runHoldId));
 
   // 措辞必须是「排上队」不是「做好了」——通话 brain 会把工具返回值当事实转述给用户。
   return `任务「${title}」已经排上队，还在后台跑，没做完。别说已经完成。`;

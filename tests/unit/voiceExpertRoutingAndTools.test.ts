@@ -145,6 +145,39 @@ describe('A4 窄工具', () => {
     expect(lastRunOptions().toolScope?.allowedConnectorIds).toContain('crm');
   });
 
+  // D4 的另一半：管理器支持 run 级持票没用，得 spawnTask 真的去取那张票。
+  // 2026-07-26 真机的洞就在这——挂断即解除，语音派的 run 后半程直接按会话档落盘。
+  // 判据是「run 在飞时抬严标记为真、落地后为假」，不是「有没有调某个函数」。
+  it('spawn_task 为这一轮单独持票，run 落地才还（抬严罩住整个 run）', async () => {
+    const { getPermissionModeManager } = await import('../../src/host/permissions/modes');
+    const permissions = getPermissionModeManager();
+    let settle!: () => void;
+    sendMessage.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      settle = () => resolve(undefined);
+    }));
+
+    expect(permissions.isLiveVoiceSession('session-1')).toBe(false);
+
+    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '干活' }), toolContext());
+
+    // 注意这里没有任何「通话票」——只有 run 票。挂断早于 run 结束时就是这个状态。
+    expect(permissions.isLiveVoiceSession('session-1')).toBe(true);
+
+    settle();
+    await vi.waitFor(() => expect(permissions.isLiveVoiceSession('session-1')).toBe(false));
+  });
+
+  it('run 失败也要还票（否则会话永久卡在只读档）', async () => {
+    const { getPermissionModeManager } = await import('../../src/host/permissions/modes');
+    const permissions = getPermissionModeManager();
+    sendMessage.mockImplementationOnce(async () => { throw new Error('boom'); });
+
+    await executeVoiceTool('spawn_task', JSON.stringify({ title: 'a', prompt: '干活' }), toolContext());
+
+    await vi.waitFor(() => expect(permissions.isLiveVoiceSession('session-1')).toBe(false));
+    expect(workItems.value.at(-1)).toEqual(expect.objectContaining({ status: 'failed' }));
+  });
+
   it('缺少任务内容时不派活（口误不该变成一次真跑）', async () => {
     const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: '空的' }), toolContext());
     expect(result).toContain('没有派发');

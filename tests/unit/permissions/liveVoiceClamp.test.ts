@@ -82,7 +82,7 @@ describe('D4 主 agent 链：通话态档位抬严', () => {
     // 前提：不在通话态时这一档确实放行（否则这条测试等于什么都没测）
     await expect(writeInsideWorkspaceDecision()).resolves.toBe('approve');
 
-    manager.markLiveVoiceSession(sessionId);
+    manager.markLiveVoiceSession(sessionId, 'call:test');
 
     await expect(writeInsideWorkspaceDecision()).resolves.toBe('ask');
     const effective = resolveSessionPermissionMode(undefined, sessionId);
@@ -92,11 +92,52 @@ describe('D4 主 agent 链：通话态档位抬严', () => {
 
   it('挂断后回到会话自己的档位（不能永久钳着）', () => {
     manager.setSessionMode(sessionId, 'acceptEdits', true);
-    manager.markLiveVoiceSession(sessionId);
+    manager.markLiveVoiceSession(sessionId, 'call:test');
     expect(resolveSessionPermissionMode(undefined, sessionId)).toBe('readOnly');
 
-    manager.clearLiveVoiceSession(sessionId);
+    manager.clearLiveVoiceSession(sessionId, 'call:test');
 
+    expect(resolveSessionPermissionMode(undefined, sessionId)).toBe('acceptEdits');
+  });
+
+  // 2026-07-26 真机抓到的洞：抬严原本随挂断立刻解除，而**语音派的 run 活得比通话久**
+  // （用户说完就挂是常态）。实测通话中 Write 被拦 → 07:51:21 挂断 → 07:51:47 同一个 run
+  // 用 touch 直接落盘，一次确认都没弹——D4「语音派的活不能自动落盘」在最常见路径上全失效。
+  // 判据必须是「挂断后那个 run 的真实判定」，不是「标记有没有被清掉」。
+  it('挂断后，语音派的 run 还在飞时仍然抬严（票没还完就不解除）', async () => {
+    manager.setSessionMode(sessionId, 'acceptEdits', true);
+    await expect(writeInsideWorkspaceDecision()).resolves.toBe('approve');
+
+    manager.markLiveVoiceSession(sessionId, 'call:test');        // 建连
+    manager.markLiveVoiceSession(sessionId, 'run:voice-work-1'); // 语音派活
+
+    manager.clearLiveVoiceSession(sessionId, 'call:test');       // ← 用户挂断，run 还在跑
+
+    expect(resolveSessionPermissionMode(undefined, sessionId)).toBe('readOnly');
+    await expect(writeInsideWorkspaceDecision()).resolves.toBe('ask');
+  });
+
+  it('语音派的 run 落地后才解除（最后一张票还掉）', async () => {
+    manager.setSessionMode(sessionId, 'acceptEdits', true);
+    manager.markLiveVoiceSession(sessionId, 'call:test');
+    manager.markLiveVoiceSession(sessionId, 'run:voice-work-1');
+    manager.clearLiveVoiceSession(sessionId, 'call:test');
+
+    manager.clearLiveVoiceSession(sessionId, 'run:voice-work-1');
+
+    expect(resolveSessionPermissionMode(undefined, sessionId)).toBe('acceptEdits');
+    await expect(writeInsideWorkspaceDecision()).resolves.toBe('approve');
+  });
+
+  it('多个语音 run 并存时，任一还在飞就继续抬严', () => {
+    manager.setSessionMode(sessionId, 'acceptEdits', true);
+    manager.markLiveVoiceSession(sessionId, 'run:a');
+    manager.markLiveVoiceSession(sessionId, 'run:b');
+
+    manager.clearLiveVoiceSession(sessionId, 'run:a');
+    expect(resolveSessionPermissionMode(undefined, sessionId)).toBe('readOnly');
+
+    manager.clearLiveVoiceSession(sessionId, 'run:b');
     expect(resolveSessionPermissionMode(undefined, sessionId)).toBe('acceptEdits');
   });
 
@@ -146,32 +187,32 @@ describe('D4 子 agent 链：通话态 preset 抬严', () => {
     expect(await resolveSubagentPreset('ci', 'writer', sessionId)).toBe('ci');
     expect(writeOutsideAllowedFor('ci')).toBe(true);
 
-    manager.markLiveVoiceSession(sessionId);
+    manager.markLiveVoiceSession(sessionId, 'call:test');
 
     const preset = await resolveSubagentPreset('ci', 'writer', sessionId);
     expect(preset).toBe('development');
     expect(writeOutsideAllowedFor(preset)).toBe(false);
 
-    manager.clearLiveVoiceSession(sessionId);
+    manager.clearLiveVoiceSession(sessionId, 'call:test');
   });
 
   it('已经不免确认的档在通话态原样返回（不误伤）', async () => {
-    manager.markLiveVoiceSession(sessionId);
+    manager.markLiveVoiceSession(sessionId, 'call:test');
 
     expect(await resolveSubagentPreset('development', 'writer', sessionId)).toBe('development');
     expect(await resolveSubagentPreset('strict', 'writer', sessionId)).toBe('strict');
     expect(clampLiveVoicePermissionPreset('custom')).toBe('custom');
 
-    manager.clearLiveVoiceSession(sessionId);
+    manager.clearLiveVoiceSession(sessionId, 'call:test');
   });
 
   it('首跑 strict 与通话抬严叠加时取更严的那个', async () => {
     consumeFirstRunStrictMock.mockResolvedValue(true);
-    manager.markLiveVoiceSession(sessionId);
+    manager.markLiveVoiceSession(sessionId, 'call:test');
 
     expect(await resolveSubagentPreset('ci', 'writer', sessionId)).toBe('strict');
 
-    manager.clearLiveVoiceSession(sessionId);
+    manager.clearLiveVoiceSession(sessionId, 'call:test');
   });
 
   it('没在通话的会话，子 agent 档位不受影响', async () => {

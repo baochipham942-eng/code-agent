@@ -244,11 +244,22 @@ export class PermissionModeManager {
    */
   private rolePresetSessions: Map<string, PermissionMode> = new Map();
   /**
-   * 正在实时语音通话中的会话（D4）：语音态比文本再严一档。
+   * 语音抬严的持有票（D4）：语音态比文本再严一档。
    * 用户在通话里说「直接改吧」时，手不在键盘上、眼睛不在 diff 上——免确认档在这种
    * 姿态下等于无人值守，所以写盘/执行一律退回交互确认。
+   *
+   * ⚠️ 为什么是**引用计数**而不是「通话中/不在通话」的布尔态（2026-07-26 真机抓到的洞）：
+   * 抬严原本随挂断立刻解除，而**语音派出去的 run 活得比通话久**——用户说完就挂是常态。
+   * 实测：通话中 Write 被拦 → 07:51:21 挂断 → 07:51:47 同一个 run 用 touch 直接落盘，
+   * **一次确认都没弹**。D4 承诺的「语音派的活不能自动落盘」在最常见的路径上完全失效。
+   *
+   * 所以抬严的生命周期必须覆盖**语音派的 run**，不是覆盖通话：
+   *   · 通话建连 → 持一张票，挂断还票
+   *   · 每个语音派的 run → 各持一张票，run 落地（成功/失败都算）还票
+   * 任一票还在就抬严。等价于「把抬严挂在 run 上」，但不必把 runId 穿进
+   * getModeForSession 的三个调用方（toolExecutor / subagent / bash 沙箱）。
    */
-  private liveVoiceSessions: Set<string> = new Set();
+  private liveVoiceHolds: Map<string, Set<string>> = new Map();
 
   constructor(initialMode: PermissionMode = 'default') {
     this.currentMode = initialMode;
@@ -317,7 +328,7 @@ export class PermissionModeManager {
     if (sessionId && this.unattendedSessions.has(sessionId)) {
       mode = clampUnattendedPermissionMode(mode);
     }
-    if (sessionId && this.liveVoiceSessions.has(sessionId)) {
+    if (this.isLiveVoiceSession(sessionId)) {
       mode = clampLiveVoicePermissionMode(mode);
     }
     return mode;
@@ -354,22 +365,33 @@ export class PermissionModeManager {
     this.rolePresetSessions.delete(sessionId);
   }
 
-  /** 标记会话进入实时语音通话态（VoiceSessionService 建连成功时调用）。 */
-  markLiveVoiceSession(sessionId: string): void {
-    this.liveVoiceSessions.add(sessionId);
+  /**
+   * 取一张语音抬严票。`holdId` 标识持有者：
+   *   · 通话本身 = `call:<voiceSessionId>`（建连时取，挂断时还）
+   *   · 语音派的 run = `run:<workItemId>`（派发时取，run 落地时还）
+   * 同一个 holdId 重复取是幂等的。
+   */
+  markLiveVoiceSession(sessionId: string, holdId: string): void {
+    const holds = this.liveVoiceHolds.get(sessionId) ?? new Set<string>();
+    holds.add(holdId);
+    this.liveVoiceHolds.set(sessionId, holds);
   }
 
-  /** 挂断即解除（VoiceSessionService teardown 调用）。 */
-  clearLiveVoiceSession(sessionId: string): void {
-    this.liveVoiceSessions.delete(sessionId);
+  /** 还票。最后一张票还掉才真正解除抬严——别再让挂断单独决定解除时机。 */
+  clearLiveVoiceSession(sessionId: string, holdId: string): void {
+    const holds = this.liveVoiceHolds.get(sessionId);
+    if (!holds) return;
+    holds.delete(holdId);
+    if (holds.size === 0) this.liveVoiceHolds.delete(sessionId);
   }
 
   /**
-   * 是否处于实时语音通话态。子 agent 链的档位钳制读这里——PermissionConfig 那条链
-   * 不经过 getModeForSession，只共享这一个会话态标记（D4 两条链同源单一真源）。
+   * 是否仍处于语音抬严态（通话进行中，**或**语音派的 run 还在飞）。
+   * 子 agent 链的档位钳制也读这里——PermissionConfig 那条链不经过 getModeForSession，
+   * 只共享这一个标记（D4 两条链同源单一真源）。
    */
   isLiveVoiceSession(sessionId?: string): boolean {
-    return !!sessionId && this.liveVoiceSessions.has(sessionId);
+    return !!sessionId && (this.liveVoiceHolds.get(sessionId)?.size ?? 0) > 0;
   }
 
   /**

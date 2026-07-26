@@ -73,7 +73,9 @@ async function teardown(reason: string): Promise<void> {
   clearTimeout(session.maxDurationTimer);
   logger.info('session ended', { voiceSessionId: session.id, reason });
   // D4：通话态标记必须先于任何后续动作解除，别让抬严挂在会话上不下来。
-  getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId);
+  // 只还「通话」这一张票。语音派出去、还在飞的 run 各自持票，抬严对它们继续有效——
+  // 挂断不再等于解除（2026-07-26 真机：挂断后同一个 run 直接落盘，D4 承诺全失效）。
+  getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId, `call:${session.id}`);
   const endedAt = Date.now();
   const { startedAt } = session;
   const durationSec = Math.max(0, Math.round((endedAt - startedAt) / 1000));
@@ -199,7 +201,7 @@ async function connectAndBind(
     }, VOICE_SESSION_MAX_DURATION_MS),
   };
   // D4 抬严必须在有任何工具可派之前就位——建连成功即标记。
-  getPermissionModeManager().markLiveVoiceSession(neoSessionId);
+  getPermissionModeManager().markLiveVoiceSession(neoSessionId, `call:${id}`);
   logger.info('session started', { voiceSessionId: id, neoSessionId, activeAgentId: routing.activeAgentId });
 
   client.on('message', (data: Buffer, isBinary: boolean) => {

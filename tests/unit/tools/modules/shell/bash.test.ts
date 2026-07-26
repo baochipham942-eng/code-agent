@@ -143,6 +143,18 @@ describe('bashModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
     });
 
+    // validateToolArgs 放行了 `''`（对 type: string 的必填参数它是合法值），
+    // 「非空」这条语义要求得由工具自己兜。不兜的话空命令会跑成 `sh -c ''`：
+    // 退出 0、无输出，模型拿到静默成功。
+    it('rejects an empty / whitespace-only command instead of silently succeeding', async () => {
+      const handler = await bashModule.createHandler();
+      for (const command of ['', '   ', '\n\t']) {
+        const result = await handler.execute({ command }, makeCtx(), allowAll);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+      }
+    });
+
     it('rejects non-string command', async () => {
       const handler = await bashModule.createHandler();
       const result = await handler.execute({ command: 123 }, makeCtx(), allowAll);

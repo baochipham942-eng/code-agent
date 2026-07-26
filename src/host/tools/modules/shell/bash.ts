@@ -530,6 +530,12 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     if (typeof rawCommand !== 'string') {
       return { ok: false, error: 'command must be a string', code: 'INVALID_ARGS' };
     }
+    // 「非空」是工具语义，不是 schema 语义：validateToolArgs 只管 `''` 是不是合法的
+    // string（是），该不该拒由这里说了算。不补这道，空命令会一路跑到 `sh -c ''`——
+    // 退出 0、无输出，模型拿到一个**静默成功**，比报错更难查。
+    if (rawCommand.trim() === '') {
+      return { ok: false, error: 'command must not be empty', code: 'INVALID_ARGS' };
+    }
 
     const permit = await canUseTool(schema.name, args);
     if (!permit.allow) {

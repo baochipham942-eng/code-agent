@@ -41,7 +41,7 @@ export interface ValidationIssue {
 /**
  * 校验 args 是否符合 inputSchema 的 required + 顶层 type 约束。
  *
- * - missing required：required 数组里列了但 args 没有（或为 null/undefined/空字符串）
+ * - missing required：required 数组里列了但 args 没有（或为 null/undefined；空字符串是合法值，不算 missing）
  * - wrong_type：properties[k].type 与 typeof args[k] 不匹配（顶层字段，不递归 nested）
  *
  * 不校验：嵌套对象内部字段、enum、pattern、min/max — 这些工具自己处理更合适

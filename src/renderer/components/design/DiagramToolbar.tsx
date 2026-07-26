@@ -37,7 +37,9 @@ export const DiagramToolbar: React.FC<DiagramToolbarProps> = ({
   return (
     <div
       data-testid="diagram-toolbar"
-      className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur"
+      // 窄栏适配（2026-07-26 打磨批 D D8）：7 工具+调色板一排约 350px，右栏（320px 档）
+      // 放不下。flex-wrap + max-w 限宽后窄栏自动二排收纳、宽栏一排维持现状。
+      className="absolute left-1/2 top-4 z-10 flex max-w-[calc(100%-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-xl border border-white/[0.1] bg-zinc-900/90 px-2 py-1.5 shadow-xl backdrop-blur"
     >
       {tools.map((it) => (
         <button

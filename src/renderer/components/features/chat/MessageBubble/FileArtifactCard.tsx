@@ -96,14 +96,14 @@ export const FileArtifactCard: React.FC<Props> = ({ items, mediaContext }) => {
           >
             <div className="flex items-center gap-2 px-2.5 py-1.5">
               {pickIcon(ext)}
-              <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-200">
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-zinc-100">
                 {item.label}
               </span>
               <span
                 className={`flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${
                   status === 'created'
-                    ? 'bg-emerald-500/15 text-emerald-400'
-                    : 'bg-amber-500/15 text-amber-400'
+                    ? 'bg-emerald-500/12 text-emerald-300'
+                    : 'bg-amber-500/12 text-amber-300'
                 }`}
               >
                 {status === 'created' ? 'Created' : 'Modified'}

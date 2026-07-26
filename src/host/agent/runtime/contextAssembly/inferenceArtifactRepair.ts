@@ -1,9 +1,12 @@
 // ContextAssembly - artifact 修复 / 工具准备 推理 helper（从 inference.ts 纯结构性抽出，零行为改动）。
 // 输出 token 上限、artifact 修复模式判定/工具过滤/maxTokens 上限、等待进度心跳、assistant delta 发射等。
+import { createHash } from 'crypto';
 import type { ToolCall, ToolDefinition } from '../../../../shared/contract';
+import { CONTEXT_LEDGER } from '../../../../shared/constants';
 import type { ModelResponse } from '../../../agent/loopTypes';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import type { InferenceOptions } from '../../../model/types';
+import { getContextEventLedger } from '../../../context/contextEventLedger';
 import {
   getArtifactRepairToolPolicy,
   isArtifactRepairWritePriority as isArtifactRepairWritePriorityForGuard,
@@ -124,6 +127,38 @@ export function buildArtifactValidationAttemptCompletionResponse(targetFile: str
 }
 
 export function emitToolSchemaSnapshot(ctx: ContextAssemblyCtx, tools: ToolDefinition[]): void {
+  const orderedTools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const toolNames = orderedTools.map((tool) => tool.name);
+  const schemaHash = createHash(CONTEXT_LEDGER.SCHEMA_HASH_ALGORITHM)
+    .update(JSON.stringify(orderedTools.map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema }))))
+    .digest('hex');
+  const timestamp = Date.now();
+  getContextEventLedger().upsertEvents([
+    {
+      id: '',
+      sessionId: ctx.runtime.sessionId,
+      agentId: ctx.runtime.agentId,
+      invocationId: ctx.runtime.turn.currentTurnId,
+      sourceKind: CONTEXT_LEDGER.SOURCE_KIND.TOOL_SCHEMA_SNAPSHOT,
+      sourceDetail: schemaHash,
+      reason: `${toolNames.length} active tools`,
+      toolNames,
+      schemaHash,
+      timestamp,
+    },
+    {
+      id: '',
+      sessionId: ctx.runtime.sessionId,
+      agentId: ctx.runtime.agentId,
+      invocationId: ctx.runtime.turn.currentTurnId,
+      sourceKind: CONTEXT_LEDGER.SOURCE_KIND.MODEL_BINDING,
+      sourceDetail: `${ctx.runtime.modelConfig.provider}/${ctx.runtime.modelConfig.model}`,
+      reason: 'model binding',
+      model: ctx.runtime.modelConfig.model,
+      provider: ctx.runtime.modelConfig.provider,
+      timestamp,
+    },
+  ]);
   if (tools.length === 0) return;
   ctx.runtime.onEvent({
     type: 'tool_schema_snapshot',

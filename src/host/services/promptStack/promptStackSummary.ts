@@ -1,192 +1,142 @@
 // ============================================================================
 // Prompt Stack Summary
 // ============================================================================
-// Produces a metadata-only view of the current system prompt stack. This is the
-// backend slice for a future Prompt Stack Inspector: useful for UI/debugging
-// without exposing the full system prompt.
+// Produces a metadata-only view from the persisted Context Ledger. Prompt text
+// is deliberately not accepted here: provenance must come from assembly-time
+// records, never from marker parsing.
 // ============================================================================
 
+import { CONTEXT_LEDGER } from '../../../shared/constants';
 import { PROMPT_VERSION } from '../../../shared/constants/agent';
 import type {
-  PromptStackLayerId,
   PromptStackLayerSummary,
   PromptStackSummary,
+  PromptStackSummaryRequest,
 } from '../../../shared/contract/promptStack';
-import { estimateTokens } from '../../context/tokenEstimator';
-import { DYNAMIC_BOUNDARY_MARKER } from '../../prompts/cacheBreakDetection';
+import {
+  getContextEventLedger,
+  type ContextEventRecord,
+} from '../../context/contextEventLedger';
 
-function count(text: string): Pick<PromptStackLayerSummary, 'chars' | 'tokens'> {
-  return {
-    chars: text.length,
-    tokens: estimateTokens(text),
-  };
+function selectInvocationId(
+  events: ReadonlyArray<ContextEventRecord>,
+  requestedInvocationId?: string,
+): string | undefined {
+  if (requestedInvocationId) return requestedInvocationId;
+  const latest = events
+    .filter((event) => event.invocationId && (
+      event.sourceKind === CONTEXT_LEDGER.SOURCE_KIND.PROMPT_LAYER
+      || event.sourceKind === CONTEXT_LEDGER.SOURCE_KIND.TOOL_SCHEMA_SNAPSHOT
+      || event.sourceKind === CONTEXT_LEDGER.SOURCE_KIND.MODEL_BINDING
+    ))
+    .sort((a, b) => b.timestamp - a.timestamp)[0];
+  return latest?.invocationId;
 }
 
-function makeLayer(
-  id: PromptStackLayerId,
-  label: string,
-  text: string,
-  present: boolean,
-  note?: string,
-): PromptStackLayerSummary {
-  return {
-    id,
-    label,
-    present,
-    ...count(present ? text : ''),
-    ...(note ? { note } : {}),
-  };
+function summarizeLayers(events: ReadonlyArray<ContextEventRecord>): PromptStackLayerSummary[] {
+  // flatMap 里把 layer / promptLayerOutcome 取出来做窄化，下游就拿到非可选值 ——
+  // 用 filter + `!` 会把「账本可能没记这两个字段」这件事抹平，语义比断言更重要。
+  return events
+    .flatMap((event) => {
+      const { layer, promptLayerOutcome } = event;
+      if (
+        event.sourceKind !== CONTEXT_LEDGER.SOURCE_KIND.PROMPT_LAYER
+        || !promptLayerOutcome
+        || !layer
+      ) {
+        return [];
+      }
+      return [{ event, layer, promptLayerOutcome }];
+    })
+    .sort((a, b) => (a.event.sequence ?? 0) - (b.event.sequence ?? 0))
+    .map(({ event, layer, promptLayerOutcome }) => ({
+      id: layer,
+      label: event.sourceDetail || layer,
+      present: promptLayerOutcome === CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
+      chars: event.chars ?? 0,
+      tokens: event.tokens ?? 0,
+      outcome: promptLayerOutcome,
+      note: event.reason,
+    }));
 }
 
-function sliceBetween(text: string, startMarker: string, endMarker?: string): string {
-  const start = text.indexOf(startMarker);
-  if (start === -1) return '';
-  const contentStart = start + startMarker.length;
-  if (!endMarker) return text.slice(contentStart);
-  const end = text.indexOf(endMarker, contentStart);
-  return end === -1 ? text.slice(contentStart) : text.slice(contentStart, end);
-}
-
-function sliceBefore(text: string, marker: string): string {
-  const end = text.indexOf(marker);
-  return end === -1 ? '' : text.slice(0, end);
-}
-
-function sliceTaggedBlock(text: string, tagName: string): string {
-  const open = new RegExp(`<${tagName}(?:\\s[^>]*)?>`).exec(text);
-  if (open?.index === undefined) return '';
-  const closeMarker = `</${tagName}>`;
-  const close = text.indexOf(closeMarker, open.index + open[0].length);
-  if (close === -1) return '';
-  return text.slice(open.index, close + closeMarker.length);
-}
-
-function collectTaggedBlocks(text: string, tagNames: string[]): string {
-  return tagNames
-    .map((tagName) => sliceTaggedBlock(text, tagName))
-    .filter(Boolean)
-    .join('\n\n');
-}
-
-function hasAny(text: string, markers: string[]): boolean {
-  return markers.some((marker) => text.includes(marker));
-}
-
-export function summarizePromptStack(systemPrompt: string): PromptStackSummary {
-  const [substrate, dynamic = ''] = systemPrompt.split(DYNAMIC_BOUNDARY_MARKER);
-  const hasDynamicBoundary = systemPrompt.includes(DYNAMIC_BOUNDARY_MARKER);
-
-  const soulText = sliceBetween(substrate, 'You are Agent Neo', '## Tools') || sliceBefore(substrate, '## Tools');
-  const toolsText = sliceBetween(substrate, '## Tools', '## Tool Call Envelope');
-  const envelopeText = sliceBetween(substrate, '## Tool Call Envelope', '## File');
-  const remoteFragmentsText = sliceTaggedBlock(dynamic, 'signed_remote_prompt_fragments');
-  const roleAssetsText = sliceTaggedBlock(systemPrompt, 'role_assets');
-  const projectProfileText = sliceTaggedBlock(systemPrompt, 'project_profile');
-  const skillText = collectTaggedBlocks(systemPrompt, [
-    'preloaded_skills',
-    'skill-instructions',
-    'skill-execution-report',
-  ]);
-  const hasSkillGuidance = hasAny(systemPrompt, [
-    '<skill',
-    'Loading skill:',
-    'SKILL.md',
-    'Skills are product capabilities',
-  ]);
-
-  const layers: PromptStackLayerSummary[] = [
-    makeLayer(
-      'substrate',
-      'Stable substrate',
-      substrate,
-      substrate.length > 0,
-      'Identity, engineering rules, tool catalog, and tool envelope conventions.',
-    ),
-    makeLayer(
-      'soul',
-      'Soul / identity',
-      soulText,
-      substrate.includes('You are Agent Neo') || substrate.includes('<project_profile>'),
-      'User SOUL.md replaces the identity block; project PROFILE.md may append project context.',
-    ),
-    makeLayer(
-      'tools',
-      'Tool catalog',
-      toolsText,
-      substrate.includes('## Tools'),
-      'Visible tool usage rules and routing guidance.',
-    ),
-    makeLayer(
-      'tool-envelope',
-      'Tool envelope',
-      envelopeText,
-      substrate.includes('## Tool Call Envelope'),
-      'Semantic metadata contract for user-visible tool activity.',
-    ),
-    makeLayer(
-      'dynamic',
-      'Dynamic overlays',
-      dynamic,
-      dynamic.length > 0,
-      'Runtime fragments after the dynamic boundary: remote fragments, path rules, or profile overlays.',
-    ),
-    makeLayer(
-      'remote-fragments',
-      'Trusted remote fragments',
-      remoteFragmentsText,
-      remoteFragmentsText.length > 0 || dynamic.includes('trusted_remote') || dynamic.includes('remote prompt fragments'),
-      'Control-plane prompt fragments, when configured.',
-    ),
-    makeLayer(
-      'role-assets',
-      'Role assets',
-      roleAssetsText,
-      roleAssetsText.length > 0,
-      'Persistent role memory and recent work history.',
-    ),
-    makeLayer(
-      'project-profile',
-      'Project profile',
-      projectProfileText,
-      projectProfileText.length > 0,
-      'Project-level PROFILE.md extension.',
-    ),
-    makeLayer(
-      'skills',
-      'Skill guidance',
-      skillText || toolsText,
-      hasSkillGuidance,
-      'Mounted skill bodies or skill routing guidance.',
-    ),
-  ];
-
-  const detectedCapabilities = layers
-    .filter((layer) => layer.present)
-    .map((layer) => layer.label);
-
+export function summarizePromptStack(
+  events: ReadonlyArray<ContextEventRecord>,
+  request: Partial<PromptStackSummaryRequest> = {},
+): PromptStackSummary {
+  const scopedEvents = events.filter((event) => {
+    if (request.sessionId && event.sessionId !== request.sessionId) return false;
+    if (!request.agentId) return !event.agentId;
+    return event.agentId === request.agentId || !event.agentId;
+  });
+  const invocationId = selectInvocationId(scopedEvents, request.invocationId);
+  const invocationEvents = invocationId
+    ? scopedEvents.filter((event) => event.invocationId === invocationId)
+    : [];
+  const layers = summarizeLayers(invocationEvents);
+  const recordedAt = invocationEvents.reduce(
+    (latest, event) => Math.max(latest, event.timestamp),
+    0,
+  ) || undefined;
+  const toolEvent = invocationEvents.find(
+    (event) => event.sourceKind === CONTEXT_LEDGER.SOURCE_KIND.TOOL_SCHEMA_SNAPSHOT,
+  );
+  const modelEvent = invocationEvents.find(
+    (event) => event.sourceKind === CONTEXT_LEDGER.SOURCE_KIND.MODEL_BINDING,
+  );
+  const checkpointEvent = recordedAt
+    ? scopedEvents
+      .filter((event) => (
+        event.sourceKind === 'compression_survivor'
+        && event.timestamp <= recordedAt
+      ))
+      .sort((a, b) => b.timestamp - a.timestamp)[0]
+    : undefined;
   const warnings: string[] = [];
-  if (!hasDynamicBoundary) {
-    warnings.push('No dynamic boundary found; prompt cache attribution may be less granular.');
-  }
-  if (!layers.find((layer) => layer.id === 'tools')?.present) {
-    warnings.push('Tool catalog marker not found.');
-  }
-  if (!layers.find((layer) => layer.id === 'skills')?.present) {
-    warnings.push('No skill guidance detected in the current prompt text.');
-  }
+  if (!invocationId) warnings.push('No model invocation record found for this session.');
+  if (invocationId && layers.length === 0) warnings.push('No prompt layer records found for this invocation.');
+  if (invocationId && !toolEvent) warnings.push('No active tool snapshot found for this invocation.');
+  if (invocationId && !modelEvent) warnings.push('No model binding found for this invocation.');
 
   return {
+    sessionId: request.sessionId,
+    agentId: request.agentId,
+    invocationId,
+    recordedAt,
     promptVersion: PROMPT_VERSION,
-    totalChars: systemPrompt.length,
-    totalTokens: estimateTokens(systemPrompt),
-    hasDynamicBoundary,
+    totalChars: layers
+      .filter((layer) => layer.present)
+      .reduce((total, layer) => total + layer.chars, 0),
+    totalTokens: layers
+      .filter((layer) => layer.present)
+      .reduce((total, layer) => total + layer.tokens, 0),
     layers,
-    detectedCapabilities,
+    ...(toolEvent?.schemaHash ? {
+      activeTools: {
+        names: toolEvent.toolNames ?? [],
+        count: toolEvent.toolNames?.length ?? 0,
+        schemaHash: toolEvent.schemaHash,
+      },
+    } : {}),
+    ...(modelEvent?.model && modelEvent.provider ? {
+      modelBinding: { model: modelEvent.model, provider: modelEvent.provider },
+    } : {}),
+    ...(checkpointEvent ? {
+      compactionCheckpoint: {
+        messageId: checkpointEvent.messageId,
+        timestamp: checkpointEvent.timestamp,
+        layer: checkpointEvent.layer,
+        operation: checkpointEvent.sourceDetail?.split(':')[1],
+      },
+    } : {}),
     warnings,
   };
 }
 
-export async function getCurrentPromptStackSummary(): Promise<PromptStackSummary> {
-  const { SYSTEM_PROMPT } = await import('../../prompts/builder');
-  return summarizePromptStack(String(SYSTEM_PROMPT));
+export function getCurrentPromptStackSummary(
+  request?: PromptStackSummaryRequest,
+): PromptStackSummary {
+  if (!request?.sessionId) return summarizePromptStack([], request);
+  const events = getContextEventLedger().list(request.sessionId, request.agentId);
+  return summarizePromptStack(events, request);
 }

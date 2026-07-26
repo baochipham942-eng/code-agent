@@ -3,12 +3,123 @@
 // 从 messageBuild.ts 抽出以收敛文件体积，无行为变更（GAP-023 可见化逻辑保持原样）。
 
 import { estimateTokens } from '../../../context/tokenOptimizer';
+import {
+  getContextEventLedger,
+  type ContextEventLedger,
+  type ContextEventRecord,
+} from '../../../context/contextEventLedger';
+import { CONTEXT_LEDGER } from '../../../../shared/constants';
 import type { ContextAssemblyCtx } from './shared';
 import { logger, getSystemPromptBudget } from './shared';
 
 export type PromptAppendPolicy =
   | { kind: 'optional' }
   | { kind: 'required'; trimCandidates?: string[] };
+
+interface PromptLayerBuffer {
+  invocationId: string;
+  nextSequence: number;
+  records: Map<string, ContextEventRecord>;
+}
+
+const promptLayerBuffers = new WeakMap<object, PromptLayerBuffer>();
+
+function getPromptLayerBuffer(ctx: ContextAssemblyCtx): PromptLayerBuffer | undefined {
+  const invocationId = ctx.runtime.turn.currentTurnId;
+  if (!invocationId) return undefined;
+  const key = ctx.runtime as unknown as object;
+  const existing = promptLayerBuffers.get(key);
+  if (existing?.invocationId === invocationId) return existing;
+  const created = { invocationId, nextSequence: 0, records: new Map<string, ContextEventRecord>() };
+  promptLayerBuffers.set(key, created);
+  return created;
+}
+
+function recordPromptLayer(
+  ctx: ContextAssemblyCtx | undefined,
+  label: string,
+  chars: number,
+  tokens: number,
+  promptLayerOutcome: ContextEventRecord['promptLayerOutcome'],
+): void {
+  if (!ctx || !promptLayerOutcome) return;
+  const buffer = getPromptLayerBuffer(ctx);
+  if (!buffer) return;
+  const existing = buffer.records.get(label);
+  buffer.records.set(label, {
+    id: '',
+    sessionId: ctx.runtime.sessionId,
+    agentId: ctx.runtime.agentId,
+    invocationId: buffer.invocationId,
+    sourceKind: CONTEXT_LEDGER.SOURCE_KIND.PROMPT_LAYER,
+    sourceDetail: label,
+    layer: label,
+    reason: promptLayerOutcome,
+    sequence: existing?.sequence ?? buffer.nextSequence++,
+    chars,
+    tokens,
+    promptLayerOutcome,
+    timestamp: Date.now(),
+  });
+}
+
+export function recordBasePromptLayer(
+  ctx: ContextAssemblyCtx,
+  prompt: string,
+  source: string,
+  nestedBlocks: Iterable<string> = [],
+): void {
+  let substrate = prompt;
+  for (const block of nestedBlocks) {
+    substrate = removePromptBlock(substrate, block);
+  }
+  recordPromptLayer(
+    ctx,
+    source,
+    substrate.length,
+    estimateTokens(substrate),
+    CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
+  );
+}
+
+export function snapshotPromptLayerRecords(ctx: ContextAssemblyCtx): ContextEventRecord[] {
+  const buffer = getPromptLayerBuffer(ctx);
+  return buffer ? Array.from(buffer.records.values(), (record) => ({ ...record })) : [];
+}
+
+export function restorePromptLayerRecords(
+  ctx: ContextAssemblyCtx,
+  records: ReadonlyArray<ContextEventRecord>,
+): void {
+  const buffer = getPromptLayerBuffer(ctx);
+  if (!buffer) return;
+  for (const record of records) {
+    const sequence = record.sequence ?? buffer.nextSequence;
+    buffer.records.set(record.layer || record.sourceDetail || String(sequence), {
+      ...record,
+      id: '',
+      sessionId: ctx.runtime.sessionId,
+      agentId: ctx.runtime.agentId,
+      invocationId: buffer.invocationId,
+      sequence,
+      timestamp: Date.now(),
+    });
+    buffer.nextSequence = Math.max(buffer.nextSequence, sequence + 1);
+  }
+}
+
+export function flushPromptLayerRecords(
+  ctx: ContextAssemblyCtx,
+  ledger: Pick<ContextEventLedger, 'upsertEvents'> = getContextEventLedger(),
+): ContextEventRecord[] {
+  const buffer = getPromptLayerBuffer(ctx);
+  if (!buffer) return [];
+  const timestamp = Date.now();
+  const records = Array.from(buffer.records.values(), (record) => ({ ...record, timestamp }));
+  if (records.length > 0) ledger.upsertEvents(records);
+  promptLayerBuffers.delete(ctx.runtime as unknown as object);
+  return records;
+}
 
 /**
  * GAP-023: 按当前模型解析 system prompt 预算（动态化）；无 ctx 时退回静态默认值。
@@ -44,8 +155,22 @@ export function appendPromptBlockWithinBudget(
     );
     // GAP-023: 丢弃可见化（context health 面板），不只是 debug log
     recordDroppedPromptBlock(ctx, label);
+    recordPromptLayer(
+      ctx,
+      label,
+      block.length,
+      estimateTokens(block),
+      CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.DROPPED,
+    );
     return prompt;
   }
+  recordPromptLayer(
+    ctx,
+    label,
+    nextPrompt.length - prompt.length,
+    Math.max(0, nextTokens - estimateTokens(prompt)),
+    CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
+  );
   return nextPrompt;
 }
 
@@ -65,6 +190,13 @@ export function appendRequiredPromptBlock(
       `上下文预算保留必需 ${label}：预计 ${nextTokens}/${promptBudget(ctx)} tokens`,
     );
   }
+  recordPromptLayer(
+    ctx,
+    label,
+    nextPrompt.length - prompt.length,
+    Math.max(0, nextTokens - estimateTokens(prompt)),
+    CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
+  );
   return nextPrompt;
 }
 
@@ -142,6 +274,13 @@ export function appendPromptBlockWithinBudgetWithStatus(
     trimmed.push(candidate);
     // GAP-023: 为保必需块而被裁掉的块同样可见化
     recordDroppedPromptBlock(ctx, candidate);
+    recordPromptLayer(
+      ctx,
+      candidate,
+      candidateBlock.length,
+      estimateTokens(candidateBlock),
+      CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.TRIMMED,
+    );
     const retriedPrompt = appendPromptBlockWithinBudget(workingPrompt, block, label, ctx);
     if (retriedPrompt !== workingPrompt) {
       return { prompt: retriedPrompt, appended: true, trimmed };

@@ -13,6 +13,26 @@ export const PROMPT_VERSION = 'sys-v20' as const;
 export const EXPLORE_AGENT_DESCRIPTION =
   'Read-only codebase exploration with cited evidence. Reuse findings; do not repeat the same search.';
 
+/** Context Ledger 的持久化事件标识与 prompt 分层结果。 */
+export const CONTEXT_LEDGER = {
+  SOURCE_KIND: {
+    PROMPT_LAYER: 'prompt_layer',
+    TOOL_SCHEMA_SNAPSHOT: 'tool_schema_snapshot',
+    MODEL_BINDING: 'model_binding',
+  },
+  PROMPT_LAYER_OUTCOME: {
+    INCLUDED: 'included',
+    DROPPED: 'dropped',
+    TRIMMED: 'trimmed',
+  },
+  BASE_SOURCE: {
+    TASK: 'task system prompt',
+    PROJECT: 'project system prompt',
+    FULL_REPLACE: 'full system prompt',
+  },
+  SCHEMA_HASH_ALGORITHM: 'sha256',
+} as const;
+
 /** Agent 配置 */
 export const AGENT = {
   /** 最大迭代次数 */

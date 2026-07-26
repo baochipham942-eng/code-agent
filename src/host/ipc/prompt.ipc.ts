@@ -4,6 +4,7 @@
 
 import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import type { PromptStackSummaryRequest } from '../../shared/contract/promptStack';
 import {
   listPrompts,
   getPromptDetail,
@@ -91,7 +92,7 @@ export function registerPromptHandlers(ipcMain: IpcMain): void {
           break;
         }
         case 'stackSummary':
-          data = await getCurrentPromptStackSummary();
+          data = getCurrentPromptStackSummary(payload as PromptStackSummaryRequest | undefined);
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

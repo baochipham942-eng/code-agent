@@ -5,6 +5,12 @@ import type { Message } from '../../../src/shared/contract';
 import { CompressionState } from '../../../src/host/context/compressionState';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from '../../../src/host/agent/runtime/contextAssembly/shared';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
+import { CONTEXT_LEDGER } from '../../../src/shared/constants';
+
+const contextLedgerMocks = vi.hoisted(() => ({
+  upsertEvents: vi.fn(),
+  upsertCompressionEvents: vi.fn(),
+}));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -120,9 +126,7 @@ vi.mock('../../../src/host/context/contextInterventionHelpers', () => ({
 }));
 
 vi.mock('../../../src/host/context/contextEventLedger', () => ({
-  getContextEventLedger: () => ({
-    upsertCompressionEvents: vi.fn(),
-  }),
+  getContextEventLedger: () => contextLedgerMocks,
 }));
 
 vi.mock('../../../src/host/agent/checkpointWriterService', () => ({
@@ -146,6 +150,7 @@ vi.mock('../../../src/host/agent/runtime/contextAssembly/archiveHydration', () =
 }));
 
 import { buildModelMessages } from '../../../src/host/agent/runtime/contextAssembly/messageBuild';
+import { getPromptForTask } from '../../../src/host/prompts/builder';
 
 function buildMessage(content: string): Message {
   return {
@@ -269,5 +274,35 @@ describe('messageBuild game skill knowledge injection', () => {
     expect(prompt).not.toContain('Player auto-moves along `forwardAxis`');
     expect(prompt).not.toContain('This section is build-time inlined into game prompt assembly');
     expect(prompt).not.toContain('legitimate empty / "none" input');
+  });
+
+  it('replays cached prompt layers into the ledger for the next invocation', async () => {
+    const ctx = makeCtx('Explain the repository');
+    ctx.runtime.turn.beginTurn('turn-ledger-first', 'span-ledger-first');
+
+    await buildModelMessages(ctx);
+    expect(contextLedgerMocks.upsertEvents).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          invocationId: 'turn-ledger-first',
+          layer: CONTEXT_LEDGER.BASE_SOURCE.TASK,
+        }),
+      ]),
+    );
+
+    contextLedgerMocks.upsertEvents.mockClear();
+    ctx.runtime.turn.beginTurn('turn-ledger-cache-hit', 'span-ledger-cache-hit');
+    await buildModelMessages(ctx);
+
+    expect(getPromptForTask).toHaveBeenCalledTimes(1);
+    expect(contextLedgerMocks.upsertEvents).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          invocationId: 'turn-ledger-cache-hit',
+          layer: CONTEXT_LEDGER.BASE_SOURCE.TASK,
+          promptLayerOutcome: CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
+        }),
+      ]),
+    );
   });
 });

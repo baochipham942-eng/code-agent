@@ -96,9 +96,6 @@ export * from './deliverable';
 // Swarm types (Agent Swarm 监控)
 export * from './swarm';
 
-// Diff types (E3: 变更追踪)
-export * from './diff';
-
 // Citation types (E1: 引用溯源)
 export * from './citation';
 

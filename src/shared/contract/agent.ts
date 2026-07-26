@@ -7,7 +7,6 @@ import type { Message } from './message';
 import type { ToolCall, ToolResult } from './tool';
 import type { PermissionRequest } from './permission';
 import type { SessionTask, TodoItem } from './planning';
-import type { FileDiff } from './diff';
 import type { EvidenceRef } from './evidence';
 import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackStrategy, ModelFallbackToolPolicy, ModelFallbackTraceStep, ModelProviderIdentity, ModelToolStrategyDiagnostics } from './modelDecision';
 import type { SurfaceExecutionEventV1 } from './surfaceExecution';
@@ -477,8 +476,6 @@ export type AgentEvent =
   | { type: 'interrupt_start'; data: InterruptEventData }
   | { type: 'interrupt_acknowledged'; data: InterruptEventData }
   | { type: 'interrupt_complete'; data: InterruptEventData }
-  // E3: 变更追踪
-  | { type: 'diff_computed'; data: FileDiff }
   // E1: 引用溯源
   | { type: 'citations_updated'; data: { citations: import('./citation').Citation[] } }
   // E4: 模型切换

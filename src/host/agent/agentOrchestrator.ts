@@ -370,7 +370,7 @@ export class AgentOrchestrator {
     logger.info('Interrupt and continue requested');
     const sessionManager = getSessionManager();
     const sessionId = this.sessionId ?? sessionManager.getCurrentSessionId();
-    const effectiveMessage = this.applyTurnSystemContext(newMessage, options);
+    const effectiveMessage = this.applyTurnSystemContext(newMessage, options, sessionId);
 
     if (this.isInterrupting) {
       logger.info('[AgentOrchestrator] Already interrupting, queuing message');
@@ -959,7 +959,7 @@ export class AgentOrchestrator {
     try {
       const requirementsAnalyzer = getAgentRequirementsAnalyzer();
       const requirements = await requirementsAnalyzer.analyze(content, this.workingDirectory);
-      const executionContent = this.applyTurnSystemContext(content, options);
+      const executionContent = this.applyTurnSystemContext(content, options, sessionId);
 
       if (this.delegateMode && !requirements.needsAutoAgent) {
         logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
@@ -1343,13 +1343,39 @@ export class AgentOrchestrator {
   private applyTurnSystemContext(
     content: string,
     options?: AgentRunOptions,
+    sessionId?: string | null,
   ): string {
     const turnSystemContext = options?.turnSystemContext?.filter((item) => item.trim().length > 0) || [];
+    const liveVoiceNotice = this.buildLiveVoicePermissionNotice(sessionId ?? this.sessionId ?? undefined);
+    if (liveVoiceNotice) {
+      turnSystemContext.push(liveVoiceNotice);
+    }
     if (turnSystemContext.length === 0) {
       return content;
     }
 
     return `${turnSystemContext.join('\n\n')}\n\n<user_request>\n${content}\n</user_request>`;
+  }
+
+  /**
+   * D4 通话态钳档告知模型（2026-07-26 真机实录）：live-voice 会话把权限档钳严到
+   * readOnly 时，模型此前完全不知道自己被拦了什么——Write 被拒后接连换 Write→Write→
+   * Bash 三种写法白试，因为它只看到通用拒绝错误，猜不到根因是「通话中」。
+   * 这里把钳档事实和「等审批卡、别换写法重试」的行为指引直接注入这一轮的 system context，
+   * 与 buildWorkbenchTurnSystemContext 那批 workbench 偏好走同一个 turnSystemContext 数组、
+   * 同一套渲染方式，不另起机制。判据同源于 requestPermission 的停车分支（D4 单一真源）。
+   */
+  private buildLiveVoicePermissionNotice(sessionId?: string | null): string | null {
+    if (!sessionId) return null;
+    const manager = getPermissionModeManager();
+    if (!manager.isLiveVoiceSession(sessionId)) return null;
+    const mode = manager.getModeForSession(sessionId);
+    return [
+      '<live_voice_permission_notice>',
+      `当前处于实时语音通话中，权限档已临时抬严到 ${mode}：写入和执行类操作会挂起等待用户在审批卡上确认，不会被静默拒绝。`,
+      '不要因为一次尝试没有立即成功就反复更换写法重试，等待审批结果即可。',
+      '</live_voice_permission_notice>',
+    ].join('\n');
   }
 
   private async resolveAgentRouting(

@@ -226,6 +226,7 @@ interface OrchestratorInternals {
   resolveParkedApproval(id: string, response: string, feedbackOverride?: string): void;
   getPendingApprovalRepo(): unknown;
   drainPendingPermissions(response?: string): void;
+  applyTurnSystemContext(content: string, options?: AgentRunOptions, sessionId?: string | null): string;
 }
 function internals(o: AgentOrchestrator): OrchestratorInternals {
   return o as unknown as OrchestratorInternals;
@@ -1072,6 +1073,44 @@ describe('AgentOrchestrator', () => {
       getPermissionModeManager().setSessionMode(SESSION, 'acceptEdits', true);
 
       expect(await modeDuringRun('role-no-preset')).toBe('acceptEdits');
+    });
+  });
+
+  // 2026-07-26 真机实录：D4 通话态钳档只改了权限判定链，模型完全不知道自己被拦的原因，
+  // 白试 Write→Write→Bash 三种写法。这条门钉的是「注入进最终 executionContent 的说明」，
+  // 不是钉钳档函数本身——钳档已由 liveVoiceClamp.test.ts 钉过。
+  describe('D4 通话态权限说明注入 system context', () => {
+    const SESSION = 'live-voice-turn-context-session';
+
+    afterEach(() => {
+      getPermissionModeManager().clearLiveVoiceSession(SESSION, 'call:test');
+    });
+
+    it('通话态生效时，本轮 executionContent 含权限抬严说明与「别换写法重试」指引', () => {
+      getPermissionModeManager().markLiveVoiceSession(SESSION, 'call:test');
+
+      const result = internals(orchestrator).applyTurnSystemContext('干活', undefined, SESSION);
+
+      expect(result).toContain('<live_voice_permission_notice>');
+      expect(result).toContain('实时语音通话中');
+      expect(result).toContain('不要因为一次尝试没有立即成功就反复更换写法重试');
+      expect(result).toContain('干活'); // 原始用户请求原样透传
+    });
+
+    it('非通话态时，executionContent 不含该说明（无其他 turnSystemContext 时原样返回）', () => {
+      const result = internals(orchestrator).applyTurnSystemContext('干活', undefined, SESSION);
+
+      expect(result).not.toContain('live_voice_permission_notice');
+      expect(result).toBe('干活');
+    });
+
+    it('挂断（钳制解除）后新一轮不再注入', () => {
+      getPermissionModeManager().markLiveVoiceSession(SESSION, 'call:test');
+      getPermissionModeManager().clearLiveVoiceSession(SESSION, 'call:test');
+
+      const result = internals(orchestrator).applyTurnSystemContext('干活', undefined, SESSION);
+
+      expect(result).not.toContain('live_voice_permission_notice');
     });
   });
 });

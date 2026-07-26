@@ -144,9 +144,9 @@ describe('bashModule (native)', () => {
     });
 
     // validateToolArgs 放行了 `''`（对 type: string 的必填参数它是合法值），
-    // 「非空」这条语义要求得由工具自己兜。不兜的话空命令会跑成 `sh -c ''`：
-    // 退出 0、无输出，模型拿到静默成功。
-    it('rejects an empty / whitespace-only command instead of silently succeeding', async () => {
+    // 「非空」这条语义要求得由工具自己兜。不兜的话会一路走到 spawn 抛
+    // ERR_INVALID_ARG_VALUE，最后报成 FS_ERROR——参数问题伪装成文件系统错误。
+    it('rejects an empty / whitespace-only command instead of failing as a misleading FS_ERROR', async () => {
       const handler = await bashModule.createHandler();
       for (const command of ['', '   ', '\n\t']) {
         const result = await handler.execute({ command }, makeCtx(), allowAll);

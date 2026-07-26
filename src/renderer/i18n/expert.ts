@@ -31,6 +31,7 @@ export const expertZh = {
     },
     memberBar: {
       leader: '主会话',
+      leadLabel: '主理人',
       leaderTitle: '回到主对话',
       standbyHint: '待命中，发第一句话就开工',
       readOnlyHint: '只读视图',
@@ -243,6 +244,7 @@ export const expertEn: typeof expertZh = {
     },
     memberBar: {
       leader: 'Main chat',
+      leadLabel: 'Lead',
       leaderTitle: 'Back to the main conversation',
       standbyHint: 'On standby — your first message starts them',
       readOnlyHint: 'Read-only',

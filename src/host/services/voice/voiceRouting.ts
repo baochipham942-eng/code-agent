@@ -55,10 +55,9 @@ function buildShortPersona(agentId: string): string {
  * requestedAgentId 来自 Renderer 的 activeAgentId：单专家会话 = 那位专家；
  * 用户没选 = undefined，走会话默认 agent。
  *
- * ⚠️ 团会话「默认收件人 = Lead」（D2）本批**没有实现**：本仓运行时不存在会话级的
- * lead 记录——`recipe.lead` 只在组队发起那一刻被当作主会话本轮的 agentOverrideId
- * 消费一次，之后没有任何地方记得「这个会话的 lead 是谁」。要兑现 D2 得先补一条
- * 会话级 lead 持久化，那是独立的一件事，不该塞进本批悄悄造一个假的。
+ * 团会话的会话级 lead 已记录在 sessions.metadata.teamLead，D2 所需数据已就绪。
+ * 本函数仍只按 Renderer 显式传入的 activeAgentId 路由；「默认收件人 = Lead」的读取与
+ * 接线留给语音批 B，不在这里提前改变现有通话路由。
  */
 export function resolveVoiceRouting(requestedAgentId?: string): VoiceRoutingState {
   const activeAgentId = requestedAgentId?.trim() || undefined;

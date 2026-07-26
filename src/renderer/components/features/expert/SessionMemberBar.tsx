@@ -13,11 +13,13 @@ import { useSwarmStore } from '../../../stores/swarmStore';
 import { useComposerStore } from '../../../stores/composerStore';
 import { useTeamRecipeStore } from '../../../stores/teamRecipeStore';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
+import { readPersistedTeamLead } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
 import { useComposerNoticeStore, selectHasBlockingNotice } from '../../../stores/composerNoticeStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
@@ -48,6 +50,7 @@ export interface MemberPill {
   name: string;
   profession?: string;
   status: 'standby' | 'running' | 'completed' | 'failed';
+  isLead: boolean;
   agent?: SwarmAgentState;
   record?: SwarmRunAgentRecord;
 }
@@ -79,6 +82,10 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
   const selectedTeamRecipeId = useComposerStore((state) => state.selectedTeamRecipeId);
   const recipes = useTeamRecipeStore((state) => state.recipes);
   const agentEntries = useAgentRegistryStore((state) => state.entries);
+  const teamLeadRoleId = useSessionStore((state) => {
+    const session = state.sessions.find((item) => item.id === sessionId);
+    return readPersistedTeamLead(session?.metadata)?.roleId ?? null;
+  });
   const [persistedAgents, setPersistedAgents] = useState<SwarmRunAgentRecord[]>([]);
 
   const teamAgents = swarmSessionId === sessionId && agents.length > 1 ? agents : [];
@@ -113,6 +120,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         name: agent.name || roleId,
         profession: professionOf(roleId),
         status: pillStatusOf(agent.status),
+        isLead: roleId === teamLeadRoleId,
         agent,
         record: records?.[index],
       } satisfies MemberPill;
@@ -131,8 +139,9 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
       name: roleId,
       profession: professionOf(roleId),
       status: 'standby' as const,
+      isLead: roleId === teamLeadRoleId,
     }));
-  }, [hasRealtimeTeam, teamAgents, persistedAgents, selectedTeamRecipeId, recipes, professionOf]);
+  }, [hasRealtimeTeam, teamAgents, persistedAgents, selectedTeamRecipeId, recipes, professionOf, teamLeadRoleId]);
 
   return pills;
 }
@@ -226,6 +235,14 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
               {pill.profession && <span className="text-xs font-semibold text-zinc-100">{pill.profession}</span>}
               <span className={pill.profession ? 'text-[10px] text-zinc-400' : 'text-xs font-medium text-zinc-100'}>{pill.name}</span>
             </span>
+            {pill.isLead && (
+              <span
+                data-testid={`member-lead-badge-${pill.roleId}`}
+                className="shrink-0 rounded bg-amber-400/15 px-1 py-0.5 text-[9px] font-medium leading-none text-amber-300"
+              >
+                {text.leadLabel}
+              </span>
+            )}
             <StatusBadge status={pill.status} />
           </button>
         ))}

@@ -109,9 +109,23 @@ describe('streamingStatePresentation', () => {
       isActiveTurn: false,
       sessionStatus: 'paused',
     });
+    // snapshot.turnId 是 host 现铸 UUID，投影 turnId 是位置序号 turn-N —— 归属靠
+    // 节点匹配：重水化回填的消息 id=snapshot.turnId，节点 messageId/id 前缀命中。
+    const interruptedTurn = makeTurn({
+      status: 'completed',
+      nodes: [
+        {
+          id: 'turn-1-text',
+          messageId: 'turn-1',
+          type: 'assistant_text',
+          content: 'partial',
+          timestamp: 1_500,
+        },
+      ],
+    });
     const snapshotted = buildStreamingUiState({
       t: zh,
-      turn: makeTurn({ status: 'completed' }),
+      turn: interruptedTurn,
       isActiveTurn: false,
       streamSnapshot: makeSnapshot(),
     });
@@ -119,7 +133,32 @@ describe('streamingStatePresentation', () => {
     expect(paused.status).toBe('resumable');
     expect(snapshotted.status).toBe('resumable');
     expect(snapshotted.showResumeHint).toBe(true);
-    expect(hasIncompleteStreamSnapshot(makeSnapshot({ turnId: 'other-turn' }), 'turn-1')).toBe(false);
+    expect(hasIncompleteStreamSnapshot(makeSnapshot({ turnId: 'other-turn' }), interruptedTurn)).toBe(false);
+    expect(hasIncompleteStreamSnapshot(makeSnapshot(), makeTurn())).toBe(false);
+  });
+
+  it('会话仍在处理中时，命中的 snapshot 不把活跃轮盖成 resumable', () => {
+    const interruptedTurn = makeTurn({
+      nodes: [
+        {
+          id: 'turn-1-text',
+          messageId: 'turn-1',
+          type: 'assistant_text',
+          content: 'partial',
+          timestamp: 1_500,
+        },
+      ],
+    });
+    const state = buildStreamingUiState({
+      t: zh,
+      turn: interruptedTurn,
+      isActiveTurn: true,
+      sessionStatus: 'running',
+      isSessionProcessing: true,
+      streamSnapshot: makeSnapshot(),
+    });
+
+    expect(state.status).toBe('drafting');
   });
 
   it('does not show completed states as streaming banners', () => {

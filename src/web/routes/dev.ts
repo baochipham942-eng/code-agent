@@ -636,6 +636,27 @@ export function createDevRouter(deps: DevRouterDeps): Router {
     res.json({ ok: true });
   });
 
+  // ── POST /api/dev/emit-sse (E2E test hook) ──────────────────────────
+  // 仅 CODE_AGENT_E2E=1 启用。向全局 SSE 广播任意 channel 事件，供 Playwright
+  // 激活非 agent:event 通道（如 task:event 的 state_change——没有它合成流式
+  // 事件无法让 taskStore 把会话标记为 running，投影 turn 永远不是 streaming 态，
+  // 流式滚动行为无从真机验证）。
+  router.post('/dev/emit-sse', (req: Request, res: Response) => {
+    if (process.env.CODE_AGENT_E2E !== '1') {
+      res.status(404).json({ error: 'E2E hook disabled' });
+      return;
+    }
+
+    const body = req.body as { channel?: unknown; args?: unknown } | undefined;
+    if (typeof body?.channel !== 'string' || !body.channel.trim()) {
+      res.status(400).json({ error: 'Body must be { channel: string, args: unknown }.' });
+      return;
+    }
+
+    broadcastSSE(body.channel.trim(), body.args ?? null);
+    res.json({ ok: true });
+  });
+
   // ── POST /api/dev/seed-messages (E2E test hook) ─────────────────────
   // 仅 CODE_AGENT_E2E=1。把消息按真实持久化路径（sessionManager.addMessageToSession）
   // 写进会话：语音投影 e2e 靠它落「host 真实会落的那种消息」，不旁路 model 层

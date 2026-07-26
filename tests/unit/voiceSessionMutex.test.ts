@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
 import type { VoiceEvent, VoiceTransport } from '../../src/shared/contract/voice';
+import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
@@ -160,12 +161,30 @@ describe('voiceSessionService 互斥与挂断', () => {
     expect(summaryMessage.metadata?.voiceCallSummary).toMatchObject({
       durationSec: 75,
       provider: 'qwen-omni',
-      conversationModel: 'qwen3-omni-flash-realtime',
+      conversationModel: QWEN_OMNI_REALTIME_MODEL,
       workItemCount: 0,
       startedAt,
       endedAt,
     });
     expect(summaryMessage.content).toBe('语音通话结束，时长 1 分 15 秒');
     nowSpy.mockRestore();
+  });
+});
+
+// D4 的生产者接线：钳制函数写得再对，没人置位就是「建好不接电」。
+// 这一条钉的是 attachVoiceClient/teardown 真的动了通话态标记。
+describe('通话态标记（D4 生产者）', () => {
+  it('建连即标记，挂断即解除', async () => {
+    const { getPermissionModeManager } = await import('../../src/host/permissions/modes');
+    const manager = getPermissionModeManager();
+    expect(manager.isLiveVoiceSession('session-live')).toBe(false);
+
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-live');
+    expect(manager.isLiveVoiceSession('session-live')).toBe(true);
+
+    client.close();
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
+    expect(manager.isLiveVoiceSession('session-live')).toBe(false);
   });
 });

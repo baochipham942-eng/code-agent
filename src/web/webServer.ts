@@ -30,7 +30,6 @@ import { loadShellEnvironment } from '../host/services/infra/shellEnvironment';
 import { initSentryNode } from '../host/observability/sentryNode';
 import { initCrashMarker } from '../host/observability/crashMarker';
 import { initPostHogNode } from '../host/observability/posthogNode';
-import { IPC_CHANNELS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../host/services/core/sessionDefaults';
 import { getModelSessionState } from '../host/session/modelSessionState';
 import {
@@ -38,7 +37,7 @@ import {
   persistModelOverride,
   rehydrateModelOverrideFromSession,
 } from '../host/session/modelOverridePersistence';
-import type { AuthUser, ModelProvider, PermissionResponse, Session } from '../shared/contract';
+import type { AuthUser, ModelProvider, Session } from '../shared/contract';
 import type { SwarmTraceRepo } from '../shared/contract/swarmTrace';
 import type { PendingApprovalRepository } from '../host/services/core/repositories/PendingApprovalRepository';
 import { installLocalWebAuthStatusHandler } from './webLocalAuth';
@@ -122,13 +121,6 @@ type SessionDomainIpcRequest = {
 type SkillReloadStats = {
   total: number;
 };
-
-type PermissionResponseHandler = (
-  event: unknown,
-  requestId: string,
-  response: PermissionResponse,
-  sessionId?: string,
-) => unknown | Promise<unknown>;
 
 function resolveDirIfUsable(dir: string | undefined): string | null {
   if (!dir) return null;
@@ -336,6 +328,7 @@ import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 // Middleware
 import { SERVER_AUTH_TOKEN, exitIfE2EFlagRefused, writeDevAuthToken } from './middleware/auth';
 import { attachVoiceStreamUpgrade } from './voiceStreamUpgrade';
+import { installPermissionResponseHandler } from './webPermissionResponseHandler';
 
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
 import { getAppVersion } from '../host/platform';
@@ -823,36 +816,14 @@ function registerHandlers(): void {
     logger.info('Local web auth status enabled for E2E/dev API mode');
   }
 
-  const originalPermissionResponseHandler = handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE) as PermissionResponseHandler | undefined;
-  handlers.set(
-    IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-    async (_event: unknown, requestId: string, response: PermissionResponse, sessionId?: string) => {
-      const pending = pendingDevPermissions.get(requestId);
-      if (pending) {
-        pending.resolve(response);
-        return {
-          success: true,
-          data: {
-            requestId,
-            sessionId: sessionId || pending.request.sessionId,
-            source: 'web-dev-real-approval',
-          },
-        };
-      }
-
-      if (originalPermissionResponseHandler) {
-        return originalPermissionResponseHandler(_event, requestId, response, sessionId);
-      }
-
-      return {
-        success: false,
-        error: {
-          code: 'PENDING_PERMISSION_NOT_FOUND',
-          message: `No pending permission request found for ${requestId}`,
-        },
-      };
-    }
-  );
+  // 覆盖 agent.ipc.ts 的 legacy handler：它走 AppService，而 web 路径的 AppService 恒为 null
+  // （= 生产上「点允许」永远 500 "Agent not initialized"）。实现见该模块头注释。
+  installPermissionResponseHandler({
+    handlers,
+    pendingDevPermissions,
+    getCurrentSessionId: () => currentSessionId,
+    logger,
+  });
 
   // Override domain:session handler — session.ipc.ts requires AppService which is null in web mode.
   // Re-route to SessionManager (same logic as the REST /api/sessions endpoints).

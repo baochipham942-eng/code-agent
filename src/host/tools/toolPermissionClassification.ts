@@ -45,11 +45,22 @@ export function readOnlyForcesConfirmationFor(
 }
 
 /**
- * 只读探索档（审出 MED）：无审批 UI 的运行环境（web 聊天 /api/agent/run 走
- * CLI 非交互 handler、CLI run/batch）对 forceConfirm 请求自动拒绝（fail-closed）。
- * 泛用的 "Permission denied by user" 在该路径是误导——给模型可转述的真实原因与出路。
+ * 只读探索档（审出 MED）：无审批 UI 的运行环境（CLI run/batch 非交互模式，见
+ * `src/cli/permissionPolicy.ts` 的 createCLIPermissionHandler）对 forceConfirm 请求
+ * 自动拒绝（fail-closed）。泛用的 "Permission denied by user" 在该路径是误导——
+ * 给模型可转述的真实原因与出路。
+ *
+ * D4 通话态钳档（2026-07-26 真机实录）：live-voice 会话被钳到 readOnly 时也会走
+ * 这条 forceConfirm 拒绝路径，但它**不是无 UI 环境**——agentOrchestrator.requestPermission
+ * 对通话态一律走「停车挂起」（parkApproval），请求真的进了审批卡等用户应答，只是不在
+ * 60s 内强求。上面这句「无审批界面会自动拒绝」+「请切换会话权限档」在这里两句都是假话：
+ * 档是通话钳的不是用户设的，切换也没用（钳制只收紧不放宽）。isLiveVoiceClamp=true 时
+ * 换成如实描述通话场景的文案，不复用无 UI 那句。
  */
-export function readOnlyDenialError(toolName: string): string {
+export function readOnlyDenialError(toolName: string, isLiveVoiceClamp: boolean): string {
+  if (isLiveVoiceClamp) {
+    return `实时语音通话中：${toolName} 需要写入/执行权限，已挂起等待你在审批卡上确认，但这次请求最终没有获批（你选择了拒绝，或超时未处理）。通话期间无法通过切换会话权限档跳过这一步——如需执行，请重新发起请求并在审批卡上点允许。`;
+  }
   return `只读探索模式：${toolName} 未获用户确认而被拦截（无审批界面的运行环境会自动拒绝）。如需执行该操作，请切换会话权限档后重试。`;
 }
 

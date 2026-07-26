@@ -6,6 +6,7 @@
 import { EventEmitter } from 'events';
 import { app, AppWindow } from '../platform';
 import type { AgentEvent, Message, MessageMetadata, MessageSnapshotData, ToolCall } from '../../shared/contract';
+import type { PermissionDeliveryOutcome, PermissionResponse } from '../../shared/contract/permission';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
 import type { ConfigService } from '../services/core/configService';
@@ -547,12 +548,22 @@ export class TaskManager extends EventEmitter {
   handlePermissionResponse(
     sessionId: string,
     requestId: string,
-    response: 'allow' | 'allow_session' | 'deny'
-  ): void {
+    response: PermissionResponse
+  ): PermissionDeliveryOutcome {
     const wrapper = this.activeOrchestrators.get(sessionId);
-    if (wrapper) {
-      wrapper.orchestrator.handlePermissionResponse(requestId, response);
+    if (!wrapper) {
+      // 静默 return 是 2026-07-26「点了允许什么也没发生」的第二个藏身处：
+      // 会话没有活跃 orchestrator（进程重启 / 会话已收）时内存里的 pending promise 早就没了，
+      // 但调用方拿到的是 void，只能当成功。指名道姓报出来，别让它继续隐身。
+      logger.warn('Permission response dropped: no active orchestrator for session', {
+        sessionId,
+        requestId,
+        response,
+        activeSessionIds: [...this.activeOrchestrators.keys()],
+      });
+      return 'no_orchestrator';
     }
+    return wrapper.orchestrator.handlePermissionResponse(requestId, response);
   }
 
   /**

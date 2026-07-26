@@ -10,6 +10,17 @@ const listParkedApprovals = vi.fn<() => Promise<ParkedApprovalInboxItem[]>>();
 const markReviewed = vi.fn().mockResolvedValue(null);
 const switchSession = vi.fn().mockResolvedValue(undefined);
 const ipcInvoke = vi.fn().mockResolvedValue(undefined);
+const toastInfo = vi.fn();
+const toastError = vi.fn();
+
+vi.mock('../../../src/renderer/hooks/useToast', () => ({
+  toast: {
+    info: (...args: unknown[]) => toastInfo(...args),
+    error: (...args: unknown[]) => toastError(...args),
+    success: vi.fn(),
+    warning: vi.fn(),
+  },
+}));
 
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: {
@@ -136,6 +147,39 @@ describe('AutomationReviewInbox', () => {
     await waitFor(() => {
       // 复用 agent:permission-response，requestId=停车行 id，sessionId 透传
       expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', 'perm_req_1', 'allow', 'session-1');
+    });
+  });
+
+  it('宿主已死（outcome=no_orchestrator）：提示已失效并刷新列表，不静默（D0）', async () => {
+    listParkedApprovals.mockResolvedValueOnce([makeParked({ id: 'perm_dead', sessionId: 'session-1' })]).mockResolvedValue([]);
+    ipcInvoke.mockResolvedValueOnce({ outcome: 'no_orchestrator' });
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approve')).toBeTruthy();
+    });
+    const listCallsBefore = listParkedApprovals.mock.calls.length;
+
+    fireEvent.click(screen.getByTestId('parked-approve'));
+
+    await waitFor(() => {
+      expect(toastInfo).toHaveBeenCalled();
+      // 刷新后 orphaned 灰态由下一次 load 呈现
+      expect(listParkedApprovals.mock.calls.length).toBeGreaterThan(listCallsBefore);
+    });
+  });
+
+  it('响应失败（invoke 拒绝）：浮错误 toast 并恢复可点，不再吞掉', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({ id: 'perm_fail', sessionId: 'session-1' })]);
+    ipcInvoke.mockRejectedValueOnce(new Error('PENDING_PERMISSION_NOT_FOUND'));
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approve')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId('parked-approve'));
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalled();
     });
   });
 

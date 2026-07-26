@@ -5,7 +5,7 @@
 // 具体实现类。适配器（src/host/app/agentAppService.ts）负责委托给实际服务。
 // ============================================================================
 
-import type { PermissionResponse } from './permission';
+import type { PermissionDeliveryOutcome, PermissionResponse } from './permission';
 import type { Session } from './session';
 import type { SessionTask } from './planning';
 import type { AgentEngineSessionMetadata } from './agentEngine';
@@ -163,7 +163,8 @@ export interface AgentApplicationService {
   // === Agent Operations ===
   sendMessage(envelope: ConversationEnvelope): Promise<void>;
   cancel(sessionId?: string): Promise<void>;
-  handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): void;
+  /** 回报投递结果：'no_orchestrator'/'unknown_request' = 停车审批宿主已死，行已被标 orphaned */
+  handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): PermissionDeliveryOutcome;
   interruptAndContinue(envelope: ConversationEnvelope): Promise<SteerOrQueueOutcome>;
 
   // === Workspace ===

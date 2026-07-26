@@ -134,7 +134,7 @@ function makeAppService(sessionId: string, messages: Message[], modelOverride?: 
     getCurrentSessionId: () => sessionId,
     sendMessage: async () => {},
     cancel: async () => {},
-    handlePermissionResponse: () => {},
+    handlePermissionResponse: () => 'delivered' as const,
     interruptAndContinue: async () => ({ outcome: 'steered' }),
     getWorkingDirectory: () => undefined,
     setWorkingDirectory: () => {},

@@ -730,6 +730,7 @@ function registerHandlers(): void {
     const { persistAgentRun, getRecentAgentHistory } = require('../host/session/agentHistoryPersistence') as typeof import('../host/session/agentHistoryPersistence');
     const { installSwarmTraceWriter } = require('../host/agent/swarmTraceWriter') as typeof import('../host/agent/swarmTraceWriter');
     const { getDatabase } = require('../host/services/core/databaseService') as typeof import('../host/services/core/databaseService');
+    const { hydrateApprovalGatesAtBoot } = require('../host/agent/parkedApprovalHydration') as typeof import('../host/agent/parkedApprovalHydration');
     /* eslint-enable @typescript-eslint/no-require-imports */
 
     let swarmTraceRepo: SwarmTraceRepo | null = null;
@@ -749,13 +750,8 @@ function registerHandlers(): void {
 
     if (pendingApprovalRepo) {
       try {
-        const planOrphans = planApprovalGate.attachPersistence(pendingApprovalRepo);
-        const launchOrphans = launchApprovalGate.attachPersistence(pendingApprovalRepo);
-        if (planOrphans + launchOrphans > 0) {
-          logger.warn(
-            `Orphaned approvals from previous web process: ${planOrphans} plan(s) + ${launchOrphans} launch(es)`,
-          );
-        }
+        // plan/launch/parked(tool_approval+directory_access) 三类残留 pending 一站式 orphan
+        hydrateApprovalGatesAtBoot(pendingApprovalRepo);
       } catch (err) {
         logger.warn('PendingApproval hydration failed (web):', (err as Error).message);
       }

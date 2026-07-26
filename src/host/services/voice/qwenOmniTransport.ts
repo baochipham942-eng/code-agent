@@ -11,9 +11,11 @@ import {
   QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL,
   QWEN_OMNI_REALTIME_VOICE,
   QWEN_OMNI_REALTIME_WS_URL,
+  VOICE_TURN_DETECTION_DEFAULT,
   VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
-import type { VoiceTransport, VoiceTransportHandle } from '../../../shared/contract/voice';
+import type { VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../../shared/contract/voice';
+import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('QwenOmniVoice');
@@ -39,11 +41,46 @@ function parseEvent(raw: unknown): UpstreamEvent | null {
   return null;
 }
 
+type UpstreamTurnDetection =
+  | { type: 'server_vad'; threshold?: number; prefix_padding_ms?: number; silence_duration_ms?: number }
+  | { type: 'semantic_vad'; eagerness?: 'low' | 'medium' | 'high' | 'auto' }
+  | null;
+
+function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
+  try {
+    const configured = getConfigService().getSettings().voice?.turnDetection;
+    return configured === undefined ? VOICE_TURN_DETECTION_DEFAULT : configured;
+  } catch {
+    return VOICE_TURN_DETECTION_DEFAULT;
+  }
+}
+
+function toUpstreamTurnDetection(config: VoiceTurnDetectionConfig): UpstreamTurnDetection {
+  if (config === null) return null;
+  if (config.type === 'semantic_vad') {
+    return {
+      type: 'semantic_vad',
+      ...(config.eagerness ? { eagerness: config.eagerness } : {}),
+    };
+  }
+  return {
+    type: 'server_vad',
+    ...(config.threshold !== undefined ? { threshold: config.threshold } : {}),
+    ...(config.prefixPaddingMs !== undefined ? { prefix_padding_ms: config.prefixPaddingMs } : {}),
+    ...(config.silenceDurationMs !== undefined ? { silence_duration_ms: config.silenceDurationMs } : {}),
+  };
+}
+
 export const qwenOmniTransport: VoiceTransport = {
   id: 'qwen-omni',
 
   async connect({ apiKey, config, onEvent, onAudio }): Promise<VoiceTransportHandle> {
     const model = config.model ?? QWEN_OMNI_REALTIME_MODEL;
+    const turnDetectionConfig = resolveTurnDetectionConfig();
+    const upstreamTurnDetection = toUpstreamTurnDetection(turnDetectionConfig);
+    const vadSilenceWindowMs = turnDetectionConfig?.type === 'server_vad'
+      ? turnDetectionConfig.silenceDurationMs
+      : undefined;
     const url = `${QWEN_OMNI_REALTIME_WS_URL}?model=${encodeURIComponent(model)}`;
     logger.info('connecting upstream', { model });
 
@@ -73,16 +110,17 @@ export const qwenOmniTransport: VoiceTransport = {
           input_audio_format: 'pcm16',
           output_audio_format: 'pcm16',
           input_audio_transcription: { model: QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL },
-          // server_vad：上游断句并自动触发回复，全双工体验的默认档。
-          turn_detection: { type: 'server_vad' },
+          turn_detection: upstreamTurnDetection,
           ...(config.instructions ? { instructions: config.instructions } : {}),
         },
       }),
     );
 
-    // TTFA = 用户说完（上游 speech_stopped）→ 第一个下行音频包。
+    // TTFA 模型口径从上游 speech_stopped 开始；体感口径不是实测值，
+    // 是按 server_vad 先等待 silence_duration_ms 才发 speech_stopped 这一机制推算。
     let speechStoppedAt = 0;
-    let ttfaMs: number | undefined;
+    let ttfaModelMs: number | undefined;
+    let ttfaPerceivedMs: number | undefined;
 
     ws.on('message', (raw) => {
       const event = parseEvent(raw);
@@ -91,9 +129,10 @@ export const qwenOmniTransport: VoiceTransport = {
       switch (event.type) {
         case 'response.audio.delta':
           if (typeof event.delta === 'string') {
-            if (speechStoppedAt && ttfaMs === undefined) {
-              ttfaMs = Date.now() - speechStoppedAt;
-              logger.info('ttfa', { ms: ttfaMs });
+            if (speechStoppedAt && ttfaModelMs === undefined) {
+              ttfaModelMs = Date.now() - speechStoppedAt;
+              ttfaPerceivedMs = vadSilenceWindowMs !== undefined ? ttfaModelMs + vadSilenceWindowMs : undefined;
+              logger.info('ttfa', { ttfaModelMs, ttfaPerceivedMs });
             }
             onAudio(Buffer.from(event.delta, 'base64'));
           }
@@ -109,14 +148,19 @@ export const qwenOmniTransport: VoiceTransport = {
           break;
         case 'input_audio_buffer.speech_started':
           speechStoppedAt = 0;
-          ttfaMs = undefined;
+          ttfaModelMs = undefined;
+          ttfaPerceivedMs = undefined;
           onEvent({ type: 'speech.started' });
           break;
         case 'input_audio_buffer.speech_stopped':
           speechStoppedAt = Date.now();
           break;
         case 'response.done':
-          onEvent({ type: 'response.done', ttfaMs });
+          onEvent({
+            type: 'response.done',
+            ...(ttfaModelMs !== undefined ? { ttfaModelMs } : {}),
+            ...(ttfaPerceivedMs !== undefined ? { ttfaPerceivedMs } : {}),
+          });
           break;
         case 'error':
           logger.warn('upstream error', { code: event.error?.code });

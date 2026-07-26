@@ -84,7 +84,9 @@ export function VoiceSpikePanel(): React.JSX.Element {
           setAssistantText((prev) => (voiceEvent.done ? voiceEvent.text : prev + voiceEvent.text));
           break;
         case 'response.done':
-          if (voiceEvent.ttfaMs !== undefined) setStatus(`首包 ${voiceEvent.ttfaMs}ms`);
+          if (voiceEvent.ttfaModelMs !== undefined) {
+            setStatus(`首包 ${voiceEvent.ttfaModelMs}ms${voiceEvent.ttfaPerceivedMs !== undefined ? ` / 体感 ${voiceEvent.ttfaPerceivedMs}ms` : ''}`);
+          }
           break;
         case 'error':
           setCallState('error');

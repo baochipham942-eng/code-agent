@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { VOICE_SESSION_MAX_DURATION_MS } from '../../../shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_SESSION_MAX_DURATION_MS } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceTransportHandle } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -19,6 +19,7 @@ const logger = createLogger('VoiceSession');
 interface ActiveSession {
   id: string;
   neoSessionId: string;
+  startedAt: number;
   client: WsSocket;
   upstream: VoiceTransportHandle;
   maxDurationTimer: NodeJS.Timeout;
@@ -53,6 +54,7 @@ async function persistTranscript(neoSessionId: string, role: 'user' | 'assistant
       role,
       content: trimmed,
       timestamp: Date.now(),
+      metadata: { source: 'voice' },
     });
   } catch (err) {
     logger.warn('failed to persist transcript', { role, message: err instanceof Error ? err.message : 'unknown' });
@@ -65,6 +67,34 @@ async function teardown(reason: string): Promise<void> {
   active = null;
   clearTimeout(session.maxDurationTimer);
   logger.info('session ended', { voiceSessionId: session.id, reason });
+  const endedAt = Date.now();
+  const { startedAt } = session;
+  const durationSec = Math.max(0, Math.round((endedAt - startedAt) / 1000));
+  const minutes = Math.floor(durationSec / 60);
+  const seconds = durationSec % 60;
+  const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
+  try {
+    await getSessionManager().addMessageToSession(session.neoSessionId, {
+      id: `voice-summary-${endedAt}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'system',
+      content: `语音通话结束，时长 ${durationText}`,
+      timestamp: endedAt,
+      metadata: {
+        source: 'voice',
+        voiceCallSummary: {
+          durationSec,
+          provider: session.upstream.provider,
+          conversationModel: QWEN_OMNI_REALTIME_MODEL,
+          // 窄工具派发还没接入通话数据面，本批只能记录 0。
+          workItemCount: 0,
+          startedAt,
+          endedAt,
+        },
+      },
+    });
+  } catch (err) {
+    logger.warn('failed to persist call summary', { message: err instanceof Error ? err.message : 'unknown' });
+  }
   await session.upstream.close().catch(() => undefined);
   if (session.client.readyState === session.client.OPEN) session.client.close();
 }
@@ -130,6 +160,7 @@ async function connectAndBind(client: WsSocket, neoSessionId: string, apiKey: st
   active = {
     id,
     neoSessionId,
+    startedAt: Date.now(),
     client,
     upstream,
     maxDurationTimer: setTimeout(() => {

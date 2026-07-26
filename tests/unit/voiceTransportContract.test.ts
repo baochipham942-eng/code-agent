@@ -3,9 +3,9 @@
 // clientBootstrap（Renderer 直连上游）。判别联合把「永远不该被调用的 no-op」
 // 从接口上消灭，本测试钉住两侧真跑出来的 handle 形态——真 OpenAI adapter 未落地，
 // direct 侧用 fake adapter 钉形态。
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'events';
-import type { VoiceTransport, VoiceTransportHandle } from '../../src/shared/contract/voice';
+import type { VoiceEvent, VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../src/shared/contract/voice';
 
 /** 最小 ws 替身：qwenOmniTransport 只用到 open/error 事件、send、readyState、close。 */
 class FakeUpstream extends EventEmitter {
@@ -24,6 +24,9 @@ class FakeUpstream extends EventEmitter {
 }
 
 const upstreams: FakeUpstream[] = [];
+const mockConfig = vi.hoisted(() => ({
+  settings: {} as { voice?: { turnDetection?: VoiceTurnDetectionConfig } },
+}));
 
 vi.mock('ws', () => {
   class MockWebSocket extends FakeUpstream {
@@ -40,7 +43,7 @@ vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 vi.mock('../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ getSettings: () => ({}) }),
+  getConfigService: () => ({ getSettings: () => mockConfig.settings }),
 }));
 
 const { qwenOmniTransport } = await import('../../src/host/services/voice/qwenOmniTransport');
@@ -71,7 +74,18 @@ async function connectHandle(transport: VoiceTransport): Promise<VoiceTransportH
   });
 }
 
+function readSessionUpdate(upstream: FakeUpstream): { session: { turn_detection?: unknown } } {
+  const raw = upstream.sent.find((item) => (JSON.parse(item) as { type?: string }).type === 'session.update');
+  if (!raw) throw new Error('missing session.update');
+  return JSON.parse(raw) as { session: { turn_detection?: unknown } };
+}
+
 describe('VoiceTransport 契约（relay / direct 双跑）', () => {
+  beforeEach(() => {
+    upstreams.length = 0;
+    mockConfig.settings = {};
+  });
+
   it('relay adapter：kind=relay 且 sendAudio 真把帧推给上游', async () => {
     const handle = await connectHandle(qwenOmniTransport);
 
@@ -85,6 +99,83 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     expect(appended.map((e) => e.type)).toContain('input_audio_buffer.append');
     expect(appended[0].audio).toBe(Buffer.from([1, 2, 3, 4]).toString('base64'));
 
+    await handle.close();
+  });
+
+  it('默认 turn_detection 发 server_vad，且三项参数映射为上游 snake_case', async () => {
+    const handle = await connectHandle(qwenOmniTransport);
+    const upstream = upstreams[upstreams.length - 1];
+    const update = readSessionUpdate(upstream);
+
+    expect(update.session.turn_detection).toEqual({
+      type: 'server_vad',
+      threshold: 0.5,
+      prefix_padding_ms: 300,
+      silence_duration_ms: 500,
+    });
+
+    await handle.close();
+  });
+
+  it('配置 semantic_vad 时按配置发给上游', async () => {
+    mockConfig.settings = { voice: { turnDetection: { type: 'semantic_vad', eagerness: 'high' } } };
+
+    const handle = await connectHandle(qwenOmniTransport);
+    const upstream = upstreams[upstreams.length - 1];
+    const update = readSessionUpdate(upstream);
+
+    expect(update.session.turn_detection).toEqual({ type: 'semantic_vad', eagerness: 'high' });
+
+    await handle.close();
+  });
+
+  it('response.done 同时报 ttfaModelMs 和按 server_vad 静音窗推算的 ttfaPerceivedMs', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    const upstream = upstreams[upstreams.length - 1];
+    const nowSpy = vi.spyOn(Date, 'now');
+
+    nowSpy.mockReturnValue(10_000);
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.speech_stopped' }));
+    nowSpy.mockReturnValue(10_427);
+    upstream.emit('message', JSON.stringify({ type: 'response.audio.delta', delta: Buffer.from([1]).toString('base64') }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done' }));
+
+    const done = events.find((event) => event.type === 'response.done');
+    expect(done).toMatchObject({ type: 'response.done', ttfaModelMs: 427, ttfaPerceivedMs: 927 });
+
+    nowSpy.mockRestore();
+    await handle.close();
+  });
+
+  it('turn_detection 关闭时 response.done 不报 ttfaPerceivedMs', async () => {
+    mockConfig.settings = { voice: { turnDetection: null } };
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1' },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+    });
+    const upstream = upstreams[upstreams.length - 1];
+    const nowSpy = vi.spyOn(Date, 'now');
+
+    nowSpy.mockReturnValue(20_000);
+    upstream.emit('message', JSON.stringify({ type: 'input_audio_buffer.speech_stopped' }));
+    nowSpy.mockReturnValue(20_300);
+    upstream.emit('message', JSON.stringify({ type: 'response.audio.delta', delta: Buffer.from([2]).toString('base64') }));
+    upstream.emit('message', JSON.stringify({ type: 'response.done' }));
+
+    const done = events.find((event) => event.type === 'response.done');
+    expect(done).toMatchObject({ type: 'response.done', ttfaModelMs: 300 });
+    expect(done && 'ttfaPerceivedMs' in done).toBe(false);
+
+    nowSpy.mockRestore();
     await handle.close();
   });
 

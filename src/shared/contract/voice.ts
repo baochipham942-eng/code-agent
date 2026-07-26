@@ -10,6 +10,20 @@
 
 export type VoiceProviderId = 'qwen-omni' | 'openai-realtime';
 
+export type VoiceTurnDetectionConfig =
+  | { type: 'server_vad'; threshold?: number; prefixPaddingMs?: number; silenceDurationMs?: number }
+  | { type: 'semantic_vad'; eagerness?: 'low' | 'medium' | 'high' | 'auto' }
+  | null;
+
+export interface VoiceCallSummary {
+  durationSec: number;
+  provider: VoiceProviderId;
+  conversationModel: string;
+  workItemCount: number;
+  startedAt: number;
+  endedAt: number;
+}
+
 export interface VoiceSessionConfig {
   /** 绑定的 Neo 会话，字幕落到这条会话的消息流。 */
   neoSessionId: string;
@@ -31,7 +45,7 @@ export type VoiceEvent =
   | { type: 'assistant.transcript'; text: string; done: boolean }
   /** 用户开口 —— Renderer 据此清空播放队列做 barge-in */
   | { type: 'speech.started' }
-  | { type: 'response.done'; ttfaMs?: number }
+  | { type: 'response.done'; ttfaModelMs?: number; ttfaPerceivedMs?: number }
   | { type: 'error'; code: string; message: string };
 
 /** Renderer → Host 的控制帧（媒体帧走二进制，不走这里）。 */

@@ -3,6 +3,8 @@
 // Phase 0 spike：仅 Qwen-Omni Realtime（DashScope，WebSocket 形态）。
 // ============================================================================
 
+import type { VoiceTurnDetectionConfig } from '../contract/voice';
+
 /**
  * DashScope Qwen-Omni Realtime WebSocket 接入点。
  *
@@ -20,6 +22,17 @@ export const QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL = 'gummy-realtime-v1';
 
 /** 默认音色。 */
 export const QWEN_OMNI_REALTIME_VOICE = 'Chelsie';
+
+/**
+ * 显式写死 server_vad 默认值，是为了 ttfaPerceivedMs 能算得出静音窗。
+ * 上游常见默认：threshold=0.5、prefix_padding_ms=300、silence_duration_ms=500。
+ */
+export const VOICE_TURN_DETECTION_DEFAULT: VoiceTurnDetectionConfig = {
+  type: 'server_vad',
+  threshold: 0.5,
+  prefixPaddingMs: 300,
+  silenceDurationMs: 500,
+};
 
 /** 上行麦克风采样率（Hz），厂商要求 16k 单声道 PCM16。 */
 export const VOICE_UPSTREAM_SAMPLE_RATE = 16_000;

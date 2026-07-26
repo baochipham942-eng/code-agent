@@ -1,15 +1,22 @@
 // 全局单路互斥与挂断释放（方案 §2.6 / Phase 0 出口「验证互斥与挂断」）。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
+import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
+import type { VoiceEvent, VoiceTransport } from '../../src/shared/contract/voice';
 
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
-const connect = vi.fn(async () => ({ kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close }));
+const addMessageToSession = vi.fn(async () => undefined);
+let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
+const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
+  lastOnEvent = input.onEvent;
+  return { kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close };
+});
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
-  getSessionManager: () => ({ addMessageToSession: vi.fn(async () => undefined) }),
+  getSessionManager: () => ({ addMessageToSession }),
 }));
 vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -42,6 +49,8 @@ describe('voiceSessionService 互斥与挂断', () => {
     connect.mockClear();
     close.mockClear();
     sendAudio.mockClear();
+    addMessageToSession.mockClear();
+    lastOnEvent = null;
   });
 
   it('第二路通话被拒绝，第一路不受影响', async () => {
@@ -102,5 +111,61 @@ describe('voiceSessionService 互斥与挂断', () => {
 
     expect(sendAudio).toHaveBeenCalledTimes(1);
     client.close();
+  });
+
+  it('语音来源只认 metadata.source，不认 message id 前缀', () => {
+    const message: Message = {
+      id: 'plain-message-id',
+      role: 'user',
+      content: 'hello',
+      timestamp: 1,
+      metadata: { source: 'voice' },
+    };
+
+    expect(isVoiceInputMessage(message)).toBe(true);
+  });
+
+  it('final 字幕落库写入 metadata.source=voice', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '  你好  ', done: true });
+
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
+    const [, message] = addMessageToSession.mock.calls[0] as [string, Message];
+    expect(message.content).toBe('你好');
+    expect(message.metadata?.source).toBe('voice');
+
+    client.close();
+  });
+
+  it('挂断后写入 voiceCallSummary，durationSec 来自真实起止时间', async () => {
+    const startedAt = 1_800_000_000_000;
+    const endedAt = startedAt + 75_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(startedAt);
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+    nowSpy.mockReturnValue(endedAt);
+
+    client.close();
+
+    await vi.waitFor(() => {
+      expect(addMessageToSession.mock.calls.some(([, message]) => Boolean((message as Message).metadata?.voiceCallSummary))).toBe(true);
+    });
+    const [, summaryMessage] = addMessageToSession.mock.calls.find(([, message]) =>
+      Boolean((message as Message).metadata?.voiceCallSummary)
+    ) as [string, Message];
+    expect(summaryMessage.role).toBe('system');
+    expect(summaryMessage.metadata?.source).toBe('voice');
+    expect(summaryMessage.metadata?.voiceCallSummary).toMatchObject({
+      durationSec: 75,
+      provider: 'qwen-omni',
+      conversationModel: 'qwen3-omni-flash-realtime',
+      workItemCount: 0,
+      startedAt,
+      endedAt,
+    });
+    expect(summaryMessage.content).toBe('语音通话结束，时长 1 分 15 秒');
+    nowSpy.mockRestore();
   });
 });

@@ -318,14 +318,19 @@ describe('LibraryPanel', () => {
     expect(screen.getByTestId('library-edit-save')).toHaveProperty('disabled', true);
   });
 
-  it('「返回应用」按钮复位 appStore 面板开关', async () => {
+  // 批 C：资料库改 inline 二级页（侧栏常驻，右侧内容区渲染），
+  // 返回语义从「返回应用」按钮改为侧栏直接切换，页内不再画返回按钮。
+  it('是 inline 二级页：不接管整窗、不画「返回应用」按钮', async () => {
     listLibraryItems.mockResolvedValue([]);
     useAppStore.getState().setShowLibraryPanel(true);
     render(<LibraryPanel />);
     await waitFor(() => {
       expect(screen.getByTestId('library-panel')).toBeTruthy();
     });
-    screen.getByRole('button', { name: '返回应用' }).click();
+    expect(screen.getByTestId('library-panel').getAttribute('data-page-variant')).toBe('inline');
+    expect(screen.queryByTestId('full-screen-page-back')).toBeNull();
+    // 返回靠 appStore 的统一让位动作（switchSession/新建会话经它收口）
+    useAppStore.getState().closeSecondaryPages();
     expect(useAppStore.getState().showLibraryPanel).toBe(false);
   });
 

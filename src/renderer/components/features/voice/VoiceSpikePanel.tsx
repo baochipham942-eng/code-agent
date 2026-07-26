@@ -56,6 +56,11 @@ export function VoiceSpikePanel(): React.JSX.Element {
     setAssistantText('');
     setUserText('');
 
+    // 旧连接必须先关：error 态下按钮会切回「开始通话」，此时上一条 WS 往往还开着，
+    // 不关就会被 Host 的单路互斥挡成 VOICE_SESSION_BUSY（真机 2026-07-26）。
+    wsRef.current?.close();
+    wsRef.current = null;
+
     const ws = new WebSocket(buildStreamUrl(currentSessionId));
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;

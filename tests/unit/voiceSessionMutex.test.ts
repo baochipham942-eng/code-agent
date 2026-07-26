@@ -103,6 +103,40 @@ describe('voiceSessionService 互斥与挂断', () => {
     again.close();
   });
 
+  // 2026-07-26 真机踩到的死锁：上游 COMMON_ERROR 后 Host 仍占着 active，
+  // 而渲染侧收到 error 就把按钮切回「开始通话」——「挂断」从此点不到，
+  // 再拨被自己的互斥挡成 VOICE_SESSION_BUSY，只能重启 app 或干等 10 分钟 max-duration。
+  // 判据是「重拨能不能成」，不是「有没有打日志」。
+  it('上游报错即释放通话，用户能立刻重拨', async () => {
+    const first = new FakeClient();
+    await attachVoiceClient(first as never, 'session-1');
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    lastOnEvent?.({ type: 'error', code: 'COMMON_ERROR', message: '上游炸了' });
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
+    expect(close).toHaveBeenCalled(); // 上游连接也要放掉，别留着继续计费
+
+    const again = new FakeClient();
+    await attachVoiceClient(again as never, 'session-1');
+    expect(types(again)).not.toContain('VOICE_SESSION_BUSY');
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+    again.close();
+  });
+
+  it('上游连接关闭即释放通话，用户能立刻重拨', async () => {
+    const first = new FakeClient();
+    await attachVoiceClient(first as never, 'session-1');
+    expect(getActiveVoiceSessionId()).not.toBeNull();
+
+    lastOnEvent?.({ type: 'state', state: 'closed' });
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
+
+    const again = new FakeClient();
+    await attachVoiceClient(again as never, 'session-1');
+    expect(types(again)).not.toContain('VOICE_SESSION_BUSY');
+    again.close();
+  });
+
   it('二进制帧转发到上游，文本帧不当音频转发', async () => {
     const client = new FakeClient();
     await attachVoiceClient(client as never, 'session-1');

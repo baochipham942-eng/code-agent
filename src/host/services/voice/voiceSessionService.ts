@@ -73,7 +73,9 @@ async function teardown(reason: string): Promise<void> {
   clearTimeout(session.maxDurationTimer);
   logger.info('session ended', { voiceSessionId: session.id, reason });
   // D4：通话态标记必须先于任何后续动作解除，别让抬严挂在会话上不下来。
-  getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId);
+  // 只还「通话」这一张票。语音派出去、还在飞的 run 各自持票，抬严对它们继续有效——
+  // 挂断不再等于解除（2026-07-26 真机：挂断后同一个 run 直接落盘，D4 承诺全失效）。
+  getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId, `call:${session.id}`);
   const endedAt = Date.now();
   const { startedAt } = session;
   const durationSec = Math.max(0, Math.round((endedAt - startedAt) / 1000));
@@ -151,6 +153,14 @@ async function connectAndBind(
         send(client, event);
         if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text);
         else if (event.type === 'assistant.transcript' && event.done) void persistTranscript(neoSessionId, 'assistant', event.text);
+        // 上游报错 / 上游连接关闭 = 这一路通话已经死了，必须就地释放 active。
+        // 否则两侧对「通话是否结束」的判断会分叉：渲染侧收到 error 就把按钮切回「开始通话」，
+        // 而 Host 仍占着 active，用户再拨被自己的互斥挡成 VOICE_SESSION_BUSY，
+        // 且此时「挂断」已经点不到——整条语音链锁死到 10 分钟 max-duration 才自愈。
+        // （2026-07-26 真机踩到：上游 COMMON_ERROR 后必须重启 app 才能再打。）
+        else if (event.type === 'error' || (event.type === 'state' && event.state === 'closed')) {
+          if (active?.id === id) void teardown(event.type === 'error' ? 'upstream-error' : 'upstream-closed');
+        }
       },
       onAudio: (frame) => {
         if (client.readyState === client.OPEN) client.send(frame, { binary: true });
@@ -191,7 +201,7 @@ async function connectAndBind(
     }, VOICE_SESSION_MAX_DURATION_MS),
   };
   // D4 抬严必须在有任何工具可派之前就位——建连成功即标记。
-  getPermissionModeManager().markLiveVoiceSession(neoSessionId);
+  getPermissionModeManager().markLiveVoiceSession(neoSessionId, `call:${id}`);
   logger.info('session started', { voiceSessionId: id, neoSessionId, activeAgentId: routing.activeAgentId });
 
   client.on('message', (data: Buffer, isBinary: boolean) => {

@@ -467,9 +467,12 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     flushView();
 
     const observed = observe.mock.calls.map((call) => call[0] as HTMLElement);
-    // 观察面收窄：只观察跟随中的活动 turn，而不是所有已挂载 turn
-    expect(observed).toHaveLength(1);
-    expect(observed[0].dataset.traceTurnId).toBe('turn-2');
+    // 观察面收窄：所有 observer（吸底调度 + 流式 min-height 锁）都只观察跟随中的
+    // 活动 turn，而不是所有已挂载 turn
+    expect(observed.length).toBeGreaterThanOrEqual(1);
+    for (const el of observed) {
+      expect(el.dataset.traceTurnId).toBe('turn-2');
+    }
 
     mocks.scrollToIndex.mockClear();
     act(() => {

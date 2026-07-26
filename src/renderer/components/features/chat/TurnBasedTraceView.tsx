@@ -620,14 +620,16 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   useEffect(() => {
     if (!activeAssistantAnchor || !focusedTurnId) return;
 
-    const focusKey = `${projection.sessionId}:${focusedTurnId}:${activeAssistantAnchor.nodeId}`;
+    // focusKey 只到 turn 粒度，不带 anchorNodeId：流式 overlay 的临时节点
+    // （-content-live/-reasoning-live）在工具边界/turn 完成时 id 翻转，若 key 含
+    // 节点 id，每次翻转都重新触发顶置 → 整页上拉（真机证据：未跟随流式期间
+    // 每个工具边界一次 scrollTop → 0）。turn 粒度 key 保证每个 turn 至多顶置一次。
+    const focusKey = `${projection.sessionId}:${focusedTurnId}`;
     if (prevAssistantAnchorRef.current === focusKey) return;
     prevAssistantAnchorRef.current = focusKey;
 
-    // 跟随期间吸底只由 followOutput 驱动、新消息顶置由 latestUserNodeId effect 负责。
-    // 流式 overlay 的临时节点（-content-live/-reasoning-live）在工具边界/turn 完成时
-    // id 翻转，此时按 anchor 顶置会整页上拉、再被吸底驱动拉回，形成上移-回弹抖动，
-    // 所以跟随中直接跳过。
+    // 跟随期间吸底只由 followOutput 驱动、新消息顶置由 latestUserNodeId effect 负责，
+    // 跟随中直接跳过。
     if (keepActiveOutputVisibleRef.current) return;
 
     keepActiveOutputVisibleRef.current = projection.activeTurnIndex === activeAssistantAnchor.turnIndex;
@@ -773,6 +775,37 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     observer.observe(target);
     return () => observer.disconnect();
   }, [outputFollowTurn?.turnId, outputFollowTurnIndex, scheduleActiveDisplayScroll, scrollerElement]);
+
+  // F3：活动流式 turn 的只增 min-height 锁。流式 overlay 的 live 节点在工具边界
+  // 换 id 重挂载，turn 内部高度瞬时塌陷 → virtuoso 重测量把列表总高压到视口高、
+  // scrollTop 被钳到 0，下一帧 followOutput 再拉回——这就是真机证据里每个工具边界
+  // 一次 scrollTop→0 闪跳（f3-heightlog：scrollHeight 2795→602→2764 的瞬时塌陷）。
+  // 锁定期间内部重挂载不再引起总高塌陷；turn 离开 streaming 即释放（折叠等正常
+  // 收缩不受影响）。
+  useEffect(() => {
+    const scroller = scrollerElement;
+    const turnId = outputFollowTurn?.turnId;
+    if (!scroller || !turnId || outputFollowTurn?.status !== 'streaming') return;
+    if (typeof ResizeObserver !== 'function') return;
+    const el = scroller.querySelector<HTMLElement>(getTraceTurnSelector(turnId));
+    if (!el) return;
+
+    let lockedHeight = 0;
+    const growLock = () => {
+      const height = el.getBoundingClientRect().height;
+      if (height > lockedHeight) {
+        lockedHeight = height;
+        el.style.minHeight = `${height}px`;
+      }
+    };
+    growLock();
+    const lockObserver = new ResizeObserver(growLock);
+    lockObserver.observe(el);
+    return () => {
+      lockObserver.disconnect();
+      el.style.minHeight = '';
+    };
+  }, [outputFollowTurn?.turnId, outputFollowTurn?.status, scrollerElement]);
 
   // Load older messages when scrolling to top
   const handleStartReached = useCallback(() => {

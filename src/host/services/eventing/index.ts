@@ -11,7 +11,12 @@
 // ============================================================================
 
 export { EventBus, getEventBus, shutdownEventBus } from './bus';
-export { EventBridge, initEventBridge, getEventBridge } from './bridge';
+export {
+  EventBridge,
+  initEventBridge,
+  initWebEventBridge,
+  getEventBridge,
+} from './bridge';
 export {
   InternalEventStore,
   getInternalEventStore,

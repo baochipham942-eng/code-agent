@@ -236,6 +236,12 @@ export class PermissionModeManager {
    * 只在本轮有效（turn 结束即 clear），第二轮起回到会话档。
    */
   private firstRunStrictSessions: Set<string> = new Set();
+  /**
+   * 本轮跑的专家自带的审批档（详情页「安全」页 / agent.md 的 permission-override）。
+   * 「为这位专家单独设置」比会话档更具体，所以它取代会话档当 base——包括放宽方向
+   * （放手档 → bypassPermissions）；首跑 / 无人值守两处钳制仍压在它之上，只收紧不放宽。
+   */
+  private rolePresetSessions: Map<string, PermissionMode> = new Map();
 
   constructor(initialMode: PermissionMode = 'default') {
     this.currentMode = initialMode;
@@ -293,7 +299,9 @@ export class PermissionModeManager {
    */
   getModeForSession(sessionId?: string): PermissionMode {
     this.ensureSessionModesLoaded();
-    const base = (sessionId && this.sessionModes.get(sessionId)) || this.currentMode;
+    const base = (sessionId && this.rolePresetSessions.get(sessionId))
+      || (sessionId && this.sessionModes.get(sessionId))
+      || this.currentMode;
     // 首跑钳制排在无人值守之前：两者都只收紧，先收到最严那档即可。
     if (sessionId && this.firstRunStrictSessions.has(sessionId)) {
       return clampFirstRunPermissionMode(base);
@@ -318,6 +326,21 @@ export class PermissionModeManager {
   /** 本轮结束即解除，第二轮起回到会话自己的档。 */
   clearFirstRunStrictSession(sessionId: string): void {
     this.firstRunStrictSessions.delete(sessionId);
+  }
+
+  /**
+   * 标记「这一轮跑的专家自带审批档」——PR #637 打通了 agent.md 的 permission-override，
+   * 但它的下游出口只有 subagentPipeline；用户在输入框选中专家直接聊时专家是主 agent，
+   * 那条路根本不经过（与 #690/#697 同源）。主 agent 的档位单一真源就是 getModeForSession，
+   * 所以档位在轮起点写进来、finally 清掉。
+   */
+  setRolePresetSession(sessionId: string, mode: PermissionMode): void {
+    this.rolePresetSessions.set(sessionId, mode);
+  }
+
+  /** 本轮结束即解除，没带档的专家 / 下一轮换人时回到会话自己的档。 */
+  clearRolePresetSession(sessionId: string): void {
+    this.rolePresetSessions.delete(sessionId);
   }
 
   /**
@@ -616,6 +639,16 @@ export function clampUnattendedPermissionMode(mode: PermissionMode): PermissionM
  * 首跑钳制：把任何「有免确认」的档收到 readOnly（读通过、每一次写/执行都问用户）。
  * 只收紧不放宽——已经更严的档（plan / readOnly）原样返回。
  */
+/**
+ * 专家审批档 → 主 agent 档位。详情页三档承诺的行为逐条对上：
+ * - strict「每一步都先问过你」→ readOnly（读通过，写/执行一律确认，免确认捷径全失效）
+ * - development「工作目录内自己来，目录外先问」→ default（classifier 的 W1/R3 即此语义）
+ * - ci「不管在哪儿都自己动手」→ bypassPermissions（硬毙清单与危险命令二次确认照常）
+ */
+export function rolePermissionPresetToMode(preset: 'strict' | 'development' | 'ci'): PermissionMode {
+  return preset === 'strict' ? 'readOnly' : preset === 'ci' ? 'bypassPermissions' : 'default';
+}
+
 export function clampFirstRunPermissionMode(mode: PermissionMode): PermissionMode {
   return permissionModeAutoApproves(mode, 'write') || permissionModeAutoApproves(mode, 'execute')
     ? 'readOnly'

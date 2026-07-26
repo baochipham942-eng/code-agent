@@ -164,6 +164,7 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
     expect(processor.guardStateForTest.userStopHookBlockCount).toBe(1);
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       '<stop-hook>\ntests are still failing, keep fixing\n</stop-hook>',
+      'stop-hook',
     );
   });
 
@@ -231,6 +232,7 @@ describe('MessageProcessor user stop hook (GAP-006)', () => {
     expect(processor.guardStateForTest.userStopHookBlockCount).toBe(0);
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       '<stop-hook>\nall checks passed\n</stop-hook>',
+      'stop-hook',
     );
     expect(runFinalizer.emitTaskComplete).toHaveBeenCalled();
   });

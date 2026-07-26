@@ -9,6 +9,8 @@
 // ============================================================================
 
 import posthog from 'posthog-js';
+import { IPC_CHANNELS } from '@shared/ipc';
+import { ipcService } from '../services/ipcService';
 
 let initialized = false;
 let enabled = true;
@@ -52,4 +54,14 @@ export function identifyRenderer(distinctId: string, properties?: Record<string,
 export function resetRendererIdentity(): void {
   if (!initialized) return;
   posthog.reset();
+}
+
+export function installPostHogIdentityListener(): (() => void) | undefined {
+  return ipcService.on(IPC_CHANNELS.POSTHOG_IDENTITY, ({ distinctId }) => {
+    if (distinctId) {
+      identifyRenderer(distinctId);
+    } else {
+      resetRendererIdentity();
+    }
+  });
 }

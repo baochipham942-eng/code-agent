@@ -13,6 +13,7 @@ import { getEventBus } from './bus';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('EventBridge');
+export type EventBridgeSender = (channel: string, data: unknown) => void;
 
 /** 不转发到渲染进程的 domain */
 const INTERNAL_DOMAINS: EventDomain[] = ['system'];
@@ -30,10 +31,12 @@ const DOMAIN_TO_CHANNEL: Partial<Record<EventDomain, string>> = {
 
 export class EventBridge {
   private getWindow: () => AppWindow | null;
+  private sender: EventBridgeSender | null;
   private unsubscribe: (() => void) | null = null;
 
-  constructor(getWindow: () => AppWindow | null) {
+  constructor(getWindow: () => AppWindow | null, sender: EventBridgeSender | null = null) {
     this.getWindow = getWindow;
+    this.sender = sender;
   }
 
   start(): EventBridge {
@@ -60,18 +63,22 @@ export class EventBridge {
     if (event.bridgeToRenderer === false) return;
     if (INTERNAL_DOMAINS.includes(event.domain)) return;
 
-    const window = this.getWindow();
-    if (!window || window.isDestroyed()) return;
-
     const channel = DOMAIN_TO_CHANNEL[event.domain] || `${event.domain}:event`;
+    const payload = {
+      type: event.type,
+      data: event.data,
+      timestamp: event.timestamp,
+      sessionId: event.sessionId,
+    };
 
     try {
-      window.webContents.send(channel, {
-        type: event.type,
-        data: event.data,
-        timestamp: event.timestamp,
-        sessionId: event.sessionId,
-      });
+      if (this.sender) {
+        this.sender(channel, payload);
+        return;
+      }
+      const window = this.getWindow();
+      if (!window || window.isDestroyed()) return;
+      window.webContents.send(channel, payload);
     } catch (err) {
       logger.debug(`EventBridge forward failed for ${channel}:`, err);
     }
@@ -85,6 +92,17 @@ export function initEventBridge(getWindow: () => AppWindow | null): EventBridge 
     globalBridge.stop();
   }
   globalBridge = new EventBridge(getWindow);
+  return globalBridge;
+}
+
+/**
+ * Web/Tauri 发行版直接把 EventBus 事件送进 SSE 广播层，不借 Electron window。
+ */
+export function initWebEventBridge(sender: EventBridgeSender): EventBridge {
+  if (globalBridge) {
+    globalBridge.stop();
+  }
+  globalBridge = new EventBridge(() => null, sender);
   return globalBridge;
 }
 

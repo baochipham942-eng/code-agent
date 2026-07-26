@@ -1511,12 +1511,15 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result.error).toContain('Artifact validation failed');
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-validation-failed kind="interactive_artifact">'),
+      'artifact-validation',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('交互测试合约'),
+      'artifact-validation',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('runSmokeTest'),
+      'artifact-validation',
     );
     expect(fileReadTracker.hasBeenRead(filePath)).toBe(true);
   });
@@ -1725,6 +1728,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(toolExecutor.execute).not.toHaveBeenCalled();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-tool-blocked>'),
+      'artifact-repair',
     );
 
     ctx.turn.clearReinference();
@@ -2339,6 +2343,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(ctx.turn.needsReinference).toBe(true);
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-recovery>'),
+      'artifact-repair',
     );
 
     ctx.turn.clearReinference();
@@ -2351,6 +2356,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     // guidance — there is no blocked-tool counter that escalates the message.
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenLastCalledWith(
       expect.stringContaining('Your next action must be Edit, Append, or a complete Write on the target HTML file now'),
+      'artifact-repair',
     );
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
@@ -2491,6 +2497,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(contextAssembly.pushPersistentSystemContext).not.toHaveBeenCalled();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-validation-passed kind="interactive_artifact">'),
+      'preflight-guard',
     );
     expect(toolExecutor.execute).not.toHaveBeenCalled();
   });
@@ -2562,9 +2569,11 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(repairGuardMeta?.editAnchorFailure).toBe(true);
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-edit-anchor-failed>'),
+      'artifact-repair',
     );
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-recovery>'),
+      'artifact-repair',
     );
   });
 
@@ -2727,6 +2736,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(ctx.control.forceFinalResponseReason).toContain('artifact repair target already passes validation');
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-validation-passed kind="interactive_artifact">'),
+      'preflight-guard',
     );
     expect(contextAssembly.pushPersistentSystemContext).not.toHaveBeenCalled();
   });
@@ -2847,6 +2857,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(ctx.control.forceFinalResponseReason).toBeUndefined();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-playability-repair-active>'),
+      'preflight-guard',
     );
   });
 
@@ -3189,6 +3200,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(toolExecutor.execute).not.toHaveBeenCalled();
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-recovery>'),
+      'artifact-repair',
     );
   });
 
@@ -3722,9 +3734,11 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result.success).toBe(true);
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-validation-passed kind="interactive_artifact">'),
+      'artifact-validation',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('runtime smoke passed via interactive test contract'),
+      'artifact-validation',
     );
   });
 
@@ -3843,6 +3857,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result.error).toContain('missing_gameplay_mechanics');
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('平台玩法修复必须把布局、碰撞、奖励、能力和 gate 路线一起修到可达'),
+      'artifact-validation',
     );
     expect(ctx.artifact.repairGuard?.activeIssueCodes).toContain('missing_gameplay_mechanics');
   });
@@ -3903,6 +3918,7 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(ctx.nudgeManager.trackModifiedFile).toHaveBeenCalledWith(filePath);
     expect(contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
       expect.stringContaining('<artifact-validation-failed kind="interactive_artifact">'),
+      'artifact-validation',
     );
   });
 
@@ -3972,9 +3988,11 @@ describe('ToolExecutionEngine hook/telemetry argument handling', () => {
     expect(result.error).toContain('Artifact validation failed');
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-validation-failed kind="interactive_artifact">'),
+      'artifact-validation',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('Append 没有设置 final=true'),
+      'artifact-validation',
     );
   });
 

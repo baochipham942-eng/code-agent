@@ -185,9 +185,11 @@ describe('MessageProcessor delivery critic (GAP-013)', () => {
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<delivery-critic>'),
+      'delivery-critic',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('空指针'),
+      'delivery-critic',
     );
   });
 

@@ -37,11 +37,10 @@ describe('Tool Enhancement Tests', () => {
         'B1: fileReadTracker.ts',
         'B2: quoteNormalizer.ts',
         'B3: externalModificationDetector.ts',
-        'B4: backgroundTaskPersistence.ts',
         'B5: edit_file integration',
         'B6: grep enhancements',
       ];
-      expect(dependencies).toHaveLength(6);
+      expect(dependencies).toHaveLength(5);
     });
   });
 });

@@ -46,7 +46,7 @@ export type TaskExecutor = (
  * 形成 DAGScheduler → agentDefinition → hybrid/... 的循环依赖。
  * 改为构造时注入 resolver，将 agentDefinition 的 import 所有权移出 scheduler 层。
  *
- * initBackgroundServices 在启动期调 getDAGScheduler().setAgentResolver({ resolve })
+ * webStartupServices 在发行版启动期调 getDAGScheduler().setAgentResolver({ resolve })
  * 注入实现。未注入时执行 agent 任务抛错（由上层报告清晰错误）。
  */
 export interface AgentTaskResolver {
@@ -169,7 +169,7 @@ export class DAGScheduler extends EventEmitter {
   // DAG 初始化回调（由 dagEventBridge 注入，避免循环依赖）
   private onDAGInit?: (dag: TaskDAG) => void;
 
-  // Agent 任务解析器（由 initBackgroundServices 注入，ADR-008 Phase 4 避免循环依赖）
+  // Agent 任务解析器（由 webStartupServices 注入，ADR-008 Phase 4 避免循环依赖）
   private agentResolver?: AgentTaskResolver;
   private subagentExecutor?: SubagentExecutorPort;
 
@@ -194,7 +194,7 @@ export class DAGScheduler extends EventEmitter {
 
   /**
    * 注入 Agent 任务解析器（ADR-008 Phase 4）
-   * initBackgroundServices 启动时调用，把 agentDefinition 的 prompt/tools/maxIterations
+   * webStartupServices 启动时调用，把 agentDefinition 的 prompt/tools/maxIterations
    * 查询函数包装成 resolver 传入，避免 scheduler → agentDefinition 的循环依赖。
    */
   setAgentResolver(resolver: AgentTaskResolver): void {

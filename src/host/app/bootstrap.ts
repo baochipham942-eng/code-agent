@@ -7,9 +7,9 @@
 //
 // 各阶段实现已拆分到独立模块：
 //   Phase 1: initCoreServices.ts — DB, config, logger, shell environment
-//   Phase 2: initBackgroundServices.ts — cron, telemetry, cloud, updates, MCP
-//   Phase 3: createAgentRuntime.ts — TaskManager (sole orchestrator owner), channels
-//   Phase 4: restoreSession.ts — session restoration, planning service
+//   Phase 1: initCoreServices.ts — dead host path 的 DB/config 初始化
+//   Phase 2: createAgentRuntime.ts — TaskManager (sole orchestrator owner), channels
+//   Phase 3: restoreSession.ts — session restoration, planning service
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
@@ -33,7 +33,6 @@ import {
 import { resolveDurableRunRollout } from './durableRunRollout';
 
 import { initializeCoreServices as initCoreServicesImpl } from './initCoreServices';
-import { initializeBackgroundInfra } from './initBackgroundServices';
 import { createAgentRuntime } from './createAgentRuntime';
 import { registerDesktopQueuedInputDrain } from './desktopQueuedInputDrain';
 import { initializeSession, initializePlanningService } from './restoreSession';
@@ -143,14 +142,11 @@ export async function initializeBackgroundServices(): Promise<void> {
     .then(({ runDbRetention }) => runDbRetention())
     .catch((error) => logger.warn('DB retention failed', error as Error));
 
-  // Phase 2: Background infrastructure (cloud, MCP, cron, updates, etc.)
-  await initializeBackgroundInfra(configService);
-
-  // Phase 3: Agent runtime (TaskManager as sole orchestrator owner, channels)
+  // Phase 2: Agent runtime (TaskManager as sole orchestrator owner, channels)
   const applicationRunRegistry = getApplicationRunRegistry();
   createAgentRuntime(configService, applicationRunRegistry);
 
-  // Phase 3b: Create AgentApplicationService (facade for IPC layer)
+  // Phase 2b: Create AgentApplicationService (facade for IPC layer)
   const rolloutPolicy = resolveDurableRunRollout();
   if (rolloutPolicy.diagnostic) logger.error(rolloutPolicy.diagnostic);
   durableRunRuntime = await initializeDurableRun({
@@ -192,12 +188,12 @@ export async function initializeBackgroundServices(): Promise<void> {
   });
   queuedInputDrain.runStartupSweep();
 
-  // Phase 4a: Session restoration (uses TaskManager to manage orchestrator)
+  // Phase 3a: Session restoration (uses TaskManager to manage orchestrator)
   logger.info('Initializing session...');
   const currentSessionId = await initializeSession(settings);
   logger.info('Session initialized', { currentSessionId });
 
-  // Phase 4b: Planning service
+  // Phase 3b: Planning service
   logger.info('Initializing planning service...');
   planningService = await initializePlanningService(currentSessionId);
   if (planningService) {

@@ -8,6 +8,7 @@ import type {
   ModelResponse,
 } from '../../../agent/loopTypes';
 import type { ContextEventRecord } from '../../../context/contextEventLedger';
+import type { ContextInjectionSource } from '../../../context/contextEventLedger';
 import type { ProjectableMessage } from '../../../context/projectionEngine';
 import { createLogger } from '../../../services/infra/logger';
 import { SYSTEM_PROMPT_BUDGET, getContextWindow } from '../../../../shared/constants';
@@ -137,9 +138,9 @@ export interface ContextAssemblyCtx {
   ): ContextInterventionSnapshot;
   summarizeCollapsedContext(messages: Array<{ role: string; content: string }>): Promise<string>;
   loadResearchSkillPrompt(): string | null;
-  injectSystemMessage(content: string, category?: string): void;
+  injectSystemMessage(content: string, source: ContextInjectionSource, category?: string): void;
   flushHookMessageBuffer(): void;
-  pushPersistentSystemContext(content: string): void;
+  pushPersistentSystemContext(content: string, source: ContextInjectionSource): void;
   getBudgetedPersistentSystemContext(): string[];
   trimPersistentSystemContext(): void;
   truncatePersistentSystemContext(content: string, maxTokens: number): string;

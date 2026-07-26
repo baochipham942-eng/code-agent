@@ -366,6 +366,7 @@ describe('MessageProcessor persistence', () => {
     ]);
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('Continue from exactly where your previous response stopped'),
+      'output-continuation',
     );
     expect(ctx.modelConfig.maxTokens).toBeGreaterThan(4096);
     expect(ctx.onEvent).toHaveBeenCalledWith(
@@ -430,6 +431,7 @@ describe('MessageProcessor persistence', () => {
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('Continue from exactly where your previous response stopped'),
+      'output-continuation',
     );
     expect(ctx.modelConfig.maxTokens).toBe(4096);
     expect(runFinalizer.emitTaskProgress).toHaveBeenCalledWith(
@@ -1083,12 +1085,15 @@ describe('MessageProcessor persistence', () => {
     expect(action).toBe('continue');
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<tool-admission-repair>'),
+      'unavailable-tools',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('<artifact-repair-admission-blocked>'),
+      'unavailable-tools',
     );
     expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(
       expect.stringContaining('Your previous tool call requested unavailable tools: Read.'),
+      'unavailable-tools',
     );
     // repairGuard 已被上面触发的 repair 流程写入，非 undefined
     expect(ctx.artifact.repairGuard!.noProgressTurns).toBe(1);
@@ -1214,9 +1219,11 @@ describe('MessageProcessor persistence', () => {
     expect(ctx.control.forceFinalResponsePrompt).toBeUndefined();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('artifact repair guard revalidated the target before accepting another repair-mode tool call.'),
+      'artifact-validation',
     );
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('The repair guard has been cleared. Retry the user requested action with the full tool set if needed.'),
+      'artifact-validation',
     );
     expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
     expect(ctx.messages).toHaveLength(0);
@@ -1299,6 +1306,7 @@ describe('MessageProcessor persistence', () => {
     expect(ctx.artifact.repairGuard).toBeUndefined();
     expect(contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
       expect.stringContaining('requested tools: Edit'),
+      'artifact-validation',
     );
     expect(contextAssembly.addAndPersistMessage).not.toHaveBeenCalled();
     expect(ctx.messages).toHaveLength(0);

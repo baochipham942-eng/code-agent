@@ -7,13 +7,12 @@
 //   - 'launch:*'（审批事件）→ 'workflow:launch:event' 通道（WorkflowLaunchEvent）
 //   - 其余（run 事件）→ 'workflow:event' 通道（完整 ScriptRunEvent）
 //
-// 为什么不用通用 EventBridge：通用 bridge（services/eventing/bridge.ts）只在 Tauri 主进程
-// 的 initBackgroundServices 里 start()，webServer 模式根本没起它（与 swarm 同样的坑）。
-// 专用 bridge 在模块加载时自装，main/ipc/index.ts 一 import 就生效，Tauri + webServer 两端
-// 通吃；webServer 下 webContents.send 被 mock window 拦成 broadcastSSE，自动到浏览器端。
+// 为什么仍保留专用 bridge：通用 bridge 由 webStartupServices 启动，只做 domain → 通用
+// channel 映射；这里还要把 launch 与 run 分流到两个 workflow 专用通道。专用 bridge 在
+// 模块加载时自装，main/ipc/index.ts 一 import 就生效；web 模式经 AppWindow → SSE 到浏览器端。
 //
 // bridgeToRenderer:false 很关键：Tauri 主进程同时跑着通用 EventBridge，若用默认 true 会被
-// 通用 bridge 再转发一次 → renderer 收到重复事件。设 false 让本专用 bridge 独家投递。
+// 通用 bridge 再转发一次 → renderer 收到重复事件。设 false 让本专用 bridge独家投递。
 // ============================================================================
 
 import { AppWindow, ipcHost } from '../platform';

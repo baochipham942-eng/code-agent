@@ -130,9 +130,7 @@ export class MessageProcessor {
           this.guardState.toolCallRetryCount++;
           logger.warn(`[AgentLoop] Detected text description of tool call: "${failedToolCallMatch.toolName}"`);
           logCollector.agent('WARN', `Model described tool call as text: ${failedToolCallMatch.toolName}`);
-          this.contextAssembly.injectSystemMessage(
-            this.ctx.antiPatternDetector.generateToolCallFormatError(failedToolCallMatch.toolName, response.content)
-          );
+          this.contextAssembly.injectSystemMessage(this.ctx.antiPatternDetector.generateToolCallFormatError(failedToolCallMatch.toolName, response.content), 'tool-call-repair');
           logger.debug(`[AgentLoop] Tool call retry ${this.guardState.toolCallRetryCount}/${this.ctx.maxToolCallRetries}`);
           return { response, wasForceExecuted, shouldContinue: true };
         }
@@ -251,7 +249,7 @@ export class MessageProcessor {
               retry: this.guardState.userStopHookBlockCount,
             });
             if (userStopResult.message) {
-              this.contextAssembly.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`);
+              this.contextAssembly.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`, 'stop-hook');
             }
             return 'continue';
           }
@@ -266,7 +264,7 @@ export class MessageProcessor {
             data: { message: 'Stop hook 持续拦截已达重试上限，本次按完成处理' },
           });
         } else if (userStopResult.message) {
-          this.contextAssembly.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`);
+          this.contextAssembly.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`, 'stop-hook');
         }
       } catch (error) {
         logger.error('[AgentLoop] User stop hook error:', error);
@@ -325,6 +323,7 @@ export class MessageProcessor {
                 verifyHint,
                 '</delivery-critic>',
               ].join('\n'),
+              'delivery-critic',
             );
             this.ctx.onEvent({
               type: 'notification',
@@ -357,7 +356,7 @@ export class MessageProcessor {
           this.guardState.stopHookRetryCount++;
 
           if (this.guardState.stopHookRetryCount <= this.ctx.maxStopHookRetries) {
-            this.contextAssembly.injectSystemMessage(stopResult.injectContext);
+            this.contextAssembly.injectSystemMessage(stopResult.injectContext, 'planning-hook');
             if (stopResult.notification) {
               this.ctx.onEvent({
                 type: 'notification',
@@ -426,10 +425,11 @@ export class MessageProcessor {
             'Do not repeat earlier content.',
             'If the user asked for a long file or long code listing, keep continuing in chunks until complete.',
             'Only switch to write_file or another file-producing tool if the user explicitly wants the remaining content saved as a file.',
-          ].join(' ')
+          ].join(' '),
+          'output-continuation',
         );
       } else {
-        this.contextAssembly.injectSystemMessage(this.buildTextContinuationPrompt());
+        this.contextAssembly.injectSystemMessage(this.buildTextContinuationPrompt(), 'output-continuation');
       }
 
       this.runFinalizer.emitTaskProgress(
@@ -451,7 +451,7 @@ export class MessageProcessor {
         iterations,
         workingDirectory: this.ctx.workingDirectory,
         mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh,
-        injectSystemMessage: (msg: string) => this.contextAssembly.injectSystemMessage(msg),
+        injectSystemMessage: (msg, source) => this.contextAssembly.injectSystemMessage(msg, source),
         onEvent: (event: { type: string; data: unknown }) => {
           const agentEvent = toAgentEventFromNudge(event);
           if (agentEvent) {
@@ -467,7 +467,7 @@ export class MessageProcessor {
     // P7 + P0 Output validation (delegated to NudgeManager)
     if (!isForcedFinalTextPass) {
       const validationTriggered = this.ctx.nudgeManager.runOutputValidation(
-        (msg: string) => this.contextAssembly.injectSystemMessage(msg),
+        (msg, source) => this.contextAssembly.injectSystemMessage(msg, source),
       );
       if (validationTriggered) {
         return 'continue';
@@ -496,7 +496,7 @@ export class MessageProcessor {
         reason: desktopClaimGate.reason,
         sessionId: this.ctx.sessionId,
       });
-      this.contextAssembly.injectSystemMessage(desktopClaimGate.repairPrompt);
+      this.contextAssembly.injectSystemMessage(desktopClaimGate.repairPrompt, 'desktop-claim-guard');
       return 'continue';
     }
 
@@ -624,6 +624,7 @@ export class MessageProcessor {
           'Continue without those tools. If you need user input, state the blocker in your final text instead of calling an interactive tool.',
           '</tool-run-policy>',
         ].join('\n'),
+        'tool-policy-guard',
       );
       if (this.guardState.toolCallRetryCount > this.ctx.maxToolCallRetries) {
         const finalMessage: Message = {
@@ -718,7 +719,7 @@ export class MessageProcessor {
         const content = writeFileCall.arguments?.content as string;
         if (content) {
           logger.warn(`${writeFileCall.name} content length: ${content.length} chars - may be truncated!`);
-          this.contextAssembly.injectSystemMessage(generateTruncationWarning());
+          this.contextAssembly.injectSystemMessage(generateTruncationWarning(), 'truncation-recovery');
         }
       } else {
         // 检测截断的 bash heredoc
@@ -770,7 +771,8 @@ export class MessageProcessor {
             `上一次的 bash 命令包含 heredoc（<<EOF...EOF），但因 max_tokens 限制被截断，命令不完整。\n` +
             `已跳过执行以避免 SyntaxError。请重新生成完整的命令。\n` +
             `提示：如果内联脚本很长，考虑先用 write_file 写入临时文件再用 bash 执行，而不是使用 heredoc。\n` +
-            `</truncation-recovery>`
+            `</truncation-recovery>`,
+            'truncation-recovery',
           );
 
           return 'continue';
@@ -779,7 +781,8 @@ export class MessageProcessor {
         this.contextAssembly.injectSystemMessage(
           `<truncation-recovery>\n` +
           `上一次输出因 max_tokens 限制被截断。请继续完成未完成的操作。\n` +
-          `</truncation-recovery>`
+          `</truncation-recovery>`,
+          'truncation-recovery',
         );
       }
     }
@@ -940,7 +943,8 @@ export class MessageProcessor {
             '不要再次调用 mkdir，不要只输出计划，不要停留在目录准备。',
             '如果文件非常大：先 Write 一个最小可运行骨架到该路径，再用 Append 连续补完，并在最后一个 Append 上设置 final=true；如果完整单文件已经准备好且体量适中，可以直接一次 Write。',
             '</artifact-file-write-required>',
-          ].join('\n')
+          ].join('\n'),
+          'artifact-write-guard',
         );
       }
     }
@@ -1016,7 +1020,7 @@ export class MessageProcessor {
           fingerprint: detection.sameFingerprint,
           matchCount: detection.matchCount,
         });
-        this.contextAssembly.injectSystemMessage(buildStagnationHint(detection.matchCount));
+        this.contextAssembly.injectSystemMessage(buildStagnationHint(detection.matchCount), 'stagnation-guard');
         this.guardState.stagnationWarningEmitted = true;
       }
       // Hint 注入后仍重复 → 真止损,避免无谓烧 token。
@@ -1029,9 +1033,7 @@ export class MessageProcessor {
           fingerprint: detection.sameFingerprint,
           matchCount: detection.matchCount,
         });
-        this.contextAssembly.injectSystemMessage(
-          buildStagnationStopMessage(detection.matchCount, detection.sameFingerprint),
-        );
+        this.contextAssembly.injectSystemMessage(buildStagnationStopMessage(detection.matchCount, detection.sameFingerprint), 'stagnation-guard');
         this.ctx.onEvent({
           type: 'error',
           data: {
@@ -1059,7 +1061,7 @@ export class MessageProcessor {
           toolName: spam.toolName,
           count: spam.count,
         });
-        this.contextAssembly.injectSystemMessage(buildToolSpamHint(spam.toolName!, spam.count));
+        this.contextAssembly.injectSystemMessage(buildToolSpamHint(spam.toolName!, spam.count), 'tool-spam-hint');
         this.guardState.searchSpamWarningEmitted = true;
       }
     }
@@ -1109,7 +1111,7 @@ export class MessageProcessor {
     const artifactRepairPolicy = getArtifactRepairToolPolicy(this.ctx.artifact.repairGuard);
     this.ctx.nudgeManager.checkProgressState(
       this.ctx.turn.toolsUsedInTurn,
-      (msg: string) => this.contextAssembly.injectSystemMessage(msg),
+      (msg, source) => this.contextAssembly.injectSystemMessage(msg, source),
       { mutationToolPrompt: artifactRepairPolicy?.mutationToolPromptZh },
     );
 
@@ -1117,7 +1119,7 @@ export class MessageProcessor {
     if (wasForceExecuted) {
       this.ctx.nudgeManager.checkPostForceExecute(
         this.ctx.workingDirectory,
-        (msg: string) => this.contextAssembly.injectSystemMessage(msg),
+        (msg, source) => this.contextAssembly.injectSystemMessage(msg, source),
       );
     }
 

@@ -19,7 +19,10 @@ import type {
 import type { RuntimeContext } from './runtimeContext';
 import type { TaskProgressPort } from './runtimePorts';
 import type { ContextInterventionSnapshot } from '../../../shared/contract/contextView';
-import type { ContextEventRecord } from '../../context/contextEventLedger';
+import type {
+  ContextEventRecord,
+  ContextInjectionSource,
+} from '../../context/contextEventLedger';
 import type {
   ContextAssemblyCtx,
   ContextTranscriptEntry,
@@ -216,16 +219,16 @@ export class ContextAssembly {
     return buildPlanContextMessageImpl(this.makeCtx());
   }
 
-  injectSystemMessage(content: string, category?: string): void {
-    return injectSystemMessageImpl(this.makeCtx(), content, category);
+  injectSystemMessage(content: string, source: ContextInjectionSource, category?: string): void {
+    return injectSystemMessageImpl(this.makeCtx(), content, source, category);
   }
 
   flushHookMessageBuffer(): void {
     return flushHookMessageBufferImpl(this.makeCtx());
   }
 
-  pushPersistentSystemContext(content: string): void {
-    return pushPersistentSystemContextImpl(this.makeCtx(), content);
+  pushPersistentSystemContext(content: string, source: ContextInjectionSource): void {
+    return pushPersistentSystemContextImpl(this.makeCtx(), content, source);
   }
 
   private getBudgetedPersistentSystemContext(): string[] {

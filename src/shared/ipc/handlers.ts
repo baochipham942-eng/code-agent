@@ -639,6 +639,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CONFIRM_ACTION_ASK]: (request: ConfirmActionRequest) => void;
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
   [IPC_CHANNELS.AUTH_PASSWORD_RESET_CALLBACK]: (data: { accessToken: string; refreshToken: string }) => void;
+  [IPC_CHANNELS.POSTHOG_IDENTITY]: (data: { distinctId: string | null }) => void;
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
   [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;
   [IPC_CHANNELS.SESSION_LIST_UPDATED]: () => void;

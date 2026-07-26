@@ -222,7 +222,8 @@ export class ConversationRuntime {
         `Instead, analyze the request and provide a detailed step-by-step plan.\n` +
         `Format your plan as a numbered list with clear, actionable steps.\n` +
         `Wait for user approval before proceeding with execution.\n` +
-        `</plan-mode>`
+        `</plan-mode>`,
+        'plan-guidance',
       );
       logger.info('[AgentLoop] Plan mode activated');
     } else {
@@ -262,7 +263,7 @@ export class ConversationRuntime {
       this.flowState.structuredOutput.schema,
       result.validationErrors || [result.error || 'Unknown error']
     );
-    this.contextAssembly.injectSystemMessage(correctionPrompt);
+    this.contextAssembly.injectSystemMessage(correctionPrompt, 'output-validation');
     logger.debug(`[AgentLoop] Structured output correction injected (retry ${this.flowState.structuredOutputRetryCount}/${this.ctx.maxStructuredOutputRetries})`);
   }
 
@@ -287,7 +288,8 @@ export class ConversationRuntime {
       `Execute each step one at a time, verifying completion before moving to the next.\n` +
       `Steps:\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n` +
       `\nStart with step 1. After completing each step, explicitly state "Step N completed" before moving on.\n` +
-      `</step-by-step-mode>`
+      `</step-by-step-mode>`,
+      'plan-guidance',
     );
 
     for (let i = 0; i < steps.length; i++) {
@@ -443,12 +445,16 @@ export class ConversationRuntime {
           }
 
           // Swarm goal（P4）：allowSwarm 时首轮注入一次编排引导
-          maybeInjectSwarmGuidance(this.ctx, (m) => this.contextAssembly.injectSystemMessage(m), iterations);
+          maybeInjectSwarmGuidance(
+            this.ctx,
+            (message) => this.contextAssembly.injectSystemMessage(message, 'swarm-guidance'),
+            iterations,
+          );
 
           // Codex 式审计 nudge：每 CHECKPOINT_INTERVAL 轮强制重注入"先假设没做完、
           // 逐项找证据"的完成前自检框架，对抗模型过早自报完成（pi-goal 上下文注入思路）。
           if (this.ctx.goalMode.shouldInjectAudit(iterations)) {
-            this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildAuditNudge());
+            this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildAuditNudge(), 'goal-progress');
             logger.debug('[GoalMode] audit nudge injected', { turn: iterations });
           }
         }
@@ -584,7 +590,7 @@ export class ConversationRuntime {
           const emptyCheck = doomLoopGuard.recordEmptyOutput();
           if (emptyCheck.action === 'continue' && emptyCheck.nudge) {
             logger.warn('[DoomLoopGuard] Empty text output; auto-continuing with nudge');
-            this.contextAssembly.injectSystemMessage(emptyCheck.nudge);
+            this.contextAssembly.injectSystemMessage(emptyCheck.nudge, 'runtime-auto-continuation');
             continue;
           }
           logger.warn('[DoomLoopGuard] Empty output continuation limit reached; stopping');
@@ -595,7 +601,7 @@ export class ConversationRuntime {
           const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
           if (textAction === 'continue') continue;
           if (this.ctx.goalMode?.isPending()) {
-            this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildContinuationPrompt());
+            this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildContinuationPrompt(), 'goal-progress');
             continue;
           }
           if (textAction === 'break') break;
@@ -620,7 +626,7 @@ export class ConversationRuntime {
           }
           if (doomCheck.nudge) {
             logger.warn(`[DoomLoopGuard] ${doomCheck.level} detected; injecting nudge`);
-            this.contextAssembly.injectSystemMessage(doomCheck.nudge);
+            this.contextAssembly.injectSystemMessage(doomCheck.nudge, 'stagnation-guard');
           }
           const toolAction = await this.messageProcessor.handleToolResponse(response, wasForceExecuted, iterations, langfuse);
           if (toolAction === 'continue') continue;
@@ -632,7 +638,7 @@ export class ConversationRuntime {
         //     验证通过才 markMet（增量3c）。在此之前 goal 不会被标 met，刻意拒绝 Ralph
         //     式"模型自报完成即退出"。recordTurnProgress 于增量3e 接线。
         if (this.ctx.goalMode?.isPending()) {
-          this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildContinuationPrompt());
+          this.contextAssembly.injectSystemMessage(this.ctx.goalMode.buildContinuationPrompt(), 'goal-progress');
           continue;
         }
 
@@ -770,6 +776,7 @@ export class ConversationRuntime {
           if (skillContext.contextModifier.toolBoundary.strict) {
             this.contextAssembly.injectSystemMessage(
               buildStrictToolsetNotice(skillContext.contextModifier.toolBoundary),
+              'unavailable-tools',
             );
           }
         }
@@ -821,7 +828,7 @@ export class ConversationRuntime {
     if (!isSimpleTask) {
       const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
       // 持久化到 system context，确保每轮推理都可见（而非注入消息历史后被淹没）
-      this.contextAssembly.pushPersistentSystemContext(complexityHint);
+      this.contextAssembly.pushPersistentSystemContext(complexityHint, 'complexity-hint');
 
       if (!hasActiveSessionTodos(this.ctx.sessionId)) {
         try {
@@ -886,7 +893,7 @@ export class ConversationRuntime {
 
           if (judgment.shouldParallel && judgment.confidence >= 0.7) {
             const parallelHint = orchestrator.generateParallelHint(judgment);
-            this.contextAssembly.pushPersistentSystemContext(parallelHint);
+            this.contextAssembly.pushPersistentSystemContext(parallelHint, 'parallel-execution-hint');
 
             logger.info('[AgentLoop] Parallel execution suggested', {
               dimensions: judgment.parallelDimensions,
@@ -964,7 +971,7 @@ export class ConversationRuntime {
           if (reminder) {
             logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens) to persistent context`);
             // 任务模式 reminder（含 DATA_PROCESSING 等）持久化到 system context
-            this.contextAssembly.pushPersistentSystemContext(reminder);
+            this.contextAssembly.pushPersistentSystemContext(reminder, 'mode-reminder');
           }
         }
       } catch (error) {
@@ -994,7 +1001,10 @@ export class ConversationRuntime {
         return null;
       }
       if (promptResult.message) {
-        this.contextAssembly.injectSystemMessage(`<user-prompt-hook>\n${promptResult.message}\n</user-prompt-hook>`);
+        this.contextAssembly.injectSystemMessage(
+          `<user-prompt-hook>\n${promptResult.message}\n</user-prompt-hook>`,
+          'user-prompt-hook',
+        );
       }
     }
 
@@ -1009,10 +1019,16 @@ export class ConversationRuntime {
     if (isFirstUserTurn && this.ctx.hookManager) {
       const sessionResult = await this.ctx.hookManager.triggerSessionStart(this.ctx.sessionId);
       if (sessionResult.message) {
-        this.contextAssembly.injectSystemMessage(`<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`);
+        this.contextAssembly.injectSystemMessage(
+          `<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`,
+          'session-start-hook',
+        );
       }
       if (sessionResult.injectedContext) {
-        this.contextAssembly.injectSystemMessage(`<session-start-hook>\n${sessionResult.injectedContext}\n</session-start-hook>`);
+        this.contextAssembly.injectSystemMessage(
+          `<session-start-hook>\n${sessionResult.injectedContext}\n</session-start-hook>`,
+          'session-start-hook',
+        );
       }
     }
 
@@ -1024,7 +1040,10 @@ export class ConversationRuntime {
           this.ctx.workingDirectory
         );
         if (recovery) {
-          this.contextAssembly.injectSystemMessage(`<session-recovery>\n${recovery}\n</session-recovery>`);
+          this.contextAssembly.injectSystemMessage(
+            `<session-recovery>\n${recovery}\n</session-recovery>`,
+            'runtime-recovery',
+          );
           logger.info('[AgentLoop] Session recovery summary injected');
         }
       } catch {

@@ -1,3 +1,12 @@
+// ============================================================================
+// RolePackShelf - 签名云货架（「发现」tab 的更多专家区）
+// ============================================================================
+//
+// 卡片与专家卡/专家团卡同一套货架语言（图标瓦片 + 名称 + 来源徽标 + 一句话价值
+// + 标签 + 品牌色主 CTA）；「云货架」来源徽标常驻，是签名货架的差异化标识。
+// 加载三态：loading / 失败（error）/ 超时（timedOut，由 ExpertPanel 计时），
+// 后两者都给空态 + 重试，不再让「正在加载更多专家…」常驻。
+
 import React from 'react';
 import { AlertTriangle, Download, RefreshCw, Trash2 } from 'lucide-react';
 import type { RolePackListItem } from '../../../services/rolesClient';
@@ -5,6 +14,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { Badge } from '../../primitives/Badge';
 import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
+import { RoleIcon } from '../shared/RoleIcon';
 
 export interface RolePackHealthNoticeProps {
   /** 缺省表示该角色不是云下发包，直接不渲染（省掉调用方的 has + 非空断言） */
@@ -58,6 +68,8 @@ interface RolePackShelfProps {
   items: RolePackListItem[];
   loading: boolean;
   error: boolean;
+  /** 加载超过 ROLE_PACKS_LOAD_TIMEOUT_MS（ExpertPanel）仍未返回：换超时空态，给退出路径 */
+  timedOut?: boolean;
   busyRoleId: string | null;
   onRetryLoad: () => void;
   onInstall: (roleId: string) => void;
@@ -69,6 +81,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
   items,
   loading,
   error,
+  timedOut = false,
   busyRoleId,
   onRetryLoad,
   onInstall,
@@ -81,7 +94,14 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
   return (
     <section aria-labelledby="role-pack-shelf-title">
       <h2 id="role-pack-shelf-title" className="mb-3 text-sm font-medium text-zinc-200">{text.sectionTitle}</h2>
-      {loading ? <p className="text-xs text-zinc-500">{text.loading}</p> : null}
+      {loading && !timedOut ? <p className="text-xs text-zinc-500">{text.loading}</p> : null}
+      {/* 超时只在加载仍挂起时占位；晚到的响应一落地就让位给货架/失败态（ExpertPanel 会同步清 timedOut） */}
+      {timedOut && loading ? (
+        <div data-testid="role-pack-load-timeout" className="space-y-2">
+          <EmptyState variant="box" text={text.loadTimeout} />
+          <Button variant="secondary" size="sm" onClick={onRetryLoad}>{text.retryLoad}</Button>
+        </div>
+      ) : null}
       {!loading && error ? (
         <div data-testid="role-pack-load-error" className="space-y-2">
           <EmptyState variant="box" text={text.loadFailed} />
@@ -98,13 +118,22 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
               <article key={entry.roleId} data-testid={`role-pack-card-${entry.roleId}`} className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3.5">
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="text-sm font-medium text-zinc-100">{entry.displayName || entry.roleId}</h3>
-                      <p className="mt-0.5 text-xs text-zinc-500">{entry.visual.profession}</p>
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
+                        <RoleIcon name={entry.visual.icon} className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-zinc-100">{entry.displayName || entry.roleId}</span>
+                        <span className="block truncate text-xs text-zinc-500">{entry.visual.profession}</span>
+                      </span>
                     </div>
-                    {item.installed ? <Badge className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-200">{text.installed}</Badge> : null}
+                    <span className="flex flex-shrink-0 items-center gap-1">
+                      {/* 签名云货架的来源标识是差异化卖点，保留并常驻 */}
+                      <Badge data-testid={`role-pack-source-${entry.roleId}`} className="border-zinc-700 bg-zinc-800 text-[10px] text-zinc-400">{text.sourceBadge}</Badge>
+                      {item.installed ? <Badge className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-200">{text.installed}</Badge> : null}
+                    </span>
                   </div>
-                  {entry.description ? <p className="mt-2 text-xs leading-relaxed text-zinc-400">{entry.description}</p> : null}
+                  {entry.description ? <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-zinc-400">{entry.description}</p> : null}
                 </div>
                 {entry.tags && entry.tags.length > 0 ? (
                   <div className="flex flex-wrap gap-1">

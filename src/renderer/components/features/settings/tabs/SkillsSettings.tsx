@@ -1,5 +1,6 @@
 // ============================================================================
-// SkillsSettings - Skills 管理 Tab（已安装 / 发现安装）
+// SkillsSettings - Skills 管理 Tab（已安装 / 发现安装；默认落「已安装」，
+// 货架（发现）是第二落点，与能力中心「先我的后货架」的默认口径一致）
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -53,8 +54,8 @@ export const SkillsSettings: React.FC = () => {
   const skillsText = t.settings.skills.main;
   const settingsCapabilityFocus = useAppStore((state) => state.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((state) => state.clearSettingsCapabilityFocus);
-  // 视图状态
-  const [activeTab, setActiveTab] = useState<SkillsViewTab>('discover');
+  // 视图状态（默认「已安装」：先看自己的，再逛货架）
+  const [activeTab, setActiveTab] = useState<SkillsViewTab>('installed');
 
   // 数据状态
   const [libraries, setLibraries] = useState<LocalSkillLibrary[]>([]);

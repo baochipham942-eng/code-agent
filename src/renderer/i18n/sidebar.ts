@@ -9,6 +9,14 @@ export const sidebarZh = {
     // 顶部 / 搜索
     newTask: '新任务',
     newTaskTitle: '新建任务（纯对话，不继承项目上下文）',
+    // 当前工作目录行（顶栏目录 chip 退役后的唯一入口）
+    currentDirectory: '当前目录',
+    selectDirectory: '选择目录',
+    selectDirectoryTitle: '选择工作目录',
+    pathDialogTitle: '输入工作目录路径',
+    pathDialogDescription: 'Web 模式没有系统目录选择器，请直接输入绝对路径。',
+    pathDialogPlaceholder: '/绝对/路径',
+    confirm: '确定',
     openSearch: '搜索会话',
     searchPlaceholder: '搜索会话…',
     searchDialogTitle: '搜索会话',
@@ -277,6 +285,13 @@ export const sidebarEn: typeof sidebarZh = {
   sidebar: {
     newTask: 'New task',
     newTaskTitle: 'New task (plain conversation, no project context)',
+    currentDirectory: 'Current directory',
+    selectDirectory: 'Choose directory',
+    selectDirectoryTitle: 'Choose working directory',
+    pathDialogTitle: 'Enter working directory path',
+    pathDialogDescription: 'Web mode has no system directory picker; type an absolute path.',
+    pathDialogPlaceholder: '/absolute/path',
+    confirm: 'Confirm',
     openSearch: 'Search sessions',
     searchPlaceholder: 'Search sessions…',
     searchDialogTitle: 'Search sessions',

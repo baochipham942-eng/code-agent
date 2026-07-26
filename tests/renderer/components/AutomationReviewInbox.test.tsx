@@ -72,13 +72,25 @@ function makeParked(over: Partial<ParkedApprovalInboxItem>): ParkedApprovalInbox
 }
 
 describe('AutomationReviewInbox', () => {
-  it('无待审时不渲染', async () => {
+  it('无待审时渲染安静空态「都过目完了」', async () => {
     listPendingReview.mockResolvedValue([]);
-    const { container } = render(<AutomationReviewInbox />);
+    render(<AutomationReviewInbox />);
     await waitFor(() => {
       expect(listPendingReview).toHaveBeenCalled();
     });
-    expect(container.querySelector('[data-testid="automation-review-inbox"]')).toBeNull();
+    // 收件箱提为独立卡片区后常显：空态卡片在、审批分组不在
+    expect(screen.getByTestId('automation-review-inbox')).toBeTruthy();
+    expect(screen.getByTestId('automation-review-all-clear')).toBeTruthy();
+    expect(screen.queryByTestId('parked-approval-group')).toBeNull();
+  });
+
+  it('待过目条数经 onPendingCountChange 回传给页首状态条', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({}), makeRecord({ id: 'auto-2' })]);
+    const onPendingCountChange = vi.fn();
+    render(<AutomationReviewInbox onPendingCountChange={onPendingCountChange} />);
+    await waitFor(() => {
+      expect(onPendingCountChange).toHaveBeenCalledWith(2);
+    });
   });
 
   it('渲染待审条目，已过目调 markReviewed 并刷新', async () => {

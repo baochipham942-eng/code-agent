@@ -96,7 +96,6 @@ export async function attachVoiceClient(client: WsSocket, neoSessionId: string):
 }
 
 async function connectAndBind(client: WsSocket, neoSessionId: string, apiKey: string): Promise<void> {
-
   const id = `voice-${Date.now()}-${++sessionSeq}`;
   send(client, { type: 'state', state: 'connecting' });
 

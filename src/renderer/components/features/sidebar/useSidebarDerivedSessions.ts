@@ -23,6 +23,7 @@ import {
 import { hasNeedsInputForSession as deriveHasNeedsInputForSession } from '../../../utils/sessionNeedsInput';
 import { sortSidebarSessionsForRecovery } from '../../../utils/sidebarSessionOrdering';
 import { hasSessionDeliverySignals } from '../../../utils/sessionRecoveryHints';
+import { useI18n } from '../../../hooks/useI18n';
 import {
   buildSidebarMessageSearchHitGroups,
   getCurrentProjectSearchSessionIds,
@@ -83,6 +84,7 @@ export interface SidebarDerivedSessions {
  */
 export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParams): SidebarDerivedSessions {
   const { canOpenSessionReplay } = params;
+  const { t } = useI18n();
 
   const sessions = useSessionStore((state) => state.sessions);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -402,6 +404,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
           const base = marker.replace(/\/$/, ''); // '/.code-agent/design'
           return !(wd.includes(marker) || wd.endsWith(base));
         }),
+        t.sidebarProject.uncategorizedGroupName,
       ).map((group) => ({
         ...group,
         sessions: sortSidebarSessionsForRecovery(
@@ -424,7 +427,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
             ),
         ),
       })),
-    [backgroundSessionMap, filteredSessions, hasNeedsInputForSession, sessionRuntimes, sessionStates],
+    [backgroundSessionMap, filteredSessions, hasNeedsInputForSession, sessionRuntimes, sessionStates, t],
   );
   const visibleProjectIds = useMemo(
     () =>

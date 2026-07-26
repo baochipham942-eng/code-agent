@@ -19,7 +19,8 @@ export interface WorkspaceGroup {
    *  UNCATEGORIZED_WORKSPACE_KEY. */
   key: string;
   /** Display name — project groups use their primary workspace basename until
-   *  Project metadata loads; fallback bucket uses '未分类'. */
+   *  Project metadata loads; the fallback bucket uses the caller-supplied
+   *  uncategorizedName (i18n, 禁硬编码). */
   name: string;
   /** Primary workspace path, usually the most recently active session's path. */
   path?: string;
@@ -90,9 +91,13 @@ function getGroupPaths(sessions: SessionWithMeta[]): string[] {
  *
  * - Project groups are keyed by persisted projectId.
  * - Sessions without project metadata fall back to full workingDirectory path.
- * - The uncategorized bucket (if non-empty) is always appended at the end.
+ * - The uncategorized bucket (if non-empty) is always appended at the end; its
+ *   display name comes from the caller (i18n), not hardcoded here.
  */
-export function groupByWorkspace(sessions: SessionWithMeta[]): WorkspaceGroup[] {
+export function groupByWorkspace(
+  sessions: SessionWithMeta[],
+  uncategorizedName: string,
+): WorkspaceGroup[] {
   const buckets = new Map<string, SessionBucket>();
 
   for (const session of sessions) {
@@ -123,8 +128,8 @@ export function groupByWorkspace(sessions: SessionWithMeta[]): WorkspaceGroup[] 
     if (key === UNCATEGORIZED_WORKSPACE_KEY) {
       uncategorized = {
         key,
-        // 这是默认的纯对话归宿（非"没分类好"的失败态），命名为「对话」更贴近实际语义。
-        name: '对话',
+        // 这是默认的纯对话归宿（非"没分类好"的失败态），组名由调用方按 i18n 传入。
+        name: uncategorizedName,
         isUncategorized: true,
         paths,
         sessions: sortedSessions,

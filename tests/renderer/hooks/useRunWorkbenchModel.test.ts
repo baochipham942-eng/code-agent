@@ -30,6 +30,56 @@ describe('buildGlobalTaskRecords', () => {
       sourceThreadId: 'other-123456',
     });
   });
+
+  it('resolves cross-session card titles from sessionStore sessions (DB title)', () => {
+    const tasks = buildGlobalTaskRecords({
+      currentSessionId: 'session-current',
+      sessionStates: {
+        'other-123456': { status: 'running' },
+      } satisfies Record<string, SessionState>,
+      sessions: [
+        { id: 'other-123456', title: '整理周报', status: 'running' },
+      ],
+    });
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].title).toBe('整理周报');
+  });
+
+  it('classifies status through the shared session status presentation mapping', () => {
+    const tasks = buildGlobalTaskRecords({
+      currentSessionId: 'session-current',
+      sessionStates: {
+        'running-session': { status: 'running' },
+        'failed-session': { status: 'error', error: 'boom' },
+        'queued-session': { status: 'queued', queuePosition: 2 },
+      } satisfies Record<string, SessionState>,
+      sessions: [
+        { id: 'running-session', title: '跑动中', status: 'running' },
+        { id: 'failed-session', title: '失败了', status: 'error' },
+        { id: 'queued-session', title: '排队中', status: 'queued' },
+      ],
+    });
+
+    const byId = new Map(tasks.map((task) => [task.sourceThreadId, task]));
+
+    // 与侧栏 getSessionStatusPresentation 同一文案映射：live → 执行中
+    expect(byId.get('running-session')).toMatchObject({
+      status: 'in_progress',
+      steps: [{ title: '执行中', status: 'in_progress' }],
+    });
+    // error → 出错 + blocked
+    expect(byId.get('failed-session')).toMatchObject({
+      status: 'blocked',
+      steps: [{ title: '出错', status: 'blocked' }],
+      resumeHint: 'boom',
+    });
+    // queued 保留队列位置细节
+    expect(byId.get('queued-session')).toMatchObject({
+      status: 'in_progress',
+      steps: [{ title: '队列 #2', status: 'in_progress' }],
+    });
+  });
 });
 
 describe('buildLedgerTaskRecords', () => {

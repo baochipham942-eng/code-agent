@@ -25,6 +25,9 @@ type ExperimentDbWriter = Pick<DatabaseService, 'insertExperiment' | 'insertExpe
 
 export interface EvalHarnessExperimentResultLike {
   experimentId: string;
+  /** 数据集/套件标识（可选）。存在时落盘实验名为 eval-harness-<dataset>-<日期>，
+   *  评测中心基准 tab 按「source + 归一数据集名」分组才有意义；缺省保持旧格式。 */
+  dataset?: string;
   cases: Array<{
     caseId: string;
     trials: Array<{
@@ -84,6 +87,23 @@ export class ExperimentAdapter {
   private normalizeScore(score: number, scale: 'zero_one' | 'zero_hundred'): number {
     const normalized = scale === 'zero_one' ? score * 100 : score;
     return Math.max(0, Math.min(100, normalized));
+  }
+
+  /**
+   * 数据集名安全化为实验名片段：空白/斜杠等转 `-`，压扁重复 `-`；
+   * 整段形如日期/时间戳（2026-07-21 / 20260721 / 13 位 epoch）时加 `ds-` 前缀，
+   * 避免被 renderer 侧归一函数（evalDatasetName.ts）当日期剥掉。返回空表示不可用。
+   */
+  private sanitizeDatasetSegment(raw: string): string | undefined {
+    const sanitized = raw.trim()
+      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
+      .replace(/-{2,}/g, '-')
+      .replace(/^-+|-+$/g, '');
+    if (!sanitized) return undefined;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(sanitized) || /^\d{8}$/.test(sanitized) || /^\d{13}$/.test(sanitized)) {
+      return `ds-${sanitized}`;
+    }
+    return sanitized;
   }
 
   private normalizeTestStatus(status: TestResult['status']): EvalCaseStatus {
@@ -359,6 +379,8 @@ export class ExperimentAdapter {
       };
     });
 
+    const day = new Date(summary.startTime).toISOString().slice(0, 10);
+    const datasetSegment = summary.dataset ? this.sanitizeDatasetSegment(summary.dataset) : undefined;
     return {
       schemaVersion: 1,
       runId: summary.runId || crypto.randomUUID(),
@@ -367,10 +389,13 @@ export class ExperimentAdapter {
       startTime: summary.startTime,
       endTime: summary.endTime,
       durationMs: summary.duration || 0,
-      // GAP-017: harness 对照实验用变体名命名，便于跨实验对比时识别维度
+      // GAP-017: harness 对照实验用变体名命名，便于跨实验对比时识别维度；
+      // 裸 eval 形态带数据集名（eval-<dataset>-<日期>），基准 tab 按数据集分组才成立
       name: summary.harness
-        ? `harness-${summary.harness.name}-${new Date(summary.startTime).toISOString().slice(0, 10)}`
-        : `eval-${new Date(summary.startTime).toISOString().slice(0, 10)}`,
+        ? `harness-${summary.harness.name}-${day}`
+        : datasetSegment
+          ? `eval-${datasetSegment}-${day}`
+          : `eval-${day}`,
       scope: 'full',
       environment: summary.environment,
       totals: this.computeTotals(cases),
@@ -467,6 +492,8 @@ export class ExperimentAdapter {
     const startTime = Date.parse(result.timestamp) || Date.now();
     const totals = this.computeTotals(cases);
     const hasGateDegradedCase = cases.some(c => c.failureStage === 'telemetry_replay_gate');
+    const day = new Date(startTime).toISOString().slice(0, 10);
+    const datasetSegment = result.dataset ? this.sanitizeDatasetSegment(result.dataset) : undefined;
     return {
       schemaVersion: 1,
       runId: result.experimentId || crypto.randomUUID(),
@@ -474,7 +501,7 @@ export class ExperimentAdapter {
       aggregation: 'median_threshold',
       startTime,
       durationMs: cases.reduce((sum, c) => sum + c.durationMs, 0),
-      name: `eval-harness-${new Date(startTime).toISOString().slice(0, 10)}`,
+      name: datasetSegment ? `eval-harness-${datasetSegment}-${day}` : `eval-harness-${day}`,
       scope: 'full',
       environment,
       totals: {

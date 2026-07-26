@@ -6,6 +6,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { canAccessFeature, createAccessSubject } from '../../../utils/accessControl';
 import { canAccessSettingsTab } from '../../../utils/settingsTabs';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { PageContent } from '../shared/PageContent';
 import { ExpertPanel } from '../expert/ExpertPanel';
 
 // 四个重型 tab 一律懒加载：能力中心比设置页开得频繁得多，
@@ -68,11 +69,12 @@ export const CapabilityHubPage: React.FC = () => {
           </div>
         )}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-4">
+      {/* 内容区走 PageContent 契约（全宽 + px-6 py-4），pb-12 保留底部呼吸位 */}
+      <PageContent className="pb-12">
         <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
           {content}
         </React.Suspense>
-      </div>
+      </PageContent>
     </FullScreenPage>
   );
 };

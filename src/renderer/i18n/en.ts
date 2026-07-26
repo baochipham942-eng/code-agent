@@ -31,8 +31,10 @@ import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
 import { workbenchTabsEn } from './workbenchTabs';
+import { activityPanelEn } from './activity';
 
 export const en: Translations = {
+  ...activityPanelEn,
   ...capabilityHubEn,
   ...evalCenterEn,
   ...localOpsEn,

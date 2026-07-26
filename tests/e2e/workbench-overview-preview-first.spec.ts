@@ -120,8 +120,8 @@ test('右栏概览是预览优先的形态，旧的清单外壳已移除', async
 
   const overview = page.getByTestId('workbench-overview-view');
 
-  // 空态：说清楚没有产物，而不是给一堆按钮
-  await expect(overview.getByText('暂无可预览文件')).toBeVisible({ timeout: 10_000 });
+  // 空态：任务现场叙事（运行中的任务会实时显示在这里），而不是一个空产物壳或一堆按钮
+  await expect(overview.getByText('运行中的任务会实时显示在这里')).toBeVisible({ timeout: 10_000 });
 
   // 旧外壳三件（会话产物折叠头 / 统计行 / 文件小标题）都不许再出现
   await expect(overview.getByText('本会话产物')).toHaveCount(0);

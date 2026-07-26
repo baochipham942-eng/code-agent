@@ -30,8 +30,10 @@ import { evalCenterZh } from './evalCenter';
 import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
 import { workbenchTabsZh } from './workbenchTabs';
+import { activityPanelZh } from './activity';
 
 export const zh = {
+  ...activityPanelZh,
   ...capabilityHubZh,
   ...evalCenterZh,
   ...localOpsZh,

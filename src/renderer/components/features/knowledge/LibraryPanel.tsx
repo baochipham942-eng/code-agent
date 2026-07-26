@@ -9,6 +9,9 @@
 // 「记忆」tab 放来源 tab 同一行最右而非来源序列内：来源 tab 是同一份条目列表的过滤维度，
 // 记忆是整页内容切换，语义不同类；视觉上仍共享一行 tab 带，避免再多开一条工具栏。
 // 带进对话在聊天输入区的 LibraryPinModal 里做，本页只管资产面。
+// 布局契约（2026-07-27 UX 收尾 1.4）：内容区走 PageContent（全宽 + px-6 py-4），
+// 两行工具带对齐同一横向节奏 px-6；「记忆」tab 内嵌 KnowledgeMemoryContent，
+// 用 PageContent 的 flex 容器形态（scroll/padding 关闭），布局由被嵌组件自管。
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronRight, FileText, Globe, Loader2, Package, Pencil, RefreshCw, Trash2, Upload } from 'lucide-react';
@@ -22,6 +25,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { PageContent } from '../shared/PageContent';
 import { Button } from '../../primitives/Button';
 import { IconButton } from '../../primitives/IconButton';
 import { Input } from '../../primitives/Input';
@@ -300,7 +304,7 @@ export const LibraryPanel: React.FC = () => {
       />
 
       {/* 顶行：来源 tab × 搜索 × 品牌套件入口；「记忆」并列 tab 在最右（见文件头注释） */}
-      <div className="shrink-0 border-b border-zinc-800 px-5 py-2">
+      <div className="shrink-0 border-b border-zinc-800 px-6 py-2">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1" role="tablist" aria-label={t.library.sectionsLabel}>
             {(['ai', 'uploads', 'favorites'] as const).map((sourceKey) => (
@@ -372,7 +376,7 @@ export const LibraryPanel: React.FC = () => {
 
       {/* 次行：类型 chips = 全部 + LIBRARY_ITEM_KINDS（contract 推导） */}
       {view === 'items' && (
-        <div className="shrink-0 border-b border-zinc-800 px-5 py-2" aria-label={t.library.kindChipsLabel} data-testid="library-kind-chips">
+        <div className="shrink-0 border-b border-zinc-800 px-6 py-2" aria-label={t.library.kindChipsLabel} data-testid="library-kind-chips">
           <div className="flex flex-wrap items-center gap-1.5">
             <Button
               type="button"
@@ -402,7 +406,7 @@ export const LibraryPanel: React.FC = () => {
       )}
 
       {view === 'items' ? (
-        <div id="library-items-panel" role="tabpanel" className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+        <PageContent id="library-items-panel" role="tabpanel">
           {loading ? (
             <div className="flex items-center justify-center py-16 text-zinc-500">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -463,15 +467,15 @@ export const LibraryPanel: React.FC = () => {
               </table>
             </div>
           )}
-        </div>
+        </PageContent>
       ) : view === 'brands' ? (
-        <div id="library-brands-panel" role="tabpanel" className="flex-1 min-h-0 overflow-y-auto px-5 py-5">
+        <PageContent id="library-brands-panel" role="tabpanel">
           <BrandManager isOpen onClose={closeEmbeddedBrandManager} presentation="inline" />
-        </div>
+        </PageContent>
       ) : (
-        <div id="library-memory-panel" role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <PageContent id="library-memory-panel" role="tabpanel" scroll={false} padding={false}>
           <KnowledgeMemoryContent />
-        </div>
+        </PageContent>
       )}
 
       <Modal

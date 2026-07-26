@@ -9,6 +9,12 @@
 // - 脏保护：用户手动改过 HTML/steps（dirty）后，新 IPC 请求不得静默覆盖——挂起为
 //   heldRequest，顶部横幅让用户选「加载新请求」（覆盖并照常执行）或「保留当前编辑」
 //   （回传 error 拒绝，main 端 promise 立即 reject，而不是干等 30s 超时）。
+// - 2026-07-27 粗糙点收尾：
+//   ① steps 编辑器抽成 StepsJsonEditor（行号 gutter + 失焦 JSON 校验即时报错）；
+//   ② HTML 源 textarea 默认 12 行且可拖拽加高（rows=12 + resize-y）；
+//   ③ 结果区加失败汇总头（sticky 置顶：通过徽标 + N 失败），失败卡片排在通过之前；
+//   ④ 术语全走 i18n（通过徽标 / 区块标题 / iframe 未就绪提示）；
+//   ⑤ 运行中「重载」按钮 disabled；结果卡片 key 用每次运行生成的稳定 id（不用 index）。
 // ============================================================================
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, RotateCw, AlertTriangle, CheckCircle2, Radio } from 'lucide-react';
@@ -17,6 +23,7 @@ import { ipcService } from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { StepsJsonEditor } from './StepsJsonEditor';
 import type {
   BrowserInteractionStep,
   BrowserInteractionStepResult,
@@ -92,6 +99,13 @@ export function InAppValidationWorkspace(): React.ReactElement {
   const [stepsText, setStepsText] = useState<string>(() => JSON.stringify(DEMO_STEPS, null, 2));
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<BrowserInteractionStepResult[]>([]);
+  // 结果卡片稳定 key：每次写入结果时生成一轮新 id，重渲染不复用 index。
+  const resultKeySeqRef = useRef(0);
+  const resultKeysRef = useRef<string[]>([]);
+  const setResultsWithKeys = useCallback((next: BrowserInteractionStepResult[]) => {
+    resultKeysRef.current = next.map(() => `result-${++resultKeySeqRef.current}`);
+    setResults(next);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [iframeReady, setIframeReady] = useState(false);
   const [manualReloadKey, setManualReloadKey] = useState(0);
@@ -111,7 +125,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
   const runScript = useCallback(async () => {
     if (!iframeRef.current) return;
     if (!iframeReady) {
-      setError('iframe 还没加载完，再等等。');
+      setError(v.iframeNotReady);
       return;
     }
     setError(null);
@@ -119,37 +133,37 @@ export function InAppValidationWorkspace(): React.ReactElement {
     try {
       const parsed = JSON.parse(stepsText) as BrowserInteractionStep[];
       const result = await runInAppInteractions(iframeRef.current, parsed);
-      setResults(result);
+      setResultsWithKeys(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      setResults([]);
+      setResultsWithKeys([]);
     } finally {
       setRunning(false);
     }
-  }, [stepsText, iframeReady]);
+  }, [stepsText, iframeReady, setResultsWithKeys, v.iframeNotReady]);
 
   const loadDemo = useCallback(() => {
     setHtmlSource(DEMO_HTML);
     setStepsText(JSON.stringify(DEMO_STEPS, null, 2));
-    setResults([]);
+    setResultsWithKeys([]);
     setError(null);
     setDirty(false);
     if (iframeRef.current) {
       setIframeReady(false);
       iframeRef.current.srcdoc = DEMO_HTML;
     }
-  }, []);
+  }, [setResultsWithKeys]);
 
   // 应用一条 IPC 请求：注入内容并标记 active，iframe 重 mount 后由下面的 effect 自动跑。
   const applyRequest = useCallback((request: InAppValidationRequest) => {
     activeIpcRequestRef.current = { requestId: request.requestId };
     setHtmlSource(request.html);
     setStepsText(JSON.stringify(request.steps, null, 2));
-    setResults([]);
+    setResultsWithKeys([]);
     setError(null);
     setIframeReady(false);
     setDirty(false);
-  }, []);
+  }, [setResultsWithKeys]);
 
   // IPC 入口。脏保护：有手动编辑时挂起请求等用户选择，不得静默覆盖（旧实现 :127-135 直接覆盖）。
   useEffect(() => {
@@ -174,7 +188,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
     runInAppInteractions(iframe, pendingRequest.steps)
       .then(async (stepResults) => {
         if (cancelled) return;
-        setResults(stepResults);
+        setResultsWithKeys(stepResults);
         await ipcService.invoke(IPC_CHANNELS.IN_APP_VALIDATION_RESULT, {
           requestId: activeRequest.requestId,
           results: stepResults,
@@ -198,7 +212,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
     return () => {
       cancelled = true;
     };
-  }, [iframeReady, pendingRequest, setPendingRequest]);
+  }, [iframeReady, pendingRequest, setPendingRequest, setResultsWithKeys]);
 
   const handleLoadHeldRequest = useCallback(() => {
     if (!heldRequest) return;
@@ -220,8 +234,13 @@ export function InAppValidationWorkspace(): React.ReactElement {
 
   const passedCount = results.filter((r) => r.passed).length;
   const totalCount = results.length;
+  const failedCount = totalCount - passedCount;
   const allPassed = totalCount > 0 && passedCount === totalCount;
   const ipcActive = Boolean(pendingRequest) && !heldRequest;
+  // 失败置顶：渲染顺序 = 失败卡片在前、通过在后（原始索引保留用于稳定 key）。
+  const orderedResults = results
+    .map((result, index) => ({ result, index }))
+    .sort((a, b) => Number(a.result.passed) - Number(b.result.passed));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="in-app-validation-workspace">
@@ -239,7 +258,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
                 : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
             }`}
           >
-            {passedCount}/{totalCount} passed
+            {v.passedBadge.replace('{passed}', String(passedCount)).replace('{total}', String(totalCount))}
           </span>
         ) : null}
         <div className="flex-1" />
@@ -253,7 +272,8 @@ export function InAppValidationWorkspace(): React.ReactElement {
         <button /* ds-allow:button: 验证工作台工具条次级按钮，同上 */
           type="button"
           onClick={reloadIframe}
-          className="flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+          disabled={running}
+          className="flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
         >
           <RotateCw className="h-3 w-3" /> {v.reload}
         </button>
@@ -297,7 +317,7 @@ export function InAppValidationWorkspace(): React.ReactElement {
 
       <div className="flex min-h-0 flex-1">
         <div className="flex flex-1 flex-col border-r border-slate-800">
-          <div className="border-b border-slate-800 px-3 py-1 text-xs text-slate-400">iframe 预览（沙箱）</div>
+          <div className="border-b border-slate-800 px-3 py-1 text-xs text-slate-400">{v.iframePreviewLabel}</div>
           <iframe
             key={pendingRequest?.requestId || `manual-${manualReloadKey}`}
             ref={iframeRef}
@@ -310,10 +330,12 @@ export function InAppValidationWorkspace(): React.ReactElement {
         </div>
 
         <div className="flex w-[480px] flex-col">
-          <div className="flex flex-col border-b border-slate-800">
-            <div className="px-3 py-1 text-xs text-slate-400">HTML 源码</div>
+          <div className="flex shrink-0 flex-col border-b border-slate-800">
+            <div className="px-3 py-1 text-xs text-slate-400">{v.htmlSourceLabel}</div>
+            {/* 默认 12 行、可纵向拖拽加高（原 h-36 resize-none 压死高度） */}
             <textarea
-              className="h-36 resize-none bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-hidden"
+              rows={12}
+              className="resize-y bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-hidden"
               value={htmlSource}
               onChange={(e) => {
                 setHtmlSource(e.target.value);
@@ -321,69 +343,85 @@ export function InAppValidationWorkspace(): React.ReactElement {
               }}
             />
           </div>
-          <div className="flex flex-1 flex-col">
-            <div className="px-3 py-1 text-xs text-slate-400">Step 脚本（JSON）</div>
-            <textarea
-              className="flex-1 resize-none bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-hidden"
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="px-3 py-1 text-xs text-slate-400">{v.stepsLabel}</div>
+            <StepsJsonEditor
               value={stepsText}
-              onChange={(e) => {
-                setStepsText(e.target.value);
+              onChange={(next) => {
+                setStepsText(next);
                 setDirty(true);
               }}
+              parseErrorTemplate={v.stepsInvalidJson}
             />
           </div>
-          <div className="max-h-80 overflow-auto border-t border-slate-800 bg-slate-950 px-3 py-2 text-xs">
-            {error && (
-              <div className="mb-2 flex items-start gap-1 rounded bg-rose-900/40 p-2 text-rose-200">
-                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-            {results.length === 0 && !error && (
-              <div className="space-y-2 text-slate-500">
-                <div>{v.emptyHint}</div>
-                <div>{v.emptySchemaTitle}</div>
-                <pre className="overflow-x-auto rounded border border-slate-800 bg-slate-900 p-2 text-[11px] text-slate-400">{v.emptySchemaExample}</pre>
-              </div>
-            )}
-            {results.map((result, index) => (
+          <div className="flex max-h-80 shrink-0 flex-col border-t border-slate-800 bg-slate-950 text-xs">
+            {/* 失败汇总头：sticky 置顶，失败数一眼可见；卡片渲染顺序失败在前 */}
+            {totalCount > 0 && (
               <div
-                key={index}
-                className={`mb-2 rounded border p-2 ${
-                  result.passed
-                    ? 'border-emerald-800 bg-emerald-950/40'
-                    : 'border-rose-800 bg-rose-950/40'
-                }`}
+                className="sticky top-0 flex items-center gap-2 border-b border-slate-800 bg-slate-950 px-3 py-1.5"
+                data-testid="in-app-validation-result-summary"
               >
-                <div className="flex items-center gap-1">
-                  {result.passed ? (
-                    <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                  ) : (
-                    <AlertTriangle className="h-3 w-3 text-rose-400" />
-                  )}
-                  <span className="font-medium">
-                    {result.label || result.action.type}
-                  </span>
-                  <span className="ml-auto text-slate-500">{result.durationMs}ms</span>
-                </div>
-                {result.checks.length > 0 && (
-                  /* checks 是「已通过的断言」，恒绿在失败步骤里会误读成全好——改中性色，
-                     步骤级 pass/fail 已由边框与图标表达。 */
-                  <ul className="mt-1 list-disc pl-4 text-zinc-400">
-                    {result.checks.map((check, i) => (
-                      <li key={i}>{check}</li>
-                    ))}
-                  </ul>
-                )}
-                {result.failures.length > 0 && (
-                  <ul className="mt-1 list-disc pl-4 text-rose-300">
-                    {result.failures.map((failure, i) => (
-                      <li key={i}>{failure}</li>
-                    ))}
-                  </ul>
-                )}
+                <span className={allPassed ? 'text-emerald-300' : 'text-zinc-300'}>
+                  {v.passedBadge.replace('{passed}', String(passedCount)).replace('{total}', String(totalCount))}
+                </span>
+                <span className={failedCount > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                  {failedCount > 0 ? v.failedSummary.replace('{n}', String(failedCount)) : v.allPassedSummary}
+                </span>
               </div>
-            ))}
+            )}
+            <div className="overflow-auto px-3 py-2">
+              {error && (
+                <div className="mb-2 flex items-start gap-1 rounded bg-rose-900/40 p-2 text-rose-200">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+              {results.length === 0 && !error && (
+                <div className="space-y-2 text-slate-500">
+                  <div>{v.emptyHint}</div>
+                  <div>{v.emptySchemaTitle}</div>
+                  <pre className="overflow-x-auto rounded border border-slate-800 bg-slate-900 p-2 text-[11px] text-slate-400">{v.emptySchemaExample}</pre>
+                </div>
+              )}
+              {orderedResults.map(({ result, index }) => (
+                <div
+                  key={resultKeysRef.current[index] ?? index}
+                  className={`mb-2 rounded border p-2 ${
+                    result.passed
+                      ? 'border-emerald-800 bg-emerald-950/40'
+                      : 'border-rose-800 bg-rose-950/40'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    {result.passed ? (
+                      <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                    ) : (
+                      <AlertTriangle className="h-3 w-3 text-rose-400" />
+                    )}
+                    <span className="font-medium">
+                      {result.label || result.action.type}
+                    </span>
+                    <span className="ml-auto text-slate-500">{result.durationMs}ms</span>
+                  </div>
+                  {result.checks.length > 0 && (
+                    /* checks 是「已通过的断言」，恒绿在失败步骤里会误读成全好——改中性色，
+                       步骤级 pass/fail 已由边框与图标表达。 */
+                    <ul className="mt-1 list-disc pl-4 text-zinc-400">
+                      {result.checks.map((check, i) => (
+                        <li key={i}>{check}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {result.failures.length > 0 && (
+                    <ul className="mt-1 list-disc pl-4 text-rose-300">
+                      {result.failures.map((failure, i) => (
+                        <li key={i}>{failure}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

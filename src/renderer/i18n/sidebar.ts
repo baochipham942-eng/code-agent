@@ -135,6 +135,8 @@ export const sidebarZh = {
   },
   sidebarProject: {
     plainChatTitle: '纯对话，不继承项目上下文',
+    // 未分类组（无工作区的纯对话归宿）的组名
+    uncategorizedGroupName: '快速对话',
     unfinishedCount: '{count} 个未完成',
     openConsole: '打开 {name} 项目控制台',
     collapseDetails: '收起 {name} 项目详情',
@@ -403,6 +405,7 @@ export const sidebarEn: typeof sidebarZh = {
   },
   sidebarProject: {
     plainChatTitle: 'Plain conversation, no project context',
+    uncategorizedGroupName: 'Quick chats',
     unfinishedCount: '{count} unfinished',
     openConsole: 'Open {name} project console',
     collapseDetails: 'Collapse {name} project details',

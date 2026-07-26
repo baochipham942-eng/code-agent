@@ -529,6 +529,8 @@ export function buildInboxItems(data: MemoryAuditPayload, t: Translations = zh):
 // 内容与外壳分离（2026-07-26 导航去重方案 9）：KnowledgeMemoryContent 是可嵌入的内容组件，
 // 由 LibraryPanel 的「记忆」tab 复用；KnowledgeMemoryPanel 仅保留 FullScreenPage 入口形态，
 // 不再被侧边栏菜单直接引用（菜单删改在另一工作流）。
+// 布局契约（2026-07-27 UX 收尾 1.4）：页级横向 padding 统一 px-6（PageContent 契约），
+// 卡片统一 rounded-lg border-zinc-800 bg-zinc-900/70。
 export const KnowledgeMemoryContent: React.FC = () => {
   const { t } = useI18n();
   const workingDirectory = useAppStore((state) => state.workingDirectory);
@@ -675,14 +677,14 @@ export const KnowledgeMemoryContent: React.FC = () => {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="knowledge-memory-content">
       {error && (
-        <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+        <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
           <AlertCircle className="h-4 w-4" />
           {error}
         </div>
       )}
 
       {/* 嵌入模式没有 FullScreenPageHeader，上下文标签与刷新入口收进内容区顶部工具行 */}
-      <div className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-6 pt-4">
         <span className="truncate text-xs text-zinc-500">
           {contextLabel}{sessionLabel ? ` · session ${sessionLabel}` : ''}
         </span>
@@ -697,7 +699,7 @@ export const KnowledgeMemoryContent: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid flex-1 min-h-0 grid-cols-[minmax(280px,0.85fr)_minmax(420px,1.35fr)] gap-4 overflow-hidden p-5">
+      <div className="grid flex-1 min-h-0 grid-cols-[minmax(280px,0.85fr)_minmax(420px,1.35fr)] gap-4 overflow-hidden px-6 py-4">
         <div className="flex min-h-0 flex-col gap-4">
           <LightMemoryHealthPanel
             health={lightHealth}
@@ -707,7 +709,7 @@ export const KnowledgeMemoryContent: React.FC = () => {
             onRebuild={() => void handleRebuildLightIndex()}
           />
 
-          <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-zinc-800 bg-zinc-900/60">
+          <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-zinc-800 bg-zinc-900/70">
             <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
               <div className="flex items-center gap-2">
                 <Inbox className="h-4 w-4 text-amber-300" />
@@ -745,7 +747,7 @@ export const KnowledgeMemoryContent: React.FC = () => {
           </section>
         </div>
 
-        <section className="flex min-h-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/60">
+        <section className="flex min-h-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/70">
           <div className="border-b border-zinc-800 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -891,7 +893,7 @@ export function LightMemoryHealthPanel({
       : 'border-amber-500/30 bg-amber-500/10 text-amber-200';
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/60" data-testid="light-memory-health-panel">
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/70" data-testid="light-memory-health-panel">
       <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-emerald-300" />

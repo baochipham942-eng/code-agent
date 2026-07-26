@@ -4,6 +4,9 @@
 // cronStore.stats（运行中=jobsByStatus.running、成功率=successRate）+
 // 收件箱回传的待过目数（与侧栏角标同一琥珀色视觉语言）。
 // 布局自上而下：状态条 → 待过目收件箱（独立卡片区）→ 推荐模板 → 任务列表+详情。
+// 布局契约（2026-07-27 UX 收尾 1.4）：页级横向 padding 统一 px-6（PageContent 契约），
+// 状态条卡片走统一卡片语言（rounded-lg border-zinc-800 bg-zinc-900/70）；
+// 底部列表+详情双栏为全 bleed 工作台区，padding 由页内面板自管。
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -29,8 +32,8 @@ const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; 
   testId,
 }) => (
   <div
-    className={`rounded-xl border px-4 py-3 ${
-      attention ? 'border-amber-500/30 bg-amber-500/10' : 'border-zinc-800 bg-zinc-900/60'
+    className={`rounded-lg border px-4 py-3 ${
+      attention ? 'border-amber-500/30 bg-amber-500/10' : 'border-zinc-800 bg-zinc-900/70'
     }`}
     data-testid={testId}
   >
@@ -92,7 +95,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         onClose={onClose}
       />
 
-      <div className="grid shrink-0 grid-cols-3 gap-3 px-5 pt-4" data-testid="cron-status-bar">
+      <div className="grid shrink-0 grid-cols-3 gap-3 px-6 pt-4" data-testid="cron-status-bar">
         <StatusTile
           label={cc.statRunning}
           value={stats ? String(runningCount) : '—'}
@@ -114,7 +117,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       <WebModeBanner />
 
       {error && (
-        <div className="border-b border-red-500/20 bg-red-500/10 px-5 py-2 text-sm text-red-300">
+        <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-2 text-sm text-red-300">
           {error}
         </div>
       )}

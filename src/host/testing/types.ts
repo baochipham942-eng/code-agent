@@ -460,6 +460,9 @@ export interface TestRunSummary {
   averageStdDev?: number;
   /** GAP-017: 本次 run 使用的 harness 配置（对照实验维度，落 DB config_json） */
   harness?: HarnessVariantConfig;
+  /** 数据集/套件名（可选）：run 覆盖的 case 全部来自同一 suite 时落该 suite 名，
+   *  用于实验命名 eval-<dataset>-<日期>（评测中心基准 tab 按数据集分组） */
+  dataset?: string;
   /** WP1-4: 本次 run 登记的 prompt 改动预测（deltaReporter 对账用） */
   prediction?: EvalPrediction;
   /** judge 校准接线：本次 run llm_judge 分数绑定的校准记录；缺失即视为未校准 */

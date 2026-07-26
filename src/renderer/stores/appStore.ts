@@ -69,8 +69,8 @@ export type TaskPanelTab = 'monitor' | 'orchestration';
 export type { CapabilityHubTab } from '../utils/settingsTabs';
 /** 「本机操作」整窗页的页内 tab：桌面操作 / 浏览器（2026-07-26 导航去重方案 9 合并页）。 */
 export type LocalOpsTab = 'desktop' | 'browser';
-// 评测中心（admin-only 整窗页）的顶层 tab：回放 / 验证。
-export type EvalCenterTab = 'replay' | 'validation';
+// 评测中心（admin-only 整窗页）的顶层 tab：回放 / 验证 / 遥测 / 基准（v2 扩两 tab）。
+export type EvalCenterTab = 'replay' | 'validation' | 'telemetry' | 'benchmarks';
 export type { WorkbenchTabId, WorkbenchViewId } from '../utils/workbenchViews';
 
 // Preview tab — one per opened file (kind === 'file') or live dev server (kind === 'liveDev')

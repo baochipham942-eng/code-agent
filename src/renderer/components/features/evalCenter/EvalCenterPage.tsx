@@ -2,14 +2,19 @@
 // EvalCenterPage - 评测中心（admin-only）
 //
 // 契约：
-// - 整窗页统一外壳（FullScreenPage），v1 两个 tab：回放 / 验证，分段 tab 模式照
-//   CapabilityHubPage；tab 状态存 appStore.evalCenterTab，页内切换走 setEvalCenterTab
-//   （不动互斥表、不重置回放深链）。
+// - 整窗页统一外壳（FullScreenPage），v2 四个 tab：回放 / 验证 / 遥测 / 基准，
+//   分段 tab 模式照 CapabilityHubPage；tab 状态存 appStore.evalCenterTab，页内
+//   切换走 setEvalCenterTab（不动互斥表、不重置回放深链）。
 // - 入口：用户菜单（admin-only，canAccessFeature('eval.center')）、会话行 hover 眼睛
 //   图标（openEvalCenter('replay', sessionId) 深链）、useInAppValidationBridge（IPC
 //   请求且本页未打开时 openEvalCenter('validation')）。
 // - 不抢占：本页已打开时 bridge 只写 pendingInAppValidationRequest，由这里给「验证」
 //   tab 上角标提示，不打断用户当前 tab。
+// - v2 新增：「遥测」tab 内嵌去外壳化的会话遥测查看器（EvalTelemetryTab，复用
+//   features/telemetry 子组件）；「基准」tab 为 eval-harness 跑分结果只读视图
+//   （EvalBenchmarksTab，experiments 表 + aily 五关卡分组分层）。
+// - 内容区契约（2026-07-27 UX 收尾 1.4）：PageContent 全 bleed 形态（scroll/padding
+//   关闭），四个 tab 内容自管面板布局与内边距。
 // - 门禁双保险：入口已在菜单层拦 admin；这里再校验一次，非 admin 只给提示页。
 // ============================================================================
 import React, { useMemo } from 'react';
@@ -19,15 +24,28 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { canAccessFeature, createAccessSubject } from '../../../utils/accessControl';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { PageContent } from '../shared/PageContent';
 
-// 两个 tab 内容都偏重（回放面板 / 验证工作台），懒加载，首开评测中心不背两个包。
+// 四个 tab 内容都偏重（回放面板 / 验证工作台 / 遥测查看器 / 基准视图），懒加载，
+// 首开评测中心不背全部包。
 const EvalReplayExplorer = React.lazy(() => import('./EvalReplayExplorer').then((m) => ({ default: m.EvalReplayExplorer })));
 const InAppValidationWorkspace = React.lazy(() => import('../inAppValidation/InAppValidationWorkspace').then((m) => ({ default: m.InAppValidationWorkspace })));
+const EvalTelemetryTab = React.lazy(() => import('./EvalTelemetryTab').then((m) => ({ default: m.EvalTelemetryTab })));
+const EvalBenchmarksTab = React.lazy(() => import('./EvalBenchmarksTab').then((m) => ({ default: m.EvalBenchmarksTab })));
 
 const EVAL_TABS: Array<{ key: EvalCenterTab; label: (t: ReturnType<typeof useI18n>['t']) => string }> = [
   { key: 'replay', label: (t) => t.evalCenter.tabReplay },
   { key: 'validation', label: (t) => t.evalCenter.tabValidation },
+  { key: 'telemetry', label: (t) => t.evalCenter.tabTelemetry },
+  { key: 'benchmarks', label: (t) => t.evalCenter.tabBenchmarks },
 ];
+
+const EVAL_TAB_CONTENT: Record<EvalCenterTab, React.ReactNode> = {
+  replay: <EvalReplayExplorer />,
+  validation: <InAppValidationWorkspace />,
+  telemetry: <EvalTelemetryTab />,
+  benchmarks: <EvalBenchmarksTab />,
+};
 
 export const EvalCenterPage: React.FC = () => {
   const { t } = useI18n();
@@ -75,9 +93,11 @@ export const EvalCenterPage: React.FC = () => {
         ) : undefined}
       />
       {canAccess ? (
-        <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
-          {evalCenterTab === 'replay' ? <EvalReplayExplorer /> : <InAppValidationWorkspace />}
-        </React.Suspense>
+        <PageContent scroll={false} padding={false}>
+          <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
+            {EVAL_TAB_CONTENT[evalCenterTab]}
+          </React.Suspense>
+        </PageContent>
       ) : (
         <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
           {t.evalCenter.adminOnly}

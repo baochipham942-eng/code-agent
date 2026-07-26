@@ -276,6 +276,53 @@ export interface CanonicalEvalRun {
 }
 
 // ============================================================================
+// Eval Experiments 只读视图 - 评测中心「基准」tab IPC 载荷
+// 数据源：experiments / experiment_cases 表（ExperimentAdapter 落盘）。
+// 只读查询通道（evaluation:list-experiments / evaluation:load-experiment）的
+// renderer 侧契约；刻意裁剪掉 config_json / data_json 原文，避免大字段过 IPC。
+// ============================================================================
+
+export interface EvalExperimentSummary {
+  total?: number;
+  passed?: number;
+  failed?: number;
+  partial?: number;
+  skipped?: number;
+  errored?: number;
+  /** 0-1 通过率（分母排除 skipped，见 ADR-036 F2）。 */
+  passRate?: number;
+  /** 0-1 均分（legacy Eval Center UI 口径）。 */
+  avgScore?: number;
+  duration?: number;
+}
+
+export interface EvalExperimentListItem {
+  id: string;
+  name: string;
+  timestamp: number;
+  model: string | null;
+  provider: string | null;
+  scope: string;
+  /** 落盘来源：test-runner / eval-harness / regression。 */
+  source: string;
+  gitCommit: string | null;
+  summary: EvalExperimentSummary | null;
+}
+
+export interface EvalExperimentCaseItem {
+  caseId: string;
+  status: EvalCaseStatus;
+  /** 0-100 分。 */
+  score: number;
+  durationMs: number | null;
+}
+
+export interface EvalExperimentDetail {
+  experiment: EvalExperimentListItem;
+  cases: EvalExperimentCaseItem[];
+}
+
+// ============================================================================
 // Structured Replay - shared contract for telemetry/replay consumers
 // ============================================================================
 

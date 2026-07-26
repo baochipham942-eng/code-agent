@@ -77,6 +77,7 @@ export async function handleUnavailableToolCalls(
           'They were progressive-disclosure tools that had not been loaded yet. Call them again now with the correct arguments — do not say you lack them.',
           '</tool-auto-loaded>',
         ].join('\n'),
+        'unavailable-tools',
       );
       const assistantMsg: Message = {
         id: contextAssembly.generateId(),
@@ -162,9 +163,10 @@ export async function handleUnavailableToolCalls(
       recoveryPrompt || '',
       '</tool-admission-repair>',
     ].filter(Boolean).join('\n'),
+    'unavailable-tools',
   );
   if (recoveryPrompt) {
-    contextAssembly.pushPersistentSystemContext(recoveryPrompt);
+    contextAssembly.pushPersistentSystemContext(recoveryPrompt, 'unavailable-tools');
   }
   const assistantMsg: Message = {
     id: contextAssembly.generateId(),

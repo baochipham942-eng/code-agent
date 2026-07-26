@@ -164,7 +164,7 @@ export class ToolExecutionEngine {
       const result = await this.ctx.planningService.hooks.onSessionStart();
 
       if (result.injectContext) {
-        this.contextAssembly.injectSystemMessage(result.injectContext);
+        this.contextAssembly.injectSystemMessage(result.injectContext, 'planning-hook');
       }
 
       if (result.notification) {
@@ -202,7 +202,8 @@ export class ToolExecutionEngine {
           changedFiles.join('\n') +
           (externalChanges.length > 10 ? `\n...及另外 ${externalChanges.length - 10} 个文件` : '') +
           `\n如需操作这些文件，建议先重新读取最新内容。\n` +
-          `</external-file-changes>`
+          `</external-file-changes>`,
+          'file-change-warning',
         );
       }
     } catch { /* ignore in non-Electron environments */ }
@@ -381,7 +382,8 @@ export class ToolExecutionEngine {
             `⚠️ The tool "${toolCall.name}" was blocked by a user-defined hook.\n` +
             `Reason: ${userHookResult.message || 'No reason provided'}\n` +
             `You may need to adjust your approach or ask the user for guidance.\n` +
-            `</tool-blocked-by-hook>`
+            `</tool-blocked-by-hook>`,
+            'tool-blocked-by-hook',
           );
 
           emitToolCallStart();
@@ -402,7 +404,10 @@ export class ToolExecutionEngine {
         }
 
         if (userHookResult.message) {
-          this.contextAssembly.injectSystemMessage(`<pre-tool-hook>\n${userHookResult.message}\n</pre-tool-hook>`);
+          this.contextAssembly.injectSystemMessage(
+            `<pre-tool-hook>\n${userHookResult.message}\n</pre-tool-hook>`,
+            'pre-tool-hook',
+          );
         }
       } catch (error) {
         logger.error('[AgentLoop] User pre-tool hook error:', error);
@@ -418,7 +423,7 @@ export class ToolExecutionEngine {
         });
 
         if (preResult.injectContext) {
-          this.contextAssembly.injectSystemMessage(preResult.injectContext);
+          this.contextAssembly.injectSystemMessage(preResult.injectContext, 'planning-hook');
         }
       } catch (error) {
         logger.error('Pre-tool hook error:', error);
@@ -455,6 +460,7 @@ export class ToolExecutionEngine {
           'The next action should patch the target artifact or run validation.',
           '</artifact-repair-tool-blocked>',
         ].join('\n'),
+        'artifact-repair',
       );
       // 硬停时不再注入恢复提示/重推理——activateArtifactRepairAdmissionStop 已设
       // forceFinalResponse，让本轮强制收尾，别再对同一被拦动作多花一次模型请求。
@@ -463,6 +469,7 @@ export class ToolExecutionEngine {
         if (!alreadyValid) {
           this.contextAssembly.pushPersistentSystemContext(
             buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
+            'artifact-repair',
           );
           this.ctx.turn.requestReinference();
         }
@@ -495,11 +502,12 @@ export class ToolExecutionEngine {
           },
         },
       };
-      this.contextAssembly.injectSystemMessage(repeatedArtifactRepairPatchBlock);
+      this.contextAssembly.injectSystemMessage(repeatedArtifactRepairPatchBlock, 'artifact-repair');
       // 硬停时不再注入恢复提示/重推理——forceFinalResponse 已让本轮收尾。
       if (!repairForceStopped && guard?.targetFile) {
         this.contextAssembly.pushPersistentSystemContext(
           buildArtifactRepairRecoveryPrompt(guard.targetFile, guard.activeIssueCodes),
+          'artifact-repair',
         );
         this.ctx.turn.requestReinference();
       }
@@ -549,7 +557,8 @@ export class ToolExecutionEngine {
         `Raw arguments (truncated): ${rawArgs.substring(0, 300)}\n\n` +
         `Please ensure your tool call arguments are valid JSON.` +
         schemaSection + `\n` +
-        `</tool-arguments-parse-error>`
+        `</tool-arguments-parse-error>`,
+        'tool-argument-repair',
       );
 
       emitToolCallStart();
@@ -618,7 +627,7 @@ export class ToolExecutionEngine {
         },
       };
 
-      this.contextAssembly.injectSystemMessage(injectMessage);
+      this.contextAssembly.injectSystemMessage(injectMessage, 'tool-schema-repair');
 
       emitToolCallStart();
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.turn.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined, toolResult.metadata);
@@ -898,7 +907,7 @@ export class ToolExecutionEngine {
         if (filePath) {
           const rereadWarning = this.ctx.antiPatternDetector.trackFileReread(filePath);
           if (rereadWarning) {
-            this.contextAssembly.injectSystemMessage(rereadWarning);
+            this.contextAssembly.injectSystemMessage(rereadWarning, 'file-consistency-guard');
           }
         }
       }
@@ -941,7 +950,7 @@ export class ToolExecutionEngine {
         this.ctx.onEvent({ type: 'tool_call_end', data: sanitizeToolResultForObservation(toolCall, hardLimitResult) });
         return hardLimitResult;
       } else if (readWriteWarning) {
-        this.contextAssembly.injectSystemMessage(readWriteWarning);
+        this.contextAssembly.injectSystemMessage(readWriteWarning, 'file-consistency-guard');
       }
 
       let preservedToolResult = markFileEvidenceResult(toolCall, toolResult);
@@ -960,7 +969,10 @@ export class ToolExecutionEngine {
           );
 
           if (userPostResult.message) {
-            this.contextAssembly.injectSystemMessage(`<post-tool-hook>\n${userPostResult.message}\n</post-tool-hook>`);
+            this.contextAssembly.injectSystemMessage(
+              `<post-tool-hook>\n${userPostResult.message}\n</post-tool-hook>`,
+              'post-tool-hook',
+            );
           }
         } catch (error) {
           logger.error('[AgentLoop] User post-tool hook error:', error);
@@ -987,7 +999,10 @@ export class ToolExecutionEngine {
             if (source) {
               const review = runDesignQualityReview({ toolName: toolCall.name, filePath: rawPath, source });
               if (review) {
-                this.contextAssembly.injectSystemMessage(`<design-quality-review>\n${review}\n</design-quality-review>`);
+                this.contextAssembly.injectSystemMessage(
+                  `<design-quality-review>\n${review}\n</design-quality-review>`,
+                  'design-quality-review',
+                );
               }
             }
           }
@@ -1058,7 +1073,7 @@ export class ToolExecutionEngine {
           });
 
           if (postResult.injectContext) {
-            this.contextAssembly.injectSystemMessage(postResult.injectContext);
+            this.contextAssembly.injectSystemMessage(postResult.injectContext, 'planning-hook');
           }
         } catch (error) {
           logger.error('Post-tool hook error:', error);

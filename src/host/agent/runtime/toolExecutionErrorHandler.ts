@@ -71,7 +71,10 @@ export async function handleToolExecutionError({
 
   // Circuit breaker tracking for exceptions
   if (ctx.circuitBreaker.recordFailure(toolResult.error)) {
-    contextAssembly.injectSystemMessage(ctx.circuitBreaker.generateWarningMessage(toolResult.error));
+    contextAssembly.injectSystemMessage(
+      ctx.circuitBreaker.generateWarningMessage(toolResult.error),
+      'circuit-breaker',
+    );
     ctx.onEvent({
       type: 'error',
       data: {
@@ -94,7 +97,10 @@ export async function handleToolExecutionError({
       );
 
       if (userFailResult.message) {
-        contextAssembly.injectSystemMessage(`<post-tool-failure-hook>\n${userFailResult.message}\n</post-tool-failure-hook>`);
+        contextAssembly.injectSystemMessage(
+          `<post-tool-failure-hook>\n${userFailResult.message}\n</post-tool-failure-hook>`,
+          'post-tool-failure-hook',
+        );
       }
     } catch (hookError) {
       logger.error('[AgentLoop] User post-tool failure hook error:', hookError);
@@ -111,7 +117,7 @@ export async function handleToolExecutionError({
       });
 
       if (errorResult.injectContext) {
-        contextAssembly.injectSystemMessage(errorResult.injectContext);
+        contextAssembly.injectSystemMessage(errorResult.injectContext, 'planning-hook');
       }
     } catch (hookError) {
       logger.error('Error hook error:', hookError);

@@ -255,6 +255,7 @@ export async function maybeFinishArtifactRepairIfAlreadyValid(
         'Static contract validation is not enough for this repair pass. Continue fixing the user-visible playability issue in the target artifact.',
         '</artifact-playability-repair-active>',
       ].join('\n'),
+      'preflight-guard',
     );
     return false;
   }
@@ -286,6 +287,7 @@ export async function maybeFinishArtifactRepairIfAlreadyValid(
         ...validation.checks.map((check, index) => `${index + 1}. ${check}`),
         '</artifact-validation-passed>',
       ].join('\n'),
+      'preflight-guard',
     );
     ctx.artifact.markValidationPassed(guard.targetFile);
     activateForceFinalResponse(ctx, `artifact repair target already passes validation after blocked ${guard.lastBlockedTool || 'source'} read`);

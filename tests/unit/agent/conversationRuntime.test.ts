@@ -542,7 +542,8 @@ describe('ConversationRuntime', () => {
       expect(runtime.flowStateForTest.isPlanModeActive).toBe(true);
       expect(ctx.control.savedMessages).toHaveLength(1);
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        expect.stringContaining('PLAN MODE')
+        expect.stringContaining('PLAN MODE'),
+        'plan-guidance',
       );
     });
 
@@ -899,10 +900,12 @@ describe('ConversationRuntime', () => {
         expect.objectContaining({ mode: 'legacySeparate' }),
       );
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        '<screen-memory>\nscreen context from activity provider\n</screen-memory>'
+        '<screen-memory>\nscreen context from activity provider\n</screen-memory>',
+        'screen-memory',
       );
       expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
-        '<desktop-activity-context>\ndesktop context from activity provider\n</desktop-activity-context>'
+        '<desktop-activity-context>\ndesktop context from activity provider\n</desktop-activity-context>',
+        'desktop-activity',
       );
     });
 
@@ -912,7 +915,8 @@ describe('ConversationRuntime', () => {
       await runtime.initializeRun('hello');
 
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        '<seed-memory>\n## Stored Memories\n- [Preference]: Use concise Chinese\n</seed-memory>'
+        '<seed-memory>\n## Stored Memories\n- [Preference]: Use concise Chinese\n</seed-memory>',
+        'seed-memory',
       );
       expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toContainEqual(
         expect.objectContaining({
@@ -938,7 +942,8 @@ describe('ConversationRuntime', () => {
 
       expect(buildSeedMemoryBlock).not.toHaveBeenCalled();
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        '<seed-memory>\n## Packed Memories\n<memory-pack>\n- [1] Use concise Chinese\n</memory-pack>\n</seed-memory>'
+        '<seed-memory>\n## Packed Memories\n<memory-pack>\n- [1] Use concise Chinese\n</memory-pack>\n</seed-memory>',
+        'seed-memory',
       );
       expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toContainEqual(
         expect.objectContaining({
@@ -1068,10 +1073,12 @@ describe('ConversationRuntime', () => {
       await (runtime as any).injectActivityContext({ includeDesktopActivity: true });
 
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        '<screen-memory>\nscreen context from activity provider\n</screen-memory>'
+        '<screen-memory>\nscreen context from activity provider\n</screen-memory>',
+        'screen-memory',
       );
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
-        '<desktop-activity-context>\ndesktop context from activity provider\n</desktop-activity-context>'
+        '<desktop-activity-context>\ndesktop context from activity provider\n</desktop-activity-context>',
+        'desktop-activity',
       );
     });
 
@@ -1216,6 +1223,7 @@ describe('ConversationRuntime', () => {
       expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(4);
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
         expect.stringContaining('<doom-loop-guard>'),
+        'stagnation-guard',
       );
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
         expect.any(Number),
@@ -1243,6 +1251,7 @@ describe('ConversationRuntime', () => {
       expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(4);
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
         expect.stringContaining('no usable answer'),
+        'runtime-auto-continuation',
       );
       expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
         expect.any(Number),
@@ -1291,6 +1300,7 @@ describe('ConversationRuntime', () => {
       expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(1);
       expect(modules.contextAssembly.injectSystemMessage).toHaveBeenCalledWith(
         expect.stringContaining('<goal-continuation>'),
+        'goal-progress',
       );
       expect(ctx.onEvent).toHaveBeenCalledWith({
         type: 'goal_complete',
@@ -1321,6 +1331,7 @@ describe('ConversationRuntime', () => {
 
       expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
         'Continue from where you stopped. Do not restate or apologize.',
+        'output-continuation',
       );
     });
 
@@ -1338,6 +1349,7 @@ describe('ConversationRuntime', () => {
       expect(modules.contextAssembly.checkAndAutoCompress).not.toHaveBeenCalled();
       expect(modules.contextAssembly.injectSystemMessage).not.toHaveBeenCalledWith(
         'Continue from where you stopped. Do not restate or apologize.',
+        'output-continuation',
       );
     });
 

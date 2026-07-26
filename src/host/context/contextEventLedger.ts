@@ -3,19 +3,19 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { getPath } from '../platform/appPaths';
 import { createLogger } from '../services/infra/logger';
 import type {
+  ContextEventSourceKind,
+  ContextInjectionSource,
   ContextProvenanceAction,
   ContextProvenanceCategory,
 } from '../../shared/contract/contextView';
 import type { CompressionCommit } from './compressionState';
 import type { SubagentContextAnnotation } from './subagentContextStore';
 
-export type ContextEventSourceKind =
-  | 'message'
-  | 'tool_result'
-  | 'dependency_carry_over'
-  | 'attachment'
-  | 'compression_survivor'
-  | 'system_anchor';
+export { CONTEXT_INJECTION_SOURCES } from '../../shared/contract/contextView';
+export type {
+  ContextEventSourceKind,
+  ContextInjectionSource,
+} from '../../shared/contract/contextView';
 
 export interface ContextEventRecord {
   id: string;

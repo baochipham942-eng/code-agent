@@ -103,7 +103,10 @@ export async function handleGoalCompletionGate(
   });
   if (evidenceVerdict.verdict === 'bounce') {
     ctx.goalMode.clearCompletionRequest();
-    contextAssembly.injectSystemMessage(evidenceVerdict.feedback ?? evidenceVerdict.reason);
+    contextAssembly.injectSystemMessage(
+      evidenceVerdict.feedback ?? evidenceVerdict.reason,
+      'goal-gate',
+    );
     return 'continue';
   }
 
@@ -239,6 +242,7 @@ export async function handleGoalCompletionGate(
             gate?.output || '(无输出)',
             '</goal-verify-failed>',
           ].join('\n'),
+          'goal-gate',
         );
         return 'continue';
       }
@@ -416,6 +420,7 @@ export async function handleGoalCompletionGate(
             review.reason,
             '</goal-review-failed>',
           ].join('\n'),
+          'goal-gate',
         );
         return 'continue';
       }
@@ -473,6 +478,7 @@ export async function handleGoalCompletionGate(
     : `verification status: ${verificationEvidence.status}；${verificationEvidence.summary}`;
   contextAssembly.injectSystemMessage(
     `<${tag}>\n${[passedGates || '目标条件通过', verificationLine, '目标达成，结束本次 goal。'].join('\n')}\n</${tag}>`,
+    'goal-gate',
   );
   return 'break';
 }

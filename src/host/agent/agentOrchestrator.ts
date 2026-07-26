@@ -456,7 +456,14 @@ export class AgentOrchestrator {
 
   handlePermissionResponse(requestId: string, response: PermissionResponse): void {
     const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return;
+    if (!pending) {
+      // 这条分支就是「用户点了『允许』，然后什么也没发生」的现场（2026-07-26 真机踩到）：
+      // 60s 交互门超时后条目已被删除，迟到的点击落进虚空——**两端都不可见**，
+      // 用户只看到「失败」，日志里一个字都没有，无从查起。
+      // 任何丢弃分支必须留痕，且要指名道姓说清是谁被丢了。
+      logger.warn('Permission response for unknown/expired request, dropped', { requestId, response });
+      return;
+    }
     // B2: 停车挂起的审批走 repo-changes 裁决口（会话卡 / 收件箱两口共用）。
     if (pending.parked) {
       this.resolveParkedApproval(requestId, response);
@@ -786,9 +793,15 @@ export class AgentOrchestrator {
     // 无人值守会话（cron/heartbeat/channel）：审批不再走 60s deny，改为「停车挂起」，
     // 写 pending_approvals 等收件箱/会话卡任一入口应答（B2）。判据与权限档钳制同源
     // （markUnattendedSession）。repo 不可用时（DB 未就绪/测试）回退老 60s 路径。
-    const parkRepo = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId)
-      ? this.getPendingApprovalRepo()
-      : null;
+    //
+    // 语音派的 run 走同一条路（2026-07-26 真机）：D4 抬严的立论就是「用户在通话里
+    // 手不在键盘上、眼睛不在 diff 上，这姿态等于无人值守」——既然这么判定，审批就不能
+    // 要求他 60 秒内点一下。实测通话结束后 run 才请求审批，60s 必然超时自动拒绝，
+    // 而迟到的点击又落进静默丢弃分支，用户只看到「失败」且毫无线索。
+    // 判据与抬严同源（isLiveVoiceSession = 通话中 或 语音派的 run 还在飞）。
+    const needsParking = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId)
+      || getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
+    const parkRepo = needsParking ? this.getPendingApprovalRepo() : null;
     if (parkRepo) {
       return this.parkApproval(fullRequest, permissionLevel, parkRepo);
     }

@@ -35,9 +35,19 @@ const loggerMocks = vi.hoisted(() => {
     dispose: vi.fn().mockResolvedValue(undefined),
   });
 
+  // 留一份所有 logger 实例的引用：模块级 logger 是 import 期建的，
+  // clearAllMocks 会清掉 createLogger.mock.results，事后就再也找不到它了。
+  const instances: Array<ReturnType<typeof createMockLogger>> = [];
+  const track = () => {
+    const instance = createMockLogger();
+    instances.push(instance);
+    return instance;
+  };
+
   return {
-    logger: createMockLogger(),
-    createLogger: vi.fn(() => createMockLogger()),
+    logger: track(),
+    createLogger: vi.fn(track),
+    instances,
     LogLevel: { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 },
   };
 });
@@ -488,10 +498,29 @@ describe('AgentOrchestrator', () => {
   // Permission Response Tests
   // --------------------------------------------------------------------------
   describe('权限响应处理', () => {
+    /** 汇总所有 mock logger 的 warn 调用（模块级 logger 抓不到具体实例，扫全量）。 */
+    const collectWarns = (): string =>
+      loggerMocks.instances
+        .flatMap((instance) => instance.warn.mock.calls.map((call) => JSON.stringify(call)))
+        .join('|');
+
     it('handlePermissionResponse 对不存在的请求不应抛错', () => {
       expect(() => {
         orchestrator.handlePermissionResponse('nonexistent-id', 'allow');
       }).not.toThrow();
+    });
+
+    // 2026-07-26 真机：用户点了「允许」，60s 交互门已经超时把条目删了，这一击落进
+    // `if (!pending) return` —— 两端都不可见，用户只看到「失败」，日志里一个字都没有。
+    // 丢弃分支必须留痕并指名道姓，否则这类现场根本无从查起。
+    it('迟到/未知的审批响应被丢弃时必须留痕（不能静默 return）', () => {
+      // 模块级 logger 是 import 期建的，抓不到具体那一个——扫所有 createLogger 产出的
+      // warn 调用即可，判据是「这条丢弃有没有被写出来、写没写清是谁」。
+      orchestrator.handlePermissionResponse('expired-req-id', 'allow');
+
+      const blob = collectWarns();
+      expect(blob).toContain('expired-req-id');
+      expect(blob.toLowerCase()).toContain('dropped');
     });
   });
 
@@ -739,6 +768,43 @@ describe('AgentOrchestrator', () => {
       expect(entry?.parked).toBe(true);
       // 收尾避免悬挂 promise
       internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
+      expect(await promise).toBe(false);
+    });
+
+    // 2026-07-26 真机：语音派的 run 在通话结束后才请求审批 → 60s 必然超时自动拒绝，
+    // 而迟到的点击又落进静默丢弃分支，用户只看到「失败」且毫无线索。
+    // D4 抬严的立论就是「通话姿态等于无人值守」，那审批也不能要求 60 秒内点一下。
+    // 判据是「有没有真的停车」（写 pending_approvals + promise 不 resolve），不是有没有打日志。
+    it('语音态：审批同样停车挂起，不走 60s deny', async () => {
+      const voiceSid = `voice-${Math.random().toString(36).slice(2)}`;
+      getPermissionModeManager().markLiveVoiceSession(voiceSid, 'run:voice-work-1');
+
+      const promise = parkRequest(voiceSid);
+
+      expect(await isStillPending(promise)).toBe(true);
+      expect(fake.insert).toHaveBeenCalledTimes(1);
+      const requestId = fake.insert.mock.calls[0][0].id as string;
+      expect(internals(parkedOrch).pendingPermissions.get(requestId)?.parked).toBe(true);
+
+      internals(parkedOrch).resolveParkedApproval(requestId, 'deny');
+      expect(await promise).toBe(false);
+      getPermissionModeManager().clearLiveVoiceSession(voiceSid, 'run:voice-work-1');
+    });
+
+    it('语音 run 落地后恢复 60s 交互路径（停车不是永久的）', async () => {
+      const voiceSid = `voice-${Math.random().toString(36).slice(2)}`;
+      getPermissionModeManager().markLiveVoiceSession(voiceSid, 'run:voice-work-1');
+      getPermissionModeManager().clearLiveVoiceSession(voiceSid, 'run:voice-work-1');
+
+      const promise = internals(parkedOrch).requestPermission({
+        type: 'command',
+        tool: 'bash',
+        sessionId: voiceSid,
+        details: { command: 'echo x' },
+      });
+
+      expect(fake.insert).not.toHaveBeenCalled();
+      internals(parkedOrch).pendingPermissions.get([...internals(parkedOrch).pendingPermissions.keys()][0])?.resolve('deny');
       expect(await promise).toBe(false);
     });
 

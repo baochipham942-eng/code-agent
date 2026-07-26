@@ -66,9 +66,13 @@ export function validateToolArgs(
   const issues: ValidationIssue[] = [];
 
   // 1. missing required
+  // 注意：空字符串 '' 不算 missing —— 对 type: string 的必填参数，"" 是合法值
+  // （如 Write.content 传 "" 表示"我就是要建/清空一个空文件"）。之前把 '' 等同
+  // missing 会把模型明确传的合法空值打回去，还谎报"缺少"（其实传了）。
+  // 真正"这个字符串不能为空"的语义要求由各工具 handler 自己校验并给出对应错误。
   for (const key of required) {
     const v = safeArgs[key];
-    if (v === undefined || v === null || v === '') {
+    if (v === undefined || v === null) {
       const prop = properties[key];
       issues.push({
         field: key,

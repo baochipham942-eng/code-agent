@@ -253,6 +253,12 @@ export interface MessageMetadata {
    * 是写前 guard 的唯一坐标真源——prompt 里的可读位置只给人看，不作数。
    */
   artifactLocator?: ArtifactLocatorV1;
+  /**
+   * F4：标记这条 assistant 消息是 renderer 重水化时从 StreamRecoverySnapshot 回填的
+   * 流式 partial（非 DB 落库消息），消息 id 即 snapshot.turnId。仅 renderer 写入，
+   * 用于重试锚点推导等需要识别"未落库草稿"的场景。
+   */
+  streamRecovery?: { turnId: string };
 }
 
 export interface Message {

@@ -59,14 +59,25 @@ const idleState: StreamingUiState = {
   showCancelCleanup: false,
 };
 
+/**
+ * 快照是否属于「这一轮」的未完成流式。
+ * snapshot.turnId 是 host 每轮流式开始时现铸的 UUID，投影 turnId 是位置序号
+ * `turn-N`（useTurnProjection），两者永不相等——按 turnId 相等匹配恒 false（F4
+ * 期间 banner/resumable 从不工作的根因）。重水化会把 snapshot 回填成
+ * id=snapshot.turnId 的 assistant 消息（streamRecoveryMessage），所以真正的归属
+ * 关系体现在投影节点上：节点 messageId / 节点 id 前缀命中 snapshot.turnId。
+ */
 export function hasIncompleteStreamSnapshot(
   snapshot: StreamRecoverySnapshot | null | undefined,
-  turnId: string,
+  turn: TraceTurn,
 ): boolean {
-  return Boolean(
-    snapshot?.turnId === turnId &&
-      snapshot.streamStatus === 'incomplete' &&
-      snapshot.isFinal === false,
+  if (snapshot?.streamStatus !== 'incomplete' || snapshot.isFinal !== false) {
+    return false;
+  }
+  return turn.nodes.some((node) =>
+    node.messageId === snapshot.turnId ||
+    node.id === snapshot.turnId ||
+    node.id.startsWith(`${snapshot.turnId}-`),
   );
 }
 
@@ -119,7 +130,9 @@ export function buildStreamingUiState({
     };
   }
 
-  if (sessionStatus === 'paused' || hasIncompleteStreamSnapshot(streamSnapshot, turn.turnId)) {
+  // 会话仍在处理中时，被中断轮已由 drafting/using_tools 等活跃状态表达，partial 也
+  // 已回填上屏并在续跑——snapshot 只在流真正断掉（会话不再处理）时才升级为 resumable。
+  if (sessionStatus === 'paused' || (!isSessionProcessing && hasIncompleteStreamSnapshot(streamSnapshot, turn))) {
     return {
       status: 'resumable',
       label: t.turnRun.status.resumable,

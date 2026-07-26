@@ -11,6 +11,7 @@ import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '@shared/c
 import { createLogger } from '../utils/logger';
 import { sessionsSignature } from '../utils/sessionListSignature';
 import { hydrateToolCallResults } from '../utils/messageHydration';
+import { mergeStreamSnapshotIntoMessages } from '../utils/streamRecoveryMessage';
 import ipcService from '../services/ipcService';
 import { useSessionUIStore } from './sessionUIStore';
 import { useAppStore } from './appStore';
@@ -370,7 +371,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             messageCount: (session as SessionWithMeta).messageCount || session.messages?.filter(isVisibleHistoryMessage).length || 0,
             turnCount: session.turnCount || session.messages?.filter((message) => isVisibleHistoryMessage(message) && message.role === 'user').length || 0,
           });
-          const loadedMessages = hydrateToolCallResults(session.messages || []);
+          const streamSnapshot = session.streamSnapshot || null;
+          // F4：非 final 的 streamSnapshot 回填成一条 id=snapshot.turnId 的 streaming
+          // assistant 消息——切走期间的 partial 立即上屏，本轮剩余流式事件按 turnId
+          // 寻址也能命中同一条消息无缝续接。不走 addMessage（它会无条件清掉 snapshot）。
+          const loadedMessages = mergeStreamSnapshotIntoMessages(
+            hydrateToolCallResults(session.messages || []),
+            streamSnapshot,
+          );
           const totalCount = (session as SessionWithMeta).messageCount ?? loadedMessages.length;
           useAppStore.getState().setWorkingDirectory(session.workingDirectory ?? null);
           set({
@@ -378,7 +386,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             messages: loadedMessages,
             todos: session.todos || [],
             sessionTasks: sessionTasks || [],
-            streamSnapshot: session.streamSnapshot || null,
+            streamSnapshot,
             isLoading: false,
             unreadSessionIds: nextUnreadIds,
             hasOlderMessages: totalCount > loadedMessages.length,

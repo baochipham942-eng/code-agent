@@ -155,7 +155,9 @@ class VoiceCallBridge {
       }
       // host 侧关闭（挂断/上游死/超时）：摘要落库有一点延迟，稍后再拉一次。
       this.scheduleReload(sessionId, 800);
-      this.store().reset();
+      // error 态不 reset：把错误留在 chrome 上给用户看，由 End 按钮显式收尾；
+      // 否则上游报错一闪而过，用户只看到通话凭空消失。
+      if (phase !== 'error') this.store().reset();
     };
   }
 

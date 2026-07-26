@@ -62,7 +62,11 @@ vi.mock('../../../src/host/prompts/providerVariants', () => ({
   isProviderVariantDisabled: vi.fn(() => false),
 }));
 
-vi.mock('../../../src/shared/constants', () => ({
+// 按名字枚举的 mock 会在 constants 每次新增导出时炸（本次实测：新增
+// EXPLORE_AGENT_DESCRIPTION 直接让 spawnAgent.schema 的模板求值失败）。
+// spread 真实模块后只覆盖要改的两个，新增导出不再牵连本测试。
+vi.mock('../../../src/shared/constants', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/shared/constants')>()),
   DEFAULT_PROVIDER: 'mock-provider',
   DEFAULT_MODEL: 'mock-model',
 }));

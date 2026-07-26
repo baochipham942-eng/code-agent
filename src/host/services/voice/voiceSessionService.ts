@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { QWEN_OMNI_REALTIME_MODEL, VOICE_SESSION_MAX_DURATION_MS } from '../../../shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceTransportHandle } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
@@ -49,6 +49,8 @@ interface ActiveSession {
   maxDurationTimer: NodeJS.Timeout;
   /** 本次通话派出去的任务数，进通话摘要 */
   workItemCount: number;
+  /** 助手字幕的增量缓冲：上游只给 delta，挂断时若 done 没到要拿它冲成 final。 */
+  transcriptBuf: { assistant: string };
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -97,6 +99,15 @@ async function teardown(reason: string): Promise<void> {
   // 只还「通话」这一张票。语音派出去、还在飞的 run 各自持票，抬严对它们继续有效——
   // 挂断不再等于解除（2026-07-26 真机：挂断后同一个 run 直接落盘，D4 承诺全失效）。
   getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId, `call:${session.id}`);
+  // 排水窗：用户 ASR completed / 助手 transcript done 常在挂断后 ~1s 才到，立刻关
+  // 上游会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话落库只剩摘要）。
+  // 窗口内 onEvent 照常把 final 落库；窗口结束后 done 仍没到的助手增量缓冲冲成 final。
+  await new Promise((resolve) => setTimeout(resolve, VOICE_TEARDOWN_DRAIN_MS));
+  const pendingAssistant = session.transcriptBuf.assistant;
+  if (pendingAssistant.trim()) {
+    session.transcriptBuf.assistant = '';
+    await persistTranscript(session.neoSessionId, 'assistant', pendingAssistant);
+  }
   const endedAt = Date.now();
   const { startedAt } = session;
   const durationSec = Math.max(0, Math.round((endedAt - startedAt) / 1000));
@@ -166,6 +177,7 @@ async function connectAndBind(
   const routing = resolveVoiceRouting(requestedAgentId);
   const liveSettings = readVoiceLiveSettings();
 
+  const transcriptBuf = { assistant: '' };
   let upstream: VoiceTransportHandle;
   try {
     upstream = await qwenOmniTransport.connect({
@@ -179,7 +191,14 @@ async function connectAndBind(
       onEvent: (event) => {
         send(client, event);
         if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text);
-        else if (event.type === 'assistant.transcript' && event.done) void persistTranscript(neoSessionId, 'assistant', event.text);
+        else if (event.type === 'assistant.transcript') {
+          if (event.done) {
+            transcriptBuf.assistant = '';
+            void persistTranscript(neoSessionId, 'assistant', event.text);
+          } else {
+            transcriptBuf.assistant += event.text;
+          }
+        }
         // 上游报错 / 上游连接关闭 = 这一路通话已经死了，必须就地释放 active。
         // 否则两侧对「通话是否结束」的判断会分叉：渲染侧收到 error 就把按钮切回「开始通话」，
         // 而 Host 仍占着 active，用户再拨被自己的互斥挡成 VOICE_SESSION_BUSY，
@@ -222,6 +241,7 @@ async function connectAndBind(
     client,
     upstream,
     workItemCount: 0,
+    transcriptBuf,
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });
       void teardown('max-duration');

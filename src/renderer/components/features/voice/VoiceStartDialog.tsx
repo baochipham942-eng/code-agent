@@ -7,6 +7,7 @@
 // ============================================================================
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { AudioLines, ShieldCheck } from 'lucide-react';
 import { Modal, ModalFooter } from '../../primitives/Modal';
 import { BUTTON_PRIMARY_CLASS } from '../../primitives/Button';
@@ -22,7 +23,10 @@ export const VoiceStartDialog: React.FC<VoiceStartDialogProps> = ({ isOpen, onCo
   const { t } = useI18n();
   const text = t.voice.live;
 
-  return (
+  // Modal 用 fixed 定位但不走 portal；本组件挂在 composer 深处，祖先链上有
+  // transform（动画容器），fixed 会被劫持成相对该祖先定位——真机实测弹窗底部
+  // 超出窗口、按钮不可见（2026-07-26 产品负责人抓到）。portal 到 body 根治。
+  return createPortal(
     <Modal
       isOpen={isOpen}
       onClose={onCancel}
@@ -51,7 +55,8 @@ export const VoiceStartDialog: React.FC<VoiceStartDialogProps> = ({ isOpen, onCo
           <span>{text.confirmPrivacy}</span>
         </p>
       </div>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 };
 

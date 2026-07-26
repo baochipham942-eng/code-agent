@@ -66,6 +66,13 @@ export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 /** 通话最长时长（ms），到点强制挂断，兜住忘记挂断导致的持续计费。 */
 export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
 
+/**
+ * 挂断后的上游排水窗（ms）：用户 ASR completed 与助手 transcript done 常在挂断后
+ * ~1s 内才到，立刻关 WS 会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话
+ * 落库只剩摘要）。窗口内到达的 final 照常落库，超时后再关。
+ */
+export const VOICE_TEARDOWN_DRAIN_MS = 1500;
+
 /** get_current_file_summary 最多回几个文件路径，别把通话摘要撑成一屏。 */
 export const VOICE_RECENT_FILE_LIMIT = 8;
 

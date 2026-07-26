@@ -335,6 +335,7 @@ import { cleanupUploadDirs, ensureUploadRootDir } from './helpers/upload';
 
 // Middleware
 import { SERVER_AUTH_TOKEN, exitIfE2EFlagRefused, writeDevAuthToken } from './middleware/auth';
+import { attachVoiceStreamUpgrade } from './voiceStreamUpgrade';
 
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
 import { getAppVersion } from '../host/platform';
@@ -1214,7 +1215,7 @@ async function main(): Promise<void> {
   });
   queuedInputStartupSweep.maybeRun();
 
-  const server = http.createServer(app);
+  const server = attachVoiceStreamUpgrade(http.createServer(app));
 
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {

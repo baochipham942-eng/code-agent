@@ -53,21 +53,25 @@ async function ensureActiveSession(page: Page): Promise<string> {
   return sessionId!;
 }
 
-/** 与 host voiceSessionService 落库形状逐字段对齐（字幕 / 摘要）。 */
-function voiceMessages() {
+/**
+ * 与 host voiceSessionService 落库形状逐字段对齐（字幕 / 摘要）。
+ * e2e 数据目录跨 run 复用，消息文案带 run 唯一标记，重跑不会被上一轮的
+ * 落库污染成「两张摘要卡」的假重影（真踩到过一次：复跑同会话双 seed）。
+ */
+function voiceMessages(runTag: string) {
   const startedAt = Date.now() - 75_000;
   return [
     {
       id: `voice-user-${startedAt}`,
       role: 'user',
-      content: '帮我看下登录页的文案',
+      content: `帮我看下登录页的文案 ${runTag}`,
       timestamp: startedAt + 5_000,
       metadata: { source: 'voice' },
     },
     {
       id: `voice-assistant-${startedAt}`,
       role: 'assistant',
-      content: '好的，我先看一下登录页。',
+      content: `好的，我先看一下登录页 ${runTag}`,
       timestamp: startedAt + 20_000,
       metadata: { source: 'voice' },
     },
@@ -93,11 +97,21 @@ function voiceMessages() {
 
 test('语音字幕与摘要经真实 model 层投影：恰好各一份，无重影', async ({ page, request, baseURL }) => {
   await waitForAppReady(page);
-  const sessionId = await ensureActiveSession(page);
+  await ensureActiveSession(page);
   const token = await getAuthToken(page);
+  const runTag = `r${Date.now().toString(36)}`;
+
+  // 每次跑全新会话：e2e 数据目录跨 run 复用，复用旧会话会被上一轮 seed 污染
+  const created = await request.post(`${baseURL}/api/sessions?token=${encodeURIComponent(token)}`, {
+    data: { title: `voice-e2e-${runTag}` },
+  });
+  expect(created.status(), await created.text()).toBe(200);
+  const createdBody = (await created.json()) as { success: boolean; data?: { id?: string } };
+  const sessionId = createdBody.data?.id;
+  expect(sessionId, 'create session via REST failed').toBeTruthy();
 
   const seed = await request.post(`${baseURL}/api/dev/seed-messages?token=${encodeURIComponent(token)}`, {
-    data: { sessionId, messages: voiceMessages() },
+    data: { sessionId, messages: voiceMessages(runTag) },
   });
   expect(seed.status(), await seed.text()).toBe(200);
 
@@ -113,9 +127,10 @@ test('语音字幕与摘要经真实 model 层投影：恰好各一份，无重�
   await expect(summaryCard).toHaveCount(1, { timeout: 10_000 });
   await expect(summaryCard).toContainText('qwen3.5-omni-flash-realtime');
 
-  // 字幕气泡各一条 + 语音来源标恰好两个
-  await expect(page.getByText('帮我看下登录页的文案')).toHaveCount(1);
-  await expect(page.getByText('好的，我先看一下登录页。')).toHaveCount(1);
+  // 字幕气泡各一条（限定在投影 DOM 内：侧栏会话标题来自首条消息，会重复命中宽松选择器）
+  // + 语音来源标恰好两个
+  await expect(page.locator('[data-trace-node-type="user"]').getByText(`帮我看下登录页的文案 ${runTag}`)).toHaveCount(1);
+  await expect(page.locator('[data-trace-node-type="assistant_text"]').getByText(`好的，我先看一下登录页 ${runTag}`)).toHaveCount(1);
   await expect(page.locator('[data-testid="voice-source-badge"]')).toHaveCount(2);
 
   // 默认配置下 Live 入口不可见（总开关关；§9.3）

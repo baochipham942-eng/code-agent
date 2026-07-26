@@ -34,20 +34,28 @@ function selectInvocationId(
 }
 
 function summarizeLayers(events: ReadonlyArray<ContextEventRecord>): PromptStackLayerSummary[] {
+  // flatMap 里把 layer / promptLayerOutcome 取出来做窄化，下游就拿到非可选值 ——
+  // 用 filter + `!` 会把「账本可能没记这两个字段」这件事抹平，语义比断言更重要。
   return events
-    .filter((event) => (
-      event.sourceKind === CONTEXT_LEDGER.SOURCE_KIND.PROMPT_LAYER
-      && event.promptLayerOutcome
-      && event.layer
-    ))
-    .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
-    .map((event) => ({
-      id: event.layer!,
-      label: event.sourceDetail || event.layer!,
-      present: event.promptLayerOutcome === CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
+    .flatMap((event) => {
+      const { layer, promptLayerOutcome } = event;
+      if (
+        event.sourceKind !== CONTEXT_LEDGER.SOURCE_KIND.PROMPT_LAYER
+        || !promptLayerOutcome
+        || !layer
+      ) {
+        return [];
+      }
+      return [{ event, layer, promptLayerOutcome }];
+    })
+    .sort((a, b) => (a.event.sequence ?? 0) - (b.event.sequence ?? 0))
+    .map(({ event, layer, promptLayerOutcome }) => ({
+      id: layer,
+      label: event.sourceDetail || layer,
+      present: promptLayerOutcome === CONTEXT_LEDGER.PROMPT_LAYER_OUTCOME.INCLUDED,
       chars: event.chars ?? 0,
       tokens: event.tokens ?? 0,
-      outcome: event.promptLayerOutcome!,
+      outcome: promptLayerOutcome,
       note: event.reason,
     }));
 }

@@ -4,7 +4,6 @@ import { getPath } from '../platform/appPaths';
 import { createLogger } from '../services/infra/logger';
 import type {
   ContextEventSourceKind,
-  ContextInjectionSource,
   PromptLayerOutcome,
   ContextProvenanceAction,
   ContextProvenanceCategory,

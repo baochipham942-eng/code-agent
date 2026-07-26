@@ -74,15 +74,18 @@ async function openOverviewView(page: Page): Promise<void> {
     await expandPanel.click();
   }
 
-  // 空栏时是 workbench-empty-launcher，已有视图时走左上角的视图选择器
+  // D6 tab 形态（2026-07-26 打磨批 D）：空栏时是 workbench-empty-launcher；已有视图时
+  // 概览要么已平铺成 tab（点击即切），要么从「＋」的可打开视图列表里加。
   const emptyLauncher = page.getByTestId('workbench-empty-launcher');
-  const viewSelector = page.getByRole('button', { name: '选择当前视图' });
-  await expect(emptyLauncher.or(viewSelector)).toBeVisible({ timeout: 15_000 });
-  if (await viewSelector.isVisible().catch(() => false)) {
-    await viewSelector.click();
-  }
-  const openOverview = page.getByTestId('open-workbench-view-overview');
-  if (await openOverview.isVisible().catch(() => false)) {
+  const overviewTab = page.getByTestId('workbench-tab-overview');
+  await expect(emptyLauncher.or(overviewTab)).toBeVisible({ timeout: 15_000 });
+  if (await overviewTab.isVisible().catch(() => false)) {
+    await overviewTab.click();
+  } else {
+    const openOverview = page.getByTestId('open-workbench-view-overview');
+    if (!(await openOverview.isVisible().catch(() => false))) {
+      await page.getByRole('button', { name: '打开新面板' }).click();
+    }
     await openOverview.click();
   }
   await expect(page.getByTestId('workbench-overview-view')).toBeVisible({ timeout: 10_000 });

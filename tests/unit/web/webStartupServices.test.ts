@@ -50,11 +50,14 @@ afterEach(() => {
 describe('web startup service chain', () => {
   it('dispatches every migrated registration from the single web startup entry', async () => {
     const calls = new Map<WebStartupTaskName, ReturnType<typeof vi.fn>>();
-    const tasks = Object.fromEntries(TASK_NAMES.map((name) => {
+    // Object.fromEntries 只能给出 index signature，与 WebStartupTasks 的具名 key 不重叠，
+    // 故显式逐 key 装配而不是靠断言抹平。
+    const tasks = {} as WebStartupTasks;
+    for (const name of TASK_NAMES) {
       const task = vi.fn();
       calls.set(name, task);
-      return [name, task];
-    })) as WebStartupTasks;
+      tasks[name] = task;
+    }
     const configService = {
       getBudgetConfig: () => ({ enabled: true, maxBudget: 25 }),
       getSettings: () => ({ workspace: {} }),
@@ -80,16 +83,19 @@ describe('web startup service chain', () => {
       blockThreshold: 1,
       resetPeriodHours: 24,
     };
-    let listener: ((status: {
+    // 用 ref 容器而不是裸 let：赋值只发生在回调闭包里，TS 的控制流分析看不到，
+    // 会把后面的 listener 收窄成 null 而报 "not callable"。
+    type BudgetAlertListener = (status: {
       alertLevel: BudgetAlertLevel;
       currentCost: number;
       maxBudget: number;
       usagePercentage: number;
       message?: string;
-    }) => void) | null = null;
+    }) => void;
+    const listenerRef: { current: BudgetAlertListener | null } = { current: null };
     const initBudget = vi.fn(() => ({
-      setAlertListener(next: typeof listener) {
-        listener = next;
+      setAlertListener(next: BudgetAlertListener) {
+        listenerRef.current = next;
       },
     }));
     const push = vi.fn();
@@ -101,8 +107,8 @@ describe('web startup service chain', () => {
     );
 
     expect(initBudget).toHaveBeenCalledWith(config);
-    expect(listener).not.toBeNull();
-    listener?.({
+    expect(listenerRef.current).not.toBeNull();
+    listenerRef.current?.({
       alertLevel: BudgetAlertLevel.BLOCKED,
       currentCost: 42,
       maxBudget: 42,

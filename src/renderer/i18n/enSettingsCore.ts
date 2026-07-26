@@ -51,6 +51,13 @@ export const enSettingsCore = {
     modal: {
       loading: 'Loading…',
     },
+    unsavedChanges: {
+      badge: 'Unsaved',
+      title: 'Unsaved changes',
+      message: 'The "General model" tab has Provider configuration changes that have not been saved. Leaving will discard them.',
+      discard: 'Discard changes',
+      stay: 'Keep editing',
+    },
     searchIndex: {
       permissionMode: 'Safety mode',
       modelRoutingStrategy: 'Model routing strategy',

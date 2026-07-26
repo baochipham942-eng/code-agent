@@ -67,7 +67,7 @@ export interface SidebarSessionItemProps {
   handleRenameSubmit: SidebarRowActions['handleRenameSubmit'];
   handleRenameKeyDown: SidebarRowActions['handleRenameKeyDown'];
   handleDoubleClick: SidebarRowActions['handleDoubleClick'];
-  handleOpenSessionReplay: SidebarRowActions['handleOpenSessionReplay'];
+  handleOpenSessionReplayInEvalCenter: SidebarRowActions['handleOpenSessionReplayInEvalCenter'];
   handleOpenSessionAssets: SidebarSessionActions['handleOpenSessionAssets'];
   handleOpenReplayEvidence: SidebarRowActions['handleOpenReplayEvidence'];
   handleSelectMessageSearchHit: SidebarSessionActions['handleSelectMessageSearchHit'];
@@ -106,7 +106,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   handleRenameSubmit,
   handleRenameKeyDown,
   handleDoubleClick,
-  handleOpenSessionReplay,
+  handleOpenSessionReplayInEvalCenter,
   handleOpenSessionAssets,
   handleSelectMessageSearchHit,
   handleArchiveSession,
@@ -219,7 +219,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
         )}
       </div>
 
-      {/* Hover 动作簇：Replay（管理员）/ 产物 / 归档 — 默认隐藏，覆盖右槽位置 */}
+      {/* Hover 动作簇：Replay（管理员，进评测中心回放 tab）/ 产物 / 归档 — 默认隐藏，覆盖右槽位置 */}
       {!multiSelectMode && !isRenaming && (
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100">
           {canOpenSessionReplay && sessionHasActivity && (
@@ -230,7 +230,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void handleOpenSessionReplay(session);
+                handleOpenSessionReplayInEvalCenter(session);
               }}
               className="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-700/70 hover:text-zinc-200 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)]"
             >

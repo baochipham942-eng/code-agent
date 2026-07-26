@@ -1,13 +1,26 @@
+// ============================================================================
+// InAppValidationWorkspace - 应用内验证工作台（可嵌入）
+//
+// 契约：
+// - 不含 FullScreenPage 外壳；作为评测中心「验证」tab 的内容挂载，页面框架由外层负责。
+// - IPC 入口：main 端 IN_APP_VALIDATION_REQUEST → appStore.pendingInAppValidationRequest。
+//   本组件消费 pending 请求：注入 HTML+steps、iframe 以 requestId 强制重 mount、
+//   加载完自动跑并经 IN_APP_VALIDATION_RESULT 回传。
+// - 脏保护：用户手动改过 HTML/steps（dirty）后，新 IPC 请求不得静默覆盖——挂起为
+//   heldRequest，顶部横幅让用户选「加载新请求」（覆盖并照常执行）或「保留当前编辑」
+//   （回传 error 拒绝，main 端 promise 立即 reject，而不是干等 30s 超时）。
+// ============================================================================
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Play, RotateCw, AlertTriangle, CheckCircle2, Code2, Radio } from 'lucide-react';
+import { Play, RotateCw, AlertTriangle, CheckCircle2, Radio } from 'lucide-react';
 import { runInAppInteractions } from '../../../utils/inAppValidationExecutor';
 import { ipcService } from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useAppStore } from '../../../stores/appStore';
-import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
+import { useI18n } from '../../../hooks/useI18n';
 import type {
   BrowserInteractionStep,
   BrowserInteractionStepResult,
+  InAppValidationRequest,
 } from '../../../../shared/contract/browserInteraction';
 
 const DEMO_HTML = `<!doctype html>
@@ -71,7 +84,9 @@ const DEMO_STEPS: BrowserInteractionStep[] = [
   },
 ];
 
-export function InAppValidationPanel(): React.ReactElement {
+export function InAppValidationWorkspace(): React.ReactElement {
+  const { t } = useI18n();
+  const v = t.evalCenter.validation;
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [htmlSource, setHtmlSource] = useState<string>(DEMO_HTML);
   const [stepsText, setStepsText] = useState<string>(() => JSON.stringify(DEMO_STEPS, null, 2));
@@ -80,11 +95,13 @@ export function InAppValidationPanel(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [iframeReady, setIframeReady] = useState(false);
   const [manualReloadKey, setManualReloadKey] = useState(0);
+  // 脏保护：用户手动编辑过 HTML/steps 即 dirty；IPC 加载 / Demo 加载后复位。
+  const [dirty, setDirty] = useState(false);
+  const [heldRequest, setHeldRequest] = useState<InAppValidationRequest | null>(null);
   const activeIpcRequestRef = useRef<{ requestId: string } | null>(null);
 
   const pendingRequest = useAppStore((s) => s.pendingInAppValidationRequest);
   const setPendingRequest = useAppStore((s) => s.setPendingInAppValidationRequest);
-  const setShowInAppValidationPanel = useAppStore((s) => s.setShowInAppValidationPanel);
 
   const reloadIframe = useCallback(() => {
     setIframeReady(false);
@@ -116,24 +133,35 @@ export function InAppValidationPanel(): React.ReactElement {
     setStepsText(JSON.stringify(DEMO_STEPS, null, 2));
     setResults([]);
     setError(null);
+    setDirty(false);
     if (iframeRef.current) {
       setIframeReady(false);
       iframeRef.current.srcdoc = DEMO_HTML;
     }
   }, []);
 
-  // IPC 入口：main 端发来 request → 注入 HTML+steps；iframe 通过 key={requestId} 强制
-  // 重 mount，加载完后 onLoad 把 iframeReady 翻 true，下一个 effect 自动跑并回传。
-  useEffect(() => {
-    if (!pendingRequest) return;
-    activeIpcRequestRef.current = { requestId: pendingRequest.requestId };
-    setHtmlSource(pendingRequest.html);
-    setStepsText(JSON.stringify(pendingRequest.steps, null, 2));
+  // 应用一条 IPC 请求：注入内容并标记 active，iframe 重 mount 后由下面的 effect 自动跑。
+  const applyRequest = useCallback((request: InAppValidationRequest) => {
+    activeIpcRequestRef.current = { requestId: request.requestId };
+    setHtmlSource(request.html);
+    setStepsText(JSON.stringify(request.steps, null, 2));
     setResults([]);
     setError(null);
     setIframeReady(false);
-  }, [pendingRequest]);
+    setDirty(false);
+  }, []);
 
+  // IPC 入口。脏保护：有手动编辑时挂起请求等用户选择，不得静默覆盖（旧实现 :127-135 直接覆盖）。
+  useEffect(() => {
+    if (!pendingRequest) return;
+    if (dirty) {
+      setHeldRequest(pendingRequest);
+      return;
+    }
+    applyRequest(pendingRequest);
+  }, [pendingRequest, dirty, applyRequest]);
+
+  // 自动跑 IPC 请求并回传结果（仅当请求已被 apply 进 activeIpcRequestRef）。
   useEffect(() => {
     const activeRequest = activeIpcRequestRef.current;
     if (!activeRequest || !iframeReady || !pendingRequest) return;
@@ -172,20 +200,36 @@ export function InAppValidationPanel(): React.ReactElement {
     };
   }, [iframeReady, pendingRequest, setPendingRequest]);
 
+  const handleLoadHeldRequest = useCallback(() => {
+    if (!heldRequest) return;
+    applyRequest(heldRequest);
+    setHeldRequest(null);
+  }, [heldRequest, applyRequest]);
+
+  const handleKeepEditing = useCallback(() => {
+    if (!heldRequest) return;
+    const requestId = heldRequest.requestId;
+    setHeldRequest(null);
+    setPendingRequest(null);
+    // 明确回传拒绝，main 端 runInAppValidation 的 promise 立即 reject。
+    void ipcService.invoke(IPC_CHANNELS.IN_APP_VALIDATION_RESULT, {
+      requestId,
+      error: v.requestDeclined,
+    });
+  }, [heldRequest, setPendingRequest, v.requestDeclined]);
+
   const passedCount = results.filter((r) => r.passed).length;
   const totalCount = results.length;
   const allPassed = totalCount > 0 && passedCount === totalCount;
-  const ipcActive = Boolean(pendingRequest);
+  const ipcActive = Boolean(pendingRequest) && !heldRequest;
 
   return (
-    <FullScreenPage testId="in-app-validation-panel">
-      <FullScreenPageHeader
-        icon={<Code2 className="h-4 w-4 text-emerald-300" />}
-        title="In-App 验证"
-        description="在应用内沙箱验证 HTML 预览和交互脚本"
-        badge={ipcActive ? (
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="in-app-validation-workspace">
+      {/* 工具条：运行 = 主操作（品牌色），Demo/重载 = 次级幽灵按钮 */}
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-800 px-3">
+        {ipcActive ? (
           <span className="flex items-center gap-1 rounded border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200">
-            <Radio className="h-3 w-3 animate-pulse" /> IPC 驱动中
+            <Radio className="h-3 w-3 animate-pulse" /> {v.ipcDriven}
           </span>
         ) : totalCount > 0 ? (
           <span
@@ -198,34 +242,58 @@ export function InAppValidationPanel(): React.ReactElement {
             {passedCount}/{totalCount} passed
           </span>
         ) : null}
-        onClose={() => setShowInAppValidationPanel(false)}
-        actions={(
-          <>
-          <button
+        <div className="flex-1" />
+        <button /* ds-allow:button: 验证工作台工具条次级按钮，12px 微尺寸行内样式，Button primitive 无对应变体 */
+          type="button"
+          onClick={loadDemo}
+          className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+        >
+          {v.loadDemo}
+        </button>
+        <button /* ds-allow:button: 验证工作台工具条次级按钮，同上 */
+          type="button"
+          onClick={reloadIframe}
+          className="flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+        >
+          <RotateCw className="h-3 w-3" /> {v.reload}
+        </button>
+        <button /* ds-allow:button: 验证工作台主操作，品牌色实心按钮，Button primitive 无 12px 微尺寸变体 */
+          type="button"
+          onClick={runScript}
+          disabled={running}
+          className="flex items-center gap-1 rounded bg-primary-600 px-3 py-1 text-xs font-medium text-white hover:bg-primary-500 disabled:opacity-50"
+        >
+          <Play className="h-3 w-3" /> {running ? v.running : v.run}
+        </button>
+      </div>
+
+      {/* 脏保护横幅：held 请求等用户选择，期间不覆盖编辑、不自动执行 */}
+      {heldRequest && (
+        <div
+          className="flex shrink-0 items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2"
+          data-testid="in-app-validation-held-request"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-300" />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-medium text-amber-200">{v.heldTitle}</div>
+            <div className="text-[11px] text-amber-200/70">{v.heldBody}</div>
+          </div>
+          <button /* ds-allow:button: 脏保护横幅主操作，品牌色实心按钮，Button primitive 无 12px 微尺寸变体 */
             type="button"
-            onClick={loadDemo}
-            className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+            onClick={handleLoadHeldRequest}
+            className="rounded bg-primary-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-primary-500"
           >
-            载入 Demo
+            {v.loadRequest}
           </button>
-          <button
+          <button /* ds-allow:button: 脏保护横幅次级操作，同上 */
             type="button"
-            onClick={reloadIframe}
-            className="flex items-center gap-1 rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
+            onClick={handleKeepEditing}
+            className="rounded border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 hover:bg-zinc-800"
           >
-            <RotateCw className="h-3 w-3" /> 重载
+            {v.keepEditing}
           </button>
-          <button
-            type="button"
-            onClick={runScript}
-            disabled={running}
-            className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-medium hover:bg-emerald-500 disabled:opacity-50"
-          >
-            <Play className="h-3 w-3" /> {running ? '运行中…' : '运行脚本'}
-          </button>
-          </>
-        )}
-      />
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         <div className="flex flex-1 flex-col border-r border-slate-800">
@@ -236,7 +304,7 @@ export function InAppValidationPanel(): React.ReactElement {
             title="in-app-validation-preview"
             srcDoc={htmlSource}
             onLoad={() => setIframeReady(true)}
-            className="flex-1 bg-white"
+            className="flex-1 bg-zinc-950"
             sandbox="allow-scripts allow-same-origin allow-forms"
           />
         </div>
@@ -247,7 +315,10 @@ export function InAppValidationPanel(): React.ReactElement {
             <textarea
               className="h-36 resize-none bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-hidden"
               value={htmlSource}
-              onChange={(e) => setHtmlSource(e.target.value)}
+              onChange={(e) => {
+                setHtmlSource(e.target.value);
+                setDirty(true);
+              }}
             />
           </div>
           <div className="flex flex-1 flex-col">
@@ -255,7 +326,10 @@ export function InAppValidationPanel(): React.ReactElement {
             <textarea
               className="flex-1 resize-none bg-slate-900 px-3 py-2 font-mono text-xs text-slate-100 outline-hidden"
               value={stepsText}
-              onChange={(e) => setStepsText(e.target.value)}
+              onChange={(e) => {
+                setStepsText(e.target.value);
+                setDirty(true);
+              }}
             />
           </div>
           <div className="max-h-80 overflow-auto border-t border-slate-800 bg-slate-950 px-3 py-2 text-xs">
@@ -266,7 +340,11 @@ export function InAppValidationPanel(): React.ReactElement {
               </div>
             )}
             {results.length === 0 && !error && (
-              <div className="text-slate-500">点"运行脚本"开始验证</div>
+              <div className="space-y-2 text-slate-500">
+                <div>{v.emptyHint}</div>
+                <div>{v.emptySchemaTitle}</div>
+                <pre className="overflow-x-auto rounded border border-slate-800 bg-slate-900 p-2 text-[11px] text-slate-400">{v.emptySchemaExample}</pre>
+              </div>
             )}
             {results.map((result, index) => (
               <div
@@ -289,7 +367,9 @@ export function InAppValidationPanel(): React.ReactElement {
                   <span className="ml-auto text-slate-500">{result.durationMs}ms</span>
                 </div>
                 {result.checks.length > 0 && (
-                  <ul className="mt-1 list-disc pl-4 text-emerald-300">
+                  /* checks 是「已通过的断言」，恒绿在失败步骤里会误读成全好——改中性色，
+                     步骤级 pass/fail 已由边框与图标表达。 */
+                  <ul className="mt-1 list-disc pl-4 text-zinc-400">
                     {result.checks.map((check, i) => (
                       <li key={i}>{check}</li>
                     ))}
@@ -307,6 +387,6 @@ export function InAppValidationPanel(): React.ReactElement {
           </div>
         </div>
       </div>
-    </FullScreenPage>
+    </div>
   );
 }

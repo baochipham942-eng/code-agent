@@ -27,12 +27,14 @@ import { rolePackEn } from './rolePack';
 import { expertEn } from './expert';
 import { generativeUIEn } from './generativeUI';
 import { capabilityHubEn } from './capabilityHub';
+import { evalCenterEn } from './evalCenter';
 import { localOpsEn } from './localOps';
 import { onboardingEn } from './onboarding';
 import { workbenchTabsEn } from './workbenchTabs';
 
 export const en: Translations = {
   ...capabilityHubEn,
+  ...evalCenterEn,
   ...localOpsEn,
   ...onboardingEn,
   ...generativeUIEn,

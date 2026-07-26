@@ -1,6 +1,16 @@
 // ============================================================================
 // SettingsModal - Main Settings Modal Entry Point
 // Layout + Tab Switching
+//
+// 未保存拦截契约（2026-07 设置页 P0）：
+// - staged-dirty 的唯一来源是 ModelSettings 的 Provider 表单（契约见 ModelSettings
+//   文件头注释），通过 onDirtyChange 上报到本组件的 modelFormDirty。
+// - 拦截层在本组件（tab 条件渲染会 unmount 内容组件，子组件自己拦不住）：
+//   侧栏 tab 点击 / 设置搜索跳转 / 关闭设置页（返回键 + X）统一走
+//   guardWhileModelDirty，dirty 时弹 ConfirmDialog（丢弃修改 / 继续编辑）。
+// - dirty 期间侧栏「通用模型」tab 显示「未保存」徽标；其他即存页不参与。
+// - 已知边界：全局 Escape 快捷键（useKeyboardShortcuts）直接 setShowSettings(false)，
+//   走 store 不经过本组件，暂不拦截（拦截需把 dirty 提升到全局 store，留给后续批次）。
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -34,6 +44,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
+import { ConfirmDialog } from '../../composites/ConfirmDialog';
 import { UpdateNotification } from '../../UpdateNotification';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/contract';
@@ -56,8 +67,10 @@ import { tauriCheckForUpdate } from '../../../utils/tauriUpdater';
 
 const logger = createLogger('SettingsModal');
 
-const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
+// 宽版内容区（max-w-6xl）tab：内容本身有宽表格 / 多栏布局，窄版会恒横向滚动
+export const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'cache',
+  'general',
   'keybindings',
   'model',
   'visualModels',
@@ -219,6 +232,11 @@ export const SettingsModal: React.FC = () => {
     () => new Set()
   );
 
+  // ModelSettings Provider 表单的 staged-dirty 上报（契约见文件头注释）
+  const [modelFormDirty, setModelFormDirty] = useState(false);
+  // dirty 时被拦下的导航动作（切 tab / 关闭），确认「丢弃修改」后执行
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
+
   // active tab 落在折叠组内（如搜索直达 MCP）时自动展开该组
   useEffect(() => {
     const group = SETTINGS_TAB_GROUP_BY_TAB[activeTab];
@@ -243,18 +261,37 @@ export const SettingsModal: React.FC = () => {
     });
   }, []);
 
-  // 搜到的条目落点未必还在设置页（自动化 / 能力中心那几项已搬走），交给同一个判定函数分流
-  const handleSearchNavigate = useCallback((tab: SettingsTab) => {
-    if (resolveSettingsDeepLink(tab).kind !== 'settings') {
-      openSettingsTab(tab);
+  // dirty 拦截统一入口：ModelSettings dirty 时先弹确认，否则直接执行。
+  // 注意要包一层惰性函数，setPendingNavigation(() => action) 才能存函数而非调用结果。
+  const guardWhileModelDirty = useCallback((action: () => void) => {
+    if (modelFormDirty) {
+      setPendingNavigation(() => action);
       return;
     }
-    setActiveTab(tab);
-  }, [openSettingsTab]);
+    action();
+  }, [modelFormDirty]);
+
+  const handleDiscardChanges = useCallback(() => {
+    const pending = pendingNavigation;
+    setPendingNavigation(null);
+    // ModelSettings 随 tab 切换 unmount，其 cleanup 会把 dirty 复位
+    pending?.();
+  }, [pendingNavigation]);
+
+  // 搜到的条目落点未必还在设置页（自动化 / 能力中心那几项已搬走），交给同一个判定函数分流
+  const handleSearchNavigate = useCallback((tab: SettingsTab) => {
+    guardWhileModelDirty(() => {
+      if (resolveSettingsDeepLink(tab).kind !== 'settings') {
+        openSettingsTab(tab);
+        return;
+      }
+      setActiveTab(tab);
+    });
+  }, [guardWhileModelDirty, openSettingsTab]);
 
   const handleClose = useCallback(() => {
-    setShowSettings(false);
-  }, [setShowSettings]);
+    guardWhileModelDirty(() => setShowSettings(false));
+  }, [guardWhileModelDirty, setShowSettings]);
 
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
@@ -371,7 +408,10 @@ export const SettingsModal: React.FC = () => {
                     <button
                       key={tab.id}
                       type="button"
-                      onClick={() => setActiveTab(tab.id)}
+                      onClick={() => {
+                        if (tab.id === activeTab) return;
+                        guardWhileModelDirty(() => setActiveTab(tab.id));
+                      }}
                       className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
                         activeTab === tab.id
                           ? 'bg-zinc-800 text-zinc-100'
@@ -384,6 +424,11 @@ export const SettingsModal: React.FC = () => {
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">
                         {tab.label}
                       </span>
+                      {tab.id === 'model' && modelFormDirty && (
+                        <span className="shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1 text-[10px] text-amber-200">
+                          {t.settings.unsavedChanges.badge}
+                        </span>
+                      )}
                       {tab.badge && (
                         <span className="h-2 w-2 shrink-0 rounded-full bg-indigo-500 animate-pulse" />
                       )}
@@ -425,7 +470,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'appshots' && <AppshotsSettings />}
             {activeTab === 'model' && (
-              <ModelSettings config={modelConfig} onChange={setModelConfig} />
+              <ModelSettings config={modelConfig} onChange={setModelConfig} onDirtyChange={setModelFormDirty} />
             )}
             {activeTab === 'visualModels' && <VisualModelsSettings />}
             {activeTab === 'agentEngine' && <AgentEngineSettings />}
@@ -448,6 +493,18 @@ export const SettingsModal: React.FC = () => {
           </div>
         </main>
       </div>
+
+      {/* 未保存修改拦截：丢弃 = 执行被拦下的导航，继续编辑 = 留在当前 tab */}
+      <ConfirmDialog
+        isOpen={pendingNavigation !== null}
+        variant="warning"
+        title={t.settings.unsavedChanges.title}
+        message={t.settings.unsavedChanges.message}
+        confirmText={t.settings.unsavedChanges.discard}
+        cancelText={t.settings.unsavedChanges.stay}
+        onConfirm={handleDiscardChanges}
+        onCancel={() => setPendingNavigation(null)}
+      />
 
       {/* Optional Update Modal */}
       {isDesktopShellMode() && !isTauriMode() && showUpdateModal && optionalUpdateInfo && (

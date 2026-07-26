@@ -32,6 +32,7 @@ import {
   Activity,
   UsersRound,
   Download,
+  Gauge,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useUIStore } from '../stores/uiStore';
@@ -107,6 +108,8 @@ export const Sidebar: React.FC = () => {
     openLocalOpsPanel,
     showProjectCollaborationPage,
     openProjectCollaborationPage,
+    showEvalCenter,
+    openEvalCenter,
     optionalUpdateInfo,
     setShowOptionalUpdateModal,
     openWorkspacePreview,
@@ -172,6 +175,8 @@ export const Sidebar: React.FC = () => {
     hasCachedAdminClaim,
   } = useAuthStore();
   const canOpenSessionReplay = canAccessFeature('eval.replay', user);
+  // 评测中心入口门禁与菜单里其他 admin 判定同一条通路（user.isAdmin verified claim）。
+  const canOpenEvalCenter = canAccessFeature('eval.center', user);
   const isVerifiedAdmin = user?.isAdmin === true;
   const isAdminPendingVerification = !isVerifiedAdmin && hasCachedAdminClaim && sessionTrustState === 'cached';
   const adminPendingTitle =
@@ -400,6 +405,7 @@ export const Sidebar: React.FC = () => {
     saveExportToDownloads,
     openRuntimeLogsFolder,
     handleOpenSessionReplay,
+    handleOpenSessionReplayInEvalCenter,
     handleOpenReplayEvidence,
     handleContextMenu,
     handleDoubleClick,
@@ -604,7 +610,7 @@ export const Sidebar: React.FC = () => {
     handleRenameSubmit,
     handleRenameKeyDown,
     handleDoubleClick,
-    handleOpenSessionReplay,
+    handleOpenSessionReplayInEvalCenter,
     handleOpenSessionAssets,
     handleOpenReplayEvidence,
     handleSelectMessageSearchHit,
@@ -854,6 +860,20 @@ export const Sidebar: React.FC = () => {
                   }
                   label={sb.menuNeoCollab}
                 />
+                {canOpenEvalCenter && (
+                  <AccountMenuItem
+                    onClick={() => {
+                      openEvalCenter();
+                      setShowUserMenu(false);
+                    }}
+                    icon={
+                      <Gauge
+                        className={`w-4 h-4 ${showEvalCenter ? 'text-amber-400' : 'text-amber-400/80'}`}
+                      />
+                    }
+                    label={sb.menuEvalCenter}
+                  />
+                )}
 
                 <div className="my-1 border-t border-zinc-800" />
                 <button

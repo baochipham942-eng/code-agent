@@ -426,7 +426,7 @@ prompt builder 要求 _meta
 |------|------|---------|
 | Browser Surface | 托管浏览器/relay 状态从工具输出上移到右侧工作面，展示 readiness、session 状态和浏览器连接面 | `src/renderer/components/features/browser/BrowserSurfacePanel.tsx`、`src/host/services/infra/browserRelayService.ts` |
 | Agent Pointer Overlay | Browser/Computer surface 的虚拟鼠标反馈层，展示当前动作位置、阶段和最近轨迹记录 | `src/renderer/components/workbench/AgentPointerOverlay.tsx`、`src/renderer/stores/agentPointerStore.ts`、`src/shared/utils/agentPointer.ts` |
-| In-App Validation | HTML artifact 验证面板，iframe 中执行 interaction steps 并显示 pass/fail，配合 `validate_html_in_app` 工具形成可见验收轨迹 | `src/renderer/components/features/inAppValidation/InAppValidationPanel.tsx`、`src/renderer/hooks/useInAppValidationBridge.ts` |
+| In-App Validation | HTML artifact 验证面板，iframe 中执行 interaction steps 并显示 pass/fail，配合 `validate_html_in_app` 工具形成可见验收轨迹 | `src/renderer/components/features/inAppValidation/InAppValidationWorkspace.tsx`、`src/renderer/hooks/useInAppValidationBridge.ts` |
 | HandoffCard | 长任务或外部 engine 接力时，把 handoff proposal 呈现在 TaskPanel 里，用户可判断是否继续、复盘或换 engine | `src/renderer/components/TaskPanel/HandoffCard.tsx`、`src/host/handoff/*` |
 | Agent Engine 状态卡 | TaskPanel 投影外部 engine 的 ledger status、输出引用和权限 profile，避免把 Codex/Claude 执行伪装成普通 Native turn | `src/renderer/hooks/useRunWorkbenchModel.ts`、`src/renderer/types/runWorkbench.ts` |
 

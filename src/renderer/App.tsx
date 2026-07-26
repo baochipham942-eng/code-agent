@@ -117,8 +117,8 @@ const ActivityPanel = React.lazy(() => import('./components/features/activity/Ac
 const LocalOpsPage = React.lazy(() => import('./components/features/localOps/LocalOpsPage').then((module) => ({
   default: module.LocalOpsPage,
 })));
-const InAppValidationPanel = React.lazy(() => import('./components/features/inAppValidation/InAppValidationPanel').then((module) => ({
-  default: module.InAppValidationPanel,
+const EvalCenterPage = React.lazy(() => import('./components/features/evalCenter/EvalCenterPage').then((module) => ({
+  default: module.EvalCenterPage,
 })));
 
 async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
@@ -158,7 +158,7 @@ export const App: React.FC = () => {
     selectedSwarmAgentId,
     showLab,
     showLocalOpsPanel,
-    showInAppValidationPanel,
+    showEvalCenter,
     showProjectCollaborationPage,
     projectCollaborationPageProjectId,
     closeProjectCollaborationPage,
@@ -879,9 +879,9 @@ export const App: React.FC = () => {
                 <React.Suspense fallback={null}>
                   <LocalOpsPage />
                 </React.Suspense>
-              ) : showInAppValidationPanel ? (
+              ) : showEvalCenter ? (
                 <React.Suspense fallback={null}>
-                  <InAppValidationPanel />
+                  <EvalCenterPage />
                 </React.Suspense>
               ) : (
                 <PanelGroup orientation="horizontal" className="flex-1 min-h-0" id="main-layout">

@@ -1,0 +1,61 @@
+export const evalCenterZh = {
+  evalCenter: {
+    title: '评测中心',
+    description: '会话回放 · 应用内验证',
+    tabReplay: '回放',
+    tabValidation: '验证',
+    adminOnly: '评测中心仅管理员可用。',
+    newRequestBadge: '新请求',
+    validation: {
+      loadDemo: '载入 Demo',
+      reload: '重载',
+      run: '运行脚本',
+      running: '运行中…',
+      ipcDriven: 'IPC 驱动中',
+      heldTitle: '收到新的验证请求',
+      heldBody: '你手动修改过当前内容，加载新请求会覆盖这些编辑。',
+      loadRequest: '加载新请求',
+      keepEditing: '保留当前编辑',
+      requestDeclined: '用户选择保留当前编辑，该请求未执行。',
+      emptyHint: '点「运行脚本」开始验证。',
+      emptySchemaTitle: 'Step 脚本格式示例：',
+      emptySchemaExample: '[\n  {\n    "label": "点按钮",\n    "action": { "type": "click-selector", "selector": "#ok" },\n    "expect": { "textVisible": "完成", "timeoutMs": 1500 }\n  }\n]',
+    },
+    replay: {
+      pickSession: '选择左侧会话查看回放',
+      emptySessions: '还没有可回放的会话（需要至少一轮对话）。',
+      currentSessionBadge: '当前',
+    },
+  },
+};
+
+export const evalCenterEn = {
+  evalCenter: {
+    title: 'Eval Center',
+    description: 'Session replay · In-app validation',
+    tabReplay: 'Replay',
+    tabValidation: 'Validation',
+    adminOnly: 'The eval center is admin-only.',
+    newRequestBadge: 'New request',
+    validation: {
+      loadDemo: 'Load demo',
+      reload: 'Reload',
+      run: 'Run script',
+      running: 'Running…',
+      ipcDriven: 'IPC driven',
+      heldTitle: 'New validation request received',
+      heldBody: 'You have manual edits. Loading the new request will overwrite them.',
+      loadRequest: 'Load new request',
+      keepEditing: 'Keep my edits',
+      requestDeclined: 'The user kept their edits; the request was not executed.',
+      emptyHint: 'Press "Run script" to start validation.',
+      emptySchemaTitle: 'Step script format example:',
+      emptySchemaExample: '[\n  {\n    "label": "Click button",\n    "action": { "type": "click-selector", "selector": "#ok" },\n    "expect": { "textVisible": "Done", "timeoutMs": 1500 }\n  }\n]',
+    },
+    replay: {
+      pickSession: 'Pick a session on the left to inspect its replay',
+      emptySessions: 'No replayable sessions yet (at least one turn required).',
+      currentSessionBadge: 'Current',
+    },
+  },
+};

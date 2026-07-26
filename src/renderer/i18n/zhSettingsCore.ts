@@ -51,6 +51,13 @@ export const zhSettingsCore = {
     modal: {
       loading: '加载中…',
     },
+    unsavedChanges: {
+      badge: '未保存',
+      title: '有未保存的修改',
+      message: '「通用模型」里有尚未保存的 Provider 配置修改，离开后会被丢弃。',
+      discard: '丢弃修改',
+      stay: '继续编辑',
+    },
     searchIndex: {
       permissionMode: '安全模式',
       modelRoutingStrategy: '模型路由策略',

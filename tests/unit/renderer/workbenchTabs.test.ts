@@ -18,7 +18,7 @@ describe('appStore workbench tabs', () => {
       projectCollaborationPageProjectId: null,
       showKnowledgeMemoryPanel: false,
       showLocalOpsPanel: false,
-      showInAppValidationPanel: false,
+      showEvalCenter: false,
     });
   });
 
@@ -70,7 +70,7 @@ describe('appStore workbench tabs', () => {
     useAppStore.setState({
       showKnowledgeMemoryPanel: true,
       showLocalOpsPanel: true,
-      showInAppValidationPanel: true,
+      showEvalCenter: true,
     });
 
     useAppStore.getState().openProjectCollaborationPage(' project-1 ');
@@ -80,7 +80,7 @@ describe('appStore workbench tabs', () => {
       projectCollaborationPageProjectId: 'project-1',
       showKnowledgeMemoryPanel: false,
       showLocalOpsPanel: false,
-      showInAppValidationPanel: false,
+      showEvalCenter: false,
     });
 
     useAppStore.getState().closeProjectCollaborationPage();

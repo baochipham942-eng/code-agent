@@ -1,7 +1,9 @@
 // ============================================================================
 // 实时语音媒体面的 WS upgrade 处理器
 //
-// 只认 VOICE_STREAM_WS_PATH，鉴权用 webServer 同一个 SERVER_AUTH_TOKEN
+// Renderer ↔ Host 的音频通道：二进制帧 = PCM 音频，文本帧 = 事件/控制。
+// 音频帧率高（双向各 ~10 帧/秒），走不了请求/响应式 IPC，所以在 webServer 上
+// 单开一条 WS。只认 VOICE_STREAM_WS_PATH，鉴权复用同一个 SERVER_AUTH_TOKEN
 // （query token，与 SSE /api/events 同款——WebSocket 浏览器 API 不能自定义 header）。
 // ============================================================================
 
@@ -14,7 +16,7 @@ import { verifyToken } from './middleware/auth';
 
 const logger = createLogger('VoiceUpgrade');
 
-export function attachVoiceStreamUpgrade(server: Server): void {
+export function attachVoiceStreamUpgrade<T extends Server>(server: T): T {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (req, socket, head) => {
@@ -42,4 +44,6 @@ export function attachVoiceStreamUpgrade(server: Server): void {
       void attachVoiceClient(client, neoSessionId);
     });
   });
+
+  return server;
 }

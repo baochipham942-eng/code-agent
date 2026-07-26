@@ -143,6 +143,27 @@ describe('readOnly 只读探索档', () => {
     expect(result.error).toContain('切换会话权限档');
   });
 
+  // 2026-07-26 真机实录：live-voice 会话被 D4 钳到 readOnly 后拒绝时复用了这句「无审批
+  // 界面的运行环境会自动拒绝，请切换会话权限档」——两句都是假话（有 UI、切换也没用，钳制
+  // 只收紧不放宽）。分化判据见 toolPermissionClassification.readOnlyDenialError。
+  it('通话态钳档下拒绝：文案说明通话场景，不冒充无 UI 环境，不建议切换权限档', async () => {
+    const sessionId = 'live-voice-session';
+    getPermissionModeManager().markLiveVoiceSession(sessionId, 'call:test');
+    permissionReturn = false;
+    setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute(
+      'write_file',
+      { file_path: '/test/directory/a.txt', content: 'x' },
+      { sessionId },
+    );
+    getPermissionModeManager().clearLiveVoiceSession(sessionId, 'call:test');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('实时语音通话中');
+    expect(result.error).not.toContain('无审批界面的运行环境会自动拒绝');
+    expect(result.error).not.toContain('请切换会话权限档');
+  });
+
   it('classifier deny 在 readOnly 下保持 deny，不降级为确认', async () => {
     getPermissionModeManager().setMode('readOnly');
     mockClassification = { decision: 'deny', reason: 'dangerous', confidence: 1, cached: false };

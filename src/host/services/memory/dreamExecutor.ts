@@ -82,7 +82,7 @@ export async function executeDreamRun(
   ].join('\n');
 }
 
-/** 启动期调用（initBackgroundServices）：把 dream 接入 executor 桥 */
+/** 启动期调用（webStartupServices）：把 dream 接入 executor 桥 */
 export function registerDreamSkillExecutor(overrides: DreamExecutorOverrides = {}): void {
   registerSkillExecutor(DREAM_SKILL_NAME, (request) => executeDreamRun(request, overrides));
   logger.info('Dream skill executor registered');

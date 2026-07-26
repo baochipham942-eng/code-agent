@@ -33,7 +33,7 @@ export enum BudgetAlertLevel {
  */
 export interface BudgetConfig {
   enabled: boolean;
-  /** Maximum budget in USD (default: 10.0) */
+  /** Maximum budget in USD（default: 0 = 不设上限；注释此前写 10.0 与代码不符） */
   maxBudget: number;
   /** Silent log threshold (default: 0.7 = 70%) */
   silentThreshold: number;

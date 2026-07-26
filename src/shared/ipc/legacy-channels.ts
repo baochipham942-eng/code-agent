@@ -137,6 +137,7 @@ export const IPC_CHANNELS = {
   AUTH_UPDATE_PASSWORD: 'auth:update-password',
   AUTH_EVENT: 'auth:event',
   AUTH_PASSWORD_RESET_CALLBACK: 'auth:password-reset-callback',
+  POSTHOG_IDENTITY: 'posthog:identity',
 
   // Sync channels
   SYNC_GET_STATUS: 'sync:get-status',

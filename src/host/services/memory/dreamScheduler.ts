@@ -3,10 +3,10 @@
 //
 // ⚠️ 有意未接线（2026-07-25 产品判断，不是遗漏）。
 //
-// 唯一注册点是 app/initBackgroundServices.ts —— 那条不在任何发行版中执行的 Electron
-// main 路径（见 src/host/index.ts 头注释），所以发行版里这个 job 从未被创建过。
-// 同批的 dbRetention / logRetention / Light Memory consolidation 都已接到
-// src/web/webServer.ts，唯独 dream 与 distill 刻意留着不接：
+// 当前没有任何启动注册点，所以发行版里这个 job 不会被创建。原先唯一的“注册点”
+// 位于已删除的 app/initBackgroundServices.ts 死入口；删除死入口后仍刻意不把 cron
+// 迁入 src/web/webStartupServices.ts。同批的 dbRetention / logRetention /
+// Light Memory consolidation 都已接到 src/web/，唯独 dream 与 distill 刻意留着不接：
 //
 //   它们会无人值守地自动发起 LLM 调用产生真实费用，属产品 + 成本判断而非接线判断。
 //   而"记忆整理"的核心诉求已由 Light Memory consolidation 覆盖（webStartupMemoryJobs.ts，

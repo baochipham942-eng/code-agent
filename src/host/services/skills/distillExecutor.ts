@@ -109,7 +109,7 @@ export async function executeDistillRun(
   return formatDistillRunReport(report);
 }
 
-/** 启动期调用（initBackgroundServices）：把 distill 接入 executor 桥 */
+/** 启动期调用（webStartupServices）：把 distill 接入 executor 桥 */
 export function registerDistillSkillExecutor(): void {
   registerSkillExecutor(DISTILL_SKILL_NAME, (request) => executeDistillRun(request));
   logger.info('Distill skill executor registered');

@@ -270,7 +270,7 @@ export function onAgentRegistryChange(handler: () => void): () => void {
 /**
  * 初始化注册中心：首次扫描 + 启动 chokidar watcher。
  *
- * - 启动调用：initBackgroundServices.ts Phase 2
+ * - 发行版启动调用：webServer.ts
  * - 多次调用：先 dispose 再重建（适用于 workingDir 切换）
  */
 export async function initAgentRegistry(workingDir?: string): Promise<void> {

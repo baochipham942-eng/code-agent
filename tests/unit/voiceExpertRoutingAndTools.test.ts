@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentRunOptions } from '../../src/host/research/types';
 
-const sendMessage = vi.hoisted(() => vi.fn(async () => undefined));
+const sendMessage = vi.hoisted(() => vi.fn(async (_content: string, _attachments: undefined, _options: AgentRunOptions) => undefined));
 const buildRoleContextBlock = vi.hoisted(() => vi.fn(async () => '<role>全量 L0/L1 资料架</role>'));
 const incompleteTasks = vi.hoisted(() => ({ value: [] as Array<{ subject: string; status: string }> }));
 const resolvedAgent = vi.hoisted(() => ({
@@ -51,7 +51,9 @@ function toolContext(activeAgentId?: string) {
 }
 
 function lastRunOptions(): AgentRunOptions {
-  return sendMessage.mock.calls.at(-1)![2] as AgentRunOptions;
+  const call = sendMessage.mock.calls.at(-1);
+  if (!call) throw new Error('sendMessage was never called');
+  return call[2];
 }
 
 describe('A3 通话身份解析', () => {
@@ -116,7 +118,7 @@ describe('A4 窄工具', () => {
 
     expect(result).toContain('改大纲');
     await vi.waitFor(() => expect(sendMessage).toHaveBeenCalled());
-    expect(sendMessage.mock.calls.at(-1)![0]).toBe('把大纲改成三段');
+    expect(sendMessage.mock.calls.at(-1)?.[0]).toBe('把大纲改成三段');
     const options = lastRunOptions();
     expect(options.agentOverrideId).toBe('muzhi');
     expect(options.turnSystemContext?.[0]).toContain('全量 L0/L1');

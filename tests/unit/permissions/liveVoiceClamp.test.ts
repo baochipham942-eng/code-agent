@@ -22,6 +22,8 @@ import {
 import { resolveSessionPermissionMode } from '../../../src/host/tools/toolPermissionClassification';
 import { getPresetConfig } from '../../../src/host/services/core/permissionPresets';
 import { getSubagentPipeline, resetSubagentPipeline } from '../../../src/host/agent/subagentPipeline';
+import type { DynamicAgentConfig } from '../../../src/host/agent/agentDefinition';
+import type { PermissionPreset } from '../../../src/shared/contract/permission';
 
 const consumeFirstRunStrictMock = vi.hoisted(() => vi.fn(async () => false));
 vi.mock('../../../src/host/services/roleAssets/rolePackInstallService', () => ({
@@ -98,12 +100,10 @@ describe('D4 子 agent 链：通话态 preset 抬严', () => {
   });
 
   /** 走真实管线：preset → getPresetConfig → createContext → checkToolExecution。 */
-  function writeOutsideAllowedFor(preset: 'ci' | 'development' | 'strict'): boolean {
+  function writeOutsideAllowedFor(preset: PermissionPreset): boolean {
     const pipeline = getSubagentPipeline();
-    const context = pipeline.createContext(
-      { name: 'voice-child', systemPrompt: '', permissionPreset: preset },
-      workingDirectory,
-    );
+    const config: DynamicAgentConfig = { name: 'voice-child', systemPrompt: '', tools: [], permissionPreset: preset };
+    const context = pipeline.createContext(config, workingDirectory);
     expect(context.permissionConfig).toEqual(getPresetConfig(preset, workingDirectory));
     return pipeline.checkToolExecution(context, writeOutsideWorkspace).allowed;
   }

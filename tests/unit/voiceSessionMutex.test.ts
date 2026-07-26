@@ -7,7 +7,7 @@ import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
-const addMessageToSession = vi.fn(async () => undefined);
+const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
@@ -133,7 +133,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     lastOnEvent?.({ type: 'user.transcript', text: '  你好  ', done: true });
 
     await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
-    const [, message] = addMessageToSession.mock.calls[0] as [string, Message];
+    const [, message] = addMessageToSession.mock.calls[0];
     expect(message.content).toBe('你好');
     expect(message.metadata?.source).toBe('voice');
 
@@ -151,11 +151,11 @@ describe('voiceSessionService 互斥与挂断', () => {
     client.close();
 
     await vi.waitFor(() => {
-      expect(addMessageToSession.mock.calls.some(([, message]) => Boolean((message as Message).metadata?.voiceCallSummary))).toBe(true);
+      expect(addMessageToSession.mock.calls.some(([, message]) => Boolean(message.metadata?.voiceCallSummary))).toBe(true);
     });
-    const [, summaryMessage] = addMessageToSession.mock.calls.find(([, message]) =>
-      Boolean((message as Message).metadata?.voiceCallSummary)
-    ) as [string, Message];
+    const summaryCall = addMessageToSession.mock.calls.find(([, message]) => Boolean(message.metadata?.voiceCallSummary));
+    if (!summaryCall) throw new Error('missing voiceCallSummary message');
+    const [, summaryMessage] = summaryCall;
     expect(summaryMessage.role).toBe('system');
     expect(summaryMessage.metadata?.source).toBe('voice');
     expect(summaryMessage.metadata?.voiceCallSummary).toMatchObject({

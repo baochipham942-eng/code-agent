@@ -120,6 +120,7 @@ import { registerContextHealthHandlers, resolveContextHealthForSession } from '.
 import { getContextHealthService } from '../../../src/host/context/contextHealthService';
 import { initAutoCompressor } from '../../../src/host/context/autoCompressor';
 import { getSessionStateManager } from '../../../src/host/session/sessionStateManager';
+import { initTaskManager } from '../../../src/host/task/TaskManager';
 import { DEFAULT_MODEL, getContextWindow } from '../../../src/shared/constants';
 import type { AgentApplicationService } from '../../../src/shared/contract/appService';
 import type { CompactResult } from '../../../src/shared/contract/contextHealth';
@@ -362,6 +363,50 @@ describe('resolveContextHealthForSession', () => {
     expect(getContextHealthService().get(sessionId).currentTokens).toBeGreaterThan(0);
     expect(getContextHealthService().get(sessionId).currentTokens).toBeLessThan(result.beforeTokens);
     expect(compactMocks.compactModelSummarizeWithMetadata.mock.calls[0][0]).not.toContain('User Focus For This Compaction:');
+  });
+
+  // 发行版里注入的 getTaskManager 恒为 null（setupAllIpcHandlers 的唯一调用方 webServer.ts
+  // 写死 `() => null`），于是压缩结果只落库、不写回正在跑的 orchestrator——那句
+  // "TaskManager not available" 的 warn 长期空转。判据是**真实行为**：真 TaskManager 单例 +
+  // 真 orchestrator，注入项给 null，压缩后 orchestrator 手里的消息必须已经是压缩过的。
+  it('注入的 TaskManager 为 null（发行版形状）时，压缩结果仍写回真实活跃的 orchestrator', async () => {
+    const sessionId = 'session-compact-web-mode';
+    const messages: Message[] = Array.from({ length: 14 }, (_, index) => ({
+      id: `m${index + 1}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `历史消息 ${index + 1}\n${'这是一段需要被压缩的长上下文。'.repeat(260)}`,
+      timestamp: index + 1,
+    }));
+    const appService = makeAppService(sessionId, messages, DEFAULT_MODEL);
+
+    const taskManager = initTaskManager();
+    taskManager.initialize({
+      configService: {
+        getSettings: () => ({
+          permissions: { autoApprove: {}, devModeAutoApprove: false },
+          models: { default: 'openai', providers: {}, routing: {} },
+        }),
+        getApiKey: () => '',
+      } as never,
+      onAgentEvent: () => {},
+    } as never);
+    const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId)!;
+    orchestrator.setMessages(messages);
+
+    registerContextHealthHandlers({
+      getAppService: () => appService,
+      getTaskManager: () => null, // ← 发行版形状
+      getSystemPromptForSession: () => '',
+    });
+
+    const handler = compactMocks.handlers.get('context:compact-current');
+    const result = await handler!({}, sessionId) as CompactResult;
+
+    expect(result.success).toBe(true);
+    // 真实行为：正在跑的那个 orchestrator 手里的消息已经被换成压缩后的
+    expect(orchestrator.getMessages()).toEqual(compactMocks.state.persistedMessages);
+    expect(orchestrator.getMessages().some((m) => m.compaction?.type === 'compaction')).toBe(true);
+    expect(orchestrator.getMessages().length).toBeLessThan(messages.length);
   });
 
   it('rejects compact-current when preserving the latest user leaves no safe span', async () => {

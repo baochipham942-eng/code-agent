@@ -32,6 +32,7 @@ function normalizeRequest(
     type: request.type as PermissionType,
     reason: request.reason,
     reasonCode: request.reasonCode,
+    dangerLevel: request.dangerLevel,
     boundary: request.boundary,
     details: {
       filePath: request.details.path,
@@ -79,11 +80,21 @@ export function PermissionCard() {
     ? normalizeRequest(pendingPermissionRequest)
     : null;
 
+  // 「这操作本身危险」与「这次必须你亲手点」是两件事，卡上必须分开表达。
+  //
+  // host 侧的 forceConfirm 同时被两个来源置位：confirmationGate 的真风险评估
+  // （它另外还给出 dangerLevel），和 readOnly / 通话抬严这类**流程性**要求
+  // （档位规定逐次确认，与内容危险度无关）。此前这里把 forceConfirm 直接当危险，
+  // 于是往工作目录写个 hello 也会顶着红框和「这是一个危险命令」——
+  // 红卡成了常态，真危险那次反而淹在里面。
   const isDangerous =
     request !== null &&
-    (request.forceConfirm === true ||
+    (request.dangerLevel === 'danger' ||
       request.type === 'dangerous_command' ||
       (request.type === 'command' && isDangerousCommand(request.details.command)));
+
+  // forceConfirm 该有的职责一点没松：不许走「会话/始终」这类常驻授权，必须逐次点。
+  const hideStandingGrants = isDangerous || request?.forceConfirm === true;
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
   const isNewRequest = request !== null && processedRequestRef.current !== request.id;
@@ -206,14 +217,14 @@ export function PermissionCard() {
           }
           break;
         case 's':
-          if (!isDangerous) {
+          if (!hideStandingGrants) {
             e.preventDefault();
             e.stopPropagation();
             handleApproval('session');
           }
           break;
         case 'a':
-          if (e.shiftKey && !isDangerous) {
+          if (e.shiftKey && !hideStandingGrants) {
             e.preventDefault();
             e.stopPropagation();
             handleApproval('always');
@@ -229,7 +240,7 @@ export function PermissionCard() {
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [request, handleApproval, isDangerous]);
+  }, [request, handleApproval, hideStandingGrants]);
 
   useEffect(() => {
     if (!request) return;
@@ -277,7 +288,7 @@ export function PermissionCard() {
         </div>
 
         {/* 审批选项 - 水平排列 */}
-        <ApprovalOptionsCompact onApproval={handleApproval} isDangerous={isDangerous} />
+        <ApprovalOptionsCompact onApproval={handleApproval} hideStandingGrants={hideStandingGrants} />
       </div>
     </div>
   );

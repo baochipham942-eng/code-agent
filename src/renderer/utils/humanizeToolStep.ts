@@ -145,12 +145,17 @@ function matchesUiScript(text: string, t: Translations): boolean {
  * 把单个工具调用合成一句步骤人话。模型自写的 shortDescription（产品视角语义标签）
  * 优先级最高——比机械模板更贴近"在干什么"；没有（或语种与界面不一致）时按工具
  * 类目落到对应模板，未识别的工具兜底"使用了 <工具名>"（不裸露英文工具名之外的黑话）。
+ *
+ * failed=true（toolCall.result 已存在且 success===false）时，写/编类目不再输出过去时
+ * 肯定式（「写入了/编辑了」）——它会与状态词「写入失败/编辑失败」同屏自相矛盾；
+ * 改用意图式中性表述（「写入 X」），结果语义交给状态词表达。进行中/成功场景文案不变。
  */
 export function humanizeToolStep(
   name: string,
   args: Record<string, unknown> | undefined,
   t: Translations,
   shortDescription?: string,
+  failed?: boolean,
 ): string {
   if (
     isSemanticToolUIEnabled()
@@ -171,10 +176,12 @@ export function humanizeToolStep(
     }
     case 'write': {
       const target = shortenPath(firstString(a, ['file_path', 'path']));
+      if (failed) return target ? h.writeIntent.replace('{target}', target) : h.writeIntentFallback;
       return target ? h.write.replace('{target}', target) : h.writeFallback;
     }
     case 'edit': {
       const target = shortenPath(firstString(a, ['file_path', 'path']));
+      if (failed) return target ? h.editIntent.replace('{target}', target) : h.editIntentFallback;
       return target ? h.edit.replace('{target}', target) : h.editFallback;
     }
     case 'bash': {

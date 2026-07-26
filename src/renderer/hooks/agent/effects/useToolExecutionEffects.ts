@@ -205,7 +205,10 @@ export function applyToolExecutionEvent(
               : targetMessage.toolCalls.flatMap((tc: ToolCall, idx: number) =>
                 tc._streaming && tc.name === event.data.name ? [idx] : []
               );
-            const fallbackIndex = sameNameStreamingIndices.length === 1
+            // 并发同名工具会有多个候选：按 FIFO 绑定最早的一个（host 按 tool_calls
+            // 数组序发 start，流式占位同序）。拒绑会让真实 id 丢失——之后
+            // tool_call_end 按 stableId 永远匹配不上，成功工具错报「已中断」。
+            const fallbackIndex = sameNameStreamingIndices.length > 0
               ? sameNameStreamingIndices[0]
               : -1;
             const matchedIndex = stableIdIndex >= 0 ? stableIdIndex : fallbackIndex;

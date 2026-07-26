@@ -39,8 +39,8 @@ export function getToolStatusLabel(
     case 'success':
       return enrichCompletedLabel(toolCall, t);
     case 'error':
-      if (isArtifactValidationFailureAfterWrite(toolCall)) {
-        return t.toolStatus.writeValidationFailed;
+      if (isArtifactValidationFailureAfterMutation(toolCall)) {
+        return artifactValidationFailedLabel(toolCall.name, t);
       }
       return labels.error;
     case 'interrupted':
@@ -48,13 +48,32 @@ export function getToolStatusLabel(
   }
 }
 
-function isArtifactValidationFailureAfterWrite(toolCall: ToolCall): boolean {
-  if (toolCall.name !== 'Write' && toolCall.name !== 'write_file') return false;
+// host 侧「写后验收」门（toolArtifactRepairPolicy.isFileMutationTool）覆盖的全部文件
+// 变更工具：验收失败会被原地翻转成 result.success=false 并写
+// metadata.artifactValidation.failed=true。renderer 不跨层 import host，名单手工对齐——
+// host 门加工具时这里要同步加。
+const ARTIFACT_VALIDATED_MUTATION_TOOLS = new Set([
+  'Write',
+  'write_file',
+  'Edit',
+  'edit_file',
+  'Append',
+  'append_file',
+]);
+
+function isArtifactValidationFailureAfterMutation(toolCall: ToolCall): boolean {
+  if (!ARTIFACT_VALIDATED_MUTATION_TOOLS.has(toolCall.name)) return false;
   const metadata = toolCall.result?.metadata;
   if (!metadata || typeof metadata !== 'object') return false;
   const artifactValidation = (metadata as { artifactValidation?: unknown }).artifactValidation;
   if (!artifactValidation || typeof artifactValidation !== 'object') return false;
   return (artifactValidation as { failed?: unknown }).failed === true;
+}
+
+function artifactValidationFailedLabel(toolName: string, t: Translations): string {
+  if (toolName === 'Edit' || toolName === 'edit_file') return t.toolStatus.editValidationFailed;
+  if (toolName === 'Append' || toolName === 'append_file') return t.toolStatus.appendValidationFailed;
+  return t.toolStatus.writeValidationFailed;
 }
 
 /**

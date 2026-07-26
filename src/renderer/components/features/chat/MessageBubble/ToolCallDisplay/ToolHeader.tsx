@@ -45,6 +45,8 @@ export function ToolHeader({ toolCall, status }: Props) {
     toolCall.arguments as Record<string, unknown> | undefined,
     t,
     toolCall.shortDescription,
+    // 已失败的调用不再用过去时肯定式，避免与状态词同屏矛盾（结果语义交给状态词）
+    toolCall.result?.success === false,
   );
   const statusLabel = getToolStatusLabel(toolCall, status, t);
 

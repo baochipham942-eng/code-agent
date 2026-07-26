@@ -162,6 +162,41 @@ describe('humanizeToolStep — en locale parity', () => {
   });
 });
 
+describe('humanizeToolStep — 失败结果不再输出过去时肯定式', () => {
+  // 「写入失败 + 写入了 …」这类同行矛盾：正文改意图式中性表述，结果语义交给状态词。
+  it('failed write: intent phrasing instead of past-tense claim', () => {
+    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, zh, undefined, true))
+      .toBe('写入 notes.md');
+  });
+
+  it('failed edit: intent phrasing instead of past-tense claim', () => {
+    expect(humanizeToolStep('Edit', { file_path: 'src/index.ts' }, zh, undefined, true))
+      .toBe('编辑 src/index.ts');
+  });
+
+  it('failed write without path: intent fallback', () => {
+    expect(humanizeToolStep('Write', {}, zh, undefined, true)).toBe('写入一个文件');
+  });
+
+  it('failed edit without path: intent fallback', () => {
+    expect(humanizeToolStep('Edit', {}, zh, undefined, true)).toBe('编辑一个文件');
+  });
+
+  it('en parity: failed write/edit use intent phrasing', () => {
+    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, en, undefined, true))
+      .toBe('Write notes.md');
+    expect(humanizeToolStep('Edit', { file_path: 'src/index.ts' }, en, undefined, true))
+      .toBe('Edit src/index.ts');
+  });
+
+  it('failed=false keeps the past-tense templates (success/in-progress 不回归)', () => {
+    expect(humanizeToolStep('Write', { file_path: 'notes.md' }, zh, undefined, false))
+      .toBe('写入了 notes.md');
+    expect(humanizeToolStep('Edit', { file_path: 'src/index.ts' }, zh, undefined, false))
+      .toBe('编辑了 src/index.ts');
+  });
+});
+
 describe('humanizeToolGroupLabel', () => {
   it('aggregates adjacent tool calls into a bucketed overview', () => {
     expect(humanizeToolGroupLabel(['Read', 'Read', 'Bash'], zh))

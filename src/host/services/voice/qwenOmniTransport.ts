@@ -202,7 +202,10 @@ export const qwenOmniTransport: VoiceTransport = {
           });
           break;
         case 'error':
-          logger.warn('upstream error', { code: event.error?.code });
+          // message 必须一起记：上游的 code 常常是 COMMON_ERROR 这种无信息量的占位，
+          // 真正说明原因的只有 message。2026-07-26 真机踩到——现场只剩一个 COMMON_ERROR，
+          // 解释在哪查不到（那句话当时只发给了渲染侧）。
+          logger.warn('upstream error', { code: event.error?.code, message: event.error?.message });
           onEvent({
             type: 'error',
             code: event.error?.code ?? 'UPSTREAM_ERROR',

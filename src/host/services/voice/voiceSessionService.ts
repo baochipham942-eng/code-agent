@@ -151,6 +151,14 @@ async function connectAndBind(
         send(client, event);
         if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text);
         else if (event.type === 'assistant.transcript' && event.done) void persistTranscript(neoSessionId, 'assistant', event.text);
+        // 上游报错 / 上游连接关闭 = 这一路通话已经死了，必须就地释放 active。
+        // 否则两侧对「通话是否结束」的判断会分叉：渲染侧收到 error 就把按钮切回「开始通话」，
+        // 而 Host 仍占着 active，用户再拨被自己的互斥挡成 VOICE_SESSION_BUSY，
+        // 且此时「挂断」已经点不到——整条语音链锁死到 10 分钟 max-duration 才自愈。
+        // （2026-07-26 真机踩到：上游 COMMON_ERROR 后必须重启 app 才能再打。）
+        else if (event.type === 'error' || (event.type === 'state' && event.state === 'closed')) {
+          if (active?.id === id) void teardown(event.type === 'error' ? 'upstream-error' : 'upstream-closed');
+        }
       },
       onAudio: (frame) => {
         if (client.readyState === client.OPEN) client.send(frame, { binary: true });

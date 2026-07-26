@@ -40,8 +40,12 @@ export function attachVoiceStreamUpgrade<T extends Server>(server: T): T {
       return;
     }
 
+    // 通话身份来自 Renderer 的 activeAgentId（按会话存在 Renderer 侧，host 无存量可查）。
+    // 缺省 = 会话默认 agent，不是错误，所以不拒绝握手。
+    const requestedAgentId = url.searchParams.get('agentId') ?? undefined;
+
     wss.handleUpgrade(req, socket, head, (client) => {
-      void attachVoiceClient(client, neoSessionId);
+      void attachVoiceClient(client, neoSessionId, requestedAgentId);
     });
   });
 

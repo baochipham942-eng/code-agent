@@ -7,21 +7,27 @@
 // ============================================================================
 
 import type { WebSocket as WsSocket } from 'ws';
-import { VOICE_SESSION_MAX_DURATION_MS } from '../../../shared/constants/voice';
+import { QWEN_OMNI_REALTIME_MODEL, VOICE_SESSION_MAX_DURATION_MS } from '../../../shared/constants/voice';
 import type { VoiceClientCommand, VoiceEvent, VoiceTransportHandle } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { getSessionManager } from '../infra/sessionManager';
+import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
+import { resolveVoiceRouting } from './voiceRouting';
+import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 
 const logger = createLogger('VoiceSession');
 
 interface ActiveSession {
   id: string;
   neoSessionId: string;
+  startedAt: number;
   client: WsSocket;
   upstream: VoiceTransportHandle;
   maxDurationTimer: NodeJS.Timeout;
+  /** 本次通话派出去的任务数，进通话摘要 */
+  workItemCount: number;
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -53,6 +59,7 @@ async function persistTranscript(neoSessionId: string, role: 'user' | 'assistant
       role,
       content: trimmed,
       timestamp: Date.now(),
+      metadata: { source: 'voice' },
     });
   } catch (err) {
     logger.warn('failed to persist transcript', { role, message: err instanceof Error ? err.message : 'unknown' });
@@ -65,6 +72,35 @@ async function teardown(reason: string): Promise<void> {
   active = null;
   clearTimeout(session.maxDurationTimer);
   logger.info('session ended', { voiceSessionId: session.id, reason });
+  // D4：通话态标记必须先于任何后续动作解除，别让抬严挂在会话上不下来。
+  getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId);
+  const endedAt = Date.now();
+  const { startedAt } = session;
+  const durationSec = Math.max(0, Math.round((endedAt - startedAt) / 1000));
+  const minutes = Math.floor(durationSec / 60);
+  const seconds = durationSec % 60;
+  const durationText = minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
+  try {
+    await getSessionManager().addMessageToSession(session.neoSessionId, {
+      id: `voice-summary-${endedAt}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'system',
+      content: `语音通话结束，时长 ${durationText}`,
+      timestamp: endedAt,
+      metadata: {
+        source: 'voice',
+        voiceCallSummary: {
+          durationSec,
+          provider: session.upstream.provider,
+          conversationModel: QWEN_OMNI_REALTIME_MODEL,
+          workItemCount: session.workItemCount,
+          startedAt,
+          endedAt,
+        },
+      },
+    });
+  } catch (err) {
+    logger.warn('failed to persist call summary', { message: err instanceof Error ? err.message : 'unknown' });
+  }
   await session.upstream.close().catch(() => undefined);
   if (session.client.readyState === session.client.OPEN) session.client.close();
 }
@@ -73,7 +109,7 @@ async function teardown(reason: string): Promise<void> {
  * 接管一条来自 Renderer 的媒体面 WS。webServer 的 upgrade 处理器调用。
  * 互斥：已有活跃通话时直接拒绝，不排队。
  */
-export async function attachVoiceClient(client: WsSocket, neoSessionId: string): Promise<void> {
+export async function attachVoiceClient(client: WsSocket, neoSessionId: string, requestedAgentId?: string): Promise<void> {
   if (active || connecting) {
     send(client, { type: 'error', code: 'VOICE_SESSION_BUSY', message: '已有一路通话在进行中' });
     client.close();
@@ -89,21 +125,28 @@ export async function attachVoiceClient(client: WsSocket, neoSessionId: string):
 
   connecting = true;
   try {
-    await connectAndBind(client, neoSessionId, apiKey);
+    await connectAndBind(client, neoSessionId, apiKey, requestedAgentId);
   } finally {
     connecting = false;
   }
 }
 
-async function connectAndBind(client: WsSocket, neoSessionId: string, apiKey: string): Promise<void> {
+async function connectAndBind(
+  client: WsSocket,
+  neoSessionId: string,
+  apiKey: string,
+  requestedAgentId?: string,
+): Promise<void> {
   const id = `voice-${Date.now()}-${++sessionSeq}`;
   send(client, { type: 'state', state: 'connecting' });
+
+  const routing = resolveVoiceRouting(requestedAgentId);
 
   let upstream: VoiceTransportHandle;
   try {
     upstream = await qwenOmniTransport.connect({
       apiKey,
-      config: { neoSessionId },
+      config: { neoSessionId, instructions: routing.personaInstructions, tools: VOICE_TOOL_DEFINITIONS },
       onEvent: (event) => {
         send(client, event);
         if (event.type === 'user.transcript' && event.done) void persistTranscript(neoSessionId, 'user', event.text);
@@ -112,6 +155,14 @@ async function connectAndBind(client: WsSocket, neoSessionId: string, apiKey: st
       onAudio: (frame) => {
         if (client.readyState === client.OPEN) client.send(frame, { binary: true });
       },
+      onToolCall: (call) => executeVoiceTool(call.name, call.arguments, {
+        neoSessionId,
+        activeAgentId: routing.activeAgentId,
+        onWorkItem: (item) => {
+          if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
+          send(client, { type: 'work.upsert', item });
+        },
+      }),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'connect failed';
@@ -130,19 +181,25 @@ async function connectAndBind(client: WsSocket, neoSessionId: string, apiKey: st
   active = {
     id,
     neoSessionId,
+    startedAt: Date.now(),
     client,
     upstream,
+    workItemCount: 0,
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });
       void teardown('max-duration');
     }, VOICE_SESSION_MAX_DURATION_MS),
   };
-  logger.info('session started', { voiceSessionId: id, neoSessionId });
+  // D4 抬严必须在有任何工具可派之前就位——建连成功即标记。
+  getPermissionModeManager().markLiveVoiceSession(neoSessionId);
+  logger.info('session started', { voiceSessionId: id, neoSessionId, activeAgentId: routing.activeAgentId });
 
   client.on('message', (data: Buffer, isBinary: boolean) => {
     if (active?.id !== id) return;
     if (isBinary) {
-      upstream.sendAudio(data);
+      // direct 形态的媒体面不经 Host（Renderer 直连上游），这里收到二进制帧只能是
+      // 客户端接错了传输形态——丢弃比静默 no-op 转发更接近真相。
+      if (upstream.kind === 'relay') upstream.sendAudio(data);
       return;
     }
     let command: VoiceClientCommand;

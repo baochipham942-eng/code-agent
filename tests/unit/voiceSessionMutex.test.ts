@@ -1,15 +1,23 @@
 // 全局单路互斥与挂断释放（方案 §2.6 / Phase 0 出口「验证互斥与挂断」）。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
+import { isVoiceInputMessage, type Message } from '../../src/shared/contract/message';
+import type { VoiceEvent, VoiceTransport } from '../../src/shared/contract/voice';
+import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
-const connect = vi.fn(async () => ({ provider: 'qwen-omni', clientBootstrap: null, sendAudio, interrupt: vi.fn(), close }));
+const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
+let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
+const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
+  lastOnEvent = input.onEvent;
+  return { kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close };
+});
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
-  getSessionManager: () => ({ addMessageToSession: vi.fn(async () => undefined) }),
+  getSessionManager: () => ({ addMessageToSession }),
 }));
 vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -42,6 +50,8 @@ describe('voiceSessionService 互斥与挂断', () => {
     connect.mockClear();
     close.mockClear();
     sendAudio.mockClear();
+    addMessageToSession.mockClear();
+    lastOnEvent = null;
   });
 
   it('第二路通话被拒绝，第一路不受影响', async () => {
@@ -65,7 +75,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
     connect.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return { provider: 'qwen-omni', clientBootstrap: null, sendAudio, interrupt: vi.fn(), close };
+      return { kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close };
     });
 
     const a = new FakeClient();
@@ -102,5 +112,79 @@ describe('voiceSessionService 互斥与挂断', () => {
 
     expect(sendAudio).toHaveBeenCalledTimes(1);
     client.close();
+  });
+
+  it('语音来源只认 metadata.source，不认 message id 前缀', () => {
+    const message: Message = {
+      id: 'plain-message-id',
+      role: 'user',
+      content: 'hello',
+      timestamp: 1,
+      metadata: { source: 'voice' },
+    };
+
+    expect(isVoiceInputMessage(message)).toBe(true);
+  });
+
+  it('final 字幕落库写入 metadata.source=voice', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+
+    lastOnEvent?.({ type: 'user.transcript', text: '  你好  ', done: true });
+
+    await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalled());
+    const [, message] = addMessageToSession.mock.calls[0];
+    expect(message.content).toBe('你好');
+    expect(message.metadata?.source).toBe('voice');
+
+    client.close();
+  });
+
+  it('挂断后写入 voiceCallSummary，durationSec 来自真实起止时间', async () => {
+    const startedAt = 1_800_000_000_000;
+    const endedAt = startedAt + 75_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(startedAt);
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+    nowSpy.mockReturnValue(endedAt);
+
+    client.close();
+
+    await vi.waitFor(() => {
+      expect(addMessageToSession.mock.calls.some(([, message]) => Boolean(message.metadata?.voiceCallSummary))).toBe(true);
+    });
+    const summaryCall = addMessageToSession.mock.calls.find(([, message]) => Boolean(message.metadata?.voiceCallSummary));
+    if (!summaryCall) throw new Error('missing voiceCallSummary message');
+    const [, summaryMessage] = summaryCall;
+    expect(summaryMessage.role).toBe('system');
+    expect(summaryMessage.metadata?.source).toBe('voice');
+    expect(summaryMessage.metadata?.voiceCallSummary).toMatchObject({
+      durationSec: 75,
+      provider: 'qwen-omni',
+      conversationModel: QWEN_OMNI_REALTIME_MODEL,
+      workItemCount: 0,
+      startedAt,
+      endedAt,
+    });
+    expect(summaryMessage.content).toBe('语音通话结束，时长 1 分 15 秒');
+    nowSpy.mockRestore();
+  });
+});
+
+// D4 的生产者接线：钳制函数写得再对，没人置位就是「建好不接电」。
+// 这一条钉的是 attachVoiceClient/teardown 真的动了通话态标记。
+describe('通话态标记（D4 生产者）', () => {
+  it('建连即标记，挂断即解除', async () => {
+    const { getPermissionModeManager } = await import('../../src/host/permissions/modes');
+    const manager = getPermissionModeManager();
+    expect(manager.isLiveVoiceSession('session-live')).toBe(false);
+
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-live');
+    expect(manager.isLiveVoiceSession('session-live')).toBe(true);
+
+    client.close();
+    await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
+    expect(manager.isLiveVoiceSession('session-live')).toBe(false);
   });
 });

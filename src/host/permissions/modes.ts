@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getUserConfigDir } from '../config/configPaths';
+import type { PermissionPreset } from '../../shared/contract/permission';
 
 const logger = createLogger('PermissionModes');
 
@@ -242,6 +243,12 @@ export class PermissionModeManager {
    * （放手档 → bypassPermissions）；首跑 / 无人值守两处钳制仍压在它之上，只收紧不放宽。
    */
   private rolePresetSessions: Map<string, PermissionMode> = new Map();
+  /**
+   * 正在实时语音通话中的会话（D4）：语音态比文本再严一档。
+   * 用户在通话里说「直接改吧」时，手不在键盘上、眼睛不在 diff 上——免确认档在这种
+   * 姿态下等于无人值守，所以写盘/执行一律退回交互确认。
+   */
+  private liveVoiceSessions: Set<string> = new Set();
 
   constructor(initialMode: PermissionMode = 'default') {
     this.currentMode = initialMode;
@@ -302,14 +309,18 @@ export class PermissionModeManager {
     const base = (sessionId && this.rolePresetSessions.get(sessionId))
       || (sessionId && this.sessionModes.get(sessionId))
       || this.currentMode;
-    // 首跑钳制排在无人值守之前：两者都只收紧，先收到最严那档即可。
+    // 三处钳制都只收紧不放宽，所以依次叠加即可，顺序不影响结果。
+    let mode = base;
     if (sessionId && this.firstRunStrictSessions.has(sessionId)) {
-      return clampFirstRunPermissionMode(base);
+      mode = clampFirstRunPermissionMode(mode);
     }
     if (sessionId && this.unattendedSessions.has(sessionId)) {
-      return clampUnattendedPermissionMode(base);
+      mode = clampUnattendedPermissionMode(mode);
     }
-    return base;
+    if (sessionId && this.liveVoiceSessions.has(sessionId)) {
+      mode = clampLiveVoicePermissionMode(mode);
+    }
+    return mode;
   }
 
   /**
@@ -341,6 +352,24 @@ export class PermissionModeManager {
   /** 本轮结束即解除，没带档的专家 / 下一轮换人时回到会话自己的档。 */
   clearRolePresetSession(sessionId: string): void {
     this.rolePresetSessions.delete(sessionId);
+  }
+
+  /** 标记会话进入实时语音通话态（VoiceSessionService 建连成功时调用）。 */
+  markLiveVoiceSession(sessionId: string): void {
+    this.liveVoiceSessions.add(sessionId);
+  }
+
+  /** 挂断即解除（VoiceSessionService teardown 调用）。 */
+  clearLiveVoiceSession(sessionId: string): void {
+    this.liveVoiceSessions.delete(sessionId);
+  }
+
+  /**
+   * 是否处于实时语音通话态。子 agent 链的档位钳制读这里——PermissionConfig 那条链
+   * 不经过 getModeForSession，只共享这一个会话态标记（D4 两条链同源单一真源）。
+   */
+  isLiveVoiceSession(sessionId?: string): boolean {
+    return !!sessionId && this.liveVoiceSessions.has(sessionId);
   }
 
   /**
@@ -647,6 +676,41 @@ export function clampUnattendedPermissionMode(mode: PermissionMode): PermissionM
  */
 export function rolePermissionPresetToMode(preset: 'strict' | 'development' | 'ci'): PermissionMode {
   return preset === 'strict' ? 'readOnly' : preset === 'ci' ? 'bypassPermissions' : 'default';
+}
+
+/**
+ * D4 Live 语音抬严（主 agent 链）：通话态比文本再严一档 —— 收到 readOnly。
+ *
+ * ⚠️ 方案 §6.7.10 的映射表写的是 `acceptEdits → default`，**那个映射兑现不了它自己
+ * 承诺的行为**，2026-07-26 真机验证实测：会话档 acceptEdits + 通话态，钳到 default 后
+ * 语音派的写文件任务**照样直接落盘**。原因是档位不是写入放行的唯一闸门——
+ * `permissionClassifier` 的 W1 规则「写入项目目录内 → approve」与档位无关，
+ * `permissionModeAutoApproves` 只把 ask 升成 approve，压根管不到 W1 已经 approve 的那条。
+ *
+ * 真正能兑现「写盘一律要点权限卡」的机制只有一个：readOnly 档的
+ * `readOnlyForcesConfirmationFor`，它把 classifier 的 approve **降级回 ask**。
+ * 首跑钳制（clampFirstRunPermissionMode）出于同样的理由也是收到 readOnly，不是 default。
+ *
+ * 语义对齐方案 §6.6 权限矩阵：读/搜索随会话 policy 通过，写文件 / patch / shell / 外发
+ * 一律 Ask。dontAsk / plan 已经是 deny 级别，比 readOnly 更严，原样返回。
+ *
+ * 为什么不能「口头说允许就行」：通话时用户手不在键盘、眼睛不在 diff 上，
+ * 口述「好的」既没有具体对象也没有可回看的痕迹，不能替代权限卡点击。
+ */
+export function clampLiveVoicePermissionMode(mode: PermissionMode): PermissionMode {
+  return mode === 'dontAsk' || mode === 'plan' || mode === 'readOnly' ? mode : 'readOnly';
+}
+
+/**
+ * D4 Live 语音抬严（子 agent 链）：与上面同一决议的 preset 口径。
+ *
+ * 两条链的档位类型不同（主链是 PermissionMode，子链是 PermissionPreset →
+ * PermissionConfig），但抬严语义一致：ci 档四类操作全自动批准，等价于
+ * bypassPermissions，通话态收到 development（写/执行退回 trustProjectDirectory 收口）；
+ * development / strict 已经不免确认，原样返回。
+ */
+export function clampLiveVoicePermissionPreset(preset: PermissionPreset): PermissionPreset {
+  return preset === 'ci' ? 'development' : preset;
 }
 
 export function clampFirstRunPermissionMode(mode: PermissionMode): PermissionMode {

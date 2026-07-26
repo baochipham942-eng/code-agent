@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { VOICE_STREAM_WS_PATH } from '@shared/constants';
 import type { VoiceEvent } from '@shared/contract/voice';
+import { readActiveAgentSessionMap } from '../../../stores/activeAgentSessionMap';
 import { useRealtimeVoiceAudio } from '../../../hooks/useRealtimeVoiceAudio';
 import { useSessionStore } from '../../../stores/sessionStore';
 
@@ -22,6 +23,9 @@ function buildStreamUrl(sessionId: string): string {
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const params = new URLSearchParams({ sessionId });
   if (typeof token === 'string') params.set('token', token);
+  // 通话身份沿用输入框选中的专家（activeAgentId 只存在 Renderer 侧，host 查不到）。
+  const activeAgentId = readActiveAgentSessionMap()[sessionId];
+  if (activeAgentId) params.set('agentId', activeAgentId);
   return `${scheme}://${window.location.host}${VOICE_STREAM_WS_PATH}?${params.toString()}`;
 }
 
@@ -84,7 +88,9 @@ export function VoiceSpikePanel(): React.JSX.Element {
           setAssistantText((prev) => (voiceEvent.done ? voiceEvent.text : prev + voiceEvent.text));
           break;
         case 'response.done':
-          if (voiceEvent.ttfaMs !== undefined) setStatus(`首包 ${voiceEvent.ttfaMs}ms`);
+          if (voiceEvent.ttfaModelMs !== undefined) {
+            setStatus(`首包 ${voiceEvent.ttfaModelMs}ms${voiceEvent.ttfaPerceivedMs !== undefined ? ` / 体感 ${voiceEvent.ttfaPerceivedMs}ms` : ''}`);
+          }
           break;
         case 'error':
           setCallState('error');

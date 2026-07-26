@@ -1,3 +1,20 @@
+// ============================================================================
+// 这道门守什么、不守什么（实测边界，勿删）
+//
+// 守得住：
+//   - 注入管道会把 source 原样带进 ContextEventLedger（不再写死 'system_message'）
+//   - 缓冲合并保留多个来源；无来源时明确落 'unattributed'
+//   - category 仍然只控制 hookMessageBuffer 路由，没被 source 改掉语义
+//
+// 守不住（已实测确认）：
+//   - **各个调用点填的 source 值是否正确**。本文件用自建 harness 直接调
+//     injectSystemMessage，覆盖的是管道而非那 100 个真实调用点。实测把
+//     messageProcessor.ts 的 'tool-spam-hint' 改成 'nudge'，本文件仍全绿。
+//   - 兜底的是 typecheck：source 是必填参数且为联合类型，所以「漏填」和
+//     「填一个不存在的值」不可能发生；能发生的只有「填成另一个合法但错误的来源」。
+//     这类错误只误导账本诊断，不影响运行时行为，因此没有为它建 100 条断言。
+//     若将来账本被用于自动决策（而非人工诊断），这条盲区必须先补上。
+// ============================================================================
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'fs';
 import os from 'os';

@@ -83,6 +83,23 @@ export interface PermissionRequest {
 //   模型侧无任何入口（no-self-grant）。
 export type PermissionResponse = 'allow' | 'allow_session' | 'allow_standing' | 'deny';
 
+/**
+ * 审批响应投递结果——「点了允许之后到底发生了什么」的唯一口径。
+ *
+ * 2026-07-26 真机：整条投递链（HTTP → IPC → TaskManager → Orchestrator）**每一层失败
+ * 都不留痕，成功也不留痕**，于是「点击没到 host」和「到了但没生效」在日志里长得一模一样，
+ * 排查整整卡在这个区分上。所以每层都必须回报自己死在哪一步，而不是 void + 静默 return。
+ */
+export type PermissionDeliveryOutcome =
+  /** 已交给持有该 pending promise 的 orchestrator */
+  | 'delivered'
+  /** orchestrator 在，但它没有这个 requestId（已超时删除 / 已被抢答 / id 打错） */
+  | 'unknown_request'
+  /** 该 session 没有活跃 orchestrator（进程重启后内存里的 pending promise 已不存在） */
+  | 'no_orchestrator'
+  /** 请求没带 sessionId，且当前也没有活跃会话可兜底 */
+  | 'no_session';
+
 // ============================================================================
 // Permission Request Reason (enumerated, traceable, i18n-able)
 // ============================================================================

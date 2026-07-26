@@ -471,13 +471,13 @@ export class AgentOrchestrator {
     }
     // B2: 停车挂起的审批走 repo-changes 裁决口（会话卡 / 收件箱两口共用）。
     if (pending.parked) {
-      logger.info('Permission response delivered to parked approval', { requestId, response, tool: pending.request.tool });
+      logger.info('Permission response delivered to parked approval', { requestId, response, tool: pending.request?.tool });
       this.resolveParkedApproval(requestId, response);
       return 'delivered';
     }
     // 成功路径也要留痕：没有这条就无法区分「点击没到 host」和「到了但没生效」，
     // 2026-07-26 那次排查整整卡在这个区分上。
-    logger.info('Permission response delivered', { requestId, response, tool: pending.request.tool });
+    logger.info('Permission response delivered', { requestId, response, tool: pending.request?.tool });
     pending.resolve(response);
     this.pendingPermissions.delete(requestId);
     return 'delivered';

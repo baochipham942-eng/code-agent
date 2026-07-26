@@ -30,7 +30,6 @@ import { loadShellEnvironment } from '../host/services/infra/shellEnvironment';
 import { initSentryNode } from '../host/observability/sentryNode';
 import { initCrashMarker } from '../host/observability/crashMarker';
 import { initPostHogNode } from '../host/observability/posthogNode';
-import { IPC_CHANNELS } from '../shared/ipc';
 import { resolveSessionDefaultModelConfig } from '../host/services/core/sessionDefaults';
 import { getModelSessionState } from '../host/session/modelSessionState';
 import {

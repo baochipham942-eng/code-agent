@@ -21,7 +21,7 @@ import {
 } from '../src/host/testing/ci/sampleSplits';
 import { filterTestCases, loadAllTestSuites } from '../src/host/testing/testCaseLoader';
 import { countDeclaredAssertions } from '../src/host/testing/assertionEngine';
-import { getTestDirs } from '../src/host/config/configPaths';
+import { getTestDirs, resolvePathWithFallback } from '../src/host/config/configPaths';
 import { isRedlineCase } from '../src/host/testing/testCaseClassification';
 
 const HELP = `eval-split — 生成 held-in/held-out/control/safety 切分（eval-splits.json）
@@ -66,7 +66,12 @@ async function main() {
   }
   if (!ids || ids.length === 0) { console.error('缺 id 全集：给 --from-baseline 或 --ids\n'); process.exit(1); }
 
-  const suites = await loadAllTestSuites(getTestDirs(out).testCases.new);
+  const testDirs = getTestDirs(out);
+  const testCaseDir = await resolvePathWithFallback(
+    testDirs.testCases.new,
+    testDirs.testCases.legacy,
+  );
+  const suites = await loadAllTestSuites(testCaseDir.resolved);
   const cases = filterTestCases(suites, {});
   const caseById = new Map(cases.map((testCase) => [testCase.id, testCase]));
   const unknown = ids.filter((id) => !caseById.has(id));

@@ -45,6 +45,7 @@ import type { CompareConfiguration, TestRunSummary, TrendDataPoint } from '../sr
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
 import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants';
 import { isRedlineCase } from '../src/host/testing/testCaseClassification';
+import { getTestDirs } from '../src/host/config/configPaths';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
@@ -287,6 +288,13 @@ function getCommitSha(): string {
   }
 }
 
+function resolveCoreTestCaseDir(workingDir: string): string {
+  const testDirs = getTestDirs(workingDir).testCases;
+  if (fs.existsSync(testDirs.new)) return testDirs.new;
+  if (fs.existsSync(testDirs.legacy)) return testDirs.legacy;
+  return testDirs.new;
+}
+
 function getRepoStatusSnapshot(repoDir: string): string[] | null {
   try {
     execSync('git rev-parse --is-inside-work-tree', { cwd: repoDir, stdio: 'ignore' });
@@ -501,13 +509,12 @@ async function runEvals(
     const config = createDefaultConfig(workingDir, {
       verbose: false,
       workingDirectory: agentWorkingDir,
+      testCaseDir: opts.caseDir ?? resolveCoreTestCaseDir(workingDir),
       filterTags: opts.tags,
       filterIds: opts.ids,
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
       // WP1-4: 预测登记随 summary 落盘/DB，deltaReporter 对账
       ...(opts.prediction ? { prediction: opts.prediction } : {}),
-      // 外部基准（如 GAIA）用独立 case 目录
-      ...(opts.caseDir ? { testCaseDir: opts.caseDir } : {}),
     });
 
     const agent = createAgent({
@@ -627,7 +634,7 @@ async function runCompareCommand(
 
   // Load & filter cases
   const defaultConfig = createDefaultConfig(workingDir);
-  const suites = await loadAllTestSuites(opts.caseDir ?? defaultConfig.testCaseDir);
+  const suites = await loadAllTestSuites(opts.caseDir ?? resolveCoreTestCaseDir(workingDir));
   const testCases = filterTestCases(suites, { filterTags: opts.tags, filterIds: opts.ids });
   const totalCases = testCases.length;
 
@@ -756,7 +763,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
       console.error(chalk.red(`  Error: 没有版本化切分文件（${EVAL_SPLITS_RELATIVE_PATH}）。先跑 scripts/eval-split.ts 生成。`));
       process.exit(1);
     }
-    const suites = await loadAllTestSuites(createDefaultConfig(cwd).testCaseDir);
+    const suites = await loadAllTestSuites(resolveCoreTestCaseDir(cwd));
     const allCases = filterTestCases(suites, {});
     try {
       assertValidEvalSplits(splitFile, {
@@ -826,7 +833,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
 
     // --real mode safety guards for promote
     if (effectiveReal) {
-      const testCaseDir_ = createDefaultConfig(workingDir).testCaseDir;
+      const testCaseDir_ = resolveCoreTestCaseDir(workingDir);
       const suites = await loadAllTestSuites(testCaseDir_);
       const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
       const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
@@ -911,7 +918,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   // --real mode safety guards
   if (effectiveReal) {
     // Load suites to count total cases
-    const testCaseDir_ = caseDir ?? createDefaultConfig(workingDir).testCaseDir;
+    const testCaseDir_ = caseDir ?? resolveCoreTestCaseDir(workingDir);
     const suites = await loadAllTestSuites(testCaseDir_);
     const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
     const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import type { TestRunSummary } from '../../../src/host/testing/types';
@@ -95,6 +95,19 @@ const savedEnv = { ...process.env };
 
 beforeEach(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), 'code-agent-eval-ci-promote-html-'));
+  await mkdir(path.join(root, '.claude'), { recursive: true });
+  await writeFile(
+    path.join(root, '.claude', 'eval-splits.json'),
+    JSON.stringify({
+      version: 1,
+      seed: 'test-seed',
+      createdAt: '2026-07-26T00:00:00.000Z',
+      heldIn: ['case-a'],
+      heldOut: [],
+      control: ['case-a'],
+      safety: [],
+    }),
+  );
   process.env.AUTO_TEST_API_KEY = 'test-key';
   saveReportMock.mockReset();
   saveReportMock.mockResolvedValue([path.join(root, '.code-agent', 'test-results', 'report.html')]);

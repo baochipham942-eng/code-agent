@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // autoTestHook 完成消息的通过率口径（Codex 审计 R1 MED）：
-// 与 markdown/HTML 报告一致——能力分母 = total - skipped - infraExcluded（WP1-2），
+// 与 markdown/HTML 报告一致——能力分母 = total - skipped - infraExcluded - costExceeded，
 // 分母为 0（全 skipped / 全 infra）时输出 0.0% 而非 NaN/Infinity。
 // ---------------------------------------------------------------------------
 import { describe, expect, it } from 'vitest';
@@ -36,6 +36,11 @@ describe('formatAutoTestCompletionMessage', () => {
 
   it('skipped 不进能力分母', () => {
     const msg = formatAutoTestCompletionMessage(makeSummary({ total: 2, passed: 1, skipped: 1 }));
+    expect(msg).toContain('(100.0%)');
+  });
+
+  it('cost_exceeded 不进能力分母', () => {
+    const msg = formatAutoTestCompletionMessage(makeSummary({ total: 2, passed: 1, costExceeded: 1 }));
     expect(msg).toContain('(100.0%)');
   });
 

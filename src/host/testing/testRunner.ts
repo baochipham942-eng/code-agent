@@ -358,6 +358,12 @@ export class TestRunner {
           const result = await this.runSingleTest(testCase);
           trialResults.push(this.toTrialSummary(result));
 
+          // 同一 case 已经越过美元上限时不得继续后续 trial 烧量。
+          if (result.status === 'cost_exceeded') {
+            bestResult = result;
+            break;
+          }
+
           if (this.isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
             telemetryGateFailureResult ??= result;
           }
@@ -629,6 +635,11 @@ export class TestRunner {
       logger.info(`Running trial ${trial + 1}/${trialsPerCase} for case ${testCase.id}`);
       const result = await this.runSingleTest(testCase, context);
       trialResults.push(this.toTrialSummary(result));
+
+      if (result.status === 'cost_exceeded') {
+        bestResult = result;
+        break;
+      }
 
       if (this.isRealAgentRunCase(testCase) && result.telemetryGate?.passed === false) {
         telemetryGateFailureResult ??= result;

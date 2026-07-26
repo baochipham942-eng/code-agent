@@ -1,9 +1,9 @@
 // ============================================================================
 // baseline 分母口径 A 方案：compare/promote 与报告口径统一为
-// 能力分母 = total − skipped − infra_excluded（WP1-2 完整形态）。
+// 能力分母 = total − skipped − infra_excluded − cost_exceeded。
 // 此前 compare/promote 只减 infra 不减 skipped，带 skipped 的 run 出现
 // 「报告 100% / baseline delta 50%」分裂（批 5 codex 审计 deferred HIGH）。
-// 迁移：baseline 新增 denominatorVersion=2；读到旧版基线只告警不硬拦。
+// 迁移：baseline denominatorVersion=3 纳入 cost_exceeded；读到旧版只告警不硬拦。
 // ============================================================================
 
 import { describe, expect, it, vi, afterEach } from 'vitest';
@@ -42,6 +42,7 @@ function makeSummary(results: TestResult[]): TestRunSummary {
     skipped: results.filter((r) => r.status === 'skipped').length,
     partial: results.filter((r) => r.status === 'partial').length,
     infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
+    costExceeded: results.filter((r) => r.status === 'cost_exceeded').length,
     averageScore: 1,
     results,
     environment: { model: 'm', provider: 'p', workingDirectory: '/tmp' },
@@ -69,13 +70,14 @@ describe('baseline 分母排除 skipped（A 方案）', () => {
     expect(delta.isRegression).toBe(false);
   });
 
-  it('promote：capabilityTotal 排除 skipped，skipped 不落 caseResults，写 denominatorVersion=2', async () => {
+  it('promote：capabilityTotal 排除 skipped，skipped 不落 caseResults，写 denominatorVersion=3', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'baseline-denom-'));
     const manager = new BaselineManager(root);
     await manager.promote(makeSummary([
       makeResult({ testId: 'a' }),
       makeResult({ testId: 'b', status: 'skipped', score: 0 }),
       makeResult({ testId: 'c', status: 'infra_excluded', score: 0 }),
+      makeResult({ testId: 'd', status: 'cost_exceeded', score: 0 }),
     ]), 'sha2');
 
     const baseline = await manager.load();
@@ -83,7 +85,8 @@ describe('baseline 分母排除 skipped（A 方案）', () => {
     expect(baseline?.globalMetrics.totalCases).toBe(1);
     expect(baseline?.caseResults.b).toBeUndefined();
     expect(baseline?.caseResults.c).toBeUndefined();
-    expect(baseline?.denominatorVersion).toBe(2);
+    expect(baseline?.caseResults.d).toBeUndefined();
+    expect(baseline?.denominatorVersion).toBe(3);
   });
 
   it('读旧版基线（无 denominatorVersion）→ 告警不硬拦，比较照常', async () => {

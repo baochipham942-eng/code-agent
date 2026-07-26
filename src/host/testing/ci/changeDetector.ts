@@ -11,13 +11,16 @@ interface TriggerPattern {
 }
 
 const TRIGGER_PATTERNS: TriggerPattern[] = [
-  // Full re-run triggers
+  // 五类影响 agent 行为的改动共用同一套 full regression baseline。
   { glob: 'src/host/prompts/**', scope: 'full' },
+  { glob: '.claude/skills/**', scope: 'full' },
+  { glob: 'src/host/skills/**', scope: 'full' },
+  { glob: 'src/host/services/skills/**', scope: 'full' },
+  { glob: 'src/host/context/**', scope: 'full' },
   { glob: 'src/host/tools/**', scope: 'full' },
   { glob: 'src/host/model/**', scope: 'full' },
+  { glob: 'src/host/agent/**', scope: 'full' },
   { glob: 'src/shared/constants.ts', scope: 'full' },
-  // Smoke test triggers
-  { glob: 'src/host/agent/agent*.ts', scope: 'smoke' },
 ];
 
 const SKIP_PATTERNS = [

@@ -22,7 +22,7 @@ const HELP = `eval-noise-sweep — 重复 K 跑实测评测噪声带（付费！
 Options:
   --runs <k>          重复次数（默认 5，至少 ${NOISE_BAND_LIMITS.minRuns}）
   --split <bucket>    用切分桶做子集（默认 held-in）
-  --ids <a,b>         或显式 id 列表（优先于 --split）
+  --ids <a,b>         显式 id 列表（仍与 --split 桶取交集）
   --model <m>         模型（传给 eval-ci --model）
   --provider <p>      提供商
   --concurrency <n>   并发（默认 1，降低限流噪声混入）
@@ -78,14 +78,21 @@ async function main() {
   }
 
   const cwd = process.cwd();
+  const splits = await loadEvalSplits(cwd);
+  if (!splits) {
+    throw new Error('缺版本化切分文件，先跑 scripts/eval-split.ts');
+  }
   if (split === 'safety') {
     throw new Error('safety 红线 case 禁止进入 noise sweep；它们只能在 OS jail 下做单次安全验证');
   }
-  let ids = explicitIds;
-  if (!ids) {
-    const splits = await loadEvalSplits(cwd);
-    if (!splits) { console.error('缺切分文件，先跑 scripts/eval-split.ts（或用 --ids）'); process.exit(1); }
-    ids = applySplitFilter(undefined, splits, split);
+  const safetyIds = new Set(splits.safety);
+  const explicitSafetyIds = (explicitIds ?? []).filter((id) => safetyIds.has(id));
+  if (explicitSafetyIds.length > 0) {
+    throw new Error(`红线 case 禁止进入 noise sweep: ${explicitSafetyIds.join(', ')}`);
+  }
+  const ids = applySplitFilter(explicitIds, splits, split);
+  if (ids.length === 0) {
+    throw new Error(`--split ${split} 与 --ids 交集为空，拒绝启动 sweep`);
   }
   console.log(`噪声带 sweep：${ids.length} cases × ${runs} runs（${model ?? 'default model'}）\n`);
 
@@ -98,7 +105,7 @@ async function main() {
     const before = listReports(resultsDir);
     console.log(`— run ${k}/${runs} 开始 ${new Date().toISOString()}`);
     const cliArgs = ['tsx', 'scripts/eval-ci.ts', '--real', '--force', '--scope', 'full',
-      '--ids', ids.join(','), '--concurrency', String(concurrency)];
+      '--split', split, '--ids', ids.join(','), '--concurrency', String(concurrency)];
     if (model) cliArgs.push('--model', model);
     if (provider) cliArgs.push('--provider', provider);
     // timeout 强杀：eval-ci 偶发跑完不退出（悬挂 handle 吊住进程，2026-07-04 实测

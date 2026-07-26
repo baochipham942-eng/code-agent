@@ -24,7 +24,7 @@ export const enSettingsCore = {
       skills: 'Skills',
       conversation: 'Context compaction',
       keybindings: 'Shortcuts',
-      voiceInput: 'Voice input',
+      voiceInput: 'Voice',
       workspace: 'Workspace',
       automation: 'Automation',
       channels: 'Channels',

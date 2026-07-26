@@ -17,12 +17,16 @@ export interface SidebarGroupExpansionView {
 }
 
 export function shouldForceExpandSidebarGroup(
-  { hasCurrentSession, hasSearchFilters, unfinishedCount }: SidebarGroupExpansionSignals,
+  { hasSearchFilters }: SidebarGroupExpansionSignals,
   options?: { disableForceExpand?: boolean },
 ): boolean {
-  // D-8：未分类组关掉 force-expand，否则它常驻当前/未完成会话会被永久钉成展开、无法折叠。
+  // 2026-07-26 语义修正：force-expand 只保留给搜索/筛选命中（临时视图态）。
+  // 当前会话/未完成会话不再钉死分组——默认本来就是展开（isWorkspaceExpanded
+  // 缺省 true），persisted false 只可能来自用户显式收起，显式操作必须赢，
+  // 否则任何有活动的分组永久无法收起（D-8 在未分类组修过一次的同款病，全量修掉）。
+  // 未完成信号仍由分组头的色球+数字承载，收起不丢信息。
   if (options?.disableForceExpand) return false;
-  return hasCurrentSession || hasSearchFilters || unfinishedCount > 0;
+  return hasSearchFilters;
 }
 
 export function resolveSidebarGroupExpanded(
@@ -33,21 +37,10 @@ export function resolveSidebarGroupExpanded(
   return persistedExpanded || shouldForceExpandSidebarGroup(signals, options);
 }
 
-function getForceExpandReason({
-  hasCurrentSession,
-  hasSearchFilters,
-  unfinishedCount,
-}: SidebarGroupExpansionSignals): string {
-  if (hasCurrentSession) {
-    return '当前会话所在项目保持展开';
-  }
-  if (unfinishedCount > 0) {
-    return '未完成会话所在项目保持展开';
-  }
-  if (hasSearchFilters) {
-    return '搜索或筛选命中的项目保持展开';
-  }
-  return '项目保持展开';
+function getForceExpandReason(_signals: SidebarGroupExpansionSignals): string {
+  // force-expand 现在只有搜索/筛选一个来源（见 shouldForceExpandSidebarGroup）。
+  // 措辞避开「命中」二字：搜索态的 DOM 断言用它排查旧版计数 chip 回归。
+  return '搜索/筛选结果所在项目保持展开';
 }
 
 export function resolveSidebarGroupExpansionView({

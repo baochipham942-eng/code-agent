@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resampleTo16k, type ResampleState } from '../../../src/renderer/hooks/useRealtimeVoiceAudio';
+import { resampleTo16k, type ResampleState } from '../../../src/renderer/services/voiceAudioPipeline';
 
 describe('resampleTo16k', () => {
   it('48k -> 16k 抽出约 1/3 的样本数', () => {

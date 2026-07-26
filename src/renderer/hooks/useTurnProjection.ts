@@ -258,6 +258,35 @@ export function projectTurns(
       continue;
     }
 
+    // 语音通话摘要（§7.5 投影合流）：role=system 但带 voiceCallSummary，是通话的唯一
+    // 摘要条目（host 挂断时落库，生产者唯一）。ownership 显式归 voice——不进通用
+    // system 黑洞，也不许渲染侧再造第二条摘要。
+    if (msg.role === 'system' && msg.metadata?.voiceCallSummary) {
+      const node: TraceNode = {
+        id: msg.id,
+        type: 'system',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        subtype: 'voice_call_summary',
+        metadata: msg.metadata,
+      };
+      if (currentTurn) {
+        currentTurn.nodes.push(node);
+        currentTurn.endTime = msg.timestamp;
+      } else {
+        turnCounter++;
+        turns.push({
+          turnNumber: turnCounter,
+          turnId: `turn-${turnCounter}`,
+          nodes: [node],
+          status: 'completed',
+          startTime: msg.timestamp,
+          endTime: msg.timestamp,
+        });
+      }
+      continue;
+    }
+
     // System messages → skip (nudges, recovery hints)
     if (msg.role === 'system') continue;
 

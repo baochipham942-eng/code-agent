@@ -24,6 +24,8 @@ import { InputAddMenu } from './InputAddMenu';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
+import { LiveVoiceButton } from '../../voice/LiveVoiceButton';
+import { VoiceChrome } from '../../voice/VoiceChrome';
 import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
 import { CommandPalette } from '../../../CommandPalette';
@@ -743,6 +745,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           onCancel={onCancelQueuedRuntimeInput}
         />
 
+        {/* 实时通话 chrome：live 时底栏扩展（打字/附件入口保留在下方原处，§7.2） */}
+        <VoiceChrome sessionId={currentSessionId ?? null} />
+
         {/* Codex 风格融合：去掉明显边框 + 阴影，只用极弱 bg 区分输入区跟聊天内容 */}
         <div className="relative bg-white/[0.02] backdrop-blur-sm rounded-2xl focus-within:bg-white/[0.04] transition-colors duration-200">
           {/* 看某位成员时输入框整块封住：人只跟团长说话，不跟成员说话 */}
@@ -924,6 +929,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {!disabled && (
               <VoiceInputButton
                 onTranscript={handleVoiceTranscript}
+                disabled={disabled}
+              />
+            )}
+            {/* 实时通话入口（与口述输入并列、职责分离，§4.2） */}
+            {!disabled && (
+              <LiveVoiceButton
+                sessionId={currentSessionId ?? null}
+                hasMessages={hasMessages}
                 disabled={disabled}
               />
             )}

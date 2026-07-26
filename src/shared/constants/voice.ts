@@ -38,6 +38,12 @@ export const QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL = 'gummy-realtime-v1';
 export const QWEN_OMNI_REALTIME_VOICE = 'Tina';
 
 /**
+ * `qwen3.5-omni-flash-realtime` 实测可用音色白名单（2026-07-26 真机逐个合成验证）。
+ * 设置页音色选择器只能从这里出选项——音色枚举与模型强绑定，换模型必须重新真跑一遍。
+ */
+export const QWEN_OMNI_REALTIME_VOICE_WHITELIST = ['Tina', 'Ethan', 'Serena'] as const;
+
+/**
  * 显式写死 server_vad 默认值，是为了 ttfaPerceivedMs 能算得出静音窗。
  * 上游常见默认：threshold=0.5、prefix_padding_ms=300、silence_duration_ms=500。
  */
@@ -60,6 +66,13 @@ export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 /** 通话最长时长（ms），到点强制挂断，兜住忘记挂断导致的持续计费。 */
 export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
 
+/**
+ * 挂断后的上游排水窗（ms）：用户 ASR completed 与助手 transcript done 常在挂断后
+ * ~1s 内才到，立刻关 WS 会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话
+ * 落库只剩摘要）。窗口内到达的 final 照常落库，超时后再关。
+ */
+export const VOICE_TEARDOWN_DRAIN_MS = 1500;
+
 /** get_current_file_summary 最多回几个文件路径，别把通话摘要撑成一屏。 */
 export const VOICE_RECENT_FILE_LIMIT = 8;
 
@@ -68,6 +81,3 @@ export const VOICE_SPAWN_TASK_MAX_ITERATIONS = 30;
 
 /** Renderer→Host 媒体面 WS 路径。 */
 export const VOICE_STREAM_WS_PATH = '/api/voice/stream';
-
-/** dev-only 入口开关的 localStorage 键。Phase 1 换成正式设置项后删除。 */
-export const VOICE_DEV_FLAG_KEY = 'code-agent:voice-spike';

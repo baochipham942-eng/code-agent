@@ -102,6 +102,19 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     await handle.close();
   });
 
+  it('relay adapter：commit 发 input_audio_buffer.commit + response.create（PTT 手动提交）', async () => {
+    const handle = await connectHandle(qwenOmniTransport);
+    if (handle.kind !== 'relay') throw new Error('unreachable');
+
+    const upstream = upstreams[upstreams.length - 1];
+    const before = upstream.sent.length;
+    handle.commit();
+    const sent = upstream.sent.slice(before).map((raw) => JSON.parse(raw) as { type: string });
+    expect(sent.map((e) => e.type)).toEqual(['input_audio_buffer.commit', 'response.create']);
+
+    await handle.close();
+  });
+
   it('默认 turn_detection 发 server_vad，且三项参数映射为上游 snake_case', async () => {
     const handle = await connectHandle(qwenOmniTransport);
     const upstream = upstreams[upstreams.length - 1];

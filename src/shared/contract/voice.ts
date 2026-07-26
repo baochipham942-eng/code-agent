@@ -54,6 +54,18 @@ export interface VoiceSessionConfig {
 /** Renderer 直连上游所需的建连材料。只有 direct 形态才有。 */
 export type VoiceClientBootstrap = { kind: 'webrtc'; clientSecret: string; sdpUrl: string; expiresAt: number };
 
+/** GET /api/voice/status 的响应：LiveVoiceButton 可见性与占用态的 host 真相。 */
+export interface VoiceStatusResponse {
+  provider: VoiceProviderId;
+  /** 所选 Provider 的 key 是否已配置（secureStorage 或 env，host 侧判） */
+  configured: boolean;
+  /** 全局单路互斥：当前是否有通话进行中 */
+  active: boolean;
+}
+
+/** 设置页「实时通话」组保存后广播的窗口事件（对齐 VOICE_INPUT_SETTINGS_UPDATED_EVENT 先例）。 */
+export const VOICE_LIVE_SETTINGS_UPDATED_EVENT = 'voice-live-settings-updated';
+
 /** 上游 → Host 归一化后的事件。Renderer 只认这一套，换 provider 不改前端。 */
 export type VoiceEvent =
   | { type: 'state'; state: 'connecting' | 'live' | 'closed' }
@@ -69,7 +81,15 @@ export type VoiceEvent =
   | { type: 'error'; code: string; message: string };
 
 /** Renderer → Host 的控制帧（媒体帧走二进制，不走这里）。 */
-export type VoiceClientCommand = { type: 'end' } | { type: 'interrupt' };
+export type VoiceClientCommand =
+  | { type: 'end' }
+  | { type: 'interrupt' }
+  /**
+   * 手动提交（turn_detection = null 的 PTT/点按模式）：把缓冲音频切成一轮并请求回复。
+   * server_vad 模式下上游自动断句，发这个帧是合法的 no-op 上游行为，但 Renderer 只在
+   * 手动模式下发它。
+   */
+  | { type: 'commit' };
 
 interface VoiceTransportHandleBase {
   readonly provider: VoiceProviderId;
@@ -90,6 +110,11 @@ export type VoiceTransportHandle =
       readonly kind: 'relay';
       /** 推一帧麦克风 PCM16@16k 单声道，转 base64 发上游。 */
       sendAudio(frame: Buffer): void;
+      /**
+       * 手动提交一轮：input_audio_buffer.commit + response.create。
+       * 只在 turn_detection = null（PTT/点按）路径有意义；server_vad 路径上游自动断句。
+       */
+      commit(): void;
     })
   /** Renderer 直连上游（OpenAI Realtime 等 WebRTC 形态），媒体不经 Host。 */
   | (VoiceTransportHandleBase & {

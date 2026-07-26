@@ -22,6 +22,7 @@ import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { readPersistedTeamLead } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
 import { useComposerNoticeStore, selectHasBlockingNotice } from '../../../stores/composerNoticeStore';
+import { useVoiceCallStore } from '../../../stores/voiceCallStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 
 export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAgentState {
@@ -154,6 +155,9 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
   const setViewingMemberId = useMemberViewStore((state) => state.setViewingMemberId);
   const blockedByNotice = useComposerNoticeStore(selectHasBlockingNotice);
   const [expandedOverNotice, setExpandedOverNotice] = useState(false);
+  // 通话中高亮通话身份（§6.7.7；只展示，点击切换 set_active_agent 是 Phase 2）
+  const voiceCallLive = useVoiceCallStore((state) => state.phase === 'live' || state.phase === 'connecting');
+  const voiceActiveAgentId = useVoiceCallStore((state) => state.activeAgentId);
 
   // 换会话必须退出成员视图，否则会拿上一个会话的成员去渲染这一个
   useEffect(() => { setViewingMemberId(null); }, [sessionId, setViewingMemberId]);
@@ -209,12 +213,15 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             <span className="text-xs font-medium text-zinc-100">{text.leader}</span>
           </button>
         )}
-        {pills.map((pill) => (
+        {pills.map((pill) => {
+          const voiceActive = voiceCallLive && (pill.key === voiceActiveAgentId || pill.roleId === voiceActiveAgentId);
+          return (
           <button /* ds-allow:button: 成员 pill 需承载头像、两行文字和状态徽标，Button primitive 的居中按钮形态不适配 */
             key={pill.key}
             type="button"
             data-testid={`member-pill-${pill.roleId}`}
             data-selected={viewingMemberId === pill.key}
+            data-voice-active={voiceActive || undefined}
             onClick={() => {
               // 待命态还没有对话可看；再点同一个人回主会话
               if (pill.status === 'standby') return;
@@ -224,9 +231,11 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 text-left transition-colors ${
               pill.status === 'standby'
                 ? 'border-zinc-800 bg-zinc-900/60 text-zinc-500'
-                : viewingMemberId === pill.key
-                  ? 'border-zinc-300 bg-zinc-800'
-                  : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
+                : voiceActive
+                  ? 'border-emerald-400/70 bg-emerald-500/10 ring-1 ring-emerald-400/40'
+                  : viewingMemberId === pill.key
+                    ? 'border-zinc-300 bg-zinc-800'
+                    : 'border-zinc-700 bg-zinc-800/70 hover:border-zinc-500'
             }`}
           >
             <RoleInitialAvatar roleId={pill.roleId} name={pill.name} className="h-5 w-5 text-[10px]" />
@@ -245,7 +254,8 @@ export const SessionMemberBar: React.FC<{ sessionId: string | null }> = ({ sessi
             )}
             <StatusBadge status={pill.status} />
           </button>
-        ))}
+          );
+        })}
         {standby && <span className="shrink-0 text-[11px] text-zinc-500">{text.standbyHint}</span>}
       </div>
     </>

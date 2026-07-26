@@ -25,8 +25,9 @@ import { GoalNoticeMessage } from './MessageBubble/GoalNoticeMessage';
 import { FallbackBanner } from './MessageBubble/FallbackBanner';
 import { RouteTraceChip, shouldRenderModelDecisionChip } from './RouteTraceChip';
 import { TurnQualityStrip } from './TurnQualityStrip';
+import { VoiceCallSummaryCard } from '../voice/VoiceCallSummaryCard';
 import { useSmoothStreamingText } from '../../../hooks/useSmoothStreamingText';
-import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
+import { Archive, AudioLines, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText, Link, GitBranch, RotateCcw, Wrench, CornerDownRight } from 'lucide-react';
 import { UI } from '@shared/constants';
 import { humanizeToolError } from '../../../utils/toolExecutionPresentation';
 import { useI18n } from '../../../hooks/useI18n';
@@ -63,6 +64,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           content={node.content}
           attachments={attachments}
           metadata={node.metadata?.workbench}
+          sourceType={node.metadata?.source}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
           onRewind={onRewindUserPrompt}
           rewindDisabled={rewindDisabled}
@@ -217,10 +219,13 @@ const UserNode: React.FC<{
   content: string;
   attachments?: import('@shared/contract').MessageAttachment[];
   metadata?: WorkbenchMessageMetadata;
+  /** 输入来源（§8.2）：voice/dictation 的气泡加来源小标 */
+  sourceType?: 'voice' | 'dictation' | 'typed';
   isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, sessionId, content, attachments, metadata, isNeoTagMessage, onRewind, rewindDisabled }) => {
+}> = ({ messageId, sessionId, content, attachments, metadata, sourceType, isNeoTagMessage, onRewind, rewindDisabled }) => {
+  const { t } = useI18n();
   const isGuidedTurn = metadata?.runtimeInputDelivery === 'queued_next_turn';
   // @neo 落库正文被剥了前缀（它兼任模型 prompt），渲染时补回展示，重启后也能看到带色的 @neo
   const displayContent = restoreNeoTagTokenForDisplay(
@@ -246,6 +251,12 @@ const UserNode: React.FC<{
               <div className="mb-1 flex items-center justify-end gap-2 text-xs text-zinc-400">
                 <CornerDownRight className="h-3.5 w-3.5" />
                 <span>已引导对话</span>
+              </div>
+            )}
+            {sourceType === 'voice' && (
+              <div data-testid="voice-source-badge" className="mb-1 flex items-center justify-end gap-1 text-2xs text-zinc-500">
+                <AudioLines className="h-3 w-3" />
+                <span>{t.voice.sourceBadge}</span>
               </div>
             )}
             <div className="group/user-prompt flex items-start gap-1.5">
@@ -330,6 +341,7 @@ const AssistantTextNode: React.FC<{
   isStreaming?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
 }> = ({ node, sessionId, isStreaming: turnStreaming, onStreamingDisplayUpdate }) => {
+  const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const wasReportingStreamingDisplayRef = useRef(false);
@@ -427,6 +439,13 @@ const AssistantTextNode: React.FC<{
 
       {node.metadata?.turnQuality && (
         <TurnQualityStrip summary={node.metadata.turnQuality} />
+      )}
+
+      {node.metadata?.source === 'voice' && (
+        <div data-testid="voice-source-badge" className="mb-1 flex items-center gap-1 text-2xs text-zinc-500">
+          <AudioLines className="h-3 w-3" />
+          <span>{t.voice.sourceBadge}</span>
+        </div>
       )}
 
       {/* Text content */}
@@ -851,6 +870,10 @@ const SystemNode: React.FC<{ node: TraceNode }> = ({ node }) => {
 
   if (node.subtype === 'model_fallback') {
     return <FallbackBanner content={node.content} />;
+  }
+
+  if (node.subtype === 'voice_call_summary' && node.metadata?.voiceCallSummary) {
+    return <VoiceCallSummaryCard summary={node.metadata.voiceCallSummary} />;
   }
 
   // generic system

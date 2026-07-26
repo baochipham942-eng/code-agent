@@ -93,6 +93,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/dev/notifications'],
   ['delete', '/dev/notifications'],
   ['post', '/dev/emit-swarm-event'],
+  ['post', '/dev/seed-messages'],
   ['post', '/dev/emit-agent-events'],
   ['post', '/dev/emit-workflow-events'],
   ['post', '/dev/emit-workflow-launch'],
@@ -116,6 +117,8 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/background/tasks'],
   ['post', '/background/move-to-background'],
   ['post', '/background/move-to-foreground'],
+  // voice router
+  ['get', '/voice/status'],
   // admin review queue router
   ['get', '/admin/review-queue'],
   ['post', '/admin/review-queue/issues'],

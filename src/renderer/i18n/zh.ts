@@ -6,6 +6,7 @@ import { zhSettings } from './zhSettings';
 import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
 import { chatInputZh } from './chatInput';
+import { voiceZh } from './voice';
 import { chatInputModelStrategyZh } from './chatInputModelStrategy';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
@@ -892,6 +893,7 @@ export const zh = {
   ...knowledgeMemoryZh,
   ...chatTranscriptZh,
   ...chatInputZh,
+  ...voiceZh,
   ...chatInputModelStrategyZh,
   ...sidebarZh,
   ...cronCenterZh,

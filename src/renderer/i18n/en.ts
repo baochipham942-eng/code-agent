@@ -7,6 +7,7 @@ import { enSettings } from './enSettings';
 import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
 import { chatInputEn } from './chatInput';
+import { voiceEn } from './voice';
 import { chatInputModelStrategyEn } from './chatInputModelStrategy';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
@@ -902,6 +903,7 @@ export const en: Translations = {
   ...knowledgeMemoryEn,
   ...chatTranscriptEn,
   ...chatInputEn,
+  ...voiceEn,
   ...chatInputModelStrategyEn,
   ...sidebarEn,
   ...cronCenterEn,

@@ -10,6 +10,9 @@ export const workbenchTabsZh = {
       designCanvas: '把想法摆成图，边看边改',
     },
     chooseView: '选择当前视图',
+    // D6 tab 条形态：「＋」按钮的称谓 + 脏预览圆点的悬浮提示
+    addView: '打开新面板',
+    unsavedChanges: '未保存',
     openViews: '已打开的视图',
     closeView: '关闭 {view}',
     collapsePanel: '收起面板',
@@ -46,6 +49,8 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
     },
     availableViews: 'Available views',
     chooseView: 'Choose current view',
+    addView: 'Open a new panel',
+    unsavedChanges: 'Unsaved changes',
     openViews: 'Open views',
     closeView: 'Close {view}',
     collapsePanel: 'Collapse panel',

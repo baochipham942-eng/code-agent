@@ -13,6 +13,10 @@ import { useSessionStore } from '../../../stores/sessionStore';
 
 type CallState = 'idle' | 'connecting' | 'live' | 'error';
 
+function hasToken(): boolean {
+  return typeof (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ === 'string';
+}
+
 function buildStreamUrl(sessionId: string): string {
   const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__;
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -91,9 +95,21 @@ export function VoiceSpikePanel(): React.JSX.Element {
       }
     };
 
+    // WebSocket 的 error 事件不带原因，所以自己记住「有没有 open 过」——
+    // 没 open 就 close = 握手被拒（多半是 token/路径），这条信息必须显示出来。
+    let opened = false;
+    ws.addEventListener('open', () => {
+      opened = true;
+    });
+    ws.onerror = () => setCallState('error');
     ws.onclose = () => {
       audio.stop();
-      setCallState('idle');
+      if (!opened) {
+        setCallState('error');
+        setStatus(`握手失败 ${new URL(buildStreamUrl(currentSessionId)).host}${hasToken() ? '' : '（无 token）'}`);
+      } else {
+        setCallState('idle');
+      }
     };
   }, [audio, currentSessionId]);
 

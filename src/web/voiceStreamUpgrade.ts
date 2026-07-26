@@ -9,7 +9,10 @@ import type { Server } from 'http';
 import { WebSocketServer } from 'ws';
 import { VOICE_STREAM_WS_PATH } from '../shared/constants/voice';
 import { attachVoiceClient } from '../host/services/voice/voiceSessionService';
+import { createLogger } from '../host/services/infra/logger';
 import { verifyToken } from './middleware/auth';
+
+const logger = createLogger('VoiceUpgrade');
 
 export function attachVoiceStreamUpgrade(server: Server): void {
   const wss = new WebSocketServer({ noServer: true });
@@ -18,8 +21,10 @@ export function attachVoiceStreamUpgrade(server: Server): void {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== VOICE_STREAM_WS_PATH) return; // 其他路径留给别的 upgrade 消费者
 
+    // 拒绝路径必须留痕：静默 403 会让「客户端连不上」在 host 日志里完全不可见。
     const token = url.searchParams.get('token');
     if (!token || !verifyToken(token)) {
+      logger.warn('rejected voice upgrade', { reason: token ? 'invalid-token' : 'missing-token' });
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
@@ -27,6 +32,7 @@ export function attachVoiceStreamUpgrade(server: Server): void {
 
     const neoSessionId = url.searchParams.get('sessionId');
     if (!neoSessionId) {
+      logger.warn('rejected voice upgrade', { reason: 'missing-session-id' });
       socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
       socket.destroy();
       return;

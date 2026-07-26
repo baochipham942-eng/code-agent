@@ -6,12 +6,12 @@ import {
 } from '../../../src/renderer/utils/sidebarGroupExpansion';
 
 describe('sidebarGroupExpansion', () => {
-  it('keeps current, filtered, and unfinished groups expanded', () => {
+  it('只有搜索/筛选命中才 force-expand；当前会话与未完成不再钉死分组（2026-07-26 语义修正）', () => {
     expect(shouldForceExpandSidebarGroup({
       hasCurrentSession: true,
       hasSearchFilters: false,
       unfinishedCount: 0,
-    })).toBe(true);
+    })).toBe(false);
 
     expect(shouldForceExpandSidebarGroup({
       hasCurrentSession: false,
@@ -23,30 +23,35 @@ describe('sidebarGroupExpansion', () => {
       hasCurrentSession: false,
       hasSearchFilters: false,
       unfinishedCount: 1,
-    })).toBe(true);
+    })).toBe(false);
   });
 
-  it('lets the uncategorized group collapse even when it holds the current session (D-8)', () => {
-    const forcingSignals = {
+  it('显式收起对含当前会话/未完成会话的组同样生效（用户操作赢过活动信号）', () => {
+    const activeSignals = {
       hasCurrentSession: true,
       hasSearchFilters: false,
-      unfinishedCount: 2,
+      unfinishedCount: 3,
     };
 
-    // 普通项目组：被钉成展开
-    expect(shouldForceExpandSidebarGroup(forcingSignals)).toBe(true);
-    // 未分类组：关掉 force-expand，遵从持久折叠状态
-    expect(shouldForceExpandSidebarGroup(forcingSignals, { disableForceExpand: true })).toBe(false);
+    expect(resolveSidebarGroupExpanded(false, activeSignals)).toBe(false);
 
     const view = resolveSidebarGroupExpansionView({
       persistedExpanded: false,
-      signals: forcingSignals,
+      signals: activeSignals,
       isCollapsing: false,
-      displayName: '未分类',
-      disableForceExpand: true,
+      displayName: 'work',
     });
     expect(view.forceExpanded).toBe(false);
     expect(view.isVisibleExpanded).toBe(false);
+    expect(view.phase).toBe('collapsed');
+    expect(view.toggleAriaLabel).toBe('展开 work');
+  });
+
+  it('未分类组 disableForceExpand 连搜索命中也不钉（D-8）', () => {
+    expect(shouldForceExpandSidebarGroup(
+      { hasCurrentSession: false, hasSearchFilters: true, unfinishedCount: 0 },
+      { disableForceExpand: true },
+    )).toBe(false);
   });
 
   it('lets completed non-current groups follow persisted collapse state', () => {
@@ -60,12 +65,12 @@ describe('sidebarGroupExpansion', () => {
     expect(resolveSidebarGroupExpanded(false, signals)).toBe(false);
   });
 
-  it('keeps a protected group visibly expanded even when the user collapsed it', () => {
+  it('搜索命中的已收起组保持可见展开并展示保护标签', () => {
     const view = resolveSidebarGroupExpansionView({
       persistedExpanded: false,
       signals: {
-        hasCurrentSession: true,
-        hasSearchFilters: false,
+        hasCurrentSession: false,
+        hasSearchFilters: true,
         unfinishedCount: 0,
       },
       isCollapsing: false,

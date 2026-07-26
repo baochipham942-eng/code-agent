@@ -113,7 +113,11 @@ export function VoiceSpikePanel(): React.JSX.Element {
     };
   }, [audio, currentSessionId]);
 
-  useEffect(() => hangUp, [hangUp]);
+  // 只在卸载时挂断。不能写成 useEffect(() => hangUp, [hangUp])：hangUp 的依赖每次渲染
+  // 都换新身份，清理函数会在 dial() 触发的那次重渲染里立刻跑，把还在握手的 WS 关掉。
+  const hangUpRef = useRef(hangUp);
+  hangUpRef.current = hangUp;
+  useEffect(() => () => hangUpRef.current(), []);
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-72 rounded-lg border border-border bg-background/95 p-3 text-xs shadow-lg">

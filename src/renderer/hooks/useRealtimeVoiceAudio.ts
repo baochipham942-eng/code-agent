@@ -4,7 +4,7 @@
 // 播放：24k PCM16 无缝排队播放，支持 barge-in 清空
 // ============================================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { VOICE_DOWNSTREAM_SAMPLE_RATE, VOICE_UPSTREAM_SAMPLE_RATE } from '@shared/constants';
 
 /** 跨回调保留的小数读取位置，避免缓冲区边界处的漂移与咔哒声。 */
@@ -161,5 +161,10 @@ export function useRealtimeVoiceAudio() {
 
   useEffect(() => stop, [stop]);
 
-  return { start, stop, enqueuePlayback, clearPlayback, micLevel, framesSent, error };
+  // 稳定身份：调用方常把它整个塞进 useCallback/useEffect 依赖，每渲染换新对象会让
+  // 那些 effect 的清理函数在每次渲染后都跑一遍。
+  return useMemo(
+    () => ({ start, stop, enqueuePlayback, clearPlayback, micLevel, framesSent, error }),
+    [start, stop, enqueuePlayback, clearPlayback, micLevel, framesSent, error],
+  );
 }

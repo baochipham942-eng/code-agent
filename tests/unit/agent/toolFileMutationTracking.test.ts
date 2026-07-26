@@ -2,12 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { trackFileMutationSideEffects } from '../../../src/host/agent/runtime/toolFileMutationTracking';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 
-vi.mock('../../../src/host/services/diff/diffTracker', () => ({
-  getDiffTracker: () => ({
-    computeAndStore: vi.fn(),
-  }),
-}));
-
 describe('trackFileMutationSideEffects', () => {
   it('clears the blocked-tool repair counter after a successful target file mutation', async () => {
     const trackedFiles: string[] = [];

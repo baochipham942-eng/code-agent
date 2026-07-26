@@ -379,13 +379,6 @@ export class HooksEngine {
   }
 
   /**
-   * Register a custom decision hook
-   */
-  registerDecisionHook(point: HookPoint, hook: DecisionHook): void {
-    this.decisionHooks.push({ point, hook });
-  }
-
-  /**
    * Get registered decision hooks for testing/inspection
    */
   getRegisteredDecisionHooks(): Array<{

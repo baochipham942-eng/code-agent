@@ -13,8 +13,8 @@
 // 报 knip 的 `files` 类问题 = "从生产入口出发完全走不到的文件"。
 //
 // 它防的是最贵的那种缺陷——"建好不接电"：代码写完、测试齐全、生产零消费者。
-// 已知受害史见 src/host/index.ts 头注释（那条死掉的 Electron main 路径，
-// telemetry 上传器 / Agent Registry / LogBridge / dbRetention 先后在它上面搁浅）。
+// 已知受害史是现已删除的 src/host/index.ts Electron main 路径：
+// telemetry 上传器 / Agent Registry / LogBridge / dbRetention 先后在它上面搁浅。
 //
 // 口径与取舍：
 //   - **只做计数棘轮，不做 allowlist**。目的是"防新增"不是"逼人删"：存量 132 个里有一批
@@ -25,7 +25,8 @@
 //   - 清理后手动调小，只降不升。
 //
 // 基线沿革：2026-07-25 建门，实测 132；同日 #676 把 retention 接进 webServer 后降到 131；
-// 同日删 41 个死 barrel（孤儿审计 D4）后降到 90，随即收紧。
+// 同日删 41 个死 barrel（孤儿审计 D4）后降到 90；2026-07-26 删除旧 Host
+// main/bootstrap 及其两个专用辅助文件后降到 71，随即收紧。
 //
 // 用法：node scripts/knip-production-ratchet.mjs
 
@@ -33,13 +34,13 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import process from 'node:process';
 
-const BASELINE_MAX = 79;
+const BASELINE_MAX = 71;
 const KNIP_VERSION = '6.24.0';
 const CONFIG = 'knip.production.json';
 
 // 锚点：已知必然生产不可达的文件。它若从结果里消失而文件还在，说明本门的口径已经失效
 // （配置写错 / entry 被误改 / knip 报告格式变了），必须报红而不是"零命中=通过"地假绿。
-const ANCHOR = 'src/host/index.ts';
+const ANCHOR = 'src/host/app/lifecycle.ts';
 
 // 自检 0：entry 必须都真实存在。
 // 少了一个生产入口，它下面整棵子树都会被算成"生产不可达"，门于是红在"你新增了 N 个死代码"
@@ -88,8 +89,8 @@ if (count === 0) {
 // 自检 2：锚点还在磁盘上却不在结果里 → 口径失效
 if (existsSync(ANCHOR) && !files.includes(ANCHOR)) {
   console.error(`[knip-production-ratchet] ✗ 自检失败：锚点 ${ANCHOR} 仍存在，却没被判为生产不可达。`);
-  console.error('  它是已确认的死主进程路径（见该文件头注释）。锚点失效说明本门的可达性口径已经不可信。');
-  console.error('  若该文件真被接回了发行版构建，请同步更新本脚本的 ANCHOR 与那三处 DEAD PATH 标记。');
+  console.error('  它是已确认未被任何生产入口引用的旧 Host lifecycle。锚点失效说明本门的可达性口径已经不可信。');
+  console.error('  若该文件真被接回发行版，请换一个仍然明确生产不可达的锚点。');
   process.exit(1);
 }
 

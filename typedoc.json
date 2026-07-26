@@ -1,7 +1,6 @@
 {
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": [
-    "src/host/index.ts",
     "src/host/agent/agentOrchestrator.ts",
     "src/host/agent/agentLoop.ts",
     "src/host/tools/toolRegistry.ts",

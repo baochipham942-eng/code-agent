@@ -1,21 +1,23 @@
 // ============================================================================
 // 死主进程路径的防复发门
 //
-// src/host/index.ts 这条 Electron main 路径不在任何发行版中执行，但它的文件名
-// （"Main Process Entry" / "Background Services"）看起来正是该挂后台服务的地方。
-// 挂错不报错、不红任何测试，只是永远不执行——webServer.ts :515/:617/:653 三处注释
-// 就是三次补课记录，dbRetention/logRetention 是第四次（生产库因此涨到 377MB+）。
+// src/host/index.ts → src/host/app/bootstrap.ts 这条 Electron main 路径已经物理删除。
+// 它从未进入任何发行版，但文件名（"Main Process Entry" / "Background Services"）
+// 看起来正是该挂后台服务的地方。挂错不报错、不红任何测试，只是永远不执行——
+// webServer.ts :515/:617/:653 三处注释是前三次补课记录，dbRetention/logRetention
+// 是第四次（生产库因此涨到 377MB+）。
 //
 // 这道门钉三件事：
-//   1. 仍保留的两个死文件，其 DEAD PATH 标记不许被静默删掉；
-//   2. 标记所声称的事实仍然成立——src/host/index.ts 确实不是 esbuild 入口。
-//      若哪天真把它接回构建，本门会红，逼人来处理标记而不是留下自相矛盾的注释。
-//   3. initBackgroundServices.ts 必须物理消失，迁出的注册必须经 webServer →
+//   1. 三个误导性死入口不许以同名文件复活；
+//   2. src/host/index.ts 不许重新混入 esbuild 入口；
+//   3. 迁出的注册必须经 webServer →
 //      webStartupServices 两跳进入发行版。
 // 外加：dbRetention / logRetention 与 Light Memory 的既有 web 接线不许再掉。
 //
-// 新增断言守住本轮已知 registrar 的名字与两跳调用，不声称能自动识别未来换名的新服务；
-// 未来新增启动服务若使用全新符号，仍需 code review 判断它是否属于后台注册面。
+// 已知盲区（继续如实记录）：本门守住本轮已知 registrar 的名字与两跳调用，无法自动
+// 识别未来换名的新服务。未来新增启动服务若使用全新符号，仍需 code review 判断它是否
+// 属于后台注册面、是否放在 src/web 的启动文件。它也不解析 JS AST，下面的按行去注释
+// 只能覆盖已经实际发生过的两类失效形态。
 // ============================================================================
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
@@ -49,16 +51,16 @@ function dropCommentLines(source: string): string {
 }
 const readCode = (file: string): string => dropCommentLines(read(file));
 
-const DEAD_PATH_FILES = [
+const REMOVED_DEAD_ENTRY_FILES = [
   'src/host/index.ts',
   'src/host/app/bootstrap.ts',
+  'src/host/app/initBackgroundServices.ts',
 ];
 
 const MAIN_PROCESS_ENTRY = 'src/host/index.ts';
 const SHIPPED_ENTRY = 'src/web/webServer.ts';
 const RETENTION_KICKOFF = 'src/web/webStartupRetention.ts';
 const STARTUP_SERVICES = 'src/web/webStartupServices.ts';
-const REMOVED_BACKGROUND_ENTRY = 'src/host/app/initBackgroundServices.ts';
 const HOST_APP_DIR = 'src/host/app';
 const MIGRATED_REGISTRATIONS: Array<[string, RegExp]> = [
   ['预算 hydrate + alert', /budget:\s*\(\)\s*=>\s*\{\s*wireBudgetService\s*\(/],
@@ -80,15 +82,14 @@ const MIGRATED_REGISTRATIONS: Array<[string, RegExp]> = [
 ];
 
 describe('死主进程路径（src/host/index.ts）', () => {
-  it.each(DEAD_PATH_FILES)('%s 保留 DEAD PATH 标记与正确的改挂指引', (file) => {
-    const source = read(file);
-    expect(source, `${file} 的 DEAD PATH 标记被删了。它不是装饰：没有它，下一个人会把新的后台服务挂进这条永不执行的路径。`)
-      .toContain('DEAD PATH');
-    expect(source, `${file} 的标记里必须指明改挂 ${SHIPPED_ENTRY}，否则读者知道这里是死的也不知道该去哪。`)
-      .toContain(SHIPPED_ENTRY);
+  it.each(REMOVED_DEAD_ENTRY_FILES)('%s 不许以任何形式复活', (file) => {
+    expect(
+      existsSync(path.join(root, file)),
+      `${file} 是已删除的误导性死入口；后台服务注册只能放在 src/web 的发行版启动文件`,
+    ).toBe(false);
   });
 
-  it('src/host/index.ts 仍然不是任何 esbuild 构建入口（标记所声称的事实）', () => {
+  it('发行版 esbuild 入口包含 webServer，且不含 src/host/index.ts', () => {
     const config = readCode('esbuild.config.ts');
     const entries = [...config.matchAll(/entry:\s*'([^']+)'/g)].map((m) => m[1]);
 
@@ -96,15 +97,8 @@ describe('死主进程路径（src/host/index.ts）', () => {
     expect(entries.length, 'esbuild.config.ts 里一个 entry 都没解析到，说明本门的解析口径已失效，需要修门而不是放行').toBeGreaterThan(0);
     expect(entries).toContain(SHIPPED_ENTRY);
 
-    expect(entries, `${MAIN_PROCESS_ENTRY} 被接回构建入口了，现存两个文件的 DEAD PATH 标记就成了错的，请同步处理。`)
+    expect(entries, `${MAIN_PROCESS_ENTRY} 被接回构建入口了；这会恢复已确认不属于发行版的旧主进程路径。`)
       .not.toContain(MAIN_PROCESS_ENTRY);
-  });
-
-  it('initBackgroundServices.ts 不许在 src/host/app 下复活', () => {
-    expect(
-      existsSync(path.join(root, REMOVED_BACKGROUND_ENTRY)),
-      '死入口已被抽干并删除；恢复同名文件会重新制造一个看似正确、发行版却永不执行的挂载点',
-    ).toBe(false);
   });
 
   it('webServer 真的调用集中式发行版后台启动入口（第一跳）', () => {

@@ -54,13 +54,10 @@ describe('shared Durable Run application initialization', () => {
     db.close();
   });
 
-  it('keeps Web and Tauri bootstrap on the same rollout initializer', () => {
+  it('keeps the shipped Web bootstrap on the shared rollout initializer', () => {
     const root = path.resolve(import.meta.dirname, '../../../..');
     const web = readFileSync(path.join(root, 'src/web/webServer.ts'), 'utf8');
-    const desktop = readFileSync(path.join(root, 'src/host/app/bootstrap.ts'), 'utf8');
     expect(web).toContain("from '../host/app/initializeDurableRun'");
-    expect(desktop).toContain("from './initializeDurableRun'");
     expect(web).toContain('await initializeDurableRun({');
-    expect(desktop).toContain('await initializeDurableRun({');
   });
 });

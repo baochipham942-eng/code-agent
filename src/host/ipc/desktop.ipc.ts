@@ -438,11 +438,6 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           return { success: true, data: service.listRecent(payload?.limit || 10) } satisfies IPCResponse<unknown>;
         }
 
-        case 'getTimeline': {
-          const payload = (request.payload || {}) as DesktopTimelineQuery;
-          return { success: true, data: service.getTimeline(payload) } satisfies IPCResponse<unknown>;
-        }
-
         case 'search': {
           const payload = request.payload as DesktopSearchQuery;
           return { success: true, data: service.search(payload) } satisfies IPCResponse<unknown>;

@@ -20,6 +20,7 @@
     "lint": "eslint src --ext .ts,.tsx",
     "lint:eslint-ratchet": "node scripts/eslint-ratchet.mjs",
     "debt:report": "node scripts/architecture-debt-report.mjs",
+    "gates:local": "node scripts/gates-local.mjs",
     "check:repository-structure": "node scripts/ci/check-repository-structure.mjs",
     "typecheck": "node node_modules/typescript7/bin/tsc --noEmit",
     "test": "vitest run",

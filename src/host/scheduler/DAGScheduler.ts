@@ -32,14 +32,6 @@ const logger = createLogger('DAGScheduler');
 // ============================================================================
 
 /**
- * 任务执行器函数签名
- */
-export type TaskExecutor = (
-  task: DAGTask,
-  context: TaskExecutionContext
-) => Promise<TaskOutput>;
-
-/**
  * Agent 任务解析器（ADR-008 Phase 4）
  *
  * DAGScheduler 原本直接 import agent/agentDefinition 取 prompt/tools/maxIterations，
@@ -163,9 +155,6 @@ export class DAGScheduler extends EventEmitter {
   private isRunning = false;
   private isPaused = false;
 
-  // 自定义任务执行器
-  private customExecutors: Map<string, TaskExecutor> = new Map();
-
   // DAG 初始化回调（由 dagEventBridge 注入，避免循环依赖）
   private onDAGInit?: (dag: TaskDAG) => void;
 
@@ -226,22 +215,14 @@ export class DAGScheduler extends EventEmitter {
   }
 
   /**
-   * 注册自定义执行器
-   */
-  registerExecutor(type: string, executor: TaskExecutor): void {
-    this.customExecutors.set(type, executor);
-  }
-
-  /**
    * Fork an execution-local scheduler while retaining the process-level
-   * resolver, custom executors and visualization bridge installed at app init.
+   * resolver and visualization bridge installed at app init.
    * Mutable DAG state is deliberately not copied.
    */
   createRunScheduler(config: Partial<DAGSchedulerConfig> = {}): DAGScheduler {
     const scheduler = new DAGScheduler({ ...this.config, ...config });
     scheduler.agentResolver = this.agentResolver;
     scheduler.subagentExecutor = this.subagentExecutor;
-    scheduler.customExecutors = new Map(this.customExecutors);
     scheduler.onDAGInit = this.onDAGInit;
 
     // Existing consumers subscribe to the process-level scheduler. Relay only
@@ -452,12 +433,6 @@ export class DAGScheduler extends EventEmitter {
     task: DAGTask,
     context: TaskExecutionContext
   ): Promise<TaskOutput> {
-    // 检查自定义执行器
-    const customExecutor = this.customExecutors.get(task.type);
-    if (customExecutor) {
-      return customExecutor(task, context);
-    }
-
     switch (task.type) {
       case 'agent':
         return this.executeAgentTask(task, context);

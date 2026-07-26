@@ -280,10 +280,6 @@ vi.mock('../../../src/host/security/inputSanitizer', () => ({
   getInputSanitizer: vi.fn(),
 }));
 
-vi.mock('../../../src/host/services/diff/diffTracker', () => ({
-  getDiffTracker: vi.fn(),
-}));
-
 vi.mock('../../../src/host/services/citation/citationService', () => ({
   getCitationService: vi.fn(),
 }));

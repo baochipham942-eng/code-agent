@@ -70,44 +70,13 @@ export type {
 } from './desktopActivityDerivation';
 
 export class DesktopActivityUnderstandingService implements Disposable {
-  private initialized = false;
-  private disposed = false;
-  private refreshTimer: NodeJS.Timeout | null = null;
   private refreshPromise: Promise<DesktopActivityDerivationRun> | null = null;
   private lastRefreshAtMs = 0;
 
   constructor(private config: DesktopActivityUnderstandingConfig = DEFAULT_CONFIG) {}
 
-  async initialize(): Promise<void> {
-    if (this.initialized) return;
-
-    this.initialized = true;
-
-    await this.refreshRecentActivity().catch((error) => {
-      logger.warn('Initial desktop activity refresh failed', { error: String(error) });
-    });
-
-    this.refreshTimer = setInterval(() => {
-      this.refreshRecentActivity().catch((error) => {
-        logger.warn('Scheduled desktop activity refresh failed', { error: String(error) });
-      });
-    }, this.config.refreshIntervalMs);
-
-    logger.info('Desktop activity understanding service initialized', {
-      lookbackHours: this.config.lookbackHours,
-      sliceMinutes: this.config.sliceMinutes,
-      refreshIntervalMs: this.config.refreshIntervalMs,
-    });
-  }
-
   async dispose(): Promise<void> {
-    if (this.disposed) return;
-    this.disposed = true;
-
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-      this.refreshTimer = null;
-    }
+    // On-demand refresh owns no background resources.
   }
 
   async refreshRecentActivity(options: {
@@ -631,20 +600,4 @@ export function getDesktopActivityUnderstandingService(): DesktopActivityUnderst
   }
 
   return desktopActivityUnderstandingService;
-}
-
-export async function initDesktopActivityUnderstandingService(
-  config?: Partial<DesktopActivityUnderstandingConfig>
-): Promise<DesktopActivityUnderstandingService> {
-  if (config) {
-    desktopActivityUnderstandingService = new DesktopActivityUnderstandingService({
-      ...DEFAULT_CONFIG,
-      ...config,
-    });
-    getServiceRegistry().register('DesktopActivityUnderstandingService', desktopActivityUnderstandingService);
-  }
-
-  const service = getDesktopActivityUnderstandingService();
-  await service.initialize();
-  return service;
 }

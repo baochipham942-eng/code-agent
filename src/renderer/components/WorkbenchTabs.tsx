@@ -321,7 +321,6 @@ export const WorkbenchTabs: React.FC = () => {
                 role="tab"
                 aria-selected={isActive}
                 tabIndex={0}
-                title={meta.title}
                 data-testid={`workbench-tab-${meta.id}`}
                 onClick={() => selectView(meta.id)}
                 onKeyDown={(event) => {

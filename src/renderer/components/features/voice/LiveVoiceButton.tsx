@@ -36,7 +36,7 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
 
   return (
     <>
-      <button
+      <button /* ds-allow:button: 与 VoiceInputButton 同构的纯图标入口按钮，圆形 icon-only 形态沿用既有 composer 按钮语言 */
         type="button"
         data-testid="live-voice-button"
         onClick={() => (hasMessages ? setConfirmOpen(true) : start())}

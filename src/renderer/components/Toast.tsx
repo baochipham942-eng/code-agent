@@ -37,7 +37,7 @@ export const ToastContainer: React.FC = () => {
           <span className="text-sm font-bold shrink-0 mt-0.5">{ICON_MAP[t.type]}</span>
           <span className="text-sm text-zinc-200 break-words">{t.message}</span>
           {t.action && (
-            <button
+            <button /* ds-allow:button: toast 内的描边小动作钮（不再提示），Button primitive 的主按钮语义不符 */
               onClick={() => {
                 t.action!.onClick();
                 removeToast(t.id);

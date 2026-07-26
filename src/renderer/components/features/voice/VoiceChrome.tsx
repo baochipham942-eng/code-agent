@@ -158,7 +158,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
       </span>
 
       {store.interruptMode === 'push_to_talk' && (
-        <button
+        <button /* ds-allow:button: PTT 按住说话按钮，pointer 按住/松开语义 + 双态样式，Button primitive 不支持 */
           type="button"
           data-testid="voice-ptt"
           onPointerDown={() => voiceCallBridge.pttDown()}
@@ -175,7 +175,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
         </button>
       )}
       {store.interruptMode === 'manual' && (
-        <button
+        <button /* ds-allow:button: 点按说话按钮，双态样式与 PTT 同构，Button primitive 的居中按钮形态不适配 */
           type="button"
           data-testid="voice-manual-commit"
           onClick={() => voiceCallBridge.manualTap()}
@@ -190,7 +190,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
         </button>
       )}
 
-      <button
+      <button /* ds-allow:button: 静音 icon-only 按钮，与 composer 既有 icon 按钮同语言 */
         type="button"
         data-testid="voice-mute"
         onClick={() => voiceCallBridge.toggleMute()}
@@ -203,7 +203,7 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
         {store.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
       </button>
 
-      <button
+      <button /* ds-allow:button: 挂断按钮，通话 chrome 特有的红色小型形态，Button primitive 无此变体 */
         type="button"
         data-testid="voice-end"
         onClick={() => voiceCallBridge.hangUp()}

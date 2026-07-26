@@ -12,6 +12,7 @@ export * from './tool';
 export * from './permission';
 export * from './permissionBoundary';
 export * from './privacyBoundaryIndex';
+export * from './voice';
 export * from './voiceTranscription';
 export * from './authInventory';
 

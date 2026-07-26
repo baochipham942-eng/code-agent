@@ -20,6 +20,8 @@ import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { UpdateNotification } from './components/UpdateNotification';
 import { isDesktopShellMode, isTauriMode } from './utils/platform';
+import { VoiceSpikePanel } from './components/features/voice/VoiceSpikePanel';
+import { isVoiceSpikeEnabled } from './components/features/voice/voiceSpikeFlag';
 // PermissionDialog moved to PermissionCard inline in ChatView
 import { ProjectCollaborationPage } from './components/features/projectCollaboration';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
@@ -987,6 +989,9 @@ export const App: React.FC = () => {
           onClose={() => setShowOptionalUpdateModal(false)}
         />
       )}
+
+      {/* 实时语音 Phase 0 spike：dev-only 隐藏入口，靠 localStorage 开关打开 */}
+      {isVoiceSpikeEnabled() && <VoiceSpikePanel />}
 
       {/* Model Onboarding Modal - 首次启动引导 */}
       {showModelOnboarding && (

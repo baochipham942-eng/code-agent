@@ -206,7 +206,7 @@ export function exitIfE2EFlagRefused(env: NodeJS.ProcessEnv = process.env): void
 
 // ── Authentication ────────────────────────────────────────────────────────
 /** Constant-time token comparison to prevent timing attacks */
-function verifyToken(provided: string): boolean {
+export function verifyToken(provided: string): boolean {
   const expected = Buffer.from(SERVER_AUTH_TOKEN, 'utf8');
   const actual = Buffer.from(provided, 'utf8');
   if (expected.length !== actual.length) return false;

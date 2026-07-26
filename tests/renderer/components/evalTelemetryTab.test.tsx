@@ -3,7 +3,9 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-const invokeMock = vi.hoisted(() => vi.fn(async () => undefined));
+// 显式标注签名：vi.fn(async () => undefined) 会把类型推成零参，
+// 后面 mockImplementation((channel) => ...) 就装不进去（tests tsconfig 棘轮会红）。
+const invokeMock = vi.hoisted(() => vi.fn<(channel: string, arg?: unknown) => Promise<unknown>>(async () => undefined));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   ipcService: { invoke: invokeMock, on: vi.fn(() => () => {}) },
   default: { invoke: invokeMock, on: vi.fn(() => () => {}) },

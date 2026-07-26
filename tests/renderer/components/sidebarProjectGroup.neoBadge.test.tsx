@@ -111,7 +111,7 @@ function sharedSessionProps(): SidebarSessionItemSharedProps {
     handleRenameSubmit: vi.fn(),
     handleRenameKeyDown: vi.fn(),
     handleDoubleClick: vi.fn(),
-    handleOpenSessionReplay: vi.fn(),
+    handleOpenSessionReplayInEvalCenter: vi.fn(),
     handleOpenSessionAssets: vi.fn(),
     handleOpenReplayEvidence: vi.fn(),
     handleSelectMessageSearchHit: vi.fn(),

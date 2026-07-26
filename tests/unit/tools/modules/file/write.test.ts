@@ -28,6 +28,7 @@ vi.mock('../../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
 }));
 
 import { writeModule } from '../../../../../src/host/tools/modules/file/write';
+import { validateToolArgs } from '../../../../../src/host/agent/runtime/toolArgsValidator';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -88,6 +89,23 @@ describe('writeModule (native)', () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
+    });
+
+    // 根因回归（2026-07-26 真机 trace）：真机上模型实际传的是 content: ""（合法空文件
+    // 意图），却被 toolArgsValidator 的共用「missing required」谓词把 '' 当 undefined
+    // 打回。这里跑完整链路：先过 validateToolArgs（真实 dispatch 前置门），确认它放行，
+    // 再真的调 handler 落盘 —— 断言磁盘上出现的是真实空文件，不是只断言 schema 结构。
+    it('an explicit empty-string content passes the pre-dispatch validator and creates a real empty file', async () => {
+      const file = path.join(tmpDir, 'explicit-empty.txt');
+      const args = { file_path: file, content: '' };
+
+      const gate = validateToolArgs('Write', writeModule.schema.inputSchema, args);
+      expect(gate.ok).toBe(true);
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(args, makeCtx(), allowAll);
+      expect(result.ok).toBe(true);
+      expect(await fs.readFile(file, 'utf-8')).toBe('');
     });
   });
 

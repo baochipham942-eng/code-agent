@@ -7,6 +7,10 @@
 // 布局契约（2026-07-27 UX 收尾 1.4）：页级横向 padding 统一 px-6（PageContent 契约），
 // 状态条卡片走统一卡片语言（rounded-lg border-zinc-800 bg-zinc-900/70）；
 // 底部列表+详情双栏为全 bleed 工作台区，padding 由页内面板自管。
+// 滚动契约（2026-07-26 打磨批 D D0）：header 以下整体是页级滚动区（overflow-y-auto）——
+// 顶区（状态条/收件箱/推荐模板）全是 shrink-0，矮窗口下会吃光高度；工作台 grid 用
+// flex-[1_0_420px]：高屏 grow 占满剩余空间，矮屏不低于 420px、整页可滚到达。
+// （此前顶区 shrink-0 + grid overflow-hidden 且无页级滚动，矮窗口整页滚不动。）
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -95,46 +99,48 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         onClose={onClose}
       />
 
-      <div className="grid shrink-0 grid-cols-3 gap-3 px-6 pt-4" data-testid="cron-status-bar">
-        <StatusTile
-          label={cc.statRunning}
-          value={stats ? String(runningCount) : '—'}
-          testId="cron-status-running"
-        />
-        <StatusTile
-          label={cc.statPendingReview}
-          value={String(pendingReviewCount)}
-          attention={pendingReviewCount > 0}
-          testId="cron-status-pending"
-        />
-        <StatusTile
-          label={cc.statRate}
-          value={stats ? `${stats.successRate.toFixed(0)}%` : '—'}
-          testId="cron-status-rate"
-        />
-      </div>
-
-      <WebModeBanner />
-
-      {error && (
-        <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-2 text-sm text-red-300">
-          {error}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="cron-center-scroll">
+        <div className="grid shrink-0 grid-cols-3 gap-3 px-6 pt-4" data-testid="cron-status-bar">
+          <StatusTile
+            label={cc.statRunning}
+            value={stats ? String(runningCount) : '—'}
+            testId="cron-status-running"
+          />
+          <StatusTile
+            label={cc.statPendingReview}
+            value={String(pendingReviewCount)}
+            attention={pendingReviewCount > 0}
+            testId="cron-status-pending"
+          />
+          <StatusTile
+            label={cc.statRate}
+            value={stats ? `${stats.successRate.toFixed(0)}%` : '—'}
+            testId="cron-status-rate"
+          />
         </div>
-      )}
 
-      <AutomationReviewInbox onPendingCountChange={setPendingReviewCount} />
-      <CronFeaturedTemplates />
+        <WebModeBanner />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[360px_1fr] overflow-hidden">
-        <CronJobList />
-        <div className="min-w-0">
-          {isLoading && jobs.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-              {cc.loading}
-            </div>
-          ) : (
-            <CronJobDetail job={selectedJob} />
-          )}
+        {error && (
+          <div className="border-b border-red-500/20 bg-red-500/10 px-6 py-2 text-sm text-red-300">
+            {error}
+          </div>
+        )}
+
+        <AutomationReviewInbox onPendingCountChange={setPendingReviewCount} />
+        <CronFeaturedTemplates />
+
+        <div className="grid flex-[1_0_420px] grid-cols-[360px_1fr] overflow-hidden">
+          <CronJobList />
+          <div className="min-w-0">
+            {isLoading && jobs.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                {cc.loading}
+              </div>
+            ) : (
+              <CronJobDetail job={selectedJob} />
+            )}
+          </div>
         </div>
       </div>
 

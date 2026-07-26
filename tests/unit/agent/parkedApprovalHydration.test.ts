@@ -61,7 +61,7 @@ function seed(repo: PendingApprovalRepository, id: string, kind: string): void {
     agentId: null,
     agentName: null,
     coordinatorId: 'session-1',
-    payloadJson: JSON.stringify({ sessionId: 'session-1', tool: 'Bash' }),
+    payload: { sessionId: 'session-1', tool: 'Bash' },
     submittedAt: 1_000,
   });
 }

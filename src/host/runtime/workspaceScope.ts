@@ -54,6 +54,20 @@ export function workspacePathIdentity(input: string): { dev: string | null; ino:
   }
 }
 
+/**
+ * 项目源身份只比较 inode，不比较 dev。2026-07-26 在 macOS 上实测同一 inode、同一 APFS 卷的
+ * dev 从 16777233 变为 16777229；dev minor 会随挂载顺序重编，参与门禁会让用户重启后首次运行项目作用域任务全部失败。
+ */
+export function workspaceIdentityMatches(
+  storedIdentity: Pick<WorkspaceRoot, 'identityDev' | 'identityIno'>,
+  currentIdentity: ReturnType<typeof workspacePathIdentity>,
+): boolean {
+  const storedIno = storedIdentity.identityIno ?? null;
+  return storedIno !== null
+    && currentIdentity.ino !== null
+    && storedIno === currentIdentity.ino;
+}
+
 export function isPathWithinRoot(candidate: string, root: string): boolean {
   try {
     const relative = path.relative(

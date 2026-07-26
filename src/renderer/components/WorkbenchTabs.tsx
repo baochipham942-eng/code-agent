@@ -340,7 +340,7 @@ export const WorkbenchTabs: React.FC = () => {
                 {meta.isDirty && (
                   <span className="text-[10px] leading-none text-amber-400" title={t.workbenchTabs.unsavedChanges}>●</span>
                 )}
-                <button
+                <button /* ds-allow:button: tab 内 10px 超小关闭钮（对齐 FileExplorerPanel TabBar 的 ×），primitive 变体不适配 */
                   type="button"
                   aria-label={t.workbenchTabs.closeView.replace('{view}', meta.label)}
                   title={t.workbenchTabs.closeView.replace('{view}', meta.label)}

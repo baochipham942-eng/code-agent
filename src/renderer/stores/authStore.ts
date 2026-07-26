@@ -8,6 +8,7 @@ import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 import { reloadSessionsForAuthChange } from './sessionStore';
+import { identifyRenderer, resetRendererIdentity } from '../observability/posthogRenderer';
 
 const logger = createLogger('AuthStore');
 
@@ -440,7 +441,10 @@ export async function initializeAuthStore(): Promise<void> {
       store.setUser(status.user);
       store.setAuthStatusMeta(status);
       if (status.user) {
+        if (status.analyticsDistinctId) identifyRenderer(status.analyticsDistinctId);
         void reloadSessionsForAuthenticatedUser({ principalChanged: prevUserId !== status.user.id });
+      } else {
+        resetRendererIdentity();
       }
     }
   } catch (error) {

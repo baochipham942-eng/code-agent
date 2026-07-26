@@ -17,11 +17,11 @@ describe('Browser Surface side-door wiring', () => {
 
   it('rejects legacy LogBridge browser_action before command dispatch', () => {
     const source = readFileSync(
-      resolve(repoRoot, 'src/host/app/initBackgroundServices.ts'),
+      resolve(repoRoot, 'src/web/webStartupServices.ts'),
       'utf8',
     );
-    const start = source.indexOf('async function setupLogBridge');
-    const end = source.indexOf('// P3-A', start);
+    const start = source.indexOf('logBridgeHandler:');
+    const end = source.indexOf('fileCheckpointCleanup:', start);
     const handler = source.slice(start, end);
 
     expect(start).toBeGreaterThanOrEqual(0);

@@ -2,8 +2,9 @@
 // DistillScheduler — 每 30 天自动 distill 的 cron 注册（roadmap 3.2）
 //
 // ⚠️ 有意未接线（2026-07-25 产品判断，不是遗漏）。理由与 dreamScheduler 同：
-// 唯一注册点在那条死掉的 Electron main 路径上，而它会无人值守自动发起 LLM 调用
-// 产生真实费用，属产品 + 成本判断。详见 src/host/services/memory/dreamScheduler.ts 头注释。
+// 当前没有任何启动注册点；原先位于已删除的 Electron main 死入口，也没有迁入
+// src/web/webStartupServices.ts。它会无人值守自动发起 LLM 调用产生真实费用，属产品
+// + 成本判断。详见 src/host/services/memory/dreamScheduler.ts 头注释。
 // ============================================================================
 // 照 dreamScheduler 模式：scheduleType 'every' + interval days 是日历 cron 的
 // 近似（cron service 按 startAt + N*interval 推算下次触发，不是自实现计时器），

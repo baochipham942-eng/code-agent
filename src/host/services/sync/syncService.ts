@@ -179,6 +179,14 @@ class SyncService implements Disposable {
     await supabase.from('devices').delete().eq('user_id', user.id).eq('device_id', deviceId);
   }
 
+  // ⚠️ 有意未接线（2026-07-26 产品判断，不是遗漏）。
+  //
+  // startAutoSync 会每 5 分钟把 sessions / messages（完整对话正文）/
+  // user_preferences 推到 Supabase。对话正文上云属于产品与隐私决策，当前发行版
+  // 不在登录回调或 web 启动链自动调用本方法。
+  //
+  // 要接线请先确认 UI 上有明确的同步开关与隐私告知，并拿到“完整对话正文上云”
+  // 的产品许可，别当成启动遗漏顺手接上。
   async startAutoSync(intervalMs: number = 5 * 60 * 1000): Promise<void> {
     if (this.syncInterval || !isSupabaseInitialized()) {
       return;

@@ -246,7 +246,7 @@ export class SubagentExecutor {
 
     // Create pipeline context
     const pipeline = getSubagentPipeline();
-    const effectivePreset = await resolveSubagentPreset(config.permissionPreset, config.roleId);
+    const effectivePreset = await resolveSubagentPreset(config.permissionPreset, config.roleId, context.sessionId);
     const dynamicConfig: DynamicAgentConfig = {
       name: config.name,
       systemPrompt: effectiveSystemPrompt,

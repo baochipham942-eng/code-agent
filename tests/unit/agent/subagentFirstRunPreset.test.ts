@@ -21,25 +21,25 @@ describe('云货架专家首轮强制 strict', () => {
   it('首轮压过包自己声明的档位——声明 ci 也按 strict 跑', async () => {
     consumeFirstRunStrictMock.mockResolvedValue(true);
 
-    await expect(resolveSubagentPreset('ci', 'writer')).resolves.toBe('strict');
+    await expect(resolveSubagentPreset('ci', 'writer', undefined)).resolves.toBe('strict');
     expect(consumeFirstRunStrictMock).toHaveBeenCalledWith('writer');
   });
 
   it('第二轮起按包声明的档位跑（consume 后不再强制）', async () => {
     consumeFirstRunStrictMock.mockResolvedValue(false);
 
-    await expect(resolveSubagentPreset('ci', 'writer')).resolves.toBe('ci');
+    await expect(resolveSubagentPreset('ci', 'writer', undefined)).resolves.toBe('ci');
   });
 
   // 没有 roleId 的子 agent（内置 agent / 动态 agent）不该被这条影响，也不该白查一次台账。
   it('非角色子 agent 不受影响，也不查台账', async () => {
-    await expect(resolveSubagentPreset('development', undefined)).resolves.toBe('development');
+    await expect(resolveSubagentPreset('development', undefined, undefined)).resolves.toBe('development');
     expect(consumeFirstRunStrictMock).not.toHaveBeenCalled();
   });
 
   it('未声明档位时回落 development（不是悄悄变 strict）', async () => {
     consumeFirstRunStrictMock.mockResolvedValue(false);
 
-    await expect(resolveSubagentPreset(undefined, 'writer')).resolves.toBe('development');
+    await expect(resolveSubagentPreset(undefined, 'writer', undefined)).resolves.toBe('development');
   });
 });

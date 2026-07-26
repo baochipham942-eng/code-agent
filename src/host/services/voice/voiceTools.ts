@@ -12,7 +12,7 @@
 // 要留痕告警——静默降级会让语音指挥台看起来只是「模型不肯调工具」。
 // ============================================================================
 
-import type { VoiceToolDefinition } from '../../../shared/contract/voice';
+import type { VoiceToolDefinition, VoiceWorkItem } from '../../../shared/contract/voice';
 import { VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
 import { getIncompleteTasks } from '../planning/taskStore';
 import { getSessionManager } from '../infra/sessionManager';
@@ -56,8 +56,8 @@ export interface VoiceToolContext {
   neoSessionId: string;
   /** 派活时带上的专家身份；undefined = 会话默认 agent（自动路由） */
   activeAgentId?: string;
-  /** 派出去的任务计数，进通话摘要 */
-  onTaskSpawned: (title: string) => void;
+  /** 任务状态回流：进通话摘要计数 + 推给 Renderer 的 Active Work 条 */
+  onWorkItem: (item: VoiceWorkItem) => void;
 }
 
 /** 上游 function_call 的执行出口。返回值原样回灌给通话 brain（纯文本）。 */
@@ -150,15 +150,18 @@ async function spawnTask(rawArguments: string, context: VoiceToolContext): Promi
     maxIterations: VOICE_SPAWN_TASK_MAX_ITERATIONS,
   });
 
-  context.onTaskSpawned(title);
+  const workItemId = `voice-work-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  context.onWorkItem({ id: workItemId, title, status: 'queued' });
   void orchestrator
     .sendMessage(prompt, undefined, { ...scopedOptions, mode: 'normal' })
     .catch((err: unknown) => {
-      logger.warn('voice spawned task failed', {
-        title,
-        message: err instanceof Error ? err.message : 'unknown',
-      });
+      const detail = err instanceof Error ? err.message : 'unknown';
+      logger.warn('voice spawned task failed', { title, message: detail });
+      // 派发失败必须回流：真机实测过一次「任务其实没跑起来，通话里却说已经做完了」，
+      // fire-and-forget 不回流就等于对用户撒谎。
+      context.onWorkItem({ id: workItemId, title, status: 'failed', detail });
     });
 
-  return `已派出任务「${title}」，在后台跑了。`;
+  // 措辞必须是「排上队」不是「做好了」——通话 brain 会把工具返回值当事实转述给用户。
+  return `任务「${title}」已经排上队，还在后台跑，没做完。别说已经完成。`;
 }

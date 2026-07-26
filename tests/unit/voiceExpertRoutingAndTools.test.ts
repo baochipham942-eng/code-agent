@@ -46,8 +46,14 @@ vi.mock('../../src/host/connectors', () => ({
 const { executeVoiceTool, VOICE_TOOL_DEFINITIONS } = await import('../../src/host/services/voice/voiceTools');
 const { resolveVoiceRouting } = await import('../../src/host/services/voice/voiceRouting');
 
+const workItems = vi.hoisted(() => ({ value: [] as Array<{ status: string; title: string; detail?: string }> }));
+
 function toolContext(activeAgentId?: string) {
-  return { neoSessionId: 'session-1', activeAgentId, onTaskSpawned: vi.fn() };
+  return {
+    neoSessionId: 'session-1',
+    activeAgentId,
+    onWorkItem: (item: { status: string; title: string; detail?: string }) => workItems.value.push(item),
+  };
 }
 
 function lastRunOptions(): AgentRunOptions {
@@ -88,6 +94,7 @@ describe('A4 窄工具', () => {
     buildRoleContextBlock.mockClear();
     resolvedAgent.value = undefined;
     incompleteTasks.value = [];
+    workItems.value = [];
   });
 
   it('只注册三个工具，且没有一个能直接改东西', () => {
@@ -116,7 +123,10 @@ describe('A4 窄工具', () => {
 
     const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: '改大纲', prompt: '把大纲改成三段' }), toolContext('muzhi'));
 
-    expect(result).toContain('改大纲');
+    // 措辞不能让通话 brain 转述成「已经做完了」——真机实测过一次这种撒谎
+    expect(result).toContain('排上队');
+    expect(result).not.toContain('完成了');
+    expect(workItems.value).toEqual([expect.objectContaining({ title: '改大纲', status: 'queued' })]);
     await vi.waitFor(() => expect(sendMessage).toHaveBeenCalled());
     expect(sendMessage.mock.calls.at(-1)?.[0]).toBe('把大纲改成三段');
     const options = lastRunOptions();
@@ -139,5 +149,15 @@ describe('A4 窄工具', () => {
     const result = await executeVoiceTool('spawn_task', JSON.stringify({ title: '空的' }), toolContext());
     expect(result).toContain('没有派发');
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('派发失败会回流 work.upsert failed（不能只在日志里烂掉）', async () => {
+    resolvedAgent.value = { id: 'muzhi', name: '牧之' };
+    sendMessage.mockRejectedValueOnce(new Error('trust identity changed'));
+
+    await executeVoiceTool('spawn_task', JSON.stringify({ title: '写文件', prompt: '建个文件' }), toolContext('muzhi'));
+
+    await vi.waitFor(() => expect(workItems.value.some((item) => item.status === 'failed')).toBe(true));
+    expect(workItems.value.at(-1)).toMatchObject({ title: '写文件', status: 'failed', detail: 'trust identity changed' });
   });
 });

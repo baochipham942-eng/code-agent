@@ -15,6 +15,15 @@ export type VoiceTurnDetectionConfig =
   | { type: 'semantic_vad'; eagerness?: 'low' | 'medium' | 'high' | 'auto' }
   | null;
 
+/** 通话里派出的一件活。Phase 1 批 A 只有 queued / failed 两个真实终态，进度细分留给 Phase 2。 */
+export interface VoiceWorkItem {
+  id: string;
+  title: string;
+  status: 'queued' | 'failed';
+  /** 失败原因，供 UI 显示；成功排上队时没有 */
+  detail?: string;
+}
+
 export interface VoiceCallSummary {
   durationSec: number;
   provider: VoiceProviderId;
@@ -55,6 +64,8 @@ export type VoiceEvent =
   /** 用户开口 —— Renderer 据此清空播放队列做 barge-in */
   | { type: 'speech.started' }
   | { type: 'response.done'; ttfaModelMs?: number; ttfaPerceivedMs?: number }
+  /** 语音派出的任务状态。Active Work 条消费（批 B），host 侧同时用它计通话摘要的 workItemCount。 */
+  | { type: 'work.upsert'; item: VoiceWorkItem }
   | { type: 'error'; code: string; message: string };
 
 /** Renderer → Host 的控制帧（媒体帧走二进制，不走这里）。 */

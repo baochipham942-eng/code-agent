@@ -158,8 +158,9 @@ async function connectAndBind(
       onToolCall: (call) => executeVoiceTool(call.name, call.arguments, {
         neoSessionId,
         activeAgentId: routing.activeAgentId,
-        onTaskSpawned: () => {
-          if (active?.id === id) active.workItemCount += 1;
+        onWorkItem: (item) => {
+          if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
+          send(client, { type: 'work.upsert', item });
         },
       }),
     });

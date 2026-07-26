@@ -1,4 +1,5 @@
 import type { SessionWithMeta } from '../stores/sessionStore';
+import { readPersistedTeamLead } from '@shared/contract/teamRecipe';
 
 /**
  * 会话列表轻量签名：只覆盖侧栏渲染会用到的字段。两次 loadSessions 签名相同 = 列表视觉无变化，
@@ -7,8 +8,9 @@ import type { SessionWithMeta } from '../stores/sessionStore';
  */
 export function sessionsSignature(list: SessionWithMeta[]): string {
   return list
-    .map((s) =>
-      [
+    .map((s) => {
+      const teamLead = readPersistedTeamLead(s.metadata);
+      return [
         s.id,
         s.updatedAt ?? 0,
         s.status ?? '',
@@ -18,7 +20,10 @@ export function sessionsSignature(list: SessionWithMeta[]): string {
         s.durableWaitingInput ? 1 : 0,
         s.title ?? '',
         s.workingDirectory ?? '',
-      ].join(':'),
-    )
+        teamLead?.roleId ?? '',
+        teamLead?.recipeId ?? '',
+        teamLead?.setAt ?? 0,
+      ].join(':');
+    })
     .join('|');
 }

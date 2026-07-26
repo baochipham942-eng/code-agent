@@ -44,7 +44,6 @@ const CODING_PATTERNS = /(cursor|terminal|iterm|warp|xcode|visual studio code|vs
 export interface DesktopActivityUnderstandingConfig {
   lookbackHours: number;
   sliceMinutes: number;
-  refreshIntervalMs: number;
   maxEventsPerRefresh: number;
   minEventsPerSlice: number;
   maxSubjectsPerSlice: number;
@@ -81,7 +80,6 @@ export const AUTO_SUPERSEDED_SUPPRESS_MS = 12 * 60 * 60 * 1000;
 export const DEFAULT_CONFIG: DesktopActivityUnderstandingConfig = {
   lookbackHours: 24,
   sliceMinutes: 30,
-  refreshIntervalMs: 5 * 60 * 1000,
   maxEventsPerRefresh: 5000,
   minEventsPerSlice: 2,
   maxSubjectsPerSlice: 3,

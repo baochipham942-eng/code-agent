@@ -229,6 +229,12 @@ export const qwenOmniTransport: VoiceTransport = {
         if (ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: frame.toString('base64') }));
       },
+      commit() {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        // turn_detection = null 的手动模式：commit 把缓冲切成一轮，response.create 让模型开口。
+        ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+        ws.send(JSON.stringify({ type: 'response.create' }));
+      },
       interrupt() {
         if (ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ type: 'response.cancel' }));

@@ -7,11 +7,12 @@ import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
+const commitMock = vi.fn();
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
-  return { kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close };
+  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), close };
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
@@ -50,6 +51,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     connect.mockClear();
     close.mockClear();
     sendAudio.mockClear();
+    commitMock.mockClear();
     addMessageToSession.mockClear();
     lastOnEvent = null;
   });
@@ -75,7 +77,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
     connect.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return { kind: 'relay', provider: 'qwen-omni', sendAudio, interrupt: vi.fn(), close };
+      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), close };
     });
 
     const a = new FakeClient();
@@ -93,7 +95,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     await attachVoiceClient(client as never, 'session-1');
 
     client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
-    await vi.waitFor(() => expect(close).toHaveBeenCalled());
+    await vi.waitFor(() => expect(close).toHaveBeenCalled(), { timeout: 4000 });
     expect(getActiveVoiceSessionId()).toBeNull();
 
     const again = new FakeClient();
@@ -114,7 +116,8 @@ describe('voiceSessionService 互斥与挂断', () => {
 
     lastOnEvent?.({ type: 'error', code: 'COMMON_ERROR', message: '上游炸了' });
     await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull());
-    expect(close).toHaveBeenCalled(); // 上游连接也要放掉，别留着继续计费
+    // 上游连接也要放掉，别留着继续计费（排水窗后才关，见 VOICE_TEARDOWN_DRAIN_MS）
+    await vi.waitFor(() => expect(close).toHaveBeenCalled(), { timeout: 4000 });
 
     const again = new FakeClient();
     await attachVoiceClient(again as never, 'session-1');
@@ -148,6 +151,17 @@ describe('voiceSessionService 互斥与挂断', () => {
     client.close();
   });
 
+  it('commit 控制帧转发到 relay handle（PTT 手动提交路径）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'commit' })), false);
+
+    expect(commitMock).toHaveBeenCalledTimes(1);
+    expect(sendAudio).not.toHaveBeenCalled();
+    client.close();
+  });
+
   it('语音来源只认 metadata.source，不认 message id 前缀', () => {
     const message: Message = {
       id: 'plain-message-id',
@@ -174,6 +188,23 @@ describe('voiceSessionService 互斥与挂断', () => {
     client.close();
   });
 
+  // 2026-07-26 真机：12s 通话挂断后落库只剩摘要——final 常在挂断后才到，
+  // 立刻关上游等于把说过的话全丢。判据：未 done 的助手增量在挂断后必须落库。
+  it('挂断时把未 done 的助手增量字幕冲成 final 落库（排水窗兜底）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+    lastOnEvent?.({ type: 'assistant.transcript', text: '正在', done: false });
+    lastOnEvent?.({ type: 'assistant.transcript', text: '创建文件。', done: false });
+
+    client.close();
+
+    await vi.waitFor(() => {
+      expect(addMessageToSession.mock.calls.some(
+        ([, message]) => message.role === 'assistant' && message.content === '正在创建文件。',
+      )).toBe(true);
+    }, { timeout: 4000 });
+  }, 10_000);
+
   it('挂断后写入 voiceCallSummary，durationSec 来自真实起止时间', async () => {
     const startedAt = 1_800_000_000_000;
     const endedAt = startedAt + 75_000;
@@ -186,7 +217,7 @@ describe('voiceSessionService 互斥与挂断', () => {
 
     await vi.waitFor(() => {
       expect(addMessageToSession.mock.calls.some(([, message]) => Boolean(message.metadata?.voiceCallSummary))).toBe(true);
-    });
+    }, { timeout: 4000 });
     const summaryCall = addMessageToSession.mock.calls.find(([, message]) => Boolean(message.metadata?.voiceCallSummary));
     if (!summaryCall) throw new Error('missing voiceCallSummary message');
     const [, summaryMessage] = summaryCall;

@@ -105,9 +105,6 @@ export function createStaticRouter(deps: StaticDeps): Router {
           `${headTag}<script>` +
           `window.__CODE_AGENT_TOKEN__=${toInlineScriptJson(serverAuthToken)};` +
           `window.__CODE_AGENT_RENDERER_BUNDLE__=${toInlineScriptJson(loadedRendererBundle)};` +
-          // Phase 0 语音 spike 的隐藏开关：打包态没有 devtools 改不了 localStorage，
-          // 所以同时认 .env 里的 CODE_AGENT_VOICE_SPIKE=1。Phase 1 落正式设置项后删。
-          `window.__CODE_AGENT_VOICE_SPIKE__=${toInlineScriptJson(process.env.CODE_AGENT_VOICE_SPIKE === '1')};` +
           '</script>'
         )
       );

@@ -17,6 +17,28 @@ import type { SpeechInputSettings } from './speech';
 import type { VoiceTurnDetectionConfig } from './voice';
 import type { KeybindingsSettings } from '../keybindings';
 
+/** 实时通话（Live Voice）UI 设置。全部可选，未配置 = 安全默认（入口隐藏、Provider 默认档）。 */
+export interface VoiceLiveSettings {
+  /** 总开关：关 = Composer 不显示实时通话入口 */
+  enabled?: boolean;
+  /**
+   * 音色。**音色枚举与通话模型强绑定**（`src/shared/constants/voice.ts` 的实测白名单），
+   * 换模型必须重新真机验证白名单，别让这里写成自由文本。
+   */
+  voiceId?: string;
+  /** 通话语言；auto/未配置 = 跟随上游自动检测 */
+  language?: 'auto' | 'zh' | 'en';
+  /**
+   * 打断方式：
+   * - `server_vad`（默认）：全双工自动断句，灵敏度由 vadSensitivity 映射 turn_detection.threshold；
+   * - `push_to_talk`：按住说话、松开提交（turn_detection = null + commit）；
+   * - `manual`：点按开始、再点按提交（同为 turn_detection = null + commit，仅交互不同）。
+   */
+  interrupt?: 'server_vad' | 'push_to_talk' | 'manual';
+  /** server_vad 灵敏度档位：high 灵敏（threshold 0.3）/ medium（0.5）/ low 迟钝（0.7） */
+  vadSensitivity?: 'low' | 'medium' | 'high';
+}
+
 export interface ModelEntrySettings {
   enabled?: boolean;
   label?: string;
@@ -146,6 +168,8 @@ export interface AppSettings {
   voice?: {
     /** 上游断句策略；null 表示手动 commit 模式 */
     turnDetection?: VoiceTurnDetectionConfig;
+    /** 实时通话（Live Voice）UI 设置；运行时断句真源仍是上面的 turnDetection */
+    live?: VoiceLiveSettings;
   };
   // API 超时配置
   timeouts?: {

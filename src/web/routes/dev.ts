@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import type { AgentEvent, PermissionRequest, PermissionResponse } from '../../shared/contract';
+import type { AgentEvent, Message, PermissionRequest, PermissionResponse } from '../../shared/contract';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { sseClients, broadcastSSE } from '../helpers/sse';
@@ -634,6 +634,34 @@ export function createDevRouter(deps: DevRouterDeps): Router {
       sessionId: event.sessionId,
     });
     res.json({ ok: true });
+  });
+
+  // ── POST /api/dev/seed-messages (E2E test hook) ─────────────────────
+  // 仅 CODE_AGENT_E2E=1。把消息按真实持久化路径（sessionManager.addMessageToSession）
+  // 写进会话：语音投影 e2e 靠它落「host 真实会落的那种消息」，不旁路 model 层
+  // （#706/#713 教训：mock 掉 model 层，同产物投影两遍也看不见）。
+  router.post('/dev/seed-messages', async (req: Request, res: Response) => {
+    if (process.env.CODE_AGENT_E2E !== '1') {
+      res.status(404).json({ error: 'E2E hook disabled' });
+      return;
+    }
+
+    const body = req.body as { sessionId?: unknown; messages?: unknown } | undefined;
+    if (typeof body?.sessionId !== 'string' || !body.sessionId || !Array.isArray(body?.messages)) {
+      res.status(400).json({ error: 'Body must be { sessionId: string, messages: Message[] }' });
+      return;
+    }
+
+    try {
+      const { getSessionManager } = await import('../../host/services/infra/sessionManager');
+      const messages = body.messages as Message[];
+      for (const message of messages) {
+        await getSessionManager().addMessageToSession(body.sessionId, message);
+      }
+      res.json({ ok: true, count: messages.length });
+    } catch (error) {
+      res.status(500).json({ error: formatError(error) });
+    }
   });
 
   // ── POST /api/dev/emit-agent-events (E2E test hook) ─────────────────

@@ -679,17 +679,26 @@ export function rolePermissionPresetToMode(preset: 'strict' | 'development' | 'c
 }
 
 /**
- * D4 Live 语音抬严（主 agent 链）：通话态比文本再严一档。
+ * D4 Live 语音抬严（主 agent 链）：通话态比文本再严一档 —— 收到 readOnly。
  *
- * 映射表照方案 §6.7.10：bypassPermissions / acceptEdits → default（免确认全部失效），
- * 其余档原样返回——default 本身写/执行/网络就已经全是 prompt，dontAsk / readOnly /
- * plan 已经更严，delegate 由上游先解析成父档再进这里。
+ * ⚠️ 方案 §6.7.10 的映射表写的是 `acceptEdits → default`，**那个映射兑现不了它自己
+ * 承诺的行为**，2026-07-26 真机验证实测：会话档 acceptEdits + 通话态，钳到 default 后
+ * 语音派的写文件任务**照样直接落盘**。原因是档位不是写入放行的唯一闸门——
+ * `permissionClassifier` 的 W1 规则「写入项目目录内 → approve」与档位无关，
+ * `permissionModeAutoApproves` 只把 ask 升成 approve，压根管不到 W1 已经 approve 的那条。
  *
- * 为什么不是「口头说允许就行」：通话时用户手不在键盘、眼睛不在 diff 上，
+ * 真正能兑现「写盘一律要点权限卡」的机制只有一个：readOnly 档的
+ * `readOnlyForcesConfirmationFor`，它把 classifier 的 approve **降级回 ask**。
+ * 首跑钳制（clampFirstRunPermissionMode）出于同样的理由也是收到 readOnly，不是 default。
+ *
+ * 语义对齐方案 §6.6 权限矩阵：读/搜索随会话 policy 通过，写文件 / patch / shell / 外发
+ * 一律 Ask。dontAsk / plan 已经是 deny 级别，比 readOnly 更严，原样返回。
+ *
+ * 为什么不能「口头说允许就行」：通话时用户手不在键盘、眼睛不在 diff 上，
  * 口述「好的」既没有具体对象也没有可回看的痕迹，不能替代权限卡点击。
  */
 export function clampLiveVoicePermissionMode(mode: PermissionMode): PermissionMode {
-  return mode === 'bypassPermissions' || mode === 'acceptEdits' ? 'default' : mode;
+  return mode === 'dontAsk' || mode === 'plan' || mode === 'readOnly' ? mode : 'readOnly';
 }
 
 /**

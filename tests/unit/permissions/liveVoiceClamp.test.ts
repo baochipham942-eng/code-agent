@@ -19,7 +19,11 @@ import {
   permissionModeAutoApproves,
   type PermissionMode,
 } from '../../../src/host/permissions/modes';
-import { resolveSessionPermissionMode } from '../../../src/host/tools/toolPermissionClassification';
+import {
+  readOnlyForcesConfirmationFor,
+  resolveSessionPermissionMode,
+  resolveToolPermissionClassification,
+} from '../../../src/host/tools/toolPermissionClassification';
 import { getPresetConfig } from '../../../src/host/services/core/permissionPresets';
 import { getSubagentPipeline, resetSubagentPipeline } from '../../../src/host/agent/subagentPipeline';
 import type { DynamicAgentConfig } from '../../../src/host/agent/agentDefinition';
@@ -40,20 +44,48 @@ describe('D4 主 agent 链：通话态档位抬严', () => {
     sessionId = `live-voice-${Math.random().toString(36).slice(2)}`;
   });
 
-  // 免确认的两档就是「用户看不到审批弹窗」的来源。通话时用户手不在键盘上，
-  // 这两档等价于无人值守，必须摁掉。
+  const WRITE_TOOL = { requiresPermission: true, permissionLevel: 'write' as const };
+  const workingDirectory = '/tmp/live-voice-workspace';
+
+  /**
+   * 真跑一次判定链，返回最终审批结果。
+   *
+   * 这条门必须走到 classification 这一层：只断言「档位变了」会漏掉 2026-07-26 真机
+   * 抓到的那个洞——档位钳到 default 之后，classifier 的 W1「写入项目目录内 → approve」
+   * 依然放行，写文件照样直接落盘。判据只能是「用户到底会不会被问」。
+   */
+  async function writeInsideWorkspaceDecision(): Promise<string> {
+    const mode = resolveSessionPermissionMode(undefined, sessionId);
+    const result = await resolveToolPermissionClassification({
+      executionToolName: 'write_file',
+      policyToolName: 'write_file',
+      params: { file_path: `${workingDirectory}/note.txt`, content: 'hello' },
+      policyForcesConfirmation: false,
+      boundaryViolation: undefined,
+      workingDirectory,
+      workspaceRoot: workingDirectory,
+      permissionLevel: 'write',
+      permStartTime: 0,
+      readOnlyForcesConfirmation: readOnlyForcesConfirmationFor(mode, WRITE_TOOL),
+      sessionPermissionMode: mode,
+    });
+    return result.decision;
+  }
+
+  // 免确认的档就是「用户看不到审批弹窗」的来源。通话时用户手不在键盘上，必须摁掉。
   it.each<[PermissionMode]>([
     ['bypassPermissions'],
     ['acceptEdits'],
-  ])('会话档是 %s 时，通话态下判定链读到的档位不再免确认', (mode) => {
+    ['default'],
+  ])('会话档是 %s 时，通话态下工作区内写入也必须弹确认', async (mode) => {
     manager.setSessionMode(sessionId, mode, true);
-    // 前提：不在通话态时，这一档确实是免确认的（否则这条测试等于什么都没测）
-    expect(permissionModeAutoApproves(resolveSessionPermissionMode(undefined, sessionId), 'write')).toBe(true);
+    // 前提：不在通话态时这一档确实放行（否则这条测试等于什么都没测）
+    await expect(writeInsideWorkspaceDecision()).resolves.toBe('approve');
 
     manager.markLiveVoiceSession(sessionId);
 
+    await expect(writeInsideWorkspaceDecision()).resolves.toBe('ask');
     const effective = resolveSessionPermissionMode(undefined, sessionId);
-    expect(effective).toBe('default');
     expect(permissionModeAutoApproves(effective, 'write')).toBe(false);
     expect(permissionModeAutoApproves(effective, 'execute')).toBe(false);
   });
@@ -61,7 +93,7 @@ describe('D4 主 agent 链：通话态档位抬严', () => {
   it('挂断后回到会话自己的档位（不能永久钳着）', () => {
     manager.setSessionMode(sessionId, 'acceptEdits', true);
     manager.markLiveVoiceSession(sessionId);
-    expect(resolveSessionPermissionMode(undefined, sessionId)).toBe('default');
+    expect(resolveSessionPermissionMode(undefined, sessionId)).toBe('readOnly');
 
     manager.clearLiveVoiceSession(sessionId);
 
@@ -77,7 +109,8 @@ describe('D4 主 agent 链：通话态档位抬严', () => {
     expect(clampLiveVoicePermissionMode('dontAsk')).toBe('dontAsk');
     expect(clampLiveVoicePermissionMode('readOnly')).toBe('readOnly');
     expect(clampLiveVoicePermissionMode('plan')).toBe('plan');
-    expect(clampLiveVoicePermissionMode('default')).toBe('default');
+    // default 不是「已经够严」——它下面 classifier 仍会放行工作区内写入，所以也要收
+    expect(clampLiveVoicePermissionMode('default')).toBe('readOnly');
   });
 });
 

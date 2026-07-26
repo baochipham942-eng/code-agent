@@ -73,6 +73,7 @@ import {
   semanticProgressReasonForToolCall,
 } from './toolPreflightGuards';
 import { getArtifactLocatorPreflightBlock } from '../../tools/artifacts/artifactLocatorHost';
+import { clearApprovalWait, getApprovalWaitMs } from '../../tools/toolExecutionTelemetry';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 
@@ -736,7 +737,10 @@ export class ToolExecutionEngine {
     const timeoutThreshold = TOOL_TIMEOUT_THRESHOLDS[toolCall.name] ?? TOOL_PROGRESS.DEFAULT_THRESHOLD;
     let timeoutEmitted = false;
     const progressInterval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
+      // 卡在人身上的时间不算工具耗时：语音态/无人值守的审批是「停车挂起」（不限时），
+      // 把等人那段算进来的话，用户还在看审批卡就先被告知「工具执行超时」（2026-07-26 真机）。
+      const now = Date.now();
+      const elapsed = now - startTime - getApprovalWaitMs(toolCall.id, now);
       this.ctx.onEvent({
         type: 'tool_progress',
         data: { toolCallId: toolCall.id, toolName: toolCall.name, elapsedMs: elapsed },
@@ -794,6 +798,7 @@ export class ToolExecutionEngine {
         }
       );
       clearInterval(progressInterval);
+      clearApprovalWait(toolCall.id);
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
 
       // exit_role_flow：工具本体触达不到 turn 状态，在引擎侧收口——成功即解除
@@ -1113,6 +1118,7 @@ export class ToolExecutionEngine {
       return preservedToolResult;
     } catch (error) {
       clearInterval(progressInterval);
+      clearApprovalWait(toolCall.id);
       // catch 错误处理已抽取为 handleToolExecutionError（行为不变）。clearInterval
       // 引用局部 progressInterval 故留在此处；其余逻辑全部委托给 helper。
       return await handleToolExecutionError({

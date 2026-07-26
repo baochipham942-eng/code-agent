@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setProtocolToolRegistryPort } from '../../../src/host/tools/protocolToolRegistration';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 import { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
@@ -17,6 +17,7 @@ import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { computeArtifactRevision } from '../../../src/host/tools/artifacts/artifactLocatorHost';
 import type { ArtifactLocatorV1 } from '../../../src/shared/contract/artifactLocator';
 import { getBackgroundSubagentRegistry } from '../../../src/host/agent/backgroundSubagentRegistry';
+import { requestPermissionWithTelemetry } from '../../../src/host/tools/toolExecutionTelemetry';
 
 const serviceMocks = vi.hoisted(() => {
   const langfuse = {
@@ -4180,5 +4181,91 @@ describe('ToolExecutionEngine — tool args repair gate fires in the real engine
     expect(injected[1]).toContain('校验失败');
     expect(injected[2]).toContain('tool-args-repair-exhausted');
     expect(injected[2]).not.toContain('完整参数 schema');
+  });
+});
+
+// ============================================================================
+// 等人审批的时间不算工具耗时
+// ============================================================================
+//
+// 2026-07-26 真机：语音态审批改成「停车挂起」（不限时）后，用户还在看审批卡，
+// 界面已经弹出「工具执行超时」——90s 阈值把等人的时间也算进了工具耗时。
+// 判据是**真实行为**：等待期间到底有没有发出 tool_timeout 事件。
+describe('工具耗时不计入等待人工审批的时间', () => {
+  const TOOL_CALL_ID = 'tool-await-approval';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fileReadTracker.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 造一个「执行期间要等人审批」的 toolExecutor：审批 promise 由测试手动 resolve。 */
+  function makeApprovalGatedExecutor(waiting: { resolve?: (v: boolean) => void }) {
+    return {
+      execute: vi.fn(async (_name: string, _args: Record<string, unknown>, options: { currentToolCallId?: string }) => {
+        await requestPermissionWithTelemetry({
+          request: { type: 'file_read', tool: 'read_file', reason: 'gate' } as never,
+          toolCallId: options.currentToolCallId,
+          requestPermission: () => new Promise<boolean>((resolve) => { waiting.resolve = resolve; }),
+        });
+        return { toolCallId: '', success: true, output: 'ok' } as ToolResult;
+      }),
+    };
+  }
+
+  function makeEngine(toolExecutor: unknown) {
+    const ctx = makeRuntimeContext({ toolExecutor: toolExecutor as never });
+    const engine = new ToolExecutionEngine(ctx);
+    engine.setModules({
+      injectSystemMessage: vi.fn(),
+      pushPersistentSystemContext: vi.fn(),
+      getCurrentAttachments: vi.fn().mockReturnValue([]),
+    } as never, { emitTaskProgress: vi.fn() } as never, {
+      setPlanMode: vi.fn(),
+      isPlanMode: vi.fn().mockReturnValue(false),
+    } as never);
+    return { ctx, engine };
+  }
+
+  const timeoutEvents = (ctx: RuntimeContext) =>
+    (ctx.onEvent as unknown as { mock: { calls: Array<[{ type: string }]> } }).mock.calls
+      .filter(([event]) => event.type === 'tool_timeout');
+
+  it('人一直没点：等 5 分钟也不报「工具超时」', async () => {
+    vi.useFakeTimers();
+    const waiting: { resolve?: (v: boolean) => void } = {};
+    const { ctx, engine } = makeEngine(makeApprovalGatedExecutor(waiting));
+
+    const run = engine.executeToolsWithHooks([makeToolCall(TOOL_CALL_ID, 'a.txt')]);
+    await vi.advanceTimersByTimeAsync(300_000); // 5 分钟，远超 90s 阈值
+
+    expect(waiting.resolve).toBeTypeOf('function'); // 确认真的卡在审批上
+    expect(timeoutEvents(ctx)).toHaveLength(0);
+
+    waiting.resolve!(true);
+    await vi.advanceTimersByTimeAsync(0);
+    await run;
+    expect(timeoutEvents(ctx)).toHaveLength(0);
+  });
+
+  it('对照：不等审批、工具自己跑满 90s，照样报超时（机制没被关掉）', async () => {
+    vi.useFakeTimers();
+    const slowExecutor = {
+      execute: vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120_000));
+        return { toolCallId: '', success: true, output: 'ok' } as ToolResult;
+      }),
+    };
+    const { ctx, engine } = makeEngine(slowExecutor);
+
+    const run = engine.executeToolsWithHooks([makeToolCall('tool-slow', 'a.txt')]);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await run;
+
+    expect(timeoutEvents(ctx).length).toBeGreaterThan(0);
   });
 });

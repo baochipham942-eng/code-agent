@@ -41,7 +41,7 @@ export interface ValidationIssue {
 /**
  * 校验 args 是否符合 inputSchema 的 required + 顶层 type 约束。
  *
- * - missing required：required 数组里列了但 args 没有（或为 null/undefined/空字符串）
+ * - missing required：required 数组里列了但 args 没有（或为 null/undefined；空字符串是合法值，不算 missing）
  * - wrong_type：properties[k].type 与 typeof args[k] 不匹配（顶层字段，不递归 nested）
  *
  * 不校验：嵌套对象内部字段、enum、pattern、min/max — 这些工具自己处理更合适
@@ -66,9 +66,13 @@ export function validateToolArgs(
   const issues: ValidationIssue[] = [];
 
   // 1. missing required
+  // 注意：空字符串 '' 不算 missing —— 对 type: string 的必填参数，"" 是合法值
+  // （如 Write.content 传 "" 表示"我就是要建/清空一个空文件"）。之前把 '' 等同
+  // missing 会把模型明确传的合法空值打回去，还谎报"缺少"（其实传了）。
+  // 真正"这个字符串不能为空"的语义要求由各工具 handler 自己校验并给出对应错误。
   for (const key of required) {
     const v = safeArgs[key];
-    if (v === undefined || v === null || v === '') {
+    if (v === undefined || v === null) {
       const prop = properties[key];
       issues.push({
         field: key,

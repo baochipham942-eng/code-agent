@@ -401,3 +401,153 @@ describe('TurnBasedTraceView focus helpers', () => {
     );
   });
 });
+
+describe('TurnBasedTraceView streaming scroll drivers', () => {
+  function makeStreamingTurn(overrides: Partial<TraceTurn> = {}): TraceTurn {
+    return {
+      turnNumber: 1,
+      turnId: 'turn-1',
+      status: 'streaming',
+      startTime: 100,
+      nodes: [
+        { id: 'user-1', type: 'user', content: 'question', timestamp: 100 },
+        { id: 'assistant-live', type: 'assistant_text', content: 'partial answer', timestamp: 120 },
+      ],
+      ...overrides,
+    };
+  }
+
+  function makeStreamingProjection(turn: TraceTurn): TraceProjection {
+    return { sessionId: 'session-1', turns: [turn], activeTurnIndex: 0 };
+  }
+
+  function flushView(): void {
+    act(() => {
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+  }
+
+  it('流式跟随期间 output revision 变化不再触发 scrollToIndex（followOutput 单独吸底）', () => {
+    const turn = makeStreamingTurn();
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeStreamingProjection(turn) }));
+    flushView();
+    mocks.scrollToIndex.mockClear();
+
+    // 工具边界：追加 tool_call 节点 → outputFollowRevision 变化
+    const withTool: TraceTurn = {
+      ...turn,
+      nodes: [...turn.nodes, { id: 'tool-1', type: 'tool_call', content: '', timestamp: 130 }],
+    };
+    view.rerender(React.createElement(TurnBasedTraceView, { projection: makeStreamingProjection(withTool) }));
+    flushView();
+
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it('流式跟随期间 ResizeObserver 只观察活动 turn 且高度变化不再调度 scrollToIndex', () => {
+    let observerCallback: ResizeObserverCallback | null = null;
+    const observe = vi.fn();
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) {
+        observerCallback = callback;
+      }
+      observe = observe;
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    });
+
+    const streamingTurn = makeStreamingTurn({ turnNumber: 2, turnId: 'turn-2', startTime: 200 });
+    const projection: TraceProjection = {
+      sessionId: 'session-1',
+      turns: [makeTurn(0), streamingTurn],
+      activeTurnIndex: 1,
+    };
+    render(React.createElement(TurnBasedTraceView, { projection }));
+    flushView();
+
+    const observed = observe.mock.calls.map((call) => call[0] as HTMLElement);
+    // 观察面收窄：只观察跟随中的活动 turn，而不是所有已挂载 turn
+    expect(observed).toHaveLength(1);
+    expect(observed[0].dataset.traceTurnId).toBe('turn-2');
+
+    mocks.scrollToIndex.mockClear();
+    act(() => {
+      observerCallback?.([
+        { target: observed[0], contentRect: rect(0, 480) } as unknown as ResizeObserverEntry,
+      ], {} as ResizeObserver);
+    });
+    act(() => {
+      vi.advanceTimersByTime(ACTIVE_DISPLAY_SCROLL_INTERVAL_MS + 20);
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it('流式跟随期间 assistant anchor id 翻转不再上拉（无 align start / scrollIntoView）', () => {
+    const scrollIntoView = vi.fn();
+    const turn = makeStreamingTurn();
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeStreamingProjection(turn) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    flushView();
+    mocks.scrollToIndex.mockClear();
+
+    // 流式 overlay 临时节点消失、正式节点出现 → anchor id 翻转（TurnCard 已 mock，
+    // 手工补一个带 data 属性的新 anchor 元素，模拟真实挂载）
+    const anchorElement = document.createElement('div');
+    anchorElement.dataset.traceNodeId = 'assistant-final';
+    anchorElement.dataset.traceNodeType = 'assistant_text';
+    (anchorElement as HTMLElement & { scrollIntoView: unknown }).scrollIntoView = scrollIntoView;
+    scroller.appendChild(anchorElement);
+
+    const flipped: TraceTurn = {
+      ...turn,
+      nodes: [
+        turn.nodes[0],
+        { ...turn.nodes[1], id: 'assistant-final' },
+      ],
+    };
+    view.rerender(React.createElement(TurnBasedTraceView, { projection: makeStreamingProjection(flipped) }));
+    flushView();
+
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('流式结束后跟随窗口内 revision 变化仍会 settle 到底部', () => {
+    const turn = makeStreamingTurn();
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeStreamingProjection(turn) }));
+    flushView();
+    mocks.scrollToIndex.mockClear();
+
+    const completed: TraceTurn = { ...turn, status: 'completed', endTime: 300 };
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [completed], activeTurnIndex: -1 },
+    }));
+    flushView();
+
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({
+      index: 0,
+      align: 'end',
+      behavior: 'auto',
+    });
+  });
+
+  it('非跟随场景（无活动 turn 的历史会话）仍按 turn 顶置滚动', () => {
+    const projection: TraceProjection = {
+      sessionId: 'session-2',
+      activeTurnIndex: -1,
+      turns: [{ ...makeStreamingTurn(), status: 'completed' }],
+    };
+    render(React.createElement(TurnBasedTraceView, { projection }));
+    flushView();
+
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({
+      index: 0,
+      align: 'start',
+      behavior: 'auto',
+    });
+  });
+});

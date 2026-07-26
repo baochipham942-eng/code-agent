@@ -27,8 +27,15 @@ export const QWEN_OMNI_REALTIME_MODEL = 'qwen3.5-omni-flash-realtime';
 /** 用户语音转写模型（input_audio_transcription），出字幕用。 */
 export const QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL = 'gummy-realtime-v1';
 
-/** 默认音色。 */
-export const QWEN_OMNI_REALTIME_VOICE = 'Chelsie';
+/**
+ * 默认音色。**音色枚举与模型强绑定**，换模型必须一起验。
+ *
+ * 2026-07-26 实测（qwen3.5-omni-flash-realtime）：`Tina`/`Ethan`/`Serena` 能出声，
+ * 上一代默认的 `Chelsie` 与 `Cherry` 一律 400 `Voice 'X' is not supported`。
+ * 更阴的是**这个错不在建连时报**——`session.update` 照收、`session.updated` 原样回显音色，
+ * 直到第一次真合成才 400。所以「session.updated 回显了」不能当作音色可用的判据。
+ */
+export const QWEN_OMNI_REALTIME_VOICE = 'Tina';
 
 /**
  * 显式写死 server_vad 默认值，是为了 ttfaPerceivedMs 能算得出静音窗。

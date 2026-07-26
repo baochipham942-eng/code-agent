@@ -907,9 +907,23 @@ function registerHandlers(): void {
           });
           sm.setCurrentSession((data as { id: string }).id);
           break;
-        case 'load':
-          data = await sm.restoreSession(payload?.sessionId as string);
+        case 'load': {
+          const session = await sm.restoreSession(payload?.sessionId as string);
+          // 与桌面 IPC 的 agentAppService.loadSession 对齐：进行中的流式快照随 load
+          // 返回，renderer 切会话重水化时靠它把 partial 内容合回消息流（F4）。
+          if (session) {
+            const { loadStreamSnapshot } = await import('../host/session/streamSnapshot');
+            const streamSnapshot = loadStreamSnapshot({
+              workingDir: session.workingDirectory,
+              sessionId: session.id,
+            });
+            if (streamSnapshot?.sessionId === session.id) {
+              (session as { streamSnapshot?: unknown }).streamSnapshot = streamSnapshot;
+            }
+          }
+          data = session;
           break;
+        }
         case 'delete':
           await sm.deleteSession(payload?.sessionId as string);
           data = null;

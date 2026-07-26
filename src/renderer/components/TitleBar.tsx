@@ -9,7 +9,12 @@ import { PanelLeftClose, PanelLeft, PanelRight } from 'lucide-react';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { useI18n } from '../hooks/useI18n';
-export const TitleBar: React.FC = () => {
+interface TitleBarProps {
+  /** 二级页（能力中心/资料库/自动化等）在位：只留侧栏开关，会话动作与右栏开关都无对象 */
+  secondaryPageActive?: boolean;
+}
+
+export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false }) => {
   const { t } = useI18n();
   const {
     sidebarCollapsed,
@@ -29,13 +34,13 @@ export const TitleBar: React.FC = () => {
           variant="ghost"
           size="md"
         />
-        <SessionActionsMenu />
+        {!secondaryPageActive && <SessionActionsMenu />}
       </div>
       {/* Right: 右栏收起态的展开入口。展开态的收起 affordance 在面板头
           （WorkbenchTabs 收起按钮），顶栏不再叠一颗（2026-07-26 打磨批 D D5 去重）。
           右栏没有全局快捷键（快捷键只覆盖左栏），收起/展开均走这两处按钮。 */}
       <div className="flex items-center gap-2">
-        {workbenchCollapsed && (
+        {workbenchCollapsed && !secondaryPageActive && (
           <IconButton
             icon={<PanelRight className="w-4 h-4" />}
             aria-label={t.workbenchTabs.expandPanel}

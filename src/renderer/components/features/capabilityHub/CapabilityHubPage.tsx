@@ -26,7 +26,7 @@ export const CapabilityHubPage: React.FC = () => {
   const { t } = useI18n();
   const currentUser = useAuthStore((s) => s.user);
   const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
-  const { capabilityHubTab, openCapabilityHub, setShowCapabilityHub, setShowPromptManager } = useAppStore();
+  const { capabilityHubTab, openCapabilityHub, setShowPromptManager } = useAppStore();
   const visibleTabs = useMemo(() => HUB_TABS.filter(({ key }) => (
     key !== 'plugins' || canAccessSettingsTab('plugins', accessSubject)
   )), [accessSubject]);
@@ -45,12 +45,11 @@ export const CapabilityHubPage: React.FC = () => {
     : null;
 
   return (
-    <FullScreenPage testId="capability-hub-page">
+    <FullScreenPage testId="capability-hub-page" variant="inline">
       <FullScreenPageHeader
         icon={<Boxes className="h-4 w-4 text-violet-300" />}
         title={t.capabilityHub.title}
         description={t.capabilityHub.description}
-        onClose={() => setShowCapabilityHub(false)}
         actions={(
           <div className="flex items-center gap-2">
             {canOpenPromptManager && (

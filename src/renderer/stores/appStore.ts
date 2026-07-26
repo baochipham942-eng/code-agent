@@ -364,6 +364,8 @@ export interface AppState {
   setShowActivityPanel: (show: boolean) => void;
   setShowCapabilityHub: (show: boolean) => void;
   openCapabilityHub: (tab: CapabilityHubTab) => void;
+  /** 回到会话区：关掉互斥表里所有二级页。侧栏选会话/新建任务时调用。 */
+  closeSecondaryPages: () => void;
   setShowCronCenter: (show: boolean) => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
   setShowFileExplorer: (show: boolean) => void;
@@ -687,6 +689,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     showSettings: false,
     capabilityHubTab: tab,
   }),
+  closeSecondaryPages: () => set({ ...FULLSCREEN_PANELS_CLOSED }),
   setShowCronCenter: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showCronCenter: show }),
   setShowTimeCapabilityCenter: (show) => set({ showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {

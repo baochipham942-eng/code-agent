@@ -27,7 +27,18 @@ function formatNextRun(ts: number, locale: string): string {
 export const SidebarCapabilityZone: React.FC = () => {
   const { t, language } = useI18n();
   const cz = t.sidebar.capabilityZone;
-  const { showCronCenter, openCapabilityHub, setShowCronCenter, setShowLibraryPanel } = useAppStore();
+  const { showCronCenter, showCapabilityHub, showLibraryPanel, expertDetailRoleId, openCapabilityHub, setShowCronCenter, setShowLibraryPanel } = useAppStore();
+  // 二级页迁入右侧内容区后，返回语义 = 侧栏直接切换，所以这三行要能读出「我现在在哪」。
+  // 专家详情是能力中心的下钻页，归到能力中心一栏亮。
+  const activeRow = expertDetailRoleId || showCapabilityHub ? 'hub'
+    : showLibraryPanel ? 'library'
+    : showCronCenter ? 'automation'
+    : null;
+  const rowClass = (key: 'hub' | 'library' | 'automation') => (
+    `group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
+      activeRow === key ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800/70'
+    }`
+  );
   const jobs = useCronStore((state) => state.jobs);
   const stats = useCronStore((state) => state.stats);
   const refresh = useCronStore((state) => state.refresh);
@@ -73,9 +84,10 @@ export const SidebarCapabilityZone: React.FC = () => {
         type="button"
         onClick={() => openCapabilityHub('experts')}
         data-testid="sidebar-capability-hub"
+        aria-current={activeRow === 'hub' ? 'page' : undefined}
         // 「里面装了什么」移到悬浮提示：需要时问得到，不必占一行常驻
         title={cz.capabilityHubSubtitle}
-        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
+        className={rowClass('hub')}
       >
         {/* 裸图标（h-4，中性 zinc-500）：24px 底块瓦片三条叠起来是一条沉重的左边缘，
             颜色只留给「要你处理的地方」（待过目角标 + running 圆点）。 */}
@@ -90,8 +102,9 @@ export const SidebarCapabilityZone: React.FC = () => {
         type="button"
         onClick={() => setShowLibraryPanel(true)}
         data-testid="sidebar-capability-library"
+        aria-current={activeRow === 'library' ? 'page' : undefined}
         title={cz.librarySubtitle}
-        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
+        className={rowClass('library')}
       >
         <BookOpen className="h-4 w-4 flex-shrink-0 text-zinc-500" />
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
@@ -103,8 +116,9 @@ export const SidebarCapabilityZone: React.FC = () => {
         type="button"
         onClick={() => setShowCronCenter(true)}
         data-testid="sidebar-capability-automation"
+        aria-current={activeRow === 'automation' ? 'page' : undefined}
         title={subtitle}
-        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
+        className={rowClass('automation')}
       >
         <span className="relative flex h-4 w-4 flex-shrink-0 items-center justify-center text-zinc-500">
           <Clock3 className="h-4 w-4" />

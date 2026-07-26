@@ -817,6 +817,13 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作）在位时，
+  // 顶栏收敛为只留侧栏开关。评测中心是 overlay 独立页，整窗盖住顶栏，不参与这里的判定。
+  const inlineSecondaryPageActive = Boolean(
+    expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
+    || showCapabilityHub || showCronCenter || showLocalOpsPanel
+  );
+
   const renderWorkbenchContent = () => (
     <div className="flex flex-col h-full bg-zinc-900">
       <WorkbenchTabs />
@@ -850,8 +857,9 @@ export const App: React.FC = () => {
 
           {/* Right Area: Chat + TaskPanel with shared title bar */}
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Right Title Bar */}
-            <TitleBar />
+            {/* Right Title Bar —— 二级页在位时只保留侧栏开关：
+                会话动作菜单与右栏开关都是会话态控件，二级页里指向不存在的东西。 */}
+            <TitleBar secondaryPageActive={inlineSecondaryPageActive} />
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">

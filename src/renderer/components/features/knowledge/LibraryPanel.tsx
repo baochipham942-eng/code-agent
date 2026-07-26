@@ -92,7 +92,6 @@ function matchesSearch(item: LibraryItem, query: string): boolean {
 
 export const LibraryPanel: React.FC = () => {
   const { t, language } = useI18n();
-  const setShowLibraryPanel = useAppStore((s) => s.setShowLibraryPanel);
   const sessions = useSessionStore((s) => s.sessions);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -249,12 +248,11 @@ export const LibraryPanel: React.FC = () => {
   };
 
   return (
-    <FullScreenPage testId="library-panel">
+    <FullScreenPage testId="library-panel" variant="inline">
       <FullScreenPageHeader
         icon={<BookOpen className="h-4 w-4 text-indigo-300" />}
         title={t.library.panelTitle}
         description={t.library.panelDescription}
-        onClose={() => setShowLibraryPanel(false)}
         actions={view === 'items' ? (
           <div className="flex min-w-0 items-center gap-2">
             <select

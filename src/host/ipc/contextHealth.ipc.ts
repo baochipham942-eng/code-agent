@@ -22,6 +22,7 @@ import {
 import type { AgentApplicationService } from '../../shared/contract/appService';
 import type { CompressedMessage } from '../context/tokenOptimizer';
 import type { TaskManager } from '../task';
+import { getTaskManager as getTaskManagerSingleton } from '../task';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService, getSessionManager } from '../services';
 import { getDatabase } from '../services/core/databaseService';
@@ -321,9 +322,28 @@ function resolveModelConfigForSession(
   return { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL };
 }
 
+/**
+ * 取「当前活跃的 TaskManager」——注入项拿不到时回退模块单例。
+ *
+ * 注入项在**发行版里恒为 null**：`setupAllIpcHandlers` 的唯一调用方是 `webServer.ts`
+ * （桌面那条入口已在 #717/#721 删除），它写的是 `getTaskManager: () => null`。
+ * 那对 `task.ipc` 是诚实的——web 路径的 agent run 走 `/api/agent/run` → durable run →
+ * `orchestrator.sendMessage`，**根本不经过 `TaskManager.startTask`**，所以任务状态本来就是空的，
+ * 报 unavailable 好过返回「成功但空」。
+ *
+ * 但 contextHealth 要的是**当前活跃的 orchestrator**，它在 web 路径确实存在
+ * （`createAgentRuntime` 初始化过同一个单例）。拿 null 的后果是 `/compact` 的结果
+ * 只落库、不写回正在跑的 orchestrator——那句 `TaskManager not available` 的 warn
+ * 在发行版长期空转，压缩对当前这一轮不生效。
+ * `task.ipc` / `tag.ipc` 本来就直接读单例，这里同源。
+ */
+function resolveLiveTaskManager(deps: ContextHealthDependencies): TaskManager | null {
+  return deps.getTaskManager() ?? getTaskManagerSingleton();
+}
+
 function resolveHookManagerForSession(deps: ContextHealthDependencies, sessionId: string) {
   try {
-    return deps.getTaskManager()?.getOrchestrator(sessionId)?.getHookManager?.();
+    return resolveLiveTaskManager(deps)?.getOrchestrator(sessionId)?.getHookManager?.();
   } catch {
     return undefined;
   }
@@ -471,7 +491,7 @@ async function compactSession(
   const afterPercent = maxTokens > 0 ? Math.round((afterTokens / maxTokens) * 1000) / 10 : 0;
   const compactedAt = compaction.block.timestamp;
 
-  const taskManager = deps.getTaskManager();
+  const taskManager = resolveLiveTaskManager(deps);
   if (taskManager) {
     const orchestrator = taskManager.getOrchestrator(sessionId);
     if (orchestrator) {

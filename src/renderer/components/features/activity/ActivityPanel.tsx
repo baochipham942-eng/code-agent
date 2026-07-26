@@ -224,7 +224,6 @@ export const ActivityPanel: React.FC<{ onClose: () => void }> = ({ onClose }) =>
         description="观察、上下文、prompt 注入边界"
         badge={<Pill tone={model.modeTone}>{model.modeLabel}</Pill>}
         onClose={onClose}
-        closeLabel="关闭 Activity"
         actions={(
           <button
             type="button"

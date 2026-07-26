@@ -26,17 +26,11 @@ import {
   Search,
   ChevronRight,
   FlaskConical,
-  Clock3,
   CalendarDays,
   Monitor,
-  Globe,
-  MousePointerClick,
-  ScrollText,
+  MonitorSmartphone,
   Activity,
-  Brain,
-  Users,
   UsersRound,
-  Ticket,
   Download,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -100,25 +94,17 @@ export const Sidebar: React.FC = () => {
   const {
     clearPlanningState,
     setShowSettings,
-    openSettingsTab,
-    setShowCronCenter,
-    setShowPromptManager,
     setWorkingDirectory,
     showLab,
     setShowLab,
-    showCronCenter,
     showTimeCapabilityCenter,
     setShowTimeCapabilityCenter,
     showDesktopPanel,
     setShowDesktopPanel,
-    showBrowserSurfacePanel,
-    setShowBrowserSurfacePanel,
     showActivityPanel,
     setShowActivityPanel,
-    showKnowledgeMemoryPanel,
-    setShowKnowledgeMemoryPanel,
-    showComputerUsePanel,
-    setShowComputerUsePanel,
+    showLocalOpsPanel,
+    openLocalOpsPanel,
     showProjectCollaborationPage,
     openProjectCollaborationPage,
     optionalUpdateInfo,
@@ -185,9 +171,6 @@ export const Sidebar: React.FC = () => {
     authBackendAvailable,
     hasCachedAdminClaim,
   } = useAuthStore();
-  const canOpenPromptManager = canAccessFeature('prompt.manager', user);
-  const canOpenUserDashboard = canAccessFeature('settings.users', user);
-  const canOpenInviteCodes = canAccessFeature('settings.invites', user);
   const canOpenSessionReplay = canAccessFeature('eval.replay', user);
   const isVerifiedAdmin = user?.isAdmin === true;
   const isAdminPendingVerification = !isVerifiedAdmin && hasCachedAdminClaim && sessionTrustState === 'cached';
@@ -206,7 +189,7 @@ export const Sidebar: React.FC = () => {
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const isCreatingSession = creatingSessionMode !== null;
   const hasActiveAdvancedTool = Boolean(
-    showLab || showTimeCapabilityCenter || showDesktopPanel || showBrowserSurfacePanel,
+    showLab || showTimeCapabilityCenter || showDesktopPanel,
   );
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
   const currentSessionProjectId = useMemo(() => {
@@ -687,8 +670,9 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
 
-      {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。 */}
-      <div className="px-2 pb-1 flex-shrink-0">
+      {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。
+          与能力区之间零间距：四条入口行等距同组，区间断点只留在能力区之后（pb-2）。 */}
+      <div className="px-2 flex-shrink-0">
         <SidebarNewTaskRow
           onClick={handleNewChat}
           disabled={isCreatingSession || creatingWorkspaceKey !== null}
@@ -848,27 +832,15 @@ export const Sidebar: React.FC = () => {
                 />
                 <AccountMenuItem
                   onClick={() => {
-                    setShowKnowledgeMemoryPanel(true);
+                    openLocalOpsPanel('desktop');
                     setShowUserMenu(false);
                   }}
                   icon={
-                    <Brain
-                      className={`w-4 h-4 ${showKnowledgeMemoryPanel ? 'text-emerald-400' : 'text-emerald-400/80'}`}
+                    <MonitorSmartphone
+                      className={`w-4 h-4 ${showLocalOpsPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`}
                     />
                   }
-                  label={sb.menuKnowledgeMemory}
-                />
-                <AccountMenuItem
-                  onClick={() => {
-                    setShowComputerUsePanel(true);
-                    setShowUserMenu(false);
-                  }}
-                  icon={
-                    <MousePointerClick
-                      className={`w-4 h-4 ${showComputerUsePanel ? 'text-cyan-400' : 'text-cyan-400/80'}`}
-                    />
-                  }
-                  label={sb.menuComputerUse}
+                  label={sb.menuLocalOps}
                 />
                 <AccountMenuItem
                   onClick={() => {
@@ -882,44 +854,6 @@ export const Sidebar: React.FC = () => {
                   }
                   label={sb.menuNeoCollab}
                 />
-                <AccountMenuItem
-                  onClick={() => {
-                    setShowCronCenter(!showCronCenter);
-                    setShowUserMenu(false);
-                  }}
-                  icon={<Clock3 className={`w-4 h-4 ${showCronCenter ? 'text-amber-400' : 'text-amber-400/80'}`} />}
-                  label={sb.menuAutomation}
-                />
-                {canOpenPromptManager && (
-                  <AccountMenuItem
-                    onClick={() => {
-                      setShowPromptManager(true);
-                      setShowUserMenu(false);
-                    }}
-                    icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
-                    label={sb.menuPrompts}
-                  />
-                )}
-                {canOpenUserDashboard && (
-                  <AccountMenuItem
-                    onClick={() => {
-                      openSettingsTab('users');
-                      setShowUserMenu(false);
-                    }}
-                    icon={<Users className="w-4 h-4 text-amber-400/80" />}
-                    label={sb.menuUserManagement}
-                  />
-                )}
-                {canOpenInviteCodes && (
-                  <AccountMenuItem
-                    onClick={() => {
-                      openSettingsTab('invites');
-                      setShowUserMenu(false);
-                    }}
-                    icon={<Ticket className="w-4 h-4 text-amber-400/80" />}
-                    label={sb.menuInviteCodes}
-                  />
-                )}
 
                 <div className="my-1 border-t border-zinc-800" />
                 <button
@@ -953,11 +887,6 @@ export const Sidebar: React.FC = () => {
                       onClick={() => { setShowDesktopPanel(!showDesktopPanel); setShowUserMenu(false); }}
                       icon={<Monitor className={`w-4 h-4 ${showDesktopPanel ? 'text-cyan-400' : 'text-cyan-400/80'}`} />}
                       label={sb.menuDesktopCapture}
-                    />
-                    <AccountMenuItem
-                      onClick={() => { setShowBrowserSurfacePanel(true); setShowUserMenu(false); }}
-                      icon={<Globe className={`w-4 h-4 ${showBrowserSurfacePanel ? 'text-sky-400' : 'text-sky-400/80'}`} />}
-                      label={sb.menuBrowser}
                     />
                   </div>
                 )}

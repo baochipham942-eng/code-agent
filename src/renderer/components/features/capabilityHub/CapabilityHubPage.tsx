@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo } from 'react';
-import { Boxes } from 'lucide-react';
+import { Boxes, ScrollText } from 'lucide-react';
 import { useAppStore, type CapabilityHubTab } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
-import { createAccessSubject } from '../../../utils/accessControl';
+import { canAccessFeature, createAccessSubject } from '../../../utils/accessControl';
 import { canAccessSettingsTab } from '../../../utils/settingsTabs';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { ExpertPanel } from '../expert/ExpertPanel';
@@ -25,10 +25,12 @@ export const CapabilityHubPage: React.FC = () => {
   const { t } = useI18n();
   const currentUser = useAuthStore((s) => s.user);
   const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
-  const { capabilityHubTab, openCapabilityHub, setShowCapabilityHub } = useAppStore();
+  const { capabilityHubTab, openCapabilityHub, setShowCapabilityHub, setShowPromptManager } = useAppStore();
   const visibleTabs = useMemo(() => HUB_TABS.filter(({ key }) => (
     key !== 'plugins' || canAccessSettingsTab('plugins', accessSubject)
   )), [accessSubject]);
+  // 提示词管理（admin-only）收进能力中心 header（2026-07 方案 9C：从用户菜单迁来）
+  const canOpenPromptManager = canAccessFeature('prompt.manager', accessSubject);
 
   useEffect(() => {
     if (visibleTabs.some((tab) => tab.key === capabilityHubTab)) return;
@@ -48,14 +50,21 @@ export const CapabilityHubPage: React.FC = () => {
         title={t.capabilityHub.title}
         description={t.capabilityHub.description}
         onClose={() => setShowCapabilityHub(false)}
-        closeLabel={t.common.close}
         actions={(
-          <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
-            {visibleTabs.map(({ key, label }) => (
-              <button /* ds-allow:button: 能力中心 tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */ key={key} type="button" role="tab" aria-selected={capabilityHubTab === key} data-testid={`capability-hub-tab-${key}`} onClick={() => openCapabilityHub(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${capabilityHubTab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>
-                {label(t)}
+          <div className="flex items-center gap-2">
+            {canOpenPromptManager && (
+              <button /* ds-allow:button: 能力中心 header 提示词入口，对齐 tab 胶囊的 12px 微尺寸行内样式，Button primitive 无对应变体 */ type="button" data-testid="capability-hub-open-prompts" onClick={() => setShowPromptManager(true)} className="flex items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition-colors hover:text-zinc-200">
+                <ScrollText className="h-3.5 w-3.5" />
+                {t.capabilityHub.openPromptManager}
               </button>
-            ))}
+            )}
+            <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
+              {visibleTabs.map(({ key, label }) => (
+                <button /* ds-allow:button: 能力中心 tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */ key={key} type="button" role="tab" aria-selected={capabilityHubTab === key} data-testid={`capability-hub-tab-${key}`} onClick={() => openCapabilityHub(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${capabilityHubTab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>
+                  {label(t)}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       />

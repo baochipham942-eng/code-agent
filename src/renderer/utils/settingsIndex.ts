@@ -50,14 +50,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'automation', labelKey: 'newTask', keywords: ['new task', 'create', 'task', 'cron', 'automation wizard'] },
   { tab: 'automation', labelKey: 'executionHistory', keywords: ['history', 'execution', 'run', 'runs', 'log', 'logs'] },
 
-  // User Management
-  { tab: 'users', labelKey: 'registeredUsers', keywords: ['user', 'users', 'user management', 'registered users', 'email', 'last login', 'active'] },
-  { tab: 'users', labelKey: 'userFields', keywords: ['profile', 'fields', 'registration time', 'registration source', 'device', 'session', 'message'] },
-  { tab: 'invites', labelKey: 'inviteManagement', keywords: ['invite', 'invite code', 'invite codes', 'registration', 'code', 'usage count', 'validity'] },
-  { tab: 'invites', labelKey: 'newInvite', keywords: ['create invite', 'new invite', 'create', 'issue', 'disable', 'enable'] },
-  { tab: 'controlPlane', labelKey: 'releaseAudit', keywords: ['control plane', 'audit', 'release', 'rollout', 'gray release', 'signature', 'payload'] },
-  { tab: 'controlPlane', labelKey: 'onlineVersionHash', keywords: ['hash', 'keyId', 'artifact', 'capability registry', 'prompt registry', 'cloud config', 'version'] },
-
   // Model
   { tab: 'model', labelKey: 'modelProviders', keywords: ['provider', 'providers', 'api', 'deepseek', 'claude', 'kimi', 'openai', 'zhipu', 'moonshot'] },
   { tab: 'model', labelKey: 'apiKey', keywords: ['apikey', 'api key', 'secret', 'key', 'auth', 'authentication', 'provider key', 'model credential'] },
@@ -90,10 +82,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'cache', labelKey: 'dataManagement', keywords: ['data', 'statistics', 'session count', 'message count'] },
   { tab: 'cache', labelKey: 'databaseSize', keywords: ['database', 'size', 'storage'] },
   { tab: 'cache', labelKey: 'clearCache', keywords: ['cache', 'clear', 'cleanup', 'empty'] },
-
-  // Capability Center
-  { tab: 'capabilities', labelKey: 'localCapabilityInventory', keywords: ['capability', 'capabilities', 'capability center', 'marketplace', 'registry', 'audit'] },
-  { tab: 'capabilities', labelKey: 'capabilityAudit', keywords: ['skill', 'mcp', 'tool', 'channel', 'connector', 'workflow', 'permission', 'risk', 'source'] },
 
   // Plugins
   { tab: 'plugins', labelKey: 'pluginMarketplace', keywords: ['plugin', 'plugins', 'marketplace', 'install', 'uninstall', 'enable', 'disable'] },

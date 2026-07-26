@@ -59,7 +59,6 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
         title={cc.title}
         description={cc.subtitle}
         onClose={onClose}
-        closeLabel={cc.close}
         actions={stats ? (
           <div className="hidden items-center gap-2 text-xs text-zinc-400 xl:flex">
           <span className="rounded-full bg-zinc-900 px-2.5 py-1">{cc.statTotal} {stats.totalJobs}</span>

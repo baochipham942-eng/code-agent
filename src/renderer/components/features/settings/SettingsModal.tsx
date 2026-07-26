@@ -23,16 +23,12 @@ import {
   MessageSquare,
   Webhook,
   FolderOpen,
-  Ticket,
-  Users,
-  Cloud,
   Camera,
   Keyboard,
   ShieldCheck,
   Terminal,
   Mic,
   Search,
-  Boxes,
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -70,10 +66,6 @@ const WIDE_SETTINGS_TABS = new Set<SettingsTab>([
   'memory',
   'openchronicle',
   'workspace',
-  'users',
-  'invites',
-  'controlPlane',
-  'capabilities',
 ]);
 
 // Tab Components
@@ -97,10 +89,8 @@ import { HooksSettings } from './tabs/HooksSettings';
 import { AboutSettings } from './tabs/AboutSettings';
 import { ScreenMemorySettings } from './tabs/ScreenMemorySettings';
 import PrivacySettings from './tabs/PrivacySettings';
-import { UserDashboardSettings } from './tabs/UserDashboardSettings';
-import { InviteCodesSettings } from './tabs/InviteCodesSettings';
-import { ControlPlaneSettings } from './tabs/ControlPlaneSettings';
-const CapabilityCenterSettings = React.lazy(() => import('./tabs/CapabilityCenterSettings').then((m) => ({ default: m.CapabilityCenterSettings })));
+// 用户管理 / 邀请码 / 控制平面 / 能力治理四个 tab 已迁 admin-console（2026-07 方案 9C），
+// 组件文件保留在 ./tabs 下待清死代码，但设置页不再 import、不提供任何入口。
 import ipcService from '../../../services/ipcService';
 
 interface SettingsTabConfig {
@@ -132,7 +122,8 @@ export function buildSettingsTabGroups({
   access,
 }: BuildSettingsTabsOptions): SettingsTabGroupConfig[] {
   const accessSubject = createAccessSubject(access);
-  // 顺序即侧栏顺序（Settings IA v2 拍板 2026-07-03：默认 5 组 + 高级折叠组 + admin 管理组）
+  // 顺序即侧栏顺序（Settings IA v2 拍板 2026-07-03：默认 5 组 + 高级折叠组；
+  // 2026-07 方案 9C：admin 管理组迁 admin-console，设置页不再出现）
   const tabs: SettingsTabConfig[] = [
     // 模型与能力
     { id: 'model', label: t.settings.tabs.model, icon: <Brain className="w-4 h-4" /> },
@@ -160,11 +151,6 @@ export function buildSettingsTabGroups({
     { id: 'hooks', label: t.settings.tabs.hooks, icon: <Webhook className="w-4 h-4" /> },
     { id: 'appshots', label: t.settings.tabs.appshots, icon: <Camera className="w-4 h-4" /> },
     { id: 'cache', label: t.settings.tabs.cache, icon: <Database className="w-4 h-4" /> },
-    // 管理（仅 admin）
-    { id: 'users', label: t.settings.tabs.users, icon: <Users className="w-4 h-4" /> },
-    { id: 'invites', label: t.settings.tabs.invites, icon: <Ticket className="w-4 h-4" /> },
-    { id: 'controlPlane', label: t.settings.tabs.controlPlane, icon: <Cloud className="w-4 h-4" /> },
-    { id: 'capabilities', label: t.settings.tabs.capabilities, icon: <Boxes className="w-4 h-4" /> },
   ];
 
   const groups = new Map<SettingsTabGroupId, SettingsTabConfig[]>();
@@ -224,10 +210,6 @@ export const SettingsModal: React.FC = () => {
   } = useAppStore();
   const currentUser = useAuthStore((state) => state.user);
   const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
-  const canViewUsers = canAccessSettingsTab('users', accessSubject);
-  const canViewInvites = canAccessSettingsTab('invites', accessSubject);
-  const canViewControlPlane = canAccessSettingsTab('controlPlane', accessSubject);
-  const canViewCapabilities = canAccessSettingsTab('capabilities', accessSubject);
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     settingsInitialTab ?? DEFAULT_SETTINGS_TAB
@@ -261,7 +243,7 @@ export const SettingsModal: React.FC = () => {
     });
   }, []);
 
-  // 搜到的条目落点未必还在设置页（自动化 / 能力中心那四项已搬走），交给同一个判定函数分流
+  // 搜到的条目落点未必还在设置页（自动化 / 能力中心那几项已搬走），交给同一个判定函数分流
   const handleSearchNavigate = useCallback((tab: SettingsTab) => {
     if (resolveSettingsDeepLink(tab).kind !== 'settings') {
       openSettingsTab(tab);
@@ -442,10 +424,6 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'keybindings' && <KeybindingsSettings />}
             {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'appshots' && <AppshotsSettings />}
-            {canViewUsers && activeTab === 'users' && <UserDashboardSettings />}
-            {canViewInvites && activeTab === 'invites' && <InviteCodesSettings />}
-            {canViewControlPlane && activeTab === 'controlPlane' && <ControlPlaneSettings />}
-            {canViewCapabilities && activeTab === 'capabilities' && <CapabilityCenterSettings onNavigateSettings={handleSearchNavigate} />}
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}

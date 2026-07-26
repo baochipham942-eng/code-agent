@@ -26,11 +26,13 @@ import { rolePackZh } from './rolePack';
 import { expertZh } from './expert';
 import { generativeUIZh } from './generativeUI';
 import { capabilityHubZh } from './capabilityHub';
+import { localOpsZh } from './localOps';
 import { onboardingZh } from './onboarding';
 import { workbenchTabsZh } from './workbenchTabs';
 
 export const zh = {
   ...capabilityHubZh,
+  ...localOpsZh,
   ...onboardingZh,
   ...generativeUIZh,
   ...workbenchTabsZh,

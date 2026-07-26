@@ -114,11 +114,8 @@ const AgentTeamPanel = React.lazy(() => import('./components/features/agentTeam'
 const ActivityPanel = React.lazy(() => import('./components/features/activity/ActivityPanel').then((module) => ({
   default: module.ActivityPanel,
 })));
-const BrowserSurfacePanel = React.lazy(() => import('./components/features/browser/BrowserSurfacePanel').then((module) => ({
-  default: module.BrowserSurfacePanel,
-})));
-const ComputerUsePanel = React.lazy(() => import('./components/features/computerUse/ComputerUsePanel').then((module) => ({
-  default: module.ComputerUsePanel,
+const LocalOpsPage = React.lazy(() => import('./components/features/localOps/LocalOpsPage').then((module) => ({
+  default: module.LocalOpsPage,
 })));
 const InAppValidationPanel = React.lazy(() => import('./components/features/inAppValidation/InAppValidationPanel').then((module) => ({
   default: module.InAppValidationPanel,
@@ -160,7 +157,7 @@ export const App: React.FC = () => {
     setShowAgentTeamPanel,
     selectedSwarmAgentId,
     showLab,
-    showComputerUsePanel,
+    showLocalOpsPanel,
     showInAppValidationPanel,
     showProjectCollaborationPage,
     projectCollaborationPageProjectId,
@@ -169,8 +166,6 @@ export const App: React.FC = () => {
     showLibraryPanel,
     showActivityPanel,
     setShowActivityPanel,
-    showBrowserSurfacePanel,
-    setShowBrowserSurfacePanel,
     setShowSettings,
     setLanguage,
     setOptionalUpdateInfo,
@@ -880,9 +875,9 @@ export const App: React.FC = () => {
                 <React.Suspense fallback={null}>
                   <CronCenterPanel onClose={() => setShowCronCenter(false)} />
                 </React.Suspense>
-              ) : showComputerUsePanel ? (
+              ) : showLocalOpsPanel ? (
                 <React.Suspense fallback={null}>
-                  <ComputerUsePanel />
+                  <LocalOpsPage />
                 </React.Suspense>
               ) : showInAppValidationPanel ? (
                 <React.Suspense fallback={null}>
@@ -1080,12 +1075,6 @@ export const App: React.FC = () => {
           projectId={visibleProjectCollaborationProjectId}
           onClose={closeProjectCollaborationPage}
         />
-      )}
-
-      {showBrowserSurfacePanel && (
-        <React.Suspense fallback={null}>
-          <BrowserSurfacePanel onClose={() => setShowBrowserSurfacePanel(false)} />
-        </React.Suspense>
       )}
 
       {showAgentTeamPanel && currentSessionId && swarmActiveRunId && swarmActiveSessionId === currentSessionId && (

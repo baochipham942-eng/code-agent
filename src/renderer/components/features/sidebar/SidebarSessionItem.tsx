@@ -20,7 +20,8 @@ import {
 
 /**
  * 需要关注但非运行中的状态，行尾显一个安静的小圆点（不是带文字的彩色 chip），
- * 颜色对齐 sessionPresentation 的语义色，保持「标题 + 时间」的克制版式。
+ * 颜色对齐 sessionPresentation 的语义色。状态点与时间二选一：有状态点时时间让位，
+ * 行尾同一时刻只讲一件事。
  */
 function getAttentionDotClassName(kind: string): string | null {
   switch (kind) {
@@ -205,10 +206,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : (
               <>
-                {attentionDotClass && (
+                {/* 状态点与时间二选一（2026-07-26 拍板）：有状态要传达时时间让位，
+                    行尾同一时刻只讲一件事，列表更聚焦。 */}
+                {attentionDotClass ? (
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
+                ) : (
+                  <span className="text-[11px] text-zinc-600 tabular-nums">{lastActiveLabel}</span>
                 )}
-                <span className="text-[11px] text-zinc-600 tabular-nums">{lastActiveLabel}</span>
               </>
             )}
           </span>

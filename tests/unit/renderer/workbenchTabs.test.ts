@@ -17,7 +17,7 @@ describe('appStore workbench tabs', () => {
       showProjectCollaborationPage: false,
       projectCollaborationPageProjectId: null,
       showKnowledgeMemoryPanel: false,
-      showComputerUsePanel: false,
+      showLocalOpsPanel: false,
       showInAppValidationPanel: false,
     });
   });
@@ -69,7 +69,7 @@ describe('appStore workbench tabs', () => {
   it('opens the project collaboration page with a project binding and closes sibling main panels', () => {
     useAppStore.setState({
       showKnowledgeMemoryPanel: true,
-      showComputerUsePanel: true,
+      showLocalOpsPanel: true,
       showInAppValidationPanel: true,
     });
 
@@ -79,7 +79,7 @@ describe('appStore workbench tabs', () => {
       showProjectCollaborationPage: true,
       projectCollaborationPageProjectId: 'project-1',
       showKnowledgeMemoryPanel: false,
-      showComputerUsePanel: false,
+      showLocalOpsPanel: false,
       showInAppValidationPanel: false,
     });
 

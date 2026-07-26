@@ -526,9 +526,11 @@ export function buildInboxItems(data: MemoryAuditPayload, t: Translations = zh):
     .slice(0, 16);
 }
 
-export const KnowledgeMemoryPanel: React.FC = () => {
+// 内容与外壳分离（2026-07-26 导航去重方案 9）：KnowledgeMemoryContent 是可嵌入的内容组件，
+// 由 LibraryPanel 的「记忆」tab 复用；KnowledgeMemoryPanel 仅保留 FullScreenPage 入口形态，
+// 不再被侧边栏菜单直接引用（菜单删改在另一工作流）。
+export const KnowledgeMemoryContent: React.FC = () => {
   const { t } = useI18n();
-  const setShowKnowledgeMemoryPanel = useAppStore((state) => state.setShowKnowledgeMemoryPanel);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [data, setData] = useState<MemoryAuditPayload | null>(null);
@@ -671,32 +673,29 @@ export const KnowledgeMemoryPanel: React.FC = () => {
   const sessionLabel = data?.sessionId || currentSessionId;
 
   return (
-    <FullScreenPage testId="knowledge-memory-panel">
-      <FullScreenPageHeader
-        icon={<Brain className="h-4 w-4 text-emerald-300" />}
-        title="Knowledge / Memory"
-        description={`${contextLabel}${sessionLabel ? ` · session ${sessionLabel}` : ''}`}
-        onClose={() => setShowKnowledgeMemoryPanel(false)}
-        closeLabel={t.knowledgeMemory.closeLabel}
-        actions={(
-          <button
-            type="button"
-            onClick={() => void loadAudit()}
-            disabled={isLoading}
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-zinc-700 px-3 text-xs text-zinc-300 hover:border-zinc-600 hover:bg-zinc-900 disabled:opacity-60"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            {t.knowledgeMemory.refresh}
-          </button>
-        )}
-      />
-
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="knowledge-memory-content">
       {error && (
         <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
           <AlertCircle className="h-4 w-4" />
           {error}
         </div>
       )}
+
+      {/* 嵌入模式没有 FullScreenPageHeader，上下文标签与刷新入口收进内容区顶部工具行 */}
+      <div className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4">
+        <span className="truncate text-xs text-zinc-500">
+          {contextLabel}{sessionLabel ? ` · session ${sessionLabel}` : ''}
+        </span>
+        <button
+          type="button"
+          onClick={() => void loadAudit()}
+          disabled={isLoading}
+          className="inline-flex h-8 items-center gap-2 rounded-md border border-zinc-700 px-3 text-xs text-zinc-300 hover:border-zinc-600 hover:bg-zinc-900 disabled:opacity-60"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+          {t.knowledgeMemory.refresh}
+        </button>
+      </div>
 
       <div className="grid flex-1 min-h-0 grid-cols-[minmax(280px,0.85fr)_minmax(420px,1.35fr)] gap-4 overflow-hidden p-5">
         <div className="flex min-h-0 flex-col gap-4">
@@ -817,6 +816,22 @@ export const KnowledgeMemoryPanel: React.FC = () => {
           </div>
         </section>
       </div>
+    </div>
+  );
+};
+
+// 入口形态：FullScreenPage 外壳 + 共享内容。App.tsx 仍按 showKnowledgeMemoryPanel 挂载，
+// 菜单入口的收编由导航去重工作流处理。
+export const KnowledgeMemoryPanel: React.FC = () => {
+  const setShowKnowledgeMemoryPanel = useAppStore((state) => state.setShowKnowledgeMemoryPanel);
+  return (
+    <FullScreenPage testId="knowledge-memory-panel">
+      <FullScreenPageHeader
+        icon={<Brain className="h-4 w-4 text-emerald-300" />}
+        title="Knowledge / Memory"
+        onClose={() => setShowKnowledgeMemoryPanel(false)}
+      />
+      <KnowledgeMemoryContent />
     </FullScreenPage>
   );
 };

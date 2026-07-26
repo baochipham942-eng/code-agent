@@ -753,7 +753,6 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
         title={detail?.visual.displayName || roleId}
         description={detail?.visual.profession || roleText.detail.subtitle}
         onClose={closeDetail}
-        closeLabel={t.common.close}
         actions={<div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">{ROLE_DETAIL_TABS.map((key) => <button /* ds-allow:button: 详情页内部 tab 使用语义分段控件 */ key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`role-detail-tab-${key}`} onClick={() => setTab(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>{expertText.detailTabs[key]}</button>)}</div>}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-5">

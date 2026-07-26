@@ -142,7 +142,6 @@ export const PromptManagerModal: React.FC = () => {
         title="提示词"
         description="默认提示词、自定义覆盖和远端片段"
         onClose={() => setShowPromptManager(false)}
-        closeLabel="关闭 提示词"
       />
 
         <div className="flex flex-1 min-h-0">

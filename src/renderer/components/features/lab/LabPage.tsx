@@ -144,7 +144,6 @@ export const LabPage: React.FC = () => {
         title={currentLabTitle}
         description={currentLabDescription}
         onClose={() => setShowLab(false)}
-        closeLabel={t.lab.closeLabel}
       />
 
       {/* Content */}

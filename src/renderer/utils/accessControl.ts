@@ -8,22 +8,8 @@ export interface AccessSubject {
 }
 
 export const ACCESS_CONTROL_REGISTRY = {
-  'settings.users': {
-    label: '用户看板',
-    adminOnly: true,
-  },
-  'settings.invites': {
-    label: '邀请码',
-    adminOnly: true,
-  },
-  'settings.controlPlane': {
-    label: '控制平面',
-    adminOnly: true,
-  },
-  'settings.capabilities': {
-    label: '能力治理',
-    adminOnly: true,
-  },
+  // settings.users/invites/controlPlane/capabilities 已随管理组迁 admin-console（2026-07 方案 9C），
+  // 桌面端无任何调用方，注册项一并移除。
   // Settings IA v2 拍板（2026-07-03）：插件/Hook 下放普通用户自行配置
   'settings.plugins': {
     label: '插件管理',

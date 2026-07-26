@@ -6,8 +6,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Shrink } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useStatusStore } from '../../../stores/statusStore';
 import { useContextCompactionStore } from '../../../stores/contextCompactionStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { useBudgetStatus } from '../../../hooks/useBudgetStatus';
+import { CostDisplay } from '../../StatusBar/CostDisplay';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { formatContextUsagePercent } from '../../../utils/contextUsageFormat';
@@ -49,6 +52,13 @@ export const ContextUsagePill: React.FC = () => {
   const succeedCompaction = useContextCompactionStore((s) => s.succeed);
   const failCompaction = useContextCompactionStore((s) => s.fail);
   const clearCompaction = useContextCompactionStore((s) => s.clear);
+  // 底栏收敛（2026-07-26 拍板）：累计费用从 composer 底栏收进本面板，
+  // 与上下文用量同一个 hover 出口。budget 接线沿用 CostDisplay 预算感知口径
+  // （cache-aware 成本 + 缓存节省 tooltip + 告警染色），useBudgetStatus 非轮询。
+  const sessionCost = useStatusStore((s) => s.sessionCost);
+  const unknownCostTurns = useStatusStore((s) => s.unknownCostTurns);
+  const isStreaming = useStatusStore((s) => s.isStreaming);
+  const budgetStatus = useBudgetStatus(sessionCost, isStreaming);
 
   useEffect(() => {
     const handleDeepLink = () => setOpen(true);
@@ -180,9 +190,8 @@ export const ContextUsagePill: React.FC = () => {
             className={`${styles.ring} transition-all duration-500`}
           />
         </svg>
-        {/* 折叠态原来只有环，百分比只在 hover 的 title 和展开面板里——一个没有刻度的
-            圆环读不出"用了多少"。补一个可读锚点，还没有第一轮数据时不占位。 */}
-        {hasData && <span data-testid="context-usage-percent">{displayPct}%</span>}
+        {/* 折叠态只留圆环（2026-07-26 底栏收敛拍板，推翻此前"可读锚点"决定）：
+            圆环讲进度，精确百分比在 hover title 和展开面板，底栏不再常驻数字。 */}
       </button>
 
       {open && (
@@ -198,6 +207,12 @@ export const ContextUsagePill: React.FC = () => {
               ? ch.tokensFraction.replace('{used}', formatTokens(currentTokens)).replace('{max}', formatTokens(maxTokens))
               : ch.waitingCapacity}
           </div>
+
+          {(sessionCost > 0 || unknownCostTurns > 0) && (
+            <div className="mt-2 border-t border-border-muted pt-2 text-[11px] text-zinc-400 tabular-nums">
+              <CostDisplay cost={sessionCost} isStreaming={isStreaming} budget={budgetStatus} />
+            </div>
+          )}
 
           {canCompact && (
             <button

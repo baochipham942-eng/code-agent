@@ -199,7 +199,6 @@ export function InAppValidationPanel(): React.ReactElement {
           </span>
         ) : null}
         onClose={() => setShowInAppValidationPanel(false)}
-        closeLabel="关闭 In-App 验证"
         actions={(
           <>
           <button

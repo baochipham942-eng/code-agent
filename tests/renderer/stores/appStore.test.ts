@@ -143,9 +143,9 @@ describe('appStore', () => {
     expect(useAppStore.getState()).toMatchObject({ showCronCenter: true, showSettings: false });
   });
 
-  it('keeps capabilities deep links in settings', () => {
+  it('redirects capabilities deep links to the capability hub (2026-07 方案 9C)', () => {
     useAppStore.getState().openSettingsTab('capabilities');
-    expect(useAppStore.getState()).toMatchObject({ showSettings: true, settingsInitialTab: 'capabilities', showCapabilityHub: false });
+    expect(useAppStore.getState()).toMatchObject({ showSettings: false, showCapabilityHub: true, capabilityHubTab: 'experts' });
   });
 
   it('opens capability settings with a typed focus target', () => {
@@ -177,13 +177,13 @@ describe('appStore', () => {
     });
   });
 
-  it('opens the knowledge memory panel outside settings and closes computer use', () => {
-    useAppStore.setState({ showComputerUsePanel: true });
+  it('opens the knowledge memory panel outside settings and closes the local ops page', () => {
+    useAppStore.setState({ showLocalOpsPanel: true });
     useAppStore.getState().setShowKnowledgeMemoryPanel(true);
 
     expect(useAppStore.getState()).toMatchObject({
       showKnowledgeMemoryPanel: true,
-      showComputerUsePanel: false,
+      showLocalOpsPanel: false,
     });
   });
 

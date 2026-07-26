@@ -405,7 +405,6 @@ const TimeCapabilityPanel: React.FC<TimeCapabilityPanelProps> = ({ onClose }) =>
         title="Time & Capability"
         description="任务时间、Cron 运行、Calendar 状态和现场修复"
         onClose={onClose}
-        closeLabel="关闭 Time & Capability"
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">

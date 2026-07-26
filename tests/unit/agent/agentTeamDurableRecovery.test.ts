@@ -372,6 +372,23 @@ describe('Agent Team durable adapter', () => {
     });
   });
 
+  it('persists a created worktree on both the node and state indexes', async () => {
+    const runtime = new AgentTeamDurableRuntime(fakeKernel(), parentHost);
+    const controller = await runtime.start({
+      scope,
+      parentRunId: 'native-a',
+      logicalOperationId: 'tool-call-a',
+      sideEffect: false,
+      tasks: [{ id: 'node-a', role: 'coder', task: 'change code', tools: ['Write'] }],
+      now: 10,
+    });
+
+    await controller.markNodeWorktree('node-a', '/tmp/agent-node-a', 11);
+
+    expect(controller.getState().taskGraph[0].worktreeRef).toBe('/tmp/agent-node-a');
+    expect(controller.getState().worktreeRefs).toEqual({ 'node-a': '/tmp/agent-node-a' });
+  });
+
   it('projects the stable Team child and terminal result onto the Native parent', async () => {
     const kernel = fakeKernel();
     const nativeOwner: RunOwnerLease = { ownerId: 'native-owner', processInstanceId: 'native-process', epoch: 1, leaseExpiresAt: 1000 };

@@ -96,6 +96,30 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+export async function isValidAgentWorktree(worktreePath: string): Promise<boolean> {
+  if (!fs.existsSync(worktreePath)) return false;
+  try {
+    const { stdout } = await execAsync(
+      `git -C ${shellQuote(worktreePath)} worktree list --porcelain`,
+      { timeout: WORKTREE_TIMEOUT },
+    );
+    const expected = fs.realpathSync(worktreePath);
+    return stdout
+      .split('\n')
+      .filter((line) => line.startsWith('worktree '))
+      .some((line) => {
+        const candidate = line.slice('worktree '.length);
+        try {
+          return fs.realpathSync(candidate) === expected;
+        } catch {
+          return false;
+        }
+      });
+  } catch {
+    return false;
+  }
+}
+
 /** Keep git ref/path components bounded even when the logical Team identity is composite. */
 export function getAgentWorktreeKey(agentId: string): string {
   if (Buffer.byteLength(agentId, 'utf8') <= MAX_AGENT_REF_COMPONENT_BYTES) {

@@ -89,6 +89,7 @@ export interface AgentTeamDurableController {
   markApprovalWaiting(approvalId: string, now?: number): Promise<void>;
   resolveApproval(approvalId: string, status: 'approved' | 'rejected' | 'cancelled', now?: number): Promise<void>;
   markNodeDispatched(task: AgentTask, now?: number): Promise<void>;
+  markNodeWorktree(taskId: string, worktreeRef: string, now?: number): Promise<void>;
   markNodeTerminal(task: AgentTask, result: AgentTaskResult, now?: number): Promise<void>;
   enqueueMessage(agentId: string, body: string, from?: string, type?: string, now?: number): Promise<AgentTeamMailboxMessage>;
   consumeMessages(agentId: string, now?: number): Promise<AgentTeamMailboxMessage[]>;

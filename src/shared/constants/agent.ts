@@ -7,7 +7,11 @@
  * 聚合失败率。精确复现仍依赖 turn 级的 systemPromptHash（运行时拼装后的 SHA-256，
  * 已落 system_prompt_cache 全文）—— promptVersion 只是粗标签，不替代 hash。
  */
-export const PROMPT_VERSION = 'sys-v19' as const;
+export const PROMPT_VERSION = 'sys-v20' as const;
+
+/** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
+export const EXPLORE_AGENT_DESCRIPTION =
+  'Read-only codebase exploration with cited evidence. Reuse findings; do not repeat the same search.';
 
 /** Agent 配置 */
 export const AGENT = {

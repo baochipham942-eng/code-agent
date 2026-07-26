@@ -4,6 +4,7 @@ import {
   renderAgentCatalogSection,
   renderAgentRoleDescription,
 } from './agentDescription';
+import { EXPLORE_AGENT_DESCRIPTION } from '../../../../shared/constants';
 
 const baseDescription = `Launch a sub-agent for a focused task. Sub-agents run in isolated sessions with their own context window and return only their final result to you.
 
@@ -36,6 +37,7 @@ When NOT to spawn:
 ## After delegation
 - Minimize waiting — do meaningful non-overlapping work while agents run
 - Don't redo what a sub-agent already did
+- Use sub-agent results directly without repeating the same search; if they conflict with other evidence you have, resolve the conflict before integrating
 - Review returned changes, then integrate or refine
 
 ## Parallel patterns
@@ -44,7 +46,7 @@ When NOT to spawn:
 - Run reviewer in parallel with ongoing implementation
 
 ## Available roles
-- explore (alias: explorer): Read-only codebase exploration. Fast and authoritative. Spawn multiple in parallel for independent questions. Trust their results without re-verification.
+- explore (alias: explorer): ${EXPLORE_AGENT_DESCRIPTION}
 - coder: Implementation work. Assign file ownership explicitly. Tell coders they are not alone in the codebase.
 - reviewer: Code review and quality checks. Read-only.
 - plan (alias: planner): Architecture design and task decomposition. Full context.
@@ -63,7 +65,7 @@ function buildSpawnAgentDescription(): string {
     /## Available roles\n(?:- .+\n?)+/,
     `## Available roles\n${renderAgentCatalogSection([
       'Available agent types:',
-      '- explore: Read-only codebase exploration. Fast and authoritative. Spawn multiple in parallel for independent questions. Trust their results without re-verification.',
+      `- explore: ${EXPLORE_AGENT_DESCRIPTION}`,
       '- coder: Implementation work. Assign file ownership explicitly. Tell coders they are not alone in the codebase.',
       '- reviewer: Code review and quality checks. Read-only.',
       '- plan: Architecture design and task decomposition. Full context.',

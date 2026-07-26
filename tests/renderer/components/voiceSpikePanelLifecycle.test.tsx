@@ -5,7 +5,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, act } from '@testing-library/react';
 import React from 'react';
 
-vi.mock('@shared/constants', () => ({
+// 按名字枚举的 mock 会在 constants 每次新增导出时炸（连坐无关测试）。
+// spread 真实模块后只覆盖本测试要改的键。
+vi.mock('@shared/constants', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@shared/constants')>()),
   VOICE_STREAM_WS_PATH: '/api/voice/stream',
   VOICE_DEV_FLAG_KEY: 'code-agent:voice-spike',
   VOICE_UPSTREAM_SAMPLE_RATE: 16000,

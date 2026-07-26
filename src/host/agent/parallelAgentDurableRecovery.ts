@@ -7,6 +7,7 @@ import {
   type AgentTaskResult,
 } from './parallelAgentCoordinatorTypes';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
+import type { ParallelAgentRecoveryRefs } from './parallelAgentRecoveryRefs';
 
 export function restoreParallelAgentDurableState(input: {
   scope?: SwarmRunScope;
@@ -19,7 +20,13 @@ export function restoreParallelAgentDurableState(input: {
   const taskDefinitions = new Map<string, AgentTask>();
   const completedTasks = new Map<string, AgentTaskResult>();
   const messageQueues = new Map<string, AgentMessage[]>();
+  const recoveryRefs: ParallelAgentRecoveryRefs = {
+    worktrees: new Map(Object.entries(input.state.worktreeRefs)),
+    artifacts: new Map(Object.entries(input.state.artifactRefs).map(([taskId, refs]) => [taskId, [...refs]])),
+  };
   for (const node of input.state.taskGraph) {
+    if (node.worktreeRef && !recoveryRefs.worktrees.has(node.id)) recoveryRefs.worktrees.set(node.id, node.worktreeRef);
+    if (node.artifactRefs.length > 0 && !recoveryRefs.artifacts.has(node.id)) recoveryRefs.artifacts.set(node.id, [...node.artifactRefs]);
     taskDefinitions.set(node.id, {
       id: node.id,
       role: node.role,
@@ -48,6 +55,7 @@ export function restoreParallelAgentDurableState(input: {
     taskDefinitions,
     completedTasks,
     messageQueues,
+    recoveryRefs,
     sharedContext: {
       findings: input.state.findings,
       decisions: input.state.decisions,

@@ -23,10 +23,21 @@ const executorState = vi.hoisted(() => ({
   executeMock: vi.fn(),
 }));
 
+const worktreeState = vi.hoisted(() => ({
+  createMock: vi.fn(),
+  validMock: vi.fn(),
+}));
+
 vi.mock('../../../src/host/agent/subagentExecutor', () => ({
   getSubagentExecutor: () => ({
     execute: executorState.executeMock,
   }),
+}));
+
+vi.mock('../../../src/host/agent/agentWorktree', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../src/host/agent/agentWorktree')>(),
+  createAgentWorktree: worktreeState.createMock,
+  isValidAgentWorktree: worktreeState.validMock,
 }));
 
 // ---------------------------------------------------------------------------
@@ -165,6 +176,7 @@ function makeFakeDurableController(scope: SwarmRunScope): AgentTeamDurableContro
     markApprovalWaiting: vi.fn(async () => undefined),
     resolveApproval: vi.fn(async () => undefined),
     markNodeDispatched: vi.fn(async () => undefined),
+    markNodeWorktree: vi.fn(async () => undefined),
     markNodeTerminal: vi.fn(async () => undefined),
     enqueueMessage: vi.fn(async (agentId, body, from = 'user', type = 'text', now = Date.now()) => {
       const persisted: AgentTeamMailboxMessage = {
@@ -198,6 +210,9 @@ describe('ParallelAgentCoordinator', () => {
   beforeEach(() => {
     resetSpawnGuard();
     executorState.executeMock.mockReset();
+    worktreeState.createMock.mockReset();
+    worktreeState.validMock.mockReset();
+    worktreeState.validMock.mockResolvedValue(false);
     schedulerState.executeMock.mockReset();
     schedulerState.capturedDAG = null;
 
@@ -514,6 +529,112 @@ describe('ParallelAgentCoordinator', () => {
   // ==========================================================================
 
   describe('executeParallel 依赖调度', () => {
+    it('恢复后重跑节点复用仍有效的原 worktree，不创建新的 worktree', async () => {
+      const scope: SwarmRunScope = { sessionId: 'test-session', runId: 'run-recovery', treeId: 'tree-recovery' };
+      const recovered = new ParallelAgentCoordinator({ aggregateResults: false }, scope);
+      recovered.initialize({ ...makeFakeContext(), scope, durableController: makeFakeDurableController(scope) } as never);
+      worktreeState.validMock.mockResolvedValue(true);
+      const checkpoint = makeFakeDurableController(scope).getState();
+      checkpoint.taskGraph = [{
+        id: 'recovered-task', role: 'coder', task: 'continue', dependsOn: [], tools: ['Read'],
+        permissionProfile: 'readonly', sideEffect: false, status: 'dispatched',
+        operationId: 'node:recovered-task', worktreeRef: '/tmp/original-worktree', artifactRefs: [],
+      }];
+      checkpoint.worktreeRefs = { 'recovered-task': '/tmp/original-worktree' };
+      recovered.restoreDurableState(checkpoint, {
+        runId: scope.runId, treeId: scope.treeId, classification: 'retry_safe', checkpoint,
+        orphanChildRefs: [], nodes: [{ nodeId: 'recovered-task', classification: 'retry_safe', reason: 'retry' }],
+      });
+
+      await recovered.retryTask('recovered-task');
+
+      expect(worktreeState.createMock).not.toHaveBeenCalled();
+      expect(executorState.executeMock).toHaveBeenCalledWith(expect.objectContaining({
+        context: expect.objectContaining({ cwd: '/tmp/original-worktree', worktreePath: '/tmp/original-worktree' }),
+      }));
+    });
+
+    it('恢复记录的原 worktree 已失效时新建 worktree 后继续执行', async () => {
+      const scope: SwarmRunScope = { sessionId: 'test-session', runId: 'run-stale-worktree', treeId: 'tree-stale-worktree' };
+      const recovered = new ParallelAgentCoordinator({ aggregateResults: false }, scope);
+      const durable = makeFakeDurableController(scope);
+      recovered.initialize({ ...makeFakeContext(), scope, durableController: durable } as never);
+      worktreeState.createMock.mockResolvedValue({
+        worktreePath: '/tmp/replacement-worktree',
+        branchName: 'agent/recovered-task',
+        baseCommit: 'abc123',
+      });
+      const checkpoint = durable.getState();
+      checkpoint.taskGraph = [{
+        id: 'recovered-task', role: 'coder', task: 'continue', dependsOn: [], tools: ['Read'],
+        permissionProfile: 'readonly', sideEffect: false, status: 'dispatched',
+        operationId: 'node:recovered-task', worktreeRef: '/tmp/missing-worktree', artifactRefs: [],
+      }];
+      checkpoint.worktreeRefs = { 'recovered-task': '/tmp/missing-worktree' };
+      recovered.restoreDurableState(checkpoint, {
+        runId: scope.runId, treeId: scope.treeId, classification: 'retry_safe', checkpoint,
+        orphanChildRefs: [], nodes: [{ nodeId: 'recovered-task', classification: 'retry_safe', reason: 'retry' }],
+      });
+
+      await recovered.retryTask('recovered-task');
+
+      expect(worktreeState.createMock).toHaveBeenCalledWith('recovered-task', '/tmp');
+      expect(durable.markNodeWorktree).toHaveBeenCalledWith('recovered-task', '/tmp/replacement-worktree');
+      expect(executorState.executeMock).toHaveBeenCalledWith(expect.objectContaining({
+        context: expect.objectContaining({ cwd: '/tmp/replacement-worktree', worktreePath: '/tmp/replacement-worktree' }),
+      }));
+    });
+
+    it('恢复后已存在的 artifactRefs 直接复用产物，不再启动生成执行器', async () => {
+      const scope: SwarmRunScope = { sessionId: 'test-session', runId: 'run-artifact', treeId: 'tree-artifact' };
+      const recovered = new ParallelAgentCoordinator({ aggregateResults: false }, scope);
+      const durable = makeFakeDurableController(scope);
+      recovered.initialize({
+        ...makeFakeContext(),
+        executionContext: { ...makeFakeContext().executionContext, cwd: process.cwd() } as never,
+        scope,
+        durableController: durable,
+      });
+      const checkpoint = durable.getState();
+      checkpoint.taskGraph = [{
+        id: 'artifact-task', role: 'coder', task: 'generate', dependsOn: [], tools: ['Read'],
+        permissionProfile: 'readonly', sideEffect: false, status: 'dispatched',
+        operationId: 'node:artifact-task', artifactRefs: ['package.json'],
+      }];
+      checkpoint.artifactRefs = { 'artifact-task': ['package.json'] };
+      recovered.restoreDurableState(checkpoint, {
+        runId: scope.runId, treeId: scope.treeId, classification: 'retry_safe', checkpoint,
+        orphanChildRefs: [], nodes: [{ nodeId: 'artifact-task', classification: 'retry_safe', reason: 'retry' }],
+      });
+
+      const result = await recovered.retryTask('artifact-task');
+
+      expect(result.output).toContain('Recovered existing artifacts: package.json');
+      expect(executorState.executeMock).not.toHaveBeenCalled();
+    });
+
+    it('恢复记录的 artifactRefs 不存在时照常启动生成执行器', async () => {
+      const scope: SwarmRunScope = { sessionId: 'test-session', runId: 'run-missing-artifact', treeId: 'tree-missing-artifact' };
+      const recovered = new ParallelAgentCoordinator({ aggregateResults: false }, scope);
+      const durable = makeFakeDurableController(scope);
+      recovered.initialize({ ...makeFakeContext(), scope, durableController: durable } as never);
+      const checkpoint = durable.getState();
+      checkpoint.taskGraph = [{
+        id: 'artifact-task', role: 'coder', task: 'generate', dependsOn: [], tools: ['Read'],
+        permissionProfile: 'readonly', sideEffect: false, status: 'dispatched',
+        operationId: 'node:artifact-task', artifactRefs: ['definitely-missing-artifact.md'],
+      }];
+      checkpoint.artifactRefs = { 'artifact-task': ['definitely-missing-artifact.md'] };
+      recovered.restoreDurableState(checkpoint, {
+        runId: scope.runId, treeId: scope.treeId, classification: 'retry_safe', checkpoint,
+        orphanChildRefs: [], nodes: [{ nodeId: 'artifact-task', classification: 'retry_safe', reason: 'retry' }],
+      });
+
+      await recovered.retryTask('artifact-task');
+
+      expect(executorState.executeMock).toHaveBeenCalledTimes(1);
+    });
+
     it('fails fast on reentrant execution instead of clearing the active run state', async () => {
       let resolveFirst!: (result: {
         success: boolean;

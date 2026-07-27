@@ -238,7 +238,10 @@ async function startRun(state: LedgerState, title: string, prompt: string): Prom
   // D4：这张票的寿命跟着 run 走，不跟着通话走。终态事件或启动失败才还。
   getPermissionModeManager().markLiveVoiceSession(state.neoSessionId, runHoldId(workItemId));
   void tm
-    .startTask(state.neoSessionId, prompt, undefined, options)
+    // 第 5 个参数落在 startTask 建的那条 role:'user' 消息上。必须标记 voiceDispatch——
+    // prompt 是通话 brain 改写出来的，不是用户原话（用户原话是字幕那条），
+    // 不标就会顶着用户身份显示在右边。
+    .startTask(state.neoSessionId, prompt, undefined, options, { voiceDispatch: { title } })
     .catch((err: unknown) => {
       const detail = err instanceof Error ? err.message : 'unknown';
       logger.warn('voice run failed to start', { title, message: detail });

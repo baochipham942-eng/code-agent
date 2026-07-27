@@ -110,6 +110,7 @@ export const voiceZh = {
       assistant: '助手',
     },
     sourceBadge: '语音',
+    dispatchLabel: '语音派出任务「{title}」，以下是发给执行引擎的指令',
     echoHint: {
       message: '外放可能让助手听到自己的声音，建议佩戴耳机',
       dontShowAgain: '不再提示',
@@ -224,6 +225,7 @@ export const voiceEn: typeof voiceZh = {
       assistant: 'Assistant',
     },
     sourceBadge: 'Voice',
+    dispatchLabel: 'Dispatched by voice as「{title}」— this is the instruction sent to the execution engine',
     echoHint: {
       message: 'Speaker output may let the assistant hear itself. Consider wearing headphones',
       dontShowAgain: "Don't show again",

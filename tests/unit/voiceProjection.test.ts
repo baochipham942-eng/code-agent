@@ -182,3 +182,33 @@ describe('partial 与真消息的交接（批 H）', () => {
       .toEqual({ partialAssistant: '' });
   });
 });
+
+// 语音派出的那条指令不是用户说的话——它是通话 brain 改写后发给执行引擎的。
+// 存的是 role:'user'（runtime 需要用户轮），但顶着用户身份显示在右边 = 把话安在用户嘴里。
+// 判据是投影出来的节点类型，不是「metadata 存下来了」。
+describe('语音派出的指令不冒充用户消息（批 H）', () => {
+  const dispatch = (id: string, timestamp: number): Message => ({
+    id,
+    role: 'user',
+    content: '用户要求在工作目录下创建一个名为 test3.txt 的文件。请执行此操作。',
+    timestamp,
+    metadata: { voiceDispatch: { title: '建 test3.txt' } },
+  });
+
+  it('投成左侧节点而不是用户气泡', () => {
+    const projection = projectTurns([dispatch('voice-dispatch-1', 1000)], 'session-1', false);
+    const node = projection.turns.flatMap((t) => t.nodes).find((n) => n.id === 'voice-dispatch-1');
+    expect(node?.type).toBe('assistant_text');
+    expect(node?.metadata?.voiceDispatch?.title).toBe('建 test3.txt');
+  });
+
+  it('用户真说的那句仍然是用户气泡（别把语音消息一锅端）', () => {
+    const projection = projectTurns([
+      voiceTranscript('voice-user-1', 'user', '在工作目录建个文件，叫 test 三点 txt', 900),
+      dispatch('voice-dispatch-1', 1000),
+    ], 'session-1', false);
+    const nodes = projection.turns.flatMap((t) => t.nodes);
+    expect(nodes.find((n) => n.id === 'voice-user-1')?.type).toBe('user');
+    expect(nodes.find((n) => n.id === 'voice-dispatch-1')?.type).toBe('assistant_text');
+  });
+});

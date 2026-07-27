@@ -216,7 +216,7 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
 
               <div className="space-y-2">
                 {q.options.map((option, oIndex) => (
-                  <button
+                  <button /* ds-allow:button: 选项行整面可点（选中指示+标题+描述复合内容），沿用旧 UserQuestionModal 选项行形态 */
                     key={oIndex}
                     onClick={() => handleSelect(q.header, option.label, q.multiSelect)}
                     className={`w-full p-2.5 rounded-lg border text-left transition-all ${

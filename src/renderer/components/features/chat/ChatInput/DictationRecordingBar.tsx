@@ -148,7 +148,7 @@ export const DictationRecordingBar: React.FC<DictationRecordingBarProps> = ({
         </>
       )}
       {/* 停止：转写后文本落回输入框可编辑 */}
-      <button
+      <button /* ds-allow:button: 录音态行内 icon-only 按钮，沿用 composer 圆形图标按钮语言（同 LiveVoiceButton 先例） */
         type="button"
         onClick={onStop}
         disabled={isTranscribing}
@@ -159,7 +159,7 @@ export const DictationRecordingBar: React.FC<DictationRecordingBarProps> = ({
         <Square className="h-3.5 w-3.5 fill-current stroke-[2.2]" />
       </button>
       {/* 发送：停止录音，转写完成后自动提交 */}
-      <button
+      <button /* ds-allow:button: 录音态行内 icon-only 按钮，沿用 composer 圆形图标按钮语言（同 LiveVoiceButton 先例） */
         type="button"
         onClick={onSend}
         disabled={isTranscribing}

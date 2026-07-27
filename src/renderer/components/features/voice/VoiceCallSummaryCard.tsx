@@ -48,7 +48,7 @@ export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ 
   return (
     <div data-testid="voice-call-summary-card" className="py-1">
       <div className="rounded-lg border border-primary-500/20 bg-primary-500/5">
-        <button
+        <button /* ds-allow:button: 摘要卡整行即展开/收起开关（图标+文案复合内容，aria-expanded），非主操作按钮，沿用 bare 先例 */
           type="button"
           aria-expanded={expanded}
           title={expanded ? text.collapse : text.expand}

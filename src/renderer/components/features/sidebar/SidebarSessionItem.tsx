@@ -214,7 +214,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
 
         {/* 分叉标记：紧跟标题右侧，仅分叉来的子会话显示，点击跳回父会话 */}
         {forkParentSessionId && !multiSelectMode && (
-          <button
+          <button /* ds-allow:button: 侧栏列表行标题旁的分叉来源小图标，Button primitive 动作按钮形状不适配列表行 */
             type="button"
             data-testid="fork-lineage-marker"
             aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}

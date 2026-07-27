@@ -394,7 +394,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
           <div className="flex items-center gap-2" data-testid="turn-reply-actions">
             {forkAnchor && (
               <div className="relative">
-                <button
+                <button /* ds-allow:button: turn 回复操作区的轻量文字触发器（图标+小字），Button primitive 无对应紧凑变体 */
                   type="button"
                   data-testid="turn-fork-action"
                   aria-label={t.turnCard.createForkFromReply}
@@ -416,7 +416,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                     aria-label={t.turnCard.chooseWorkspace}
                     className="absolute bottom-full left-0 z-30 mb-1 w-72 rounded-lg border border-zinc-700 bg-zinc-900 p-1.5 shadow-xl"
                   >
-                    <button
+                    <button /* ds-allow:button: 工作区模式菜单项是标题+说明的双行可选行，Button primitive 的动作按钮布局不适配 */
                       type="button"
                       role="menuitem"
                       onClick={() => void handleFork('shared_current')}
@@ -425,7 +425,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                       <span className="block text-xs text-zinc-200">{t.turnCard.sharedCurrent}</span>
                       <span className="mt-0.5 block text-[11px] text-zinc-500">{t.turnCard.sharedCurrentDetail}</span>
                     </button>
-                    <button
+                    <button /* ds-allow:button: 工作区模式菜单项是标题+说明的双行可选行，Button primitive 的动作按钮布局不适配 */
                       type="button"
                       role="menuitem"
                       onClick={() => void handleFork('isolated_at_anchor')}

@@ -58,21 +58,22 @@ describe('SessionRepository conversation rewind', () => {
 
   afterEach(() => db.close());
 
-  it('soft-hides the stable suffix and writes an auditable idempotency record', () => {
+  it('keeps the anchor active, soft-hides only the later suffix, and writes an audit record', () => {
     const result = repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'rewind-request-1',
       createdAt: 100,
       ownerUserId: null,
     });
 
-    expect(result.hiddenMessageIds).toEqual(['u2', 'a2', 'u3']);
+    expect(result.hiddenMessageIds).toEqual(['a2', 'u3']);
+    expect(result.activeMessages.map((message) => message.id)).toEqual(['u1', 'a1', 'u2']);
     expect(db.prepare(`
       SELECT id, visibility, hidden_by_rewind_id
       FROM messages WHERE session_id = 'session-1' ORDER BY rowid
     `).all()).toEqual([
       { id: 'u1', visibility: 'active', hidden_by_rewind_id: null },
       { id: 'a1', visibility: 'active', hidden_by_rewind_id: null },
-      { id: 'u2', visibility: 'rewound', hidden_by_rewind_id: result.rewindId },
+      { id: 'u2', visibility: 'active', hidden_by_rewind_id: null },
       { id: 'a2', visibility: 'rewound', hidden_by_rewind_id: result.rewindId },
       { id: 'u3', visibility: 'rewound', hidden_by_rewind_id: result.rewindId },
     ]);
@@ -84,6 +85,21 @@ describe('SessionRepository conversation rewind', () => {
       status: 'completed',
       files_restored: 0,
       files_deleted: 0,
+    });
+  });
+
+  it('keeps the first prompt visible when rewinding to the first message', () => {
+    const result = repository.applyPromptRewind('session-1', 'u1', {
+      idempotencyKey: 'rewind-first-prompt',
+      createdAt: 100,
+      ownerUserId: null,
+    });
+
+    expect(result.activeMessages.map((message) => message.id)).toEqual(['u1']);
+    expect(result.hiddenMessageIds).toEqual(['a1', 'u2', 'a2', 'u3']);
+    expect(repository.getMessageById('session-1', 'u1')).toMatchObject({
+      id: 'u1',
+      visibility: 'active',
     });
   });
 
@@ -105,7 +121,7 @@ describe('SessionRepository conversation rewind', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 1 });
   });
 
-  it('rejects an invalid or already hidden anchor with zero writes', () => {
+  it('rejects an invalid or hidden anchor with zero writes', () => {
     const beforeMissing = totalChanges(db);
     expect(() => repository.applyPromptRewind('session-1', 'missing', {
       idempotencyKey: 'missing',
@@ -119,7 +135,7 @@ describe('SessionRepository conversation rewind', () => {
       ownerUserId: null,
     });
     const beforeHidden = totalChanges(db);
-    expect(() => repository.applyPromptRewind('session-1', 'u2', {
+    expect(() => repository.applyPromptRewind('session-1', 'u3', {
       idempotencyKey: 'different',
       createdAt: 200,
       ownerUserId: null,
@@ -189,7 +205,7 @@ describe('SessionRepository conversation rewind', () => {
 
     const restored = repository.restorePromptRewind('session-1', rewind.rewindId, 200, null);
 
-    expect(restored.restoredMessageCount).toBe(3);
+    expect(restored.restoredMessageCount).toBe(2);
     expect(repository.getMessages('session-1')).toHaveLength(5);
     expect(db.prepare(`
       SELECT status, restored_at FROM session_rewinds WHERE id = ?
@@ -227,8 +243,8 @@ describe('SessionRepository conversation rewind', () => {
       ownerUserId: null,
     });
 
-    expect(rewind.hiddenMessageIds).toEqual(['u2', 'a2', 'a1']);
-    expect(rewind.activeMessages.map((message) => message.id)).toEqual(['u3', 'u1']);
+    expect(rewind.hiddenMessageIds).toEqual(['a2', 'a1']);
+    expect(rewind.activeMessages.map((message) => message.id)).toEqual(['u3', 'u1', 'u2']);
   });
 
   it.each(['running', 'paused', 'queued', 'cancelling'])(
@@ -309,11 +325,12 @@ describe('SessionRepository conversation rewind', () => {
     expect(() => repository.restorePromptRewind('session-1', older.rewindId, 200, null))
       .toThrow('REWIND_RESTORE_ORDER');
     expect(totalChanges(db)).toBe(beforeOutOfOrderRestore);
-    expect(repository.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
+    expect(repository.getMessages('session-1').map((message) => message.id))
+      .toEqual(['u1', 'a1', 'u2']);
 
     repository.restorePromptRewind('session-1', newer.rewindId, 210, null);
     expect(repository.getMessages('session-1').map((message) => message.id))
-      .toEqual(['u1', 'a1', 'u2', 'a2']);
+      .toEqual(['u1', 'a1', 'u2', 'a2', 'u3']);
 
     repository.restorePromptRewind('session-1', older.rewindId, 220, null);
     expect(repository.getMessages('session-1').map((message) => message.id))

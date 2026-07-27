@@ -869,11 +869,14 @@ describe('AgentAppService lifecycle routing', () => {
         content: 'rewrite this prompt',
         timestamp: 30,
         attachments: [{ name: 'brief.md' }],
-        visibility: 'rewound',
+        visibility: 'active',
       },
-      hiddenMessageIds: ['u2', 'a2'],
-      activeMessages: [{ id: 'u1', role: 'user', content: 'previous', timestamp: 10 }],
-      hiddenMessageCount: 2,
+      hiddenMessageIds: ['a2'],
+      activeMessages: [
+        { id: 'u1', role: 'user', content: 'previous', timestamp: 10 },
+        { id: 'u2', role: 'user', content: 'rewrite this prompt', timestamp: 30 },
+      ],
+      hiddenMessageCount: 1,
     });
 
     const service = createService(taskManager);
@@ -892,11 +895,12 @@ describe('AgentAppService lifecycle routing', () => {
     expect(checkpointService.rewindFiles).not.toHaveBeenCalled();
     expect(taskManager.setSessionContext).toHaveBeenCalledWith('session-1', [
       { id: 'u1', role: 'user', content: 'previous', timestamp: 10 },
+      { id: 'u2', role: 'user', content: 'rewrite this prompt', timestamp: 30 },
     ]);
     expect(result).toMatchObject({
       success: true,
-      draft: { content: 'rewrite this prompt', attachments: [{ name: 'brief.md' }] },
-      hiddenMessageCount: 2,
+      draft: { content: '' },
+      hiddenMessageCount: 1,
       workspaceChanged: false,
       filesRestored: 0,
       filesDeleted: 0,

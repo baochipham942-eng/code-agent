@@ -9,8 +9,13 @@ import { applyConversationBranchSchema } from '../../../src/host/services/core/d
 import { ConversationBranchRepository } from '../../../src/host/services/core/repositories/ConversationBranchRepository';
 import { SessionForkRepository } from '../../../src/host/services/core/repositories/SessionForkRepository';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { createLogger } from '../../../src/host/services/infra/logger';
 
-const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+const logger = createLogger('ConversationBranchProjectionRepair.test');
+vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+vi.spyOn(logger, 'error').mockImplementation(() => undefined);
 const boundary = { ownerUserId: 'owner-1', projectId: 'project-1' } as const;
 const reason = 'restore the compatibility projection from independently audited immutable replay';
 

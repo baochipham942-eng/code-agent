@@ -45,7 +45,14 @@ import type {
   RestoreConversationRewindResult,
   RewindConversationResult,
 } from '../../src/shared/contract/sessionRewind';
-import type { SessionExportEnvelopeV2 } from '../../src/shared/contract/sessionForkPortability';
+import type {
+  ImportSessionForkResponse,
+  SessionExportEnvelopeV2,
+} from '../../src/shared/contract/sessionForkPortability';
+import {
+  prepareExternalEngineAcceptanceEnvironment,
+  runExternalEngineProcessAcceptance,
+} from './session-fork-external-engine-smoke';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -936,6 +943,90 @@ async function runWebAcceptance(input: {
     portableWorkspace,
   );
 
+  const sourceProjectId = source.projectId;
+  requireCheck(
+    typeof sourceProjectId === 'string' && sourceProjectId.length > 0,
+    'Fork source is bound to one canonical Project before portability import',
+    { sourceProjectId },
+  );
+  const subtree = await domain<SessionExportEnvelopeV2>(server, 'exportSessionFork', {
+    sessionId: source.id,
+    exportId: 'acceptance-subtree-export',
+    mode: 'subtree',
+  });
+  const importRequest = {
+    envelope: subtree,
+    targetProjectId: sourceProjectId,
+    namespace: 'acceptance-device-b',
+    allowProjectRemap: false,
+  };
+  const imported = await domain<ImportSessionForkResponse>(
+    server,
+    'importSessionFork',
+    importRequest,
+  );
+  const repeatedImport = await domain<ImportSessionForkResponse>(
+    server,
+    'importSessionFork',
+    importRequest,
+  );
+  const importedIsolatedId = imported.sessionIdMap[isolated.childSession.id];
+  requireCheck(
+    typeof importedIsolatedId === 'string'
+      && imported.importId === repeatedImport.importId
+      && canonicalJson(imported.sessionIdMap) === canonicalJson(repeatedImport.sessionIdMap),
+    'portable subtree import is idempotent and maps the isolated child once',
+    { imported, repeatedImport, importedIsolatedId },
+  );
+  const importedIsolated = await domain<Session>(server, 'load', {
+    sessionId: importedIsolatedId,
+  });
+  requireCheck(
+    importedIsolated.readOnly === false
+      && importedIsolated.projectId === sourceProjectId
+      && typeof importedIsolated.workingDirectory === 'string'
+      && importedIsolated.workingDirectory !== workspaceRoot
+      && manifestDigest(await fileManifest(importedIsolated.workingDirectory))
+        === manifestDigest(anchorManifest),
+    'Web import publishes a runnable durable isolated workspace with exact anchor bytes',
+    {
+      importedIsolatedId,
+      workingDirectory: importedIsolated.workingDirectory,
+      readOnly: importedIsolated.readOnly,
+      projectId: importedIsolated.projectId,
+    },
+  );
+  const importedLineage = await domain<SessionForkLineageSummary>(server, 'getForkLineage', {
+    sessionId: importedIsolatedId,
+  });
+  requireCheck(
+    importedLineage.parentSessionId === imported.sessionIdMap[source.id]
+      && importedLineage.sourceAnchorMessageId === imported.messageIdMap.a2,
+    'portable import preserves remapped parent/child lineage and anchor provenance',
+    importedLineage,
+  );
+  const reexported = await domain<SessionExportEnvelopeV2>(server, 'exportSessionFork', {
+    sessionId: importedIsolatedId,
+    exportId: 'acceptance-imported-isolated-reexport',
+    mode: 'detached_child',
+  });
+  const reexportedWorkspace = reexported.sessions
+    .find((session) => session.id === importedIsolatedId)
+    ?.workspace;
+  requireCheck(
+    reexportedWorkspace?.mode === 'isolated_at_anchor'
+      && reexportedWorkspace.isolatedAnchor?.content.payloadDigest
+        === portableWorkspace?.isolatedAnchor?.content.payloadDigest
+      && reexportedWorkspace.isolatedAnchor?.baseCommit === baseCommit,
+    'published imported isolated workspace can be re-exported with identical portable evidence',
+    reexportedWorkspace,
+  );
+  requireCheck(
+    manifestDigest(await fileManifest(workspaceRoot)) === manifestDigest(sourceFilesBeforeFork)
+      && readSourceDatabaseSnapshot(dbPath, source.id).digest === sourceAfterFork.digest,
+    'portable import and re-export leave the original source rows and workspace byte-stable',
+  );
+
   const childSidecars = [
     shared.childSession.id,
     isolated.childSession.id,
@@ -1134,6 +1225,14 @@ async function runWebAcceptance(input: {
       sourceFileManifestDigest: manifestDigest(sourceFilesBeforeFork),
       stablePrefixSourceIds: shared.messageMappings.map((mapping) => mapping.sourceMessageId),
       portableWorkspace,
+      portabilityImport: {
+        importId: imported.importId,
+        rootSessionId: imported.rootSessionId,
+        importedIsolatedId,
+        importedIsolatedWorktree: importedIsolated.workingDirectory,
+        reexportedPayloadDigest:
+          reexportedWorkspace?.isolatedAnchor?.content.payloadDigest,
+      },
     },
     rewind: {
       sessionId: rewindSource.id,
@@ -1226,7 +1325,11 @@ async function verifyRestartAndRestore(input: {
 
 async function runDesktopIpcAcceptance(input: {
   dataDir: string;
+  dbPath: string;
   sessionId: string;
+  workspaceRoot: string;
+  fakeHome: string;
+  fakeBin: string;
 }): Promise<Record<string, unknown>> {
   process.env.CODE_AGENT_DATA_DIR = input.dataDir;
   process.env.CODE_AGENT_E2E = '1';
@@ -1326,12 +1429,22 @@ async function runDesktopIpcAcceptance(input: {
       'Desktop IPC executes explicit Rewind restore through AgentAppService',
       restored,
     );
+    const externalProcess = await runExternalEngineProcessAcceptance({
+      database,
+      dbPath: input.dbPath,
+      templateSessionId: input.sessionId,
+      workspaceRoot: input.workspaceRoot,
+      fakeHome: input.fakeHome,
+      fakeBin: input.fakeBin,
+      recordCheck: requireCheck,
+    });
     return {
       sourceSessionId: input.sessionId,
       childSessionId: fork.childSession.id,
       forkId: fork.lineage.forkId,
       rewindId: rewind.rewindId,
       restoredMessageCount: restored.restoredMessageCount,
+      externalProcess,
     };
   } finally {
     database.close();
@@ -1355,6 +1468,7 @@ async function verifyShellManifest(): Promise<Record<string, unknown>> {
     'listForkChildren',
     'rewindConversation',
     'restoreConversationRewind',
+    'restoreWorkspaceFilesAtCheckpoint',
   ];
   const advertised = new Set(manifest.capabilities.map((capability) => capability.id));
   const requiredIds = requiredActions.map((action) => (
@@ -1421,9 +1535,17 @@ async function main(): Promise<void> {
     networkAudits.push(await verifyNetworkAudit(server, 'restarted'));
     server = null;
 
+    const externalEnvironment = await prepareExternalEngineAcceptanceEnvironment({
+      evidenceRoot: evidenceDir,
+      fakeHome,
+    });
     const desktop = await runDesktopIpcAcceptance({
       dataDir,
+      dbPath,
       sessionId: web.desktopSessionId,
+      workspaceRoot,
+      fakeHome,
+      fakeBin: externalEnvironment.fakeBin,
     });
     const shell = await verifyShellManifest();
     const finalCounts = readDatabaseCounts(dbPath);

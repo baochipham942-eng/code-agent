@@ -35,6 +35,10 @@ import {
   rowToMessage,
   rowToSession,
 } from './sessionRepositoryParsers';
+import {
+  readPublishedImportedPortableWorkspace,
+  type PublishedImportedWorkspaceSessionRow,
+} from './sessionForkPublishedWorkspaceReader';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -661,20 +665,14 @@ export class SessionForkPortabilitySourceReader {
     fork: StoredForkRow,
   ): PortableSessionWorkspaceV2 | null {
     const row = this.db.prepare(`
-      SELECT origin, metadata, read_only, working_directory
+      SELECT user_id, project_id, origin, metadata, agent_engine, read_only,
+             working_directory, workspace, is_deleted, status
       FROM sessions
       WHERE id = ?
       LIMIT 1
-    `).get(fork.child_session_id) as {
-      origin: string | null;
-      metadata: string | null;
-      read_only: number;
-      working_directory: string | null;
-    } | undefined;
+    `).get(fork.child_session_id) as PublishedImportedWorkspaceSessionRow | undefined;
     if (
       !row
-      || Number(row.read_only) !== 1
-      || row.working_directory !== null
       || typeof row.origin !== 'string'
       || typeof row.metadata !== 'string'
     ) {
@@ -696,7 +694,27 @@ export class SessionForkPortabilitySourceReader {
       portable,
       `imported isolated fork ${fork.id} workspace`,
     );
-    return portable.mode === 'isolated_at_anchor' ? portable : null;
+    if (portable.mode !== 'isolated_at_anchor') return null;
+    if (!Object.prototype.hasOwnProperty.call(metadata, 'importedWorkspacePublicationV1')) {
+      if (
+        Number(row.read_only) !== 1
+        || row.working_directory !== null
+        || row.workspace !== null
+      ) {
+        fail(
+          'INVALID_ENVELOPE',
+          `imported isolated fork ${fork.id} is neither hidden nor atomically published`,
+        );
+      }
+      return portable;
+    }
+    return readPublishedImportedPortableWorkspace(this.db, {
+      fork,
+      session: row,
+      metadata,
+      importedPortable: portable,
+      publication: metadata.importedWorkspacePublicationV1,
+    });
   }
 
   private readMappings(fork: StoredForkRow): Array<{

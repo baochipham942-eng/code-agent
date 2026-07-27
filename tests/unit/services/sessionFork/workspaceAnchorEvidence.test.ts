@@ -105,7 +105,7 @@ describe('AnchorWorkspaceEvidenceService', () => {
         sourcePath: repositoryRoot,
         isolatedRelativePath: '.',
       }],
-    })).rejects.toMatchObject<Partial<AnchorEvidenceError>>({ code: 'BASE_COMMIT_REQUIRED' });
+    })).rejects.toMatchObject({ code: 'BASE_COMMIT_REQUIRED' } satisfies Partial<AnchorEvidenceError>);
 
     await expect(service.capture({
       anchorId: 'assistant-a2',
@@ -113,7 +113,7 @@ describe('AnchorWorkspaceEvidenceService', () => {
       baseCommit: 'deadbeef',
       workspaceScopeVersion: 'scope-v1',
       pathMappings: [],
-    })).rejects.toMatchObject<Partial<AnchorEvidenceError>>({ code: 'PATH_MAPPING_INCOMPLETE' });
+    })).rejects.toMatchObject({ code: 'PATH_MAPPING_INCOMPLETE' } satisfies Partial<AnchorEvidenceError>);
   });
 
   it('refuses hidden tracked state and a repository generation that changes during capture', async () => {
@@ -130,7 +130,7 @@ describe('AnchorWorkspaceEvidenceService', () => {
         sourcePath: repositoryRoot,
         isolatedRelativePath: '.',
       }],
-    })).rejects.toMatchObject<Partial<AnchorEvidenceError>>({ code: 'TRACKED_STATE_HIDDEN' });
+    })).rejects.toMatchObject({ code: 'TRACKED_STATE_HIDDEN' } satisfies Partial<AnchorEvidenceError>);
     git(repositoryRoot, 'update-index', '--no-assume-unchanged', 'src/tracked.txt');
 
     class DriftingRunner implements WorkspaceCommandRunner {
@@ -160,7 +160,7 @@ describe('AnchorWorkspaceEvidenceService', () => {
         sourcePath: repositoryRoot,
         isolatedRelativePath: '.',
       }],
-    })).rejects.toMatchObject<Partial<AnchorEvidenceError>>({ code: 'ANCHOR_STATE_CHANGED' });
+    })).rejects.toMatchObject({ code: 'ANCHOR_STATE_CHANGED' } satisfies Partial<AnchorEvidenceError>);
   });
 
   it('fails closed when patch/blob evidence is missing or tampered', async () => {
@@ -182,12 +182,12 @@ describe('AnchorWorkspaceEvidenceService', () => {
     const missingBlob = structuredClone(evidence);
     missingBlob.payload.untrackedBlobs = {};
     await expect(service.validateBundle(missingBlob))
-      .rejects.toMatchObject<Partial<AnchorEvidenceError>>({ code: 'EVIDENCE_INCOMPLETE' });
+      .rejects.toMatchObject({ code: 'EVIDENCE_INCOMPLETE' } satisfies Partial<AnchorEvidenceError>);
 
     const tamperedPatch = structuredClone(evidence);
     tamperedPatch.payload.unstagedPatchBase64 = Buffer.from('tampered').toString('base64');
     await expect(service.validateBundle(tamperedPatch))
-      .rejects.toMatchObject<Partial<AnchorEvidenceError>>({ code: 'EVIDENCE_HASH_MISMATCH' });
+      .rejects.toMatchObject({ code: 'EVIDENCE_HASH_MISMATCH' } satisfies Partial<AnchorEvidenceError>);
   });
 
   it('rejects repository identity drift before materialization can trust the evidence', async () => {
@@ -207,7 +207,7 @@ describe('AnchorWorkspaceEvidenceService', () => {
     });
 
     await expect(service.assertRepositoryIdentity(evidence, second.repositoryRoot))
-      .rejects.toMatchObject<Partial<AnchorEvidenceError>>({ code: 'REPOSITORY_IDENTITY_DRIFT' });
+      .rejects.toMatchObject({ code: 'REPOSITORY_IDENTITY_DRIFT' } satisfies Partial<AnchorEvidenceError>);
 
     expect(await readFile(path.join(first.repositoryRoot, 'src', 'tracked.txt'), 'utf8')).toBe('base\n');
   });

@@ -46,6 +46,21 @@ type SessionDomainHandlerDependencies = {
   getDurableRunReadService: () => DurableRunReadService | undefined;
 };
 
+async function createSessionApplicationService(deps: SessionDomainHandlerDependencies) {
+  const [{ AgentAppServiceImpl }, { getTaskManager }] = await Promise.all([
+    import('../host/app/agentAppService'),
+    import('../host/task'),
+  ]);
+  return new AgentAppServiceImpl(
+    () => getTaskManager(),
+    () => null,
+    deps.getCurrentSessionId,
+    deps.setCurrentSessionId,
+    undefined,
+    deps.getDurableRunReadService(),
+  );
+}
+
 export function installSessionDomainHandler(deps: SessionDomainHandlerDependencies): void {
   deps.handlers.set('domain:session', async (_event: unknown, request: SessionDomainIpcRequest) => {
     const { action, payload } = request;
@@ -234,181 +249,42 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
         case 'readSessionForkTree':
         case 'readSessionForkNeighborhood': {
           const portabilityPayload = (payload ?? {}) as Record<string, unknown>;
-          const { getDatabase } = await import('../host/services/core/databaseService');
-          const { getAuthService } = await import('../host/services/auth/authService');
-          const {
-            LOCAL_SESSION_FORK_OWNER_SCOPE_ID,
-            SessionForkPortabilityError,
-          } = await import('../shared/contract/sessionForkPortability');
-          const database = getDatabase();
-          const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
-          const ownerScopeId = ownerUserId ?? LOCAL_SESSION_FORK_OWNER_SCOPE_ID;
-          const requireProject = (value: unknown): string => {
-            const projectId = typeof value === 'string' ? value.trim() : '';
-            if (!projectId || !database.getProjectRepo().getProject(projectId)) {
-              throw new SessionForkPortabilityError(
-                'PROJECT_SCOPE_MISMATCH',
-                `project ${projectId || '<empty>'} was not found`,
-              );
-            }
-            return projectId;
-          };
-
+          const appService = await createSessionApplicationService(deps);
           if (action === 'exportSessionFork') {
-            const sessionId = typeof portabilityPayload.sessionId === 'string'
-              ? portabilityPayload.sessionId.trim()
-              : '';
-            const exportId = typeof portabilityPayload.exportId === 'string'
-              ? portabilityPayload.exportId.trim()
-              : '';
-            if (!sessionId || !exportId) {
-              return {
-                success: false,
-                error: { code: 'INVALID_PAYLOAD', message: 'sessionId and exportId are required' },
-              };
-            }
-            const session = database.getSession(sessionId, { userId: ownerUserId });
-            if (!session?.projectId) {
-              throw new SessionForkPortabilityError(
-                'PROJECT_SCOPE_MISMATCH',
-                `session ${sessionId} has no accessible canonical project`,
-              );
-            }
-            data = database.exportSessionFork({
-              exportId,
-              rootSessionId: sessionId,
-              ownerScopeId,
-              projectId: session.projectId,
-              mode: portabilityPayload.mode === 'detached_child'
-                ? 'detached_child'
-                : 'subtree',
-            });
+            data = await appService.exportSessionFork(
+              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ExportSessionForkRequest,
+            );
             break;
           }
-
           if (action === 'importSessionFork') {
-            if (
-              !portabilityPayload.envelope
-              || typeof portabilityPayload.envelope !== 'object'
-              || typeof portabilityPayload.namespace !== 'string'
-              || !portabilityPayload.namespace.trim()
-            ) {
-              return {
-                success: false,
-                error: { code: 'INVALID_PAYLOAD', message: 'envelope and namespace are required' },
-              };
-            }
-            data = database.importSessionFork({
-              envelope: portabilityPayload.envelope as import('../shared/contract/sessionForkPortability').SessionExportEnvelopeV2,
-              targetOwnerScopeId: ownerScopeId,
-              targetProjectId: requireProject(portabilityPayload.targetProjectId),
-              namespace: portabilityPayload.namespace.trim(),
-              allowProjectRemap: portabilityPayload.allowProjectRemap === true,
-            });
-            for (const sessionId of Object.values(
-              (data as import('../host/services/core/repositories/SessionForkPortabilityRepository').ImportSessionForkResult)
-                .sessionIdMap,
-            )) {
-              sm.invalidateSessionCache(sessionId);
-            }
+            data = await appService.importSessionFork(
+              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ImportSessionForkRequest,
+            );
             break;
           }
-
-          const projectId = requireProject(
-            portabilityPayload.projectId ?? portabilityPayload.targetProjectId,
-          );
           if (action === 'enqueueSessionForkSync') {
-            const exportId = String(portabilityPayload.exportId ?? '').trim();
-            const syncEnvelopeId = String(portabilityPayload.syncEnvelopeId ?? '').trim();
-            const envelope = database.getDurableSessionForkExport(
-              exportId,
-              ownerScopeId,
-              projectId,
+            data = await appService.enqueueSessionForkSync(
+              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').EnqueueSessionForkSyncRequest,
             );
-            if (!envelope) {
-              throw new SessionForkPortabilityError(
-                'SYNC_ENVELOPE_NOT_FOUND',
-                `export ${exportId} does not exist`,
-              );
-            }
-            data = database.enqueueSessionForkOutbound({
-              syncEnvelopeId,
-              envelope,
-              dependencyIds: Array.isArray(portabilityPayload.dependencyIds)
-                ? portabilityPayload.dependencyIds.filter(
-                  (value: unknown): value is string => typeof value === 'string',
-                )
-                : [],
-              ownerScopeId,
-              projectId,
-            });
           } else if (action === 'ingestSessionForkSync') {
-            data = database.ingestSessionForkInbound({
-              wire: portabilityPayload.wire as import('../shared/contract/sessionForkPortability').SessionForkSyncWireEnvelope,
-              ownerScopeId,
-              projectId,
-            });
-          } else if (action === 'importReadySessionForkSync') {
-            const syncEnvelopeId = String(portabilityPayload.syncEnvelopeId ?? '').trim();
-            const namespace = String(portabilityPayload.namespace ?? '').trim();
-            const record = database.getSessionForkSyncRecord(
-              'inbox',
-              syncEnvelopeId,
-              ownerScopeId,
-              projectId,
+            data = await appService.ingestSessionForkSync(
+              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').IngestSessionForkSyncRequest,
             );
-            if (!record) {
-              throw new SessionForkPortabilityError(
-                'SYNC_ENVELOPE_NOT_FOUND',
-                `inbox ${syncEnvelopeId} does not exist`,
-              );
-            }
-            if (record.state !== 'ready' && record.state !== 'applied') {
-              throw new SessionForkPortabilityError(
-                'ENVELOPE_NOT_READY',
-                `inbox ${syncEnvelopeId} is ${record.state}`,
-              );
-            }
-            const imported = database.importSessionFork({
-              envelope: record.envelope,
-              targetOwnerScopeId: ownerScopeId,
-              targetProjectId: projectId,
-              namespace,
-              allowProjectRemap: false,
-            });
-            for (const sessionId of Object.values(imported.sessionIdMap)) {
-              sm.invalidateSessionCache(sessionId);
-            }
-            const sync = record.state === 'applied'
-              ? record
-              : database.applySessionForkInbound(
-                syncEnvelopeId,
-                ownerScopeId,
-                projectId,
-              );
-            data = { sync, imported };
+          } else if (action === 'importReadySessionForkSync') {
+            data = await appService.importReadySessionForkSync(
+              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ImportReadySessionForkSyncRequest,
+            );
           } else if (action === 'searchSessionForkExports') {
-            data = database.searchDurableSessionForks(
-              String(portabilityPayload.exportId ?? ''),
-              ownerScopeId,
-              projectId,
-              String(portabilityPayload.query ?? ''),
+            data = await appService.searchSessionForkExports(
+              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').SearchSessionForkExportsRequest,
             );
           } else if (action === 'readSessionForkTree') {
-            data = database.getDurableSessionForkTree(
-              String(portabilityPayload.exportId ?? ''),
-              ownerScopeId,
-              projectId,
+            data = await appService.readSessionForkTree(
+              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ReadSessionForkTreeRequest,
             );
           } else {
-            data = database.getDurableSessionForkNeighborhood(
-              String(portabilityPayload.exportId ?? ''),
-              ownerScopeId,
-              projectId,
-              String(portabilityPayload.centerSessionId ?? ''),
-              typeof portabilityPayload.radius === 'number'
-                ? portabilityPayload.radius
-                : undefined,
+            data = await appService.readSessionForkNeighborhood(
+              portabilityPayload as unknown as import('../shared/contract/sessionForkPortability').ReadSessionForkNeighborhoodRequest,
             );
           }
           break;
@@ -598,16 +474,7 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
           break;
         }
         case 'restoreWorkspaceFilesAtCheckpoint': {
-          const { AgentAppServiceImpl } = await import('../host/app/agentAppService');
-          const { getTaskManager } = await import('../host/task');
-          const appService = new AgentAppServiceImpl(
-            () => getTaskManager(),
-            () => null,
-            deps.getCurrentSessionId,
-            deps.setCurrentSessionId,
-            undefined,
-            deps.getDurableRunReadService(),
-          );
+          const appService = await createSessionApplicationService(deps);
           data = await appService.restoreWorkspaceFilesAtCheckpoint({
             sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId : '',
             checkpointMessageId: typeof payload?.checkpointMessageId === 'string'

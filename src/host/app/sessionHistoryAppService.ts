@@ -45,8 +45,14 @@ import type { TaskManager } from '../task';
 import { getAuthService } from '../services/auth/authService';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getDatabase } from '../services/core/databaseService';
+import { getProjectSourceGitStates } from '../services/git/gitStatusService';
 import { getSessionManager } from '../services/infra/sessionManager';
+import { getProjectService } from '../services/project/projectService';
 import { SessionForkService } from '../services/sessionFork/SessionForkService';
+import { planSessionForkImport } from '../services/sessionFork/portability';
+import type {
+  TrustedSingleRootGitProjectWorkspace,
+} from '../services/sessionFork/workspace';
 import { SessionRewindService } from '../services/sessionRewind/SessionRewindService';
 import type { DurableRunReadService } from './durableRunReadService';
 
@@ -115,17 +121,75 @@ export class SessionHistoryAppService {
   }
 
   async importSessionFork(params: ImportSessionForkRequest): Promise<ImportSessionForkResponse> {
-    const result = getDatabase().importSessionFork({
+    const database = getDatabase();
+    const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
+    const ownerScopeId = ownerUserId ?? LOCAL_SESSION_FORK_OWNER_SCOPE_ID;
+    const targetProjectId = this.requireSessionForkProject(params.targetProjectId);
+    const plan = planSessionForkImport({
       envelope: params.envelope,
-      targetOwnerScopeId: this.currentSessionForkOwnerScope(),
-      targetProjectId: this.requireSessionForkProject(params.targetProjectId),
+      targetOwnerScopeId: ownerScopeId,
+      targetProjectId,
       namespace: params.namespace,
       allowProjectRemap: params.allowProjectRemap,
     });
-    for (const sessionId of Object.values(result.sessionIdMap)) {
-      getSessionManager().invalidateSessionCache(sessionId);
+    const result = database.importSessionFork({
+      envelope: params.envelope,
+      targetOwnerScopeId: ownerScopeId,
+      targetProjectId,
+      namespace: params.namespace,
+      allowProjectRemap: params.allowProjectRemap,
+    });
+
+    try {
+      const isolatedSessions = plan.envelope.sessions
+        .filter((session) => session.workspace?.mode === 'isolated_at_anchor')
+        .map((session) => {
+          const sourceSessionId = Object.entries(plan.sessionIdMap)
+            .find(([, importedSessionId]) => importedSessionId === session.id)?.[0];
+          const importedSessionId = sourceSessionId
+            ? result.sessionIdMap[sourceSessionId]
+            : undefined;
+          const lineageNode = plan.envelope.lineage.nodes
+            .find((node) => node.sessionId === session.id);
+          const portableEvidence = session.workspace?.isolatedAnchor;
+          if (
+            !sourceSessionId
+            || importedSessionId !== session.id
+            || !lineageNode?.forkId
+            || !lineageNode.parentSessionId
+            || !lineageNode.anchorChildMessageId
+            || !portableEvidence
+          ) {
+            throw new Error(
+              `IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: isolated session ${session.id} `
+              + 'requires its remapped child anchor and complete portable evidence',
+            );
+          }
+          return {
+            importedSessionId,
+            importedAnchorMessageId: lineageNode.anchorChildMessageId,
+            portableEvidence,
+          };
+        })
+        .sort((left, right) => left.importedSessionId.localeCompare(right.importedSessionId));
+
+      if (isolatedSessions.length > 0) {
+        const workspaceBinding = await this.requireImportedWorkspaceBinding(targetProjectId);
+        for (const isolated of isolatedSessions) {
+          await database.publishImportedIsolatedWorkspace({
+            ...isolated,
+            ownerUserId,
+            targetProjectId,
+            workspaceBinding,
+          });
+        }
+      }
+      return result;
+    } finally {
+      for (const sessionId of Object.values(result.sessionIdMap)) {
+        getSessionManager().invalidateSessionCache(sessionId);
+      }
     }
-    return result;
   }
 
   async enqueueSessionForkSync(
@@ -441,6 +505,51 @@ export class SessionHistoryAppService {
       throw new Error(`PROJECT_ACCESS_DENIED: project ${projectId || '<empty>'} was not found`);
     }
     return normalized;
+  }
+
+  private async requireImportedWorkspaceBinding(
+    projectId: string,
+  ): Promise<TrustedSingleRootGitProjectWorkspace> {
+    const scope = getProjectService().getWorkspaceScope(projectId);
+    if (!scope) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: target Project requires one '
+        + 'trusted read-write primary Git workspace',
+      );
+    }
+    const root = scope.roots[0];
+    if (
+      scope.projectId !== projectId
+      || scope.roots.length !== 1
+      || root?.role !== 'primary'
+      || root.access !== 'read_write'
+      || scope.primaryRoot !== root.path
+    ) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: target Project requires one '
+        + 'trusted read-write primary Git workspace',
+      );
+    }
+    const gitStates = await getProjectSourceGitStates(scope);
+    const gitState = gitStates[0];
+    if (
+      gitStates.length !== 1
+      || !gitState?.isRepository
+      || gitState.sourceId !== root.sourceId
+      || !gitState.repositoryRoot
+    ) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: target Project primary source '
+        + 'is not the verified Git repository root',
+      );
+    }
+    return {
+      projectId,
+      topology: 'single_root_git',
+      identityTrust: 'verified',
+      repositoryRoot: gitState.repositoryRoot,
+      workspaceScopeVersion: scope.version,
+    };
   }
 
   private requireConversationBoundary(sessionId: string): ConversationBoundary {

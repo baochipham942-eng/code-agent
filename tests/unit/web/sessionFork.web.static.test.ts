@@ -33,6 +33,22 @@ describe('web session Fork parity', () => {
     expect(children).toContain('.listChildren(sessionId)');
     expect(children).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
   });
+
+  it('routes portability and sync through the shared application service', () => {
+    const start = source.indexOf("case 'exportSessionFork':");
+    const end = source.indexOf("case 'replayConversationBranch':", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = source.slice(start, end);
+    expect(body).toContain('createSessionApplicationService(deps)');
+    expect(body).toContain('appService.exportSessionFork');
+    expect(body).toContain('appService.importSessionFork');
+    expect(body).toContain('appService.enqueueSessionForkSync');
+    expect(body).toContain('appService.ingestSessionForkSync');
+    expect(body).toContain('appService.importReadySessionForkSync');
+    expect(body).not.toContain('database.importSessionFork');
+    expect(body).not.toContain('database.publishImportedIsolatedWorkspace');
+  });
 });
 
 describe('web conversation Rewind parity', () => {
@@ -53,7 +69,7 @@ describe('web conversation Rewind parity', () => {
 
   it('routes explicit workspace file restore through the shared application service', () => {
     const body = caseBody('restoreWorkspaceFilesAtCheckpoint');
-    expect(body).toContain('AgentAppServiceImpl');
+    expect(body).toContain('createSessionApplicationService(deps)');
     expect(body).toContain('.restoreWorkspaceFilesAtCheckpoint');
     expect(body).not.toContain('SessionRewindService');
     expect(body).not.toContain('getFileCheckpointService');

@@ -10,8 +10,13 @@ import { ConversationBranchRepository } from '../../../src/host/services/core/re
 import { SessionForkRepository } from '../../../src/host/services/core/repositories/SessionForkRepository';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { ProjectRepository } from '../../../src/host/services/core/repositories/ProjectRepository';
+import { createLogger } from '../../../src/host/services/infra/logger';
 
-const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+const logger = createLogger('ConversationBranchProductionIntegration.test');
+vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+vi.spyOn(logger, 'error').mockImplementation(() => undefined);
 const boundary = { ownerUserId: 'owner-1', projectId: 'project-1' } as const;
 
 describe('immutable conversation ledger production write integration', () => {
@@ -182,10 +187,11 @@ describe('immutable conversation ledger production write integration', () => {
       }],
     } as never);
 
-    const immutableJson = String(db.prepare(`
+    const immutableRow = db.prepare(`
       SELECT message_json FROM conversation_entries
       WHERE source_session_id = 'private-message'
-    `).get()?.message_json ?? '');
+    `).get() as { message_json: string } | undefined;
+    const immutableJson = String(immutableRow?.message_json ?? '');
     expect(immutableJson).not.toContain('secret-attachment-bytes');
     expect(immutableJson).not.toContain('/Users/private');
     expect(immutableJson).not.toContain('secret-node');

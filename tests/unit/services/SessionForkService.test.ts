@@ -4,9 +4,11 @@ import {
   SessionForkService,
   type SessionForkServiceDatabase,
 } from '../../../src/host/services/sessionFork/SessionForkService';
+import type { CreateForkRepositoryResult } from '../../../src/host/services/core/repositories/SessionForkRepository';
+import type { Session } from '../../../src/shared/contract/session';
 import { SessionForkError } from '../../../src/shared/contract/sessionFork';
 
-const sourceSession = {
+const sourceSession: Session = {
   id: 'source',
   userId: 'user-1',
   title: 'Source task',
@@ -20,7 +22,7 @@ const sourceSession = {
   projectId: 'project-1',
 };
 
-const childSession = {
+const childSession: Session = {
   ...sourceSession,
   id: 'child-1',
   title: 'Source task · 分支',
@@ -36,7 +38,7 @@ function database(): SessionForkServiceDatabase {
       if (!session || options?.userId === undefined) return session;
       return session.userId === options.userId ? session : null;
     }),
-    createSessionFork: vi.fn((input) => ({
+    createSessionFork: vi.fn((input): CreateForkRepositoryResult => ({
       forkId: 'fork-1',
       childSessionId: childSession.id,
       copiedMessageCount: 4,
@@ -205,7 +207,7 @@ describe('SessionForkService', () => {
 
   it('publishes an isolated child only through the durable workspace saga', async () => {
     const db = database();
-    const isolatedChild = {
+    const isolatedChild: Session = {
       ...childSession,
       workingDirectory: '/durable/session-fork-worktrees/child-1',
       engine: {
@@ -219,7 +221,7 @@ describe('SessionForkService', () => {
       if (!session || options?.userId === undefined) return session;
       return session.userId === options.userId ? session : null;
     });
-    db.createIsolatedSessionFork = vi.fn(async (input) => ({
+    db.createIsolatedSessionFork = vi.fn(async (input): Promise<CreateForkRepositoryResult> => ({
       forkId: 'fork-1',
       childSessionId: isolatedChild.id,
       copiedMessageCount: 4,

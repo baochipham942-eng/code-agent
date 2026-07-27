@@ -12,6 +12,13 @@ import {
 
 const boundary = { ownerUserId: 'owner-1', projectId: 'project-1' } as const;
 
+function totalChanges(db: BetterSqlite3.Database): number {
+  const row = db.prepare(`
+    SELECT total_changes() AS total_changes
+  `).get() as { total_changes: number };
+  return row.total_changes;
+}
+
 function installLegacySchema(db: BetterSqlite3.Database): void {
   db.exec(`
     CREATE TABLE sessions (
@@ -77,22 +84,6 @@ function seedRootSession(db: BetterSqlite3.Database, id = 'source'): void {
     INSERT INTO sessions (id, user_id, project_id, is_deleted, created_at)
     VALUES (?, 'owner-1', 'project-1', 0, 1)
   `).run(id);
-}
-
-function insertLegacyMessage(
-  db: BetterSqlite3.Database,
-  sessionId: string,
-  id: string,
-  role: 'user' | 'assistant',
-  content: string,
-  timestamp: number,
-  visibility: 'active' | 'rewound' = 'active',
-): void {
-  db.prepare(`
-    INSERT INTO messages (
-      id, session_id, role, content, timestamp, visibility, is_meta
-    ) VALUES (?, ?, ?, ?, ?, ?, 0)
-  `).run(id, sessionId, role, content, timestamp, visibility);
 }
 
 describe('ConversationBranchRepository', () => {
@@ -295,7 +286,7 @@ describe('ConversationBranchRepository', () => {
       });
     }
     const counts = repository.getRawLedgerCounts('source', boundary);
-    const beforeInvalid = db.totalChanges;
+    const beforeInvalid = totalChanges(db);
     expect(() => repository.recordRewind({
       sessionId: 'source',
       boundary,
@@ -305,7 +296,7 @@ describe('ConversationBranchRepository', () => {
       idempotencyKey: 'rewind-invalid-order',
       createdAt: 39,
     })).toThrow('INVALID_REWIND');
-    expect(db.totalChanges).toBe(beforeInvalid);
+    expect(totalChanges(db)).toBe(beforeInvalid);
 
     const rewind = repository.recordRewind({
       sessionId: 'source',
@@ -338,7 +329,7 @@ describe('ConversationBranchRepository', () => {
       events: counts.events + 2,
     });
 
-    const before = db.totalChanges;
+    const before = totalChanges(db);
     expect(() => repository.recordRewind({
       sessionId: 'source',
       boundary,
@@ -347,7 +338,7 @@ describe('ConversationBranchRepository', () => {
       rewindId: 'rewind-bad',
       idempotencyKey: 'rewind-bad',
     })).toThrowError(ConversationBranchError);
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
   });
 
   it('compares branches, traces shared provenance, and stores evaluation attribution as events', () => {
@@ -433,7 +424,7 @@ describe('ConversationBranchRepository', () => {
   });
 
   it('fails closed across owner and project boundaries with zero writes', () => {
-    const before = db.totalChanges;
+    const before = totalChanges(db);
     expect(() => repository.appendMessage({
       sessionId: 'source',
       boundary: { ownerUserId: 'intruder', projectId: 'project-1' },
@@ -446,7 +437,7 @@ describe('ConversationBranchRepository', () => {
       message: { id: 'u1', role: 'user', content: 'blocked', timestamp: 10 },
       idempotencyKey: 'blocked-project',
     })).toThrow('PROJECT_MISMATCH');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
   });
 
   it('quarantines a corrupt hash chain and only permits an auditable override', () => {

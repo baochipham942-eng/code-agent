@@ -35,6 +35,13 @@ function sha256Hex(value: Buffer): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function totalChanges(db: BetterSqlite3.Database): number {
+  const row = db.prepare(`
+    SELECT total_changes() AS total_changes
+  `).get() as { total_changes: number };
+  return row.total_changes;
+}
+
 function applyAllSchema(db: BetterSqlite3.Database): void {
   applySchema(db, noopLogger);
   applySessionsMigrations(db, noopLogger);
@@ -482,7 +489,7 @@ describe('SessionForkPortabilityRepository', () => {
       mode: 'subtree',
     })).toThrow(/PROJECT_SCOPE_MISMATCH|SESSION/);
     db.prepare("UPDATE session_fork_anchor_evidence SET status = 'blocked' WHERE id = 'evidence-1'").run();
-    const afterEvidenceMutation = db.totalChanges;
+    const afterEvidenceMutation = totalChanges(db);
     expect(() => repository.exportSessionFork({
       exportId: 'incomplete-evidence',
       rootSessionId: 'root',
@@ -490,7 +497,7 @@ describe('SessionForkPortabilityRepository', () => {
       projectId: 'project-1',
       mode: 'subtree',
     })).toThrow(/EVIDENCE|isolated/i);
-    expect(db.totalChanges).toBe(afterEvidenceMutation);
+    expect(totalChanges(db)).toBe(afterEvidenceMutation);
     expect(db.prepare('SELECT COUNT(*) AS count FROM session_fork_portability_exports').get())
       .toEqual({ count: 0 });
   });
@@ -601,7 +608,7 @@ describe('SessionForkPortabilityRepository', () => {
       issues: [],
     });
     const importedRootAssistantId = plan.messageIdMap.a1;
-    const importedAttachmentProvenance = JSON.parse(String(db.prepare(`
+    const importedAttachmentRow = db.prepare(`
       SELECT entry.message_json
       FROM conversation_branch_entries AS reference
       JOIN conversation_branches AS branch ON branch.id = reference.branch_id
@@ -609,7 +616,13 @@ describe('SessionForkPortabilityRepository', () => {
       WHERE branch.session_id = ? AND reference.projected_message_id = ?
       ORDER BY reference.ordinal DESC
       LIMIT 1
-    `).get(plan.sessionIdMap.root, importedRootAssistantId)?.message_json ?? '{}')) as {
+    `).get(
+      plan.sessionIdMap.root,
+      importedRootAssistantId,
+    ) as { message_json: string } | undefined;
+    const importedAttachmentProvenance = JSON.parse(String(
+      importedAttachmentRow?.message_json ?? '{}',
+    )) as {
       readOnlyAttachmentProvenance?: Array<{ contentDigest?: string }>;
     };
     expect(importedAttachmentProvenance.readOnlyAttachmentProvenance?.[0]?.contentDigest)
@@ -656,7 +669,7 @@ describe('SessionForkPortabilityRepository', () => {
       SET content = 'tampered after completed import'
       WHERE id = ?
     `).run(result.messageIdMap.a1);
-    const changesBeforeRetry = db.totalChanges;
+    const changesBeforeRetry = totalChanges(db);
 
     expect(() => repository.importSessionFork({
       envelope,
@@ -667,7 +680,7 @@ describe('SessionForkPortabilityRepository', () => {
     })).toThrow(
       /changed its compatibility projection|failed immutable replay|PROJECTION_ALIAS_PAYLOAD_MISMATCH/u,
     );
-    expect(db.totalChanges).toBe(changesBeforeRetry);
+    expect(totalChanges(db)).toBe(changesBeforeRetry);
   });
 
   it('roundtrips revisions, projection replacement, Fork, Rewind, and evaluation attribution', () => {
@@ -1201,7 +1214,7 @@ describe('SessionForkPortabilityRepository', () => {
         SET content = 'post-import audit closure tamper'
         WHERE session_id = ? AND id = ?
       `).run(importedChildId, imported.messageIdMap.ca1);
-      const changesBeforeRejectedRetry = db.totalChanges;
+      const changesBeforeRejectedRetry = totalChanges(db);
       expect(() => repository.importSessionFork({
         envelope,
         targetOwnerScopeId: 'owner-1',
@@ -1209,7 +1222,7 @@ describe('SessionForkPortabilityRepository', () => {
         namespace: `${expectedStatus}-device`,
         importedAt: 70,
       })).toThrow(/changed its compatibility projection|failed immutable replay closure|audit digest|audit status/u);
-      expect(db.totalChanges).toBe(changesBeforeRejectedRetry);
+      expect(totalChanges(db)).toBe(changesBeforeRejectedRetry);
     },
   );
 

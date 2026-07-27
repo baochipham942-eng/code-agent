@@ -16,6 +16,13 @@ const noopLogger = {
   debug: vi.fn(),
 } as unknown as Parameters<typeof applySchema>[1];
 
+function totalChanges(db: BetterSqlite3.Database): number {
+  const row = db.prepare(`
+    SELECT total_changes() AS total_changes
+  `).get() as { total_changes: number };
+  return row.total_changes;
+}
+
 function seed(db: BetterSqlite3.Database): void {
   db.prepare(`
     INSERT INTO sessions (
@@ -86,7 +93,7 @@ describe('SessionRepository conversation rewind', () => {
       createdAt: 100,
       ownerUserId: null,
     });
-    const changesAfterFirst = db.totalChanges;
+    const changesAfterFirst = totalChanges(db);
     const second = repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'rewind-request-1',
       createdAt: 200,
@@ -94,30 +101,30 @@ describe('SessionRepository conversation rewind', () => {
     });
 
     expect(second).toEqual(first);
-    expect(db.totalChanges).toBe(changesAfterFirst);
+    expect(totalChanges(db)).toBe(changesAfterFirst);
     expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 1 });
   });
 
   it('rejects an invalid or already hidden anchor with zero writes', () => {
-    const beforeMissing = db.totalChanges;
+    const beforeMissing = totalChanges(db);
     expect(() => repository.applyPromptRewind('session-1', 'missing', {
       idempotencyKey: 'missing',
       ownerUserId: null,
     })).toThrow('Active user message not found');
-    expect(db.totalChanges).toBe(beforeMissing);
+    expect(totalChanges(db)).toBe(beforeMissing);
 
     repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'first',
       createdAt: 100,
       ownerUserId: null,
     });
-    const beforeHidden = db.totalChanges;
+    const beforeHidden = totalChanges(db);
     expect(() => repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'different',
       createdAt: 200,
       ownerUserId: null,
     })).toThrow('Active user message not found');
-    expect(db.totalChanges).toBe(beforeHidden);
+    expect(totalChanges(db)).toBe(beforeHidden);
   });
 
   it('rolls the visibility update back when the audit insert fails', () => {
@@ -181,13 +188,13 @@ describe('SessionRepository conversation rewind', () => {
     'rejects persisted %s state in the transaction with zero writes',
     (status) => {
       db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run(status, 'session-1');
-      const before = db.totalChanges;
+      const before = totalChanges(db);
 
       expect(() => repository.applyPromptRewind('session-1', 'u2', {
         idempotencyKey: `persisted-${status}`,
         ownerUserId: null,
       })).toThrow('SESSION_RUNNING');
-      expect(db.totalChanges).toBe(before);
+      expect(totalChanges(db)).toBe(before);
       expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 0 });
     },
   );
@@ -205,13 +212,13 @@ describe('SessionRepository conversation rewind', () => {
       INSERT INTO durable_runs (run_id, session_id, parent_run_id, status)
       VALUES ('run-1', 'session-1', NULL, 'recovering')
     `).run();
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(() => repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'durable-running',
       ownerUserId: null,
     })).toThrow('SESSION_RUNNING');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
     expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 0 });
   });
 
@@ -219,23 +226,23 @@ describe('SessionRepository conversation rewind', () => {
     db.prepare("UPDATE sessions SET user_id = 'owner-a' WHERE id = 'session-1'").run();
 
     for (const ownerUserId of ['owner-b', null] as const) {
-      const before = db.totalChanges;
+      const before = totalChanges(db);
       expect(() => repository.applyPromptRewind('session-1', 'u2', {
         idempotencyKey: `owner-${String(ownerUserId)}`,
         ownerUserId,
       })).toThrow('SESSION_ACCESS_DENIED');
-      expect(db.totalChanges).toBe(before);
+      expect(totalChanges(db)).toBe(before);
     }
     expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 0 });
   });
 
   it('rejects a missing owner boundary with zero writes', () => {
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(() => repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'missing-owner',
     })).toThrow('SESSION_ACCESS_DENIED');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
     expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 0 });
   });
 
@@ -250,11 +257,11 @@ describe('SessionRepository conversation rewind', () => {
       createdAt: 100,
       ownerUserId: null,
     });
-    const beforeOutOfOrderRestore = db.totalChanges;
+    const beforeOutOfOrderRestore = totalChanges(db);
 
     expect(() => repository.restorePromptRewind('session-1', older.rewindId, 200, null))
       .toThrow('REWIND_RESTORE_ORDER');
-    expect(db.totalChanges).toBe(beforeOutOfOrderRestore);
+    expect(totalChanges(db)).toBe(beforeOutOfOrderRestore);
     expect(repository.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
 
     repository.restorePromptRewind('session-1', newer.rewindId, 210, null);
@@ -274,15 +281,15 @@ describe('SessionRepository conversation rewind', () => {
       ownerUserId: 'owner-a',
     });
 
-    const beforeOwnerMismatch = db.totalChanges;
+    const beforeOwnerMismatch = totalChanges(db);
     expect(() => repository.restorePromptRewind('session-1', rewind.rewindId, 200, 'owner-b'))
       .toThrow('SESSION_ACCESS_DENIED');
-    expect(db.totalChanges).toBe(beforeOwnerMismatch);
+    expect(totalChanges(db)).toBe(beforeOwnerMismatch);
 
     db.prepare("UPDATE sessions SET status = 'running' WHERE id = 'session-1'").run();
-    const beforeRunning = db.totalChanges;
+    const beforeRunning = totalChanges(db);
     expect(() => repository.restorePromptRewind('session-1', rewind.rewindId, 210, 'owner-a'))
       .toThrow('SESSION_RUNNING');
-    expect(db.totalChanges).toBe(beforeRunning);
+    expect(totalChanges(db)).toBe(beforeRunning);
   });
 });

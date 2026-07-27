@@ -397,7 +397,9 @@ describe('portable P2 conversation history', () => {
 
   it('removes compound secret and local-path metadata keys recursively', () => {
     const source = sourceRows();
-    const target = source.entries.find((row) => row.id === 'e-a2');
+    const mutableEntries = source.entries.map((row) => ({ ...row }));
+    source.entries = mutableEntries;
+    const target = mutableEntries.find((row) => row.id === 'e-a2');
     if (!target) throw new Error('privacy fixture entry is missing');
     const message = JSON.parse(String(target.message_json)) as Record<string, unknown>;
     message.metadata = {
@@ -558,14 +560,17 @@ describe('portable P2 conversation history', () => {
       reason: 'Reviewed source evidence and accepted exact lineage repair.',
     });
 
-    const childAppend = plan.actions.find((action) => (
+    const childAppend = plan.actions.find((
+      action,
+    ): action is Extract<PortableConversationReplayAction, { method: 'appendMessage' }> => (
       action.method === 'appendMessage'
       && action.input.sessionId === 'target-child'
       && action.input.message.id === 'target-c-a2'
     ));
+    if (!childAppend) throw new Error('child append replay action is missing');
     expect(JSON.stringify(childAppend)).not.toContain('/Users/private');
     expect(JSON.stringify(childAppend)).not.toContain('provider-secret');
-    expect(childAppend?.input.message).toMatchObject({
+    expect(childAppend.input.message).toMatchObject({
       id: 'target-c-a2',
       metadata: { safe: 'retained' },
     });

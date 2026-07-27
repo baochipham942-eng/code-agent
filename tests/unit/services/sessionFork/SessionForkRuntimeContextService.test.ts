@@ -4,43 +4,65 @@ import {
   SessionForkRuntimeContextService,
   type SessionForkRuntimeContextDatabase,
 } from '../../../../src/host/services/sessionFork/context/SessionForkRuntimeContextService';
+import type {
+  SessionForkContextHandoffRecord,
+  SessionForkContextSource,
+} from '../../../../src/host/services/core/repositories/SessionForkRepository';
 
 const digest = 'a'.repeat(64);
 
 function database(): SessionForkRuntimeContextDatabase {
-  return {
-    getSessionForkContextSource: vi.fn(() => ({
-      lineage: {
-        forkId: 'fork-1',
-        rootSessionId: 'source',
-        parentSessionId: 'source',
-        childSessionId: 'child',
-        sourceAnchorMessageId: 'a2',
-        anchorChildMessageId: 'ca2',
-        depth: 1,
-        workspaceMode: 'shared_current',
-        contextDeliveryMode: 'validated_context_handoff',
-        status: 'completed',
-        syncState: 'local_only',
-        createdAt: 10,
+  const source = {
+    lineage: {
+      forkId: 'fork-1',
+      rootSessionId: 'source',
+      parentSessionId: 'source',
+      childSessionId: 'child',
+      sourceAnchorMessageId: 'a2',
+      anchorChildMessageId: 'ca2',
+      depth: 1,
+      workspaceMode: 'shared_current',
+      contextDeliveryMode: 'validated_context_handoff',
+      status: 'completed',
+      syncState: 'local_only',
+      createdAt: 10,
+    },
+    sourcePrefixDigest: digest,
+    mappedActivePrefix: [
+      {
+        ordinal: 0,
+        sourceMessageId: 'u1',
+        childMessageId: 'cu1',
+        message: {
+          id: 'cu1',
+          role: 'user',
+          content: 'question',
+          timestamp: 1,
+          visibility: 'active',
+        },
       },
-      sourcePrefixDigest: digest,
-      mappedActivePrefix: [
-        {
-          ordinal: 0,
-          sourceMessageId: 'u1',
-          childMessageId: 'cu1',
-          message: { id: 'cu1', role: 'user', content: 'question', timestamp: 1, visibility: 'active' },
+      {
+        ordinal: 1,
+        sourceMessageId: 'a2',
+        childMessageId: 'ca2',
+        message: {
+          id: 'ca2',
+          role: 'assistant',
+          content: 'answer',
+          timestamp: 2,
+          visibility: 'active',
         },
-        {
-          ordinal: 1,
-          sourceMessageId: 'a2',
-          childMessageId: 'ca2',
-          message: { id: 'ca2', role: 'assistant', content: 'answer', timestamp: 2, visibility: 'active' },
-        },
-      ],
-    })),
-    prepareSessionForkContextHandoff: vi.fn((_forkId, _engine, payloadDigest) => ({
+      },
+    ],
+  } satisfies SessionForkContextSource;
+
+  return {
+    getSessionForkContextSource: vi.fn<
+      SessionForkRuntimeContextDatabase['getSessionForkContextSource']
+    >(() => source),
+    prepareSessionForkContextHandoff: vi.fn<
+      SessionForkRuntimeContextDatabase['prepareSessionForkContextHandoff']
+    >((_forkId, _engine, payloadDigest) => ({
       forkId: 'fork-1',
       engine: 'codex_cli',
       payloadDigest,
@@ -50,8 +72,10 @@ function database(): SessionForkRuntimeContextDatabase {
       dispatchStartedAt: null,
       consumedAt: null,
       error: null,
-    })),
-    markSessionForkContextHandoffDispatching: vi.fn((_forkId, payloadDigest, attemptId) => ({
+    } satisfies SessionForkContextHandoffRecord)),
+    markSessionForkContextHandoffDispatching: vi.fn<
+      SessionForkRuntimeContextDatabase['markSessionForkContextHandoffDispatching']
+    >((_forkId, payloadDigest, attemptId) => ({
       forkId: 'fork-1',
       engine: 'codex_cli',
       payloadDigest,
@@ -61,8 +85,10 @@ function database(): SessionForkRuntimeContextDatabase {
       dispatchStartedAt: 30,
       consumedAt: null,
       error: null,
-    })),
-    markSessionForkContextHandoffConsumed: vi.fn((_forkId, payloadDigest, attemptId) => ({
+    } satisfies SessionForkContextHandoffRecord)),
+    markSessionForkContextHandoffConsumed: vi.fn<
+      SessionForkRuntimeContextDatabase['markSessionForkContextHandoffConsumed']
+    >((_forkId, payloadDigest, attemptId) => ({
       forkId: 'fork-1',
       engine: 'codex_cli',
       payloadDigest,
@@ -72,7 +98,7 @@ function database(): SessionForkRuntimeContextDatabase {
       dispatchStartedAt: 30,
       consumedAt: 40,
       error: null,
-    })),
+    } satisfies SessionForkContextHandoffRecord)),
   };
 }
 

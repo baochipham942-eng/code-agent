@@ -13,8 +13,13 @@ import { applyConversationBranchSchema } from '../../../src/host/services/core/d
 import { DatabaseService } from '../../../src/host/services/core/databaseService';
 import { ConversationBranchRepository } from '../../../src/host/services/core/repositories/ConversationBranchRepository';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { createLogger } from '../../../src/host/services/infra/logger';
 
-const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+const logger = createLogger('conversationBranchRepair.database.test');
+vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+vi.spyOn(logger, 'error').mockImplementation(() => undefined);
 const boundary = { ownerUserId: 'owner-1', projectId: 'project-1' } as const;
 
 describe('DatabaseService conversation projection repair facade', () => {

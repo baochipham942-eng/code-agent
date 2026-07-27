@@ -16,6 +16,13 @@ const noopLogger = {
   debug: vi.fn(),
 } as unknown as Parameters<typeof applySchema>[1];
 
+function totalChanges(db: BetterSqlite3.Database): number {
+  const row = db.prepare(`
+    SELECT total_changes() AS total_changes
+  `).get() as { total_changes: number };
+  return row.total_changes;
+}
+
 function seedSource(db: BetterSqlite3.Database, status = 'completed'): void {
   db.prepare(`
     INSERT INTO sessions (
@@ -214,9 +221,9 @@ describe('SessionForkRepository', () => {
     ['user anchor', { anchorAssistantMessageId: 'u2' }, 'ANCHOR_NOT_COMPLETED_ASSISTANT'],
     ['missing anchor', { anchorAssistantMessageId: 'missing' }, 'INVALID_ANCHOR'],
   ])('rejects %s with zero writes', (_label, overrides, code) => {
-    const before = db.totalChanges;
+    const before = totalChanges(db);
     expect(() => repo.createFork(forkInput(overrides))).toThrow(code);
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
     expect(db.prepare('SELECT COUNT(*) AS count FROM session_forks').get()).toEqual({ count: 0 });
     expect(db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE id = 'child-1'").get()).toEqual({ count: 0 });
   });
@@ -227,18 +234,18 @@ describe('SessionForkRepository', () => {
       SET visibility = 'rewound', hidden_by_rewind_id = 'rewind-1', hidden_at = 90
       WHERE id = 'a2'
     `).run();
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(() => repo.createFork(forkInput())).toThrow('ANCHOR_REWOUND');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
   });
 
   it('rejects a running source with zero writes', () => {
     db.prepare("UPDATE sessions SET status = 'running' WHERE id = 'source'").run();
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(() => repo.createFork(forkInput())).toThrow('SESSION_RUNNING');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
   });
 
   it('rechecks the persistent source status inside the transaction before writing', () => {
@@ -299,19 +306,19 @@ describe('SessionForkRepository', () => {
       INSERT INTO durable_runs (run_id, session_id, parent_run_id, status)
       VALUES ('run-1', 'source', NULL, 'recovering')
     `).run();
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(() => repo.createFork(forkInput())).toThrow('SESSION_RUNNING');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
     expect(db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE id = 'child-1'").get()).toEqual({ count: 0 });
     expect(db.prepare('SELECT COUNT(*) AS count FROM session_forks').get()).toEqual({ count: 0 });
   });
 
   it('enforces string and null owner scopes while preserving undefined for internal compatibility', () => {
-    const before = db.totalChanges;
+    const before = totalChanges(db);
     expect(() => repo.createFork(forkInput({ ownerUserId: 'user-2' }))).toThrow('SESSION_NOT_FOUND');
     expect(() => repo.createFork(forkInput({ ownerUserId: null }))).toThrow('SESSION_NOT_FOUND');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
     expect(repo.getLineage('child-1', 'user-2')).toBeNull();
     expect(repo.listChildren('source', 'user-2')).toEqual([]);
 
@@ -322,7 +329,7 @@ describe('SessionForkRepository', () => {
 
   it('returns lineage only when both source and child are in the requested owner scope', () => {
     repo.createFork(forkInput());
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(repo.getLineage('child-1', 'user-1')).toMatchObject({ forkId: 'fork-1' });
     expect(repo.listChildren('source', 'user-1')).toHaveLength(1);
@@ -330,7 +337,7 @@ describe('SessionForkRepository', () => {
     expect(repo.getLineage('child-1', null)).toBeNull();
     expect(repo.listChildren('source', 'user-2')).toEqual([]);
     expect(repo.listChildren('source', null)).toEqual([]);
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
   });
 
   it('keeps a child lineage auditable after its parent is soft-deleted', () => {
@@ -394,10 +401,10 @@ describe('SessionForkRepository', () => {
         WHERE fork_id = 'fork-1' AND ordinal > 0
       )
     `).run();
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
   });
 
   it('rejects a suffix-truncated mapping ledger even when its remaining rows are contiguous', () => {
@@ -406,10 +413,10 @@ describe('SessionForkRepository', () => {
       DELETE FROM session_fork_message_map
       WHERE fork_id = 'fork-1' AND ordinal > 0
     `).run();
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
   });
 
   it('rejects mapping rows that resolve outside the child session or orphan their source row', () => {
@@ -419,10 +426,10 @@ describe('SessionForkRepository', () => {
       SET child_message_id = 'a2'
       WHERE fork_id = 'fork-1' AND ordinal = 3
     `).run();
-    const wrongChildBefore = db.totalChanges;
+    const wrongChildBefore = totalChanges(db);
 
     expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
-    expect(db.totalChanges).toBe(wrongChildBefore);
+    expect(totalChanges(db)).toBe(wrongChildBefore);
 
     db.prepare(`
       UPDATE session_fork_message_map
@@ -432,20 +439,20 @@ describe('SessionForkRepository', () => {
           source_message_id = 'missing-source-message'
       WHERE fork_id = 'fork-1' AND ordinal = 3
     `).run();
-    const orphanSourceBefore = db.totalChanges;
+    const orphanSourceBefore = totalChanges(db);
 
     expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
-    expect(db.totalChanges).toBe(orphanSourceBefore);
+    expect(totalChanges(db)).toBe(orphanSourceBefore);
   });
 
   it('rejects copied child drift while keeping the sealed context independent from later source projection changes', () => {
     repo.createFork(forkInput());
     db.prepare("UPDATE messages SET content = 'tampered child' WHERE session_id = 'child-1' AND content = 'two'")
       .run();
-    const childDriftBefore = db.totalChanges;
+    const childDriftBefore = totalChanges(db);
 
     expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
-    expect(db.totalChanges).toBe(childDriftBefore);
+    expect(totalChanges(db)).toBe(childDriftBefore);
 
     db.prepare("UPDATE messages SET content = 'two' WHERE session_id = 'child-1' AND content = 'tampered child'")
       .run();
@@ -458,11 +465,11 @@ describe('SessionForkRepository', () => {
           hidden_at = 999
       WHERE id = 'u2'
     `).run();
-    const sourceDriftBefore = db.totalChanges;
+    const sourceDriftBefore = totalChanges(db);
 
     expect(repo.getContextSource('child-1')?.mappedActivePrefix.map((entry) => entry.message.content))
       .toEqual(['one', 'one answer', 'two', 'two answer']);
-    expect(db.totalChanges).toBe(sourceDriftBefore);
+    expect(totalChanges(db)).toBe(sourceDriftBefore);
   });
 
   it('rejects fork anchor metadata that no longer terminates at the mapped source and child pair', () => {
@@ -477,20 +484,20 @@ describe('SessionForkRepository', () => {
           )
       WHERE id = 'fork-1'
     `).run();
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
   });
 
   it('rejects a fork whose persisted prefix digest no longer matches both projections', () => {
     repo.createFork(forkInput());
     db.prepare("UPDATE session_forks SET source_prefix_digest = ? WHERE id = 'fork-1'")
       .run('f'.repeat(64));
-    const before = db.totalChanges;
+    const before = totalChanges(db);
 
     expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
-    expect(db.totalChanges).toBe(before);
+    expect(totalChanges(db)).toBe(before);
   });
 
   it('persists a fail-closed context handoff dispatch lifecycle', () => {

@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
@@ -16,7 +23,7 @@ interface ExternalEngineAcceptanceInput {
   templateSessionId: string;
   workspaceRoot: string;
   fakeHome: string;
-  evidenceRoot: string;
+  fakeBin: string;
   recordCheck: (condition: unknown, label: string, evidence?: unknown) => void;
 }
 
@@ -32,6 +39,9 @@ interface FakeEngineCapture {
   argv: string[];
   cwd: string;
   stdin: string;
+  envKeys: string[];
+  forbiddenEnvKeys: string[];
+  unsafeConfigPaths: string[];
 }
 
 interface EngineEvidence {
@@ -51,6 +61,19 @@ interface EngineEvidence {
 const EXTERNAL_ENGINES = ['codex_cli', 'claude_code'] as const;
 const SOURCE_RUNTIME_IDENTITY = 'source-provider-runtime-must-never-be-copied';
 const FIRST_PROMPT = 'acceptance first child prompt';
+const SESSION_RELATED_TABLES = [
+  'todos',
+  'session_tasks',
+  'session_task_events',
+  'context_interventions',
+  'session_runtime_state',
+  'queued_inputs',
+  'agent_wakes',
+  'permission_decisions',
+  'tool_execution_events',
+  'durable_runs',
+  'generative_ui_instances',
+] as const;
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -96,12 +119,22 @@ process.stdin.on('end', () => {
     argv: process.argv.slice(2),
     cwd: process.cwd(),
     stdin,
+    envKeys: Object.keys(process.env).sort(),
+    forbiddenEnvKeys: Object.keys(process.env).filter((key) =>
+      /(API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|PASSWORD|CREDENTIAL|SECRET)/i.test(key)
+    ).sort(),
+    unsafeConfigPaths: ['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME']
+      .filter((key) => process.env[key] && !path.resolve(process.env[key]).startsWith(path.resolve(process.env.HOME) + path.sep)),
   };
   fs.writeFileSync(
     path.join(__dirname, executable + '.capture.json'),
     JSON.stringify(capture, null, 2) + '\\n',
     'utf8',
   );
+  if (capture.forbiddenEnvKeys.length > 0 || capture.unsafeConfigPaths.length > 0) {
+    process.stderr.write('acceptance fake rejected unsafe environment keys\\n');
+    process.exit(72);
+  }
   if (executable === 'codex') {
     const outputIndex = process.argv.indexOf('--output-last-message');
     if (outputIndex >= 0 && process.argv[outputIndex + 1]) {
@@ -145,23 +178,33 @@ async function installFakeEngines(root: string): Promise<string> {
   return fakeBin;
 }
 
-function scrubProviderEnvironment(fakeBin: string, fakeHome: string): void {
+async function isolateProviderEnvironment(fakeBin: string, fakeHome: string): Promise<void> {
+  const isolatedPaths = {
+    CODEX_HOME: path.join(fakeHome, '.codex'),
+    CLAUDE_CONFIG_DIR: path.join(fakeHome, '.claude'),
+    XDG_CONFIG_HOME: path.join(fakeHome, '.config'),
+    XDG_DATA_HOME: path.join(fakeHome, '.local', 'share'),
+    XDG_CACHE_HOME: path.join(fakeHome, '.cache'),
+  };
+  await Promise.all(Object.values(isolatedPaths).map((directory) => (
+    mkdir(directory, { recursive: true, mode: 0o700 })
+  )));
   process.env.PATH = `${fakeBin}:${process.env.PATH ?? ''}`;
   process.env.HOME = fakeHome;
-  delete process.env.CODEX_HOME;
   for (const key of Object.keys(process.env)) {
     if (
       key.startsWith('ANTHROPIC_')
       || key.startsWith('CLAUDE_CODE_')
       || key.startsWith('CLAUDE_AI_')
-      || /(API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|CREDENTIAL)/i.test(key)
+      || /(API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|PASSWORD|CREDENTIAL|SECRET)/i.test(key)
     ) {
       delete process.env[key];
     }
   }
+  Object.assign(process.env, isolatedPaths);
 }
 
-function rawSourceDigest(dbPath: string, sessionId: string): string {
+function rawSourceStateDigest(dbPath: string, sessionId: string): string {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
   try {
     const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
@@ -171,10 +214,71 @@ function rawSourceDigest(dbPath: string, sessionId: string): string {
       WHERE session_id = ?
       ORDER BY timestamp ASC, rowid ASC
     `).all(sessionId);
-    return sha256(stableJson({ session, messages }));
+    const sidecars = Object.fromEntries(SESSION_RELATED_TABLES.map((table) => {
+      const exists = db.prepare(`
+        SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1
+      `).get(table);
+      if (!exists) return [table, []];
+      const rows = db.prepare(`SELECT * FROM ${table} WHERE session_id = ?`).all(sessionId);
+      return [table, rows.sort((left, right) => stableJson(left).localeCompare(stableJson(right)))];
+    }));
+    return sha256(stableJson({ session, messages, sidecars }));
   } finally {
     db.close();
   }
+}
+
+async function workspaceDigest(root: string): Promise<string> {
+  const entries: Array<{ path: string; sha256: string; sizeBytes: number }> = [];
+  const visit = async (directory: string, relativeDirectory: string): Promise<void> => {
+    const children = await readdir(directory, { withFileTypes: true });
+    children.sort((left, right) => left.name.localeCompare(right.name));
+    for (const child of children) {
+      if (!relativeDirectory && child.name === '.git') continue;
+      const relativePath = relativeDirectory ? `${relativeDirectory}/${child.name}` : child.name;
+      const absolutePath = path.join(directory, child.name);
+      if (child.isDirectory()) {
+        await visit(absolutePath, relativePath);
+      } else if (child.isFile()) {
+        const bytes = await readFile(absolutePath);
+        entries.push({
+          path: relativePath,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          sizeBytes: bytes.byteLength,
+        });
+      }
+    }
+  };
+  await visit(root, '');
+  return sha256(stableJson(entries));
+}
+
+async function assertExactAcceptanceBinding(
+  input: ExternalEngineAcceptanceInput,
+): Promise<void> {
+  const [
+    { getDatabase },
+    { getLogsPath, getUserDataPath },
+  ] = await Promise.all([
+    import('../../src/host/services/core/databaseService'),
+    import('../../src/host/platform'),
+  ]);
+  const expectedDataDir = path.dirname(path.resolve(input.dbPath));
+  const expectedLogsPath = path.join(expectedDataDir, 'logs');
+  input.recordCheck(
+    getDatabase() === input.database
+      && path.resolve(process.env.CODE_AGENT_DATA_DIR ?? '') === expectedDataDir
+      && path.resolve(getUserDataPath()) === expectedDataDir
+      && path.resolve(getLogsPath()) === expectedLogsPath,
+    'external engine acceptance is bound to the exact isolated database and logs root',
+    {
+      databaseSingletonMatches: getDatabase() === input.database,
+      configuredDataDir: process.env.CODE_AGENT_DATA_DIR,
+      userDataPath: getUserDataPath(),
+      logsPath: getLogsPath(),
+      expectedDataDir,
+    },
+  );
 }
 
 function readContextHandoff(
@@ -257,7 +361,8 @@ async function runOneEngine(
   });
   const messages = conversation(`${suffix}-`);
   messages.forEach((message) => database.addMessage(sourceSessionId, message));
-  const sourceBefore = rawSourceDigest(input.dbPath, sourceSessionId);
+  const sourceBefore = rawSourceStateDigest(input.dbPath, sourceSessionId);
+  const workspaceBefore = await workspaceDigest(input.workspaceRoot);
 
   const forkService = new SessionForkService(
     input.database as ConstructorParameters<typeof SessionForkService>[0],
@@ -284,8 +389,8 @@ async function runOneEngine(
       && childBeforeRun.engine.runId === undefined
       && childBeforeRun.engine.externalSessionId === undefined
       && childBeforeRun.engine.logPath === undefined
-      && childBeforeRun.engine.cwd === undefined,
-    `${engine} Fork clears provider runtime identity before first child run`,
+      && childBeforeRun.engine.cwd === input.workspaceRoot,
+    `${engine} Fork clears provider runtime identity while preserving the inherited cwd`,
     { lineage: fork.lineage, childEngine: childBeforeRun?.engine },
   );
 
@@ -305,11 +410,22 @@ async function runOneEngine(
 
   getAgentEngineRegistry().invalidate();
   const descriptor = await getAgentEngineRegistry().get(engine);
+  const expectedBinaryPath = await realpath(path.join(
+    fakeBin,
+    engine === 'codex_cli' ? 'codex' : 'claude',
+  ));
+  const detectedBinaryPath = descriptor.binaryPath
+    ? await realpath(descriptor.binaryPath)
+    : '';
   input.recordCheck(
     descriptor.installState === 'installed'
-      && descriptor.binaryPath?.startsWith(fakeBin),
+      && detectedBinaryPath === expectedBinaryPath,
     `${engine} acceptance uses the local fake executable`,
-    { binaryPath: descriptor.binaryPath, version: descriptor.version },
+    {
+      binaryPath: descriptor.binaryPath,
+      expectedBinaryPath,
+      version: descriptor.version,
+    },
   );
 
   const commonRequest = {
@@ -339,28 +455,58 @@ async function runOneEngine(
     `${engine === 'codex_cli' ? 'codex' : 'claude'}.capture.json`,
   );
   const capture = JSON.parse(await readFile(capturePath, 'utf8')) as FakeEngineCapture;
+  const expectedMessages = [
+    ['user', 'external user one'],
+    ['assistant', 'external assistant one'],
+    ['user', 'external user two'],
+    ['assistant', 'external assistant two'],
+  ];
+  const actualMessages = prepared.handoff.messages.map((message) => [
+    message.role,
+    message.content,
+  ]);
+  const { composeExternalForkLaunchPrompt } = await import(
+    '../../src/host/services/sessionFork/context/externalForkContextHandoff'
+  );
+  const expectedLaunchPrompt = composeExternalForkLaunchPrompt({
+    engine,
+    handoff: prepared.handoff,
+    prompt: FIRST_PROMPT,
+  });
   input.recordCheck(
     capture.cwd === input.workspaceRoot
-      && capture.stdin.includes('external user one')
-      && capture.stdin.includes('external assistant two')
-      && capture.stdin.includes(FIRST_PROMPT)
-      && capture.stdin.includes(prepared.handoff.sourcePrefixDigest)
+      && stableJson(actualMessages) === stableJson(expectedMessages)
+      && capture.stdin === expectedLaunchPrompt
+      && !capture.stdin.includes('external user three')
       && !capture.stdin.includes(SOURCE_RUNTIME_IDENTITY)
-      && !capture.argv.some((value) => value === '--resume' || value === 'resume'),
-    `${engine} process receives the sealed prefix and new prompt without resume identity`,
+      && !capture.argv.some((value) => value.toLowerCase().includes('resume'))
+      && !stableJson(capture.argv).includes(SOURCE_RUNTIME_IDENTITY)
+      && capture.forbiddenEnvKeys.length === 0
+      && capture.unsafeConfigPaths.length === 0,
+    `${engine} process receives exactly [u1,a1,u2,a2] and the new prompt in an isolated environment`,
     {
       cwd: capture.cwd,
       argv: capture.argv,
+      messages: actualMessages,
       stdinSha256: sha256(capture.stdin),
       sourcePrefixDigest: prepared.handoff.sourcePrefixDigest,
+      envKeys: capture.envKeys,
+      forbiddenEnvKeys: capture.forbiddenEnvKeys,
+      unsafeConfigPaths: capture.unsafeConfigPaths,
     },
   );
 
-  const sourceAfter = rawSourceDigest(input.dbPath, sourceSessionId);
+  const sourceAfter = rawSourceStateDigest(input.dbPath, sourceSessionId);
+  const workspaceAfter = await workspaceDigest(input.workspaceRoot);
   input.recordCheck(
-    sourceAfter === sourceBefore,
-    `${engine} Fork and context dispatch leave the source session byte-stable`,
-    { before: sourceBefore, after: sourceAfter },
+    sourceAfter === sourceBefore && workspaceAfter === workspaceBefore,
+    `${engine} Fork and context dispatch leave source rows, runtime sidecars, and files byte-stable`,
+    {
+      sourceBefore,
+      sourceAfter,
+      workspaceBefore,
+      workspaceAfter,
+    },
   );
   const handoff = readContextHandoff(input.dbPath, fork.lineage.forkId);
   input.recordCheck(
@@ -398,12 +544,20 @@ async function runOneEngine(
 export async function runExternalEngineProcessAcceptance(
   input: ExternalEngineAcceptanceInput,
 ): Promise<{ engines: EngineEvidence[]; fakeBin: string }> {
-  const fakeBin = await installFakeEngines(input.evidenceRoot);
-  scrubProviderEnvironment(fakeBin, input.fakeHome);
+  await assertExactAcceptanceBinding(input);
   const database = input.database as ExternalEngineDatabase;
   const engines: EngineEvidence[] = [];
   for (const engine of EXTERNAL_ENGINES) {
-    engines.push(await runOneEngine(input, database, engine, fakeBin));
+    engines.push(await runOneEngine(input, database, engine, input.fakeBin));
   }
-  return { engines, fakeBin };
+  return { engines, fakeBin: input.fakeBin };
+}
+
+export async function prepareExternalEngineAcceptanceEnvironment(input: {
+  evidenceRoot: string;
+  fakeHome: string;
+}): Promise<{ fakeBin: string }> {
+  const fakeBin = await installFakeEngines(input.evidenceRoot);
+  await isolateProviderEnvironment(fakeBin, input.fakeHome);
+  return { fakeBin };
 }

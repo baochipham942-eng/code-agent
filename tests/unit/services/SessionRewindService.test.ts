@@ -4,24 +4,35 @@ import {
   SessionRewindService,
   type SessionRewindServiceDatabase,
 } from '../../../src/host/services/sessionRewind/SessionRewindService';
+import type {
+  PromptRewindRestoreResult,
+  PromptRewindResult,
+} from '../../../src/host/services/core/repositories/SessionRepository';
 
 function database(): SessionRewindServiceDatabase {
   return {
-    applyPromptRewind: vi.fn(() => ({
+    applyPromptRewind: vi.fn((): PromptRewindResult => ({
       rewindId: 'rewind-1',
       anchorMessage: {
         id: 'u2',
         role: 'user',
         content: 'rewrite this',
         timestamp: 30,
-        attachments: [{ name: 'brief.md' }],
+        attachments: [{
+          id: 'attachment-brief',
+          type: 'file',
+          category: 'document',
+          name: 'brief.md',
+          size: 12,
+          mimeType: 'text/markdown',
+        }],
         visibility: 'rewound',
       },
       hiddenMessageIds: ['u2', 'a2'],
       hiddenMessageCount: 2,
       activeMessages: [{ id: 'u1', role: 'user', content: 'before', timestamp: 10 }],
     })),
-    restorePromptRewind: vi.fn(() => ({
+    restorePromptRewind: vi.fn((): PromptRewindRestoreResult => ({
       rewindId: 'rewind-1',
       restoredMessageCount: 2,
       activeMessages: [

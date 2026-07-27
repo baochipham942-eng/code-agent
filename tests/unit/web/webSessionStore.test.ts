@@ -25,7 +25,7 @@ function createDatabaseStub() {
     updateSession: vi.fn(),
     addMessage: vi.fn(),
     updateMessage: vi.fn(),
-    getMessages: vi.fn(() => []),
+    getMessages: vi.fn<() => Message[]>(() => []),
   };
 }
 

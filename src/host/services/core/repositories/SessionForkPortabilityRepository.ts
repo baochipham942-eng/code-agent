@@ -1,12 +1,8 @@
 import { createHash } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 
-import type { Message } from '../../../../shared/contract/message';
 import type {
-  ConversationLineageAudit,
   ConversationLineageAuditStatus,
-  ConversationLineageIssueCode,
-  ConversationMessageSnapshot,
 } from '../../../../shared/contract/conversationBranch';
 import type {
   ForkNeighborhoodProjection,
@@ -30,28 +26,14 @@ import {
   buildForkTreeProjection,
   decodeSessionExportEnvelopeV2,
   encodeSessionExportEnvelopeV2,
-  planPortableConversationHistoryImport,
   planSessionForkImport,
   searchForkDocuments,
   validateSessionExportEnvelopeV2,
 } from '../../sessionFork/portability';
-import type {
-  PortableConversationProjectionRepairReplayAction,
-  PortableConversationHistoryImportPlan,
-  PortableConversationReplayAction,
-} from '../../sessionFork/portability/conversationHistoryTypes';
-import {
-  deepPortableClone,
-} from '../../sessionFork/portability/canonical';
 import { SessionForkPortabilitySourceReader } from './SessionForkPortabilitySourceReader';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
-import { rowToMessage } from './sessionRepositoryParsers';
-import { sanitizeConversationMessageSnapshot } from '../conversationMessageSnapshot';
-import {
-  canonicalConversationJson,
-  canonicalConversationMessagePayload,
-  conversationSha256,
-} from '../database/schemaConversationBranch';
+import { SessionForkConversationImportRepository } from './SessionForkConversationImportRepository';
+import { SessionForkSyncRepository } from './SessionForkSyncRepository';
 
 export interface ExportSessionForkInput {
   exportId: string;
@@ -115,32 +97,12 @@ interface StoredImportRow {
   created_at: number;
 }
 
-interface StoredSyncRow {
-  direction: 'outbox' | 'inbox';
-  sync_envelope_id: string;
-  owner_scope_id: string;
-  project_id: string;
-  payload_digest: string;
-  dependency_ids_json: string;
-  envelope_json: string;
-  state: SessionForkSyncEnvelopeRecord['state'];
-  reason: string | null;
-  attempt_count: number;
-  created_at: number;
-  updated_at: number;
-}
-
 interface StoredImportPlanV1 {
   schema: 'neo.session-fork-import-plan';
   version: 1;
   result: ImportSessionForkResult;
   expectedConversationStatusBySession: Record<string, ConversationLineageAuditStatus>;
   compatibilityProjectionDigestBySession: Record<string, string>;
-}
-
-interface TargetQuarantineEvidence {
-  issueDigest: string;
-  quarantineEventId: string;
 }
 
 function fail(
@@ -160,14 +122,6 @@ function parseJson<T>(value: unknown, label: string): T {
       `${label} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-}
-
-function parseStringArray(value: unknown, label: string): string[] {
-  const parsed = parseJson<unknown>(value, label);
-  if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== 'string')) {
-    fail('INVALID_ENVELOPE', `${label} must be a string array`);
-  }
-  return parsed as string[];
 }
 
 function canonicalStringify(value: unknown): string {
@@ -207,10 +161,6 @@ function persistedOwnerScope(ownerScopeId: string): string | null {
   return ownerScopeId === LOCAL_SESSION_FORK_OWNER_SCOPE_ID ? null : ownerScopeId;
 }
 
-function importedConversationSnapshot(message: Message): ConversationMessageSnapshot {
-  return sanitizeConversationMessageSnapshot(message);
-}
-
 function importResultFromPlan(
   plan: SessionForkImportPlan,
   importId: string,
@@ -245,6 +195,8 @@ function importIdFor(
 
 export class SessionForkPortabilityRepository {
   private readonly conversationBranchRepo: ConversationBranchRepository | null;
+  private readonly conversationImportRepo: SessionForkConversationImportRepository;
+  private readonly syncRepo: SessionForkSyncRepository;
 
   constructor(
     private readonly db: BetterSqlite3.Database,
@@ -258,6 +210,11 @@ export class SessionForkPortabilityRepository {
     `).get());
     this.conversationBranchRepo = conversationBranchRepo
       ?? (hasConversationLedger ? new ConversationBranchRepository(this.db) : null);
+    this.conversationImportRepo = new SessionForkConversationImportRepository(
+      this.db,
+      this.conversationBranchRepo,
+    );
+    this.syncRepo = new SessionForkSyncRepository(this.db);
   }
 
   exportSessionFork(input: ExportSessionForkInput): SessionExportEnvelopeV2 {
@@ -391,13 +348,17 @@ export class SessionForkPortabilityRepository {
       }
 
       const importedHistoryPlan = sourceConversationHistory
-        ? this.integrateImportedConversationHistory(
+        ? this.conversationImportRepo.integrateImportedConversationHistory(
           sourceConversationHistory,
           plan,
         )
         : null;
       if (!sourceConversationHistory) {
-        this.integrateImportedConversationLedger(plan, nodes, importedAt);
+        this.conversationImportRepo.integrateImportedConversationLedger(
+          plan,
+          nodes,
+          importedAt,
+        );
       }
 
       // Compatibility projections are deliberately last. Until every fork and
@@ -411,7 +372,7 @@ export class SessionForkPortabilityRepository {
         this.finalizeImportedLineageProjection(node, session, plan);
       }
       if (sourceConversationHistory && importedHistoryPlan) {
-        this.verifyImportedConversationHistory(
+        this.conversationImportRepo.verifyImportedConversationHistory(
           sourceConversationHistory,
           importedHistoryPlan,
           plan,
@@ -423,14 +384,17 @@ export class SessionForkPortabilityRepository {
         schema: 'neo.session-fork-import-plan',
         version: 1,
         result,
-        expectedConversationStatusBySession: this.expectedConversationStatusBySession(
-          sourceConversationHistory,
-          plan,
-        ),
+        expectedConversationStatusBySession:
+          this.conversationImportRepo.expectedConversationStatusBySession(
+            sourceConversationHistory,
+            plan,
+          ),
         compatibilityProjectionDigestBySession: Object.fromEntries(
           Object.values(result.sessionIdMap).map((sessionId) => [
             sessionId,
-            this.importedCompatibilityProjectionDigest(sessionId),
+            this.conversationImportRepo.importedCompatibilityProjectionDigest(
+              sessionId,
+            ),
           ]),
         ),
       };
@@ -456,707 +420,10 @@ export class SessionForkPortabilityRepository {
     return apply.immediate();
   }
 
-  private integrateImportedConversationHistory(
-    history: NonNullable<SessionExportEnvelopeV2['conversationHistory']>,
-    plan: SessionForkImportPlan,
-  ): PortableConversationHistoryImportPlan {
-    if (!this.conversationBranchRepo) {
-      fail('REFERENCE_NOT_CLOSED', 'immutable conversation ledger is required for Session Fork import');
-    }
-    const historyPlan = planPortableConversationHistoryImport({
-      history,
-      sessionIdMap: plan.sessionIdMap,
-      messageIdMap: plan.messageIdMap,
-      forkIdMap: plan.forkIdMap,
-      targetOwnerUserId: persistedOwnerScope(plan.targetOwnerScopeId),
-      targetProjectId: plan.targetProjectId,
-    });
-    // Compatibility rows are inserted in their final imported state before the
-    // immutable event stream is reconstructed. Disable projection comparison
-    // only for this enclosing import transaction, then audit the converged
-    // public projection with the production repository below.
-    const replayRepository = new ConversationBranchRepository(this.db, {
-      auditCompatibilityProjection: false,
-    });
-    const targetQuarantines = new Map<string, TargetQuarantineEvidence>();
-    for (const action of historyPlan.actions) {
-      this.applyConversationHistoryAction(replayRepository, action, targetQuarantines);
-    }
-    return historyPlan;
-  }
-
-  private applyConversationHistoryAction(
-    repository: ConversationBranchRepository,
-    action: PortableConversationReplayAction,
-    targetQuarantines: Map<string, TargetQuarantineEvidence>,
-  ): void {
-    switch (action.method) {
-      case 'initializeSessionBranch':
-        repository.initializeSessionBranch(action.input);
-        return;
-      case 'appendMessage':
-        repository.appendMessage(action.input);
-        return;
-      case 'recordMessageRevision':
-        repository.recordMessageRevision(action.input);
-        return;
-      case 'recordProjectionReplacement':
-        repository.recordProjectionReplacement(action.input);
-        return;
-      case 'createForkBranch':
-        repository.createForkBranch(action.input);
-        return;
-      case 'recordRewind':
-        repository.recordRewind(action.input);
-        return;
-      case 'recordRewindRestore':
-        repository.recordRewindRestore(action.input);
-        return;
-      case 'recordEvaluationAttribution':
-        repository.recordEvaluationAttribution(action.input);
-        return;
-      case 'auditAndQuarantine': {
-        const auditRepository = this.conversationBranchRepo ?? repository;
-        const before = auditRepository.auditLineage(
-          action.input.sessionId,
-          action.input.boundary,
-        );
-        const actualIssueTypes = this.lineageIssueTypes(before.issues.map((issue) => issue.code));
-        const expectedIssueTypes = this.lineageIssueTypes(action.expectedIssueTypes);
-        if (
-          before.issues.length === 0
-          || canonicalStringify(actualIssueTypes) !== canonicalStringify(expectedIssueTypes)
-          || before.issueDigest === action.expectedIssueDigest
-        ) {
-          fail(
-            'DIGEST_MISMATCH',
-            `quarantine ${action.sourceEventId} does not match remapped target lineage findings`,
-          );
-        }
-        const after = auditRepository.auditAndQuarantine(action.input);
-        if (
-          after.issueDigest !== before.issueDigest
-          || after.status !== 'quarantined'
-          || !after.quarantineEventId
-        ) {
-          fail(
-            'DIGEST_MISMATCH',
-            `quarantine ${action.sourceEventId} changed while it was being reconstructed`,
-          );
-        }
-        targetQuarantines.set(action.sourceEventId, {
-          issueDigest: after.issueDigest,
-          quarantineEventId: after.quarantineEventId,
-        });
-        return;
-      }
-      case 'recordRepairOverride': {
-        const auditRepository = this.conversationBranchRepo ?? repository;
-        const targetQuarantine = targetQuarantines.get(action.sourceQuarantineEventId);
-        if (!targetQuarantine) {
-          fail(
-            'REFERENCE_NOT_CLOSED',
-            `repair override ${action.sourceEventId} lost its target quarantine evidence`,
-          );
-        }
-        const after = auditRepository.recordRepairOverride({
-          ...action.input,
-          issueDigest: targetQuarantine.issueDigest,
-        });
-        if (
-          after.status !== 'override_active'
-          || after.issueDigest !== targetQuarantine.issueDigest
-          || after.quarantineEventId !== targetQuarantine.quarantineEventId
-        ) {
-          fail(
-            'DIGEST_MISMATCH',
-            `repair override ${action.sourceEventId} changed its target quarantine evidence`,
-          );
-        }
-        return;
-      }
-      case 'repairCompatibilityProjection':
-        this.applyPortableProjectionRepair(action);
-        return;
-    }
-  }
-
-  private lineageIssueTypes(
-    issueTypes: readonly ConversationLineageIssueCode[],
-  ): ConversationLineageIssueCode[] {
-    return [...new Set(issueTypes)].sort();
-  }
-
-  private applyPortableProjectionRepair(
-    action: PortableConversationProjectionRepairReplayAction,
-  ): void {
-    if (!this.conversationBranchRepo) {
-      fail('REFERENCE_NOT_CLOSED', 'projection repair requires the production lineage repository');
-    }
-    const initialAudit = this.conversationBranchRepo.auditLineage(
-      action.input.sessionId,
-      action.input.boundary,
-    );
-    if (initialAudit.status !== 'healthy' || initialAudit.issues.length > 0) {
-      fail(
-        'DIGEST_MISMATCH',
-        `projection repair ${action.sourceEventId} did not begin from a healthy target projection`,
-      );
-    }
-    this.manufacturePortableProjectionMismatch(action);
-    const mismatchAudit = this.conversationBranchRepo.auditLineage(
-      action.input.sessionId,
-      action.input.boundary,
-    );
-    const actualIssueTypes = this.lineageIssueTypes(
-      mismatchAudit.issues.map((issue) => issue.code),
-    );
-    const expectedIssueTypes = this.lineageIssueTypes(action.sourceEvidence.issueTypes);
-    if (
-      mismatchAudit.issues.length === 0
-      || canonicalStringify(actualIssueTypes) !== canonicalStringify(expectedIssueTypes)
-      || mismatchAudit.issueDigest === action.sourceEvidence.sourceIssueDigest
-    ) {
-      fail(
-        'DIGEST_MISMATCH',
-        `projection repair ${action.sourceEventId} could not recreate exact target-native issue types`,
-      );
-    }
-    const quarantine = this.conversationBranchRepo.auditAndQuarantine({
-      sessionId: action.input.sessionId,
-      boundary: action.input.boundary,
-      idempotencyKey: action.sourceEvidence.quarantineIdempotencyKey,
-      createdAt: action.sourceEvidence.quarantineCreatedAt,
-    });
-    if (
-      quarantine.status !== 'quarantined'
-      || !quarantine.quarantineEventId
-      || quarantine.issueDigest !== mismatchAudit.issueDigest
-    ) {
-      fail(
-        'DIGEST_MISMATCH',
-        `projection repair ${action.sourceEventId} target quarantine was not stable`,
-      );
-    }
-    const repaired = this.conversationBranchRepo.repairCompatibilityProjection({
-      ...action.input,
-      issueDigest: quarantine.issueDigest,
-    });
-    if (repaired.status !== 'healthy' || repaired.issues.length > 0) {
-      fail(
-        'DIGEST_MISMATCH',
-        `projection repair ${action.sourceEventId} did not finish healthy`,
-      );
-    }
-  }
-
-  private manufacturePortableProjectionMismatch(
-    action: PortableConversationProjectionRepairReplayAction,
-  ): void {
-    if (!this.conversationBranchRepo) {
-      fail('REFERENCE_NOT_CLOSED', 'projection repair lost its immutable replay repository');
-    }
-    const replay = this.conversationBranchRepo.replay(
-      action.input.sessionId,
-      action.input.boundary,
-    );
-    const messages = replay.messages;
-    const issueTypes = new Set(action.sourceEvidence.issueTypes);
-    const wantsMissing = issueTypes.has('PROJECTION_ALIAS_MISSING');
-    const wantsExtra = issueTypes.has('PROJECTION_ALIAS_EXTRA');
-    const wantsOrder = issueTypes.has('PROJECTION_ALIAS_ORDER_MISMATCH');
-    const wantsPayload = issueTypes.has('PROJECTION_ALIAS_PAYLOAD_MISMATCH');
-    if (wantsMissing && wantsExtra) {
-      fail(
-        'REFERENCE_NOT_CLOSED',
-        `projection repair ${action.sourceEventId} has mutually exclusive missing and extra evidence`,
-      );
-    }
-
-    let hiddenIndex: number | null = null;
-    let orderCreatedByCardinality = false;
-    if (wantsMissing) {
-      if (messages.length === 0) {
-        fail('REFERENCE_NOT_CLOSED', 'missing projection evidence has no replay message');
-      }
-      if (wantsOrder) {
-        const minimum = wantsPayload ? 3 : 2;
-        if (messages.length < minimum) {
-          fail(
-            'REFERENCE_NOT_CLOSED',
-            'missing/order projection evidence cannot preserve its requested payload finding',
-          );
-        }
-        hiddenIndex = wantsPayload ? 1 : 0;
-        orderCreatedByCardinality = true;
-      } else {
-        if (wantsPayload && messages.length < 2) {
-          fail(
-            'REFERENCE_NOT_CLOSED',
-            'missing/payload projection evidence needs two replay messages',
-          );
-        }
-        hiddenIndex = messages.length - 1;
-      }
-      const hiddenMessage = messages[hiddenIndex];
-      const hiddenMarker = `portable_projection_replay:${digestHex({
-        sessionId: action.input.sessionId,
-        sourceEventId: action.sourceEventId,
-        kind: 'missing',
-      }).slice(0, 24)}`;
-      const hidden = this.db.prepare(`
-        UPDATE messages
-        SET visibility = 'rewound', hidden_by_rewind_id = ?, hidden_at = ?, synced_at = NULL
-        WHERE session_id = ? AND id = ?
-          AND COALESCE(visibility, 'active') = 'active'
-      `).run(
-        hiddenMarker,
-        action.createdAt,
-        action.input.sessionId,
-        hiddenMessage.projectedMessageId,
-      );
-      if (hidden.changes !== 1) {
-        fail('REFERENCE_NOT_CLOSED', 'projection repair could not hide its deterministic alias');
-      }
-    }
-
-    const activeIndices = messages
-      .map((_message, index) => index)
-      .filter((index) => index !== hiddenIndex);
-    let swappedIndices = new Set<number>();
-    const needsExplicitSwap = wantsOrder
-      && !orderCreatedByCardinality
-      && !(wantsExtra && !wantsPayload);
-    if (needsExplicitSwap) {
-      if (activeIndices.length < (wantsPayload ? 3 : 2)) {
-        fail(
-          'REFERENCE_NOT_CLOSED',
-          `projection repair ${action.sourceEventId} lacks deterministic order evidence`,
-        );
-      }
-      const pair = activeIndices.slice(-2) as [number, number];
-      const leftTimestamp = messages[pair[0]].message.timestamp;
-      const rightTimestamp = messages[pair[1]].message.timestamp;
-      const moveLeftAfterRight = Number.isSafeInteger(rightTimestamp + 1);
-      const replacementTimestamp = moveLeftAfterRight
-        ? rightTimestamp + 1
-        : leftTimestamp - 1;
-      if (!Number.isSafeInteger(replacementTimestamp)) {
-        fail('REFERENCE_NOT_CLOSED', 'projection repair timestamp order is not safe');
-      }
-      const changed = this.db.prepare(`
-        UPDATE messages SET timestamp = ?, synced_at = NULL
-        WHERE session_id = ? AND id = ?
-      `).run(
-        replacementTimestamp,
-        action.input.sessionId,
-        messages[moveLeftAfterRight ? pair[0] : pair[1]].projectedMessageId,
-      );
-      if (changed.changes !== 1) {
-        fail('REFERENCE_NOT_CLOSED', 'projection repair could not reorder deterministic aliases');
-      }
-      swappedIndices = new Set(pair);
-    }
-
-    if (wantsPayload) {
-      const payloadIndex = activeIndices.find((index) => !swappedIndices.has(index));
-      if (payloadIndex === undefined) {
-        fail('REFERENCE_NOT_CLOSED', 'payload projection evidence has no aligned replay message');
-      }
-      const marker = `[portable projection mismatch ${digestHex({
-        sessionId: action.input.sessionId,
-        sourceEventId: action.sourceEventId,
-        kind: 'payload',
-      }).slice(0, 24)}]`;
-      const updated = this.db.prepare(`
-        UPDATE messages SET content = ?, synced_at = NULL
-        WHERE session_id = ? AND id = ?
-      `).run(
-        marker,
-        action.input.sessionId,
-        messages[payloadIndex].projectedMessageId,
-      );
-      if (updated.changes !== 1) {
-        fail('REFERENCE_NOT_CLOSED', 'projection repair could not alter deterministic payload');
-      }
-    }
-
-    if (wantsExtra) {
-      const insertBefore = wantsOrder && !wantsPayload;
-      const bounds = this.db.prepare(`
-        SELECT COALESCE(MIN(rowid), 0) AS minimum, COALESCE(MAX(rowid), 0) AS maximum
-        FROM messages
-      `).get() as { minimum: number; maximum: number };
-      const rowId = insertBefore ? Number(bounds.minimum) - 1 : Number(bounds.maximum) + 1;
-      if (!Number.isSafeInteger(rowId)) {
-        fail('REFERENCE_NOT_CLOSED', 'extra projection evidence row order is not safe');
-      }
-      const edgeMessage = insertBefore ? messages[0] : messages[messages.length - 1];
-      const timestamp = edgeMessage?.message.timestamp ?? 0;
-      const digest = digestHex({
-        sessionId: action.input.sessionId,
-        sourceEventId: action.sourceEventId,
-        kind: 'extra',
-      });
-      this.db.prepare(`
-        INSERT INTO messages (
-          rowid, id, session_id, role, content, timestamp,
-          tool_calls, tool_results, attachments, thinking, effort_level,
-          synced_at, content_parts, metadata, is_meta, compaction,
-          visibility, hidden_by_rewind_id, hidden_at
-        ) VALUES (
-          ?, ?, ?, 'system', ?, ?,
-          NULL, NULL, NULL, NULL, NULL,
-          NULL, NULL, NULL, 1, NULL,
-          'active', NULL, NULL
-        )
-      `).run(
-        rowId,
-        `portable_projection_extra_${digest.slice(0, 32)}`,
-        action.input.sessionId,
-        `[portable projection extra ${digest.slice(0, 24)}]`,
-        timestamp,
-      );
-    }
-  }
-
-  private verifyImportedConversationHistory(
-    history: NonNullable<SessionExportEnvelopeV2['conversationHistory']>,
-    historyPlan: PortableConversationHistoryImportPlan,
-    plan: SessionForkImportPlan,
-  ): void {
-    if (!this.conversationBranchRepo) {
-      fail('REFERENCE_NOT_CLOSED', 'immutable conversation ledger disappeared during import');
-    }
-    const expectedStatusBySession = this.expectedConversationStatusBySession(history, plan);
-    for (const branch of history.branches) {
-      const targetSessionId = plan.sessionIdMap[branch.sessionId];
-      if (!targetSessionId) {
-        fail('REFERENCE_NOT_CLOSED', `imported history lost session mapping ${branch.sessionId}`);
-      }
-      const audit = this.conversationBranchRepo.auditLineage(
-        targetSessionId,
-        historyPlan.targetBoundary,
-      );
-      const expectedStatus = expectedStatusBySession[targetSessionId] ?? 'healthy';
-      try {
-        this.assertConversationAuditClosure(targetSessionId, audit, expectedStatus);
-      } catch (error) {
-        const projectionDetails = audit.issues.flatMap((issue) => (
-          issue.code === 'PROJECTION_ALIAS_PAYLOAD_MISMATCH'
-          && typeof issue.ordinal === 'number'
-            ? [this.describeProjectionPayloadMismatch(targetSessionId, issue.ordinal)]
-            : []
-        ));
-        fail(
-          'DIGEST_MISMATCH',
-          `imported history ${targetSessionId} is ${audit.status}; expected ${expectedStatus}: ${audit.issues
-            .map((issue) => `${issue.code}(${issue.detail})`)
-            .join(', ')}${projectionDetails.length > 0 ? `; ${projectionDetails.join('; ')}` : ''}; ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-  }
-
-  private expectedConversationStatusBySession(
-    history: SessionExportEnvelopeV2['conversationHistory'] | undefined,
-    plan: SessionForkImportPlan,
-  ): Record<string, ConversationLineageAuditStatus> {
-    const result: Record<string, ConversationLineageAuditStatus> = {};
-    for (const targetSessionId of Object.values(plan.sessionIdMap)) {
-      result[targetSessionId] = 'healthy';
-    }
-    if (!history) return result;
-    const sourceSessionByBranch = new Map(
-      history.branches.map((branch) => [branch.id, branch.sessionId]),
-    );
-    for (const event of history.events) {
-      const sourceSessionId = sourceSessionByBranch.get(event.branchId);
-      const targetSessionId = sourceSessionId ? plan.sessionIdMap[sourceSessionId] : undefined;
-      if (!targetSessionId) {
-        fail('REFERENCE_NOT_CLOSED', `history event ${event.id} lost its session mapping`);
-      }
-      if (event.eventType === 'quarantine') {
-        result[targetSessionId] = 'quarantined';
-      } else if (event.eventType === 'repair_override') {
-        result[targetSessionId] = 'override_active';
-      } else if (event.eventType === 'projection_repair') {
-        result[targetSessionId] = 'healthy';
-      }
-    }
-    return result;
-  }
-
-  private assertConversationAuditClosure(
-    sessionId: string,
-    audit: ConversationLineageAudit,
-    expectedStatus: ConversationLineageAuditStatus,
-  ): void {
-    if (audit.status !== expectedStatus) {
-      throw new Error(`audit status ${audit.status} does not match ${expectedStatus}`);
-    }
-    if (expectedStatus === 'healthy') {
-      if (audit.issues.length !== 0) throw new Error('healthy audit still has lineage issues');
-      return;
-    }
-    if (audit.issues.length === 0 || !audit.quarantineEventId) {
-      throw new Error(`${expectedStatus} audit has no exact quarantine closure`);
-    }
-    const quarantine = this.db.prepare(`
-      SELECT event_type, payload_json
-      FROM conversation_branch_events
-      WHERE id = ?
-        AND branch_id = (SELECT id FROM conversation_branches WHERE session_id = ?)
-      LIMIT 1
-    `).get(audit.quarantineEventId, sessionId) as {
-      event_type: string;
-      payload_json: string;
-    } | undefined;
-    const quarantinePayload = quarantine
-      ? parseJson<Record<string, unknown>>(
-        quarantine.payload_json,
-        `quarantine ${audit.quarantineEventId}`,
-      )
-      : {};
-    if (
-      quarantine?.event_type !== 'quarantine'
-      || quarantinePayload.issueDigest !== audit.issueDigest
-    ) {
-      throw new Error(`${expectedStatus} audit digest is not closed by its quarantine event`);
-    }
-    if (expectedStatus === 'quarantined') return;
-    if (!audit.repairOverrideEventId) {
-      throw new Error('override audit has no exact repair override closure');
-    }
-    const repair = this.db.prepare(`
-      SELECT event_type, payload_json
-      FROM conversation_branch_events
-      WHERE id = ?
-        AND branch_id = (SELECT id FROM conversation_branches WHERE session_id = ?)
-      LIMIT 1
-    `).get(audit.repairOverrideEventId, sessionId) as {
-      event_type: string;
-      payload_json: string;
-    } | undefined;
-    const repairPayload = repair
-      ? parseJson<Record<string, unknown>>(
-        repair.payload_json,
-        `repair override ${audit.repairOverrideEventId}`,
-      )
-      : {};
-    if (
-      repair?.event_type !== 'repair_override'
-      || repairPayload.issueDigest !== audit.issueDigest
-      || repairPayload.quarantineEventId !== audit.quarantineEventId
-    ) {
-      throw new Error('override audit is not closed by its repair event');
-    }
-  }
-
-  private describeProjectionPayloadMismatch(
-    sessionId: string,
-    ordinal: number,
-  ): string {
-    const immutable = this.db.prepare(`
-      SELECT reference.projected_message_id, entry.message_json, entry.payload_digest
-      FROM conversation_branches AS branch
-      JOIN conversation_branch_entries AS reference ON reference.branch_id = branch.id
-      JOIN conversation_entries AS entry ON entry.id = reference.entry_id
-      WHERE branch.session_id = ? AND reference.ordinal = ?
-      LIMIT 1
-    `).get(sessionId, ordinal) as {
-      projected_message_id: string;
-      message_json: string;
-      payload_digest: string;
-    } | undefined;
-    if (!immutable) return `ordinal ${ordinal} immutable payload missing`;
-    const projected = this.db.prepare(`
-      SELECT rowid AS __rowid, *
-      FROM messages
-      WHERE session_id = ? AND id = ?
-      LIMIT 1
-    `).get(sessionId, immutable.projected_message_id) as Record<string, unknown> | undefined;
-    if (!projected) return `ordinal ${ordinal} compatibility payload missing`;
-    const expected = parseJson<Record<string, unknown>>(
-      immutable.message_json,
-      `entry at ${sessionId}:${ordinal}`,
-    );
-    const actual = canonicalConversationMessagePayload(
-      sanitizeConversationMessageSnapshot(rowToMessage(projected)) as unknown as Record<string, unknown>,
-    );
-    const differingFields = [...new Set([
-      ...Object.keys(expected),
-      ...Object.keys(actual),
-    ])].filter((key) => (
-      canonicalConversationJson(expected[key]) !== canonicalConversationJson(actual[key])
-    )).sort();
-    return `ordinal ${ordinal} differs at [${differingFields.join(',')}], expected ${immutable.payload_digest}, actual ${conversationSha256(canonicalConversationJson(actual))}`;
-  }
-
-  private integrateImportedConversationLedger(
-    plan: SessionForkImportPlan,
-    nodes: SessionExportEnvelopeV2['lineage']['nodes'],
-    importedAt: number,
-  ): void {
-    if (!this.conversationBranchRepo) {
-      fail('REFERENCE_NOT_CLOSED', 'immutable conversation ledger is required for Session Fork import');
-    }
-    const boundary = {
-      ownerUserId: persistedOwnerScope(plan.targetOwnerScopeId),
-      projectId: plan.targetProjectId,
-    };
-    const mappingsByFork = new Map<string, SessionExportEnvelopeV2['lineage']['messageMappings']>();
-    for (const mapping of plan.envelope.lineage.messageMappings) {
-      const grouped = mappingsByFork.get(mapping.forkId) ?? [];
-      grouped.push(mapping);
-      mappingsByFork.set(mapping.forkId, grouped);
-    }
-    for (const mappings of mappingsByFork.values()) {
-      mappings.sort((left, right) => left.ordinal - right.ordinal);
-    }
-
-    for (const node of nodes) {
-      const messages = this.readImportedConversationMessages(node.sessionId);
-      if (!node.parentSessionId || !node.forkId) {
-        this.conversationBranchRepo.initializeSessionBranch({
-          sessionId: node.sessionId,
-          boundary,
-          createdAt: node.createdAt,
-        });
-        for (const message of messages) {
-          this.conversationBranchRepo.appendMessage({
-            sessionId: node.sessionId,
-            boundary,
-            message: importedConversationSnapshot(message),
-            idempotencyKey: `portability:${plan.sourceExportId}:append:${message.id}`,
-            provenance: {
-              kind: 'portability_import',
-              sourceExportId: plan.sourceExportId,
-              importedAt,
-            },
-            createdAt: message.timestamp,
-          });
-        }
-        continue;
-      }
-
-      const mappings = mappingsByFork.get(node.forkId) ?? [];
-      this.conversationBranchRepo.createForkBranch({
-        sourceSessionId: node.parentSessionId,
-        childSessionId: node.sessionId,
-        sourceAnchorMessageId: node.sourceAnchorMessageId ?? '',
-        childAnchorMessageId: node.anchorChildMessageId ?? '',
-        forkId: node.forkId,
-        boundary,
-        messageAliases: mappings.map((mapping) => ({
-          sourceMessageId: mapping.sourceMessageId,
-          childMessageId: mapping.childMessageId,
-        })),
-        idempotencyKey: `portability:${plan.sourceExportId}:fork:${node.forkId}`,
-        createdAt: node.createdAt,
-      });
-      const copiedMessageIds = new Set(mappings.map((mapping) => mapping.childMessageId));
-      for (const message of messages) {
-        if (copiedMessageIds.has(message.id)) continue;
-        this.conversationBranchRepo.appendMessage({
-          sessionId: node.sessionId,
-          boundary,
-          message: importedConversationSnapshot(message),
-          idempotencyKey: `portability:${plan.sourceExportId}:append:${message.id}`,
-          provenance: {
-            kind: 'portability_import',
-            sourceExportId: plan.sourceExportId,
-            importedAt,
-          },
-          createdAt: message.timestamp,
-        });
-      }
-    }
-
-    for (const node of nodes) {
-      const messages = this.readImportedConversationMessages(node.sessionId);
-      if (!messages.some((message) => message.visibility === 'rewound')) continue;
-      this.conversationBranchRepo.recordProjectionReplacement({
-        sessionId: node.sessionId,
-        boundary,
-        messages: messages
-          .filter((message) => message.visibility !== 'rewound')
-          .map(importedConversationSnapshot),
-        idempotencyKey: `portability:${plan.sourceExportId}:visibility:${node.sessionId}`,
-        reason: 'portability_import_visibility',
-        createdAt: importedAt,
-      });
-    }
-  }
-
-  private readImportedConversationMessages(sessionId: string): Message[] {
-    return (this.db.prepare(`
-      SELECT rowid AS __rowid, *
-      FROM messages
-      WHERE session_id = ?
-      ORDER BY timestamp ASC, rowid ASC
-    `).all(sessionId) as Array<Record<string, unknown>>).map((row) => rowToMessage(row));
-  }
-
-  private importedCompatibilityProjectionDigest(sessionId: string): string {
-    const rows = this.db.prepare(`
-      SELECT rowid AS __rowid, *
-      FROM messages
-      WHERE session_id = ?
-      ORDER BY timestamp ASC, rowid ASC
-    `).all(sessionId) as Array<Record<string, unknown>>;
-    return conversationSha256(canonicalConversationJson(rows.map((row, index) => ({
-      index,
-      messageId: String(row.id),
-      payload: canonicalConversationMessagePayload(
-        sanitizeConversationMessageSnapshot(rowToMessage(row)) as unknown as Record<string, unknown>,
-      ),
-    }))));
-  }
-
   enqueueOutbound(
     input: EnqueueSessionForkOutboundInput,
   ): SessionForkSyncEnvelopeRecord {
-    this.requireEnvelopeScope(input.envelope, input.ownerScopeId, input.projectId);
-    this.assertDependencies(input.syncEnvelopeId, input.dependencyIds);
-    const existing = this.readSyncRow('outbox', input.syncEnvelopeId);
-    if (existing) {
-      return this.resolveSyncDuplicate(
-        existing,
-        input.envelope.payloadDigest,
-        input.ownerScopeId,
-        input.projectId,
-      );
-    }
-    const now = input.now ?? Date.now();
-    const apply = this.db.transaction(() => {
-      this.persistEnvelopeIfAbsent(input.envelope);
-      this.db.prepare(`
-        INSERT INTO session_fork_portability_sync (
-          direction, sync_envelope_id, owner_scope_id, project_id,
-          payload_digest, dependency_ids_json, envelope_json, state,
-          reason, attempt_count, created_at, updated_at
-        ) VALUES ('outbox', ?, ?, ?, ?, ?, ?, 'local_only', NULL, 0, ?, ?)
-      `).run(
-        input.syncEnvelopeId,
-        input.ownerScopeId,
-        input.projectId,
-        input.envelope.payloadDigest,
-        canonicalStringify(input.dependencyIds),
-        encodeSessionExportEnvelopeV2(input.envelope),
-        now,
-        now,
-      );
-      return this.requireSyncRecord(
-        'outbox',
-        input.syncEnvelopeId,
-        input.ownerScopeId,
-        input.projectId,
-      );
-    });
-    return apply.immediate();
+    return this.syncRepo.enqueueOutbound(input);
   }
 
   async flushOutbound(
@@ -1165,123 +432,18 @@ export class SessionForkPortabilityRepository {
     projectId: string,
     options: FlushSessionForkOutboundOptions = {},
   ): Promise<SessionForkSyncEnvelopeRecord> {
-    const current = this.requireSyncRecord(
-      'outbox',
+    return this.syncRepo.flushOutbound(
       syncEnvelopeId,
       ownerScopeId,
       projectId,
+      options,
     );
-    if (current.state === 'applied') return current;
-    if (current.state === 'blocked' && current.reason === 'SYNC_ID_DIGEST_CONFLICT') {
-      fail('SYNC_ID_DIGEST_CONFLICT', `${syncEnvelopeId} is blocked by a digest conflict`);
-    }
-    if (options.remoteUploadEnabled !== true) {
-      fail('REMOTE_UPLOAD_DISABLED', 'remote lineage upload requires explicit enablement');
-    }
-    if (!options.transport) {
-      fail('INVALID_ENVELOPE', 'remote upload was enabled without an explicit transport');
-    }
-    const now = options.now ?? Date.now();
-    this.db.prepare(`
-      UPDATE session_fork_portability_sync
-      SET state = 'pending', reason = NULL, attempt_count = attempt_count + 1,
-          updated_at = ?
-      WHERE direction = 'outbox' AND sync_envelope_id = ?
-        AND owner_scope_id = ? AND project_id = ?
-    `).run(now, syncEnvelopeId, ownerScopeId, projectId);
-    const pending = this.requireSyncRecord(
-      'outbox',
-      syncEnvelopeId,
-      ownerScopeId,
-      projectId,
-    );
-    try {
-      await options.transport.upload({
-        syncEnvelopeId,
-        payloadDigest: pending.payloadDigest,
-        dependencyIds: [...pending.dependencyIds],
-        envelope: deepPortableClone(pending.envelope),
-      });
-      this.db.prepare(`
-        UPDATE session_fork_portability_sync
-        SET state = 'applied', reason = NULL, updated_at = ?
-        WHERE direction = 'outbox' AND sync_envelope_id = ?
-          AND owner_scope_id = ? AND project_id = ? AND state = 'pending'
-      `).run(now + 1, syncEnvelopeId, ownerScopeId, projectId);
-      return this.requireSyncRecord(
-        'outbox',
-        syncEnvelopeId,
-        ownerScopeId,
-        projectId,
-      );
-    } catch (error) {
-      const reason = error instanceof SessionForkPortabilityError
-        ? error.code
-        : 'TRANSPORT_UPLOAD_FAILED';
-      this.db.prepare(`
-        UPDATE session_fork_portability_sync
-        SET state = 'blocked', reason = ?, updated_at = ?
-        WHERE direction = 'outbox' AND sync_envelope_id = ?
-          AND owner_scope_id = ? AND project_id = ?
-      `).run(reason, now + 1, syncEnvelopeId, ownerScopeId, projectId);
-      throw error;
-    }
   }
 
-  ingestInbound(input: IngestSessionForkInboundInput): SessionForkSyncEnvelopeRecord {
-    const {
-      wire,
-      ownerScopeId,
-      projectId,
-    } = input;
-    const existing = this.readSyncRow('inbox', wire.syncEnvelopeId);
-    if (existing) {
-      return this.resolveSyncDuplicate(
-        existing,
-        wire.payloadDigest,
-        ownerScopeId,
-        projectId,
-      );
-    }
-    this.assertDependencies(wire.syncEnvelopeId, wire.dependencyIds);
-    if (wire.payloadDigest !== wire.envelope.payloadDigest) {
-      fail('DIGEST_MISMATCH', 'sync wrapper digest differs from its envelope');
-    }
-    this.requireEnvelopeScope(wire.envelope, ownerScopeId, projectId);
-    const now = input.now ?? Date.now();
-    const apply = this.db.transaction(() => {
-      this.persistEnvelopeIfAbsent(wire.envelope);
-      const missing = this.unappliedInboundDependencies(
-        wire.dependencyIds,
-        ownerScopeId,
-        projectId,
-      );
-      this.db.prepare(`
-        INSERT INTO session_fork_portability_sync (
-          direction, sync_envelope_id, owner_scope_id, project_id,
-          payload_digest, dependency_ids_json, envelope_json, state,
-          reason, attempt_count, created_at, updated_at
-        ) VALUES ('inbox', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-      `).run(
-        wire.syncEnvelopeId,
-        ownerScopeId,
-        projectId,
-        wire.payloadDigest,
-        canonicalStringify(wire.dependencyIds),
-        encodeSessionExportEnvelopeV2(wire.envelope),
-        missing.length > 0 ? 'quarantined' : 'ready',
-        missing.length > 0 ? 'DEPENDENCY_NOT_APPLIED' : null,
-        now,
-        now,
-      );
-      return this.requireSyncRecord(
-        'inbox',
-        wire.syncEnvelopeId,
-        ownerScopeId,
-        projectId,
-      );
-    });
-    return apply.immediate();
+  ingestInbound(
+    input: IngestSessionForkInboundInput,
+  ): SessionForkSyncEnvelopeRecord {
+    return this.syncRepo.ingestInbound(input);
   }
 
   applyInbound(
@@ -1290,41 +452,16 @@ export class SessionForkPortabilityRepository {
     projectId: string,
     now = Date.now(),
   ): SessionForkSyncEnvelopeRecord {
-    const apply = this.db.transaction(() => {
-      const current = this.requireSyncRecord(
-        'inbox',
-        syncEnvelopeId,
-        ownerScopeId,
-        projectId,
-      );
-      if (current.state === 'applied') return current;
-      if (current.state !== 'ready') {
-        fail('ENVELOPE_NOT_READY', `${syncEnvelopeId} is ${current.state}`);
-      }
-      this.db.prepare(`
-        UPDATE session_fork_portability_sync
-        SET state = 'applied', reason = NULL, updated_at = ?
-        WHERE direction = 'inbox' AND sync_envelope_id = ?
-          AND owner_scope_id = ? AND project_id = ? AND state = 'ready'
-      `).run(now, syncEnvelopeId, ownerScopeId, projectId);
-      this.promoteQuarantinedInbound(now, ownerScopeId, projectId);
-      return this.requireSyncRecord(
-        'inbox',
-        syncEnvelopeId,
-        ownerScopeId,
-        projectId,
-      );
-    });
-    return apply.immediate();
+    return this.syncRepo.applyInbound(
+      syncEnvelopeId,
+      ownerScopeId,
+      projectId,
+      now,
+    );
   }
 
   recoverInterruptedSync(now = Date.now()): number {
-    return this.db.prepare(`
-      UPDATE session_fork_portability_sync
-      SET state = 'local_only', reason = 'RECOVERED_PENDING_UPLOAD',
-          updated_at = ?
-      WHERE direction = 'outbox' AND state = 'pending'
-    `).run(now).changes;
+    return this.syncRepo.recoverInterruptedSync(now);
   }
 
   getSyncRecord(
@@ -1333,15 +470,12 @@ export class SessionForkPortabilityRepository {
     ownerScopeId: string,
     projectId: string,
   ): SessionForkSyncEnvelopeRecord | null {
-    const row = this.readSyncRow(direction, syncEnvelopeId);
-    if (!row) return null;
-    if (row.owner_scope_id !== ownerScopeId) {
-      fail('OWNER_SCOPE_MISMATCH', `sync envelope ${syncEnvelopeId} belongs to another owner`);
-    }
-    if (row.project_id !== projectId) {
-      fail('PROJECT_SCOPE_MISMATCH', `sync envelope ${syncEnvelopeId} belongs to another project`);
-    }
-    return this.syncRowToRecord(row);
+    return this.syncRepo.getSyncRecord(
+      direction,
+      syncEnvelopeId,
+      ownerScopeId,
+      projectId,
+    );
   }
 
   searchDurableForks(
@@ -1720,7 +854,9 @@ export class SessionForkPortabilityRepository {
           storedPlan.compatibilityProjectionDigestBySession[sessionId];
         if (
           typeof expectedProjectionDigest !== 'string'
-          || this.importedCompatibilityProjectionDigest(sessionId) !== expectedProjectionDigest
+          || this.conversationImportRepo.importedCompatibilityProjectionDigest(
+            sessionId,
+          ) !== expectedProjectionDigest
         ) {
           fail(
             'REFERENCE_NOT_CLOSED',
@@ -1739,7 +875,11 @@ export class SessionForkPortabilityRepository {
         );
       }
       try {
-        this.assertConversationAuditClosure(sessionId, audit, expectedStatus);
+        this.conversationImportRepo.assertConversationAuditClosure(
+          sessionId,
+          audit,
+          expectedStatus,
+        );
       } catch (error) {
         fail(
           'REFERENCE_NOT_CLOSED',
@@ -1808,140 +948,4 @@ export class SessionForkPortabilityRepository {
     return 'healthy';
   }
 
-  private readSyncRow(
-    direction: 'outbox' | 'inbox',
-    syncEnvelopeId: string,
-  ): StoredSyncRow | null {
-    return (this.db.prepare(`
-      SELECT *
-      FROM session_fork_portability_sync
-      WHERE direction = ? AND sync_envelope_id = ?
-      LIMIT 1
-    `).get(direction, syncEnvelopeId) as StoredSyncRow | undefined) ?? null;
-  }
-
-  private requireSyncRecord(
-    direction: 'outbox' | 'inbox',
-    syncEnvelopeId: string,
-    ownerScopeId: string,
-    projectId: string,
-  ): SessionForkSyncEnvelopeRecord {
-    const record = this.getSyncRecord(
-      direction,
-      syncEnvelopeId,
-      ownerScopeId,
-      projectId,
-    );
-    if (!record) {
-      fail('SYNC_ENVELOPE_NOT_FOUND', `${direction} envelope ${syncEnvelopeId} does not exist`);
-    }
-    return record;
-  }
-
-  private syncRowToRecord(row: StoredSyncRow): SessionForkSyncEnvelopeRecord {
-    const envelope = decodeSessionExportEnvelopeV2(row.envelope_json, {
-      ownerScopeId: row.owner_scope_id,
-      projectId: row.project_id,
-    });
-    if (envelope.payloadDigest !== row.payload_digest) {
-      fail('DIGEST_MISMATCH', `sync envelope ${row.sync_envelope_id} payload drifted`);
-    }
-    return {
-      syncEnvelopeId: row.sync_envelope_id,
-      payloadDigest: row.payload_digest,
-      dependencyIds: parseStringArray(
-        row.dependency_ids_json,
-        `sync ${row.sync_envelope_id} dependencies`,
-      ),
-      envelope,
-      direction: row.direction,
-      state: row.state,
-      createdAt: Number(row.created_at),
-      updatedAt: Number(row.updated_at),
-      ...(row.reason ? { reason: row.reason } : {}),
-    };
-  }
-
-  private resolveSyncDuplicate(
-    row: StoredSyncRow,
-    payloadDigest: string,
-    ownerScopeId: string,
-    projectId: string,
-  ): SessionForkSyncEnvelopeRecord {
-    if (row.owner_scope_id !== ownerScopeId) {
-      fail('OWNER_SCOPE_MISMATCH', `sync envelope ${row.sync_envelope_id} belongs to another owner`);
-    }
-    if (row.project_id !== projectId) {
-      fail('PROJECT_SCOPE_MISMATCH', `sync envelope ${row.sync_envelope_id} belongs to another project`);
-    }
-    if (row.payload_digest !== payloadDigest) {
-      this.db.prepare(`
-        UPDATE session_fork_portability_sync
-        SET state = 'blocked', reason = 'SYNC_ID_DIGEST_CONFLICT',
-            updated_at = updated_at + 1
-        WHERE direction = ? AND sync_envelope_id = ?
-          AND owner_scope_id = ? AND project_id = ?
-      `).run(row.direction, row.sync_envelope_id, ownerScopeId, projectId);
-      fail('SYNC_ID_DIGEST_CONFLICT', `${row.sync_envelope_id} was reused with another digest`);
-    }
-    return this.syncRowToRecord(row);
-  }
-
-  private assertDependencies(syncEnvelopeId: string, dependencyIds: string[]): void {
-    if (
-      dependencyIds.includes(syncEnvelopeId)
-      || new Set(dependencyIds).size !== dependencyIds.length
-    ) {
-      fail('REFERENCE_NOT_CLOSED', `${syncEnvelopeId} has invalid dependency references`);
-    }
-  }
-
-  private unappliedInboundDependencies(
-    dependencyIds: string[],
-    ownerScopeId: string,
-    projectId: string,
-  ): string[] {
-    return dependencyIds.filter((dependencyId) => {
-      const row = this.readSyncRow('inbox', dependencyId);
-      return row?.owner_scope_id !== ownerScopeId
-        || row.project_id !== projectId
-        || row.state !== 'applied';
-    });
-  }
-
-  private promoteQuarantinedInbound(
-    now: number,
-    ownerScopeId: string,
-    projectId: string,
-  ): void {
-    let promoted = true;
-    while (promoted) {
-      promoted = false;
-      const rows = this.db.prepare(`
-        SELECT *
-        FROM session_fork_portability_sync
-        WHERE direction = 'inbox' AND state = 'quarantined'
-          AND owner_scope_id = ? AND project_id = ?
-        ORDER BY created_at ASC, sync_envelope_id ASC
-      `).all(ownerScopeId, projectId) as StoredSyncRow[];
-      for (const row of rows) {
-        const dependencyIds = parseStringArray(
-          row.dependency_ids_json,
-          `sync ${row.sync_envelope_id} dependencies`,
-        );
-        if (this.unappliedInboundDependencies(
-          dependencyIds,
-          ownerScopeId,
-          projectId,
-        ).length > 0) continue;
-        this.db.prepare(`
-          UPDATE session_fork_portability_sync
-          SET state = 'ready', reason = NULL, updated_at = ?
-          WHERE direction = 'inbox' AND sync_envelope_id = ?
-            AND state = 'quarantined'
-        `).run(now, row.sync_envelope_id);
-        promoted = true;
-      }
-    }
-  }
 }

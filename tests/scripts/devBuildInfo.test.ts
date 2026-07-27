@@ -43,6 +43,9 @@ describe('dev build-info install gate', () => {
     expect(writeIndex).toBeGreaterThan(copyIndex);
     expect(resignIndex).toBeGreaterThan(writeIndex);
     expect(script).toContain('Contents/Resources/build-info.json');
+    expect(functionBody(script, 'write_build_info')).toContain(
+      'status --porcelain --untracked-files=normal',
+    );
   });
 
   it('warns before deleting a build from another worktree without blocking install', () => {

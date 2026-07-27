@@ -74,17 +74,19 @@ write_build_info() {
   local commit
   local commit_short
   local dirty
+  local git_status
   local worktree
 
   branch="$(git -C "$PROJECT_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
   commit="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)"
   commit_short="$(git -C "$PROJECT_ROOT" rev-parse --short=7 HEAD 2>/dev/null || true)"
   worktree="$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
-  if git -C "$PROJECT_ROOT" diff --quiet --ignore-submodules HEAD -- 2>/dev/null \
-    && [ -z "$(git -C "$PROJECT_ROOT" ls-files --others --exclude-standard 2>/dev/null || true)" ]; then
-    dirty="false"
-  elif git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    dirty="true"
+  if git_status="$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=normal 2>/dev/null)"; then
+    if [ -n "$git_status" ]; then
+      dirty="true"
+    else
+      dirty="false"
+    fi
   else
     dirty=""
   fi

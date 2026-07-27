@@ -20,6 +20,15 @@ interface WebQueuedInputDrainDependencies {
   hasActiveRun: (sessionId: string) => boolean;
   runEnvelope: (envelope: ConversationEnvelope, response: Response) => Promise<void>;
   emitAgentEvent: (sessionId: string, event: AgentEvent) => void;
+  /**
+   * 一条排队消息在宿主侧走完（消费/失败）后通知前端。
+   * 前端的排队卡片是本地 React state，只有「立即发送」那条路会自己清；
+   * 宿主自动抽干时前端完全不知情，卡片就永远留着，点撤回还会被如实告知
+   * 「已经开始发送」——用户看到的就是「没发出去又删不掉」。
+   */
+  notifyQueuedInputSettled: (
+    settled: { sessionId: string; id: string; status: 'consumed' | 'failed' },
+  ) => void;
   logger: WebRouteLogger;
 }
 
@@ -68,6 +77,7 @@ export function createWebQueuedInputDrain({
   hasActiveRun,
   runEnvelope,
   emitAgentEvent,
+  notifyQueuedInputSettled,
   logger,
 }: WebQueuedInputDrainDependencies): WebQueuedInputDrain {
   const activeSessions = new Set<string>();
@@ -106,6 +116,7 @@ export function createWebQueuedInputDrain({
         message: errorMessage(error),
       },
     });
+    notifyQueuedInputSettled({ sessionId, id, status: 'failed' });
   };
 
   const scheduleDrain = (sessionId: string): void => {
@@ -150,6 +161,7 @@ export function createWebQueuedInputDrain({
           id: record.id,
         });
       }
+      notifyQueuedInputSettled({ sessionId, id: record.id, status: 'consumed' });
     } finally {
       activeSessions.delete(sessionId);
       if (pendingReleasedSessions.delete(sessionId)) {

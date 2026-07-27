@@ -849,7 +849,10 @@ export const Sidebar: React.FC = () => {
       )}
 
       {/* Bottom: User Menu or Login */}
-      <div className="p-2 relative flex-shrink-0" ref={accountMenuRef}>
+      {/* py-1.5 而非 p-2：账号行内容中心距侧栏底 = 6 + py-2.5(10) + 8 = 24，与顶行图标/红绿灯
+          中心距顶的 24 上下对称（2026-07-28 产品负责人：四角在容器里的位置要一致）。
+          横向仍是 8，与其他区块的 px-2 同规范。 */}
+      <div className="px-2 py-1.5 relative flex-shrink-0" ref={accountMenuRef}>
         {isAuthenticated && user ? (
           <>
             <button

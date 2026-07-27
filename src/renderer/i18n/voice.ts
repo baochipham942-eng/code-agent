@@ -114,6 +114,7 @@ export const voiceZh = {
     echoHint: {
       message: '外放可能让助手听到自己的声音，建议佩戴耳机',
       dontShowAgain: '不再提示',
+      fallback: '原生回声消除当前不可用，已切换到耳机模式；使用外放可能导致打断异常',
     },
   },
 };
@@ -229,6 +230,7 @@ export const voiceEn: typeof voiceZh = {
     echoHint: {
       message: 'Speaker output may let the assistant hear itself. Consider wearing headphones',
       dontShowAgain: "Don't show again",
+      fallback: 'Native echo cancellation is unavailable. Headphone mode is active; speaker output may cause interruption issues',
     },
   },
 };

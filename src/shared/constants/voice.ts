@@ -60,6 +60,12 @@ export const VOICE_UPSTREAM_SAMPLE_RATE = 16_000;
 /** 下行助手音频采样率（Hz），厂商固定 24k 单声道 PCM16。 */
 export const VOICE_DOWNSTREAM_SAMPLE_RATE = 24_000;
 
+/** Tauri 原生 AEC sidecar 的上行音频/电平/生命周期事件。 */
+export const VOICE_AEC_OUTPUT_EVENT = 'voice-aec:output';
+
+/** PCM 经 JSON IPC 传给 Rust 时的 base64 分块大小，避免一次展开大数组撑爆调用栈。 */
+export const VOICE_AEC_BASE64_CHUNK_BYTES = 0x8000;
+
 /** 上游 WS 握手超时（ms）。 */
 export const VOICE_UPSTREAM_CONNECT_TIMEOUT_MS = 15_000;
 

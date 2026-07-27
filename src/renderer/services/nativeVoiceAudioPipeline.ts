@@ -1,0 +1,173 @@
+// ============================================================================
+// macOS 原生 AEC 管线
+//
+// Rust/Tauri 持有 TCC 权限并 spawn Swift sidecar。Renderer 只消费归一化事件、
+// 把上行继续送现有 voice WS，并把下行 PCM / clear / mute 控制送回原生播放链。
+// ============================================================================
+
+import {
+  VOICE_AEC_BASE64_CHUNK_BYTES,
+  VOICE_AEC_OUTPUT_EVENT,
+} from '@shared/constants/voice';
+import {
+  controlNativeVoiceAec,
+  startNativeVoiceAec,
+  stopNativeVoiceAec,
+  writeNativeVoiceAecPlayback,
+} from './nativeDesktop';
+import { listenTauriEvent, type TauriUnlisten } from './tauriPluginFacade';
+import type { VoiceAudioPipelineCallbacks, VoiceAudioPipelineLike } from './voiceAudioPipeline';
+
+interface NativeVoiceAecEvent {
+  kind: 'audio' | 'levels' | 'error';
+  data?: string;
+  mic?: number;
+  playback?: number;
+  message?: string;
+}
+
+function pcmToBase64(pcm: Int16Array): string {
+  const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += VOICE_AEC_BASE64_CHUNK_BYTES) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + VOICE_AEC_BASE64_CHUNK_BYTES));
+  }
+  return btoa(binary);
+}
+
+function base64ToPcm(value: string): Int16Array {
+  const binary = atob(value);
+  if (binary.length % Int16Array.BYTES_PER_ELEMENT !== 0) {
+    throw new Error('Native AEC emitted an odd-length PCM frame');
+  }
+  const buffer = new ArrayBuffer(binary.length);
+  const bytes = new Uint8Array(buffer);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Int16Array(buffer);
+}
+
+export class NativeVoiceAudioPipeline implements VoiceAudioPipelineLike {
+  private unlisten: TauriUnlisten | null = null;
+  private started = false;
+  private stopped = false;
+  private failed = false;
+  private muted = false;
+  private captureOpen = true;
+  private effectiveMuted = false;
+  private micLevel = 0;
+  private playbackGeneration = 0;
+  private playbackWrites: Promise<void> = Promise.resolve();
+  private controlWrites: Promise<void> = Promise.resolve();
+
+  constructor(private readonly callbacks: VoiceAudioPipelineCallbacks) {}
+
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    this.syncCaptureGate();
+  }
+
+  setCaptureOpen(open: boolean): void {
+    this.captureOpen = open;
+    this.syncCaptureGate();
+  }
+
+  getMicLevel(): number {
+    return this.micLevel;
+  }
+
+  async start(): Promise<void> {
+    this.stopped = false;
+    this.failed = false;
+    this.unlisten = await listenTauriEvent<NativeVoiceAecEvent>(
+      VOICE_AEC_OUTPUT_EVENT,
+      ({ payload }) => this.handleEvent(payload),
+    );
+    try {
+      const result = await startNativeVoiceAec();
+      if (result.outputEvent !== VOICE_AEC_OUTPUT_EVENT) {
+        throw new Error(`Unexpected native AEC event: ${result.outputEvent}`);
+      }
+      this.started = true;
+      this.syncCaptureGate(true);
+    } catch (error) {
+      this.unlisten?.();
+      this.unlisten = null;
+      void stopNativeVoiceAec().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  stop(): void {
+    this.stopped = true;
+    this.started = false;
+    this.playbackGeneration += 1;
+    this.playbackWrites = Promise.resolve();
+    this.controlWrites = Promise.resolve();
+    this.unlisten?.();
+    this.unlisten = null;
+    this.micLevel = 0;
+    void stopNativeVoiceAec().catch(() => undefined);
+  }
+
+  enqueuePlayback(pcm24k: Int16Array): void {
+    if (!this.started || this.stopped || pcm24k.length === 0) return;
+    const generation = this.playbackGeneration;
+    const data = pcmToBase64(pcm24k);
+    this.playbackWrites = this.playbackWrites
+      .then(async () => {
+        if (this.stopped || generation !== this.playbackGeneration) return;
+        await writeNativeVoiceAecPlayback(data);
+      })
+      .catch(() => this.fail('NATIVE_AEC_PLAYBACK_FAILED'));
+  }
+
+  clearPlayback(): void {
+    if (!this.started || this.stopped) return;
+    this.playbackGeneration += 1;
+    this.playbackWrites = Promise.resolve();
+    void controlNativeVoiceAec('clear').catch(() => this.fail('NATIVE_AEC_CONTROL_FAILED'));
+  }
+
+  private syncCaptureGate(force = false): void {
+    const nextMuted = this.muted || !this.captureOpen;
+    if (!force && nextMuted === this.effectiveMuted) return;
+    this.effectiveMuted = nextMuted;
+    if (!this.started || this.stopped) return;
+    const command = nextMuted ? 'mute' : 'unmute';
+    this.controlWrites = this.controlWrites
+      .then(async () => {
+        if (!this.stopped) await controlNativeVoiceAec(command);
+      })
+      .catch(() => this.fail('NATIVE_AEC_CONTROL_FAILED'));
+  }
+
+  private handleEvent(event: NativeVoiceAecEvent): void {
+    if (this.stopped) return;
+    if (event.kind === 'audio' && event.data) {
+      try {
+        this.callbacks.onFrame(base64ToPcm(event.data));
+      } catch {
+        this.fail('NATIVE_AEC_CAPTURE_FAILED');
+      }
+      return;
+    }
+    if (event.kind === 'levels') {
+      const mic = typeof event.mic === 'number' ? event.mic : 0;
+      const playback = typeof event.playback === 'number' ? event.playback : 0;
+      this.micLevel = mic;
+      this.callbacks.onLevels?.(mic, playback);
+      return;
+    }
+    if (event.kind === 'error' && this.started) {
+      this.fail('NATIVE_AEC_RUNTIME_FAILED');
+    }
+  }
+
+  private fail(code: string): void {
+    if (this.failed || this.stopped) return;
+    this.failed = true;
+    this.callbacks.onError?.(code);
+  }
+}

@@ -22,8 +22,10 @@ import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useVoiceCallStore, type VoiceInterruptMode } from '../stores/voiceCallStore';
 import ipcService from './ipcService';
-import { maybeShowSpeakerEchoHint } from './voiceEchoHint';
-import { VoiceAudioPipeline } from './voiceAudioPipeline';
+import { isNativeDesktopAvailable } from './nativeDesktop';
+import { NativeVoiceAudioPipeline } from './nativeVoiceAudioPipeline';
+import { maybeShowSpeakerEchoHint, showVoiceAecFallbackWarning } from './voiceEchoHint';
+import { VoiceAudioPipeline, type VoiceAudioPipelineLike } from './voiceAudioPipeline';
 import { resolvePartialRelease } from '../utils/voicePartialOverlay';
 import { selectVoiceFocusContext } from './voiceFocusContext';
 
@@ -40,12 +42,18 @@ function buildStreamUrl(sessionId: string, agentId?: string): string {
   return `${scheme}://${window.location.host}${VOICE_STREAM_WS_PATH}?${params.toString()}`;
 }
 
-async function readInterruptMode(): Promise<VoiceInterruptMode> {
+async function readVoiceRuntimeSettings(): Promise<{
+  interruptMode: VoiceInterruptMode;
+  echoCancellation: 'auto' | 'off';
+}> {
   try {
     const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
-    return settings.voice?.live?.interrupt ?? 'server_vad';
+    return {
+      interruptMode: settings.voice?.live?.interrupt ?? 'server_vad',
+      echoCancellation: settings.voice?.live?.echoCancellation ?? 'auto',
+    };
   } catch {
-    return 'server_vad';
+    return { interruptMode: 'server_vad', echoCancellation: 'auto' };
   }
 }
 
@@ -64,7 +72,9 @@ async function reloadVoiceSessionMessages(sessionId: string): Promise<void> {
 
 class VoiceCallBridge {
   private ws: WebSocket | null = null;
-  private audio: VoiceAudioPipeline | null = null;
+  private audio: VoiceAudioPipelineLike | null = null;
+  private audioReady: Promise<'native_aec' | 'headphones'> | null = null;
+  private fallbackWarningShown = false;
   private reloadTimer: ReturnType<typeof setTimeout> | null = null;
   /** 用户显式挂断 vs 网络断开——只有后者才该重连。 */
   private intentionalClose = false;
@@ -163,22 +173,29 @@ class VoiceCallBridge {
     this.audio?.stop();
     this.audio = null;
     this.settledPartials = {};
+    this.audioReady = null;
+    this.fallbackWarningShown = false;
 
     const activeAgentId = readActiveAgentSessionMap()[sessionId];
-    const interruptMode = await readInterruptMode();
+    const { interruptMode, echoCancellation } = await readVoiceRuntimeSettings();
     if (useVoiceCallStore.getState().phase !== 'idle') return; // await 期间状态被改，别抢
     this.store().dialStarted(sessionId, activeAgentId, interruptMode);
     this.intentionalClose = false;
     this.reconnectAttempt = 0;
 
-    this.openSocket(sessionId, activeAgentId, interruptMode);
+    this.openSocket(sessionId, activeAgentId, interruptMode, echoCancellation);
   }
 
   /**
    * 建一条媒体面 WS 并接管它。首次拨号和断线重连共用——重连换的是 socket，
    * 不是通话：store 不 reset，host 侧在宽限窗里认得同一条会话（见 attachVoiceClient）。
    */
-  private openSocket(sessionId: string, activeAgentId: string | undefined, interruptMode: VoiceInterruptMode): void {
+  private openSocket(
+    sessionId: string,
+    activeAgentId: string | undefined,
+    interruptMode: VoiceInterruptMode,
+    echoCancellation: 'auto' | 'off',
+  ): void {
     const ws = new WebSocket(buildStreamUrl(sessionId, activeAgentId));
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
@@ -186,20 +203,7 @@ class VoiceCallBridge {
 
     ws.onopen = () => {
       opened = true;
-      const pipeline = new VoiceAudioPipeline({
-        onFrame: (pcm16k) => {
-          if (ws.readyState === WebSocket.OPEN) ws.send(pcm16k.buffer as ArrayBuffer);
-        },
-        onLevels: (mic, playback) => this.store().levelsChanged(mic, playback),
-        onError: (code) => {
-          this.store().phaseChanged('error');
-          this.store().eventApplied({ error: { code, message: getT().voice.error.micDenied } });
-        },
-      });
-      // PTT/手动模式起步就关采集门：不说话时一帧人声都不该上去（turn_detection=null）。
-      pipeline.setCaptureOpen(interruptMode === 'server_vad');
-      this.audio = pipeline;
-      void pipeline.start();
+      this.audioReady = this.startAudio(ws, interruptMode, echoCancellation);
     };
 
     ws.onmessage = (event) => {
@@ -229,6 +233,7 @@ class VoiceCallBridge {
     ws.onclose = () => {
       this.audio?.stop();
       this.audio = null;
+      this.audioReady = null;
       if (this.ws === ws) this.ws = null;
       const { phase } = this.store();
       if (phase === 'idle') return;
@@ -242,7 +247,7 @@ class VoiceCallBridge {
       }
       this.stopFocusReporting();
       // 用户没挂断却断了 = 网络抖动，试着接回同一通电话（host 侧有宽限窗）。
-      if (!this.intentionalClose && phase !== 'error' && this.scheduleReconnect(sessionId, activeAgentId, interruptMode)) return;
+      if (!this.intentionalClose && phase !== 'error' && this.scheduleReconnect(sessionId, activeAgentId, interruptMode, echoCancellation)) return;
       // host 侧关闭（挂断/上游死/超时）：摘要落库有一点延迟，稍后再拉一次。
       this.scheduleReload(sessionId, undefined, 800);
       // error 态不 reset：把错误留在 chrome 上给用户看，由 End 按钮显式收尾；
@@ -259,6 +264,7 @@ class VoiceCallBridge {
     sessionId: string,
     activeAgentId: string | undefined,
     interruptMode: VoiceInterruptMode,
+    echoCancellation: 'auto' | 'off',
   ): boolean {
     const delay = VOICE_RECONNECT_BACKOFF_MS[this.reconnectAttempt];
     if (delay === undefined) {
@@ -276,9 +282,97 @@ class VoiceCallBridge {
       this.reconnectTimer = null;
       // 期间用户自己挂了 / 切走了就别再连
       if (this.store().phase === 'idle' || this.intentionalClose) return;
-      this.openSocket(sessionId, activeAgentId, interruptMode);
+      this.openSocket(sessionId, activeAgentId, interruptMode, echoCancellation);
     }, delay);
     return true;
+  }
+
+  private webAudioCallbacks(ws: WebSocket) {
+    return {
+      onFrame: (pcm16k: Int16Array) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(pcm16k.buffer as ArrayBuffer);
+      },
+      onLevels: (mic: number, playback: number) => this.store().levelsChanged(mic, playback),
+      onError: (code: string) => {
+        this.store().phaseChanged('error');
+        this.store().eventApplied({ error: { code, message: getT().voice.error.micDenied } });
+      },
+    };
+  }
+
+  private warnAecFallback(): void {
+    if (this.fallbackWarningShown) return;
+    this.fallbackWarningShown = true;
+    showVoiceAecFallbackWarning(getT().voice.echoHint.fallback);
+  }
+
+  /**
+   * @param involuntary 非自愿降级（原生 AEC 本该可用却没用上）才报警告。
+   *   用户在设置里显式选了「强制关」不是降级——那是他的选择，每通电话报一次
+   *   「原生回声消除当前不可用」等于把用户的设置说成故障。
+   */
+  private async startWebAudio(
+    ws: WebSocket,
+    interruptMode: VoiceInterruptMode,
+    involuntary: boolean,
+  ): Promise<'headphones'> {
+    const pipeline = new VoiceAudioPipeline(this.webAudioCallbacks(ws));
+    pipeline.setCaptureOpen(interruptMode === 'server_vad');
+    this.audio = pipeline;
+    if (involuntary) this.warnAecFallback();
+    await pipeline.start();
+    return 'headphones';
+  }
+
+  private async startAudio(
+    ws: WebSocket,
+    interruptMode: VoiceInterruptMode,
+    echoCancellation: 'auto' | 'off',
+  ): Promise<'native_aec' | 'headphones'> {
+    // 用户显式关掉 = 自愿走耳机模式，不报降级；非 macOS/原生壳不可用 = 非自愿，要报。
+    if (echoCancellation === 'off') return this.startWebAudio(ws, interruptMode, false);
+    if (!isNativeDesktopAvailable()) return this.startWebAudio(ws, interruptMode, true);
+
+    const pipeline = new NativeVoiceAudioPipeline({
+      onFrame: (pcm16k) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(pcm16k.buffer as ArrayBuffer);
+      },
+      onLevels: (mic, playback) => this.store().levelsChanged(mic, playback),
+      onError: () => {
+        void this.fallbackFromNative(ws, interruptMode, pipeline);
+      },
+    });
+    pipeline.setCaptureOpen(interruptMode === 'server_vad');
+    this.audio = pipeline;
+    try {
+      await pipeline.start();
+      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) {
+        pipeline.stop();
+        return 'native_aec';
+      }
+      return 'native_aec';
+    } catch {
+      if (this.audio === pipeline) {
+        pipeline.stop();
+        this.audio = null;
+      }
+      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return 'headphones';
+      return this.startWebAudio(ws, interruptMode, true);
+    }
+  }
+
+  private async fallbackFromNative(
+    ws: WebSocket,
+    interruptMode: VoiceInterruptMode,
+    failedPipeline: NativeVoiceAudioPipeline,
+  ): Promise<void> {
+    if (this.audio !== failedPipeline || this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+    failedPipeline.stop();
+    this.audio = null;
+    await this.startWebAudio(ws, interruptMode, true);
+    if (this.ws !== ws || this.store().phase !== 'live') return;
+    const text = getT().voice.echoHint;
+    void maybeShowSpeakerEchoHint({ message: text.message, dontShowAgain: text.dontShowAgain });
   }
 
   private handleEvent(event: VoiceEvent, sessionId: string): void {
@@ -290,8 +384,14 @@ class VoiceCallBridge {
           this.reconnectAttempt = 0;
           this.store().reconnectingChanged(false);
           this.startFocusReporting();
-          const text = getT().voice.echoHint;
-          void maybeShowSpeakerEchoHint({ message: text.message, dontShowAgain: text.dontShowAgain });
+          // 耳机提示只在真走了 WebView 管线（没有原生 AEC）时才有意义。
+          const ready = this.audioReady;
+          void (async () => {
+            const mode = await ready;
+            if (mode !== 'headphones' || this.store().phase !== 'live') return;
+            const text = getT().voice.echoHint;
+            await maybeShowSpeakerEchoHint({ message: text.message, dontShowAgain: text.dontShowAgain });
+          })();
         } else if (event.state === 'connecting') {
           this.store().phaseChanged('connecting');
         }
@@ -355,6 +455,7 @@ class VoiceCallBridge {
     this.ws = null;
     this.audio?.stop();
     this.audio = null;
+    this.audioReady = null;
     const { sessionId } = this.store();
     if (sessionId) this.scheduleReload(sessionId, undefined, 800);
     this.store().reset();

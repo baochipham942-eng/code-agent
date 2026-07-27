@@ -50,3 +50,8 @@ export async function maybeShowSpeakerEchoHint(text: { message: string; dontShow
   dismiss();
   toast.warning(text.message, { label: text.dontShowAgain, onClick: dismiss }, 8000);
 }
+
+/** 原生 AEC 不可用时每通明确提示，不能被「不再提示耳机建议」吞掉。 */
+export function showVoiceAecFallbackWarning(message: string): void {
+  toast.warning(message);
+}

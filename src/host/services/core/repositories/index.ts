@@ -3,6 +3,13 @@
 // ============================================================================
 
 export { SessionRepository, type StoredSession, type StoredMessage } from './SessionRepository';
+export {
+  SessionForkRepository,
+  type CreateForkRepositoryInput,
+  type CreateForkRepositoryResult,
+  type SessionForkContextSource,
+  type SessionForkContextHandoffRecord,
+} from './SessionForkRepository';
 export { MemoryRepository, type MemoryRecord } from './MemoryRepository';
 export { ConfigRepository, type UserPreference, type ProjectKnowledge, type ToolExecution } from './ConfigRepository';
 export { CaptureRepository } from './CaptureRepository';

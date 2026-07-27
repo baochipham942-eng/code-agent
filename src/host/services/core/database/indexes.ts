@@ -38,6 +38,12 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_visibility_timestamp ON messages(session_id, visibility, timestamp DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_hidden_by_rewind ON messages(hidden_by_rewind_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_session_rewinds_session_created ON session_rewinds(session_id, created_at DESC)`);
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_session_rewinds_idempotency ON session_rewinds(session_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_forks_source_created ON session_forks(source_session_id, created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_forks_root_depth ON session_forks(root_session_id, depth, created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_forks_parent ON session_forks(parent_fork_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_message_source ON session_fork_message_map(source_message_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_context_handoff_state ON session_fork_context_handoffs(state, dispatch_started_at)`);
 
   // Cron 相关索引
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled)`);

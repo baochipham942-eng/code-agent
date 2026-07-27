@@ -4,6 +4,7 @@
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
+import { createHash } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import type { Session, Message, ModelProvider, TodoItem, SessionTask } from '../../../../shared/contract';
 import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEngine';
@@ -42,6 +43,7 @@ type MessageQueryOptions = { includeRewound?: boolean };
 type SessionOwnerFilter = string | null | undefined;
 
 export interface PromptRewindRecordInput {
+  idempotencyKey?: string;
   checkpointMessageId?: string | null;
   filesRestored?: number;
   filesDeleted?: number;
@@ -54,6 +56,12 @@ export interface PromptRewindResult {
   anchorMessage: Message;
   hiddenMessageIds: string[];
   hiddenMessageCount: number;
+  activeMessages: Message[];
+}
+
+export interface PromptRewindRestoreResult {
+  rewindId: string;
+  restoredMessageCount: number;
   activeMessages: Message[];
 }
 
@@ -955,6 +963,25 @@ export class SessionRepository {
   ): PromptRewindResult {
     const now = record.createdAt ?? Date.now();
     const rewindId = `rewind_${now}_${uuidv4().slice(0, 8)}`;
+    const idempotencyKey = record.idempotencyKey?.trim() || null;
+    const requestDigest = createHash('sha256')
+      .update(JSON.stringify({ sessionId, userMessageId }))
+      .digest('hex');
+
+    if (idempotencyKey) {
+      const existing = this.db.prepare(`
+        SELECT *
+        FROM session_rewinds
+        WHERE session_id = ? AND idempotency_key = ?
+        LIMIT 1
+      `).get(sessionId, idempotencyKey) as SQLiteRow | undefined;
+      if (existing) {
+        if (String(existing.request_digest ?? '') !== requestDigest) {
+          throw new Error('IDEMPOTENCY_CONFLICT: the idempotency key was already used for another rewind');
+        }
+        return this.readPromptRewindResult(existing);
+      }
+    }
 
     const applyFn = this.db.transaction(() => {
       const anchorRow = this.db
@@ -1029,9 +1056,10 @@ export class SessionRepository {
         INSERT INTO session_rewinds (
           id, session_id, anchor_message_id, anchor_prompt, anchor_timestamp,
           checkpoint_message_id, hidden_message_count, hidden_message_ids,
-          files_restored, files_deleted, errors_json, created_at
+          files_restored, files_deleted, errors_json, idempotency_key,
+          request_digest, status, restored_at, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', NULL, ?)
       `,
         )
         .run(
@@ -1046,21 +1074,99 @@ export class SessionRepository {
           record.filesRestored ?? 0,
           record.filesDeleted ?? 0,
           JSON.stringify(record.errors ?? []),
+          idempotencyKey,
+          requestDigest,
           now,
         );
 
       this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(now, sessionId);
 
-      return {
-        rewindId,
-        anchorMessage,
-        hiddenMessageIds,
-        hiddenMessageCount: hiddenMessageIds.length,
-        activeMessages: this.getMessages(sessionId),
-      };
+      const persisted = this.db.prepare('SELECT * FROM session_rewinds WHERE id = ?')
+        .get(rewindId) as SQLiteRow;
+      return this.readPromptRewindResult(persisted);
     });
 
     return applyFn();
+  }
+
+  restorePromptRewind(
+    sessionId: string,
+    rewindId: string,
+    restoredAt = Date.now(),
+  ): PromptRewindRestoreResult {
+    const restoreFn = this.db.transaction(() => {
+      const rewind = this.db.prepare(`
+        SELECT id, status
+        FROM session_rewinds
+        WHERE id = ? AND session_id = ?
+        LIMIT 1
+      `).get(rewindId, sessionId) as { id: string; status: string } | undefined;
+      if (!rewind) throw new Error(`Rewind not found: ${rewindId}`);
+      if (rewind.status === 'restored') {
+        return {
+          rewindId,
+          restoredMessageCount: 0,
+          activeMessages: this.getMessages(sessionId),
+        };
+      }
+      if (rewind.status !== 'completed') {
+        throw new Error(`Rewind cannot be restored from status ${rewind.status}`);
+      }
+
+      const result = this.db.prepare(`
+        UPDATE messages
+        SET visibility = 'active',
+            hidden_by_rewind_id = NULL,
+            hidden_at = NULL,
+            synced_at = NULL
+        WHERE session_id = ?
+          AND hidden_by_rewind_id = ?
+          AND visibility = 'rewound'
+      `).run(sessionId, rewindId);
+
+      this.db.prepare(`
+        UPDATE session_rewinds
+        SET status = 'restored', restored_at = ?
+        WHERE id = ? AND session_id = ?
+      `).run(restoredAt, rewindId, sessionId);
+      this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?')
+        .run(restoredAt, sessionId);
+
+      return {
+        rewindId,
+        restoredMessageCount: result.changes,
+        activeMessages: this.getMessages(sessionId),
+      };
+    });
+    return restoreFn();
+  }
+
+  private readPromptRewindResult(row: SQLiteRow): PromptRewindResult {
+    const sessionId = String(row.session_id);
+    const anchorMessage = this.getMessageById(
+      sessionId,
+      String(row.anchor_message_id),
+      { includeRewound: true },
+    );
+    if (!anchorMessage) {
+      throw new Error(`Rewind anchor is missing: ${String(row.anchor_message_id)}`);
+    }
+    let hiddenMessageIds: string[] = [];
+    try {
+      const parsed = JSON.parse(String(row.hidden_message_ids ?? '[]')) as unknown;
+      hiddenMessageIds = Array.isArray(parsed)
+        ? parsed.filter((value): value is string => typeof value === 'string')
+        : [];
+    } catch {
+      throw new Error(`Rewind audit is corrupt: ${String(row.id)}`);
+    }
+    return {
+      rewindId: String(row.id),
+      anchorMessage,
+      hiddenMessageIds,
+      hiddenMessageCount: Number(row.hidden_message_count ?? hiddenMessageIds.length),
+      activeMessages: this.getMessages(sessionId),
+    };
   }
 
   // --------------------------------------------------------------------------

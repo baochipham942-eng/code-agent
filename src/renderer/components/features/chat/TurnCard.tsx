@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   CircleDot,
   FileText,
+  GitFork,
   LoaderCircle,
   RotateCcw,
   ShieldAlert,
@@ -44,6 +45,8 @@ import {
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
+import { useMessageActionStore } from '../../../stores/messageActionStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -81,6 +84,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   onRewindUserPrompt,
 }) => {
   const { t } = useI18n();
+  const forkFromHere = useMessageActionStore((state) => state.forkFromHere);
+  const sessionIsRunning = useSessionStore((state) => (
+    sessionId ? Boolean(state.runningSessionIds?.has(sessionId)) : false
+  ));
+  const [isForking, setIsForking] = useState(false);
   const stats = useMemo(() => {
     const duration = turn.endTime ? turn.endTime - turn.startTime : null;
     const time = new Date(turn.startTime).toLocaleTimeString('zh-CN', {
@@ -179,6 +187,30 @@ export const TurnCard: React.FC<TurnCardProps> = ({
       || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
     return { messageId, content };
   }, [isStreaming, turn.nodes]);
+  const forkAnchor = useMemo(() => {
+    if (turn.status !== 'completed' || isStreaming) return null;
+    const node = [...turn.nodes]
+      .reverse()
+      .find((item) => (
+        item.type === 'assistant_text'
+        && typeof item.content === 'string'
+        && item.content.trim().length > 0
+      ));
+    if (!node) return null;
+    const messageId = node.messageId
+      || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
+    return { messageId };
+  }, [isStreaming, turn.nodes, turn.status]);
+
+  const handleFork = async () => {
+    if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;
+    setIsForking(true);
+    try {
+      await forkFromHere(forkAnchor.messageId);
+    } finally {
+      setIsForking(false);
+    }
+  };
 
   return (
     <div
@@ -351,11 +383,33 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
         {/* 评价对象是这一轮的回答，所以位置在整轮最后——挂在正文节点里会插在答案和
             它产出的文件卡之间，看起来像在给上面那一句话打分。 */}
-        {feedbackAnchor && (
-          <TurnFeedback
-            messageId={feedbackAnchor.messageId}
-            content={feedbackAnchor.content}
-          />
+        {(forkAnchor || feedbackAnchor) && (
+          <div className="flex items-center gap-2" data-testid="turn-reply-actions">
+            {forkAnchor && (
+              <button
+                type="button"
+                data-testid="turn-fork-action"
+                aria-label={t.turnCard.forkFromHere}
+                title={t.turnCard.forkFromHere}
+                disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
+                onClick={() => {
+                  void handleFork();
+                }}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-zinc-500 transition-colors hover:bg-violet-500/10 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isForking
+                  ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  : <GitFork className="h-3.5 w-3.5" />}
+                <span>{isForking ? t.turnCard.forking : t.turnCard.fork}</span>
+              </button>
+            )}
+            {feedbackAnchor && (
+              <TurnFeedback
+                messageId={feedbackAnchor.messageId}
+                content={feedbackAnchor.content}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>

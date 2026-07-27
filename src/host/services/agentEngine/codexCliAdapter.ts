@@ -28,6 +28,13 @@ import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './a
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
+import {
+  assertExternalForkContextDispatchLifecycle,
+  composeExternalForkLaunchPrompt,
+  summarizeExternalForkContextHandoff,
+  type ExternalForkContextDispatchCallback,
+  type ExternalForkContextHandoff,
+} from '../sessionFork/context';
 
 const EMPTY_RESPONSE_MESSAGE = 'Codex CLI returned an empty response.';
 
@@ -40,6 +47,13 @@ export interface CodexCliRunRequest extends AgentEngineRunRequest {
   stallWarningMs?: number;
   durableLifecycle?: ExternalEngineDurableLifecycle;
   resumeLaunch?: ExternalEngineResumeLaunch;
+  /**
+   * Audited fork prefix for the first child run. This is a new-session handoff,
+   * never a Codex resume identity.
+   */
+  forkContextHandoff?: ExternalForkContextHandoff;
+  onForkContextDispatchStart?: ExternalForkContextDispatchCallback;
+  onForkContextDispatched?: ExternalForkContextDispatchCallback;
 }
 
 interface CodexParsedEvent {
@@ -52,6 +66,22 @@ interface CodexParsedEvent {
 export class CodexCliAdapter {
   async run(request: CodexCliRunRequest): Promise<AgentEngineRunResult> {
     assertExternalRuntimeAttachments('codex_cli', request.attachmentsCount, 'Codex CLI P0');
+    const launchPrompt = request.forkContextHandoff
+      ? composeExternalForkLaunchPrompt({
+          engine: 'codex_cli',
+          handoff: request.forkContextHandoff,
+          prompt: request.prompt,
+          resumeLaunchPresent: Boolean(request.resumeLaunch),
+        })
+      : request.prompt;
+    const forkContextAudit = request.forkContextHandoff
+      ? summarizeExternalForkContextHandoff(request.forkContextHandoff)
+      : undefined;
+    assertExternalForkContextDispatchLifecycle(
+      request.forkContextHandoff,
+      request.onForkContextDispatchStart,
+      request.onForkContextDispatched,
+    );
 
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();
@@ -135,6 +165,7 @@ export class CodexCliAdapter {
         logPath,
         timeoutMs: timing.timeoutMs,
         stallWarningMs: timing.stallWarningMs,
+        ...(forkContextAudit ? { forkContext: forkContextAudit } : {}),
       },
     });
     ledger.appendEvent({
@@ -169,7 +200,29 @@ export class CodexCliAdapter {
       model,
       permissionProfile,
     });
-    child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : request.prompt));
+    const onForkContextDispatchStart = request.onForkContextDispatchStart;
+    const onForkContextDispatched = request.onForkContextDispatched;
+    try {
+      if (forkContextAudit) {
+        if (!onForkContextDispatchStart || !onForkContextDispatched) {
+          throw new Error('Fork context dispatch lifecycle disappeared after validation');
+        }
+        await onForkContextDispatchStart(forkContextAudit);
+        child.stdin.end(launchPrompt);
+        await onForkContextDispatched(forkContextAudit);
+      } else {
+        child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : launchPrompt));
+      }
+    } catch (error) {
+      logStream.end();
+      try {
+        if (request.durableLifecycle) await request.durableLifecycle.terminateProcess('SIGTERM');
+        else child.kill('SIGTERM');
+      } catch {
+        // Preserve the dispatch lifecycle failure that left the durable state fail-closed.
+      }
+      throw error;
+    }
 
     let stdoutBuffer = '';
     let stderrText = '';

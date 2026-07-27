@@ -61,7 +61,7 @@ import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndic
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
 import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
-import type { PromptRewindResult } from '@shared/contract/appService';
+import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { useI18n } from '../hooks/useI18n';
 import { localeForLanguage } from '../utils/i18nTime';
@@ -680,18 +680,19 @@ export const ChatView: React.FC = () => {
     if (!currentSessionId || !pendingPromptRewind || isPromptRewinding) return;
     setIsPromptRewinding(true);
     try {
-      const result = await ipcService.invokeDomain<PromptRewindResult>(
+      const result = await ipcService.invokeDomain<RewindConversationResult>(
         IPC_DOMAINS.SESSION,
-        'rewindToPrompt',
+        'rewindConversation',
         {
           sessionId: currentSessionId,
-          userMessageId: pendingPromptRewind.messageId,
+          anchorUserMessageId: pendingPromptRewind.messageId,
+          idempotencyKey: `rewind:${currentSessionId}:${pendingPromptRewind.messageId}:${crypto.randomUUID()}`,
         },
       );
       setMessages(result.activeMessages);
       chatInputRef.current?.setDraft(result.draft);
       setPendingPromptRewind(null);
-      toast.success(t.chat.rewindSuccess.replace('{count}', String(result.filesRestored + result.filesDeleted)));
+      toast.success(t.chat.rewindSuccess);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {

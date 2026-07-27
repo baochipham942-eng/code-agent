@@ -330,6 +330,82 @@ describe('IPC Handlers', () => {
       });
     });
 
+    it('routes Fork and lineage reads through the same session application service', async () => {
+      const forkResult = {
+        childSession: { id: 'child-1' },
+        lineage: { forkId: 'fork-1' },
+      };
+      const mockAppService = {
+        forkSession: vi.fn().mockResolvedValue(forkResult),
+        getForkLineage: vi.fn().mockResolvedValue(forkResult.lineage),
+        listForkChildren: vi.fn().mockResolvedValue([forkResult.lineage]),
+      };
+      registerSessionHandlers(ipc.mock, () => mockAppService as any);
+      const forkPayload = {
+        sourceSessionId: 'source-1',
+        anchorAssistantMessageId: 'a2',
+        idempotencyKey: 'request-1',
+        workspaceMode: 'shared_current',
+      };
+
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'fork',
+        payload: forkPayload,
+      })).resolves.toEqual({ success: true, data: forkResult });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'getForkLineage',
+        payload: { sessionId: 'child-1' },
+      })).resolves.toEqual({ success: true, data: forkResult.lineage });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'listForkChildren',
+        payload: { sessionId: 'source-1' },
+      })).resolves.toEqual({ success: true, data: [forkResult.lineage] });
+
+      expect(mockAppService.forkSession).toHaveBeenCalledWith(forkPayload);
+      expect(mockAppService.getForkLineage).toHaveBeenCalledWith('child-1');
+      expect(mockAppService.listForkChildren).toHaveBeenCalledWith('source-1');
+    });
+
+    it('routes history-only Rewind and recovery through the session application service', async () => {
+      const rewindResult = {
+        success: true,
+        sessionId: 'session-1',
+        rewindId: 'rewind-1',
+        workspaceChanged: false,
+      };
+      const restoreResult = {
+        success: true,
+        sessionId: 'session-1',
+        rewindId: 'rewind-1',
+        restoredMessageCount: 2,
+        workspaceChanged: false,
+      };
+      const mockAppService = {
+        rewindConversation: vi.fn().mockResolvedValue(rewindResult),
+        restoreConversationRewind: vi.fn().mockResolvedValue(restoreResult),
+      };
+      registerSessionHandlers(ipc.mock, () => mockAppService as any);
+
+      const rewindPayload = {
+        sessionId: 'session-1',
+        anchorUserMessageId: 'u2',
+        idempotencyKey: 'rewind-request-1',
+      };
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'rewindConversation',
+        payload: rewindPayload,
+      })).resolves.toEqual({ success: true, data: rewindResult });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'restoreConversationRewind',
+        payload: { sessionId: 'session-1', rewindId: 'rewind-1' },
+      })).resolves.toEqual({ success: true, data: restoreResult });
+      expect(mockAppService.rewindConversation).toHaveBeenCalledWith(rewindPayload);
+      expect(mockAppService.restoreConversationRewind).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        rewindId: 'rewind-1',
+      });
+    });
+
     it('returns error when services not initialized', async () => {
       registerSessionHandlers(ipc.mock, () => null as any);
 

@@ -12,6 +12,17 @@ import type { AgentEngineSessionMetadata } from './agentEngine';
 import type { Message, MessageAttachment } from './message';
 import type { ModelProvider } from './model';
 import type {
+  CreateSessionForkRequest,
+  CreateSessionForkResult,
+  SessionForkLineageSummary,
+} from './sessionFork';
+import type {
+  RestoreConversationRewindRequest,
+  RestoreConversationRewindResult,
+  RewindConversationRequest,
+  RewindConversationResult,
+} from './sessionRewind';
+import type {
   ConversationEnvelope,
   ConversationExecutionIntent,
   ConversationModelSpec,
@@ -145,6 +156,7 @@ export interface PromptRewindResult {
   hiddenMessageCount: number;
   filesRestored: number;
   filesDeleted: number;
+  workspaceChanged: false;
 }
 
 export type SteerOrQueueOutcome =
@@ -181,7 +193,12 @@ export interface AgentApplicationService {
   unarchiveSession(sessionId: string): Promise<Session | null>;
   getMessages(sessionId: string): Promise<Message[]>;
   getSessionTasks(sessionId: string): Promise<SessionTask[]>;
-  rewindToPrompt(params: { sessionId: string; userMessageId: string }): Promise<PromptRewindResult>;
+  forkSession(params: CreateSessionForkRequest): Promise<CreateSessionForkResult>;
+  getForkLineage(sessionId: string): Promise<SessionForkLineageSummary | null>;
+  listForkChildren(sessionId: string): Promise<SessionForkLineageSummary[]>;
+  rewindConversation(params: RewindConversationRequest): Promise<RewindConversationResult>;
+  restoreConversationRewind(params: RestoreConversationRewindRequest): Promise<RestoreConversationRewindResult>;
+  rewindToPrompt(params: { sessionId: string; userMessageId: string; idempotencyKey?: string }): Promise<PromptRewindResult>;
   getSerializedCompressionState(sessionId?: string): string | null;
   loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }>;
   exportSession(sessionId: string): Promise<unknown>;

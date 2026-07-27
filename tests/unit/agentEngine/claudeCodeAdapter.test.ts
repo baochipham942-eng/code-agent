@@ -81,6 +81,7 @@ import {
 } from '../../../src/host/services/agentEngine/claudeCodeAdapter';
 import { createClaudeResumeLaunch } from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
 import type { ExternalEngineDurableLifecycle } from '../../../src/host/services/agentEngine/externalEngineDurableLifecycle';
+import { buildTestExternalForkContextHandoff } from '../services/sessionFork/externalForkContextTestFixture';
 
 describe('Claude Code adapter helpers', () => {
   it('uses Claude Code print mode with plan permissions and read-only tools', () => {
@@ -360,6 +361,63 @@ describe('ClaudeCodeAdapter.run', () => {
         runtimeState: 'ready',
       },
     });
+  });
+
+  it('delivers the validated mapped fork prefix to Claude stdin on the first child run', async () => {
+    let child: ReturnType<typeof createMockChild> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      child = createMockChild([
+        JSON.stringify({ type: 'result', subtype: 'success', result: 'continued child answer' }),
+      ], 0);
+      return child;
+    });
+    const forkContextHandoff = buildTestExternalForkContextHandoff('claude_code');
+    const onForkContextDispatchStart = vi.fn(async () => undefined);
+    const onForkContextDispatched = vi.fn(async () => undefined);
+
+    await new ClaudeCodeAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+      forkContextHandoff,
+      onForkContextDispatchStart,
+      onForkContextDispatched,
+    });
+
+    const stdin = child?.stdin.end.mock.calls[0]?.[0] as string;
+    expect(stdin).toContain('<<<NEO_SESSION_FORK_CONTEXT_V1>>>');
+    expect(stdin).toContain('question one');
+    expect(stdin).toContain('answer two');
+    expect(stdin).toContain('continue the branch');
+    expect(stdin).toContain('Do not infer, resume, or reuse any provider runtime/session identity');
+    expect(stdin).not.toContain('externalSessionId');
+
+    const args = mocks.spawn.mock.calls[0][1] as string[];
+    expect(args).not.toContain('--resume');
+    const userMessage = mocks.addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message?.role === 'user');
+    expect(userMessage?.content).toBe('continue the branch');
+
+    const firstTask = mocks.upsertTask.mock.calls[0][0];
+    expect(firstTask.metadata.forkContext).toMatchObject({
+      forkId: 'fork-claude',
+      deliveryMode: 'validated_context_handoff',
+      messageCount: 4,
+      providerNativeFork: false,
+    });
+    expect(JSON.stringify(firstTask.metadata.forkContext)).not.toContain('question one');
+    expect(JSON.stringify(firstTask.metadata.forkContext)).not.toContain('continue the branch');
+    expect(onForkContextDispatchStart).toHaveBeenCalledWith(firstTask.metadata.forkContext);
+    expect(onForkContextDispatched).toHaveBeenCalledWith(firstTask.metadata.forkContext);
+    expect(Object.isFrozen(firstTask.metadata.forkContext)).toBe(true);
+    expect(onForkContextDispatchStart.mock.invocationCallOrder[0])
+      .toBeLessThan(child!.stdin.end.mock.invocationCallOrder[0]);
+    expect(child!.stdin.end.mock.invocationCallOrder[0])
+      .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
   });
 
   it('inherits Claude auth from the captured login shell when the desktop process env is missing it', async () => {

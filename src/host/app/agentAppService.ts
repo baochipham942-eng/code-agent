@@ -32,11 +32,28 @@ import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
 import { getDatabase } from '../services/core/databaseService';
 import { getAuthService } from '../services/auth/authService';
-import { getFileCheckpointService } from '../services/checkpoint';
 import { applyPromptCommandExpansion } from '../services/commands/promptCommandService';
 import { normalizeAgentEffortLevel } from '../../shared/effortLevels';
 import type { AgentRunOptions } from '../research/types';
 import type { SteerOrQueueOutcome } from '../runtime/steerQueueFence';
+import type {
+  CreateSessionForkRequest,
+  CreateSessionForkResult,
+  SessionForkLineageSummary,
+} from '../../shared/contract/sessionFork';
+import { SessionForkService } from '../services/sessionFork/SessionForkService';
+import {
+  DEFAULT_EXTERNAL_FORK_CONTEXT_POLICY,
+  SessionForkRuntimeContextService,
+  type PreparedSessionForkRuntimeContext,
+} from '../services/sessionFork/context';
+import type {
+  RestoreConversationRewindRequest,
+  RestoreConversationRewindResult,
+  RewindConversationRequest,
+  RewindConversationResult,
+} from '../../shared/contract/sessionRewind';
+import { SessionRewindService } from '../services/sessionRewind/SessionRewindService';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
@@ -158,6 +175,19 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       }
       throw error;
     }
+  }
+
+  private prepareExternalForkContext(
+    sessionId: string,
+    engine: ExternalAgentEngineKind,
+    firstUserPrompt: string,
+  ): Promise<PreparedSessionForkRuntimeContext | null> {
+    return new SessionForkRuntimeContextService(getDatabase()).prepareFirstChildRun({
+      childSessionId: sessionId,
+      engine,
+      firstUserPrompt,
+      policy: DEFAULT_EXTERNAL_FORK_CONTEXT_POLICY,
+    });
   }
 
   private async withDurableSessionReplayPayload(session: Session): Promise<Session> {
@@ -405,6 +435,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model, { strict: true });
+      const forkContext = await this.prepareExternalForkContext(
+        resolvedSessionId,
+        engine.kind,
+        envelope.content,
+      );
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
       await this.executeExternalRun(durableLifecycle, () => new CodexCliAdapter().run({
         sessionId: resolvedSessionId,
@@ -417,6 +452,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         attachmentsCount: envelope.attachments?.length ?? 0,
         messageMetadata: this.getMessageMetadata(envelope),
         durableLifecycle,
+        ...(forkContext ? {
+          forkContextHandoff: forkContext.handoff,
+          onForkContextDispatchStart: forkContext.onDispatchStart,
+          onForkContextDispatched: forkContext.onDispatched,
+        } : {}),
       }));
       return;
     }
@@ -424,6 +464,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model, { strict: true });
+      const forkContext = await this.prepareExternalForkContext(
+        resolvedSessionId,
+        engine.kind,
+        envelope.content,
+      );
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
       await this.executeExternalRun(durableLifecycle, () => new ClaudeCodeAdapter().run({
         sessionId: resolvedSessionId,
@@ -436,6 +481,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         attachmentsCount: envelope.attachments?.length ?? 0,
         messageMetadata: this.getMessageMetadata(envelope),
         durableLifecycle,
+        ...(forkContext ? {
+          forkContextHandoff: forkContext.handoff,
+          onForkContextDispatchStart: forkContext.onDispatchStart,
+          onForkContextDispatched: forkContext.onDispatched,
+        } : {}),
       }));
       return;
     }
@@ -809,65 +859,60 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return listTasks(sessionId);
   }
 
-  async rewindToPrompt(params: { sessionId: string; userMessageId: string }): Promise<PromptRewindResult> {
-    const { sessionId, userMessageId } = params;
-    const tm = this.getTaskManager();
-    const state = tm.getSessionState(sessionId);
-    if (isTaskManagerOwnedRunState(state.status)) {
-      throw new Error('Cannot rewind while the session is running');
-    }
-
-    const db = getDatabase();
-    const anchorMessage = db.getMessageById(sessionId, userMessageId);
-    if (anchorMessage?.role !== 'user') {
-      throw new Error(`Active user message not found: ${userMessageId}`);
-    }
-
-    const checkpointService = getFileCheckpointService();
-    const checkpoint = await checkpointService.getFirstCheckpointAtOrAfter(
-      sessionId,
-      anchorMessage.timestamp,
-    );
-
-    let filesRestored = 0;
-    let filesDeleted = 0;
-    const errors: string[] = [];
-
-    if (checkpoint) {
-      const rewindFilesResult = await checkpointService.rewindFiles(sessionId, checkpoint.messageId);
-      filesRestored = rewindFilesResult.restoredFiles.length;
-      filesDeleted = rewindFilesResult.deletedFiles.length;
-      if (!rewindFilesResult.success) {
-        const message = rewindFilesResult.errors.map((item) => item.error).filter(Boolean).join('; ')
-          || 'File checkpoint rewind failed';
-        throw new Error(message);
-      }
-      errors.push(...rewindFilesResult.errors.map((item) => item.error).filter(Boolean));
-    }
-
-    const sessionManager = getSessionManager();
-    const rewindResult = await sessionManager.applyPromptRewind(sessionId, userMessageId, {
-      checkpointMessageId: checkpoint?.messageId ?? null,
-      filesRestored,
-      filesDeleted,
-      errors,
+  async forkSession(params: CreateSessionForkRequest): Promise<CreateSessionForkResult> {
+    const database = getDatabase();
+    const taskManager = this.getTaskManager();
+    const service = new SessionForkService(database, {
+      getRuntimeStatus: (sessionId) => taskManager.getSessionState(sessionId).status,
     });
+    const result = await service.createFork(params);
+    if (result.lineage.contextDeliveryMode === 'neo_native_prefix') {
+      taskManager.setSessionContext(
+        result.childSession.id,
+        database.getMessages(result.childSession.id),
+      );
+    }
+    return result;
+  }
 
-    tm.setSessionContext(sessionId, rewindResult.activeMessages);
+  async getForkLineage(sessionId: string): Promise<SessionForkLineageSummary | null> {
+    return new SessionForkService(getDatabase()).getLineage(sessionId);
+  }
 
-    return {
-      success: true,
-      sessionId,
-      rewindId: rewindResult.rewindId,
-      draft: {
-        content: anchorMessage.content,
-        attachments: anchorMessage.attachments,
-      },
-      activeMessages: rewindResult.activeMessages,
-      hiddenMessageCount: rewindResult.hiddenMessageCount,
-      filesRestored,
-      filesDeleted,
-    };
+  async listForkChildren(sessionId: string): Promise<SessionForkLineageSummary[]> {
+    return new SessionForkService(getDatabase()).listChildren(sessionId);
+  }
+
+  async rewindConversation(params: RewindConversationRequest): Promise<RewindConversationResult> {
+    const tm = this.getTaskManager();
+    const result = await new SessionRewindService(getDatabase(), {
+      getRuntimeStatus: (sessionId) => tm.getSessionState(sessionId).status,
+      setSessionContext: (sessionId, messages) => tm.setSessionContext(sessionId, messages),
+    }).rewindConversation(params);
+    getSessionManager().invalidateSessionCache(params.sessionId);
+    return result;
+  }
+
+  async restoreConversationRewind(
+    params: RestoreConversationRewindRequest,
+  ): Promise<RestoreConversationRewindResult> {
+    const tm = this.getTaskManager();
+    const result = await new SessionRewindService(getDatabase(), {
+      getRuntimeStatus: (sessionId) => tm.getSessionState(sessionId).status,
+      setSessionContext: (sessionId, messages) => tm.setSessionContext(sessionId, messages),
+    }).restoreConversation(params);
+    getSessionManager().invalidateSessionCache(params.sessionId);
+    return result;
+  }
+
+  async rewindToPrompt(
+    params: { sessionId: string; userMessageId: string; idempotencyKey?: string },
+  ): Promise<PromptRewindResult> {
+    return this.rewindConversation({
+      sessionId: params.sessionId,
+      anchorUserMessageId: params.userMessageId,
+      idempotencyKey: params.idempotencyKey ?? `legacy:${params.sessionId}:${params.userMessageId}`,
+    });
   }
 
   getSerializedCompressionState(sessionId?: string): string | null {

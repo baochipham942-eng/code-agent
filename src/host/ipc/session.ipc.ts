@@ -24,6 +24,8 @@ import {
 import { createLogger } from '../services/infra/logger';
 import { assertAdminAccess } from './adminGuard';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
+import { SessionForkError } from '../../shared/contract/sessionFork';
+import { SessionRewindError } from '../../shared/contract/sessionRewind';
 
 /** Inline stub — old memoryTriggerService removed */
 type SessionMemoryContext = unknown;
@@ -75,6 +77,17 @@ export function registerSessionHandlers(
         case 'getSessionTasks':
           data = await requireAppService().getSessionTasks((payload as { sessionId: string }).sessionId);
           break;
+        case 'fork':
+          data = await requireAppService().forkSession(
+            payload as import('../../shared/contract/sessionFork').CreateSessionForkRequest,
+          );
+          break;
+        case 'getForkLineage':
+          data = await requireAppService().getForkLineage((payload as { sessionId: string }).sessionId);
+          break;
+        case 'listForkChildren':
+          data = await requireAppService().listForkChildren((payload as { sessionId: string }).sessionId);
+          break;
         case 'getRecap': {
           // A6 回会话追赶：素材只来自产物快照 + 任务账本，不读消息流水。
           const p = payload as { sessionId: string; since?: number };
@@ -83,10 +96,20 @@ export function registerSessionHandlers(
           break;
         }
         case 'rewindToPrompt': {
-          const p = payload as { sessionId: string; userMessageId: string };
+          const p = payload as { sessionId: string; userMessageId: string; idempotencyKey?: string };
           data = await requireAppService().rewindToPrompt(p);
           break;
         }
+        case 'rewindConversation':
+          data = await requireAppService().rewindConversation(
+            payload as import('../../shared/contract/sessionRewind').RewindConversationRequest,
+          );
+          break;
+        case 'restoreConversationRewind':
+          data = await requireAppService().restoreConversationRewind(
+            payload as import('../../shared/contract/sessionRewind').RestoreConversationRewindRequest,
+          );
+          break;
         case 'export':
           data = await requireAppService().exportSession((payload as { sessionId: string }).sessionId);
           break;
@@ -153,7 +176,9 @@ export function registerSessionHandlers(
       return {
         success: false,
         error: {
-          code: 'INTERNAL_ERROR',
+          code: error instanceof SessionForkError || error instanceof SessionRewindError
+            ? error.code
+            : 'INTERNAL_ERROR',
           message: error instanceof Error ? error.message : String(error),
         },
       };

@@ -71,27 +71,17 @@ export function registerCheckpointHandlers(ipcMain: IpcMain): void {
     }
   });
 
-  // Fork: 回滚文件 + 截断消息
-  ipcMain.handle(IPC_CHANNELS.CHECKPOINT_FORK, async (_, sessionId: string, messageId: string) => {
-    try {
-      // 1. Rewind files to checkpoint
-      const service = getFileCheckpointService();
-      const rewindResult = await service.rewindFiles(sessionId, messageId);
-
-      // 2. Truncate messages after the checkpoint message
-      const { getDatabase } = await import('../services/core/databaseService');
-      const db = getDatabase();
-      const truncated = db.truncateMessagesAfter(sessionId, messageId);
-
-      return {
-        success: rewindResult.success,
-        filesRestored: rewindResult.restoredFiles.length + rewindResult.deletedFiles.length,
-        messagesTruncated: truncated,
-      };
-    } catch (error) {
-      logger.error('Failed to fork from checkpoint', { error, sessionId, messageId });
-      return { success: false, filesRestored: 0, messagesTruncated: 0, error: String(error) };
-    }
+  // Compatibility tombstone only. The former implementation rewound source
+  // files and physically deleted source messages, so it must never execute.
+  // User Fork is now the domain:session/fork application-service operation.
+  ipcMain.handle(IPC_CHANNELS.CHECKPOINT_FORK, async () => {
+    return {
+      success: false,
+      code: 'LEGACY_FORK_RETIRED',
+      filesRestored: 0,
+      messagesTruncated: 0,
+      error: 'checkpoint:fork was retired; use domain:session/fork',
+    };
   });
 
   // 手动触发清理

@@ -108,6 +108,12 @@ type SessionDomainPayload = {
   title?: string;
   workingDirectory?: string;
   userMessageId?: string;
+  anchorUserMessageId?: string;
+  anchorAssistantMessageId?: string;
+  idempotencyKey?: string;
+  rewindId?: string;
+  sourceSessionId?: string;
+  workspaceMode?: 'shared_current' | 'isolated_at_anchor';
   updates?: Partial<Session>;
   /** getRecap：上次查看这个会话的时间戳，只追赶它之后收口的轮次 */
   since?: number;
@@ -943,6 +949,60 @@ function registerHandlers(): void {
           data = listTasks(sessionId);
           break;
         }
+        case 'fork': {
+          const sourceSessionId = typeof payload?.sourceSessionId === 'string'
+            ? payload.sourceSessionId.trim()
+            : '';
+          const anchorAssistantMessageId = typeof payload?.anchorAssistantMessageId === 'string'
+            ? payload.anchorAssistantMessageId.trim()
+            : '';
+          const idempotencyKey = typeof payload?.idempotencyKey === 'string'
+            ? payload.idempotencyKey.trim()
+            : '';
+          if (!sourceSessionId || !anchorAssistantMessageId || !idempotencyKey) {
+            return {
+              success: false,
+              error: {
+                code: 'INVALID_PAYLOAD',
+                message: 'sourceSessionId, anchorAssistantMessageId and idempotencyKey are required',
+              },
+            };
+          }
+          const { getDatabase } = await import('../host/services/core/databaseService');
+          const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
+          const service = new SessionForkService(getDatabase(), {
+            getRuntimeStatus: (sessionId) => runRegistry.hasSession(sessionId) ? 'running' : undefined,
+          });
+          data = await service.createFork({
+            sourceSessionId,
+            anchorAssistantMessageId,
+            idempotencyKey,
+            workspaceMode: payload?.workspaceMode === 'isolated_at_anchor'
+              ? 'isolated_at_anchor'
+              : 'shared_current',
+          });
+          break;
+        }
+        case 'getForkLineage': {
+          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
+          if (!sessionId) {
+            return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
+          }
+          const { getDatabase } = await import('../host/services/core/databaseService');
+          const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
+          data = new SessionForkService(getDatabase()).getLineage(sessionId);
+          break;
+        }
+        case 'listForkChildren': {
+          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
+          if (!sessionId) {
+            return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
+          }
+          const { getDatabase } = await import('../host/services/core/databaseService');
+          const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
+          data = new SessionForkService(getDatabase()).listChildren(sessionId);
+          break;
+        }
         case 'getRecap': {
           // A6 回会话追赶：与 session.ipc.ts 同一条服务，别在这里另起一套。
           const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
@@ -957,9 +1017,14 @@ function registerHandlers(): void {
           data = await getSessionRecap(sessionId, since);
           break;
         }
+        case 'rewindConversation':
         case 'rewindToPrompt': {
           const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
-          const userMessageId = typeof payload?.userMessageId === 'string' ? payload.userMessageId.trim() : '';
+          const userMessageId = typeof payload?.anchorUserMessageId === 'string'
+            ? payload.anchorUserMessageId.trim()
+            : typeof payload?.userMessageId === 'string'
+              ? payload.userMessageId.trim()
+              : '';
           if (!sessionId || !userMessageId) {
             return {
               success: false,
@@ -969,60 +1034,35 @@ function registerHandlers(): void {
               },
             };
           }
-          if (runRegistry.hasSession(sessionId)) {
-            throw new Error('Cannot rewind while the session is running');
-          }
-
           const { getDatabase } = await import('../host/services/core/databaseService');
-          const db = getDatabase();
-          const anchorMessage = db.getMessageById(sessionId, userMessageId);
-          if (anchorMessage?.role !== 'user') {
-            throw new Error(`Active user message not found: ${userMessageId}`);
-          }
-
-          const { getFileCheckpointService } = await import('../host/services/checkpoint');
-          const checkpointService = getFileCheckpointService();
-          const checkpoint = await checkpointService.getFirstCheckpointAtOrAfter(
+          const { SessionRewindService } = await import('../host/services/sessionRewind/SessionRewindService');
+          data = await new SessionRewindService(getDatabase(), {
+            getRuntimeStatus: (id) => runRegistry.hasSession(id) ? 'running' : undefined,
+          }).rewindConversation({
             sessionId,
-            anchorMessage.timestamp,
-          );
-
-          let filesRestored = 0;
-          let filesDeleted = 0;
-          const errors: string[] = [];
-
-          if (checkpoint) {
-            const rewindFilesResult = await checkpointService.rewindFiles(sessionId, checkpoint.messageId);
-            filesRestored = rewindFilesResult.restoredFiles.length;
-            filesDeleted = rewindFilesResult.deletedFiles.length;
-            if (!rewindFilesResult.success) {
-              const message = rewindFilesResult.errors.map((item) => item.error).filter(Boolean).join('; ')
-                || 'File checkpoint rewind failed';
-              throw new Error(message);
-            }
-            errors.push(...rewindFilesResult.errors.map((item) => item.error).filter(Boolean));
-          }
-
-          const rewindResult = await sm.applyPromptRewind(sessionId, userMessageId, {
-            checkpointMessageId: checkpoint?.messageId ?? null,
-            filesRestored,
-            filesDeleted,
-            errors,
+            anchorUserMessageId: userMessageId,
+            idempotencyKey: typeof payload?.idempotencyKey === 'string' && payload.idempotencyKey.trim()
+              ? payload.idempotencyKey.trim()
+              : `legacy:${sessionId}:${userMessageId}`,
           });
-
-          data = {
-            success: true,
-            sessionId,
-            rewindId: rewindResult.rewindId,
-            draft: {
-              content: anchorMessage.content,
-              attachments: anchorMessage.attachments,
-            },
-            activeMessages: rewindResult.activeMessages,
-            hiddenMessageCount: rewindResult.hiddenMessageCount,
-            filesRestored,
-            filesDeleted,
-          };
+          sm.invalidateSessionCache(sessionId);
+          break;
+        }
+        case 'restoreConversationRewind': {
+          const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '';
+          const rewindId = typeof payload?.rewindId === 'string' ? payload.rewindId.trim() : '';
+          if (!sessionId || !rewindId) {
+            return {
+              success: false,
+              error: { code: 'INVALID_PAYLOAD', message: 'sessionId and rewindId are required' },
+            };
+          }
+          const { getDatabase } = await import('../host/services/core/databaseService');
+          const { SessionRewindService } = await import('../host/services/sessionRewind/SessionRewindService');
+          data = await new SessionRewindService(getDatabase(), {
+            getRuntimeStatus: (id) => runRegistry.hasSession(id) ? 'running' : undefined,
+          }).restoreConversation({ sessionId, rewindId });
+          sm.invalidateSessionCache(sessionId);
           break;
         }
         case 'export':
@@ -1043,7 +1083,10 @@ function registerHandlers(): void {
       }
       return { success: true, data };
     } catch (error) {
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
+      const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+        ? error.code
+        : 'INTERNAL_ERROR';
+      return { success: false, error: { code, message: error instanceof Error ? error.message : String(error) } };
     }
   });
 

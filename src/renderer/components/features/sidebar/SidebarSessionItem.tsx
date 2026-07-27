@@ -1,5 +1,5 @@
 import React from 'react';
-import { Archive, ArchiveRestore, CheckSquare, Eye, Loader2, Pin, ScrollText, Square } from 'lucide-react';
+import { Archive, ArchiveRestore, CheckSquare, Eye, GitFork, Loader2, Pin, ScrollText, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { IconButton } from '../../primitives';
@@ -36,6 +36,17 @@ function getAttentionDotClassName(kind: string): string | null {
     default:
       return null;
   }
+}
+
+function getForkParentSessionId(session: SessionWithMeta): string | null {
+  const lineage = session.metadata?.forkLineage;
+  if (lineage && typeof lineage === 'object' && !Array.isArray(lineage)) {
+    const parentSessionId = (lineage as Record<string, unknown>).parentSessionId;
+    if (typeof parentSessionId === 'string' && parentSessionId.trim()) {
+      return parentSessionId;
+    }
+  }
+  return session.parentSessionId?.trim() || null;
 }
 
 export interface SidebarSessionItemProps {
@@ -145,6 +156,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const displayTitle = getDisplaySessionTitle(session.title);
   const canOpenSessionAssets = canReuseSessionWorkbench(session);
   const titleToneClass = isSelected ? 'text-zinc-100' : isUnread ? 'text-zinc-200' : 'text-zinc-400';
+  const forkParentSessionId = getForkParentSessionId(session);
 
   return (
     <div
@@ -178,6 +190,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           <span className="w-4 shrink-0 flex items-center justify-center">
             {isPinned && <Pin className="w-3 h-3 text-amber-500 -rotate-45" />}
           </span>
+        )}
+        {forkParentSessionId && !multiSelectMode && (
+          <GitFork
+            className="h-3.5 w-3.5 shrink-0 text-violet-400"
+            data-testid="fork-lineage-marker"
+            aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}
+          />
         )}
 
         {/* 标题：重命名模式 vs 普通 */}

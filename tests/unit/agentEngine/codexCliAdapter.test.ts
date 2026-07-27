@@ -71,6 +71,7 @@ vi.mock('../../../src/host/services/agentEngine/agentEngineRegistry', () => ({
 import { CodexCliAdapter } from '../../../src/host/services/agentEngine/codexCliAdapter';
 import { createCodexResumeLaunch } from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
 import type { ExternalEngineDurableLifecycle } from '../../../src/host/services/agentEngine/externalEngineDurableLifecycle';
+import { buildTestExternalForkContextHandoff } from '../services/sessionFork/externalForkContextTestFixture';
 
 const ENV_KEYS = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN', 'CODEX_HOME'] as const;
 const originalEnv: Partial<Record<typeof ENV_KEYS[number], string>> = {};
@@ -193,6 +194,130 @@ describe('CodexCliAdapter.run', () => {
         runtimeState: 'ready',
       },
     });
+  });
+
+  it('delivers the validated mapped fork prefix to Codex stdin on the first child run', async () => {
+    let child: ReturnType<typeof createMockChild> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      child = createMockChild([
+        JSON.stringify({ type: 'message_delta', delta: 'continued child answer' }),
+      ], 0);
+      return child;
+    });
+    const forkContextHandoff = buildTestExternalForkContextHandoff('codex_cli');
+    const onForkContextDispatchStart = vi.fn(async () => undefined);
+    const onForkContextDispatched = vi.fn(async () => undefined);
+
+    await new CodexCliAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+      forkContextHandoff,
+      onForkContextDispatchStart,
+      onForkContextDispatched,
+    });
+
+    const stdin = child?.stdin.end.mock.calls[0]?.[0] as string;
+    expect(stdin).toContain('<<<NEO_SESSION_FORK_CONTEXT_V1>>>');
+    expect(stdin).toContain('question one');
+    expect(stdin).toContain('answer two');
+    expect(stdin).toContain('continue the branch');
+    expect(stdin).toContain('Do not infer, resume, or reuse any provider runtime/session identity');
+    expect(stdin).not.toContain('externalSessionId');
+
+    const userMessage = mocks.addMessageToSession.mock.calls
+      .map((call) => call[1])
+      .find((message) => message?.role === 'user');
+    expect(userMessage?.content).toBe('continue the branch');
+
+    const firstTask = mocks.upsertTask.mock.calls[0][0];
+    expect(firstTask.metadata.forkContext).toMatchObject({
+      forkId: 'fork-codex',
+      deliveryMode: 'validated_context_handoff',
+      messageCount: 4,
+      providerNativeFork: false,
+    });
+    expect(JSON.stringify(firstTask.metadata.forkContext)).not.toContain('question one');
+    expect(JSON.stringify(firstTask.metadata.forkContext)).not.toContain('continue the branch');
+    expect(onForkContextDispatchStart).toHaveBeenCalledWith(firstTask.metadata.forkContext);
+    expect(onForkContextDispatched).toHaveBeenCalledWith(firstTask.metadata.forkContext);
+    expect(Object.isFrozen(firstTask.metadata.forkContext)).toBe(true);
+    expect(onForkContextDispatchStart.mock.invocationCallOrder[0])
+      .toBeLessThan(child!.stdin.end.mock.invocationCallOrder[0]);
+    expect(child!.stdin.end.mock.invocationCallOrder[0])
+      .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
+  });
+
+  it('requires a durable fork dispatch lifecycle before spawning Codex', async () => {
+    await expect(new CodexCliAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      forkContextHandoff: buildTestExternalForkContextHandoff('codex_cli'),
+    })).rejects.toMatchObject({
+      code: 'DISPATCH_LIFECYCLE_REQUIRED',
+    });
+
+    expect(mocks.spawn).not.toHaveBeenCalled();
+    expect(mocks.addMessageToSession).not.toHaveBeenCalled();
+  });
+
+  it('does not write fork context to stdin when dispatch-start persistence rejects', async () => {
+    let child: ReturnType<typeof createMockChild> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      child = createMockChild([], 0);
+      return child;
+    });
+    const onForkContextDispatchStart = vi.fn(async () => {
+      throw new Error('dispatch-start persistence failed');
+    });
+    const onForkContextDispatched = vi.fn(async () => undefined);
+
+    await expect(new CodexCliAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      forkContextHandoff: buildTestExternalForkContextHandoff('codex_cli'),
+      onForkContextDispatchStart,
+      onForkContextDispatched,
+    })).rejects.toThrow('dispatch-start persistence failed');
+
+    expect(onForkContextDispatchStart).toHaveBeenCalledTimes(1);
+    expect(child?.stdin.end).not.toHaveBeenCalled();
+    expect(onForkContextDispatched).not.toHaveBeenCalled();
+    expect(child?.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('writes once then aborts when consumed-state persistence rejects', async () => {
+    let child: ReturnType<typeof createMockChild> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      child = createMockChild([], 0);
+      return child;
+    });
+    const onForkContextDispatchStart = vi.fn(async () => undefined);
+    const onForkContextDispatched = vi.fn(async () => {
+      throw new Error('consumed-state persistence failed');
+    });
+
+    await expect(new CodexCliAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      forkContextHandoff: buildTestExternalForkContextHandoff('codex_cli'),
+      onForkContextDispatchStart,
+      onForkContextDispatched,
+    })).rejects.toThrow('consumed-state persistence failed');
+
+    expect(onForkContextDispatchStart).toHaveBeenCalledTimes(1);
+    expect(child?.stdin.end).toHaveBeenCalledTimes(1);
+    expect(onForkContextDispatched).toHaveBeenCalledTimes(1);
+    expect(child?.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
   it('rejects workspace-write permission profile before spawning Codex CLI', async () => {

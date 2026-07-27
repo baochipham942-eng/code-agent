@@ -89,9 +89,81 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       files_restored INTEGER NOT NULL DEFAULT 0,
       files_deleted INTEGER NOT NULL DEFAULT 0,
       errors_json TEXT NOT NULL DEFAULT '[]',
+      idempotency_key TEXT,
+      request_digest TEXT,
+      status TEXT NOT NULL DEFAULT 'completed',
+      restored_at INTEGER,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
+  `);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN idempotency_key TEXT`, logger);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN request_digest TEXT`, logger);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'`, logger);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN restored_at INTEGER`, logger);
+
+  // User-visible Session Fork is distinct from parent_session_id. The latter
+  // remains a compatibility projection used by subagents and older clients.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_forks (
+      id TEXT PRIMARY KEY,
+      source_session_id TEXT NOT NULL,
+      child_session_id TEXT NOT NULL UNIQUE,
+      root_session_id TEXT NOT NULL,
+      parent_fork_id TEXT,
+      anchor_message_id TEXT NOT NULL,
+      anchor_child_message_id TEXT NOT NULL,
+      workspace_mode TEXT NOT NULL,
+      context_delivery_mode TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      source_prefix_digest TEXT NOT NULL,
+      status TEXT NOT NULL,
+      depth INTEGER NOT NULL,
+      sync_state TEXT NOT NULL DEFAULT 'local_only',
+      workspace_snapshot_id TEXT,
+      error_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      committed_at INTEGER,
+      FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE RESTRICT,
+      FOREIGN KEY (child_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (root_session_id) REFERENCES sessions(id) ON DELETE RESTRICT,
+      FOREIGN KEY (parent_fork_id) REFERENCES session_forks(id) ON DELETE RESTRICT,
+      UNIQUE (source_session_id, idempotency_key),
+      CHECK (workspace_mode IN ('shared_current', 'isolated_at_anchor')),
+      CHECK (context_delivery_mode IN ('neo_native_prefix', 'provider_native_fork', 'validated_context_handoff', 'unsupported')),
+      CHECK (status IN ('preparing', 'workspace_ready', 'completed', 'failed', 'quarantined')),
+      CHECK (sync_state IN ('local_only', 'pending', 'synced', 'blocked'))
+    );
+
+    CREATE TABLE IF NOT EXISTS session_fork_message_map (
+      fork_id TEXT NOT NULL,
+      ordinal INTEGER NOT NULL,
+      source_message_id TEXT NOT NULL,
+      child_message_id TEXT NOT NULL UNIQUE,
+      source_timestamp INTEGER NOT NULL,
+      source_order_key TEXT NOT NULL,
+      source_row_digest TEXT NOT NULL,
+      PRIMARY KEY (fork_id, ordinal),
+      UNIQUE (fork_id, source_message_id),
+      FOREIGN KEY (fork_id) REFERENCES session_forks(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS session_fork_context_handoffs (
+      fork_id TEXT PRIMARY KEY,
+      engine TEXT NOT NULL,
+      payload_digest TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'pending',
+      attempt_id TEXT,
+      prepared_at INTEGER NOT NULL,
+      dispatch_started_at INTEGER,
+      consumed_at INTEGER,
+      error_json TEXT,
+      FOREIGN KEY (fork_id) REFERENCES session_forks(id) ON DELETE CASCADE,
+      CHECK (engine IN ('codex_cli', 'claude_code')),
+      CHECK (state IN ('pending', 'dispatching', 'consumed', 'blocked'))
+    );
   `);
 
   // Tool Executions 表 (用于缓存和审计)

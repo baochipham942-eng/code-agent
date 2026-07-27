@@ -25,7 +25,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
+import { SessionRepository, SessionForkRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
@@ -87,6 +87,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
 
   // Repositories
   private sessionRepo!: SessionRepository;
+  private sessionForkRepo!: SessionForkRepository;
   private memoryRepo!: MemoryRepository;
   private configRepo!: ConfigRepository;
   private captureRepo!: CaptureRepository;
@@ -206,6 +207,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
 
       // 初始化 Repositories
       this.sessionRepo = new SessionRepository(this.db);
+      this.sessionForkRepo = new SessionForkRepository(this.db);
+      const interruptedForkHandoffs = this.sessionForkRepo.recoverInterruptedContextHandoffs(Date.now());
+      if (interruptedForkHandoffs > 0) {
+        logger.warn(`[DatabaseService] blocked ${interruptedForkHandoffs} interrupted fork context handoff(s)`);
+      }
       this.memoryRepo = new MemoryRepository(this.db);
       this.configRepo = new ConfigRepository(this.db);
       this.captureRepo = new CaptureRepository(this.db);
@@ -820,9 +826,58 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.getMessageById(sessionId, messageId, options);
   }
+  createSessionFork(
+    input: import('./repositories').CreateForkRepositoryInput,
+  ): import('./repositories').CreateForkRepositoryResult {
+    this.ensureDb();
+    return this.sessionForkRepo.createFork(input);
+  }
+  getSessionForkLineage(sessionId: string): import('../../../shared/contract/sessionFork').SessionForkLineageSummary | null {
+    this.ensureDb();
+    return this.sessionForkRepo.getLineage(sessionId);
+  }
+  listSessionForkChildren(sessionId: string): import('../../../shared/contract/sessionFork').SessionForkLineageSummary[] {
+    this.ensureDb();
+    return this.sessionForkRepo.listChildren(sessionId);
+  }
+  getSessionForkContextSource(childSessionId: string): import('./repositories').SessionForkContextSource | null {
+    this.ensureDb();
+    return this.sessionForkRepo.getContextSource(childSessionId);
+  }
+  prepareSessionForkContextHandoff(
+    forkId: string,
+    engine: import('../../../shared/contract/agentEngine').ExternalAgentEngineKind,
+    payloadDigest: string,
+    preparedAt?: number,
+  ): import('./repositories').SessionForkContextHandoffRecord {
+    this.ensureDb();
+    return this.sessionForkRepo.prepareContextHandoff(forkId, engine, payloadDigest, preparedAt);
+  }
+  markSessionForkContextHandoffDispatching(
+    forkId: string,
+    payloadDigest: string,
+    attemptId: string,
+    startedAt?: number,
+  ): import('./repositories').SessionForkContextHandoffRecord {
+    this.ensureDb();
+    return this.sessionForkRepo.markContextHandoffDispatching(forkId, payloadDigest, attemptId, startedAt);
+  }
+  markSessionForkContextHandoffConsumed(
+    forkId: string,
+    payloadDigest: string,
+    attemptId: string,
+    consumedAt?: number,
+  ): import('./repositories').SessionForkContextHandoffRecord {
+    this.ensureDb();
+    return this.sessionForkRepo.markContextHandoffConsumed(forkId, payloadDigest, attemptId, consumedAt);
+  }
   applyPromptRewind(sessionId: string, userMessageId: string, record?: import('./repositories/SessionRepository').PromptRewindRecordInput): import('./repositories/SessionRepository').PromptRewindResult {
     this.ensureDb();
     return this.sessionRepo.applyPromptRewind(sessionId, userMessageId, record);
+  }
+  restorePromptRewind(sessionId: string, rewindId: string, restoredAt?: number): import('./repositories/SessionRepository').PromptRewindRestoreResult {
+    this.ensureDb();
+    return this.sessionRepo.restorePromptRewind(sessionId, rewindId, restoredAt);
   }
   getUnsyncedSessions(limit: number = 1000): import('./repositories').StoredSession[] {
     this.ensureDb();

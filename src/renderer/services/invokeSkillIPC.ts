@@ -1,6 +1,6 @@
 import type { IpcInvokeHandlers } from '@shared/ipc';
 import type { SkillChannel } from '@shared/ipc/channels';
-import { takeTransportFailure } from '../api/httpTransport';
+import { takeTransportFailure } from '../api/transportFailures';
 import { createLogger } from '../utils/logger';
 import ipcService from './ipcService';
 

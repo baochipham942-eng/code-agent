@@ -643,7 +643,10 @@ export const Sidebar: React.FC = () => {
           2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
           hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端，所以 darwin 下
           左侧留出死区：灯占 x20-72（三颗 12px 按钮、20px 间距），再留 24px 呼吸位 ⇒ pl-96，
-          和 Codex 顶栏里灯与第一颗图标的间距一档；② 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的
+          和 Codex 顶栏里灯与第一颗图标的间距一档；灯的**垂直**位置由 macOS 定（中心距顶 16px，
+          tauri.conf 的 trafficLightPosition 只在建窗那刻生效，visible:false→show() 后被系统重排，
+          2.11 又没有运行时 setter），所以 darwin 下本行改 items-start：32px 图标贴顶 ⇒ 中心也是 16，
+          与灯同轴；非 mac 无灯，仍按行居中；② 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的
           地方，可以先不展示」），这行于是只剩右侧功能图标——与 Codex 参照一致。
           本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。
           ⚠️ 拖拽靠 `data-tauri-drag-region` 属性——`-webkit-app-region: drag` 是 Electron 的
@@ -652,7 +655,7 @@ export const Sidebar: React.FC = () => {
           ③ 图标紧贴红绿灯左对齐（参照 Codex），不再甩到侧栏右端。 */}
       <div
         data-tauri-drag-region
-        className={`h-12 flex items-center justify-start gap-2 flex-shrink-0 pr-3 ${isMacShell ? 'pl-[96px]' : 'pl-3'}`}
+        className={`h-12 flex ${isMacShell ? 'items-start' : 'items-center'} justify-start gap-2 flex-shrink-0 pr-3 ${isMacShell ? 'pl-[96px]' : 'pl-3'}`}
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>

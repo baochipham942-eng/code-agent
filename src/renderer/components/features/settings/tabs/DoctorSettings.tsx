@@ -83,7 +83,8 @@ const DoctorItemRow: React.FC<{
 }> = ({ item, suggestionPrefix, fixLabel, isFixing, onFix }) => {
   const [expanded, setExpanded] = useState(item.status === 'fail');
   const hasDetails = !!(item.details || item.suggestion);
-  const showFix = !!item.fix && (item.status === 'fail' || item.status === 'warn');
+  const fix = item.fix;
+  const showFix = !!fix && (item.status === 'fail' || item.status === 'warn');
 
   return (
     <div className="border border-zinc-700/50 rounded-lg overflow-hidden">
@@ -108,17 +109,17 @@ const DoctorItemRow: React.FC<{
             </span>
           )}
         </button>
-        {showFix && item.fix && (
+        {showFix && fix && (
           <span className="shrink-0 pr-2">
             <Button
               variant="secondary"
               size="sm"
               loading={isFixing}
-              onClick={() => onFix(item.fix!.code)}
-              data-testid={`doctor-fix-${item.fix.code}`}
+              onClick={() => onFix(fix.code)}
+              data-testid={`doctor-fix-${fix.code}`}
               leftIcon={<Wrench className="w-3.5 h-3.5" />}
             >
-              {fixLabel ?? item.fix.code}
+              {fixLabel ?? fix.code}
             </Button>
           </span>
         )}

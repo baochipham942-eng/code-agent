@@ -19,8 +19,13 @@ import {
   checkForUpdates,
   updateRepository as gitUpdateRepository,
   readRepoMetaAsync,
+  saveRepoMeta,
 } from './gitDownloader';
 import { parseSkillMd, hasSkillMd } from './skillParser';
+import {
+  detectRepositoryLayout,
+  type RepositoryLayout,
+} from './skillRepositoryLayout';
 import {
   RECOMMENDED_REPOSITORIES,
   getDefaultAutoDownloadRepos,
@@ -149,7 +154,6 @@ class SkillRepositoryService implements Disposable {
         repo: parsed.repo,
         branch: repo.branch || parsed.branch,
         targetDir,
-        skillsPath: repo.skillsPath === '.' ? undefined : repo.skillsPath,
         modelScopeRepoType: parsed.source === 'modelscope' ? parsed.repoType : undefined,
       });
 
@@ -160,9 +164,20 @@ class SkillRepositoryService implements Disposable {
         };
       }
 
-      // 扫描 skills 目录
       const localPath = result.localPath;
-      const skills = await this.scanSkillsInLibrary(localPath, repo.skillsPath);
+      const layout = await detectRepositoryLayout(localPath);
+      const installedRepo: SkillRepository = {
+        ...repo,
+        skillsPath: layout.skillsPath,
+      };
+      const meta = await readRepoMetaAsync(localPath);
+      if (meta) {
+        await saveRepoMeta(localPath, {
+          ...meta,
+          skillsPath: layout.skillsPath,
+        });
+      }
+      const skills = await this.scanSkillsInLibrary(localPath, layout);
 
       // 创建 LocalSkillLibrary
       const library: LocalSkillLibrary = {
@@ -180,7 +195,7 @@ class SkillRepositoryService implements Disposable {
 
       // 更新配置：添加仓库
       if (!this.config.repositories.find((r) => r.id === repo.id)) {
-        this.config.repositories.push(repo);
+        this.config.repositories.push(installedRepo);
       }
 
       // 黑名单语义下新安装的 skills 默认全部启用，无需额外写入
@@ -249,10 +264,20 @@ class SkillRepositoryService implements Disposable {
         };
       }
 
-      // 重新扫描 skills
+      // 重新探测布局并扫描 skills
       const repo = this.config.repositories.find((r) => r.id === repoId);
-      const skillsPath = repo?.skillsPath || 'skills';
-      const skills = await this.scanSkillsInLibrary(library.localPath, skillsPath);
+      const layout = await detectRepositoryLayout(library.localPath);
+      const skills = await this.scanSkillsInLibrary(library.localPath, layout);
+      if (repo) {
+        repo.skillsPath = layout.skillsPath;
+      }
+      const meta = await readRepoMetaAsync(library.localPath);
+      if (meta) {
+        await saveRepoMeta(library.localPath, {
+          ...meta,
+          skillsPath: layout.skillsPath,
+        });
+      }
 
       // 更新库信息
       library.lastUpdated = Date.now();
@@ -356,7 +381,8 @@ class SkillRepositoryService implements Disposable {
       name: name || `${parsed.owner}/${parsed.repo}`,
       url,
       branch: parsed.branch,
-      skillsPath: parsed.source === 'modelscope' ? '.' : 'skills',
+      // The actual path is filled by repository layout detection after download.
+      skillsPath: '.',
       category: 'community',
       recommended: false,
       author: parsed.owner,
@@ -528,9 +554,8 @@ class SkillRepositoryService implements Disposable {
           (r) => r.id === entry.name || `${meta.owner}-${meta.repo}`.toLowerCase() === entry.name
         );
 
-        // 扫描 skills（优先使用 meta.skillsPath，其次是 repo.skillsPath，最后默认 'skills'）
-        const skillsPath = meta.skillsPath || repo?.skillsPath || 'skills';
-        const skills = await this.scanSkillsInLibrary(libraryPath, skillsPath);
+        const layout = await detectRepositoryLayout(libraryPath);
+        const skills = await this.scanSkillsInLibrary(libraryPath, layout);
 
         // 创建库对象
         const library: LocalSkillLibrary = {
@@ -562,12 +587,32 @@ class SkillRepositoryService implements Disposable {
    */
   private async scanSkillsInLibrary(
     libraryPath: string,
-    skillsSubPath: string
+    layout: RepositoryLayout
   ): Promise<LocalSkillInfo[]> {
     const skills: LocalSkillInfo[] = [];
 
-    // 确定 skills 目录路径
-    const skillsDir = skillsSubPath === '.' ? libraryPath : path.join(libraryPath, skillsSubPath);
+    if (layout.layout === 'single-skill') {
+      try {
+        const parsed = await parseSkillMd(libraryPath, 'library');
+        return [{
+          name: parsed.name,
+          description: parsed.description,
+          libraryId: path.basename(libraryPath),
+          localPath: libraryPath,
+          enabled: !this.config.disabledSkills.includes(parsed.name),
+        }];
+      } catch (parseError) {
+        logger.warn('Failed to parse single-skill repository', {
+          libraryPath,
+          error: parseError instanceof Error ? parseError.message : 'Unknown error',
+        });
+        return [];
+      }
+    }
+
+    const skillsDir = layout.skillsPath === '.'
+      ? libraryPath
+      : path.join(libraryPath, layout.skillsPath);
 
     try {
       const entries = await fs.readdir(skillsDir, { withFileTypes: true });

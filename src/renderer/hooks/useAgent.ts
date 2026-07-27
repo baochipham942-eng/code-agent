@@ -63,7 +63,8 @@ const logger = createLogger('useAgent');
 
 /** 排队消息「现在不能按原路发」的三种情形：前两种硬拒，busy 走立即转向。 */
 type QueuedSendBlock = {
-  kind: 'inFlight' | 'cancelling' | 'busy';
+  /** busy = 正在回复中，可立即转向；其余一律硬拒并出声。 */
+  kind: 'inFlight' | 'cancelling' | 'notSteerable' | 'busy';
   message: string;
 };
 
@@ -156,9 +157,15 @@ export const useAgent = () => {
     if (status === 'cancelling') {
       return { kind: 'cancelling', message: t.chatInput.queuedSendBlockedCancelling };
     }
-    if (useAppStore.getState().isSessionProcessing(sessionId) || isRuntimeBusyStatus(status)) {
-      // busy 不再是死路：产品负责人 2026-07-27 拍板，回复中点「发送」= 立即转向。
+    // 「正在回复中」才可转向（拍板 A 的适用范围就是这一档）。
+    // paused / queued 同属 isRuntimeBusyStatus 但**不是**回复中：对它们发 interrupt
+    // 多半只会被重新排队，那就又回到本文件死磕的那个老 bug——点了没反应、
+    // 且条目已被 markSending 变成宿主不恢复的 sending 孤儿。所以它们照旧硬拒 + 出声。
+    if (status === 'running' || useAppStore.getState().isSessionProcessing(sessionId)) {
       return { kind: 'busy', message: t.chatInput.queuedSendBlockedBusy };
+    }
+    if (isRuntimeBusyStatus(status)) {
+      return { kind: 'notSteerable', message: t.chatInput.queuedSendBlockedBusy };
     }
     return null;
   }, [t]);
@@ -548,12 +555,14 @@ export const useAgent = () => {
         current,
         failureResponse.data.status === 'failed' ? { ...settled, sendFailed: true } : settled,
       ));
+      // 退回队列也要出声，否则又是一个「点了没反应」。
+      toast.info(t.chatInput.queuedSendBlockedBusy);
     } catch (error) {
       logger.error('Failed to steer queued runtime input', error, { id });
     } finally {
       queuedRuntimeInputSendInFlightRef.current.delete(id);
     }
-  }, [setQueuedRuntimeInputs]);
+  }, [setQueuedRuntimeInputs, t]);
 
   const sendQueuedRuntimeInput = useCallback(async (id: string) => {
     const queued = queuedRuntimeInputsRef.current.find((item) => item.id === id);

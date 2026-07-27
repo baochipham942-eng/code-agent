@@ -454,6 +454,7 @@ export const enSettingsModels = {
         confirmInstall: 'Install',
         confirming: 'Installing…',
         confirmFailed: 'Installation failed',
+        alreadyInstalled: 'This library is already installed. To reinstall, remove it from the Installed tab first.',
       },
       cards: {
         install: 'Install',

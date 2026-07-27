@@ -30,7 +30,7 @@ import { SkillsInstalledTab } from './SkillsInstalledTab';
 import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab';
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
 import type { SkillsMPSearchResult } from './SkillsSettingsCards';
-import { SkillInstallPreviewModal } from './SkillInstallPreviewModal';
+import { SkillInstallPreviewModal, mapRepoInstallError } from './SkillInstallPreviewModal';
 
 // 分组/摘要工具函数集中在 SkillsInstalledTab，测试也从那里引用
 export {
@@ -351,7 +351,10 @@ export const SkillsSettings: React.FC = () => {
         setAddSkillModalOpen(false);
         setStagedPreview(result);
       } else {
-        setCustomError(result?.error || skillsText.addFailed);
+        setCustomError(mapRepoInstallError(result?.error, {
+          alreadyInstalled: t.settings.skills.preview.alreadyInstalled,
+          confirmFailed: skillsText.addFailed,
+        }));
       }
     } catch (err) {
       logger.error('Failed to stage custom repo', err);

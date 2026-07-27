@@ -455,6 +455,7 @@ export const zhSettingsModels = {
         confirmInstall: '确认安装',
         confirming: '安装中…',
         confirmFailed: '安装失败',
+        alreadyInstalled: '该库已安装。如需重装，请先在「已安装」中删除原库。',
       },
       cards: {
         install: '安装',

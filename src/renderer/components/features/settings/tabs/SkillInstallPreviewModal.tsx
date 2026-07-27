@@ -38,6 +38,18 @@ interface SkillInstallPreviewModalProps {
   onInstalled: (repoName: string) => void;
 }
 
+/** host 侧英文错误串 → 用户可读文案（识别不了的原样透出） */
+export function mapRepoInstallError(
+  error: string | undefined,
+  text: { alreadyInstalled: string; confirmFailed: string },
+): string {
+  if (!error) return text.confirmFailed;
+  if (error.includes('already exists') || error.includes('already installed')) {
+    return text.alreadyInstalled;
+  }
+  return error;
+}
+
 export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> = ({
   result,
   onCancel,
@@ -83,7 +95,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
         settledRef.current = true;
         onInstalled(repoName);
       } else {
-        setConfirmError(confirmResult?.error || previewText.confirmFailed);
+        setConfirmError(mapRepoInstallError(confirmResult?.error, previewText));
       }
     } catch (err) {
       logger.error('Failed to confirm staged repository', err);
@@ -91,7 +103,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
     } finally {
       setConfirming(false);
     }
-  }, [confirming, stageId, repoName, onInstalled, previewText.confirmFailed]);
+  }, [confirming, stageId, repoName, onInstalled, previewText]);
 
   const toggleSkill = (name: string) => {
     setExpandedSkills((prev) => {

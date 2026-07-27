@@ -223,6 +223,20 @@ describe('自定义库 staged 装前预览', () => {
     expect(callsFor(SKILL_CHANNELS.REPO_CANCEL)).toEqual([]);
   });
 
+  it('已安装冲突错误映射为人话，不透英文技术串', async () => {
+    setupInvokeMock({
+      confirm: { success: false, error: 'Repository already exists: foo-skills' },
+    });
+    render(<SkillsSettings />);
+    await submitCustomUrl();
+    await screen.findByText('foo-skills');
+
+    fireEvent.click(screen.getByRole('button', { name: zh.settings.skills.preview.confirmInstall }));
+
+    await screen.findByText(zh.settings.skills.preview.alreadyInstalled);
+    expect(screen.queryByText(/Repository already exists/)).toBeNull();
+  });
+
   it('stage 失败在 URL 弹窗内联报错，不弹预览', async () => {
     setupInvokeMock({ stage: { success: false, error: 'stage boom' } });
     render(<SkillsSettings />);

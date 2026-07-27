@@ -528,11 +528,17 @@ class SkillRepositoryService implements Disposable {
     }
 
     const targetPath = path.join(this.skillsDir, staged.repoId);
-    if (this.libraries.has(staged.repoId) || await this.pathExists(targetPath)) {
+    if (this.libraries.has(staged.repoId)) {
       return {
         success: false,
         error: `Repository already exists: ${staged.repoId}`,
       };
+    }
+    // 磁盘有目录但未注册 = 历史坏安装/删除未遂的残留（托管下载产物，非用户数据），
+    // 清掉后继续安装，避免用户卡在「装不上又删不掉」
+    if (await this.pathExists(targetPath)) {
+      logger.warn('Removing orphan repository directory before install', { targetPath });
+      await fs.rm(targetPath, { recursive: true, force: true });
     }
 
     try {

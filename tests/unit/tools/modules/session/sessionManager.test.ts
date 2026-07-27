@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 import type { Session } from '../../../../../src/shared/contract/session';
+import { SessionForkError } from '../../../../../src/shared/contract/sessionFork';
 
 const mocks = vi.hoisted(() => ({
   sessionManager: {
     listSessions: vi.fn(),
     listArchivedSessions: vi.fn(),
     getSession: vi.fn(),
+    getMessages: vi.fn(),
     createSession: vi.fn(),
     addMessageToSession: vi.fn(),
     archiveSession: vi.fn(),
@@ -17,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   taskManager: {
     getSessionState: vi.fn(),
   },
+  sessionHistoryAppService: {
+    forkSession: vi.fn(),
+  },
   resolveSessionDefaultModelConfig: vi.fn(),
 }));
 
@@ -26,6 +31,14 @@ vi.mock('../../../../../src/host/services/infra/sessionManager', () => ({
 
 vi.mock('../../../../../src/host/task/TaskManager', () => ({
   getTaskManager: () => mocks.taskManager,
+}));
+
+vi.mock('../../../../../src/host/app/sessionHistoryAppService', () => ({
+  SessionHistoryAppService: class {
+    forkSession(...args: unknown[]) {
+      return mocks.sessionHistoryAppService.forkSession(...args);
+    }
+  },
 }));
 
 vi.mock('../../../../../src/host/services/core/sessionDefaults', () => ({
@@ -76,6 +89,7 @@ beforeEach(() => {
   mocks.sessionManager.listSessions.mockResolvedValue([]);
   mocks.sessionManager.listArchivedSessions.mockResolvedValue([]);
   mocks.sessionManager.getSession.mockResolvedValue(null);
+  mocks.sessionManager.getMessages.mockResolvedValue([]);
   mocks.sessionManager.createSession.mockImplementation(async (options: Partial<Session>) => makeSession({
     id: 'created-session',
     title: options.title,
@@ -91,6 +105,31 @@ beforeEach(() => {
   mocks.sessionManager.unarchiveSession.mockResolvedValue(null);
   mocks.sessionManager.updateSession.mockResolvedValue(undefined);
   mocks.taskManager.getSessionState.mockReturnValue({ status: 'idle' });
+  mocks.sessionHistoryAppService.forkSession.mockResolvedValue({
+    childSession: makeSession({
+      id: 'fork-child',
+      title: 'Session 1 · 分支',
+      parentSessionId: 'parent-session',
+    }),
+    lineage: {
+      forkId: 'fork-1',
+      rootSessionId: 'parent-session',
+      parentSessionId: 'parent-session',
+      childSessionId: 'fork-child',
+      sourceAnchorMessageId: 'assistant-1',
+      anchorChildMessageId: 'assistant-1-child',
+      depth: 1,
+      workspaceMode: 'shared_current',
+      contextDeliveryMode: 'neo_native_prefix',
+      status: 'completed',
+      syncState: 'local_only',
+      createdAt: 300,
+    },
+    messageMappings: [],
+    copiedMessageCount: 2,
+    sourcePrefixDigest: 'digest',
+    workspaceLabel: '历史对话 + 当前文件',
+  });
   mocks.resolveSessionDefaultModelConfig.mockReturnValue(defaultModel);
 });
 
@@ -102,7 +141,7 @@ describe('SessionManager schema', () => {
     expect(sessionManagerModule.schema.inputSchema.required).toEqual(['action']);
 
     const props = sessionManagerModule.schema.inputSchema.properties as Record<string, { enum?: string[] }>;
-    expect(props.action.enum).toEqual(['list', 'get', 'create', 'archive', 'unarchive', 'rename']);
+    expect(props.action.enum).toEqual(['list', 'get', 'create', 'fork', 'archive', 'unarchive', 'rename']);
     expect(props.action.enum).not.toContain('delete');
   });
 });
@@ -323,6 +362,159 @@ describe('SessionManager dispatch', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('PERMISSION_DENIED');
     expect(mocks.sessionManager.createSession).not.toHaveBeenCalled();
+  });
+
+  it('fork defaults to the current session and latest completed persisted assistant message', async () => {
+    const source = makeSession({ id: 'parent-session', title: 'Parent' });
+    mocks.sessionManager.getSession.mockResolvedValue(source);
+    mocks.sessionManager.getMessages.mockResolvedValue([
+      { id: 'user-1', role: 'user', content: 'Start', timestamp: 1 },
+      { id: 'assistant-1', role: 'assistant', content: 'Completed reply', timestamp: 2 },
+      {
+        id: 'assistant-tool',
+        role: 'assistant',
+        content: 'Calling a tool',
+        timestamp: 3,
+        contentParts: [{ type: 'tool_call', toolCallId: 'call-1' }],
+      },
+      { id: 'assistant-meta', role: 'assistant', content: 'Hidden', timestamp: 4, isMeta: true },
+      { id: 'user-2', role: 'user', content: 'Follow-up', timestamp: 5 },
+    ]);
+    const permission = vi.fn(async () => ({ allow: true as const }));
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'fork', reason: 'Explore another direction' },
+      makeCtx({ sessionId: source.id }),
+      permission,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mocks.sessionManager.getMessages).toHaveBeenCalledWith(source.id);
+    expect(mocks.sessionHistoryAppService.forkSession).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: source.id,
+      anchorAssistantMessageId: 'assistant-1',
+      workspaceMode: 'shared_current',
+      idempotencyKey: expect.stringMatching(/^agent-session-fork:[a-f0-9]{64}$/),
+    }));
+    expect(permission).toHaveBeenCalledWith(
+      'SessionManager',
+      expect.objectContaining({
+        action: 'fork',
+        sessionId: source.id,
+        anchorMessageId: 'assistant-1',
+      }),
+      'Explore another direction',
+      expect.objectContaining({ dangerLevel: 'normal' }),
+    );
+    if (result.ok) {
+      expect(result.output).toBe(
+        'Created fork session fork-child "Session 1 · 分支" from parent parent-session at assistant message assistant-1.',
+      );
+      expect(result.meta).toMatchObject({
+        childSessionId: 'fork-child',
+        title: 'Session 1 · 分支',
+        parentSessionId: source.id,
+        anchorMessageId: 'assistant-1',
+      });
+    }
+  });
+
+  it('fork uses an explicit anchorMessageId without resolving messages', async () => {
+    const source = makeSession({ id: 'source-session', title: 'Source' });
+    mocks.sessionManager.getSession.mockResolvedValue(source);
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      {
+        action: 'fork',
+        sessionId: source.id,
+        anchorMessageId: 'assistant-explicit',
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mocks.sessionManager.getMessages).not.toHaveBeenCalled();
+    expect(mocks.sessionHistoryAppService.forkSession).toHaveBeenCalledWith(expect.objectContaining({
+      sourceSessionId: source.id,
+      anchorAssistantMessageId: 'assistant-explicit',
+      workspaceMode: 'shared_current',
+    }));
+  });
+
+  it('fork refuses a running source session before permission or app service execution', async () => {
+    const source = makeSession({ id: 'running-session', status: 'idle' });
+    mocks.sessionManager.getSession.mockResolvedValue(source);
+    mocks.taskManager.getSessionState.mockReturnValue({ status: 'running' });
+    const permission = vi.fn(async () => ({ allow: true as const }));
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'fork', sessionId: source.id },
+      makeCtx(),
+      permission,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('SESSION_RUNNING');
+      expect(result.meta).toMatchObject({
+        action: 'fork',
+        sourceSessionId: source.id,
+        runtimeStatus: 'running',
+      });
+    }
+    expect(permission).not.toHaveBeenCalled();
+    expect(mocks.sessionManager.getMessages).not.toHaveBeenCalled();
+    expect(mocks.sessionHistoryAppService.forkSession).not.toHaveBeenCalled();
+  });
+
+  it('fork derives a stable idempotency key from the source session and anchor', async () => {
+    const source = makeSession({ id: 'source-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(source);
+    const handler = await sessionManagerModule.createHandler();
+    const args = {
+      action: 'fork',
+      sessionId: source.id,
+      anchorMessageId: 'assistant-stable',
+    };
+
+    await handler.execute(args, makeCtx(), allowAll);
+    await handler.execute(args, makeCtx(), allowAll);
+
+    expect(mocks.sessionHistoryAppService.forkSession).toHaveBeenCalledTimes(2);
+    const firstKey = mocks.sessionHistoryAppService.forkSession.mock.calls[0][0].idempotencyKey;
+    const secondKey = mocks.sessionHistoryAppService.forkSession.mock.calls[1][0].idempotencyKey;
+    expect(firstKey).toBe(secondKey);
+    expect(firstKey).toMatch(/^agent-session-fork:[a-f0-9]{64}$/);
+  });
+
+  it('fork converts app service failures into structured tool errors', async () => {
+    const source = makeSession({ id: 'source-session' });
+    mocks.sessionManager.getSession.mockResolvedValue(source);
+    mocks.sessionHistoryAppService.forkSession.mockRejectedValue(
+      new SessionForkError('INVALID_ANCHOR', 'message missing was not found in the source session'),
+    );
+    const handler = await sessionManagerModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'fork', sessionId: source.id, anchorMessageId: 'missing' },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ANCHOR');
+      expect(result.error).toContain('message missing was not found');
+      expect(result.meta).toMatchObject({
+        action: 'fork',
+        sourceSessionId: source.id,
+        anchorMessageId: 'missing',
+      });
+    }
   });
 
   it('archive refuses the current session before requesting permission', async () => {

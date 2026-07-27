@@ -4,29 +4,48 @@
 // ============================================================================
 
 import type BetterSqlite3 from 'better-sqlite3';
-import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'node:crypto';
 import type { Session, Message, ModelProvider, TodoItem, SessionTask } from '../../../../shared/contract';
 import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEngine';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
-import { createLogger } from '../../infra/logger';
-import { runTranscriptFtsBackfill, type TranscriptKind } from '../../../../shared/transcriptFts.sql';
-import { MEMORY } from '../../../../shared/constants';
+import type { TranscriptKind } from '../../../../shared/transcriptFts.sql';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
+import {
+  ConversationBranchError,
+  type ConversationBoundary,
+  type ConversationMessageSnapshot,
+} from '../../../../shared/contract/conversationBranch';
 import {
   activeMessageWhere,
   loopInternalMessageWhere,
   visibleHistoryMessageWhere,
   ensureToolCallShortDescription,
   buildAttachmentMetadata,
+  normalizeStoredTimestamp,
   rowToMessage,
   rowToSession,
 } from './sessionRepositoryParsers';
-import { runSessionMessagesFtsSearch, runTranscriptFtsSearch } from './sessionRepositoryFtsSearch';
+import { sanitizeConversationMessageSnapshot } from '../conversationMessageSnapshot';
 import * as sidecarState from './sessionRepositorySidecarState';
+import { ConversationBranchRepository } from './ConversationBranchRepository';
+import { SessionFtsRepository } from './SessionFtsRepository';
+import {
+  patchSessionMetadataAtomically,
+  type SessionMetadataPatchOptions,
+} from './sessionMetadataPatch';
+import {
+  SessionRewindRepository,
+  type PromptRewindRecordInput,
+  type PromptRewindRestoreResult,
+  type PromptRewindResult,
+} from './SessionRewindRepository';
 
 export type { StoredSession, StoredMessage };
-
-const logger = createLogger('SessionRepository');
+export type {
+  PromptRewindRecordInput,
+  PromptRewindRestoreResult,
+  PromptRewindResult,
+} from './SessionRewindRepository';
 
 function sqliteTableExists(db: BetterSqlite3.Database, tableName: string): boolean {
   const row = db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?")
@@ -41,22 +60,6 @@ type SyncOrigin = 'local' | 'remote';
 type MessageQueryOptions = { includeRewound?: boolean };
 type SessionOwnerFilter = string | null | undefined;
 
-export interface PromptRewindRecordInput {
-  checkpointMessageId?: string | null;
-  filesRestored?: number;
-  filesDeleted?: number;
-  errors?: string[];
-  createdAt?: number;
-}
-
-export interface PromptRewindResult {
-  rewindId: string;
-  anchorMessage: Message;
-  hiddenMessageIds: string[];
-  hiddenMessageCount: number;
-  activeMessages: Message[];
-}
-
 interface SessionWriteOptions {
   syncOrigin?: SyncOrigin;
 }
@@ -66,24 +69,114 @@ interface MessageWriteOptions {
   syncOrigin?: SyncOrigin;
   syncedAt?: number | null;
   updatedAt?: number;
+  /** Internal compatibility projection write; immutable ledger was recorded by the caller. */
+  skipConversationLedger?: boolean;
 }
 
 export class SessionRepository {
-  constructor(private db: BetterSqlite3.Database) {}
+  private readonly conversationBranchRepo: ConversationBranchRepository | null;
+  private readonly rewindRepo: SessionRewindRepository;
+  private readonly ftsRepo: SessionFtsRepository;
+  private readonly sessionsHaveProjectId: boolean;
 
-  private normalizeTimestamp(value: number | string | undefined, fallback: number): number {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
+  constructor(private db: BetterSqlite3.Database) {
+    this.conversationBranchRepo = sqliteTableExists(db, 'conversation_branches')
+      ? new ConversationBranchRepository(db)
+      : null;
+    this.rewindRepo = new SessionRewindRepository(db, this.conversationBranchRepo);
+    this.ftsRepo = new SessionFtsRepository(db);
+    this.sessionsHaveProjectId = (
+      db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+    ).some((column) => column.name === 'project_id');
+  }
+
+  private readConversationBoundary(sessionId: string): ConversationBoundary {
+    const row = this.db.prepare(`
+      SELECT user_id, ${this.sessionsHaveProjectId ? 'project_id' : 'NULL AS project_id'}
+      FROM sessions
+      WHERE id = ?
+      LIMIT 1
+    `).get(sessionId) as { user_id: string | null; project_id: string | null } | undefined;
+    if (!row) throw new Error(`Session not found: ${sessionId}`);
+    return {
+      ownerUserId: typeof row.user_id === 'string' ? row.user_id : null,
+      projectId: typeof row.project_id === 'string' ? row.project_id : null,
+    };
+  }
+
+  private toConversationMessage(message: Message): ConversationMessageSnapshot {
+    return sanitizeConversationMessageSnapshot(message);
+  }
+
+  private assertRemoteSessionBoundaryCompatible(
+    sessionId: string,
+    incoming: ConversationBoundary,
+  ): void {
+    if (!sqliteTableExists(this.db, 'conversation_branches')) return;
+    const branch = this.db.prepare(`
+      SELECT id, owner_user_id, project_id
+      FROM conversation_branches
+      WHERE session_id = ?
+      LIMIT 1
+    `).get(sessionId) as {
+      id: string;
+      owner_user_id: string | null;
+      project_id: string | null;
+    } | undefined;
+    if (!branch) return;
+    if (branch.owner_user_id !== incoming.ownerUserId) {
+      throw new ConversationBranchError(
+        'OWNER_MISMATCH',
+        `remote session ${sessionId} cannot change immutable branch ${branch.id} owner`,
+      );
     }
-
-    if (typeof value === 'string') {
-      const parsed = Date.parse(value);
-      if (Number.isFinite(parsed)) {
-        return parsed;
-      }
+    if (branch.project_id !== incoming.projectId) {
+      throw new ConversationBranchError(
+        'PROJECT_MISMATCH',
+        `remote session ${sessionId} cannot change immutable branch ${branch.id} project`,
+      );
     }
+  }
 
-    return fallback;
+  private protectedForkMessageIds(sessionId: string): Set<string> {
+    if (
+      !sqliteTableExists(this.db, 'session_forks')
+      || !sqliteTableExists(this.db, 'session_fork_message_map')
+    ) {
+      return new Set();
+    }
+    const rows = this.db.prepare(`
+      SELECT map.source_message_id AS message_id
+      FROM session_forks AS fork
+      JOIN session_fork_message_map AS map ON map.fork_id = fork.id
+      WHERE fork.source_session_id = ?
+        AND fork.status IN ('workspace_ready', 'completed')
+      UNION
+      SELECT map.child_message_id AS message_id
+      FROM session_forks AS fork
+      JOIN session_fork_message_map AS map ON map.fork_id = fork.id
+      WHERE fork.child_session_id = ?
+        AND fork.status IN ('workspace_ready', 'completed')
+    `).all(sessionId, sessionId) as Array<{ message_id: string }>;
+    return new Set(rows.map((row) => String(row.message_id)));
+  }
+
+  private forkProtectedProjection(message: Message): Record<string, unknown> {
+    return {
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      timestamp: message.timestamp,
+      toolCalls: message.toolCalls ?? null,
+      toolResults: message.toolResults ?? null,
+      attachments: message.attachments ?? null,
+      thinking: message.thinking ?? message.reasoning ?? null,
+      effortLevel: message.effortLevel ?? null,
+      contentParts: message.contentParts ?? null,
+      metadata: message.metadata ?? null,
+      isMeta: Boolean(message.isMeta),
+      compaction: message.compaction ?? null,
+    };
   }
 
   private resolveSyncedAt(options?: SessionWriteOptions | MessageWriteOptions): number | null {
@@ -114,36 +207,39 @@ export class SessionRepository {
           session_type, origin, metadata, parent_session_id, source_run_id, agent_engine, memory_mode,
           suppressed_memory_entry_ids, read_only, retry_of_session_id,
           created_at, updated_at, workspace, workbench_provenance, status, last_token_usage,
-          is_deleted, synced_at, git_branch
+          is_deleted, synced_at, git_branch, project_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
     `);
 
-    stmt.run(
-      session.id,
-      session.userId ?? null,
-      session.title,
-      session.modelConfig.provider,
-      session.modelConfig.model,
-      session.workingDirectory || null,
-      session.type || 'chat',
-      session.origin ? JSON.stringify(session.origin) : null,
-      session.metadata ? JSON.stringify(session.metadata) : null,
-      session.parentSessionId || null,
-      session.sourceRunId || null,
-      session.engine ? JSON.stringify(normalizeAgentEngineSession(session.engine)) : null,
-      session.memoryMode || 'auto',
-      JSON.stringify(session.suppressedMemoryEntryIds || []),
-      session.readOnly ? 1 : 0,
-      session.retryOfSessionId || null,
-      session.createdAt,
-      session.updatedAt,
-      session.workspace || null,
-      session.workbenchProvenance ? JSON.stringify(session.workbenchProvenance) : null,
-      session.status || 'idle',
-      session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null,
-      session.gitBranch || null,
-    );
+    this.db.transaction(() => {
+      stmt.run(
+        session.id,
+        session.userId ?? null,
+        session.title,
+        session.modelConfig.provider,
+        session.modelConfig.model,
+        session.workingDirectory || null,
+        session.type || 'chat',
+        session.origin ? JSON.stringify(session.origin) : null,
+        session.metadata ? JSON.stringify(session.metadata) : null,
+        session.parentSessionId || null,
+        session.sourceRunId || null,
+        session.engine ? JSON.stringify(normalizeAgentEngineSession(session.engine)) : null,
+        session.memoryMode || 'auto',
+        JSON.stringify(session.suppressedMemoryEntryIds || []),
+        session.readOnly ? 1 : 0,
+        session.retryOfSessionId || null,
+        session.createdAt,
+        session.updatedAt,
+        session.workspace || null,
+        session.workbenchProvenance ? JSON.stringify(session.workbenchProvenance) : null,
+        session.status || 'idle',
+        session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null,
+        session.gitBranch || null,
+        session.projectId ?? null,
+      );
+    })();
   }
 
   createSessionWithId(
@@ -153,6 +249,7 @@ export class SessionRepository {
       userId?: string | null;
       modelConfig: { provider: ModelProvider; model: string };
       workingDirectory?: string;
+      projectId?: string | null;
       type?: Session['type'];
       origin?: Session['origin'];
       parentSessionId?: string;
@@ -168,8 +265,8 @@ export class SessionRepository {
     options?: SessionWriteOptions,
   ): void {
     const now = Date.now();
-    const createdAt = this.normalizeTimestamp(data.createdAt, now);
-    const updatedAt = this.normalizeTimestamp(data.updatedAt, createdAt);
+    const createdAt = normalizeStoredTimestamp(data.createdAt, now);
+    const updatedAt = normalizeStoredTimestamp(data.updatedAt, createdAt);
     // 云端同步（syncOrigin='remote'）走幂等 upsert：本地可能已存在同 id 但 user_id 为
     // NULL/不同（按 owner 过滤的 getSession 查不到 → 误判为不存在），纯 INSERT 会撞主键
     // UNIQUE 报错且每轮同步刷屏，这些会话也永远认领不到当前用户 → 列表里不显示。
@@ -183,6 +280,7 @@ export class SessionRepository {
             model_provider = excluded.model_provider,
             model_name = excluded.model_name,
             working_directory = excluded.working_directory,
+            project_id = excluded.project_id,
             updated_at = excluded.updated_at,
             is_deleted = excluded.is_deleted,
             synced_at = excluded.synced_at`
@@ -191,32 +289,41 @@ export class SessionRepository {
         INSERT INTO sessions (
           id, user_id, title, model_provider, model_name, working_directory,
           session_type, origin, metadata, parent_session_id, source_run_id, agent_engine, read_only, retry_of_session_id,
-          created_at, updated_at, is_deleted, synced_at
+          created_at, updated_at, is_deleted, synced_at, project_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ${conflictClause}
     `);
 
-    stmt.run(
-      id,
-      data.userId ?? null,
-      data.title,
-      data.modelConfig.provider,
-      data.modelConfig.model,
-      data.workingDirectory || null,
-      data.type || 'chat',
-      data.origin ? JSON.stringify(data.origin) : null,
-      data.metadata ? JSON.stringify(data.metadata) : null,
-      data.parentSessionId || null,
-      data.sourceRunId || null,
-      data.engine ? JSON.stringify(normalizeAgentEngineSession(data.engine)) : null,
-      data.readOnly ? 1 : 0,
-      data.retryOfSessionId || null,
-      createdAt,
-      updatedAt,
-      data.isDeleted ? 1 : 0,
-      this.resolveSyncedAt(options),
-    );
+    this.db.transaction(() => {
+      if (options?.syncOrigin === 'remote') {
+        this.assertRemoteSessionBoundaryCompatible(id, {
+          ownerUserId: data.userId ?? null,
+          projectId: data.projectId ?? null,
+        });
+      }
+      stmt.run(
+        id,
+        data.userId ?? null,
+        data.title,
+        data.modelConfig.provider,
+        data.modelConfig.model,
+        data.workingDirectory || null,
+        data.type || 'chat',
+        data.origin ? JSON.stringify(data.origin) : null,
+        data.metadata ? JSON.stringify(data.metadata) : null,
+        data.parentSessionId || null,
+        data.sourceRunId || null,
+        data.engine ? JSON.stringify(normalizeAgentEngineSession(data.engine)) : null,
+        data.readOnly ? 1 : 0,
+        data.retryOfSessionId || null,
+        createdAt,
+        updatedAt,
+        data.isDeleted ? 1 : 0,
+        this.resolveSyncedAt(options),
+        data.projectId ?? null,
+      );
+    })();
   }
 
   getSession(sessionId: string, options?: { includeDeleted?: boolean; userId?: string | null }): StoredSession | null {
@@ -338,51 +445,9 @@ export class SessionRepository {
   patchSessionMetadata(
     sessionId: string,
     patch: Record<string, unknown>,
-    options?: { modelConfig?: { provider: string; model: string }; updatedAt?: number },
+    options?: SessionMetadataPatchOptions,
   ): boolean {
-    const row = this.db.prepare('SELECT metadata FROM sessions WHERE id = ?').get(sessionId) as
-      | { metadata: string | null }
-      | undefined;
-    if (!row) return false;
-
-    let current: Record<string, unknown> = {};
-    try {
-      const parsed = row.metadata ? JSON.parse(row.metadata) : null;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) current = parsed as Record<string, unknown>;
-    } catch { /* 损坏的 metadata 视为空对象，补丁后修复为合法 JSON */ }
-
-    let changed = Boolean(options?.modelConfig);
-    const merged = { ...current };
-    for (const [key, value] of Object.entries(patch)) {
-      if (value === null) {
-        if (key in merged) {
-          delete merged[key];
-          changed = true;
-        }
-      } else {
-        merged[key] = value;
-        changed = true;
-      }
-    }
-    if (!changed) return true;
-
-    this.db
-      .prepare(`
-        UPDATE sessions
-        SET metadata = ?,
-            model_provider = COALESCE(?, model_provider),
-            model_name = COALESCE(?, model_name),
-            updated_at = ?
-        WHERE id = ?
-      `)
-      .run(
-        JSON.stringify(merged),
-        options?.modelConfig?.provider ?? null,
-        options?.modelConfig?.model ?? null,
-        options?.updatedAt ?? Date.now(),
-        sessionId,
-      );
-    return true;
+    return patchSessionMetadataAtomically(this.db, sessionId, patch, options);
   }
 
   deleteSession(sessionId: string, options?: SessionWriteOptions & { deletedAt?: number }): void {
@@ -501,44 +566,126 @@ export class SessionRepository {
     const thinkingContent = message.thinking || message.reasoning || null;
 
     const toolCallsForStorage = ensureToolCallShortDescription(message.toolCalls);
-    stmt.run(
-      message.id,
-      sessionId,
-      message.role,
-      message.content,
-      message.timestamp,
-      toolCallsForStorage ? JSON.stringify(toolCallsForStorage) : null,
-      message.toolResults ? JSON.stringify(message.toolResults) : null,
-      attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
-      thinkingContent,
-      message.effortLevel || null,
-      this.resolveSyncedAt(options),
-      message.contentParts ? JSON.stringify(message.contentParts) : null,
-      message.metadata ? JSON.stringify(message.metadata) : null,
-      message.isMeta ? 1 : 0,
-      message.compaction ? JSON.stringify(message.compaction) : null,
-      message.visibility ?? 'active',
-      message.hiddenByRewindId ?? null,
-      message.hiddenAt ?? null,
-    );
+    const write = (): void => {
+      stmt.run(
+        message.id,
+        sessionId,
+        message.role,
+        message.content,
+        message.timestamp,
+        toolCallsForStorage ? JSON.stringify(toolCallsForStorage) : null,
+        message.toolResults ? JSON.stringify(message.toolResults) : null,
+        attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
+        thinkingContent,
+        message.effortLevel || null,
+        this.resolveSyncedAt(options),
+        message.contentParts ? JSON.stringify(message.contentParts) : null,
+        message.metadata ? JSON.stringify(message.metadata) : null,
+        message.isMeta ? 1 : 0,
+        message.compaction ? JSON.stringify(message.compaction) : null,
+        message.visibility ?? 'active',
+        message.hiddenByRewindId ?? null,
+        message.hiddenAt ?? null,
+      );
 
-    if (!options?.skipTimestampUpdate && !message.isMeta) {
-      this.db
-        .prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?')
-        .run(options?.updatedAt ?? Date.now(), sessionId);
+      if (this.conversationBranchRepo && !options?.skipConversationLedger) {
+        const persistedRow = this.db.prepare(`
+          SELECT *
+          FROM messages
+          WHERE session_id = ? AND id = ?
+          LIMIT 1
+        `).get(sessionId, message.id) as SQLiteRow | undefined;
+        if (!persistedRow) {
+          throw new Error(`Message disappeared before immutable append: ${message.id}`);
+        }
+        this.conversationBranchRepo.appendMessage({
+          sessionId,
+          boundary: this.readConversationBoundary(sessionId),
+          message: this.toConversationMessage(rowToMessage(persistedRow)),
+          idempotencyKey: `message-append:${message.id}`,
+          provenance: {
+            kind: 'compatibility_projection_append',
+            syncOrigin: options?.syncOrigin ?? 'local',
+          },
+          createdAt: message.timestamp,
+        });
+      }
+
+      if (!options?.skipTimestampUpdate && !message.isMeta) {
+        this.db
+          .prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?')
+          .run(options?.updatedAt ?? Date.now(), sessionId);
+      }
+    };
+    if (this.conversationBranchRepo && !options?.skipConversationLedger) {
+      this.db.transaction(write)();
+    } else {
+      write();
     }
   }
 
   replaceMessages(sessionId: string, messages: Message[], updatedAt: number = Date.now()): void {
     const replaceFn = this.db.transaction(() => {
-      this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId);
+      const protectedIds = this.protectedForkMessageIds(sessionId);
+      if (protectedIds.size > 0) {
+        const desiredById = new Map(messages.map((message) => [message.id, message]));
+        for (const protectedId of protectedIds) {
+          const desired = desiredById.get(protectedId);
+          const currentRow = this.db.prepare(`
+            SELECT *
+            FROM messages
+            WHERE session_id = ? AND id = ?
+            LIMIT 1
+          `).get(sessionId, protectedId) as SQLiteRow | undefined;
+          if (
+            !desired
+            || !currentRow
+            || JSON.stringify(this.forkProtectedProjection(desired))
+              !== JSON.stringify(this.forkProtectedProjection(rowToMessage(currentRow)))
+          ) {
+            throw new Error(
+              `FORK_PREFIX_PROTECTED: replaceMessages cannot remove or rewrite mapped message ${protectedId}`,
+            );
+          }
+        }
+      }
+
+      if (protectedIds.size === 0) {
+        this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId);
+      } else {
+        const placeholders = [...protectedIds].map(() => '?').join(',');
+        this.db.prepare(`
+          DELETE FROM messages
+          WHERE session_id = ? AND id NOT IN (${placeholders})
+        `).run(sessionId, ...protectedIds);
+      }
       for (const message of messages) {
+        if (protectedIds.has(message.id)) continue;
         this.addMessage(sessionId, message, {
           skipTimestampUpdate: true,
           updatedAt,
+          skipConversationLedger: true,
         });
       }
       this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(updatedAt, sessionId);
+      if (this.conversationBranchRepo) {
+        const persistedRows = this.db.prepare(`
+          SELECT *
+          FROM messages
+          WHERE session_id = ?
+          ORDER BY timestamp ASC, rowid ASC
+        `).all(sessionId) as SQLiteRow[];
+        const snapshots = persistedRows.map((row) => this.toConversationMessage(rowToMessage(row)));
+        const digest = createHash('sha256').update(JSON.stringify(snapshots)).digest('hex');
+        this.conversationBranchRepo.recordProjectionReplacement({
+          sessionId,
+          boundary: this.readConversationBoundary(sessionId),
+          messages: snapshots,
+          idempotencyKey: `projection-replace:${digest}`,
+          reason: 'SessionRepository.replaceMessages compatibility projection',
+          createdAt: updatedAt,
+        });
+      }
     });
 
     replaceFn();
@@ -624,9 +771,48 @@ export class SessionRepository {
       // 兼容普通 updateMessage 调用；碰撞恢复路径必须显式传入目标 sessionId。
       values.push(null, messageId);
     }
-    const result = this.db.prepare(sql).run(...values);
-    if (result.changes === 0) {
-      throw new Error(`Message update missed for session ${sessionId ?? 'unknown'} and id ${messageId}`);
+    const target = this.db.prepare(sessionId
+      ? 'SELECT session_id FROM messages WHERE id = ? AND session_id = ? LIMIT 1'
+      : 'SELECT session_id FROM messages WHERE id = ? LIMIT 1')
+      .get(...(sessionId ? [messageId, sessionId] : [messageId])) as { session_id: string } | undefined;
+    const resolvedSessionId = target?.session_id;
+    const recordsRevision = Object.keys(updates).some((key) => ![
+      'visibility',
+      'hiddenByRewindId',
+      'hiddenAt',
+    ].includes(key));
+    const write = (): void => {
+      const result = this.db.prepare(sql).run(...values);
+      if (result.changes === 0 || !resolvedSessionId) {
+        throw new Error(`Message update missed for session ${sessionId ?? 'unknown'} and id ${messageId}`);
+      }
+      if (this.conversationBranchRepo && recordsRevision) {
+        const revisedRow = this.db.prepare(`
+          SELECT *
+          FROM messages
+          WHERE session_id = ? AND id = ?
+          LIMIT 1
+        `).get(resolvedSessionId, messageId) as SQLiteRow | undefined;
+        if (!revisedRow) throw new Error(`Message disappeared after update: ${messageId}`);
+        const revisedMessage = rowToMessage(revisedRow);
+        const revisionDigest = createHash('sha256')
+          .update(JSON.stringify(this.toConversationMessage(revisedMessage)))
+          .digest('hex');
+        this.conversationBranchRepo.recordMessageRevision({
+          sessionId: resolvedSessionId,
+          boundary: this.readConversationBoundary(resolvedSessionId),
+          targetMessageId: messageId,
+          revisedMessage: this.toConversationMessage(revisedMessage),
+          idempotencyKey: `message-revision:${messageId}:${revisionDigest}`,
+          reason: 'SessionRepository.updateMessage compatibility projection',
+          createdAt: revisedMessage.timestamp,
+        });
+      }
+    };
+    if (this.conversationBranchRepo && recordsRevision) {
+      this.db.transaction(write)();
+    } else {
+      write();
     }
   }
 
@@ -696,20 +882,7 @@ export class SessionRepository {
     return rows.reverse().map((row) => rowToMessage(row));
   }
 
-  // --------------------------------------------------------------------------
-  // Episodic FTS search (Workstream D)
-  // --------------------------------------------------------------------------
-
-  /**
-   * 用 FTS5 全文检索历史会话消息。
-   *
-   * - 触发器自动同步 messages → session_messages_fts，应用层无感
-   * - 按相关性排序（BM25 rank），最近优先作为 tie-breaker
-   * - sessionId 过滤可选，限定在当前 session 内搜索
-   * - trigram tokenizer 要求查询至少 3 个字符
-   * - 默认把查询包成 phrase literal（双引号），避开 `-` / `:` 等 FTS5 运算符；
-   *   用户若显式以 `"` 开头则原样透传，保留高级 FTS5 语法
-   */
+  // FTS 查询与回填由独立仓储实现，保留此处公开兼容 API。
   searchSessionMessagesFts(
     query: string,
     options: {
@@ -724,57 +897,13 @@ export class SessionRepository {
     content: string;
     timestamp: number;
   }> {
-    return runSessionMessagesFtsSearch(this.db, query, options);
+    return this.ftsRepo.searchSessionMessagesFts(query, options);
   }
 
-  /**
-   * Backfill session_messages_fts from an existing messages table.
-   * 只在 FTS 表为空、且 messages 表非空时执行（典型场景：升级后首次启动）。
-   * 返回 backfill 的行数；幂等且可重复调用。
-   */
   backfillSessionMessagesFts(): number {
-    try {
-      // 存在性检查用 LIMIT 1 而非 COUNT(*)：FTS5 虚表的 COUNT(*) 是全索引扫描，
-      // 大库上每次启动白扫几百 MB（启动关键路径）。
-      const ftsHasRows = this.db.prepare('SELECT 1 FROM session_messages_fts LIMIT 1').get() !== undefined;
-      const msgHasRows = this.db.prepare('SELECT 1 FROM messages LIMIT 1').get() !== undefined;
-
-      if (ftsHasRows || !msgHasRows) {
-        return 0;
-      }
-
-      logger.info('[EpisodicFts] Backfilling FTS from messages...');
-      const result = this.db
-        .prepare(
-          `
-          INSERT INTO session_messages_fts (message_id, session_id, role, content, timestamp)
-          SELECT id, session_id, role, COALESCE(content, ''), timestamp
-          FROM messages
-          WHERE COALESCE(is_meta, 0) = 0
-            AND ${loopInternalMessageWhere('messages')}
-          `,
-        )
-        .run();
-      const inserted = Number(result.changes ?? 0);
-      logger.info(`[EpisodicFts] Backfill complete: ${inserted} rows`);
-      return inserted;
-    } catch (err) {
-      logger.warn('[EpisodicFts] Backfill failed (non-blocking)', {
-        error: err,
-      });
-      return 0;
-    }
+    return this.ftsRepo.backfillSessionMessagesFts();
   }
 
-  // --------------------------------------------------------------------------
-  // Transcript FTS（kind 分解索引，roadmap 2.1）— History 工具底层
-  // --------------------------------------------------------------------------
-
-  /**
-   * 按 kind 分解的转录全文检索（transcript_fts，BM25 排序）。
-   * 与 searchSessionMessagesFts 的差异：覆盖 tool_input/tool_output/reasoning，
-   * 支持 kind / toolName / 时间窗过滤。FTS 语法错误向上抛（调用方提示模型修正）。
-   */
   searchTranscriptFts(
     query: string,
     options: {
@@ -794,14 +923,9 @@ export class SessionRepository {
     snippet: string;
     timestamp: number;
   }> {
-    return runTranscriptFtsSearch(this.db, query, options);
+    return this.ftsRepo.searchTranscriptFts(query, options);
   }
 
-  /**
-   * 取锚点消息 ±N 条上下文（同 session，按 timestamp + rowid 稳定排序）。
-   * 邻居过滤 meta/loop/rewound；锚点本身即使被隐藏也返回（matched=true）。
-   * 锚点不存在返回 null。
-   */
   getTranscriptAround(
     messageId: string,
     options: { before?: number; after?: number } = {},
@@ -809,80 +933,11 @@ export class SessionRepository {
     sessionId: string;
     messages: Array<{ message: Message; matched: boolean }>;
   } | null {
-    const clampWindow = (value: number | undefined, fallback: number): number => {
-      if (value === undefined || !Number.isFinite(value)) return fallback;
-      return Math.max(0, Math.min(Math.floor(value), MEMORY.HISTORY_AROUND_MAX_WINDOW));
-    };
-    const before = clampWindow(options.before, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW);
-    const after = clampWindow(options.after, MEMORY.HISTORY_AROUND_DEFAULT_WINDOW);
-
-    const anchor = this.db
-      .prepare('SELECT rowid AS rid, session_id, timestamp FROM messages WHERE id = ?')
-      .get(messageId) as { rid: number; session_id: string; timestamp: number } | undefined;
-    if (!anchor) {
-      return null;
-    }
-
-    const visible = `${visibleHistoryMessageWhere('m')}`;
-    const beforeRows = this.db
-      .prepare(
-        `
-        SELECT m.* FROM messages m
-        WHERE m.session_id = ?
-          AND (m.timestamp < ? OR (m.timestamp = ? AND m.rowid <= ?))
-          AND (${visible} OR m.id = ?)
-        ORDER BY m.timestamp DESC, m.rowid DESC
-        LIMIT ?
-        `,
-      )
-      .all(anchor.session_id, anchor.timestamp, anchor.timestamp, anchor.rid, messageId, before + 1) as SQLiteRow[];
-
-    const afterRows = this.db
-      .prepare(
-        `
-        SELECT m.* FROM messages m
-        WHERE m.session_id = ?
-          AND (m.timestamp > ? OR (m.timestamp = ? AND m.rowid > ?))
-          AND ${visible}
-        ORDER BY m.timestamp ASC, m.rowid ASC
-        LIMIT ?
-        `,
-      )
-      .all(anchor.session_id, anchor.timestamp, anchor.timestamp, anchor.rid, after) as SQLiteRow[];
-
-    const ordered = [...beforeRows.reverse(), ...afterRows];
-    return {
-      sessionId: anchor.session_id,
-      messages: ordered.map((row) => ({
-        message: rowToMessage(row),
-        matched: String(row.id) === messageId,
-      })),
-    };
+    return this.ftsRepo.getTranscriptAround(messageId, options);
   }
 
-  /**
-   * Backfill transcript_fts from existing messages（升级后首次启动）。
-   * 只在 transcript_fts 为空且 messages 非空时执行；幂等。
-   */
   backfillTranscriptFts(): number {
-    try {
-      // 同 backfillSessionMessagesFts：LIMIT 1 存在性检查，避免 FTS5 COUNT(*) 全扫
-      const ftsHasRows = this.db.prepare('SELECT 1 FROM transcript_fts LIMIT 1').get() !== undefined;
-      const msgHasRows = this.db.prepare('SELECT 1 FROM messages LIMIT 1').get() !== undefined;
-      if (ftsHasRows || !msgHasRows) {
-        return 0;
-      }
-
-      logger.info('[TranscriptFts] Backfilling from messages...');
-      const inserted = runTranscriptFtsBackfill(this.db);
-      logger.info(`[TranscriptFts] Backfill complete: ${inserted} rows`);
-      return inserted;
-    } catch (err) {
-      logger.warn('[TranscriptFts] Backfill failed (non-blocking)', {
-        error: err,
-      });
-      return 0;
-    }
+    return this.ftsRepo.backfillTranscriptFts();
   }
 
   getUnsyncedSessions(limit: number = 1000): StoredSession[] {
@@ -953,136 +1008,21 @@ export class SessionRepository {
     userMessageId: string,
     record: PromptRewindRecordInput = {},
   ): PromptRewindResult {
-    const now = record.createdAt ?? Date.now();
-    const rewindId = `rewind_${now}_${uuidv4().slice(0, 8)}`;
-
-    const applyFn = this.db.transaction(() => {
-      const anchorRow = this.db
-        .prepare(
-          `
-        SELECT rowid as __rowid, *
-        FROM messages
-        WHERE session_id = ?
-          AND id = ?
-          AND role = 'user'
-          AND ${activeMessageWhere('messages')}
-        LIMIT 1
-      `,
-        )
-        .get(sessionId, userMessageId) as SQLiteRow | undefined;
-
-      if (!anchorRow) {
-        throw new Error(`Active user message not found: ${userMessageId}`);
-      }
-
-      const anchorMessage = rowToMessage(anchorRow);
-      const anchorRowId = Number(anchorRow.__rowid || 0);
-      const rowsToHide = this.db
-        .prepare(
-          `
-        SELECT id
-        FROM messages
-        WHERE session_id = ?
-          AND rowid >= ?
-          AND ${activeMessageWhere('messages')}
-        ORDER BY timestamp ASC, rowid ASC
-      `,
-        )
-        .all(sessionId, anchorRowId) as Array<{ id: string }>;
-
-      const hiddenMessageIds = rowsToHide.map((row) => String(row.id));
-      if (hiddenMessageIds.length > 0) {
-        const placeholders = hiddenMessageIds.map(() => '?').join(',');
-        this.db
-          .prepare(
-            `
-          UPDATE messages
-          SET visibility = 'rewound',
-              hidden_by_rewind_id = ?,
-              hidden_at = ?,
-              synced_at = NULL
-          WHERE session_id = ?
-            AND id IN (${placeholders})
-        `,
-          )
-          .run(rewindId, now, sessionId, ...hiddenMessageIds);
-
-        if (sqliteTableExists(this.db, 'generative_ui_instances')) {
-          this.db.prepare(`
-            UPDATE generative_ui_instances SET status = 'hidden', updated_at = ?
-            WHERE session_id = ? AND source_message_id IN (${placeholders}) AND status = 'active'
-          `).run(now, sessionId, ...hiddenMessageIds);
-          this.db.prepare(`
-            UPDATE execution_manifests
-            SET status = 'invalidated', updated_at = ?, resolved_at = ?, invalidation_reason = 'SOURCE_REWOUND'
-            WHERE session_id = ? AND instance_id IN (
-              SELECT instance_id FROM generative_ui_instances
-              WHERE session_id = ? AND source_message_id IN (${placeholders})
-            ) AND status IN ('pending', 'approved', 'executing')
-          `).run(now, now, sessionId, sessionId, ...hiddenMessageIds);
-        }
-      }
-
-      this.db
-        .prepare(
-          `
-        INSERT INTO session_rewinds (
-          id, session_id, anchor_message_id, anchor_prompt, anchor_timestamp,
-          checkpoint_message_id, hidden_message_count, hidden_message_ids,
-          files_restored, files_deleted, errors_json, created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-        )
-        .run(
-          rewindId,
-          sessionId,
-          userMessageId,
-          anchorMessage.content,
-          anchorMessage.timestamp,
-          record.checkpointMessageId ?? null,
-          hiddenMessageIds.length,
-          JSON.stringify(hiddenMessageIds),
-          record.filesRestored ?? 0,
-          record.filesDeleted ?? 0,
-          JSON.stringify(record.errors ?? []),
-          now,
-        );
-
-      this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(now, sessionId);
-
-      return {
-        rewindId,
-        anchorMessage,
-        hiddenMessageIds,
-        hiddenMessageCount: hiddenMessageIds.length,
-        activeMessages: this.getMessages(sessionId),
-      };
-    });
-
-    return applyFn();
+    return this.rewindRepo.applyPromptRewind(sessionId, userMessageId, record);
   }
 
-  // --------------------------------------------------------------------------
-  // Message Truncation (for checkpoint fork)
-  // --------------------------------------------------------------------------
-
-  /**
-   * Delete all messages after a given message (by timestamp).
-   * Used by checkpoint:fork to truncate conversation history.
-   */
-  truncateMessagesAfter(sessionId: string, messageId: string): number {
-    const msg = this.db
-      .prepare('SELECT timestamp FROM messages WHERE id = ? AND session_id = ?')
-      .get(messageId, sessionId) as { timestamp: number } | undefined;
-
-    if (!msg) return 0;
-
-    const result = this.db
-      .prepare('DELETE FROM messages WHERE session_id = ? AND timestamp > ?')
-      .run(sessionId, msg.timestamp);
-
-    return result.changes;
+  restorePromptRewind(
+    sessionId: string,
+    rewindId: string,
+    restoredAt = Date.now(),
+    ownerUserId?: string | null,
+  ): PromptRewindRestoreResult {
+    return this.rewindRepo.restorePromptRewind(
+      sessionId,
+      rewindId,
+      restoredAt,
+      ownerUserId,
+    );
   }
 
   // --------------------------------------------------------------------------

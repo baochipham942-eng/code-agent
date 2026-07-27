@@ -83,6 +83,10 @@ function createBaseSchema(db: BetterSqlite3.Database): void {
       files_restored INTEGER NOT NULL DEFAULT 0,
       files_deleted INTEGER NOT NULL DEFAULT 0,
       errors_json TEXT,
+      idempotency_key TEXT,
+      request_digest TEXT,
+      status TEXT NOT NULL DEFAULT 'completed',
+      restored_at INTEGER,
       created_at INTEGER NOT NULL
     );
   `);
@@ -415,7 +419,7 @@ describe('SessionRepository — Transcript FTS5 (kind-decomposed)', () => {
     repo.addMessage('sess-A', makeMessage('m2', 'secret axolotl rewound note', { timestamp: 20 }));
     repo.addMessage('sess-A', makeMessage('m3', 'after rewind', { role: 'assistant', timestamp: 30 }));
 
-    repo.applyPromptRewind('sess-A', 'm2', { createdAt: 100 });
+    repo.applyPromptRewind('sess-A', 'm2', { createdAt: 100, ownerUserId: null });
 
     const visible = repo.searchTranscriptFts('secret axolotl');
     expect(visible).toEqual([]);

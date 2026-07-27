@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildClaudeResumeArgs,
   buildCodexResumeArgs,
+  createClaudeContinuationResumeLaunch,
   createClaudeResumeLaunch,
+  createCodexContinuationResumeLaunch,
   createCodexResumeLaunch,
 } from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
 
@@ -48,6 +50,88 @@ describe('external engine resume builders', () => {
     expect(launch.stdin).toBeUndefined();
     expect(launch.commandSummary).toContain('--resume');
     expect(launch.commandSummary).not.toContain(identity.externalSessionId);
+  });
+
+  it('builds a normal Codex continuation from the new lifecycle and current run last-message path', () => {
+    const launch = createCodexContinuationResumeLaunch({
+      lifecycle: {
+        runId: 'turn-2-run',
+        attempt: 1,
+        ownerEpoch: 9,
+      },
+      sessionId: 'neo-session',
+      persistedExternalSessionId: 'external-session-123',
+      cwd: '/tmp/workspace',
+      logsRoot: '/tmp/neo-logs',
+      model: 'gpt-5',
+      continuationInput: 'second turn',
+      permissionProfile: 'read_only',
+    });
+
+    expect(launch).toMatchObject({
+      runId: 'turn-2-run',
+      sessionId: 'neo-session',
+      attempt: 1,
+      ownerEpoch: 9,
+      externalSessionId: 'external-session-123',
+      stdin: 'second turn',
+      permissionProfile: 'read_only',
+    });
+    expect(launch.args).toContain('resume');
+    expect(launch.args).toContain('external-session-123');
+    expect(launch.args).toContain('/tmp/neo-logs/agent-engines/codex-cli/turn-2-run.last.md');
+    expect(launch.args.at(-1)).toBe('-');
+    expect(JSON.stringify(launch.args)).not.toContain('second turn');
+  });
+
+  it('builds a normal Claude continuation with the prompt only on stdin', () => {
+    const launch = createClaudeContinuationResumeLaunch({
+      lifecycle: {
+        runId: 'turn-2-run',
+        attempt: 1,
+        ownerEpoch: 9,
+      },
+      sessionId: 'neo-session',
+      persistedExternalSessionId: 'external-session-123',
+      cwd: '/tmp/workspace',
+      model: 'sonnet',
+      continuationInput: 'second turn',
+      permissionProfile: 'read_only',
+    });
+
+    expect(launch).toMatchObject({
+      runId: 'turn-2-run',
+      sessionId: 'neo-session',
+      attempt: 1,
+      ownerEpoch: 9,
+      externalSessionId: 'external-session-123',
+      stdin: 'second turn',
+      permissionProfile: 'read_only',
+    });
+    expect(launch.args).toContain('--resume');
+    expect(launch.args).toContain('external-session-123');
+    expect(JSON.stringify(launch.args)).not.toContain('second turn');
+  });
+
+  it('fails closed for unsafe Codex run paths and empty continuation prompts', () => {
+    expect(() => createCodexContinuationResumeLaunch({
+      lifecycle: { runId: '../old-run', attempt: 1, ownerEpoch: 1 },
+      sessionId: 'neo-session',
+      persistedExternalSessionId: 'external-session-123',
+      cwd: '/tmp/workspace',
+      logsRoot: '/tmp/neo-logs',
+      continuationInput: 'second turn',
+      permissionProfile: 'read_only',
+    })).toThrow(/not safe/);
+
+    expect(() => createClaudeContinuationResumeLaunch({
+      lifecycle: { runId: 'turn-2-run', attempt: 1, ownerEpoch: 1 },
+      sessionId: 'neo-session',
+      persistedExternalSessionId: 'external-session-123',
+      cwd: '/tmp/workspace',
+      continuationInput: '   ',
+      permissionProfile: 'read_only',
+    })).toThrow(/non-empty/);
   });
 
   it('fails closed without external session, recovered attempt, owner epoch, cwd, or read-only permission', () => {

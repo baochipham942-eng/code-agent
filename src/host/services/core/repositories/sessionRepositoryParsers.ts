@@ -27,6 +27,18 @@ export function visibleHistoryMessageWhere(alias = 'm'): string {
   return `${activeMessageWhere(alias)} AND COALESCE(${alias}.is_meta, 0) = 0 AND ${loopInternalMessageWhere(alias)}`;
 }
 
+export function normalizeStoredTimestamp(
+  value: number | string | undefined,
+  fallback: number,
+): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
 /**
  * 入库 choke point：保证持久化的所有 ToolCall 都有 shortDescription（产品视角
  * 语义短句）。任何上游路径——messageProcessor / TaskManager.turnState 重构造 /

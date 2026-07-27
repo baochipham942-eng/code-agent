@@ -324,6 +324,8 @@ export const TELEMETRY_CHANNELS = {
   DELETE_SESSION: 'telemetry:delete-session',
   /** 提交会话/轮次质量反馈 */
   SUBMIT_FEEDBACK: 'telemetry:submit-feedback',
+  /** 读回会话内已存的轮次评价（好评/差评高亮回填） */
+  GET_SESSION_FEEDBACK: 'telemetry:get-session-feedback',
   /** 获取结构化回放数据 */
   GET_STRUCTURED_REPLAY: 'replay:get-structured-data',
 	  /** 获取 Agent Trajectory 质量摘要 */

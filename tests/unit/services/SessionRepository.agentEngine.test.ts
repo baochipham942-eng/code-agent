@@ -26,6 +26,7 @@ function createSchema(db: BetterSqlite3.Database): void {
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
       working_directory TEXT,
+      project_id TEXT,
       session_type TEXT NOT NULL DEFAULT 'chat',
       origin TEXT,
       metadata TEXT,

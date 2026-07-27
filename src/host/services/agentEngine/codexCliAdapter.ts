@@ -28,6 +28,13 @@ import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './a
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
+import {
+  assertExternalForkContextDispatchLifecycle,
+  composeExternalForkLaunchPrompt,
+  summarizeExternalForkContextHandoff,
+  type ExternalForkContextDispatchCallback,
+  type ExternalForkContextHandoff,
+} from '../sessionFork/context';
 
 const EMPTY_RESPONSE_MESSAGE = 'Codex CLI returned an empty response.';
 
@@ -40,6 +47,13 @@ export interface CodexCliRunRequest extends AgentEngineRunRequest {
   stallWarningMs?: number;
   durableLifecycle?: ExternalEngineDurableLifecycle;
   resumeLaunch?: ExternalEngineResumeLaunch;
+  /**
+   * Audited fork prefix for the first child run. This is a new-session handoff,
+   * never a Codex resume identity.
+   */
+  forkContextHandoff?: ExternalForkContextHandoff;
+  onForkContextDispatchStart?: ExternalForkContextDispatchCallback;
+  onForkContextDispatched?: ExternalForkContextDispatchCallback;
 }
 
 interface CodexParsedEvent {
@@ -52,6 +66,22 @@ interface CodexParsedEvent {
 export class CodexCliAdapter {
   async run(request: CodexCliRunRequest): Promise<AgentEngineRunResult> {
     assertExternalRuntimeAttachments('codex_cli', request.attachmentsCount, 'Codex CLI P0');
+    const launchPrompt = request.forkContextHandoff
+      ? composeExternalForkLaunchPrompt({
+          engine: 'codex_cli',
+          handoff: request.forkContextHandoff,
+          prompt: request.prompt,
+          resumeLaunchPresent: Boolean(request.resumeLaunch),
+        })
+      : request.prompt;
+    const forkContextAudit = request.forkContextHandoff
+      ? summarizeExternalForkContextHandoff(request.forkContextHandoff)
+      : undefined;
+    assertExternalForkContextDispatchLifecycle(
+      request.forkContextHandoff,
+      request.onForkContextDispatchStart,
+      request.onForkContextDispatched,
+    );
 
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();
@@ -106,6 +136,7 @@ export class CodexCliAdapter {
         kind: 'codex_cli',
         model,
         runId,
+        externalSessionId: request.resumeLaunch?.externalSessionId,
         logPath,
         cwd,
         permissionProfile,
@@ -135,6 +166,7 @@ export class CodexCliAdapter {
         logPath,
         timeoutMs: timing.timeoutMs,
         stallWarningMs: timing.stallWarningMs,
+        ...(forkContextAudit ? { forkContext: forkContextAudit } : {}),
       },
     });
     ledger.appendEvent({
@@ -169,7 +201,28 @@ export class CodexCliAdapter {
       model,
       permissionProfile,
     });
-    child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : request.prompt));
+    const onForkContextDispatchStart = request.onForkContextDispatchStart;
+    const onForkContextDispatched = request.onForkContextDispatched;
+    try {
+      if (forkContextAudit) {
+        if (!onForkContextDispatchStart || !onForkContextDispatched) {
+          throw new Error('Fork context dispatch lifecycle disappeared after validation');
+        }
+        await onForkContextDispatchStart(forkContextAudit);
+        child.stdin.end(launchPrompt);
+      } else {
+        child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : launchPrompt));
+      }
+    } catch (error) {
+      logStream.end();
+      try {
+        if (request.durableLifecycle) await request.durableLifecycle.terminateProcess('SIGTERM');
+        else child.kill('SIGTERM');
+      } catch {
+        // Preserve the dispatch lifecycle failure that left the durable state fail-closed.
+      }
+      throw error;
+    }
 
     let stdoutBuffer = '';
     let stderrText = '';
@@ -177,6 +230,7 @@ export class CodexCliAdapter {
     let spawnErrorMessage: string | undefined;
     let resumeIdentityError: string | undefined;
     let observedExternalSessionId: string | undefined;
+    let confirmedExternalSessionId: string | undefined;
     let timeoutMessage: string | undefined;
     let stalled = false;
 
@@ -246,7 +300,7 @@ export class CodexCliAdapter {
             resumeIdentityError = 'Codex resumed a different external session';
             void request.durableLifecycle?.terminateProcess('SIGTERM');
           } else {
-            request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+            confirmedExternalSessionId = parsed.externalSessionId;
           }
         }
         if (parsed?.textDelta) {
@@ -305,7 +359,7 @@ export class CodexCliAdapter {
         if (request.resumeLaunch && parsed.externalSessionId !== request.resumeLaunch.externalSessionId) {
           resumeIdentityError = 'Codex resumed a different external session';
         } else {
-          request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+          confirmedExternalSessionId = parsed.externalSessionId;
         }
       }
       if (parsed?.textDelta) {
@@ -324,8 +378,33 @@ export class CodexCliAdapter {
     if (request.resumeLaunch && !observedExternalSessionId && !resumeIdentityError) {
       resumeIdentityError = 'Codex resume did not confirm the external session identity';
     }
+    if (request.forkContextHandoff && !confirmedExternalSessionId && !resumeIdentityError) {
+      resumeIdentityError = 'Codex fork handoff did not confirm a new external session identity';
+    }
     const emptyResponse = !finalText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
     const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0 || emptyResponse);
+    const sessionExternalSessionId = failed
+      ? request.resumeLaunch?.externalSessionId
+      : confirmedExternalSessionId ?? request.resumeLaunch?.externalSessionId;
+    if (forkContextAudit && !failed) {
+      if (!onForkContextDispatched) {
+        throw new Error('Fork context dispatch lifecycle disappeared after provider identity confirmation');
+      }
+      try {
+        await onForkContextDispatched(forkContextAudit);
+      } catch (error) {
+        try {
+          if (request.durableLifecycle) await request.durableLifecycle.terminateProcess('SIGTERM');
+          else child.kill('SIGTERM');
+        } catch {
+          // Preserve the consumed-state persistence failure and leave the handoff fail-closed.
+        }
+        throw error;
+      }
+    }
+    if (!failed && sessionExternalSessionId) {
+      request.durableLifecycle?.persistExternalSessionId(sessionExternalSessionId);
+    }
 
     ledger.addOutputRef({
       taskId,
@@ -417,6 +496,7 @@ export class CodexCliAdapter {
           kind: 'codex_cli',
           model,
           runId,
+          externalSessionId: sessionExternalSessionId,
           logPath,
           cwd,
           permissionProfile,
@@ -480,7 +560,7 @@ export class CodexCliAdapter {
       type: 'agent_engine.completed',
       status: 'completed',
       message: 'Codex CLI run completed',
-      data: { runId, logPath },
+      data: { runId, logPath, externalSessionId: sessionExternalSessionId },
     });
     ledger.queueNotification({
       taskId,
@@ -497,6 +577,7 @@ export class CodexCliAdapter {
         kind: 'codex_cli',
         model,
         runId,
+        externalSessionId: sessionExternalSessionId,
         logPath,
         cwd,
         permissionProfile,

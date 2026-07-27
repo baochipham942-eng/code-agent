@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IpcMain } from 'electron';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
+import { WorkspaceFileRestoreError } from '../../../src/shared/contract/fileRestore';
 
 // ---------------------------------------------------------------------------
 // Mock ipcHost: 捕获 handler 注册，支持按 channel 调用
@@ -327,6 +328,125 @@ describe('IPC Handlers', () => {
       expect(mockAppService.createSession).toHaveBeenCalledWith({
         title: 'Workspace Session',
         workingDirectory: '/repo/code-agent',
+      });
+    });
+
+    it('routes Fork and lineage reads through the same session application service', async () => {
+      const forkResult = {
+        childSession: { id: 'child-1' },
+        lineage: { forkId: 'fork-1' },
+      };
+      const mockAppService = {
+        forkSession: vi.fn().mockResolvedValue(forkResult),
+        getForkLineage: vi.fn().mockResolvedValue(forkResult.lineage),
+        listForkChildren: vi.fn().mockResolvedValue([forkResult.lineage]),
+      };
+      registerSessionHandlers(ipc.mock, () => mockAppService as any);
+      const forkPayload = {
+        sourceSessionId: 'source-1',
+        anchorAssistantMessageId: 'a2',
+        idempotencyKey: 'request-1',
+        workspaceMode: 'shared_current',
+      };
+
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'fork',
+        payload: forkPayload,
+      })).resolves.toEqual({ success: true, data: forkResult });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'getForkLineage',
+        payload: { sessionId: 'child-1' },
+      })).resolves.toEqual({ success: true, data: forkResult.lineage });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'listForkChildren',
+        payload: { sessionId: 'source-1' },
+      })).resolves.toEqual({ success: true, data: [forkResult.lineage] });
+
+      expect(mockAppService.forkSession).toHaveBeenCalledWith(forkPayload);
+      expect(mockAppService.getForkLineage).toHaveBeenCalledWith('child-1');
+      expect(mockAppService.listForkChildren).toHaveBeenCalledWith('source-1');
+    });
+
+    it('routes history-only Rewind and recovery through the session application service', async () => {
+      const rewindResult = {
+        success: true,
+        sessionId: 'session-1',
+        rewindId: 'rewind-1',
+        workspaceChanged: false,
+      };
+      const restoreResult = {
+        success: true,
+        sessionId: 'session-1',
+        rewindId: 'rewind-1',
+        restoredMessageCount: 2,
+        workspaceChanged: false,
+      };
+      const fileRestoreResult = {
+        success: true,
+        sessionId: 'session-1',
+        checkpointMessageId: 'a2',
+        restoredFileCount: 1,
+        deletedFileCount: 0,
+        workspaceChanged: true,
+        conversationChanged: false,
+      };
+      const mockAppService = {
+        rewindConversation: vi.fn().mockResolvedValue(rewindResult),
+        restoreConversationRewind: vi.fn().mockResolvedValue(restoreResult),
+        restoreWorkspaceFilesAtCheckpoint: vi.fn().mockResolvedValue(fileRestoreResult),
+      };
+      registerSessionHandlers(ipc.mock, () => mockAppService as any);
+
+      const rewindPayload = {
+        sessionId: 'session-1',
+        anchorUserMessageId: 'u2',
+        idempotencyKey: 'rewind-request-1',
+      };
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'rewindConversation',
+        payload: rewindPayload,
+      })).resolves.toEqual({ success: true, data: rewindResult });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'restoreConversationRewind',
+        payload: { sessionId: 'session-1', rewindId: 'rewind-1' },
+      })).resolves.toEqual({ success: true, data: restoreResult });
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'restoreWorkspaceFilesAtCheckpoint',
+        payload: { sessionId: 'session-1', checkpointMessageId: 'a2' },
+      })).resolves.toEqual({ success: true, data: fileRestoreResult });
+      expect(mockAppService.rewindConversation).toHaveBeenCalledWith(rewindPayload);
+      expect(mockAppService.restoreConversationRewind).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        rewindId: 'rewind-1',
+      });
+      expect(mockAppService.restoreWorkspaceFilesAtCheckpoint).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        checkpointMessageId: 'a2',
+      });
+    });
+
+    it('preserves the typed workspace file restore failure code', async () => {
+      const mockAppService = {
+        restoreWorkspaceFilesAtCheckpoint: vi.fn().mockRejectedValue(
+          new WorkspaceFileRestoreError(
+            'WORKSPACE_FILE_RESTORE_FAILED',
+            'injected checkpoint write failure',
+            1,
+            0,
+            1,
+          ),
+        ),
+      };
+      registerSessionHandlers(ipc.mock, () => mockAppService as any);
+
+      await expect(ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, {
+        action: 'restoreWorkspaceFilesAtCheckpoint',
+        payload: { sessionId: 'session-1', checkpointMessageId: 'a2' },
+      })).resolves.toMatchObject({
+        success: false,
+        error: {
+          code: 'WORKSPACE_FILE_RESTORE_FAILED',
+        },
       });
     });
 

@@ -135,7 +135,10 @@ interface IPCResponse<T = unknown> {
 | `load` | `{ sessionId: string }` | `Session` | 加载会话 |
 | `delete` | `{ sessionId: string }` | `null` | 删除会话 |
 | `getMessages` | `{ sessionId: string }` | `Message[]` | 获取消息 |
-| `rewindToPrompt` | `{ sessionId: string; userMessageId: string }` | `PromptRewindResult` | 回到某条用户提示词：隐藏后续 active 消息、恢复文件 checkpoint、回填输入草稿 |
+| `rewindConversation` | `{ sessionId: string; anchorUserMessageId: string; idempotencyKey: string }` | `RewindConversationResult` | 锚点保持 active，仅软隐藏其后的消息；兼容 draft 字段返回空内容；不修改工作区文件 |
+| `restoreConversationRewind` | `{ sessionId: string; rewindId: string }` | `RestoreConversationRewindResult` | 按 LIFO 显式恢复同一次 Rewind 的消息/UI 可见性；不修改工作区文件 |
+| `restoreWorkspaceFilesAtCheckpoint` | `{ sessionId: string; checkpointMessageId: string }` | `RestoreWorkspaceFilesAtCheckpointResult` | 独立恢复文件 checkpoint；失败时不改变消息可见性 |
+| `rewindToPrompt` | `{ sessionId: string; userMessageId: string }` | `PromptRewindResult` | 旧客户端兼容别名，内部投影到 `rewindConversation`，仍不恢复文件 |
 | `export` | `{ sessionId: string }` | `SessionExport` | 导出会话 |
 | `import` | `{ data: unknown }` | `string` | 导入会话 |
 

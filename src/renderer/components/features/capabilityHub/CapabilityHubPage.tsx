@@ -8,6 +8,7 @@ import { canAccessSettingsTab } from '../../../utils/settingsTabs';
 import { FullScreenPage } from '../shared/FullScreenPage';
 import { PageContent } from '../shared/PageContent';
 import { ExpertPanel } from '../expert/ExpertPanel';
+import { HubTabHeader } from './HubTabHeader';
 
 // 四个重型 tab 一律懒加载：能力中心比设置页开得频繁得多，
 // 首屏不该背着技能/连接器/插件/能力清单的注册表。
@@ -49,8 +50,8 @@ export const CapabilityHubPage: React.FC = () => {
   return (
     <FullScreenPage testId="capability-hub-page" variant="inline">
       {/* 2026-07-27 审美关拍板（对标 WorkBuddy）：四个 tab 从右上角小胶囊提为顶行主导航，
-          页面大标题跟着当前 tab 走——「能力中心」是容器名，用户真正在看的是「专家 / 技能 / …」。
-          分类筛选留给各 tab 自己在内容区顶部铺（专家 tab 的 chips 带人数）。 */}
+          本 header 只留 pill 导航；大标题下沉到各 tab 自己的 HubTabHeader，
+          这样标题才可能和同 tab 的操作簇同行。 */}
       <header className="shrink-0 px-6 pt-4">
         <div className="flex items-center gap-3">
           <nav className="flex items-center gap-1" role="tablist" aria-label={t.capabilityHub.title}>
@@ -74,11 +75,11 @@ export const CapabilityHubPage: React.FC = () => {
             ))}
           </nav>
         </div>
-        <h1 className="mt-4 truncate text-2xl font-semibold tracking-tight text-zinc-100">{activeTabLabel}</h1>
       </header>
       {/* 内容区走 PageContent 契约（全宽 + px-6 py-4），pb-12 保留底部呼吸位 */}
       <PageContent className="pb-12">
-        <React.Suspense fallback={<div className="p-4 text-sm text-zinc-500">{t.settings.modal.loading}</div>}>
+        {/* 标题已下沉到各 tab：lazy 加载瞬间用只有标题的 HubTabHeader 占位，切 tab 大标题不闪 */}
+        <React.Suspense fallback={<HubTabHeader title={activeTabLabel} />}>
           {content}
         </React.Suspense>
       </PageContent>

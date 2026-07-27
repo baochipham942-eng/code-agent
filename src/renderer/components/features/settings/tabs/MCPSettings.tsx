@@ -24,7 +24,8 @@ import { useWorkbenchCapabilityQuickActionRunner } from '../../../../hooks/useWo
 import { useAuthStore } from '../../../../stores/authStore';
 import { useAppStore } from '../../../../stores/appStore';
 import { Button, Toggle } from '../../../primitives';
-import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
+import { SettingsDetails, SettingsSection } from '../SettingsLayout';
+import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 import { createLogger } from '../../../../utils/logger';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { WebModeBanner } from '../WebModeBanner';
@@ -298,19 +299,50 @@ export const MCPSettings: React.FC = () => {
     }
   };
 
+  // 页头走四 tab 共用的 HubTabHeader：大标题「连接器」与「已连接|发现连接」切换同一行；
+  // 加载中也渲染页头，与其余三个 tab 一致，避免标题闪现。
+  const hubHeader = (
+    <HubTabHeader
+      testId="mcp-hub-header"
+      title={t.capabilityHub.tabConnectors}
+      actions={(
+        <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
+          {([
+            ['connected', `${mcpText.tabs.connectedPrefix}${serverSummary.total}${mcpText.tabs.connectedSuffix}`],
+            ['discover', mcpText.tabs.discover],
+          ] as Array<[McpViewTab, string]>).map(([tab, label]) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                activeTab === tab
+                  ? 'bg-zinc-700 text-zinc-100'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    />
+  );
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+      <div>
+        {hubHeader}
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+        </div>
       </div>
     );
   }
 
   return (
-    <SettingsPage
-      title={mcpText.title}
-      description={mcpText.description}
-    >
+    <div className="space-y-6">
+      {hubHeader}
       <WebModeBanner />
 
       {(settingsCapabilityFocus?.kind === 'mcp' || settingsCapabilityFocus?.kind === 'connector') && (
@@ -330,27 +362,6 @@ export const MCPSettings: React.FC = () => {
           </Button>
         </div>
       )}
-
-      {/* Tab 切换：已连接 / 发现连接 */}
-      <div className="flex w-fit items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
-        {([
-          ['connected', `${mcpText.tabs.connectedPrefix}${serverSummary.total}${mcpText.tabs.connectedSuffix}`],
-          ['discover', mcpText.tabs.discover],
-        ] as Array<[McpViewTab, string]>).map(([tab, label]) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              activeTab === tab
-                ? 'bg-zinc-700 text-zinc-100'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
 
       {activeTab === 'discover' && (
         <McpDiscoverTab
@@ -683,6 +694,6 @@ export const MCPSettings: React.FC = () => {
         onQuickAction={runQuickAction}
         onClose={() => setActiveSheetTarget(null)}
       />
-    </SettingsPage>
+    </div>
   );
 };

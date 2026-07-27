@@ -93,6 +93,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/dev/notifications'],
   ['delete', '/dev/notifications'],
   ['post', '/dev/emit-swarm-event'],
+  ['post', '/dev/emit-sse'],
   ['post', '/dev/seed-messages'],
   ['post', '/dev/emit-agent-events'],
   ['post', '/dev/emit-workflow-events'],

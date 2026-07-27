@@ -139,7 +139,7 @@ export const ChatView: React.FC = () => {
   // 语义 = 必须先回答（或显式跳过）才能继续输入。队首先答，答完露出下一题。
   const pendingUserQuestion = useSessionStore((state) =>
     currentSessionId
-      ? (state.pendingUserQuestionsBySessionId.get(currentSessionId)?.[0] ?? null)
+      ? (state.pendingUserQuestionsBySessionId?.get(currentSessionId)?.[0] ?? null)
       : null,
   );
   const currentSessionWorkingDirectory = currentSession

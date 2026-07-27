@@ -829,12 +829,15 @@ export const Sidebar: React.FC = () => {
               onClick={() => setShowUserMenu(!showUserMenu)}
               aria-label={sb.userMenu}
               aria-expanded={showUserMenu}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
+              /* 落到全侧栏基准轨（2026-07-27 对齐规范）：pl-2 使外层 8 + 8 = 图标左缘 16；
+                 图标 16px + gap-2.5(10) 使昵称左缘 42，与入口行/分组名/会话行标题同线；
+                 pr-3 使展开箭头右缘 220、中心 212，与分组头角标/会话行状态点同轴。 */
+              className="w-full flex items-center gap-2.5 pl-2 pr-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
             >
               {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover" />
+                <img src={user.avatarUrl} alt="" className="w-4 h-4 shrink-0 rounded-full object-cover" />
               ) : (
-                <User className="w-5 h-5 text-zinc-500" />
+                <User className="w-4 h-4 shrink-0 text-zinc-500" />
               )}
               <span className="flex-1 text-left text-sm font-medium text-zinc-400 truncate">
                 {user.nickname || user.email?.split('@')[0]}

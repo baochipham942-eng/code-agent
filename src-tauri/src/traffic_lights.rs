@@ -21,9 +21,12 @@
 
 /// 与 `tauri.conf.json` 的 `trafficLightPosition` 必须**保持同值**：两条通道跑同一套算法、
 /// 喂同一个参数，才不会互相拉扯。改这里就要改那里。
-/// y=22 对应灯中心距窗口顶 24（= 顶行 h-12 内垂直居中的图标中心），实测口径。
+/// 两个值都是**实测反解**出来的，不是推算：
+/// - x 是按钮 frame 左缘（不是圆心）。macOS 默认摆在 9，wry 这条路会接管横向，
+///   所以显式写回 9，保持系统原本的观感；灯间距沿用系统的 23。
+/// - y 与灯中心是斜率 1 的平移关系：实测 y=22 时中心落在 19.8 ⇒ 要 24 就取 26.2。
 #[cfg(target_os = "macos")]
-const TRAFFIC_LIGHT_INSET: (f64, f64) = (20.0, 22.0);
+const TRAFFIC_LIGHT_INSET: (f64, f64) = (9.0, 26.2);
 
 /// wry `inset_traffic_lights` 的等价实现（wry-0.55.1
 /// src/wkwebview/class/wry_web_view_parent.rs）。**刻意逐字照搬**：

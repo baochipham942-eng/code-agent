@@ -20,8 +20,8 @@ import React from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 
-export type FullScreenPageVariant = 'inline' | 'overlay';
-export type FullScreenPageHeaderVariant = 'page' | 'bar';
+type FullScreenPageVariant = 'inline' | 'overlay';
+type FullScreenPageHeaderVariant = 'page' | 'bar';
 
 interface FullScreenPageProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;

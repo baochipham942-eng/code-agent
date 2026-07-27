@@ -71,7 +71,8 @@ test('侧栏会话列表滚动条不占布局宽——右轨与账号区箭头�
   // 全局 ::-webkit-scrollbar 是 6px 占位式滚动条。强制列表溢出后，若滚动条占宽，
   // clientWidth 会比 offsetWidth 少 6px——列表内右轨（角标/状态点）随之左移 6px，
   // 与滚动容器外的账号区箭头错轴（2026-07-27 真机实锤 206 vs 212）。
-  const widths = await scroll.evaluate((el) => {
+  const widths = await scroll.evaluate((node) => {
+    const el = node as HTMLElement;
     el.style.maxHeight = '40px'; // 与会话数无关地制造溢出
     return {
       overflowing: el.scrollHeight > el.clientHeight,

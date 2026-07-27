@@ -430,6 +430,16 @@ class SkillRepositoryService implements Disposable {
     }
 
     const repoId = `${parsed.owner}-${parsed.repo}`.toLowerCase();
+
+    // 已注册的库在 stage 阶段就拦下（真机踩坑：走到 confirm 才报冲突，
+    // 用户白等一次下载还看不懂错误）；磁盘残留但未注册的交给 confirm 清理重装
+    if (this.libraries.has(repoId)) {
+      return {
+        success: false,
+        error: `Repository already installed: ${repoId}`,
+      };
+    }
+
     const repoName = name || `${parsed.owner}/${parsed.repo}`;
     const stageId = randomUUID();
     const stagePath = path.join(this.stagingDir, stageId);

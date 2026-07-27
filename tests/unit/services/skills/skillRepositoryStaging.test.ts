@@ -135,6 +135,16 @@ describe('SkillRepositoryService staged install lifecycle', () => {
     ]);
   });
 
+  it('rejects staging an already-registered repository upfront', async () => {
+    const first = await service.stageRepository('https://github.com/preview/dup-repo');
+    expect(first.success).toBe(true);
+    await service.confirmStagedRepository(first.stageId!);
+
+    const second = await service.stageRepository('https://github.com/preview/dup-repo');
+    expect(second.success).toBe(false);
+    expect(second.error).toContain('already installed');
+  });
+
   it('replaces an orphan on-disk directory that is not registered in config', async () => {
     // 半孤儿态：目标目录在磁盘上（历史坏安装残留）但未注册进 libraries/config，
     // confirm 应清掉残留继续安装，而不是把用户卡在「装不上又删不掉」

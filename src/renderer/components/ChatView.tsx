@@ -730,7 +730,6 @@ export const ChatView: React.FC = () => {
       chatInputRef.current?.setDraft(result.draft);
       setPendingPromptRewind(null);
       setRewindRefreshToken((token) => token + 1);
-      toast.warning(t.chat.rewindSuccess);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {

@@ -721,7 +721,10 @@ export const Sidebar: React.FC = () => {
       <SidebarCapabilityZone />
 
       {/* Session List - Project Grouped */}
-      <div className="flex-1 overflow-y-auto px-2 min-h-0">
+      {/* scrollbar-hidden：全局 ::-webkit-scrollbar 是 6px 占位式滚动条，列表一溢出
+          行内右轨（分组角标/状态点 cx=212）整体左移 6px，与容器外账号区箭头错轴
+          （2026-07-27 Dev 包实测 206 vs 212）。隐藏滚动条让占位归零，滚轮/触控板滚动不受影响。 */}
+      <div className="flex-1 overflow-y-auto scrollbar-hidden px-2 min-h-0" data-testid="sidebar-session-scroll">
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />

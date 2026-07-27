@@ -40,11 +40,8 @@ export const VoiceLiveSettingsSection: React.FC = () => {
   const [language, setLanguage] = useState<NonNullable<VoiceLiveSettings['language']>>('auto');
   const [interrupt, setInterrupt] = useState<InterruptMode>('server_vad');
   const [sensitivity, setSensitivity] = useState<VadSensitivity>('medium');
-<<<<<<< HEAD
   const [executionModel, setExecutionModel] = useState<VoiceLiveSettings['executionModel']>(undefined);
-=======
   const [echoCancellation, setEchoCancellation] = useState<EchoCancellationMode>('auto');
->>>>>>> 0489214aa (feat(voice): add echo cancellation setting)
 
   useEffect(() => {
     let cancelled = false;
@@ -57,11 +54,8 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         setLanguage(voice?.live?.language ?? 'auto');
         setInterrupt(deriveInterruptMode(voice));
         setSensitivity(deriveVadSensitivity(voice));
-<<<<<<< HEAD
         setExecutionModel(voice?.live?.executionModel);
-=======
         setEchoCancellation(voice?.live?.echoCancellation ?? 'auto');
->>>>>>> 0489214aa (feat(voice): add echo cancellation setting)
       })
       .catch((error) => logger.error('load voice live settings failed', error));
     return () => { cancelled = true; };
@@ -74,11 +68,8 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       language,
       interrupt,
       vadSensitivity: sensitivity,
-<<<<<<< HEAD
       ...(executionModel ? { executionModel } : {}),
-=======
       echoCancellation,
->>>>>>> 0489214aa (feat(voice): add echo cancellation setting)
       ...patch,
     };
     // 应用到本地 state

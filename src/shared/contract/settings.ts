@@ -37,17 +37,14 @@ export interface VoiceLiveSettings {
   interrupt?: 'server_vad' | 'push_to_talk' | 'manual';
   /** server_vad 灵敏度档位：high 灵敏（threshold 0.3）/ medium（0.5）/ low 迟钝（0.7） */
   vadSensitivity?: 'low' | 'medium' | 'high';
-<<<<<<< HEAD
   /**
    * 语音派活时的执行引擎（方案 §6.1 双脑：通话模型只负责听说，干活是另一个模型）。
    * 未配置 = 跟随会话默认引擎，与批 H 之前的行为完全一致。
    * 通话模型不在这里配——它与 Provider 的实时协议和音色白名单强绑定，见 QWEN_OMNI_REALTIME_MODEL。
    */
   executionModel?: { provider: string; model: string };
-=======
   /** 回声消除：auto 优先原生 AEC；off 强制走耳机模式。未配置 = auto。 */
   echoCancellation?: 'auto' | 'off';
->>>>>>> 0489214aa (feat(voice): add echo cancellation setting)
 }
 
 export interface ModelEntrySettings {

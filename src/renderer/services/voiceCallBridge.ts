@@ -329,15 +329,9 @@ class VoiceCallBridge {
     interruptMode: VoiceInterruptMode,
     echoCancellation: 'auto' | 'off',
   ): Promise<'native_aec' | 'headphones'> {
-<<<<<<< HEAD
     // 用户显式关掉 = 自愿走耳机模式，不报降级；非 macOS/原生壳不可用 = 非自愿，要报。
     if (echoCancellation === 'off') return this.startWebAudio(ws, interruptMode, false);
     if (!isNativeDesktopAvailable()) return this.startWebAudio(ws, interruptMode, true);
-=======
-    if (echoCancellation === 'off' || !isNativeDesktopAvailable()) {
-      return this.startWebAudio(ws, interruptMode);
-    }
->>>>>>> 0489214aa (feat(voice): add echo cancellation setting)
 
     const pipeline = new NativeVoiceAudioPipeline({
       onFrame: (pcm16k) => {

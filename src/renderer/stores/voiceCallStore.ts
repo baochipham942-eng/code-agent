@@ -140,7 +140,8 @@ export function selectVoiceVisualState(state: {
   if (state.phase === 'connecting') return 'connecting';
   if (state.phase === 'error') return 'error';
   if (state.muted) return 'muted';
-  if (state.workItems.some((item) => item.status === 'queued')) return 'working';
+  // 在途 = 排队中或正在跑。只看 queued 的话，run 一开始跑 working 态就掉了（批 H 前的行为）。
+  if (state.workItems.some((item) => item.status === 'queued' || item.status === 'running')) return 'working';
   if (state.assistantSpeaking) return 'speaking';
   return 'listening';
 }

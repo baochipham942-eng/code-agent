@@ -10,6 +10,7 @@
 import React from 'react';
 import { Mic, MicOff, Phone } from 'lucide-react';
 import { selectVoiceVisualState, useVoiceCallStore, type VoiceVisualState } from '../../../stores/voiceCallStore';
+import type { VoiceWorkItemStatus } from '@shared/contract/voice';
 import { voiceCallBridge } from '../../../services/voiceCallBridge';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAgentRegistryStore } from '../../../stores/agentRegistryStore';
@@ -99,10 +100,26 @@ const ActiveExpertChip: React.FC<{ sessionId: string | null }> = ({ sessionId })
   );
 };
 
+/** 五态各自的底色。终态与在途态必须一眼可分——否则「做完了」和「还在排队」长一个样。 */
+const WORK_ITEM_TONE: Record<VoiceWorkItemStatus, string> = {
+  queued: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+  running: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
+  done: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  cancelled: 'border-zinc-500/30 bg-zinc-500/10 text-zinc-400',
+  failed: 'border-red-500/30 bg-red-500/10 text-red-300',
+};
+
 const WorkStrip: React.FC = () => {
   const { t } = useI18n();
   const workItems = useVoiceCallStore((state) => state.workItems);
   if (workItems.length === 0) return null;
+  const label: Record<VoiceWorkItemStatus, string> = {
+    queued: t.voice.work.queued,
+    running: t.voice.work.running,
+    done: t.voice.work.done,
+    cancelled: t.voice.work.cancelled,
+    failed: t.voice.work.failed,
+  };
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       {workItems.map((item) => (
@@ -110,13 +127,9 @@ const WorkStrip: React.FC = () => {
           key={item.id}
           data-testid={`voice-work-item-${item.status}`}
           title={item.detail ?? item.title}
-          className={`max-w-40 truncate rounded-full border px-2 py-0.5 text-[11px] ${
-            item.status === 'failed'
-              ? 'border-red-500/30 bg-red-500/10 text-red-300'
-              : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-          }`}
+          className={`max-w-40 truncate rounded-full border px-2 py-0.5 text-[11px] ${WORK_ITEM_TONE[item.status]}`}
         >
-          {item.status === 'failed' ? t.voice.work.failed : t.voice.work.queued} · {item.title}
+          {label[item.status]} · {item.title}
         </span>
       ))}
     </span>

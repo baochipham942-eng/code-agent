@@ -16,6 +16,7 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { resolveVoiceRouting } from './voiceRouting';
+import { beginVoiceDispatch, endVoiceDispatch } from './voiceAgentCoordinator';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
 
@@ -99,6 +100,8 @@ async function teardown(reason: string): Promise<void> {
   // 只还「通话」这一张票。语音派出去、还在飞的 run 各自持票，抬严对它们继续有效——
   // 挂断不再等于解除（2026-07-26 真机：挂断后同一个 run 直接落盘，D4 承诺全失效）。
   getPermissionModeManager().clearLiveVoiceSession(session.neoSessionId, `call:${session.id}`);
+  // 断开 work item 的 UI 回流；账本与 run 的票继续活到最后一件活落地（同上）。
+  endVoiceDispatch();
   // 排水窗：用户 ASR completed / 助手 transcript done 常在挂断后 ~1s 才到，立刻关
   // 上游会把这通电话说过的话全部丢掉（2026-07-26 真机：12s 通话落库只剩摘要）。
   // 窗口内 onEvent 照常把 final 落库；窗口结束后 done 仍没到的助手增量缓冲冲成 final。
@@ -178,6 +181,16 @@ async function connectAndBind(
   const liveSettings = readVoiceLiveSettings();
 
   const transcriptBuf = { assistant: '' };
+  // 绑定必须早于建连：上游一旦握手成功就可能立刻发 function_call，
+  // 晚绑一步那次调用会落到「通话还没就绪」的兜底上。
+  beginVoiceDispatch({
+    neoSessionId,
+    activeAgentId: routing.activeAgentId,
+    onWorkItem: (item) => {
+      if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
+      send(client, { type: 'work.upsert', item });
+    },
+  });
   let upstream: VoiceTransportHandle;
   try {
     upstream = await qwenOmniTransport.connect({
@@ -211,18 +224,12 @@ async function connectAndBind(
       onAudio: (frame) => {
         if (client.readyState === client.OPEN) client.send(frame, { binary: true });
       },
-      onToolCall: (call) => executeVoiceTool(call.name, call.arguments, {
-        neoSessionId,
-        activeAgentId: routing.activeAgentId,
-        onWorkItem: (item) => {
-          if (active?.id === id && item.status === 'queued') active.workItemCount += 1;
-          send(client, { type: 'work.upsert', item });
-        },
-      }),
+      onToolCall: (call) => executeVoiceTool(call.name, call.arguments),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'connect failed';
     logger.warn('upstream connect failed', { voiceSessionId: id, message });
+    endVoiceDispatch();
     send(client, { type: 'error', code: 'VOICE_UPSTREAM_UNAVAILABLE', message });
     client.close();
     return;
@@ -230,6 +237,7 @@ async function connectAndBind(
 
   // 客户端在 await 期间就断了：别留悬空的上游连接（会持续计费）。
   if (client.readyState !== client.OPEN) {
+    endVoiceDispatch();
     await upstream.close().catch(() => undefined);
     return;
   }

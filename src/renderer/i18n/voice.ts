@@ -45,6 +45,9 @@ export const voiceZh = {
       active: '正在执行',
       assignee: '由 {name} 执行',
       queued: '已排队',
+      running: '进行中',
+      done: '已完成',
+      cancelled: '已取消',
       failed: '失败',
     },
     call: {
@@ -150,6 +153,9 @@ export const voiceEn: typeof voiceZh = {
       active: 'Working',
       assignee: 'Assigned to {name}',
       queued: 'Queued',
+      running: 'Running',
+      done: 'Done',
+      cancelled: 'Cancelled',
       failed: 'Failed',
     },
     call: {

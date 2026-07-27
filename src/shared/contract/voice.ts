@@ -15,12 +15,20 @@ export type VoiceTurnDetectionConfig =
   | { type: 'semantic_vad'; eagerness?: 'low' | 'medium' | 'high' | 'auto' }
   | null;
 
-/** 通话里派出的一件活。Phase 1 批 A 只有 queued / failed 两个真实终态，进度细分留给 Phase 2。 */
+/**
+ * 通话里派出的一件活。
+ *
+ * Phase 2 批 H 补齐全生命周期：此前只有 queued / failed 两态——run 干完了不发任何事件，
+ * Active Work 条上它永远停在「排队中」，通话 brain 也拿不到「做完了」的依据。
+ * 状态迁移由 TaskManager 的 task_started / task_completed / task_error / task_cancelled 驱动。
+ */
+export type VoiceWorkItemStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+
 export interface VoiceWorkItem {
   id: string;
   title: string;
-  status: 'queued' | 'failed';
-  /** 失败原因，供 UI 显示；成功排上队时没有 */
+  status: VoiceWorkItemStatus;
+  /** 失败原因，供 UI 显示；其余状态没有 */
   detail?: string;
 }
 

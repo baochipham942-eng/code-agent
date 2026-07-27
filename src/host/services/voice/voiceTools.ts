@@ -1,9 +1,9 @@
 // ============================================================================
-// 通话侧窄工具（方案 §6.2 模式 A）
+// 通话侧窄工具（方案 §6.2）—— 注册面 + 参数解析
 //
-// 只挂三个：两个只读查询 + 一个「派活」。派活本身**不执行任何动作**，它把请求
-// 转成一轮普通的 Neo 对话（带 agentOverrideId），真正的读写/命令由既有 agent
-// runtime 跑，权限走既有判定链 + D4 通话抬严。通话 brain 全程零写权限（D5）。
+// 本文件只做两件事：给上游注册工具 JSON Schema，把 function_call 的原始参数解析成
+// VoiceIntent。一切执行、权限、记账都在 voiceAgentCoordinator（模式 B 的单一 chokepoint）。
+// 通话 brain 全程零写权限（D5）。
 //
 // 2026-07-26 实测（见收口报告）：DashScope Realtime 的 tools 支持**按模型分化**——
 // qwen3.5-omni-*-realtime 接受 tools 并真发 function_call；上一代
@@ -12,14 +12,9 @@
 // 要留痕告警——静默降级会让语音指挥台看起来只是「模型不肯调工具」。
 // ============================================================================
 
-import type { VoiceToolDefinition, VoiceWorkItem } from '../../../shared/contract/voice';
-import { VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
-import { getIncompleteTasks } from '../planning/taskStore';
-import { getSessionManager } from '../infra/sessionManager';
+import type { VoiceToolDefinition } from '../../../shared/contract/voice';
 import { createLogger } from '../infra/logger';
-import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
-import { withWorkbenchTurnSystemContext } from '../../app/workbenchTurnContext';
-import { getPermissionModeManager } from '../../permissions/modes';
+import { dispatchVoiceIntent, type VoiceIntent } from './voiceAgentCoordinator';
 
 const logger = createLogger('VoiceTools');
 
@@ -51,129 +46,79 @@ export const VOICE_TOOL_DEFINITIONS: VoiceToolDefinition[] = [
       required: ['title', 'prompt'],
     },
   },
+  {
+    type: 'function',
+    name: 'steer_task',
+    description:
+      '在正在跑的任务上改方向。用户说「等一下，改成……」「不是这样，应该……」时调用。'
+      + '不会重新开始，是打断当前这轮并按新要求继续。',
+    parameters: {
+      type: 'object',
+      properties: {
+        instruction: { type: 'string', description: '新的要求，要包含用户的原话要点' },
+      },
+      required: ['instruction'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'cancel_task',
+    description: '停掉正在跑的任务。用户说「算了」「别做了」「停下」时调用。',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
 ];
 
-export interface VoiceToolContext {
-  neoSessionId: string;
-  /** 派活时带上的专家身份；undefined = 会话默认 agent（自动路由） */
-  activeAgentId?: string;
-  /** 任务状态回流：进通话摘要计数 + 推给 Renderer 的 Active Work 条 */
-  onWorkItem: (item: VoiceWorkItem) => void;
-}
-
 /** 上游 function_call 的执行出口。返回值原样回灌给通话 brain（纯文本）。 */
-export async function executeVoiceTool(
-  name: string,
-  rawArguments: string,
-  context: VoiceToolContext,
-): Promise<string> {
+export async function executeVoiceTool(name: string, rawArguments: string): Promise<string> {
+  const intent = toIntent(name, rawArguments);
+  if (typeof intent === 'string') return intent;
   try {
-    switch (name) {
-      case 'get_active_tasks':
-        return describeActiveTasks(context.neoSessionId);
-      case 'get_current_file_summary':
-        return await describeRecentFiles(context.neoSessionId);
-      case 'spawn_task':
-        return await spawnTask(rawArguments, context);
-      default:
-        // 上游只可能调我们注册过的名字；调了别的说明注册面和执行面不同步，必须留痕。
-        logger.warn('unknown voice tool call', { name });
-        return `不支持的工具：${name}`;
-    }
+    return await dispatchVoiceIntent(intent);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown error';
-    logger.warn('voice tool failed', { name, message });
+    logger.warn('voice intent failed', { name, message });
     return `工具执行失败：${message}`;
   }
 }
 
-function describeActiveTasks(neoSessionId: string): string {
-  const tasks = getIncompleteTasks(neoSessionId);
-  if (!tasks.length) return '当前没有进行中的任务。';
-  return tasks.map((task) => `- ${task.subject}（${task.status}）`).join('\n');
-}
-
-/**
- * 「最近动过的文件」取自会话消息里工具调用的 file_path——host 侧没有编辑器意义上的
- * 「当前文件」（那是 Renderer 的焦点态，方案 §6.5 的 [Context — Focus] 需要一条
- * Renderer→Host 的焦点上报通道，本批没做）。这里给的是会话内真实发生过的文件动作。
- */
-async function describeRecentFiles(neoSessionId: string): Promise<string> {
-  const session = await getSessionManager().getSession(neoSessionId, 30);
-  const paths = new Set<string>();
-  for (const message of session?.messages ?? []) {
-    for (const call of message.toolCalls ?? []) {
-      const filePath = (call.arguments as Record<string, unknown> | undefined)?.file_path;
-      if (typeof filePath === 'string' && filePath) paths.add(filePath);
+/** 解析成功返回 Intent，失败返回一句给通话 brain 的人话。 */
+function toIntent(name: string, rawArguments: string): VoiceIntent | string {
+  switch (name) {
+    case 'get_active_tasks':
+      return { kind: 'status' };
+    case 'get_current_file_summary':
+      return { kind: 'recent_files' };
+    case 'cancel_task':
+      return { kind: 'cancel_task' };
+    case 'spawn_task': {
+      const args = parseArgs(rawArguments);
+      if (!args) return '任务参数解析失败，请重说一遍要做什么。';
+      const prompt = str(args.prompt);
+      if (!prompt) return '缺少任务内容，没有派发。';
+      return { kind: 'spawn_task', title: str(args.title) || prompt.slice(0, 30), prompt };
     }
+    case 'steer_task': {
+      const args = parseArgs(rawArguments);
+      if (!args) return '改方向的内容没听清，什么都没改。请重说一遍。';
+      const instruction = str(args.instruction);
+      if (!instruction) return '没听清要改成什么，什么都没改。';
+      return { kind: 'steer_task', instruction };
+    }
+    default:
+      // 上游只可能调我们注册过的名字；调了别的说明注册面和执行面不同步，必须留痕。
+      logger.warn('unknown voice tool call', { name });
+      return `不支持的工具：${name}`;
   }
-  if (!paths.size) return '本次会话还没有读写过文件。';
-  return [...paths].slice(-VOICE_RECENT_FILE_LIMIT).map((path) => `- ${path}`).join('\n');
 }
 
-/**
- * 派活：转成一轮普通对话交给既有 runtime。
- *
- * 不 await 整轮跑完——通话不能被一个几分钟的 run 冻住（方案 §6.4）。
- * agentOverrideId 让这一轮和文本侧走同一条身份链（连接器收窄、角色资料注入都在那条链上）。
- */
-async function spawnTask(rawArguments: string, context: VoiceToolContext): Promise<string> {
-  let parsed: { title?: string; prompt?: string };
+function parseArgs(rawArguments: string): Record<string, unknown> | null {
   try {
-    parsed = JSON.parse(rawArguments || '{}') as { title?: string; prompt?: string };
+    return JSON.parse(rawArguments || '{}') as Record<string, unknown>;
   } catch {
-    return '任务参数解析失败，请重说一遍要做什么。';
+    return null;
   }
-  const prompt = parsed.prompt?.trim();
-  const title = parsed.title?.trim() || prompt?.slice(0, 30) || '语音派发任务';
-  if (!prompt) return '缺少任务内容，没有派发。';
+}
 
-  const { getTaskManager } = await import('../../task');
-  const orchestrator = getTaskManager().getOrCreateCurrentOrchestrator(context.neoSessionId);
-  if (!orchestrator) {
-    logger.warn('no orchestrator for voice spawn_task', { neoSessionId: context.neoSessionId });
-    return '现在派不出任务（会话执行器不可用），可以稍后再说一次。';
-  }
-
-  // 身份链和文本轮同源。两件事都得做，各自的消费点不同：
-  //   · turnSystemContext ← buildRoleContextBlock：执行 run 的全量 L0/L1（§6.7.3）。
-  //     主 agent 轮**不会**自动注入角色资料，每个 host 调用方都得自己灌（cron / 组队 / 醒来都这样）。
-  //   · withWorkbenchTurnSystemContext：连接器收窄的**唯一**发生地——它只在
-  //     agentAppService 的两个 renderer 入口被调过，host 直调 sendMessage 一律绕开它。
-  //     不显式过这一道，专家 agent.md 里声明的 connectors 在语音派的活上就是不生效（#637 同款形状）。
-  const roleContextBlock = context.activeAgentId
-    ? await buildRoleContextBlock(context.activeAgentId).catch(() => null)
-    : null;
-  const scopedOptions = withWorkbenchTurnSystemContext({
-    mode: 'normal',
-    ...(context.activeAgentId ? { agentOverrideId: context.activeAgentId } : {}),
-    ...(roleContextBlock ? { turnSystemContext: [roleContextBlock] } : {}),
-    maxIterations: VOICE_SPAWN_TASK_MAX_ITERATIONS,
-  });
-
-  const workItemId = `voice-work-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  context.onWorkItem({ id: workItemId, title, status: 'queued' });
-
-  // D4 抬严必须罩住这个 run 的**整个生命周期**，不能随挂断解除。
-  // 2026-07-26 真机：用户说完就挂（这是常态），通话票一还、抬严没了，
-  // 同一个 run 后面几步直接按会话档 acceptEdits 落盘，一次确认都没弹。
-  // 所以派发前先为这个 run 单独取一张票，run 落地（成功/失败都算）才还。
-  const permissions = getPermissionModeManager();
-  const runHoldId = `run:${workItemId}`;
-  permissions.markLiveVoiceSession(context.neoSessionId, runHoldId);
-
-  void orchestrator
-    .sendMessage(prompt, undefined, { ...scopedOptions, mode: 'normal' })
-    .catch((err: unknown) => {
-      const detail = err instanceof Error ? err.message : 'unknown';
-      logger.warn('voice spawned task failed', { title, message: detail });
-      // 派发失败必须回流：真机实测过一次「任务其实没跑起来，通话里却说已经做完了」，
-      // fire-and-forget 不回流就等于对用户撒谎。
-      context.onWorkItem({ id: workItemId, title, status: 'failed', detail });
-    })
-    // finally 而非 then：run 挂了也必须还票，否则会话永久卡在只读档。
-    .finally(() => permissions.clearLiveVoiceSession(context.neoSessionId, runHoldId));
-
-  // 措辞必须是「排上队」不是「做好了」——通话 brain 会把工具返回值当事实转述给用户。
-  return `任务「${title}」已经排上队，还在后台跑，没做完。别说已经完成。`;
+function str(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }

@@ -80,6 +80,9 @@ import { createRunContext, type RunHandle } from '../runtime/runContext';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
 import { resolveWorkspacePath } from '../runtime/workspaceScope';
+import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
+import { getAuthService } from '../services/auth/authService';
+import { getDatabase } from '../services/core/databaseService';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
@@ -1230,8 +1233,13 @@ export class AgentOrchestrator {
         rolePresetSessionId = sessionId;
       }
       const runSession = sessionId ? await getSessionManager().getSession(sessionId) : undefined;
-      const workspaceScope = runSession?.projectId
-        ? getProjectService().getWorkspaceScope(runSession.projectId)
+      const workspaceScope = runSession
+        ? resolveSessionWorkspaceScope(
+            runSession,
+            getAuthService().getCurrentUser()?.id ?? null,
+            getDatabase(),
+            getProjectService(),
+          )
         : undefined;
       const runWorkingDirectory = workspaceScope
         ? (resolveWorkspacePath(workspaceScope, this.workingDirectory, 'read')

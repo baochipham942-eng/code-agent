@@ -24,6 +24,11 @@ import {
 import { createLogger } from '../services/infra/logger';
 import { assertAdminAccess } from './adminGuard';
 import { getArtifactIssueRepository } from '../services/core/repositories/ArtifactIssueRepository';
+import { SessionForkError } from '../../shared/contract/sessionFork';
+import { SessionRewindError } from '../../shared/contract/sessionRewind';
+import { ConversationBranchError } from '../../shared/contract/conversationBranch';
+import { SessionForkPortabilityError } from '../../shared/contract/sessionForkPortability';
+import { WorkspaceFileRestoreError } from '../../shared/contract/fileRestore';
 
 /** Inline stub — old memoryTriggerService removed */
 type SessionMemoryContext = unknown;
@@ -75,6 +80,119 @@ export function registerSessionHandlers(
         case 'getSessionTasks':
           data = await requireAppService().getSessionTasks((payload as { sessionId: string }).sessionId);
           break;
+        case 'fork':
+          data = await requireAppService().forkSession(
+            payload as import('../../shared/contract/sessionFork').CreateSessionForkRequest,
+          );
+          break;
+        case 'getForkLineage':
+          data = await requireAppService().getForkLineage((payload as { sessionId: string }).sessionId);
+          break;
+        case 'listForkChildren':
+          data = await requireAppService().listForkChildren((payload as { sessionId: string }).sessionId);
+          break;
+        case 'exportSessionFork':
+          data = await requireAppService().exportSessionFork(
+            payload as import('../../shared/contract/sessionForkPortability').ExportSessionForkRequest,
+          );
+          break;
+        case 'importSessionFork':
+          data = await requireAppService().importSessionFork(
+            payload as import('../../shared/contract/sessionForkPortability').ImportSessionForkRequest,
+          );
+          break;
+        case 'enqueueSessionForkSync':
+          data = await requireAppService().enqueueSessionForkSync(
+            payload as import('../../shared/contract/sessionForkPortability').EnqueueSessionForkSyncRequest,
+          );
+          break;
+        case 'ingestSessionForkSync':
+          data = await requireAppService().ingestSessionForkSync(
+            payload as import('../../shared/contract/sessionForkPortability').IngestSessionForkSyncRequest,
+          );
+          break;
+        case 'importReadySessionForkSync':
+          data = await requireAppService().importReadySessionForkSync(
+            payload as import('../../shared/contract/sessionForkPortability').ImportReadySessionForkSyncRequest,
+          );
+          break;
+        case 'searchSessionForkExports':
+          data = await requireAppService().searchSessionForkExports(
+            payload as import('../../shared/contract/sessionForkPortability').SearchSessionForkExportsRequest,
+          );
+          break;
+        case 'readSessionForkTree':
+          data = await requireAppService().readSessionForkTree(
+            payload as import('../../shared/contract/sessionForkPortability').ReadSessionForkTreeRequest,
+          );
+          break;
+        case 'readSessionForkNeighborhood':
+          data = await requireAppService().readSessionForkNeighborhood(
+            payload as import('../../shared/contract/sessionForkPortability').ReadSessionForkNeighborhoodRequest,
+          );
+          break;
+        case 'replayConversationBranch': {
+          const p = payload as {
+            sessionId: string;
+            options?: { includeRewound?: boolean; allowRepairOverride?: boolean };
+          };
+          data = await requireAppService().replayConversationBranch(p.sessionId, p.options);
+          break;
+        }
+        case 'compareConversationBranches': {
+          const p = payload as { leftSessionId: string; rightSessionId: string };
+          data = await requireAppService().compareConversationBranches(
+            p.leftSessionId,
+            p.rightSessionId,
+          );
+          break;
+        }
+        case 'traceConversationProvenance': {
+          const p = payload as { sessionId: string; messageId: string };
+          data = await requireAppService().traceConversationProvenance(p.sessionId, p.messageId);
+          break;
+        }
+        case 'auditConversationLineage':
+          data = await requireAppService().auditConversationLineage(
+            (payload as { sessionId: string }).sessionId,
+          );
+          break;
+        case 'quarantineConversationLineage': {
+          const p = payload as { sessionId: string; idempotencyKey: string };
+          data = await requireAppService().quarantineConversationLineage(
+            p.sessionId,
+            p.idempotencyKey,
+          );
+          break;
+        }
+        case 'repairConversationLineage':
+          data = await requireAppService().repairConversationLineage(
+            payload as {
+              sessionId: string;
+              issueDigest: string;
+              reason: string;
+              idempotencyKey: string;
+            },
+          );
+          break;
+        case 'recordConversationEvaluationAttribution':
+          data = await requireAppService().recordConversationEvaluationAttribution(
+            payload as {
+              sessionId: string;
+              evaluationId: string;
+              runId?: string | null;
+              metric: string;
+              value: number;
+              attributedMessageIds: string[];
+              idempotencyKey: string;
+            },
+          );
+          break;
+        case 'listConversationEvaluationAttributions':
+          data = await requireAppService().listConversationEvaluationAttributions(
+            (payload as { sessionId: string }).sessionId,
+          );
+          break;
         case 'getRecap': {
           // A6 回会话追赶：素材只来自产物快照 + 任务账本，不读消息流水。
           const p = payload as { sessionId: string; since?: number };
@@ -83,10 +201,25 @@ export function registerSessionHandlers(
           break;
         }
         case 'rewindToPrompt': {
-          const p = payload as { sessionId: string; userMessageId: string };
+          const p = payload as { sessionId: string; userMessageId: string; idempotencyKey?: string };
           data = await requireAppService().rewindToPrompt(p);
           break;
         }
+        case 'rewindConversation':
+          data = await requireAppService().rewindConversation(
+            payload as import('../../shared/contract/sessionRewind').RewindConversationRequest,
+          );
+          break;
+        case 'restoreConversationRewind':
+          data = await requireAppService().restoreConversationRewind(
+            payload as import('../../shared/contract/sessionRewind').RestoreConversationRewindRequest,
+          );
+          break;
+        case 'restoreWorkspaceFilesAtCheckpoint':
+          data = await requireAppService().restoreWorkspaceFilesAtCheckpoint(
+            payload as import('../../shared/contract/fileRestore').RestoreWorkspaceFilesAtCheckpointRequest,
+          );
+          break;
         case 'export':
           data = await requireAppService().exportSession((payload as { sessionId: string }).sessionId);
           break;
@@ -153,7 +286,13 @@ export function registerSessionHandlers(
       return {
         success: false,
         error: {
-          code: 'INTERNAL_ERROR',
+          code: error instanceof SessionForkError
+            || error instanceof SessionRewindError
+            || error instanceof ConversationBranchError
+            || error instanceof SessionForkPortabilityError
+            || error instanceof WorkspaceFileRestoreError
+            ? error.code
+            : 'INTERNAL_ERROR',
           message: error instanceof Error ? error.message : String(error),
         },
       };

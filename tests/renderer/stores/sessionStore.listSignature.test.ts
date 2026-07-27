@@ -58,4 +58,42 @@ describe('sessionsSignature', () => {
     const two = [session({ id: 'a', updatedAt: 100 }), session({ id: 'b', updatedAt: 100 })];
     expect(sessionsSignature(one)).not.toBe(sessionsSignature(two));
   });
+
+  it('changes when Project or explicit Fork lineage changes', () => {
+    const lineage = {
+      forkId: 'fork-1',
+      rootSessionId: 'source',
+      parentSessionId: 'source',
+      childSessionId: 'fork-child',
+      sourceAnchorMessageId: 'a2',
+      anchorChildMessageId: 'child-a2',
+      depth: 1,
+      workspaceMode: 'shared_current' as const,
+      contextDeliveryMode: 'neo_native_prefix' as const,
+      status: 'completed' as const,
+      syncState: 'local_only' as const,
+      createdAt: 100,
+    };
+    const base = [session({
+      id: 'fork-child',
+      updatedAt: 100,
+      projectId: 'project-a',
+      metadata: { forkLineage: lineage },
+    })];
+
+    expect(sessionsSignature(base)).not.toBe(sessionsSignature([
+      session({ ...base[0], projectId: 'project-b' }),
+    ]));
+    expect(sessionsSignature(base)).not.toBe(sessionsSignature([
+      session({
+        ...base[0],
+        metadata: {
+          forkLineage: {
+            ...lineage,
+            workspaceMode: 'isolated_at_anchor',
+          },
+        },
+      }),
+    ]));
+  });
 });

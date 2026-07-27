@@ -29,6 +29,13 @@ import { classifyAgentEngineFailure, formatAgentEngineFailureContent } from './a
 import { assertExternalRuntimeAttachments } from '../../model/providerRuntimeCapabilities';
 import { extractExternalModelUsage, type ExternalEngineDurableLifecycle } from './externalEngineDurableLifecycle';
 import type { ExternalEngineResumeLaunch } from './externalEngineResumeBuilders';
+import {
+  assertExternalForkContextDispatchLifecycle,
+  composeExternalForkLaunchPrompt,
+  summarizeExternalForkContextHandoff,
+  type ExternalForkContextDispatchCallback,
+  type ExternalForkContextHandoff,
+} from '../sessionFork/context';
 
 const EMPTY_RESPONSE_MESSAGE = 'Claude Code returned an empty response.';
 
@@ -41,6 +48,13 @@ export interface ClaudeCodeRunRequest extends AgentEngineRunRequest {
   stallWarningMs?: number;
   durableLifecycle?: ExternalEngineDurableLifecycle;
   resumeLaunch?: ExternalEngineResumeLaunch;
+  /**
+   * Audited fork prefix for the first child run. This starts a new Claude
+   * provider session and may never be combined with --resume.
+   */
+  forkContextHandoff?: ExternalForkContextHandoff;
+  onForkContextDispatchStart?: ExternalForkContextDispatchCallback;
+  onForkContextDispatched?: ExternalForkContextDispatchCallback;
 }
 
 interface ClaudeParsedEvent {
@@ -57,6 +71,22 @@ interface ClaudeParsedEvent {
 export class ClaudeCodeAdapter {
   async run(request: ClaudeCodeRunRequest): Promise<AgentEngineRunResult> {
     assertExternalRuntimeAttachments('claude_code', request.attachmentsCount, 'Claude Code P1');
+    const launchPrompt = request.forkContextHandoff
+      ? composeExternalForkLaunchPrompt({
+          engine: 'claude_code',
+          handoff: request.forkContextHandoff,
+          prompt: request.prompt,
+          resumeLaunchPresent: Boolean(request.resumeLaunch),
+        })
+      : request.prompt;
+    const forkContextAudit = request.forkContextHandoff
+      ? summarizeExternalForkContextHandoff(request.forkContextHandoff)
+      : undefined;
+    assertExternalForkContextDispatchLifecycle(
+      request.forkContextHandoff,
+      request.onForkContextDispatchStart,
+      request.onForkContextDispatched,
+    );
 
     const cwd = assertWorkspaceCwd(request.cwd, request.workspaceRoot);
     const registry = getAgentEngineRegistry();
@@ -118,6 +148,7 @@ export class ClaudeCodeAdapter {
         kind: 'claude_code',
         model,
         runId,
+        externalSessionId: request.resumeLaunch?.externalSessionId,
         logPath,
         cwd,
         permissionProfile,
@@ -149,6 +180,7 @@ export class ClaudeCodeAdapter {
         logPath,
         timeoutMs: timing.timeoutMs,
         stallWarningMs: timing.stallWarningMs,
+        ...(forkContextAudit ? { forkContext: forkContextAudit } : {}),
       },
     });
     ledger.appendEvent({
@@ -181,7 +213,28 @@ export class ClaudeCodeAdapter {
       model,
       permissionProfile,
     });
-    child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : request.prompt));
+    const onForkContextDispatchStart = request.onForkContextDispatchStart;
+    const onForkContextDispatched = request.onForkContextDispatched;
+    try {
+      if (forkContextAudit) {
+        if (!onForkContextDispatchStart || !onForkContextDispatched) {
+          throw new Error('Fork context dispatch lifecycle disappeared after validation');
+        }
+        await onForkContextDispatchStart(forkContextAudit);
+        child.stdin.end(launchPrompt);
+      } else {
+        child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : launchPrompt));
+      }
+    } catch (error) {
+      logStream.end();
+      try {
+        if (request.durableLifecycle) await request.durableLifecycle.terminateProcess('SIGTERM');
+        else child.kill('SIGTERM');
+      } catch {
+        // Preserve the dispatch lifecycle failure that left the durable state fail-closed.
+      }
+      throw error;
+    }
 
     let stdoutBuffer = '';
     let stderrText = '';
@@ -189,7 +242,8 @@ export class ClaudeCodeAdapter {
     let resultText = '';
     let cliErrorText = '';
     let cliErrorStatusCode: number | undefined;
-    let externalSessionId: string | undefined;
+    let observedExternalSessionId: string | undefined;
+    let confirmedExternalSessionId: string | undefined;
     let spawnErrorMessage: string | undefined;
     let timeoutMessage: string | undefined;
     let resumeIdentityError: string | undefined;
@@ -249,12 +303,12 @@ export class ClaudeCodeAdapter {
       const usage = extractExternalModelUsage(line);
       if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
       if (parsed.externalSessionId) {
-        externalSessionId = parsed.externalSessionId;
+        observedExternalSessionId = parsed.externalSessionId;
         if (request.resumeLaunch && parsed.externalSessionId !== request.resumeLaunch.externalSessionId) {
           resumeIdentityError = 'Claude resumed a different external session';
           void request.durableLifecycle?.terminateProcess('SIGTERM');
         } else {
-          request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
+          confirmedExternalSessionId = parsed.externalSessionId;
         }
       }
       if (parsed.textDelta && (parsed.textDeltaSource !== 'snapshot' || streamedText.length === 0)) {
@@ -343,11 +397,36 @@ export class ClaudeCodeAdapter {
     }
 
     const completedAt = Date.now();
-    if (request.resumeLaunch && !externalSessionId && !resumeIdentityError) {
+    if (request.resumeLaunch && !observedExternalSessionId && !resumeIdentityError) {
       resumeIdentityError = 'Claude resume did not confirm the external session identity';
+    }
+    if (request.forkContextHandoff && !confirmedExternalSessionId && !resumeIdentityError) {
+      resumeIdentityError = 'Claude fork handoff did not confirm a new external session identity';
     }
     const emptyResponse = !finalText && !cliErrorText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
     const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0 || emptyResponse);
+    const sessionExternalSessionId = failed
+      ? request.resumeLaunch?.externalSessionId
+      : confirmedExternalSessionId ?? request.resumeLaunch?.externalSessionId;
+    if (forkContextAudit && !failed) {
+      if (!onForkContextDispatched) {
+        throw new Error('Fork context dispatch lifecycle disappeared after provider identity confirmation');
+      }
+      try {
+        await onForkContextDispatched(forkContextAudit);
+      } catch (error) {
+        try {
+          if (request.durableLifecycle) await request.durableLifecycle.terminateProcess('SIGTERM');
+          else child.kill('SIGTERM');
+        } catch {
+          // Preserve the consumed-state persistence failure and leave the handoff fail-closed.
+        }
+        throw error;
+      }
+    }
+    if (!failed && sessionExternalSessionId) {
+      request.durableLifecycle?.persistExternalSessionId(sessionExternalSessionId);
+    }
 
     ledger.addOutputRef({
       taskId,
@@ -370,7 +449,7 @@ export class ClaudeCodeAdapter {
       kind: 'claude_code',
       model,
       runId,
-      externalSessionId,
+      externalSessionId: sessionExternalSessionId,
       logPath,
       cwd,
       permissionProfile,
@@ -512,7 +591,7 @@ export class ClaudeCodeAdapter {
       type: 'agent_engine.completed',
       status: 'completed',
       message: 'Claude Code run completed',
-      data: { runId, logPath, externalSessionId },
+      data: { runId, logPath, externalSessionId: sessionExternalSessionId },
     });
     ledger.queueNotification({
       taskId,

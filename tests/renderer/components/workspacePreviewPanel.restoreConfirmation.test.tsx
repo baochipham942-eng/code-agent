@@ -196,11 +196,19 @@ describe('WorkspacePreviewPanel restore confirmation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Restore checkpoint' }));
     fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
 
-    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith(
-      IPC_CHANNELS.CHECKPOINT_REWIND,
-      'session-1',
-      'message-1',
+    await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.SESSION,
+      'restoreWorkspaceFilesAtCheckpoint',
+      {
+        sessionId: 'session-1',
+        checkpointMessageId: 'message-1',
+      },
     ));
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.CHECKPOINT_REWIND,
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it('never calls checkpoint rewind after cancellation', () => {
@@ -209,7 +217,11 @@ describe('WorkspacePreviewPanel restore confirmation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Restore checkpoint' }));
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.invokeDomain).not.toHaveBeenCalledWith(
+      IPC_DOMAINS.SESSION,
+      'restoreWorkspaceFilesAtCheckpoint',
+      expect.anything(),
+    );
     expect(screen.queryByRole('dialog', { name: '恢复到这个时间点？' })).toBeNull();
   });
 });

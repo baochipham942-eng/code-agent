@@ -160,7 +160,7 @@ MessageContent 通过 markdown 代码块的语言标签路由到不同渲染组�
 
 当前 ChatInput 常驻项按 B+ 口径收敛为：`+`、权限模式、当前 agent、session memory、上下文用量、模型+effort+engine 胶囊、语音、发送。`InlineWorkbenchBar` 在输入区上方承载 Skills/MCP scope 和 Auto/Manual routing；Live Preview 属于低频 session action，入口在 `SessionActionsMenu`。
 
-Prompt Rewind 需要把历史用户提示词重新放回输入框，所以 `ChatInputHandle` 暴露 `setDraft({ content, attachments })` 和 `focus()`；`ChatView` 在 `rewindToPrompt` 成功后调用它，并用返回的 `activeMessages` 刷新当前会话消息。
+Prompt Rewind 需要把历史用户提示词重新放回输入框，所以 `ChatInputHandle` 暴露 `setDraft({ content, attachments })` 和 `focus()`；`ChatView` 在 `rewindConversation` 成功后调用它，并用返回的 `activeMessages` 刷新当前会话消息。`ActiveConversationRewindBanner` 单独调用 `restoreConversationRewind`；工作区文件恢复走独立的 `restoreWorkspaceFilesAtCheckpoint`，不和消息可见性写入绑定。
 
 ### 2026-06-18 输入推荐降噪与非流式工具顺序
 

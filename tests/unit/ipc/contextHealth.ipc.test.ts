@@ -126,6 +126,10 @@ import type { AgentApplicationService } from '../../../src/shared/contract/appSe
 import type { CompactResult } from '../../../src/shared/contract/contextHealth';
 import type { Message } from '../../../src/shared/contract';
 
+async function unsupportedAppServiceOperation(): Promise<never> {
+  throw new Error('not implemented');
+}
+
 function makeAppService(sessionId: string, messages: Message[], modelOverride?: string): AgentApplicationService {
   return {
     getMessages: async () => messages,
@@ -145,6 +149,28 @@ function makeAppService(sessionId: string, messages: Message[], modelOverride?: 
     updateSession: async () => {},
     archiveSession: async () => null,
     unarchiveSession: async () => null,
+    forkSession: unsupportedAppServiceOperation,
+    getForkLineage: unsupportedAppServiceOperation,
+    listForkChildren: unsupportedAppServiceOperation,
+    exportSessionFork: unsupportedAppServiceOperation,
+    importSessionFork: unsupportedAppServiceOperation,
+    enqueueSessionForkSync: unsupportedAppServiceOperation,
+    ingestSessionForkSync: unsupportedAppServiceOperation,
+    importReadySessionForkSync: unsupportedAppServiceOperation,
+    searchSessionForkExports: unsupportedAppServiceOperation,
+    readSessionForkTree: unsupportedAppServiceOperation,
+    readSessionForkNeighborhood: unsupportedAppServiceOperation,
+    replayConversationBranch: unsupportedAppServiceOperation,
+    compareConversationBranches: unsupportedAppServiceOperation,
+    traceConversationProvenance: unsupportedAppServiceOperation,
+    auditConversationLineage: unsupportedAppServiceOperation,
+    quarantineConversationLineage: unsupportedAppServiceOperation,
+    repairConversationLineage: unsupportedAppServiceOperation,
+    recordConversationEvaluationAttribution: unsupportedAppServiceOperation,
+    listConversationEvaluationAttributions: unsupportedAppServiceOperation,
+    rewindConversation: unsupportedAppServiceOperation,
+    restoreConversationRewind: unsupportedAppServiceOperation,
+    restoreWorkspaceFilesAtCheckpoint: unsupportedAppServiceOperation,
     loadOlderMessages: async () => ({ messages: [], hasMore: false }),
     exportSession: async () => null,
     exportSessionMarkdown: async () => ({ markdown: '', suggestedFileName: 'session.md' }),

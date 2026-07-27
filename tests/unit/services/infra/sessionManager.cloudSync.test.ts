@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { UNSORTED_PROJECT_ID } from '../../../../src/shared/contract/project';
 
 const sendMock = vi.fn();
+const ensureProjectForWorkspaceMock = vi.fn();
 
 const dbState = {
   sessions: [] as any[],
@@ -60,6 +62,12 @@ vi.mock('../../../../src/host/services/infra/supabaseService', () => ({
   }),
 }));
 
+vi.mock('../../../../src/host/services/project/projectService', () => ({
+  getProjectService: () => ({
+    ensureProjectForWorkspace: ensureProjectForWorkspaceMock,
+  }),
+}));
+
 describe('SessionManager cloud sync notifications', () => {
   beforeEach(() => {
     dbState.sessions = [];
@@ -71,6 +79,8 @@ describe('SessionManager cloud sync notifications', () => {
     dbMock.updateSession.mockClear();
     dbMock.logAuditEvent.mockClear();
     supabaseLimitMock.mockReset();
+    ensureProjectForWorkspaceMock.mockReset();
+    ensureProjectForWorkspaceMock.mockResolvedValue({ id: UNSORTED_PROJECT_ID });
   });
 
   it('broadcasts session:list-updated after creating a local session', async () => {
@@ -85,6 +95,7 @@ describe('SessionManager cloud sync notifications', () => {
     expect(dbMock.createSession).toHaveBeenCalledWith(expect.objectContaining({
       id: session.id,
       title: 'REST-created session',
+      projectId: UNSORTED_PROJECT_ID,
     }));
     expect(dbMock.logAuditEvent).toHaveBeenCalledWith('session_created', { sessionId: session.id }, session.id);
     expect(sendMock).toHaveBeenCalledTimes(1);
@@ -123,6 +134,65 @@ describe('SessionManager cloud sync notifications', () => {
 
     expect(dbMock.createSessionWithId).not.toHaveBeenCalled();
     expect(dbMock.updateSession).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('resolves a canonical Project before writing a newly discovered cloud session', async () => {
+    supabaseLimitMock.mockResolvedValue({
+      data: [{
+        id: 'remote-session',
+        title: 'Remote',
+        model_provider: 'openai',
+        model_name: 'gpt-5',
+        working_directory: '/repo/cloud',
+        created_at: 10,
+        updated_at: 20,
+        is_deleted: false,
+      }],
+      error: null,
+    });
+    ensureProjectForWorkspaceMock.mockResolvedValue({ id: 'project-cloud' });
+    const { SessionManager } = await import('../../../../src/host/services/infra/sessionManager');
+    const manager = new SessionManager();
+
+    await manager.listSessions();
+
+    await vi.waitFor(() => {
+      expect(dbMock.createSessionWithId).toHaveBeenCalledWith(
+        'remote-session',
+        expect.objectContaining({
+          userId: 'user-1',
+          projectId: 'project-cloud',
+          workingDirectory: '/repo/cloud',
+        }),
+        { syncOrigin: 'remote' },
+      );
+    });
+    expect(ensureProjectForWorkspaceMock).toHaveBeenCalledWith('/repo/cloud', 20);
+  });
+
+  it('writes nothing when a cloud session Project boundary cannot be resolved', async () => {
+    supabaseLimitMock.mockResolvedValue({
+      data: [{
+        id: 'remote-session',
+        title: 'Remote',
+        model_provider: 'openai',
+        model_name: 'gpt-5',
+        working_directory: '/repo/cloud',
+        created_at: 10,
+        updated_at: 20,
+        is_deleted: false,
+      }],
+      error: null,
+    });
+    ensureProjectForWorkspaceMock.mockRejectedValue(new Error('project unavailable'));
+    const { SessionManager } = await import('../../../../src/host/services/infra/sessionManager');
+    const manager = new SessionManager();
+
+    await manager.listSessions();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(dbMock.createSessionWithId).not.toHaveBeenCalled();
     expect(sendMock).not.toHaveBeenCalled();
   });
 

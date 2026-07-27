@@ -34,7 +34,6 @@ export {
 } from './skillBridge';
 
 export {
-  parseGitHubUrl,
   downloadRepository,
   getLatestCommit,
   checkForUpdates,
@@ -42,7 +41,6 @@ export {
   readRepoMeta,
   saveRepoMeta,
   readRepoMetaAsync,
-  type GitHubRepoInfo,
   type DownloadOptions,
   type DownloadResult,
   type RepoMeta,

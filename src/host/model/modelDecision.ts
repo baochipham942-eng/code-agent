@@ -261,11 +261,17 @@ function messageText(messages: ModelMessage[]): string {
 function inferStrategyIntent(
   messages: ModelMessage[],
   complexity: TaskComplexity,
+  capabilityNeeds: ModelCapabilityNeed[],
 ): TaskStrategyRuleIntent {
   if (hasVisionInput(messages)) return 'vision';
 
   const text = messageText(messages).toLowerCase();
-  if (complexity.level === 'complex' || /研究|规划|方案|重构|架构|对标|分析|audit|review|refactor|architect|migrate|benchmark/.test(text)) {
+  const hasResearchIntent = complexity.level === 'complex'
+    || /研究|规划|方案|重构|架构|对标|分析|audit|review|refactor|architect|migrate|benchmark/.test(text);
+  if (capabilityNeeds.includes('artifact') && !hasResearchIntent) {
+    return 'artifact';
+  }
+  if (hasResearchIntent) {
     return 'research';
   }
   if (/```|\.tsx?|\.jsx?|\.py|\.go|\.rs|\.java|\.css|\.html|package\.json|tsconfig|readme|代码|文件|修复|实现|测试|改/.test(text)) {
@@ -287,8 +293,11 @@ function resolveStrategyProfile(
   intent: TaskStrategyRuleIntent,
 ): { profile: TaskStrategyProfileId; rule?: TaskStrategyRuleSettings } {
   const rule = findEnabledStrategyRule(strategy, intent);
-  if (rule) return { profile: rule.profile, rule };
-  return { profile: strategy.defaultProfile || 'main' };
+  const profile = rule?.profile || strategy.defaultProfile || 'main';
+  return {
+    profile: intent === 'artifact' && profile === 'fast' ? 'main' : profile,
+    ...(rule ? { rule } : {}),
+  };
 }
 
 function applyStrategySlot(
@@ -514,7 +523,7 @@ export function resolveModelDecision(input: ModelDecisionInput): ModelDecisionRe
   if (taskStrategy) {
     const intent = taskStrategy.mode === 'manual'
       ? 'coding'
-      : inferStrategyIntent(messages, complexity);
+      : inferStrategyIntent(messages, complexity, capabilityNeeds);
     const { profile, rule } = taskStrategy.mode === 'manual'
       ? { profile: (taskStrategy.defaultProfile || 'main') as TaskStrategyProfileId, rule: undefined }
       : resolveStrategyProfile(taskStrategy, intent);

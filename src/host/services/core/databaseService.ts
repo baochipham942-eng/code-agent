@@ -25,7 +25,7 @@ import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/c
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository } from './repositories';
+import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
@@ -99,6 +99,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private toolExecutionEventRepo!: ToolExecutionEventRepository;
   private swarmLedgerRepo!: SwarmLedgerRepository;
   private usageLedgerRepo!: UsageLedgerRepository;
+  private turnCostRepo!: TurnCostRepository;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
 
@@ -222,6 +223,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       this.toolExecutionEventRepo = new ToolExecutionEventRepository(this.db);
       this.swarmLedgerRepo = new SwarmLedgerRepository(this.db);
       this.usageLedgerRepo = new UsageLedgerRepository(this.db);
+      this.turnCostRepo = new TurnCostRepository(this.db);
       this.initializeDurableRunRepository(this.db);
       step('repos');
 
@@ -1188,6 +1190,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   getPendingApprovalRepo(): PendingApprovalRepository {
     this.ensureDb();
     return this.pendingApprovalRepo;
+  }
+
+  getTurnCostRepo(): TurnCostRepository {
+    this.ensureDb();
+    return this.turnCostRepo;
   }
 
   // --- AgentWakeRepository ---

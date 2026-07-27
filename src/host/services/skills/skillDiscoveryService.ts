@@ -358,11 +358,15 @@ class SkillDiscoveryService {
         // 读取 .meta.json 获取 skillsPath
         const metaPath = path.join(libraryPath, '.meta.json');
         let skillsSubPath = '.'; // 默认 skills 在根目录
+        // .meta.json 是"已下载库"的标记：同一个目录也承载用户手写/蒸馏产出的
+        // 普通 skill（skills/<name>/SKILL.md，无 meta），它们必须留给 user 扫描
+        let isDownloadedLibrary = false;
 
         try {
           const metaContent = await fs.readFile(metaPath, 'utf-8');
           const meta = JSON.parse(metaContent) as LibraryMeta;
           skillsSubPath = meta.skillsPath || '.';
+          isDownloadedLibrary = true;
           logger.debug('Loaded library meta', {
             library: entry.name,
             skillsPath: skillsSubPath,
@@ -375,7 +379,12 @@ class SkillDiscoveryService {
         }
 
         const skillsDir = path.join(libraryPath, skillsSubPath);
-        await this.scanDirectory(skillsDir, 'library');
+        if (isDownloadedLibrary && (await hasSkillMd(skillsDir))) {
+          // single-skill 布局：库根目录本身就是一个 skill
+          await this.loadSkillDirectory(skillsDir, 'library');
+        } else {
+          await this.scanDirectory(skillsDir, 'library');
+        }
       }
 
       logger.debug('Loaded skills from libraries', {

@@ -12,6 +12,9 @@
  */
 export type SkillRepositoryCategory = 'core' | 'workflow' | 'productivity' | 'community';
 
+/** Remote provider used by a skill repository. */
+export type SkillRepoSourceType = 'github' | 'modelscope';
+
 // ----------------------------------------------------------------------------
 // 推荐分类（产物导向）
 // ----------------------------------------------------------------------------
@@ -254,6 +257,27 @@ export interface DownloadResult {
   library?: LocalSkillLibrary;
   /** 错误信息 */
   error?: string;
+}
+
+/** Skill metadata and source text shown before a staged install is confirmed. */
+export interface StagedSkillPreview {
+  name: string;
+  description: string;
+  /** Complete SKILL.md text, including YAML frontmatter. */
+  skillMdContent: string;
+}
+
+/** Result returned by the non-mutating repository staging operation. */
+export interface StageRepositoryResult {
+  success: boolean;
+  error?: string;
+  stageId?: string;
+  repoId?: string;
+  repoName?: string;
+  sourceType?: SkillRepoSourceType;
+  layout?: 'single-skill' | 'library';
+  skills?: StagedSkillPreview[];
+  warnings?: string[];
 }
 
 /**

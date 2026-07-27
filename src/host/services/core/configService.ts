@@ -163,7 +163,7 @@ export class ConfigService implements IReadConfigService {
       const data = await fs.readFile(this.configPath, 'utf-8');
       const loaded = parseJsonValue(data);
       this.settings = isRecord(loaded)
-        ? this.mergeSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>)
+        ? this.mergeAppSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>)
         : { ...DEFAULT_SETTINGS };
     } catch (error) {
       const nodeError = error as NodeJS.ErrnoException;
@@ -261,7 +261,7 @@ export class ConfigService implements IReadConfigService {
         logger.warn('Config reload skipped: file is not a JSON object');
         return false;
       }
-      this.settings = this.mergeSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>);
+      this.settings = this.mergeAppSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>);
       // 与 initialize 末尾保持一致:重新注入需要全局状态的配置
       this.applyUserPermissionRules();
       this.applyProviderConcurrencyOverrides();
@@ -652,7 +652,7 @@ export class ConfigService implements IReadConfigService {
       }
     }
 
-    this.settings = this.mergeSettings(this.settings, updates);
+    this.settings = this.mergeAppSettings(this.settings, updates);
     await this.save();
 
     // 用户更新 permissions.{deny,ask,allow} 后立即重新加载到 PolicyEngine
@@ -1166,6 +1166,25 @@ export class ConfigService implements IReadConfigService {
     } catch (error) {
       logger.error('Failed to sync to Keychain:', error);
     }
+  }
+
+  private mergeAppSettings(base: AppSettings, updates: Partial<AppSettings>): AppSettings {
+    const merged = this.mergeSettings(base, updates);
+    const persistedRules = updates.models?.taskStrategy?.rules;
+    const defaultRules = DEFAULT_SETTINGS.models.taskStrategy?.rules;
+    if (!persistedRules || !defaultRules || !merged.models.taskStrategy) {
+      return merged;
+    }
+
+    const persistedRuleIds = new Set(persistedRules.map((rule) => rule.id));
+    merged.models.taskStrategy = {
+      ...merged.models.taskStrategy,
+      rules: [
+        ...persistedRules,
+        ...defaultRules.filter((rule) => !persistedRuleIds.has(rule.id)),
+      ],
+    };
+    return merged;
   }
 
   private mergeSettings<T extends object>(base: T, updates: Partial<T>): T {

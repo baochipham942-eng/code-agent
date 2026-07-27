@@ -649,8 +649,10 @@ export const Sidebar: React.FC = () => {
           2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
           hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端；灯的纵向由原生 objc
           摆到中心 24（src-tauri/src/traffic_lights.rs），与本行图标同轴。
-          ② 图标在本行**垂直居中**（中心 24），与右侧 TitleBar 的图标同一水平——
-          两条顶栏的控件必须同轴（2026-07-27 产品负责人拍板）。
+          ② 图标在本行**垂直居中**（h-16 ⇒ 中心 32），与右侧 TitleBar 的图标同一水平——
+          两条顶栏的控件必须同轴（2026-07-27 产品负责人拍板），所以 TitleBar 要同高。
+          行高取 64 而不是 48，是为了让图标字形上缘 ≈26，与左右各 26 的 padding 齐
+          （2026-07-28 产品负责人：「红绿灯上面的 padding = 左边的 padding」）。
           ③ 图标**右对齐**（产品负责人 07-27 二次拍板）：`justify-end` + `pr-3` 与分组头 / 会话行
           同一个右内边距 ⇒ 最右那颗 32px 按钮的中心，正好落在分组角标 / 状态点 / 账号箭头
           那条右轨上。写 justify-end 而不是某个 pl 魔法值：图标数量随权限变化（筛选钮仅管理员可见），
@@ -662,7 +664,7 @@ export const Sidebar: React.FC = () => {
           （2026-07-27 产品负责人实测「双击标题栏没反应」）。style 保留是给 web/Electron 兜底。 */}
       <div
         data-tauri-drag-region
-        className="h-12 flex items-center justify-end gap-2 flex-shrink-0 pl-3 pr-3"
+        className="h-16 flex items-center justify-end gap-2 flex-shrink-0 pl-3 pr-3"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* 图标之间不留 gap：32px 按钮首尾相接 ⇒ 中心间距 32，与 Codex 顶栏一致 */}
@@ -849,12 +851,12 @@ export const Sidebar: React.FC = () => {
       )}
 
       {/* Bottom: User Menu or Login */}
-      {/* 上下留白按「与顶行对称」反推，不是拍脑袋：顶行是 h-12(48) 内容居中 ⇒ 中心距顶 24。
-          底部这块也做成 48 高：容器 py-1.5(6) + 行 py-2(8)*2 + 行内容 20(text-sm leading-5) = 48
-          ⇒ 中心距底 6+20 = 24，与顶部对称。
+      {/* 上下留白按「与顶行对称」反推，不是拍脑袋：顶行 h-16(64) 内容居中 ⇒ 中心距顶 32。
+          底部这块也做成 64 高：容器 py-3.5(14) + 行 py-2(8)*2 + 行内容 20(text-sm leading-5) = 64
+          ⇒ 中心距底 14+18 = 32，与顶部对称，四边 padding 于是全等 26。
           注意行内容高由**最高的那个**决定（昵称 text-sm 的 20，不是头像的 16）——
           按 16 算会差 2px，实测才发现（2026-07-28）。横向仍是 8，与其他区块 px-2 同规范。 */}
-      <div className="px-2 py-1.5 relative flex-shrink-0" ref={accountMenuRef}>
+      <div className="px-2 py-3.5 relative flex-shrink-0" ref={accountMenuRef}>
         {isAuthenticated && user ? (
           <>
             <button

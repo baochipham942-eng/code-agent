@@ -13,7 +13,8 @@
 // header 契约：
 // - variant="page"（默认）：标题块坐在内容区顶部，px-6 大标题 + 描述 + 右侧 actions。
 //   这是拍板形态（「标题放右边更清晰」），inline 与 overlay 页共用。
-// - variant="bar"：h-12 紧凑条，与主 TitleBar 同高，留给仍需紧凑顶栏的页面。
+// - variant="bar"：h-12 紧凑条，留给仍需紧凑顶栏的 overlay 页（主 TitleBar 已加高到 h-16，
+//   这里刻意不跟——overlay 页不在侧栏语境里，不参与四角 padding 那套对称）。
 // - onClose 可选：给了才画返回按钮（overlay 页需要，inline 页靠侧栏返回）。
 // ============================================================================
 import React from 'react';
@@ -22,9 +23,9 @@ import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 import { useI18n } from '../../../hooks/useI18n';
 
 // overlay 页整窗接管时，macOS 红绿灯就浮在它左上角（原生标题栏已撤）——
-// 主布局靠侧栏首行 h-12 给灯让位，overlay 页没有侧栏，不让位就顶格压在灯下面
+// 主布局靠侧栏首行 h-16 给灯让位，overlay 页没有侧栏，不让位就顶格压在灯下面
 // （2026-07-27 产品负责人指出「返回应用太顶格」）。inline 页在侧栏右侧，不受影响。
-const OVERLAY_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' ? 'pt-7' : '';
+const OVERLAY_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' ? 'pt-10' : '';
 
 type FullScreenPageVariant = 'inline' | 'overlay';
 type FullScreenPageHeaderVariant = 'page' | 'bar';

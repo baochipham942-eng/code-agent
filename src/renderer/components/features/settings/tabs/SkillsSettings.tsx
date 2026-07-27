@@ -12,6 +12,7 @@ import type {
   SkillCatalogPayload,
   SkillRepository,
   SkillRoleBundle,
+  StageRepositoryResult,
 } from '@shared/contract/skillRepository';
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
 import type { SkillRegistryListItem } from '@shared/contract/skillRegistry';
@@ -28,6 +29,7 @@ import { SkillsInstalledTab } from './SkillsInstalledTab';
 import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab';
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
 import type { SkillsMPSearchResult } from './SkillsSettingsCards';
+import { SkillInstallPreviewModal } from './SkillInstallPreviewModal';
 
 // 分组/摘要工具函数集中在 SkillsInstalledTab，测试也从那里引用
 export {
@@ -64,6 +66,10 @@ export const SkillsSettings: React.FC = () => {
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖（web 模式 IPC 不可用时保持内置）
   const [catalog, setCatalog] = useState<SkillCatalogPayload>(getBuiltinSkillCatalogPayload);
   const [customUrl, setCustomUrl] = useState('');
+  // 自定义库 staged 装前预览：stage 成功后的预览载荷，非空即弹预览弹窗
+  const [stagedPreview, setStagedPreview] = useState<StageRepositoryResult | null>(null);
+  // 自定义库表单内联错误（stage 失败在原表单位置展示）
+  const [customError, setCustomError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -318,34 +324,33 @@ export const SkillsSettings: React.FC = () => {
     }
   };
 
-  // 添加自定义仓库
+  // 添加自定义仓库：先 stage（下载到暂存并返回装前预览），确认后才落库
   const handleAddCustom = async () => {
     const url = customUrl.trim();
     if (!url) return;
 
-    if (!url.startsWith('https://github.com/')) {
-      setMessage({ type: 'error', text: skillsText.invalidGithubUrl });
+    const isSupportedUrl =
+      url.startsWith('https://github.com/') || /^https:\/\/(www\.)?modelscope\.cn\//.test(url);
+    if (!isSupportedUrl) {
+      setCustomError(skillsText.invalidRepoUrl);
       return;
     }
 
     setActionLoading('custom');
-    setMessage(null);
+    setCustomError(null);
     try {
       const result = await invokeSkillIPC(
-        SKILL_CHANNELS.REPO_ADD_CUSTOM,
+        SKILL_CHANNELS.REPO_STAGE,
         url
       );
-      if (result?.success) {
-        setMessage({ type: 'success', text: skillsText.repoAdded });
-        setCustomUrl('');
-        setActiveTab('installed');
-        await loadData();
+      if (result?.success && result.stageId) {
+        setStagedPreview(result);
       } else {
-        setMessage({ type: 'error', text: result?.error || skillsText.addFailed });
+        setCustomError(result?.error || skillsText.addFailed);
       }
     } catch (err) {
-      logger.error('Failed to add custom repo', err);
-      setMessage({ type: 'error', text: skillsText.addFailed });
+      logger.error('Failed to stage custom repo', err);
+      setCustomError(skillsText.addFailed);
     } finally {
       setActionLoading(null);
     }
@@ -544,8 +549,28 @@ export const SkillsSettings: React.FC = () => {
           onClearSearch={handleClearSearch}
           onInstallFromSearch={handleInstallFromSearch}
           customUrl={customUrl}
-          onCustomUrlChange={setCustomUrl}
+          onCustomUrlChange={(value) => {
+            setCustomUrl(value);
+            setCustomError(null);
+          }}
+          customError={customError}
           onAddCustom={handleAddCustom}
+        />
+      )}
+
+      {/* 自定义库装前预览：stage 成功后弹出，确认才落库，关闭即 cancel */}
+      {stagedPreview && (
+        <SkillInstallPreviewModal
+          result={stagedPreview}
+          onCancel={() => setStagedPreview(null)}
+          onInstalled={async (repoName) => {
+            setStagedPreview(null);
+            setCustomUrl('');
+            setCustomError(null);
+            setMessage({ type: 'success', text: `${repoName}${skillsText.installSuccessSuffix}` });
+            setActiveTab('installed');
+            await loadData();
+          }}
         />
       )}
     </div>

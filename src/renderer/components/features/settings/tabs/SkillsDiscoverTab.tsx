@@ -54,6 +54,8 @@ export interface SkillsDiscoverTabProps {
   // 自定义仓库
   customUrl: string;
   onCustomUrlChange: (value: string) => void;
+  /** 自定义库表单内联错误（stage 失败在原表单位置展示） */
+  customError?: string | null;
   onAddCustom: () => void;
 }
 
@@ -169,6 +171,7 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   onInstallFromSearch,
   customUrl,
   onCustomUrlChange,
+  customError,
   onAddCustom,
 }) => {
   const { t } = useI18n();
@@ -380,6 +383,12 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
             <p className="text-xs text-zinc-500">
               {discoverText.customDescription}
             </p>
+            {customError && (
+              <div className="flex items-center gap-2 text-xs text-red-400">
+                <AlertCircle className="h-3 w-3 shrink-0" />
+                {customError}
+              </div>
+            )}
           </div>
           <div className="mt-3">
             <Button

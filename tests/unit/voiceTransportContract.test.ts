@@ -60,6 +60,9 @@ const fakeDirectTransport: VoiceTransport = {
       provider: 'openai-realtime',
       clientBootstrap: { kind: 'webrtc', clientSecret: 'ephemeral-x', sdpUrl: 'https://example.invalid/sdp', expiresAt: 1 },
       interrupt: vi.fn(),
+      // 批 H 新增：instructions 增量刷新是两侧都必须实现的能力（焦点变化 / 切专家）。
+      // direct 形态的媒体面不经 Host，但控制面照样要能刷——这条属于 Base，不属于分支。
+      updateInstructions: vi.fn(),
       close: async () => undefined,
     };
   },
@@ -250,6 +253,35 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
 
     // 判别联合的价值：direct 上根本没有 sendAudio 可调，而不是调了个 no-op。
     expect('sendAudio' in handle).toBe(false);
+
+    await handle.close();
+  });
+
+  // 批 H：焦点变化/切专家要增量刷 instructions。这是 Base 上的能力，
+  // 两种形态都得有——少一个就是「换个 provider 上下文注入静默失效」。
+  it('两种形态都实现 updateInstructions（不是 relay 独有）', async () => {
+    const relay = await connectHandle(qwenOmniTransport);
+    expect(typeof relay.updateInstructions).toBe('function');
+    await relay.close();
+
+    const direct = await connectHandle(fakeDirectTransport);
+    expect(typeof direct.updateInstructions).toBe('function');
+    await direct.close();
+  });
+
+  it('relay 的 updateInstructions 只发 instructions，不重发整份 session', async () => {
+    const handle = await connectHandle(qwenOmniTransport);
+    const upstream = upstreams[upstreams.length - 1];
+    upstream.sent.length = 0;
+
+    handle.updateInstructions('你是牧之\n\n[Context — Focus]\n- 当前文件：/repo/a.ts');
+
+    const frames = upstream.sent.map((raw) => JSON.parse(raw) as { type: string; session?: Record<string, unknown> });
+    const update = frames.find((frame) => frame.type === 'session.update');
+    expect(update?.session).toEqual({ instructions: '你是牧之\n\n[Context — Focus]\n- 当前文件：/repo/a.ts' });
+    // 重发 turn_detection / tools 会把上游按模型分化过的行为重新赌一遍，不做。
+    expect(update?.session).not.toHaveProperty('turn_detection');
+    expect(update?.session).not.toHaveProperty('tools');
 
     await handle.close();
   });

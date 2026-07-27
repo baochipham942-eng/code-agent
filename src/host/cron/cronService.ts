@@ -1114,6 +1114,23 @@ export class CronService implements Disposable {
     }
   }
 
+  private mapExecutionRows(rows: unknown[]): CronJobExecution[] {
+    return rows.map(normalizeCronExecutionRow).filter((row): row is CronExecutionRow => row !== null).map((row) => ({
+      id: row.id,
+      jobId: row.job_id,
+      sessionId: row.session_id || undefined,
+      status: row.status,
+      scheduledAt: row.scheduled_at,
+      startedAt: row.started_at ?? undefined,
+      completedAt: row.completed_at ?? undefined,
+      duration: row.duration ?? undefined,
+      result: parseJsonValue(row.result),
+      error: row.error || undefined,
+      retryAttempt: row.retry_attempt,
+      exitCode: row.exit_code ?? undefined,
+    }));
+  }
+
   private loadExecutionsFromDatabase(jobId: string, limit: number): CronJobExecution[] {
     try {
       const db = getDatabase().getDb();
@@ -1127,22 +1144,30 @@ export class CronService implements Disposable {
         LIMIT ?
       `).all(jobId, limit) as unknown[];
 
-      return rows.reverse().map(normalizeCronExecutionRow).filter((row): row is CronExecutionRow => row !== null).map((row) => ({
-        id: row.id,
-        jobId: row.job_id,
-        sessionId: row.session_id || undefined,
-        status: row.status,
-        scheduledAt: row.scheduled_at,
-        startedAt: row.started_at ?? undefined,
-        completedAt: row.completed_at ?? undefined,
-        duration: row.duration ?? undefined,
-        result: parseJsonValue(row.result),
-        error: row.error || undefined,
-        retryAttempt: row.retry_attempt,
-        exitCode: row.exit_code ?? undefined,
-      }));
+      return this.mapExecutionRows(rows.reverse());
     } catch (error) {
       console.error('[CronService] Failed to load executions from database:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 跨任务执行流（自动化页「运行记录」tab）：全部任务的执行按时间倒序。
+   * DB 是权威源——executeJob 开头就落 running 行，无需再并内存态。
+   */
+  getRecentExecutions(limit: number = 50): CronJobExecution[] {
+    try {
+      const db = getDatabase().getDb();
+      if (!db) return [];
+      const rows = db.prepare(`
+        SELECT *
+        FROM cron_executions
+        ORDER BY scheduled_at DESC
+        LIMIT ?
+      `).all(limit) as unknown[];
+      return this.mapExecutionRows(rows);
+    } catch (error) {
+      console.error('[CronService] Failed to load recent executions from database:', error);
       return [];
     }
   }

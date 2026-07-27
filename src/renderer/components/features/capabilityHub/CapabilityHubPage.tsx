@@ -27,11 +27,14 @@ export const CapabilityHubPage: React.FC = () => {
   const currentUser = useAuthStore((s) => s.user);
   const accessSubject = useMemo(() => createAccessSubject(currentUser), [currentUser]);
   const { capabilityHubTab, openCapabilityHub } = useAppStore();
-  // 「插件」tab 暂时下架（2026-07-27 产品负责人拍板，能力未打磨好）：代码与深链常量保留，
-  // 只不渲染入口；指向 plugins 的深链由下方 useEffect 兜底回退到第一个可见 tab，不崩不白屏。
-  const visibleTabs = useMemo(() => HUB_TABS.filter(({ key }) => key !== 'plugins'), []);
-  // 2026-07-27 拍板：提示词管理属个人配置，入口迁到设置页 → 人格（soul tab），
-  // 能力中心 header 只留 tab 主导航。
+  // 「插件」tab 仅管理员可见（E5，2026-07-27 拍板；#751 曾无条件下架，此处按工单
+  // 收敛为 access 门控：普通用户不渲染入口，admin 保留可达路径）。深链常量保留，
+  // 指向 plugins 的深链由下方 useEffect 兜底回退到第一个可见 tab，不崩不白屏。
+  const visibleTabs = useMemo(() => HUB_TABS.filter(({ key }) => (
+    key !== 'plugins' || canAccessSettingsTab('plugins', accessSubject)
+  )), [accessSubject]);
+  // 提示词管理入口已移走（2026-07-27 二次拍板：它是管理员工具 ⇒ 账号菜单 admin 档，
+  // 既不在能力中心 header，也不在设置页）。
 
   // tab state 指向已隐藏入口（如 plugins 深链）时，回退到第一个可见 tab。
   useEffect(() => {

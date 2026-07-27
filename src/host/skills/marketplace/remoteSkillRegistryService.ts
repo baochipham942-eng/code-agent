@@ -135,8 +135,17 @@ export class RemoteSkillRegistryService {
     }
   }
 
-  /** 货架列表 = registry 条目 × 本机安装状态（registry 为版本源，钉点不一致即有新版） */
+  /**
+   * 货架列表 = registry 条目 × 本机安装状态（registry 为版本源，钉点不一致即有新版）。
+   * 带 TTL 缓存：这条路每次都打控制面网络请求（2026-07-27 Dev 包实测 2.2s），
+   * 是技能页 loading 的大头。registry 变化极低频，安装/升级路径已调 invalidateListCache
+   * 保证 installed/hasUpdate 标记新鲜；拉取失败/空货架不缓存，下次重试。
+   */
   async listItems(): Promise<{ items: SkillRegistryListItem[]; error?: string }> {
+    const now = Date.now();
+    if (this.listItemsCache && now - this.listItemsCache.at < CLOUD.REGISTRY_CACHE_TTL) {
+      return { items: this.listItemsCache.items };
+    }
     const { entries, error } = await this.fetchEntries();
     if (entries.length === 0) {
       return { items: [], ...(error ? { error } : {}) };
@@ -151,25 +160,13 @@ export class RemoteSkillRegistryService {
         hasUpdate: Boolean(record) && record?.pinnedCommit !== entry.pinnedCommit,
       };
     });
+    this.listItemsCache = { at: now, items };
     return { items };
   }
 
-  /**
-   * listItems 的 TTL 缓存版，供输入期推荐等高频只读路径用。
-   * 推荐按防抖击键触发，registry 变化极低频——不缓存会让每次输入都打一次控制面网络请求。
-   * 安装/货架页仍走 listItems/getEntry 拿新鲜数据。
-   */
+  /** listItems 的 items-only 视图（输入期推荐等高频只读路径沿用旧签名） */
   async listItemsCached(): Promise<SkillRegistryListItem[]> {
-    const now = Date.now();
-    if (this.listItemsCache && now - this.listItemsCache.at < CLOUD.REGISTRY_CACHE_TTL) {
-      return this.listItemsCache.items;
-    }
-    const { items } = await this.listItems();
-    // 拉取失败/空货架不缓存，下次重试
-    if (items.length > 0) {
-      this.listItemsCache = { at: now, items };
-    }
-    return items;
+    return (await this.listItems()).items;
   }
 
   /** 安装成功后 installed 标记变化，缓存失效 */

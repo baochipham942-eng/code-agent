@@ -11,6 +11,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Badge } from '../../primitives/Badge';
+import { SidebarDoctorAlert } from './SidebarDoctorAlert';
 
 /** 下次运行时间：今天只显 HH:mm，其他日期带月日 */
 function formatNextRun(ts: number, locale: string): string {
@@ -123,6 +124,8 @@ export const SidebarCapabilityZone: React.FC = () => {
         {pendingCount > 0 && <Badge className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300" data-testid="sidebar-capability-automation-pending" role="status" aria-label={pendingLabel} title={pendingLabel}>{pendingCount}</Badge>}
         <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
+      {/* 诊断问题徽标行：仅启动静默快检有 fail 项时出现，全绿不打扰 */}
+      <SidebarDoctorAlert />
     </div>
   );
 };

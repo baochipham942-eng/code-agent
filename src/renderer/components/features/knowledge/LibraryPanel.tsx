@@ -3,14 +3,14 @@
 // ============================================================================
 //
 // 项目资产一等公民面，页头结构：来源 tab × 类型 chips × 搜索。
-// - 顶行：来源 tab（AI 生成 / 我的上传 / 我的收藏）+ 最右「记忆」tab（并列内容切换），
-//   右侧搜索框 + 「品牌套件」次级入口（原 section tab 降级为入口按钮，不再是并列分区）。
+// - 顶行：来源 tab（AI 生成 / 我的上传 / 我的收藏）+ 右侧搜索框
+//   + 「品牌套件」次级入口（原 section tab 降级为入口按钮，不再是并列分区）。
 // - 次行：类型 chips = 全部 + LIBRARY_ITEM_KINDS（contract 推导，样式对齐原 kind filter）。
-// 「记忆」tab 放来源 tab 同一行最右而非来源序列内：来源 tab 是同一份条目列表的过滤维度，
-// 记忆是整页内容切换，语义不同类；视觉上仍共享一行 tab 带，避免再多开一条工具栏。
+// 「记忆」tab 已撤（2026-07-27 审美关：记忆偏个人设置，不算资料库）——
+// 家在设置 → 记忆（深链 openSettingsTab('memory')），独立整窗页 KnowledgeMemoryPanel 也仍在。
 // 带进对话在聊天输入区的 LibraryPinModal 里做，本页只管资产面。
 // 布局契约（2026-07-27 UX 收尾 1.4）：内容区走 PageContent（全宽 + px-6 py-4），
-// 两行工具带对齐同一横向节奏 px-6；「记忆」tab 内嵌 KnowledgeMemoryContent，
+// 两行工具带对齐同一横向节奏 px-6；
 // 用 PageContent 的 flex 容器形态（scroll/padding 关闭），布局由被嵌组件自管。
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,15 +31,17 @@ import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
 import { Textarea } from '../../primitives/Textarea';
 import { BrandManager } from '../../design/BrandManager';
-import { KnowledgeMemoryContent } from './KnowledgeMemoryPanel';
 
 const GLOBAL_SCOPE = 'global';
 const closeEmbeddedBrandManager = () => undefined;
 
 // 来源维度：AI 生成 / 我的上传 / 我的收藏（favorites 暂为壳，见 deriveItemSource 注释）
 type LibrarySource = 'ai' | 'uploads' | 'favorites';
-// 页面视图：items = 条目列表；brands = 品牌套件管理（次级入口打开）；memory = 知识与记忆
-type LibraryView = 'items' | 'brands' | 'memory';
+// 页面视图：items = 条目列表；brands = 品牌套件管理（次级入口打开）。
+// 「记忆」tab 已撤（2026-07-27 审美关：记忆是个人设置不是资料库）——它的家在
+// 设置 → 记忆（SettingsModal 的 MemoryTab，深链 openSettingsTab('memory')），
+// 独立整窗页 KnowledgeMemoryPanel 也仍在。一个能力只留一个家。
+type LibraryView = 'items' | 'brands';
 
 /**
  * 来源推导口径：LibraryItem contract（src/shared/contract/library.ts）暂无 origin/favorite
@@ -320,20 +322,6 @@ export const LibraryPanel: React.FC = () => {
                 {sourceKey === 'ai' ? t.library.sourceAi : sourceKey === 'uploads' ? t.library.sourceUploads : t.library.sourceFavorites}
               </Button>
             ))}
-            <span className="mx-1 h-4 w-px bg-zinc-800" aria-hidden="true" />
-            <Button
-              type="button"
-              role="tab"
-              size="sm"
-              variant={view === 'memory' ? 'secondary' : 'ghost'}
-              aria-selected={view === 'memory'}
-              aria-controls="library-memory-panel"
-              tabIndex={view === 'memory' ? 0 : -1}
-              data-testid="library-tab-memory"
-              onClick={() => setView('memory')}
-            >
-              {t.library.memoryTab}
-            </Button>
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-2">
             {view === 'items' && (
@@ -465,13 +453,9 @@ export const LibraryPanel: React.FC = () => {
             </div>
           )}
         </PageContent>
-      ) : view === 'brands' ? (
+      ) : (
         <PageContent id="library-brands-panel" role="tabpanel">
           <BrandManager isOpen onClose={closeEmbeddedBrandManager} presentation="inline" />
-        </PageContent>
-      ) : (
-        <PageContent id="library-memory-panel" role="tabpanel" scroll={false} padding={false}>
-          <KnowledgeMemoryContent />
         </PageContent>
       )}
 

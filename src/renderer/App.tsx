@@ -817,8 +817,10 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
+  const isSidebarVisible = isStandard && !sidebarCollapsed;
   // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作）在位时，
-  // 顶栏收敛为只留侧栏开关。评测中心是 overlay 独立页，整窗盖住顶栏，不参与这里的判定。
+  // 顶栏收敛。评测中心是 overlay 独立页，整窗盖住顶栏，不参与这里的判定。
   const inlineSecondaryPageActive = Boolean(
     expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
     || showCapabilityHub || showCronCenter || showLocalOpsPanel
@@ -849,7 +851,7 @@ export const App: React.FC = () => {
         {/* Main Content - Three-column layout with integrated title bars */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Column: Sidebar with its own title bar - darker background */}
-          {isStandard && !sidebarCollapsed && (
+          {isSidebarVisible && (
             <div className="flex flex-col w-60 bg-zinc-950">
               <Sidebar />
             </div>
@@ -857,9 +859,13 @@ export const App: React.FC = () => {
 
           {/* Right Area: Chat + TaskPanel with shared title bar */}
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Right Title Bar —— 二级页在位时只保留侧栏开关：
-                会话动作菜单与右栏开关都是会话态控件，二级页里指向不存在的东西。 */}
-            <TitleBar secondaryPageActive={inlineSecondaryPageActive} />
+            {/* Right Title Bar —— 三个槽位全空时整条不渲染（2026-07-27 审美关）：
+                侧栏收起开关已挪回侧栏自己头上，顶栏只在收起态留展开入口；
+                二级页在位时会话动作与右栏开关也都没有对象。于是「二级页 + 侧栏展开」
+                这一档顶栏什么都不剩，留着只是一条空的 h-12 边框——不画，让大标题贴顶。 */}
+            {(!inlineSecondaryPageActive || !isSidebarVisible) && (
+              <TitleBar secondaryPageActive={inlineSecondaryPageActive} />
+            )}
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">

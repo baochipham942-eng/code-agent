@@ -85,7 +85,9 @@ export const CronFeaturedTemplates: React.FC = () => {
 
   return (
     <section
-      className="shrink-0 border-b border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-zinc-950 to-zinc-950 px-5 py-4"
+      /* 2026-07-27 审美关：整块 amber 渐变强调条降噪成中性区（对标 WorkBuddy 的模板区）。
+         彩色只留 Sparkles 图标——推荐是常驻内容，不是要你立刻处理的告警。 */
+      className="shrink-0 border-b border-zinc-800 bg-zinc-900/40 px-6 py-4"
       data-testid="cron-featured-templates"
     >
       <div className="mb-3 flex items-center gap-2">

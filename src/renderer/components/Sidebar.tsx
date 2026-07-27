@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Trash2,
   Search,
+  PanelLeftClose,
   ChevronRight,
   FlaskConical,
   CalendarDays,
@@ -114,6 +115,7 @@ export const Sidebar: React.FC = () => {
     optionalUpdateInfo,
     setShowOptionalUpdateModal,
     openWorkspacePreview,
+    setSidebarCollapsed,
   } = useAppStore();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
@@ -638,8 +640,9 @@ export const Sidebar: React.FC = () => {
       {/* Header: h-12 to align with TitleBar on the right */}
       <div className="h-12 px-3 flex items-center justify-between gap-2 flex-shrink-0">
         <NeoBrandMark />
-        {!isAuthLoading && (
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1">
+          {!isAuthLoading && (
+            <>
             <IconButton
               type="button"
               variant="ghost"
@@ -673,8 +676,20 @@ export const Sidebar: React.FC = () => {
                 activeStatusFilterLabel={activeStatusFilterLabel}
               />
             )}
-          </div>
-        )}
+            </>
+          )}
+          {/* 侧栏收起开关坐在侧栏自己头上（2026-07-27 审美关拍板：从右侧顶栏挪回左侧面板）。
+              收起态的展开入口留在 TitleBar——侧栏那时不存在，按钮得有别的落脚点。 */}
+          <IconButton
+            icon={<PanelLeftClose className="h-4 w-4" />}
+            aria-label={sb.collapseSidebar}
+            data-testid="sidebar-collapse"
+            onClick={() => setSidebarCollapsed(true)}
+            variant="ghost"
+            size="md"
+            className="h-8 w-8"
+          />
+        </div>
       </div>
 
       {/* 当前工作目录行：放在新任务行上方。它是「新任务落到哪、下面项目组怎么分」的上游

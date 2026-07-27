@@ -90,7 +90,7 @@ export const NewSessionWelcome: React.FC<{
           {/* 目录选择并入新任务流程：标签从只读展示升级为换目录入口。
               未设目录时是引导态「选择目录」；已设时显示项目名，点击可换。 */}
           {onPickDirectory ? (
-            <button
+            <button /* ds-allow:button: 欢迎页目录 chip（11px 行内胶囊，与只读上下文标签同形态），Button primitive 无对应微尺寸变体 */
               type="button"
               onClick={onPickDirectory}
               title={contextTitle}

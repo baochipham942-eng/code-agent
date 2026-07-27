@@ -51,7 +51,8 @@ import { InlineStrip } from './features/chat/InlineStrip';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { useMessageActionStore } from '../stores/messageActionStore';
-import { isWebMode } from '../utils/platform';
+import { isWebMode, isTauriMode } from '../utils/platform';
+import { pickNativeDirectory } from '../services/tauriPluginFacade';
 import { toast } from '../hooks/useToast';
 import { hasConfiguredDefaultRuntimeModel, hasConfiguredRuntimeModels } from '@shared/modelRuntime';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
@@ -96,6 +97,8 @@ export async function handleQueuedSteerOutcome(
 export const ChatView: React.FC = () => {
   const { t } = useI18n();
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
+  const setAppWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
+  const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
@@ -384,6 +387,37 @@ export const ChatView: React.FC = () => {
   }, [bridgeStatus, bridgeVersion, workingDirectory, compareVersions, t]);
 
   const { requireAuthAsync } = useRequireAuth();
+
+  // 目录选择并入新任务流程（批C2）：沿用原 SidebarWorkspaceRow 的同一条数据通道——
+  // composer + appStore 同写，并持久化到当前会话，让工作区分组归位、agent 拿到正确 cwd。
+  const applyWorkingDirectory = React.useCallback(async (selectedPath: string) => {
+    setComposerWorkingDirectory(selectedPath);
+    setAppWorkingDirectory(selectedPath);
+    const sessionId = useSessionStore.getState().currentSessionId;
+    if (sessionId) {
+      try {
+        await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'update', {
+          sessionId,
+          updates: { workingDirectory: selectedPath },
+        });
+      } catch (err) {
+        console.error('Failed to persist session workingDirectory:', err);
+      }
+    }
+  }, [setAppWorkingDirectory, setComposerWorkingDirectory]);
+
+  const handlePickDirectory = React.useCallback(async () => {
+    try {
+      if (isTauriMode()) {
+        const selectedPath = await pickNativeDirectory({ title: t.sidebar.selectDirectoryTitle });
+        if (selectedPath) await applyWorkingDirectory(selectedPath);
+      } else {
+        setShowDirPicker(true);
+      }
+    } catch (error) {
+      console.error('Failed to pick working directory:', error);
+    }
+  }, [applyWorkingDirectory, t.sidebar.selectDirectoryTitle]);
 
   // Turn-based trace projection
   const baseProjection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing, launchRequests, neoWorkCards);
@@ -770,6 +804,7 @@ export const ChatView: React.FC = () => {
                 onSend={handleSendMessage}
                 workingDirectory={currentSessionWorkingDirectory}
                 workbenchSnapshot={currentSession?.workbenchSnapshot}
+                onPickDirectory={() => { void handlePickDirectory(); }}
               />
             ) : (
               <div className="h-full" aria-hidden />
@@ -822,9 +857,13 @@ export const ChatView: React.FC = () => {
           )}
 
           {/* 工作目录选择弹窗 (Phase 4) */}
+          {/* onSelect 真正落盘（此前只关弹窗把选择丢掉了——批C2 顺带修正） */}
           <DirectoryPickerModal
             isOpen={showDirPicker}
-            onSelect={() => setShowDirPicker(false)}
+            onSelect={(directory) => {
+              setShowDirPicker(false);
+              void applyWorkingDirectory(directory);
+            }}
             onClose={() => setShowDirPicker(false)}
           />
 

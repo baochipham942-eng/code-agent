@@ -67,7 +67,6 @@ import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
-import { SidebarWorkspaceRow } from './features/sidebar/SidebarWorkspaceRow';
 import {
   buildSessionStatusFilterOptions,
   buildSessionStatusFilterLabels,
@@ -724,11 +723,8 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      {/* 当前工作目录行：放在新任务行上方。它是「新任务落到哪、下面项目组怎么分」的上游
-          作用域声明，读作上下文而不是与能力区并列的入口；目录选择已并入侧栏（顶栏 chip 退役）。 */}
-      <div className="px-2 flex-shrink-0">
-        <SidebarWorkspaceRow />
-      </div>
+      {/* 「选择目录」行已退役（批C2）：目录选择并入新任务流程（欢迎页目录 chip +
+          DirectoryPickerModal/原生选择器），侧栏不再展示内部路径。 */}
 
       {/* 新任务默认纯对话，不继承项目上下文（项目会话走各项目组 + 按钮）。
           与能力区之间零间距：四条入口行等距同组，区间断点只留在能力区之后（pb-2）。 */}

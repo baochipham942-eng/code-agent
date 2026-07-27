@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe('CapabilityHubPage', () => {
-  it('只渲染三个能力 tab，「插件」tab 暂时下架（代码保留，入口不渲染）', () => {
+  it('普通用户只看到专家、技能和连接器（插件 tab 隐藏，代码与深链保留）', () => {
     useAuthStore.setState({ user: user(false) });
     render(<CapabilityHubPage />);
     for (const key of ['experts', 'skills', 'connectors']) {
@@ -32,10 +32,17 @@ describe('CapabilityHubPage', () => {
     expect(screen.queryByTestId('capability-hub-tab-inventory')).toBeNull();
   });
 
-  it('深链指向已隐藏的插件 tab 时（普通用户）回退到第一个可见 tab，不白屏', async () => {
+  it('管理员看到 plugins tab（工单要求 admin 可达路径保留）', () => {
+    useAuthStore.setState({ user: user(true) });
+    render(<CapabilityHubPage />);
+    expect(screen.getByTestId('capability-hub-tab-plugins')).toBeTruthy();
+  });
+
+  it('普通用户从 plugins 深链进入时回退到 experts，不白屏', async () => {
     useAuthStore.setState({ user: user(false) });
     useAppStore.setState({ capabilityHubTab: 'plugins' });
     render(<CapabilityHubPage />);
+
     await waitFor(() => expect(useAppStore.getState().capabilityHubTab).toBe('experts'));
   });
 

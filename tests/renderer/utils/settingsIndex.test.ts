@@ -50,8 +50,8 @@ describe('settings search index', () => {
     expect(searchSettings('capability center', { isAdmin: true })).toHaveLength(0);
   });
 
-  it('keeps plugins/hooks searchable for non-admin users (Settings IA v2, 2026-07-03 拍板)', () => {
-    expect(searchSettings(zh.settings.searchIndex.pluginMarketplace).map((entry) => entry.tab)).toContain('plugins');
+  it('hides plugins from regular-user search while keeping hooks searchable', () => {
+    expect(searchSettings(zh.settings.searchIndex.pluginMarketplace).map((entry) => entry.tab)).not.toContain('plugins');
     expect(searchSettings(zh.settings.searchIndex.hookConfig).map((entry) => entry.tab)).toContain('hooks');
   });
 

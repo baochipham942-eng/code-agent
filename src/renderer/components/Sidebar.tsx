@@ -849,9 +849,11 @@ export const Sidebar: React.FC = () => {
       )}
 
       {/* Bottom: User Menu or Login */}
-      {/* py-1.5 而非 p-2：账号行内容中心距侧栏底 = 6 + py-2.5(10) + 8 = 24，与顶行图标/红绿灯
-          中心距顶的 24 上下对称（2026-07-28 产品负责人：四角在容器里的位置要一致）。
-          横向仍是 8，与其他区块的 px-2 同规范。 */}
+      {/* 上下留白按「与顶行对称」反推，不是拍脑袋：顶行是 h-12(48) 内容居中 ⇒ 中心距顶 24。
+          底部这块也做成 48 高：容器 py-1.5(6) + 行 py-2(8)*2 + 行内容 20(text-sm leading-5) = 48
+          ⇒ 中心距底 6+20 = 24，与顶部对称。
+          注意行内容高由**最高的那个**决定（昵称 text-sm 的 20，不是头像的 16）——
+          按 16 算会差 2px，实测才发现（2026-07-28）。横向仍是 8，与其他区块 px-2 同规范。 */}
       <div className="px-2 py-1.5 relative flex-shrink-0" ref={accountMenuRef}>
         {isAuthenticated && user ? (
           <>
@@ -863,7 +865,7 @@ export const Sidebar: React.FC = () => {
                  根带 6 + 容器 p-2(8) + 行 px-3(12) = 图标左缘 26；+图标 16 +gap-2.5(10) = 昵称左缘 52，
                  与入口行/分组名/会话行标题同线；右侧同样 6+8+12 ⇒ 内容右缘 214，
                  展开箭头与分组头角标/会话行状态点同轴。左右内边距都用 px-3，不再一边 8 一边 12。 */
-              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-white/[0.04] transition-colors"
             >
               {user.avatarUrl ? (
                 <img src={user.avatarUrl} alt="" className="w-4 h-4 shrink-0 rounded-full object-cover" />

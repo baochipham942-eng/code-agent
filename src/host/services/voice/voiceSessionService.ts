@@ -137,13 +137,26 @@ function emitVoiceCallHook(
   void (async () => {
     try {
       const { getTaskManager } = await import('../../task');
-      // getOrchestrator 只取已存在的（不 get-or-create：不能为了发一个观察事件
-      // 就把整个 orchestrator 建起来）。还没跑过 agent 轮次的新会话就是拿不到——
-      // 这时必须留痕，否则「hook 没触发」在日志里完全不可见（静默跳过 = 查不到根因）。
-      const hooks = getTaskManager()?.getOrchestrator(params.sessionId)?.getHookManager?.();
+      // 已存在的 manager 挂着 onTrigger / aiCompletion，优先复用；纯语音会话没有
+      // orchestrator 时才临时创建，避免为了观察事件拉起整棵 agent 运行时。
+      let hooks = getTaskManager()?.getOrchestrator(params.sessionId)?.getHookManager?.();
       if (!hooks) {
-        logger.info('voice call hook skipped: no hook manager for session', { event, sessionId: params.sessionId });
-        return;
+        try {
+          const session = await getSessionManager().getSession(params.sessionId, 1);
+          const { createHookManager } = await import('../../hooks');
+          hooks = createHookManager({
+            workingDirectory: session?.workingDirectory?.trim() || process.cwd(),
+          });
+          await hooks.initialize();
+          if (!hooks.hasHooksFor(event)) return;
+        } catch (err) {
+          logger.info('voice call hook skipped: existing and temporary hook managers unavailable', {
+            event,
+            sessionId: params.sessionId,
+            message: err instanceof Error ? err.message : 'unknown',
+          });
+          return;
+        }
       }
       await hooks.triggerVoiceCall(event, params);
     } catch (err) {

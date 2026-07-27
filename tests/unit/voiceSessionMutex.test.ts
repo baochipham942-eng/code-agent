@@ -11,6 +11,7 @@ const commitMock = vi.fn();
 const updateInstructions = vi.fn();
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 const patchSessionMetadata = vi.fn(async (_sessionId: string, _patch: Record<string, unknown>) => true);
+const getSession = vi.fn(async (_sessionId: string) => ({ workingDirectory: '/repo/voice-session' }));
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
@@ -20,7 +21,7 @@ const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) =>
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
-  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata }),
+  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata, getSession }),
 }));
 vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -34,9 +35,22 @@ interface VoiceCallHookParams {
   reason?: string;
 }
 const triggerVoiceCall = vi.fn(async (_event: string, _params: VoiceCallHookParams) => ({ blocked: false }));
+const initializeTemporaryHookManager = vi.fn(async () => undefined);
+const hasTemporaryVoiceCallHook = vi.fn(() => true);
+const temporaryTriggerVoiceCall = vi.fn(async (_event: string, _params: VoiceCallHookParams) => ({ blocked: false }));
+let hasExistingOrchestrator = true;
 vi.mock('../../src/host/task', () => ({
   getTaskManager: () => ({
-    getOrchestrator: () => ({ getHookManager: () => ({ triggerVoiceCall }) }),
+    getOrchestrator: () => (
+      hasExistingOrchestrator ? { getHookManager: () => ({ triggerVoiceCall }) } : undefined
+    ),
+  }),
+}));
+vi.mock('../../src/host/hooks', () => ({
+  createHookManager: () => ({
+    initialize: initializeTemporaryHookManager,
+    hasHooksFor: hasTemporaryVoiceCallHook,
+    triggerVoiceCall: temporaryTriggerVoiceCall,
   }),
 }));
 
@@ -428,6 +442,11 @@ describe('焦点上报刷新 instructions（批 H）', () => {
 describe('通话生命周期 hook', () => {
   beforeEach(() => {
     triggerVoiceCall.mockClear();
+    temporaryTriggerVoiceCall.mockClear();
+    initializeTemporaryHookManager.mockClear();
+    hasTemporaryVoiceCallHook.mockClear();
+    getSession.mockClear();
+    hasExistingOrchestrator = true;
     connect.mockClear();
     addMessageToSession.mockClear();
   });
@@ -448,6 +467,20 @@ describe('通话生命周期 hook', () => {
     const [params] = eventsOf('VoiceCallStarted');
     expect(params).toMatchObject({ sessionId: 'session-hook', durationSec: 0 });
     expect(typeof params.voiceCallId).toBe('string');
+  });
+
+  it('没有 orchestrator 的纯语音会话仍通过临时 hook manager 送达 VoiceCallStarted', async () => {
+    hasExistingOrchestrator = false;
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hook-fallback');
+
+    await vi.waitFor(() => expect(temporaryTriggerVoiceCall).toHaveBeenCalledWith(
+      'VoiceCallStarted',
+      expect.objectContaining({ sessionId: 'session-hook-fallback', durationSec: 0 }),
+    ));
+    expect(getSession).toHaveBeenCalledWith('session-hook-fallback', 1);
+    expect(initializeTemporaryHookManager).toHaveBeenCalledOnce();
+    expect(hasTemporaryVoiceCallHook).toHaveBeenCalledWith('VoiceCallStarted');
   });
 
   it('挂断发 VoiceCallEnded，时长与摘要卡同一个数（别各算各的）', async () => {

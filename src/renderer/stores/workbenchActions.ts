@@ -113,9 +113,11 @@ export function createWorkbenchActions({
           : state.previewTabs;
         return {
           ...state,
-          // 用户显式开一个视图 = 要看右栏；收起位一并清掉，否则「展开」按钮点了没反应
-          // （右栏改成「有视图才占位」后，collapsed 与 tabs 空是两个各自能挡住它的条件）。
-          workbenchCollapsed: options?.source === 'auto' ? state.workbenchCollapsed : false,
+          // 打开一个视图 = 要看右栏，所以默认清掉收起位。
+          // 唯一例外：活动信号（source: 'auto'）撞上**用户自己按过的收起**——那是 #700 的
+          // 「收起后不因活动信号自己弹回」。产品默认的收起态（workbenchCollapsedByUser=false）
+          // 不算用户意图，任务开跑照样把右栏带出来（2026-07-27 产品负责人拍板）。
+          workbenchCollapsed: options?.source === 'auto' && state.workbenchCollapsedByUser,
           workbenchTabs: state.workbenchTabs.includes(view)
             ? state.workbenchTabs
             : [...state.workbenchTabs, view],

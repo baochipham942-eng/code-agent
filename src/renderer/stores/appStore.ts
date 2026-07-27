@@ -289,6 +289,13 @@ export interface AppState {
   workbenchSessionKey: string | null;
   /** 右栏整栏收起。视图切换器模型下「关闭」的对象是整栏，不再是单个视图。 */
   workbenchCollapsed: boolean;
+  /**
+   * 右栏当前的收起是不是**用户自己按的**。
+   * 默认收起（初值 true）是产品默认值，不是用户意图——两者要分开，否则
+   * 「任务开跑自动弹出右栏」和 #700 的「用户收起后不因活动信号自己弹回」二选一。
+   * 只由 setWorkbenchCollapsed 写（它的两个调用点都是用户点击）。
+   */
+  workbenchCollapsedByUser: boolean;
   taskWorkbenchOpenSource: WorkbenchOpenSource | null;
   taskWorkbenchActivityActive: boolean;
 
@@ -540,6 +547,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 默认收起：开一条新会话时右栏无事可做，常驻空态启动器白占三分之一屏
   // （2026-07-27 审美关拍板）。用户展开后本次运行期内保持展开，切会话不重置。
   workbenchCollapsed: true,
+  workbenchCollapsedByUser: false,
   taskWorkbenchOpenSource: null,
   taskWorkbenchActivityActive: false,
   workbenchHighlight: null,
@@ -1010,7 +1018,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     stopDevServer: fireStopDevServer,
   }),
 
-  setWorkbenchCollapsed: (collapsed) => set({ workbenchCollapsed: collapsed }),
+  setWorkbenchCollapsed: (collapsed) => set({ workbenchCollapsed: collapsed, workbenchCollapsedByUser: collapsed }),
 
   syncTaskWorkbenchForActivity: (hasActivity) => {
     const state = get();

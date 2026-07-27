@@ -189,20 +189,15 @@ describe('LibraryPanel', () => {
     expect(document.querySelector('[data-library-item]')).toBeNull();
   });
 
-  it('「记忆」tab 嵌入 KnowledgeMemoryContent，并收起条目筛选行', async () => {
-    const { fireEvent } = await import('@testing-library/react');
+  // 2026-07-27 审美关：「记忆」从资料库撤走（记忆偏个人设置），家在设置 → 记忆。
+  // 资料库不该再有第二个入口，也不该再嵌 KnowledgeMemoryContent。
+  it('不再有「记忆」tab，也不嵌 KnowledgeMemoryContent', async () => {
     listLibraryItems.mockResolvedValue([makeItem()]);
     render(<LibraryPanel />);
     await screen.findByText('Brief.pdf');
 
-    fireEvent.click(screen.getByTestId('library-tab-memory'));
-    await screen.findByTestId('knowledge-memory-content-stub');
-    expect(screen.queryByTestId('library-kind-chips')).toBeNull();
-    expect(screen.queryByTestId('library-item-list')).toBeNull();
-
-    // 点回来源 tab 恢复条目列表
-    fireEvent.click(screen.getByTestId('library-source-ai'));
-    await screen.findByText('Brief.pdf');
+    expect(screen.queryByTestId('library-tab-memory')).toBeNull();
+    expect(screen.queryByTestId('knowledge-memory-content-stub')).toBeNull();
   });
 
   it('品牌套件从右侧次级入口进入，列出真实品牌且不改变资料条目筛选和计数', async () => {

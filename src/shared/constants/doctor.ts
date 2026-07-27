@@ -15,3 +15,8 @@ export const DOCTOR_FIX_CODES = {
 } as const;
 
 export type DoctorFixCode = (typeof DOCTOR_FIX_CODES)[keyof typeof DOCTOR_FIX_CODES];
+
+export const DOCTOR_TIMEOUTS = {
+  DEFAULT_PER_CHECK_MS: 10_000,
+  DEFAULT_OVERALL_MS: 30_000,
+} as const;

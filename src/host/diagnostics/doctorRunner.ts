@@ -16,16 +16,13 @@ import { checkCurrentBrowserRelay } from './checks/browserRelay';
 import { checkMcpServers } from './checks/mcp';
 import { checkHooksConfig } from './checks/hooks';
 import { checkAppVersion } from './checks/version';
-import { DOCTOR_FIX_CODES } from '../../shared/constants/doctor';
+import { DOCTOR_FIX_CODES, DOCTOR_TIMEOUTS } from '../../shared/constants/doctor';
 import type {
   DoctorCategory,
   DoctorItem,
   DoctorReport,
   RunDoctorOptions,
 } from './types';
-
-/** 默认单项超时 */
-const DEFAULT_PER_CHECK_TIMEOUT_MS = 10_000;
 
 /** 包一层 Promise.race 加超时，超时时返回兜底 warn 项 */
 async function withTimeout<T>(
@@ -49,12 +46,19 @@ async function withTimeout<T>(
 }
 
 /** 单项超时兜底项 */
-function timeoutItem(category: DoctorCategory, name: string, timeoutMs: number): DoctorItem {
+function timeoutItem(
+  category: DoctorCategory,
+  name: string,
+  timeoutMs: number,
+  scope: 'check' | 'overall' = 'check',
+): DoctorItem {
   return {
     category,
     name,
     status: 'warn',
-    message: `检查超时（${(timeoutMs / 1000).toFixed(0)}s）`,
+    message: scope === 'overall'
+      ? `整体检查超时（${(timeoutMs / 1000).toFixed(0)}s）`
+      : `检查超时（${(timeoutMs / 1000).toFixed(0)}s）`,
     suggestion: '可能是网络或外部进程响应慢；可重试',
     fix: { code: fixCodeForCategory(category) },
   };
@@ -90,7 +94,9 @@ interface CheckJob {
 
 export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> {
   const startedAt = Date.now();
-  const timeoutMs = opts?.perCheckTimeoutMs ?? DEFAULT_PER_CHECK_TIMEOUT_MS;
+  const perCheckTimeoutMs = opts?.perCheckTimeoutMs ?? DOCTOR_TIMEOUTS.DEFAULT_PER_CHECK_MS;
+  const overallTimeoutMs = opts?.overallTimeoutMs ?? DOCTOR_TIMEOUTS.DEFAULT_OVERALL_MS;
+  const deadline = startedAt + overallTimeoutMs;
   const skipNetwork = !!opts?.skipNetwork;
 
   // 顺序与 DOCTOR_CATEGORIES 保持一致 — 影响 CLI 输出顺序
@@ -149,10 +155,22 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
     },
   ];
 
+  const selectedJobs = opts?.category
+    ? jobs.filter((job) => job.category === opts.category)
+    : jobs;
   const items: DoctorItem[] = [];
 
-  for (const job of jobs) {
+  for (const job of selectedJobs) {
     const jobStart = Date.now();
+    const remainingOverallMs = deadline - jobStart;
+
+    if (remainingOverallMs <= 0) {
+      items.push({
+        ...timeoutItem(job.category, job.name, overallTimeoutMs, 'overall'),
+        durationMs: 0,
+      });
+      continue;
+    }
 
     if (job.network && skipNetwork) {
       items.push({
@@ -165,10 +183,19 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
     }
 
     try {
+      const effectiveTimeoutMs = Math.min(perCheckTimeoutMs, remainingOverallMs);
+      const limitedByOverallTimeout = remainingOverallMs <= perCheckTimeoutMs;
       const { value } = await withTimeout(
         job.run(),
-        timeoutMs,
-        () => [timeoutItem(job.category, job.name, timeoutMs)],
+        effectiveTimeoutMs,
+        () => [
+          timeoutItem(
+            job.category,
+            job.name,
+            limitedByOverallTimeout ? overallTimeoutMs : perCheckTimeoutMs,
+            limitedByOverallTimeout ? 'overall' : 'check',
+          ),
+        ],
       );
 
       const durationMs = Date.now() - jobStart;

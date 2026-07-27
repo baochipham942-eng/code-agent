@@ -166,6 +166,50 @@ describe('runDoctor', () => {
     });
   });
 
+  it('category 只运行并返回指定分类', async () => {
+    const report = await runDoctor({ category: 'mcp' });
+
+    expect(new Set(report.items.map((item) => item.category))).toEqual(new Set(['mcp']));
+    expect(mcpMock).toHaveBeenCalledTimes(1);
+    expect(networkMock).not.toHaveBeenCalled();
+    expect(providerHealthMock).not.toHaveBeenCalled();
+    expect(browserRelayMock).not.toHaveBeenCalled();
+    expect(hooksMock).not.toHaveBeenCalled();
+    expect(versionMock).not.toHaveBeenCalled();
+  });
+
+  it('整体超时后仍为所有未完成 check 返回 warn，报告保持完整', async () => {
+    networkMock.mockImplementationOnce(() => new Promise(() => undefined));
+
+    const report = await runDoctor({
+      perCheckTimeoutMs: 1_000,
+      overallTimeoutMs: 20,
+    });
+
+    const cats = new Set(report.items.map((item) => item.category));
+    expect(cats).toEqual(
+      new Set([
+        'environment',
+        'database',
+        'config',
+        'disk',
+        'network',
+        'provider_health',
+        'mcp',
+        'hooks',
+        'version',
+      ]),
+    );
+    expect(report.items.find((item) => item.category === 'network')).toMatchObject({
+      status: 'warn',
+      message: expect.stringMatching(/整体检查超时/),
+      fix: { code: 'open-proxy-help' },
+    });
+    expect(report.items.filter((item) => item.status === 'warn').length).toBeGreaterThanOrEqual(6);
+    expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.skip)
+      .toBe(report.items.length);
+  });
+
   it('MCP 全 lazy 时不应计入 fail', async () => {
     mcpMock.mockReturnValueOnce([
       { category: 'mcp', name: 'filesystem', status: 'skip', message: 'lazy' },

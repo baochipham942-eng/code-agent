@@ -68,8 +68,12 @@ export interface DoctorReport {
  * `runDoctor()` 调用选项
  */
 export interface RunDoctorOptions {
+  /** 仅运行指定分类；不传时运行全部分类 */
+  category?: DoctorCategory;
   /** 跳过需要网络的 check（network / version）。CLI 默认 false，启动检查可传 true */
   skipNetwork?: boolean;
   /** 单项 check 超时（毫秒），默认 10s */
   perCheckTimeoutMs?: number;
+  /** 整份报告超时（毫秒），默认 30s；超时后未完成项以 warn 返回 */
+  overallTimeoutMs?: number;
 }

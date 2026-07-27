@@ -25,11 +25,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
     sidebarCollapsed,
     setSidebarCollapsed,
     workbenchCollapsed,
-    workbenchTabs,
-    openWorkbenchTab,
+    setWorkbenchCollapsed,
   } = useAppStore();
-  // 右栏只在有视图时占位，所以「展开」= 开一个视图（概览），不是单纯翻 collapsed 位。
-  const canExpandWorkbench = workbenchCollapsed || workbenchTabs.length === 0;
   return (
     <div className="h-12 flex items-center justify-between px-4 border-b border-border-muted bg-transparent backdrop-blur-sm relative z-30">
       <div className="flex items-center gap-2">
@@ -48,12 +45,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
       {/* Right: 右栏收起态的展开入口。展开态的收起 affordance 在面板头
           （WorkbenchTabs 收起按钮），顶栏不再叠一颗（2026-07-26 打磨批 D D5 去重）。 */}
       <div className="flex items-center gap-2">
-        {canExpandWorkbench && !secondaryPageActive && (
+        {workbenchCollapsed && !secondaryPageActive && (
           <IconButton
             icon={<PanelRight className="w-4 h-4" />}
             aria-label={t.workbenchTabs.expandPanel}
             data-testid="titlebar-expand-workbench"
-            onClick={() => openWorkbenchTab('overview', { source: 'user' })}
+            onClick={() => setWorkbenchCollapsed(false)}
             variant="ghost"
             size="md"
           />

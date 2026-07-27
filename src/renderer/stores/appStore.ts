@@ -537,7 +537,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activeWorkbenchTab: null,
   workbenchBySession: {},
   workbenchSessionKey: null,
-  workbenchCollapsed: false,
+  // 默认收起：开一条新会话时右栏无事可做，常驻空态启动器白占三分之一屏
+  // （2026-07-27 审美关拍板）。用户展开后本次运行期内保持展开，切会话不重置。
+  workbenchCollapsed: true,
   taskWorkbenchOpenSource: null,
   taskWorkbenchActivityActive: false,
   workbenchHighlight: null,

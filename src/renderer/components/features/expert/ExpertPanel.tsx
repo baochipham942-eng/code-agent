@@ -45,6 +45,7 @@ import { RoleAvatarTile } from './RoleAvatarTile';
 import { RolePackHealthNotice, RolePackShelf } from './RolePackShelf';
 import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
 import { groupRolesByCategory } from './roleCategoryGroups';
+import { HubTabHeader } from '../capabilityHub/HubTabHeader';
 
 type ExpertTab = 'mine' | 'discover';
 
@@ -324,16 +325,54 @@ export const ExpertPanel: React.FC = () => {
     : t.team.expertGroup.replace('{count}', String(recipe.members.length));
 
   // 滚动由能力中心的外层容器统一负责，这里只排内容；
-  // 工具条 sticky 住，否则列表一长就被滚出视野。
-  // 一行工具条：左侧 = 分类 chips（按角色 category 字段推导，见上方推导口径注释，
-  // 可 wrap 到第二行），右侧 = 我的/发现 + 刷新 + 新建专家；
-  // 右侧 ml-auto：chips 不显示时（无可筛分类 / 加载中）左侧自然塌陷，右侧保持右对齐，不硬造占位。
+  // 页头走四 tab 共用的 HubTabHeader（吸顶）：第一行 = 大标题「专家」+ 操作簇
+  // （我的/发现 + 刷新 + 对话式建团 + 新建专家），第二行 = 分类 chips
+  // （按角色 category 字段推导，见上方推导口径注释；无分类可筛时不渲染、不留空高）。
+  // 「对话式建团」原在「组队」section 标题里，被 chips 行遮住半截——它是「新建」类
+  // 动作，并入第一行操作簇与「新建专家」并列（2026-07-27 产品负责人验收拍板）。
   return (
     <div data-testid="expert-panel">
       {selectedRecipe ? null : (
-        // 操作条与分类 chips 合一行同吸顶（2026-07-27 产品负责人拍板：分类与右侧操作同行对齐）；
-        // 底色跟内容区同层（zinc-900）+ 发丝底边，不再用更深的 zinc-950 形成断层黑条。
-        <div className="sticky top-0 z-10 -mx-6 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-800/70 bg-zinc-900/95 px-6 py-2 backdrop-blur">
+        <HubTabHeader
+          testId="expert-hub-header"
+          title={t.capabilityHub.tabExperts}
+          actions={(
+            <>
+              <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
+                {(['mine', 'discover'] as const).map((key) => (
+                  <button /* ds-allow:button: tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === key}
+                    data-testid={`expert-tab-${key}`}
+                    onClick={() => setTab(key)}
+                    className={`rounded px-2.5 py-1 text-xs transition-colors ${
+                      tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {key === 'mine' ? text.tabMine : text.tabDiscover}
+                  </button>
+                ))}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void load()}
+                disabled={loading}
+                leftIcon={<RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />}
+              >
+                {text.refresh}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => void startCreateTeamChat(t.team.createChatSessionTitle)} data-testid="expert-create-team-chat">
+                {t.team.createByChat}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
+                {text.createExpert}
+              </Button>
+            </>
+          )}
+        >
           {!loading && categoryGroups.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5" data-testid="expert-category-chips">
               {[{ key: 'all', label: text.categoryAll, count: shown.length }, ...categoryGroups.map((group) => ({ key: group.key, label: group.label, count: group.entries.length }))].map((chip) => (
@@ -356,38 +395,7 @@ export const ExpertPanel: React.FC = () => {
               ))}
             </div>
           ) : null}
-          <div className="ml-auto flex items-center gap-2">
-            <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
-              {(['mine', 'discover'] as const).map((key) => (
-                <button /* ds-allow:button: tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === key}
-                  data-testid={`expert-tab-${key}`}
-                  onClick={() => setTab(key)}
-                  className={`rounded px-2.5 py-1 text-xs transition-colors ${
-                    tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  {key === 'mine' ? text.tabMine : text.tabDiscover}
-                </button>
-              ))}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void load()}
-              disabled={loading}
-              leftIcon={<RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />}
-            >
-              {text.refresh}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
-              {text.createExpert}
-            </Button>
-          </div>
-        </div>
+        </HubTabHeader>
       )}
       <div>
         {selectedRecipe ? (
@@ -413,10 +421,7 @@ export const ExpertPanel: React.FC = () => {
           <div className="space-y-6">
             {tab === 'discover' ? (
               <section aria-labelledby="team-recipes-title">
-                <h2 id="team-recipes-title" className="mb-3 text-sm font-medium text-zinc-200">
-                  <span>{t.team.sectionTitle}</span>
-                  <Button className="ml-2" variant="ghost" size="sm" onClick={() => void startCreateTeamChat(t.team.createChatSessionTitle)}>{t.team.createByChat}</Button>
-                </h2>
+                <h2 id="team-recipes-title" className="mb-3 text-sm font-medium text-zinc-200">{t.team.sectionTitle}</h2>
                 <h3 className="mb-2 text-xs font-medium text-zinc-400">{t.team.builtinRecipes}</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {TEAM_RECIPES.map((recipe) => (

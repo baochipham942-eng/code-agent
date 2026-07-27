@@ -31,6 +31,7 @@ import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab'
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
 import type { SkillsMPSearchResult } from './SkillsSettingsCards';
 import { SkillInstallPreviewModal, mapRepoInstallError } from './SkillInstallPreviewModal';
+import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 
 // 分组/摘要工具函数集中在 SkillsInstalledTab，测试也从那里引用
 export {
@@ -456,18 +457,77 @@ export const SkillsSettings: React.FC = () => {
     }
   };
 
+  // 页头走四 tab 共用的 HubTabHeader：大标题「技能」与操作簇（添加技能 / 已安装|发现安装 /
+  // 刷新）同一行（2026-07-27 产品负责人验收拍板：「放一行不行吗」）。加载中也渲染页头，
+  // 与其余三个 tab 一致，避免标题闪现。
+  const hubHeader = (
+    <HubTabHeader
+      testId="skills-hub-header"
+      title={t.capabilityHub.tabSkills}
+      actions={(
+        <>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setCustomUrl('');
+              setCustomError(null);
+              setAddSkillModalOpen(true);
+            }}
+            leftIcon={<Plus className="h-3 w-3" />}
+          >
+            {skillsText.addSkill}
+          </Button>
+          <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
+            {([
+              ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
+              ['discover', skillsText.discoverTab],
+            ] as Array<[SkillsViewTab, string]>).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => setActiveTab(tab)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeTab === tab
+                    ? 'bg-zinc-700 text-zinc-100'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={loadData}
+            disabled={loading}
+            leftIcon={<RefreshCw className="h-3 w-3" />}
+          >
+            {skillsText.refresh}
+          </Button>
+        </>
+      )}
+    />
+  );
+
   // 加载中
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+      <div>
+        {hubHeader}
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+        </div>
       </div>
     );
   }
 
   return (
-    // 弹窗头部已展示「Skills / 能力与连接」标题，内容区直接从 Tab 开始，不再叠标题
     <div className="space-y-6">
+      {hubHeader}
       <WebModeBanner />
 
       {settingsCapabilityFocus?.kind === 'skill' && (
@@ -502,52 +562,6 @@ export const SkillsSettings: React.FC = () => {
           <span className="text-sm">{message.text}</span>
         </div>
       )}
-
-      {/* Tab 切换 + 刷新 + 添加技能 */}
-      <div className="flex items-center justify-end gap-3">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            setCustomUrl('');
-            setCustomError(null);
-            setAddSkillModalOpen(true);
-          }}
-          leftIcon={<Plus className="h-3 w-3" />}
-        >
-          {skillsText.addSkill}
-        </Button>
-        <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
-          {([
-            ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
-            ['discover', skillsText.discoverTab],
-          ] as Array<[SkillsViewTab, string]>).map(([tab, label]) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab}
-              onClick={() => setActiveTab(tab)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeTab === tab
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={loadData}
-          disabled={loading}
-          leftIcon={<RefreshCw className="h-3 w-3" />}
-        >
-          {skillsText.refresh}
-        </Button>
-      </div>
 
       {/* Tab 内容 */}
       {activeTab === 'installed' ? (

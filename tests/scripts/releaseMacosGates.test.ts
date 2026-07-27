@@ -922,6 +922,7 @@ describe('macOS release fail-closed gates', () => {
     const targets = Object.values(merged);
 
     expect(resourcePatch['../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app']).toBeNull();
+    expect(resourcePatch['../scripts/voice-aec-io']).toBeNull();
     expect(resourcePatch['../node_modules/@img/sharp-darwin-arm64/package.json']).toBeNull();
     expect(resourcePatch['../node_modules/@img/sharp-libvips-darwin-arm64/package.json']).toBeNull();
     expect(sources.some((resource) => resource.includes('Agent Neo Computer Use.app'))).toBe(false);
@@ -973,6 +974,18 @@ describe('macOS release fail-closed gates', () => {
       .toEqual([]);
     const missing = WINDOWS_SIDECARS.filter((source) => !shipped.includes(source));
     expect(missing, 'declared Windows sidecar disappeared from the overlay').toEqual([]);
+  });
+
+  it('builds, bundles, resolves and signs the macOS voice AEC helper', () => {
+    const resources = readTauriResources();
+    const buildAudio = readRepoFile('scripts/build-audio-capture.sh');
+    const nativeDesktop = readRepoFile('src-tauri/src/native_desktop.rs');
+    const releaseBundle = readRepoFile('scripts/tauri-release-bundle.sh');
+
+    expect(resources.map['../scripts/voice-aec-io']).toBe('scripts/voice-aec-io');
+    expect(buildAudio).toContain('build_swift_tool voice-aec-io');
+    expect(nativeDesktop).toContain('const VOICE_AEC_BINARY_NAME: &str = "voice-aec-io"');
+    expect(releaseBundle).toContain('-name "voice-aec-io"');
   });
 
   it('replaces arm64 native resources in the macOS x64 Tauri resource overlay', () => {

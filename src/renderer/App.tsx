@@ -183,10 +183,13 @@ export const App: React.FC = () => {
   // 响应式：窄屏先把横向空间让给聊天和右侧状态面板。
   const windowWidth = useWindowWidth();
   const isNarrowViewport = windowWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH;
-  // 宽屏右栏壳常驻：关闭最后一个视图后仍要挂载 Codex 式空态启动器。
-  // 窄屏继续只在确有可展示内容时临时占用聊天区。
-  // 视图切换器模型：右栏只有「收起」和「显示某个面板」两态，用户收起后不因活动信号自己弹回。
-  const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH && !workbenchCollapsed;
+  // 右栏「只在需要时出现」（2026-07-27 审美关拍板）：没有任何视图时不占位——
+  // 开一条默认新会话时右栏本来就无事可做，常驻空态启动器等于白占三分之一屏。
+  // 展开入口不失效：顶栏那颗 PanelRight 直接开「概览」视图（= 原来的空态启动器）。
+  // 视图切换器模型不变：用户收起后不因活动信号自己弹回。
+  const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH
+    && !workbenchCollapsed
+    && workbenchTabs.length > 0;
   const isPreviewActive = typeof activeWorkbenchTab === 'string' && activeWorkbenchTab.startsWith('preview:');
   const showNarrowWorkbench =
     !workbenchCollapsed &&

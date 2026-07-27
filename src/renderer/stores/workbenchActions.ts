@@ -113,6 +113,9 @@ export function createWorkbenchActions({
           : state.previewTabs;
         return {
           ...state,
+          // 用户显式开一个视图 = 要看右栏；收起位一并清掉，否则「展开」按钮点了没反应
+          // （右栏改成「有视图才占位」后，collapsed 与 tabs 空是两个各自能挡住它的条件）。
+          workbenchCollapsed: options?.source === 'auto' ? state.workbenchCollapsed : false,
           workbenchTabs: state.workbenchTabs.includes(view)
             ? state.workbenchTabs
             : [...state.workbenchTabs, view],

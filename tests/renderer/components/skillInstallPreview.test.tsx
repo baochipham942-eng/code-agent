@@ -134,7 +134,10 @@ describe('自定义库 staged 装前预览', () => {
 
     fireEvent.click(screen.getByText('alpha'));
     // markdown 渲染产物：标题/加粗是语义元素而非裸文本
-    expect(await screen.findByRole('heading', { name: 'Alpha Section' })).toBeTruthy();
+    // MarkdownCore 走 React.lazy，并行跑测试时 chunk 加载可能超过默认 1s，放宽等待
+    expect(
+      await screen.findByRole('heading', { name: 'Alpha Section' }, { timeout: 10000 })
+    ).toBeTruthy();
     expect(await screen.findByText('Alpha full body')).toBeTruthy();
     // 不再是一坨等宽裸文本 <pre>
     expect(container.querySelector('pre')).toBeNull();

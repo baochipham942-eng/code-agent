@@ -36,7 +36,7 @@ export const SidebarCapabilityZone: React.FC = () => {
     : showCronCenter ? 'automation'
     : null;
   const rowClass = (key: 'hub' | 'library' | 'automation') => (
-    `group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
+    `group flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors ${
       activeRow === key ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800/70'
     }`
   );

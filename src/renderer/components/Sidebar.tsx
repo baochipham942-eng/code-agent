@@ -638,9 +638,13 @@ export const Sidebar: React.FC = () => {
   };
 
   return (
-    // pr = 最右让给滚动条的窄带（见下方会话列表注释）：不滚动的兄弟块全部缩到同一条内轨，
-    // 滚动列表再用负 margin 把这条带要回去放自己的滚动条。
-    <div className="flex-1 flex flex-col bg-transparent overflow-hidden pr-[var(--scrollbar-size)]">
+    // 侧栏横向节奏的单一真源（2026-07-27 产品负责人：「内容都太靠左，而且左右 padding 不一样」）：
+    //   根左右各让一条 --scrollbar-size 的带 → 右边那条给滚动条用（列表用等宽负 margin 要回去），
+    //   左边那条是纯留白，于是**外框左右等宽**；各区块统一 px-2(8)，各行内统一 px-3(12)。
+    //   ⇒ 任意行的内容左缘 26 / 右缘 214，左右留白都是 26。
+    // 改这里的任何一个数，下面每一处（入口区 / 分组头 / 会话行 / 账号行 / 顶行图标）都要跟着对，
+    // 否则又会退回改之前那种「三条右轨、两条左轨」的状态。
+    <div className="flex-1 flex flex-col bg-transparent overflow-hidden px-[var(--scrollbar-size)]">
       {/* Header: h-12 to align with TitleBar on the right.
           2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
           hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端；灯的纵向由原生 objc
@@ -852,10 +856,11 @@ export const Sidebar: React.FC = () => {
               onClick={() => setShowUserMenu(!showUserMenu)}
               aria-label={sb.userMenu}
               aria-expanded={showUserMenu}
-              /* 落到全侧栏基准轨（2026-07-27 对齐规范）：pl-2 使外层 8 + 8 = 图标左缘 16；
-                 图标 16px + gap-2.5(10) 使昵称左缘 42，与入口行/分组名/会话行标题同线；
-                 pr-3 使展开箭头右缘 220、中心 212，与分组头角标/会话行状态点同轴。 */
-              className="w-full flex items-center gap-2.5 pl-2 pr-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
+              /* 落到全侧栏基准轨（数值见 Sidebar 根的横向节奏注释）：
+                 根带 6 + 容器 p-2(8) + 行 px-3(12) = 图标左缘 26；+图标 16 +gap-2.5(10) = 昵称左缘 52，
+                 与入口行/分组名/会话行标题同线；右侧同样 6+8+12 ⇒ 内容右缘 214，
+                 展开箭头与分组头角标/会话行状态点同轴。左右内边距都用 px-3，不再一边 8 一边 12。 */
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
             >
               {user.avatarUrl ? (
                 <img src={user.avatarUrl} alt="" className="w-4 h-4 shrink-0 rounded-full object-cover" />

@@ -22,7 +22,7 @@ export const SidebarNewTaskRow: React.FC<SidebarNewTaskRowProps> = ({
       onClick={onClick}
       disabled={disabled}
       data-testid="sidebar-new-task"
-      className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70 disabled:cursor-not-allowed disabled:opacity-50"
+      className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-zinc-800/70 disabled:cursor-not-allowed disabled:opacity-50"
     >
       {/* 与能力区三行同一形态：裸图标 + 文字（2026-07-26 打磨批 D D1）。
           品牌瓦片（色块图标容器）与能力中心/资料库/自动化是两种语言，产品负责人

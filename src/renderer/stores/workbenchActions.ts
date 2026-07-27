@@ -85,6 +85,8 @@ export function createWorkbenchActions({
         return;
       }
 
+      // 打开右栏视图 = 人在会话区，二级页让位（侧栏常驻后二级页与会话区可同屏共存）。
+      get().closeSecondaryPages();
       const view = target.view;
       set((state) => {
         const taskWorkbenchOpenSource = id === 'task' || id === 'overview'
@@ -111,6 +113,11 @@ export function createWorkbenchActions({
           : state.previewTabs;
         return {
           ...state,
+          // 打开一个视图 = 要看右栏，所以默认清掉收起位。
+          // 唯一例外：活动信号（source: 'auto'）撞上**用户自己按过的收起**——那是 #700 的
+          // 「收起后不因活动信号自己弹回」。产品默认的收起态（workbenchCollapsedByUser=false）
+          // 不算用户意图，任务开跑照样把右栏带出来（2026-07-27 产品负责人拍板）。
+          workbenchCollapsed: options?.source === 'auto' && state.workbenchCollapsedByUser,
           workbenchTabs: state.workbenchTabs.includes(view)
             ? state.workbenchTabs
             : [...state.workbenchTabs, view],

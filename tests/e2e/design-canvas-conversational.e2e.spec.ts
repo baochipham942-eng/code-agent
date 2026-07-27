@@ -72,13 +72,26 @@ async function enterSessionState(page: Page): Promise<void> {
   await expect(page.locator('[data-chat-input]')).toBeVisible({ timeout: 10_000 });
 }
 
+/**
+ * 右栏默认收起（2026-07-27 审美关：新会话不该一上来就占三分之一屏），
+ * 所以任何要摸右栏的用例先从标题栏展开一次——这也是真实用户路径。
+ */
+async function expandWorkbench(page: Page): Promise<void> {
+  const expandBtn = page.locator('[data-testid="titlebar-expand-workbench"]');
+  await expandBtn.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+  if (await expandBtn.isVisible().catch(() => false)) {
+    await expandBtn.click();
+  }
+}
+
 test('从聊天点设计画布入口 → design-canvas tab 激活 + konva 画布非零尺寸渲染', async ({ page }) => {
   await waitForAppReady(page);
   await enterSessionState(page);
 
-  // 1. 宽屏下右栏常驻，没打开任何面板时直接给空态启动器；有会话时设计画布可点。
+  // 1. 右栏默认收起，先展开；展开后没打开任何面板时给空态启动器，有会话时设计画布可点。
   //    （旧写法先用 TitleBar 开一个 tab、再找 open-design-canvas —— 那个 testid 和
   //    「Show task panel」标签早已不存在，此 spec 不在 CI 内所以一直没被发现。）
+  await expandWorkbench(page);
   const entryBtn = page.locator('[data-testid="open-workbench-view-design-canvas"]');
   await expect(entryBtn).toBeVisible({ timeout: 10_000 });
   await expect(entryBtn).toBeEnabled();
@@ -126,6 +139,7 @@ test('右栏能整栏收起，再从标题栏展开回原来的面板', async ({
   await waitForAppReady(page);
   await enterSessionState(page);
 
+  await expandWorkbench(page);
   const launcher = page.locator('[data-testid="workbench-empty-launcher"]');
   await expect(launcher).toBeVisible({ timeout: 10_000 });
 

@@ -328,6 +328,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     switchSession: async (sessionId: string) => {
       const { currentSessionId, unreadSessionIds } = get();
+      // 落到某个会话 = 回到会话区：二级页（能力中心/资料库/自动化…）让位。
+      // 放在早退之前——从二级页点当前会话也要回得来。
+      useAppStore.getState().closeSecondaryPages();
       if (currentSessionId === sessionId) return;
 
       // 竞态保护：记录本次切换的版本号，异步完成后检查是否过期

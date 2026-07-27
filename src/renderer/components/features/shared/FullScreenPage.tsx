@@ -1,22 +1,32 @@
 // ============================================================================
 // FullScreenPage / FullScreenPageHeader - 二级页面统一外壳
 //
-// 外壳契约（与设置页同范式，参照 Codex 设置页）：
-// - 整窗接管：全屏 fixed 覆盖层，底色 bg-zinc-900 与主窗口内容区同层（不再用更深的
-//   zinc-950 造成明暗层级颠倒），进场统一 animate-fadeIn 淡入。
-// - header 与主 TitleBar 对齐：同为 h-12，且不声明 WebkitAppRegion 拖拽区
-//   （TitleBar 本身也不是 drag region）。
-// - 关闭范式统一为左上角「← 返回应用」（复用 i18n key settings.backToApp，
-//   不再各页自传 closeLabel / 右上角 X）；title 紧随其后，右侧仅保留页面级
-//   actions 插槽。
+// 外壳契约（2026-07-27 二级页架构批 C 改版，参照 Codex：常驻左栏 + 右侧大标题内容区）：
+// - variant="inline"：**不接管整窗**，在 App 右侧内容区内就地铺满（min-w-0 flex-1）。
+//   左侧边栏常驻可见，导航语义 = 侧栏直接切换，因此 header 不再画「← 返回应用」。
+//   能力中心 / 资料库 / 自动化 / 专家详情 / 知识记忆 / 本机操作走这一档。
+// - variant="overlay"（默认，= 改版前行为）：整窗固定覆盖层接管，给真独立页
+//   （设置、评测中心、Lab、工作流、提示词库、活动、时间能力、项目协作、桌面状态）
+//   ——它们自带左导航或属深度工具面，不参与侧栏三件套的横向切换。
+//   默认留在 overlay 是刻意的：新增页不写 variant 时退回旧行为，不会静默漏进右侧区。
+//
+// header 契约：
+// - variant="page"（默认）：标题块坐在内容区顶部，px-6 大标题 + 描述 + 右侧 actions。
+//   这是拍板形态（「标题放右边更清晰」），inline 与 overlay 页共用。
+// - variant="bar"：h-12 紧凑条，与主 TitleBar 同高，留给仍需紧凑顶栏的页面。
+// - onClose 可选：给了才画返回按钮（overlay 页需要，inline 页靠侧栏返回）。
 // ============================================================================
 import React from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 
+type FullScreenPageVariant = 'inline' | 'overlay';
+type FullScreenPageHeaderVariant = 'page' | 'bar';
+
 interface FullScreenPageProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   testId?: string;
+  variant?: FullScreenPageVariant;
 }
 
 interface FullScreenPageHeaderProps {
@@ -25,19 +35,25 @@ interface FullScreenPageHeaderProps {
   description?: string;
   badge?: React.ReactNode;
   actions?: React.ReactNode;
-  onClose: () => void;
+  /** 省略则不画返回按钮（inline 页靠侧栏切换返回） */
+  onClose?: () => void;
+  /** 返回按钮文案，默认「返回应用」；下钻页（如专家详情）用它说清回哪儿 */
+  closeLabel?: string;
+  variant?: FullScreenPageHeaderVariant;
 }
 
 export const FullScreenPage: React.FC<FullScreenPageProps> = ({
   children,
   className = '',
   testId,
+  variant = 'overlay',
   ...divProps
 }) => (
   <div
     {...divProps}
     data-testid={testId}
-    className={`fixed inset-0 z-50 flex min-h-0 flex-col bg-zinc-900 text-zinc-100 animate-fadeIn ${className}`}
+    data-page-variant={variant}
+    className={`${variant === 'overlay' ? 'fixed inset-0 z-50' : 'min-w-0 flex-1'} flex min-h-0 flex-col bg-zinc-900 text-zinc-100 animate-fadeIn ${className}`}
   >
     {children}
   </div>
@@ -50,33 +66,63 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
   badge,
   actions,
   onClose,
+  closeLabel,
+  variant = 'page',
 }) => {
   const { t } = useI18n();
-  return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4">
-      <div className="flex min-w-0 items-center gap-3">
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          <span>{t.settings.backToApp}</span>
-        </button>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700/70 bg-zinc-800">
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="truncate text-base font-semibold text-zinc-100">{title}</h2>
-            {badge}
-          </div>
-          {description ? <p className="mt-0.5 truncate text-xs text-zinc-500">{description}</p> : null}
-        </div>
-      </div>
+  const backButton = onClose ? (
+    <button
+      type="button"
+      onClick={onClose}
+      data-testid="full-screen-page-back"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
+    >
+      <ChevronLeft className="h-4 w-4" />
+      <span>{closeLabel ?? t.settings.backToApp}</span>
+    </button>
+  ) : null;
 
-      <div className="flex shrink-0 items-center gap-2">
-        {actions}
+  if (variant === 'bar') {
+    return (
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {backButton}
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700/70 bg-zinc-800">
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="truncate text-base font-semibold text-zinc-100">{title}</h2>
+              {badge}
+            </div>
+            {description ? <p className="mt-0.5 truncate text-xs text-zinc-500">{description}</p> : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">{actions}</div>
+      </header>
+    );
+  }
+
+  // page 形态：标题块坐在内容区顶部（px-6 与 PageContent 同横向节奏），
+  // 大标题独占视觉一等位、actions 与标题同行右对齐，描述压在标题下方。
+  // 二级页在位时右侧顶栏不渲染，本标题块就是窗口顶部——原生标题栏撤掉后它得能拖窗口。
+  return (
+    <header className="shrink-0 px-6 pb-4 pt-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+      {backButton ? <div className="-ml-2 mb-3">{backButton}</div> : null}
+      <div className="flex items-start justify-between gap-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-700/70 bg-zinc-800">
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-xl font-semibold tracking-tight text-zinc-100">{title}</h1>
+              {badge}
+            </div>
+            {description ? <p className="mt-1 truncate text-sm text-zinc-500">{description}</p> : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 pt-1">{actions}</div>
       </div>
     </header>
   );

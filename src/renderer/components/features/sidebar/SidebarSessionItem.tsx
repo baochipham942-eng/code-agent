@@ -212,12 +212,20 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
 
-        {/* 分叉标记：固定 16px 槽位、与行尾状态列同轴（不跟标题长度漂移），
-            仅分叉来的子会话显示，点击跳回父会话；hover 动作簇上来时随状态列一起让位。 */}
+        {/* 行尾固定 16px 状态列（2026-07-27 对齐规范）：宽度恒定，内容互斥——
+            运行中 spinner / 需关注圆点 / 分叉标记 / 未读点 / 空，全部同一竖轴。
+            分叉标记点击跳回父会话。相对时间已撤（产品拍板：新旧由排序表达，
+            精确时间在行 title 里），右槽不再讲第二件事。 */}
         {!isRenaming && (
           <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
-            {forkParentSessionId && !multiSelectMode && (
-              <button /* ds-allow:button: 侧栏列表行状态轴上的分叉来源小图标，Button primitive 动作按钮形状不适配列表行 */
+            {surfaceExecutionSession ? (
+              <SurfaceExecutionRunStatus session={surfaceExecutionSession} placement="sidebar" />
+            ) : isRunning ? (
+              <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
+            ) : attentionDotClass ? (
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
+            ) : forkParentSessionId && !multiSelectMode ? (
+              <button /* ds-allow:button: 侧栏状态轴上的分叉来源小图标，Button primitive 动作按钮形状不适配列表行 */
                 type="button"
                 data-testid="fork-lineage-marker"
                 aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}
@@ -230,21 +238,6 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               >
                 <GitFork className="h-3.5 w-3.5" />
               </button>
-            )}
-          </span>
-        )}
-
-        {/* 行尾固定 16px 状态列（2026-07-27 对齐规范）：宽度恒定，内容互斥——
-            运行中 spinner / 需关注圆点 / 未读点 / 空。相对时间已撤（产品拍板：
-            新旧由排序表达，精确时间在行 title 里），右槽不再讲第二件事。 */}
-        {!isRenaming && (
-          <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
-            {surfaceExecutionSession ? (
-              <SurfaceExecutionRunStatus session={surfaceExecutionSession} placement="sidebar" />
-            ) : isRunning ? (
-              <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
-            ) : attentionDotClass ? (
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
             ) : isUnread && !multiSelectMode ? (
               <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
             ) : null}

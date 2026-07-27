@@ -27,6 +27,10 @@ export interface RewindConversationResult {
   success: true;
   sessionId: string;
   rewindId: string;
+  /**
+   * Compatibility field retained for existing renderer consumers. Rewind keeps
+   * the anchor prompt visible, so host/web surfaces return an empty draft.
+   */
   draft: {
     content: string;
     attachments?: MessageAttachment[];

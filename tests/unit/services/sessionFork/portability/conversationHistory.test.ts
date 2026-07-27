@@ -181,9 +181,8 @@ function sourceRows(): ConversationHistorySourceRows {
         anchorOrdinal: 2,
         anchorEntryId: 'e-u2',
         anchorMessageId: 'c-u2',
-        hiddenMessageIds: ['c-u2', 'c-a2'],
+        hiddenMessageIds: ['c-a2'],
         hidden: [
-          { ordinal: 2, entryId: 'e-u2', projectedMessageId: 'c-u2' },
           { ordinal: 3, entryId: 'e-a2', projectedMessageId: 'c-a2' },
         ],
       }),
@@ -536,7 +535,7 @@ describe('portable P2 conversation history', () => {
     expect(rewind?.input).toMatchObject({
       sessionId: 'target-child',
       anchorMessageId: 'target-c-u2',
-      hiddenMessageIds: ['target-c-u2', 'target-c-a2'],
+      hiddenMessageIds: ['target-c-a2'],
       rewindId: plan.rewindIdMap['rewind-1'],
     });
     const evaluation = plan.actions.find(

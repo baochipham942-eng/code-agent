@@ -67,7 +67,8 @@ async function createSessionAndGetId(page: Page): Promise<string> {
 }
 
 async function openOverviewView(page: Page): Promise<void> {
-  // 右栏默认收起（#700 的 workbenchCollapsed），先从标题栏展开
+  // 右栏默认收起（2026-07-27 审美关把 appStore 初值 workbenchCollapsed 改为 true；
+  // #700 引入该字段时默认是 false=展开，本行原注释与当时实现不符），先从标题栏展开
   const expandPanel = page.getByRole('button', { name: '展开面板' });
   await expandPanel.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
   if (await expandPanel.isVisible().catch(() => false)) {

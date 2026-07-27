@@ -98,7 +98,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   }),
 }));
 
-import { registerRolesHandlers } from '../../../src/host/ipc/roles.ipc';
+import { registerRolesHandlers, sanitizeLastWork } from '../../../src/host/ipc/roles.ipc';
 import {
   ensureRoleAssetDirs,
   writeScopedMemory,
@@ -167,7 +167,14 @@ describe('roles.ipc (domain:roles)', () => {
       expect(entry.roleId).toBe('研究员');
       expect(entry.description).toContain('调研');
       expect(entry.memoryCount).toBe(2);
-      expect(entry.lastWork).toContain('Q2 报告');
+      expect(entry.lastWork).toBe('2026-06-03 产出报告');
+    });
+
+    it('returns null last work when a role has no history', async () => {
+      await ensureRoleAssetDirs('研究员');
+      const res = await invoke<RolePanelEntry[]>('list');
+      expect(res.success).toBe(true);
+      expect(res.data?.[0].lastWork).toBeNull();
     });
 
     it('marks builtin roles as builtin even when registry reports user source', async () => {
@@ -538,5 +545,22 @@ describe('roles.ipc (domain:roles)', () => {
       expect(res.success).toBe(false);
       expect(res.error?.code).toBe('UNKNOWN_ACTION');
     });
+  });
+});
+
+describe('sanitizeLastWork', () => {
+  it('removes internal labels and leaked work directories from a history row', () => {
+    expect(sanitizeLastWork('- 2026-07-22 | Directory: wt-e4a6fix | [工作目录: /private/tmp/xx/yy] 修复了侧栏对齐'))
+      .toBe('2026-07-22 修复了侧栏对齐');
+  });
+
+  it('cleans absolute paths from an unstructured row', () => {
+    expect(sanitizeLastWork('- 检查 /Users/linchen/project 和 C:\\workspace\\secret 后完成'))
+      .toBe('检查 和 后完成');
+  });
+
+  it('falls back to the cleaned label when the summary only contains a path', () => {
+    expect(sanitizeLastWork('- 2026-07-22 | 完成竞品报告 | ~/projects/private-report.md'))
+      .toBe('2026-07-22 完成竞品报告');
   });
 });

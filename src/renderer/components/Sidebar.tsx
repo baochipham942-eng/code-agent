@@ -50,6 +50,9 @@ import { sessionAutomationClient } from '../services/sessionAutomationClient';
 import { SessionReplaySummaryDialog } from './features/sidebar/SessionReplaySummaryDialog';
 import { getSessionTypeLabel } from './features/sidebar/SessionTypeFilterBar';
 import { AccountMenuItem, AccountMenuLabel } from './features/sidebar/sidebarPresentation';
+import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
+import { isTauriMode } from '../utils/platform';
+import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
 import { formatRelativeTime } from '../utils/i18nTime';
 import ipcService from '../services/ipcService';
@@ -93,8 +96,24 @@ export function isAccountMenuEventOutside(
 
 export const Sidebar: React.FC = () => {
   const { t } = useI18n();
-  // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）
+  // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）。
+  // 红绿灯只存在于「Tauri 壳 + macOS + 非全屏」：全屏时系统把它藏起来，浏览器里根本没有——
+  // 这两种态左上角空着难看，改挂品牌标（2026-07-27 产品负责人拍板）。
   const isMacShell = getCurrentKeybindingPlatform() === 'darwin';
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+  useEffect(() => {
+    if (!isTauriMode()) return;
+    let alive = true;
+    const check = () => {
+      isNativeWindowFullscreen()
+        .then((v) => { if (alive) setIsNativeFullscreen(v); })
+        .catch(() => {});
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => { alive = false; window.removeEventListener('resize', check); };
+  }, []);
+  const trafficLightZone = isMacShell && isTauriMode() && !isNativeFullscreen;
   const sb = t.sidebar;
   const {
     clearPlanningState,
@@ -642,13 +661,17 @@ export const Sidebar: React.FC = () => {
       {/* Header: h-12 to align with TitleBar on the right.
           2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
           hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端，所以 darwin 下
-          左侧留出 72px 死区；② 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的
-          地方，可以先不展示」），这行于是只剩右侧功能图标——与 Codex 参照一致。
+          左侧留出 72px 死区；② 品牌标只在红绿灯不在场时展示（全屏/浏览器/非 mac 壳，
+          2026-07-27 产品负责人：那两种态左上角太空），红绿灯在场时仍不展示。
           本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。 */}
       <div
-        className={`h-12 flex items-center justify-end gap-2 flex-shrink-0 pr-3 ${isMacShell ? 'pl-[72px]' : 'pl-3'}`}
+        className={`h-12 flex items-center justify-between gap-2 flex-shrink-0 pr-3 ${trafficLightZone ? 'pl-[72px]' : 'pl-3'}`}
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
+        {/* 左槽：红绿灯不在场（全屏/浏览器/非 mac 壳）时挂品牌标，否则留空由 pl-[72px] 让位 */}
+        <div className="flex min-w-0 items-center">
+          {!trafficLightZone && <NeoBrandMark size={22} />}
+        </div>
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           {!isAuthLoading && (
             <>

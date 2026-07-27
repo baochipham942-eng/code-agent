@@ -30,8 +30,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
   return (
     // 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay），窗口得自己留拖拽区：
     // 本行整体可拖，行内控件逐个 no-drag。
+    // bg-zinc-900 与下方聊天区/右栏同色、不画下边框——顶栏与内容区打通成一整块
+    // （2026-07-27 产品负责人：黑色顶栏与下方割裂）。
     <div
-      className="h-12 flex items-center justify-between px-4 border-b border-border-muted bg-transparent backdrop-blur-sm relative z-30"
+      className="h-12 flex items-center justify-between px-4 bg-zinc-900 relative z-30"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>

@@ -65,7 +65,7 @@ describe('FolderTrustDialog', () => {
         },
       ],
       blockedItems: [],
-    } as const;
+    };
 
     for (const state of ['blocked', 'trusted'] as const) {
       const evaluation = { ...base, state, dangerousItems: [...base.dangerousItems] };

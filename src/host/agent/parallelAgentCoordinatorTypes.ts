@@ -1,13 +1,10 @@
-import { createHash } from 'crypto';
-import * as path from 'path';
 import type { AgentFailureCode } from '../../shared/contract/agentFailure';
 import {
   getSwarmRunScopeKey,
   type SwarmAgentContextSnapshot,
   type SwarmRunScope,
 } from '../../shared/contract/swarm';
-import { AGENT_TIMEOUTS, COORDINATION_CHECKPOINTS } from '../../shared/constants';
-import { getUserConfigDir } from '../config/configPaths';
+import { AGENT_TIMEOUTS } from '../../shared/constants';
 import type { SubagentResult } from './subagentExecutorTypes';
 
 export interface AgentTask {
@@ -118,64 +115,8 @@ export interface CoordinatorConfig {
   aggregateResults: boolean;
 }
 
-export interface ParallelCheckpoint {
-  version: number;
-  sessionId: string;
-  runId?: string;
-  treeId?: string;
-  createdAt: number;
-  updatedAt: number;
-  taskDefinitions: Array<[string, AgentTask]>;
-  completedTasks: Array<[string, AgentTaskResult]>;
-  runningTaskIds: string[];
-  sharedContext: {
-    findings: Record<string, unknown>;
-    files: Record<string, string>;
-    decisions: Record<string, string>;
-    errors: string[];
-    lastUpdated?: Record<string, number>;
-  };
-}
-
-export type ParallelCheckpointIdentity = string | SwarmRunScope;
-
-function getCheckpointDigest(value: string): string {
-  return createHash('sha256').update(value).digest('hex').slice(0, 32);
-}
-
 export function isSameRunScope(left: SwarmRunScope, right: SwarmRunScope): boolean {
   return getSwarmRunScopeKey(left) === getSwarmRunScopeKey(right);
-}
-
-export function getCheckpointIdentity(identity: ParallelCheckpointIdentity): {
-  sessionId: string;
-  runId?: string;
-  treeId?: string;
-  fileName: string;
-} {
-  if (typeof identity === 'string') {
-    const safeLegacyName = (
-      identity !== '.'
-      && identity !== '..'
-      && /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(identity)
-    )
-      ? identity
-      : `legacy-${getCheckpointDigest(identity)}`;
-    return { sessionId: identity, fileName: safeLegacyName };
-  }
-  return {
-    ...identity,
-    fileName: `run-${getCheckpointDigest(getSwarmRunScopeKey(identity))}`,
-  };
-}
-
-export function getParallelCheckpointPath(identity: ParallelCheckpointIdentity): string {
-  const checkpointIdentity = getCheckpointIdentity(identity);
-  return path.join(
-    getUserConfigDir(),
-    COORDINATION_CHECKPOINTS.PARALLEL_DIR,
-    `${checkpointIdentity.fileName}.json`,
-  );
 }
 
 export const DEFAULT_COORDINATOR_CONFIG: CoordinatorConfig = {

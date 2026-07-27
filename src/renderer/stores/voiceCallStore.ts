@@ -55,6 +55,8 @@ interface VoiceCallStoreState {
   micLevel: number;
   playbackLevel: number;
   error: VoiceCallError | null;
+  /** 通话中的一次性提示（如「当前模型不支持派活」）；不致命，不进 error 态 */
+  notice: string | null;
   ttfa: { modelMs?: number; perceivedMs?: number } | null;
 
   /** 以下动作只由 voiceCallBridge 调用 */
@@ -67,6 +69,7 @@ interface VoiceCallStoreState {
     partialAssistant?: string;
     workItem?: VoiceWorkItem;
     error?: VoiceCallError | null;
+    notice?: string | null;
     ttfa?: { modelMs?: number; perceivedMs?: number };
   }) => void;
   levelsChanged: (mic: number, playback: number) => void;
@@ -93,6 +96,7 @@ const INITIAL = {
   micLevel: 0,
   playbackLevel: 0,
   error: null,
+  notice: null,
   ttfa: null,
 };
 
@@ -121,6 +125,7 @@ export const useVoiceCallStore = create<VoiceCallStoreState>((set) => ({
         ? [...state.workItems.filter((item) => item.id !== event.workItem!.id), event.workItem]
         : state.workItems,
       error: event.error === undefined ? state.error : event.error,
+      notice: event.notice === undefined ? state.notice : event.notice,
       ttfa: event.ttfa ?? state.ttfa,
     })),
 

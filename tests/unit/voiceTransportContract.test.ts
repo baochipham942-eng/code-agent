@@ -6,11 +6,13 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'events';
 import type { VoiceEvent, VoiceTransport, VoiceTransportHandle, VoiceTurnDetectionConfig } from '../../src/shared/contract/voice';
+import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 
 /** 最小 ws 替身：qwenOmniTransport 只用到 open/error 事件、send、readyState、close。 */
 class FakeUpstream extends EventEmitter {
   static OPEN = 1;
   readyState = 1;
+  url = '';
   sent: string[] = [];
   send(data: string) {
     this.sent.push(data);
@@ -31,8 +33,9 @@ const mockConfig = vi.hoisted(() => ({
 vi.mock('ws', () => {
   class MockWebSocket extends FakeUpstream {
     static OPEN = 1;
-    constructor() {
+    constructor(url: string) {
       super();
+      this.url = url;
       upstreams.push(this);
       setTimeout(() => this.emit('open'), 0);
     }
@@ -295,6 +298,67 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     const upstream = upstreams[upstreams.length - 1];
 
     expect(readSessionUpdate(upstream).session.turn_detection).toMatchObject({ type: 'server_vad' });
+
+    await handle.close();
+  });
+
+  // 工单③：通话模型可配。判据打在「WS URL 里的 ?model= 真是什么」，不是「字段被赋了值」。
+  it('config.model 真进 WS URL 的 ?model=；未传时回落默认常量', async () => {
+    const explicit = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', model: 'qwen3-omni-flash-realtime' },
+      onEvent: vi.fn(),
+      onAudio: vi.fn(),
+    });
+    expect(upstreams[upstreams.length - 1].url).toContain('?model=qwen3-omni-flash-realtime');
+    await explicit.close();
+
+    const fallback = await connectHandle(qwenOmniTransport);
+    expect(upstreams[upstreams.length - 1].url).toContain(`?model=${QWEN_OMNI_REALTIME_MODEL}`);
+    await fallback.close();
+  });
+
+  // 工单③ fail-loud 兜底：上一代模型对 tools 是「收下不报错、回显 null」——
+  // 判据是「用户可见的 notice 真发出去了」，不是「logger.warn 被调了」。
+  it('注册了 tools 但 session.updated 回显 tools: null → 发用户可见 notice，一条连接只发一次', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+      onToolCall: async () => 'ok',
+    });
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({ type: 'session.updated', session: { tools: null } }));
+    // 上游可能刷多条 session.updated（比如 focus 刷新后），提示只该出现一次
+    upstream.emit('message', JSON.stringify({ type: 'session.updated', session: {} }));
+
+    const notices = events.filter((event) => event.type === 'notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ type: 'notice', code: 'VOICE_TOOLS_DROPPED' });
+
+    await handle.close();
+  });
+
+  it('session.updated 回显真收下了 tools → 不发 notice', async () => {
+    const events: VoiceEvent[] = [];
+    const handle = await qwenOmniTransport.connect({
+      apiKey: 'test-key',
+      config: { neoSessionId: 's1', tools: [{ type: 'function', name: 'get_active_tasks', description: 'd', parameters: { type: 'object', properties: {}, required: [] } }] },
+      onEvent: (event) => events.push(event),
+      onAudio: vi.fn(),
+      onToolCall: async () => 'ok',
+    });
+    const upstream = upstreams[upstreams.length - 1];
+
+    upstream.emit('message', JSON.stringify({
+      type: 'session.updated',
+      session: { tools: [{ type: 'function', name: 'get_active_tasks' }] },
+    }));
+
+    expect(events.filter((event) => event.type === 'notice')).toHaveLength(0);
 
     await handle.close();
   });

@@ -88,6 +88,11 @@ export type VoiceEvent =
   | { type: 'response.done'; ttfaModelMs?: number; ttfaPerceivedMs?: number }
   /** 语音派出的任务状态。Active Work 条消费（批 B），host 侧同时用它计通话摘要的 workItemCount。 */
   | { type: 'work.upsert'; item: VoiceWorkItem }
+  /**
+   * 用户可见的一次性提示（不致命，通话继续）。判据钉在上游真实回显上——
+   * 例如注册了 tools 但 session.updated 回显 tools: null（模型不支持 function calling）。
+   */
+  | { type: 'notice'; code: string; message: string }
   | { type: 'error'; code: string; message: string };
 
 /**

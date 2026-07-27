@@ -164,6 +164,8 @@ export const qwenOmniTransport: VoiceTransport = {
     // 「转写有了但模型不开口」时，日志里一片空白，无法判因。这里只记事件
     // **类型**和计数，绝不记 delta / audio 内容（音频不落日志是硬纪律）。
     const eventTypeSeen = new Map<string, number>();
+    // tools 被上游静默丢弃的用户可见提示：一通电话只报一次，别每条 session.updated 刷。
+    let toolsDroppedNotified = false;
     ws.on('message', (raw) => {
       const event = parseEvent(raw);
       if (!event) return;
@@ -215,6 +217,17 @@ export const qwenOmniTransport: VoiceTransport = {
               model,
               sent: registeredTools.length,
             });
+            // fail-loud 兜底：判据打在「上游真的回了什么」上，不打在白名单表里写了什么——
+            // 表可能过期，上游行为可能变。只进日志用户看不见，必须让通话里的人当场知道
+            // 「这通电话派不了活」，否则他只会觉得这玩意儿今天不肯干活。
+            if (!toolsDroppedNotified) {
+              toolsDroppedNotified = true;
+              onEvent({
+                type: 'notice',
+                code: 'VOICE_TOOLS_DROPPED',
+                message: `当前通话模型（${model}）不支持在通话中派活，这通电话只能聊天`,
+              });
+            }
           }
           break;
         }

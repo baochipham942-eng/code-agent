@@ -437,6 +437,9 @@ class VoiceCallBridge {
       case 'work.upsert':
         this.store().eventApplied({ workItem: event.item });
         break;
+      case 'notice':
+        this.store().eventApplied({ notice: event.message });
+        break;
       case 'error':
         this.store().phaseChanged('error');
         this.store().eventApplied({ error: { code: event.code, message: event.message } });

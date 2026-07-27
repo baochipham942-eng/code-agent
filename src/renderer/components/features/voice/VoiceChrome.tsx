@@ -150,8 +150,9 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
     <div
       data-testid="voice-chrome"
       data-state={visual}
-      className="mb-2 flex items-center gap-3 rounded-xl border border-zinc-700/70 bg-zinc-900/80 px-3 py-2"
+      className="mb-2 rounded-xl border border-zinc-700/70 bg-zinc-900/80 px-3 py-2"
     >
+      <div className="flex items-center gap-3">
       <PresenceWave state={visual} level={level} />
       <span data-testid="voice-status" className={`shrink-0 text-xs ${STATE_COLOR[visual]}`}>
         {statusText}
@@ -205,6 +206,14 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
         <Phone className="h-3.5 w-3.5" />
         {t.voice.live.end}
       </button>
+      </div>
+
+      {/* 一次性提示（如 tools 被上游静默丢弃）：不抢 error 态，通话继续，但用户必须当场看见 */}
+      {store.notice && (
+        <p data-testid="voice-call-notice" className="mt-1.5 text-xs leading-5 text-amber-300">
+          {store.notice}
+        </p>
+      )}
     </div>
   );
 };

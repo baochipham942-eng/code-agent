@@ -361,6 +361,9 @@ export const zhSettingsModels = {
       reset: '恢复默认',
       resetCustomTitle: '删除自定义人格，恢复内置默认',
       resetDefaultTitle: '当前已是内置默认',
+      promptEntryTitle: '提示词管理',
+      promptEntryDescription: '查看和覆写 Agent 使用的各类提示词（系统提示词、工具说明等），覆写保存到本地并对下一轮对话立即生效。',
+      promptEntryButton: '打开提示词管理',
     },
     skills: {
       main: {

@@ -39,7 +39,7 @@ describe('CapabilityHubPage', () => {
     await waitFor(() => expect(useAppStore.getState().capabilityHubTab).toBe('experts'));
   });
 
-  it('提示词入口仅 admin 可见（2026-07 方案 9C 从用户菜单迁入）', () => {
+  it('任何身份都不再有提示词入口（2026-07-27 拍板：提示词入口迁设置页 → 人格 tab）', () => {
     useAuthStore.setState({ user: user(false) });
     const { unmount } = render(<CapabilityHubPage />);
     expect(screen.queryByTestId('capability-hub-open-prompts')).toBeNull();
@@ -47,6 +47,6 @@ describe('CapabilityHubPage', () => {
 
     useAuthStore.setState({ user: user(true) });
     render(<CapabilityHubPage />);
-    expect(screen.getByTestId('capability-hub-open-prompts')).toBeTruthy();
+    expect(screen.queryByTestId('capability-hub-open-prompts')).toBeNull();
   });
 });

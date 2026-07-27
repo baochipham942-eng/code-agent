@@ -58,7 +58,9 @@ export const SkillsSettings: React.FC = () => {
   const settingsCapabilityFocus = useAppStore((state) => state.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((state) => state.clearSettingsCapabilityFocus);
   // 视图状态（默认「已安装」：先看自己的，再逛货架）
-  const [activeTab, setActiveTab] = useState<SkillsViewTab>('installed');
+  // 默认落「发现安装」：新用户「已安装」多为空，发现视角是更好的第一屏；
+  // 深链（settingsCapabilityFocus）与安装成功后仍会显式切到已安装
+  const [activeTab, setActiveTab] = useState<SkillsViewTab>('discover');
 
   // 数据状态
   const [libraries, setLibraries] = useState<LocalSkillLibrary[]>([]);

@@ -130,12 +130,14 @@ describe('自定义库 staged 装前预览', () => {
   it('头部「添加技能」按钮在两个 tab 下都可见，发现页不再有底部自定义区块', async () => {
     setupInvokeMock();
     render(<SkillsSettings />);
-    // 已安装 tab（默认落点）
+    // 发现安装 tab（默认落点）
+    const discoverTab = await screen.findByRole('tab', { name: zh.settings.skills.main.discoverTab });
+    expect(discoverTab.getAttribute('aria-selected')).toBe('true');
     expect(
       await screen.findByRole('button', { name: zh.settings.skills.main.addSkill })
     ).toBeTruthy();
-    // 发现安装 tab
-    fireEvent.click(screen.getByRole('tab', { name: zh.settings.skills.main.discoverTab }));
+    // 已安装 tab
+    fireEvent.click(screen.getByRole('tab', { name: /已安装/ }));
     expect(
       await screen.findByRole('button', { name: zh.settings.skills.main.addSkill })
     ).toBeTruthy();

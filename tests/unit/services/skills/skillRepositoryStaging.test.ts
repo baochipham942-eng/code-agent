@@ -135,6 +135,37 @@ describe('SkillRepositoryService staged install lifecycle', () => {
     ]);
   });
 
+  it('rejects staging an already-registered repository upfront', async () => {
+    const first = await service.stageRepository('https://github.com/preview/dup-repo');
+    expect(first.success).toBe(true);
+    await service.confirmStagedRepository(first.stageId!);
+
+    const second = await service.stageRepository('https://github.com/preview/dup-repo');
+    expect(second.success).toBe(false);
+    expect(second.error).toContain('already installed');
+  });
+
+  it('replaces an orphan on-disk directory that is not registered in config', async () => {
+    // 半孤儿态：目标目录在磁盘上（历史坏安装残留）但未注册进 libraries/config，
+    // confirm 应清掉残留继续安装，而不是把用户卡在「装不上又删不掉」
+    const orphanDir = path.join(configRoot, 'skills', 'preview-preview-repo');
+    await fs.mkdir(orphanDir, { recursive: true });
+    await fs.writeFile(path.join(orphanDir, 'stale.txt'), 'leftover', 'utf-8');
+
+    const staged = await service.stageRepository(
+      'https://www.modelscope.cn/skills/@preview/preview-repo',
+      'Preview repository'
+    );
+    expect(staged.success).toBe(true);
+
+    const confirmed = await service.confirmStagedRepository(staged.stageId!);
+    expect(confirmed.success).toBe(true);
+    expect(service.getLocalLibraries()).toHaveLength(1);
+    // 残留内容被替换，不残存旧文件
+    await expect(fs.access(path.join(orphanDir, 'stale.txt'))).rejects.toThrow();
+    await expect(fs.access(path.join(orphanDir, 'SKILL.md'))).resolves.toBeUndefined();
+  });
+
   it('cancels staged content without changing installed state or config', async () => {
     const staged = await service.stageRepository(
       'https://github.com/preview/cancel-repo'

@@ -36,10 +36,10 @@ import { PluginsSettings } from '../../../src/renderer/components/features/setti
 describe('capability center defaults', () => {
   afterEach(cleanup);
 
-  it('技能页默认选中已安装（先看自己的，再逛货架）', async () => {
+  it('技能页默认选中发现安装（2026-07-27 拍板：新用户已安装为空，先逛货架）', async () => {
     render(<SkillsSettings />);
-    await waitFor(() => expect(screen.getByRole('tab', { name: /已安装/ }).getAttribute('aria-selected')).toBe('true'));
-    expect(screen.getByRole('tab', { name: '发现安装' }).getAttribute('aria-selected')).toBe('false');
+    await waitFor(() => expect(screen.getByRole('tab', { name: '发现安装' }).getAttribute('aria-selected')).toBe('true'));
+    expect(screen.getByRole('tab', { name: /已安装/ }).getAttribute('aria-selected')).toBe('false');
   });
 
   // 这条门原来只断言渲染结果不含 "Alma"，但 mock 把插件列表喂成空，

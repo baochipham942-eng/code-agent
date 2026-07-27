@@ -4,14 +4,15 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertCircle, Check, Loader2, RefreshCw } from 'lucide-react';
-import { Button } from '../../../primitives';
+import { AlertCircle, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { Button, Input, Modal } from '../../../primitives';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type {
   LocalSkillLibrary,
   SkillCatalogPayload,
   SkillRepository,
   SkillRoleBundle,
+  StageRepositoryResult,
 } from '@shared/contract/skillRepository';
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
 import type { SkillRegistryListItem } from '@shared/contract/skillRegistry';
@@ -20,6 +21,7 @@ import {
   getBuiltinSkillCatalogPayload,
 } from '@shared/constants/skillCatalog';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
@@ -28,6 +30,7 @@ import { SkillsInstalledTab } from './SkillsInstalledTab';
 import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab';
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
 import type { SkillsMPSearchResult } from './SkillsSettingsCards';
+import { SkillInstallPreviewModal, mapRepoInstallError } from './SkillInstallPreviewModal';
 
 // 分组/摘要工具函数集中在 SkillsInstalledTab，测试也从那里引用
 export {
@@ -55,7 +58,9 @@ export const SkillsSettings: React.FC = () => {
   const settingsCapabilityFocus = useAppStore((state) => state.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((state) => state.clearSettingsCapabilityFocus);
   // 视图状态（默认「已安装」：先看自己的，再逛货架）
-  const [activeTab, setActiveTab] = useState<SkillsViewTab>('installed');
+  // 默认落「发现安装」：新用户「已安装」多为空，发现视角是更好的第一屏；
+  // 深链（settingsCapabilityFocus）与安装成功后仍会显式切到已安装
+  const [activeTab, setActiveTab] = useState<SkillsViewTab>('discover');
 
   // 数据状态
   const [libraries, setLibraries] = useState<LocalSkillLibrary[]>([]);
@@ -64,6 +69,12 @@ export const SkillsSettings: React.FC = () => {
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖（web 模式 IPC 不可用时保持内置）
   const [catalog, setCatalog] = useState<SkillCatalogPayload>(getBuiltinSkillCatalogPayload);
   const [customUrl, setCustomUrl] = useState('');
+  // 「添加技能」URL 输入弹窗开关（头部按钮触发，两个 tab 下都可见）
+  const [addSkillModalOpen, setAddSkillModalOpen] = useState(false);
+  // 自定义库 staged 装前预览：stage 成功后的预览载荷，非空即弹预览弹窗
+  const [stagedPreview, setStagedPreview] = useState<StageRepositoryResult | null>(null);
+  // 「添加技能」弹窗内联错误（stage 失败在弹窗内展示）
+  const [customError, setCustomError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -318,34 +329,38 @@ export const SkillsSettings: React.FC = () => {
     }
   };
 
-  // 添加自定义仓库
+  // 添加自定义仓库：先 stage（下载到暂存并返回装前预览），确认后才落库
   const handleAddCustom = async () => {
     const url = customUrl.trim();
     if (!url) return;
 
-    if (!url.startsWith('https://github.com/')) {
-      setMessage({ type: 'error', text: skillsText.invalidGithubUrl });
+    const isSupportedUrl =
+      url.startsWith('https://github.com/') || /^https:\/\/(www\.)?modelscope\.cn\//.test(url);
+    if (!isSupportedUrl) {
+      setCustomError(skillsText.invalidRepoUrl);
       return;
     }
 
     setActionLoading('custom');
-    setMessage(null);
+    setCustomError(null);
     try {
       const result = await invokeSkillIPC(
-        SKILL_CHANNELS.REPO_ADD_CUSTOM,
+        SKILL_CHANNELS.REPO_STAGE,
         url
       );
-      if (result?.success) {
-        setMessage({ type: 'success', text: skillsText.repoAdded });
-        setCustomUrl('');
-        setActiveTab('installed');
-        await loadData();
+      if (result?.success && result.stageId) {
+        // 关掉 URL 弹窗，打开装前预览弹窗；失败则留在 URL 弹窗内联报错
+        setAddSkillModalOpen(false);
+        setStagedPreview(result);
       } else {
-        setMessage({ type: 'error', text: result?.error || skillsText.addFailed });
+        setCustomError(mapRepoInstallError(result?.error, {
+          alreadyInstalled: t.settings.skills.preview.alreadyInstalled,
+          confirmFailed: skillsText.addFailed,
+        }));
       }
     } catch (err) {
-      logger.error('Failed to add custom repo', err);
-      setMessage({ type: 'error', text: skillsText.addFailed });
+      logger.error('Failed to stage custom repo', err);
+      setCustomError(skillsText.addFailed);
     } finally {
       setActionLoading(null);
     }
@@ -477,8 +492,20 @@ export const SkillsSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 切换 + 刷新 */}
+      {/* Tab 切换 + 刷新 + 添加技能 */}
       <div className="flex items-center justify-end gap-3">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setCustomUrl('');
+            setCustomError(null);
+            setAddSkillModalOpen(true);
+          }}
+          leftIcon={<Plus className="h-3 w-3" />}
+        >
+          {skillsText.addSkill}
+        </Button>
         <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
           {([
             ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
@@ -543,9 +570,62 @@ export const SkillsSettings: React.FC = () => {
           onSearch={handleSearch}
           onClearSearch={handleClearSearch}
           onInstallFromSearch={handleInstallFromSearch}
-          customUrl={customUrl}
-          onCustomUrlChange={setCustomUrl}
-          onAddCustom={handleAddCustom}
+        />
+      )}
+
+      {/* 「添加技能」URL 输入弹窗：stage 成功 → 关闭本弹窗并打开装前预览 */}
+      <Modal
+        isOpen={addSkillModalOpen}
+        onClose={() => setAddSkillModalOpen(false)}
+        title={skillsText.customTitle}
+        size="sm"
+      >
+        <div className="space-y-3">
+          <Input
+            value={customUrl}
+            onChange={(event) => {
+              setCustomUrl(event.target.value);
+              setCustomError(null);
+            }}
+            placeholder="https://github.com/user/my-skills"
+            inputSize="sm"
+            disabled={actionLoading === 'custom'}
+          />
+          <p className="text-xs text-zinc-500">{skillsText.customDescription}</p>
+          {customError && (
+            <div className="flex items-center gap-2 text-xs text-red-400">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              {customError}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={isWebMode() || !customUrl.trim()}
+              onClick={handleAddCustom}
+              loading={actionLoading === 'custom'}
+              leftIcon={actionLoading !== 'custom' ? <Plus className="h-3 w-3" /> : undefined}
+            >
+              {skillsText.addRepo}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 自定义库装前预览：stage 成功后弹出，确认才落库，关闭即 cancel */}
+      {stagedPreview && (
+        <SkillInstallPreviewModal
+          result={stagedPreview}
+          onCancel={() => setStagedPreview(null)}
+          onInstalled={async (repoName) => {
+            setStagedPreview(null);
+            setCustomUrl('');
+            setCustomError(null);
+            setMessage({ type: 'success', text: `${repoName}${skillsText.installSuccessSuffix}` });
+            setActiveTab('installed');
+            await loadData();
+          }}
         />
       )}
     </div>

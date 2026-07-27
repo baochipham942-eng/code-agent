@@ -430,6 +430,16 @@ class SkillRepositoryService implements Disposable {
     }
 
     const repoId = `${parsed.owner}-${parsed.repo}`.toLowerCase();
+
+    // 已注册的库在 stage 阶段就拦下（真机踩坑：走到 confirm 才报冲突，
+    // 用户白等一次下载还看不懂错误）；磁盘残留但未注册的交给 confirm 清理重装
+    if (this.libraries.has(repoId)) {
+      return {
+        success: false,
+        error: `Repository already installed: ${repoId}`,
+      };
+    }
+
     const repoName = name || `${parsed.owner}/${parsed.repo}`;
     const stageId = randomUUID();
     const stagePath = path.join(this.stagingDir, stageId);
@@ -528,11 +538,17 @@ class SkillRepositoryService implements Disposable {
     }
 
     const targetPath = path.join(this.skillsDir, staged.repoId);
-    if (this.libraries.has(staged.repoId) || await this.pathExists(targetPath)) {
+    if (this.libraries.has(staged.repoId)) {
       return {
         success: false,
         error: `Repository already exists: ${staged.repoId}`,
       };
+    }
+    // 磁盘有目录但未注册 = 历史坏安装/删除未遂的残留（托管下载产物，非用户数据），
+    // 清掉后继续安装，避免用户卡在「装不上又删不掉」
+    if (await this.pathExists(targetPath)) {
+      logger.warn('Removing orphan repository directory before install', { targetPath });
+      await fs.rm(targetPath, { recursive: true, force: true });
     }
 
     try {

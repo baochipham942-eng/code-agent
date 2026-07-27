@@ -437,8 +437,6 @@ describe('ParallelAgentCoordinator', () => {
         subagentExecutor: executorB as never,
         scope: scopeB,
       });
-      vi.spyOn(coordinatorA, 'persistCheckpoint').mockResolvedValue(undefined);
-      vi.spyOn(coordinatorB, 'persistCheckpoint').mockResolvedValue(undefined);
       const agentA = createScopedSwarmAgentId(scopeA, 'agent_reviewer_0');
       const agentB = createScopedSwarmAgentId(scopeB, 'agent_reviewer_0');
 
@@ -1088,7 +1086,6 @@ describe('ParallelAgentCoordinator', () => {
         } as never,
         scope: scopeA,
       });
-      vi.spyOn(queuedCoordinator, 'persistCheckpoint').mockResolvedValue(undefined);
       const taskStarts = vi.fn();
       queuedCoordinator.on('task:start', taskStarts);
       const holder = await guard.acquireSlot({ scope: scopeB, timeoutMs: 1_000 });
@@ -1153,7 +1150,6 @@ describe('ParallelAgentCoordinator', () => {
         } as never,
         scope,
       });
-      vi.spyOn(scopedCoordinator, 'persistCheckpoint').mockResolvedValue(undefined);
       const taskStarts = vi.fn();
       scopedCoordinator.on('task:start', taskStarts);
       const holder = await guard.acquireSlot({ scope: holderScope, timeoutMs: 1_000 });

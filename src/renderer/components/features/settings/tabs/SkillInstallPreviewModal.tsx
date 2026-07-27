@@ -133,7 +133,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
             </div>
             <p className="mt-0.5 text-xs text-zinc-400">{layoutLabel}</p>
           </div>
-          <button
+          <button /* ds-allow:button: 弹窗头部图标关闭钮（仅图标方形热区），Button primitive 无 icon-only 变体 */
             onClick={handleClose}
             className="p-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
             aria-label={t.common.close}
@@ -181,7 +181,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
             const expanded = expandedSkills.has(skill.name);
             return (
               <div key={skill.name} className="rounded-lg border border-zinc-700 bg-zinc-800">
-                <button
+                <button /* ds-allow:button: skill 卡整行展开/收起触发器（左对齐全宽列表行），Button primitive 是居中动作按钮形状 */
                   type="button"
                   onClick={() => toggleSkill(skill.name)}
                   aria-expanded={expanded}

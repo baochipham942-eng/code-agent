@@ -27,6 +27,12 @@ export const QWEN_OMNI_REALTIME_MODEL = 'qwen3.5-omni-flash-realtime';
 /** 用户语音转写模型（input_audio_transcription），出字幕用。 */
 export const QWEN_OMNI_REALTIME_TRANSCRIPTION_MODEL = 'gummy-realtime-v1';
 
+/** Dictation 使用的 Gummy 实时识别接入点与任务参数。 */
+export const GUMMY_REALTIME_WS_URL = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
+export const GUMMY_REALTIME_MODEL = 'gummy-realtime-v1';
+export const GUMMY_REALTIME_SAMPLE_RATE = 16_000;
+export const GUMMY_REALTIME_MAX_END_SILENCE_MS = 800;
+
 /**
  * 默认音色。**音色枚举与模型强绑定**，换模型必须一起验。
  *
@@ -100,3 +106,6 @@ export const VOICE_SPAWN_TASK_MAX_ITERATIONS = 30;
 
 /** Renderer→Host 媒体面 WS 路径。 */
 export const VOICE_STREAM_WS_PATH = '/api/voice/stream';
+
+/** Renderer→Host Dictation 流式识别 WS 路径。 */
+export const DICTATION_STREAM_WS_PATH = '/api/voice/dictation';

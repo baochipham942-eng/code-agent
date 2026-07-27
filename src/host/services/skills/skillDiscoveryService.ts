@@ -375,7 +375,11 @@ class SkillDiscoveryService {
         }
 
         const skillsDir = path.join(libraryPath, skillsSubPath);
-        await this.scanDirectory(skillsDir, 'library');
+        if (await hasSkillMd(skillsDir)) {
+          await this.loadSkillDirectory(skillsDir, 'library');
+        } else {
+          await this.scanDirectory(skillsDir, 'library');
+        }
       }
 
       logger.debug('Loaded skills from libraries', {

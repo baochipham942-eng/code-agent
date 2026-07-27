@@ -28,6 +28,11 @@ describe('settings search index', () => {
     expect(searchSettings(en.settings.searchIndex.browserToolMode).map((entry) => entry.tab)).toContain('workspace');
   });
 
+  it('routes prompt management searches to persona settings', () => {
+    expect(searchSettings(zh.settings.searchIndex.promptManager).map((entry) => entry.tab)).toContain('soul');
+    expect(searchSettings(en.settings.searchIndex.promptManager).map((entry) => entry.tab)).toContain('soul');
+  });
+
   it('covers plugin management settings for admins', () => {
     expect(searchSettings(zh.settings.searchIndex.pluginMarketplace, { isAdmin: true }).map((entry) => entry.tab)).toContain('plugins');
     expect(searchSettings(zh.settings.searchIndex.pluginVisibility, { isAdmin: true }).map((entry) => entry.tab)).toContain('plugins');
@@ -45,8 +50,8 @@ describe('settings search index', () => {
     expect(searchSettings('capability center', { isAdmin: true })).toHaveLength(0);
   });
 
-  it('keeps plugins/hooks searchable for non-admin users (Settings IA v2, 2026-07-03 拍板)', () => {
-    expect(searchSettings(zh.settings.searchIndex.pluginMarketplace).map((entry) => entry.tab)).toContain('plugins');
+  it('hides plugins from regular-user search while keeping hooks searchable', () => {
+    expect(searchSettings(zh.settings.searchIndex.pluginMarketplace).map((entry) => entry.tab)).not.toContain('plugins');
     expect(searchSettings(zh.settings.searchIndex.hookConfig).map((entry) => entry.tab)).toContain('hooks');
   });
 

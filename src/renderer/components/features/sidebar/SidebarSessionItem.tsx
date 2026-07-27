@@ -212,10 +212,11 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
 
-        {/* 行尾固定 16px 状态列（2026-07-27 对齐规范）：宽度恒定，内容互斥——
-            运行中 spinner / 需关注圆点 / 分叉标记 / 未读点 / 空，全部同一竖轴。
-            分叉标记点击跳回父会话。相对时间已撤（产品拍板：新旧由排序表达，
-            精确时间在行 title 里），右槽不再讲第二件事。 */}
+        {/* 行尾状态区：两个固定 16px 槽位、同一基线——
+            左槽是临时状态（surfaceExecution / 运行中 spinner / 需关注圆点 / 未读点），
+            右槽（最右轴）是分叉标记：身份而非状态，永远占位，不与临时状态互斥
+            （参照 Codex：分叉子任务运行时身份图标与状态图标并存）。
+            分叉标记点击跳回父会话；hover 动作簇上来时两槽一起让位。 */}
         {!isRenaming && (
           <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
             {surfaceExecutionSession ? (
@@ -224,8 +225,15 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               <Loader2 className="w-3 h-3 text-emerald-400/80 animate-spin" aria-label={localizedStatusLabel} />
             ) : attentionDotClass ? (
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${attentionDotClass}`} aria-label={localizedStatusLabel} />
-            ) : forkParentSessionId && !multiSelectMode ? (
-              <button /* ds-allow:button: 侧栏状态轴上的分叉来源小图标，Button primitive 动作按钮形状不适配列表行 */
+            ) : isUnread && !multiSelectMode ? (
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
+            ) : null}
+          </span>
+        )}
+        {!isRenaming && (
+          <span className="w-4 shrink-0 flex items-center justify-center transition-opacity duration-150 group-hover:opacity-0 group-focus-visible:opacity-0">
+            {forkParentSessionId && !multiSelectMode && (
+              <button /* ds-allow:button: 侧栏最右状态轴上的分叉身份小图标，Button primitive 动作按钮形状不适配列表行 */
                 type="button"
                 data-testid="fork-lineage-marker"
                 aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}
@@ -238,9 +246,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               >
                 <GitFork className="h-3.5 w-3.5" />
               </button>
-            ) : isUnread && !multiSelectMode ? (
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" aria-label={s.unread} />
-            ) : null}
+            )}
           </span>
         )}
       </div>

@@ -132,7 +132,7 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   // 系统
   update: 'system',
   about: 'system',
-  // 高级（默认折叠，普通用户可自行配置）
+  // 高级（默认折叠；plugins 仅管理员可见，其余项普通用户可配置）
   agentEngine: 'advanced',
   mcp: 'advanced',
   plugins: 'advanced',
@@ -143,9 +143,10 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   capabilities: 'advanced',
 };
 
-// 管理组迁 admin-console 后，设置页已无 admin 门控 tab（v2 拍板：plugins/hooks 下放普通用户）。
-// 映射表留空，canAccessSettingsTab 保留给深链/搜索过滤的统一调用口。
-const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlledFeature>> = {};
+// 插件配置只对管理员开放；tab id 继续保留，供管理员深链与能力中心映射使用。
+const SETTINGS_TAB_ACCESS_FEATURES: Partial<Record<SettingsTab, AccessControlledFeature>> = {
+  plugins: 'settings.plugins',
+};
 
 export function canAccessSettingsTab(tab: SettingsTab, subject?: AccessSubject | null): boolean {
   const feature = SETTINGS_TAB_ACCESS_FEATURES[tab];

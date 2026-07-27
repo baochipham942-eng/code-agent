@@ -353,6 +353,7 @@ export const enSettingsModels = {
       safetyStrong: 'always apply',
       safetySuffix: ', are not edited here, and cannot be overridden by a custom persona.',
       contentLabel: 'Persona content',
+      promptManager: 'Prompt management',
       charSuffix: ' characters',
       placeholder: 'For example: You are Agent Neo, an AI coworker…',
       errorPrefix: 'Action failed: ',

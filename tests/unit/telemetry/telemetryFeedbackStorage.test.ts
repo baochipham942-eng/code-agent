@@ -4,6 +4,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import { getDatabase } from '../../../src/host/services/core/databaseService';
 import { TelemetryStorage } from '../../../src/host/telemetry/telemetryStorage';
+import { getSessionFeedbackRatings } from '../../../src/host/telemetry/telemetryFeedbackSql';
 import type { TelemetrySession } from '../../../src/shared/contract/telemetry';
 
 const dbState = vi.hoisted(() => ({
@@ -116,6 +117,21 @@ describe('TelemetryStorage feedback', () => {
 
     storage.markFeedbackSynced([unsynced[0].id], 200);
     expect(storage.getUnsyncedFeedback(10, 'user-1')).toEqual([]);
+  });
+
+  it('reads back session ratings for UI highlight rehydration (anchor + rating only)', () => {
+    const storage = new TelemetryStorage();
+    storage.insertSession(createTelemetrySession('session-1', 'user-1', 100));
+    storage.recordFeedback({ sessionId: 'session-1', messageId: 'm1', rating: 1 });
+    storage.recordFeedback({ sessionId: 'session-1', messageId: 'm2', rating: -1, fullContent: { assistantResponse: 'x' } });
+    // 同锚点二次提交是改评而不是新增
+    storage.recordFeedback({ sessionId: 'session-1', messageId: 'm1', rating: -1, fullContent: { assistantResponse: 'y' } });
+
+    const ratings = getSessionFeedbackRatings('session-1');
+    expect(ratings).toHaveLength(2);
+    expect(new Map(ratings.map((r) => [r.messageId, r.rating]))).toEqual(new Map([['m1', -1], ['m2', -1]]));
+    expect(Object.keys(ratings[0])).toEqual(['messageId', 'rating']);
+    expect(getSessionFeedbackRatings('session-none')).toEqual([]);
   });
 
   it('scopes unsynced feedback to the active user owner', () => {

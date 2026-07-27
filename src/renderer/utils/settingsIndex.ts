@@ -78,6 +78,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'appearance', labelKey: 'fontSize', keywords: ['font', 'size', 'text'] },
   { tab: 'appearance', labelKey: 'language', keywords: ['language', 'chinese', 'english', 'internationalization', 'i18n'] },
 
+  // Persona
+  { tab: 'soul', labelKey: 'promptManager', keywords: ['prompt', 'prompts', 'prompt manager', 'persona', 'system prompt'] },
+
   // Doctor（全量诊断：基础偏好组的独立菜单项）
   { tab: 'doctor', labelKey: 'systemDiagnostics', keywords: ['doctor', 'diagnostics', 'health check', 'system check', 'troubleshoot', 'stethoscope'] },
 

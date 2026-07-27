@@ -82,6 +82,7 @@ export const SkillsSettings: React.FC = () => {
   // 官方市场货架状态
   const [registryItems, setRegistryItems] = useState<SkillRegistryListItem[]>([]);
   const [registryError, setRegistryError] = useState<string | null>(null);
+  const [registryLoading, setRegistryLoading] = useState(false);
 
   // SkillsMP 搜索状态
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,14 +97,18 @@ export const SkillsSettings: React.FC = () => {
     }
   }, [settingsCapabilityFocus?.kind, settingsCapabilityFocus?.nonce]);
 
-  // 加载数据
+  // 加载数据。本地四项毫秒级、并行拉完即撤整页 spinner；
+  // 官方货架走控制面网络（冷路径实测 2.2s，是此前整页转圈 3.5s 的大头），
+  // 拆成独立小态不阻塞页面——已安装列表先可用，货架区自己转圈。
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const libs = await invokeSkillIPC(SKILL_CHANNELS.REPO_LIST);
-      const skills = await invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST);
-      const repos = await invokeSkillIPC(SKILL_CHANNELS.RECOMMENDED_REPOS);
-      const remoteCatalog = await invokeSkillIPC(SKILL_CHANNELS.CATALOG);
+      const [libs, skills, repos, remoteCatalog] = await Promise.all([
+        invokeSkillIPC(SKILL_CHANNELS.REPO_LIST),
+        invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST),
+        invokeSkillIPC(SKILL_CHANNELS.RECOMMENDED_REPOS),
+        invokeSkillIPC(SKILL_CHANNELS.CATALOG),
+      ]);
       setLibraries(libs || []);
       setDiscoveredSkills(skills || []);
       if (remoteCatalog) {
@@ -112,17 +117,23 @@ export const SkillsSettings: React.FC = () => {
       // 推荐列表里排除已安装的仓库
       const installedIds = new Set((libs || []).map((l) => l.repoId));
       setRecommendedRepos((repos || []).filter((r) => !installedIds.has(r.id)));
-      // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
-      const registry = await invokeSkillIPC(
-        SKILL_CHANNELS.REGISTRY_LIST
-      );
-      setRegistryItems(registry?.items || []);
-      setRegistryError(registry?.error || null);
     } catch (err) {
       logger.error('Failed to load skill data', err);
       setMessage({ type: 'error', text: skillsText.loadFailed });
     } finally {
       setLoading(false);
+    }
+    // 官方市场货架（签名 registry；离线/校验失败为空货架 + 原因码）
+    setRegistryLoading(true);
+    try {
+      const registry = await invokeSkillIPC(SKILL_CHANNELS.REGISTRY_LIST);
+      setRegistryItems(registry?.items || []);
+      setRegistryError(registry?.error || null);
+    } catch (err) {
+      logger.error('Failed to load skill registry shelf', err);
+      setRegistryError('fetch_failed');
+    } finally {
+      setRegistryLoading(false);
     }
   }, [skillsText.loadFailed]);
 
@@ -553,6 +564,7 @@ export const SkillsSettings: React.FC = () => {
         <SkillsDiscoverTab
           registryItems={registryItems}
           registryError={registryError}
+          registryLoading={registryLoading}
           onInstallRegistryEntry={handleInstallRegistryEntry}
           catalog={catalog}
           recommendedRepos={recommendedRepos}

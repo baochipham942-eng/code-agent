@@ -27,7 +27,8 @@ describe('SidebarDoctorAlert 徽标逻辑', () => {
 
   afterEach(() => {
     cleanup();
-    useDoctorStore.setState({ report: null, isDialogOpen: false });
+    useDoctorStore.setState({ report: null });
+    useAppStore.setState({ showSettings: false, settingsInitialTab: null });
   });
 
   it('hasDoctorFailures：有 fail 为 true，全绿/仅 warn/空报告为 false', () => {
@@ -60,10 +61,11 @@ describe('SidebarDoctorAlert 徽标逻辑', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('点击徽标打开诊断弹层', () => {
+  it('点击徽标深链打开设置并定位到「诊断」页', () => {
     useDoctorStore.setState({ report: makeReport(1), startupCheckDone: true });
     render(<SidebarDoctorAlert />);
     screen.getByTestId('sidebar-doctor-alert').click();
-    expect(useDoctorStore.getState().isDialogOpen).toBe(true);
+    expect(useAppStore.getState().showSettings).toBe(true);
+    expect(useAppStore.getState().settingsInitialTab).toBe('doctor');
   });
 });

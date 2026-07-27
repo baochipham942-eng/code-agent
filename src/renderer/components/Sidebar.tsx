@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Trash2,
   Search,
+  PanelLeftClose,
   ChevronRight,
   FlaskConical,
   CalendarDays,
@@ -35,6 +36,7 @@ import {
   Gauge,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
@@ -61,7 +63,6 @@ import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionAc
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
-import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { SidebarWorkspaceRow } from './features/sidebar/SidebarWorkspaceRow';
 import {
@@ -92,6 +93,8 @@ export function isAccountMenuEventOutside(
 
 export const Sidebar: React.FC = () => {
   const { t } = useI18n();
+  // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）
+  const isMacShell = getCurrentKeybindingPlatform() === 'darwin';
   const sb = t.sidebar;
   const {
     clearPlanningState,
@@ -114,6 +117,7 @@ export const Sidebar: React.FC = () => {
     optionalUpdateInfo,
     setShowOptionalUpdateModal,
     openWorkspacePreview,
+    setSidebarCollapsed,
   } = useAppStore();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
@@ -635,11 +639,19 @@ export const Sidebar: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
-      {/* Header: h-12 to align with TitleBar on the right */}
-      <div className="h-12 px-3 flex items-center justify-between gap-2 flex-shrink-0">
-        <NeoBrandMark />
-        {!isAuthLoading && (
-          <div className="flex items-center gap-1">
+      {/* Header: h-12 to align with TitleBar on the right.
+          2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
+          hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端，所以 darwin 下
+          左侧留出 72px 死区；② 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的
+          地方，可以先不展示」），这行于是只剩右侧功能图标——与 Codex 参照一致。
+          本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。 */}
+      <div
+        className={`h-12 flex items-center justify-end gap-2 flex-shrink-0 pr-3 ${isMacShell ? 'pl-[72px]' : 'pl-3'}`}
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      >
+        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          {!isAuthLoading && (
+            <>
             <IconButton
               type="button"
               variant="ghost"
@@ -673,8 +685,20 @@ export const Sidebar: React.FC = () => {
                 activeStatusFilterLabel={activeStatusFilterLabel}
               />
             )}
-          </div>
-        )}
+            </>
+          )}
+          {/* 侧栏收起开关坐在侧栏自己头上（2026-07-27 审美关拍板：从右侧顶栏挪回左侧面板）。
+              收起态的展开入口留在 TitleBar——侧栏那时不存在，按钮得有别的落脚点。 */}
+          <IconButton
+            icon={<PanelLeftClose className="h-4 w-4" />}
+            aria-label={sb.collapseSidebar}
+            data-testid="sidebar-collapse"
+            onClick={() => setSidebarCollapsed(true)}
+            variant="ghost"
+            size="md"
+            className="h-8 w-8"
+          />
+        </div>
       </div>
 
       {/* 当前工作目录行：放在新任务行上方。它是「新任务落到哪、下面项目组怎么分」的上游
@@ -805,12 +829,15 @@ export const Sidebar: React.FC = () => {
               onClick={() => setShowUserMenu(!showUserMenu)}
               aria-label={sb.userMenu}
               aria-expanded={showUserMenu}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
+              /* 落到全侧栏基准轨（2026-07-27 对齐规范）：pl-2 使外层 8 + 8 = 图标左缘 16；
+                 图标 16px + gap-2.5(10) 使昵称左缘 42，与入口行/分组名/会话行标题同线；
+                 pr-3 使展开箭头右缘 220、中心 212，与分组头角标/会话行状态点同轴。 */
+              className="w-full flex items-center gap-2.5 pl-2 pr-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
             >
               {user.avatarUrl ? (
-                <img src={user.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover" />
+                <img src={user.avatarUrl} alt="" className="w-4 h-4 shrink-0 rounded-full object-cover" />
               ) : (
-                <User className="w-5 h-5 text-zinc-500" />
+                <User className="w-4 h-4 shrink-0 text-zinc-500" />
               )}
               <span className="flex-1 text-left text-sm font-medium text-zinc-400 truncate">
                 {user.nickname || user.email?.split('@')[0]}

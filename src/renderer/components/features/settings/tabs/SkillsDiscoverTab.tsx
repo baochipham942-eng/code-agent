@@ -1,10 +1,10 @@
 // ============================================================================
 // SkillsDiscoverTab - 发现安装
-// 角色场景包 → 按场景浏览（产物分类）→ SkillsMP 搜索 → 整库安装 → 自定义仓库
+// 角色场景包 → 按场景浏览（产物分类）→ SkillsMP 搜索 → 整库安装
 // ============================================================================
 
 import React from 'react';
-import { AlertCircle, CheckCircle2, Plus, Search, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Search, ShieldCheck, X } from 'lucide-react';
 import type {
   RecommendedSkillEntry,
   SkillCatalogPayload,
@@ -51,10 +51,6 @@ export interface SkillsDiscoverTabProps {
   onSearch: () => void;
   onClearSearch: () => void;
   onInstallFromSearch: (skill: SkillsMPSearchResult) => void;
-  // 自定义仓库
-  customUrl: string;
-  onCustomUrlChange: (value: string) => void;
-  onAddCustom: () => void;
 }
 
 type SkillsDiscoverLabels = typeof zh.settings.skills.discover;
@@ -167,9 +163,6 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   onSearch,
   onClearSearch,
   onInstallFromSearch,
-  customUrl,
-  onCustomUrlChange,
-  onAddCustom,
 }) => {
   const { t } = useI18n();
   const discoverText = t.settings.skills.discover;
@@ -364,37 +357,6 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
           ))}
         </div>
       )}
-
-      {/* 自定义仓库 */}
-      <div className="space-y-3">
-        <h4 className="text-sm font-medium text-zinc-200">{discoverText.customTitle}</h4>
-        <div className="rounded-lg border border-zinc-700 bg-zinc-800 p-4">
-          <div className="space-y-2">
-            <Input
-              value={customUrl}
-              onChange={(event) => onCustomUrlChange(event.target.value)}
-              placeholder="https://github.com/user/my-skills"
-              inputSize="sm"
-              disabled={actionLoading === 'custom'}
-            />
-            <p className="text-xs text-zinc-500">
-              {discoverText.customDescription}
-            </p>
-          </div>
-          <div className="mt-3">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={isWebMode() || !customUrl.trim()}
-              onClick={onAddCustom}
-              loading={actionLoading === 'custom'}
-              leftIcon={actionLoading !== 'custom' ? <Plus className="h-3 w-3" /> : undefined}
-            >
-              {discoverText.addRepo}
-            </Button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

@@ -7,7 +7,7 @@ import type { SkillDraftOrigin } from '../contract/agent';
 import type { ParsedSkill } from '../contract/agentSkill';
 import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, MCPOAuthConsentRequest, MCPOAuthConsentResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
 import type { ServiceApiKey } from '../contract/configService';
-import type { DownloadResult, LocalSkillLibrary, SessionSkillMount, SkillCatalogPayload, SkillRecommendation, SkillRepository, UpdateResult } from '../contract/skillRepository';
+import type { DownloadResult, LocalSkillLibrary, SessionSkillMount, SkillCatalogPayload, SkillRecommendation, SkillRepository, StageRepositoryResult, UpdateResult } from '../contract/skillRepository';
 import type { SkillRegistryListItem } from '../contract/skillRegistry';
 
 import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
@@ -240,6 +240,9 @@ export interface IpcInvokeHandlers {
   [SKILL_CHANNELS.REPO_UPDATE]: (repoId: string) => Promise<UpdateResult>;
   [SKILL_CHANNELS.REPO_REMOVE]: (repoId: string) => Promise<void>;
   [SKILL_CHANNELS.REPO_ADD_CUSTOM]: (url: string, name?: string) => Promise<DownloadResult>;
+  [SKILL_CHANNELS.REPO_STAGE]: (url: string, name?: string) => Promise<StageRepositoryResult>;
+  [SKILL_CHANNELS.REPO_CONFIRM]: (stageId: string) => Promise<DownloadResult>;
+  [SKILL_CHANNELS.REPO_CANCEL]: (stageId: string) => Promise<void>;
   [SKILL_CHANNELS.REGISTRY_LIST]: () => Promise<{ items: SkillRegistryListItem[]; error?: string }>;
   [SKILL_CHANNELS.REGISTRY_INSTALL]: (name: string) => Promise<{ success: boolean; error?: string }>;
   [SKILL_CHANNELS.SKILL_LIST]: () => Promise<Array<ParsedSkill & {

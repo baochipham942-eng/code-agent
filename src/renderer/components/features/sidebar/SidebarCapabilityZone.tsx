@@ -5,12 +5,13 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Clock3, ChevronRight, BookOpen, Boxes } from 'lucide-react';
+import { Clock3, BookOpen, Boxes } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Badge } from '../../primitives/Badge';
+import { SidebarDoctorAlert } from './SidebarDoctorAlert';
 
 /** 下次运行时间：今天只显 HH:mm，其他日期带月日 */
 function formatNextRun(ts: number, locale: string): string {
@@ -27,7 +28,18 @@ function formatNextRun(ts: number, locale: string): string {
 export const SidebarCapabilityZone: React.FC = () => {
   const { t, language } = useI18n();
   const cz = t.sidebar.capabilityZone;
-  const { showCronCenter, openCapabilityHub, setShowCronCenter, setShowLibraryPanel } = useAppStore();
+  const { showCronCenter, showCapabilityHub, showLibraryPanel, expertDetailRoleId, openCapabilityHub, setShowCronCenter, setShowLibraryPanel } = useAppStore();
+  // 二级页迁入右侧内容区后，返回语义 = 侧栏直接切换，所以这三行要能读出「我现在在哪」。
+  // 专家详情是能力中心的下钻页，归到能力中心一栏亮。
+  const activeRow = expertDetailRoleId || showCapabilityHub ? 'hub'
+    : showLibraryPanel ? 'library'
+    : showCronCenter ? 'automation'
+    : null;
+  const rowClass = (key: 'hub' | 'library' | 'automation') => (
+    `group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
+      activeRow === key ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800/70'
+    }`
+  );
   const jobs = useCronStore((state) => state.jobs);
   const stats = useCronStore((state) => state.stats);
   const refresh = useCronStore((state) => state.refresh);
@@ -73,9 +85,10 @@ export const SidebarCapabilityZone: React.FC = () => {
         type="button"
         onClick={() => openCapabilityHub('experts')}
         data-testid="sidebar-capability-hub"
+        aria-current={activeRow === 'hub' ? 'page' : undefined}
         // 「里面装了什么」移到悬浮提示：需要时问得到，不必占一行常驻
         title={cz.capabilityHubSubtitle}
-        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
+        className={rowClass('hub')}
       >
         {/* 裸图标（h-4，中性 zinc-500）：24px 底块瓦片三条叠起来是一条沉重的左边缘，
             颜色只留给「要你处理的地方」（待过目角标 + running 圆点）。 */}
@@ -83,28 +96,28 @@ export const SidebarCapabilityZone: React.FC = () => {
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.capabilityHub}
         </span>
-        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
       {/* Batch 2 L3: 资料库槽位点亮 */}
       <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
         onClick={() => setShowLibraryPanel(true)}
         data-testid="sidebar-capability-library"
+        aria-current={activeRow === 'library' ? 'page' : undefined}
         title={cz.librarySubtitle}
-        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
+        className={rowClass('library')}
       >
         <BookOpen className="h-4 w-4 flex-shrink-0 text-zinc-500" />
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.library}
         </span>
-        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
       <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
         onClick={() => setShowCronCenter(true)}
         data-testid="sidebar-capability-automation"
+        aria-current={activeRow === 'automation' ? 'page' : undefined}
         title={subtitle}
-        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-zinc-800/70"
+        className={rowClass('automation')}
       >
         <span className="relative flex h-4 w-4 flex-shrink-0 items-center justify-center text-zinc-500">
           <Clock3 className="h-4 w-4" />
@@ -121,8 +134,9 @@ export const SidebarCapabilityZone: React.FC = () => {
         {/* 全栏唯一的两处彩色（这个角标 + running 圆点）= 要你处理的地方；
             裸数字自己说不清是什么，读屏靠 aria-label。 */}
         {pendingCount > 0 && <Badge className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300" data-testid="sidebar-capability-automation-pending" role="status" aria-label={pendingLabel} title={pendingLabel}>{pendingCount}</Badge>}
-        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
+      {/* 诊断问题徽标行：仅启动静默快检有 fail 项时出现，全绿不打扰 */}
+      <SidebarDoctorAlert />
     </div>
   );
 };

@@ -4,6 +4,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { getUserConfigDir } from '../../config/configPaths';
 import type {
   SkillRepository,
@@ -11,16 +12,24 @@ import type {
   LocalSkillInfo,
   SkillConfig,
   DownloadResult,
+  StageRepositoryResult,
+  StagedSkillPreview,
+  SkillRepoSourceType,
   UpdateResult,
 } from '@shared/contract/skillRepository';
 import {
   downloadRepository,
-  parseGitHubUrl,
+  parseRepoUrl,
   checkForUpdates,
   updateRepository as gitUpdateRepository,
   readRepoMetaAsync,
+  saveRepoMeta,
 } from './gitDownloader';
 import { parseSkillMd, hasSkillMd } from './skillParser';
+import {
+  detectRepositoryLayout,
+  type RepositoryLayout,
+} from './skillRepositoryLayout';
 import {
   RECOMMENDED_REPOSITORIES,
   getDefaultAutoDownloadRepos,
@@ -30,6 +39,16 @@ import { createLogger } from '../infra/logger';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SkillRepositoryService');
+
+interface StagedRepositoryRecord {
+  stageId: string;
+  repoId: string;
+  repoName: string;
+  sourceType: SkillRepoSourceType;
+  repository: SkillRepository;
+  localPath: string;
+  layout: RepositoryLayout;
+}
 
 // ============================================================================
 // Service Class
@@ -41,19 +60,23 @@ const logger = createLogger('SkillRepositoryService');
  */
 class SkillRepositoryService implements Disposable {
   private skillsDir: string; // ~/.code-agent/skills/
+  private stagingDir: string; // ~/.code-agent/skills/.staging/
   private configPath: string; // ~/.code-agent/skill-config.json
   private config: SkillConfig;
   private libraries: Map<string, LocalSkillLibrary> = new Map();
+  private stagedRepositories: Map<string, StagedRepositoryRecord> = new Map();
   private initialized = false;
 
   async dispose(): Promise<void> {
     this.libraries.clear();
+    this.stagedRepositories.clear();
     this.initialized = false;
   }
 
   constructor() {
     const baseDir = getUserConfigDir();
     this.skillsDir = path.join(baseDir, 'skills');
+    this.stagingDir = path.join(this.skillsDir, '.staging');
     this.configPath = path.join(baseDir, 'skill-config.json');
     this.config = {
       repositories: [],
@@ -75,6 +98,10 @@ class SkillRepositoryService implements Disposable {
 
     // 创建目录
     await fs.mkdir(this.skillsDir, { recursive: true });
+    // Staging entries are process-local transactions. Anything left from a
+    // prior process is an orphan and must never become an installed library.
+    await fs.rm(this.stagingDir, { recursive: true, force: true });
+    await fs.mkdir(this.stagingDir, { recursive: true });
 
     // 加载配置
     await this.loadConfig();
@@ -134,21 +161,22 @@ class SkillRepositoryService implements Disposable {
 
     try {
       // 解析 URL
-      const parsed = parseGitHubUrl(repo.url);
+      const parsed = parseRepoUrl(repo.url);
       if (!parsed) {
         return {
           success: false,
-          error: `Invalid GitHub URL: ${repo.url}`,
+          error: `Invalid repository URL: ${repo.url}`,
         };
       }
 
       // 使用 gitDownloader 下载
       const result = await downloadRepository({
+        source: parsed.source,
         owner: parsed.owner,
         repo: parsed.repo,
         branch: repo.branch || parsed.branch,
         targetDir,
-        skillsPath: repo.skillsPath === '.' ? undefined : repo.skillsPath,
+        modelScopeRepoType: parsed.source === 'modelscope' ? parsed.repoType : undefined,
       });
 
       if (!result.success) {
@@ -158,9 +186,20 @@ class SkillRepositoryService implements Disposable {
         };
       }
 
-      // 扫描 skills 目录
       const localPath = result.localPath;
-      const skills = await this.scanSkillsInLibrary(localPath, repo.skillsPath);
+      const layout = await detectRepositoryLayout(localPath);
+      const installedRepo: SkillRepository = {
+        ...repo,
+        skillsPath: layout.skillsPath,
+      };
+      const meta = await readRepoMetaAsync(localPath);
+      if (meta) {
+        await saveRepoMeta(localPath, {
+          ...meta,
+          skillsPath: layout.skillsPath,
+        });
+      }
+      const skills = await this.scanSkillsInLibrary(localPath, layout);
 
       // 创建 LocalSkillLibrary
       const library: LocalSkillLibrary = {
@@ -178,7 +217,7 @@ class SkillRepositoryService implements Disposable {
 
       // 更新配置：添加仓库
       if (!this.config.repositories.find((r) => r.id === repo.id)) {
-        this.config.repositories.push(repo);
+        this.config.repositories.push(installedRepo);
       }
 
       // 黑名单语义下新安装的 skills 默认全部启用，无需额外写入
@@ -247,10 +286,20 @@ class SkillRepositoryService implements Disposable {
         };
       }
 
-      // 重新扫描 skills
+      // 重新探测布局并扫描 skills
       const repo = this.config.repositories.find((r) => r.id === repoId);
-      const skillsPath = repo?.skillsPath || 'skills';
-      const skills = await this.scanSkillsInLibrary(library.localPath, skillsPath);
+      const layout = await detectRepositoryLayout(library.localPath);
+      const skills = await this.scanSkillsInLibrary(library.localPath, layout);
+      if (repo) {
+        repo.skillsPath = layout.skillsPath;
+      }
+      const meta = await readRepoMetaAsync(library.localPath);
+      if (meta) {
+        await saveRepoMeta(library.localPath, {
+          ...meta,
+          skillsPath: layout.skillsPath,
+        });
+      }
 
       // 更新库信息
       library.lastUpdated = Date.now();
@@ -329,11 +378,11 @@ class SkillRepositoryService implements Disposable {
    */
   async addCustomRepository(url: string, name?: string): Promise<DownloadResult> {
     // 解析 URL
-    const parsed = parseGitHubUrl(url);
+    const parsed = parseRepoUrl(url);
     if (!parsed) {
       return {
         success: false,
-        error: `Invalid GitHub URL: ${url}`,
+        error: `Invalid repository URL: ${url}`,
       };
     }
 
@@ -354,7 +403,8 @@ class SkillRepositoryService implements Disposable {
       name: name || `${parsed.owner}/${parsed.repo}`,
       url,
       branch: parsed.branch,
-      skillsPath: 'skills', // 默认使用 skills 目录
+      // The actual path is filled by repository layout detection after download.
+      skillsPath: '.',
       category: 'community',
       recommended: false,
       author: parsed.owner,
@@ -362,6 +412,196 @@ class SkillRepositoryService implements Disposable {
 
     // 下载仓库
     return this.downloadRepository(repo);
+  }
+
+  /**
+   * Download and inspect a repository without mutating installed libraries or
+   * skill-config.json.
+   */
+  async stageRepository(url: string, name?: string): Promise<StageRepositoryResult> {
+    await this.initialize();
+
+    const parsed = parseRepoUrl(url);
+    if (!parsed) {
+      return {
+        success: false,
+        error: `Invalid repository URL: ${url}`,
+      };
+    }
+
+    const repoId = `${parsed.owner}-${parsed.repo}`.toLowerCase();
+
+    // 已注册的库在 stage 阶段就拦下（真机踩坑：走到 confirm 才报冲突，
+    // 用户白等一次下载还看不懂错误）；磁盘残留但未注册的交给 confirm 清理重装
+    if (this.libraries.has(repoId)) {
+      return {
+        success: false,
+        error: `Repository already installed: ${repoId}`,
+      };
+    }
+
+    const repoName = name || `${parsed.owner}/${parsed.repo}`;
+    const stageId = randomUUID();
+    const stagePath = path.join(this.stagingDir, stageId);
+
+    try {
+      const result = await downloadRepository({
+        source: parsed.source,
+        owner: parsed.owner,
+        repo: parsed.repo,
+        branch: parsed.branch,
+        targetDir: stagePath,
+        modelScopeRepoType: parsed.source === 'modelscope' ? parsed.repoType : undefined,
+      });
+      if (!result.success) {
+        await fs.rm(stagePath, { recursive: true, force: true });
+        return {
+          success: false,
+          error: result.error || 'Repository staging download failed',
+        };
+      }
+
+      const layout = await detectRepositoryLayout(stagePath);
+      const skillDirectories = await this.getSkillDirectories(stagePath, layout);
+      const skills: StagedSkillPreview[] = [];
+      const warnings: string[] = [];
+
+      for (const skillDirectory of skillDirectories) {
+        const parsedSkill = await parseSkillMd(skillDirectory, 'library');
+        const skillMdContent = await fs.readFile(
+          path.join(skillDirectory, 'SKILL.md'),
+          'utf-8'
+        );
+        skills.push({
+          name: parsedSkill.name,
+          description: parsedSkill.description,
+          skillMdContent,
+        });
+        if (parsedSkill.frontmatterWarnings) {
+          warnings.push(
+            ...parsedSkill.frontmatterWarnings.map(
+              (warning) => `${parsedSkill.name}: ${warning}`
+            )
+          );
+        }
+      }
+
+      const repository: SkillRepository = {
+        id: repoId,
+        name: repoName,
+        url,
+        branch: parsed.branch,
+        skillsPath: layout.skillsPath,
+        category: 'community',
+        recommended: false,
+        author: parsed.owner,
+      };
+      this.stagedRepositories.set(stageId, {
+        stageId,
+        repoId,
+        repoName,
+        sourceType: parsed.source,
+        repository,
+        localPath: stagePath,
+        layout,
+      });
+
+      return {
+        success: true,
+        stageId,
+        repoId,
+        repoName,
+        sourceType: parsed.source,
+        layout: layout.layout,
+        skills,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      };
+    } catch (error) {
+      await fs.rm(stagePath, { recursive: true, force: true });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown staging error',
+      };
+    }
+  }
+
+  /** Confirm a staged install by atomically moving it into the installed root. */
+  async confirmStagedRepository(stageId: string): Promise<DownloadResult> {
+    await this.initialize();
+
+    const staged = this.stagedRepositories.get(stageId);
+    if (!staged) {
+      return {
+        success: false,
+        error: `Staged repository not found: ${stageId}`,
+      };
+    }
+
+    const targetPath = path.join(this.skillsDir, staged.repoId);
+    if (this.libraries.has(staged.repoId)) {
+      return {
+        success: false,
+        error: `Repository already exists: ${staged.repoId}`,
+      };
+    }
+    // 磁盘有目录但未注册 = 历史坏安装/删除未遂的残留（托管下载产物，非用户数据），
+    // 清掉后继续安装，避免用户卡在「装不上又删不掉」
+    if (await this.pathExists(targetPath)) {
+      logger.warn('Removing orphan repository directory before install', { targetPath });
+      await fs.rm(targetPath, { recursive: true, force: true });
+    }
+
+    try {
+      const meta = await readRepoMetaAsync(staged.localPath);
+      if (meta) {
+        await saveRepoMeta(staged.localPath, {
+          ...meta,
+          skillsPath: staged.layout.skillsPath,
+        });
+      }
+
+      await fs.rename(staged.localPath, targetPath);
+      const skills = await this.scanSkillsInLibrary(targetPath, staged.layout);
+      const installedMeta = await readRepoMetaAsync(targetPath);
+      const now = Date.now();
+      const library: LocalSkillLibrary = {
+        repoId: staged.repoId,
+        repoName: staged.repoName,
+        localPath: targetPath,
+        downloadedAt: installedMeta?.downloadedAt || now,
+        lastUpdated: installedMeta?.lastUpdated || now,
+        version: installedMeta?.commitHash,
+        skills,
+      };
+
+      this.libraries.set(staged.repoId, library);
+      this.config.repositories.push(staged.repository);
+      await this.saveConfig();
+      this.stagedRepositories.delete(stageId);
+
+      return {
+        success: true,
+        localPath: targetPath,
+        library,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown confirmation error',
+      };
+    }
+  }
+
+  /** Delete staged content without changing installed state. */
+  async cancelStagedRepository(stageId: string): Promise<void> {
+    await this.initialize();
+
+    const staged = this.stagedRepositories.get(stageId);
+    if (!staged) {
+      throw new Error(`Staged repository not found: ${stageId}`);
+    }
+    await fs.rm(staged.localPath, { recursive: true, force: true });
+    this.stagedRepositories.delete(stageId);
   }
 
   // ==========================================================================
@@ -526,9 +766,8 @@ class SkillRepositoryService implements Disposable {
           (r) => r.id === entry.name || `${meta.owner}-${meta.repo}`.toLowerCase() === entry.name
         );
 
-        // 扫描 skills（优先使用 meta.skillsPath，其次是 repo.skillsPath，最后默认 'skills'）
-        const skillsPath = meta.skillsPath || repo?.skillsPath || 'skills';
-        const skills = await this.scanSkillsInLibrary(libraryPath, skillsPath);
+        const layout = await detectRepositoryLayout(libraryPath);
+        const skills = await this.scanSkillsInLibrary(libraryPath, layout);
 
         // 创建库对象
         const library: LocalSkillLibrary = {
@@ -560,12 +799,32 @@ class SkillRepositoryService implements Disposable {
    */
   private async scanSkillsInLibrary(
     libraryPath: string,
-    skillsSubPath: string
+    layout: RepositoryLayout
   ): Promise<LocalSkillInfo[]> {
     const skills: LocalSkillInfo[] = [];
 
-    // 确定 skills 目录路径
-    const skillsDir = skillsSubPath === '.' ? libraryPath : path.join(libraryPath, skillsSubPath);
+    if (layout.layout === 'single-skill') {
+      try {
+        const parsed = await parseSkillMd(libraryPath, 'library');
+        return [{
+          name: parsed.name,
+          description: parsed.description,
+          libraryId: path.basename(libraryPath),
+          localPath: libraryPath,
+          enabled: !this.config.disabledSkills.includes(parsed.name),
+        }];
+      } catch (parseError) {
+        logger.warn('Failed to parse single-skill repository', {
+          libraryPath,
+          error: parseError instanceof Error ? parseError.message : 'Unknown error',
+        });
+        return [];
+      }
+    }
+
+    const skillsDir = layout.skillsPath === '.'
+      ? libraryPath
+      : path.join(libraryPath, layout.skillsPath);
 
     try {
       const entries = await fs.readdir(skillsDir, { withFileTypes: true });
@@ -612,6 +871,40 @@ class SkillRepositoryService implements Disposable {
     }
 
     return skills;
+  }
+
+  private async getSkillDirectories(
+    libraryPath: string,
+    layout: RepositoryLayout
+  ): Promise<string[]> {
+    if (layout.layout === 'single-skill') {
+      return [libraryPath];
+    }
+
+    const skillsDir = layout.skillsPath === '.'
+      ? libraryPath
+      : path.join(libraryPath, layout.skillsPath);
+    const entries = await fs.readdir(skillsDir, { withFileTypes: true });
+    const skillDirectories: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) {
+        continue;
+      }
+      const skillDirectory = path.join(skillsDir, entry.name);
+      if (await hasSkillMd(skillDirectory)) {
+        skillDirectories.push(skillDirectory);
+      }
+    }
+    return skillDirectories;
+  }
+
+  private async pathExists(targetPath: string): Promise<boolean> {
+    try {
+      await fs.access(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

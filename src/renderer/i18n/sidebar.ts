@@ -8,6 +8,8 @@ export const sidebarZh = {
   sidebar: {
     // 顶部 / 搜索
     newTask: '新任务',
+    collapseSidebar: '收起侧栏',
+    expandSidebar: '展开侧栏',
     // （原 newTaskTitle tooltip 已删：实现语义自嗨文案，2026-07-26 打磨批 D D2）
     // 当前工作目录行（顶栏目录 chip 退役后的唯一入口）
     currentDirectory: '当前目录',
@@ -81,6 +83,8 @@ export const sidebarZh = {
       librarySubtitle: '任务产出与上传的文件，可带进对话',
       capabilityHub: '能力中心',
       capabilityHubSubtitle: '专家 · 技能 · 连接器',
+      doctorIssues: '{count} 项检查未通过',
+      doctorIssuesSubtitle: '点击查看完整诊断',
     },
   },
   sessionMenu: {
@@ -286,6 +290,8 @@ export const sidebarZh = {
 export const sidebarEn: typeof sidebarZh = {
   sidebar: {
     newTask: 'New task',
+    collapseSidebar: 'Collapse sidebar',
+    expandSidebar: 'Expand sidebar',
     currentDirectory: 'Current directory',
     selectDirectory: 'Choose directory',
     selectDirectoryTitle: 'Choose working directory',
@@ -350,6 +356,8 @@ export const sidebarEn: typeof sidebarZh = {
       librarySubtitle: 'Project assets · pin into chats',
       capabilityHub: 'Capability Hub',
       capabilityHubSubtitle: 'Experts · Skills · Connectors',
+      doctorIssues: '{count} checks failing',
+      doctorIssuesSubtitle: 'Click to open full diagnostics',
     },
   },
   sessionMenu: {

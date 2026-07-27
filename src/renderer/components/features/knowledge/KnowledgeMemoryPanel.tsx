@@ -825,13 +825,11 @@ export const KnowledgeMemoryContent: React.FC = () => {
 // 入口形态：FullScreenPage 外壳 + 共享内容。App.tsx 仍按 showKnowledgeMemoryPanel 挂载，
 // 菜单入口的收编由导航去重工作流处理。
 export const KnowledgeMemoryPanel: React.FC = () => {
-  const setShowKnowledgeMemoryPanel = useAppStore((state) => state.setShowKnowledgeMemoryPanel);
   return (
-    <FullScreenPage testId="knowledge-memory-panel">
+    <FullScreenPage testId="knowledge-memory-panel" variant="inline">
       <FullScreenPageHeader
         icon={<Brain className="h-4 w-4 text-emerald-300" />}
         title="Knowledge / Memory"
-        onClose={() => setShowKnowledgeMemoryPanel(false)}
       />
       <KnowledgeMemoryContent />
     </FullScreenPage>

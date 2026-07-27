@@ -18,15 +18,14 @@ const LOCAL_OPS_TABS: Array<{ key: LocalOpsTab; label: (t: ReturnType<typeof use
 
 export const LocalOpsPage: React.FC = () => {
   const { t } = useI18n();
-  const { localOpsTab, openLocalOpsPanel, setShowLocalOpsPanel } = useAppStore();
+  const { localOpsTab, openLocalOpsPanel } = useAppStore();
 
   return (
-    <FullScreenPage testId="local-ops-page">
+    <FullScreenPage testId="local-ops-page" variant="inline">
       <FullScreenPageHeader
         icon={<MonitorSmartphone className="h-4 w-4 text-cyan-300" />}
         title={t.localOps.title}
         description={t.localOps.description}
-        onClose={() => setShowLocalOpsPanel(false)}
         actions={(
           <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
             {LOCAL_OPS_TABS.map(({ key, label }) => (

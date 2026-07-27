@@ -10,6 +10,7 @@ import {
   getUpdateService,
   isUpdateServiceInitialized,
 } from '../../services/cloud/updateService';
+import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import type { DoctorItem } from '../types';
 
 export async function checkAppVersion(): Promise<DoctorItem> {
@@ -35,6 +36,7 @@ export async function checkAppVersion(): Promise<DoctorItem> {
         message: `有新版可更新：${currentVersion} → ${info.latestVersion ?? '?'}`,
         suggestion: '在设置面板点"检查更新"或直接下载新版',
         details: info.releaseNotes,
+        fix: { code: DOCTOR_FIX_CODES.OPEN_UPDATE_SETTINGS },
       };
     }
     return {
@@ -50,6 +52,7 @@ export async function checkAppVersion(): Promise<DoctorItem> {
       status: 'warn',
       message: `更新检查失败：${err instanceof Error ? err.message : String(err)}`,
       suggestion: '可能是网络问题，可忽略；当前版本 v' + currentVersion,
+      fix: { code: DOCTOR_FIX_CODES.OPEN_PROXY_HELP },
     };
   }
 }

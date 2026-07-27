@@ -91,12 +91,11 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   const runningCount = stats?.jobsByStatus?.running ?? 0;
 
   return (
-    <FullScreenPage testId="cron-center-panel">
+    <FullScreenPage testId="cron-center-panel" variant="inline">
       <FullScreenPageHeader
         icon={<Clock3 className="h-4 w-4 text-amber-300" />}
         title={cc.title}
         description={cc.subtitle}
-        onClose={onClose}
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="cron-center-scroll">

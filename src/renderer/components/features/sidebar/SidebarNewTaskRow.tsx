@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, Loader2, Plus } from 'lucide-react';
+import { Loader2, SquarePen } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 
 interface SidebarNewTaskRowProps {
@@ -31,12 +31,11 @@ export const SidebarNewTaskRow: React.FC<SidebarNewTaskRowProps> = ({
       {loading ? (
         <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-zinc-500" />
       ) : (
-        <Plus className="h-4 w-4 flex-shrink-0 text-zinc-500" />
+        <SquarePen className="h-4 w-4 flex-shrink-0 text-zinc-500" />
       )}
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100">
         {sb.newTask}
       </span>
-      <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
     </button>
   );
 };

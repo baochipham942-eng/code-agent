@@ -333,59 +333,63 @@ export const ExpertPanel: React.FC = () => {
   return (
     <div data-testid="expert-panel">
       {selectedRecipe ? null : (
-          <div className="sticky top-0 z-10 -mx-6 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-800/70 bg-zinc-900/90 px-6 py-2 backdrop-blur">
-            {!loading && categoryGroups.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-1.5" data-testid="expert-category-chips">
-                {[{ key: 'all', label: text.categoryAll }, ...categoryGroups.map((group) => ({ key: group.key, label: group.label }))].map((chip) => (
-                  <button /* ds-allow:button: 分类过滤 chip（aria-pressed 切换胶囊），Button primitive 无 chip/筛选语义变体 */
-                    key={chip.key}
-                    type="button"
-                    aria-pressed={activeCategory === chip.key}
-                    data-testid={`expert-category-chip-${chip.key}`}
-                    onClick={() => setSelectedCategory(chip.key)}
-                    className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
-                      activeCategory === chip.key
-                        ? 'border-zinc-500 bg-zinc-700 text-zinc-100'
-                        : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <div className="ml-auto flex items-center gap-2">
-              <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
-                {(['mine', 'discover'] as const).map((key) => (
-                  <button /* ds-allow:button: tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={tab === key}
-                    data-testid={`expert-tab-${key}`}
-                    onClick={() => setTab(key)}
-                    className={`rounded px-2.5 py-1 text-xs transition-colors ${
-                      tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    {key === 'mine' ? text.tabMine : text.tabDiscover}
-                  </button>
-                ))}
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void load()}
-                disabled={loading}
-                leftIcon={<RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />}
-              >
-                {text.refresh}
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
-                {text.createExpert}
-              </Button>
+        // 操作条与分类 chips 合一行同吸顶（2026-07-27 产品负责人拍板：分类与右侧操作同行对齐）；
+        // 底色跟内容区同层（zinc-900）+ 发丝底边，不再用更深的 zinc-950 形成断层黑条。
+        <div className="sticky top-0 z-10 -mx-6 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-800/70 bg-zinc-900/95 px-6 py-2 backdrop-blur">
+          {!loading && categoryGroups.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5" data-testid="expert-category-chips">
+              {[{ key: 'all', label: text.categoryAll, count: shown.length }, ...categoryGroups.map((group) => ({ key: group.key, label: group.label, count: group.entries.length }))].map((chip) => (
+                <button /* ds-allow:button: 分类过滤 chip（aria-pressed 切换胶囊），Button primitive 无 chip/筛选语义变体 */
+                  key={chip.key}
+                  type="button"
+                  aria-pressed={activeCategory === chip.key}
+                  data-role-category={chip.key}
+                  data-testid={`expert-category-chip-${chip.key}`}
+                  onClick={() => setSelectedCategory(chip.key)}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+                    activeCategory === chip.key
+                      ? 'border-zinc-500 bg-zinc-700 text-zinc-100'
+                      : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {chip.label}
+                  <span className="ml-1 tabular-nums opacity-60">{chip.count}</span>
+                </button>
+              ))}
             </div>
+          ) : null}
+          <div className="ml-auto flex items-center gap-2">
+            <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
+              {(['mine', 'discover'] as const).map((key) => (
+                <button /* ds-allow:button: tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === key}
+                  data-testid={`expert-tab-${key}`}
+                  onClick={() => setTab(key)}
+                  className={`rounded px-2.5 py-1 text-xs transition-colors ${
+                    tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {key === 'mine' ? text.tabMine : text.tabDiscover}
+                </button>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void load()}
+              disabled={loading}
+              leftIcon={<RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />}
+            >
+              {text.refresh}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void startCreateRoleChat()} data-testid="expert-create-role">
+              {text.createExpert}
+            </Button>
           </div>
+        </div>
       )}
       <div>
         {selectedRecipe ? (
@@ -559,48 +563,24 @@ export const ExpertPanel: React.FC = () => {
               </div>
             ) : null}
 
-            {/* 分类标题用 col-span-full 横跨整行，卡片留在同一个 grid 里连续排布：
-                每组各起一个 grid 会让只有 1–2 位专家的分类把整行拉空。
-                选中某个分类 chip 后收敛为扁平过滤网格，不再重复分组标题。 */}
+            {/* 卡片区一律扁平 3 列（2026-07-27 审美关拍板：分类靠上面的 chips 表达，
+                「全部」chip 就是原先的分组总览）。此前「全部」态在网格里插 col-span-full 的
+                分类小标题，每个分类只有 1–2 人时每行就只剩一张卡，看着像单列。 */}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {tab === 'mine' && activeCategory === 'all'
-                ? categoryGroups.flatMap((group) => [
-                  <div
-                    key={`category-${group.key}`}
-                    data-role-category={group.key}
-                    className="col-span-full pt-2 text-xs font-medium uppercase tracking-wide text-zinc-500 first:pt-0"
-                  >
-                    {group.label}{t.settings.roles.categoryCountPrefix}{group.entries.length}{t.settings.roles.categoryCountSuffix}
-                  </div>,
-                  ...group.entries.map((entry) => (
-                    <ExpertCard
-                      key={entry.roleId}
-                      entry={entry}
-                      tab={tab}
-                      text={text}
-                      sourceText={t.settings.roles.card.source}
-                      rolePacksByRoleId={rolePacksByRoleId}
-                      busyRolePackId={busyRolePackId}
-                      onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
-                      onDetail={() => openExpertRoleDetail(entry.roleId)}
-                      onInvite={(seed) => invite(entry, seed)}
-                    />
-                  )),
-                ])
-                : filteredShown.map((entry) => (
-                  <ExpertCard
-                    key={entry.roleId}
-                    entry={entry}
-                    tab={tab}
-                    text={text}
-                    sourceText={t.settings.roles.card.source}
-                    rolePacksByRoleId={rolePacksByRoleId}
-                    busyRolePackId={busyRolePackId}
-                    onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
-                    onDetail={() => openExpertRoleDetail(entry.roleId)}
-                    onInvite={(seed) => invite(entry, seed)}
-                  />
-                ))}
+              {filteredShown.map((entry) => (
+                <ExpertCard
+                  key={entry.roleId}
+                  entry={entry}
+                  tab={tab}
+                  text={text}
+                  sourceText={t.settings.roles.card.source}
+                  rolePacksByRoleId={rolePacksByRoleId}
+                  busyRolePackId={busyRolePackId}
+                  onRetryMissingSkills={(roleId) => { void runRolePackAction(roleId, retryRolePackMissingSkills); }}
+                  onDetail={() => openExpertRoleDetail(entry.roleId)}
+                  onInvite={(seed) => invite(entry, seed)}
+                />
+              ))}
             </div>
           </div>
         )}

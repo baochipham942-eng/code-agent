@@ -31,6 +31,7 @@ import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { RoleDetailPage } from './components/features/expert/RoleDetailPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
+import { useDoctorStore, DOCTOR_STARTUP_CHECK_DELAY_MS } from './stores/doctorStore';
 import { ModelOnboardingModal } from './components/onboarding/ModelOnboardingModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
@@ -183,9 +184,10 @@ export const App: React.FC = () => {
   // 响应式：窄屏先把横向空间让给聊天和右侧状态面板。
   const windowWidth = useWindowWidth();
   const isNarrowViewport = windowWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH;
-  // 宽屏右栏壳常驻：关闭最后一个视图后仍要挂载 Codex 式空态启动器。
-  // 窄屏继续只在确有可展示内容时临时占用聊天区。
-  // 视图切换器模型：右栏只有「收起」和「显示某个面板」两态，用户收起后不因活动信号自己弹回。
+  // 右栏「只在需要时出现」（2026-07-27 审美关拍板）= **默认收起**（appStore 初值 true），
+  // 不是「没视图就不占位」——后者会把空态启动器里的四个发现入口（概览/文件/浏览器/设计画布）
+  // 一并藏掉，对非程序员用户等于砍掉可达路径（e2e 当场抓到）。
+  // 收起态顶栏留展开入口；打开任一视图（openWorkbenchTab，非 auto 源）也会顺带清收起位。
   const showWorkbench = windowWidth >= WORKBENCH_MIN_VISIBLE_WIDTH && !workbenchCollapsed;
   const isPreviewActive = typeof activeWorkbenchTab === 'string' && activeWorkbenchTab.startsWith('preview:');
   const showNarrowWorkbench =
@@ -555,6 +557,14 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [isAuthLoading, openModelOnboardingIfNeeded]);
 
+  // 启动后延迟静默跑一次诊断快检（skipNetwork）：有 fail 项才在侧栏亮红点，全绿不打扰
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void useDoctorStore.getState().runSilentStartupCheck();
+    }, DOCTOR_STARTUP_CHECK_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
   // 监听工具创建确认请求
   useEffect(() => {
     const unsubscribe = ipcService.on(
@@ -817,6 +827,15 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
+  const isSidebarVisible = isStandard && !sidebarCollapsed;
+  // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/知识记忆/本机操作）在位时，
+  // 顶栏收敛。评测中心是 overlay 独立页，整窗盖住顶栏，不参与这里的判定。
+  const inlineSecondaryPageActive = Boolean(
+    expertDetailRoleId || showKnowledgeMemoryPanel || showLibraryPanel
+    || showCapabilityHub || showCronCenter || showLocalOpsPanel
+  );
+
   const renderWorkbenchContent = () => (
     <div className="flex flex-col h-full bg-zinc-900">
       <WorkbenchTabs />
@@ -842,7 +861,7 @@ export const App: React.FC = () => {
         {/* Main Content - Three-column layout with integrated title bars */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Column: Sidebar with its own title bar - darker background */}
-          {isStandard && !sidebarCollapsed && (
+          {isSidebarVisible && (
             <div className="flex flex-col w-60 bg-zinc-950">
               <Sidebar />
             </div>
@@ -850,8 +869,13 @@ export const App: React.FC = () => {
 
           {/* Right Area: Chat + TaskPanel with shared title bar */}
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Right Title Bar */}
-            <TitleBar />
+            {/* Right Title Bar —— 三个槽位全空时整条不渲染（2026-07-27 审美关）：
+                侧栏收起开关已挪回侧栏自己头上，顶栏只在收起态留展开入口；
+                二级页在位时会话动作与右栏开关也都没有对象。于是「二级页 + 侧栏展开」
+                这一档顶栏什么都不剩，留着只是一条空的 h-12 边框——不画，让大标题贴顶。 */}
+            {(!inlineSecondaryPageActive || !isSidebarVisible) && (
+              <TitleBar secondaryPageActive={inlineSecondaryPageActive} />
+            )}
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex overflow-hidden">

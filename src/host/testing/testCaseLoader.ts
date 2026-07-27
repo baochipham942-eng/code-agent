@@ -39,6 +39,16 @@ function validateTestCase(testCase: unknown, index: number): TestCase {
   if (!tc.expect) {
     tc.expect = {};
   }
+  if (
+    tc.max_cost_usd !== undefined
+    && (
+      typeof tc.max_cost_usd !== 'number'
+      || !Number.isFinite(tc.max_cost_usd)
+      || tc.max_cost_usd <= 0
+    )
+  ) {
+    throw new Error(`Test case ${tc.id}: 'max_cost_usd' must be a finite number greater than 0`);
+  }
 
   return tc as unknown as TestCase;
 }
@@ -67,6 +77,7 @@ function validateTestSuite(data: unknown, filePath: string): TestSuite {
     setup: suite.setup as string[] | undefined,
     cleanup: suite.cleanup as string[] | undefined,
     tags: suite.tags as string[] | undefined,
+    default_max_cost_usd: suite.default_max_cost_usd as number | undefined,
   };
 }
 
@@ -155,6 +166,18 @@ export function filterTestCases(
       // Apply suite defaults
       if (!testCase.timeout && suite.default_timeout) {
         testCase.timeout = suite.default_timeout;
+      }
+      if (testCase.max_cost_usd === undefined && suite.default_max_cost_usd !== undefined) {
+        if (
+          typeof suite.default_max_cost_usd !== 'number'
+          || !Number.isFinite(suite.default_max_cost_usd)
+          || suite.default_max_cost_usd <= 0
+        ) {
+          throw new Error(
+            `Test suite ${suite.name}: 'default_max_cost_usd' must be a finite number greater than 0`,
+          );
+        }
+        testCase.max_cost_usd = suite.default_max_cost_usd;
       }
 
       allCases.push(testCase);

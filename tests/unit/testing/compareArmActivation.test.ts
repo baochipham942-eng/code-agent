@@ -212,7 +212,18 @@ describe('接线契约：eval-ci --compare 路径真的调用了两道断言', (
 
     const { main } = await import('../../../scripts/eval-ci');
     await expect(
-      main(['node', 'eval-ci', '--compare', yamlPath, '--model', 'model-a', '--provider', 'mock'], dir),
+      main([
+        'node',
+        'eval-ci',
+        '--compare',
+        yamlPath,
+        '--model',
+        'model-a',
+        '--provider',
+        'mock',
+        '--case-dir',
+        dir,
+      ], dir),
     ).rejects.toThrow('__process_exit_1__');
 
     const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
@@ -231,7 +242,7 @@ describe('接线契约：eval-ci --compare 路径真的调用了两道断言', (
     expect(activeSrc).toMatch(/assertCompareArmsDistinct\(baseline, candidate\)/);
     // compare 专属 case-dir 接线：CLI 解析值传入 runCompareCommand，并用于 suite 加载。
     expect(activeSrc).toMatch(/runCompareCommand\(workingDir, compare, \{[^}]*caseDir[^}]*\}\)/);
-    expect(activeSrc).toMatch(/loadAllTestSuites\(opts\.caseDir \?\? defaultConfig\.testCaseDir\)/);
+    expect(activeSrc).toMatch(/loadAllTestSuites\(opts\.caseDir \?\? resolveCoreTestCaseDir\(workingDir\)\)/);
     // 跑后断言调用点，且必须出现在报数（generateComparisonConsole）之前
     const activatedAt = activeSrc.indexOf('assertCompareArmsActivated(result)');
     const reportAt = activeSrc.indexOf('generateComparisonConsole(result)');

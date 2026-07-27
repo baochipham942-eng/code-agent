@@ -5,6 +5,7 @@
 name: "Prompt Real Smoke Tests"
 description: "Low-cost real-model smoke coverage for prompt/tool schema regressions."
 default_timeout: 90000
+default_max_cost_usd: 0.10
 tags:
   - prompt-real-smoke
   - core-path

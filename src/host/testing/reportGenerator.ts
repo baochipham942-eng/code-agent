@@ -43,6 +43,9 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   if ((summary.infraExcluded ?? 0) > 0) {
     lines.push(`| 基础设施排除 | ${summary.infraExcluded} 🔌 |`);
   }
+  if ((summary.costExceeded ?? 0) > 0) {
+    lines.push(`| 成本超限 | ${summary.costExceeded} 💸 |`);
+  }
   lines.push(`| 通过率 | ${getPassRate(summary)}% |`);
   lines.push(`| 平均分数 | ${(summary.averageScore * 100).toFixed(1)}% |`);
   lines.push(`| 总耗时 | ${formatDuration(summary.duration)} |`);
@@ -185,6 +188,21 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
     lines.push('');
     for (const result of infraTests) {
       lines.push(`- 🔌 **${result.testId}**: ${result.failureReason || result.description}`);
+    }
+    lines.push('');
+  }
+
+  const costExceededTests = summary.results.filter((result) => result.status === 'cost_exceeded');
+  if (costExceededTests.length > 0) {
+    lines.push('## 成本超限用例');
+    lines.push('');
+    lines.push('> 单 case 实际模型成本超过声明上限，执行已 fail-closed；该结果不计入能力通过率分母。');
+    lines.push('');
+    for (const result of costExceededTests) {
+      lines.push(
+        `- 💸 **${result.testId}**: ${result.failureReason || result.description}`
+        + `（实际 $${(result.costUsd ?? 0).toFixed(6)} / 上限 $${(result.costLimitUsd ?? 0).toFixed(6)}）`,
+      );
     }
     lines.push('');
   }
@@ -334,7 +352,8 @@ export function generateConsoleReport(summary: TestRunSummary): string {
     const icon = result.status === 'passed' ? '✅' :
                  result.status === 'partial' ? '🟡' :
                  result.status === 'failed' ? '❌' :
-                 result.status === 'infra_excluded' ? '🔌' : '⏭️';
+                 result.status === 'infra_excluded' ? '🔌' :
+                 result.status === 'cost_exceeded' ? '💸' : '⏭️';
     const duration = formatDuration(result.duration);
     const scoreStr = result.status === 'partial' ? ` (${(result.score * 100).toFixed(0)}%)` : '';
     lines.push(`  ${icon} ${result.testId.padEnd(30)} ${duration}${scoreStr}`);
@@ -347,7 +366,8 @@ export function generateConsoleReport(summary: TestRunSummary): string {
   lines.push('');
   lines.push('───────────────────────────────────────────────────────');
   const infraSegment = (summary.infraExcluded ?? 0) > 0 ? `  |  🔌 ${summary.infraExcluded}` : '';
-  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${infraSegment}`);
+  const costSegment = (summary.costExceeded ?? 0) > 0 ? `  |  💸 ${summary.costExceeded}` : '';
+  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}${infraSegment}${costSegment}`);
   lines.push(`  Duration: ${formatDuration(summary.duration)}  |  Pass rate: ${getPassRate(summary)}%  |  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
   lines.push('═══════════════════════════════════════════════════════');
   lines.push('');
@@ -431,7 +451,11 @@ function generateScoreAuthoritySection(
   ];
 
   const hasLlmJudge = results.some(
-    (r) => r.scoreAuthority === 'llm_judge' && r.status !== 'skipped' && r.status !== 'infra_excluded',
+    (result) =>
+      result.scoreAuthority === 'llm_judge'
+      && result.status !== 'skipped'
+      && result.status !== 'infra_excluded'
+      && result.status !== 'cost_exceeded',
   );
   const judgeTrusted = judgeCalibration ? isTrustedCalibration(judgeCalibration) : false;
   const judgeNote = !hasLlmJudge
@@ -450,7 +474,8 @@ function generateScoreAuthoritySection(
       (r) =>
         (r.scoreAuthority ?? 'unknown') === bucket.key &&
         r.status !== 'skipped' &&
-        r.status !== 'infra_excluded',
+        r.status !== 'infra_excluded' &&
+        r.status !== 'cost_exceeded',
     );
     if (inBucket.length === 0) continue;
     const passed = inBucket.filter((r) => r.status === 'passed').length;
@@ -472,8 +497,12 @@ function generateScoreAuthoritySection(
 
 function getPassRate(summary: TestRunSummary): string {
   if (summary.total === 0) return '0';
-  // 能力分母排除 skipped 与 infra_excluded（WP1-2）
-  const runTests = summary.total - summary.skipped - (summary.infraExcluded ?? 0);
+  // 能力分母排除 skipped / infra_excluded / cost_exceeded。
+  const runTests =
+    summary.total
+    - summary.skipped
+    - (summary.infraExcluded ?? 0)
+    - (summary.costExceeded ?? 0);
   if (runTests === 0) return '0';
   return ((summary.passed / runTests) * 100).toFixed(1);
 }

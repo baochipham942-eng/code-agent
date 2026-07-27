@@ -8,6 +8,7 @@
 name: "增量编辑预算测试"
 description: "P0 observation masking 修复专项评测，验证多轮文件读→改→再改链路的工具调用预算控制"
 default_timeout: 240000
+default_max_cost_usd: 0.10
 tags:
   - incremental-edit
   - p0-regression

@@ -6,6 +6,7 @@
 name: "任务完成能力测试"
 description: "测试 Agent 完成完整编程任务的能力"
 default_timeout: 120000
+default_max_cost_usd: 0.10
 tags:
   - tasks
   - integration

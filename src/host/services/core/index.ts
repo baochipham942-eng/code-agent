@@ -49,6 +49,13 @@ export {
   type TokenUsage,
 } from './budgetService';
 
+// 错误类不外抛：调用方判定统一走 isScopedCostLimitExceeded 谓词，
+// 免得两条判据（instanceof / 谓词）各自漂移。
+export {
+  createScopedCostLimit,
+  isScopedCostLimitExceeded,
+} from './scopedCostLimit';
+
 // promptSuggestions 故意不在此处 re-export：它通过动态 import 依赖 ../../model/quickModel，
 // 而 quickModel 间接依赖 services barrel，会形成 core ↔ model 循环。
 // 消费方请 `import ... from '@host/services/core/promptSuggestions'` 直接引用。

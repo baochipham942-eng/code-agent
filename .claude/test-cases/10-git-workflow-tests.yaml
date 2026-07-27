@@ -7,6 +7,7 @@
 name: "Git 工作流测试"
 description: "测试 Agent 的 Git 操作能力"
 default_timeout: 60000
+default_max_cost_usd: 0.10
 tags:
   - git
   - core-path

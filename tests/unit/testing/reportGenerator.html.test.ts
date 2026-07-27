@@ -38,6 +38,7 @@ function makeSummary(results: TestResult[]): TestRunSummary {
     skipped: results.filter((r) => r.status === 'skipped').length,
     partial: results.filter((r) => r.status === 'partial').length,
     infraExcluded: results.filter((r) => r.status === 'infra_excluded').length,
+    costExceeded: results.filter((r) => r.status === 'cost_exceeded').length,
     averageScore: 0.67,
     results,
     environment: { model: 'mock-model', provider: 'mock-provider', workingDirectory: '/tmp/work' },
@@ -152,18 +153,28 @@ describe('generateHtmlReport', () => {
     expect(html).not.toContain('onerror=alert');
   });
 
-  it('uses a capability denominator that excludes skipped and infra_excluded results', () => {
+  it('uses a capability denominator that excludes skipped, infra_excluded, and cost_exceeded results', () => {
     const html = generateHtmlReport(makeSummary([
       makeResult({ testId: 'pass-1', status: 'passed', score: 1 }),
       makeResult({ testId: 'pass-2', status: 'passed', score: 1 }),
       makeResult({ testId: 'fail-1', status: 'failed', score: 0 }),
       makeResult({ testId: 'skip-1', status: 'skipped', score: 0 }),
       makeResult({ testId: 'infra-1', status: 'infra_excluded', score: 0, failureReason: '429' }),
+      makeResult({
+        testId: 'cost-1',
+        status: 'cost_exceeded',
+        score: 0,
+        failureReason: '成本超限',
+        costUsd: 0.11,
+        costLimitUsd: 0.10,
+      }),
     ]));
 
     expect(html).toContain('data-testid="capability-denominator">3</span>');
     expect(html).toContain('data-testid="pass-rate">66.7%</span>');
     expect(html).toContain('data-testid="infra-excluded-count">1</span>');
+    expect(html).toContain('data-testid="cost-exceeded-count">1</span>');
+    expect(html).toContain('单 case 实际模型成本越线后立即停止');
   });
 
   it('colors the pass, partial, and fail buckets while keeping infra_excluded separate', () => {

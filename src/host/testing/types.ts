@@ -26,7 +26,15 @@ export type TestCaseType =
  * infra_excluded（WP1-2）：429/超时/5xx/网络等基础设施故障，非 agent 能力信号，
  * 不进能力通过率分母、不进 baseline 对账，报告单列。
  */
-export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'partial' | 'infra_excluded';
+export type TestStatus =
+  | 'pending'
+  | 'running'
+  | 'passed'
+  | 'failed'
+  | 'skipped'
+  | 'partial'
+  | 'infra_excluded'
+  | 'cost_exceeded';
 
 /**
  * Expected tool call
@@ -226,6 +234,8 @@ export interface TestCase {
   cleanup?: string[];
   /** Timeout in milliseconds */
   timeout?: number;
+  /** 单 case 实际模型成本硬上限（USD）；可由 suite default_max_cost_usd 提供默认值 */
+  max_cost_usd?: number;
   /** Tags for filtering */
   tags?: string[];
   /** Skip this test */
@@ -289,6 +299,8 @@ export interface TestSuite {
   cleanup?: string[];
   /** Suite tags */
   tags?: string[];
+  /** suite 内 case 的默认实际模型成本硬上限（USD） */
+  default_max_cost_usd?: number;
 }
 
 /**
@@ -359,6 +371,10 @@ export interface TestResult {
   turnCount: number;
   /** Assertion score (0.0 - 1.0) */
   score: number;
+  /** 本 case 由 BudgetService usage 实际归集的美元成本 */
+  costUsd?: number;
+  /** 本 case 声明的美元成本硬上限 */
+  costLimitUsd?: number;
   /** 评分权威桶：分数由确定性断言 / LLM judge / 无外部验证背书 */
   scoreAuthority?: ScoreAuthority;
   /** Pipeline failure stage (from failure funnel analysis) */
@@ -424,6 +440,8 @@ export interface TestRunSummary {
   partial: number;
   /** 基础设施故障排除数（429/超时/5xx/网络），不进能力分母 */
   infraExcluded?: number;
+  /** 单 case 成本超限数，fail-loud 但不进能力分母 */
+  costExceeded?: number;
   /** Average score across non-skipped tests (0.0 - 1.0) */
   averageScore: number;
   /** Individual results */
@@ -942,7 +960,7 @@ export type EvalRunMode = 'mock' | 'real';
 
 export interface EvalBaseline {
   version: number;
-  /** 分母口径版本：2=能力分母排除 skipped+infra（与报告一致）；缺省=旧口径（只排 infra） */
+  /** 分母口径版本：3=能力分母排除 skipped+infra+cost_exceeded；缺省=旧口径 */
   denominatorVersion?: number;
   updatedAt: number;
   updatedBy: string;
@@ -991,6 +1009,8 @@ export interface TrendDataPoint {
   mode?: EvalRunMode;
   /** WP1-2：本 run 被基础设施故障排除的 case 数（passRate 分母已排除它们） */
   infraExcluded?: number;
+  /** 本 run 单 case 成本超限数（passRate 分母已排除） */
+  costExceeded?: number;
   /** roadmap 2.4 A/B 归因（audit D-R3）：同 commit 两臂在 trend 里靠它区分 */
   providerVariantArm?: 'variant-on' | 'variant-off';
 }

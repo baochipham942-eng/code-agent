@@ -589,6 +589,10 @@ export const zhSettingsCore = {
       saving: '正在保存',
       effectiveNextRecording: '设置会在下一次录音时生效',
       modes: {
+        stream: {
+          label: '边说边出字',
+          description: '通过 DashScope Gummy 实时写入输入框；起步时不可用则走原有整段转写',
+        },
         'local-first': {
           label: '本地优先',
           description: 'whisper-cpp 可用时本地转写，失败后用 Groq 兜底',

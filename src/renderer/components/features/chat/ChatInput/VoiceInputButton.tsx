@@ -173,7 +173,13 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
             <div className="min-w-0 flex-1">
               <p className="break-words text-xs leading-5 text-zinc-200">{error}</p>
               <p className="mt-1 text-2xs text-zinc-500">
-                {effectiveSettings.mode === 'local-first' ? v.modeLocalFirst : effectiveSettings.mode === 'local-only' ? v.modeLocalOnly : v.modeCloudOnly}
+                {effectiveSettings.mode === 'stream'
+                  ? v.modeStream
+                  : effectiveSettings.mode === 'local-first'
+                    ? v.modeLocalFirst
+                    : effectiveSettings.mode === 'local-only'
+                      ? v.modeLocalOnly
+                      : v.modeCloudOnly}
                 {' · '}
                 {effectiveSettings.language === 'auto' ? v.autoLanguage : effectiveSettings.language}
               </p>

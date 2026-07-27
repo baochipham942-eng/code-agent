@@ -2,7 +2,7 @@
 // Speech input and transcription contracts
 // ============================================================================
 
-export type SpeechTranscriptionMode = 'local-first' | 'local-only' | 'cloud-only';
+export type SpeechTranscriptionMode = 'stream' | 'local-first' | 'local-only' | 'cloud-only';
 
 export type SpeechCloudProvider = 'groq';
 
@@ -25,7 +25,7 @@ export interface SpeechInputSettings {
 
 export const DEFAULT_SPEECH_INPUT_SETTINGS: SpeechInputSettings = {
   enabled: true,
-  mode: 'local-first',
+  mode: 'stream',
   language: 'zh',
   localModel: 'ggml-large-v3-turbo.bin',
   threads: 4,

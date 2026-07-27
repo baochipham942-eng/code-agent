@@ -106,7 +106,7 @@ describe('VoiceInputButton', () => {
     const html = renderButton();
 
     expect(html).toContain('模型文件不存在');
-    expect(html).toContain('本地优先');
+    expect(html).toContain('边说边出字');
     expect(html).toContain('重试');
     expect(html).toContain('关闭');
   });

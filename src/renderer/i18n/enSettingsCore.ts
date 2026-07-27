@@ -589,6 +589,10 @@ export const enSettingsCore = {
       saving: 'Saving',
       effectiveNextRecording: 'Settings take effect on the next recording',
       modes: {
+        stream: {
+          label: 'Live transcription',
+          description: 'Show words in the composer while you speak via DashScope Gummy; falls back before recording if unavailable',
+        },
         'local-first': {
           label: 'Local first',
           description: 'Use local transcription when whisper-cpp is available, then fall back to Groq on failure',

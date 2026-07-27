@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
-import { Check, Cloud, Cpu, Mic, RotateCcw, SlidersHorizontal, Trash2, Wand2 } from 'lucide-react';
+import { AudioLines, Check, Cloud, Cpu, Mic, RotateCcw, SlidersHorizontal, Trash2, Wand2 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, SpeechInputSettings, SpeechRetainedAudioClearResult, SpeechTranscriptionMode } from '@shared/contract';
 import { DEFAULT_SPEECH_INPUT_SETTINGS, VOICE_INPUT_SETTINGS_UPDATED_EVENT } from '@shared/contract';
@@ -19,6 +19,10 @@ const MODE_OPTIONS: Array<{
   id: SpeechTranscriptionMode;
   icon: React.ReactNode;
 }> = [
+  {
+    id: 'stream',
+    icon: <AudioLines className="h-4 w-4" />,
+  },
   {
     id: 'local-first',
     icon: <Cpu className="h-4 w-4" />,
@@ -133,7 +137,7 @@ export const VoiceInputSettings: React.FC = () => {
 
       <div className="border-t border-zinc-700 pt-4">
         <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.modeTitle}</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {MODE_OPTIONS.map((option) => {
             const active = settings.mode === option.id;
             const optionText = voiceText.modes[option.id];

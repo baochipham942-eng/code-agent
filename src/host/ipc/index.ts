@@ -165,7 +165,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerTaskHandlers(ipcMain, getTaskManager);
 
   // Status handlers (UX 改进)
-  registerStatusHandlers();
+  registerStatusHandlers(ipcMain);
 
   // Context health handlers (上下文健康度)
   registerContextHealthHandlers({ getAppService, getTaskManager });

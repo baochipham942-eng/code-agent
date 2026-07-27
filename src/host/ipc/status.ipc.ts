@@ -2,11 +2,13 @@
 // Status IPC Handlers - 状态相关的 IPC 通道
 // ============================================================================
 
-import { ipcHost, type AppWindow } from '../platform';
+import { ipcHost, type AppWindow, type IpcMain } from '../platform';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createLogger } from '../services/infra/logger';
 import { MODEL_PRICING_PER_1M, MODEL_API_ENDPOINTS, DEFAULT_PROVIDER } from '../../shared/constants';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { getDatabase } from '../services/core/databaseService';
 
 const logger = createLogger('StatusIPC');
 const execAsync = promisify(exec);
@@ -23,9 +25,9 @@ export const STATUS_CHANNELS = {
 /**
  * 注册状态相关的 IPC handlers
  */
-export function registerStatusHandlers(): void {
+export function registerStatusHandlers(ipcMain: IpcMain = ipcHost): void {
   // 获取 Git 信息
-  ipcHost.handle(STATUS_CHANNELS.GET_GIT_INFO, async (_, workingDir: string) => {
+  ipcMain.handle(STATUS_CHANNELS.GET_GIT_INFO, async (_, workingDir: string) => {
     try {
       const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', {
         cwd: workingDir,
@@ -39,7 +41,7 @@ export function registerStatusHandlers(): void {
   });
 
   // 网络状态检测
-  ipcHost.handle(STATUS_CHANNELS.CHECK_NETWORK, async () => {
+  ipcMain.handle(STATUS_CHANNELS.CHECK_NETWORK, async () => {
     try {
       const start = Date.now();
       const controller = new AbortController();
@@ -67,6 +69,50 @@ export function registerStatusHandlers(): void {
       return 'offline';
     }
   });
+
+  ipcMain.handle(
+    IPC_DOMAINS.STATUS,
+    async (_, request: IPCRequest): Promise<IPCResponse> => {
+      try {
+        const repo = getDatabase().getTurnCostRepo();
+        switch (request.action) {
+          case 'getTodayCost':
+            return { success: true, data: repo.getTodayCost() };
+
+          case 'getCostStats': {
+            const days = (request.payload as { days?: unknown } | undefined)?.days;
+            if (!Number.isInteger(days) || Number(days) < 1) {
+              return {
+                success: false,
+                error: {
+                  code: 'INVALID_ARGS',
+                  message: 'getCostStats requires a positive integer payload.days',
+                },
+              };
+            }
+            return { success: true, data: repo.getCostStats(Number(days)) };
+          }
+
+          default:
+            return {
+              success: false,
+              error: {
+                code: 'INVALID_ACTION',
+                message: `Unknown status action: ${request.action}`,
+              },
+            };
+        }
+      } catch (error) {
+        return {
+          success: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+      }
+    },
+  );
 
   logger.info('Status handlers registered');
 }

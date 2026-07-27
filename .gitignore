@@ -94,6 +94,7 @@ raw/
 
 # Swift build artifacts (run scripts/build-*.sh to regenerate)
 scripts/system-audio-capture
+scripts/voice-aec-io
 scripts/vision-ocr
 scripts/vision-tagger
 

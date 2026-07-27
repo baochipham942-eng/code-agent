@@ -37,7 +37,7 @@ Agent Team 的身份从“进程里最近一次 swarm”升级为 `SwarmRunScope
 | trace / ledger | writer 和 publisher 带 scope，写回前核 owner；跨 scope 事件拒绝 | `swarmTraceWriter.ts`、`swarmEventPublisher.ts` |
 | renderer isolation | store、monitor、history 与 mutations 只消费当前 scope 事件 | `swarmStore.ts`、`swarmEventRouting.ts`、`*.scope.test.tsx` |
 
-Native 外层 runId 与 Team 的 `SwarmRunScope.runId` 是两级身份，不能互相覆盖。当前 `SwarmRunScope`、launch request 和事件载荷已支持 `parentNativeRunId`，ToolExecutor 会校验父 run 一致性。Parallel `restoreCheckpoint()` 仍只有原语和单测，生产 Agent Team 入口尚未 rehydrate Native parent，不能宣称 crash recovery 已完成；见 [coordinator-checkpoint-symmetry.md](./coordinator-checkpoint-symmetry.md)。
+Native 外层 runId 与 Team 的 `SwarmRunScope.runId` 是两级身份，不能互相覆盖。当前 `SwarmRunScope`、launch request 和事件载荷已支持 `parentNativeRunId`，ToolExecutor 会校验父 run 一致性。Parallel 侧的 JSON checkpoint（`persistCheckpoint` / `restoreCheckpoint` / `parallel-coordination-checkpoints/`）已于 2026-07-27 整套删除——`restoreCheckpoint()` 全仓零调用方，写入侧只产生无人读取的文件。Agent Team 的崩溃恢复只有 Durable Run 一条路径，见 [agent-team-durable-recovery.md](./agent-team-durable-recovery.md)；历史对照表见 [coordinator-checkpoint-symmetry.md](./coordinator-checkpoint-symmetry.md)。
 
 ## 0. 通信级别模型 (Communication Levels)
 

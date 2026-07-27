@@ -54,7 +54,7 @@ import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
-import { formatRelativeTime } from '../utils/i18nTime';
+import { localeForLanguage } from '../utils/i18nTime';
 import ipcService from '../services/ipcService';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../utils/sessionPresentation';
 import { hasSessionDeliverySignals } from '../utils/sessionRecoveryHints';
@@ -94,7 +94,7 @@ export function isAccountMenuEventOutside(
 }
 
 export const Sidebar: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）。
   // 红绿灯只存在于「Tauri 壳 + macOS + 非全屏」：全屏时系统把它藏起来，浏览器里根本没有——
   // 这两种态左上角空着难看，改挂品牌标（2026-07-27 产品负责人拍板）。
@@ -579,7 +579,7 @@ export const Sidebar: React.FC = () => {
           showStatusBadge: status.showBadge,
           typeLabel: getSessionTypeLabel(session.type),
           summary: hasMeaningfulSummary ? snapshotSummary : undefined,
-          lastActiveLabel: formatRelativeTime(t, latestActivityAt),
+          lastActiveTitle: new Date(latestActivityAt).toLocaleString(localeForLanguage(language)),
           workingDirectory: session.workingDirectory,
           gitBranch: session.gitBranch,
           prLabel: session.prLink ? `PR #${session.prLink.number}` : undefined,

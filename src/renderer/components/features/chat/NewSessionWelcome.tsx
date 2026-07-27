@@ -76,7 +76,8 @@ export const NewSessionWelcome: React.FC<{
 
   return (
     <div className="h-full flex flex-col items-center justify-center px-6 py-12">
-      <div className="w-full max-w-2xl animate-fade-in">
+      {/* max-w-3xl(768px) 与消息流/输入框同宽（2026-07-27 拍板）：首发消息后内容列不再跳 96px */}
+      <div className="w-full max-w-3xl animate-fade-in">
         {/* 品牌标入场（2026-07-26 空态品牌化）：用户第一眼页面此前没有任何品牌触点 */}
         <NeoBrandMark size={28} showWordmark={false} className="mb-4" />
         <div className="mb-5 flex items-center justify-between gap-4">

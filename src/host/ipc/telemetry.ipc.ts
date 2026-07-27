@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { ipcHost, AppWindow } from '../platform';
+import { getSessionFeedbackRatings } from '../telemetry/telemetryFeedbackSql';
 import { TELEMETRY_CHANNELS } from '../../shared/ipc/channels';
 import { getTelemetryStorage } from '../telemetry/telemetryStorage';
 // extractStructuredReplay loaded dynamically — excluded from production bundle
@@ -252,7 +253,7 @@ export function registerTelemetryHandlers(getMainWindow: () => AppWindow | null)
   // 只出锚点与评分，不带 comment/fullContent，不走 admin-only 查询面。
   ipcHost.handle(
     TELEMETRY_CHANNELS.GET_SESSION_FEEDBACK,
-    async (_event, sessionId: string) => storage.getSessionFeedbackRatings(sessionId),
+    async (_event, sessionId: string) => getSessionFeedbackRatings(sessionId),
   );
 
   // 健康摘要：是否启用 + session 数 + 存储占用 + 最近事件时间

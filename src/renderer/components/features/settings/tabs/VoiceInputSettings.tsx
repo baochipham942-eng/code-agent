@@ -11,7 +11,6 @@ import ipcService from '../../../../services/ipcService';
 import { createLogger } from '../../../../utils/logger';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Toggle } from '../../../primitives/Toggle';
-import { VoiceLiveSettingsSection } from './VoiceLiveSettingsSection';
 
 const logger = createLogger('VoiceInputSettings');
 
@@ -114,17 +113,7 @@ export const VoiceInputSettings: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8">
-      {/* 实时通话组（§7.6 IA：实时通话 + 口述输入同页归并） */}
-      <section>
-        <h2 className="mb-4 text-base font-semibold text-zinc-100">{t.voice.settings.live}</h2>
-        <VoiceLiveSettingsSection />
-      </section>
-
-      {/* 口述输入组（现有 ASR 设置，原样保留） */}
-      <section>
-        <h2 className="mb-4 border-t border-zinc-700 pt-6 text-base font-semibold text-zinc-100">{t.voice.settings.dictation}</h2>
-        <div className="space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="pr-4">
           <h3 className="mb-1 text-sm font-medium text-zinc-200">{voiceText.enableTitle}</h3>
@@ -301,8 +290,6 @@ export const VoiceInputSettings: React.FC = () => {
         <SlidersHorizontal className="h-3.5 w-3.5" />
         <span>{saving ? voiceText.saving : voiceText.effectiveNextRecording}</span>
       </div>
-        </div>
-      </section>
     </div>
   );
 };

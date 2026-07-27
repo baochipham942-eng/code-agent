@@ -7,9 +7,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AppSettings } from '../../../src/shared/contract';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const invokeDomainMock = vi.hoisted(() => vi.fn());
-const availability = vi.hoisted(() => ({ enabled: true, configured: true }));
+// usage 是批 H 新增：设置页「通话用量」读它。mock 少一个字段整个 tab 就白屏，
+// 所以这里跟着真 hook 的返回形状走，不是可选补丁。
+const availability = vi.hoisted(() => ({
+  enabled: true,
+  configured: true,
+  usage: { monthSeconds: 0, monthCalls: 0 },
+}));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
   useI18n: () => ({ t: zh, language: 'zh' }),
@@ -100,5 +107,36 @@ describe('VoiceLiveSettingsSection', () => {
       const payload = setCall![2] as { voice: { turnDetection: { threshold?: number } } };
       expect(payload.voice.turnDetection.threshold).toBe(0.7);
     });
+  });
+
+  // 批 H：执行引擎与通话模型分离（§6.1）。判据是「选了真存进 live.executionModel」，
+  // 不是「下拉框渲染出来了」——存不进去就是个装饰品。
+  it('选执行引擎写 live.executionModel，选回「跟随会话默认」把它去掉', async () => {
+    settingsGet(undefined);
+    render(<VoiceLiveSettingsSection />);
+    const providerSelect = await screen.findByTestId('voice-execution-provider');
+
+    fireEvent.change(providerSelect, { target: { value: 'deepseek' } });
+    await waitFor(() => expect(invokeDomainMock).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'set', expect.anything()));
+    const saved = invokeDomainMock.mock.calls.filter((c) => c[1] === 'set').at(-1)?.[2] as Partial<AppSettings>;
+    expect(saved.voice?.live?.executionModel?.provider).toBe('deepseek');
+    expect(saved.voice?.live?.executionModel?.model).toBeTruthy();
+
+    invokeDomainMock.mockClear();
+    fireEvent.change(screen.getByTestId('voice-execution-provider'), { target: { value: '' } });
+    await waitFor(() => expect(invokeDomainMock).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'set', expect.anything()));
+    const cleared = invokeDomainMock.mock.calls.filter((c) => c[1] === 'set').at(-1)?.[2] as Partial<AppSettings>;
+    expect(cleared.voice?.live?.executionModel).toBeUndefined();
+  });
+
+  it('本月通话用量按分钟显示（只记账不设限）', async () => {
+    availability.usage = { monthSeconds: 754, monthCalls: 11 };
+    settingsGet(undefined);
+    render(<VoiceLiveSettingsSection />);
+
+    const summary = await screen.findByTestId('voice-usage-summary');
+    expect(summary.textContent).toContain('13');  // 754s ≈ 13 分钟
+    expect(summary.textContent).toContain('11');
+    availability.usage = { monthSeconds: 0, monthCalls: 0 };
   });
 });

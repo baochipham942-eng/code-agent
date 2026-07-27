@@ -11,7 +11,7 @@
 // App paths & lifecycle
 export { app, getPath, getUserDataPath, getHomePath, getTempPath, getAppDataPath,
   getDocumentsPath, getDesktopPath, getDownloadsPath, getLogsPath,
-  getAppVersion, getAppName, isPackaged, getAppPath, getLocale } from './appPaths';
+  getAppVersion, getBuildInfo, getAppName, isPackaged, getAppPath, getLocale } from './appPaths';
 
 // IPC types
 export type { IpcMain, IpcMainInvokeEvent, IpcMainEvent, HandlerFn } from './ipcTypes';

@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { RendererServeDecision } from './desktopShell';
+import type { BuildInfo } from './buildInfo';
 
 export type PersistenceStatus = 'available' | 'unavailable';
 export type PersistenceMode = 'database' | 'memory';
@@ -24,6 +25,7 @@ export interface WebHealthResponse {
   serverRoot: string;
   pid: number;
   tauriBootToken: string | null;
+  build: BuildInfo | null;
   persistence: PersistenceHealth;
   rendererServe?: RendererServeDecision | null;
 }

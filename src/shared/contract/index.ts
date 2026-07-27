@@ -130,6 +130,7 @@ export * from './productClosure';
 export * from './completionSummary';
 export * from './handoff';
 export * from './persistence';
+export * from './buildInfo';
 export * from './desktopShell';
 export * from './turnCost';
 

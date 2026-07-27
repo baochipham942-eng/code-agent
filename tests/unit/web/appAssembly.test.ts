@@ -50,6 +50,7 @@ function buildDeps(dataDir: string): CreateAppDeps {
     pendingDevPermissions: new Map(),
     resolveCodeAgentDataDir: () => dataDir,
     getAppVersion: () => '0.0.0-test',
+    getBuildInfo: () => null,
     getDurableRunRollout: () => ({
       policy: {
         mode: 'legacy',

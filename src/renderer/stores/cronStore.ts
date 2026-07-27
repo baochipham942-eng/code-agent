@@ -20,6 +20,8 @@ interface CronState {
   stats: CronServiceStats | null;
   latestExecutions: Record<string, CronJobExecution | null>;
   executionsByJobId: Record<string, CronJobExecution[]>;
+  /** 跨任务执行流（运行记录 tab），按时间倒序 */
+  recentExecutions: CronJobExecution[];
   selectedJobId: string | null;
   filterMode: CronJobFilterMode;
   searchQuery: string;
@@ -37,6 +39,7 @@ interface CronState {
   loadJobs: () => Promise<void>;
   loadStats: () => Promise<void>;
   loadExecutions: (jobId: string, limit?: number) => Promise<void>;
+  loadRecentExecutions: (limit?: number) => Promise<void>;
   refresh: () => Promise<void>;
   createJob: (input: CreateCronJobInput) => Promise<CronJobDefinition>;
   updateJob: (jobId: string, updates: UpdateCronJobInput) => Promise<CronJobDefinition | null>;
@@ -59,6 +62,7 @@ export const useCronStore = create<CronState>()((set, get) => ({
   stats: null,
   latestExecutions: {},
   executionsByJobId: {},
+  recentExecutions: [],
   selectedJobId: null,
   filterMode: 'all',
   searchQuery: '',
@@ -138,6 +142,18 @@ export const useCronStore = create<CronState>()((set, get) => ({
       logger.error('Failed to load cron executions', error);
       set({
         error: error instanceof Error ? error.message : 'Failed to load cron executions',
+      });
+    }
+  },
+
+  loadRecentExecutions: async (limit = 50) => {
+    try {
+      const recentExecutions = await cronClient.getRecentExecutions(limit);
+      set({ recentExecutions });
+    } catch (error) {
+      logger.error('Failed to load recent cron executions', error);
+      set({
+        error: error instanceof Error ? error.message : 'Failed to load recent cron executions',
       });
     }
   },

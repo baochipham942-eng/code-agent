@@ -387,7 +387,11 @@ export function buildWorkbenchMcpRegistryItem(server: WorkbenchMcpCapability): W
       id: server.id,
       label: server.label,
       detail: server.error,
-      tags: [server.transport || '', `${server.toolCount} tools`, `${server.resourceCount} resources`],
+      tags: [
+        server.transport || '',
+        Number.isFinite(server.toolCount) ? `${server.toolCount} tools` : '',
+        Number.isFinite(server.resourceCount) ? `${server.resourceCount} resources` : '',
+      ],
     }),
     blockedReason,
   };

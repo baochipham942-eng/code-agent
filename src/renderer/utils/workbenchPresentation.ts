@@ -14,7 +14,12 @@ import type {
   ManagedBrowserExternalBridgeState,
 } from '@shared/contract/desktop';
 import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
-import type { WorkbenchCapabilityRegistryItem } from './workbenchCapabilityRegistry';
+import type {
+  WorkbenchCapabilityRegistryItem,
+  WorkbenchMcpRegistryItem,
+} from './workbenchCapabilityRegistry';
+import { isMcpAuthenticationFailure } from './mcpRecovery';
+import { zh } from '../i18n/zh';
 
 type WorkbenchRuntimeStatus = 'connected' | 'disconnected' | 'connecting' | 'error' | 'lazy';
 type Locale = 'en' | 'zh';
@@ -206,7 +211,9 @@ export function getWorkbenchCapabilityTitle(
   } else if (capability.kind === 'connector' && capability.detail) {
     parts.push(capability.detail);
   } else if (capability.kind === 'mcp') {
-    parts.push(`transport: ${capability.transport}`);
+    if (capability.transport) {
+      parts.push(`transport: ${capability.transport}`);
+    }
     if (!capability.enabled) {
       parts.push(locale === 'zh' ? '已禁用' : 'disabled');
     }
@@ -225,6 +232,37 @@ export function getWorkbenchCapabilityTitle(
   return parts.join('\n');
 }
 
+export type McpTrustSummaryLabels = (typeof zh)['settings']['mcp']['trustSummary'];
+
+// 每台 MCP server 的安全/元数据摘要。防御空值：transport 缺失、计数未加载
+// （未连接/懒加载未触发）时整段省略，绝不让裸 undefined/null 字符串进 UI。
+export function getMcpTrustSummary(
+  server: WorkbenchMcpRegistryItem,
+  labels: McpTrustSummaryLabels = zh.settings.mcp.trustSummary,
+): string {
+  const parts: string[] = [];
+
+  if (server.transport) {
+    parts.push(server.transport);
+  }
+
+  const hasLoadedCounts = server.lifecycle.connectionState === 'connected'
+    && Number.isFinite(server.toolCount)
+    && Number.isFinite(server.resourceCount);
+  if (hasLoadedCounts) {
+    parts.push(`${server.toolCount} ${labels.toolUnit} / ${server.resourceCount} ${labels.resourceUnit}`);
+  }
+
+  parts.push(labels.approvalNotice);
+  parts.push(
+    isMcpAuthenticationFailure(server)
+      ? labels.authReauthorizeHint
+      : labels.authMaskedHint,
+  );
+
+  return parts.join(' · ');
+}
+
 export function getWorkbenchReferenceTitle(
   reference: WorkbenchReference,
   options?: { locale?: Locale },
@@ -235,7 +273,7 @@ export function getWorkbenchReferenceTitle(
     reference.kind === 'skill' && reference.source
       ? (locale === 'zh' ? `来源: ${reference.source}` : `source: ${reference.source}`)
       : undefined,
-    reference.kind === 'mcp' ? `transport: ${reference.transport}` : undefined,
+    reference.kind === 'mcp' && reference.transport ? `transport: ${reference.transport}` : undefined,
     reference.kind === 'skill' && !reference.mounted && reference.installState === 'available'
       ? (locale === 'zh' ? '当前已安装但未挂载' : 'installed but not mounted')
       : undefined,

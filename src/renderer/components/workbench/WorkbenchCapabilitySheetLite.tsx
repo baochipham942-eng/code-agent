@@ -6,6 +6,7 @@ import { Modal } from '../primitives/Modal';
 import { WorkbenchPill, type WorkbenchPillTone } from './WorkbenchPrimitives';
 import {
   formatWorkbenchHistoryActionSummary,
+  getMcpTrustSummary,
   getWorkbenchCapabilityStatusPresentation,
 } from '../../utils/workbenchPresentation';
 import {
@@ -188,9 +189,14 @@ function renderCapabilityMeta(capability: WorkbenchCapabilityRegistryItem): Reac
 
   return (
     <div className="space-y-1 text-[11px] text-zinc-400">
-      <div>transport: {capability.transport}</div>
-      <div>tools: {capability.toolCount} · resources: {capability.resourceCount}</div>
+      {capability.transport && <div>transport: {capability.transport}</div>}
+      {capability.lifecycle.connectionState === 'connected'
+        && Number.isFinite(capability.toolCount)
+        && Number.isFinite(capability.resourceCount) && (
+        <div>tools: {capability.toolCount} · resources: {capability.resourceCount}</div>
+      )}
       <div>{capability.enabled ? '当前已启用' : '当前已禁用'}</div>
+      <div className="leading-relaxed">{getMcpTrustSummary(capability)}</div>
       {capability.error && (
         <div className="leading-relaxed text-zinc-300">{capability.error}</div>
       )}

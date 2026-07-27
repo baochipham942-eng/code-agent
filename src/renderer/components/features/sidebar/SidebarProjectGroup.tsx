@@ -146,7 +146,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       data-sidebar-group-phase={expansionView.phase}
     >
       <div
-        className="group sticky top-0 z-20 flex items-center gap-1.5 w-full px-2 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
+        className="group sticky top-0 z-20 flex items-center gap-1.5 w-full pl-2 pr-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
         title={title}
       >
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
@@ -157,8 +157,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             左轨 42px —— 入口区行 8(容器)+16(图标)+... = 文字 42；分组头 px-2 同轨；
             会话行区 ml-[10px] 使行容器落在 18，行内 pl-0 + 16px 前导槽 + gap-2 = 18+24 = 42；
             展开行没有前导槽，用 pl-6(24) 补齐到同一条 42。
-            右轨 224px —— 分组头角标右缘 232-8(px-2)；会话行改 pr-2 使状态列右缘同为 224，
-            两者中心都落在 216。 */}
+            右轨基准 = 账号区箭头（cx=212，right=220）：分组头 pr-3、会话行 pr-3，
+            使角标 / 状态点 / 账号箭头三者右缘同为 220、中心同为 212（实测口径）。 */}
         <button
           type="button"
           title={expansionView.toggleTitle}

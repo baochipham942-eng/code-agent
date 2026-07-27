@@ -36,6 +36,7 @@ import {
   Gauge,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 import { useUIStore } from '../stores/uiStore';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
@@ -62,7 +63,6 @@ import { useSidebarSessionActions } from './features/sidebar/useSidebarSessionAc
 import { useSidebarRowActions, resolveRuntimeLogsDir } from './features/sidebar/useSidebarRowActions';
 import { SidebarStatusFilterDropdown } from './features/sidebar/SidebarStatusFilterDropdown';
 import { SidebarSearchDialog } from './features/sidebar/SidebarSearchDialog';
-import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { SidebarNewTaskRow } from './features/sidebar/SidebarNewTaskRow';
 import { SidebarWorkspaceRow } from './features/sidebar/SidebarWorkspaceRow';
 import {
@@ -93,6 +93,8 @@ export function isAccountMenuEventOutside(
 
 export const Sidebar: React.FC = () => {
   const { t } = useI18n();
+  // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）
+  const isMacShell = getCurrentKeybindingPlatform() === 'darwin';
   const sb = t.sidebar;
   const {
     clearPlanningState,
@@ -637,10 +639,17 @@ export const Sidebar: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
-      {/* Header: h-12 to align with TitleBar on the right */}
-      <div className="h-12 px-3 flex items-center justify-between gap-2 flex-shrink-0">
-        <NeoBrandMark />
-        <div className="flex items-center gap-1">
+      {/* Header: h-12 to align with TitleBar on the right.
+          2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
+          hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端，所以 darwin 下
+          左侧留出 72px 死区；② 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的
+          地方，可以先不展示」），这行于是只剩右侧功能图标——与 Codex 参照一致。
+          本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。 */}
+      <div
+        className={`h-12 flex items-center justify-end gap-2 flex-shrink-0 pr-3 ${isMacShell ? 'pl-[72px]' : 'pl-3'}`}
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      >
+        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           {!isAuthLoading && (
             <>
             <IconButton

@@ -105,10 +105,11 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
 
   // page 形态：标题块坐在内容区顶部（px-6 与 PageContent 同横向节奏），
   // 大标题独占视觉一等位、actions 与标题同行右对齐，描述压在标题下方。
+  // 二级页在位时右侧顶栏不渲染，本标题块就是窗口顶部——原生标题栏撤掉后它得能拖窗口。
   return (
-    <header className="shrink-0 px-6 pb-4 pt-5">
+    <header className="shrink-0 px-6 pb-4 pt-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
       {backButton ? <div className="-ml-2 mb-3">{backButton}</div> : null}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-zinc-700/70 bg-zinc-800">
             {icon}

@@ -28,8 +28,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
     setWorkbenchCollapsed,
   } = useAppStore();
   return (
-    <div className="h-12 flex items-center justify-between px-4 border-b border-border-muted bg-transparent backdrop-blur-sm relative z-30">
-      <div className="flex items-center gap-2">
+    // 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay），窗口得自己留拖拽区：
+    // 本行整体可拖，行内控件逐个 no-drag。
+    <div
+      className="h-12 flex items-center justify-between px-4 border-b border-border-muted bg-transparent backdrop-blur-sm relative z-30"
+      style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+    >
+      <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {sidebarCollapsed && (
           <IconButton
             icon={<PanelLeft className="w-4 h-4" />}
@@ -44,7 +49,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
       </div>
       {/* Right: 右栏收起态的展开入口。展开态的收起 affordance 在面板头
           （WorkbenchTabs 收起按钮），顶栏不再叠一颗（2026-07-26 打磨批 D D5 去重）。 */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {workbenchCollapsed && !secondaryPageActive && (
           <IconButton
             icon={<PanelRight className="w-4 h-4" />}

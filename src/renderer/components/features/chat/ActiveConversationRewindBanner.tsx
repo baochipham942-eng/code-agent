@@ -112,7 +112,7 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
     >
       <History className="h-3.5 w-3.5 shrink-0 text-amber-300" />
       <span className="min-w-0 flex-1">{t.chat.rewindSuccess}</span>
-      <button
+      <button /* ds-allow:button: 横幅右端的紧凑内联恢复动作，Button primitive 的标准尺寸/形状不适配横幅布局 */
         type="button"
         onClick={() => void handleRestore()}
         disabled={disabled || isRestoring}

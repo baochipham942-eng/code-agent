@@ -31,9 +31,9 @@ const sessionRatingsCache = new Map<string, Promise<Map<string, 1 | -1>>>();
 function loadSessionRatings(sessionId: string): Promise<Map<string, 1 | -1>> {
   let cached = sessionRatingsCache.get(sessionId);
   if (!cached) {
-    cached = ipcService
-      .invoke(IPC_CHANNELS.TELEMETRY_GET_SESSION_FEEDBACK, sessionId)
-      .then((rows: TelemetryFeedbackRating[]) => new Map(rows.map((r) => [r.messageId, r.rating])))
+    // Promise.resolve 包一层：测试环境的 ipcService mock 可能返回 undefined，别在 .then 上炸
+    cached = Promise.resolve(ipcService.invoke(IPC_CHANNELS.TELEMETRY_GET_SESSION_FEEDBACK, sessionId))
+      .then((rows) => new Map(((rows ?? []) as TelemetryFeedbackRating[]).map((r) => [r.messageId, r.rating])))
       .catch(() => {
         sessionRatingsCache.delete(sessionId); // 失败不缓存，下次重试
         return new Map<string, 1 | -1>();

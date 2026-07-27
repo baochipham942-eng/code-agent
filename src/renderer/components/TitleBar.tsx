@@ -1,15 +1,25 @@
 // ============================================================================
-// TitleBar - Right side title bar with sidebar / session / workbench toggles
-// （目录 chip 已退役：工作目录选择并入侧栏项目组体系，入口在 SidebarWorkspaceRow，
-//   腾出的居中视觉空间不再补东西。）
+// TitleBar - 右侧顶栏
+// （目录 chip 已退役：工作目录选择并入侧栏项目组体系，入口在 SidebarWorkspaceRow。）
+//
+// 2026-07-27 审美关拍板：侧栏收起开关挪回左侧面板自己头上（SidebarHeader），
+// 这里只在**侧栏收起态**留展开入口——侧栏那时不存在，按钮得有别的落脚点。
+// 于是「二级页在位 + 侧栏展开」时本栏三个槽位全空，由 App 直接不渲染它，
+// 让二级页大标题贴到窗口顶（Codex 式）。判定与 App 的 shouldRenderTitleBar 同源。
 // ============================================================================
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { PanelLeftClose, PanelLeft, PanelRight } from 'lucide-react';
+import { PanelLeft, PanelRight } from 'lucide-react';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { useI18n } from '../hooks/useI18n';
-export const TitleBar: React.FC = () => {
+
+interface TitleBarProps {
+  /** 二级页（能力中心/资料库/自动化等）在位：会话动作与右栏开关都无对象 */
+  secondaryPageActive?: boolean;
+}
+
+export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false }) => {
   const { t } = useI18n();
   const {
     sidebarCollapsed,
@@ -18,27 +28,33 @@ export const TitleBar: React.FC = () => {
     setWorkbenchCollapsed,
   } = useAppStore();
   return (
-    <div className="h-12 flex items-center justify-between px-4 border-b border-border-muted bg-transparent backdrop-blur-sm relative z-30">
-      {/* Left: sidebar toggle + session actions */}
-      <div className="flex items-center gap-2">
-        {/* Sidebar Toggle */}
-        <IconButton
-          icon={sidebarCollapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-          aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          variant="ghost"
-          size="md"
-        />
-        <SessionActionsMenu />
+    // 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay），窗口得自己留拖拽区：
+    // 本行整体可拖，行内控件逐个 no-drag。
+    <div
+      className="h-12 flex items-center justify-between px-4 border-b border-border-muted bg-transparent backdrop-blur-sm relative z-30"
+      style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+    >
+      <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        {sidebarCollapsed && (
+          <IconButton
+            icon={<PanelLeft className="w-4 h-4" />}
+            aria-label={t.sidebar.expandSidebar}
+            data-testid="titlebar-expand-sidebar"
+            onClick={() => setSidebarCollapsed(false)}
+            variant="ghost"
+            size="md"
+          />
+        )}
+        {!secondaryPageActive && <SessionActionsMenu />}
       </div>
       {/* Right: 右栏收起态的展开入口。展开态的收起 affordance 在面板头
-          （WorkbenchTabs 收起按钮），顶栏不再叠一颗（2026-07-26 打磨批 D D5 去重）。
-          右栏没有全局快捷键（快捷键只覆盖左栏），收起/展开均走这两处按钮。 */}
-      <div className="flex items-center gap-2">
-        {workbenchCollapsed && (
+          （WorkbenchTabs 收起按钮），顶栏不再叠一颗（2026-07-26 打磨批 D D5 去重）。 */}
+      <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        {workbenchCollapsed && !secondaryPageActive && (
           <IconButton
             icon={<PanelRight className="w-4 h-4" />}
             aria-label={t.workbenchTabs.expandPanel}
+            data-testid="titlebar-expand-workbench"
             onClick={() => setWorkbenchCollapsed(false)}
             variant="ghost"
             size="md"

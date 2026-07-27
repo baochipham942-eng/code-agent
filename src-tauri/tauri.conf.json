@@ -22,7 +22,9 @@
         "dragDropEnabled": false,
         "visible": false,
         "url": "about:blank",
-        "backgroundColor": "#18181b"
+        "backgroundColor": "#18181b",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

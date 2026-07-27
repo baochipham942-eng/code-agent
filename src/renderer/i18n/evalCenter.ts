@@ -42,6 +42,7 @@ export const evalCenterZh = {
       pickSession: '选择左侧会话查看回放',
       emptySessions: '还没有可回放的会话（需要至少一轮对话）。',
       currentSessionBadge: '当前',
+      sessionListTitle: '可回放会话',
     },
     benchmarks: {
       levelsTitle: '能力验收五关卡',
@@ -187,6 +188,7 @@ export const evalCenterEn = {
       pickSession: 'Pick a session on the left to inspect its replay',
       emptySessions: 'No replayable sessions yet (at least one turn required).',
       currentSessionBadge: 'Current',
+      sessionListTitle: 'Replayable sessions',
     },
     benchmarks: {
       levelsTitle: 'Five capability gates',

@@ -73,8 +73,9 @@ beforeEach(() => {
     {
       category: 'network',
       name: 'DeepSeek',
-      status: 'pass',
-      message: '150ms',
+      status: 'warn',
+      message: '连接超时',
+      fix: { code: 'open-proxy-help' },
     },
   ]);
   providerHealthMock.mockReturnValue([
@@ -155,6 +156,14 @@ describe('runDoctor', () => {
 
     expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.skip)
       .toBe(report.items.length);
+  });
+
+  it('全量聚合保留各 check 返回的 machine-readable fix 字段', async () => {
+    const report = await runDoctor();
+
+    expect(report.items.find((item) => item.name === 'DeepSeek')?.fix).toEqual({
+      code: 'open-proxy-help',
+    });
   });
 
   it('MCP 全 lazy 时不应计入 fail', async () => {

@@ -2,6 +2,8 @@
 // Doctor Diagnostics - 共享类型定义
 // ============================================================================
 
+import type { DoctorFixCode } from '../../shared/constants/doctor';
+
 /**
  * Doctor 检查项分类（与 DOCTOR_CATEGORIES 数组同构）
  * - environment / database / config / disk: 来自原 doctor.ipc.ts
@@ -41,6 +43,18 @@ export interface DoctorItem {
   suggestion?: string;
   /** 本项耗时，便于定位慢检查 */
   durationMs?: number;
+  /**
+   * 前端可解释的修复动作码。完整清单：
+   * - open-runtime-help
+   * - open-data-directory
+   * - open-provider-settings
+   * - open-proxy-help
+   * - open-mcp-settings
+   * - open-browser-relay-settings
+   * - open-hooks-settings
+   * - open-update-settings
+   */
+  fix?: { code: DoctorFixCode };
 }
 
 export interface DoctorReport {
@@ -59,4 +73,3 @@ export interface RunDoctorOptions {
   /** 单项 check 超时（毫秒），默认 10s */
   perCheckTimeoutMs?: number;
 }
-

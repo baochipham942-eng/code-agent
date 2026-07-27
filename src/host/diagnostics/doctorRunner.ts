@@ -16,6 +16,7 @@ import { checkCurrentBrowserRelay } from './checks/browserRelay';
 import { checkMcpServers } from './checks/mcp';
 import { checkHooksConfig } from './checks/hooks';
 import { checkAppVersion } from './checks/version';
+import { DOCTOR_FIX_CODES } from '../../shared/constants/doctor';
 import type {
   DoctorCategory,
   DoctorItem,
@@ -55,7 +56,28 @@ function timeoutItem(category: DoctorCategory, name: string, timeoutMs: number):
     status: 'warn',
     message: `检查超时（${(timeoutMs / 1000).toFixed(0)}s）`,
     suggestion: '可能是网络或外部进程响应慢；可重试',
+    fix: { code: fixCodeForCategory(category) },
   };
+}
+
+function fixCodeForCategory(category: DoctorCategory): NonNullable<DoctorItem['fix']>['code'] {
+  switch (category) {
+    case 'environment':
+      return DOCTOR_FIX_CODES.OPEN_RUNTIME_HELP;
+    case 'database':
+    case 'config':
+    case 'disk':
+      return DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY;
+    case 'network':
+    case 'version':
+      return DOCTOR_FIX_CODES.OPEN_PROXY_HELP;
+    case 'provider_health':
+      return DOCTOR_FIX_CODES.OPEN_PROVIDER_SETTINGS;
+    case 'mcp':
+      return DOCTOR_FIX_CODES.OPEN_MCP_SETTINGS;
+    case 'hooks':
+      return DOCTOR_FIX_CODES.OPEN_HOOKS_SETTINGS;
+  }
 }
 
 interface CheckJob {
@@ -165,6 +187,7 @@ export async function runDoctor(opts?: RunDoctorOptions): Promise<DoctorReport> 
         details: err instanceof Error ? err.message : String(err),
         suggestion: '查看 details 排查；如非可恢复错误，提 issue',
         durationMs: Date.now() - jobStart,
+        fix: { code: fixCodeForCategory(job.category) },
       });
     }
   }

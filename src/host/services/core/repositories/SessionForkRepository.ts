@@ -50,7 +50,7 @@ export interface SessionForkContextSource {
   }>;
 }
 
-export type SessionForkContextHandoffState = 'pending' | 'dispatching' | 'consumed' | 'blocked';
+type SessionForkContextHandoffState = 'pending' | 'dispatching' | 'consumed' | 'blocked';
 
 export interface SessionForkContextHandoffRecord {
   forkId: string;

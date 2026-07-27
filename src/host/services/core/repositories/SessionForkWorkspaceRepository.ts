@@ -11,7 +11,7 @@ import type {
 
 type SQLiteRow = Record<string, unknown>;
 
-export type SessionForkAnchorEvidenceStatus = 'complete' | 'blocked';
+type SessionForkAnchorEvidenceStatus = 'complete' | 'blocked';
 
 export interface SessionForkAnchorEvidenceRecord {
   id: string;
@@ -52,7 +52,7 @@ export interface RecordSessionForkAnchorEvidenceInput {
   now?: number;
 }
 
-export type SessionForkWorkspaceSagaState =
+type SessionForkWorkspaceSagaState =
   | 'preparing'
   | 'workspace_ready'
   | 'child_staged'

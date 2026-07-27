@@ -5,7 +5,7 @@ import path from 'node:path';
 import { digestWorkspaceValue } from './anchorEvidence';
 import type { WorkspaceForkIntent, WorkspaceForkIntentStore } from './types';
 
-export class WorkspaceIntentStoreError extends Error {
+class WorkspaceIntentStoreError extends Error {
   constructor(
     public readonly code:
       | 'INTENT_CONFLICT'

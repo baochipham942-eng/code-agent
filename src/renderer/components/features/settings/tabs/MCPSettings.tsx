@@ -99,7 +99,6 @@ export const MCPSettings: React.FC = () => {
     loading: discoverActionLoading,
     begin: beginDiscoverAction,
     end: endDiscoverAction,
-    isStale: isStaleDiscoverAction,
   } = useStaleGuardedLoadingSet();
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖
@@ -231,36 +230,13 @@ export const MCPSettings: React.FC = () => {
     }
   }, [mcpText, reloadMcpStatus]);
 
-  // ---- 发现连接：推荐 MCP 的三类动作 ----
+  // ---- 发现连接：推荐 MCP 的两类动作 ----
 
-  /** 免配置 server 一键连接 */
-  const handleQuickConnect = useCallback(async (entry: RecommendedMcpServerEntry) => {
-    if (!canManageMcp || !entry.connection) return;
-    const generation = beginDiscoverAction(entry.id);
-    try {
-      await handleAddServer({
-        name: entry.id,
-        type: entry.connection.type,
-        command: entry.connection.command,
-        args: entry.connection.args,
-        env: entry.connection.env,
-        url: entry.connection.url,
-        headers: entry.connection.headers,
-      });
-      if (isStaleDiscoverAction(entry.id, generation)) {
-        // 这条 add 在同一 entry 的新一轮操作已经取代它之后才成功落地——
-        // 静默完成的写入会变成幽灵 server，主动撤销（A5 stale-promise 回滚）。
-        await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'removeServer', { serverName: entry.id }).catch(() => {});
-        return;
-      }
-      await reloadMcpStatus();
-    } finally {
-      endDiscoverAction(entry.id, generation);
-    }
-  }, [handleAddServer, reloadMcpStatus, beginDiscoverAction, endDiscoverAction, isStaleDiscoverAction]);
-
-  /** 需要凭证的 server：打开预填编辑器让用户补凭证 */
-  const handleConnectWithConfig = useCallback((entry: RecommendedMcpServerEntry) => {
+  /**
+   * 添加 server：打开预填好目录配置的编辑器（initialConfig 预填 → McpServerEditor）。
+   * 免配置与需要凭证的条目统一走这条确认路径，连接逻辑（addServer）不变。
+   */
+  const handleAddEntry = useCallback((entry: RecommendedMcpServerEntry) => {
     if (!canManageMcp || !entry.connection) return;
     setEditorInitialConfig({
       name: entry.id,
@@ -383,8 +359,7 @@ export const MCPSettings: React.FC = () => {
           enabledServerIds={new Set(mcpServers.filter((server) => server.enabled).map((server) => server.id))}
           canManageMcp={canManageMcp}
           actionLoading={discoverActionLoading}
-          onQuickConnect={handleQuickConnect}
-          onConnectWithConfig={handleConnectWithConfig}
+          onAdd={handleAddEntry}
           onEnableBuiltin={handleEnableBuiltin}
           onOpenComputerUsePanel={() => setShowComputerUsePanel(true)}
         />

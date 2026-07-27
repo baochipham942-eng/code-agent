@@ -107,3 +107,59 @@ Worktree：`.worktrees/mcp-connectors-polish`，分支 `feat/mcp-connectors-poli
 - 本批改动以单 commit 追加在 `feat/mcp-connectors-polish` 顶端（message：能力中心默认态与专家工具条合并……），HEAD sha 以 `git rev-parse HEAD` 为准。
 
 未 push（按启动提示词要求）。
+
+---
+
+# 发现面货架化（2026-07-27）
+
+启动提示词：`docs/plans/2026-07-27-连接器发现面货架化-启动提示词.md`（private-archive）
+同一 worktree / 分支（`feat/mcp-connectors-polish`，PR #751）追加，未 push。
+
+## 改动清单
+
+### 1. 目录元数据扩展（`src/shared/constants/mcpCatalog.ts` + `src/shared/contract/mcpCatalog.ts`）
+
+- contract 新增 `McpCatalogTool { name; description? }` 与 `RecommendedMcpServerEntry.tools?: McpCatalogTool[]`（静态策展清单，可选）。
+- 新增 `getMcpRuntimeBadge(entry)`：运行时徽标从既有 `builtin`/`connection` 字段推导（builtin→内置、stdio npx→NPX、stdio uvx→UVX、sse/http→远程），**未新增目录字段**；推导不出返回 null，前端不显示徽标。
+- 15 个主流 server 填入真实工具名录，逐字抄自官方 README / 官方包源码（2026-07-27 核实）：
+  - fetch 1、firecrawl 26（README Available Tools）、github 26（servers-archived 旧版参考 server，与 builtinConfig 用的 `@modelcontextprotocol/server-github` 对齐）、playwright 24（只收默认启用组 Core 23 + `browser_tabs`，`--caps` opt-in 组不收）、supabase 32（main 源码 tools 目录）、amap 12（npm 包 0.0.8 源码，高德无公开 GitHub 仓库）、excel 7、memory 9、puppeteer 7、lark 6（与 `readOnlyTools`/`FEISHU_READONLY_TOOLS` 同源）、exa 2（builtinConfig URL `?tools=` 锁定）、brave-search 2、context7 2（连字符命名，照抄不"修正"）、deepwiki 3、sequential-thinking 1。
+- 宁缺毋滥：tavily（hosted 名录未经官方文档证实）、notion / figma（hosted 名录无稳定公开文档）、task_master（名录随版本变动大）留空，前端显示「安装后可见」占位。
+- `description` 沿用既有字段（每条本就有）；**未动 host 运行时逻辑**。
+
+### 2. 发现面货架卡（`McpDiscoverTab.tsx`）
+
+- `McpServerCard` 重写为 SHELF_CARD 同语言卡片（与专家/技能页货架卡同底同距，zinc 体系）：左侧展开箭头（chevron 旋转）+ 图标瓦片（目录无图标字段，统一用默认 server 图标 Plug）+ 名称 + 运行时徽标（mono 小徽标）+ chinaDirect 徽标；下方一句描述 + 凭证提示小字；右侧单一按钮。
+- 展开层：有静态清单显示「N 个工具」+ 工具名列表（带中文小字描述），无清单显示「安装后可见」占位。
+- 已配置的 server（`enabled`/`connected`）右侧显示「已添加」次级态（Check + 灰字），不再给添加按钮，不可重复添加。
+- 布局从 2 列 grid 改为整行卡片堆叠（展开工具清单不挤）。
+
+### 3. 「添加」统一走预填流程（`MCPSettings.tsx`）
+
+- 右侧「添加」主按钮统一调用 `handleAddEntry`：`initialConfig` 预填目录 connection → 打开 `McpServerEditor` 确认/补凭证 → `addServer`。**连接逻辑（addServer IPC、secret keys 透传）未动**。
+- 原免配置「快速连接」直连路径（`handleQuickConnect` 及其 stale-promise 回滚分支）随交互统一删除；`getEntryAction` 收敛为 `enabled | enable-builtin | connected | add`。
+- 内置未启用 server 仍走「启用」（`handleEnableBuiltin` + 独立 loading 不变）。
+- 管理面（已连接表格）与降噪批产出零改动。
+
+### 4. i18n
+
+- `settings.mcp.discover` 新增：`add`、`added`、`runtimeBuiltin`、`runtimeRemote`、`expandTools`、`collapseTools`、`toolsCountSuffix`、`toolsVisibleAfterInstall`；移除不再使用的 `quickConnect`、`connect`、`enabled`、`connected`；`browseDescription` 改写为预填流程口径。zh/en 同步，未新增依赖。
+
+## 测试
+
+- 新增 `tests/renderer/components/mcpDiscoverTab.shelf.test.tsx`（7 条）：运行时徽标推导（NPX/UVX/远程/内置）、描述与凭证提示渲染、展开「N 个工具」+ 工具名、无清单占位与收起、已添加态（无重复添加按钮）、「添加」回调携带 connection 预填模板且不直接写库、内置未启用走「启用」/已启用显示「已添加」。
+- 改写 `mcpSettings.status.test.ts`：发现面 mock 从 `onQuickConnect` 改为 `onAdd`；原「quick-connect addServer」用例改为「添加走预填流程」——点添加先开预填编辑器（断言 `initialConfig.name` 到位、未调 addServer），编辑器保存后才走 addServer（user scope + secret keys）。
+- `mcpCatalog.test.ts`：`getEntryAction` 用例同步为 `add` 语义（免配置/需凭证条目均断言 `add`）。
+- i18n 棘轮（`settingsContentI18nRatchet`）遵守：新增文案全部走 labels，改动文件无中文字面量。
+
+## 验收门
+
+- `npm run typecheck`：通过（0 error）。
+- `npm run lint`：0 error（425 warning 均为存量，与前两批相同；本次改动文件 eslint 零告警）。
+- 相关测试：`mcpCatalog` + `mcpDiscoverTab.shelf` + `mcpSettings.status` + `settingsContentI18nRatchet` + `capabilityCenterDefaults` 5 文件 92 测试全绿；`tests/unit/services/mcp` 14 测试全绿。
+- 全量 `npx vitest run tests/renderer`：507 文件 / 3229 测试全绿。
+
+## Commits
+
+- 本批改动以单 commit 追加在 `feat/mcp-connectors-polish` 顶端，HEAD sha 以 `git rev-parse HEAD` 为准。
+
+未 push（按启动提示词要求）。

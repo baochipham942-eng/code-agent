@@ -195,11 +195,11 @@ describe('discover tab entry actions', () => {
     expect(getEntryAction(quickConnectEntry, new Set([quickConnectEntry.id]), new Set())).toBe('connected');
   });
 
-  it('credential-free entry offers quick connect', () => {
-    expect(getEntryAction(quickConnectEntry, new Set(), new Set())).toBe('quick-connect');
+  it('credential-free entry offers add (prefill editor flow)', () => {
+    expect(getEntryAction(quickConnectEntry, new Set(), new Set())).toBe('add');
   });
 
-  it('credential-required entry opens config editor', () => {
-    expect(getEntryAction(credentialEntry, new Set(), new Set())).toBe('connect-with-config');
+  it('credential-required entry also offers add (prefill editor flow)', () => {
+    expect(getEntryAction(credentialEntry, new Set(), new Set())).toBe('add');
   });
 });

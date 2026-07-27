@@ -232,28 +232,34 @@ vi.mock('../../../src/renderer/components/features/settings/sections/localBridge
 vi.mock('../../../src/renderer/components/features/settings/McpServerEditor', () => ({
   McpServerEditor: (props: {
     isOpen: boolean;
+    initialConfig?: { name?: string };
     onSave: (
       config: { name: string; type: 'stdio'; command: string },
       secrets?: { secretEnvKeys: string[]; secretHeaderKeys: string[] },
     ) => void;
   }) => props.isOpen
     ? React.createElement(
-      'button',
-      {
-        type: 'button',
-        onClick: () => props.onSave(
-          { name: 'secret-server', type: 'stdio', command: 'node' },
-          { secretEnvKeys: ['X'], secretHeaderKeys: [] },
-        ),
-      },
-      'mock-save-secret-server',
+      'div',
+      null,
+      React.createElement('span', null, `mock-editor-initial-${props.initialConfig?.name ?? 'none'}`),
+      React.createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () => props.onSave(
+            { name: 'secret-server', type: 'stdio', command: 'node' },
+            { secretEnvKeys: ['X'], secretHeaderKeys: [] },
+          ),
+        },
+        'mock-save-secret-server',
+      ),
     )
     : null,
 }));
 
 vi.mock('../../../src/renderer/components/features/settings/tabs/McpDiscoverTab', () => ({
   McpDiscoverTab: (props: {
-    onQuickConnect: (entry: {
+    onAdd: (entry: {
       id: string;
       name: string;
       description: string;
@@ -265,7 +271,7 @@ vi.mock('../../../src/renderer/components/features/settings/tabs/McpDiscoverTab'
     'button',
     {
       type: 'button',
-      onClick: () => props.onQuickConnect({
+      onClick: () => props.onAdd({
         id: 'quick-server',
         name: 'Quick Server',
         description: 'Quick server fixture',
@@ -274,7 +280,7 @@ vi.mock('../../../src/renderer/components/features/settings/tabs/McpDiscoverTab'
         connection: { type: 'stdio', command: 'npx' },
       }),
     },
-    'mock-quick-connect',
+    'mock-add-entry',
   ),
 }));
 
@@ -425,7 +431,7 @@ describe('MCPSettings status', () => {
     render(React.createElement(MCPSettings));
 
     // 默认发现视角：已连接表格不渲染，发现目录（mock）在屏
-    expect(screen.getByText('mock-quick-connect')).toBeTruthy();
+    expect(screen.getByText('mock-add-entry')).toBeTruthy();
     expect(screen.queryByTestId('mcp-server-status-dot-github')).toBeNull();
 
     openConnectedTab();
@@ -496,10 +502,15 @@ describe('MCPSettings status', () => {
     });
   });
 
-  it('passes user scope through the quick-connect addServer path', async () => {
+  it('routes discover add through the prefilled editor flow', async () => {
     render(React.createElement(MCPSettings));
-    fireEvent.click(screen.getByText(mcpText.tabs.discover));
-    fireEvent.click(screen.getByText('mock-quick-connect'));
+    fireEvent.click(screen.getByText('mock-add-entry'));
+
+    // 「添加」不直接写库：先打开预填目录配置的编辑器
+    expect(screen.getByText('mock-editor-initial-quick-server')).toBeTruthy();
+    expect(mockDomainInvoke).not.toHaveBeenCalledWith(IPC_DOMAINS.MCP, 'addServer', expect.anything());
+
+    fireEvent.click(screen.getByText('mock-save-secret-server'));
 
     await waitFor(() => {
       expect(mockDomainInvoke).toHaveBeenCalledWith(
@@ -507,15 +518,12 @@ describe('MCPSettings status', () => {
         'addServer',
         {
           config: {
-            name: 'quick-server',
+            name: 'secret-server',
             type: 'stdio',
-            command: 'npx',
-            args: undefined,
-            env: undefined,
-            url: undefined,
-            headers: undefined,
+            command: 'node',
           },
           scope: 'user',
+          secretEnvKeys: ['X'],
         },
       );
     });

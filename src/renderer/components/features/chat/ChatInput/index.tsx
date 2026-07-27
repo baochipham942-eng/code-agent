@@ -912,40 +912,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           )}
           {/* Neo Tag 轻量化重设计:@neo = 正常输入,composer 不再显示 "work card" 预览 chip
               (产品负责人 2026-07-02)。neoTagInvocation 仍用于压掉文件 mention 弹窗噪音。 */}
-          {/* G4：Dictation 录音中输入行换成录音条（波形 + 计时 + 停止/发送），
-              停止后文本落回输入框；InputArea 卸载不丢草稿（value 在本层 state） */}
-          {isDictationActive ? (
-            <DictationRecordingBar
-              status={voice.status}
-              duration={voice.duration}
-              inputLevel={voice.inputLevel}
-              silenceWarning={voice.silenceWarning}
-              onStop={voice.stop}
-              onSend={() => {
-                dictationSendAfterTranscriptRef.current = true;
-                voice.stop();
-              }}
-            />
-          ) : (
-            <InputArea
-              ref={inputAreaRef}
-              value={value}
-              onChange={handleValueChange}
-              onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
-              onFileSelect={handleFileSelect}
-              onImagePaste={handleImagePaste}
-              disabled={disabled && !isProcessing}
-              hasAttachments={attachments.length > 0}
-              hasMessages={hasMessages}
-              isFocused={isFocused}
-              onFocusChange={setIsFocused}
-              placeholder={resolvedPlaceholder}
-              onHistoryPrev={getPreviousInput}
-              onHistoryNext={getNextInput}
-              onHistoryReset={resetInputHistoryIndex}
-              onAutocompleteKeyDown={handleAutocompleteKeyDown}
-            />
+          {/* Dictation 录音条在输入框**上方**（与 VoiceChrome 同款位置），输入框保持可见可编辑
+              ——真机反馈：原来整条替换输入行，等于录音时把草稿和输入口都藏了。 */}
+          {isDictationActive && (
+            <div className="px-3 pb-1.5">
+              <DictationRecordingBar
+                status={voice.status}
+                duration={voice.duration}
+                inputLevel={voice.inputLevel}
+                silenceWarning={voice.silenceWarning}
+                onStop={voice.stop}
+                onSend={() => {
+                  dictationSendAfterTranscriptRef.current = true;
+                  voice.stop();
+                }}
+              />
+            </div>
           )}
+          <InputArea
+            ref={inputAreaRef}
+            value={value}
+            onChange={handleValueChange}
+            onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
+            onFileSelect={handleFileSelect}
+            onImagePaste={handleImagePaste}
+            disabled={disabled && !isProcessing}
+            hasAttachments={attachments.length > 0}
+            hasMessages={hasMessages}
+            isFocused={isFocused}
+            onFocusChange={setIsFocused}
+            placeholder={resolvedPlaceholder}
+            onHistoryPrev={getPreviousInput}
+            onHistoryNext={getNextInput}
+            onHistoryReset={resetInputHistoryIndex}
+            onAutocompleteKeyDown={handleAutocompleteKeyDown}
+          />
           <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
           {/* 底部工具栏 */}
           <div className="flex items-center gap-1 px-3 pb-3">

@@ -14,6 +14,7 @@ import { DEFAULT_SPEECH_INPUT_SETTINGS } from '@shared/contract';
 import type { UseVoiceInputReturn } from '../../../../hooks/useVoiceInput';
 import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useAppStore } from '../../../../stores/appStore';
 
 export interface VoiceInputButtonProps {
   /** ChatInput 持有的语音输入状态（同一 hook 实例驱动录音条与按钮） */
@@ -76,6 +77,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
 }) => {
   const { t } = useI18n();
   const v = t.voiceInputButton;
+  const openSettingsTab = useAppStore((s) => s.openSettingsTab);
   const {
     status,
     duration,
@@ -94,6 +96,8 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
   const isRecording = status === 'recording';
   const isTranscribing = status === 'transcribing';
   const canOpenMicrophoneSettings = errorCode === 'MICROPHONE_PERMISSION_DENIED';
+  // 没通道 / 没配 key 是配置问题，「重试」按钮对它无效——给一个真能解决问题的落点。
+  const canOpenVoiceSettings = errorCode === 'SPEECH_NO_CHANNEL' || errorCode === 'NOT_INITIALIZED';
   const effectiveSettings = settings ?? DEFAULT_SPEECH_INPUT_SETTINGS;
 
   React.useEffect(() => {
@@ -178,6 +182,15 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
                 className="inline-flex h-7 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-200 hover:bg-zinc-700"
               >
                 {v.openSettingsButton}
+              </button>
+            )}
+            {canOpenVoiceSettings && (
+              <button
+                type="button"
+                onClick={() => { clearError(); openSettingsTab('voiceInput'); }}
+                className="inline-flex h-7 items-center rounded-md bg-zinc-800 px-2 text-xs text-zinc-200 hover:bg-zinc-700"
+              >
+                {v.openVoiceSettingsButton}
               </button>
             )}
             {canRetry && (

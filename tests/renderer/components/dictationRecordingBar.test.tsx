@@ -70,15 +70,20 @@ describe('DictationRecordingBar（G4）', () => {
 
   it('波形条来自真实电平采样（level prop 驱动，非假动画）', () => {
     const { rerender, props } = renderBar({ inputLevel: 0 });
-    // 初始一档 0 → 全是最低高度 12%
+    // 静默 → 最低高度 6%（细线，不是点）
     let bars = screen.getByTestId('dictation-waveform').querySelectorAll('span');
     expect(bars.length).toBe(1);
-    expect(bars[0].style.height).toBe('12%');
+    expect(bars[0].style.height).toBe('6%');
 
     rerender(<DictationRecordingBar {...props} inputLevel={0.8} />);
     bars = screen.getByTestId('dictation-waveform').querySelectorAll('span');
     expect(bars.length).toBe(2);
-    expect(bars[1].style.height).toBe('80%');
+    expect(bars[1].style.height).toBe('89%');
+
+    // 开方曲线：低电平也要被拉起来（线性 ×100 只有 9%，几乎看不出动静）
+    rerender(<DictationRecordingBar {...props} inputLevel={0.09} />);
+    bars = screen.getByTestId('dictation-waveform').querySelectorAll('span');
+    expect(bars[2].style.height).toBe('30%');
   });
 
   it('prefers-reduced-motion：退化为静态电平条（无逐档波形）', () => {
@@ -99,7 +104,7 @@ describe('DictationRecordingBar（G4）', () => {
       expect(staticBar).toBeTruthy();
       expect(screen.queryByTestId('dictation-waveform')).toBeNull();
       const fill = staticBar.querySelectorAll('div');
-      expect(fill[fill.length - 1].style.width).toBe('42%');
+      expect(fill[fill.length - 1].style.width).toBe('65%');
     } finally {
       window.matchMedia = original;
     }

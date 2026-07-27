@@ -24,6 +24,15 @@ export function formatRecordingClock(totalSeconds: number): string {
 
 const WAVEFORM_BAR_COUNT = 48;
 
+/**
+ * 电平 → 条高百分比。线性映射下正常说话只吃掉量程一小截，配上 12% 的下限就成了
+ * 一排不动的圆点（真机反馈「像静态点阵」）。开方压低端 + 把静默下限压到 6%，
+ * 让说话真正拉满、静默是一条细线而不是点。与通话条 PresenceWave 同一条曲线。
+ */
+function levelToBarHeight(level: number): number {
+  return Math.max(6, Math.round(Math.min(1, Math.sqrt(Math.max(0, level))) * 100));
+}
+
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = React.useState(
     () =>
@@ -74,7 +83,7 @@ const DictationWaveform: React.FC<{ level: number; silenceWarning: boolean }> = 
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
           <div
             className={`h-full rounded-full ${barColor}`}
-            style={{ width: `${Math.max(3, Math.round(level * 100))}%` }}
+            style={{ width: `${levelToBarHeight(level)}%` }}
           />
         </div>
       </div>
@@ -92,7 +101,7 @@ const DictationWaveform: React.FC<{ level: number; silenceWarning: boolean }> = 
         <span
           key={index}
           className={`w-[3px] shrink-0 rounded-full ${barColor}`}
-          style={{ height: `${Math.max(12, Math.round(value * 100))}%` }}
+          style={{ height: `${levelToBarHeight(value)}%` }}
         />
       ))}
     </div>

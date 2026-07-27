@@ -6,6 +6,7 @@
 import { existsSync } from 'fs';
 import { stat } from 'fs/promises';
 import { join } from 'path';
+import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import { getUserConfigDir } from '../../config/configPaths';
 import type { DoctorItem } from '../types';
 
@@ -20,6 +21,7 @@ export function checkNodeVersion(): DoctorItem {
     message: `Node.js ${version}`,
     details: isPass ? undefined : 'Requires Node.js >= 18',
     suggestion: isPass ? undefined : '请升级 Node.js 到 18 或以上版本',
+    fix: isPass ? undefined : { code: DOCTOR_FIX_CODES.OPEN_RUNTIME_HELP },
   };
 }
 
@@ -33,6 +35,7 @@ export function checkConfigDir(): DoctorItem {
     message: exists ? configDir : 'Config directory not found',
     details: exists ? undefined : `Expected at ${configDir}`,
     suggestion: exists ? undefined : '应用首次启动会自动创建配置目录，可忽略此警告',
+    fix: exists ? undefined : { code: DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY },
   };
 }
 
@@ -65,6 +68,7 @@ export async function checkDatabase(): Promise<DoctorItem> {
       message: 'Cannot read database',
       details: err instanceof Error ? err.message : String(err),
       suggestion: '检查数据库文件权限，或删除后让应用重建',
+      fix: { code: DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY },
     };
   }
 }
@@ -95,6 +99,7 @@ export async function checkDiskUsage(): Promise<DoctorItem> {
       status: 'warn',
       message: 'Cannot check disk usage',
       suggestion: '检查配置目录的访问权限',
+      fix: { code: DOCTOR_FIX_CODES.OPEN_DATA_DIRECTORY },
     };
   }
 }

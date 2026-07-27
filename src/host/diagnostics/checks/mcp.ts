@@ -9,11 +9,18 @@
 // 注意：本检查**不**主动触发 ensureConnected，避免 doctor 产生副作用。
 // ============================================================================
 
+import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
+import type { DoctorFixCode } from '../../../shared/constants/doctor';
 import { getMCPClient } from '../../mcp/mcpClient';
 import type { MCPServerStatus } from '../../mcp/types';
 import type { DoctorItem, DoctorStatus } from '../types';
 
-const STATUS_MAP: Record<MCPServerStatus, { status: DoctorStatus; label: string; suggestion?: string }> = {
+const STATUS_MAP: Record<MCPServerStatus, {
+  status: DoctorStatus;
+  label: string;
+  suggestion?: string;
+  fixCode?: DoctorFixCode;
+}> = {
   connected: { status: 'pass', label: '已连接' },
   lazy: {
     status: 'skip',
@@ -23,16 +30,19 @@ const STATUS_MAP: Record<MCPServerStatus, { status: DoctorStatus; label: string;
     status: 'warn',
     label: '连接中',
     suggestion: '如果长时间停在此状态，检查 server 是否真的在启动',
+    fixCode: DOCTOR_FIX_CODES.OPEN_MCP_SETTINGS,
   },
   disconnected: {
     status: 'warn',
     label: '未连接',
     suggestion: '若希望立即可用，可在 MCP 面板手动连接',
+    fixCode: DOCTOR_FIX_CODES.OPEN_MCP_SETTINGS,
   },
   error: {
     status: 'fail',
     label: '连接错误',
     suggestion: '检查 server 命令、网络、依赖；详细错误见 details',
+    fixCode: DOCTOR_FIX_CODES.OPEN_MCP_SETTINGS,
   },
 };
 
@@ -67,6 +77,7 @@ export function checkMcpServers(): DoctorItem[] {
         : mapping.label,
       details: state.error,
       suggestion: mapping.suggestion,
+      fix: mapping.fixCode ? { code: mapping.fixCode } : undefined,
     };
   });
 }

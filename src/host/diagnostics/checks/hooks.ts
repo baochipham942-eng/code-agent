@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { promises as fs } from 'fs';
+import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import { getHooksConfigPaths, parseHooksConfig } from '../../hooks/configParser';
 import type { DoctorItem, DoctorStatus } from '../types';
 
@@ -75,6 +76,7 @@ async function checkOneSource({ source, workingDirectory }: HookSourceCheckInput
       message: 'JSON 解析失败',
       details: `${target.path}\n${syntaxErr}`,
       suggestion: '检查 JSON 语法（引号、逗号、括号匹配）',
+      fix: { code: DOCTOR_FIX_CODES.OPEN_HOOKS_SETTINGS },
     };
   }
 
@@ -99,6 +101,7 @@ async function checkOneSource({ source, workingDirectory }: HookSourceCheckInput
       message: '解析出错',
       details: `${target.path}\n${err instanceof Error ? err.message : String(err)}`,
       suggestion: '查看上面 details 中的解析错误',
+      fix: { code: DOCTOR_FIX_CODES.OPEN_HOOKS_SETTINGS },
     };
   }
 }

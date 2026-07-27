@@ -10,6 +10,7 @@ import {
   normalizeProviderId,
   MCP,
   getModelMaxOutputTokens,
+  DOCTOR_TIMEOUTS,
 } from '../../shared/constants';
 import type {
   ModelCapability,
@@ -20,7 +21,11 @@ import type {
 import { inferModelCapabilities, inferSupportsTool } from '../../shared/modelRuntime';
 import { runDiagnostics } from './doctor.ipc';
 import { runDoctor } from '../diagnostics/doctorRunner';
-import type { RunDoctorOptions } from '../diagnostics/types';
+import {
+  DOCTOR_CATEGORIES,
+  type DoctorCategory,
+  type RunDoctorOptions,
+} from '../diagnostics/types';
 import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 import { PROVIDER_REGISTRY } from '../model/providerRegistry';
 import { resolveModelThinkingCapability } from '../model/providerRuntimeCapabilities';
@@ -428,6 +433,93 @@ export async function handleDiscoverModels(payload: DiscoverModelsPayload): Prom
 // Public Registration
 // ----------------------------------------------------------------------------
 
+const RUN_DOCTOR_OPTION_KEYS = new Set([
+  'category',
+  'skipNetwork',
+  'perCheckTimeoutMs',
+  'overallTimeoutMs',
+]);
+
+type RunDoctorOptionsValidation =
+  | { ok: true; options: RunDoctorOptions }
+  | { ok: false; message: string };
+
+function validateDoctorTimeout(
+  value: unknown,
+  field: 'perCheckTimeoutMs' | 'overallTimeoutMs',
+  maximum: number,
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== 'number'
+    || !Number.isSafeInteger(value)
+    || value < DOCTOR_TIMEOUTS.MIN_MS
+    || value > maximum
+  ) {
+    return `${field} must be an integer between ${DOCTOR_TIMEOUTS.MIN_MS} and ${maximum}.`;
+  }
+  return undefined;
+}
+
+function validateRunDoctorOptions(payload: unknown): RunDoctorOptionsValidation {
+  if (payload === undefined) return { ok: true, options: {} };
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { ok: false, message: 'run_doctor payload must be an object.' };
+  }
+
+  const record = payload as Record<string, unknown>;
+  const unknownKeys = Object.keys(record).filter((key) => !RUN_DOCTOR_OPTION_KEYS.has(key));
+  if (unknownKeys.length > 0) {
+    return { ok: false, message: `Unknown run_doctor option: ${unknownKeys.join(', ')}.` };
+  }
+
+  if (
+    record.category !== undefined
+    && (
+      typeof record.category !== 'string'
+      || !DOCTOR_CATEGORIES.includes(record.category as DoctorCategory)
+    )
+  ) {
+    return {
+      ok: false,
+      message: `category must be one of: ${DOCTOR_CATEGORIES.join(', ')}.`,
+    };
+  }
+  if (record.skipNetwork !== undefined && typeof record.skipNetwork !== 'boolean') {
+    return { ok: false, message: 'skipNetwork must be a boolean.' };
+  }
+
+  const perCheckError = validateDoctorTimeout(
+    record.perCheckTimeoutMs,
+    'perCheckTimeoutMs',
+    DOCTOR_TIMEOUTS.MAX_PER_CHECK_MS,
+  );
+  if (perCheckError) return { ok: false, message: perCheckError };
+
+  const overallError = validateDoctorTimeout(
+    record.overallTimeoutMs,
+    'overallTimeoutMs',
+    DOCTOR_TIMEOUTS.MAX_OVERALL_MS,
+  );
+  if (overallError) return { ok: false, message: overallError };
+
+  return {
+    ok: true,
+    options: {
+      ...(record.category !== undefined
+        ? { category: record.category as DoctorCategory }
+        : {}),
+      ...(record.skipNetwork !== undefined ? { skipNetwork: record.skipNetwork as boolean } : {}),
+      ...(record.perCheckTimeoutMs !== undefined
+        ? { perCheckTimeoutMs: record.perCheckTimeoutMs as number }
+        : {}),
+      ...(record.overallTimeoutMs !== undefined
+        ? { overallTimeoutMs: record.overallTimeoutMs as number }
+        : {}),
+    },
+  };
+}
+
 /**
  * 注册 Provider 相关 IPC handlers
  */
@@ -460,7 +552,14 @@ export function registerProviderHandlers(ipcMain: IpcMain): void {
           return { success: true, data };
         }
         case 'run_doctor': {
-          const data = await runDoctor(payload as RunDoctorOptions | undefined);
+          const validation = validateRunDoctorOptions(payload);
+          if (!validation.ok) {
+            return {
+              success: false,
+              error: { code: 'INVALID_ARGUMENT', message: validation.message },
+            };
+          }
+          const data = await runDoctor(validation.options);
           return { success: true, data };
         }
         case 'getHealthStatus': {

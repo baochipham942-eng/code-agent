@@ -62,6 +62,7 @@ const MIGRATED: string[] = [
   'sections/localBridge/StatusIndicator.tsx',
   'sections/localBridge/LocalBridgeSection.tsx',
   'ProviderDoctorDialog.tsx',
+  'tabs/DoctorSettings.tsx',
   'McpServerEditor.tsx',
   'SettingsModal.tsx',
   'WebModeBanner.tsx',

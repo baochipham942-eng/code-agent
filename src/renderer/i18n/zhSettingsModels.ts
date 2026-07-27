@@ -251,6 +251,7 @@ export const zhSettingsModels = {
     },
     providerDoctor: {
       title: '系统诊断',
+      pageDescription: '检查运行环境、网络、配置、数据库等 9 类系统状态；失败项可直接跳转修复。',
       exportLogs: '导出日志',
       rerun: '重新诊断',
       start: '开始诊断',
@@ -278,6 +279,18 @@ export const zhSettingsModels = {
         warnSuffix: ' 警告',
         failSuffix: ' 失败',
         skipSuffix: ' 跳过',
+      },
+      recheckCategory: '重新检查本类',
+      fixFailedPrefix: '操作失败：',
+      fixLabels: {
+        'open-runtime-help': '查看运行环境信息',
+        'open-data-directory': '打开数据目录',
+        'open-provider-settings': '去配置 AI 服务',
+        'open-proxy-help': '查看代理设置',
+        'open-mcp-settings': '打开 MCP 设置',
+        'open-browser-relay-settings': '打开浏览器接力设置',
+        'open-hooks-settings': '打开 Hooks 设置',
+        'open-update-settings': '打开更新设置',
       },
     },
     search: {

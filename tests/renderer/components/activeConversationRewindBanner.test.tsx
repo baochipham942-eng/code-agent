@@ -43,7 +43,9 @@ describe('ActiveConversationRewindBanner', () => {
           anchorEntryId: null,
           createdAt: 1,
         },
-        messages: [],
+        messages: [
+          { ordinal: 0, entryId: 'e1', projectedMessageId: 'u1', sourceSessionId: 'session-1', sourceMessageId: 'u1', aliasKind: 'native', message: { id: 'u1', role: 'user', content: '最初的问题', timestamp: 1 } },
+        ],
         openRewindIds: ['rewind-older', 'rewind-latest'],
         ledgerEventCount: 4,
       })
@@ -86,14 +88,14 @@ describe('ActiveConversationRewindBanner', () => {
       />,
     );
 
-    expect((await screen.findByRole('status')).textContent).toContain('已回退到这条提示词');
+    expect((await screen.findByRole('status')).textContent).toContain('已回退到「最初的问题」');
     expect(mocks.invokeDomain).toHaveBeenNthCalledWith(
       1,
       IPC_DOMAINS.SESSION,
       'replayConversationBranch',
       {
         sessionId: 'session-1',
-        options: { includeRewound: true },
+        options: { includeRewound: false },
       },
     );
 
@@ -130,7 +132,7 @@ describe('ActiveConversationRewindBanner', () => {
         'replayConversationBranch',
         {
           sessionId: 'session-1',
-          options: { includeRewound: true },
+          options: { includeRewound: false },
         },
       );
     });

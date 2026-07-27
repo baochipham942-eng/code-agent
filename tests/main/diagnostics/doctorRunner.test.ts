@@ -73,8 +73,9 @@ beforeEach(() => {
     {
       category: 'network',
       name: 'DeepSeek',
-      status: 'pass',
-      message: '150ms',
+      status: 'warn',
+      message: '连接超时',
+      fix: { code: 'open-proxy-help' },
     },
   ]);
   providerHealthMock.mockReturnValue([
@@ -157,6 +158,58 @@ describe('runDoctor', () => {
       .toBe(report.items.length);
   });
 
+  it('全量聚合保留各 check 返回的 machine-readable fix 字段', async () => {
+    const report = await runDoctor();
+
+    expect(report.items.find((item) => item.name === 'DeepSeek')?.fix).toEqual({
+      code: 'open-proxy-help',
+    });
+  });
+
+  it('category 只运行并返回指定分类', async () => {
+    const report = await runDoctor({ category: 'mcp' });
+
+    expect(new Set(report.items.map((item) => item.category))).toEqual(new Set(['mcp']));
+    expect(mcpMock).toHaveBeenCalledTimes(1);
+    expect(networkMock).not.toHaveBeenCalled();
+    expect(providerHealthMock).not.toHaveBeenCalled();
+    expect(browserRelayMock).not.toHaveBeenCalled();
+    expect(hooksMock).not.toHaveBeenCalled();
+    expect(versionMock).not.toHaveBeenCalled();
+  });
+
+  it('整体超时后仍为所有未完成 check 返回 warn，报告保持完整', async () => {
+    networkMock.mockImplementationOnce(() => new Promise(() => undefined));
+
+    const report = await runDoctor({
+      perCheckTimeoutMs: 1_000,
+      overallTimeoutMs: 20,
+    });
+
+    const cats = new Set(report.items.map((item) => item.category));
+    expect(cats).toEqual(
+      new Set([
+        'environment',
+        'database',
+        'config',
+        'disk',
+        'network',
+        'provider_health',
+        'mcp',
+        'hooks',
+        'version',
+      ]),
+    );
+    expect(report.items.find((item) => item.category === 'network')).toMatchObject({
+      status: 'warn',
+      message: expect.stringMatching(/整体检查超时/),
+      fix: { code: 'open-proxy-help' },
+    });
+    expect(report.items.filter((item) => item.status === 'warn').length).toBeGreaterThanOrEqual(6);
+    expect(report.summary.pass + report.summary.warn + report.summary.fail + report.summary.skip)
+      .toBe(report.items.length);
+  });
+
   it('MCP 全 lazy 时不应计入 fail', async () => {
     mcpMock.mockReturnValueOnce([
       { category: 'mcp', name: 'filesystem', status: 'skip', message: 'lazy' },
@@ -205,6 +258,36 @@ describe('runDoctor', () => {
     expect(v!.status === 'warn' || v!.status === 'fail').toBe(true);
     // 网络失败不应让整体崩
     expect(report.summary).toBeDefined();
+  });
+
+  it('单个 check 抛异常时保留完整报告，并把该项降级为带 fix 的 fail', async () => {
+    providerHealthMock.mockImplementationOnce(() => {
+      throw new Error('health snapshot exploded');
+    });
+
+    const report = await runDoctor();
+    const failedItem = report.items.find((item) => item.name === 'Provider health');
+
+    expect(failedItem).toMatchObject({
+      category: 'provider_health',
+      status: 'fail',
+      details: 'health snapshot exploded',
+      fix: { code: 'open-provider-settings' },
+    });
+    expect(new Set(report.items.map((item) => item.category))).toEqual(
+      new Set([
+        'environment',
+        'database',
+        'config',
+        'disk',
+        'network',
+        'provider_health',
+        'mcp',
+        'hooks',
+        'version',
+      ]),
+    );
+    expect(report.summary.fail).toBe(1);
   });
 
   it('Hook 配置解析返回 warn 时应进入 warn 计数', async () => {

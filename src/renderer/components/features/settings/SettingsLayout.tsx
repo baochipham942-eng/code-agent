@@ -8,6 +8,8 @@ import { ChevronDown } from 'lucide-react';
 interface SettingsPageProps {
   title: string;
   description: string;
+  /** 头部右侧动作区（如导出/重跑按钮），与 SettingsSection 的 actions 同模式 */
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -25,13 +27,24 @@ interface SettingsDetailsProps extends SettingsSectionProps {
 export const SettingsPage: React.FC<SettingsPageProps> = ({
   title,
   description,
+  actions,
   children,
 }) => (
   <div className="space-y-6">
-    <header>
-      <h3 className="text-sm font-medium text-zinc-200 mb-2">{title}</h3>
-      <p className="text-xs text-zinc-400">{description}</p>
-    </header>
+    {actions ? (
+      <header className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-medium text-zinc-200 mb-2">{title}</h3>
+          <p className="text-xs text-zinc-400">{description}</p>
+        </div>
+        <div className="shrink-0">{actions}</div>
+      </header>
+    ) : (
+      <header>
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">{title}</h3>
+        <p className="text-xs text-zinc-400">{description}</p>
+      </header>
+    )}
     {children}
   </div>
 );

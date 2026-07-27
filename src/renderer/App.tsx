@@ -31,6 +31,7 @@ import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { RoleDetailPage } from './components/features/expert/RoleDetailPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
+import { useDoctorStore, DOCTOR_STARTUP_CHECK_DELAY_MS } from './stores/doctorStore';
 import { ModelOnboardingModal } from './components/onboarding/ModelOnboardingModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
@@ -554,6 +555,14 @@ export const App: React.FC = () => {
     }, UI.STARTUP_API_KEY_CHECK_DELAY);
     return () => clearTimeout(timer);
   }, [isAuthLoading, openModelOnboardingIfNeeded]);
+
+  // 启动后延迟静默跑一次诊断快检（skipNetwork）：有 fail 项才在侧栏亮红点，全绿不打扰
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void useDoctorStore.getState().runSilentStartupCheck();
+    }, DOCTOR_STARTUP_CHECK_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, []);
 
   // 监听工具创建确认请求
   useEffect(() => {

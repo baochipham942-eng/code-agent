@@ -74,6 +74,10 @@ function createSchema(db: BetterSqlite3.Database): void {
       files_restored INTEGER NOT NULL DEFAULT 0,
       files_deleted INTEGER NOT NULL DEFAULT 0,
       errors_json TEXT,
+      idempotency_key TEXT,
+      request_digest TEXT,
+      status TEXT NOT NULL DEFAULT 'completed',
+      restored_at INTEGER,
       created_at INTEGER NOT NULL
     );
   `);
@@ -335,7 +339,7 @@ describe('SessionRepository — Episodic FTS5', () => {
     repo.addMessage('sess-A', makeMessage('m2', 'secret rewind-only deployment note', 'user', 20));
     repo.addMessage('sess-A', makeMessage('m3', 'assistant answer after rewind-only note', 'assistant', 30));
 
-    repo.applyPromptRewind('sess-A', 'm2', { createdAt: 100 });
+    repo.applyPromptRewind('sess-A', 'm2', { createdAt: 100, ownerUserId: null });
 
     expect(repo.searchSessionMessagesFts('secret')).toEqual([]);
     const allAttempts = repo.searchSessionMessagesFts('secret', {
@@ -345,43 +349,8 @@ describe('SessionRepository — Episodic FTS5', () => {
   });
 });
 
-// ----------------------------------------------------------------------------
-// Message truncation — exclusive (fork) vs inclusive (edit)
-// ----------------------------------------------------------------------------
-
-describe('SessionRepository — message truncation', () => {
-  let db: BetterSqlite3.Database;
-  let repo: SessionRepository;
-
-  beforeEach(() => {
-    db = new Database(':memory:');
-    db.pragma('foreign_keys = ON');
-    createSchema(db);
-    repo = new SessionRepository(db);
-    insertSession(db, 'sess-A');
-    // 递增时间戳，保证截断按时间边界可预测
-    repo.addMessage('sess-A', makeMessage('m1', 'first', 'user', 1000));
-    repo.addMessage('sess-A', makeMessage('m2', 'second', 'user', 2000));
-    repo.addMessage('sess-A', makeMessage('m3', 'third', 'assistant', 3000));
-    repo.addMessage('sess-A', makeMessage('m4', 'fourth', 'user', 4000));
-  });
-
-  afterEach(() => {
-    db.close();
-  });
-
-  const remainingIds = (): string[] =>
-    (db.prepare('SELECT id FROM messages WHERE session_id = ? ORDER BY timestamp ASC').all('sess-A') as Array<{ id: string }>)
-      .map((row) => row.id);
-
-  it('truncateMessagesAfter 保留目标消息（fork 语义）', () => {
-    const removed = repo.truncateMessagesAfter('sess-A', 'm2');
-    expect(removed).toBe(2);
-    expect(remainingIds()).toEqual(['m1', 'm2']);
-  });
-
-  it('截断对未知消息 id 返回 0 且不动历史', () => {
-    expect(repo.truncateMessagesAfter('sess-A', 'nope')).toBe(0);
-    expect(remainingIds()).toEqual(['m1', 'm2', 'm3', 'm4']);
+describe('SessionRepository — destructive checkpoint Fork retirement', () => {
+  it('does not expose physical message truncation', () => {
+    expect('truncateMessagesAfter' in SessionRepository.prototype).toBe(false);
   });
 });

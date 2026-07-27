@@ -111,8 +111,9 @@ Prompt Rewind 使用"隐藏旧尝试，保留审计"的存储模型。普通会�
 | `messages.visibility` | `active` / `rewound`，所有普通消息读取、计数、session 列表默认只看 active | `SessionRepository.applyPromptRewind()` |
 | `messages.hidden_by_rewind_id` | 标记消息被哪次 rewind 隐藏，方便审计和回放归因 | `SessionRepository.applyPromptRewind()` |
 | `messages.hidden_at` | 隐藏时间戳，支持后续按时间排序和同步冲突排查 | `SessionRepository.applyPromptRewind()` |
-| `session_rewinds` | 每次 rewind 的审计记录：anchor message/prompt/timestamp、checkpoint message、hidden ids、files restored/deleted、errors | `SessionRepository.applyPromptRewind()` |
-| `file_checkpoints` | 文件恢复的事实来源；rewind 时选取 anchor timestamp 之后第一条 checkpoint，再调用 `rewindFiles()` | `FileCheckpointService.getFirstCheckpointAtOrAfter()` |
+| `session_rewinds` | 每次 conversation rewind 的审计记录：anchor message/prompt/timestamp、hidden ids、状态和恢复时间；兼容字段 `files_restored/files_deleted` 在 conversation rewind 中保持 0 | `SessionRepository.applyPromptRewind()` / `restorePromptRewind()` |
+| `generative_ui_instances.hidden_by_rewind_id` | 精确标记被本次 rewind 隐藏的生成式 UI；显式恢复同一次 rewind 时只恢复这些实例，不误激活原本已隐藏的实例 | `SessionRewindRepository` |
+| `file_checkpoints` | 文件恢复的独立事实来源；只有显式 `restoreWorkspaceFilesAtCheckpoint` 才调用 `rewindFiles()`，该动作不改变消息可见性 | `SessionHistoryAppService.restoreWorkspaceFilesAtCheckpoint()` |
 | `session_messages_fts` | 默认搜索 join `messages` 并过滤 rewound；显式 `includeRewound` 时才查完整历史 | `SessionRepository.searchSessionMessagesFts()` |
 
 本地 SQLite schema 在 `src/host/services/core/database/schema.ts` 里幂等迁移；云端 Supabase 迁移是 `supabase/migrations/20260511000000_prompt_rewind.sql`，同步增加 `public.messages.visibility / hidden_by_rewind_id / hidden_at` 和 `public.session_rewinds`，并对 `session_rewinds` 开启 RLS。

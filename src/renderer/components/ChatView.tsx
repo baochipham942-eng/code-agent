@@ -31,6 +31,8 @@ export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
+import { ForkSourceHint } from './features/chat/ForkSourceHint';
+import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { UserQuestionCard } from './UserQuestionCard';
 import { TranscriptPartialLine } from './features/voice/TranscriptPartialLine';
@@ -61,7 +63,7 @@ import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndic
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
 import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
-import type { PromptRewindResult } from '@shared/contract/appService';
+import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { useI18n } from '../hooks/useI18n';
 import { localeForLanguage } from '../utils/i18nTime';
@@ -222,6 +224,7 @@ export const ChatView: React.FC = () => {
     content: string;
   } | null>(null);
   const [isPromptRewinding, setIsPromptRewinding] = useState(false);
+  const [rewindRefreshToken, setRewindRefreshToken] = useState(0);
 
   const handleSearchMatchesChange = useCallback((matches: SearchMatch[], activeIdx: number) => {
     setSearchMatches(matches);
@@ -680,18 +683,20 @@ export const ChatView: React.FC = () => {
     if (!currentSessionId || !pendingPromptRewind || isPromptRewinding) return;
     setIsPromptRewinding(true);
     try {
-      const result = await ipcService.invokeDomain<PromptRewindResult>(
+      const result = await ipcService.invokeDomain<RewindConversationResult>(
         IPC_DOMAINS.SESSION,
-        'rewindToPrompt',
+        'rewindConversation',
         {
           sessionId: currentSessionId,
-          userMessageId: pendingPromptRewind.messageId,
+          anchorUserMessageId: pendingPromptRewind.messageId,
+          idempotencyKey: `rewind:${currentSessionId}:${pendingPromptRewind.messageId}:${crypto.randomUUID()}`,
         },
       );
       setMessages(result.activeMessages);
       chatInputRef.current?.setDraft(result.draft);
       setPendingPromptRewind(null);
-      toast.success(t.chat.rewindSuccess.replace('{count}', String(result.filesRestored + result.filesDeleted)));
+      setRewindRefreshToken((token) => token + 1);
+      toast.warning(t.chat.rewindSuccess);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -755,6 +760,21 @@ export const ChatView: React.FC = () => {
         {/* 回会话追赶提示（A6）：离开期间产出变了什么，一句话 */}
         <SessionRecapBanner sessionId={currentSessionId} />
 
+        <ActiveConversationRewindBanner
+          sessionId={currentSessionId}
+          refreshToken={rewindRefreshToken}
+          disabled={effectiveIsProcessing}
+          onRestored={(result) => {
+            setMessages(result.activeMessages);
+            toast.success(
+              t.chat.rewindRestored.replace(
+                '{count}',
+                String(result.restoredMessageCount),
+              ),
+            );
+          }}
+        />
+
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 
         {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话） */}
@@ -783,6 +803,9 @@ export const ChatView: React.FC = () => {
               searchMatches={searchMatches}
               activeMatchIndex={activeMatchIndex}
               onRewindUserPrompt={handleRequestPromptRewind}
+              beforeFirstUserMessage={
+                <ForkSourceHint sessionId={currentSessionId} />
+              }
             />
           )}
         </div>

@@ -65,6 +65,7 @@ export function sanitizeAttachmentForPersistence(attachment: MessageAttachment):
     name: attachment.name,
     size: attachment.size,
     mimeType: attachment.mimeType,
+    contentDigest: attachment.contentDigest,
     data,
     path: isAppshot ? undefined : attachment.path,
     thumbnail: persistentThumbnail(attachment),

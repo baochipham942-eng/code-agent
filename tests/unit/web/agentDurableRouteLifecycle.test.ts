@@ -45,6 +45,7 @@ function createLifecycle(input: {
   runRegistry: RunRegistry;
   durableActivation?: boolean;
   externalEngine?: 'codex_cli';
+  externalSessionId?: string;
 }) {
   return createAgentDurableRouteRunLifecycle({
     runRegistry: input.runRegistry,
@@ -52,6 +53,7 @@ function createLifecycle(input: {
     workspace: '/workspace',
     durableActivation: input.durableActivation ?? true,
     externalEngine: input.externalEngine,
+    externalSessionId: input.externalSessionId,
     logger,
   });
 }
@@ -110,7 +112,11 @@ describe('Agent durable route run lifecycle', () => {
       finish: vi.fn(async () => 'failed' as const),
     } as unknown as ExternalEngineDurableLifecycle;
     vi.spyOn(ExternalEngineDurableLifecycle, 'start').mockResolvedValue(externalLifecycle);
-    const lifecycle = createLifecycle({ runRegistry, externalEngine: 'codex_cli' });
+    const lifecycle = createLifecycle({
+      runRegistry,
+      externalEngine: 'codex_cli',
+      externalSessionId: 'persisted-codex-thread',
+    });
     const result = externalResult({ outputText: '   ' });
 
     await expect(lifecycle.start()).resolves.toMatchObject({ runHandle, externalLifecycle });
@@ -124,6 +130,7 @@ describe('Agent durable route run lifecycle', () => {
       sessionId: 'session-1',
       workspace: '/workspace',
       cwd: '/workspace',
+      externalSessionId: 'persisted-codex-thread',
     });
     expect(externalLifecycle.finish).toHaveBeenCalledOnce();
     expect(externalLifecycle.finish).toHaveBeenCalledWith(result, false);

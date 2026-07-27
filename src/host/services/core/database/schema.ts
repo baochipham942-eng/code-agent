@@ -20,6 +20,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
       working_directory TEXT,
+      project_id TEXT,
       session_type TEXT NOT NULL DEFAULT 'chat',
       origin TEXT,
       metadata TEXT,
@@ -41,6 +42,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN memory_mode TEXT NOT NULL DEFAULT 'auto'`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN suppressed_memory_entry_ids TEXT NOT NULL DEFAULT '[]'`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN metadata TEXT`, logger);
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN project_id TEXT`, logger);
 
   // Messages 表
   db.exec(`
@@ -89,9 +91,159 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       files_restored INTEGER NOT NULL DEFAULT 0,
       files_deleted INTEGER NOT NULL DEFAULT 0,
       errors_json TEXT NOT NULL DEFAULT '[]',
+      idempotency_key TEXT,
+      request_digest TEXT,
+      status TEXT NOT NULL DEFAULT 'completed',
+      restored_at INTEGER,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
+  `);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN idempotency_key TEXT`, logger);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN request_digest TEXT`, logger);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'`, logger);
+  safeAlter(db, `ALTER TABLE session_rewinds ADD COLUMN restored_at INTEGER`, logger);
+
+  // User-visible Session Fork is distinct from parent_session_id. The latter
+  // remains a compatibility projection used by subagents and older clients.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_forks (
+      id TEXT PRIMARY KEY,
+      source_session_id TEXT NOT NULL,
+      child_session_id TEXT NOT NULL UNIQUE,
+      root_session_id TEXT NOT NULL,
+      parent_fork_id TEXT,
+      anchor_message_id TEXT NOT NULL,
+      anchor_child_message_id TEXT NOT NULL,
+      workspace_mode TEXT NOT NULL,
+      context_delivery_mode TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      source_prefix_digest TEXT NOT NULL,
+      status TEXT NOT NULL,
+      depth INTEGER NOT NULL,
+      sync_state TEXT NOT NULL DEFAULT 'local_only',
+      workspace_snapshot_id TEXT,
+      error_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      committed_at INTEGER,
+      FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE RESTRICT,
+      FOREIGN KEY (child_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (root_session_id) REFERENCES sessions(id) ON DELETE RESTRICT,
+      FOREIGN KEY (parent_fork_id) REFERENCES session_forks(id) ON DELETE RESTRICT,
+      UNIQUE (source_session_id, idempotency_key),
+      CHECK (workspace_mode IN ('shared_current', 'isolated_at_anchor')),
+      CHECK (context_delivery_mode IN ('neo_native_prefix', 'provider_native_fork', 'validated_context_handoff', 'unsupported')),
+      CHECK (status IN ('preparing', 'workspace_ready', 'completed', 'failed', 'quarantined')),
+      CHECK (sync_state IN ('local_only', 'pending', 'synced', 'blocked'))
+    );
+
+    CREATE TABLE IF NOT EXISTS session_fork_message_map (
+      fork_id TEXT NOT NULL,
+      ordinal INTEGER NOT NULL,
+      source_message_id TEXT NOT NULL,
+      child_message_id TEXT NOT NULL UNIQUE,
+      source_timestamp INTEGER NOT NULL,
+      source_order_key TEXT NOT NULL,
+      source_row_digest TEXT NOT NULL,
+      PRIMARY KEY (fork_id, ordinal),
+      UNIQUE (fork_id, source_message_id),
+      FOREIGN KEY (fork_id) REFERENCES session_forks(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS session_fork_context_handoffs (
+      fork_id TEXT PRIMARY KEY,
+      engine TEXT NOT NULL,
+      payload_digest TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'pending',
+      attempt_id TEXT,
+      prepared_at INTEGER NOT NULL,
+      dispatch_started_at INTEGER,
+      consumed_at INTEGER,
+      error_json TEXT,
+      FOREIGN KEY (fork_id) REFERENCES session_forks(id) ON DELETE CASCADE,
+      CHECK (engine IN ('codex_cli', 'claude_code')),
+      CHECK (state IN ('pending', 'dispatching', 'consumed', 'blocked'))
+    );
+
+    CREATE TABLE IF NOT EXISTS session_fork_anchor_evidence (
+      id TEXT PRIMARY KEY,
+      source_session_id TEXT NOT NULL,
+      anchor_message_id TEXT NOT NULL,
+      owner_user_id TEXT,
+      project_id TEXT,
+      workspace_scope_version TEXT,
+      source_identity_digest TEXT,
+      source_identity_json TEXT,
+      message_digest TEXT NOT NULL,
+      repository_root TEXT,
+      base_commit TEXT,
+      observed_head TEXT,
+      evidence_digest TEXT,
+      evidence_json TEXT,
+      summary_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL,
+      blocked_reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE (source_session_id, anchor_message_id),
+      FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (anchor_message_id) REFERENCES messages(id) ON DELETE CASCADE,
+      CHECK (status IN ('complete', 'blocked'))
+    );
+
+    CREATE TABLE IF NOT EXISTS session_fork_workspace_intents (
+      intent_id TEXT PRIMARY KEY,
+      request_digest TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      source_session_id TEXT NOT NULL,
+      proposed_child_session_id TEXT NOT NULL,
+      repository_root TEXT NOT NULL,
+      workspace_path TEXT NOT NULL UNIQUE,
+      evidence_digest TEXT NOT NULL,
+      intent_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      advertisable INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      CHECK (status IN (
+        'recorded', 'worktree_created', 'applying', 'evidence_applied',
+        'verifying', 'cleanup_required', 'ready', 'advertised', 'abandoned'
+      ))
+    );
+
+    CREATE TABLE IF NOT EXISTS session_fork_workspace_sagas (
+      intent_id TEXT PRIMARY KEY,
+      source_session_id TEXT NOT NULL,
+      anchor_message_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      evidence_id TEXT NOT NULL,
+      proposed_fork_id TEXT NOT NULL UNIQUE,
+      proposed_child_session_id TEXT NOT NULL UNIQUE,
+      context_delivery_mode TEXT NOT NULL,
+      child_title TEXT NOT NULL,
+      workspace_path TEXT,
+      state TEXT NOT NULL,
+      child_session_id TEXT,
+      error_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE (source_session_id, idempotency_key),
+      FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (anchor_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
+      FOREIGN KEY (evidence_id) REFERENCES session_fork_anchor_evidence(id) ON DELETE RESTRICT,
+      CHECK (context_delivery_mode IN (
+        'neo_native_prefix', 'provider_native_fork',
+        'validated_context_handoff', 'unsupported'
+      )),
+      CHECK (state IN (
+        'preparing', 'workspace_ready', 'child_staged',
+        'completed', 'quarantined', 'aborted'
+      ))
+    );
   `);
 
   // Tool Executions 表 (用于缓存和审计)
@@ -849,6 +1001,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       state_json TEXT NOT NULL,
       state_revision INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active',
+      hidden_by_rewind_id TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       error TEXT,
@@ -856,6 +1009,11 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE CASCADE
     )
   `);
+  safeAlter(
+    db,
+    'ALTER TABLE generative_ui_instances ADD COLUMN hidden_by_rewind_id TEXT',
+    logger,
+  );
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS generative_ui_events (

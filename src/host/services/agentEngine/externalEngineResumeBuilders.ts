@@ -1,3 +1,5 @@
+import * as path from 'node:path';
+
 import type { AgentEnginePermissionProfile } from '../../../shared/contract/agentEngine';
 
 export interface ExternalEngineResumeIdentity {
@@ -22,6 +24,29 @@ interface CommonResumeInput extends ExternalEngineResumeIdentity {
   continuationInput?: string;
   permissionProfile?: AgentEnginePermissionProfile;
 }
+
+export interface ExternalEngineContinuationLifecycle {
+  readonly runId: string;
+  readonly attempt: number;
+  readonly ownerEpoch: number;
+}
+
+interface CommonContinuationInput {
+  readonly lifecycle: ExternalEngineContinuationLifecycle;
+  readonly sessionId: string;
+  readonly persistedExternalSessionId: string;
+  readonly cwd: string;
+  readonly model?: string | null;
+  readonly continuationInput: string;
+  readonly permissionProfile?: AgentEnginePermissionProfile;
+}
+
+export interface CodexContinuationResumeInput extends CommonContinuationInput {
+  /** The same root returned by getLogsPath() for the current process. */
+  readonly logsRoot: string;
+}
+
+export type ClaudeContinuationResumeInput = CommonContinuationInput;
 
 export function buildCodexResumeArgs(input: CommonResumeInput & {
   lastMessagePath: string;
@@ -92,6 +117,40 @@ export function createClaudeResumeLaunch(input: CommonResumeInput): ExternalEngi
   };
 }
 
+/**
+ * Builds a normal second-or-later turn for an already persisted Codex thread.
+ * The output file belongs to the new logical run, never to the previous turn.
+ */
+export function createCodexContinuationResumeLaunch(
+  input: CodexContinuationResumeInput,
+): ExternalEngineResumeLaunch {
+  const common = continuationResumeInput(input);
+  const runId = assertPathSafeRunId(input.lifecycle.runId);
+  const logsRoot = input.logsRoot.trim();
+  if (!logsRoot || !path.isAbsolute(logsRoot)) {
+    throw new Error('Codex continuation requires an absolute logs root');
+  }
+  return createCodexResumeLaunch({
+    ...common,
+    lastMessagePath: path.join(
+      logsRoot,
+      'agent-engines',
+      'codex-cli',
+      `${runId}.last.md`,
+    ),
+  });
+}
+
+/**
+ * Builds a normal second-or-later turn for an already persisted Claude
+ * session. Claude print mode receives the continuation only through stdin.
+ */
+export function createClaudeContinuationResumeLaunch(
+  input: ClaudeContinuationResumeInput,
+): ExternalEngineResumeLaunch {
+  return createClaudeResumeLaunch(continuationResumeInput(input));
+}
+
 function assertResumeInput(input: CommonResumeInput): void {
   if (!input.runId.trim() || !input.sessionId.trim()) throw new Error('External resume requires logical run and session identity');
   if (!Number.isInteger(input.attempt) || input.attempt < 1) throw new Error('External resume requires the recovered attempt');
@@ -111,4 +170,34 @@ function resumeIdentity(input: CommonResumeInput): ExternalEngineResumeIdentity 
     ownerEpoch: input.ownerEpoch,
     externalSessionId: input.externalSessionId.trim(),
   };
+}
+
+function continuationResumeInput(input: CommonContinuationInput): CommonResumeInput {
+  if (!input.continuationInput.trim()) {
+    throw new Error('External continuation requires a non-empty turn prompt');
+  }
+  return {
+    runId: input.lifecycle.runId,
+    sessionId: input.sessionId,
+    attempt: input.lifecycle.attempt,
+    ownerEpoch: input.lifecycle.ownerEpoch,
+    externalSessionId: input.persistedExternalSessionId,
+    cwd: input.cwd,
+    model: input.model,
+    continuationInput: input.continuationInput,
+    permissionProfile: input.permissionProfile,
+  };
+}
+
+function assertPathSafeRunId(runId: string): string {
+  const normalized = runId.trim();
+  if (
+    !normalized
+    || normalized === '.'
+    || normalized === '..'
+    || path.basename(normalized) !== normalized
+  ) {
+    throw new Error('Codex continuation run id is not safe for the last-message path');
+  }
+  return normalized;
 }

@@ -277,6 +277,8 @@ export const sidebarZh = {
   },
   sidebarSession: {
     unread: '未读',
+    forkedFrom: '分支任务，源任务：{sessionId}',
+    openForkParent: '返回源任务 {sessionId}',
     openSession: '打开会话 {title}',
     openReplay: '打开 {title} Replay',
     openAssets: '打开 {title} 的产物与资产',
@@ -549,6 +551,8 @@ export const sidebarEn: typeof sidebarZh = {
   },
   sidebarSession: {
     unread: 'Unread',
+    forkedFrom: 'Forked task, source task: {sessionId}',
+    openForkParent: 'Open source task {sessionId}',
     openSession: 'Open session {title}',
     openReplay: 'Open {title} Replay',
     openAssets: 'Open {title} artifacts & assets',

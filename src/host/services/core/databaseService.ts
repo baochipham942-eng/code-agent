@@ -10,6 +10,8 @@ import { createLogger } from '../infra/logger';
 import { getServiceRegistry } from '../serviceRegistry';
 import { loadBetterSqlite3 } from './database/nativeLoader';
 import { applySchema } from './database/schema';
+import { applyConversationBranchSchema } from './database/schemaConversationBranch';
+import { applySessionForkPortabilitySchema } from './database/schemaSessionForkPortability';
 import { applyIndexes } from './database/indexes';
 import { applySessionsMigrations, applyTelemetryTurnsMigrations, applyEvaluationCleanupMigration } from './database/migrations';
 import { DurableRunDatabaseSupport } from './database/durableRunDatabaseSupport';
@@ -21,11 +23,12 @@ const Database = loadBetterSqlite3(moduleDir, logger);
 import type { Session, Message, ToolResult, ModelProvider, TodoItem, SessionTask } from '../../../shared/contract';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../shared/contract/contextView';
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/contract/capture';
+import { SessionForkError } from '../../../shared/contract/sessionFork';
 
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
+import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
@@ -38,6 +41,25 @@ import { reconcileRun, type ReconcileResult } from './swarmReconcile';
 import type { SwarmRunDetail } from '../../../shared/contract/swarmTrace';
 import type { SessionLedger } from '../../../shared/contract/sessionLedger';
 import { redactSecrets } from '../../security/secretRedaction';
+import {
+  AnchorWorkspaceEvidenceService,
+  ImportedPortableAnchorWorkspaceMaterializer,
+  IsolatedAnchorWorkspaceService,
+  NodeWorkspaceCommandRunner,
+  digestWorkspaceValue,
+  projectChildWorkspaceScope,
+  type TrustedSingleRootGitProjectWorkspace,
+} from '../sessionFork/workspace';
+import type { WorkspaceScope } from '../../../shared/contract/project';
+import {
+  LOCAL_SESSION_FORK_OWNER_SCOPE_ID,
+  type PortableIsolatedAnchorEvidenceV1,
+  type PortableSessionWorkspaceV2,
+} from '../../../shared/contract/sessionForkPortability';
+import type { SessionForkWorkspaceMode } from '../../../shared/contract/sessionFork';
+import {
+  readPublishedImportedPortableWorkspace,
+} from './repositories/sessionForkPublishedWorkspaceReader';
 
 type DatabaseRecoveryCallback = () => void;
 
@@ -76,6 +98,106 @@ function parseJsonValue(value: unknown): unknown {
   }
 }
 
+function forkWorkspaceSourceIdentity(scope: WorkspaceScope): Record<string, unknown> {
+  const canonicalPath = (value: string): string => {
+    try {
+      return fs.realpathSync.native(value);
+    } catch {
+      return path.resolve(value);
+    }
+  };
+  return {
+    projectId: scope.projectId,
+    version: scope.version,
+    primaryRoot: canonicalPath(scope.primaryRoot),
+    roots: [...scope.roots]
+      .map((root) => ({
+        sourceId: root.sourceId,
+        path: canonicalPath(root.path),
+        access: root.access,
+        role: root.role,
+        identityDev: root.identityDev ?? null,
+        identityIno: root.identityIno ?? null,
+      }))
+      .sort((left, right) => left.sourceId.localeCompare(right.sourceId)),
+  };
+}
+
+function sessionForkFailure(error: unknown): Record<string, unknown> {
+  return {
+    code: typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code ?? 'UNKNOWN')
+      : 'UNKNOWN',
+    message: error instanceof Error ? error.message : String(error),
+    at: Date.now(),
+  };
+}
+
+export interface PublishImportedIsolatedWorkspaceInput {
+  importedSessionId: string;
+  importedAnchorMessageId: string;
+  ownerUserId: string | null;
+  targetProjectId: string;
+  workspaceBinding: TrustedSingleRootGitProjectWorkspace;
+  portableEvidence: PortableIsolatedAnchorEvidenceV1;
+  now?: number;
+}
+
+export interface PublishedImportedIsolatedWorkspace {
+  sessionId: string;
+  intentId: string;
+  workspacePath: string;
+  evidenceDigest: string;
+  workspaceScopeVersion: string;
+  publishedAt: number;
+}
+
+export interface PreparedImportedIsolatedWorkspace {
+  sessionId: string;
+  anchorMessageId: string;
+  forkId: string;
+  intentId: string;
+  workspacePath: string;
+  evidenceId: string;
+  evidenceDigest: string;
+  workspaceScopeVersion: string;
+  sourcePrimaryRoot: string;
+  baseCommit: string;
+  sourceIdentity: Record<string, unknown>;
+  pathMappings: Array<{
+    sourceId: string;
+    sourcePath: string;
+    sourceRelativePath: string;
+    isolatedRelativePath: string;
+  }>;
+  portableEvidenceId: string;
+  portablePayloadDigest: string;
+  sourceExportId: string;
+  sourcePayloadDigest: string | null;
+  targetProjectId: string;
+  ownerUserId: string | null;
+  state: 'ready' | 'published';
+  graphPublicationRequired: boolean;
+  publishedAt?: number;
+}
+
+export interface ImportedWorkspaceGraphSession {
+  sessionId: string;
+  readOnly: boolean;
+  workspaceMode: SessionForkWorkspaceMode;
+}
+
+export interface PublishPreparedImportedWorkspaceGraphInput {
+  importId?: string;
+  sourceExportId: string;
+  sourcePayloadDigest?: string;
+  ownerUserId: string | null;
+  targetProjectId: string;
+  sessions: ImportedWorkspaceGraphSession[];
+  workspaces: PreparedImportedIsolatedWorkspace[];
+  now?: number;
+}
+
 export class DatabaseService extends DurableRunDatabaseSupport {
   private db: BetterSqlite3.Database | null = null;
   private dbPath = path.join(app?.getPath?.('userData') || process.cwd(), 'code-agent.db');
@@ -87,6 +209,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
 
   // Repositories
   private sessionRepo!: SessionRepository;
+  private sessionForkRepo!: SessionForkRepository;
+  private sessionForkWorkspaceRepo!: SessionForkWorkspaceRepository;
+  private conversationBranchRepo!: ConversationBranchRepository;
+  private sessionForkPortabilityRepo!: SessionForkPortabilityRepository;
+  private isolatedAnchorWorkspaceService!: IsolatedAnchorWorkspaceService;
   private memoryRepo!: MemoryRepository;
   private configRepo!: ConfigRepository;
   private captureRepo!: CaptureRepository;
@@ -200,12 +327,46 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       applyTelemetryTurnsMigrations(this.db, logger);
       applyEvaluationCleanupMigration(this.db, logger);
       this.applyDurableRunMigration(this.db);
+      // Create immutable ledger tables before repositories are constructed,
+      // but defer legacy rows until project ownership has been backfilled.
+      applyConversationBranchSchema(this.db, { backfillLegacy: false });
+      applySessionForkPortabilitySchema(this.db);
       step('migrations');
       applyIndexes(this.db);
       step('indexes');
 
       // 初始化 Repositories
+      this.conversationBranchRepo = new ConversationBranchRepository(this.db);
       this.sessionRepo = new SessionRepository(this.db);
+      this.sessionForkRepo = new SessionForkRepository(this.db, this.conversationBranchRepo);
+      this.sessionForkWorkspaceRepo = new SessionForkWorkspaceRepository(this.db);
+      this.sessionForkPortabilityRepo = new SessionForkPortabilityRepository(
+        this.db,
+        this.conversationBranchRepo,
+      );
+      const recoveredPortabilityUploads = this.sessionForkPortabilityRepo
+        .recoverInterruptedSync(Date.now());
+      if (recoveredPortabilityUploads > 0) {
+        logger.warn(
+          `[DatabaseService] recovered ${recoveredPortabilityUploads} interrupted Session Fork upload(s) to local-only`,
+        );
+      }
+      this.isolatedAnchorWorkspaceService = new IsolatedAnchorWorkspaceService({
+        durableRoot: path.join(path.dirname(this.dbPath), 'session-fork-worktrees'),
+        intentStore: this.sessionForkWorkspaceRepo,
+      });
+      const interruptedForkHandoffs = this.sessionForkRepo.recoverInterruptedContextHandoffs(Date.now());
+      if (interruptedForkHandoffs > 0) {
+        logger.warn(`[DatabaseService] blocked ${interruptedForkHandoffs} interrupted fork context handoff(s)`);
+      }
+      await this.recoverIncompleteSessionForkWorkspaces().catch((error) => {
+        // Staged children are persisted with is_deleted=1, so a recovery fault
+        // remains fail-closed without making the rest of local history unusable.
+        logger.error(
+          '[DatabaseService] Session Fork workspace recovery remained hidden:',
+          error instanceof Error ? error.message : String(error),
+        );
+      });
       this.memoryRepo = new MemoryRepository(this.db);
       this.configRepo = new ConfigRepository(this.db);
       this.captureRepo = new CaptureRepository(this.db);
@@ -250,6 +411,63 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     }
   }
 
+  private async recoverIncompleteSessionForkWorkspaces(): Promise<void> {
+    const recoverable = this.sessionForkWorkspaceRepo.listRecoverableSagas();
+    for (const saga of recoverable) {
+      if (saga.state !== 'child_staged') {
+        const cleanup = await this.isolatedAnchorWorkspaceService.recoverIntent(
+          saga.intentId,
+          { strategy: 'cleanup' },
+        );
+        const recovery = {
+          code: cleanup.outcome === 'failed'
+            ? 'STARTUP_CLEANUP_FAILED'
+            : 'STARTUP_PRE_CHILD_CLEANUP',
+          message: cleanup.error ?? 'incomplete pre-child workspace intent was cleaned on startup',
+          recoveredAt: Date.now(),
+        };
+        if (cleanup.outcome === 'failed') {
+          this.sessionForkWorkspaceRepo.recordSagaError(saga.intentId, recovery);
+        } else if (saga.state !== 'quarantined') {
+          this.sessionForkWorkspaceRepo.abortSaga(saga.intentId, recovery);
+        }
+        continue;
+      }
+
+      const resumed = await this.isolatedAnchorWorkspaceService.recoverIntent(
+        saga.intentId,
+        { strategy: 'resume' },
+      );
+      if (resumed.outcome !== 'ready') {
+        const failure = {
+          code: 'STARTUP_WORKSPACE_RECOVERY_FAILED',
+          message: resumed.error ?? 'the staged child workspace could not be recovered',
+          recoveredAt: Date.now(),
+        };
+        this.sessionForkWorkspaceRepo.quarantineSaga(saga.intentId, failure);
+        await this.isolatedAnchorWorkspaceService
+          .recoverIntent(saga.intentId, { strategy: 'cleanup' })
+          .catch(() => undefined);
+        continue;
+      }
+      try {
+        await this.isolatedAnchorWorkspaceService.advertiseAndFinalize(
+          saga.intentId,
+          () => this.sessionForkWorkspaceRepo.finalizeSaga(saga.intentId),
+        );
+      } catch (error) {
+        const failure = {
+          ...sessionForkFailure(error),
+          code: 'STARTUP_FINALIZE_FAILED',
+        };
+        this.sessionForkWorkspaceRepo.quarantineSaga(saga.intentId, failure);
+        await this.isolatedAnchorWorkspaceService
+          .recoverIntent(saga.intentId, { strategy: 'cleanup' })
+          .catch(() => undefined);
+      }
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Raw Database Access
   // --------------------------------------------------------------------------
@@ -260,6 +478,15 @@ export class DatabaseService extends DurableRunDatabaseSupport {
    */
   getDb(): BetterSqlite3.Database | null {
     return this.db;
+  }
+
+  /**
+   * Backfill legacy sessions only after Project ownership has reached its
+   * canonical local projection. Existing immutable rows are never rewritten.
+   */
+  backfillConversationBranchLedger(): void {
+    this.ensureDb();
+    applyConversationBranchSchema(this.db!);
   }
 
   // --------------------------------------------------------------------------
@@ -708,6 +935,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       userId?: string | null;
       modelConfig: { provider: ModelProvider; model: string };
       workingDirectory?: string;
+      projectId?: string | null;
       type?: Session['type'];
       origin?: Session['origin'];
 	      parentSessionId?: string;
@@ -820,9 +1048,1657 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.getMessageById(sessionId, messageId, options);
   }
+  async captureSessionForkAnchorEvidence(
+    sessionId: string,
+    messageId: string,
+  ): Promise<import('./repositories').SessionForkAnchorEvidenceRecord | null> {
+    this.ensureDb();
+    const source = this.getSession(sessionId);
+    const message = this.getMessageById(sessionId, messageId, { includeRewound: true });
+    if (!source || !message || !isCompletedSessionForkAnchor(message)) return null;
+
+    const existing = this.sessionForkWorkspaceRepo.getAnchorEvidence(sessionId, messageId);
+    if (existing?.status === 'complete') return existing;
+
+    const messageDigest = digestSessionForkAnchorMessage(message);
+    let capturedScopeVersion: string | null = null;
+    let capturedSourceIdentity: Record<string, unknown> | null = null;
+    let capturedSourceIdentityDigest: string | null = null;
+    let capturedRepositoryRoot = source.workingDirectory
+      ? path.resolve(source.workingDirectory)
+      : null;
+    const baseRecord = {
+      sourceSessionId: sessionId,
+      anchorMessageId: messageId,
+      ownerUserId: source.userId ?? null,
+      projectId: source.projectId ?? null,
+      workspaceScopeVersion: capturedScopeVersion,
+      sourceIdentityDigest: capturedSourceIdentityDigest,
+      sourceIdentity: capturedSourceIdentity,
+      messageDigest,
+      repositoryRoot: capturedRepositoryRoot,
+    };
+
+    try {
+      if (!source.projectId) {
+        throw Object.assign(new Error('anchor session has no Project boundary'), {
+          code: 'PROJECT_SCOPE_REQUIRED',
+        });
+      }
+      const { getProjectService } = await import('../project/projectService');
+      const scope = getProjectService().getWorkspaceScope(source.projectId);
+      if (!scope) {
+        throw Object.assign(new Error('the Project has no trusted WorkspaceScope'), {
+          code: 'WORKSPACE_SCOPE_REQUIRED',
+        });
+      }
+      capturedScopeVersion = scope.version;
+      capturedSourceIdentity = forkWorkspaceSourceIdentity(scope);
+      capturedSourceIdentityDigest = digestWorkspaceValue(capturedSourceIdentity);
+      capturedRepositoryRoot = fs.realpathSync.native(scope.primaryRoot);
+      if (scope.roots.length !== 1) {
+        throw Object.assign(
+          new Error('isolated_at_anchor cannot atomically reconstruct multiple Project sources'),
+          { code: 'MULTI_SOURCE_ATOMIC_RECONSTRUCTION_UNSUPPORTED' },
+        );
+      }
+      const primary = scope.roots[0];
+      if (primary.role !== 'primary' || path.resolve(primary.path) !== path.resolve(scope.primaryRoot)) {
+        throw Object.assign(new Error('WorkspaceScope has no single trustworthy primary source'), {
+          code: 'PRIMARY_SOURCE_REQUIRED',
+        });
+      }
+      const repositoryRoot = capturedRepositoryRoot;
+      const runner = new NodeWorkspaceCommandRunner();
+      const explicitHead = (await runner.run({
+        executable: 'git',
+        args: ['rev-parse', '--verify', 'HEAD'],
+        cwd: repositoryRoot,
+      })).stdout.toString('utf8').trim();
+      const evidence = await new AnchorWorkspaceEvidenceService({ runner }).capture({
+        anchorId: messageId,
+        repositoryRoot,
+        baseCommit: explicitHead,
+        workspaceScopeVersion: scope.version,
+        pathMappings: [{
+          sourceId: primary.sourceId,
+          sourcePath: repositoryRoot,
+          isolatedRelativePath: '.',
+        }],
+      });
+      return this.sessionForkWorkspaceRepo.recordAnchorEvidence({
+        ...baseRecord,
+        workspaceScopeVersion: scope.version,
+        sourceIdentityDigest: capturedSourceIdentityDigest,
+        sourceIdentity: capturedSourceIdentity,
+        repositoryRoot,
+        evidence,
+        status: 'complete',
+        blockedReason: null,
+        summary: {
+          baseCommit: evidence.manifest.baseCommit,
+          observedHead: evidence.manifest.observedHead,
+          stagedPatch: evidence.manifest.stagedPatch,
+          unstagedPatch: evidence.manifest.unstagedPatch,
+          untrackedManifest: evidence.manifest.untrackedFiles.map((file) => ({
+            path: file.path,
+            sha256: file.sha256,
+            sizeBytes: file.sizeBytes,
+            mode: file.mode,
+          })),
+          pathMappings: evidence.manifest.pathMappings,
+        },
+      });
+    } catch (error) {
+      const failure = sessionForkFailure(error);
+      logger.warn('[DatabaseService] Session Fork anchor evidence blocked:', {
+        sessionId,
+        messageId,
+        code: failure.code,
+      });
+      return this.sessionForkWorkspaceRepo.recordAnchorEvidence({
+        ...baseRecord,
+        workspaceScopeVersion: capturedScopeVersion,
+        sourceIdentityDigest: capturedSourceIdentityDigest,
+        sourceIdentity: capturedSourceIdentity,
+        repositoryRoot: capturedRepositoryRoot,
+        evidence: null,
+        status: 'blocked',
+        blockedReason: `${String(failure.code)}: ${String(failure.message)}`,
+        summary: { failure },
+      });
+    }
+  }
+  getSessionForkAnchorEvidence(
+    sessionId: string,
+    messageId: string,
+    ownerUserId?: string | null,
+  ): import('./repositories').SessionForkAnchorEvidenceRecord | null {
+    this.ensureDb();
+    return this.sessionForkWorkspaceRepo.getAnchorEvidence(sessionId, messageId, ownerUserId);
+  }
+  getSessionForkWorkspaceScope(
+    sessionId: string,
+    ownerUserId?: string | null,
+  ): WorkspaceScope | null {
+    this.ensureDb();
+    const rawDb = this.db;
+    if (!rawDb) throw new Error('Database not initialized');
+    const importedSession = this.sessionRepo.getSession(
+      sessionId,
+      ownerUserId === undefined
+        ? { includeDeleted: true }
+        : { includeDeleted: true, userId: ownerUserId },
+    );
+    const importedPublication = importedSession?.metadata?.importedWorkspacePublicationV1;
+    if (
+      importedPublication
+      && typeof importedPublication === 'object'
+      && !Array.isArray(importedPublication)
+    ) {
+      let projection: ReturnType<typeof projectChildWorkspaceScope>;
+      try {
+        projection = projectChildWorkspaceScope(importedSession?.metadata);
+      } catch (error) {
+        throw new SessionForkError(
+          'WORKSPACE_IDENTITY_DRIFT',
+          `the imported isolated WorkspaceScope metadata is invalid: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const publication = importedPublication as Record<string, unknown>;
+      const row = rawDb.prepare(`
+        SELECT
+          intent.status AS intent_status,
+          intent.advertisable AS intent_advertisable,
+          intent.workspace_path AS intent_workspace_path,
+          intent.evidence_digest AS intent_evidence_digest,
+          evidence.id AS evidence_id,
+          evidence.source_session_id AS evidence_source_session_id,
+          evidence.project_id AS evidence_project_id,
+          evidence.workspace_scope_version AS evidence_workspace_scope_version,
+          evidence.source_identity_digest AS evidence_source_identity_digest,
+          evidence.source_identity_json AS evidence_source_identity_json,
+          evidence.repository_root AS evidence_repository_root,
+          evidence.base_commit AS evidence_base_commit,
+          evidence.evidence_digest AS evidence_digest,
+          evidence.evidence_json AS evidence_json,
+          evidence.status AS evidence_status
+        FROM session_fork_workspace_intents AS intent
+        JOIN session_fork_anchor_evidence AS evidence
+          ON evidence.id = ?
+        WHERE intent.intent_id = ?
+        LIMIT 1
+      `).get(publication.evidenceId, publication.intentId) as Record<string, unknown> | undefined;
+      const engineCwd = importedSession?.engine?.cwd;
+      const evidence = parseJsonValue(row?.evidence_json);
+      const manifest = evidence && typeof evidence === 'object' && !Array.isArray(evidence)
+        ? (evidence as { manifest?: Record<string, unknown> }).manifest
+        : null;
+      const storedIdentity = parseJsonValue(row?.evidence_source_identity_json);
+      const expectedMappings = Array.isArray(manifest?.pathMappings)
+        ? manifest.pathMappings.map((candidate) => {
+          const mapping = candidate as Record<string, unknown>;
+          return {
+            sourceId: mapping.sourceId,
+            sourcePath: mapping.sourcePath,
+            sourceRelativePath: mapping.repositoryRelativePath,
+            isolatedRelativePath: mapping.isolatedRelativePath,
+          };
+        })
+        : null;
+      const matches = Boolean(
+        importedSession
+        && projection
+        && importedSession.readOnly === false
+        && importedSession.workingDirectory === importedSession.workspace
+        && importedSession.workingDirectory === row?.intent_workspace_path
+        && importedSession.projectId === row?.evidence_project_id
+        && engineCwd === importedSession.workingDirectory
+        && row?.intent_status === 'advertised'
+        && Number(row?.intent_advertisable) === 1
+        && row?.evidence_status === 'complete'
+        && row?.evidence_source_session_id === sessionId
+        && publication.intentId === projection.verification.intentId
+        && publication.evidenceId === projection.verification.evidenceId
+        && row?.intent_evidence_digest === row?.evidence_digest
+        && projection.verification.projectId === row?.evidence_project_id
+        && projection.verification.sourceWorkspaceScopeVersion
+          === row?.evidence_workspace_scope_version
+        && projection.verification.sourcePrimaryRoot === row?.evidence_repository_root
+        && projection.verification.isolatedPrimaryRoot === row?.intent_workspace_path
+        && projection.verification.baseCommit === row?.evidence_base_commit
+        && projection.verification.evidenceDigest === row?.evidence_digest
+        && storedIdentity
+        && digestWorkspaceValue(projection.provenance.sourceIdentity)
+          === digestWorkspaceValue(storedIdentity)
+        && row?.evidence_source_identity_digest === digestWorkspaceValue(storedIdentity)
+        && expectedMappings
+        && digestWorkspaceValue(projection.provenance.pathMappings)
+          === digestWorkspaceValue(expectedMappings)
+      );
+      if (!matches || !projection) {
+        throw new SessionForkError(
+          'WORKSPACE_IDENTITY_DRIFT',
+          'the imported isolated WorkspaceScope does not match its atomic publication evidence',
+        );
+      }
+      return projection.scope;
+    }
+    const forkKind = rawDb.prepare(`
+      SELECT workspace_mode
+      FROM session_forks
+      WHERE child_session_id = ?
+      LIMIT 1
+    `).get(sessionId) as { workspace_mode: string } | undefined;
+    if (forkKind?.workspace_mode !== 'isolated_at_anchor') return null;
+
+    const ownerPredicate = ownerUserId === undefined
+      ? ''
+      : ownerUserId === null
+        ? ' AND child.user_id IS NULL AND source.user_id IS NULL'
+        : ' AND child.user_id = ? AND source.user_id = ?';
+    const ownerParams = typeof ownerUserId === 'string'
+      ? [ownerUserId, ownerUserId]
+      : [];
+    const row = rawDb.prepare(`
+      SELECT
+        child.metadata AS child_metadata,
+        child.working_directory AS child_working_directory,
+        child.agent_engine AS child_agent_engine,
+        child.project_id AS child_project_id,
+        child.is_deleted AS child_is_deleted,
+        fork.id AS fork_id,
+        fork.status AS fork_status,
+        fork.workspace_snapshot_id AS fork_workspace_snapshot_id,
+        fork.anchor_message_id AS fork_anchor_message_id,
+        saga.intent_id AS saga_intent_id,
+        saga.evidence_id AS saga_evidence_id,
+        saga.state AS saga_state,
+        saga.workspace_path AS saga_workspace_path,
+        saga.child_session_id AS saga_child_session_id,
+        evidence.id AS evidence_id,
+        evidence.anchor_message_id AS evidence_anchor_message_id,
+        evidence.project_id AS evidence_project_id,
+        evidence.workspace_scope_version AS evidence_workspace_scope_version,
+        evidence.source_identity_digest AS evidence_source_identity_digest,
+        evidence.source_identity_json AS evidence_source_identity_json,
+        evidence.repository_root AS evidence_repository_root,
+        evidence.base_commit AS evidence_base_commit,
+        evidence.evidence_digest AS evidence_digest,
+        evidence.evidence_json AS evidence_json,
+        evidence.status AS evidence_status,
+        intent.status AS intent_status,
+        intent.advertisable AS intent_advertisable
+      FROM session_forks AS fork
+      JOIN sessions AS child ON child.id = fork.child_session_id
+      JOIN sessions AS source ON source.id = fork.source_session_id
+      LEFT JOIN session_fork_workspace_sagas AS saga
+        ON saga.intent_id = fork.workspace_snapshot_id
+      LEFT JOIN session_fork_anchor_evidence AS evidence
+        ON evidence.id = saga.evidence_id
+      LEFT JOIN session_fork_workspace_intents AS intent
+        ON intent.intent_id = saga.intent_id
+      WHERE fork.child_session_id = ?
+        ${ownerPredicate}
+      LIMIT 1
+    `).get(sessionId, ...ownerParams) as Record<string, unknown> | undefined;
+    if (!row) {
+      throw new SessionForkError(
+        'SESSION_NOT_FOUND',
+        'the isolated child is outside the current owner boundary',
+      );
+    }
+
+    let projection: ReturnType<typeof projectChildWorkspaceScope>;
+    try {
+      projection = projectChildWorkspaceScope(parseJsonValue(row.child_metadata));
+    } catch (error) {
+      throw new SessionForkError(
+        'WORKSPACE_IDENTITY_DRIFT',
+        `the isolated child WorkspaceScope metadata is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const engine = parseJsonValue(row.child_agent_engine);
+    const engineCwd = engine && typeof engine === 'object' && !Array.isArray(engine)
+      ? (engine as Record<string, unknown>).cwd
+      : null;
+    const evidence = parseJsonValue(row.evidence_json);
+    const evidenceManifest = evidence && typeof evidence === 'object' && !Array.isArray(evidence)
+      ? (evidence as { manifest?: unknown }).manifest
+      : null;
+    const manifest = evidenceManifest && typeof evidenceManifest === 'object' && !Array.isArray(evidenceManifest)
+      ? evidenceManifest as Record<string, unknown>
+      : null;
+    const storedSourceIdentity = parseJsonValue(row.evidence_source_identity_json);
+    const expectedMappings = Array.isArray(manifest?.pathMappings)
+      ? manifest.pathMappings.map((mapping) => {
+        const value = mapping as Record<string, unknown>;
+        return {
+          sourceId: value.sourceId,
+          sourcePath: value.sourcePath,
+          sourceRelativePath: value.repositoryRelativePath,
+          isolatedRelativePath: value.isolatedRelativePath,
+        };
+      })
+      : null;
+    const matches = Boolean(
+      projection
+      && Number(row.child_is_deleted) === 0
+      && row.fork_status === 'completed'
+      && row.saga_state === 'completed'
+      && row.evidence_status === 'complete'
+      && row.intent_status === 'advertised'
+      && Number(row.intent_advertisable) === 1
+      && projection.verification.forkId === row.fork_id
+      && projection.verification.intentId === row.fork_workspace_snapshot_id
+      && projection.verification.intentId === row.saga_intent_id
+      && projection.verification.evidenceId === row.saga_evidence_id
+      && projection.verification.evidenceId === row.evidence_id
+      && projection.verification.projectId === row.child_project_id
+      && projection.verification.projectId === row.evidence_project_id
+      && projection.verification.sourceWorkspaceScopeVersion === row.evidence_workspace_scope_version
+      && projection.verification.sourcePrimaryRoot === row.evidence_repository_root
+      && projection.verification.isolatedPrimaryRoot === row.child_working_directory
+      && projection.verification.isolatedPrimaryRoot === row.saga_workspace_path
+      && projection.verification.baseCommit === row.evidence_base_commit
+      && projection.verification.evidenceDigest === row.evidence_digest
+      && row.saga_child_session_id === sessionId
+      && row.fork_anchor_message_id === row.evidence_anchor_message_id
+      && engineCwd === projection.verification.isolatedPrimaryRoot
+      && storedSourceIdentity
+      && digestWorkspaceValue(storedSourceIdentity) === row.evidence_source_identity_digest
+      && digestWorkspaceValue(projection.provenance.sourceIdentity)
+        === digestWorkspaceValue(storedSourceIdentity)
+      && expectedMappings
+      && digestWorkspaceValue(projection.provenance.pathMappings)
+        === digestWorkspaceValue(expectedMappings)
+    );
+    if (!matches || !projection) {
+      throw new SessionForkError(
+        'WORKSPACE_IDENTITY_DRIFT',
+        'the isolated child WorkspaceScope projection does not match its completed durable evidence',
+      );
+    }
+    return projection.scope;
+  }
+  async createIsolatedSessionFork(
+    input: import('./repositories').CreateForkRepositoryInput,
+  ): Promise<import('./repositories').CreateForkRepositoryResult> {
+    this.ensureDb();
+    const source = this.getSession(input.sourceSessionId, input.ownerUserId === undefined
+      ? undefined
+      : { userId: input.ownerUserId });
+    const anchor = this.getMessageById(
+      input.sourceSessionId,
+      input.anchorAssistantMessageId,
+      { includeRewound: true },
+    );
+    if (!source || !anchor) {
+      throw new SessionForkError('INVALID_ANCHOR', 'isolated fork source or anchor was not found');
+    }
+    const evidenceRecord = this.sessionForkWorkspaceRepo.getAnchorEvidence(
+      input.sourceSessionId,
+      input.anchorAssistantMessageId,
+      input.ownerUserId,
+    );
+    if (
+      evidenceRecord?.status !== 'complete'
+      || !evidenceRecord.evidence
+      || !evidenceRecord.repositoryRoot
+      || !evidenceRecord.projectId
+      || !evidenceRecord.workspaceScopeVersion
+      || !evidenceRecord.sourceIdentityDigest
+    ) {
+      throw new SessionForkError(
+        'EVIDENCE_INCOMPLETE',
+        evidenceRecord?.blockedReason ?? 'the anchor has no complete workspace evidence',
+      );
+    }
+    if (
+      !isCompletedSessionForkAnchor(anchor)
+      || digestSessionForkAnchorMessage(anchor) !== evidenceRecord.messageDigest
+    ) {
+      throw new SessionForkError(
+        'EVIDENCE_INCOMPLETE',
+        'the anchor message no longer matches its sealed workspace evidence',
+      );
+    }
+    if (source.projectId !== evidenceRecord.projectId) {
+      throw new SessionForkError('EVIDENCE_INCOMPLETE', 'the source Project changed after anchor capture');
+    }
+
+    const { getProjectService } = await import('../project/projectService');
+    let scope: WorkspaceScope | undefined;
+    try {
+      scope = getProjectService().getWorkspaceScope(evidenceRecord.projectId);
+    } catch (error) {
+      throw new SessionForkError(
+        'EVIDENCE_INCOMPLETE',
+        `the current WorkspaceScope identity is not trustworthy: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (
+      scope?.roots.length !== 1
+      || scope.version !== evidenceRecord.workspaceScopeVersion
+      || digestWorkspaceValue(forkWorkspaceSourceIdentity(scope)) !== evidenceRecord.sourceIdentityDigest
+      || fs.realpathSync.native(scope.primaryRoot) !== evidenceRecord.repositoryRoot
+    ) {
+      throw new SessionForkError(
+        'EVIDENCE_INCOMPLETE',
+        'the current Project/WorkspaceScope does not match the anchor evidence',
+      );
+    }
+
+    await new AnchorWorkspaceEvidenceService().validateBundle(evidenceRecord.evidence);
+    const requestDigest = digestWorkspaceValue({
+      sourceSessionId: input.sourceSessionId,
+      anchorAssistantMessageId: input.anchorAssistantMessageId,
+      idempotencyKey: input.idempotencyKey,
+      workspaceMode: 'isolated_at_anchor',
+      contextDeliveryMode: input.contextDeliveryMode,
+      evidenceId: evidenceRecord.id,
+      evidenceDigest: evidenceRecord.evidenceDigest,
+    });
+    const saga = this.sessionForkWorkspaceRepo.beginSaga({
+      sourceSessionId: input.sourceSessionId,
+      anchorMessageId: input.anchorAssistantMessageId,
+      idempotencyKey: input.idempotencyKey,
+      requestDigest,
+      evidenceId: evidenceRecord.id,
+      proposedForkId: input.forkId,
+      proposedChildSessionId: input.childSessionId,
+      contextDeliveryMode: input.contextDeliveryMode,
+      childTitle: input.childTitle,
+      now: input.now,
+    });
+    if (saga.state === 'completed') {
+      if (!saga.workspacePath) {
+        throw new SessionForkError(
+          'FORK_OPERATION_FAILED',
+          'completed isolated workspace saga has no durable workspace path',
+        );
+      }
+      return this.sessionForkRepo.createFork({
+        ...input,
+        forkId: saga.proposedForkId,
+        childSessionId: saga.proposedChildSessionId,
+        childTitle: saga.childTitle,
+        workspaceMode: 'isolated_at_anchor',
+        childWorkingDirectory: saga.workspacePath,
+        workspaceSnapshotId: saga.intentId,
+      });
+    }
+
+    let childStaged = saga.state === 'child_staged';
+    let workspaceAdvertised = false;
+    try {
+      const prepared = await this.isolatedAnchorWorkspaceService.prepare({
+        intentId: saga.intentId,
+        sourceSessionId: saga.sourceSessionId,
+        proposedChildSessionId: saga.proposedChildSessionId,
+        repositoryRoot: evidenceRecord.repositoryRoot,
+        destinationName: saga.proposedChildSessionId,
+        evidence: evidenceRecord.evidence,
+      });
+      this.sessionForkWorkspaceRepo.markSagaWorkspaceReady(
+        saga.intentId,
+        prepared.workspacePath,
+        input.now,
+      );
+      const result = this.sessionForkWorkspaceRepo.stageChild(
+        saga.intentId,
+        (stagedSaga) => this.sessionForkRepo.createFork({
+          ...input,
+          forkId: stagedSaga.proposedForkId,
+          childSessionId: stagedSaga.proposedChildSessionId,
+          childTitle: stagedSaga.childTitle,
+          workspaceMode: 'isolated_at_anchor',
+          childWorkingDirectory: prepared.workspacePath,
+          workspaceSnapshotId: stagedSaga.intentId,
+        }),
+        input.now,
+      );
+      childStaged = true;
+      await this.isolatedAnchorWorkspaceService.advertiseAndFinalize(
+        saga.intentId,
+        () => this.sessionForkWorkspaceRepo.finalizeSaga(saga.intentId, input.now),
+      );
+      workspaceAdvertised = true;
+      return result;
+    } catch (error) {
+      const failure = sessionForkFailure(error);
+      if (childStaged && !workspaceAdvertised) {
+        this.sessionForkWorkspaceRepo.quarantineSaga(saga.intentId, failure, input.now);
+        await this.isolatedAnchorWorkspaceService
+          .recoverIntent(saga.intentId, { strategy: 'cleanup' })
+          .catch(() => undefined);
+      } else if (!childStaged) {
+        const cleanup = await this.isolatedAnchorWorkspaceService
+          .recoverIntent(saga.intentId, { strategy: 'cleanup' })
+          .catch((cleanupError: unknown) => ({
+            intentId: saga.intentId,
+            outcome: 'failed' as const,
+            workspacePath: '',
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          }));
+        if (cleanup.outcome === 'failed') {
+          this.sessionForkWorkspaceRepo.recordSagaError(saga.intentId, {
+            ...failure,
+            cleanupError: cleanup.error,
+          }, input.now);
+        } else {
+          this.sessionForkWorkspaceRepo.abortSaga(saga.intentId, failure, input.now);
+        }
+      }
+      throw error instanceof SessionForkError
+        ? error
+        : new SessionForkError(
+          'FORK_OPERATION_FAILED',
+          `isolated workspace fork failed closed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    }
+  }
+  createSessionFork(
+    input: import('./repositories').CreateForkRepositoryInput,
+  ): import('./repositories').CreateForkRepositoryResult {
+    this.ensureDb();
+    return this.sessionForkRepo.createFork(input);
+  }
+  getSessionForkLineage(
+    sessionId: string,
+    ownerUserId?: string | null,
+  ): import('../../../shared/contract/sessionFork').SessionForkLineageSummary | null {
+    this.ensureDb();
+    return this.sessionForkRepo.getLineage(sessionId, ownerUserId);
+  }
+  listSessionForkChildren(
+    sessionId: string,
+    ownerUserId?: string | null,
+  ): import('../../../shared/contract/sessionFork').SessionForkLineageSummary[] {
+    this.ensureDb();
+    return this.sessionForkRepo.listChildren(sessionId, ownerUserId);
+  }
+  getSessionForkContextSource(childSessionId: string): import('./repositories').SessionForkContextSource | null {
+    this.ensureDb();
+    return this.sessionForkRepo.getContextSource(childSessionId);
+  }
+  prepareSessionForkContextHandoff(
+    forkId: string,
+    engine: import('../../../shared/contract/agentEngine').ExternalAgentEngineKind,
+    payloadDigest: string,
+    preparedAt?: number,
+  ): import('./repositories').SessionForkContextHandoffRecord {
+    this.ensureDb();
+    return this.sessionForkRepo.prepareContextHandoff(forkId, engine, payloadDigest, preparedAt);
+  }
+  markSessionForkContextHandoffDispatching(
+    forkId: string,
+    payloadDigest: string,
+    attemptId: string,
+    startedAt?: number,
+  ): import('./repositories').SessionForkContextHandoffRecord {
+    this.ensureDb();
+    return this.sessionForkRepo.markContextHandoffDispatching(forkId, payloadDigest, attemptId, startedAt);
+  }
+  markSessionForkContextHandoffConsumed(
+    forkId: string,
+    payloadDigest: string,
+    attemptId: string,
+    consumedAt?: number,
+  ): import('./repositories').SessionForkContextHandoffRecord {
+    this.ensureDb();
+    return this.sessionForkRepo.markContextHandoffConsumed(forkId, payloadDigest, attemptId, consumedAt);
+  }
   applyPromptRewind(sessionId: string, userMessageId: string, record?: import('./repositories/SessionRepository').PromptRewindRecordInput): import('./repositories/SessionRepository').PromptRewindResult {
     this.ensureDb();
     return this.sessionRepo.applyPromptRewind(sessionId, userMessageId, record);
+  }
+  restorePromptRewind(
+    sessionId: string,
+    rewindId: string,
+    restoredAt?: number,
+    ownerUserId?: string | null,
+  ): import('./repositories/SessionRepository').PromptRewindRestoreResult {
+    this.ensureDb();
+    return this.sessionRepo.restorePromptRewind(sessionId, rewindId, restoredAt, ownerUserId);
+  }
+  replayConversationBranch(
+    sessionId: string,
+    boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary,
+    options?: { includeRewound?: boolean; allowRepairOverride?: boolean },
+  ): import('../../../shared/contract/conversationBranch').ConversationReplay {
+    this.ensureDb();
+    return this.conversationBranchRepo.replay(sessionId, boundary, options);
+  }
+  compareConversationBranches(
+    leftSessionId: string,
+    rightSessionId: string,
+    boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary,
+  ): import('../../../shared/contract/conversationBranch').ConversationBranchComparison {
+    this.ensureDb();
+    return this.conversationBranchRepo.compareBranches({ leftSessionId, rightSessionId, boundary });
+  }
+  traceConversationProvenance(
+    sessionId: string,
+    messageId: string,
+    boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary,
+  ): import('../../../shared/contract/conversationBranch').ConversationProvenanceTrace {
+    this.ensureDb();
+    return this.conversationBranchRepo.traceProvenance({ sessionId, messageId, boundary });
+  }
+  auditConversationLineage(
+    sessionId: string,
+    boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary,
+  ): import('../../../shared/contract/conversationBranch').ConversationLineageAudit {
+    this.ensureDb();
+    return this.conversationBranchRepo.auditLineage(sessionId, boundary);
+  }
+  quarantineConversationLineage(
+    sessionId: string,
+    boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary,
+    idempotencyKey: string,
+    createdAt?: number,
+  ): import('../../../shared/contract/conversationBranch').ConversationLineageAudit {
+    this.ensureDb();
+    return this.conversationBranchRepo.auditAndQuarantine({
+      sessionId,
+      boundary,
+      idempotencyKey,
+      createdAt,
+    });
+  }
+  repairConversationLineage(
+    input: {
+      sessionId: string;
+      boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary;
+      issueDigest: string;
+      reason: string;
+      idempotencyKey: string;
+      createdAt?: number;
+    },
+  ): import('../../../shared/contract/conversationBranch').ConversationLineageAudit {
+    this.ensureDb();
+    return this.conversationBranchRepo.repairCompatibilityProjection(input);
+  }
+  recordConversationLineageRepairOverride(
+    input: {
+      sessionId: string;
+      boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary;
+      issueDigest: string;
+      reason: string;
+      idempotencyKey: string;
+      createdAt?: number;
+    },
+  ): import('../../../shared/contract/conversationBranch').ConversationLineageAudit {
+    this.ensureDb();
+    return this.conversationBranchRepo.recordRepairOverride(input);
+  }
+  recordConversationEvaluationAttribution(
+    input: {
+      sessionId: string;
+      boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary;
+      evaluationId: string;
+      runId?: string | null;
+      metric: string;
+      value: number;
+      attributedMessageIds: string[];
+      idempotencyKey: string;
+      createdAt?: number;
+    },
+  ): import('../../../shared/contract/conversationBranch').ConversationEvaluationAttribution {
+    this.ensureDb();
+    return this.conversationBranchRepo.recordEvaluationAttribution(input);
+  }
+  listConversationEvaluationAttributions(
+    sessionId: string,
+    boundary: import('../../../shared/contract/conversationBranch').ConversationBoundary,
+  ): import('../../../shared/contract/conversationBranch').ConversationEvaluationAttribution[] {
+    this.ensureDb();
+    return this.conversationBranchRepo.listEvaluationAttributions(sessionId, boundary);
+  }
+  exportSessionFork(
+    input: import('./repositories').ExportSessionForkInput,
+  ): import('../../../shared/contract/sessionForkPortability').SessionExportEnvelopeV2 {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.exportSessionFork(input);
+  }
+  getDurableSessionForkExport(
+    exportId: string,
+    ownerScopeId: string,
+    projectId: string,
+  ): import('../../../shared/contract/sessionForkPortability').SessionExportEnvelopeV2 | null {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.getDurableEnvelope(exportId, ownerScopeId, projectId);
+  }
+  importSessionFork(
+    input: import('./repositories').ImportSessionForkInput,
+  ): import('./repositories').ImportSessionForkResult {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.importSessionFork(input);
+  }
+  async prepareImportedIsolatedWorkspace(
+    input: PublishImportedIsolatedWorkspaceInput,
+  ): Promise<PreparedImportedIsolatedWorkspace> {
+    this.ensureDb();
+    const rawDb = this.db;
+    if (!rawDb) throw new Error('Database not initialized');
+    const importedSessionId = input.importedSessionId.trim();
+    const importedAnchorMessageId = input.importedAnchorMessageId.trim();
+    const targetProjectId = input.targetProjectId.trim();
+    if (!importedSessionId || !importedAnchorMessageId || !targetProjectId) {
+      throw new Error('IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: session, anchor, and Project are required');
+    }
+    const intentId = `import_workspace_${digestWorkspaceValue({
+      importedSessionId,
+      portableEvidenceId: input.portableEvidence.evidenceId,
+      portablePayloadDigest: input.portableEvidence.content.payloadDigest,
+      targetProjectId,
+    }).slice(0, 32)}`;
+    const destinationName = `imported-${digestWorkspaceValue(importedSessionId).slice(0, 32)}`;
+    const readSessionRow = (): {
+      id: string;
+      user_id: string | null;
+      project_id: string | null;
+      origin: string | null;
+      metadata: string | null;
+      agent_engine: string | null;
+      read_only: number;
+      working_directory: string | null;
+      workspace: string | null;
+      is_deleted: number;
+      status: string;
+    } | undefined => rawDb.prepare(`
+      SELECT id, user_id, project_id, origin, metadata, agent_engine, read_only,
+             working_directory, workspace, is_deleted, status
+      FROM sessions
+      WHERE id = ?
+      LIMIT 1
+    `).get(importedSessionId) as ReturnType<typeof readSessionRow>;
+    const requireCurrentBinding = async (): Promise<WorkspaceScope> => {
+      const { getProjectService } = await import('../project/projectService');
+      const scope = getProjectService().getWorkspaceScope(targetProjectId);
+      if (!scope) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: current Project is not the trusted single-root binding',
+        );
+      }
+      const primary = scope.roots[0];
+      const canonicalBoundRoot = fs.realpathSync.native(input.workspaceBinding.repositoryRoot);
+      if (
+        scope.projectId !== targetProjectId
+        || input.workspaceBinding.projectId !== targetProjectId
+        || input.workspaceBinding.topology !== 'single_root_git'
+        || input.workspaceBinding.identityTrust !== 'verified'
+        || scope.roots.length !== 1
+        || primary?.role !== 'primary'
+        || scope.version !== input.workspaceBinding.workspaceScopeVersion
+        || fs.realpathSync.native(scope.primaryRoot) !== canonicalBoundRoot
+        || fs.realpathSync.native(primary.path) !== canonicalBoundRoot
+      ) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: current Project is not the trusted single-root binding',
+        );
+      }
+      return scope;
+    };
+    const requireImportedSession = (allowPublished: boolean): {
+      row: NonNullable<ReturnType<typeof readSessionRow>>;
+      metadata: Record<string, unknown>;
+    } => {
+      const row = readSessionRow();
+      if (!row) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: session is not the exact hidden imported isolated workspace',
+        );
+      }
+      const metadata = parseJsonValue(row.metadata);
+      const origin = parseJsonValue(row.origin);
+      const workspace = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>).portableWorkspaceV2
+        : null;
+      const portableAnchor = workspace && typeof workspace === 'object' && !Array.isArray(workspace)
+        ? (workspace as Record<string, unknown>).isolatedAnchor
+        : null;
+      const lineage = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>).forkLineage
+        : null;
+      const portableAnchorMessageId = workspace
+        && typeof workspace === 'object'
+        && !Array.isArray(workspace)
+        && typeof (workspace as Record<string, unknown>).anchorChildMessageId === 'string'
+        ? String((workspace as Record<string, unknown>).anchorChildMessageId)
+        : lineage
+          && typeof lineage === 'object'
+          && !Array.isArray(lineage)
+          && typeof (lineage as Record<string, unknown>).anchorChildMessageId === 'string'
+          ? String((lineage as Record<string, unknown>).anchorChildMessageId)
+          : null;
+      if (
+        row.user_id !== input.ownerUserId
+        || row.project_id !== targetProjectId
+        || Number(row.is_deleted) !== 0
+        || row.status !== 'idle'
+        || !origin
+        || typeof origin !== 'object'
+        || Array.isArray(origin)
+        || (origin as Record<string, unknown>).kind !== 'import'
+        || !metadata
+        || typeof metadata !== 'object'
+        || Array.isArray(metadata)
+        || !workspace
+        || typeof workspace !== 'object'
+        || Array.isArray(workspace)
+        || (workspace as Record<string, unknown>).mode !== 'isolated_at_anchor'
+        || portableAnchorMessageId !== importedAnchorMessageId
+        || !portableAnchor
+        || digestWorkspaceValue(portableAnchor) !== digestWorkspaceValue(input.portableEvidence)
+        || (!allowPublished && (
+          Number(row.read_only) !== 1
+          || row.working_directory !== null
+          || row.workspace !== null
+        ))
+      ) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: session is not the exact hidden imported isolated workspace',
+        );
+      }
+      return { row, metadata: metadata as Record<string, unknown> };
+    };
+    const importIdentity = (metadata: Record<string, unknown>): {
+      sourceExportId: string;
+      sourcePayloadDigest: string | null;
+    } => {
+      const value = metadata.portabilityImportV2;
+      if (
+        !value
+        || typeof value !== 'object'
+        || Array.isArray(value)
+        || typeof (value as Record<string, unknown>).sourceExportId !== 'string'
+        || !String((value as Record<string, unknown>).sourceExportId).trim()
+      ) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: imported session lost its source export identity',
+        );
+      }
+      const record = value as Record<string, unknown>;
+      return {
+        sourceExportId: String(record.sourceExportId),
+        sourcePayloadDigest: typeof record.sourcePayloadDigest === 'string'
+          ? record.sourcePayloadDigest
+          : null,
+      };
+    };
+
+    await requireCurrentBinding();
+    const initial = requireImportedSession(true);
+    const importedFrom = importIdentity(initial.metadata);
+    const publishedProjection = initial.metadata.importedWorkspacePublicationV1;
+    if (
+      publishedProjection
+      && typeof publishedProjection === 'object'
+      && !Array.isArray(publishedProjection)
+    ) {
+      const publication = publishedProjection as Record<string, unknown>;
+      const intent = await this.sessionForkWorkspaceRepo.get(intentId);
+      const projection = projectChildWorkspaceScope(initial.metadata);
+      const forkId = projection?.verification.forkId;
+      const portable = initial.metadata.portableWorkspaceV2 as PortableSessionWorkspaceV2;
+      if (
+        !intent
+        || !projection
+        || !forkId
+        || projection.verification.intentId !== intentId
+        || publication.intentId !== intentId
+        || publication.portableEvidenceId !== input.portableEvidence.evidenceId
+        || publication.portablePayloadDigest !== input.portableEvidence.content.payloadDigest
+      ) {
+        throw new Error('IMPORTED_WORKSPACE_PUBLICATION_DRIFT: published workspace projection is invalid');
+      }
+      readPublishedImportedPortableWorkspace(rawDb, {
+        fork: {
+          id: forkId,
+          child_session_id: importedSessionId,
+          anchor_child_message_id: importedAnchorMessageId,
+          requireLineage: Boolean(initial.metadata.forkLineage),
+        },
+        session: initial.row,
+        metadata: initial.metadata,
+        importedPortable: portable,
+        publication,
+      });
+      return {
+        sessionId: importedSessionId,
+        anchorMessageId: importedAnchorMessageId,
+        forkId,
+        intentId,
+        workspacePath: intent.workspacePath,
+        evidenceId: projection.verification.evidenceId,
+        evidenceDigest: intent.evidenceDigest,
+        workspaceScopeVersion: projection.verification.sourceWorkspaceScopeVersion,
+        sourcePrimaryRoot: projection.verification.sourcePrimaryRoot,
+        baseCommit: projection.verification.baseCommit,
+        sourceIdentity: structuredClone(projection.provenance.sourceIdentity),
+        pathMappings: structuredClone(projection.provenance.pathMappings),
+        portableEvidenceId: input.portableEvidence.evidenceId,
+        portablePayloadDigest: input.portableEvidence.content.payloadDigest,
+        sourceExportId: importedFrom.sourceExportId,
+        sourcePayloadDigest: importedFrom.sourcePayloadDigest,
+        targetProjectId,
+        ownerUserId: input.ownerUserId,
+        state: 'published',
+        graphPublicationRequired: Boolean(
+          initial.metadata.portabilityPublicationBarrierV1,
+        ),
+        publishedAt: Number(publication.publishedAt),
+      };
+    }
+    requireImportedSession(false);
+    const anchor = this.getMessageById(
+      importedSessionId,
+      importedAnchorMessageId,
+      { includeRewound: true },
+    );
+    if (!anchor || !isCompletedSessionForkAnchor(anchor)) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: imported anchor must be a completed assistant reply',
+      );
+    }
+    const materializerInput = {
+      portableEvidence: input.portableEvidence,
+      targetProjectId,
+      workspaceBinding: input.workspaceBinding,
+      intentId,
+      sourceSessionId: importedSessionId,
+      proposedChildSessionId: importedSessionId,
+      destinationName,
+    };
+    const materializer = new ImportedPortableAnchorWorkspaceMaterializer({
+      workspaceService: this.isolatedAnchorWorkspaceService,
+    });
+    const rebound = await materializer.rebindEvidence(materializerInput);
+    const scopeBeforeMaterialization = await requireCurrentBinding();
+    const sourceIdentity = forkWorkspaceSourceIdentity(scopeBeforeMaterialization);
+    const existingEvidence = this.sessionForkWorkspaceRepo.getAnchorEvidence(
+      importedSessionId,
+      importedAnchorMessageId,
+      input.ownerUserId,
+    );
+    if (
+      existingEvidence?.status === 'complete'
+      && existingEvidence.evidenceDigest !== rebound.evidence.manifest.evidenceDigest
+    ) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_EVIDENCE_CONFLICT: imported anchor is already bound to different evidence',
+      );
+    }
+    const evidenceRecord = this.sessionForkWorkspaceRepo.recordAnchorEvidence({
+      sourceSessionId: importedSessionId,
+      anchorMessageId: importedAnchorMessageId,
+      ownerUserId: input.ownerUserId,
+      projectId: targetProjectId,
+      workspaceScopeVersion: scopeBeforeMaterialization.version,
+      sourceIdentityDigest: digestWorkspaceValue(sourceIdentity),
+      sourceIdentity,
+      messageDigest: digestSessionForkAnchorMessage(anchor),
+      repositoryRoot: rebound.repositoryRoot,
+      evidence: rebound.evidence,
+      status: 'complete',
+      summary: {
+        importedPortableEvidenceId: input.portableEvidence.evidenceId,
+        portablePayloadDigest: input.portableEvidence.content.payloadDigest,
+      },
+      now: input.now,
+    });
+    const prepared = await materializer.materialize(materializerInput);
+    const currentScope = await requireCurrentBinding();
+    const latest = requireImportedSession(false);
+    const lineage = latest.metadata.forkLineage;
+    const forkId = lineage && typeof lineage === 'object' && !Array.isArray(lineage)
+      && typeof (lineage as Record<string, unknown>).forkId === 'string'
+      ? String((lineage as Record<string, unknown>).forkId)
+      : `imported:${importedSessionId}`;
+    return {
+      sessionId: importedSessionId,
+      anchorMessageId: importedAnchorMessageId,
+      forkId,
+      intentId,
+      workspacePath: prepared.workspacePath,
+      evidenceId: evidenceRecord.id,
+      evidenceDigest: prepared.evidenceDigest,
+      workspaceScopeVersion: currentScope.version,
+      sourcePrimaryRoot: rebound.repositoryRoot,
+      baseCommit: prepared.baseCommit,
+      sourceIdentity: forkWorkspaceSourceIdentity(currentScope),
+      pathMappings: rebound.evidence.manifest.pathMappings.map((mapping) => ({
+        sourceId: mapping.sourceId,
+        sourcePath: mapping.sourcePath,
+        sourceRelativePath: mapping.repositoryRelativePath,
+        isolatedRelativePath: mapping.isolatedRelativePath,
+      })),
+      portableEvidenceId: input.portableEvidence.evidenceId,
+      portablePayloadDigest: input.portableEvidence.content.payloadDigest,
+      sourceExportId: importedFrom.sourceExportId,
+      sourcePayloadDigest: importedFrom.sourcePayloadDigest,
+      targetProjectId,
+      ownerUserId: input.ownerUserId,
+      state: 'ready',
+      graphPublicationRequired: Boolean(
+        latest.metadata.portabilityPublicationBarrierV1,
+      ),
+    };
+  }
+
+  async publishPreparedImportedWorkspaceGraph(
+    input: PublishPreparedImportedWorkspaceGraphInput,
+  ): Promise<PublishedImportedIsolatedWorkspace[]> {
+    this.ensureDb();
+    const rawDb = this.db;
+    if (!rawDb) throw new Error('Database not initialized');
+    const targetProjectId = input.targetProjectId.trim();
+    const sourceExportId = input.sourceExportId.trim();
+    if (!targetProjectId || !sourceExportId || input.sessions.length === 0) {
+      throw new Error('IMPORTED_WORKSPACE_GRAPH_INVALID: import graph identity is required');
+    }
+    const sessionIds = input.sessions.map((session) => session.sessionId.trim());
+    const workspaceSessionIds = input.workspaces.map((workspace) => workspace.sessionId.trim());
+    if (
+      sessionIds.some((sessionId) => !sessionId)
+      || new Set(sessionIds).size !== sessionIds.length
+      || workspaceSessionIds.some((sessionId) => !sessionId)
+      || new Set(workspaceSessionIds).size !== workspaceSessionIds.length
+    ) {
+      throw new Error('IMPORTED_WORKSPACE_GRAPH_INVALID: graph session identities must be unique');
+    }
+    const durableGraphRequired = input.workspaces.some(
+      (workspace) => workspace.graphPublicationRequired,
+    ) || sessionIds.some((sessionId) => {
+      const row = rawDb.prepare(`
+        SELECT metadata FROM sessions WHERE id = ? LIMIT 1
+      `).get(sessionId) as { metadata: string | null } | undefined;
+      const metadata = parseJsonValue(row?.metadata);
+      return Boolean(
+        metadata
+        && typeof metadata === 'object'
+        && !Array.isArray(metadata)
+        && Object.prototype.hasOwnProperty.call(
+          metadata,
+          'portabilityPublicationBarrierV1',
+        ),
+      );
+    });
+    if (durableGraphRequired) {
+      const importId = input.importId?.trim();
+      if (!importId) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_GRAPH_INVALID: a staged import graph requires its durable import id',
+        );
+      }
+      const importRow = rawDb.prepare(`
+        SELECT target_owner_scope_id, target_project_id, source_export_id, plan_json
+        FROM session_fork_portability_imports
+        WHERE import_id = ?
+        LIMIT 1
+      `).get(importId) as {
+        target_owner_scope_id: string;
+        target_project_id: string;
+        source_export_id: string;
+        plan_json: string;
+      } | undefined;
+      const storedPlan = parseJsonValue(importRow?.plan_json);
+      const storedResult = storedPlan
+        && typeof storedPlan === 'object'
+        && !Array.isArray(storedPlan)
+        && (storedPlan as Record<string, unknown>).schema === 'neo.session-fork-import-plan'
+        ? (storedPlan as Record<string, unknown>).result
+        : storedPlan;
+      const storedSessionMap = storedResult
+        && typeof storedResult === 'object'
+        && !Array.isArray(storedResult)
+        ? (storedResult as Record<string, unknown>).sessionIdMap
+        : null;
+      const storedSessionIds = storedSessionMap
+        && typeof storedSessionMap === 'object'
+        && !Array.isArray(storedSessionMap)
+        ? Object.values(storedSessionMap as Record<string, unknown>)
+          .filter((value): value is string => typeof value === 'string')
+          .sort()
+        : [];
+      const expectedOwnerScopeId = input.ownerUserId
+        ?? LOCAL_SESSION_FORK_OWNER_SCOPE_ID;
+      if (
+        !importRow
+        || importRow.target_owner_scope_id !== expectedOwnerScopeId
+        || importRow.target_project_id !== targetProjectId
+        || importRow.source_export_id !== sourceExportId
+        || JSON.stringify(storedSessionIds) !== JSON.stringify([...sessionIds].sort())
+      ) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_GRAPH_INVALID: session list does not close the durable import graph',
+        );
+      }
+    }
+    const expectedIsolated = input.sessions
+      .filter((session) => session.workspaceMode === 'isolated_at_anchor')
+      .map((session) => session.sessionId)
+      .sort();
+    if (
+      expectedIsolated.length === 0
+      || JSON.stringify([...workspaceSessionIds].sort()) !== JSON.stringify(expectedIsolated)
+    ) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_GRAPH_INVALID: every isolated session requires one sealed workspace',
+      );
+    }
+    for (const workspace of input.workspaces) {
+      if (
+        workspace.ownerUserId !== input.ownerUserId
+        || workspace.targetProjectId !== targetProjectId
+        || workspace.sourceExportId !== sourceExportId
+        || (
+          input.sourcePayloadDigest
+          && workspace.sourcePayloadDigest !== input.sourcePayloadDigest
+        )
+      ) {
+        throw new Error('IMPORTED_WORKSPACE_GRAPH_INVALID: prepared workspace crossed its import boundary');
+      }
+    }
+
+    const { getProjectService } = await import('../project/projectService');
+    const currentScope = getProjectService().getWorkspaceScope(targetProjectId);
+    if (
+      currentScope?.roots.length !== 1
+      || currentScope.roots[0]?.role !== 'primary'
+    ) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: current Project is not the trusted single-root binding',
+      );
+    }
+    const canonicalPrimaryRoot = fs.realpathSync.native(currentScope.primaryRoot);
+    for (const workspace of input.workspaces) {
+      if (
+        currentScope.version !== workspace.workspaceScopeVersion
+        || fs.realpathSync.native(workspace.sourcePrimaryRoot) !== canonicalPrimaryRoot
+      ) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: prepared workspace Project binding drifted',
+        );
+      }
+      if (workspace.state === 'ready') {
+        const recovered = await this.isolatedAnchorWorkspaceService.recoverIntent(
+          workspace.intentId,
+          { strategy: 'resume' },
+        );
+        if (
+          recovered.outcome !== 'ready'
+          || recovered.workspacePath !== workspace.workspacePath
+        ) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_SEAL_INVALID: ready workspace ${workspace.sessionId} failed verification`,
+          );
+        }
+      }
+    }
+
+    const readSession = (sessionId: string) => rawDb.prepare(`
+      SELECT id, user_id, project_id, origin, metadata, agent_engine, read_only,
+             working_directory, workspace, is_deleted, status
+      FROM sessions
+      WHERE id = ?
+      LIMIT 1
+    `).get(sessionId) as {
+      id: string;
+      user_id: string | null;
+      project_id: string | null;
+      origin: string | null;
+      metadata: string | null;
+      agent_engine: string | null;
+      read_only: number;
+      working_directory: string | null;
+      workspace: string | null;
+      is_deleted: number;
+      status: string;
+    } | undefined;
+    const parseSessionBoundary = (sessionId: string) => {
+      const row = readSession(sessionId);
+      const origin = parseJsonValue(row?.origin);
+      const metadata = parseJsonValue(row?.metadata);
+      const portability = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>).portabilityImportV2
+        : null;
+      const portableWorkspace = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>).portableWorkspaceV2
+        : null;
+      const actualWorkspaceMode = portableWorkspace
+        && typeof portableWorkspace === 'object'
+        && !Array.isArray(portableWorkspace)
+        && (portableWorkspace as Record<string, unknown>).mode === 'isolated_at_anchor'
+        ? 'isolated_at_anchor'
+        : 'shared_current';
+      const target = input.sessions.find((candidate) => candidate.sessionId === sessionId);
+      if (
+        row?.user_id !== input.ownerUserId
+        || row.project_id !== targetProjectId
+        || Number(row.is_deleted) !== 0
+        || row.status !== 'idle'
+        || !origin
+        || typeof origin !== 'object'
+        || Array.isArray(origin)
+        || (origin as Record<string, unknown>).kind !== 'import'
+        || !metadata
+        || typeof metadata !== 'object'
+        || Array.isArray(metadata)
+        || !portability
+        || typeof portability !== 'object'
+        || Array.isArray(portability)
+        || (portability as Record<string, unknown>).sourceExportId !== sourceExportId
+        || (
+          input.sourcePayloadDigest
+          && (portability as Record<string, unknown>).sourcePayloadDigest
+            !== input.sourcePayloadDigest
+        )
+        || target?.workspaceMode !== actualWorkspaceMode
+      ) {
+        throw new Error(
+          `IMPORTED_WORKSPACE_GRAPH_INVALID: session ${sessionId} crossed its import boundary`,
+        );
+      }
+      return { row, metadata: metadata as Record<string, unknown> };
+    };
+
+    for (const workspace of input.workspaces.filter((candidate) => candidate.state === 'published')) {
+      const { row, metadata } = parseSessionBoundary(workspace.sessionId);
+      const portable = metadata.portableWorkspaceV2 as PortableSessionWorkspaceV2;
+      const projection = projectChildWorkspaceScope(metadata);
+      const publication = metadata.importedWorkspacePublicationV1;
+      if (
+        projection?.verification.forkId !== workspace.forkId
+        || projection.verification.intentId !== workspace.intentId
+        || projection.verification.evidenceId !== workspace.evidenceId
+        || row.working_directory !== workspace.workspacePath
+      ) {
+        throw new Error(
+          `IMPORTED_WORKSPACE_PUBLICATION_DRIFT: session ${workspace.sessionId} projection changed`,
+        );
+      }
+      readPublishedImportedPortableWorkspace(rawDb, {
+        fork: {
+          id: workspace.forkId,
+          child_session_id: workspace.sessionId,
+          anchor_child_message_id: workspace.anchorMessageId,
+          requireLineage: Boolean(metadata.forkLineage),
+        },
+        session: row,
+        metadata,
+        importedPortable: portable,
+        publication,
+      });
+    }
+
+    const now = input.now ?? Date.now();
+    const workspaceBySession = new Map(
+      input.workspaces.map((workspace) => [workspace.sessionId, workspace]),
+    );
+    const publish = rawDb.transaction(() => {
+      const ownerPredicate = input.ownerUserId === null
+        ? 'user_id IS NULL'
+        : 'user_id = ?';
+      const ownerParams = input.ownerUserId === null ? [] : [input.ownerUserId];
+      for (const target of input.sessions) {
+        const { row, metadata } = parseSessionBoundary(target.sessionId);
+        const workspace = workspaceBySession.get(target.sessionId);
+        const barrier = metadata.portabilityPublicationBarrierV1;
+        if (barrier !== undefined && (
+          typeof barrier !== 'object'
+          || barrier === null
+          || Array.isArray(barrier)
+          || (barrier as Record<string, unknown>).sourceExportId !== sourceExportId
+          || (
+            input.sourcePayloadDigest
+            && (barrier as Record<string, unknown>).sourcePayloadDigest
+              !== input.sourcePayloadDigest
+          )
+          || (barrier as Record<string, unknown>).workspaceMode !== target.workspaceMode
+          || Boolean((barrier as Record<string, unknown>).desiredReadOnly) !== target.readOnly
+        )) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_GRAPH_INVALID: session ${target.sessionId} publication barrier drifted`,
+          );
+        }
+
+        if (workspace?.state === 'published') {
+          const intentRow = rawDb.prepare(`
+            SELECT status, advertisable, source_session_id, proposed_child_session_id,
+                   workspace_path, evidence_digest
+            FROM session_fork_workspace_intents
+            WHERE intent_id = ?
+            LIMIT 1
+          `).get(workspace.intentId) as Record<string, unknown> | undefined;
+          if (
+            intentRow?.status !== 'advertised'
+            || Number(intentRow.advertisable) !== 1
+            || intentRow.source_session_id !== workspace.sessionId
+            || intentRow.proposed_child_session_id !== workspace.sessionId
+            || intentRow.workspace_path !== workspace.workspacePath
+            || intentRow.evidence_digest !== workspace.evidenceDigest
+            || Number(row.read_only) !== 0
+          ) {
+            throw new Error(
+              `IMPORTED_WORKSPACE_PUBLICATION_DRIFT: session ${workspace.sessionId} is incomplete`,
+            );
+          }
+          continue;
+        }
+
+        if (!workspace) {
+          if (barrier === undefined) {
+            if (
+              Number(row.read_only) !== (target.readOnly ? 1 : 0)
+              || row.working_directory !== null
+              || row.workspace !== null
+            ) {
+              throw new Error(
+                `IMPORTED_WORKSPACE_PUBLICATION_DRIFT: session ${target.sessionId} is incomplete`,
+              );
+            }
+            continue;
+          }
+          if (
+            Number(row.read_only) !== 1
+            || row.working_directory !== null
+            || row.workspace !== null
+          ) {
+            throw new Error(
+              `IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: session ${target.sessionId} is not hidden`,
+            );
+          }
+          const {
+            portabilityPublicationBarrierV1: _publicationBarrier,
+            ...publishedMetadata
+          } = metadata;
+          const sessionUpdate = rawDb.prepare(`
+            UPDATE sessions
+            SET metadata = ?, read_only = ?, updated_at = ?, synced_at = NULL
+            WHERE id = ? AND ${ownerPredicate} AND project_id = ?
+              AND metadata = ? AND read_only = 1
+              AND working_directory IS NULL AND workspace IS NULL
+              AND is_deleted = 0 AND status = 'idle'
+          `).run(
+            JSON.stringify(publishedMetadata),
+            target.readOnly ? 1 : 0,
+            now,
+            target.sessionId,
+            ...ownerParams,
+            targetProjectId,
+            row.metadata,
+          );
+          if (sessionUpdate.changes !== 1) {
+            throw new Error(
+              `IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: session ${target.sessionId} changed`,
+            );
+          }
+          continue;
+        }
+
+        if (
+          Number(row.read_only) !== 1
+          || row.working_directory !== null
+          || row.workspace !== null
+        ) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: session ${workspace.sessionId} is not hidden`,
+          );
+        }
+        const intentRow = rawDb.prepare(`
+          SELECT revision, status, advertisable, source_session_id,
+                 proposed_child_session_id, workspace_path, evidence_digest, intent_json
+          FROM session_fork_workspace_intents
+          WHERE intent_id = ?
+          LIMIT 1
+        `).get(workspace.intentId) as {
+          revision: number;
+          status: string;
+          advertisable: number;
+          source_session_id: string;
+          proposed_child_session_id: string;
+          workspace_path: string;
+          evidence_digest: string;
+          intent_json: string;
+        } | undefined;
+        if (
+          intentRow?.status !== 'ready'
+          || Number(intentRow.advertisable) !== 1
+          || intentRow.source_session_id !== workspace.sessionId
+          || intentRow.proposed_child_session_id !== workspace.sessionId
+          || intentRow.workspace_path !== workspace.workspacePath
+          || intentRow.evidence_digest !== workspace.evidenceDigest
+        ) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_INTENT_CONFLICT: ready intent ${workspace.intentId} changed`,
+          );
+        }
+        const storedIntent = JSON.parse(intentRow.intent_json) as Record<string, unknown>;
+        const nextRevision = Number(intentRow.revision) + 1;
+        const intentUpdate = rawDb.prepare(`
+          UPDATE session_fork_workspace_intents
+          SET revision = ?, intent_json = ?, status = 'advertised',
+              advertisable = 1, updated_at = ?
+          WHERE intent_id = ? AND revision = ? AND status = 'ready' AND advertisable = 1
+        `).run(
+          nextRevision,
+          JSON.stringify({
+            ...storedIntent,
+            revision: nextRevision,
+            status: 'advertised',
+            advertisable: true,
+            updatedAt: now,
+          }),
+          now,
+          workspace.intentId,
+          intentRow.revision,
+        );
+        const {
+          portabilityPublicationBarrierV1: _publicationBarrier,
+          ...baseMetadata
+        } = metadata;
+        const projection = {
+          version: 1,
+          forkId: workspace.forkId,
+          intentId: workspace.intentId,
+          evidenceId: workspace.evidenceId,
+          projectId: targetProjectId,
+          sourceWorkspaceScopeVersion: workspace.workspaceScopeVersion,
+          sourcePrimaryRoot: workspace.sourcePrimaryRoot,
+          isolatedPrimaryRoot: workspace.workspacePath,
+          baseCommit: workspace.baseCommit,
+          evidenceDigest: workspace.evidenceDigest,
+          sourceIdentity: workspace.sourceIdentity,
+          pathMappings: workspace.pathMappings,
+        };
+        const publishedMetadata = {
+          ...baseMetadata,
+          forkWorkspaceScopeV1: projection,
+          importedWorkspacePublicationV1: {
+            version: 1,
+            intentId: workspace.intentId,
+            evidenceId: workspace.evidenceId,
+            portableEvidenceId: workspace.portableEvidenceId,
+            portablePayloadDigest: workspace.portablePayloadDigest,
+            evidenceDigest: workspace.evidenceDigest,
+            workspaceScopeVersion: workspace.workspaceScopeVersion,
+            publishedAt: now,
+          },
+        };
+        const engine = parseJsonValue(row.agent_engine);
+        const publishedEngine = {
+          ...(engine && typeof engine === 'object' && !Array.isArray(engine)
+            ? engine as Record<string, unknown>
+            : {}),
+          cwd: workspace.workspacePath,
+        };
+        const sessionUpdate = rawDb.prepare(`
+          UPDATE sessions
+          SET working_directory = ?, workspace = ?, metadata = ?, agent_engine = ?,
+              read_only = 0, updated_at = ?, synced_at = NULL
+          WHERE id = ? AND ${ownerPredicate} AND project_id = ?
+            AND metadata = ? AND agent_engine = ?
+            AND read_only = 1 AND working_directory IS NULL AND workspace IS NULL
+            AND is_deleted = 0 AND status = 'idle'
+        `).run(
+          workspace.workspacePath,
+          workspace.workspacePath,
+          JSON.stringify(publishedMetadata),
+          JSON.stringify(publishedEngine),
+          now,
+          workspace.sessionId,
+          ...ownerParams,
+          targetProjectId,
+          row.metadata,
+          row.agent_engine,
+        );
+        if (intentUpdate.changes !== 1 || sessionUpdate.changes !== 1) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: session ${workspace.sessionId} changed`,
+          );
+        }
+      }
+    });
+    publish.immediate();
+    return input.workspaces.map((workspace) => ({
+      sessionId: workspace.sessionId,
+      intentId: workspace.intentId,
+      workspacePath: workspace.workspacePath,
+      evidenceDigest: workspace.evidenceDigest,
+      workspaceScopeVersion: workspace.workspaceScopeVersion,
+      publishedAt: workspace.state === 'published'
+        ? workspace.publishedAt ?? now
+        : now,
+    }));
+  }
+
+  async publishImportedIsolatedWorkspace(
+    input: PublishImportedIsolatedWorkspaceInput,
+  ): Promise<PublishedImportedIsolatedWorkspace> {
+    const prepared = await this.prepareImportedIsolatedWorkspace(input);
+    if (prepared.graphPublicationRequired) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_GRAPH_INVALID: staged import workspaces require graph publication',
+      );
+    }
+    const [published] = await this.publishPreparedImportedWorkspaceGraph({
+      sourceExportId: prepared.sourceExportId,
+      ...(prepared.sourcePayloadDigest
+        ? { sourcePayloadDigest: prepared.sourcePayloadDigest }
+        : {}),
+      ownerUserId: input.ownerUserId,
+      targetProjectId: input.targetProjectId,
+      sessions: [{
+        sessionId: prepared.sessionId,
+        readOnly: false,
+        workspaceMode: 'isolated_at_anchor',
+      }],
+      workspaces: [prepared],
+      now: input.now,
+    });
+    if (!published) {
+      throw new Error('IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: graph returned no workspace');
+    }
+    return published;
+  }
+  enqueueSessionForkOutbound(
+    input: import('./repositories').EnqueueSessionForkOutboundInput,
+  ): import('../../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.enqueueOutbound(input);
+  }
+  flushSessionForkOutbound(
+    syncEnvelopeId: string,
+    ownerScopeId: string,
+    projectId: string,
+    options: import('./repositories').FlushSessionForkOutboundOptions = {},
+  ): Promise<import('../../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord> {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.flushOutbound(
+      syncEnvelopeId,
+      ownerScopeId,
+      projectId,
+      options,
+    );
+  }
+  ingestSessionForkInbound(
+    input: import('./repositories').IngestSessionForkInboundInput,
+  ): import('../../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.ingestInbound(input);
+  }
+  applySessionForkInbound(
+    syncEnvelopeId: string,
+    ownerScopeId: string,
+    projectId: string,
+    now?: number,
+  ): import('../../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.applyInbound(
+      syncEnvelopeId,
+      ownerScopeId,
+      projectId,
+      now,
+    );
+  }
+  getSessionForkSyncRecord(
+    direction: 'outbox' | 'inbox',
+    syncEnvelopeId: string,
+    ownerScopeId: string,
+    projectId: string,
+  ): import('../../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord | null {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.getSyncRecord(
+      direction,
+      syncEnvelopeId,
+      ownerScopeId,
+      projectId,
+    );
+  }
+  searchDurableSessionForks(
+    exportId: string,
+    ownerScopeId: string,
+    projectId: string,
+    query: string,
+  ): import('../../../shared/contract/sessionForkPortability').ForkSearchDocument[] {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.searchDurableForks(
+      exportId,
+      ownerScopeId,
+      projectId,
+      query,
+    );
+  }
+  getDurableSessionForkTree(
+    exportId: string,
+    ownerScopeId: string,
+    projectId: string,
+  ): import('../../../shared/contract/sessionForkPortability').ForkTreeNodeProjection {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.getDurableForkTree(
+      exportId,
+      ownerScopeId,
+      projectId,
+    );
+  }
+  getDurableSessionForkNeighborhood(
+    exportId: string,
+    ownerScopeId: string,
+    projectId: string,
+    centerSessionId: string,
+    radius?: number,
+  ): import('../../../shared/contract/sessionForkPortability').ForkNeighborhoodProjection {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.getDurableForkNeighborhood(
+      exportId,
+      ownerScopeId,
+      projectId,
+      centerSessionId,
+      radius,
+    );
   }
   getUnsyncedSessions(limit: number = 1000): import('./repositories').StoredSession[] {
     this.ensureDb();
@@ -839,10 +2715,6 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   markMessagesSynced(messageIds: string[]): void {
     this.ensureDb();
     this.sessionRepo.markMessagesSynced(messageIds);
-  }
-  truncateMessagesAfter(sessionId: string, messageId: string): number {
-    this.ensureDb();
-    return this.sessionRepo.truncateMessagesAfter(sessionId, messageId);
   }
   saveTodos(sessionId: string, todos: TodoItem[], updatedAt?: number): void {
     this.ensureDb();
@@ -1231,15 +3103,22 @@ export async function initDatabase(): Promise<DatabaseService> {
   await db.initialize();
   // P0-2：存量 session 按 workspace 自动归桶（幂等，仅当存在未归桶 session 时执行）。
   // 懒加载 ProjectService 避免初始化期循环依赖。
+  let projectBoundaryReady = false;
   try {
     const { getProjectService } = await import('../project/projectService');
     const backfillStart = performance.now();
     const migrated = getProjectService().backfillSessions(Date.now());
+    projectBoundaryReady = true;
     if (migrated > 0) {
       logger.info(`[DatabaseService] P0-2 backfill: ${migrated} 个存量 session 已归桶到项目 (${Math.round(performance.now() - backfillStart)}ms)`);
     }
   } catch (err) {
     logger.warn('[DatabaseService] P0-2 backfill 失败（不阻塞启动）:', err instanceof Error ? err.message : String(err));
+  }
+  if (projectBoundaryReady) {
+    db.backfillConversationBranchLedger();
+  } else {
+    logger.warn('[DatabaseService] immutable conversation backfill deferred: Project boundary is unavailable');
   }
   return db;
 }

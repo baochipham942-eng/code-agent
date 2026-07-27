@@ -3,13 +3,19 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
-import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
-const invoke = vi.hoisted(() => vi.fn());
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  invokeDomain: vi.fn(),
+}));
 const toastError = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { invoke },
+  default: {
+    invoke: mocks.invoke,
+    invokeDomain: mocks.invokeDomain,
+  },
 }));
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: { error: toastError },
@@ -46,10 +52,11 @@ const turn = {
 } satisfies TraceTurn;
 
 beforeEach(() => {
-  invoke.mockReset();
+  mocks.invoke.mockReset();
+  mocks.invokeDomain.mockReset();
   toastError.mockReset();
   useSessionStore.setState({ currentSessionId: 'session-1' });
-  invoke.mockResolvedValueOnce([
+  mocks.invoke.mockResolvedValueOnce([
     { id: 'cp-1', messageId: 'message-1', timestamp: 120, fileCount: 1 },
   ]);
 });
@@ -58,7 +65,13 @@ afterEach(cleanup);
 
 describe('TurnDiffSummary undo confirmation', () => {
   it('waits for confirmation before rewinding all changed files', async () => {
-    invoke.mockResolvedValueOnce({ success: true, filesRestored: 1 });
+    mocks.invokeDomain.mockResolvedValueOnce({
+      success: true,
+      restoredFileCount: 1,
+      deletedFileCount: 0,
+      workspaceChanged: true,
+      conversationChanged: false,
+    });
     render(<TurnDiffSummary turn={turn} />);
 
     const undo = await screen.findByRole('button', { name: '撤销' });
@@ -66,24 +79,34 @@ describe('TurnDiffSummary undo confirmation', () => {
     fireEvent.click(undo);
 
     expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invokeDomain).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: '取消' }));
-    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invokeDomain).not.toHaveBeenCalled();
 
     fireEvent.click(undo);
     fireEvent.click(screen.getByRole('button', { name: /撤销变更/ }));
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith(
-        IPC_CHANNELS.CHECKPOINT_REWIND,
-        'session-1',
-        'message-1',
+      expect(mocks.invokeDomain).toHaveBeenCalledWith(
+        IPC_DOMAINS.SESSION,
+        'restoreWorkspaceFilesAtCheckpoint',
+        {
+          sessionId: 'session-1',
+          checkpointMessageId: 'message-1',
+        },
       );
     });
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.CHECKPOINT_REWIND,
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it('keeps a retry action and reports the rewind error', async () => {
-    invoke.mockResolvedValueOnce({ success: false, filesRestored: 0, error: 'disk busy' });
+    mocks.invokeDomain.mockRejectedValueOnce(new Error('disk busy'));
     render(<TurnDiffSummary turn={turn} />);
 
     const undo = await screen.findByRole('button', { name: '撤销' });

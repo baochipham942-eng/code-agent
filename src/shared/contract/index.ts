@@ -18,6 +18,10 @@ export * from './authInventory';
 
 // Domain types
 export * from './session';
+export * from './sessionFork';
+export * from './sessionForkPortability';
+export * from './conversationHistory';
+export * from './sessionRewind';
 export * from './project';
 export * from './workspace';
 export * from './workspacePreview';

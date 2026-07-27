@@ -14,7 +14,10 @@ export function getKeybindingPlatformFromNodePlatform(platform: NodeJS.Platform 
 
 export function getCurrentKeybindingPlatform(): KeybindingPlatform {
   if (typeof navigator === 'undefined') return 'linux';
-  const platform = navigator.platform.toLowerCase();
+  // navigator.platform 是 deprecated API，新版 jsdom 已不提供，浏览器也在逐步移除；
+  // 直接 .toLowerCase() 会 TypeError（2026-07-27 侧栏接入平台判定时真炸过 12 条测试）。
+  // 退到 userAgent，再退到 linux。
+  const platform = (navigator.platform || navigator.userAgent || '').toLowerCase();
   if (platform.includes('mac')) return 'darwin';
   if (platform.includes('win')) return 'win32';
   return 'linux';

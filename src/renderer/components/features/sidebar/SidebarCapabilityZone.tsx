@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Clock3, ChevronRight, BookOpen, Boxes } from 'lucide-react';
+import { Clock3, BookOpen, Boxes } from 'lucide-react';
 import { useCronStore } from '../../../stores/cronStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -95,7 +95,6 @@ export const SidebarCapabilityZone: React.FC = () => {
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.capabilityHub}
         </span>
-        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
       {/* Batch 2 L3: 资料库槽位点亮 */}
       <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
@@ -110,7 +109,6 @@ export const SidebarCapabilityZone: React.FC = () => {
         <span className="min-w-0 flex-1 truncate text-sm text-zinc-300 group-hover:text-zinc-100">
           {cz.library}
         </span>
-        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
       <button /* ds-allow:button: 侧栏能力区单行列表行（裸图标+标题+chevron 左对齐布局），Button primitive 是居中动作按钮形状，变体不适配列表行 */
         type="button"
@@ -135,7 +133,6 @@ export const SidebarCapabilityZone: React.FC = () => {
         {/* 全栏唯一的两处彩色（这个角标 + running 圆点）= 要你处理的地方；
             裸数字自己说不清是什么，读屏靠 aria-label。 */}
         {pendingCount > 0 && <Badge className="border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-300" data-testid="sidebar-capability-automation-pending" role="status" aria-label={pendingLabel} title={pendingLabel}>{pendingCount}</Badge>}
-        <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-zinc-600 group-hover:text-zinc-400" />
       </button>
     </div>
   );

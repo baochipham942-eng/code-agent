@@ -14,6 +14,13 @@ interface AgentRunControllerDeps {
   runHandle?: RunHandle;
   logger: WebRouteLogger;
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
+  /**
+   * 这一轮没有直连客户端（队列抽干跑的就是这种：res 是个丢弃水槽）时置 true。
+   * 事件除了写进 res，还要走全局 broadcast，否则正连着的前端一个字都收不到——
+   * 消息照样落库、模型照样计费，但转录区不长东西、排队卡片也不消失。
+   * 直连轮不能开：客户端已经从自己的响应流拿到了，再广播就是重复投递。
+   */
+  mirrorToBroadcast?: boolean;
 }
 
 function isTerminalErrorEvent(event: AgentEvent): boolean {
@@ -67,6 +74,9 @@ export class AgentRunController {
   }
 
   emitSSE(event: string, data: unknown): void {
+    if (this.deps.mirrorToBroadcast) {
+      broadcastSSE(event, data);
+    }
     if (!this.canWriteSSE()) return;
     try {
       sendSSE(this.deps.res, event, data);

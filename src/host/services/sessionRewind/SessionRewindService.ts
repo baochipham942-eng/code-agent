@@ -85,8 +85,7 @@ export class SessionRewindService {
       sessionId: request.sessionId,
       rewindId: result.rewindId,
       draft: {
-        content: result.anchorMessage.content,
-        attachments: result.anchorMessage.attachments,
+        content: '',
       },
       activeMessages: result.activeMessages,
       hiddenMessageCount: result.hiddenMessageCount,

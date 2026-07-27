@@ -1,8 +1,8 @@
 // ============================================================================
 // doctorStore - 全量诊断（Doctor）前端状态
-// - 启动后静默快检结果存这里，侧栏徽标与诊断弹层共用同一份报告
-// - 弹层打开时复用已有报告；无报告则自动跑一次全量
-// - 错误不抛出：写 lastError 由弹层内联展示（静默快检失败则完全吞掉，不打扰）
+// - 启动后静默快检结果存这里，侧栏徽标与设置页「诊断」页共用同一份报告
+// - 诊断页（DoctorSettings）进入时复用已有报告；无报告则由页面自动跑一次全量
+// - 错误不抛出：写 lastError 由页面内联展示（静默快检失败则完全吞掉，不打扰）
 // ============================================================================
 
 import { create } from 'zustand';
@@ -21,18 +21,15 @@ export const DOCTOR_STARTUP_CHECK_DELAY_MS = 10_000;
 
 interface DoctorState {
   report: DoctorReport | null;
-  /** 全量 / 单类重跑进行中（弹层内展示 loading） */
+  /** 全量 / 单类重跑进行中（诊断页内展示 loading） */
   isRunning: boolean;
   /** 正在单类重检的分类；null 表示不是单类重检 */
   runningCategory: DoctorCategory | null;
-  isDialogOpen: boolean;
   /** 最近一次手动/全量运行的错误信息；成功或新一轮运行时清空 */
   lastError: string | null;
   /** 启动静默快检是否已跑过（不管结果如何只跑一次） */
   startupCheckDone: boolean;
 
-  openDialog: () => void;
-  closeDialog: () => void;
   /** 全量重跑 */
   runFull: () => Promise<void>;
   /** 单类重检，结果合并回整报告 */
@@ -53,19 +50,8 @@ export const useDoctorStore = create<DoctorState>()((set, get) => ({
   report: null,
   isRunning: false,
   runningCategory: null,
-  isDialogOpen: false,
   lastError: null,
   startupCheckDone: false,
-
-  openDialog: () => {
-    set({ isDialogOpen: true });
-    // 弹层打开时复用已有报告（如启动静默快检的结果）；没有则自动跑全量
-    if (!get().report && !get().isRunning) {
-      void get().runFull();
-    }
-  },
-
-  closeDialog: () => set({ isDialogOpen: false }),
 
   runFull: async () => {
     if (get().isRunning) return;

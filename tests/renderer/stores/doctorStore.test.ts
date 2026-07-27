@@ -39,7 +39,6 @@ beforeEach(() => {
     report: null,
     isRunning: false,
     runningCategory: null,
-    isDialogOpen: false,
     lastError: null,
     startupCheckDone: false,
   });
@@ -130,22 +129,6 @@ describe('runSilentStartupCheck（启动静默快检）', () => {
     invokeDomainMock.mockResolvedValue(makeReport({ summary: { pass: 0, warn: 0, fail: 3, skip: 0 } }));
     await useDoctorStore.getState().runSilentStartupCheck();
     expect(useDoctorStore.getState().report).toEqual(manual);
-  });
-});
-
-describe('openDialog（弹层打开复用/自动跑）', () => {
-  it('无报告时自动跑全量', async () => {
-    invokeDomainMock.mockResolvedValue(makeReport());
-    useDoctorStore.getState().openDialog();
-    expect(useDoctorStore.getState().isDialogOpen).toBe(true);
-    await vi.waitFor(() => expect(invokeDomainMock).toHaveBeenCalled());
-  });
-
-  it('已有报告时复用，不重复跑', () => {
-    useDoctorStore.setState({ report: makeReport() });
-    useDoctorStore.getState().openDialog();
-    expect(useDoctorStore.getState().isDialogOpen).toBe(true);
-    expect(invokeDomainMock).not.toHaveBeenCalled();
   });
 });
 

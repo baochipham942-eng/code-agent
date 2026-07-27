@@ -30,7 +30,6 @@ import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { RoleDetailPage } from './components/features/expert/RoleDetailPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
-import { DoctorReportDialog } from './components/features/settings/DoctorReportDialog';
 import { useDoctorStore, DOCTOR_STARTUP_CHECK_DELAY_MS } from './stores/doctorStore';
 import { ModelOnboardingModal } from './components/onboarding/ModelOnboardingModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
@@ -971,9 +970,6 @@ export const App: React.FC = () => {
 
       {/* Force Update Modal - 强制更新，不可关闭 */}
       {isDesktopShellMode() && !isTauriMode() && forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
-
-      {/* 全量诊断面板 - store 驱动，设置区入口与侧栏徽标共用 */}
-      <DoctorReportDialog />
 
       {/* Optional Update Modal - 非强制更新，由左下角入口触发 */}
       {isDesktopShellMode() && showOptionalUpdateModal && optionalUpdateInfo && !optionalUpdateInfo.forceUpdate && (

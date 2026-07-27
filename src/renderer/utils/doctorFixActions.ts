@@ -52,11 +52,11 @@ async function openAppDataDirectory(): Promise<void> {
 }
 
 export interface DoctorFixResult {
-  /** 动作把用户带去了别的界面（设置深链），调用方可据此关掉诊断弹层 */
+  /** 动作把用户带去了别的界面（设置深链会把设置页切到对应 tab） */
   navigatedAway: boolean;
 }
 
-/** 执行 fix 动作。设置深链由调用方决定是否关弹层（navigatedAway 标记）。 */
+/** 执行 fix 动作。设置深链直接切设置页 tab（诊断页同为设置页内页面，无需关弹层）。 */
 export async function runDoctorFix(code: DoctorFixCode): Promise<DoctorFixResult> {
   const action = DOCTOR_FIX_ACTIONS[code];
   switch (action.kind) {

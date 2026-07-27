@@ -24,6 +24,8 @@ import { InputAddMenu } from './InputAddMenu';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
+import { DictationRecordingBar } from './DictationRecordingBar';
+import { useVoiceInput } from '../../../../hooks/useVoiceInput';
 import { LiveVoiceButton } from '../../voice/LiveVoiceButton';
 import { VoiceChrome } from '../../voice/VoiceChrome';
 import { PermissionToggle } from './PermissionToggle';
@@ -598,6 +600,38 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   });
 
   const modelConfig = useAppStore((s) => s.modelConfig);
+
+  // G4 Dictation 录音态：hook 提到 ChatInput 层，录音条（波形铺满输入行）与
+  // 语音按钮共享同一路采集状态。录音条的发送按钮 = 停止录音 + 转写完成后
+  // 自动提交（send-after-transcript）；停止按钮 = 转写后文本落回输入框可编辑。
+  const handleVoiceTranscriptRef = useRef(handleVoiceTranscript);
+  handleVoiceTranscriptRef.current = handleVoiceTranscript;
+  const handleSubmitRef = useRef(handleSubmit);
+  handleSubmitRef.current = handleSubmit;
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const dictationSendAfterTranscriptRef = useRef(false);
+  const voice = useVoiceInput({
+    onTranscript: (text, result) => {
+      const sendAfter = dictationSendAfterTranscriptRef.current;
+      dictationSendAfterTranscriptRef.current = false;
+      handleVoiceTranscriptRef.current(text, result);
+      const transcript = text.trim();
+      if (sendAfter && transcript) {
+        const current = valueRef.current.trimEnd();
+        const merged = current ? `${current}\n\n${transcript}` : transcript;
+        void handleSubmitRef.current(undefined, { content: merged });
+      }
+    },
+  });
+  const isDictationActive = voice.status === 'recording' || voice.status === 'transcribing';
+  // 录音失败（如太短）不会触发 onTranscript——滞留的 send-after 旗标必须在
+  // 出错时清掉，否则下一次成功转写会被意外自动发送。
+  useEffect(() => {
+    if (voice.status === 'error' || voice.status === 'idle') {
+      dictationSendAfterTranscriptRef.current = false;
+    }
+  }, [voice.status]);
   // 累计费用已收进 ContextUsagePill 的 hover 面板（底栏收敛拍板 2026-07-26）：
   // 圆环 hover 展开时与上下文用量同面板展示，底栏不再常驻成本数字。
   // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
@@ -865,24 +899,40 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           )}
           {/* Neo Tag 轻量化重设计:@neo = 正常输入,composer 不再显示 "work card" 预览 chip
               (产品负责人 2026-07-02)。neoTagInvocation 仍用于压掉文件 mention 弹窗噪音。 */}
-          <InputArea
-            ref={inputAreaRef}
-            value={value}
-            onChange={handleValueChange}
-            onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
-            onFileSelect={handleFileSelect}
-            onImagePaste={handleImagePaste}
-            disabled={disabled && !isProcessing}
-            hasAttachments={attachments.length > 0}
-            hasMessages={hasMessages}
-            isFocused={isFocused}
-            onFocusChange={setIsFocused}
-            placeholder={resolvedPlaceholder}
-            onHistoryPrev={getPreviousInput}
-            onHistoryNext={getNextInput}
-            onHistoryReset={resetInputHistoryIndex}
-            onAutocompleteKeyDown={handleAutocompleteKeyDown}
-          />
+          {/* G4：Dictation 录音中输入行换成录音条（波形 + 计时 + 停止/发送），
+              停止后文本落回输入框；InputArea 卸载不丢草稿（value 在本层 state） */}
+          {isDictationActive ? (
+            <DictationRecordingBar
+              status={voice.status}
+              duration={voice.duration}
+              inputLevel={voice.inputLevel}
+              silenceWarning={voice.silenceWarning}
+              onStop={voice.stop}
+              onSend={() => {
+                dictationSendAfterTranscriptRef.current = true;
+                voice.stop();
+              }}
+            />
+          ) : (
+            <InputArea
+              ref={inputAreaRef}
+              value={value}
+              onChange={handleValueChange}
+              onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
+              onFileSelect={handleFileSelect}
+              onImagePaste={handleImagePaste}
+              disabled={disabled && !isProcessing}
+              hasAttachments={attachments.length > 0}
+              hasMessages={hasMessages}
+              isFocused={isFocused}
+              onFocusChange={setIsFocused}
+              placeholder={resolvedPlaceholder}
+              onHistoryPrev={getPreviousInput}
+              onHistoryNext={getNextInput}
+              onHistoryReset={resetInputHistoryIndex}
+              onAutocompleteKeyDown={handleAutocompleteKeyDown}
+            />
+          )}
           <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
           {/* 底部工具栏 */}
           <div className="flex items-center gap-1 px-3 pb-3">
@@ -928,7 +978,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {/* 语音输入按钮 */}
             {!disabled && (
               <VoiceInputButton
-                onTranscript={handleVoiceTranscript}
+                voice={voice}
                 disabled={disabled}
               />
             )}

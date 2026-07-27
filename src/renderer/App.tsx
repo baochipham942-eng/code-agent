@@ -12,7 +12,6 @@ import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TitleBar } from './components/TitleBar';
-import { UserQuestionModal } from './components/UserQuestionModal';
 import { MCPElicitationModal } from './components/MCPElicitationModal';
 import { MCPOAuthConsentModal } from './components/MCPOAuthConsentModal';
 import { AuthModal } from './components/AuthModal';
@@ -195,7 +194,6 @@ export const App: React.FC = () => {
     (isPreviewActive || activeWorkbenchTab === 'overview' || activeWorkbenchTab === 'browser');
   const appliedNarrowSidebarDefaultRef = useRef(false);
 
-  const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
   const [mcpOAuthConsent, setMcpOAuthConsent] = useState<MCPOAuthConsentRequest | null>(null);
 
@@ -238,15 +236,6 @@ export const App: React.FC = () => {
   const workflowPendingLaunchRequest = useWorkflowStore((state) => (
     state.pendingLaunchRequest(currentSessionId ?? undefined)
   ));
-
-  const closeUserQuestion = useCallback(() => {
-    setUserQuestion((current) => {
-      if (current) {
-        useSessionStore.getState().clearPendingUserQuestion(current);
-      }
-      return null;
-    });
-  }, []);
 
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
   const { isStandard, dagPanelEnabled } = useDisclosure();
@@ -575,13 +564,17 @@ export const App: React.FC = () => {
   }, []);
 
   // Listen for user question events (Gen 3+)
+  // G2 拍板形态：问题进 pending 队列，由 ChatView 的打断式选项卡（遮盖 composer）
+  // 渲染，不再弹全局 Modal。无 sessionId 的请求绑到当前会话，保证用户总能答到。
   useEffect(() => {
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.USER_QUESTION_ASK,
       (request: UserQuestionRequest) => {
         logger.info('Received user question', { id: request.id, sessionId: request.sessionId });
-        useSessionStore.getState().addPendingUserQuestion(request);
-        setUserQuestion(request);
+        const withSession = request.sessionId
+          ? request
+          : { ...request, sessionId: useSessionStore.getState().currentSessionId ?? undefined };
+        useSessionStore.getState().addPendingUserQuestion(withSession);
       }
     );
 
@@ -932,13 +925,7 @@ export const App: React.FC = () => {
 
 
 
-      {/* User Question Modal (Gen 3+) */}
-      {userQuestion && (
-        <UserQuestionModal
-          request={userQuestion}
-          onClose={closeUserQuestion}
-        />
-      )}
+      {/* User Question：G2 起改为 ChatView 内打断式选项卡（遮盖 composer），不再挂全局 Modal */}
 
       {/* MCP Elicitation Modal */}
       {mcpElicitation && (

@@ -24,7 +24,7 @@ const ALLOWLIST: Record<string, number> = {
   'components/UpdateNotification.tsx': 2,
   // 单选/多选项的选中指示圆点，不是按钮
   'components/MCPElicitationModal.tsx': 1,
-  'components/UserQuestionModal.tsx': 1,
+  'components/UserQuestionCard.tsx': 1,
   // 下载进度条填充色
   'components/features/background/BackgroundSessionPanel.tsx': 1,
   // 分类调色板数组（用户活动分类打点色），非 UI 按钮

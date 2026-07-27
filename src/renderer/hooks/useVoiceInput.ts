@@ -27,7 +27,7 @@ interface PendingAudio {
   durationSeconds: number;
 }
 
-interface UseVoiceInputReturn {
+export interface UseVoiceInputReturn {
   /** 当前状态 */
   status: VoiceInputStatus;
   /** 录音时长（秒） */

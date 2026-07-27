@@ -23,6 +23,10 @@ import {
   type ToolPermissionView,
 } from '../../../../../utils/toolExecutionPresentation';
 import { computeBashPreviewLines } from './bashOutputPreview';
+import {
+  buildAskUserQuestionRecord,
+  type AskUserQuestionRecord,
+} from '../../../../../utils/askUserQuestionRecord';
 import { useI18n } from '../../../../../hooks/useI18n';
 import type { Translations } from '../../../../../i18n';
 
@@ -132,6 +136,12 @@ export function ToolCallDisplay({
     () => buildWorkflowStagePreview(toolCall),
     [toolCall],
   );
+  // G2：AskUserQuestion 的问答记录（问题 + 所选答案），折叠态也常驻——
+  // 打断式选项卡回答后，这就是消息流里可回看的那条记录。
+  const askUserRecord = useMemo(
+    () => buildAskUserQuestionRecord(toolCall),
+    [toolCall],
+  );
 
   // Auto-collapse on success after 500ms (only if user hasn't manually toggled)
   useEffect(() => {
@@ -193,6 +203,10 @@ export function ToolCallDisplay({
 
       {workflowStagePreview && (
         <WorkflowStagePreview preview={workflowStagePreview} />
+      )}
+
+      {askUserRecord && (
+        <AskUserQuestionRecordBlock record={askUserRecord} />
       )}
 
       {/* Bash inline output - when collapsed, show command output preview */}
@@ -395,8 +409,31 @@ const WorkflowStagePreview: React.FC<{ preview: WorkflowStagePreviewData }> = ({
   );
 };
 
-function getPermissionToneClass(permission: ToolPermissionView): string {
-  switch (permission) {
+// G2：AskUserQuestion 问答记录块——问题 + 所选答案常驻在工具步骤下方，
+// 是打断式选项卡回答后落在消息流里的可回看记录；跳过时明示一次，不装死。
+const AskUserQuestionRecordBlock: React.FC<{ record: AskUserQuestionRecord }> = ({ record }) => {
+  const { t } = useI18n();
+  const declinedLine = `${t.userQuestion.declinedRecord}${record.declineReason ? `：${record.declineReason}` : ''}`;
+  return (
+    <div className="ml-6 mt-1 mb-0.5 space-y-1 text-xs" data-testid="ask-user-question-record">
+      {record.items.map((item, index) => (
+        <div key={item.header} className="space-y-0.5">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="shrink-0 rounded bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-zinc-500">
+              {item.header}
+            </span>
+            <span className="min-w-0 break-words text-zinc-400">{item.question}</span>
+          </div>
+          <div className="ml-2 break-words whitespace-pre-wrap text-zinc-300">
+            {record.kind === 'declined' ? (index === 0 ? declinedLine : null) : item.answer}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+function getPermissionToneClass(permission: ToolPermissionView): string {  switch (permission) {
     case 'read':
       return 'text-emerald-300';
     case 'write':

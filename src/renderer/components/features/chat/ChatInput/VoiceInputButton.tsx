@@ -1,18 +1,23 @@
 // ============================================================================
 // VoiceInputButton - 语音输入按钮组件
 // 点击录音，录音完成后自动转写
+//
+// G4 起录音态反馈上移到 composer 输入行（DictationRecordingBar：波形铺满 +
+// 计时 + 停止/发送），按钮本体只保留入口/二级停止职责（红底录音态 + tooltip），
+// 不再内嵌迷你电平条和底部小计时——那是被点名「反馈层次弱」的旧形态。
+// hook 由 ChatInput 持有并以 voice prop 传入（录音条与按钮共享同一路采集状态）。
 // ============================================================================
 
 import React from 'react';
 import { AlertCircle, Loader2, Mic, RotateCcw, X } from 'lucide-react';
-import { DEFAULT_SPEECH_INPUT_SETTINGS, type SpeechTranscribeResult } from '@shared/contract';
-import { useVoiceInput } from '../../../../hooks/useVoiceInput';
+import { DEFAULT_SPEECH_INPUT_SETTINGS } from '@shared/contract';
+import type { UseVoiceInputReturn } from '../../../../hooks/useVoiceInput';
 import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
 import { useI18n } from '../../../../hooks/useI18n';
 
 export interface VoiceInputButtonProps {
-  /** 转写完成回调 */
-  onTranscript: (text: string, result?: SpeechTranscribeResult) => void;
+  /** ChatInput 持有的语音输入状态（同一 hook 实例驱动录音条与按钮） */
+  voice: UseVoiceInputReturn;
   /** 是否禁用 */
   disabled?: boolean;
 }
@@ -64,10 +69,9 @@ function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean {
  * 语音输入按钮
  *
  * 点击开始录音，再次点击停止录音并自动转写
- * 支持录音中动画、转写中加载状态
  */
 export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
-  onTranscript,
+  voice,
   disabled = false,
 }) => {
   const { t } = useI18n();
@@ -84,11 +88,8 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
     clearError,
     error,
     errorCode,
-    inputLevel,
     silenceWarning,
-  } = useVoiceInput({
-    onTranscript,
-  });
+  } = voice;
 
   const isRecording = status === 'recording';
   const isTranscribing = status === 'transcribing';
@@ -153,14 +154,6 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
             }`}
           />
         )}
-        {isRecording && (
-          <span className="absolute bottom-1 left-1 right-1 h-0.5 overflow-hidden rounded-full bg-white/25">
-            <span
-              className="block h-full rounded-full bg-white transition-[width] duration-100"
-              style={{ width: `${Math.max(8, Math.round(inputLevel * 100))}%` }}
-            />
-          </span>
-        )}
       </button>
 
       {/* 错误恢复 */}
@@ -207,13 +200,6 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
             </button>
           </div>
         </div>
-      )}
-
-      {/* 录音时长显示 */}
-      {isRecording && duration > 0 && (
-        <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-2xs text-red-400 font-mono whitespace-nowrap">
-          {formatDuration(duration)}
-        </span>
       )}
     </div>
   );

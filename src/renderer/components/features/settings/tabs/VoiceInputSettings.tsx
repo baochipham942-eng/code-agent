@@ -129,7 +129,7 @@ export const VoiceInputSettings: React.FC = () => {
 
       <div className="border-t border-zinc-700 pt-4">
         <h3 className="mb-3 text-sm font-medium text-zinc-200">{voiceText.modeTitle}</h3>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid auto-rows-fr grid-cols-2 gap-3 lg:grid-cols-4">
           {MODE_OPTIONS.map((option) => {
             const active = settings.mode === option.id;
             const optionText = voiceText.modes[option.id];
@@ -138,15 +138,15 @@ export const VoiceInputSettings: React.FC = () => {
                 key={option.id}
                 type="button"
                 onClick={() => persist({ mode: option.id })}
-                className={`relative rounded-lg border p-3 text-left transition-all ${
+                className={`relative flex h-full flex-col rounded-lg border p-3 text-left transition-all ${
                   active
                     ? 'border-zinc-500 bg-zinc-800/60 ring-1 ring-white/10'
                     : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >
-                <div className="mb-2 flex items-center gap-2 text-zinc-300">
+                <div className="mb-2 flex h-5 items-center gap-2 text-zinc-300">
                   {option.icon}
-                  <span className="text-sm font-medium">{optionText.label}</span>
+                  <span className="text-sm font-medium leading-5">{optionText.label}</span>
                 </div>
                 <p className="text-xs leading-5 text-zinc-500">{optionText.description}</p>
                 {active && (

@@ -29,34 +29,46 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
   const currentSessionIdRef = useRef(sessionId);
   currentSessionIdRef.current = sessionId;
   const [activeRewindId, setActiveRewindId] = useState<string | null>(null);
+  const [anchorExcerpt, setAnchorExcerpt] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
 
-  const readActiveRewind = useCallback(async (expectedSessionId: string): Promise<string | null> => {
+  // 取活跃 rewind id + 锚点提示词摘录（被软隐藏的最早一条就是回退锚点本身，
+  // 横幅要把「回到哪条」说人话，不能只写「这条提示词」对着空气）
+  const readActiveRewind = useCallback(async (expectedSessionId: string): Promise<{ rewindId: string | null; excerpt: string | null }> => {
     const replay = await ipcService.invokeDomain<ConversationReplay>(
       IPC_DOMAINS.SESSION,
       'replayConversationBranch',
       {
         sessionId: expectedSessionId,
-        options: { includeRewound: false },
+        options: { includeRewound: true },
       },
     );
-    return latestOpenRewindId(replay);
+    const rewindId = latestOpenRewindId(replay);
+    if (!rewindId) return { rewindId: null, excerpt: null };
+    const anchor = replay.messages.find((entry) => entry.message.hiddenByRewindId === rewindId);
+    const raw = anchor?.message.content?.replace(/\s+/g, ' ').trim() ?? '';
+    const excerpt = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw || null;
+    return { rewindId, excerpt };
   }, []);
 
   useEffect(() => {
     let disposed = false;
     setActiveRewindId(null);
+    setAnchorExcerpt(null);
     setIsRestoring(false);
     if (!sessionId) return () => {
       disposed = true;
     };
 
-    void readActiveRewind(sessionId).then((rewindId) => {
-      if (!disposed) setActiveRewindId(rewindId);
+    void readActiveRewind(sessionId).then(({ rewindId, excerpt }) => {
+      if (disposed) return;
+      setActiveRewindId(rewindId);
+      setAnchorExcerpt(excerpt);
     }).catch((error) => {
       if (!disposed) {
         console.warn('Failed to read active conversation rewind:', error);
         setActiveRewindId(null);
+        setAnchorExcerpt(null);
       }
     });
 
@@ -82,10 +94,12 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
       if (currentSessionIdRef.current !== expectedSessionId) return;
       onRestored(result);
       setActiveRewindId(null);
+      setAnchorExcerpt(null);
       try {
-        const nextRewindId = await readActiveRewind(expectedSessionId);
+        const next = await readActiveRewind(expectedSessionId);
         if (currentSessionIdRef.current === expectedSessionId) {
-          setActiveRewindId(nextRewindId);
+          setActiveRewindId(next.rewindId);
+          setAnchorExcerpt(next.excerpt);
         }
       } catch (error) {
         console.warn('Failed to refresh active conversation rewind:', error);
@@ -111,7 +125,11 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
       className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-zinc-300"
     >
       <History className="h-3.5 w-3.5 shrink-0 text-amber-300" />
-      <span className="min-w-0 flex-1">{t.chat.rewindSuccess}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {anchorExcerpt
+          ? t.chat.rewindSuccessWithPrompt.replace('{prompt}', anchorExcerpt)
+          : t.chat.rewindSuccess}
+      </span>
       <button /* ds-allow:button: 横幅右端的紧凑内联恢复动作，Button primitive 的标准尺寸/形状不适配横幅布局 */
         type="button"
         onClick={() => void handleRestore()}

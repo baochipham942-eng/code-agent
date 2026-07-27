@@ -93,7 +93,7 @@ describe('ActiveConversationRewindBanner', () => {
       'replayConversationBranch',
       {
         sessionId: 'session-1',
-        options: { includeRewound: false },
+        options: { includeRewound: true },
       },
     );
 
@@ -130,7 +130,7 @@ describe('ActiveConversationRewindBanner', () => {
         'replayConversationBranch',
         {
           sessionId: 'session-1',
-          options: { includeRewound: false },
+          options: { includeRewound: true },
         },
       );
     });

@@ -129,8 +129,14 @@ function twoIsolatedEnvelope(): SessionExportEnvelopeV2 {
     ...structuredClone(draft.lineage.nodes[1]),
     forkId: 'fork-2',
     sessionId: 'child-2',
+    parentSessionId: 'root',
+    rootSessionId: 'root',
+    sourceAnchorMessageId: 'a1',
     anchorChildMessageId: 'c2a1',
+    depth: 1,
     ordinal: 1,
+    workspaceMode: 'isolated_at_anchor',
+    contextDeliveryMode: 'validated_context_handoff',
     createdAt: 3,
   });
   draft.lineage.messageMappings.push(

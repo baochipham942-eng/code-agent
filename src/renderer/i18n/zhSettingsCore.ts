@@ -591,19 +591,19 @@ export const zhSettingsCore = {
       modes: {
         stream: {
           label: '边说边出字',
-          description: '通过 DashScope Gummy 实时写入输入框；起步时不可用则走原有整段转写',
+          description: '说话过程中就把字写进输入框。用你自己的 DashScope Key（按时长计费，约 ¥0.009/分钟）',
+        },
+        'cloud-only': {
+          label: '说完再转写',
+          description: '停止录音后一次性转写。用你自己的 Groq Key，识别率高、按量计费',
         },
         'local-first': {
           label: '本地优先',
-          description: 'whisper-cpp 可用时本地转写，失败后用 Groq 兜底',
+          description: '先用本机 whisper-cpp，失败再走 Groq。需自行安装：brew install whisper-cpp 并下载模型到 ~/.cache/whisper/',
         },
         'local-only': {
           label: '仅本地',
-          description: '音频不离开本机，缺模型或转写失败时直接返回错误',
-        },
-        'cloud-only': {
-          label: '仅云端',
-          description: '使用 Groq Whisper，适合本地模型不可用时临时使用',
+          description: '音频不离开本机，也不花钱；识别率低于云端。同样需要自行安装 whisper-cpp 和模型',
         },
       },
       languages: {

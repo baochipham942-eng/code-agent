@@ -977,23 +977,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           )}
           {/* Neo Tag 轻量化重设计:@neo = 正常输入,composer 不再显示 "work card" 预览 chip
               (产品负责人 2026-07-02)。neoTagInvocation 仍用于压掉文件 mention 弹窗噪音。 */}
-          {/* Dictation 录音条在输入框**上方**（与 VoiceChrome 同款位置），输入框保持可见可编辑
-              ——真机反馈：原来整条替换输入行，等于录音时把草稿和输入口都藏了。 */}
-          {isDictationActive && (
-            <div className="px-3 pb-1.5">
-              <DictationRecordingBar
-                status={voice.status}
-                duration={voice.duration}
-                inputLevel={voice.inputLevel}
-                silenceWarning={voice.silenceWarning}
-                onStop={voice.stop}
-                onSend={() => {
-                  dictationSendAfterTranscriptRef.current = true;
-                  voice.stop();
-                }}
-              />
-            </div>
-          )}
           <InputArea
             ref={inputAreaRef}
             value={value}
@@ -1013,7 +996,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onAutocompleteKeyDown={handleAutocompleteKeyDown}
           />
           <RuntimeInputShortcutHint isProcessing={Boolean(isProcessing)} hasDraft={Boolean(value.trim())} />
-          {/* 底部工具栏 */}
+          {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，
+              右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
+              两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。
+              输入框本体全程可见可编辑。 */}
           <div className="flex items-center gap-1 px-3 pb-3">
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳 /命令 + 上传附件 + 交互模式 */}
             <InputAddMenu
@@ -1027,6 +1013,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               onSelectCapability={selectWorkbenchCapabilityForCurrentTurn}
             />
 
+            {isDictationActive ? (
+              <DictationRecordingBar
+                status={voice.status}
+                duration={voice.duration}
+                inputLevel={voice.inputLevel}
+                silenceWarning={voice.silenceWarning}
+                onStop={voice.stop}
+                onSend={() => {
+                  dictationSendAfterTranscriptRef.current = true;
+                  voice.stop();
+                }}
+              />
+            ) : (
+            <>
             {/* 专家在主位：用户是在跟「人」协作，这行最该先看到的是它（带头像）。
                 权限档紧跟其后并弱一档——它是"这次对话怎么放权"，是专家的属性而不是同级的另一样东西。 */}
             <AgentChip onOpenAgentCommand={openAgentCommand} />
@@ -1083,6 +1083,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 type="submit"
                 onStop={onStop}
               />
+            )}
+            </>
             )}
           </div>
         </div>

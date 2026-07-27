@@ -136,6 +136,28 @@ describe('ChatInput Dictation 接线（G4）', () => {
     expect(source).toContain('<DictationRecordingBar');
   });
 
+  // 真机反馈（2026-07-27）：录音条悬浮在输入框上方 + 底栏主按钮各有一个发送键 = 重复。
+  // 正确形态是**底栏这一行原地变成录音条**，右下角那个位置就是唯一的发送键。
+  it('录音条长在底部工具栏内，不在输入框上方另悬浮一条', () => {
+    const barAt = source.indexOf('<DictationRecordingBar');
+    const inputAreaAt = source.indexOf('<InputArea');
+    const addMenuAt = source.indexOf('<InputAddMenu');
+    expect(barAt).toBeGreaterThan(-1);
+    // 录音条必须排在 InputArea **之后**（= 在底栏里），不能排在它前面（= 悬浮在输入框上方）
+    expect(barAt).toBeGreaterThan(inputAreaAt);
+    // 且与 `+` 菜单同在底栏那一行
+    expect(barAt).toBeGreaterThan(addMenuAt);
+  });
+
+  it('录音中整行被替换：SendButton / LiveVoiceButton 都在非录音分支里（不会出现第二个发送键）', () => {
+    const barAt = source.indexOf('<DictationRecordingBar');
+    // 三者都在底栏，但主按钮必须落在 isDictationActive 的 else 分支（源码里排在录音条之后）
+    expect(source.indexOf('<SendButton')).toBeGreaterThan(barAt);
+    expect(source.indexOf('<LiveVoiceButton')).toBeGreaterThan(barAt);
+    // 录音条自带的发送键就是那个位置本身，不能同时还渲染 VoiceInputButton 的麦克风
+    expect(source.indexOf('<VoiceInputButton')).toBeGreaterThan(barAt);
+  });
+
   it('发送按钮 = 停止录音 + 转写完成后自动提交（send-after-transcript）', () => {
     expect(source).toContain('dictationSendAfterTranscriptRef.current = true;');
     expect(source).toContain("handleSubmitRef.current(undefined, { content: merged })");

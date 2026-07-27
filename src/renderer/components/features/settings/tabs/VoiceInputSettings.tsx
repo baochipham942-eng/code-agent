@@ -19,9 +19,16 @@ const MODE_OPTIONS: Array<{
   id: SpeechTranscriptionMode;
   icon: React.ReactNode;
 }> = [
+  // 排序 = 推荐顺序：云端自备 key 在前（识别率是这个功能的命根子），
+  // 本地两档排后面并在文案里写明「需自行安装」——小模型够强之前不主推
+  // （产品负责人 2026-07-27 拍板）。
   {
     id: 'stream',
     icon: <AudioLines className="h-4 w-4" />,
+  },
+  {
+    id: 'cloud-only',
+    icon: <Cloud className="h-4 w-4" />,
   },
   {
     id: 'local-first',
@@ -30,10 +37,6 @@ const MODE_OPTIONS: Array<{
   {
     id: 'local-only',
     icon: <Mic className="h-4 w-4" />,
-  },
-  {
-    id: 'cloud-only',
-    icon: <Cloud className="h-4 w-4" />,
   },
 ];
 

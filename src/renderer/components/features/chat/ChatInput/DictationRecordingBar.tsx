@@ -22,7 +22,8 @@ export function formatRecordingClock(totalSeconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-const WAVEFORM_BAR_COUNT = 48;
+// 录音条现在占的是整条底栏，48 根在宽屏下稀稀拉拉；铺满才像波形。
+const WAVEFORM_BAR_COUNT = 96;
 
 /**
  * 电平 → 条高百分比。线性映射下正常说话只吃掉量程一小截，配上 12% 的下限就成了
@@ -69,7 +70,9 @@ const DictationWaveform: React.FC<{ level: number; silenceWarning: boolean }> = 
     });
   }, [level]);
 
-  const barColor = silenceWarning ? 'bg-amber-400' : 'bg-red-400';
+  // 中性色而不是「录音红」：这一条现在长在 composer 底栏里，是输入的一部分，
+  // 不是一个报警状态（形态对齐 Codex composer）。只有静音警告才需要变色。
+  const barColor = silenceWarning ? 'bg-amber-400' : 'bg-zinc-300';
 
   if (reducedMotion) {
     // 静态电平条：不滚动不跳动，宽度随当前电平伸缩（无 transition，避免闪烁动画）
@@ -134,22 +137,17 @@ export const DictationRecordingBar: React.FC<DictationRecordingBarProps> = ({
   const isTranscribing = status === 'transcribing';
 
   return (
-    <div
-      data-testid="dictation-recording-bar"
-      className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 ${
-        silenceWarning ? 'border-amber-500/40 bg-amber-500/5' : 'border-red-500/30 bg-red-500/5'
-      }`}
-    >
+    <div data-testid="dictation-recording-bar" className="flex min-w-0 flex-1 items-center gap-2">
       {isTranscribing ? (
-        <div className="flex h-9 flex-1 items-center gap-2 text-sm text-zinc-400">
+        <div className="flex h-9 min-w-0 flex-1 items-center gap-2 text-sm text-zinc-400">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span>{v.transcribingTitle}</span>
+          <span className="truncate">{v.transcribingTitle}</span>
         </div>
       ) : (
         <>
           <DictationWaveform level={inputLevel} silenceWarning={silenceWarning} />
           <span
-            className="shrink-0 font-mono text-sm tabular-nums text-red-300"
+            className={`shrink-0 font-mono text-sm tabular-nums ${silenceWarning ? 'text-amber-300' : 'text-zinc-400'}`}
             data-testid="dictation-recording-clock"
           >
             {formatRecordingClock(duration)}
@@ -163,20 +161,21 @@ export const DictationRecordingBar: React.FC<DictationRecordingBarProps> = ({
         disabled={isTranscribing}
         title={v.stopRecordingAria}
         aria-label={v.stopRecordingAria}
-        className="flex h-9 w-9 shrink-0 place-items-center items-center justify-center rounded-xl bg-zinc-700/90 text-zinc-200 transition-all duration-200 hover:bg-zinc-600 active:scale-95 disabled:opacity-50"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-zinc-700/90 text-zinc-200 transition-all duration-200 hover:bg-zinc-600 active:scale-95 disabled:opacity-50"
       >
         <Square className="h-3.5 w-3.5 fill-current stroke-[2.2]" />
       </button>
-      {/* 发送：停止录音，转写完成后自动提交 */}
-      <button /* ds-allow:button: 录音态行内 icon-only 按钮，沿用 composer 圆形图标按钮语言（同 LiveVoiceButton 先例） */
+      {/* 发送：停止录音，转写完成后自动提交。这里就是右下角主按钮的位置——
+          整行被替换掉了，所以不会再出现第二个发送键（真机反馈：悬浮条 + 底栏各一个）。 */}
+      <button /* ds-allow:button: 录音态主按钮，占的就是 SendButton 那个位置，沿用同一套圆形语言 */
         type="button"
         onClick={onSend}
         disabled={isTranscribing}
         title={v.sendRecordingTitle}
         aria-label={v.sendRecordingTitle}
-        className="flex h-9 w-9 shrink-0 place-items-center items-center justify-center rounded-xl bg-brand text-white shadow-[0_10px_24px_var(--brand-primary-glow)] transition-all duration-200 hover:bg-brand-hover active:scale-95 disabled:opacity-50"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-zinc-900 transition-all duration-200 hover:bg-zinc-200 active:scale-95 disabled:opacity-50"
       >
-        <ArrowUp className="h-4 w-4 stroke-[2.4]" />
+        <ArrowUp className="h-4 w-4 stroke-[2.6]" />
       </button>
     </div>
   );

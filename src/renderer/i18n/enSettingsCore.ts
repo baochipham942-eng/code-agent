@@ -591,19 +591,19 @@ export const enSettingsCore = {
       modes: {
         stream: {
           label: 'Live transcription',
-          description: 'Show words in the composer while you speak via DashScope Gummy; falls back before recording if unavailable',
+          description: 'Words appear in the composer as you speak. Uses your own DashScope key (billed by duration, about ¥0.009/min)',
+        },
+        'cloud-only': {
+          label: 'Transcribe after speaking',
+          description: 'Transcribes once you stop recording. Uses your own Groq key — high accuracy, pay per use',
         },
         'local-first': {
           label: 'Local first',
-          description: 'Use local transcription when whisper-cpp is available, then fall back to Groq on failure',
+          description: 'Try local whisper-cpp first, fall back to Groq. Requires setup: brew install whisper-cpp and a model in ~/.cache/whisper/',
         },
         'local-only': {
           label: 'Local only',
-          description: 'Audio stays on this device; missing models or transcription failures return an error directly',
-        },
-        'cloud-only': {
-          label: 'Cloud only',
-          description: 'Use Groq Whisper, useful as a temporary fallback when local models are unavailable',
+          description: 'Audio never leaves this device and costs nothing; accuracy is below cloud. Also requires whisper-cpp and a model',
         },
       },
       // 语言选项用 autonym（各语言自己的文字），与 zh 侧一致——用户找自己的语言认原生文字

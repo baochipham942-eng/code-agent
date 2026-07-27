@@ -133,9 +133,15 @@ body.theme-switching * {
    Scrollbar
    ============================================================================ */
 
+/* 滚动条占位宽度的唯一真源。凡是要把"滚动区"与"不滚动的兄弟块"排到同一条轨上的地方
+   （如侧栏：列表滚动、顶行/能力区/账号行不滚动），都引用它，别再各写一个 6px。 */
+:root {
+  --scrollbar-size: 6px;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-track {

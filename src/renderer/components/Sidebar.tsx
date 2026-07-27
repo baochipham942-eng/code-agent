@@ -638,7 +638,9 @@ export const Sidebar: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
+    // pr = 最右让给滚动条的窄带（见下方会话列表注释）：不滚动的兄弟块全部缩到同一条内轨，
+    // 滚动列表再用负 margin 把这条带要回去放自己的滚动条。
+    <div className="flex-1 flex flex-col bg-transparent overflow-hidden pr-[var(--scrollbar-size)]">
       {/* Header: h-12 to align with TitleBar on the right.
           2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
           hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端，所以 darwin 下
@@ -731,8 +733,18 @@ export const Sidebar: React.FC = () => {
       {/* 能力区：自动化 / 专家 / 资料库（三件套，逐批点亮） */}
       <SidebarCapabilityZone />
 
-      {/* Session List - Project Grouped */}
-      <div className="flex-1 overflow-y-auto px-2 min-h-0">
+      {/* Session List - Project Grouped
+          scrollbar-hidden 不是审美选择，是右轨对齐的根因修复（2026-07-27 实测）：
+          global.css 给了 `::-webkit-scrollbar{width:6px}` 这种**占布局宽度**的经典滚动条，
+          列表一溢出，容器内容盒就窄 6px ⇒ 组角标/状态点中心被推到 205.8，
+          而账号行在滚动容器**外**、中心仍是 212，三者于是不同轴（产品负责人 07-27 反馈）。
+          按状态补 6px padding 只在"正在溢出"时对，不溢出时反而错——只有把这段占位彻底去掉，
+          栏内所有行才共用同一条右轨（220 右缘 / 212 中心），与溢出与否无关。
+          做法（参照 Codex：滚动条独占最右一条窄带，内容轨不受它影响）：侧栏根 `pr` 让出
+          一条滚动条宽的窄带 ⇒ 顶行/能力区/账号行都缩到同一条内轨；本滚动容器再用等宽负 margin
+          把那条窄带"要回来"，`overflow-y-scroll` 恒定占位把滚动条正好摆进去 ⇒ 它的内容盒宽度
+          回到与兄弟块相同的内轨。滚动条照常可见，且与列表溢不溢出无关。 */}
+      <div className="flex-1 overflow-y-scroll px-2 min-h-0 mr-[calc(var(--scrollbar-size)*-1)]">
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />

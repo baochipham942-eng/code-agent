@@ -25,6 +25,7 @@ mod appshots;
 mod native_app_icon;
 mod native_desktop;
 mod pip;
+mod traffic_lights;
 
 use appshots::{
     appshots_read_image_data_url, appshots_report_composer_slot, appshots_set_enabled,
@@ -2566,6 +2567,22 @@ fn unregister_configurable_global_hotkeys(app_handle: &AppHandle, state: &Keybin
     }
 }
 
+/// 把三颗红绿灯摆到与顶行图标同轴（中心 24）。macOS 在 `show()` 与窗口重排时会按系统默认位
+/// 复位它们，所以这不是"设一次"的事——show / resize / focus 之后都要重放。摆法幂等，重放无副作用。
+fn align_traffic_lights(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    if let Some(window) = app.get_webview_window("main") {
+        let window_for_main_thread = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            if let Ok(ptr) = window_for_main_thread.ns_window() {
+                unsafe { traffic_lights::align_traffic_lights(ptr) };
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
 /// renderer 首帧+初始数据就绪信号的 invoke 直连通道。
 /// emit 事件通道在打包态投递不到壳侧(window.once/app.once 均收不到,根因未明),
 /// invoke command 不走事件路由,可靠;事件监听与超时兜底仍保留,共用 AtomicBool 去重。
@@ -2578,6 +2595,7 @@ fn renderer_ready(app: AppHandle, state: State<'_, RendererReadyShown>) {
             let _ = window.show();
             let _ = window.set_focus();
         }
+        align_traffic_lights(&app);
     }
 }
 
@@ -2866,6 +2884,16 @@ fn main() {
             if let Some(win) = app_handle.get_webview_window("main") {
                 let _ = win.minimize();
             }
+        }
+        // 系统会在 show / 尺寸变化 / 全屏进出后按默认位复位三颗灯，这里统一重放。
+        // 覆盖了托盘菜单、single-instance、快捷键 toggle 等所有 show 路径——
+        // 它们无一例外跟着 set_focus，Focused 事件就是这些路径的公共汇合点。
+        RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::Resized(_) | WindowEvent::Focused(true),
+            ..
+        } if label == "main" => {
+            align_traffic_lights(app_handle);
         }
         RunEvent::ExitRequested { .. } | RunEvent::Exit => {
             cleanup_server(app_handle);

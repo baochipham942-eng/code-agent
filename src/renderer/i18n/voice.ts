@@ -27,6 +27,7 @@ export const voiceZh = {
       working: '执行中',
       reconnecting: '重连中…',
       muted: '已静音',
+      onCall: '通话中',
       error: '通话异常',
     },
     error: {
@@ -144,6 +145,7 @@ export const voiceEn: typeof voiceZh = {
       working: 'Working',
       reconnecting: 'Reconnecting…',
       muted: 'Muted',
+      onCall: 'On call',
       error: 'Call error',
     },
     error: {

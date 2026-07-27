@@ -28,7 +28,8 @@ describe('TurnCostRepository', () => {
 
   beforeEach(() => {
     db = new Database(':memory:');
-    applySchema(db, logger);
+    // 本地 logger 只 mock debug/info/warn/error 四个被测路径用到的方法；applySchema 要求完整服务 Logger（含 level/setLevel/log/dispose），沿用 desktopQueuedInputDrain.persistence.test.ts 的 as never 先例。
+    applySchema(db, logger as never);
     repo = new TurnCostRepository(db);
   });
 

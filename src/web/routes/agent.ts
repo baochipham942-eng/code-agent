@@ -84,6 +84,7 @@ import {
   createClaudeContinuationResumeLaunch,
   createCodexContinuationResumeLaunch,
 } from '../../host/services/agentEngine/externalEngineResumeBuilders';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import {
   createWebQueuedInputDrain,
   releaseThenTriggerWebQueuedInputDrain,
@@ -224,6 +225,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     },
     emitAgentEvent: (sessionId, event) => {
       broadcastSSE('agent:event', { ...event, sessionId });
+    },
+    notifyQueuedInputSettled: (settled) => {
+      broadcastSSE(IPC_CHANNELS.QUEUED_INPUT_SETTLED, settled);
     },
     logger,
   });
@@ -415,6 +419,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       runHandle,
       logger,
       tryGetSessionManager,
+      mirrorToBroadcast: !transport.connectedClient,
     });
 
     if (transport.connectedClient) {

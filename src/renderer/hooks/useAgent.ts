@@ -25,7 +25,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import type { Message } from '@shared/contract';
+import type { QueuedInputSettledEvent } from '@shared/contract/queuedInput';
+import { submitSteerEnvelope } from '../components/features/chat/chatViewSteer';
 import { QueuedInputSchemas } from '@shared/ipc/schemas';
+import ipcService from '../services/ipcService';
 import { generateMessageId } from '@shared/utils/id';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -48,6 +51,7 @@ import {
 import { useAgentState } from './agent/useAgentState';
 import { applyToolCallArgumentDelta } from '../utils/toolCallStreaming';
 import { recordStreamingPerformanceCounter } from '../utils/streamingPerformanceMetrics';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 export { resolveDirectRouting } from './agent/useAgentIPC';
 
@@ -56,6 +60,12 @@ export { resolveDirectRouting } from './agent/useAgentIPC';
 // 故这里压到 150ms 主要让纯文本流不再「半秒蹦一坨」，又不至于过度重渲染。
 const STREAMING_MESSAGE_FLUSH_INTERVAL_MS = 150;
 const logger = createLogger('useAgent');
+
+/** 排队消息「现在不能按原路发」的三种情形：前两种硬拒，busy 走立即转向。 */
+type QueuedSendBlock = {
+  kind: 'inFlight' | 'cancelling' | 'busy';
+  message: string;
+};
 
 const QUEUED_RESEND_RETRY_DELAY_MS = 500;
 
@@ -138,16 +148,17 @@ export const useAgent = () => {
    * 排队消息「现在能不能发」的唯一判据，与 useAgentIPC.sendMessage 的排队/取消判定同源同序
    * （先 cancelling 后 busy）。返回 null = 可发；返回字符串 = 不可发的人话原因。
    */
-  const getQueuedSendBlockReason = useCallback((sessionId: string, id: string): string | null => {
+  const getQueuedSendBlockReason = useCallback((sessionId: string, id: string): QueuedSendBlock | null => {
     if (queuedRuntimeInputSendInFlightRef.current.has(id)) {
-      return t.chatInput.queuedSendBlockedInFlight;
+      return { kind: 'inFlight', message: t.chatInput.queuedSendBlockedInFlight };
     }
     const status = useTaskStore.getState().sessionStates[sessionId]?.status;
     if (status === 'cancelling') {
-      return t.chatInput.queuedSendBlockedCancelling;
+      return { kind: 'cancelling', message: t.chatInput.queuedSendBlockedCancelling };
     }
     if (useAppStore.getState().isSessionProcessing(sessionId) || isRuntimeBusyStatus(status)) {
-      return t.chatInput.queuedSendBlockedBusy;
+      // busy 不再是死路：产品负责人 2026-07-27 拍板，回复中点「发送」= 立即转向。
+      return { kind: 'busy', message: t.chatInput.queuedSendBlockedBusy };
     }
     return null;
   }, [t]);
@@ -262,6 +273,22 @@ export const useAgent = () => {
 
     void hydrateQueuedRuntimeInputs(currentSessionId);
   }, [currentSessionId, hydrateQueuedRuntimeInputs, setQueuedRuntimeInputs]);
+
+  // 宿主自动抽干排队消息后，前端本地卡片得跟着消失。
+  // 「立即发送」那条路由前端自己走完生命周期会清卡；宿主抽干那条路前端完全不知情，
+  // 不听这条广播的话卡片永远留着，点撤回还会被如实告知「已经开始发送」——
+  // 用户看到的就是「没自动发出去、还删不掉」（2026-07-27 产品负责人实测）。
+  useEffect(() => {
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.QUEUED_INPUT_SETTLED,
+      (settled: QueuedInputSettledEvent) => {
+        if (!settled?.id) return;
+        queuedRuntimeInputHydrationSuppressedIdsRef.current.delete(settled.id);
+        setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== settled.id));
+      },
+    );
+    return unsubscribe;
+  }, [setQueuedRuntimeInputs]);
 
   useEffect(() => {
     const isBusy = isRuntimeBusyStatus(currentSessionTaskStatus);
@@ -451,6 +478,83 @@ export const useAgent = () => {
     setSessionProcessing,
   });
 
+  /**
+   * 模型回复中点排队卡片的「发送」= 立即转向：打断当轮，把这条插进去。
+   *
+   * 全程严守本文件的老教训：一旦 markSending 成功，这条就离开了 'queued' 态，
+   * 而宿主不恢复 sending 孤儿行——所以任何一条没转向成功的路径都必须显式
+   * reportSendOutcome 把它退回队列或标失败，绝不能就这么扔着，否则用户看到的
+   * 就是「发不出去又删不掉」。
+   */
+  const steerQueuedRuntimeInput = useCallback(async (queued: QueuedRuntimeInput) => {
+    const id = queued.id;
+    queuedRuntimeInputSendInFlightRef.current.add(id);
+    try {
+      const markResponse = await typedInvokeDomain(QueuedInputSchemas.MARK_SENDING, {
+        action: 'markSending',
+        payload: { id },
+      });
+      if (!markResponse.success) {
+        logger.error(
+          'Failed to mark queued runtime input as sending before steer',
+          new Error(markResponse.error.message),
+          { id },
+        );
+        return;
+      }
+      if (!markResponse.data.marked) return;
+
+      queuedRuntimeInputHydrationSuppressedIdsRef.current.add(id);
+      setQueuedRuntimeInputs((current) => current.filter((item) => item.id !== id));
+
+      const outcome = await submitSteerEnvelope(
+        queued.envelope,
+        queued.sessionId,
+        async () => {},
+      );
+
+      if (outcome?.outcome === 'steered') {
+        const successResponse = await typedInvokeDomain(QueuedInputSchemas.REPORT_SEND_OUTCOME, {
+          action: 'reportSendOutcome',
+          payload: { id, outcome: 'success' },
+        });
+        queuedRuntimeInputHydrationSuppressedIdsRef.current.delete(id);
+        if (!successResponse.success) {
+          logger.error(
+            'Failed to report steered queued runtime input success',
+            new Error(successResponse.error.message),
+            { id },
+          );
+        }
+        return;
+      }
+
+      // 没转向成功（宿主又把它排回去了，或 interrupt 抛错）：退回队列，别留 sending 孤儿。
+      const failureResponse = await typedInvokeDomain(QueuedInputSchemas.REPORT_SEND_OUTCOME, {
+        action: 'reportSendOutcome',
+        payload: { id, outcome: 'failure' },
+      });
+      queuedRuntimeInputHydrationSuppressedIdsRef.current.delete(id);
+      if (!failureResponse.success) {
+        logger.error(
+          'Failed to report steered queued runtime input failure',
+          new Error(failureResponse.error.message),
+          { id },
+        );
+        return;
+      }
+      const settled = { ...queued, retryCount: failureResponse.data.retryCount };
+      setQueuedRuntimeInputs((current) => requeueAtFront(
+        current,
+        failureResponse.data.status === 'failed' ? { ...settled, sendFailed: true } : settled,
+      ));
+    } catch (error) {
+      logger.error('Failed to steer queued runtime input', error, { id });
+    } finally {
+      queuedRuntimeInputSendInFlightRef.current.delete(id);
+    }
+  }, [setQueuedRuntimeInputs]);
+
   const sendQueuedRuntimeInput = useCallback(async (id: string) => {
     const queued = queuedRuntimeInputsRef.current.find((item) => item.id === id);
     if (!queued) return;
@@ -461,8 +565,14 @@ export const useAgent = () => {
     // 而此时原条目已被 markSending 置成 'sending'，宿主又不恢复 sending 孤儿行，消息就没了。
     // 判定放在 markSending 之前，任何一条不可发都出声说明，不静默 return。
     const blockedReason = getQueuedSendBlockReason(queued.sessionId, id);
-    if (blockedReason) {
-      toast.info(blockedReason);
+    if (blockedReason && blockedReason.kind !== 'busy') {
+      toast.info(blockedReason.message);
+      return;
+    }
+    if (blockedReason?.kind === 'busy') {
+      // 产品负责人 2026-07-27 拍板 A：模型回复中点「发送」不再只弹一句「等它跑完」，
+      // 直接立即转向（打断当轮把这条插进去），语义与 composer 的 ⌥↵ 一致。
+      await steerQueuedRuntimeInput(queued);
       return;
     }
 
@@ -546,7 +656,7 @@ export const useAgent = () => {
     } finally {
       queuedRuntimeInputSendInFlightRef.current.delete(id);
     }
-  }, [addMessage, getQueuedSendBlockReason, sendMessage, setQueuedRuntimeInputs]);
+  }, [addMessage, getQueuedSendBlockReason, sendMessage, setQueuedRuntimeInputs, steerQueuedRuntimeInput]);
 
   const dismissResearchDetected = useCallback(() => {
     setResearchDetected(null);

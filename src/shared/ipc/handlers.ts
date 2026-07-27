@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { AgentsChangedEvent } from '../contract/agentRegistry';
+import type { QueuedInputSettledEvent } from '../contract/queuedInput';
 import type { SkillDraftOrigin } from '../contract/agent';
 import type { ParsedSkill } from '../contract/agentSkill';
 import type { Message, PermissionResponse, Session, SessionTask, FileInfo, AppSettings, AgentEventEnvelope, TaskPlan, Finding, ErrorRecord, PlanningState, UserQuestionRequest, UserQuestionResponse, CanvasOpProposal, CanvasProposalDecision, CanvasVideoRequest, CanvasVideoDecision, AutonomyEnvelopeRequest, AutonomyEnvelopeDecision, MCPElicitationRequest, MCPElicitationResponse, MCPOAuthConsentRequest, MCPOAuthConsentResponse, AuthUser, AuthStatus, AuthSessionTrustState, SyncStatus, DeviceInfo, UpdateInfo, DownloadProgress } from '../contract';
@@ -650,6 +651,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.AUTH_PASSWORD_RESET_CALLBACK]: (data: { accessToken: string; refreshToken: string }) => void;
   [IPC_CHANNELS.POSTHOG_IDENTITY]: (data: { distinctId: string | null }) => void;
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
+  [IPC_CHANNELS.QUEUED_INPUT_SETTLED]: (settled: QueuedInputSettledEvent) => void;
   [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;
   [IPC_CHANNELS.SESSION_LIST_UPDATED]: () => void;
   [IPC_CHANNELS.WORKSPACE_CURRENT_CHANGED]: (event: { dir: string | null }) => void;

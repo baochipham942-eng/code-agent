@@ -11,7 +11,9 @@ export const sidebarZh = {
     collapseSidebar: '收起侧栏',
     expandSidebar: '展开侧栏',
     // （原 newTaskTitle tooltip 已删：实现语义自嗨文案，2026-07-26 打磨批 D D2）
-    // 当前工作目录行（顶栏目录 chip 退役后的唯一入口）
+    // 目录入口文案：服务于新任务流程（欢迎页目录 chip 引导态 + 原生目录选择器标题）。
+    // 侧栏左上角「当前工作目录行」已退役（批C2）；项目行 ⋯ 菜单的「选择工作目录」
+    // 复用 selectDirectoryTitle（2026-07-28 侧栏工作区入口重构）。
     selectDirectory: '选择目录',
     selectDirectoryTitle: '选择工作目录',
     confirm: '确定',
@@ -143,6 +145,7 @@ export const sidebarZh = {
     expandDetails: '展开 {name} 项目详情',
     openAssets: '打开 {name} 产物与资产',
     newSessionIn: '在 {name} 新建会话',
+    moreActions: '{name} 更多操作',
     noSessions: '暂无对话',
     collapse: '收起',
     expandAll: '展开全部 {count} 条',
@@ -413,6 +416,7 @@ export const sidebarEn: typeof sidebarZh = {
     expandDetails: 'Expand {name} project details',
     openAssets: 'Open {name} artifacts & assets',
     newSessionIn: 'New session in {name}',
+    moreActions: 'More actions for {name}',
     noSessions: 'No conversations',
     collapse: 'Collapse',
     expandAll: 'Show all {count}',

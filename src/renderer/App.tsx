@@ -8,6 +8,7 @@ import { useAppStore } from './stores/appStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { initializeAgentRegistryStore } from './stores/agentRegistryStore';
 import { useSessionStore } from './stores/sessionStore';
+import { initializeStatusStore } from './stores/statusStore';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -327,6 +328,12 @@ export const App: React.FC = () => {
   useEffect(() => {
     initializeAgentRegistryStore().catch((error) => {
       logger.error('Failed to initialize agent registry store', error);
+    });
+  }, []);
+
+  useEffect(() => {
+    initializeStatusStore().catch((error) => {
+      logger.error('Failed to hydrate today cost', error);
     });
   }, []);
 

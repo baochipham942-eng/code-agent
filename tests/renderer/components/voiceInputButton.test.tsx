@@ -54,8 +54,8 @@ describe('VoiceInputButton', () => {
   it('renders the idle composer voice entry point', () => {
     const html = renderButton();
 
-    expect(html).toContain('aria-label="开始语音输入，首次使用会请求麦克风"');
-    expect(html).toContain('title="开始语音输入，首次使用会请求麦克风"');
+    expect(html).toContain('aria-label="语音转文字"');
+    expect(html).toContain('title="语音转文字"');
   });
 
   it('keeps recording feedback inside the button surface', () => {

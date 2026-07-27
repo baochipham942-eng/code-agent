@@ -7,7 +7,7 @@ export const voiceZh = {
   voice: {
     live: {
       start: '实时通话',
-      startTitle: '开始实时语音通话',
+      startTitle: '开始实时通话',
       end: '结束',
       endTitle: '结束通话',
       mute: '静音',
@@ -112,7 +112,7 @@ export const voiceEn: typeof voiceZh = {
   voice: {
     live: {
       start: 'Live call',
-      startTitle: 'Start a realtime voice call',
+      startTitle: 'Start a live call',
       end: 'End',
       endTitle: 'End call',
       mute: 'Mute',

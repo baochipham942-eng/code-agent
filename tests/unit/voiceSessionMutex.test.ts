@@ -10,6 +10,7 @@ const sendAudio = vi.fn();
 const commitMock = vi.fn();
 const updateInstructions = vi.fn();
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
+const patchSessionMetadata = vi.fn(async (_sessionId: string, _patch: Record<string, unknown>) => true);
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
@@ -19,7 +20,7 @@ const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) =>
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
 vi.mock('../../src/host/services/media/imageGenerationService', () => ({ getDashscopeApiKey: () => 'test-key' }));
 vi.mock('../../src/host/services/infra/sessionManager', () => ({
-  getSessionManager: () => ({ addMessageToSession }),
+  getSessionManager: () => ({ addMessageToSession, patchSessionMetadata }),
 }));
 vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
@@ -482,5 +483,25 @@ describe('通话生命周期 hook', () => {
 
     expect(eventsOf('VoiceCallStarted')).toHaveLength(1);
     expect(eventsOf('VoiceCallEnded')).toHaveLength(0);
+  });
+});
+
+// 侧栏那个语音图标靠会话 metadata 驱动。渲染侧的门只证明「有标记就会亮」，
+// 证不了「真有人写这个标记」——本仓「建好不接电」就是这么发生的。
+describe('实时语音会话标记（生产者接线）', () => {
+  beforeEach(() => {
+    patchSessionMetadata.mockClear();
+    connect.mockClear();
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  it('建连即把 hadLiveVoice 写进会话 metadata', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-badge');
+
+    await vi.waitFor(() => expect(patchSessionMetadata).toHaveBeenCalledWith('session-badge', { hadLiveVoice: true }));
   });
 });

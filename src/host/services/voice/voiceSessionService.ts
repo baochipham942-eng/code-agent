@@ -103,6 +103,24 @@ async function persistTranscript(neoSessionId: string, role: 'user' | 'assistant
 }
 
 /**
+ * 会话级标记：这条会话用过实时语音。侧栏据此在标题旁挂一个语音图标
+ * （产品负责人 2026-07-27）——是**身份**不是状态，所以写在会话 metadata 上，
+ * 不去每次列会话时翻消息。
+ *
+ * 用 patchSessionMetadata 而不是 updateSession({metadata})：后者是整份覆盖，
+ * 会把别人写的 key 冲掉。失败只告警不影响通话。
+ */
+function markSessionHadLiveVoice(neoSessionId: string): void {
+  void getSessionManager()
+    .patchSessionMetadata(neoSessionId, { hadLiveVoice: true })
+    .catch((err: unknown) => {
+      logger.warn('failed to mark session as live-voice', {
+        message: err instanceof Error ? err.message : 'unknown',
+      });
+    });
+}
+
+/**
  * 通话生命周期事件（observer-only）：暂停/结束要让 agent 侧可编排，
  * 典型用例是会议形态的通话结束后问一句「要我整理一下吗」。
  *
@@ -346,6 +364,7 @@ async function connectAndBind(
   getPermissionModeManager().markLiveVoiceSession(neoSessionId, `call:${id}`);
   logger.info('session started', { voiceSessionId: id, neoSessionId, activeAgentId: routing.activeAgentId });
   emitVoiceCallHook('VoiceCallStarted', { voiceCallId: id, sessionId: neoSessionId, durationSec: 0 });
+  markSessionHadLiveVoice(neoSessionId);
 
   bindClientHandlers(session, client);
 }

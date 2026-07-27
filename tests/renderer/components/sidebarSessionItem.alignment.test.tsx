@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { SidebarSessionItem } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
 
-function renderRow(overrides: { pinned?: boolean; unread?: boolean } = {}) {
+function renderRow(overrides: { pinned?: boolean; unread?: boolean; hadLiveVoice?: boolean } = {}) {
   const session = {
     id: 'session-align',
     title: '对齐用例会话',
@@ -23,6 +23,7 @@ function renderRow(overrides: { pinned?: boolean; unread?: boolean } = {}) {
     turnCount: 2,
     modelConfig: { provider: 'openai', model: 'gpt-5' },
     workingDirectory: '/repo/code-agent',
+    ...(overrides.hadLiveVoice ? { metadata: { hadLiveVoice: true } } : {}),
   } as any;
 
   return renderToStaticMarkup(
@@ -102,5 +103,23 @@ describe('侧栏会话行对齐规范', () => {
 
   it('hover 动作簇带不透明底，不再直接压在标题上', () => {
     expect(renderRow()).toContain('bg-zinc-800');
+  });
+});
+
+// 产品负责人 2026-07-27：实时语音的会话要在标题旁带语音图标。
+// 判据钉在「metadata 真的驱动了渲染」——「图标加上了但永远不亮」是本仓高发故障。
+describe('实时语音会话标记', () => {
+  it('会话 metadata 标了 hadLiveVoice 才渲染语音图标', () => {
+    expect(renderRow({ hadLiveVoice: true })).toContain('session-live-voice-badge');
+    expect(renderRow()).not.toContain('session-live-voice-badge');
+  });
+
+  it('图标贴着标题，不占行尾那个状态槽（状态槽只讲此刻状态）', () => {
+    const html = renderRow({ hadLiveVoice: true, unread: true });
+    const badgeIndex = html.indexOf('session-live-voice-badge');
+    const unreadDotIndex = html.indexOf('bg-purple-400');
+    // 语音标记排在未读点之前 = 它在标题侧，未读点仍独占行尾状态列
+    expect(badgeIndex).toBeGreaterThan(-1);
+    expect(unreadDotIndex).toBeGreaterThan(badgeIndex);
   });
 });

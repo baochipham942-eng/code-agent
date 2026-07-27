@@ -97,8 +97,11 @@ export function clearAllSessionProjections(): void {
 // 测试只通过门面搭建和观察投影现场；底层 Map 仍只归 WebSessionStore 所有。
 export const sessionMessagesProjection = {
   get: getSessionMessagesProjection,
-  set(sessionId: string, messages: CachedMessage[]) {
-    replaceSessionMessagesProjection(sessionId, messages);
+  set(sessionId: string, messages: CachedMessage[] | Message[]) {
+    replaceSessionMessagesProjection(
+      sessionId,
+      toCachedSessionMessages(messages as Message[]),
+    );
     return sessionMessagesProjection;
   },
   has: (sessionId: string) => sessionMessages.has(sessionId),

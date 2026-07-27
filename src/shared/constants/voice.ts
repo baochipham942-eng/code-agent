@@ -57,9 +57,10 @@ export const QWEN_OMNI_REALTIME_VOICE = 'Tina';
 
 /**
  * `qwen3.5-omni-flash-realtime` 实测可用音色白名单（2026-07-26 真机逐个合成验证）。
- * 设置页音色选择器只能从这里出选项——音色枚举与模型强绑定，换模型必须重新真跑一遍。
+ * 设置页音色选择器只能从当前模型的 voices 出选项——音色枚举与模型强绑定，换模型必须重新真跑一遍。
+ * 只被本文件的 QWEN_OMNI_REALTIME_MODEL_OPTIONS 引用，不单独导出（knip 棘轮）。
  */
-export const QWEN_OMNI_REALTIME_VOICE_WHITELIST = ['Tina', 'Ethan', 'Serena'] as const;
+const QWEN_OMNI_REALTIME_VOICE_WHITELIST = ['Tina', 'Ethan', 'Serena'] as const;
 
 /**
  * 通话模型白名单（2026-07-28 工单③）。设置页只能从这里出选项，不做自由输入。
@@ -90,7 +91,7 @@ export const QWEN_OMNI_REALTIME_MODEL_OPTIONS = [
   },
 ] as const;
 
-export type VoiceConversationModelOption = (typeof QWEN_OMNI_REALTIME_MODEL_OPTIONS)[number];
+type VoiceConversationModelOption = (typeof QWEN_OMNI_REALTIME_MODEL_OPTIONS)[number];
 
 /**
  * 按 id 查白名单项；未配置 / 表外 id 一律回落默认模型。

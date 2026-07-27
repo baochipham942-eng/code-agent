@@ -168,6 +168,25 @@ describe('RemoteSkillRegistryService', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it('listItems（货架页路径）TTL 内不重复打网络——技能页 loading 2.2s 的修复承重点', async () => {
+    const { envelope, publicKeys } = signedRegistry([validEntry()]);
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    const service = new RemoteSkillRegistryService({
+      controlPlanePublicKeys: publicKeys,
+      endpoint: 'https://example.test/api/v1/skill-registry',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const first = await service.listItems();
+    const second = await service.listItems();
+    expect(first.items).toHaveLength(1);
+    expect(second.items).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('listItemsCached 空货架/失败不缓存，下次重试', async () => {
     const service = new RemoteSkillRegistryService({
       controlPlanePublicKeys: { 'sr-key': 'not-used' },

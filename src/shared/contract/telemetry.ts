@@ -337,6 +337,12 @@ export interface TelemetryFeedbackSubmitResult {
   error?: string;
 }
 
+/** 会话内已存的轮次评价（读回给 UI 回填高亮，只含锚点与评分，不带 comment/fullContent） */
+export interface TelemetryFeedbackRating {
+  messageId: string;
+  rating: 1 | -1;
+}
+
 export interface TelemetryRendererBundleAttempt {
   id: string;
   checkedAt: number;

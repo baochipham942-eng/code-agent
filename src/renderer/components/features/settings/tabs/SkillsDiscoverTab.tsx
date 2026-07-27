@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import { AlertCircle, CheckCircle2, Search, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, Search, ShieldCheck, X } from 'lucide-react';
 import type {
   RecommendedSkillEntry,
   SkillCatalogPayload,
@@ -30,6 +30,7 @@ export interface SkillsDiscoverTabProps {
   /** 官方市场货架（签名 registry；离线/校验失败时为空） */
   registryItems: SkillRegistryListItem[];
   registryError: string | null;
+  registryLoading?: boolean;
   onInstallRegistryEntry: (item: SkillRegistryListItem) => void;
   /** 推荐目录（云端下发优先，内置兜底） */
   catalog: SkillCatalogPayload;
@@ -146,6 +147,7 @@ const RegistryEntryCard: React.FC<{
 export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
   registryItems,
   registryError,
+  registryLoading,
   onInstallRegistryEntry,
   catalog: rawCatalog,
   recommendedRepos,
@@ -186,7 +188,13 @@ export const SkillsDiscoverTab: React.FC<SkillsDiscoverTabProps> = ({
           <h4 className="text-sm font-medium text-zinc-200">{discoverText.registryTitle}</h4>
           <p className="text-xs text-zinc-500 mt-0.5">{discoverText.registryDescription}</p>
         </div>
-        {registryItems.length > 0 ? (
+        {registryLoading && registryItems.length === 0 ? (
+          // 货架独立加载态：不再阻塞整页（registry 走控制面网络，冷路径 2s 级）
+          <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 text-xs text-zinc-500" data-testid="skills-registry-loading">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {discoverText.registryTitle}
+          </div>
+        ) : registryItems.length > 0 ? (
           <div className="space-y-2">
             {registryItems.map((item) => (
               <RegistryEntryCard

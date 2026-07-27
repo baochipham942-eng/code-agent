@@ -96,6 +96,7 @@ export const zhSettingsCore = {
       theme: '主题',
       fontSize: '字体大小',
       language: '语言',
+      promptManager: '提示词管理',
       dataManagement: '数据管理',
       databaseSize: '数据库大小',
       clearCache: '清空缓存',

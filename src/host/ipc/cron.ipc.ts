@@ -133,6 +133,12 @@ export function registerCronHandlers(): void {
           return { success: true, data: executions } satisfies IPCResponse;
         }
 
+        case 'getRecentExecutions': {
+          const limit = getNumberField(payload, 'limit');
+          const executions = cronService.getRecentExecutions(limit);
+          return { success: true, data: executions } satisfies IPCResponse;
+        }
+
         case 'getStats': {
           const stats = cronService.getStats();
           return { success: true, data: stats } satisfies IPCResponse;

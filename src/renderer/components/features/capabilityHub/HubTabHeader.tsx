@@ -8,7 +8,8 @@
 // - 吸顶 + 出血写法沿用 ExpertPanel 工具条（它是对的，保留）：
 //   sticky top-0 z-10 -mx-6 px-6 py-2 border-b bg-zinc-900/95 backdrop-blur。
 //   滚动容器是 PageContent（overflow-y-auto px-6 py-4），-mx-6 px-6 让底边线
-//   铺满整宽。
+//   铺满整宽。底部间距 mb-3：实测四个 tab「页头 → 内容首元素」间距均为 12px
+//   （批 C 验收判据 ③，差 0 ≤ 4px）。
 // ============================================================================
 import React from 'react';
 

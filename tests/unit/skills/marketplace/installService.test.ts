@@ -295,6 +295,63 @@ describe('marketplace install service trust defaults', () => {
     expect(rewritten['legacy@old-market']).toEqual(legacyRecord);
   });
 
+  it('repairs persisted UUID staging skill names from managed final paths', async () => {
+    const pluginRoot = path.join(mocks.userConfigDir, 'plugins', 'demo__official-registry');
+    await fs.mkdir(pluginRoot, { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'SKILL.md'), '---\nname: demo\n---\n', 'utf8');
+    await fs.mkdir(mocks.userConfigDir, { recursive: true });
+    await fs.writeFile(
+      path.join(mocks.userConfigDir, 'installed-plugins.json'),
+      JSON.stringify({
+        'demo@official-registry': {
+          plugin: 'demo',
+          marketplace: 'official-registry',
+          scope: 'user',
+          isEnabled: true,
+          installedAt: '2026-07-27T00:00:00.000Z',
+          pluginRoot,
+          skills: ['demo__official-registry.staging-1b94a0a6-6551-4c40-b05a-a4bf1acdfe8b'],
+          skillPaths: [''],
+          sourceMarketplacePath: pluginRoot,
+        },
+      }, null, 2) + '\n',
+      'utf8',
+    );
+
+    const installed = await listInstalledPlugins();
+    expect(installed['demo@official-registry']?.skills).toEqual(['demo__official-registry']);
+
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(mocks.userConfigDir, 'installed-plugins.json'), 'utf8'),
+    ) as Record<string, { skills: string[] }>;
+    expect(persisted['demo@official-registry']?.skills).toEqual(['demo__official-registry']);
+  });
+
+  it('does not rewrite installed records whose skill names are already correct', async () => {
+    const pluginRoot = path.join(mocks.userConfigDir, 'plugins', 'demo__official-registry');
+    await fs.mkdir(pluginRoot, { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'SKILL.md'), '---\nname: demo\n---\n', 'utf8');
+    const installedPluginsPath = path.join(mocks.userConfigDir, 'installed-plugins.json');
+    const original = JSON.stringify({
+      'demo@official-registry': {
+        plugin: 'demo',
+        marketplace: 'official-registry',
+        scope: 'user',
+        isEnabled: true,
+        installedAt: '2026-07-27T00:00:00.000Z',
+        pluginRoot,
+        skills: ['demo__official-registry'],
+        skillPaths: [''],
+        sourceMarketplacePath: pluginRoot,
+      },
+    });
+    await fs.writeFile(installedPluginsPath, original, 'utf8');
+
+    await listInstalledPlugins();
+
+    await expect(fs.readFile(installedPluginsPath, 'utf8')).resolves.toBe(original);
+  });
+
   it('does not overwrite an existing prompt command when enabling a plugin', async () => {
     await installPlugin('demo@trusted-test');
     const commandPath = path.join(mocks.userConfigDir, 'commands', 'inspect.md');
@@ -428,7 +485,19 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
     const zip = await makeRegistryZip('---\nname: remote-demo\n---\nregistry\n');
     mockCodeload(zip);
 
-    await installFromRegistryEntry(registryEntry(commit, sha256(zip)), { enableAfterInstall: true });
+    const result = await installFromRegistryEntry(
+      registryEntry(commit, sha256(zip)),
+      { enableAfterInstall: true },
+    );
+
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(mocks.userConfigDir, 'installed-plugins.json'), 'utf8'),
+    ) as Record<string, { pluginRoot: string; skills: string[] }>;
+    const rawRecord = persisted['remote-demo@official-registry']!;
+    const finalSkillName = path.basename(rawRecord.pluginRoot);
+    expect(result.installedSkills).toEqual([finalSkillName]);
+    expect(rawRecord.skills).toEqual([finalSkillName]);
+    expect(rawRecord.skills[0]).not.toContain('.staging-');
 
     const record = (await listInstalledPlugins())['remote-demo@official-registry']!;
     expect(record).toMatchObject({

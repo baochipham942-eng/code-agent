@@ -335,7 +335,9 @@ export const ExpertPanel: React.FC = () => {
       {selectedRecipe ? null : (
         // 操作条与分类 chips 合一行同吸顶（2026-07-27 产品负责人拍板：分类与右侧操作同行对齐）；
         // 底色跟内容区同层（zinc-900）+ 发丝底边，不再用更深的 zinc-950 形成断层黑条。
-        <div className="sticky top-0 z-10 -mx-6 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-800/70 bg-zinc-900/95 px-6 py-2 backdrop-blur">
+        // 底色必须**不透明**：原来的 bg-zinc-900/95 + backdrop-blur 在滚动时把下方内容
+        // 透出来，读起来像两段标题串行（2026-07-27 产品负责人第二次指出）。
+        <div className="sticky top-0 z-10 -mx-6 mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-800/70 bg-zinc-900 px-6 py-2">
           {!loading && categoryGroups.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1.5" data-testid="expert-category-chips">
               {[{ key: 'all', label: text.categoryAll, count: shown.length }, ...categoryGroups.map((group) => ({ key: group.key, label: group.label, count: group.entries.length }))].map((chip) => (

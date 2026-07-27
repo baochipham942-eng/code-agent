@@ -644,9 +644,14 @@ export const Sidebar: React.FC = () => {
           hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端，所以 darwin 下
           左侧留出 72px 死区；② 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的
           地方，可以先不展示」），这行于是只剩右侧功能图标——与 Codex 参照一致。
-          本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。 */}
+          本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。
+          ⚠️ 拖拽靠 `data-tauri-drag-region` 属性——`-webkit-app-region: drag` 是 Electron 的
+          私有属性，Tauri 的 WKWebView 根本不认，只写 style 的话窗口拖不动、双击也不缩放
+          （2026-07-27 产品负责人实测「双击标题栏没反应」）。style 保留是给 web/Electron 兜底。
+          ③ 图标紧贴红绿灯左对齐（参照 Codex），不再甩到侧栏右端。 */}
       <div
-        className={`h-12 flex items-center justify-end gap-2 flex-shrink-0 pr-3 ${isMacShell ? 'pl-[72px]' : 'pl-3'}`}
+        data-tauri-drag-region
+        className={`h-12 flex items-center justify-start gap-2 flex-shrink-0 pr-3 ${isMacShell ? 'pl-[72px]' : 'pl-3'}`}
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>

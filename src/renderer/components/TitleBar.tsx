@@ -29,8 +29,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
   } = useAppStore();
   return (
     // 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay），窗口得自己留拖拽区：
-    // 本行整体可拖，行内控件逐个 no-drag。
+    // 本行整体可拖，行内控件逐个 no-drag。拖拽真正生效靠 `data-tauri-drag-region`
+    // （WKWebView 不认 Electron 的 -webkit-app-region），双击缩放窗口也由它带来。
     <div
+      data-tauri-drag-region
       className="h-12 flex items-center justify-between px-4 border-b border-border-muted bg-transparent backdrop-blur-sm relative z-30"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >

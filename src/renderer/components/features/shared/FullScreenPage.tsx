@@ -81,7 +81,7 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
       type="button"
       onClick={onClose}
       data-testid="full-screen-page-back"
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
+      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 focus:outline-hidden"
     >
       <ChevronLeft className="h-4 w-4" />
       <span>{closeLabel ?? t.settings.backToApp}</span>
@@ -90,7 +90,7 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
 
   if (variant === 'bar') {
     return (
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4">
+      <header data-tauri-drag-region className="flex h-12 shrink-0 items-center justify-between border-b border-border-muted bg-zinc-900 px-4">
         <div className="flex min-w-0 items-center gap-3">
           {backButton}
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-700/70 bg-zinc-800">
@@ -113,7 +113,7 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
   // 大标题独占视觉一等位、actions 与标题同行右对齐，描述压在标题下方。
   // 二级页在位时右侧顶栏不渲染，本标题块就是窗口顶部——原生标题栏撤掉后它得能拖窗口。
   return (
-    <header className="shrink-0 px-6 pb-4 pt-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+    <header data-tauri-drag-region className="shrink-0 px-6 pb-4 pt-5" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
       {backButton ? <div className="-ml-2 mb-3">{backButton}</div> : null}
       <div className="flex items-start justify-between gap-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <div className="flex min-w-0 items-center gap-3">

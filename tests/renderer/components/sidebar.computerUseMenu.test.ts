@@ -187,6 +187,15 @@ describe('Sidebar account menu entry planning', () => {
     expect(html).not.toContain('In-App 验证');
   });
 
+  // 2026-07-27 产品负责人实测「双击标题栏没反应」：Tauri 的 WKWebView 不认 Electron 的
+  // -webkit-app-region，拖拽/双击缩放必须靠 data-tauri-drag-region 属性；属性掉了不会有测试自己红。
+  it('侧栏顶行是 Tauri 拖拽区，且图标紧贴红绿灯左对齐（参照 Codex）', () => {
+    reactState.useStateCalls = 0;
+    const html = renderToStaticMarkup(React.createElement(Sidebar));
+    expect(html).toContain('data-tauri-drag-region');
+    expect(html).toContain('justify-start');
+  });
+
   it('keeps internal validation tools out of the account menu for admins and members', () => {
     const adminHtml = renderToStaticMarkup(React.createElement(Sidebar));
 

@@ -71,6 +71,7 @@ import { createTelemetryAdapter } from '../telemetry/telemetryAdapter';
 import { composeTelemetryAdapters } from './metricsCollector';
 import { withRunTraceContext } from '../telemetry/runTraceContext';
 import { resolvePersistentRoleId } from './persistentRoleResolution';
+import { createTurnCostEventHandler } from './runtime/turnCostPersistence';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -89,6 +90,10 @@ export class AgentLoop {
       logger.info(`[AgentLoop] scaffold-profile-active tier=${scaffoldProfile.tier} model=${config.modelConfig.model}`);
     }
     const resolvedSessionId = config.sessionId || `session-${Date.now()}`;
+    const onEvent = createTurnCostEventHandler({
+      sessionId: resolvedSessionId,
+      onEvent: config.onEvent,
+    });
     const persistedRuntimeState = loadPersistedRuntimeState(resolvedSessionId);
     let compressionState = new CompressionState();
     if (persistedRuntimeState?.compressionStateJson) {
@@ -104,7 +109,7 @@ export class AgentLoop {
       modelConfig: config.modelConfig,
       toolExecutor: config.toolExecutor,
       messages: config.messages,
-      onEvent: config.onEvent,
+      onEvent,
       modelRouter: new ModelRouter(),
       // Goal 模式：轮次上限用契约的 maxTurns（通常 > 默认 30），否则走默认
       maxIterations: config.maxIterations ?? config.goalContract?.maxTurns ?? getMaxIterations(),

@@ -1,21 +1,18 @@
 // ============================================================================
 // MCPSettings - MCP Server Status and Configuration Tab
-// （能力中心连接器 tab；默认落「已连接」。已连接列表每行头部带连接状态点：
+// （能力中心连接器 tab；默认落「发现连接」（新用户「已连接」是空的，先给推荐视角）。
+// 已连接列表每行头部带连接状态点：
 // 绿 = connected，灰 = 其他态，扫一眼就知道哪路连接器是活的）
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  RefreshCw,
   CheckCircle,
   AlertCircle,
   KeyRound,
-  LogOut,
   Loader2,
   Plug,
   PlugZap,
-  Power,
-  PowerOff,
   Cloud,
   Plus,
 } from 'lucide-react';
@@ -26,7 +23,7 @@ import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCa
 import { useWorkbenchCapabilityQuickActionRunner } from '../../../../hooks/useWorkbenchCapabilityQuickActionRunner';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useAppStore } from '../../../../stores/appStore';
-import { Button } from '../../../primitives';
+import { Button, Toggle } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -47,6 +44,7 @@ import {
 import { WorkbenchCapabilityDetailButton } from '../../../workbench/WorkbenchPrimitives';
 import { WorkbenchCapabilitySheetLite } from '../../../workbench/WorkbenchCapabilitySheetLite';
 import {
+  getMcpTrustSummary,
   getWorkbenchCapabilityStatusPresentation,
   getWorkbenchCapabilityTitle,
 } from '../../../../utils/workbenchPresentation';
@@ -57,28 +55,18 @@ import {
   type WorkbenchCapabilityTarget,
 } from '../../../../utils/workbenchCapabilitySheet';
 import {
-  getMcpAuthenticationRecoveryMessage,
   getMcpAuthenticationRecoveryShortHint,
   isMcpAuthenticationFailure,
 } from '../../../../utils/mcpRecovery';
 import { useI18n } from '../../../../hooks/useI18n';
-import { zh } from '../../../../i18n/zh';
 
 const logger = createLogger('MCPSettings');
 
 type McpViewTab = 'connected' | 'discover';
-type McpSettingsText = typeof zh.settings.mcp;
-type McpTrustSummaryLabels = McpSettingsText['trustSummary'];
 
-export function getMcpTrustSummary(
-  server: WorkbenchMcpRegistryItem,
-  labels: McpTrustSummaryLabels = zh.settings.mcp.trustSummary,
-): string {
-  const authHint = isMcpAuthenticationFailure(server)
-    ? labels.authReauthorizeHint
-    : labels.authMaskedHint;
-  return `${server.transport} · ${server.toolCount} ${labels.toolUnit} / ${server.resourceCount} ${labels.resourceUnit} · ${labels.approvalNotice} · ${authHint}`;
-}
+// getMcpTrustSummary 已上移到 workbenchPresentation（防御空值版本），
+// 这里 re-export 保持既有引用/测试入口不变。
+export { getMcpTrustSummary };
 
 export const MCPSettings: React.FC = () => {
   const { t, language } = useI18n();
@@ -88,7 +76,7 @@ export const MCPSettings: React.FC = () => {
   const settingsCapabilityFocus = useAppStore((s) => s.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((s) => s.clearSettingsCapabilityFocus);
   const canManageMcp = true;
-  const [activeTab, setActiveTab] = useState<McpViewTab>('connected');
+  const [activeTab, setActiveTab] = useState<McpViewTab>('discover');
   const {
     status: mcpStatus,
     isLoading,
@@ -104,8 +92,6 @@ export const MCPSettings: React.FC = () => {
   } = useWorkbenchCapabilityQuickActionRunner();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
-  const [reconnectingServer, setReconnectingServer] = useState<string | null>(null);
-  const [signingOutServer, setSigningOutServer] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorInitialConfig, setEditorInitialConfig] = useState<Partial<McpServerConfig> | undefined>(undefined);
   // 每个 entry 独立 loading + 代际防陈旧覆盖（A5 stale-promise 修复，见 hook 注释）
@@ -113,7 +99,6 @@ export const MCPSettings: React.FC = () => {
     loading: discoverActionLoading,
     begin: beginDiscoverAction,
     end: endDiscoverAction,
-    isStale: isStaleDiscoverAction,
   } = useStaleGuardedLoadingSet();
   const [activeSheetTarget, setActiveSheetTarget] = useState<WorkbenchCapabilityTarget | null>(null);
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖
@@ -218,55 +203,6 @@ export const MCPSettings: React.FC = () => {
     }
   };
 
-  const handleReconnect = async (serverName: string) => {
-    if (!canManageMcp) return;
-    setReconnectingServer(serverName);
-    try {
-      const result = await window.domainAPI?.invoke<{ success: boolean; error?: string }>(
-        IPC_DOMAINS.MCP, 'reconnectServer', { serverName }
-      );
-      // result.success 是 IPC 调用成功，result.data 是实际重连结果
-      if (result?.success && result?.data?.success) {
-        setMessage({ type: 'success', text: `${serverName}${mcpText.toast.reconnectSuccessSuffix}` });
-      } else {
-        const errorMsg = result?.data?.error || mcpText.toast.unknownError;
-        setMessage({ type: 'error', text: `${serverName}${mcpText.toast.reconnectFailedMiddle}${errorMsg}` });
-      }
-      await reloadMcpStatus();
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : mcpText.toast.unknownError;
-      setMessage({ type: 'error', text: `${serverName}${mcpText.toast.reconnectFailedMiddle}${errorMsg}` });
-    } finally {
-      setReconnectingServer(null);
-    }
-  };
-
-  const handleReauthorize = useCallback((server: WorkbenchMcpRegistryItem) => {
-    setMessage({ type: 'info', text: getMcpAuthenticationRecoveryMessage(server) });
-  }, []);
-
-  const handleSignOut = async (serverName: string) => {
-    if (!canManageMcp) return;
-    setSigningOutServer(serverName);
-    try {
-      const result = await window.domainAPI?.invoke<{ success: boolean; error?: string }>(
-        IPC_DOMAINS.MCP, 'signOutServer', { serverName },
-      );
-      if (result?.success && result?.data?.success) {
-        setMessage({ type: 'success', text: `${serverName}${mcpText.toast.signOutSuccessSuffix}` });
-      } else {
-        const errorMsg = result?.data?.error || result?.error?.message || mcpText.toast.unknownError;
-        setMessage({ type: 'error', text: `${serverName}${mcpText.toast.signOutFailedMiddle}${errorMsg}` });
-      }
-      await reloadMcpStatus();
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : mcpText.toast.unknownError;
-      setMessage({ type: 'error', text: `${serverName}${mcpText.toast.signOutFailedMiddle}${errorMsg}` });
-    } finally {
-      setSigningOutServer(null);
-    }
-  };
-
   const handleAddServer = useCallback(async (
     config: McpServerConfig,
     secrets?: McpServerSaveSecrets,
@@ -294,36 +230,13 @@ export const MCPSettings: React.FC = () => {
     }
   }, [mcpText, reloadMcpStatus]);
 
-  // ---- 发现连接：推荐 MCP 的三类动作 ----
+  // ---- 发现连接：推荐 MCP 的两类动作 ----
 
-  /** 免配置 server 一键连接 */
-  const handleQuickConnect = useCallback(async (entry: RecommendedMcpServerEntry) => {
-    if (!canManageMcp || !entry.connection) return;
-    const generation = beginDiscoverAction(entry.id);
-    try {
-      await handleAddServer({
-        name: entry.id,
-        type: entry.connection.type,
-        command: entry.connection.command,
-        args: entry.connection.args,
-        env: entry.connection.env,
-        url: entry.connection.url,
-        headers: entry.connection.headers,
-      });
-      if (isStaleDiscoverAction(entry.id, generation)) {
-        // 这条 add 在同一 entry 的新一轮操作已经取代它之后才成功落地——
-        // 静默完成的写入会变成幽灵 server，主动撤销（A5 stale-promise 回滚）。
-        await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'removeServer', { serverName: entry.id }).catch(() => {});
-        return;
-      }
-      await reloadMcpStatus();
-    } finally {
-      endDiscoverAction(entry.id, generation);
-    }
-  }, [handleAddServer, reloadMcpStatus, beginDiscoverAction, endDiscoverAction, isStaleDiscoverAction]);
-
-  /** 需要凭证的 server：打开预填编辑器让用户补凭证 */
-  const handleConnectWithConfig = useCallback((entry: RecommendedMcpServerEntry) => {
+  /**
+   * 添加 server：打开预填好目录配置的编辑器（initialConfig 预填 → McpServerEditor）。
+   * 免配置与需要凭证的条目统一走这条确认路径，连接逻辑（addServer）不变。
+   */
+  const handleAddEntry = useCallback((entry: RecommendedMcpServerEntry) => {
     if (!canManageMcp || !entry.connection) return;
     setEditorInitialConfig({
       name: entry.id,
@@ -446,8 +359,7 @@ export const MCPSettings: React.FC = () => {
           enabledServerIds={new Set(mcpServers.filter((server) => server.enabled).map((server) => server.id))}
           canManageMcp={canManageMcp}
           actionLoading={discoverActionLoading}
-          onQuickConnect={handleQuickConnect}
-          onConnectWithConfig={handleConnectWithConfig}
+          onAdd={handleAddEntry}
           onEnableBuiltin={handleEnableBuiltin}
           onOpenComputerUsePanel={() => setShowComputerUsePanel(true)}
         />
@@ -489,6 +401,15 @@ export const MCPSettings: React.FC = () => {
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* 页面级安全说明：审批/凭证 mask 是所有 server 的共同事实，只在列表标题下放一行，
+              不再逐行重复；每台 server 的差异信息仍在详情弹层可见 */}
+          <div
+            data-testid="mcp-trust-summary-note"
+            className="border-b border-zinc-700/60 px-3 py-2 text-[11px] text-zinc-500"
+          >
+            {mcpText.trustSummary.approvalNotice} · {mcpText.trustSummary.authMaskedHint}
           </div>
 
           <div className="grid grid-cols-2 gap-px border-b border-zinc-700/60 bg-zinc-800/80 sm:grid-cols-5">
@@ -582,6 +503,10 @@ export const MCPSettings: React.FC = () => {
                     const statusClass = getStatusBadgeClass(server.lifecycle.connectionState);
                     const requiresReauthorization = isMcpAuthenticationFailure(server);
                     const isOAuthServer = server.authMode === 'oauth';
+                    // 计数只在真正加载过（connected）后展示；未连接/懒加载未触发时没有计数这回事
+                    const hasLoadedCounts = server.lifecycle.connectionState === 'connected'
+                      && Number.isFinite(server.toolCount)
+                      && Number.isFinite(server.resourceCount);
 
                     return (
                       <tr
@@ -610,17 +535,24 @@ export const MCPSettings: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-3 py-3 align-middle">
-                          <span className="inline-flex rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
-                            {server.transport}
-                          </span>
+                          {server.transport ? (
+                            <span className="inline-flex rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400">
+                              {server.transport}
+                            </span>
+                          ) : (
+                            <span className="text-zinc-600">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-3 align-middle text-zinc-300">
-                          <span>{server.toolCount}{mcpText.management.countToolSuffix}</span>
-                          <span className="mx-2 text-zinc-600">/</span>
-                          <span>{server.resourceCount}{mcpText.management.countResourceSuffix}</span>
-                          <div className="mt-1 max-w-[260px] text-[11px] leading-snug text-zinc-500">
-                            {getMcpTrustSummary(server, mcpText.trustSummary)}
-                          </div>
+                          {hasLoadedCounts ? (
+                            <>
+                              <span>{server.toolCount}{mcpText.management.countToolSuffix}</span>
+                              <span className="mx-2 text-zinc-600">/</span>
+                              <span>{server.resourceCount}{mcpText.management.countResourceSuffix}</span>
+                            </>
+                          ) : (
+                            <span className="text-zinc-600">—</span>
+                          )}
                           {isOAuthServer && (
                             <div className="mt-1 text-[11px] leading-snug text-zinc-400">
                               {mcpText.management.oauthStatusLabel}
@@ -660,60 +592,21 @@ export const MCPSettings: React.FC = () => {
                           )}
                         </td>
                         <td className="px-3 py-3 align-middle">
+                          {/* 行尾操作全列表统一：启用/禁用开关 + 详情入口；
+                              重连/重新授权/退出授权收进详情弹层的 quick actions */}
                           <div className="flex items-center justify-end gap-2">
+                            {canManageMcp && (
+                              <Toggle
+                                checked={server.enabled}
+                                onChange={(enabled) => handleToggleServer(server.id, enabled)}
+                                aria-label={`${server.enabled ? mcpText.management.disable : mcpText.management.enable} ${server.label}`}
+                                title={`${server.enabled ? mcpText.management.disable : mcpText.management.enable} ${server.label}`}
+                              />
+                            )}
                             <WorkbenchCapabilityDetailButton
                               label={server.label}
                               onClick={() => openCapabilitySheet(server)}
                             />
-                            {canManageMcp && isOAuthServer && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleSignOut(server.id)}
-                                loading={signingOutServer === server.id}
-                                leftIcon={<LogOut className="w-3 h-3" />}
-                              >
-                                {mcpText.management.signOut}
-                              </Button>
-                            )}
-                            {canManageMcp && server.enabled && !server.available && (
-                              requiresReauthorization ? (
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => handleReauthorize(server)}
-                                  leftIcon={<KeyRound className="w-3 h-3" />}
-                                >
-                                  {mcpText.management.reauthorize}
-                                </Button>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleReconnect(server.id)}
-                                  loading={reconnectingServer === server.id}
-                                  leftIcon={<RefreshCw className="w-3 h-3" />}
-                                >
-                                  {mcpText.management.reconnect}
-                                </Button>
-                              )
-                            )}
-                            {canManageMcp && (
-                              <Button
-                                size="sm"
-                                variant={server.enabled ? 'ghost' : 'primary'}
-                                onClick={() => handleToggleServer(server.id, !server.enabled)}
-                                leftIcon={
-                                  server.enabled ? (
-                                    <PowerOff className="w-3 h-3" />
-                                  ) : (
-                                    <Power className="w-3 h-3" />
-                                  )
-                                }
-                              >
-                                {server.enabled ? mcpText.management.disable : mcpText.management.enable}
-                              </Button>
-                            )}
                           </div>
                         </td>
                       </tr>

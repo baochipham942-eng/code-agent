@@ -200,6 +200,17 @@ export function useWorkbenchCapabilityQuickActionRunner(): WorkbenchCapabilityQu
           }
           return true;
         },
+        signOutMcpServer: async (serverName) => {
+          const result = await ipcService.invokeDomain<{ success: boolean; error?: string }>(
+            IPC_DOMAINS.MCP,
+            'signOutServer',
+            { serverName },
+          );
+          if (!result?.success) {
+            throw new Error(result?.error || `${serverName} 退出授权失败`);
+          }
+          return true;
+        },
         refreshMcpStatus: requestMcpStatusReload,
         retryConnector: async (connectorId) => {
           await ipcService.invokeDomain(IPC_DOMAINS.CONNECTOR, 'retry', { connectorId });

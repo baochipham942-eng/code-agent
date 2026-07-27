@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('../../../src/renderer/components/features/expert/ExpertPanel', () => ({ ExpertPanel: () => <div /> }));
 vi.mock('../../../src/renderer/components/features/settings/tabs/SkillsSettings', () => ({ SkillsSettings: () => <div /> }));
@@ -21,14 +21,22 @@ afterEach(() => {
 });
 
 describe('CapabilityHubPage', () => {
-  it('只渲染四个能力 tab', () => {
+  it('只渲染三个能力 tab，「插件」tab 暂时下架（代码保留，入口不渲染）', () => {
     useAuthStore.setState({ user: user(false) });
     render(<CapabilityHubPage />);
-    for (const key of ['experts', 'skills', 'connectors', 'plugins']) {
+    for (const key of ['experts', 'skills', 'connectors']) {
       expect(screen.getByTestId(`capability-hub-tab-${key}`)).toBeTruthy();
     }
+    expect(screen.queryByTestId('capability-hub-tab-plugins')).toBeNull();
     expect(screen.queryByTestId('capability-hub-tab-automation')).toBeNull();
     expect(screen.queryByTestId('capability-hub-tab-inventory')).toBeNull();
+  });
+
+  it('深链指向已隐藏的插件 tab 时回退到第一个可见 tab，不白屏', async () => {
+    useAuthStore.setState({ user: user(false) });
+    useAppStore.setState({ capabilityHubTab: 'plugins' });
+    render(<CapabilityHubPage />);
+    await waitFor(() => expect(useAppStore.getState().capabilityHubTab).toBe('experts'));
   });
 
   it('提示词入口仅 admin 可见（2026-07 方案 9C 从用户菜单迁入）', () => {

@@ -54,6 +54,17 @@ export interface RecommendedMcpConnectionTemplate {
 }
 
 /**
+ * 静态策展的工具清单条目（发现面展开卡用）。
+ * 名录抄自各 server 官方 README，宁缺毋滥；运行时真实工具以 server 连接后上报为准。
+ */
+export interface McpCatalogTool {
+  /** 工具名（照抄官方 README 大小写/下划线） */
+  name: string;
+  /** 一句中文功能描述 */
+  description?: string;
+}
+
+/**
  * MCP 推荐目录完整载荷
  * 云端下发与客户端兜底共用的数据形状
  */
@@ -104,4 +115,10 @@ export interface RecommendedMcpServerEntry {
   recommendationTier?: 'default_visible' | 'conditional' | 'not_default';
   /** 展示给用户的风险或重复能力提示 */
   riskNote?: string;
+  /**
+   * 静态策展的工具清单（发现面货架卡展开时展示）。
+   * 名录抄自各 server 官方 README，宁缺毋滥：没把握的条目不填，
+   * 前端对缺失清单显示「安装后可见」占位。运行时真实工具以连接后上报为准。
+   */
+  tools?: McpCatalogTool[];
 }

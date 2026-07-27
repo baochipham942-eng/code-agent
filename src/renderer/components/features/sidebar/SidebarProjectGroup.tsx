@@ -332,6 +332,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
           </button>
           </>
         )}
+    </div>
         {/* 设置对话框挪出 hover 浮现容器：容器离开 hover 会 display:none，
             把开着的对话框一起隐藏（原实现的缺陷）。 */}
         {group.projectId && (
@@ -341,7 +342,6 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
             onClose={() => setSettingsOpen(false)}
           />
         )}
-    </div>
       </div>
       {detailsExpanded && !group.isUncategorized && (
         <SidebarProjectDetail

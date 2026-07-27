@@ -34,6 +34,7 @@ import {
   UsersRound,
   Download,
   Gauge,
+  ScrollText,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
@@ -118,6 +119,7 @@ export const Sidebar: React.FC = () => {
     setShowOptionalUpdateModal,
     openWorkspacePreview,
     setSidebarCollapsed,
+    setShowPromptManager,
   } = useAppStore();
   const applySessionWorkbenchPreset = useComposerStore((state) => state.applySessionWorkbenchPreset);
   const applyWorkbenchPreset = useComposerStore((state) => state.applyWorkbenchPreset);
@@ -182,6 +184,10 @@ export const Sidebar: React.FC = () => {
   const canOpenSessionReplay = canAccessFeature('eval.replay', user);
   // 评测中心入口门禁与菜单里其他 admin 判定同一条通路（user.isAdmin verified claim）。
   const canOpenEvalCenter = canAccessFeature('eval.center', user);
+  // 提示词覆写是管理员工具（2026-07-27 拍板：它既不是能力资产也不是个人配置，
+  // 且改的是本机 ~/.code-agent/prompts-overrides/*.md，云端 admin-console 够不着）——
+  // 归到用户菜单「高级工具」，与模型训练/桌面采集同一档按身份显形。
+  const canOpenPromptManager = canAccessFeature('prompt.manager', user);
   const isVerifiedAdmin = user?.isAdmin === true;
   const isAdminPendingVerification = !isVerifiedAdmin && hasCachedAdminClaim && sessionTrustState === 'cached';
   const adminPendingTitle =
@@ -906,6 +912,17 @@ export const Sidebar: React.FC = () => {
                       />
                     }
                     label={sb.menuEvalCenter}
+                  />
+                )}
+                {canOpenPromptManager && (
+                  <AccountMenuItem
+                    onClick={() => {
+                      setShowPromptManager(true);
+                      setShowUserMenu(false);
+                    }}
+                    icon={<ScrollText className="w-4 h-4 text-violet-400/80" />}
+                    label={sb.menuPromptManager}
+                    testId="user-menu-open-prompt-manager"
                   />
                 )}
 

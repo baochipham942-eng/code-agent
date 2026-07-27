@@ -5,15 +5,11 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Fingerprint, Save, RotateCcw, FileText, ShieldCheck, Loader2, Check, ScrollText } from 'lucide-react';
+import { Fingerprint, Save, RotateCcw, FileText, ShieldCheck, Loader2, Check } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
-import { useAppStore } from '../../../../stores/appStore';
-import { useAuthStore } from '../../../../stores/authStore';
-import { canAccessFeature, createAccessSubject } from '../../../../utils/accessControl';
-import { Button } from '../../../primitives';
 
 const logger = createLogger('SoulSettings');
 
@@ -53,12 +49,6 @@ export const SoulSettings: React.FC = () => {
 
   const isCustom = source === 'user';
   const isDirty = content !== baseline;
-
-  // 提示词管理（admin-only）：2026-07-27 拍板，入口从能力中心 header 迁到设置页 → 人格。
-  // 无权限整块不渲染，权限语义与原入口一致。
-  const currentUser = useAuthStore((s) => s.user);
-  const setShowPromptManager = useAppStore((s) => s.setShowPromptManager);
-  const canOpenPromptManager = canAccessFeature('prompt.manager', createAccessSubject(currentUser));
 
   // 首次加载：状态 + 当前内容 + 内置默认。未自定义时预填默认作为安全的起改基线。
   useEffect(() => {
@@ -242,26 +232,6 @@ export const SoulSettings: React.FC = () => {
         </button>
       </div>
 
-      {/* 提示词管理入口（admin-only）：人格页本身就是系统提示词编辑器，覆写是它的近邻 */}
-      {canOpenPromptManager && (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3.5">
-          <div className="flex items-center gap-2">
-            <ScrollText className="h-4 w-4 text-violet-300" />
-            <h3 className="text-sm font-medium text-zinc-200">{soulText.promptEntryTitle}</h3>
-          </div>
-          <p className="mt-2 text-xs text-zinc-500">{soulText.promptEntryDescription}</p>
-          <div className="mt-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              data-testid="settings-open-prompt-manager"
-              onClick={() => setShowPromptManager(true)}
-            >
-              {soulText.promptEntryButton}
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

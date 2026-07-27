@@ -360,9 +360,6 @@ export const enSettingsModels = {
       reset: 'Restore default',
       resetCustomTitle: 'Delete the custom persona and restore the built-in default',
       resetDefaultTitle: 'Already using the built-in default',
-      promptEntryTitle: 'Prompt manager',
-      promptEntryDescription: 'View and override the prompts the Agent uses (system prompts, tool descriptions, and more). Overrides are saved locally and take effect on the next turn.',
-      promptEntryButton: 'Open prompt manager',
     },
     skills: {
       main: {

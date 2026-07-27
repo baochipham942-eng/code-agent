@@ -49,6 +49,7 @@ interface AccountMenuItemProps {
   label: string;
   onClick: () => void;
   badge?: string;
+  testId?: string;
 }
 
 export const AccountMenuLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -57,9 +58,10 @@ export const AccountMenuLabel: React.FC<{ children: React.ReactNode }> = ({ chil
   </div>
 );
 
-export const AccountMenuItem: React.FC<AccountMenuItemProps> = ({ icon, label, onClick, badge }) => (
+export const AccountMenuItem: React.FC<AccountMenuItemProps> = ({ icon, label, onClick, badge, testId }) => (
   <button
     type="button"
+    data-testid={testId}
     onClick={onClick}
     className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
   >

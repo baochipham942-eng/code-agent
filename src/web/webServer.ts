@@ -331,7 +331,7 @@ import { attachVoiceStreamUpgrade } from './voiceStreamUpgrade';
 import { installPermissionResponseHandler } from './webPermissionResponseHandler';
 
 import { applyRendererBundleUpdate } from '../host/services/renderer/rendererBundleFetcher';
-import { getAppVersion } from '../host/platform';
+import { getAppVersion, getBuildInfo } from '../host/platform';
 import { WEB_SERVER_DEFAULTS } from '../shared/constants/webServer';
 import type { PendingLocalToolCall } from './routes/agent';
 import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
@@ -1190,6 +1190,7 @@ async function main(): Promise<void> {
     pendingDevPermissions,
     resolveCodeAgentDataDir,
     getAppVersion,
+    getBuildInfo,
     getDurableRunRollout,
     getDurableRunReadService,
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),

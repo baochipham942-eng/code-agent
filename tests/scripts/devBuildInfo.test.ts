@@ -1,9 +1,24 @@
-import { readFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { join, resolve } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const repoRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  vi.doUnmock('fs');
+  vi.resetModules();
+  for (const dir of tempDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 function readInstallScript(): string {
   return readFileSync(resolve(repoRoot, 'scripts/tauri-install-dev.sh'), 'utf8');
@@ -44,5 +59,43 @@ describe('dev build-info install gate', () => {
     expect(warningBody).toContain('info.builtAt');
     expect(warningBody).toContain('无 build-info 的旧包');
     expect(warningBody).not.toMatch(/\bexit\b/);
+  });
+
+  it('reads a real build-info file and returns null for malformed JSON', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'agent-neo-build-info-'));
+    const tempBuildInfo = join(tempDir, 'build-info.json');
+    tempDirs.push(tempDir);
+
+    const expected = {
+      appName: 'Agent Neo Dev',
+      branch: 'feat/dev-build-info',
+      commit: '1234567890123456789012345678901234567890',
+      commitShort: '1234567',
+      dirty: true,
+      worktree: '/tmp/worktree with spaces',
+      builtAt: '2026-07-27T12:34:56.000Z',
+    };
+    writeFileSync(tempBuildInfo, JSON.stringify(expected));
+
+    vi.doMock('fs', async () => {
+      const actual = await vi.importActual<typeof import('fs')>('fs');
+      return {
+        ...actual,
+        readFileSync: (path: Parameters<typeof actual.readFileSync>[0], options?: unknown) => (
+          String(path).endsWith('/build-info.json')
+            ? actual.readFileSync(tempBuildInfo, options as never)
+            : actual.readFileSync(path, options as never)
+        ),
+      };
+    });
+
+    const validModule = await import('../../src/host/platform/appPaths');
+    expect(validModule.getBuildInfo()).toEqual(expected);
+    expect(validModule.getBuildInfo()).toBe(validModule.getBuildInfo());
+
+    writeFileSync(tempBuildInfo, '{bad json');
+    vi.resetModules();
+    const malformedModule = await import('../../src/host/platform/appPaths');
+    expect(malformedModule.getBuildInfo()).toBeNull();
   });
 });

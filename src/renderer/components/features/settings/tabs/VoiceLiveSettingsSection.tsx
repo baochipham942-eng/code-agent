@@ -27,7 +27,7 @@ type InterruptMode = NonNullable<VoiceLiveSettings['interrupt']>;
 type VadSensitivity = NonNullable<VoiceLiveSettings['vadSensitivity']>;
 type EchoCancellationMode = NonNullable<VoiceLiveSettings['echoCancellation']>;
 
-const INTERRUPT_OPTIONS: InterruptMode[] = ['server_vad', 'push_to_talk', 'manual'];
+const INTERRUPT_OPTIONS: InterruptMode[] = ['server_vad', 'manual'];
 const SENSITIVITY_OPTIONS: VadSensitivity[] = ['low', 'medium', 'high'];
 
 export const VoiceLiveSettingsSection: React.FC = () => {
@@ -104,7 +104,6 @@ export const VoiceLiveSettingsSection: React.FC = () => {
 
   const interruptText: Record<InterruptMode, { label: string; desc: string }> = {
     server_vad: { label: text.interruptServerVad, desc: text.interruptServerVadDesc },
-    push_to_talk: { label: text.interruptPtt, desc: text.interruptPttDesc },
     manual: { label: text.interruptManual, desc: text.interruptManualDesc },
   };
   const sensitivityText: Record<VadSensitivity, string> = {
@@ -250,7 +249,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
 
       <div className="border-t border-zinc-700 pt-4">
         <h3 className="mb-3 text-sm font-medium text-zinc-200">{text.interruptTitle}</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {INTERRUPT_OPTIONS.map((option) => {
             const active = interrupt === option;
             return (

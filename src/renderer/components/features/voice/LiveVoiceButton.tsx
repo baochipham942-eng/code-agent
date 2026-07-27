@@ -20,9 +20,14 @@ export interface LiveVoiceButtonProps {
   /** 已有文字消息的会话要先确认延续上下文 */
   hasMessages: boolean;
   disabled?: boolean;
+  /**
+   * `primary` = 它占的是输入框右侧主按钮那个位置（输入框空着时接替发送键）。
+   * 那个位置的按钮是这一行的视觉落点，用弱色 icon-only 会让整行没有终点。
+   */
+  variant?: 'ghost' | 'primary';
 }
 
-export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, hasMessages, disabled }) => {
+export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, hasMessages, disabled, variant = 'ghost' }) => {
   const { t } = useI18n();
   const { enabled, configured } = useVoiceLiveAvailability();
   const phase = useVoiceCallStore((state) => state.phase);
@@ -43,9 +48,11 @@ export const LiveVoiceButton: React.FC<LiveVoiceButtonProps> = ({ sessionId, has
         disabled={disabled}
         title={t.voice.live.startTitle}
         aria-label={t.voice.live.startTitle}
-        className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700 ${
-          disabled ? 'opacity-50 cursor-not-allowed' : ''
-        }`}
+        className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 ${
+          variant === 'primary'
+            ? 'bg-zinc-700/70 text-zinc-200 hover:bg-zinc-600'
+            : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700'
+        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         <AudioLines className="w-4 h-4" />
       </button>

@@ -28,6 +28,7 @@ import { maybeShowSpeakerEchoHint, showVoiceAecFallbackWarning } from './voiceEc
 import { VoiceAudioPipeline, type VoiceAudioPipelineLike } from './voiceAudioPipeline';
 import { resolvePartialRelease } from '../utils/voicePartialOverlay';
 import { selectVoiceFocusContext } from './voiceFocusContext';
+import { normalizeInterruptMode } from '../components/features/voice/voiceSettingsDerivation';
 
 function getT() {
   return languages[useAppStore.getState().language] ?? languages.zh;
@@ -49,7 +50,7 @@ async function readVoiceRuntimeSettings(): Promise<{
   try {
     const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
     return {
-      interruptMode: settings.voice?.live?.interrupt ?? 'server_vad',
+      interruptMode: normalizeInterruptMode(settings.voice?.live?.interrupt),
       echoCancellation: settings.voice?.live?.echoCancellation ?? 'auto',
     };
   } catch {

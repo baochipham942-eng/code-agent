@@ -24,7 +24,7 @@ export function deriveTurnDetection(
   interrupt: InterruptMode,
   sensitivity: VadSensitivity,
 ): VoiceTurnDetectionConfig {
-  if (interrupt !== 'server_vad') return null; // PTT / 点按：手动 commit 模式
+  if (interrupt !== 'server_vad') return null; // 点按说话：手动 commit 模式
   const defaults = VOICE_TURN_DETECTION_DEFAULT;
   return {
     type: 'server_vad',
@@ -34,10 +34,19 @@ export function deriveTurnDetection(
   };
 }
 
-/** 从已有设置反推 UI 三态（老配置没有 live.* 时按 turnDetection 形状推）。 */
+/**
+ * 归一化历史值。`push_to_talk`（按住说话）2026-07-27 删档——它相对「点按说话」
+ * 只多一条「松手必关麦」，代价是整通电话手被按在按钮上，桌面端不值。
+ * 已经存了这个值的配置一律迁到 manual，别让它在运行时变成一个没有 UI 的档位。
+ */
+export function normalizeInterruptMode(raw: string | undefined): InterruptMode {
+  return raw === 'server_vad' ? 'server_vad' : raw ? 'manual' : 'server_vad';
+}
+
+/** 从已有设置反推 UI 两态（老配置没有 live.* 时按 turnDetection 形状推）。 */
 export function deriveInterruptMode(settings: { turnDetection?: VoiceTurnDetectionConfig; live?: VoiceLiveSettings } | undefined): InterruptMode {
-  if (settings?.live?.interrupt) return settings.live.interrupt;
-  if (settings?.turnDetection === null) return 'push_to_talk';
+  if (settings?.live?.interrupt) return normalizeInterruptMode(settings.live.interrupt);
+  if (settings?.turnDetection === null) return 'manual';
   return 'server_vad';
 }
 

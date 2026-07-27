@@ -27,6 +27,8 @@ import { VoiceInputButton } from './VoiceInputButton';
 import { DictationRecordingBar } from './DictationRecordingBar';
 import { useVoiceInput } from '../../../../hooks/useVoiceInput';
 import { LiveVoiceButton } from '../../voice/LiveVoiceButton';
+import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
+import { useVoiceCallStore } from '../../../../stores/voiceCallStore';
 import { VoiceChrome } from '../../voice/VoiceChrome';
 import { PermissionToggle } from './PermissionToggle';
 import { ContextUsagePill } from '../ContextUsagePill';
@@ -637,6 +639,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
+  // 右侧主按钮的归属：只有「空输入框 + 没在跑 + 语音入口真能用」时才让给开通话，
+  // 其余情况发送键都有事可做（发送 / 停止），不能被换掉。
+  const liveVoiceAvailability = useVoiceLiveAvailability();
+  const liveVoiceCallPhase = useVoiceCallStore((state) => state.phase);
+  const liveVoiceIsPrimary = !hasContent
+    && !isProcessing
+    && !disabled
+    && Boolean(currentSessionId)
+    && liveVoiceAvailability.enabled
+    && liveVoiceAvailability.configured
+    && liveVoiceCallPhase === 'idle';
 
   return (
     <div
@@ -982,23 +995,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
                 disabled={disabled}
               />
             )}
-            {/* 实时通话入口（与口述输入并列、职责分离，§4.2） */}
-            {!disabled && (
+            {/*
+              右侧主按钮一个位置两种职能（2026-07-27 产品负责人拍板）：
+              输入框空着时是「开通话」，打了字才变「发送」——空输入框上摆一个
+              点了也没用的发送键，是这三个图标里最没用的那个。
+              正在跑 / 有内容 / 语音入口不可用时回退成发送键（那些状态下它有事可做）。
+            */}
+            {liveVoiceIsPrimary ? (
               <LiveVoiceButton
                 sessionId={currentSessionId ?? null}
                 hasMessages={hasMessages}
                 disabled={disabled}
+                variant="primary"
+              />
+            ) : (
+              <SendButton
+                disabled={disabled && !isProcessing}
+                isProcessing={isProcessing}
+                isInterrupting={isInterrupting}
+                hasContent={hasContent}
+                type="submit"
+                onStop={onStop}
               />
             )}
-            {/* 发送/停止/引导按钮 */}
-            <SendButton
-              disabled={disabled && !isProcessing}
-              isProcessing={isProcessing}
-              isInterrupting={isInterrupting}
-              hasContent={hasContent}
-              type="submit"
-              onStop={onStop}
-            />
           </div>
         </div>
       </form>

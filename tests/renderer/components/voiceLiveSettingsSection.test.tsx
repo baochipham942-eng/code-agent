@@ -80,17 +80,17 @@ describe('VoiceLiveSettingsSection', () => {
     });
   });
 
-  it('选 PTT 后 turnDetection 写 null（B6 手动 commit 前提），灵敏度选择隐藏', async () => {
+  it('选点按说话后 turnDetection 写 null（手动 commit 前提），灵敏度选择隐藏', async () => {
     settingsGet({ live: { enabled: true }, turnDetection: { type: 'server_vad' } });
     render(<VoiceLiveSettingsSection />);
     await waitFor(() => expect(screen.getByTestId('voice-vad-sensitivity')).toBeTruthy());
 
-    fireEvent.click(screen.getByTestId('voice-interrupt-push_to_talk'));
+    fireEvent.click(screen.getByTestId('voice-interrupt-manual'));
     await waitFor(() => {
       const setCall = invokeDomainMock.mock.calls.find(([, action]) => action === 'set');
       expect(setCall).toBeTruthy();
       const payload = setCall![2] as { voice: { turnDetection: unknown; live: { interrupt?: string } } };
-      expect(payload.voice.live.interrupt).toBe('push_to_talk');
+      expect(payload.voice.live.interrupt).toBe('manual');
       expect(payload.voice.turnDetection).toBeNull();
     });
     expect(screen.queryByTestId('voice-vad-sensitivity')).toBeNull();

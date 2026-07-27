@@ -146,7 +146,10 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
   const statusText =
     visual === 'error'
       ? (store.error?.message ?? t.voice.status.error)
-      : t.voice.status[visual as Exclude<VoiceVisualState, 'idle' | 'error'>];
+      // 点按模式没点开时麦克风门是关的——说「正在听」是骗人的，它在等你点。
+      : visual === 'listening' && store.interruptMode === 'manual' && !store.pttCaptureOn
+        ? t.voice.live.tapToTalk
+        : t.voice.status[visual as Exclude<VoiceVisualState, 'idle' | 'error'>];
 
   const level = visual === 'speaking' ? store.playbackLevel : store.micLevel;
 
@@ -172,23 +175,6 @@ export const VoiceChrome: React.FC<{ sessionId: string | null }> = ({ sessionId 
         <LevelMeter value={store.playbackLevel} tone="playback" label={t.voice.status.speaking} />
       </span>
 
-      {store.interruptMode === 'push_to_talk' && (
-        <button /* ds-allow:button: PTT 按住说话按钮，pointer 按住/松开语义 + 双态样式，Button primitive 不支持 */
-          type="button"
-          data-testid="voice-ptt"
-          onPointerDown={() => voiceCallBridge.pttDown()}
-          onPointerUp={() => voiceCallBridge.pttUp()}
-          onPointerLeave={() => voiceCallBridge.pttUp()}
-          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors select-none ${
-            store.pttCaptureOn
-              ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
-              : 'border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-500'
-          }`}
-        >
-          <Mic className="h-3.5 w-3.5" />
-          {store.pttCaptureOn ? t.voice.live.releaseToSend : t.voice.live.holdToTalk}
-        </button>
-      )}
       {store.interruptMode === 'manual' && (
         <button /* ds-allow:button: 点按说话按钮，双态样式与 PTT 同构，Button primitive 的居中按钮形态不适配 */
           type="button"

@@ -16,6 +16,7 @@ export type WorkbenchQuickActionKind =
   | 'open_skill_settings'
   | 'retry_mcp'
   | 'open_mcp_settings'
+  | 'sign_out_mcp'
   | 'retry_connector'
   | 'probe_connector'
   | 'repair_connector_permission'
@@ -48,6 +49,7 @@ export interface WorkbenchQuickActionHandlers {
   mountSkill: (skillName: string, libraryId: string) => Promise<boolean>;
   openSettingsTab: (tab: SettingsTab) => void;
   reconnectMcpServer: (serverName: string) => Promise<boolean>;
+  signOutMcpServer?: (serverName: string) => Promise<boolean>;
   refreshMcpStatus?: () => void | Promise<void>;
   retryConnector: (connectorId: string) => Promise<boolean>;
   probeConnector: (connectorId: string) => Promise<boolean>;
@@ -169,32 +171,41 @@ function buildMcpQuickActions(
   server: WorkbenchMcpRegistryItem,
   blockedReason: WorkbenchMcpRegistryItem['blockedReason'],
 ): WorkbenchQuickAction[] {
-  if (blockedReason?.code !== 'mcp_disconnected' && blockedReason?.code !== 'mcp_error') {
-    return [];
-  }
+  const actions: WorkbenchQuickAction[] = [];
 
-  if (isMcpAuthenticationFailure(server, blockedReason)) {
-    return [
-      {
+  if (blockedReason?.code === 'mcp_disconnected' || blockedReason?.code === 'mcp_error') {
+    if (isMcpAuthenticationFailure(server, blockedReason)) {
+      actions.push({
         kind: 'open_mcp_settings',
         label: '重新授权',
         emphasis: 'primary',
-      },
-    ];
+      });
+    } else {
+      actions.push(
+        {
+          kind: 'retry_mcp',
+          label: '重连',
+          emphasis: 'primary',
+        },
+        {
+          kind: 'open_mcp_settings',
+          label: '打开设置',
+          emphasis: 'secondary',
+        },
+      );
+    }
   }
 
-  return [
-    {
-      kind: 'retry_mcp',
-      label: '重连',
-      emphasis: 'primary',
-    },
-    {
-      kind: 'open_mcp_settings',
-      label: '打开设置',
+  // OAuth 退出授权从列表行收纳进详情层
+  if (server.authMode === 'oauth' && server.hasOAuthTokens) {
+    actions.push({
+      kind: 'sign_out_mcp',
+      label: '退出授权',
       emphasis: 'secondary',
-    },
-  ];
+    });
+  }
+
+  return actions;
 }
 
 export function getWorkbenchCapabilityQuickActions(
@@ -204,7 +215,10 @@ export function getWorkbenchCapabilityQuickActions(
   const blockedReason = getWorkbenchCapabilityBlockedState(capability);
 
   if (options?.includeUnselected) {
-    if (capability.kind !== 'connector' && (capability.available || !blockedReason)) {
+    if (capability.kind === 'mcp') {
+      // MCP 的恢复/授权操作由 buildMcpQuickActions 按 server 实际状态推导，
+      // 不依赖 selected 才会生成的 blockedReason。
+    } else if (capability.kind !== 'connector' && (capability.available || !blockedReason)) {
       return [];
     }
   } else if (!capability.selected || !capability.blocked || !blockedReason) {
@@ -238,6 +252,13 @@ export function getWorkbenchCapabilityQuickActionFeedback(
     return {
       tone: 'info',
       message: '已移除 connector；需要时可从连接器设置重新启用。',
+    };
+  }
+
+  if (completion?.kind === 'sign_out_mcp') {
+    return {
+      tone: 'info',
+      message: '已退出该服务器的 OAuth 授权；下次调用前需要重新授权。',
     };
   }
 
@@ -338,6 +359,15 @@ export async function runWorkbenchCapabilityQuickAction(
     case 'open_mcp_settings':
       handlers.openSettingsTab('mcp');
       return true;
+    case 'sign_out_mcp':
+      if (capability.kind !== 'mcp' || !handlers.signOutMcpServer) {
+        return false;
+      }
+      try {
+        return await handlers.signOutMcpServer(capability.id);
+      } finally {
+        await refreshMcpStatus(handlers);
+      }
     case 'retry_connector':
       if (capability.kind !== 'connector') {
         return false;

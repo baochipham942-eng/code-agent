@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { WorkbenchMcpRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
 import {
   getWorkbenchCapabilityQuickActionFeedback,
   getWorkbenchCapabilityQuickActions,
@@ -712,6 +713,220 @@ describe('workbenchQuickActions', () => {
     })).toEqual({
       tone: 'info',
       message: '已断开 connector；它不会进入后续运行时 scope。',
+    });
+  });
+
+  it('exposes MCP recovery actions in the detail sheet even without a selected-turn blockedReason', () => {
+    // 连接器管理页详情弹层：server 未选中进 turn scope 时 blockedReason 不存在，
+    // 但「已启用却没连上」的 server 仍应在详情层提供重连入口（行上不再铺重连按钮）。
+    const disconnectedServer: WorkbenchMcpRegistryItem = {
+      kind: 'mcp',
+      key: 'mcp:slack',
+      id: 'slack',
+      label: 'slack',
+      selected: false,
+      status: 'disconnected',
+      enabled: true,
+      transport: 'stdio',
+      toolCount: 0,
+      resourceCount: 0,
+      available: false,
+      turnReadiness: 'needs_config',
+      autoAllowed: false,
+      blocked: false,
+      visibleInWorkbench: true,
+      health: 'inactive',
+      lifecycle: {
+        installState: 'not_applicable',
+        mountState: 'not_applicable',
+        connectionState: 'disconnected',
+      },
+    };
+
+    expect(getWorkbenchCapabilityQuickActions(disconnectedServer, {
+      includeUnselected: true,
+    }).map((action) => action.kind)).toEqual(['retry_mcp', 'open_mcp_settings']);
+
+    // 未选中时行内（非 sheet）依旧不暴露动作
+    expect(getWorkbenchCapabilityQuickActions(disconnectedServer)).toEqual([]);
+
+    // 已连接且非 OAuth 的 server 没有需要收纳的动作
+    expect(getWorkbenchCapabilityQuickActions({
+      ...disconnectedServer,
+      status: 'connected',
+      available: true,
+      lifecycle: {
+        ...disconnectedServer.lifecycle,
+        connectionState: 'connected',
+      },
+    }, {
+      includeUnselected: true,
+    })).toEqual([]);
+  });
+
+  it('routes unselected MCP auth failures to reauthorization in the detail sheet', () => {
+    const actions = getWorkbenchCapabilityQuickActions({
+      kind: 'mcp',
+      key: 'mcp:tavily',
+      id: 'tavily',
+      label: 'tavily',
+      selected: false,
+      status: 'error',
+      enabled: true,
+      transport: 'stdio',
+      toolCount: 0,
+      resourceCount: 0,
+      error: invalidMcpTokenError,
+      available: false,
+      turnReadiness: 'needs_config',
+      autoAllowed: false,
+      blocked: false,
+      visibleInWorkbench: true,
+      health: 'error',
+      lifecycle: {
+        installState: 'not_applicable',
+        mountState: 'not_applicable',
+        connectionState: 'error',
+      },
+    }, {
+      includeUnselected: true,
+    });
+
+    expect(actions).toEqual([
+      {
+        kind: 'open_mcp_settings',
+        label: '重新授权',
+        emphasis: 'primary',
+      },
+    ]);
+  });
+
+  it('exposes OAuth sign-out in the detail sheet for authorized OAuth servers', () => {
+    const oauthServer: WorkbenchMcpRegistryItem = {
+      kind: 'mcp',
+      key: 'mcp:notion',
+      id: 'notion',
+      label: 'notion',
+      selected: false,
+      status: 'connected',
+      enabled: true,
+      transport: 'http-streamable',
+      toolCount: 2,
+      resourceCount: 1,
+      authMode: 'oauth',
+      hasOAuthTokens: true,
+      available: true,
+      turnReadiness: 'ready',
+      autoAllowed: true,
+      blocked: false,
+      visibleInWorkbench: true,
+      health: 'healthy',
+      lifecycle: {
+        installState: 'not_applicable',
+        mountState: 'not_applicable',
+        connectionState: 'connected',
+      },
+    };
+
+    expect(getWorkbenchCapabilityQuickActions(oauthServer, {
+      includeUnselected: true,
+    })).toEqual([
+      {
+        kind: 'sign_out_mcp',
+        label: '退出授权',
+        emphasis: 'secondary',
+      },
+    ]);
+
+    // 没有可用 token 时不提供退出授权
+    expect(getWorkbenchCapabilityQuickActions({
+      ...oauthServer,
+      hasOAuthTokens: false,
+    }, {
+      includeUnselected: true,
+    })).toEqual([]);
+  });
+
+  it('routes sign_out_mcp execution to the sign-out handler and refreshes status', async () => {
+    const signOutMcpServer = vi.fn().mockResolvedValue(true);
+    const refreshMcpStatus = vi.fn();
+
+    const completed = await runWorkbenchCapabilityQuickAction({
+      kind: 'mcp',
+      key: 'mcp:notion',
+      id: 'notion',
+      label: 'notion',
+      selected: false,
+      status: 'connected',
+      enabled: true,
+      transport: 'http-streamable',
+      toolCount: 2,
+      resourceCount: 1,
+      authMode: 'oauth',
+      hasOAuthTokens: true,
+      available: true,
+      turnReadiness: 'ready',
+      autoAllowed: true,
+      blocked: false,
+      visibleInWorkbench: true,
+      health: 'healthy',
+      lifecycle: {
+        installState: 'not_applicable',
+        mountState: 'not_applicable',
+        connectionState: 'connected',
+      },
+    }, {
+      kind: 'sign_out_mcp',
+      label: '退出授权',
+      emphasis: 'secondary',
+    }, {
+      mountSkill: vi.fn(),
+      openSettingsTab: vi.fn(),
+      reconnectMcpServer: vi.fn(),
+      signOutMcpServer,
+      refreshMcpStatus,
+      retryConnector: vi.fn(),
+      probeConnector: vi.fn(),
+      repairConnectorPermission: vi.fn(),
+      disconnectConnector: vi.fn(),
+      removeConnector: vi.fn(),
+      openConnectorApp: vi.fn(),
+    });
+
+    expect(completed).toBe(true);
+    expect(signOutMcpServer).toHaveBeenCalledWith('notion');
+    expect(refreshMcpStatus).toHaveBeenCalled();
+
+    expect(getWorkbenchCapabilityQuickActionFeedback({
+      kind: 'mcp',
+      key: 'mcp:notion',
+      id: 'notion',
+      label: 'notion',
+      selected: false,
+      status: 'connected',
+      enabled: true,
+      transport: 'http-streamable',
+      toolCount: 2,
+      resourceCount: 1,
+      authMode: 'oauth',
+      hasOAuthTokens: true,
+      available: true,
+      turnReadiness: 'ready',
+      autoAllowed: true,
+      blocked: false,
+      visibleInWorkbench: true,
+      health: 'healthy',
+      lifecycle: {
+        installState: 'not_applicable',
+        mountState: 'not_applicable',
+        connectionState: 'connected',
+      },
+    }, {
+      kind: 'sign_out_mcp',
+      completedAt: 3,
+    })).toEqual({
+      tone: 'info',
+      message: '已退出该服务器的 OAuth 授权；下次调用前需要重新授权。',
     });
   });
 });

@@ -4,8 +4,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkbenchMcpRegistryItem } from '../../../src/renderer/utils/workbenchCapabilityRegistry';
+import { getWorkbenchCapabilityQuickActions } from '../../../src/renderer/utils/workbenchQuickActions';
 import { zh } from '../../../src/renderer/i18n/zh';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
+
+const { mockRunQuickAction } = vi.hoisted(() => ({
+  mockRunQuickAction: vi.fn(),
+}));
 
 const invalidTokenError = [
   'Streamable HTTP error: Error POSTing to endpoint:',
@@ -197,7 +202,7 @@ vi.mock('../../../src/renderer/hooks/useWorkbenchCapabilityQuickActionRunner', (
     runningActionKey: null,
     actionErrors: {},
     completedActions: {},
-    runQuickAction: vi.fn(),
+    runQuickAction: mockRunQuickAction,
   }),
 }));
 
@@ -283,6 +288,7 @@ describe('MCPSettings status', () => {
     mcpServers = [connectedGithubServer];
     authIsAdmin = true;
     mockDomainInvoke.mockResolvedValue({ success: true, data: { success: true } });
+    mockRunQuickAction.mockReset();
     (window as unknown as { domainAPI?: { invoke: typeof mockDomainInvoke } }).domainAPI = {
       invoke: mockDomainInvoke,
     };
@@ -313,28 +319,99 @@ describe('MCPSettings status', () => {
     expect(getMcpTrustSummary(authErrorTavilyServer)).toContain(mcpText.trustSummary.authReauthorizeHint);
   });
 
-  it('shows reauthorization instead of reconnect for invalid MCP bearer tokens', () => {
+  it('trust summary 对空值字段做省略，绝不拼出裸 undefined', () => {
+    const unknownTransportServer = {
+      ...disconnectedSlackServer,
+      transport: undefined,
+    } as unknown as WorkbenchMcpRegistryItem;
+
+    const summary = getMcpTrustSummary(unknownTransportServer);
+    expect(summary).not.toContain('undefined');
+    expect(summary).not.toContain('null');
+    // 未连接时不存在计数，摘要里也不该有计数段
+    expect(summary).not.toContain(mcpText.trustSummary.toolUnit);
+  });
+
+  it('transport 未知的服务器行内不出现裸 undefined 文案', () => {
+    const unknownTransportServer = {
+      ...connectedGithubServer,
+      transport: undefined,
+    } as unknown as WorkbenchMcpRegistryItem;
+    mcpServers = [unknownTransportServer];
+
+    const html = renderToStaticMarkup(
+      React.createElement(MCPSettings),
+    );
+
+    expect(html).not.toContain('undefined');
+  });
+
+  it('moves reauthorization into the detail sheet for invalid MCP bearer tokens', () => {
     mcpServers = [authErrorTavilyServer];
 
     const html = renderToStaticMarkup(
       React.createElement(MCPSettings),
     );
 
-    expect(html).toContain(mcpText.management.reauthorize);
-    expect(html).toContain(mcpText.management.disable);
-    expect(html).toContain('禁用 MCP 后内置搜索仍可用');
+    // 行尾只剩开关 + 详情：重连/重新授权不再铺在行上
     expect(html).not.toContain(mcpText.management.reconnect);
+    expect(html).not.toContain(`>${mcpText.management.reauthorize}<`);
+    expect(html).toContain('禁用 MCP 后内置搜索仍可用');
+
+    const sheetActions = getWorkbenchCapabilityQuickActions(authErrorTavilyServer, {
+      includeUnselected: true,
+    });
+    expect(sheetActions).toEqual([
+      { kind: 'open_mcp_settings', label: '重新授权', emphasis: 'primary' },
+    ]);
   });
 
-  it('keeps reconnect for non-auth MCP disconnections', () => {
+  it('hides counts and moves reconnect into the detail sheet for non-auth disconnections', () => {
     mcpServers = [disconnectedSlackServer];
 
     const html = renderToStaticMarkup(
       React.createElement(MCPSettings),
     );
 
-    expect(html).toContain(mcpText.management.reconnect);
+    // 未加载过就不存在计数：不显示误导性的「0 工具 / 0 资源」
+    expect(html).not.toContain(`0${mcpText.management.countToolSuffix}`);
+    expect(html).not.toContain(`0${mcpText.management.countResourceSuffix}`);
+    expect(html).not.toContain(mcpText.management.reconnect);
     expect(html).not.toContain(mcpText.management.reauthorize);
+
+    const sheetActions = getWorkbenchCapabilityQuickActions(disconnectedSlackServer, {
+      includeUnselected: true,
+    });
+    expect(sheetActions.map((action) => action.kind)).toEqual(['retry_mcp', 'open_mcp_settings']);
+  });
+
+  it('安保样板文案全页只出现一次（页面级说明），不逐行重复', () => {
+    mcpServers = [connectedGithubServer, disconnectedSlackServer, oauthNotionServer];
+
+    const html = renderToStaticMarkup(
+      React.createElement(MCPSettings),
+    );
+
+    expect(html.split(mcpText.trustSummary.approvalNotice).length - 1).toBe(1);
+    expect(html.split(mcpText.trustSummary.authMaskedHint).length - 1).toBe(1);
+  });
+
+  it('行尾统一为开关 + 详情入口；开关调用 setServerEnabled', async () => {
+    mcpServers = [disconnectedSlackServer];
+
+    render(React.createElement(MCPSettings));
+    // slack fixture 当前 enabled=true，拨动开关即禁用
+    fireEvent.click(screen.getByRole('switch', {
+      name: `${mcpText.management.disable} slack`,
+    }));
+
+    await waitFor(() => {
+      expect(mockDomainInvoke).toHaveBeenCalledWith(
+        IPC_DOMAINS.MCP,
+        'setServerEnabled',
+        { serverName: 'slack', enabled: false },
+      );
+    });
   });
 
   it('默认落「已连接」，列表行头部状态点绿=connected、灰=其他态', () => {
@@ -348,7 +425,7 @@ describe('MCPSettings status', () => {
     expect(slackDot.className).toContain('bg-zinc-600');
   });
 
-  it('shows OAuth authorization status and sign-out only for OAuth servers', () => {
+  it('shows OAuth authorization status only for OAuth servers; sign-out lives in the detail sheet', () => {
     mcpServers = [oauthNotionServer, connectedGithubServer];
 
     const html = renderToStaticMarkup(
@@ -357,23 +434,31 @@ describe('MCPSettings status', () => {
 
     expect(html).toContain(mcpText.management.oauthStatusLabel);
     expect(html).toContain(mcpText.management.oauthAuthorized);
-    expect(html).toContain(mcpText.management.signOut);
-    expect((html.match(new RegExp(mcpText.management.signOut, 'g')) || []).length).toBe(1);
+    // 退出授权从行上收纳进详情弹层
+    expect(html).not.toContain(mcpText.management.signOut);
+
+    const sheetActions = getWorkbenchCapabilityQuickActions(oauthNotionServer, {
+      includeUnselected: true,
+    });
+    expect(sheetActions).toEqual([
+      { kind: 'sign_out_mcp', label: '退出授权', emphasis: 'secondary' },
+    ]);
+    expect(getWorkbenchCapabilityQuickActions(connectedGithubServer, {
+      includeUnselected: true,
+    })).toEqual([]);
   });
 
-  it('invokes signOutServer for OAuth server rows', async () => {
+  it('routes the sheet sign-out action through the quick-action runner', () => {
     mcpServers = [oauthNotionServer];
 
     render(React.createElement(MCPSettings));
-    fireEvent.click(screen.getByText(mcpText.management.signOut));
+    fireEvent.click(screen.getByLabelText('查看 notion 详情'));
+    fireEvent.click(screen.getByText('退出授权'));
 
-    await waitFor(() => {
-      expect(mockDomainInvoke).toHaveBeenCalledWith(
-        IPC_DOMAINS.MCP,
-        'signOutServer',
-        { serverName: 'notion' },
-      );
-    });
+    expect(mockRunQuickAction).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'notion' }),
+      expect.objectContaining({ kind: 'sign_out_mcp' }),
+    );
   });
 
   it('passes secret keys from McpServerEditor into the addServer payload', async () => {

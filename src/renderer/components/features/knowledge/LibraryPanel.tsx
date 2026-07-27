@@ -20,7 +20,6 @@ import type { Project } from '@shared/contract/project';
 import { deleteLibraryItem, importLibraryFiles, listLibraryItems, updateLibraryItem } from '../../../services/libraryClient';
 import { listProjects } from '../../../services/projectClient';
 import ipcService from '../../../services/ipcService';
-import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';

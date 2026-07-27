@@ -46,7 +46,8 @@ const stageSuccess: StageRepositoryResult = {
     {
       name: 'alpha',
       description: 'Alpha skill',
-      skillMdContent: '---\nname: alpha\n---\nAlpha full body',
+      skillMdContent:
+        '---\nname: alpha\ndescription: Alpha skill\n---\n## Alpha Section\n\n**Alpha full body** with list\n\n- item one',
     },
     {
       name: 'beta',
@@ -125,14 +126,20 @@ describe('自定义库 staged 装前预览', () => {
     expect(callsFor(SKILL_CHANNELS.REPO_ADD_CUSTOM)).toEqual([]);
   });
 
-  it('展开 skill 可查看 SKILL.md 全文', async () => {
+  it('展开 skill 后 SKILL.md 渲染为 markdown，frontmatter 不进正文', async () => {
     setupInvokeMock();
-    render(<SkillsSettings />);
+    const { container } = render(<SkillsSettings />);
     await submitCustomUrl();
     await screen.findByText('foo-skills');
 
     fireEvent.click(screen.getByText('alpha'));
-    expect(await screen.findByText(/Alpha full body/)).toBeTruthy();
+    // markdown 渲染产物：标题/加粗是语义元素而非裸文本
+    expect(await screen.findByRole('heading', { name: 'Alpha Section' })).toBeTruthy();
+    expect(await screen.findByText('Alpha full body')).toBeTruthy();
+    // 不再是一坨等宽裸文本 <pre>
+    expect(container.querySelector('pre')).toBeNull();
+    // frontmatter 不出现在渲染正文（name/description 卡片上已有）
+    expect(screen.queryByText(/name: alpha/)).toBeNull();
   });
 
   it('确认安装调 confirm，成功后刷新并关闭弹窗', async () => {

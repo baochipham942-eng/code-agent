@@ -46,3 +46,30 @@
 
 - 「整库安装」（推荐仓库卡片）与 SkillsMP 搜索安装仍走旧的直接下载/添加 IPC，不在本批范围（提示词只要求切换「添加自定义库」）；如需统一装前预览，建议后续批次复用 `SkillInstallPreviewModal`。
 - UI 批合并前需产品负责人过目审美（按提示词纪律，未推分支、未开 PR）。
+
+## 二轮：可读性
+
+背景：产品负责人真机反馈——对照 Kimi App skill 详情页，一轮的「查看全文」是等宽裸文本（`<pre>` 一坨难读），要求渲染成排版后的 markdown。
+
+1. **SKILL.md 渲染为 markdown**（`SkillInstallPreviewModal.tsx`）
+   - 复用现有 `MarkdownCore`（`src/renderer/components/features/chat/MessageBubble/MarkdownCore.tsx`），按 `CaptureDetail` 的既有做法 `React.lazy` + `Suspense` 懒加载，不进首屏 modulepreload；未新增依赖、未自写解析器。
+   - 新增 `stripFrontmatter`：剥掉 `---` 包围的 YAML 头部（name/description 卡片上已有），frontmatter 不进入渲染正文；fallback 占位也用剥离后的正文。
+   - 展开区样式：去掉 `font-mono text-[11px]`，改 `prose prose-invert prose-sm` + 正常字号行距，内边距加大（`px-4 py-3`），独立滚动区 `max-h-64` → `max-h-96`。
+
+2. **弹窗宽度**：`size="lg"`（max-w-lg）→ `size="full"`（max-w-4xl），参照 ModelOnboardingModal 等大号 Modal 档位；信息层级（安全提示条、warnings、skill 卡片）未动。
+
+3. **交互零改动**：stage/confirm/cancel、关闭即 cancel、settledRef 语义全部保持一轮实现。
+
+4. **测试**（`tests/renderer/components/skillInstallPreview.test.tsx`）
+   - fixture 的 alpha 内容加入 frontmatter + markdown 结构（标题/加粗/列表）。
+   - 「展开」用例改为断言：渲染出语义元素（`heading` role、加粗文本）、无裸 `<pre>`、frontmatter（`name: alpha`）不出现在正文。其余 8 条用例不变。
+
+### 二轮验收门
+
+| 门 | 结果 |
+|---|---|
+| `npm run typecheck` | 通过（0 错误） |
+| `npm run lint` | 0 errors；425 warnings 全为存量，本轮改动文件 `eslint` 单跑 0 警告 |
+| `npx vitest run tests/renderer/components/skillInstallPreview.test.tsx` | 9 用例全绿 |
+
+按提示词纪律：改动只追加 commit 到本分支，未 push，收口留给 Claude。

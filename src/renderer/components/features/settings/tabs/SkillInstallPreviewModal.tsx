@@ -5,7 +5,7 @@
 // staging。
 // ============================================================================
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useRef, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, ShieldAlert, X } from 'lucide-react';
 import { Modal, ModalFooter } from '../../../primitives';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
@@ -15,6 +15,19 @@ import { createLogger } from '../../../../utils/logger';
 import { invokeSkillIPC } from '../../../../services/invokeSkillIPC';
 
 const logger = createLogger('SkillInstallPreviewModal');
+
+// 懒加载 markdown 渲染链（react-markdown + remark/rehype），同 CaptureDetail 的做法，
+// 不进首屏 modulepreload；只有真正展开查看 SKILL.md 时才下载。
+const MarkdownCore = lazy(() => import('../../chat/MessageBubble/MarkdownCore'));
+
+/**
+ * 剥掉 SKILL.md 头部 frontmatter（`---` 包围的 YAML 块）。
+ * name/description 已在卡片头部展示，frontmatter 不进入 markdown 渲染正文。
+ */
+function stripFrontmatter(content: string): string {
+  const match = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+  return match ? content.slice(match[0].length) : content;
+}
 
 interface SkillInstallPreviewModalProps {
   /** stage 成功的结果（success=true 且带 stageId） */
@@ -96,7 +109,7 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
     <Modal
       isOpen
       onClose={handleClose}
-      size="lg"
+      size="full"
       header={
         <>
           <div className="min-w-0 flex-1">
@@ -182,9 +195,19 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
                   </span>
                 </button>
                 {expanded && (
-                  <pre className="mx-3 mb-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-[11px] leading-relaxed text-zinc-300">
-                    {skill.skillMdContent}
-                  </pre>
+                  <div className="mx-3 mb-3 max-h-96 overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3">
+                    <div className="prose prose-invert prose-sm max-w-none text-sm leading-relaxed text-zinc-300">
+                      <Suspense
+                        fallback={
+                          <div className="whitespace-pre-wrap break-words text-xs text-zinc-400">
+                            {stripFrontmatter(skill.skillMdContent)}
+                          </div>
+                        }
+                      >
+                        <MarkdownCore content={stripFrontmatter(skill.skillMdContent)} />
+                      </Suspense>
+                    </div>
+                  </div>
                 )}
               </div>
             );

@@ -280,7 +280,6 @@ export const zhSettingsModels = {
         failSuffix: ' 失败',
         skipSuffix: ' 跳过',
       },
-      openFull: '运行完整诊断',
       recheckCategory: '重新检查本类',
       fixFailedPrefix: '操作失败：',
       fixLabels: {

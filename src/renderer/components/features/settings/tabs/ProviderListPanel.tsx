@@ -3,7 +3,8 @@
 //
 //   已可用（有 Key 或无需 Key）：完整行（名称 + Key 状态 + 模型数 + 当前徽章）
 //   待添加 Key：折叠分组，精简行（点击 = 选中进入连接配置）
-//   顶部：搜索 + 运行诊断；新增 Provider 是 section 级主操作，不放进列表工具条
+//   顶部：搜索 + Provider 范围诊断；新增 Provider 是 section 级主操作，不放进列表工具条
+//   （全量诊断已迁设置独立「诊断」菜单项，不在本页提供入口）
 // ============================================================================
 
 import React, { useMemo, useState } from 'react';
@@ -27,8 +28,6 @@ interface ProviderListPanelProps {
   isAddingProvider: boolean;
   onSelect: (providerId: ModelProvider) => void;
   onOpenDoctor: () => void;
-  /** 打开全量诊断弹层（DoctorReportDialog，走 doctorStore） */
-  onOpenFullDoctor: () => void;
 }
 
 function matchRow(row: ProviderManagementRow, query: string): boolean {
@@ -155,7 +154,6 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
   isAddingProvider,
   onSelect,
   onOpenDoctor,
-  onOpenFullDoctor,
 }) => {
   const { t } = useI18n();
   const listText = t.settings.model.list;
@@ -195,16 +193,6 @@ export const ProviderListPanel: React.FC<ProviderListPanelProps> = ({
           fullWidth
         >
           {listText.doctor}
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={onOpenFullDoctor}
-          leftIcon={<Stethoscope className="h-3 w-3" />}
-          fullWidth
-          data-testid="settings-open-full-doctor"
-        >
-          {t.settings.providerDoctor.openFull}
         </Button>
       </div>
 

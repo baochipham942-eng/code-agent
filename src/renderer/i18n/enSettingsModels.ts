@@ -279,7 +279,6 @@ export const enSettingsModels = {
         failSuffix: ' failed',
         skipSuffix: ' skipped',
       },
-      openFull: 'Run full diagnostics',
       recheckCategory: 'Re-check this category',
       fixFailedPrefix: 'Action failed: ',
       fixLabels: {

@@ -99,7 +99,7 @@ const McpServerCard: React.FC<McpServerCardProps> = ({
   return (
     <div data-testid={`mcp-discover-card-${entry.id}`} className={SHELF_CARD_CLASS}>
       <div className="flex items-center gap-3">
-        <button
+        <button /* ds-allow:button: 货架卡展开/收起触发器（图标+标题整块热区），Button primitive 是居中动作按钮形状 */
           type="button"
           data-testid={`mcp-discover-expand-${entry.id}`}
           aria-expanded={expanded}

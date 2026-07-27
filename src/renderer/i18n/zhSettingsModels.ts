@@ -375,6 +375,10 @@ export const zhSettingsModels = {
         installedTabSuffix: ')',
         discoverTab: '发现安装',
         refresh: '刷新',
+        addSkill: '添加技能',
+        customTitle: '添加自定义 Skill 库',
+        customDescription: '输入 GitHub 或魔搭（ModelScope）仓库 URL，仓库根目录需包含 skill 目录结构',
+        addRepo: '添加仓库',
       },
       installed: {
         groupLabels: {
@@ -437,9 +441,6 @@ export const zhSettingsModels = {
         foundCountSuffix: ' 个结果：',
         reposTitle: '整库安装',
         reposDescription: '一次安装一个 Skill 仓库的全部内容',
-        customTitle: '添加自定义 Skill 库',
-        customDescription: '输入 GitHub 或魔搭（ModelScope）仓库 URL，仓库根目录需包含 skill 目录结构',
-        addRepo: '添加仓库',
       },
       preview: {
         sourceGithub: 'GitHub',

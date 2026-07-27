@@ -374,6 +374,10 @@ export const enSettingsModels = {
         installedTabSuffix: ')',
         discoverTab: 'Discover',
         refresh: 'Refresh',
+        addSkill: 'Add Skill',
+        customTitle: 'Add a custom Skill library',
+        customDescription: 'Enter a GitHub or ModelScope repository URL. The repository root must contain the Skill directory structure.',
+        addRepo: 'Add repository',
       },
       installed: {
         groupLabels: {
@@ -436,9 +440,6 @@ export const enSettingsModels = {
         foundCountSuffix: ' results:',
         reposTitle: 'Install a full repository',
         reposDescription: 'Install everything from a Skill repository at once',
-        customTitle: 'Add a custom Skill library',
-        customDescription: 'Enter a GitHub or ModelScope repository URL. The repository root must contain the Skill directory structure.',
-        addRepo: 'Add repository',
       },
       preview: {
         sourceGithub: 'GitHub',

@@ -4,8 +4,8 @@
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertCircle, Check, Loader2, RefreshCw } from 'lucide-react';
-import { Button } from '../../../primitives';
+import { AlertCircle, Check, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { Button, Input, Modal } from '../../../primitives';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type {
   LocalSkillLibrary,
@@ -21,6 +21,7 @@ import {
   getBuiltinSkillCatalogPayload,
 } from '@shared/constants/skillCatalog';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
 import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { WebModeBanner } from '../WebModeBanner';
@@ -66,9 +67,11 @@ export const SkillsSettings: React.FC = () => {
   // 推荐目录：内置数据为初始值，云端下发到达后覆盖（web 模式 IPC 不可用时保持内置）
   const [catalog, setCatalog] = useState<SkillCatalogPayload>(getBuiltinSkillCatalogPayload);
   const [customUrl, setCustomUrl] = useState('');
+  // 「添加技能」URL 输入弹窗开关（头部按钮触发，两个 tab 下都可见）
+  const [addSkillModalOpen, setAddSkillModalOpen] = useState(false);
   // 自定义库 staged 装前预览：stage 成功后的预览载荷，非空即弹预览弹窗
   const [stagedPreview, setStagedPreview] = useState<StageRepositoryResult | null>(null);
-  // 自定义库表单内联错误（stage 失败在原表单位置展示）
+  // 「添加技能」弹窗内联错误（stage 失败在弹窗内展示）
   const [customError, setCustomError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -344,6 +347,8 @@ export const SkillsSettings: React.FC = () => {
         url
       );
       if (result?.success && result.stageId) {
+        // 关掉 URL 弹窗，打开装前预览弹窗；失败则留在 URL 弹窗内联报错
+        setAddSkillModalOpen(false);
         setStagedPreview(result);
       } else {
         setCustomError(result?.error || skillsText.addFailed);
@@ -482,8 +487,20 @@ export const SkillsSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 切换 + 刷新 */}
+      {/* Tab 切换 + 刷新 + 添加技能 */}
       <div className="flex items-center justify-end gap-3">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setCustomUrl('');
+            setCustomError(null);
+            setAddSkillModalOpen(true);
+          }}
+          leftIcon={<Plus className="h-3 w-3" />}
+        >
+          {skillsText.addSkill}
+        </Button>
         <div className="flex items-center gap-1 rounded-lg bg-zinc-800/80 p-1">
           {([
             ['installed', `${skillsText.installedTabPrefix}${discoveredSkills.length}${skillsText.installedTabSuffix}`],
@@ -548,15 +565,48 @@ export const SkillsSettings: React.FC = () => {
           onSearch={handleSearch}
           onClearSearch={handleClearSearch}
           onInstallFromSearch={handleInstallFromSearch}
-          customUrl={customUrl}
-          onCustomUrlChange={(value) => {
-            setCustomUrl(value);
-            setCustomError(null);
-          }}
-          customError={customError}
-          onAddCustom={handleAddCustom}
         />
       )}
+
+      {/* 「添加技能」URL 输入弹窗：stage 成功 → 关闭本弹窗并打开装前预览 */}
+      <Modal
+        isOpen={addSkillModalOpen}
+        onClose={() => setAddSkillModalOpen(false)}
+        title={skillsText.customTitle}
+        size="sm"
+      >
+        <div className="space-y-3">
+          <Input
+            value={customUrl}
+            onChange={(event) => {
+              setCustomUrl(event.target.value);
+              setCustomError(null);
+            }}
+            placeholder="https://github.com/user/my-skills"
+            inputSize="sm"
+            disabled={actionLoading === 'custom'}
+          />
+          <p className="text-xs text-zinc-500">{skillsText.customDescription}</p>
+          {customError && (
+            <div className="flex items-center gap-2 text-xs text-red-400">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              {customError}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={isWebMode() || !customUrl.trim()}
+              onClick={handleAddCustom}
+              loading={actionLoading === 'custom'}
+              leftIcon={actionLoading !== 'custom' ? <Plus className="h-3 w-3" /> : undefined}
+            >
+              {skillsText.addRepo}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* 自定义库装前预览：stage 成功后弹出，确认才落库，关闭即 cancel */}
       {stagedPreview && (

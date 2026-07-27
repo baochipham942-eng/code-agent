@@ -73,3 +73,31 @@
 | `npx vitest run tests/renderer/components/skillInstallPreview.test.tsx` | 9 用例全绿 |
 
 按提示词纪律：改动只追加 commit 到本分支，未 push，收口留给 Claude。
+
+## 三轮：入口上移
+
+背景：产品负责人拍板——「添加自定义库」不沉在发现安装页最底部当区块，上移到技能页头部做成按钮。
+
+1. **头部「添加技能」按钮**（`SkillsSettings.tsx`）
+   - 顶部操作区（「已安装 (N) / 发现安装」切换 + 刷新一排）最左加 `Button size="sm" variant="secondary"` + Plus 图标，样式对齐该行现有控件；渲染在 tab 内容之外，两个 tab 下都可见。
+   - 点击打开复用现有 `Modal`（`size="sm"`）的 URL 输入弹窗：一轮的自定义 URL 输入框 + 双源说明 + 内联错误展示原样搬入，提交走既有 `handleAddCustom` stage 流程。
+   - stage 成功 → 关 URL 弹窗、开既有 `SkillInstallPreviewModal`（组件未动）；stage 失败/非法 URL → 留在 URL 弹窗内联报错。打开弹窗时重置 URL 与错误，保持干净落点。
+
+2. **移除发现页底部「自定义仓库」区块**（`SkillsDiscoverTab.tsx`）
+   - 连同标题/说明整体删除；`customUrl` / `onCustomUrlChange` / `customError` / `onAddCustom` 四个 props 及 `Plus` 孤儿导入一并收干净，无死 props、无孤儿导出（knip 零余量口径）。
+
+3. **i18n**：`customTitle` / `customDescription` / `addRepo` 从 `skills.discover` 迁至 `skills.main`（键名、文案不动），新增 `addSkill`（添加技能 / Add Skill）；zh/en 同步。
+
+4. **测试**（`tests/renderer/components/skillInstallPreview.test.tsx`）
+   - `submitCustomUrl` helper 改为：点头部「添加技能」→ 弹窗内输入 URL → 点「添加仓库」，不再切 tab；原 9 条断言链路（stage 成功弹预览 / markdown 渲染 / confirm / cancel / ESC / confirm 失败 / stage 失败内联 / 非法 URL 拦截 / 魔搭 URL）全部迁移并保持绿。
+   - 新增 1 条：按钮在「已安装」「发现安装」两个 tab 下都可见，且发现页底部不再存在 URL 输入框。共 10 条。
+
+### 三轮验收门
+
+| 门 | 结果 |
+|---|---|
+| `npm run typecheck` | 通过（0 错误） |
+| `npm run lint` | 0 errors；425 warnings 全为存量，本批改动文件 `eslint` 单跑 0 警告 |
+| `npx vitest run tests/renderer/` | 506 文件 / 3222 用例全绿（首轮跑有 4 条 wait-for 超时 flake，技能相关 6 文件隔离跑全绿，全量重跑全绿确认为并行负载 flake） |
+
+按提示词纪律：改动只追加 commit 到本分支，未 push，收口留给 Claude。

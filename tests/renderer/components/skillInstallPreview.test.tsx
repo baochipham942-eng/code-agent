@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // ============================================================================
 // 自定义 Skill 库 staged 装前预览流程测试
-// mock invokeSkillIPC，覆盖：stage 成功渲染预览弹窗、确认安装调 confirm、
-// 取消与 ESC 关闭都调 cancel、stage 失败在原表单位置展示错误。
+// mock invokeSkillIPC，覆盖：头部「添加技能」按钮打开 URL 弹窗、stage 成功
+// 渲染预览弹窗、确认安装调 confirm、取消与 ESC 关闭都调 cancel、
+// stage 失败在 URL 弹窗内联报错。
 // ============================================================================
 
 import React from 'react';
@@ -85,12 +86,12 @@ function setupInvokeMock(overrides: {
   }) as typeof invokeSkillIPC);
 }
 
-/** 切到「发现安装」tab，输入 URL 并点击添加 */
+/** 点头部「添加技能」按钮打开 URL 弹窗，输入 URL 并提交 */
 async function submitCustomUrl(url = 'https://github.com/user/foo-skills') {
-  fireEvent.click(await screen.findByRole('tab', { name: zh.settings.skills.main.discoverTab }));
+  fireEvent.click(await screen.findByRole('button', { name: zh.settings.skills.main.addSkill }));
   const input = await screen.findByPlaceholderText('https://github.com/user/my-skills');
   fireEvent.change(input, { target: { value: url } });
-  fireEvent.click(screen.getByRole('button', { name: new RegExp(zh.settings.skills.discover.addRepo) }));
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(zh.settings.skills.main.addRepo) }));
 }
 
 function callsFor(channel: string) {
@@ -124,6 +125,22 @@ describe('自定义库 staged 装前预览', () => {
     expect(screen.getByText('warning one')).toBeTruthy();
     // stage 之后不再直接落库
     expect(callsFor(SKILL_CHANNELS.REPO_ADD_CUSTOM)).toEqual([]);
+  });
+
+  it('头部「添加技能」按钮在两个 tab 下都可见，发现页不再有底部自定义区块', async () => {
+    setupInvokeMock();
+    render(<SkillsSettings />);
+    // 已安装 tab（默认落点）
+    expect(
+      await screen.findByRole('button', { name: zh.settings.skills.main.addSkill })
+    ).toBeTruthy();
+    // 发现安装 tab
+    fireEvent.click(screen.getByRole('tab', { name: zh.settings.skills.main.discoverTab }));
+    expect(
+      await screen.findByRole('button', { name: zh.settings.skills.main.addSkill })
+    ).toBeTruthy();
+    // 底部自定义区块已移除（未打开弹窗时页面不存在 URL 输入框）
+    expect(screen.queryByPlaceholderText('https://github.com/user/my-skills')).toBeNull();
   });
 
   it('展开 skill 后 SKILL.md 渲染为 markdown，frontmatter 不进正文', async () => {
@@ -206,7 +223,7 @@ describe('自定义库 staged 装前预览', () => {
     expect(callsFor(SKILL_CHANNELS.REPO_CANCEL)).toEqual([]);
   });
 
-  it('stage 失败在原表单位置展示错误，不弹预览', async () => {
+  it('stage 失败在 URL 弹窗内联报错，不弹预览', async () => {
     setupInvokeMock({ stage: { success: false, error: 'stage boom' } });
     render(<SkillsSettings />);
     await submitCustomUrl();

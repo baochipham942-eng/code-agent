@@ -3,7 +3,7 @@
 // ============================================================================
 // 26 tab / 6 组 → 默认 5 组 19 项 + 「高级」折叠组 7 项（含 capabilities 深链占位）。
 // v2 拍板要点（产品负责人 2026-07-03）：
-//   - plugins/hooks 下放普通用户（可自行配置，不再 admin-only）
+//   - hooks 下放普通用户；plugins 在能力中心仅管理员可见
 //   - 不引入开发者模式开关——技术项收进默认折叠的「高级」组，点开即用
 // 2026-07 方案 9C：admin 管理组（users/invites/controlPlane/capabilities）迁 admin-console，
 //   组定义删除；users/invites/controlPlane 深链移除，capabilities 仅留 id 重定向能力中心
@@ -15,6 +15,7 @@ import {
   SETTINGS_TAB_GROUP_BY_TAB,
   SETTINGS_TAB_GROUP_ORDER,
   COLLAPSED_SETTINGS_TAB_GROUPS,
+  CAPABILITY_HUB_TAB_BY_SETTINGS_TAB,
   canAccessSettingsTab,
 } from '../../../src/renderer/utils/settingsTabs';
 import { zh } from '../../../src/renderer/i18n/zh';
@@ -43,15 +44,20 @@ describe('Settings IA 分组 v2', () => {
     expect(SETTINGS_TAB_GROUP_ORDER).not.toContain('management');
   });
 
-  it('普通用户可访问 plugins/hooks（v2 下放）', () => {
-    expect(canAccessSettingsTab('plugins', { isAdmin: false })).toBe(true);
+  it('普通用户不能访问 plugins，管理员可访问，hooks 仍开放', () => {
+    expect(canAccessSettingsTab('plugins', { isAdmin: false })).toBe(false);
+    expect(canAccessSettingsTab('plugins', { isAdmin: true })).toBe(true);
     expect(canAccessSettingsTab('hooks', { isAdmin: false })).toBe(true);
   });
 
-  it('管理组迁出后设置页已无 admin 门控 tab', () => {
+  it('除 plugins 外其余注册 tab 对普通用户开放', () => {
     for (const tab of SETTINGS_TAB_IDS) {
-      expect(canAccessSettingsTab(tab, { isAdmin: false }), tab).toBe(true);
+      expect(canAccessSettingsTab(tab, { isAdmin: false }), tab).toBe(tab !== 'plugins');
     }
+  });
+
+  it('保留 plugins 深链到能力中心的映射', () => {
+    expect(CAPABILITY_HUB_TAB_BY_SETTINGS_TAB.plugins).toBe('plugins');
   });
 
   it('高级组默认折叠，其余组不折叠', () => {

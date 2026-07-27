@@ -50,9 +50,9 @@ describe('list_experts', () => {
 
     it('花名与 roleId 不同时两者都带，花名在前', async () => {
       service.knownRoles.mockResolvedValue([
-        { roleId: 'researcher', displayName: '溯真', description: '把问题查穿', profession: '行业研究员' },
+        { roleId: 'researcher', displayName: '溯真', description: '把问题查穿', profession: '竞品与市场情报分析师' },
       ]);
-      expect(await runTool()).toMatchObject({ output: 'researcher（溯真 · 行业研究员） — 把问题查穿' });
+      expect(await runTool()).toMatchObject({ output: 'researcher（溯真 · 竞品与市场情报分析师） — 把问题查穿' });
     });
 
     it('没有职业也没有独立花名时不留空括号', async () => {

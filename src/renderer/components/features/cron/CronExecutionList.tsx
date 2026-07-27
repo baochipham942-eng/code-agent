@@ -11,12 +11,15 @@ interface CronExecutionListProps {
   executions: CronJobExecution[];
   selectedExecutionId: string | null;
   onSelectExecution: (executionId: string) => void;
+  /** 跨任务执行流（运行记录 tab）时传入：加一列任务名 */
+  jobNameById?: Record<string, string>;
 }
 
 export const CronExecutionList: React.FC<CronExecutionListProps> = ({
   executions,
   selectedExecutionId,
   onSelectExecution,
+  jobNameById,
 }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
@@ -33,6 +36,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
       <table className="w-full text-sm">
         <thead className="bg-zinc-950/80 text-left text-xs uppercase tracking-wide text-zinc-500">
           <tr>
+            {jobNameById && <th className="px-3 py-2">{cc.colJob}</th>}
             <th className="px-3 py-2">{cc.colStatus}</th>
             <th className="px-3 py-2">{cc.colScheduledAt}</th>
             <th className="px-3 py-2">{cc.colStartedAt}</th>
@@ -53,6 +57,11 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                 }`}
                 onClick={() => onSelectExecution(execution.id)}
               >
+                {jobNameById && (
+                  <td className="max-w-[220px] truncate px-3 py-2 text-zinc-200">
+                    {jobNameById[execution.jobId] || execution.jobId}
+                  </td>
+                )}
                 <td className="px-3 py-2">
                   <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
                     {cc.status[execution.status]}

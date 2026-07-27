@@ -354,6 +354,7 @@ export const zhSettingsModels = {
       safetyStrong: '始终生效',
       safetySuffix: '，不在此处编辑、也不会被自定义人格覆盖。',
       contentLabel: '人格内容',
+      promptManager: '提示词管理',
       charSuffix: ' 字符',
       placeholder: '例如：You are Agent Neo, an AI coworker…',
       errorPrefix: '操作失败：',

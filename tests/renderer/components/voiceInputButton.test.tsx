@@ -29,6 +29,7 @@ function setHookState(patch: Record<string, unknown> = {}) {
     errorCode: null,
     lastResult: null,
     inputLevel: 0,
+    partialText: '',
     silenceWarning: false,
     ...patch,
   } as UseVoiceInputReturn;

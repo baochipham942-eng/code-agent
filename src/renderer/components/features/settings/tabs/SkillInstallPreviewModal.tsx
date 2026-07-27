@@ -53,8 +53,8 @@ export const SkillInstallPreviewModal: React.FC<SkillInstallPreviewModalProps> =
   const handleClose = useCallback(() => {
     if (!settledRef.current && stageId) {
       settledRef.current = true;
-      void invokeSkillIPC(SKILL_CHANNELS.REPO_CANCEL, stageId).catch((err) => {
-        logger.warn('Failed to cancel staged repository', err);
+      void invokeSkillIPC(SKILL_CHANNELS.REPO_CANCEL, stageId).catch((err: unknown) => {
+        logger.warn('Failed to cancel staged repository', { error: err });
       });
     }
     onCancel();

@@ -6,6 +6,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import type { Response } from 'express';
 
 import type { AgentEvent } from '../../../src/shared/contract';
+import type { QueuedInputSettledEvent } from '../../../src/shared/contract/queuedInput';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
 import { QUEUED_INPUT_RETRY } from '../../../src/shared/constants/queuedInput';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
@@ -51,6 +52,7 @@ describe('web queued input drain', () => {
     repository: QueuedInputRepository;
     runEnvelope: (envelope: ConversationEnvelope, response: Response) => Promise<void>;
     agentEvents?: Array<{ sessionId: string; event: AgentEvent }>;
+    settled?: QueuedInputSettledEvent[];
     hasActiveRun?: (sessionId: string) => boolean;
   }): WebQueuedInputDrain {
     return createWebQueuedInputDrain({
@@ -58,6 +60,7 @@ describe('web queued input drain', () => {
       hasActiveRun: input.hasActiveRun ?? (() => false),
       runEnvelope: input.runEnvelope,
       emitAgentEvent: (sessionId, event) => input.agentEvents?.push({ sessionId, event }),
+      notifyQueuedInputSettled: (event) => input.settled?.push(event),
       logger,
     });
   }
@@ -246,5 +249,49 @@ describe('web queued input drain', () => {
     });
     expect(sentIds).toEqual(['queued-earlier', 'queued-later']);
     expect(maxConcurrentRuns).toBe(1);
+  });
+
+  // 2026-07-27 产品负责人实测：队列消息其实发出去了（DB 里 consumed、模型也回复了），
+  // 但前端转录区不长东西、卡片不消失、点撤回还被告知「已经开始发送」。
+  // 根因是抽干那轮跑在丢弃水槽里且宿主不通知前端，这里把「必须通知」钉死。
+  describe('抽干后必须通知前端结算', () => {
+    it('消费成功后发出 consumed 通知', async () => {
+      const repository = createRepository();
+      const settled: QueuedInputSettledEvent[] = [];
+      repository.enqueue({ id: 'q1', sessionId: 's1', envelope: { content: '你好' } });
+
+      const drain = createDrain({
+        repository,
+        settled,
+        runEnvelope: async () => {},
+      });
+      drain.handleReleasedSession('s1');
+      await vi.waitFor(() => expect(settled.length).toBe(1));
+
+      expect(settled[0]).toEqual({ sessionId: 's1', id: 'q1', status: 'consumed' });
+      expect(repository.getById('q1')?.status).toBe('consumed');
+    });
+
+    it('重试耗尽标记失败后同样通知，卡片不会永远留着', async () => {
+      const repository = createRepository();
+      const settled: QueuedInputSettledEvent[] = [];
+      repository.enqueue({ id: 'q2', sessionId: 's2', envelope: { content: '你好' } });
+
+      const drain = createDrain({
+        repository,
+        settled,
+        agentEvents: [],
+        runEnvelope: async () => { throw new Error('boom'); },
+      });
+
+      // 反复释放直到重试预算耗尽，条目转 failed
+      for (let i = 0; i < 10 && repository.getById('q2')?.status !== 'failed'; i += 1) {
+        drain.handleReleasedSession('s2');
+        await vi.waitFor(() => expect(repository.getById('q2')?.status).not.toBe('sending'));
+      }
+
+      expect(repository.getById('q2')?.status).toBe('failed');
+      expect(settled.some((event) => event.id === 'q2' && event.status === 'failed')).toBe(true);
+    });
   });
 });

@@ -206,7 +206,7 @@ export const DoctorSettings: React.FC = () => {
       actions={
         <div className="flex items-center gap-2">
           {report && (
-            <Button variant="ghost" size="sm" onClick={handleExport} leftIcon={<ClipboardCopy className="w-4 h-4" />}>
+            <Button variant="ghost" size="sm" onClick={handleExport} leftIcon={<ClipboardCopy className="w-3.5 h-3.5" />}>
               {doctorText.exportLogs}
             </Button>
           )}

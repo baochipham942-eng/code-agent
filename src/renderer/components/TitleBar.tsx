@@ -12,7 +12,13 @@ import { useAppStore } from '../stores/appStore';
 import { PanelLeft, PanelRight } from 'lucide-react';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
+import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
 import { useI18n } from '../hooks/useI18n';
+
+// 侧栏展开时红绿灯浮在**侧栏**顶行上，本栏不受影响；侧栏一收起，本栏就成了窗口左上角那块，
+// 灯直接压在展开按钮上（2026-07-27 产品负责人截图）。darwin 下这一档要让开灯区：
+// 灯占 x9-68（objc 摆过纵向，横向仍是系统默认），再留一点呼吸位 ⇒ 84。
+const COLLAPSED_TRAFFIC_LIGHT_INSET = getCurrentKeybindingPlatform() === 'darwin' ? 'pl-[84px]' : '';
 
 interface TitleBarProps {
   /** 二级页（能力中心/资料库/自动化等）在位：会话动作与右栏开关都无对象 */
@@ -35,7 +41,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
     // 画一条横线会把右栏切成上下两段，正是要消除的读法；底色由 App 的右栏容器统一给。
     <div
       data-tauri-drag-region
-      className="h-12 flex items-center justify-between px-4 bg-transparent relative z-30"
+      className={`h-12 flex items-center justify-between px-4 bg-transparent relative z-30 ${sidebarCollapsed ? COLLAPSED_TRAFFIC_LIGHT_INSET : ''}`}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>

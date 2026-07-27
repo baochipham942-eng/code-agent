@@ -283,14 +283,34 @@ export const WorkbenchTabs: React.FC = () => {
     closeWorkbenchTab(meta.id);
   };
 
+  // 收起右栏的入口只此一处（顶栏那颗只在**已收起**时画，用来展开）。所以它必须在
+  // 空态也在场——2026-07-27 产品负责人截图：没开任何 view 时整条工具条早退不画，
+  // 右栏就此关不掉。泛化：唯一出口的控件不能挂在"有内容才渲染"的分支里。
+  const collapseButton = (
+    <IconButton
+      size="sm"
+      variant="ghost"
+      icon={<PanelRightClose />}
+      aria-label={t.workbenchTabs.collapsePanel}
+      title={t.workbenchTabs.collapsePanel}
+      data-testid="workbench-collapse-panel"
+      onClick={() => setWorkbenchCollapsed(true)}
+    />
+  );
+
   if (metas.length === 0) {
     return (
-      <WorkbenchViewLauncher
-        openedViews={workbenchTabs}
-        canOpenDesignCanvas={Boolean(currentSessionId)}
-        mode="empty"
-        onOpen={openView}
-      />
+      <>
+        <div className="flex shrink-0 items-center justify-end border-b border-zinc-700 bg-zinc-900 px-2 py-1.5">
+          {collapseButton}
+        </div>
+        <WorkbenchViewLauncher
+          openedViews={workbenchTabs}
+          canOpenDesignCanvas={Boolean(currentSessionId)}
+          mode="empty"
+          onOpen={openView}
+        />
+      </>
     );
   }
 
@@ -368,14 +388,7 @@ export const WorkbenchTabs: React.FC = () => {
           )}
         </div>
 
-        <IconButton
-          size="sm"
-          variant="ghost"
-          icon={<PanelRightClose />}
-          aria-label={t.workbenchTabs.collapsePanel}
-          title={t.workbenchTabs.collapsePanel}
-          onClick={() => setWorkbenchCollapsed(true)}
-        />
+        {collapseButton}
 
         {menuOpen && (
           <div

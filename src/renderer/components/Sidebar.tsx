@@ -643,22 +643,22 @@ export const Sidebar: React.FC = () => {
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden pr-[var(--scrollbar-size)]">
       {/* Header: h-12 to align with TitleBar on the right.
           2026-07-27 审美关：① 原生标题栏已撤（tauri.conf.json titleBarStyle=Overlay +
-          hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端，所以 darwin 下
-          左侧留出死区：灯占 x20-72（三颗 12px 按钮、20px 间距），再留 20px 呼吸位 ⇒ pl-84
-          （像素级对齐 Codex：灯右缘到第一颗图标字形左缘 20px，图标之间 32px；
-          我们原来是 37/36，看着散）；③ 图标在本行**垂直居中**（中心 24），与右侧 TitleBar 的图标同一水平——
-          两条顶栏的控件必须同轴（2026-07-27 产品负责人拍板）。macOS 灯中心在 16（系统给的，
-          tauri.conf 的 trafficLightPosition 只在建窗那刻生效、show() 后被系统重排，
-          Tauri 2.11 没有运行时 setter），差的 8px 要动原生 objc 移灯，留给布局改造批；② 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的
-          地方，可以先不展示」），这行于是只剩右侧功能图标——与 Codex 参照一致。
+          hiddenTitle），内容延伸到窗口顶，macOS 红绿灯浮在本行左端；灯的纵向由原生 objc
+          摆到中心 24（src-tauri/src/traffic_lights.rs），与本行图标同轴。
+          ② 图标在本行**垂直居中**（中心 24），与右侧 TitleBar 的图标同一水平——
+          两条顶栏的控件必须同轴（2026-07-27 产品负责人拍板）。
+          ③ 图标**右对齐**（产品负责人 07-27 二次拍板）：`justify-end` + `pr-3` 与分组头 / 会话行
+          同一个右内边距 ⇒ 最右那颗 32px 按钮的中心，正好落在分组角标 / 状态点 / 账号箭头
+          那条右轨上。写 justify-end 而不是某个 pl 魔法值：图标数量随权限变化（筛选钮仅管理员可见），
+          左对齐的绝对内边距一改人数就散，右对齐则始终钉在轨上。
+          ④ 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的地方，可以先不展示」）。
           本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。
           ⚠️ 拖拽靠 `data-tauri-drag-region` 属性——`-webkit-app-region: drag` 是 Electron 的
           私有属性，Tauri 的 WKWebView 根本不认，只写 style 的话窗口拖不动、双击也不缩放
-          （2026-07-27 产品负责人实测「双击标题栏没反应」）。style 保留是给 web/Electron 兜底。
-          ③ 图标紧贴红绿灯左对齐（参照 Codex），不再甩到侧栏右端。 */}
+          （2026-07-27 产品负责人实测「双击标题栏没反应」）。style 保留是给 web/Electron 兜底。 */}
       <div
         data-tauri-drag-region
-        className={`h-12 flex items-center justify-start gap-2 flex-shrink-0 pr-3 ${isMacShell ? 'pl-[84px]' : 'pl-3'}`}
+        className="h-12 flex items-center justify-end gap-2 flex-shrink-0 pl-3 pr-3"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* 图标之间不留 gap：32px 按钮首尾相接 ⇒ 中心间距 32，与 Codex 顶栏一致 */}

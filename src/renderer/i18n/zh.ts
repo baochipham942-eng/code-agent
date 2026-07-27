@@ -98,6 +98,7 @@ export const zh = {
     block: '阻止项目配置',
     openSettings: '打开设置',
     saving: '保存中…',
+    saveFailed: '保存失败，决定没有生效',
     risks: {
       execution: '命令执行',
       mcp: 'MCP 服务',

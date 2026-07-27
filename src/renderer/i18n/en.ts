@@ -99,6 +99,7 @@ export const en: Translations = {
     block: 'Block project config',
     openSettings: 'Open settings',
     saving: 'Saving...',
+    saveFailed: 'Could not save your decision',
     risks: {
       execution: 'Command execution',
       mcp: 'MCP servers',

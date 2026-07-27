@@ -72,7 +72,7 @@ export interface PortableAgentEngineV2 {
   origin?: 'manual' | 'import' | 'external';
 }
 
-export interface PortableForkPathMappingV1 {
+interface PortableForkPathMappingV1 {
   sourceRootDigest: string;
   /** Repository-relative source path. `.` denotes the target repository root. */
   relativePath: string;
@@ -225,7 +225,7 @@ export interface ForkLineageEnvelopeV1 {
   payloadDigest: string;
 }
 
-export interface DetachedForkProvenanceV1 {
+interface DetachedForkProvenanceV1 {
   kind: 'detached_child';
   sourceRootSessionId: string;
   sourceParentSessionId: string;
@@ -255,7 +255,7 @@ export interface SessionExportEnvelopeV2 {
   payloadDigest: string;
 }
 
-export interface SessionExportWorkspaceInputV2 {
+interface SessionExportWorkspaceInputV2 {
   mode: SessionForkWorkspaceMode;
   label: PortableSessionWorkspaceV2['label'];
   anchorChildMessageId?: string;
@@ -335,7 +335,7 @@ export interface PlanSessionForkImportInput {
   allowProjectRemap?: boolean;
 }
 
-export type SessionForkSyncEnvelopeState =
+type SessionForkSyncEnvelopeState =
   | 'local_only'
   | 'pending'
   | 'quarantined'

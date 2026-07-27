@@ -163,7 +163,7 @@ export interface RecordConversationRewindRestoreInput {
   createdAt?: number;
 }
 
-export type ProjectionRepairFaultPhase = 'after_projection_write' | 'after_event_append';
+type ProjectionRepairFaultPhase = 'after_projection_write' | 'after_event_append';
 
 export interface RepairCompatibilityProjectionInput {
   sessionId: string;

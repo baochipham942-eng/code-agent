@@ -4,7 +4,6 @@ import type {
   ConversationMessageSnapshot,
   ConversationReplayMessage,
 } from '../../../../shared/contract/conversationBranch';
-import type { SessionExportEnvelopeV2 } from '../../../../shared/contract/sessionForkPortability';
 import type { ConversationBranchRepository } from '../../core/repositories/ConversationBranchRepository';
 
 export const PORTABLE_CONVERSATION_HISTORY_SCHEMA = 'neo.conversation-history' as const;
@@ -143,12 +142,7 @@ export interface PortableConversationHistoryV1 {
   payloadDigest: string;
 }
 
-/** Transitional type until the shared V2 envelope contract adopts the field. */
-export type SessionExportEnvelopeV2WithConversationHistory = SessionExportEnvelopeV2 & {
-  conversationHistory?: PortableConversationHistoryV1;
-};
-
-export type PortableConversationReplayMethod =
+type PortableConversationReplayMethod =
   | 'initializeSessionBranch'
   | 'appendMessage'
   | 'recordMessageRevision'

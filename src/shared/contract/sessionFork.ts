@@ -1,4 +1,3 @@
-import type { Message } from './message';
 import type { Session } from './session';
 
 export type SessionForkWorkspaceMode = 'shared_current' | 'isolated_at_anchor';
@@ -9,14 +8,14 @@ export type SessionForkContextDeliveryMode =
   | 'validated_context_handoff'
   | 'unsupported';
 
-export type SessionForkStatus =
+type SessionForkStatus =
   | 'preparing'
   | 'workspace_ready'
   | 'completed'
   | 'failed'
   | 'quarantined';
 
-export type SessionForkSyncState = 'local_only' | 'pending' | 'synced' | 'blocked';
+type SessionForkSyncState = 'local_only' | 'pending' | 'synced' | 'blocked';
 
 export type SessionForkErrorCode =
   | 'SESSION_NOT_FOUND'
@@ -81,25 +80,4 @@ export interface CreateSessionForkResult {
   copiedMessageCount: number;
   sourcePrefixDigest: string;
   workspaceLabel: '历史对话 + 当前文件' | '历史对话 + 锚点文件';
-}
-
-export interface SessionForkBranchReplay {
-  sessionId: string;
-  branchId: string;
-  entries: Array<{
-    entryId: string;
-    ordinal: number;
-    message: Message;
-    sourceSessionId: string;
-    sourceMessageId: string;
-    payloadDigest: string;
-  }>;
-}
-
-export interface SessionForkBranchComparison {
-  leftSessionId: string;
-  rightSessionId: string;
-  sharedPrefixEntries: number;
-  leftOnlyEntryIds: string[];
-  rightOnlyEntryIds: string[];
 }

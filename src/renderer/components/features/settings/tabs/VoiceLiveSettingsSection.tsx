@@ -25,6 +25,7 @@ const logger = createLogger('VoiceLiveSettings');
 
 type InterruptMode = NonNullable<VoiceLiveSettings['interrupt']>;
 type VadSensitivity = NonNullable<VoiceLiveSettings['vadSensitivity']>;
+type EchoCancellationMode = NonNullable<VoiceLiveSettings['echoCancellation']>;
 
 const INTERRUPT_OPTIONS: InterruptMode[] = ['server_vad', 'push_to_talk', 'manual'];
 const SENSITIVITY_OPTIONS: VadSensitivity[] = ['low', 'medium', 'high'];
@@ -39,7 +40,11 @@ export const VoiceLiveSettingsSection: React.FC = () => {
   const [language, setLanguage] = useState<NonNullable<VoiceLiveSettings['language']>>('auto');
   const [interrupt, setInterrupt] = useState<InterruptMode>('server_vad');
   const [sensitivity, setSensitivity] = useState<VadSensitivity>('medium');
+<<<<<<< HEAD
   const [executionModel, setExecutionModel] = useState<VoiceLiveSettings['executionModel']>(undefined);
+=======
+  const [echoCancellation, setEchoCancellation] = useState<EchoCancellationMode>('auto');
+>>>>>>> 0489214aa (feat(voice): add echo cancellation setting)
 
   useEffect(() => {
     let cancelled = false;
@@ -52,7 +57,11 @@ export const VoiceLiveSettingsSection: React.FC = () => {
         setLanguage(voice?.live?.language ?? 'auto');
         setInterrupt(deriveInterruptMode(voice));
         setSensitivity(deriveVadSensitivity(voice));
+<<<<<<< HEAD
         setExecutionModel(voice?.live?.executionModel);
+=======
+        setEchoCancellation(voice?.live?.echoCancellation ?? 'auto');
+>>>>>>> 0489214aa (feat(voice): add echo cancellation setting)
       })
       .catch((error) => logger.error('load voice live settings failed', error));
     return () => { cancelled = true; };
@@ -65,7 +74,11 @@ export const VoiceLiveSettingsSection: React.FC = () => {
       language,
       interrupt,
       vadSensitivity: sensitivity,
+<<<<<<< HEAD
       ...(executionModel ? { executionModel } : {}),
+=======
+      echoCancellation,
+>>>>>>> 0489214aa (feat(voice): add echo cancellation setting)
       ...patch,
     };
     // 应用到本地 state
@@ -74,6 +87,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
     if (patch.language !== undefined) setLanguage(patch.language);
     if (patch.interrupt !== undefined) setInterrupt(patch.interrupt);
     if (patch.vadSensitivity !== undefined) setSensitivity(patch.vadSensitivity);
+    if (patch.echoCancellation !== undefined) setEchoCancellation(patch.echoCancellation);
 
     const nextInterrupt = patch.interrupt ?? interrupt;
     const nextSensitivity = patch.vadSensitivity ?? sensitivity;
@@ -218,6 +232,28 @@ export const VoiceLiveSettingsSection: React.FC = () => {
             <option value="zh">{text.languageZh}</option>
             <option value="en">{text.languageEn}</option>
           </select>
+        </label>
+      </div>
+
+      <div className="border-t border-zinc-700 pt-4">
+        <label className="block space-y-2">
+          <span className="text-sm font-medium text-zinc-200">{text.echoCancellationTitle}</span>
+          <select
+            data-testid="voice-echo-cancellation"
+            value={echoCancellation}
+            onChange={(event) => void persist({
+              echoCancellation: event.target.value as EchoCancellationMode,
+            })}
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary-500"
+          >
+            <option value="auto">{text.echoCancellationAuto}</option>
+            <option value="off">{text.echoCancellationOff}</option>
+          </select>
+          <p className="text-xs leading-5 text-zinc-500">
+            {echoCancellation === 'auto'
+              ? text.echoCancellationAutoDesc
+              : text.echoCancellationOffDesc}
+          </p>
         </label>
       </div>
 

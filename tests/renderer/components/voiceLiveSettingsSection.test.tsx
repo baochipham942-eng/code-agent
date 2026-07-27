@@ -139,4 +139,21 @@ describe('VoiceLiveSettingsSection', () => {
     expect(summary.textContent).toContain('11');
     availability.usage = { monthSeconds: 0, monthCalls: 0 };
   });
+
+  it('回声消除默认自动，可持久化为强制关', async () => {
+    settingsGet({ live: { enabled: true }, turnDetection: { type: 'server_vad' } });
+    render(<VoiceLiveSettingsSection />);
+    const select = await screen.findByTestId('voice-echo-cancellation') as HTMLSelectElement;
+    expect(select.value).toBe('auto');
+
+    fireEvent.change(select, { target: { value: 'off' } });
+    await waitFor(() => {
+      const setCall = invokeDomainMock.mock.calls.find(([, action]) => action === 'set');
+      const payload = setCall![2] as {
+        voice: { live: { echoCancellation?: string } };
+      };
+      expect(payload.voice.live.echoCancellation).toBe('off');
+    });
+    expect(screen.getByText(zh.voice.settings.echoCancellationOffDesc)).toBeTruthy();
+  });
 });

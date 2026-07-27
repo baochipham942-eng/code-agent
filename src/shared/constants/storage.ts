@@ -84,16 +84,6 @@ export const HISTORY = {
   MAX_TOKEN_HISTORY: 1000,
 } as const;
 
-/** 协调器 checkpoint 持久化 */
-export const COORDINATION_CHECKPOINTS = {
-  /** AutoAgentCoordinator checkpoint 目录名（相对 getUserConfigDir()） */
-  AUTO_DIR: 'coordination-checkpoints',
-  /** ParallelAgentCoordinator checkpoint 目录名（相对 getUserConfigDir()） */
-  PARALLEL_DIR: 'parallel-coordination-checkpoints',
-  /** 当前快照 schema 版本，读入时用于向前兼容判断 */
-  SCHEMA_VERSION: 1,
-} as const;
-
 /** Swarm Trace 持久化（ADR-010 #5） */
 export const SWARM_TRACE = {
   /** 单次 list 默认返回 run 数量上限 */

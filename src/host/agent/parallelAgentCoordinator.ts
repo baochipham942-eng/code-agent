@@ -7,39 +7,17 @@
 // - 服务 **显式任务** 入口：LLM 调用 spawn_agent tool、swarm.ipc 的 UI swarm
 // - 输入形态：AgentTask[]（带 dependsOn/tools/priority 的 DAG 节点）
 // - 核心能力：TaskDAG + DAGScheduler 做真正的依赖图调度，SharedContext
-//   （L2 共享读写），EventEmitter 事件流，节点级 Checkpoint 断点恢复
+//   （L2 共享读写），EventEmitter 事件流
 // - 不包含：动态 agent 生成、L0-L3 通信层级
 //
 // 与 AutoAgentCoordinator 的关系：
 // - 两者 **零调用交集**，服务完全不同的入口路径
 // - 不会合并：输入形态差别大（DynamicAgentDefinition vs AgentTask），
 //   核心能力互不覆盖（Auto 无 DAG，Parallel 无 Auto 的动态生成），强合需引 adapter
-// - 在 crash-safe 这条基础能力上对称（ADR-010 item #3）：都有节点级 JSON
-//   checkpoint（目录见 COORDINATION_CHECKPOINTS.{AUTO,PARALLEL}_DIR），
-//   schema 与字段语义不同但概念对齐。对照表见
-//   docs/architecture/coordinator-checkpoint-symmetry.md
-//
-// ============================================================================
-//
-// ## 节点级 Checkpoint（断点恢复）
-//
-// 长程 swarm 执行中，主进程崩溃/kill 会导致已完成节点工作白费。每个节点
-// 完成后持久化结果，重启后 restoreCheckpoint 重建 completedTasks /
-// taskDefinitions / sharedContext，重新提交同一份 tasks 会自动跳过已成功
-// 节点（cache-skip guard 在 executeTask 入口）。
-//
-// - 存储: ~/.code-agent/parallel-coordination-checkpoints/<sessionId>.json
-// - 粒度: Task 节点级（成功与失败都入快照；只有 success 才短路，失败会重跑）
-// - 运行中任务: 不持久化 Promise，重启后凭借"不在 completedTasks"触发重调度
-// - 清理: executeParallel 全部成功后自动删除快照
-// - DAG 路径: executeWithDAG 在 convertSchedulerResult 末尾做一次批量 save，
-//   但 scheduler 是外部执行体，不支持从 completedTasks restore。DAG 路径的
-//   crash-safe 能力是增量的（记录存量、不恢复调度）
+// - Agent Team 状态只经 Durable Run 提交
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { promises as fsPromises } from 'fs';
-import * as path from 'path';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import type { SubagentExecutorPort } from './subagentExecutorPort';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
@@ -50,11 +28,8 @@ import {
 import { createTextMessage, getSpawnGuard, type AgentMessage } from './spawnGuard';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';
-import { COORDINATION_CHECKPOINTS } from '../../shared/constants';
 import {
   DEFAULT_COORDINATOR_CONFIG,
-  getCheckpointIdentity,
-  getParallelCheckpointPath,
   isLegacyCoordinatorScope,
   isSameRunScope,
   type AgentTask,
@@ -62,8 +37,6 @@ import {
   type CoordinatorConfig,
   type ParallelAgentTaskSnapshotStatus,
   type ParallelAgentTaskSnapshot,
-  type ParallelCheckpoint,
-  type ParallelCheckpointIdentity,
   type ParallelExecutionResult,
   type SharedContext,
   type TaskProgressEvent,
@@ -136,8 +109,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private durableController?: AgentTeamDurableController;
   private durableOwnerEpoch?: number;
   private readonly legacyLifecycle: boolean;
-  /** Fire-and-forget persist 的串行链，保证 delete/drain 能排干所有 in-flight save */
-  private pendingPersist: Promise<void> = Promise.resolve();
   private activeGraphRunner?: GraphRunner;
   private graphCheckpoint?: GraphCheckpoint;
   private skipNextGraphCheckpoint = false;
@@ -366,13 +337,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
       .map((result) => ({ taskId: result.taskId, error: result.error || 'Unknown error' }));
     const aggregatedResults = this.config.aggregateResults ? aggregateAgentTaskResults(rawResults) : rawResults;
 
-    if (errors.length === 0) {
-      await this.deleteCheckpointIfPresent();
-    } else {
-      this.schedulePersist();
-      await this.drainPersist();
-    }
-
     this.emit('all:complete', { results: aggregatedResults, errors });
 
     return {
@@ -540,8 +504,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
       this.completedTasks.set(task.id, taskResult);
       this.abortControllers.delete(task.id); this.runningTasks.delete(task.id);
 
-      this.schedulePersist();
-
       return taskResult;
     } catch (error) {
       onThrownFailure?.();
@@ -574,8 +536,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
       };
       await this.durableController?.markNodeTerminal(task, failedResult);
       this.completedTasks.set(task.id, failedResult);
-
-      this.schedulePersist();
 
       return failedResult;
     } finally {
@@ -1041,220 +1001,5 @@ export class ParallelAgentCoordinator extends EventEmitter {
   /** Compatibility facade: all DAG execution now shares the GraphRunner path. */
   async executeWithDAG(tasks: AgentTask[]): Promise<ParallelExecutionResult> {
     return this.executeParallel(tasks);
-  }
-
-  // ============================================================================
-  // Checkpoint 持久化（ADR-010 item #3）
-  // ============================================================================
-
-  /**
-   * 落盘当前 coordinator 状态到 JSON 快照。
-   *
-   * 存储路径: ~/.code-agent/parallel-coordination-checkpoints/<sessionId>.json
-   *
-   * - Map 字段序列化成 entries 数组
-   * - Promise / AbortController / execution ports 不入快照
-   * - 失败安静 warn（checkpoint 是 best-effort，不能拖累主流程）
-   */
-  async persistCheckpoint(identity?: ParallelCheckpointIdentity): Promise<void> {
-    // Production Agent Team state is committed only through Durable Run.
-    // JSON remains a compatibility source for legacy coordinators/tests.
-    if (this.durableController) return;
-    const resolvedIdentity = this.resolveCheckpointIdentity(identity);
-    if (!resolvedIdentity) return;
-    if (!this.ownsCheckpointIdentity(resolvedIdentity)) {
-      throw new Error('Checkpoint identity does not match coordinator run scope.');
-    }
-    const checkpointIdentity = getCheckpointIdentity(resolvedIdentity);
-    if (!checkpointIdentity.sessionId) {
-      return;
-    }
-
-    const filePath = getParallelCheckpointPath(resolvedIdentity);
-    const now = Date.now();
-
-    const snapshot: ParallelCheckpoint = {
-      version: COORDINATION_CHECKPOINTS.SCHEMA_VERSION,
-      sessionId: checkpointIdentity.sessionId,
-      runId: checkpointIdentity.runId,
-      treeId: checkpointIdentity.treeId,
-      createdAt: now,
-      updatedAt: now,
-      taskDefinitions: Array.from(this.taskDefinitions.entries()),
-      completedTasks: Array.from(this.completedTasks.entries()),
-      runningTaskIds: Array.from(this.runningTasks.keys()),
-      sharedContext: this.exportSharedContext(),
-    };
-
-    try {
-      await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
-      await fsPromises.writeFile(filePath, JSON.stringify(snapshot, null, 2), 'utf-8');
-    } catch (error) {
-      logger.warn('Failed to persist parallel coordinator checkpoint', { error, filePath });
-    }
-  }
-
-  /**
-   * 从 JSON 快照重建 coordinator 状态。
-   *
-   * 重建语义（对齐 spawnGuard.restoreState / ADR-010 #3）：
-   * - completedTasks / taskDefinitions / sharedContext 原样恢复
-   * - runningTaskIds 不进 completedTasks —— 凭借"不存在于 completedTasks"
-   *   触发下一次 executeParallel 的重新调度
-   * - abortControllers 与 runningTasks 在新 coordinator 实例上为空
-   * - version 不匹配 → 视为 stale，返回 false 并忽略快照
-   * - 文件不存在 / JSON 损坏 → 返回 false，不抛
-   */
-  async restoreCheckpoint(identity?: ParallelCheckpointIdentity): Promise<boolean> {
-    if (this.durableController) return false;
-    const resolvedIdentity = this.resolveCheckpointIdentity(identity);
-    if (!resolvedIdentity || !this.ownsCheckpointIdentity(resolvedIdentity)) {
-      logger.warn('Parallel checkpoint identity does not match coordinator run scope, ignoring');
-      return false;
-    }
-    const checkpointIdentity = getCheckpointIdentity(resolvedIdentity);
-    if (!checkpointIdentity.sessionId) {
-      return false;
-    }
-
-    const filePath = getParallelCheckpointPath(resolvedIdentity);
-    let raw: string;
-    try {
-      raw = await fsPromises.readFile(filePath, 'utf-8');
-    } catch {
-      return false;
-    }
-
-    let snapshot: ParallelCheckpoint;
-    try {
-      snapshot = JSON.parse(raw) as ParallelCheckpoint;
-    } catch (error) {
-      logger.warn('Parallel checkpoint JSON corrupted, ignoring', { error, filePath });
-      return false;
-    }
-
-    if (snapshot.version !== COORDINATION_CHECKPOINTS.SCHEMA_VERSION) {
-      logger.info('Parallel checkpoint schema version mismatch, ignoring', {
-        expected: COORDINATION_CHECKPOINTS.SCHEMA_VERSION,
-        actual: snapshot.version,
-      });
-      return false;
-    }
-
-    if (
-      typeof resolvedIdentity !== 'string'
-      && (
-        snapshot.sessionId !== resolvedIdentity.sessionId
-        || snapshot.runId !== resolvedIdentity.runId
-        || snapshot.treeId !== resolvedIdentity.treeId
-      )
-    ) {
-      logger.warn('Parallel checkpoint scope mismatch, ignoring', {
-        expected: resolvedIdentity,
-        actual: {
-          sessionId: snapshot.sessionId,
-          runId: snapshot.runId,
-          treeId: snapshot.treeId,
-        },
-      });
-      return false;
-    }
-
-    // 恢复 taskDefinitions
-    this.taskDefinitions.clear();
-    for (const [id, task] of snapshot.taskDefinitions ?? []) {
-      this.taskDefinitions.set(id, task);
-    }
-
-    // 恢复 completedTasks（包括失败记录——guard 只短路 success 项）
-    this.completedTasks.clear();
-    for (const [id, result] of snapshot.completedTasks ?? []) {
-      this.completedTasks.set(id, result);
-    }
-
-    // 恢复 sharedContext
-    this.clearSharedContext();
-    if (snapshot.sharedContext) {
-      this.importSharedContext(snapshot.sharedContext);
-    }
-
-    logger.info('Parallel coordinator checkpoint restored', {
-      sessionId: checkpointIdentity.sessionId,
-      runId: checkpointIdentity.runId,
-      taskDefinitions: this.taskDefinitions.size,
-      completedTasks: this.completedTasks.size,
-      runningAtCrash: snapshot.runningTaskIds?.length ?? 0,
-    });
-
-    return true;
-  }
-
-  /**
-   * 成功收尾后清掉 checkpoint 文件。缺失视为已清理，不告警。
-   */
-  async deleteCheckpoint(identity?: ParallelCheckpointIdentity): Promise<void> {
-    if (this.durableController) return;
-    const resolvedIdentity = this.resolveCheckpointIdentity(identity);
-    if (!resolvedIdentity) return;
-    if (!this.ownsCheckpointIdentity(resolvedIdentity)) {
-      throw new Error('Checkpoint identity does not match coordinator run scope.');
-    }
-    const checkpointIdentity = getCheckpointIdentity(resolvedIdentity);
-    if (!checkpointIdentity.sessionId) {
-      return;
-    }
-    const filePath = getParallelCheckpointPath(resolvedIdentity);
-    try {
-      await fsPromises.unlink(filePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        logger.warn('Failed to delete parallel checkpoint', { error, filePath });
-      }
-    }
-  }
-
-  /**
-   * Fire-and-forget 的 persist 封装。在节点完成点调用，不 await。
-   *
-   * 串行到 pendingPersist 链上（而不是裸 void），这样 drainPersist 能在
-   * executeParallel 收尾时排干所有 in-flight save，避免 save 与 delete
-   * 竞争导致"全部成功后 checkpoint 仍然存在"。
-   */
-  private schedulePersist(): void {
-    if (this.durableController) return;
-    if (!this.resolveCheckpointIdentity()) {
-      return;
-    }
-    this.pendingPersist = this.pendingPersist
-      .catch(() => undefined)
-      .then(() => this.persistCheckpoint());
-  }
-
-  /**
-   * 等排队的 schedulePersist 全部落盘后再继续。
-   */
-  private async drainPersist(): Promise<void> {
-    await this.pendingPersist.catch(() => undefined);
-  }
-
-  private async deleteCheckpointIfPresent(): Promise<void> {
-    if (!this.resolveCheckpointIdentity()) {
-      return;
-    }
-    await this.drainPersist();
-    await this.deleteCheckpoint();
-  }
-
-  private resolveCheckpointIdentity(
-    identity?: ParallelCheckpointIdentity,
-  ): ParallelCheckpointIdentity | undefined {
-    if (identity !== undefined) return identity;
-    if (this.scope && !isLegacyCoordinatorScope(this.scope)) return this.scope;
-    return this.executionContext?.sessionId;
-  }
-
-  private ownsCheckpointIdentity(identity: ParallelCheckpointIdentity): boolean {
-    if (!this.scope || isLegacyCoordinatorScope(this.scope)) return true;
-    return typeof identity !== 'string' && isSameRunScope(this.scope, identity);
   }
 }

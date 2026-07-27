@@ -251,7 +251,7 @@ export const zhSettingsModels = {
     },
     providerDoctor: {
       title: '系统诊断',
-      pageDescription: '检查运行环境、网络、配置、数据库等 9 类系统状态；失败项可一键跳转修复。',
+      pageDescription: '检查运行环境、网络、配置、数据库等 9 类系统状态；失败项可直接跳转修复。',
       exportLogs: '导出日志',
       rerun: '重新诊断',
       start: '开始诊断',

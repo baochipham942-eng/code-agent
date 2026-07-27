@@ -660,10 +660,12 @@ export const Sidebar: React.FC = () => {
           （2026-07-28 产品负责人：「红绿灯上面的 padding = 左边的 padding」）。
           ⚠️ 对齐口径是布局框不是可见笔画：每个 lucide 图标在自己 16px 框里的内缩都不同
           （实测开关字形右边空 3、箭头空 5、角标空 1.5），按笔画永远拉不齐，按框才能一致。
-          ③ 图标**右对齐**（产品负责人 07-27 二次拍板）：`justify-end` + `pr-3` 与分组头 / 会话行
-          同一个右内边距 ⇒ 最右那颗 32px 按钮的中心，正好落在分组角标 / 状态点 / 账号箭头
-          那条右轨上。写 justify-end 而不是某个 pl 魔法值：图标数量随权限变化（筛选钮仅管理员可见），
-          左对齐的绝对内边距一改人数就散，右对齐则始终钉在轨上。
+          ③ 图标**右对齐**（产品负责人 07-27 二次拍板）：`justify-end` ⇒ 最右那颗图标落在
+          分组角标 / 状态点 / 账号箭头那条右轨（字形框右缘 224）上。写 justify-end 而不是某个
+          pl 魔法值：图标数量随权限变化（筛选钮仅管理员可见），左对齐的绝对内边距一改人数就散。
+          ⚠️ 本行的 px 比别处小 8：这里的图标是 32px 的 IconButton（16 字形居中 ⇒ 框内自带 8 内缩），
+          而角标 / 状态点 / 箭头都是裸 16px 字形。喂同一个 px 值，前者会比后者多缩 8、右轨断开
+          （2026-07-28 实测中心 206.8 vs 214.8）。所以这里写 px-0.5，让**字形框**而不是按钮框对齐。
           ④ 品牌标撤下（产品负责人：「品牌标识本身没有特别合适的地方，可以先不展示」）。
           本行同时是窗口拖拽区（原生标题栏没了，得自己给一块能拖的地方）。
           ⚠️ 拖拽靠 `data-tauri-drag-region` 属性——`-webkit-app-region: drag` 是 Electron 的
@@ -671,7 +673,7 @@ export const Sidebar: React.FC = () => {
           （2026-07-27 产品负责人实测「双击标题栏没反应」）。style 保留是给 web/Electron 兜底。 */}
       <div
         data-tauri-drag-region
-        className="h-12 flex items-center justify-end gap-2 flex-shrink-0 px-2.5"
+        className="h-12 flex items-center justify-end gap-2 flex-shrink-0 px-0.5"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* 图标之间不留 gap：32px 按钮首尾相接 ⇒ 中心间距 32，与 Codex 顶栏一致 */}

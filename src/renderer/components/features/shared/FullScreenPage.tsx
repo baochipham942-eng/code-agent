@@ -46,7 +46,7 @@ export const FullScreenPage: React.FC<FullScreenPageProps> = ({
   children,
   className = '',
   testId,
-  variant = 'inline',
+  variant = 'overlay',
   ...divProps
 }) => (
   <div

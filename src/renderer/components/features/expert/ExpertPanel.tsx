@@ -330,7 +330,7 @@ export const ExpertPanel: React.FC = () => {
   return (
     <div data-testid="expert-panel">
       {selectedRecipe ? null : (
-          <div className="sticky top-0 z-10 -mx-6 mb-3 flex items-center justify-end gap-2 bg-zinc-950/95 px-6 py-2 backdrop-blur">
+          <div className="sticky top-0 z-10 -mx-6 mb-3 flex items-center justify-end gap-2 border-b border-zinc-800/70 bg-zinc-900/90 px-6 py-2 backdrop-blur">
             <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">
               {(['mine', 'discover'] as const).map((key) => (
                 <button /* ds-allow:button: tab 切换胶囊（role=tab 分段控件），Button primitive 无 tab 语义变体 */

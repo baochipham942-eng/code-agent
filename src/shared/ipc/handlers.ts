@@ -24,7 +24,7 @@ import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import type { ScriptRunEvent, WorkflowLaunchEvent } from '../contract/scriptRun';
 import { DAG_CHANNELS, SKILL_CHANNELS } from './channels';
 
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult } from '../contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult, TelemetryFeedbackRating } from '../contract/telemetry';
 
 import type { ChannelAccount, ChannelInboxItem, ChannelType, AddChannelAccountRequest, UpdateChannelAccountRequest, RetryChannelMediaAttachmentRequest, RetryChannelMediaAttachmentResult } from '../contract/channel';
 
@@ -521,6 +521,7 @@ export interface IpcInvokeHandlers {
   } | null>;
   [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
 	  [IPC_CHANNELS.TELEMETRY_SUBMIT_FEEDBACK]: (payload: TelemetryFeedbackSubmitRequest) => Promise<TelemetryFeedbackSubmitResult>;
+	  [IPC_CHANNELS.TELEMETRY_GET_SESSION_FEEDBACK]: (sessionId: string) => Promise<TelemetryFeedbackRating[]>;
 	  [IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA]: (sessionId: string) => Promise<unknown>;
 	  [IPC_CHANNELS.REPLAY_GET_TRAJECTORY_QUALITY]: (payload: AgentTrajectoryQualitySummariesRequest) => Promise<Record<string, AgentTrajectorySessionQualitySummary>>;
 	  [IPC_CHANNELS.REPLAY_UPDATE_TRAJECTORY_COLLECTION]: (payload: AgentTrajectoryCollectionUpdateRequest) => Promise<AgentTrajectorySessionQualitySummary>;

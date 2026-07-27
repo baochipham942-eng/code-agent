@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, BarChart3, Gamepad2, HardDrive, Search } from 'lucide-react';
+import { ArrowRight, BarChart3, FolderOpen, Gamepad2, HardDrive, Search } from 'lucide-react';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
@@ -53,10 +53,13 @@ export const NewSessionWelcome: React.FC<{
   onSend: (message: string) => void;
   workingDirectory?: string | null;
   workbenchSnapshot?: SessionWorkbenchSnapshot | null;
+  /** 目录选择入口（2026-07-27 批C2：侧栏「选择目录」行退役，目录选择并入新任务流程） */
+  onPickDirectory?: () => void;
 }> = ({
   onSend,
   workingDirectory,
   workbenchSnapshot,
+  onPickDirectory,
 }) => {
   const { t } = useI18n();
   const suggestions = buildDefaultSuggestions(t);
@@ -64,14 +67,17 @@ export const NewSessionWelcome: React.FC<{
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
   const hasWorkspaceContext = Boolean(workingDirectory?.trim());
   const contextLabel = hasWorkspaceContext ? formatNewSessionContextLabel(t, workingDirectory) : null;
-  const contextTitle = hasWorkspaceContext ? t.chat.inheritedWorkspace.replace('{path}', workingDirectory!.trim()) : '';
+  // tooltip 不再回显完整路径（内部路径如 ~/.code-agent-dev/work 会原样漏给用户）；
+  // 真实路径在点开目录选择器时自然可见，那是「选路径」的语境，合适。
+  const contextTitle = t.sidebar.selectDirectoryTitle;
   const contextDetails = hasWorkspaceContext
     ? buildNewSessionContextDetails(t, workbenchSnapshot)
     : null;
 
   return (
     <div className="h-full flex flex-col items-center justify-center px-6 py-12">
-      <div className="w-full max-w-2xl animate-fade-in">
+      {/* max-w-3xl(768px) 与消息流/输入框同宽（2026-07-27 拍板）：首发消息后内容列不再跳 96px */}
+      <div className="w-full max-w-3xl animate-fade-in">
         {/* 品牌标入场（2026-07-26 空态品牌化）：用户第一眼页面此前没有任何品牌触点 */}
         <NeoBrandMark size={28} showWordmark={false} className="mb-4" />
         <div className="mb-5 flex items-center justify-between gap-4">
@@ -81,14 +87,27 @@ export const NewSessionWelcome: React.FC<{
               {t.chat.welcomeSubtitle}
             </p>
           </div>
-          {contextLabel && (
+          {/* 目录选择并入新任务流程：标签从只读展示升级为换目录入口。
+              未设目录时是引导态「选择目录」；已设时显示项目名，点击可换。 */}
+          {onPickDirectory ? (
+            <button /* ds-allow:button: 欢迎页目录 chip（11px 行内胶囊，与只读上下文标签同形态），Button primitive 无对应微尺寸变体 */
+              type="button"
+              onClick={onPickDirectory}
+              title={contextTitle}
+              data-testid="welcome-directory-chip"
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:border-white/[0.16] hover:text-zinc-200"
+            >
+              <FolderOpen className="h-3 w-3" />
+              {contextLabel ?? t.sidebar.selectDirectory}
+            </button>
+          ) : contextLabel ? (
             <span
               title={contextTitle}
               className="shrink-0 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-zinc-400"
             >
               {contextLabel}
             </span>
-          )}
+          ) : null}
         </div>
         {contextDetails && (
           <div className="mb-4 truncate text-[11px] text-zinc-500">

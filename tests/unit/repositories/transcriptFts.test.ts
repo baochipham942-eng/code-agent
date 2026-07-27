@@ -421,10 +421,11 @@ describe('SessionRepository — Transcript FTS5 (kind-decomposed)', () => {
 
     repo.applyPromptRewind('sess-A', 'm2', { createdAt: 100, ownerUserId: null });
 
-    const visible = repo.searchTranscriptFts('secret axolotl');
-    expect(visible).toEqual([]);
-    const all = repo.searchTranscriptFts('secret axolotl', { includeRewound: true });
-    expect(all.map((h) => h.messageId)).toEqual(['m2']);
+    // 新语义：锚点 m2 保持 active、默认召回可见；仅严格位于锚点之后的 m3 被软隐藏
+    expect(repo.searchTranscriptFts('secret axolotl').map((h) => h.messageId)).toEqual(['m2']);
+    expect(repo.searchTranscriptFts('after rewind')).toEqual([]);
+    const all = repo.searchTranscriptFts('after rewind', { includeRewound: true });
+    expect(all.map((h) => h.messageId)).toEqual(['m3']);
   });
 
   // ---- backfill --------------------------------------------------------------

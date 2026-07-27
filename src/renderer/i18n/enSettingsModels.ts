@@ -250,6 +250,7 @@ export const enSettingsModels = {
     },
     providerDoctor: {
       title: 'System diagnostics',
+      pageDescription: 'Checks 9 categories of system health — environment, network, config, database and more. Failures link to one-click fixes.',
       exportLogs: 'Export logs',
       rerun: 'Run again',
       start: 'Start diagnostics',

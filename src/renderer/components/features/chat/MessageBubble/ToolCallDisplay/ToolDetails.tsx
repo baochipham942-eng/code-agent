@@ -672,7 +672,7 @@ function BrowserComputerNextStepActions({ actions }: { actions: BrowserComputerN
 }
 
 // 通用失败工具的可点 action 行：复制错误 + 从此重试。
-// 「从此重试」复用 messageActionStore.forkFromHere（与会话页消息级「从此重试」同源），
+// 「从此重试」复用 messageActionStore.createForkFromReply（与会话页消息级 Fork 同源），
 // 在所属 assistant 消息处 fork 重跑；拿不到 messageId 时只显示复制。
 function GenericToolErrorActions({
   errorText,
@@ -684,7 +684,7 @@ function GenericToolErrorActions({
   messageId?: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const forkFromHere = useMessageActionStore((state) => state.forkFromHere);
+  const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
 
   return (
     <div className="mb-2 flex flex-wrap gap-1.5">
@@ -710,7 +710,7 @@ function GenericToolErrorActions({
           data-testid="tool-error-retry"
           onClick={(event) => {
             event.stopPropagation();
-            forkFromHere(messageId);
+            createForkFromReply(messageId);
           }}
           className="inline-flex items-center gap-1 rounded-md border border-sky-500/25 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-100 transition-colors hover:bg-sky-500/20"
         >

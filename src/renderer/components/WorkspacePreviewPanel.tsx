@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
 } from 'lucide-react';
 import type { ProjectArtifact, ProjectArtifactKind } from '@shared/contract/project';
+import type { RestoreWorkspaceFilesAtCheckpointResult } from '@shared/contract/fileRestore';
 import {
   createWorkbenchRecipeMergedContext,
   type WorkbenchPreset,
@@ -244,15 +245,16 @@ export const WorkspacePreviewPanel: React.FC = () => {
     setRevisionActionError(null);
     setRevisionActionMessage(null);
     try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.CHECKPOINT_REWIND,
-        currentSessionId,
-        selected.source.messageId,
-      ) as { success: boolean; filesRestored: number; error?: string } | undefined;
-      if (!result?.success) {
-        throw new Error(result?.error || 'Checkpoint restore failed');
-      }
-      setRevisionActionMessage(wp.restoredFiles.replace('{count}', String(result.filesRestored)));
+      const result = await ipcService.invokeDomain<RestoreWorkspaceFilesAtCheckpointResult>(
+        IPC_DOMAINS.SESSION,
+        'restoreWorkspaceFilesAtCheckpoint',
+        {
+          sessionId: currentSessionId,
+          checkpointMessageId: selected.source.messageId,
+        },
+      );
+      const restoredFileCount = result.restoredFileCount + result.deletedFileCount;
+      setRevisionActionMessage(wp.restoredFiles.replace('{count}', String(restoredFileCount)));
     } catch (error) {
       setRevisionActionError(error instanceof Error ? error.message : String(error));
     } finally {

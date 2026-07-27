@@ -119,6 +119,8 @@ export interface Session {
   // 归档状态
   isArchived?: boolean; // 是否已归档
   archivedAt?: number; // 归档时间
+  // 软删除状态；includeDeleted 查询会返回该标记
+  isDeleted?: boolean;
   // PR 关联
   prLink?: PRLink; // GitHub PR 关联信息
   // Git 分支

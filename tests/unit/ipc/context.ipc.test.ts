@@ -26,6 +26,10 @@ function makeMsg(
   return { id, role, content };
 }
 
+async function unsupportedAppServiceOperation(): Promise<never> {
+  throw new Error('not implemented');
+}
+
 function makeAppService(
   sessionId: string,
   messages: Message[],
@@ -49,6 +53,28 @@ function makeAppService(
     updateSession: async () => {},
     archiveSession: async () => null,
     unarchiveSession: async () => null,
+    forkSession: unsupportedAppServiceOperation,
+    getForkLineage: unsupportedAppServiceOperation,
+    listForkChildren: unsupportedAppServiceOperation,
+    exportSessionFork: unsupportedAppServiceOperation,
+    importSessionFork: unsupportedAppServiceOperation,
+    enqueueSessionForkSync: unsupportedAppServiceOperation,
+    ingestSessionForkSync: unsupportedAppServiceOperation,
+    importReadySessionForkSync: unsupportedAppServiceOperation,
+    searchSessionForkExports: unsupportedAppServiceOperation,
+    readSessionForkTree: unsupportedAppServiceOperation,
+    readSessionForkNeighborhood: unsupportedAppServiceOperation,
+    replayConversationBranch: unsupportedAppServiceOperation,
+    compareConversationBranches: unsupportedAppServiceOperation,
+    traceConversationProvenance: unsupportedAppServiceOperation,
+    auditConversationLineage: unsupportedAppServiceOperation,
+    quarantineConversationLineage: unsupportedAppServiceOperation,
+    repairConversationLineage: unsupportedAppServiceOperation,
+    recordConversationEvaluationAttribution: unsupportedAppServiceOperation,
+    listConversationEvaluationAttributions: unsupportedAppServiceOperation,
+    rewindConversation: unsupportedAppServiceOperation,
+    restoreConversationRewind: unsupportedAppServiceOperation,
+    restoreWorkspaceFilesAtCheckpoint: unsupportedAppServiceOperation,
     loadOlderMessages: async () => ({ messages: [], hasMore: false }),
     exportSession: async () => null,
     importSession: async () => sessionId,
@@ -417,43 +443,7 @@ describe('buildContextViewFromSession()', () => {
     interventionState.applyIntervention(sessionId, undefined, 'carry-over', 'exclude', true);
     interventionState.applyIntervention(sessionId, agentId, 'agent-tool', 'pin', true);
 
-    const appService: AgentApplicationService = {
-      getMessages: async () => sessionMessages,
-      getSessionTasks: async () => [],
-      getSerializedCompressionState: () => null,
-      getCurrentSessionId: () => sessionId,
-      sendMessage: async () => {},
-      cancel: async () => {},
-      handlePermissionResponse: () => 'delivered' as const,
-      interruptAndContinue: async () => ({ outcome: 'steered' }),
-      getWorkingDirectory: () => undefined,
-      setWorkingDirectory: () => {},
-      createSession: async () => { throw new Error('not implemented'); },
-      loadSession: async () => { throw new Error('not implemented'); },
-      deleteSession: async () => { throw new Error('not implemented'); },
-      listSessions: async () => [],
-      updateSession: async () => {},
-      archiveSession: async () => null,
-      unarchiveSession: async () => null,
-      loadOlderMessages: async () => ({ messages: [], hasMore: false }),
-      exportSession: async () => null,
-      importSession: async () => sessionId,
-      setCurrentSessionId: () => {},
-      getMemoryContext: async () => null,
-      switchModel: async () => ({ persisted: true }),
-      getModelOverride: () => undefined,
-      clearModelOverride: async () => ({ persisted: true }),
-      setDelegateMode: () => {},
-      isDelegateMode: () => false,
-      rewindToPrompt: async () => { throw new Error('not implemented'); },
-      exportSessionMarkdown: async () => { throw new Error('not implemented'); },
-      exportSessionDiagnostics: async () => { throw new Error('not implemented'); },
-      setEffortLevel: () => {},
-      setThinkingEnabled: () => {},
-      setInteractionMode: () => {},
-      pause: () => {},
-      resume: () => {},
-    };
+    const appService = makeAppService(sessionId, sessionMessages);
 
     const result = await buildContextViewFromSession(
       { sessionId, agentId },
@@ -507,43 +497,7 @@ describe('buildContextViewFromSession()', () => {
       updatedAt: Date.now(),
     });
 
-    const appService: AgentApplicationService = {
-      getMessages: async () => sessionMessages,
-      getSessionTasks: async () => [],
-      getSerializedCompressionState: () => null,
-      getCurrentSessionId: () => fallbackSessionId,
-      sendMessage: async () => {},
-      cancel: async () => {},
-      handlePermissionResponse: () => 'delivered' as const,
-      interruptAndContinue: async () => ({ outcome: 'steered' }),
-      getWorkingDirectory: () => undefined,
-      setWorkingDirectory: () => {},
-      createSession: async () => { throw new Error('not implemented'); },
-      loadSession: async () => { throw new Error('not implemented'); },
-      deleteSession: async () => { throw new Error('not implemented'); },
-      listSessions: async () => [],
-      updateSession: async () => {},
-      archiveSession: async () => null,
-      unarchiveSession: async () => null,
-      loadOlderMessages: async () => ({ messages: [], hasMore: false }),
-      exportSession: async () => null,
-      importSession: async () => fallbackSessionId,
-      setCurrentSessionId: () => {},
-      getMemoryContext: async () => null,
-      switchModel: async () => ({ persisted: true }),
-      getModelOverride: () => undefined,
-      clearModelOverride: async () => ({ persisted: true }),
-      setDelegateMode: () => {},
-      isDelegateMode: () => false,
-      rewindToPrompt: async () => { throw new Error('not implemented'); },
-      exportSessionMarkdown: async () => { throw new Error('not implemented'); },
-      exportSessionDiagnostics: async () => { throw new Error('not implemented'); },
-      setEffortLevel: () => {},
-      setThinkingEnabled: () => {},
-      setInteractionMode: () => {},
-      pause: () => {},
-      resume: () => {},
-    };
+    const appService = makeAppService(fallbackSessionId, sessionMessages);
 
     const result = await buildContextViewFromSession(
       { sessionId: fallbackSessionId },
@@ -679,43 +633,7 @@ describe('buildContextViewFromSession()', () => {
       },
     ]);
 
-    const appService: AgentApplicationService = {
-      getMessages: async () => sessionMessages,
-      getSessionTasks: async () => [],
-      getSerializedCompressionState: () => null,
-      getCurrentSessionId: () => multiEventSessionId,
-      sendMessage: async () => {},
-      cancel: async () => {},
-      handlePermissionResponse: () => 'delivered' as const,
-      interruptAndContinue: async () => ({ outcome: 'steered' }),
-      getWorkingDirectory: () => undefined,
-      setWorkingDirectory: () => {},
-      createSession: async () => { throw new Error('not implemented'); },
-      loadSession: async () => { throw new Error('not implemented'); },
-      deleteSession: async () => { throw new Error('not implemented'); },
-      listSessions: async () => [],
-      updateSession: async () => {},
-      archiveSession: async () => null,
-      unarchiveSession: async () => null,
-      loadOlderMessages: async () => ({ messages: [], hasMore: false }),
-      exportSession: async () => null,
-      importSession: async () => multiEventSessionId,
-      setCurrentSessionId: () => {},
-      getMemoryContext: async () => null,
-      switchModel: async () => ({ persisted: true }),
-      getModelOverride: () => undefined,
-      clearModelOverride: async () => ({ persisted: true }),
-      setDelegateMode: () => {},
-      isDelegateMode: () => false,
-      rewindToPrompt: async () => { throw new Error('not implemented'); },
-      exportSessionMarkdown: async () => { throw new Error('not implemented'); },
-      exportSessionDiagnostics: async () => { throw new Error('not implemented'); },
-      setEffortLevel: () => {},
-      setThinkingEnabled: () => {},
-      setInteractionMode: () => {},
-      pause: () => {},
-      resume: () => {},
-    };
+    const appService = makeAppService(multiEventSessionId, sessionMessages);
 
     const result = await buildContextViewFromSession(
       { sessionId: multiEventSessionId },

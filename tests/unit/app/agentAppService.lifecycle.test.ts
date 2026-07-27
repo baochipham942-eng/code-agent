@@ -1,4 +1,5 @@
  
+import { readFile } from 'node:fs/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
 import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
@@ -89,9 +90,19 @@ describe('AgentAppService lifecycle routing', () => {
 	    updateSession: ReturnType<typeof vi.fn>;
 	    restoreSession: ReturnType<typeof vi.fn>;
 	    applyPromptRewind: ReturnType<typeof vi.fn>;
+	    invalidateSessionCache: ReturnType<typeof vi.fn>;
 	  };
   let database: {
     getMessageById: ReturnType<typeof vi.fn>;
+    getMessages: ReturnType<typeof vi.fn>;
+    getSession: ReturnType<typeof vi.fn>;
+    createSessionFork: ReturnType<typeof vi.fn>;
+    getSessionForkLineage: ReturnType<typeof vi.fn>;
+    listSessionForkChildren: ReturnType<typeof vi.fn>;
+    getSessionForkWorkspaceScope: ReturnType<typeof vi.fn>;
+    applyPromptRewind: ReturnType<typeof vi.fn>;
+    restorePromptRewind: ReturnType<typeof vi.fn>;
+    repairConversationLineage: ReturnType<typeof vi.fn>;
   };
   let checkpointService: {
     getFirstCheckpointAtOrAfter: ReturnType<typeof vi.fn>;
@@ -129,9 +140,19 @@ describe('AgentAppService lifecycle routing', () => {
 	      updateSession: vi.fn().mockResolvedValue(undefined),
 	      restoreSession: vi.fn(),
 	      applyPromptRewind: vi.fn(),
+	      invalidateSessionCache: vi.fn(),
 	    };
     database = {
       getMessageById: vi.fn(),
+      getMessages: vi.fn(),
+      getSession: vi.fn(),
+      createSessionFork: vi.fn(),
+      getSessionForkLineage: vi.fn(),
+      listSessionForkChildren: vi.fn(),
+      getSessionForkWorkspaceScope: vi.fn().mockReturnValue(null),
+      applyPromptRewind: vi.fn(),
+      restorePromptRewind: vi.fn(),
+      repairConversationLineage: vi.fn(),
     };
     checkpointService = {
       getFirstCheckpointAtOrAfter: vi.fn(),
@@ -155,6 +176,73 @@ describe('AgentAppService lifecycle routing', () => {
     vi.mocked(getFileCheckpointService).mockReset();
     vi.mocked(getFileCheckpointService).mockReturnValue(checkpointService as any);
 	  });
+
+  it('routes public lineage repair to projection reconstruction with the exact owner/Project boundary', async () => {
+    const healthyAudit = {
+      status: 'healthy',
+      issueDigest: 'healthy',
+      issues: [],
+    };
+    database.getSession.mockReturnValue({
+      id: 'session-1',
+      projectId: 'project-1',
+    });
+    database.repairConversationLineage.mockReturnValue(healthyAudit);
+    const service = createService(taskManager);
+
+    await expect(service.repairConversationLineage({
+      sessionId: 'session-1',
+      issueDigest: 'issue-digest',
+      reason: 'rebuild the compatibility projection from immutable replay',
+      idempotencyKey: 'repair-1',
+    })).resolves.toBe(healthyAudit);
+
+    expect(database.getSession).toHaveBeenCalledWith('session-1', { userId: null });
+    expect(database.repairConversationLineage).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      boundary: { ownerUserId: null, projectId: 'project-1' },
+      issueDigest: 'issue-digest',
+      reason: 'rebuild the compatibility projection from immutable replay',
+      idempotencyKey: 'repair-1',
+    });
+  });
+
+  it('keeps Desktop Codex and Claude fork handoff and continuation resume wiring exact', async () => {
+    const source = await readFile(
+      new URL('../../../src/host/app/agentAppService.ts', import.meta.url),
+      'utf8',
+    );
+    const codexStart = source.indexOf("if (engine.kind === 'codex_cli')");
+    const claudeStart = source.indexOf("if (engine.kind === 'claude_code')", codexStart);
+    const mimoStart = source.indexOf("if (engine.kind === 'mimo_code')", claudeStart);
+
+    expect(codexStart).toBeGreaterThanOrEqual(0);
+    expect(claudeStart).toBeGreaterThan(codexStart);
+    expect(mimoStart).toBeGreaterThan(claudeStart);
+
+    const codexBlock = source.slice(codexStart, claudeStart);
+    const claudeBlock = source.slice(claudeStart, mimoStart);
+    for (const [block, builder, continuationError] of [
+      [codexBlock, 'createCodexContinuationResumeLaunch', 'Codex continuation requires durable lifecycle identity'],
+      [claudeBlock, 'createClaudeContinuationResumeLaunch', 'Claude continuation requires durable lifecycle identity'],
+    ] as const) {
+      expect(block).toContain(
+        'const forkContext = persistedExternalSessionId\n'
+        + '        ? null\n'
+        + '        : await this.prepareExternalForkContext(',
+      );
+      expect(block).toContain('externalSessionId: persistedExternalSessionId');
+      expect(block).toContain(continuationError);
+      expect(block).toContain(`? ${builder}({`);
+      expect(block).toContain('persistedExternalSessionId,');
+      expect(block).toContain('lifecycle: durableLifecycle,');
+      expect(block).toContain('durableLifecycle,');
+      expect(block).toContain('resumeLaunch,');
+      expect(block).toContain('forkContextHandoff: forkContext.handoff');
+      expect(block).toContain('onForkContextDispatchStart: forkContext.onDispatchStart');
+      expect(block).toContain('onForkContextDispatched: forkContext.onDispatched');
+    }
+  });
 
   it('keeps a new blank session out of the current project when workingDirectory is null', async () => {
     const service = createServiceWithConfig(taskManager, {
@@ -455,6 +543,50 @@ describe('AgentAppService lifecycle routing', () => {
     expect(sessionManager.updateSession).not.toHaveBeenCalled();
   });
 
+  it('keeps an isolated Fork on its verified child root when the renderer sends a stale source cwd', async () => {
+    sessionManager.getSession.mockResolvedValue({
+      id: 'session-1',
+      projectId: 'project-1',
+      workingDirectory: '/isolated/child',
+      metadata: {
+        forkLineage: { workspaceMode: 'isolated_at_anchor' },
+        forkWorkspaceScopeV1: { version: 1 },
+      },
+    });
+    database.getSessionForkWorkspaceScope.mockReturnValue({
+      projectId: 'project-1',
+      primaryRoot: '/isolated/child',
+      roots: [{
+        sourceId: 'isolated:intent-1',
+        path: '/isolated/child',
+        access: 'read_write',
+        role: 'primary',
+      }],
+      version: `isolated-v1:intent-1:${'a'.repeat(64)}`,
+    });
+    const service = createService(taskManager);
+
+    await service.sendMessage({
+      sessionId: 'session-1',
+      content: 'continue in the child',
+      context: { workingDirectory: '/source/project' },
+    } as any);
+
+    expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/isolated/child');
+    expect(orchestrator.setWorkingDirectory).not.toHaveBeenCalledWith('/source/project');
+    expect(sessionManager.updateSession).not.toHaveBeenCalled();
+    expect(taskManager.startTask).toHaveBeenCalledWith(
+      'session-1',
+      'continue in the child',
+      undefined,
+      undefined,
+      expect.objectContaining({
+        workbench: expect.objectContaining({ workingDirectory: '/isolated/child' }),
+      }),
+      undefined,
+    );
+  });
+
   it('skips working directory backfill when the runtime has no value', async () => {
     sessionManager.getSession.mockResolvedValue({ id: 'session-1' });
     orchestrator.getWorkingDirectory.mockReturnValue('');
@@ -656,82 +788,137 @@ describe('AgentAppService lifecycle routing', () => {
 	    expect(session.streamSnapshot).toBeUndefined();
 	  });
 
-  it('rewinds files before hiding messages and returns the original prompt as draft', async () => {
+  it('routes a native fork through the transactional fork service without selecting or editing the source', async () => {
+    const source = {
+      id: 'session-1',
+      title: 'Source task',
+      modelConfig: { provider: 'openai', model: 'gpt-5' },
+      workingDirectory: '/tmp/project',
+      engine: { kind: 'native' },
+      status: 'idle',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const child = {
+      ...source,
+      id: 'session-child',
+      title: 'Source task · 分支',
+      parentSessionId: source.id,
+      createdAt: 3,
+      updatedAt: 3,
+    };
+    database.getSession.mockImplementation((id: string) => id === source.id ? source : child);
+    database.createSessionFork.mockReturnValue({
+      forkId: 'fork-1',
+      childSessionId: child.id,
+      copiedMessageCount: 4,
+      sourcePrefixDigest: 'digest',
+      lineage: {
+        forkId: 'fork-1',
+        rootSessionId: source.id,
+        parentSessionId: source.id,
+        childSessionId: child.id,
+        sourceAnchorMessageId: 'a2',
+        anchorChildMessageId: 'child-a2',
+        depth: 1,
+        workspaceMode: 'shared_current',
+        contextDeliveryMode: 'neo_native_prefix',
+        status: 'completed',
+        syncState: 'local_only',
+        createdAt: 3,
+      },
+      messageMappings: [],
+    });
+    database.getMessages.mockReturnValue([
+      { id: 'u1-child', role: 'user', content: 'one', timestamp: 10 },
+      { id: 'a1-child', role: 'assistant', content: 'one answer', timestamp: 20 },
+      { id: 'u2-child', role: 'user', content: 'two', timestamp: 30 },
+      { id: 'a2-child', role: 'assistant', content: 'two answer', timestamp: 40 },
+    ]);
     taskManager.getSessionState.mockReturnValue({ status: 'idle' });
-    database.getMessageById.mockReturnValue({
-      id: 'u2',
-      role: 'user',
-      content: 'rewrite this prompt',
-      timestamp: 30,
-      attachments: [{ name: 'brief.md' }],
+
+    const service = createService(taskManager);
+    const result = await service.forkSession({
+      sourceSessionId: source.id,
+      anchorAssistantMessageId: 'a2',
+      idempotencyKey: 'fork-request-1',
+      workspaceMode: 'shared_current',
     });
-    checkpointService.getFirstCheckpointAtOrAfter.mockResolvedValue({
-      messageId: 'tool-message-1',
-      createdAt: 31,
-    });
-    checkpointService.rewindFiles.mockResolvedValue({
-      success: true,
-      restoredFiles: ['/tmp/a.ts'],
-      deletedFiles: ['/tmp/new.ts'],
-      errors: [],
-    });
-    sessionManager.applyPromptRewind.mockResolvedValue({
+
+    expect(result.childSession.id).toBe(child.id);
+    expect(result.workspaceLabel).toBe('历史对话 + 当前文件');
+    expect(database.createSessionFork).toHaveBeenCalledTimes(1);
+    expect(sessionManager.applyPromptRewind).not.toHaveBeenCalled();
+    expect(sessionManager.setCurrentSession).not.toHaveBeenCalled();
+    expect(taskManager.setSessionContext).toHaveBeenCalledWith(child.id, [
+      { id: 'u1-child', role: 'user', content: 'one', timestamp: 10 },
+      { id: 'a1-child', role: 'assistant', content: 'one answer', timestamp: 20 },
+      { id: 'u2-child', role: 'user', content: 'two', timestamp: 30 },
+      { id: 'a2-child', role: 'assistant', content: 'two answer', timestamp: 40 },
+    ]);
+    expect(taskManager.setCurrentSessionId).not.toHaveBeenCalled();
+  });
+
+  it('soft-hides conversation history without changing workspace files', async () => {
+    taskManager.getSessionState.mockReturnValue({ status: 'idle' });
+    database.applyPromptRewind.mockReturnValue({
       rewindId: 'rewind-1',
-      activeMessages: [{ id: 'u1', role: 'user', content: 'previous', timestamp: 10 }],
-      hiddenMessageCount: 2,
+      anchorMessage: {
+        id: 'u2',
+        role: 'user',
+        content: 'rewrite this prompt',
+        timestamp: 30,
+        attachments: [{ name: 'brief.md' }],
+        visibility: 'active',
+      },
+      hiddenMessageIds: ['a2'],
+      activeMessages: [
+        { id: 'u1', role: 'user', content: 'previous', timestamp: 10 },
+        { id: 'u2', role: 'user', content: 'rewrite this prompt', timestamp: 30 },
+      ],
+      hiddenMessageCount: 1,
     });
 
     const service = createService(taskManager);
-    const result = await service.rewindToPrompt({ sessionId: 'session-1', userMessageId: 'u2' });
+    const result = await service.rewindToPrompt({
+      sessionId: 'session-1',
+      userMessageId: 'u2',
+      idempotencyKey: 'rewind-request-1',
+    });
 
-    expect(checkpointService.getFirstCheckpointAtOrAfter).toHaveBeenCalledWith('session-1', 30);
-    expect(checkpointService.rewindFiles).toHaveBeenCalledWith('session-1', 'tool-message-1');
-    expect(sessionManager.applyPromptRewind).toHaveBeenCalledWith(
+    expect(database.applyPromptRewind).toHaveBeenCalledWith(
       'session-1',
       'u2',
-      expect.objectContaining({
-        checkpointMessageId: 'tool-message-1',
-        filesRestored: 1,
-        filesDeleted: 1,
-      }),
+      { idempotencyKey: 'rewind-request-1', ownerUserId: null },
     );
+    expect(checkpointService.getFirstCheckpointAtOrAfter).not.toHaveBeenCalled();
+    expect(checkpointService.rewindFiles).not.toHaveBeenCalled();
     expect(taskManager.setSessionContext).toHaveBeenCalledWith('session-1', [
       { id: 'u1', role: 'user', content: 'previous', timestamp: 10 },
+      { id: 'u2', role: 'user', content: 'rewrite this prompt', timestamp: 30 },
     ]);
     expect(result).toMatchObject({
       success: true,
-      draft: { content: 'rewrite this prompt', attachments: [{ name: 'brief.md' }] },
-      hiddenMessageCount: 2,
-      filesRestored: 1,
-      filesDeleted: 1,
+      draft: { content: '' },
+      hiddenMessageCount: 1,
+      workspaceChanged: false,
+      filesRestored: 0,
+      filesDeleted: 0,
     });
   });
 
-  it('does not hide messages when file rewind fails', async () => {
+  it('does not alter runtime context when the rewind transaction fails', async () => {
     taskManager.getSessionState.mockReturnValue({ status: 'idle' });
-    database.getMessageById.mockReturnValue({
-      id: 'u2',
-      role: 'user',
-      content: 'rewrite this prompt',
-      timestamp: 30,
-    });
-    checkpointService.getFirstCheckpointAtOrAfter.mockResolvedValue({
-      messageId: 'tool-message-1',
-      createdAt: 31,
-    });
-    checkpointService.rewindFiles.mockResolvedValue({
-      success: false,
-      restoredFiles: [],
-      deletedFiles: [],
-      errors: [{ filePath: '/tmp/a.ts', error: 'permission denied' }],
+    database.applyPromptRewind.mockImplementation(() => {
+      throw new Error('injected rewind transaction failure');
     });
 
     const service = createService(taskManager);
     await expect(service.rewindToPrompt({ sessionId: 'session-1', userMessageId: 'u2' })).rejects.toThrow(
-      'permission denied',
+      'injected rewind transaction failure',
     );
 
-    expect(sessionManager.applyPromptRewind).not.toHaveBeenCalled();
+    expect(checkpointService.rewindFiles).not.toHaveBeenCalled();
     expect(taskManager.setSessionContext).not.toHaveBeenCalled();
   });
 
@@ -742,9 +929,9 @@ describe('AgentAppService lifecycle routing', () => {
       const service = createService(taskManager);
 
       await expect(service.rewindToPrompt({ sessionId: 'session-1', userMessageId: 'u2' })).rejects.toThrow(
-        'Cannot rewind while the session is running',
+        'SESSION_RUNNING',
       );
-      expect(database.getMessageById).not.toHaveBeenCalled();
+      expect(database.applyPromptRewind).not.toHaveBeenCalled();
     },
   );
 	});

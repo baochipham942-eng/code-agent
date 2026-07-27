@@ -83,7 +83,7 @@ describe('hook 输出不上屏', () => {
     const turn = enrich().turns[0]!;
     render(React.createElement(TurnCard, { turn }));
 
-    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    fireEvent.click(screen.getByRole('button', { name: /Hooks/, expanded: false }));
     expect(document.body.textContent).not.toContain('MEMORY INDEX');
     expect(document.body.textContent).toContain('注入人格');
   });

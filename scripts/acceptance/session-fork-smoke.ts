@@ -24,6 +24,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   stat,
   writeFile,
@@ -1719,9 +1720,11 @@ async function main(): Promise<void> {
     options.requireCleanHead,
     options.requireFullBuild,
   );
-  const root = options.evidenceDir
+  const requestedRoot = options.evidenceDir
     ? path.resolve(options.evidenceDir)
     : await mkdtemp(path.join(os.tmpdir(), 'neo-session-fork-acceptance-'));
+  await mkdir(requestedRoot, { recursive: true });
+  const root = await realpath(requestedRoot);
   const dataDir = path.join(root, 'data');
   const fakeHome = path.join(root, 'home');
   const workspaceRoot = path.join(root, 'workspace');

@@ -25,6 +25,20 @@ vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
+interface VoiceCallHookParams {
+  voiceCallId: string;
+  sessionId: string;
+  durationSec: number;
+  workItemCount?: number;
+  reason?: string;
+}
+const triggerVoiceCall = vi.fn(async (_event: string, _params: VoiceCallHookParams) => ({ blocked: false }));
+vi.mock('../../src/host/task', () => ({
+  getTaskManager: () => ({
+    getOrchestrator: () => ({ getHookManager: () => ({ triggerVoiceCall }) }),
+  }),
+}));
+
 const { attachVoiceClient, getActiveVoiceSessionId, endActiveVoiceSession } = await import('../../src/host/services/voice/voiceSessionService');
 
 /** 最小 ws 替身：只要 readyState / OPEN / send / close / 事件。 */
@@ -402,5 +416,71 @@ describe('焦点上报刷新 instructions（批 H）', () => {
     })), false);
 
     expect(updateInstructions.mock.calls[0][0]).toContain('spawn_task');
+  });
+});
+
+// ============================================================================
+// 通话生命周期 hook（observer-only）：暂停/结束要让 agent 侧可编排——
+// 典型用例是会议形态通话结束后问一句「要我整理一下吗」。
+// 判据钉在「事件真发出去了且数字对得上」，不是「函数存在」。
+// ============================================================================
+describe('通话生命周期 hook', () => {
+  beforeEach(() => {
+    triggerVoiceCall.mockClear();
+    connect.mockClear();
+    addMessageToSession.mockClear();
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  function eventsOf(name: string): VoiceCallHookParams[] {
+    return triggerVoiceCall.mock.calls.filter(([event]) => event === name).map(([, params]) => params);
+  }
+
+  it('建连发一次 VoiceCallStarted', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hook');
+
+    await vi.waitFor(() => expect(eventsOf('VoiceCallStarted')).toHaveLength(1));
+    const [params] = eventsOf('VoiceCallStarted');
+    expect(params).toMatchObject({ sessionId: 'session-hook', durationSec: 0 });
+    expect(typeof params.voiceCallId).toBe('string');
+  });
+
+  it('挂断发 VoiceCallEnded，时长与摘要卡同一个数（别各算各的）', async () => {
+    const startedAt = 1_800_000_000_000;
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(startedAt);
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hook');
+    nowSpy.mockReturnValue(startedAt + 75_000);
+
+    client.emit('message', Buffer.from(JSON.stringify({ type: 'end' })), false);
+
+    await vi.waitFor(() => expect(eventsOf('VoiceCallEnded')).toHaveLength(1), { timeout: 4000 });
+    const [params] = eventsOf('VoiceCallEnded');
+    const summaryCall = addMessageToSession.mock.calls.find(([, m]) => Boolean(m.metadata?.voiceCallSummary));
+    if (!summaryCall) throw new Error('missing voiceCallSummary message');
+    const summary = summaryCall[1].metadata?.voiceCallSummary as { durationSec: number };
+    expect(params.durationSec).toBe(summary.durationSec);
+    expect(params).toMatchObject({ sessionId: 'session-hook', workItemCount: 0, reason: 'client-end' });
+    nowSpy.mockRestore();
+  }, 10_000);
+
+  it('客户端断开发 Paused；宽限窗内接回来不再发第二次 Started（网络抖动 ≠ 新一通电话）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-hook');
+    await vi.waitFor(() => expect(eventsOf('VoiceCallStarted')).toHaveLength(1));
+
+    client.close();
+    await vi.waitFor(() => expect(eventsOf('VoiceCallPaused')).toHaveLength(1));
+
+    const revived = new FakeClient();
+    await attachVoiceClient(revived as never, 'session-hook');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(eventsOf('VoiceCallStarted')).toHaveLength(1);
+    expect(eventsOf('VoiceCallEnded')).toHaveLength(0);
   });
 });

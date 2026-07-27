@@ -103,6 +103,38 @@ async function persistTranscript(neoSessionId: string, role: 'user' | 'assistant
 }
 
 /**
+ * 通话生命周期事件（observer-only）：暂停/结束要让 agent 侧可编排，
+ * 典型用例是会议形态的通话结束后问一句「要我整理一下吗」。
+ *
+ * 三条纪律：
+ * 1. **fire-and-forget**：hook 是用户脚本，不能让它拖住建连或收尾，也不能把通话搞挂；
+ * 2. **懒加载 task 依赖树**：建连是关键路径，不为一个可能没人订阅的事件把它拉进来
+ *    （同 voiceAgentCoordinator 的 taskManager() 先例）；
+ * 3. **重连不重复发 started**：宽限窗内接回来走 reattachVoiceClient，不经过这里。
+ */
+function emitVoiceCallHook(
+  event: 'VoiceCallStarted' | 'VoiceCallPaused' | 'VoiceCallEnded',
+  params: { voiceCallId: string; sessionId: string; durationSec: number; workItemCount?: number; reason?: string },
+): void {
+  void (async () => {
+    try {
+      const { getTaskManager } = await import('../../task');
+      // getOrchestrator 只取已存在的（不 get-or-create：不能为了发一个观察事件
+      // 就把整个 orchestrator 建起来）。还没跑过 agent 轮次的新会话就是拿不到——
+      // 这时必须留痕，否则「hook 没触发」在日志里完全不可见（静默跳过 = 查不到根因）。
+      const hooks = getTaskManager()?.getOrchestrator(params.sessionId)?.getHookManager?.();
+      if (!hooks) {
+        logger.info('voice call hook skipped: no hook manager for session', { event, sessionId: params.sessionId });
+        return;
+      }
+      await hooks.triggerVoiceCall(event, params);
+    } catch (err) {
+      logger.warn('voice call hook failed', { event, message: err instanceof Error ? err.message : 'unknown' });
+    }
+  })();
+}
+
+/**
  * 客户端断了先进宽限窗，不立刻挂断上游（批 H · sticky）。
  * 窗口内重新 attach 就当作同一通电话继续；超时才真 teardown。
  */
@@ -110,6 +142,12 @@ function beginReconnectGrace(sessionId: string): void {
   const session = active;
   if (session?.id !== sessionId || session.graceTimer) return;
   logger.info('client gone, waiting for reconnect', { voiceSessionId: sessionId });
+  emitVoiceCallHook('VoiceCallPaused', {
+    voiceCallId: sessionId,
+    sessionId: session.neoSessionId,
+    durationSec: Math.max(0, Math.round((Date.now() - session.startedAt) / 1000)),
+    reason: 'client-gone',
+  });
   session.graceTimer = setTimeout(() => {
     if (active?.id === sessionId) void teardown('reconnect-timeout');
   }, VOICE_RECONNECT_GRACE_MS);
@@ -165,6 +203,14 @@ async function teardown(reason: string): Promise<void> {
   } catch (err) {
     logger.warn('failed to persist call summary', { message: err instanceof Error ? err.message : 'unknown' });
   }
+  emitVoiceCallHook('VoiceCallEnded', {
+    voiceCallId: session.id,
+    sessionId: session.neoSessionId,
+    // 与摘要卡同一个 durationSec，别各算各的
+    durationSec,
+    workItemCount: session.workItemCount,
+    reason,
+  });
   await session.upstream.close().catch(() => undefined);
   const client = session.clientRef.current;
   if (client.readyState === client.OPEN) client.close();
@@ -299,6 +345,7 @@ async function connectAndBind(
   // D4 抬严必须在有任何工具可派之前就位——建连成功即标记。
   getPermissionModeManager().markLiveVoiceSession(neoSessionId, `call:${id}`);
   logger.info('session started', { voiceSessionId: id, neoSessionId, activeAgentId: routing.activeAgentId });
+  emitVoiceCallHook('VoiceCallStarted', { voiceCallId: id, sessionId: neoSessionId, durationSec: 0 });
 
   bindClientHandlers(session, client);
 }

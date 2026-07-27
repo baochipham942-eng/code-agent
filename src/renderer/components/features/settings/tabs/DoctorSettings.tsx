@@ -206,8 +206,7 @@ export const DoctorSettings: React.FC = () => {
       actions={
         <div className="flex items-center gap-2">
           {report && (
-            <Button variant="ghost" size="sm" onClick={handleExport}>
-              <ClipboardCopy className="w-4 h-4 mr-1.5" />
+            <Button variant="ghost" size="sm" onClick={handleExport} leftIcon={<ClipboardCopy className="w-4 h-4" />}>
               {doctorText.exportLogs}
             </Button>
           )}
@@ -216,8 +215,8 @@ export const DoctorSettings: React.FC = () => {
             onClick={() => void runFull()}
             loading={isRunning && runningCategory === null}
             disabled={isRunning}
+            leftIcon={<RefreshCw className="w-4 h-4" />}
           >
-            <RefreshCw className="w-4 h-4 mr-1.5" />
             {report ? doctorText.rerun : doctorText.start}
           </Button>
         </div>

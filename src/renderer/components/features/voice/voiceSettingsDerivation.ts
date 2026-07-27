@@ -37,16 +37,20 @@ export function deriveTurnDetection(
 /**
  * 归一化历史值。`push_to_talk`（按住说话）2026-07-27 删档——它相对「点按说话」
  * 只多一条「松手必关麦」，代价是整通电话手被按在按钮上，桌面端不值。
- * 已经存了这个值的配置一律迁到 manual，别让它在运行时变成一个没有 UI 的档位。
+ *
+ * **迁到 server_vad 而不是 manual**（产品负责人 2026-07-27 拍板，真机踩过）：
+ * 「都是手动闸麦、迁到 manual 保留原意」听起来对，实际上大多数人当初选 PTT
+ * 只是随手试了一下，升级后莫名其妙要反复点按钮才能说话。回默认档（全双工）
+ * 是「张嘴就说」的正常体验；真需要闸麦的人自己去设置里选点按说话。
  */
 export function normalizeInterruptMode(raw: string | undefined): InterruptMode {
-  return raw === 'server_vad' ? 'server_vad' : raw ? 'manual' : 'server_vad';
+  return raw === 'manual' ? 'manual' : 'server_vad';
 }
 
 /** 从已有设置反推 UI 两态（老配置没有 live.* 时按 turnDetection 形状推）。 */
 export function deriveInterruptMode(settings: { turnDetection?: VoiceTurnDetectionConfig; live?: VoiceLiveSettings } | undefined): InterruptMode {
   if (settings?.live?.interrupt) return normalizeInterruptMode(settings.live.interrupt);
-  if (settings?.turnDetection === null) return 'manual';
+  if (settings?.turnDetection === null) return 'manual';  // 老配置没有 live.* 时，null 断句 = 当初选的就是手动档
   return 'server_vad';
 }
 

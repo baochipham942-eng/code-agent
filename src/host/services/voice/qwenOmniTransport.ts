@@ -48,7 +48,14 @@ type UpstreamTurnDetection =
 
 function resolveTurnDetectionConfig(): VoiceTurnDetectionConfig {
   try {
-    const configured = getConfigService().getSettings().voice?.turnDetection;
+    const voice = getConfigService().getSettings().voice;
+    const configured = voice?.turnDetection;
+    // `turnDetection: null` = 手动 commit 档。但删掉「按住说话」之后，老配置里会出现
+    // `turnDetection: null` + `live.interrupt: 'push_to_talk'` 的组合——UI 侧把它归一到
+    // 全双工了，运行时若还按 null 走，就是「UI 说全双工、上游永远等不到 commit」的
+    // 分叉：用户说了没反应，连补救的点按按钮都不显示（2026-07-27 真机差点踩到）。
+    // 只有**显式**留在点按档时才认这个 null。
+    if (configured === null && voice?.live?.interrupt !== 'manual') return VOICE_TURN_DETECTION_DEFAULT;
     return configured === undefined ? VOICE_TURN_DETECTION_DEFAULT : configured;
   } catch {
     return VOICE_TURN_DETECTION_DEFAULT;

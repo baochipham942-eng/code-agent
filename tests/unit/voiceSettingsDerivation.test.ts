@@ -47,9 +47,16 @@ describe('反推（老配置没有 live.* 时按 turnDetection 形状推）', ()
 // 代价是整通电话手被按在按钮上。已经存了这个值的用户必须被迁走——
 // 留在运行时就是一个没有 UI 的档位（设置页选不到，却在生效）。
 describe('删档迁移', () => {
-  it('历史 push_to_talk 迁到 manual', () => {
-    expect(normalizeInterruptMode('push_to_talk')).toBe('manual');
-    expect(deriveInterruptMode({ live: { interrupt: 'push_to_talk' as never } })).toBe('manual');
+  // 迁到全双工而不是点按：当初选 PTT 的多半只是随手试了一下，
+  // 升级后要反复点按钮才能说话是莫名其妙的（2026-07-27 真机踩到）。
+  it('历史 push_to_talk 迁到全双工，不是点按', () => {
+    expect(normalizeInterruptMode('push_to_talk')).toBe('server_vad');
+    expect(deriveInterruptMode({ live: { interrupt: 'push_to_talk' as never } })).toBe('server_vad');
+  });
+
+  it('显式选的点按说话不受影响', () => {
+    expect(normalizeInterruptMode('manual')).toBe('manual');
+    expect(deriveInterruptMode({ live: { interrupt: 'manual' } })).toBe('manual');
   });
 
   it('server_vad 与未配置不受影响', () => {

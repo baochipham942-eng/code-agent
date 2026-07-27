@@ -25,7 +25,7 @@ class FakeUpstream extends EventEmitter {
 
 const upstreams: FakeUpstream[] = [];
 const mockConfig = vi.hoisted(() => ({
-  settings: {} as { voice?: { turnDetection?: VoiceTurnDetectionConfig } },
+  settings: {} as { voice?: { turnDetection?: VoiceTurnDetectionConfig; live?: { interrupt?: 'server_vad' | 'manual' } } },
 }));
 
 vi.mock('ws', () => {
@@ -170,7 +170,7 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
   });
 
   it('turn_detection 关闭时 response.done 不报 ttfaPerceivedMs', async () => {
-    mockConfig.settings = { voice: { turnDetection: null } };
+    mockConfig.settings = { voice: { turnDetection: null, live: { interrupt: 'manual' } } };
     const events: VoiceEvent[] = [];
     const handle = await qwenOmniTransport.connect({
       apiKey: 'test-key',
@@ -282,6 +282,19 @@ describe('VoiceTransport 契约（relay / direct 双跑）', () => {
     // 重发 turn_detection / tools 会把上游按模型分化过的行为重新赌一遍，不做。
     expect(update?.session).not.toHaveProperty('turn_detection');
     expect(update?.session).not.toHaveProperty('tools');
+
+    await handle.close();
+  });
+
+  // 删「按住说话」档留下的老配置形状：turnDetection: null（手动 commit）
+  // 但 live.interrupt 是已下线的 push_to_talk。UI 侧把它归一成全双工了，
+  // 运行时若还按 null 走 = UI 说全双工、上游永远等不到 commit，用户说了没反应。
+  it('老 push_to_talk 配置不再让上游停在手动 commit 档', async () => {
+    mockConfig.settings = { voice: { turnDetection: null, live: { interrupt: 'push_to_talk' as never } } };
+    const handle = await connectHandle(qwenOmniTransport);
+    const upstream = upstreams[upstreams.length - 1];
+
+    expect(readSessionUpdate(upstream).session.turn_detection).toMatchObject({ type: 'server_vad' });
 
     await handle.close();
   });

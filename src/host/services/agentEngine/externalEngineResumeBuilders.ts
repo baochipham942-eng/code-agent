@@ -25,7 +25,7 @@ interface CommonResumeInput extends ExternalEngineResumeIdentity {
   permissionProfile?: AgentEnginePermissionProfile;
 }
 
-export interface ExternalEngineContinuationLifecycle {
+interface ExternalEngineContinuationLifecycle {
   readonly runId: string;
   readonly attempt: number;
   readonly ownerEpoch: number;

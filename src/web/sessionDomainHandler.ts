@@ -10,7 +10,7 @@ import {
 import type { ModelProvider, Session } from '../shared/contract';
 import { invalidateSessionMessagesProjection } from './helpers/webSessionStore';
 
-export type SessionDomainPayload = {
+type SessionDomainPayload = {
   sessionId?: string;
   provider?: ModelProvider;
   model?: string;

@@ -6,7 +6,7 @@ import { rowToMessage } from '../repositories/sessionRepositoryParsers';
 
 type SQLiteRow = Record<string, unknown>;
 
-export const CONVERSATION_BRANCH_SCHEMA_VERSION = 1;
+const CONVERSATION_BRANCH_SCHEMA_VERSION = 1;
 
 export function conversationSha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');

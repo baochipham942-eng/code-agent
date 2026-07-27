@@ -85,7 +85,7 @@ export function parseConversationRecord(value: string): Record<string, unknown> 
   }
 }
 
-export function parseConversationNumberArray(value: unknown): number[] {
+function parseConversationNumberArray(value: unknown): number[] {
   return Array.isArray(value)
     ? value.filter((item): item is number => typeof item === 'number' && Number.isInteger(item))
     : [];
@@ -97,7 +97,7 @@ export function parseConversationStringArray(value: unknown): string[] {
     : [];
 }
 
-export function exactConversationNullableString(value: unknown): string | null {
+function exactConversationNullableString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 

@@ -2,14 +2,14 @@ import path from 'node:path';
 
 import type { WorkspaceScope } from '../../../../shared/contract/project';
 
-export interface ChildWorkspacePathMappingProvenance {
+interface ChildWorkspacePathMappingProvenance {
   sourceId: string;
   sourcePath: string;
   sourceRelativePath: string;
   isolatedRelativePath: string;
 }
 
-export interface ChildWorkspaceScopeVerification {
+interface ChildWorkspaceScopeVerification {
   forkId: string;
   intentId: string;
   evidenceId: string;

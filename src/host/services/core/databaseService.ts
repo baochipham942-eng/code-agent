@@ -29,6 +29,23 @@ import { SessionForkError } from '../../../shared/contract/sessionFork';
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
 import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, ConversationBranchRepository, SessionForkPortabilityRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
+import type {
+  CreateForkRepositoryInput,
+  CreateForkRepositoryResult,
+  SessionForkContextHandoffRecord,
+  SessionForkContextSource,
+} from './repositories/SessionForkRepository';
+import type {
+  SessionForkAnchorEvidenceRecord,
+} from './repositories/SessionForkWorkspaceRepository';
+import type {
+  EnqueueSessionForkOutboundInput,
+  ExportSessionForkInput,
+  FlushSessionForkOutboundOptions,
+  ImportSessionForkInput,
+  ImportSessionForkResult,
+  IngestSessionForkInboundInput,
+} from './repositories/SessionForkPortabilityRepository';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
@@ -1051,7 +1068,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   async captureSessionForkAnchorEvidence(
     sessionId: string,
     messageId: string,
-  ): Promise<import('./repositories').SessionForkAnchorEvidenceRecord | null> {
+  ): Promise<SessionForkAnchorEvidenceRecord | null> {
     this.ensureDb();
     const source = this.getSession(sessionId);
     const message = this.getMessageById(sessionId, messageId, { includeRewound: true });
@@ -1173,7 +1190,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     sessionId: string,
     messageId: string,
     ownerUserId?: string | null,
-  ): import('./repositories').SessionForkAnchorEvidenceRecord | null {
+  ): SessionForkAnchorEvidenceRecord | null {
     this.ensureDb();
     return this.sessionForkWorkspaceRepo.getAnchorEvidence(sessionId, messageId, ownerUserId);
   }
@@ -1422,8 +1439,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     return projection.scope;
   }
   async createIsolatedSessionFork(
-    input: import('./repositories').CreateForkRepositoryInput,
-  ): Promise<import('./repositories').CreateForkRepositoryResult> {
+    input: CreateForkRepositoryInput,
+  ): Promise<CreateForkRepositoryResult> {
     this.ensureDb();
     const source = this.getSession(input.sourceSessionId, input.ownerUserId === undefined
       ? undefined
@@ -1599,8 +1616,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     }
   }
   createSessionFork(
-    input: import('./repositories').CreateForkRepositoryInput,
-  ): import('./repositories').CreateForkRepositoryResult {
+    input: CreateForkRepositoryInput,
+  ): CreateForkRepositoryResult {
     this.ensureDb();
     return this.sessionForkRepo.createFork(input);
   }
@@ -1618,7 +1635,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionForkRepo.listChildren(sessionId, ownerUserId);
   }
-  getSessionForkContextSource(childSessionId: string): import('./repositories').SessionForkContextSource | null {
+  getSessionForkContextSource(childSessionId: string): SessionForkContextSource | null {
     this.ensureDb();
     return this.sessionForkRepo.getContextSource(childSessionId);
   }
@@ -1627,7 +1644,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     engine: import('../../../shared/contract/agentEngine').ExternalAgentEngineKind,
     payloadDigest: string,
     preparedAt?: number,
-  ): import('./repositories').SessionForkContextHandoffRecord {
+  ): SessionForkContextHandoffRecord {
     this.ensureDb();
     return this.sessionForkRepo.prepareContextHandoff(forkId, engine, payloadDigest, preparedAt);
   }
@@ -1636,7 +1653,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     payloadDigest: string,
     attemptId: string,
     startedAt?: number,
-  ): import('./repositories').SessionForkContextHandoffRecord {
+  ): SessionForkContextHandoffRecord {
     this.ensureDb();
     return this.sessionForkRepo.markContextHandoffDispatching(forkId, payloadDigest, attemptId, startedAt);
   }
@@ -1645,7 +1662,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     payloadDigest: string,
     attemptId: string,
     consumedAt?: number,
-  ): import('./repositories').SessionForkContextHandoffRecord {
+  ): SessionForkContextHandoffRecord {
     this.ensureDb();
     return this.sessionForkRepo.markContextHandoffConsumed(forkId, payloadDigest, attemptId, consumedAt);
   }
@@ -1757,7 +1774,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     return this.conversationBranchRepo.listEvaluationAttributions(sessionId, boundary);
   }
   exportSessionFork(
-    input: import('./repositories').ExportSessionForkInput,
+    input: ExportSessionForkInput,
   ): import('../../../shared/contract/sessionForkPortability').SessionExportEnvelopeV2 {
     this.ensureDb();
     return this.sessionForkPortabilityRepo.exportSessionFork(input);
@@ -1771,8 +1788,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     return this.sessionForkPortabilityRepo.getDurableEnvelope(exportId, ownerScopeId, projectId);
   }
   importSessionFork(
-    input: import('./repositories').ImportSessionForkInput,
-  ): import('./repositories').ImportSessionForkResult {
+    input: ImportSessionForkInput,
+  ): ImportSessionForkResult {
     this.ensureDb();
     return this.sessionForkPortabilityRepo.importSessionFork(input);
   }
@@ -2605,7 +2622,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     return published;
   }
   enqueueSessionForkOutbound(
-    input: import('./repositories').EnqueueSessionForkOutboundInput,
+    input: EnqueueSessionForkOutboundInput,
   ): import('../../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord {
     this.ensureDb();
     return this.sessionForkPortabilityRepo.enqueueOutbound(input);
@@ -2614,7 +2631,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     syncEnvelopeId: string,
     ownerScopeId: string,
     projectId: string,
-    options: import('./repositories').FlushSessionForkOutboundOptions = {},
+    options: FlushSessionForkOutboundOptions = {},
   ): Promise<import('../../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord> {
     this.ensureDb();
     return this.sessionForkPortabilityRepo.flushOutbound(
@@ -2625,7 +2642,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     );
   }
   ingestSessionForkInbound(
-    input: import('./repositories').IngestSessionForkInboundInput,
+    input: IngestSessionForkInboundInput,
   ): import('../../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord {
     this.ensureDb();
     return this.sessionForkPortabilityRepo.ingestInbound(input);

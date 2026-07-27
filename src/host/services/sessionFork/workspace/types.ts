@@ -56,7 +56,7 @@ export interface AnchorWorkspaceEvidenceManifest {
   evidenceDigest: string;
 }
 
-export interface AnchorWorkspaceEvidencePayload {
+interface AnchorWorkspaceEvidencePayload {
   stagedPatchBase64: string;
   unstagedPatchBase64: string;
   untrackedBlobs: Record<string, string>;

@@ -13,8 +13,8 @@ import { redactCredentialText } from '../../../../shared/security/secretPatterns
 import { estimateTokens } from '../../../context/tokenEstimator';
 
 export type ExternalForkContextSupportedEngine = 'codex_cli' | 'claude_code';
-export type ExternalForkContextDeliveryMode = 'validated_context_handoff' | 'unsupported';
-export type ExternalForkContextPrivacyMode = 'redact' | 'reject';
+type ExternalForkContextDeliveryMode = 'validated_context_handoff' | 'unsupported';
+type ExternalForkContextPrivacyMode = 'redact' | 'reject';
 
 export type ExternalForkContextErrorCode =
   | 'UNSUPPORTED_ENGINE'
@@ -80,7 +80,7 @@ export const EXTERNAL_FORK_CONTEXT_CAPABILITIES: Readonly<
   }),
 });
 
-export interface ExternalForkContextTokenPolicy {
+interface ExternalForkContextTokenPolicy {
   /** Provider input limit for the complete context handoff plus first prompt. */
   readonly maxInputTokens: number;
   /** Output/tool headroom that may not be consumed by the handoff. */
@@ -107,7 +107,7 @@ export interface ExternalForkContextPolicy {
   readonly allowReadOnlyArtifactProvenance: boolean;
 }
 
-export interface MappedActiveForkMessage {
+interface MappedActiveForkMessage {
   readonly ordinal: number;
   readonly sourceMessageId: string;
   readonly childMessageId: string;
@@ -140,7 +140,7 @@ export interface BuildExternalForkContextHandoffInput {
   readonly createdAt?: number;
 }
 
-export interface ExternalForkContextMessage {
+interface ExternalForkContextMessage {
   readonly ordinal: number;
   readonly sourceMessageId: string;
   readonly childMessageId: string;
@@ -150,7 +150,7 @@ export interface ExternalForkContextMessage {
   readonly isMeta: boolean;
 }
 
-export interface ExternalForkAttachmentProvenance {
+interface ExternalForkAttachmentProvenance {
   readonly sourceMessageId: string;
   readonly attachmentId: string;
   readonly name: string;
@@ -163,7 +163,7 @@ export interface ExternalForkAttachmentProvenance {
   readonly contentIncluded: false;
 }
 
-export interface ExternalForkArtifactProvenance {
+interface ExternalForkArtifactProvenance {
   readonly sourceMessageId: string;
   readonly artifactId: string;
   readonly kind: string;
@@ -174,7 +174,7 @@ export interface ExternalForkArtifactProvenance {
   readonly contentIncluded: false;
 }
 
-export interface ExternalForkContextBudgetVerdict {
+interface ExternalForkContextBudgetVerdict {
   readonly maxInputTokens: number;
   readonly reservedOutputTokens: number;
   readonly availableInputTokens: number;
@@ -188,7 +188,7 @@ export interface ExternalForkContextBudgetVerdict {
   readonly verdict: 'passed';
 }
 
-export interface ExternalForkContextPrivacyVerdict {
+interface ExternalForkContextPrivacyVerdict {
   readonly mode: ExternalForkContextPrivacyMode;
   readonly verdict: 'passed' | 'passed_with_redactions';
   readonly redactedFieldCount: number;
@@ -515,7 +515,7 @@ export function composeExternalForkLaunchPrompt(
   return launchPrompt;
 }
 
-export function assertExternalForkContextHandoff(
+function assertExternalForkContextHandoff(
   handoff: ExternalForkContextHandoff,
 ): void {
   if (!handoff || typeof handoff !== 'object' || Array.isArray(handoff)) {

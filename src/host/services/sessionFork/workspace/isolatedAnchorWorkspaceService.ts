@@ -28,7 +28,7 @@ import type {
   WorkspaceRecoveryResult,
 } from './types';
 
-export type IsolatedWorkspaceErrorCode =
+type IsolatedWorkspaceErrorCode =
   | 'INVALID_DESTINATION'
   | 'INTENT_CONFLICT'
   | 'WORKSPACE_BUSY'
@@ -36,7 +36,7 @@ export type IsolatedWorkspaceErrorCode =
   | 'WORKSPACE_VERIFICATION_FAILED'
   | 'WORKSPACE_CLEANUP_FAILED';
 
-export class IsolatedWorkspaceError extends Error {
+class IsolatedWorkspaceError extends Error {
   constructor(
     public readonly code: IsolatedWorkspaceErrorCode,
     message: string,

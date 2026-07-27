@@ -19,13 +19,13 @@ import type {
   WorkspaceCommandRunner,
 } from './types';
 
-export type ImportedPortableAnchorWorkspaceErrorCode =
+type ImportedPortableAnchorWorkspaceErrorCode =
   | 'TARGET_WORKSPACE_BINDING_REQUIRED'
   | 'BASE_COMMIT_UNAVAILABLE'
   | 'PORTABLE_EVIDENCE_INVALID'
   | 'MATERIALIZED_WORKSPACE_INVALID';
 
-export class ImportedPortableAnchorWorkspaceError extends Error {
+class ImportedPortableAnchorWorkspaceError extends Error {
   constructor(
     readonly code: ImportedPortableAnchorWorkspaceErrorCode,
     message: string,

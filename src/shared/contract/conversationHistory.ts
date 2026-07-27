@@ -4,10 +4,10 @@ import type {
   ConversationReplayMessage,
 } from './conversationBranch';
 
-export const PORTABLE_CONVERSATION_HISTORY_SCHEMA = 'neo.conversation-history' as const;
-export const PORTABLE_CONVERSATION_HISTORY_VERSION = 1 as const;
+const PORTABLE_CONVERSATION_HISTORY_SCHEMA = 'neo.conversation-history' as const;
+const PORTABLE_CONVERSATION_HISTORY_VERSION = 1 as const;
 
-export interface PortableConversationAttachmentProvenance {
+interface PortableConversationAttachmentProvenance {
   idDigest: string;
   type?: string;
   category?: string;
@@ -21,7 +21,7 @@ export interface PortableConversationAttachmentProvenance {
   contentDigest: string;
 }
 
-export interface PortableConversationArtifactProvenance {
+interface PortableConversationArtifactProvenance {
   idDigest: string;
   type?: string;
   title?: string;
@@ -30,7 +30,7 @@ export interface PortableConversationArtifactProvenance {
   contentDigest: string;
 }
 
-export interface PortableConversationBranch {
+interface PortableConversationBranch {
   id: string;
   sessionId: string;
   rootBranchId: string;
@@ -41,7 +41,7 @@ export interface PortableConversationBranch {
   payloadDigest: string;
 }
 
-export interface PortableConversationEntry {
+interface PortableConversationEntry {
   id: string;
   sourceSessionId: string;
   sourceMessageId: string;
@@ -55,7 +55,7 @@ export interface PortableConversationEntry {
   payloadDigest: string;
 }
 
-export interface PortableConversationReference {
+interface PortableConversationReference {
   branchId: string;
   ordinal: number;
   entryId: string;
@@ -68,7 +68,7 @@ export interface PortableConversationReference {
   payloadDigest: string;
 }
 
-export interface PortableConversationEvent {
+interface PortableConversationEvent {
   id: string;
   branchId: string;
   sequence: number;
@@ -79,7 +79,7 @@ export interface PortableConversationEvent {
   payloadDigest: string;
 }
 
-export interface PortableConversationEvaluationAttribution {
+interface PortableConversationEvaluationAttribution {
   eventId: string;
   branchId: string;
   sequence: number;

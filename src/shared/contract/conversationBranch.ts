@@ -7,8 +7,8 @@
  * lineage repair.
  */
 
-export type ConversationOwnerId = string | null;
-export type ConversationProjectId = string | null;
+type ConversationOwnerId = string | null;
+type ConversationProjectId = string | null;
 
 export interface ConversationBoundary {
   /**
@@ -20,7 +20,7 @@ export interface ConversationBoundary {
   projectId: ConversationProjectId;
 }
 
-export type ConversationMessageRole = 'user' | 'assistant' | 'system' | 'tool';
+type ConversationMessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
 /**
  * A portable message snapshot. Unknown fields are deliberately retained in the
@@ -117,7 +117,7 @@ export interface ConversationEntryRecord {
   createdAt: number;
 }
 
-export interface ConversationEntryAlias {
+interface ConversationEntryAlias {
   branchId: string;
   sessionId: string;
   messageId: string;

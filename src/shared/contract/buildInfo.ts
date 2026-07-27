@@ -5,5 +5,6 @@ export interface BuildInfo {
   commitShort: string | null;
   dirty: boolean | null;
   worktree: string | null;
+  installedFrom: string | null;
   builtAt: string;
 }

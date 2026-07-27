@@ -31,6 +31,7 @@ function isBuildInfo(value: unknown): value is BuildInfo {
     && isNullableString(value.commitShort)
     && (typeof value.dirty === 'boolean' || value.dirty === null)
     && isNullableString(value.worktree)
+    && isNullableString(value.installedFrom)
     && typeof value.builtAt === 'string'
   );
 }

@@ -281,6 +281,22 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_ledger_session ON usage_ledger (session_id, recorded_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_usage_ledger_recorded ON usage_ledger (recorded_at)`);
 
+  // Turn Cost Estimates（刊例估算，非账单）——一轮模型调用一行。
+  // usd=NULL 明确表示没有可信价格，查询时计入 unknownTurns，绝不以 0 冒充。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS turn_cost_estimates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      usd REAL,
+      source TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
   // Master Tasks 表 (用户级工作单元，跨 session 持久化；P0-c2)
   // status 列保留 TEXT 不加 CHECK，枚举校验由应用层 (src/shared/contract/task.ts) 负责
   db.exec(`

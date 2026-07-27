@@ -85,6 +85,8 @@ export async function executeCreateSession(
   options?: CreateSessionOptionsInput,
 ): Promise<Session | null> {
   const { get, set, invalidatePendingSessionSwitches, findReusableNewSessionDraft } = deps;
+  // 新建会话 = 回到会话区：二级页（能力中心/资料库/自动化…）让位。
+  useAppStore.getState().closeSecondaryPages();
   try {
     const inheritedWorkingDirectory =
       options?.workingDirectory !== undefined

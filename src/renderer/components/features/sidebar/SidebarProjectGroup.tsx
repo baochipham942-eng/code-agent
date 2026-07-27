@@ -146,24 +146,29 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       data-sidebar-group-phase={expansionView.phase}
     >
       <div
-        className="group sticky top-0 z-20 flex items-center gap-1.5 w-full px-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
+        className="group sticky top-0 z-20 flex items-center gap-1.5 w-full pl-2 pr-3 py-1.5 bg-zinc-900 backdrop-blur-sm text-left hover:bg-zinc-800/40 transition-colors"
         title={title}
       >
         {/* 分组头对齐约定(2026-07-02 拍板,2026-07-26 强化)：图标+名称左对齐、整行垂直居中；
             展开收起 chevron 不常驻，hover/聚焦时才出现在名称右侧(参考 Codex)；
             未完成数右对齐，用"色球+数字"与会话行的状态圆点同一视觉语言，不用文字胶囊。
-            07-26 Codex 式分组：分组头升格（15px 图标 + 13px zinc-200 名称）作一等工作区，
-            会话行整体缩进，左侧让出一条 icon 列，组间距 10px。 */}
+            07-26 Codex 式分组：分组头升格作一等工作区，会话行整体缩进，组间距 10px。
+            07-27 对齐规范（数值是在真实 DOM 里量出来的，不是推算）：
+            左轨 42px —— 入口区行 8(容器)+16(图标)+... = 文字 42；分组头 px-2 同轨；
+            会话行区 ml-[10px] 使行容器落在 18，行内 pl-0 + 16px 前导槽 + gap-2 = 18+24 = 42；
+            展开行没有前导槽，用 pl-6(24) 补齐到同一条 42。
+            右轨基准 = 账号区箭头（cx=212，right=220）：分组头 pr-3、会话行 pr-3，
+            使角标 / 状态点 / 账号箭头三者右缘同为 220、中心同为 212（实测口径）。 */}
         <button
           type="button"
           title={expansionView.toggleTitle}
           aria-label={expansionView.toggleAriaLabel}
           aria-disabled={expansionView.forceExpanded ? 'true' : undefined}
           onClick={() => handleToggleWorkspaceGroup(group.key, expansionView)}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
         >
-          <IconComponent className="w-[15px] h-[15px] shrink-0 text-zinc-400" />
-          <span className="truncate text-[13px] font-medium text-zinc-200">{summary.displayName}</span>
+          <IconComponent className="w-4 h-4 shrink-0 text-zinc-400" />
+          <span className="truncate text-[13px] font-medium leading-5 text-zinc-200">{summary.displayName}</span>
           <ChevronRight
             className={`w-3 h-3 shrink-0 text-zinc-500 transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 ${
               expanded ? 'rotate-90' : ''
@@ -340,7 +345,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
         const canToggle = !hasSearchFilters && (hiddenCount > 0 || showAllRows);
         return (
           <div
-            className={`${expansionView.rowsClassName} ml-[18px]`}
+            className={`${expansionView.rowsClassName} ml-[10px]`}
             data-sidebar-group-rows={group.key}
           >
             {group.sessions.length === 0 ? (
@@ -365,7 +370,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowAllRows((value) => !value)}
-                    className="w-full px-3 py-1 text-left text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 focus:outline-hidden"
+                    className="w-full pl-6 pr-3 py-1 text-left text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 focus:outline-hidden"
                   >
                     {showAllRows ? p.collapse : p.expandAll.replace('{count}', String(group.sessions.length))}
                   </button>

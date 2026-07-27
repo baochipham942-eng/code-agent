@@ -212,9 +212,9 @@ export function useSidebarSessionActions(
         createdAt: Date.now(),
       });
     }
-    if (sessionId !== currentSessionId) {
-      await switchSession(sessionId);
-    }
+    // 无条件调 switchSession：它自己会对「已经是当前会话」早退，
+    // 但在早退前把二级页关掉——从能力中心点当前会话也得回得来（e2e 抓到过）。
+    await switchSession(sessionId);
   };
 
   const handleArchiveSession = async (id: string, isArchived: boolean, e: React.MouseEvent) => {
@@ -387,10 +387,8 @@ export function useSidebarSessionActions(
       query: searchQuery.trim(),
       createdAt: Date.now(),
     });
-    if (sessionId !== currentSessionId) {
-      await switchSession(sessionId);
-    }
-  }, [currentSessionId, searchQuery, setPendingSearchJump, switchSession]);
+    await switchSession(sessionId);
+  }, [searchQuery, setPendingSearchJump, switchSession]);
 
   return {
     handleToggleWorkspaceGroup,

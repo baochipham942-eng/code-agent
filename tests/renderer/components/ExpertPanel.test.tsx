@@ -395,7 +395,7 @@ describe('ExpertPanel', () => {
     expect(screen.queryByTestId('role-quiet-hours-clear')).toBeNull();
   });
 
-  it('独立详情页的四个 tab 都可切换，「返回应用」回到能力中心专家 tab', async () => {
+  it('独立详情页的四个 tab 都可切换，返回按钮回到能力中心专家 tab', async () => {
     useAppStore.getState().openExpertRoleDetail('牧之');
     render(<RoleDetailPage roleId="牧之" />);
     await waitFor(() => expect(screen.getByTestId('role-detail-basic-tab')).toBeTruthy());
@@ -405,7 +405,8 @@ describe('ExpertPanel', () => {
     expect(screen.getByTestId('role-detail-personalization-tab')).toBeTruthy();
     fireEvent.click(screen.getByTestId('role-detail-tab-records'));
     expect(screen.getByTestId('role-detail-records-tab')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '返回应用' }));
+    // 批 C：下钻页的返回按钮改指「能力中心」（不再是泛化的「返回应用」）
+    fireEvent.click(screen.getByTestId('full-screen-page-back'));
     expect(useAppStore.getState().showCapabilityHub).toBe(true);
     expect(useAppStore.getState().capabilityHubTab).toBe('experts');
   });

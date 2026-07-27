@@ -40,6 +40,7 @@ import {
   type WorkbenchViewId,
 } from '../utils/workbenchViews';
 import { createWorkbenchActions } from './workbenchActions';
+import { SECONDARY_PAGES_CLOSED } from './secondaryPages';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
 // 在 store 模块顶层引入 ipcService（store 是大量被 import 的模块，链路尽量短）
@@ -288,6 +289,13 @@ export interface AppState {
   workbenchSessionKey: string | null;
   /** 右栏整栏收起。视图切换器模型下「关闭」的对象是整栏，不再是单个视图。 */
   workbenchCollapsed: boolean;
+  /**
+   * 右栏当前的收起是不是**用户自己按的**。
+   * 默认收起（初值 true）是产品默认值，不是用户意图——两者要分开，否则
+   * 「任务开跑自动弹出右栏」和 #700 的「用户收起后不因活动信号自己弹回」二选一。
+   * 只由 setWorkbenchCollapsed 写（它的两个调用点都是用户点击）。
+   */
+  workbenchCollapsedByUser: boolean;
   taskWorkbenchOpenSource: WorkbenchOpenSource | null;
   taskWorkbenchActivityActive: boolean;
 
@@ -364,6 +372,8 @@ export interface AppState {
   setShowActivityPanel: (show: boolean) => void;
   setShowCapabilityHub: (show: boolean) => void;
   openCapabilityHub: (tab: CapabilityHubTab) => void;
+  /** 回到会话区：关掉互斥表里所有二级页。侧栏选会话/新建任务时调用。 */
+  closeSecondaryPages: () => void;
   setShowCronCenter: (show: boolean) => void;
   setShowTimeCapabilityCenter: (show: boolean) => void;
   setShowFileExplorer: (show: boolean) => void;
@@ -385,7 +395,6 @@ export interface AppState {
   setErrors: (errors: ErrorRecord[]) => void;
   setShowPlanningPanel: (show: boolean) => void;
   setShowDAGPanel: (show: boolean) => void;
-  toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
   setShowKnowledgeMemoryPanel: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
@@ -446,20 +455,6 @@ export interface AppState {
   setContextHealth: (health: ContextHealthState | null) => void;
   setContextHealthCollapsed: (collapsed: boolean) => void;
 }
-
-// 会话区互斥全屏页：任一打开时其余全关。新增全屏页只加进这一份表——
-// 原先七个 setter 各手抄一份清单，已经漏过一次（知识记忆面板忘了关 InAppValidation）。
-// 用法：`set({ ...FULLSCREEN_PANELS_CLOSED, showXxx: true })`，自身键放在展开之后才不会被覆盖。
-const FULLSCREEN_PANELS_CLOSED = {
-  showKnowledgeMemoryPanel: false,
-  showLibraryPanel: false,
-  showCapabilityHub: false,
-  showCronCenter: false,
-  showLocalOpsPanel: false,
-  showEvalCenter: false,
-  showProjectCollaborationPage: false,
-  expertDetailRoleId: null,
-} as const;
 
 // Default model config — 引用 shared/constants.ts 常量
 const defaultModelConfig: ModelConfig = {
@@ -549,7 +544,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activeWorkbenchTab: null,
   workbenchBySession: {},
   workbenchSessionKey: null,
-  workbenchCollapsed: false,
+  // 默认收起：开一条新会话时右栏无事可做，常驻空态启动器白占三分之一屏
+  // （2026-07-27 审美关拍板）。用户展开后本次运行期内保持展开，切会话不重置。
+  workbenchCollapsed: true,
+  workbenchCollapsedByUser: false,
   taskWorkbenchOpenSource: null,
   taskWorkbenchActivityActive: false,
   workbenchHighlight: null,
@@ -582,7 +580,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
     const target = resolveSettingsDeepLink(tab);
     if (target.kind === 'cronCenter') {
-      set({ ...FULLSCREEN_PANELS_CLOSED, showCronCenter: true, showSettings: false, ...noFocus });
+      set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, showSettings: false, ...noFocus });
     } else if (target.kind === 'capabilityHub') {
       get().openCapabilityHub(target.tab);
       set(noFocus);
@@ -656,21 +654,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
-  setShowLocalOpsPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showLocalOpsPanel: show }),
+  setShowLocalOpsPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLocalOpsPanel: show }),
   openLocalOpsPanel: (tab) => set({
-    ...FULLSCREEN_PANELS_CLOSED,
+    ...SECONDARY_PAGES_CLOSED,
     showLocalOpsPanel: true,
     localOpsTab: tab || 'desktop',
   }),
   // 旧入口（MCPSettings 连接器卡片、computerUse.open 快捷键）走 shim 进合并页，UI 不再直接引用旧开关。
   setShowComputerUsePanel: (show) => (show ? get().openLocalOpsPanel('desktop') : get().setShowLocalOpsPanel(false)),
   setShowBrowserSurfacePanel: (show) => (show ? get().openLocalOpsPanel('browser') : get().setShowLocalOpsPanel(false)),
-  setShowEvalCenter: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showEvalCenter: show }),
-  openEvalCenter: (tab, replaySessionId) => set({ ...FULLSCREEN_PANELS_CLOSED, showEvalCenter: true, showSettings: false, evalCenterTab: tab || 'replay', evalCenterReplaySessionId: replaySessionId ?? null }),
+  setShowEvalCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showEvalCenter: show }),
+  openEvalCenter: (tab, replaySessionId) => set({ ...SECONDARY_PAGES_CLOSED, showEvalCenter: true, showSettings: false, evalCenterTab: tab || 'replay', evalCenterReplaySessionId: replaySessionId ?? null }),
   setEvalCenterTab: (tab) => set({ evalCenterTab: tab }),
   clearEvalCenterReplayTarget: () => set({ evalCenterReplaySessionId: null }),
   openProjectCollaborationPage: (projectId) => set({
-    ...FULLSCREEN_PANELS_CLOSED,
+    ...SECONDARY_PAGES_CLOSED,
     showProjectCollaborationPage: true,
     projectCollaborationPageProjectId: projectId?.trim() || null,
   }),
@@ -680,14 +678,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
   }),
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
   setShowActivityPanel: (show) => set({ showActivityPanel: show }),
-  setShowCapabilityHub: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showCapabilityHub: show }),
+  setShowCapabilityHub: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCapabilityHub: show }),
   openCapabilityHub: (tab) => set({
-    ...FULLSCREEN_PANELS_CLOSED,
+    ...SECONDARY_PAGES_CLOSED,
     showCapabilityHub: true,
     showSettings: false,
     capabilityHubTab: tab,
   }),
-  setShowCronCenter: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showCronCenter: show }),
+  closeSecondaryPages: () => set({ ...SECONDARY_PAGES_CLOSED }),
+  setShowCronCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCronCenter: show }),
   setShowTimeCapabilityCenter: (show) => set({ showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {
     const state = get();
@@ -733,13 +732,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setShowPlanningPanel: (show) => set({ showPlanningPanel: show }),
 
   setShowDAGPanel: (show) => set({ showDAGPanel: show }),
-  toggleDAGPanel: () => set((state) => ({ showDAGPanel: !state.showDAGPanel })),
   setShowLab: (show) => set({ showLab: show }),
   openDevServerLauncher: () => set({ devServerLauncherOpen: true }),
   closeDevServerLauncher: () => set({ devServerLauncherOpen: false }),
-  setShowKnowledgeMemoryPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showKnowledgeMemoryPanel: show }),
-  setShowLibraryPanel: (show) => set({ ...(show ? FULLSCREEN_PANELS_CLOSED : {}), showLibraryPanel: show }),
-  openExpertRoleDetail: (roleId) => set({ ...FULLSCREEN_PANELS_CLOSED, expertDetailRoleId: roleId }),
+  setShowKnowledgeMemoryPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showKnowledgeMemoryPanel: show }),
+  setShowLibraryPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLibraryPanel: show }),
+  openExpertRoleDetail: (roleId) => set({ ...SECONDARY_PAGES_CLOSED, expertDetailRoleId: roleId }),
 
   openPreview: (filePath, options) => {
     noteSurfaceIntentNavigation('preview', options?.source ?? 'user');
@@ -1020,7 +1018,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     stopDevServer: fireStopDevServer,
   }),
 
-  setWorkbenchCollapsed: (collapsed) => set({ workbenchCollapsed: collapsed }),
+  setWorkbenchCollapsed: (collapsed) => set({ workbenchCollapsed: collapsed, workbenchCollapsedByUser: collapsed }),
 
   syncTaskWorkbenchForActivity: (hasActivity) => {
     const state = get();

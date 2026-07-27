@@ -444,8 +444,8 @@ export const SettingsModal: React.FC = () => {
         </aside>
 
         <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-950">
-          <div className={`mx-auto min-h-full px-8 pb-16 pt-16 ${contentWidthClass}`}>
-            <div className="mb-10 flex items-start justify-between gap-6">
+          <div className={`mx-auto min-h-full px-8 pb-16 pt-8 ${contentWidthClass}`}>
+            <div className="mb-6 flex items-start justify-between gap-6">
               <div>
                 <h2 id="settings-page-title" className="text-2xl font-semibold text-zinc-100">
                   {activeTabConfig?.label || t.settings.title}

@@ -125,14 +125,19 @@ describe('Sidebar new session button', () => {
     const html = renderToStaticMarkup(React.createElement(Sidebar));
     const newTaskButtonHtml = html.match(/<button[^>]*data-testid="sidebar-new-task"[^>]*>.*?<\/button>/)?.[0] ?? '';
 
-    expect(html).toContain('data-testid="neo-brand-mark"');
+    // 2026-07-27 审美关：品牌标从侧栏头行下架（产品负责人：品牌标识暂无合适位置，
+    // 先不展示）；空态欢迎页那处品牌触点仍在，本行只剩右侧功能图标 = Codex 参照形态。
+    expect(html).not.toContain('data-testid="neo-brand-mark"');
     expect(html).toContain('新任务');
     // D2（打磨批 D）：实现语义 tooltip 已删，行内只剩「新任务」一个称谓。
     expect(html).not.toContain('新建任务（纯对话，不继承项目上下文）');
     // 常驻副标题已删（左栏拥挤：说明性文字第一次有用、第一百次是噪音），只留 title 悬浮提示
     expect(html).not.toContain('开始一段新的协作');
     expect(html).not.toContain('新建空白会话，不继承项目上下文');
-    expect(newTaskButtonHtml).toContain('lucide-plus');
+    // 图标换成 Codex 那种「带笔的方框」（2026-07-27 审美关）
+    expect(newTaskButtonHtml).toContain('lucide-square-pen');
+    // 四大功能行的右箭头已撤
+    expect(newTaskButtonHtml).not.toContain('lucide-chevron-right');
     expect(newTaskButtonHtml).not.toContain('lucide-loader-circle');
     expect(html).toContain('data-testid="sidebar-search-trigger"');
   });

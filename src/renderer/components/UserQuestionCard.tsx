@@ -319,5 +319,3 @@ export const UserQuestionCard: React.FC<Props> = ({ request }) => {
     </div>
   );
 };
-
-export default UserQuestionCard;

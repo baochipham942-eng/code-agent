@@ -98,5 +98,3 @@ export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ 
     </div>
   );
 };
-
-export default VoiceCallSummaryCard;

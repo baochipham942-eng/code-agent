@@ -14,7 +14,7 @@
 import type { ToolCall } from '@shared/contract';
 import type { UserQuestion } from '@shared/contract';
 
-export interface AskUserQuestionRecordItem {
+interface AskUserQuestionRecordItem {
   header: string;
   question: string;
   /** 该题所选答案（多选已 join）；跳过的题恒为 null */

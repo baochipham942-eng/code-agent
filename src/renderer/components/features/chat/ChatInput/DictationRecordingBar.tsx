@@ -172,5 +172,3 @@ export const DictationRecordingBar: React.FC<DictationRecordingBarProps> = ({
     </div>
   );
 };
-
-export default DictationRecordingBar;

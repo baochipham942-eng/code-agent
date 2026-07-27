@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -80,8 +80,60 @@ class FailOnceRunner implements WorkspaceCommandRunner {
 }
 
 describe('IsolatedAnchorWorkspaceService', () => {
+  it('fails closed when the public workspace root is replaced at the staged publish barrier', async () => {
+    const fixture = await createAnchorFixture();
+    await mkdir(path.join(fixture.repositoryRoot, 'nested'), { recursive: true });
+    await writeFile(path.join(fixture.repositoryRoot, 'nested', 'race.bin'), Buffer.from([7, 0, 6, 5]));
+    const evidenceService = new AnchorWorkspaceEvidenceService();
+    const evidence = await evidenceService.capture({
+      anchorId: 'assistant-a2',
+      repositoryRoot: fixture.repositoryRoot,
+      baseCommit: fixture.baseCommit,
+      workspaceScopeVersion: 'scope-v3',
+      pathMappings: [{
+        sourceId: 'primary',
+        sourcePath: fixture.repositoryRoot,
+        isolatedRelativePath: '.',
+      }],
+    });
+    const sourceStatusBefore = git(fixture.repositoryRoot, 'status', '--porcelain=v1', '-z');
+    const sourceRaceTarget = path.join(fixture.repositoryRoot, 'race.bin');
+    const intentStore = new JsonWorkspaceForkIntentStore(fixture.stateDirectory);
+    const service = new IsolatedAnchorWorkspaceService({
+      durableRoot: fixture.durableRoot,
+      intentStore,
+      workspacePublishBarrier: async (input) => {
+        expect(await readFile(path.join(input.stagingWorkspacePath, 'nested', 'race.bin')))
+          .toEqual(Buffer.from([7, 0, 6, 5]));
+        await symlink(fixture.repositoryRoot, input.workspacePath, 'dir');
+      },
+    });
+
+    await expect(service.prepare({
+      intentId: 'ancestor-symlink-race',
+      sourceSessionId: 'parent',
+      proposedChildSessionId: 'child',
+      repositoryRoot: fixture.repositoryRoot,
+      destinationName: 'ancestor-symlink-race',
+      evidence,
+    })).rejects.toMatchObject({ code: 'WORKSPACE_PREPARATION_FAILED' });
+
+    await expect(readFile(sourceRaceTarget)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(git(fixture.repositoryRoot, 'status', '--porcelain=v1', '-z')).toBe(sourceStatusBefore);
+    expect(await intentStore.get('ancestor-symlink-race')).toMatchObject({
+      status: 'cleanup_required',
+      advertisable: false,
+    });
+  });
+
   it('reconstructs the explicitly captured anchor into a durable detached worktree', async () => {
     const fixture = await createAnchorFixture();
+    const quotedBinaryPath = path.join(fixture.repositoryRoot, 'nested dir', 'utf8-你好.bin');
+    await mkdir(path.dirname(quotedBinaryPath), { recursive: true });
+    const quotedBinary = Buffer.from(Array.from({ length: 80 }, (_, index) => (index * 31) % 256));
+    await writeFile(quotedBinaryPath, quotedBinary);
+    await chmod(quotedBinaryPath, 0o600);
+    await writeFile(path.join(fixture.repositoryRoot, 'empty.dat'), Buffer.alloc(0));
     const evidenceService = new AnchorWorkspaceEvidenceService();
     const evidence = await evidenceService.capture({
       anchorId: 'assistant-a2',
@@ -129,6 +181,12 @@ describe('IsolatedAnchorWorkspaceService', () => {
       .toEqual(Buffer.from([0, 255, 2, 7]));
     expect(await readFile(path.join(prepared.workspacePath, 'new.bin')))
       .toEqual(Buffer.from([9, 0, 8, 7]));
+    expect(await readFile(path.join(prepared.workspacePath, 'nested dir', 'utf8-你好.bin')))
+      .toEqual(quotedBinary);
+    expect((await stat(path.join(prepared.workspacePath, 'nested dir', 'utf8-你好.bin'))).mode & 0o777)
+      .toBe(0o600);
+    expect(await readFile(path.join(prepared.workspacePath, 'empty.dat')))
+      .toEqual(Buffer.alloc(0));
     expect(git(fixture.repositoryRoot, 'status', '--porcelain=v1', '-z')).toBe(sourceStatusBefore);
 
     const persisted = await intentStore.get('fork-intent-1');
@@ -317,5 +375,52 @@ describe('IsolatedAnchorWorkspaceService', () => {
       .toBe('child evolved after advertisement\n');
     await expect(readFile(path.join(fixture.durableRoot, 'cleanup-child', 'tracked.txt')))
       .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('re-verifies an advertised-but-unfinalized workspace during restart recovery', async () => {
+    const fixture = await createAnchorFixture();
+    const evidenceService = new AnchorWorkspaceEvidenceService();
+    const evidence = await evidenceService.capture({
+      anchorId: 'assistant-a2',
+      repositoryRoot: fixture.repositoryRoot,
+      baseCommit: fixture.baseCommit,
+      workspaceScopeVersion: 'scope-v3',
+      pathMappings: [{
+        sourceId: 'primary',
+        sourcePath: fixture.repositoryRoot,
+        isolatedRelativePath: '.',
+      }],
+    });
+    const firstStore = new JsonWorkspaceForkIntentStore(fixture.stateDirectory);
+    const firstService = new IsolatedAnchorWorkspaceService({
+      durableRoot: fixture.durableRoot,
+      intentStore: firstStore,
+    });
+    const prepared = await firstService.prepare({
+      intentId: 'advertised-crash-window',
+      sourceSessionId: 'parent',
+      proposedChildSessionId: 'child',
+      repositoryRoot: fixture.repositoryRoot,
+      destinationName: 'advertised-crash-window',
+      evidence,
+    });
+    await firstService.markAdvertised('advertised-crash-window');
+    await writeFile(path.join(prepared.workspacePath, 'tracked.txt'), 'drifted before finalize\n');
+
+    const restartedService = new IsolatedAnchorWorkspaceService({
+      durableRoot: fixture.durableRoot,
+      intentStore: new JsonWorkspaceForkIntentStore(fixture.stateDirectory),
+    });
+    const recovery = await restartedService.recoverIntent(
+      'advertised-crash-window',
+      { strategy: 'resume' },
+    );
+
+    expect(recovery).toMatchObject({
+      intentId: 'advertised-crash-window',
+      outcome: 'failed',
+      workspacePath: prepared.workspacePath,
+    });
+    expect(recovery.error).toContain('differs from anchor evidence');
   });
 });

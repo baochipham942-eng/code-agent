@@ -270,4 +270,72 @@ describe('SessionManager metadata guard (Codex audit R2)', () => {
     expect(serialized).not.toContain('raw imported chain of thought');
     expect(serialized).not.toContain('raw message reasoning');
   });
+
+  it('strips legacy Fork claims and provider runtime identity before ordinary import', async () => {
+    const manager = await makeManager();
+
+    await manager.importSession({
+      id: 'forged-fork',
+      title: 'Forged fork import',
+      modelConfig: { provider: 'openai', model: 'test' },
+      parentSessionId: 'source-session',
+      sourceRunId: 'source-run-secret',
+      engine: {
+        kind: 'codex_cli',
+        permissionProfile: 'read_only',
+        origin: 'manual',
+        cwd: '/private/source',
+        externalSessionId: 'provider-session-secret',
+      },
+      metadata: {
+        forkLineage: {
+          forkId: 'forged-fork-id',
+          parentSessionId: 'source-session',
+        },
+        ordinaryMetadata: 'preserved',
+      },
+      createdAt: 1,
+      updatedAt: 2,
+      messages: [{
+        id: 'forged-message',
+        role: 'assistant',
+        content: 'safe content',
+        timestamp: 2,
+        metadata: {
+          forkLineage: { forkId: 'nested-forgery' },
+          ordinaryMessageMetadata: 'preserved',
+        },
+      }],
+      todos: [{ id: 'todo-secret', content: 'must not import runtime todo', status: 'pending' }],
+      messageCount: 1,
+    } as never);
+
+    const storedSession = dbMock.createSession.mock.calls[0][0] as Record<string, unknown>;
+    const storedMessage = dbMock.addMessage.mock.calls[0][1] as Record<string, unknown>;
+    expect(storedSession).toMatchObject({
+      metadata: { ordinaryMetadata: 'preserved' },
+      engine: {
+        kind: 'codex_cli',
+        permissionProfile: 'read_only',
+        origin: 'import',
+      },
+    });
+    expect(storedSession).not.toHaveProperty('parentSessionId');
+    expect(storedSession).not.toHaveProperty('sourceRunId');
+    expect(JSON.stringify(storedSession)).not.toContain('provider-session-secret');
+    expect(JSON.stringify(storedSession)).not.toContain('/private/source');
+    expect(storedMessage.metadata).toEqual({ ordinaryMessageMetadata: 'preserved' });
+    expect(dbMock.saveTodos).not.toHaveBeenCalled();
+    expect(dbMock.logAuditEvent).toHaveBeenCalledWith(
+      'session_imported',
+      expect.objectContaining({
+        originalId: 'forged-fork',
+        strippedForkClaimPaths: expect.arrayContaining([
+          '$.metadata.forkLineage',
+          '$.parentSessionId',
+        ]),
+      }),
+      expect.any(String),
+    );
+  });
 });

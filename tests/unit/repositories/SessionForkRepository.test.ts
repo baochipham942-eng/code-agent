@@ -245,10 +245,14 @@ describe('SessionForkRepository', () => {
     const originalTransaction = db.transaction.bind(db);
     vi.spyOn(db, 'transaction').mockImplementation(((fn: () => unknown) => {
       const transactional = originalTransaction(fn);
-      return (() => {
+      const wrapped = (() => {
         db.prepare("UPDATE sessions SET status = 'running' WHERE id = 'source'").run();
-        return transactional();
-      });
+        return transactional.immediate();
+      }) as typeof transactional;
+      wrapped.deferred = wrapped;
+      wrapped.immediate = wrapped;
+      wrapped.exclusive = wrapped;
+      return wrapped;
     }) as typeof db.transaction);
 
     expect(() => repo.createFork(forkInput())).toThrow('SESSION_RUNNING');
@@ -256,6 +260,51 @@ describe('SessionForkRepository', () => {
     expect(db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE id = 'child-1'").get()).toEqual({ count: 0 });
     expect(db.prepare('SELECT COUNT(*) AS count FROM session_forks').get()).toEqual({ count: 0 });
     expect(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE session_id = 'child-1'").get()).toEqual({ count: 0 });
+  });
+
+  it('reads and validates the anchor inside the immediate transaction with zero stale-prefix writes', () => {
+    const originalTransaction = db.transaction.bind(db);
+    vi.spyOn(db, 'transaction').mockImplementation(((fn: () => unknown) => {
+      const transactional = originalTransaction(fn);
+      const wrapped = (() => {
+        db.prepare(`
+          UPDATE messages
+          SET visibility = 'rewound', hidden_by_rewind_id = 'rewind-before-lock', hidden_at = 99
+          WHERE id = 'a2'
+        `).run();
+        return transactional.immediate();
+      }) as typeof transactional;
+      wrapped.deferred = wrapped;
+      wrapped.immediate = wrapped;
+      wrapped.exclusive = wrapped;
+      return wrapped;
+    }) as typeof db.transaction);
+
+    expect(() => repo.createFork(forkInput())).toThrow('ANCHOR_REWOUND');
+    expect(db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE id = 'child-1'").get()).toEqual({ count: 0 });
+    expect(db.prepare('SELECT COUNT(*) AS count FROM session_forks').get()).toEqual({ count: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE session_id = 'child-1'").get()).toEqual({ count: 0 });
+  });
+
+  it('rejects an active durable run even when the session compatibility status is idle', () => {
+    db.exec(`
+      CREATE TABLE durable_runs (
+        run_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        parent_run_id TEXT,
+        status TEXT NOT NULL
+      )
+    `);
+    db.prepare(`
+      INSERT INTO durable_runs (run_id, session_id, parent_run_id, status)
+      VALUES ('run-1', 'source', NULL, 'recovering')
+    `).run();
+    const before = db.totalChanges;
+
+    expect(() => repo.createFork(forkInput())).toThrow('SESSION_RUNNING');
+    expect(db.totalChanges).toBe(before);
+    expect(db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE id = 'child-1'").get()).toEqual({ count: 0 });
+    expect(db.prepare('SELECT COUNT(*) AS count FROM session_forks').get()).toEqual({ count: 0 });
   });
 
   it('enforces string and null owner scopes while preserving undefined for internal compatibility', () => {
@@ -282,6 +331,22 @@ describe('SessionForkRepository', () => {
     expect(repo.listChildren('source', 'user-2')).toEqual([]);
     expect(repo.listChildren('source', null)).toEqual([]);
     expect(db.totalChanges).toBe(before);
+  });
+
+  it('keeps a child lineage auditable after its parent is soft-deleted', () => {
+    repo.createFork(forkInput());
+    db.prepare("UPDATE sessions SET is_deleted = 1 WHERE id = 'source'").run();
+
+    expect(repo.getLineage('child-1', 'user-1')).toMatchObject({
+      forkId: 'fork-1',
+      parentSessionId: 'source',
+      childSessionId: 'child-1',
+      parentDeleted: true,
+    });
+    expect(repo.getLineage('child-1', 'user-2')).toBeNull();
+
+    db.prepare("UPDATE sessions SET is_deleted = 0 WHERE id = 'source'").run();
+    expect(repo.getLineage('child-1', 'user-1')).toMatchObject({ parentDeleted: false });
   });
 
   it('rolls back child, lineage, and copied messages when mapping persistence fails', () => {
@@ -317,6 +382,115 @@ describe('SessionForkRepository', () => {
       [2, 'u2', expect.any(String), 'two'],
       [3, 'a2', expect.any(String), 'two answer'],
     ]);
+  });
+
+  it('rejects a suffix-truncated child prefix even when the remaining ordinals are contiguous', () => {
+    repo.createFork(forkInput());
+    db.prepare(`
+      DELETE FROM messages
+      WHERE id IN (
+        SELECT child_message_id
+        FROM session_fork_message_map
+        WHERE fork_id = 'fork-1' AND ordinal > 0
+      )
+    `).run();
+    const before = db.totalChanges;
+
+    expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
+    expect(db.totalChanges).toBe(before);
+  });
+
+  it('rejects a suffix-truncated mapping ledger even when its remaining rows are contiguous', () => {
+    repo.createFork(forkInput());
+    db.prepare(`
+      DELETE FROM session_fork_message_map
+      WHERE fork_id = 'fork-1' AND ordinal > 0
+    `).run();
+    const before = db.totalChanges;
+
+    expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
+    expect(db.totalChanges).toBe(before);
+  });
+
+  it('rejects mapping rows that resolve outside the child session or orphan their source row', () => {
+    repo.createFork(forkInput());
+    db.prepare(`
+      UPDATE session_fork_message_map
+      SET child_message_id = 'a2'
+      WHERE fork_id = 'fork-1' AND ordinal = 3
+    `).run();
+    const wrongChildBefore = db.totalChanges;
+
+    expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
+    expect(db.totalChanges).toBe(wrongChildBefore);
+
+    db.prepare(`
+      UPDATE session_fork_message_map
+      SET child_message_id = (
+        SELECT id FROM messages WHERE session_id = 'child-1' AND content = 'two answer'
+      ),
+          source_message_id = 'missing-source-message'
+      WHERE fork_id = 'fork-1' AND ordinal = 3
+    `).run();
+    const orphanSourceBefore = db.totalChanges;
+
+    expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
+    expect(db.totalChanges).toBe(orphanSourceBefore);
+  });
+
+  it('rejects copied child drift while keeping the sealed context independent from later source projection changes', () => {
+    repo.createFork(forkInput());
+    db.prepare("UPDATE messages SET content = 'tampered child' WHERE session_id = 'child-1' AND content = 'two'")
+      .run();
+    const childDriftBefore = db.totalChanges;
+
+    expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
+    expect(db.totalChanges).toBe(childDriftBefore);
+
+    db.prepare("UPDATE messages SET content = 'two' WHERE session_id = 'child-1' AND content = 'tampered child'")
+      .run();
+    db.prepare(`
+      UPDATE messages
+      SET content = 'later source projection',
+          synced_at = 999,
+          visibility = 'rewound',
+          hidden_by_rewind_id = 'later-rewind',
+          hidden_at = 999
+      WHERE id = 'u2'
+    `).run();
+    const sourceDriftBefore = db.totalChanges;
+
+    expect(repo.getContextSource('child-1')?.mappedActivePrefix.map((entry) => entry.message.content))
+      .toEqual(['one', 'one answer', 'two', 'two answer']);
+    expect(db.totalChanges).toBe(sourceDriftBefore);
+  });
+
+  it('rejects fork anchor metadata that no longer terminates at the mapped source and child pair', () => {
+    repo.createFork(forkInput());
+    db.prepare(`
+      UPDATE session_forks
+      SET anchor_message_id = 'a1',
+          anchor_child_message_id = (
+            SELECT child_message_id
+            FROM session_fork_message_map
+            WHERE fork_id = 'fork-1' AND ordinal = 1
+          )
+      WHERE id = 'fork-1'
+    `).run();
+    const before = db.totalChanges;
+
+    expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
+    expect(db.totalChanges).toBe(before);
+  });
+
+  it('rejects a fork whose persisted prefix digest no longer matches both projections', () => {
+    repo.createFork(forkInput());
+    db.prepare("UPDATE session_forks SET source_prefix_digest = ? WHERE id = 'fork-1'")
+      .run('f'.repeat(64));
+    const before = db.totalChanges;
+
+    expect(() => repo.getContextSource('child-1')).toThrow('CONTEXT_HANDOFF_REJECTED');
+    expect(db.totalChanges).toBe(before);
   });
 
   it('persists a fail-closed context handoff dispatch lifecycle', () => {

@@ -9,7 +9,9 @@ import {
   encodeSessionExportEnvelopeV2,
   rehashSessionExportEnvelopeV2,
   stripLegacyForkClaims,
+  validatePortableIsolatedAnchorEvidenceV1,
 } from '../../../../../src/host/services/sessionFork/portability';
+import { PORTABLE_ANCHOR_MAX_PATCH_BYTES } from '../../../../../src/shared/contract/sessionForkPortability';
 import { OWNER_ID, PROJECT_ID, message, session, subtreeDraft } from './fixture';
 
 describe('session fork portability codecs', () => {
@@ -41,16 +43,38 @@ describe('session fork portability codecs', () => {
     expect(child?.modelConfig).not.toHaveProperty('apiKey');
     expect(child?.modelConfig).not.toHaveProperty('baseUrl');
     expect(child?.workspace?.isolatedAnchor).not.toHaveProperty('absoluteWorktreePath');
+    expect(child?.workspace?.isolatedAnchor).toMatchObject({
+      workspaceScopeVersion: 'scope-v1',
+      content: {
+        version: 1,
+        stagedPatch: {
+          blobDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+        },
+        unstagedPatch: {
+          blobDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+        },
+        untrackedFiles: [
+          expect.objectContaining({
+            relativePath: 'new.bin',
+            blobDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+            mode: 0o600,
+          }),
+        ],
+        blobs: expect.any(Object),
+        payloadDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+      },
+    });
 
     const childMessage = envelope.messages.find((item) => item.id === 'ca1');
-    expect(childMessage?.attachments).toEqual([{
+    expect(childMessage?.attachments).toEqual([expect.objectContaining({
       id: 'attachment-1',
       type: 'file',
       category: 'text',
       name: 'secret.txt',
       size: 12,
       mimeType: 'text/plain',
-    }]);
+      contentDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+    })]);
     expect(childMessage?.artifacts?.[0]).toMatchObject({
       id: 'artifact-1',
       type: 'document',
@@ -205,6 +229,63 @@ describe('session fork portability codecs', () => {
       ownerScopeId: OWNER_ID,
       projectId: PROJECT_ID,
     })).toThrow(/RUNTIME_IDENTITY_FORBIDDEN/);
+  });
+
+  it('fails closed when isolated evidence omits content or carries tampered base64', () => {
+    const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
+    const missing = structuredClone(envelope);
+    delete (missing.sessions.find((item) => item.id === 'child')?.workspace?.isolatedAnchor as {
+      content?: unknown;
+    }).content;
+    const rehashedMissing = rehashSessionExportEnvelopeV2(missing);
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(rehashedMissing), {
+      ownerScopeId: OWNER_ID,
+      projectId: PROJECT_ID,
+    })).toThrow(/PORTABLE_EVIDENCE_REQUIRED|INVALID_ENVELOPE/u);
+
+    const tampered = structuredClone(envelope);
+    const content = tampered.sessions.find((item) => item.id === 'child')
+      ?.workspace?.isolatedAnchor?.content;
+    expect(content).toBeTruthy();
+    const stagedDigest = content!.stagedPatch.blobDigest;
+    content!.blobs[stagedDigest] = Buffer.from('tampered').toString('base64');
+    const rehashedTampered = rehashSessionExportEnvelopeV2(tampered);
+    expect(() => decodeSessionExportEnvelopeV2(JSON.stringify(rehashedTampered), {
+      ownerScopeId: OWNER_ID,
+      projectId: PROJECT_ID,
+    })).toThrow(/DIGEST_MISMATCH/u);
+  });
+
+  it('rejects portable evidence budget, path, mode, and nested digest violations', () => {
+    const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
+    const original = envelope.sessions.find((item) => item.id === 'child')
+      ?.workspace?.isolatedAnchor;
+    expect(original).toBeTruthy();
+
+    const overBudget = structuredClone(original!);
+    overBudget.content.stagedPatch.sizeBytes = PORTABLE_ANCHOR_MAX_PATCH_BYTES + 1;
+    expect(() => validatePortableIsolatedAnchorEvidenceV1(overBudget))
+      .toThrow(/PORTABLE_EVIDENCE_BUDGET_EXCEEDED/u);
+
+    const absolutePath = structuredClone(original!);
+    absolutePath.content.untrackedFiles[0].relativePath = '/private/new.bin';
+    expect(() => validatePortableIsolatedAnchorEvidenceV1(absolutePath))
+      .toThrow(/ABSOLUTE_WORKTREE_FORBIDDEN/u);
+
+    const invalidMode = structuredClone(original!);
+    invalidMode.content.untrackedFiles[0].mode = 0o1000;
+    expect(() => validatePortableIsolatedAnchorEvidenceV1(invalidMode))
+      .toThrow(/INVALID_ENVELOPE/u);
+
+    const invalidBase64 = structuredClone(original!);
+    invalidBase64.content.blobs[invalidBase64.content.stagedPatch.blobDigest] = '***';
+    expect(() => validatePortableIsolatedAnchorEvidenceV1(invalidBase64))
+      .toThrow(/DIGEST_MISMATCH/u);
+
+    const nestedDigestMismatch = structuredClone(original!);
+    nestedDigestMismatch.content.payloadDigest = `sha256:${'f'.repeat(64)}`;
+    expect(() => validatePortableIsolatedAnchorEvidenceV1(nestedDigestMismatch))
+      .toThrow(/DIGEST_MISMATCH/u);
   });
 
   it('fails closed when detached mode has more than one session or lacks provenance', () => {

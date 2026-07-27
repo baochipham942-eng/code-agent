@@ -436,6 +436,8 @@ describe('ClaudeCodeAdapter.run', () => {
     expect(child!.stdin.end.mock.invocationCallOrder[0])
       .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
     expect(firstLifecycle.persistExternalSessionId).toHaveBeenCalledWith('fork-claude-session');
+    expect((firstLifecycle.persistExternalSessionId as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
+      .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
     const firstTerminalUpdate = mocks.updateSession.mock.calls.at(-1)?.[1];
     expect(firstTerminalUpdate).toMatchObject({
       status: 'idle',
@@ -504,6 +506,101 @@ describe('ClaudeCodeAdapter.run', () => {
         externalSessionId: 'fork-claude-session',
       },
     });
+  });
+
+  it('keeps the fork handoff unconsumed when Claude never confirms a new external session id', async () => {
+    let child: ReturnType<typeof createMockChild> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      child = createMockChild([
+        JSON.stringify({
+          type: 'result',
+          subtype: 'success',
+          result: 'answer without identity',
+        }),
+      ], 0);
+      return child;
+    });
+    const onForkContextDispatchStart = vi.fn(async () => undefined);
+    const onForkContextDispatched = vi.fn(async () => undefined);
+
+    const result = await new ClaudeCodeAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      forkContextHandoff: buildTestExternalForkContextHandoff('claude_code'),
+      onForkContextDispatchStart,
+      onForkContextDispatched,
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: 'Claude fork handoff did not confirm a new external session identity',
+    });
+    expect(onForkContextDispatchStart).toHaveBeenCalledTimes(1);
+    expect(child?.stdin.end).toHaveBeenCalledTimes(1);
+    expect(onForkContextDispatched).not.toHaveBeenCalled();
+  });
+
+  it('keeps the fork handoff unconsumed when Claude confirms identity but exits abnormally', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: 'partial answer',
+        session_id: 'failed-fork-session',
+      }),
+    ], 1, 'provider failed after identity confirmation'));
+    const onForkContextDispatchStart = vi.fn(async () => undefined);
+    const onForkContextDispatched = vi.fn(async () => undefined);
+
+    const result = await new ClaudeCodeAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      forkContextHandoff: buildTestExternalForkContextHandoff('claude_code'),
+      onForkContextDispatchStart,
+      onForkContextDispatched,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(onForkContextDispatchStart).toHaveBeenCalledTimes(1);
+    expect(onForkContextDispatched).not.toHaveBeenCalled();
+  });
+
+  it('aborts after identity confirmation when Claude consumed-state persistence rejects', async () => {
+    let child: ReturnType<typeof createMockChild> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      child = createMockChild([
+        JSON.stringify({
+          type: 'result',
+          subtype: 'success',
+          result: 'provider acknowledged the fork',
+          session_id: 'fork-claude-session',
+        }),
+      ], 0);
+      return child;
+    });
+    const onForkContextDispatchStart = vi.fn(async () => undefined);
+    const onForkContextDispatched = vi.fn(async () => {
+      throw new Error('consumed-state persistence failed');
+    });
+
+    await expect(new ClaudeCodeAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      forkContextHandoff: buildTestExternalForkContextHandoff('claude_code'),
+      onForkContextDispatchStart,
+      onForkContextDispatched,
+    })).rejects.toThrow('consumed-state persistence failed');
+
+    expect(onForkContextDispatchStart).toHaveBeenCalledTimes(1);
+    expect(child?.stdin.end).toHaveBeenCalledTimes(1);
+    expect(onForkContextDispatched).toHaveBeenCalledTimes(1);
+    expect(child?.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
   it('inherits Claude auth from the captured login shell when the desktop process env is missing it', async () => {

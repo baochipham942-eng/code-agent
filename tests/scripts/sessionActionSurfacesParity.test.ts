@@ -5,7 +5,7 @@
 // 此前是人肉规则（错题本条目），漏一处 = 桌面能用 web 不能用（或反之）/
 // 能力清单骗人。本门把三面枚举 diff 钉死：
 //   ① src/host/ipc/session.ipc.ts 的 action switch（case 标签）
-//   ② src/web/webServer.ts 的 session action switch（case 标签）
+//   ② src/web/sessionDomainHandler.ts 的 session action switch（case 标签）
 //   ③ shellCapabilities 能力清单（getShellCapabilities 的 session 域）
 //
 // 自举纪律：任一面提取到 0 个 action → 报红（锚点失效不假绿）；
@@ -71,7 +71,7 @@ const KNOWN_WEBSERVER_GAPS = new Set([
 
 describe('SESSION 域 action 三面对账', () => {
   const ipcActions = new Set(extractActions('src/host/ipc/session.ipc.ts', "case 'rewindToPrompt'"));
-  const webActions = new Set(extractActions('src/web/webServer.ts', "handlers.set('domain:session'"));
+  const webActions = new Set(extractActions('src/web/sessionDomainHandler.ts', "deps.handlers.set('domain:session'"));
   const manifestActions = new Set(
     getShellCapabilities()
       .filter((c) => c.domain === 'domain:session')

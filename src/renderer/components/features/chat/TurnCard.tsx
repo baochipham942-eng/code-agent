@@ -85,7 +85,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   onRewindUserPrompt,
 }) => {
   const { t } = useI18n();
-  const forkFromHere = useMessageActionStore((state) => state.forkFromHere);
+  const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
   const sessionIsRunning = useSessionStore((state) => (
     sessionId ? Boolean(state.runningSessionIds?.has(sessionId)) : false
   ));
@@ -209,7 +209,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     setIsForkMenuOpen(false);
     setIsForking(true);
     try {
-      await forkFromHere(forkAnchor.messageId, workspaceMode);
+      await createForkFromReply(forkAnchor.messageId, workspaceMode);
     } finally {
       setIsForking(false);
     }
@@ -393,9 +393,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 <button
                   type="button"
                   data-testid="turn-fork-action"
-                  aria-label={t.turnCard.forkFromHere}
+                  aria-label={t.turnCard.createForkFromReply}
                   aria-expanded={isForkMenuOpen}
-                  title={t.turnCard.forkFromHere}
+                  title={t.turnCard.createForkFromReply}
                   disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
                   onClick={() => setIsForkMenuOpen((open) => !open)}
                   className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-zinc-500 transition-colors hover:bg-violet-500/10 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40"

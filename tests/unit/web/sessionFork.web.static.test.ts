@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const source = fs.readFileSync(
-  path.resolve(__dirname, '../../../src/web/webServer.ts'),
+  path.resolve(__dirname, '../../../src/web/sessionDomainHandler.ts'),
   'utf8',
 );
 
@@ -49,5 +49,31 @@ describe('web conversation Rewind parity', () => {
 
   it('exposes explicit conversation recovery', () => {
     expect(caseBody('restoreConversationRewind')).toContain('.restoreConversation');
+  });
+
+  it('routes explicit workspace file restore through the shared application service', () => {
+    const body = caseBody('restoreWorkspaceFilesAtCheckpoint');
+    expect(body).toContain('AgentAppServiceImpl');
+    expect(body).toContain('.restoreWorkspaceFilesAtCheckpoint');
+    expect(body).not.toContain('SessionRewindService');
+    expect(body).not.toContain('getFileCheckpointService');
+    expect(body).not.toContain('rewindFiles');
+  });
+});
+
+describe('web conversation lineage repair parity', () => {
+  it('routes the public repair action to compatibility projection reconstruction', () => {
+    const start = source.indexOf("} else if (action === 'repairConversationLineage') {");
+    const end = source.indexOf("} else if (action === 'recordConversationEvaluationAttribution') {", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = source.slice(start, end);
+    expect(body).toContain('database.repairConversationLineage({');
+    expect(body).toContain('sessionId,');
+    expect(body).toContain('boundary,');
+    expect(body).toContain('issueDigest:');
+    expect(body).toContain('reason:');
+    expect(body).toContain('idempotencyKey:');
+    expect(body).not.toContain('recordConversationLineageRepairOverride');
   });
 });

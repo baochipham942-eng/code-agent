@@ -1,17 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { GitBranch, GitFork } from 'lucide-react';
+import { ChevronDown, ChevronUp, GitBranch, GitFork } from 'lucide-react';
 
 import type { SessionForkLineageSummary } from '@shared/contract/sessionFork';
+import type { ConversationBranchComparison } from '@shared/contract/conversationBranch';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { BranchHistoryPanel } from './BranchHistoryPanel';
 
 interface ForkLineageNavigationProps {
   sessionId: string;
   lineage: SessionForkLineageSummary | null;
   children: SessionForkLineageSummary[];
   onOpenSession: (sessionId: string) => void | Promise<void>;
+  comparison?: ConversationBranchComparison | null;
+  compareLoading?: boolean;
+  compareError?: boolean;
+  onCompareParent?: () => void | Promise<void>;
+  historyExpanded?: boolean;
+  onToggleHistory?: () => void;
 }
 
 export const ForkLineageNavigation: React.FC<ForkLineageNavigationProps> = ({
@@ -19,6 +27,12 @@ export const ForkLineageNavigation: React.FC<ForkLineageNavigationProps> = ({
   lineage,
   children,
   onOpenSession,
+  comparison,
+  compareLoading = false,
+  compareError = false,
+  onCompareParent,
+  historyExpanded = false,
+  onToggleHistory,
 }) => {
   const { t } = useI18n();
   if (!lineage && children.length === 0) return null;
@@ -36,13 +50,31 @@ export const ForkLineageNavigation: React.FC<ForkLineageNavigationProps> = ({
           : t.forkLineage.source}
       </span>
       {lineage && lineage.parentSessionId !== sessionId && (
-        <button
-          type="button"
-          className="shrink-0 rounded-md border border-zinc-700 px-2 py-0.5 text-zinc-300 hover:border-violet-500/50 hover:text-violet-200"
-          onClick={() => void onOpenSession(lineage.parentSessionId)}
-        >
-          {t.forkLineage.openParent}
-        </button>
+        <>
+          {lineage.parentDeleted ? (
+            <span className="shrink-0 text-zinc-500" data-testid="fork-parent-deleted">
+              {t.forkLineage.parentDeleted}
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="shrink-0 rounded-md border border-zinc-700 px-2 py-0.5 text-zinc-300 hover:border-violet-500/50 hover:text-violet-200"
+              onClick={() => void onOpenSession(lineage.parentSessionId)}
+            >
+              {t.forkLineage.openParent}
+            </button>
+          )}
+          {!lineage.parentDeleted && onCompareParent && (
+            <button
+              type="button"
+              className="shrink-0 rounded-md border border-violet-500/30 px-2 py-0.5 text-violet-300 hover:border-violet-400 hover:text-violet-100 disabled:opacity-50"
+              disabled={compareLoading}
+              onClick={() => void onCompareParent()}
+            >
+              {compareLoading ? t.forkLineage.comparing : t.forkLineage.compareParent}
+            </button>
+          )}
+        </>
       )}
       {children.map((child, index) => (
         <button
@@ -60,6 +92,30 @@ export const ForkLineageNavigation: React.FC<ForkLineageNavigationProps> = ({
           ? t.forkLineage.anchorWorkspace
           : t.forkLineage.currentWorkspace}
       </span>
+      {comparison && (
+        <span className="shrink-0 text-violet-200" data-testid="fork-branch-comparison">
+          {t.forkLineage.compareSummary
+            .replace('{shared}', String(comparison.sharedPrefixLength))
+            .replace('{current}', String(comparison.rightOnly.length))
+            .replace('{parent}', String(comparison.leftOnly.length))}
+        </span>
+      )}
+      {compareError && (
+        <span className="shrink-0 text-red-300">{t.forkLineage.compareFailed}</span>
+      )}
+      {onToggleHistory && (
+        <button
+          type="button"
+          aria-expanded={historyExpanded}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-violet-500/30 px-2 py-0.5 text-violet-300 hover:border-violet-400 hover:text-violet-100"
+          onClick={onToggleHistory}
+        >
+          {historyExpanded
+            ? <ChevronUp className="h-3 w-3" />
+            : <ChevronDown className="h-3 w-3" />}
+          {historyExpanded ? t.forkLineage.historyClose : t.forkLineage.historyOpen}
+        </button>
+      )}
     </nav>
   );
 };
@@ -67,11 +123,19 @@ export const ForkLineageNavigation: React.FC<ForkLineageNavigationProps> = ({
 export const ForkLineageBar: React.FC<{ sessionId: string | null }> = ({ sessionId }) => {
   const [lineage, setLineage] = useState<SessionForkLineageSummary | null>(null);
   const [children, setChildren] = useState<SessionForkLineageSummary[]>([]);
+  const [comparison, setComparison] = useState<ConversationBranchComparison | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareError, setCompareError] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const projectId = useSessionStore((state) =>
+    state.sessions.find((session) => session.id === sessionId)?.projectId ?? null);
 
   useEffect(() => {
     let disposed = false;
     setLineage(null);
     setChildren([]);
+    setComparison(null);
+    setCompareError(false);
     if (!sessionId) return () => {
       disposed = true;
     };
@@ -104,11 +168,46 @@ export const ForkLineageBar: React.FC<{ sessionId: string | null }> = ({ session
 
   if (!sessionId) return null;
   return (
-    <ForkLineageNavigation
-      sessionId={sessionId}
-      lineage={lineage}
-      children={children}
-      onOpenSession={(targetSessionId) => useSessionStore.getState().switchSession(targetSessionId)}
-    />
+    <>
+      <ForkLineageNavigation
+        sessionId={sessionId}
+        lineage={lineage}
+        children={children}
+        onOpenSession={(targetSessionId) => useSessionStore.getState().switchSession(targetSessionId)}
+        comparison={comparison}
+        compareLoading={compareLoading}
+        compareError={compareError}
+        onCompareParent={lineage && !lineage.parentDeleted ? async () => {
+          setCompareLoading(true);
+          setCompareError(false);
+          try {
+            const next = await ipcService.invokeDomain<ConversationBranchComparison>(
+              IPC_DOMAINS.SESSION,
+              'compareConversationBranches',
+              {
+                leftSessionId: lineage.parentSessionId,
+                rightSessionId: sessionId,
+              },
+            );
+            setComparison(next);
+          } catch {
+            setComparison(null);
+            setCompareError(true);
+          } finally {
+            setCompareLoading(false);
+          }
+        } : undefined}
+        historyExpanded={historyExpanded}
+        onToggleHistory={() => setHistoryExpanded((expanded) => !expanded)}
+      />
+      {historyExpanded && (lineage || children.length > 0) && (
+        <BranchHistoryPanel
+          key={sessionId}
+          sessionId={sessionId}
+          projectId={projectId}
+          onOpenSession={(targetSessionId) => useSessionStore.getState().switchSession(targetSessionId)}
+        />
+      )}
+    </>
   );
 };

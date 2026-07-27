@@ -23,6 +23,34 @@ import type {
   RewindConversationResult,
 } from './sessionRewind';
 import type {
+  RestoreWorkspaceFilesAtCheckpointRequest,
+  RestoreWorkspaceFilesAtCheckpointResult,
+} from './fileRestore';
+import type {
+  ConversationBranchComparison,
+  ConversationEvaluationAttribution,
+  ConversationLineageAudit,
+  ConversationProvenanceTrace,
+  ConversationReplay,
+} from './conversationBranch';
+import type {
+  EnqueueSessionForkSyncRequest,
+  ExportSessionForkRequest,
+  ForkNeighborhoodProjection,
+  ForkSearchDocument,
+  ForkTreeNodeProjection,
+  ImportReadySessionForkSyncRequest,
+  ImportReadySessionForkSyncResponse,
+  ImportSessionForkRequest,
+  ImportSessionForkResponse,
+  IngestSessionForkSyncRequest,
+  ReadSessionForkNeighborhoodRequest,
+  ReadSessionForkTreeRequest,
+  SearchSessionForkExportsRequest,
+  SessionExportEnvelopeV2,
+  SessionForkSyncEnvelopeRecord,
+} from './sessionForkPortability';
+import type {
   ConversationEnvelope,
   ConversationExecutionIntent,
   ConversationModelSpec,
@@ -31,6 +59,10 @@ import type {
 } from './conversationEnvelope';
 
 export type AppServiceRunMode = 'normal' | 'deep-research';
+export type {
+  RestoreWorkspaceFilesAtCheckpointRequest,
+  RestoreWorkspaceFilesAtCheckpointResult,
+} from './fileRestore';
 export type AppServiceReportStyle =
   | 'academic'
   | 'popular_science'
@@ -196,8 +228,64 @@ export interface AgentApplicationService {
   forkSession(params: CreateSessionForkRequest): Promise<CreateSessionForkResult>;
   getForkLineage(sessionId: string): Promise<SessionForkLineageSummary | null>;
   listForkChildren(sessionId: string): Promise<SessionForkLineageSummary[]>;
+  exportSessionFork(params: ExportSessionForkRequest): Promise<SessionExportEnvelopeV2>;
+  importSessionFork(params: ImportSessionForkRequest): Promise<ImportSessionForkResponse>;
+  enqueueSessionForkSync(
+    params: EnqueueSessionForkSyncRequest,
+  ): Promise<SessionForkSyncEnvelopeRecord>;
+  ingestSessionForkSync(
+    params: IngestSessionForkSyncRequest,
+  ): Promise<SessionForkSyncEnvelopeRecord>;
+  importReadySessionForkSync(
+    params: ImportReadySessionForkSyncRequest,
+  ): Promise<ImportReadySessionForkSyncResponse>;
+  searchSessionForkExports(
+    params: SearchSessionForkExportsRequest,
+  ): Promise<ForkSearchDocument[]>;
+  readSessionForkTree(params: ReadSessionForkTreeRequest): Promise<ForkTreeNodeProjection>;
+  readSessionForkNeighborhood(
+    params: ReadSessionForkNeighborhoodRequest,
+  ): Promise<ForkNeighborhoodProjection>;
+  replayConversationBranch(
+    sessionId: string,
+    options?: { includeRewound?: boolean; allowRepairOverride?: boolean },
+  ): Promise<ConversationReplay>;
+  compareConversationBranches(
+    leftSessionId: string,
+    rightSessionId: string,
+  ): Promise<ConversationBranchComparison>;
+  traceConversationProvenance(
+    sessionId: string,
+    messageId: string,
+  ): Promise<ConversationProvenanceTrace>;
+  auditConversationLineage(sessionId: string): Promise<ConversationLineageAudit>;
+  quarantineConversationLineage(
+    sessionId: string,
+    idempotencyKey: string,
+  ): Promise<ConversationLineageAudit>;
+  repairConversationLineage(params: {
+    sessionId: string;
+    issueDigest: string;
+    reason: string;
+    idempotencyKey: string;
+  }): Promise<ConversationLineageAudit>;
+  recordConversationEvaluationAttribution(params: {
+    sessionId: string;
+    evaluationId: string;
+    runId?: string | null;
+    metric: string;
+    value: number;
+    attributedMessageIds: string[];
+    idempotencyKey: string;
+  }): Promise<ConversationEvaluationAttribution>;
+  listConversationEvaluationAttributions(
+    sessionId: string,
+  ): Promise<ConversationEvaluationAttribution[]>;
   rewindConversation(params: RewindConversationRequest): Promise<RewindConversationResult>;
   restoreConversationRewind(params: RestoreConversationRewindRequest): Promise<RestoreConversationRewindResult>;
+  restoreWorkspaceFilesAtCheckpoint(
+    params: RestoreWorkspaceFilesAtCheckpointRequest,
+  ): Promise<RestoreWorkspaceFilesAtCheckpointResult>;
   rewindToPrompt(params: { sessionId: string; userMessageId: string; idempotencyKey?: string }): Promise<PromptRewindResult>;
   getSerializedCompressionState(sessionId?: string): string | null;
   loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number): Promise<{ messages: Message[]; hasMore: boolean }>;

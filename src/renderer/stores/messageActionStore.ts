@@ -42,7 +42,10 @@ interface MessageActionState {
   /** Regenerate the most recent assistant message (keyboard shortcut entry, no hover needed). Returns true if one was found. */
   regenerateLast: () => boolean;
   /** Create an independent child session from a completed assistant reply. */
-  forkFromHere: (messageId: string, workspaceMode?: SessionForkWorkspaceMode) => Promise<void>;
+  createForkFromReply: (
+    messageId: string,
+    workspaceMode?: SessionForkWorkspaceMode,
+  ) => Promise<void>;
 }
 
 function createForkIdempotencyKey(sourceSessionId: string, anchorAssistantMessageId: string): string {
@@ -92,7 +95,7 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     return false;
   },
 
-  forkFromHere: async (messageId: string, workspaceMode = 'shared_current') => {
+  createForkFromReply: async (messageId: string, workspaceMode = 'shared_current') => {
     const sessionStore = useSessionStore.getState();
     const sessionId = sessionStore.currentSessionId;
     if (!sessionId) return;

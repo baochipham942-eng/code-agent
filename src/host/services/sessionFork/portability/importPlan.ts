@@ -104,6 +104,11 @@ export function planSessionForkImport(input: PlanSessionForkImportInput): Sessio
   assertNoRemapCollisions(forkIdMap, 'fork');
 
   const envelope = deepPortableClone(input.envelope);
+  // The portable history is source evidence. Repository import replays it with
+  // the deterministic ID maps below, then the target ledger becomes the new
+  // truth. Keeping source-scoped IDs inside the remapped target envelope would
+  // falsely claim they belong to the target owner/Project.
+  delete envelope.conversationHistory;
   envelope.exportId = portableId(
     input.namespace,
     'export',

@@ -2,6 +2,7 @@ import type { AgentEngineKind, AgentEnginePermissionProfile } from './agentEngin
 import type { Artifact, Message, MessageAttachment, MessageRole, MessageVisibility } from './message';
 import type { ModelCapability, ModelProvider, ModelProviderProtocol, ModelReasoningEffort } from './model';
 import type { Session, SessionMemoryMode, SessionOrigin, SessionType } from './session';
+import type { PortableConversationHistoryV1 } from './conversationHistory';
 import type {
   SessionForkContextDeliveryMode,
   SessionForkWorkspaceMode,
@@ -11,6 +12,11 @@ export const SESSION_EXPORT_ENVELOPE_SCHEMA = 'neo.session-export' as const;
 export const SESSION_EXPORT_ENVELOPE_VERSION = 2 as const;
 export const FORK_LINEAGE_ENVELOPE_SCHEMA = 'neo.fork-lineage' as const;
 export const FORK_LINEAGE_ENVELOPE_VERSION = 1 as const;
+/** Portable boundary for an explicitly local/anonymous Neo profile. */
+export const LOCAL_SESSION_FORK_OWNER_SCOPE_ID = 'neo.local-owner' as const;
+export const PORTABLE_ANCHOR_MAX_PATCH_BYTES = 64 * 1024 * 1024;
+export const PORTABLE_ANCHOR_MAX_UNTRACKED_BYTES = 64 * 1024 * 1024;
+export const PORTABLE_ANCHOR_MAX_UNTRACKED_FILES = 10_000;
 
 export type SessionForkPortabilityErrorCode =
   | 'INVALID_ENVELOPE'
@@ -24,6 +30,8 @@ export type SessionForkPortabilityErrorCode =
   | 'DETACHED_PROVENANCE_REQUIRED'
   | 'RUNTIME_IDENTITY_FORBIDDEN'
   | 'ABSOLUTE_WORKTREE_FORBIDDEN'
+  | 'PORTABLE_EVIDENCE_REQUIRED'
+  | 'PORTABLE_EVIDENCE_BUDGET_EXCEEDED'
   | 'ID_REMAP_COLLISION'
   | 'REMOTE_UPLOAD_DISABLED'
   | 'SYNC_ID_DIGEST_CONFLICT'
@@ -66,16 +74,43 @@ export interface PortableAgentEngineV2 {
 
 export interface PortableForkPathMappingV1 {
   sourceRootDigest: string;
+  /** Repository-relative source path. `.` denotes the target repository root. */
   relativePath: string;
+  /** Relative destination inside the isolated worktree. */
+  isolatedRelativePath: string;
+}
+
+export interface PortableContentAddressedBlobRefV1 {
+  blobDigest: string;
+  sizeBytes: number;
+}
+
+export interface PortableUntrackedFileV1 extends PortableContentAddressedBlobRefV1 {
+  relativePath: string;
+  mode: number;
+}
+
+export interface PortableIsolatedAnchorContentV1 {
+  version: 1;
+  stagedPatch: PortableContentAddressedBlobRefV1;
+  unstagedPatch: PortableContentAddressedBlobRefV1;
+  untrackedFiles: PortableUntrackedFileV1[];
+  /** Canonical base64 blobs addressed by their `sha256:<hex>` digest. */
+  blobs: Record<string, string>;
+  payloadDigest: string;
 }
 
 export interface PortableIsolatedAnchorEvidenceV1 {
   evidenceId: string;
   repositoryIdentityDigest: string;
   baseCommit: string;
+  observedHead: string;
+  capturedAt: number;
+  workspaceScopeVersion: string;
   diffDigest: string;
   untrackedManifestDigest: string;
   pathMappings: PortableForkPathMappingV1[];
+  content: PortableIsolatedAnchorContentV1;
 }
 
 export interface PortableSessionWorkspaceV2 {
@@ -95,6 +130,8 @@ export interface PortableAttachmentProvenanceV2 {
   sheetCount?: number;
   rowCount?: number;
   language?: string;
+  /** Digest of the original attachment payload/metadata, never the bytes themselves. */
+  contentDigest: string;
 }
 
 export interface PortableArtifactProvenanceV2 {
@@ -206,6 +243,8 @@ export interface SessionExportEnvelopeV2 {
   sessions: PortableSessionV2[];
   messages: PortableMessageV2[];
   lineage: ForkLineageEnvelopeV1;
+  /** Optional append-only history; old V2 envelopes remain valid without it. */
+  conversationHistory?: PortableConversationHistoryV1;
   detachedProvenance?: DetachedForkProvenanceV1;
   payloadDigest: string;
 }
@@ -250,6 +289,7 @@ export interface BuildSessionExportEnvelopeV2Input {
   mode: SessionExportModeV2;
   sessions: SessionExportSourceV2[];
   lineage?: ForkLineageDraftV1;
+  conversationHistory?: PortableConversationHistoryV1;
   detachedProvenance?: Omit<DetachedForkProvenanceV1, 'kind'>;
 }
 
@@ -354,4 +394,66 @@ export interface ForkNeighborhoodProjection {
     parentSessionId: string;
     childSessionId: string;
   }>;
+}
+
+export interface ExportSessionForkRequest {
+  sessionId: string;
+  exportId: string;
+  mode: SessionExportModeV2;
+}
+
+export interface ImportSessionForkRequest {
+  envelope: SessionExportEnvelopeV2;
+  targetProjectId: string;
+  namespace: string;
+  allowProjectRemap?: boolean;
+}
+
+export interface ImportSessionForkResponse {
+  importId: string;
+  sourceExportId: string;
+  rootSessionId: string;
+  sessionIdMap: Record<string, string>;
+  messageIdMap: Record<string, string>;
+  forkIdMap: Record<string, string>;
+  importedAt: number;
+}
+
+export interface EnqueueSessionForkSyncRequest {
+  exportId: string;
+  projectId: string;
+  syncEnvelopeId: string;
+  dependencyIds?: string[];
+}
+
+export interface IngestSessionForkSyncRequest {
+  wire: SessionForkSyncWireEnvelope;
+  targetProjectId: string;
+}
+
+export interface ImportReadySessionForkSyncRequest {
+  syncEnvelopeId: string;
+  targetProjectId: string;
+  namespace: string;
+}
+
+export interface ImportReadySessionForkSyncResponse {
+  sync: SessionForkSyncEnvelopeRecord;
+  imported: ImportSessionForkResponse;
+}
+
+export interface SearchSessionForkExportsRequest {
+  exportId: string;
+  projectId: string;
+  query: string;
+}
+
+export interface ReadSessionForkTreeRequest {
+  exportId: string;
+  projectId: string;
+}
+
+export interface ReadSessionForkNeighborhoodRequest extends ReadSessionForkTreeRequest {
+  centerSessionId: string;
+  radius?: number;
 }

@@ -32,6 +32,7 @@ import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceEx
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { ForkLineageBar } from './features/chat/ForkLineageBar';
+import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { UserQuestionCard } from './UserQuestionCard';
 import { TranscriptPartialLine } from './features/voice/TranscriptPartialLine';
@@ -62,10 +63,7 @@ import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndic
 import { RewindPanel } from './RewindPanel';
 // PermissionCard moved to inline display in TurnBasedTraceView
 import type { AppSettings, Message, MessageAttachment, StreamRecoverySnapshot, TaskPlan } from '../../shared/contract';
-import type {
-  RestoreConversationRewindResult,
-  RewindConversationResult,
-} from '@shared/contract/sessionRewind';
+import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { ConversationEnvelope, ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { useI18n } from '../hooks/useI18n';
 import { localeForLanguage } from '../utils/i18nTime';
@@ -226,6 +224,7 @@ export const ChatView: React.FC = () => {
     content: string;
   } | null>(null);
   const [isPromptRewinding, setIsPromptRewinding] = useState(false);
+  const [rewindRefreshToken, setRewindRefreshToken] = useState(0);
 
   const handleSearchMatchesChange = useCallback((matches: SearchMatch[], activeIdx: number) => {
     setSearchMatches(matches);
@@ -696,33 +695,8 @@ export const ChatView: React.FC = () => {
       setMessages(result.activeMessages);
       chatInputRef.current?.setDraft(result.draft);
       setPendingPromptRewind(null);
-      toast.warning(
-        t.chat.rewindSuccess,
-        {
-          label: t.chat.rewindRestoreAction,
-          onClick: () => {
-            void ipcService.invokeDomain<RestoreConversationRewindResult>(
-              IPC_DOMAINS.SESSION,
-              'restoreConversationRewind',
-              {
-                sessionId: currentSessionId,
-                rewindId: result.rewindId,
-              },
-            ).then((restored) => {
-              setMessages(restored.activeMessages);
-              toast.success(
-                t.chat.rewindRestored.replace(
-                  '{count}',
-                  String(restored.restoredMessageCount),
-                ),
-              );
-            }).catch((error) => {
-              toast.error(error instanceof Error ? error.message : String(error));
-            });
-          },
-        },
-        15_000,
-      );
+      setRewindRefreshToken((token) => token + 1);
+      toast.warning(t.chat.rewindSuccess);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -787,6 +761,21 @@ export const ChatView: React.FC = () => {
         <SessionRecapBanner sessionId={currentSessionId} />
 
         <ForkLineageBar sessionId={currentSessionId} />
+
+        <ActiveConversationRewindBanner
+          sessionId={currentSessionId}
+          refreshToken={rewindRefreshToken}
+          disabled={effectiveIsProcessing}
+          onRestored={(result) => {
+            setMessages(result.activeMessages);
+            toast.success(
+              t.chat.rewindRestored.replace(
+                '{count}',
+                String(result.restoredMessageCount),
+              ),
+            );
+          }}
+        />
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
 

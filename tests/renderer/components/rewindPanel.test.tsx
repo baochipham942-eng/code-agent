@@ -41,10 +41,10 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
 
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
-    expect(html).toContain('回退到检查点');
+    expect(html).toContain('恢复工作区文件');
     expect(html).toContain('暂无可用检查点');
     expect(html).toContain('取消');
-    expect(html).toContain('回退');
+    expect(html).toContain('恢复文件');
   });
 
   it('puts checkpoint rows in the Tab order and previews on Enter', async () => {
@@ -91,15 +91,15 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole('button', { name: '回退' }));
+    fireEvent.click(screen.getByRole('button', { name: '恢复文件' }));
     expect(screen.getAllByRole('dialog')).toHaveLength(2);
     expect(invoke).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(screen.getByRole('button', { name: '取消回退' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消恢复' }));
     expect(invoke).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(screen.getByRole('button', { name: '回退' }));
-    fireEvent.click(screen.getByRole('button', { name: '确认回退' }));
+    fireEvent.click(screen.getByRole('button', { name: '恢复文件' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith(
         IPC_CHANNELS.CHECKPOINT_REWIND,
@@ -122,11 +122,11 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Before edit/ }));
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
-    fireEvent.click(screen.getByRole('button', { name: '回退' }));
-    fireEvent.click(screen.getByRole('button', { name: '确认回退' }));
+    fireEvent.click(screen.getByRole('button', { name: '恢复文件' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
 
     expect(await screen.findByText(/workspace locked/)).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '回退' }).getAttribute('disabled')).toBeNull();
+    expect(screen.getByRole('button', { name: '恢复文件' }).getAttribute('disabled')).toBeNull();
   });
 });

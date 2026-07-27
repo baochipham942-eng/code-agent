@@ -20,6 +20,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       model_provider TEXT NOT NULL,
       model_name TEXT NOT NULL,
       working_directory TEXT,
+      project_id TEXT,
       session_type TEXT NOT NULL DEFAULT 'chat',
       origin TEXT,
       metadata TEXT,
@@ -41,6 +42,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN memory_mode TEXT NOT NULL DEFAULT 'auto'`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN suppressed_memory_entry_ids TEXT NOT NULL DEFAULT '[]'`, logger);
   safeAlter(db, `ALTER TABLE sessions ADD COLUMN metadata TEXT`, logger);
+  safeAlter(db, `ALTER TABLE sessions ADD COLUMN project_id TEXT`, logger);
 
   // Messages 表
   db.exec(`

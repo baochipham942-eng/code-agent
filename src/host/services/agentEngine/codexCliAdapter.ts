@@ -210,7 +210,6 @@ export class CodexCliAdapter {
         }
         await onForkContextDispatchStart(forkContextAudit);
         child.stdin.end(launchPrompt);
-        await onForkContextDispatched(forkContextAudit);
       } else {
         child.stdin.end(request.resumeLaunch?.stdin ?? (request.resumeLaunch ? undefined : launchPrompt));
       }
@@ -388,6 +387,22 @@ export class CodexCliAdapter {
       ?? request.resumeLaunch?.externalSessionId;
     const emptyResponse = !finalText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
     const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0 || emptyResponse);
+    if (forkContextAudit && !failed) {
+      if (!onForkContextDispatched) {
+        throw new Error('Fork context dispatch lifecycle disappeared after provider identity confirmation');
+      }
+      try {
+        await onForkContextDispatched(forkContextAudit);
+      } catch (error) {
+        try {
+          if (request.durableLifecycle) await request.durableLifecycle.terminateProcess('SIGTERM');
+          else child.kill('SIGTERM');
+        } catch {
+          // Preserve the consumed-state persistence failure and leave the handoff fail-closed.
+        }
+        throw error;
+      }
+    }
 
     ledger.addOutputRef({
       taskId,

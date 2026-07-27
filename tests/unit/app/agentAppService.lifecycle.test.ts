@@ -99,8 +99,10 @@ describe('AgentAppService lifecycle routing', () => {
     createSessionFork: ReturnType<typeof vi.fn>;
     getSessionForkLineage: ReturnType<typeof vi.fn>;
     listSessionForkChildren: ReturnType<typeof vi.fn>;
+    getSessionForkWorkspaceScope: ReturnType<typeof vi.fn>;
     applyPromptRewind: ReturnType<typeof vi.fn>;
     restorePromptRewind: ReturnType<typeof vi.fn>;
+    repairConversationLineage: ReturnType<typeof vi.fn>;
   };
   let checkpointService: {
     getFirstCheckpointAtOrAfter: ReturnType<typeof vi.fn>;
@@ -147,8 +149,10 @@ describe('AgentAppService lifecycle routing', () => {
       createSessionFork: vi.fn(),
       getSessionForkLineage: vi.fn(),
       listSessionForkChildren: vi.fn(),
+      getSessionForkWorkspaceScope: vi.fn().mockReturnValue(null),
       applyPromptRewind: vi.fn(),
       restorePromptRewind: vi.fn(),
+      repairConversationLineage: vi.fn(),
     };
     checkpointService = {
       getFirstCheckpointAtOrAfter: vi.fn(),
@@ -172,6 +176,36 @@ describe('AgentAppService lifecycle routing', () => {
     vi.mocked(getFileCheckpointService).mockReset();
     vi.mocked(getFileCheckpointService).mockReturnValue(checkpointService as any);
 	  });
+
+  it('routes public lineage repair to projection reconstruction with the exact owner/Project boundary', async () => {
+    const healthyAudit = {
+      status: 'healthy',
+      issueDigest: 'healthy',
+      issues: [],
+    };
+    database.getSession.mockReturnValue({
+      id: 'session-1',
+      projectId: 'project-1',
+    });
+    database.repairConversationLineage.mockReturnValue(healthyAudit);
+    const service = createService(taskManager);
+
+    await expect(service.repairConversationLineage({
+      sessionId: 'session-1',
+      issueDigest: 'issue-digest',
+      reason: 'rebuild the compatibility projection from immutable replay',
+      idempotencyKey: 'repair-1',
+    })).resolves.toBe(healthyAudit);
+
+    expect(database.getSession).toHaveBeenCalledWith('session-1', { userId: null });
+    expect(database.repairConversationLineage).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      boundary: { ownerUserId: null, projectId: 'project-1' },
+      issueDigest: 'issue-digest',
+      reason: 'rebuild the compatibility projection from immutable replay',
+      idempotencyKey: 'repair-1',
+    });
+  });
 
   it('keeps Desktop Codex and Claude fork handoff and continuation resume wiring exact', async () => {
     const source = await readFile(
@@ -507,6 +541,50 @@ describe('AgentAppService lifecycle routing', () => {
 
     expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/old/project');
     expect(sessionManager.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps an isolated Fork on its verified child root when the renderer sends a stale source cwd', async () => {
+    sessionManager.getSession.mockResolvedValue({
+      id: 'session-1',
+      projectId: 'project-1',
+      workingDirectory: '/isolated/child',
+      metadata: {
+        forkLineage: { workspaceMode: 'isolated_at_anchor' },
+        forkWorkspaceScopeV1: { version: 1 },
+      },
+    });
+    database.getSessionForkWorkspaceScope.mockReturnValue({
+      projectId: 'project-1',
+      primaryRoot: '/isolated/child',
+      roots: [{
+        sourceId: 'isolated:intent-1',
+        path: '/isolated/child',
+        access: 'read_write',
+        role: 'primary',
+      }],
+      version: `isolated-v1:intent-1:${'a'.repeat(64)}`,
+    });
+    const service = createService(taskManager);
+
+    await service.sendMessage({
+      sessionId: 'session-1',
+      content: 'continue in the child',
+      context: { workingDirectory: '/source/project' },
+    } as any);
+
+    expect(orchestrator.setWorkingDirectory).toHaveBeenCalledWith('/isolated/child');
+    expect(orchestrator.setWorkingDirectory).not.toHaveBeenCalledWith('/source/project');
+    expect(sessionManager.updateSession).not.toHaveBeenCalled();
+    expect(taskManager.startTask).toHaveBeenCalledWith(
+      'session-1',
+      'continue in the child',
+      undefined,
+      undefined,
+      expect.objectContaining({
+        workbench: expect.objectContaining({ workingDirectory: '/isolated/child' }),
+      }),
+      undefined,
+    );
   });
 
   it('skips working directory backfill when the runtime has no value', async () => {

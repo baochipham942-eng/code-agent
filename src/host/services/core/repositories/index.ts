@@ -20,6 +20,26 @@ export {
   type SessionForkWorkspaceSagaRecord,
   type SessionForkWorkspaceSagaState,
 } from './SessionForkWorkspaceRepository';
+export {
+  ConversationBranchRepository,
+  ConversationBranchError,
+  type InitializeConversationBranchInput,
+  type AppendConversationMessageInput,
+  type RecordConversationMessageRevisionInput,
+  type RecordConversationProjectionReplacementInput,
+  type CreateConversationForkBranchInput,
+  type RecordConversationRewindInput,
+  type RecordConversationRewindRestoreInput,
+} from './ConversationBranchRepository';
+export {
+  SessionForkPortabilityRepository,
+  type ExportSessionForkInput,
+  type ImportSessionForkInput,
+  type ImportSessionForkResult,
+  type EnqueueSessionForkOutboundInput,
+  type IngestSessionForkInboundInput,
+  type FlushSessionForkOutboundOptions,
+} from './SessionForkPortabilityRepository';
 export { MemoryRepository, type MemoryRecord } from './MemoryRepository';
 export { ConfigRepository, type UserPreference, type ProjectKnowledge, type ToolExecution } from './ConfigRepository';
 export { CaptureRepository } from './CaptureRepository';

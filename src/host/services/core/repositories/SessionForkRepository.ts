@@ -11,6 +11,7 @@ import {
   type SessionForkWorkspaceMode,
 } from '../../../../shared/contract/sessionFork';
 import { rowToMessage } from './sessionRepositoryParsers';
+import { ConversationBranchRepository } from './ConversationBranchRepository';
 
 type SQLiteRow = Record<string, unknown>;
 
@@ -64,9 +65,47 @@ export interface SessionForkContextHandoffRecord {
 }
 
 const FORBIDDEN_SOURCE_STATES = new Set(['running', 'queued', 'paused', 'cancelling']);
+const ACTIVE_DURABLE_RUN_STATES = new Set([
+  'created',
+  'running',
+  'waiting',
+  'paused',
+  'recovering',
+]);
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function sqliteTableExists(db: BetterSqlite3.Database, tableName: string): boolean {
+  return Boolean(db.prepare(`
+    SELECT 1
+    FROM sqlite_master
+    WHERE type = 'table' AND name = ?
+    LIMIT 1
+  `).get(tableName));
+}
+
+function forkPrefixProjection(row: SQLiteRow, sourceMessageId?: string): Record<string, unknown> {
+  return {
+    id: sourceMessageId ?? row.id,
+    role: row.role,
+    content: row.content,
+    timestamp: row.timestamp,
+    tool_calls: row.tool_calls,
+    tool_results: row.tool_results,
+    attachments: row.attachments,
+    content_parts: row.content_parts,
+    metadata: row.metadata,
+    is_meta: row.is_meta,
+    compaction: row.compaction,
+  };
+}
+
+function digestForkPrefix(rows: SQLiteRow[], sourceMessageIds?: string[]): string {
+  return sha256(JSON.stringify(rows.map((row, index) => (
+    forkPrefixProjection(row, sourceMessageIds?.[index])
+  ))));
 }
 
 function parseJsonObject(value: unknown): Record<string, unknown> {
@@ -105,7 +144,10 @@ function isNonEmptyToolCallPayload(value: unknown): boolean {
 }
 
 export class SessionForkRepository {
-  constructor(private readonly db: BetterSqlite3.Database) {}
+  constructor(
+    private readonly db: BetterSqlite3.Database,
+    private readonly conversationBranchRepo?: ConversationBranchRepository,
+  ) {}
 
   createFork(input: CreateForkRepositoryInput): CreateForkRepositoryResult {
     const sourceSessionId = input.sourceSessionId.trim();
@@ -114,8 +156,6 @@ export class SessionForkRepository {
     if (!sourceSessionId) throw new SessionForkError('SESSION_NOT_FOUND', 'sourceSessionId is required');
     if (!anchorMessageId) throw new SessionForkError('INVALID_ANCHOR', 'anchorAssistantMessageId is required');
     if (!idempotencyKey) throw new SessionForkError('IDEMPOTENCY_CONFLICT', 'idempotencyKey is required');
-
-    this.requireForkableSource(sourceSessionId, input.ownerUserId);
 
     const requestDigest = sha256(JSON.stringify({
       sourceSessionId,
@@ -126,83 +166,79 @@ export class SessionForkRepository {
       workspaceSnapshotId: input.workspaceSnapshotId ?? null,
     }));
 
-    const existing = this.db.prepare(`
-      SELECT id, child_session_id, request_digest, source_prefix_digest
-      FROM session_forks
-      WHERE source_session_id = ? AND idempotency_key = ?
-      LIMIT 1
-    `).get(sourceSessionId, idempotencyKey) as {
-      id: string;
-      child_session_id: string;
-      request_digest: string;
-      source_prefix_digest: string;
-    } | undefined;
-    if (existing) {
-      if (existing.request_digest !== requestDigest) {
-        throw new SessionForkError('IDEMPOTENCY_CONFLICT', 'the idempotency key was already used for a different fork request');
-      }
-      return this.readResult(existing.id, existing.child_session_id, existing.source_prefix_digest);
-    }
-
-    const anyAnchor = this.db.prepare(`
-      SELECT rowid AS __rowid, *
-      FROM messages
-      WHERE session_id = ? AND id = ?
-      LIMIT 1
-    `).get(sourceSessionId, anchorMessageId) as SQLiteRow | undefined;
-    if (!anyAnchor) {
-      throw new SessionForkError('INVALID_ANCHOR', `message ${anchorMessageId} was not found in the source session`);
-    }
-    if (String(anyAnchor.visibility ?? 'active') !== 'active') {
-      throw new SessionForkError('ANCHOR_REWOUND', `message ${anchorMessageId} is not active`);
-    }
-    if (
-      anyAnchor.role !== 'assistant'
-      || Boolean(anyAnchor.is_meta)
-      || !String(anyAnchor.content ?? '').trim()
-      || isNonEmptyToolCallPayload(anyAnchor.tool_calls)
-    ) {
-      throw new SessionForkError(
-        'ANCHOR_NOT_COMPLETED_ASSISTANT',
-        `message ${anchorMessageId} is not a completed assistant reply`,
-      );
-    }
-
-    const anchorRowId = Number(anyAnchor.__rowid);
-    const anchorTimestamp = Number(anyAnchor.timestamp);
-    const prefixRows = this.db.prepare(`
-      SELECT rowid AS __rowid, *
-      FROM messages
-      WHERE session_id = ?
-        AND (
-          timestamp < ?
-          OR (timestamp = ? AND rowid <= ?)
-        )
-        AND COALESCE(visibility, 'active') = 'active'
-      ORDER BY timestamp ASC, rowid ASC
-    `).all(sourceSessionId, anchorTimestamp, anchorTimestamp, anchorRowId) as SQLiteRow[];
-    if (prefixRows.length === 0 || String(prefixRows[prefixRows.length - 1].id) !== anchorMessageId) {
-      throw new SessionForkError('INVALID_ANCHOR', 'the active prefix does not terminate at the requested anchor');
-    }
-
-    const sourcePrefixDigest = sha256(JSON.stringify(prefixRows.map((row) => ({
-      id: row.id,
-      role: row.role,
-      content: row.content,
-      timestamp: row.timestamp,
-      tool_calls: row.tool_calls,
-      tool_results: row.tool_results,
-      attachments: row.attachments,
-      content_parts: row.content_parts,
-      metadata: row.metadata,
-      is_meta: row.is_meta,
-      compaction: row.compaction,
-    }))));
-
     const now = input.now ?? Date.now();
 
     const transaction = this.db.transaction(() => {
       const source = this.requireForkableSource(sourceSessionId, input.ownerUserId);
+      const existing = this.db.prepare(`
+        SELECT id, child_session_id, request_digest, source_prefix_digest
+        FROM session_forks
+        WHERE source_session_id = ? AND idempotency_key = ?
+        LIMIT 1
+      `).get(sourceSessionId, idempotencyKey) as {
+        id: string;
+        child_session_id: string;
+        request_digest: string;
+        source_prefix_digest: string;
+      } | undefined;
+      if (existing) {
+        if (existing.request_digest !== requestDigest) {
+          throw new SessionForkError(
+            'IDEMPOTENCY_CONFLICT',
+            'the idempotency key was already used for a different fork request',
+          );
+        }
+        return this.readResult(existing.id, existing.child_session_id, existing.source_prefix_digest);
+      }
+
+      const anyAnchor = this.db.prepare(`
+        SELECT rowid AS __rowid, *
+        FROM messages
+        WHERE session_id = ? AND id = ?
+        LIMIT 1
+      `).get(sourceSessionId, anchorMessageId) as SQLiteRow | undefined;
+      if (!anyAnchor) {
+        throw new SessionForkError(
+          'INVALID_ANCHOR',
+          `message ${anchorMessageId} was not found in the source session`,
+        );
+      }
+      if (String(anyAnchor.visibility ?? 'active') !== 'active') {
+        throw new SessionForkError('ANCHOR_REWOUND', `message ${anchorMessageId} is not active`);
+      }
+      if (
+        anyAnchor.role !== 'assistant'
+        || Boolean(anyAnchor.is_meta)
+        || !String(anyAnchor.content ?? '').trim()
+        || isNonEmptyToolCallPayload(anyAnchor.tool_calls)
+      ) {
+        throw new SessionForkError(
+          'ANCHOR_NOT_COMPLETED_ASSISTANT',
+          `message ${anchorMessageId} is not a completed assistant reply`,
+        );
+      }
+
+      const anchorRowId = Number(anyAnchor.__rowid);
+      const anchorTimestamp = Number(anyAnchor.timestamp);
+      const prefixRows = this.db.prepare(`
+        SELECT rowid AS __rowid, *
+        FROM messages
+        WHERE session_id = ?
+          AND (
+            timestamp < ?
+            OR (timestamp = ? AND rowid <= ?)
+          )
+          AND COALESCE(visibility, 'active') = 'active'
+        ORDER BY timestamp ASC, rowid ASC
+      `).all(sourceSessionId, anchorTimestamp, anchorTimestamp, anchorRowId) as SQLiteRow[];
+      if (prefixRows.length === 0 || String(prefixRows[prefixRows.length - 1].id) !== anchorMessageId) {
+        throw new SessionForkError(
+          'INVALID_ANCHOR',
+          'the active prefix does not terminate at the requested anchor',
+        );
+      }
+      const sourcePrefixDigest = digestForkPrefix(prefixRows);
+
       const parentFork = this.db.prepare(`
         SELECT id, root_session_id, depth
         FROM session_forks
@@ -218,6 +254,7 @@ export class SessionForkRepository {
         forkId: input.forkId,
         rootSessionId,
         parentSessionId: sourceSessionId,
+        parentDeleted: false,
         childSessionId: input.childSessionId,
         sourceAnchorMessageId: anchorMessageId,
         anchorChildMessageId: '',
@@ -265,7 +302,7 @@ export class SessionForkRepository {
       for (let ordinal = 0; ordinal < prefixRows.length; ordinal++) {
         const sourceMessage = prefixRows[ordinal];
         const childMessageId = `msg_fork_${now}_${ordinal}_${randomUUID().slice(0, 8)}`;
-        const sourceRowDigest = sha256(JSON.stringify(sourceMessage));
+        const sourceRowDigest = sha256(JSON.stringify(forkPrefixProjection(sourceMessage)));
         const sourceOrderKey = `${Number(sourceMessage.timestamp)}:${Number(sourceMessage.__rowid)}`;
         this.db.prepare(`
           INSERT INTO messages (
@@ -354,10 +391,28 @@ export class SessionForkRepository {
           mapping.sourceRowDigest,
         );
       }
+
+      this.conversationBranchRepo?.createForkBranch({
+        sourceSessionId,
+        childSessionId: input.childSessionId,
+        sourceAnchorMessageId: anchorMessageId,
+        childAnchorMessageId: anchorMapping.childMessageId,
+        forkId: input.forkId,
+        boundary: {
+          ownerUserId: typeof source.user_id === 'string' ? source.user_id : null,
+          projectId: typeof source.project_id === 'string' ? source.project_id : null,
+        },
+        messageAliases: mappings.map((mapping) => ({
+          sourceMessageId: mapping.sourceMessageId,
+          childMessageId: mapping.childMessageId,
+        })),
+        idempotencyKey: `session-fork:${idempotencyKey}`,
+        createdAt: now,
+      });
+      return this.readResult(input.forkId, input.childSessionId, sourcePrefixDigest);
     });
 
-    transaction();
-    return this.readResult(input.forkId, input.childSessionId, sourcePrefixDigest);
+    return transaction.immediate();
   }
 
   getLineage(sessionId: string, ownerUserId?: string | null): SessionForkLineageSummary | null {
@@ -367,13 +422,12 @@ export class SessionForkRepository {
         : 'child.user_id = ? AND source.user_id = ?';
       const ownerParams = ownerUserId === null ? [] : [ownerUserId, ownerUserId];
       const row = this.db.prepare(`
-        SELECT fork.*
+        SELECT fork.*, source.is_deleted AS parent_is_deleted
         FROM session_forks AS fork
         JOIN sessions AS child ON child.id = fork.child_session_id
         JOIN sessions AS source ON source.id = fork.source_session_id
         WHERE fork.child_session_id = ?
           AND COALESCE(child.is_deleted, 0) = 0
-          AND COALESCE(source.is_deleted, 0) = 0
           AND ${ownerPredicate}
         LIMIT 1
       `).get(sessionId, ...ownerParams) as SQLiteRow | undefined;
@@ -381,9 +435,10 @@ export class SessionForkRepository {
     }
 
     const row = this.db.prepare(`
-      SELECT *
-      FROM session_forks
-      WHERE child_session_id = ?
+      SELECT fork.*, source.is_deleted AS parent_is_deleted
+      FROM session_forks AS fork
+      JOIN sessions AS source ON source.id = fork.source_session_id
+      WHERE fork.child_session_id = ?
       LIMIT 1
     `).get(sessionId) as SQLiteRow | undefined;
     return row ? this.rowToLineage(row) : null;
@@ -396,7 +451,7 @@ export class SessionForkRepository {
         : 'child.user_id = ? AND source.user_id = ?';
       const ownerParams = ownerUserId === null ? [] : [ownerUserId, ownerUserId];
       return (this.db.prepare(`
-        SELECT fork.*
+        SELECT fork.*, source.is_deleted AS parent_is_deleted
         FROM session_forks AS fork
         JOIN sessions AS child ON child.id = fork.child_session_id
         JOIN sessions AS source ON source.id = fork.source_session_id
@@ -410,10 +465,11 @@ export class SessionForkRepository {
     }
 
     return (this.db.prepare(`
-      SELECT *
-      FROM session_forks
-      WHERE source_session_id = ? AND status = 'completed'
-      ORDER BY created_at ASC, id ASC
+      SELECT fork.*, source.is_deleted AS parent_is_deleted
+      FROM session_forks AS fork
+      JOIN sessions AS source ON source.id = fork.source_session_id
+      WHERE fork.source_session_id = ? AND fork.status = 'completed'
+      ORDER BY fork.created_at ASC, fork.id ASC
     `).all(sessionId) as SQLiteRow[]).map((row) => this.rowToLineage(row));
   }
 
@@ -426,36 +482,92 @@ export class SessionForkRepository {
     `).get(childSessionId) as SQLiteRow | undefined;
     if (!fork) return null;
 
-    const rows = this.db.prepare(`
-      SELECT
-        map.ordinal AS map_ordinal,
-        map.source_message_id AS map_source_message_id,
-        map.child_message_id AS map_child_message_id,
-        message.*
+    const mappings = this.db.prepare(`
+      SELECT *
+      FROM session_fork_message_map
+      WHERE fork_id = ?
+      ORDER BY ordinal ASC
+    `).all(String(fork.id)) as SQLiteRow[];
+    const sourceRows = this.db.prepare(`
+      SELECT source.rowid AS __rowid, source.id, source.timestamp
       FROM session_fork_message_map AS map
-      JOIN messages AS message ON message.id = map.child_message_id
+      JOIN messages AS source
+        ON source.id = map.source_message_id
+       AND source.session_id = ?
       WHERE map.fork_id = ?
-        AND message.session_id = ?
       ORDER BY map.ordinal ASC
-    `).all(String(fork.id), childSessionId) as SQLiteRow[];
-    if (rows.length === 0 || rows.some((row, index) => (
-      Number(row.map_ordinal) !== index
-      || String(row.visibility ?? 'active') !== 'active'
-      || Boolean(row.is_meta)
-    ))) {
+    `).all(String(fork.source_session_id), String(fork.id)) as SQLiteRow[];
+    const childRows = this.db.prepare(`
+      SELECT child.rowid AS __rowid, child.*
+      FROM session_fork_message_map AS map
+      JOIN messages AS child
+        ON child.id = map.child_message_id
+       AND child.session_id = ?
+      WHERE map.fork_id = ?
+      ORDER BY map.ordinal ASC
+    `).all(childSessionId, String(fork.id)) as SQLiteRow[];
+    const rejectIncompletePrefix = (): never => {
       throw new SessionForkError(
         'CONTEXT_HANDOFF_REJECTED',
         `fork ${String(fork.id)} does not have a complete active mapped prefix`,
       );
+    };
+
+    if (
+      mappings.length === 0
+      || sourceRows.length !== mappings.length
+      || childRows.length !== mappings.length
+      || new Set(mappings.map((row) => String(row.source_message_id))).size !== mappings.length
+      || new Set(mappings.map((row) => String(row.child_message_id))).size !== mappings.length
+    ) {
+      rejectIncompletePrefix();
+    }
+
+    for (let index = 0; index < mappings.length; index++) {
+      const mapping = mappings[index];
+      const sourceRow = sourceRows[index];
+      const childRow = childRows[index];
+      if (
+        Number(mapping.ordinal) !== index
+        || String(mapping.source_message_id) !== String(sourceRow.id)
+        || String(mapping.child_message_id) !== String(childRow.id)
+        || Number(mapping.source_timestamp) !== Number(sourceRow.timestamp)
+        || String(mapping.source_order_key) !== `${Number(sourceRow.timestamp)}:${Number(sourceRow.__rowid)}`
+        || String(childRow.visibility ?? 'active') !== 'active'
+        || Boolean(childRow.is_meta)
+      ) {
+        rejectIncompletePrefix();
+      }
+    }
+
+    const lastMapping = mappings[mappings.length - 1];
+    const firstMapping = mappings[0];
+    if (
+      Number(firstMapping.ordinal) !== 0
+      || String(lastMapping.source_message_id) !== String(fork.anchor_message_id)
+      || String(lastMapping.child_message_id) !== String(fork.anchor_child_message_id)
+      || String(sourceRows[sourceRows.length - 1].id) !== String(fork.anchor_message_id)
+      || String(childRows[childRows.length - 1].id) !== String(fork.anchor_child_message_id)
+    ) {
+      rejectIncompletePrefix();
+    }
+
+    const persistedDigest = String(fork.source_prefix_digest);
+    const childDigest = digestForkPrefix(
+      childRows,
+      mappings.map((mapping) => String(mapping.source_message_id)),
+    );
+    if (persistedDigest !== childDigest) {
+      rejectIncompletePrefix();
     }
 
     return {
       lineage: this.rowToLineage(fork),
-      sourcePrefixDigest: String(fork.source_prefix_digest),
-      mappedActivePrefix: rows.map((row) => ({
-        ordinal: Number(row.map_ordinal),
-        sourceMessageId: String(row.map_source_message_id),
-        childMessageId: String(row.map_child_message_id),
+      sourcePrefixDigest: persistedDigest,
+      mappedActivePrefix: childRows.map((row, index) => ({
+        ordinal: Number(mappings[index].ordinal),
+        sourceMessageId: String(mappings[index].source_message_id),
+        childMessageId: String(mappings[index].child_message_id),
         message: rowToMessage(row),
       })),
     };
@@ -490,7 +602,7 @@ export class SessionForkRepository {
     const fork = this.db.prepare(`
       SELECT context_delivery_mode FROM session_forks WHERE id = ? AND status = 'completed'
     `).get(forkId) as { context_delivery_mode: string } | undefined;
-    if (!fork || fork.context_delivery_mode !== 'validated_context_handoff') {
+    if (fork?.context_delivery_mode !== 'validated_context_handoff') {
       throw new SessionForkError(
         'CONTEXT_HANDOFF_REJECTED',
         `fork ${forkId} is not eligible for validated context handoff`,
@@ -625,6 +737,20 @@ export class SessionForkRepository {
     if (FORBIDDEN_SOURCE_STATES.has(String(source.status ?? 'idle'))) {
       throw new SessionForkError('SESSION_RUNNING', `source session is ${String(source.status)}`);
     }
+    if (sqliteTableExists(this.db, 'durable_runs')) {
+      const activeRun = (this.db.prepare(`
+        SELECT run_id, status
+        FROM durable_runs
+        WHERE session_id = ?
+      `).all(sourceSessionId) as Array<{ run_id: string; status: string }>)
+        .find((run) => ACTIVE_DURABLE_RUN_STATES.has(String(run.status)));
+      if (activeRun) {
+        throw new SessionForkError(
+          'SESSION_RUNNING',
+          `source durable run ${activeRun.run_id} is ${activeRun.status}`,
+        );
+      }
+    }
     return source;
   }
 
@@ -633,6 +759,7 @@ export class SessionForkRepository {
       forkId: String(row.id),
       rootSessionId: String(row.root_session_id),
       parentSessionId: String(row.source_session_id),
+      parentDeleted: Number(row.parent_is_deleted ?? 0) !== 0,
       childSessionId: String(row.child_session_id),
       sourceAnchorMessageId: String(row.anchor_message_id),
       anchorChildMessageId: String(row.anchor_child_message_id),

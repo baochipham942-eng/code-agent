@@ -144,7 +144,10 @@ export function projectChildWorkspaceScope(
       roots: [{
         sourceId: `isolated:${verification.intentId}`,
         path: verification.isolatedPrimaryRoot,
-        access: 'read_only',
+        // The durable worktree is the child's independent workspace. Runtime
+        // permission profiles still gate writes, but the WorkspaceScope itself
+        // must not make an approved Native write structurally impossible.
+        access: 'read_write',
         role: 'primary',
       }],
       version: `isolated-v1:${verification.intentId}:${verification.evidenceDigest}`,

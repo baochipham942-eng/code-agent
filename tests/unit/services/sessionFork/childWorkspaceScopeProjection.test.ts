@@ -48,7 +48,7 @@ describe('projectChildWorkspaceScope', () => {
       roots: [{
         sourceId: 'isolated:intent-1',
         path: '/durable/child-1',
-        access: 'read_only',
+        access: 'read_write',
         role: 'primary',
       }],
       version: `isolated-v1:intent-1:${'b'.repeat(64)}`,

@@ -9,6 +9,7 @@ import {
   unlink,
 } from 'node:fs/promises';
 import path from 'node:path';
+import { deflateSync } from 'node:zlib';
 
 import {
   AnchorEvidenceError,
@@ -52,10 +53,73 @@ interface IsolatedAnchorWorkspaceServiceOptions {
   runner?: WorkspaceCommandRunner;
   evidenceService?: AnchorWorkspaceEvidenceService;
   now?: () => number;
+  /** Deterministic fault-injection hook; production callers leave this undefined. */
+  workspacePublishBarrier?: (input: {
+    intentId: string;
+    stagingWorkspacePath: string;
+    workspacePath: string;
+    relativePaths: readonly string[];
+  }) => void | Promise<void>;
 }
 
-function sha256(value: Buffer): string {
-  return createHash('sha256').update(value).digest('hex');
+const GIT_BASE85_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~";
+
+function sha256(value: Buffer): string { return createHash('sha256').update(value).digest('hex'); }
+
+function gitBlobOid(blob: Buffer, objectFormat: string): string {
+  const hashAlgorithm = objectFormat === 'sha1'
+    ? 'sha1'
+    : objectFormat === 'sha256'
+      ? 'sha256'
+      : null;
+  if (!hashAlgorithm) {
+    throw new IsolatedWorkspaceError(
+      'WORKSPACE_PREPARATION_FAILED',
+      `unsupported git object format: ${objectFormat}`,
+    );
+  }
+  return createHash(hashAlgorithm).update(`blob ${blob.byteLength}\0`).update(blob).digest('hex');
+}
+
+function quoteGitPatchPath(value: string): string {
+  const bytes = Buffer.from(value, 'utf8');
+  let quoted = '"';
+  for (const byte of bytes) {
+    if (byte === 0x22) quoted += '\\"';
+    else if (byte === 0x5c) quoted += '\\\\';
+    else if (byte === 0x09) quoted += '\\t';
+    else if (byte === 0x0a) quoted += '\\n';
+    else if (byte === 0x0d) quoted += '\\r';
+    else if (byte >= 0x20 && byte <= 0x7e) quoted += String.fromCharCode(byte);
+    else quoted += `\\${byte.toString(8).padStart(3, '0')}`;
+  }
+  return `${quoted}"`;
+}
+
+function encodeGitBase85(value: Buffer): string {
+  const compressed = deflateSync(value);
+  const lines: string[] = [];
+  for (let offset = 0; offset < compressed.byteLength; offset += 52) {
+    const line = compressed.subarray(offset, Math.min(offset + 52, compressed.byteLength));
+    const lengthMarker = line.byteLength <= 26
+      ? String.fromCharCode(0x41 + line.byteLength - 1)
+      : String.fromCharCode(0x61 + line.byteLength - 27);
+    let encoded = '';
+    for (let index = 0; index < line.byteLength; index += 4) {
+      let accumulator = 0;
+      for (let byteOffset = 0; byteOffset < 4; byteOffset += 1) {
+        accumulator = (accumulator * 256) + (line[index + byteOffset] ?? 0);
+      }
+      const digits = new Array<string>(5);
+      for (let digit = 4; digit >= 0; digit -= 1) {
+        digits[digit] = GIT_BASE85_ALPHABET[accumulator % 85];
+        accumulator = Math.floor(accumulator / 85);
+      }
+      encoded += digits.join('');
+    }
+    lines.push(`${lengthMarker}${encoded}`);
+  }
+  return lines.join('\n');
 }
 
 function errorCode(error: unknown): string {
@@ -65,9 +129,7 @@ function errorCode(error: unknown): string {
   return 'UNKNOWN';
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
 function resultFromIntent(intent: WorkspaceForkIntent): PreparedIsolatedAnchorWorkspace {
   if ((intent.status !== 'ready' && intent.status !== 'advertised') || !intent.advertisable) {
@@ -99,6 +161,7 @@ export class IsolatedAnchorWorkspaceService {
   private readonly runner: WorkspaceCommandRunner;
   private readonly evidenceService: AnchorWorkspaceEvidenceService;
   private readonly now: () => number;
+  private readonly workspacePublishBarrier?: IsolatedAnchorWorkspaceServiceOptions['workspacePublishBarrier'];
 
   constructor(options: IsolatedAnchorWorkspaceServiceOptions) {
     if (!path.isAbsolute(options.durableRoot)) {
@@ -111,6 +174,7 @@ export class IsolatedAnchorWorkspaceService {
       runner: this.runner,
     });
     this.now = options.now ?? Date.now;
+    this.workspacePublishBarrier = options.workspacePublishBarrier;
   }
 
   async prepare(input: PrepareIsolatedAnchorWorkspaceInput): Promise<PreparedIsolatedAnchorWorkspace> {
@@ -188,7 +252,7 @@ export class IsolatedAnchorWorkspaceService {
     }
     if (intent.status === 'ready') {
       try {
-        await this.verifyWorkspace(intent);
+        await this.verifyWorkspace(intent, intent.workspacePath);
         return resultFromIntent(intent);
       } catch (error) {
         const failed = await this.intentStore.update(intent.intentId, intent.revision, {
@@ -248,13 +312,6 @@ export class IsolatedAnchorWorkspaceService {
     return await this.withWorkspaceOperation(discoveredIntent.workspacePath, async () => {
       let intent = await this.intentStore.get(discoveredIntent.intentId) ?? discoveredIntent;
       try {
-        if (intent.status === 'advertised') {
-          return {
-            intentId: intent.intentId,
-            outcome: 'ready' as const,
-            workspacePath: intent.workspacePath,
-          };
-        }
         if (intent.status === 'abandoned') {
           return {
             intentId: intent.intentId,
@@ -271,8 +328,16 @@ export class IsolatedAnchorWorkspaceService {
             workspacePath: intent.workspacePath,
           };
         }
+        if (intent.status === 'advertised') {
+          await this.verifyWorkspace(intent, intent.workspacePath);
+          return {
+            intentId: intent.intentId,
+            outcome: 'ready' as const,
+            workspacePath: intent.workspacePath,
+          };
+        }
         if (intent.status === 'ready') {
-          await this.verifyWorkspace(intent);
+          await this.verifyWorkspace(intent, intent.workspacePath);
           return {
             intentId: intent.intentId,
             outcome: 'ready' as const,
@@ -280,7 +345,12 @@ export class IsolatedAnchorWorkspaceService {
           };
         }
 
-        if (intent.status !== 'recorded' || await this.pathExists(intent.workspacePath)) {
+        const stagingWorkspacePath = this.resolveStagingWorkspacePath(intent);
+        if (
+          intent.status !== 'recorded'
+          || await this.pathExists(intent.workspacePath)
+          || await this.pathExists(stagingWorkspacePath)
+        ) {
           await this.cleanupWorkspace(intent);
           intent = await this.transition(intent, 'recorded', {
             advertisable: false,
@@ -323,9 +393,40 @@ export class IsolatedAnchorWorkspaceService {
       if (intent.status !== 'ready' || !intent.advertisable) {
         throw new IsolatedWorkspaceError('INTENT_CONFLICT', 'only a verified ready intent can be advertised');
       }
-      await this.verifyWorkspace(intent);
+      await this.verifyWorkspace(intent, intent.workspacePath);
       intent = await this.transition(intent, 'advertised', { advertisable: true });
       return resultFromIntent(intent);
+    });
+  }
+
+  /**
+   * Recovery uses this form so the final filesystem seal and the database
+   * publication run under the same workspace operation lock.
+   */
+  async advertiseAndFinalize<T>(
+    intentId: string,
+    finalize: (workspace: PreparedIsolatedAnchorWorkspace) => T | Promise<T>,
+  ): Promise<T> {
+    const discovered = await this.intentStore.get(intentId);
+    if (!discovered) {
+      throw new IsolatedWorkspaceError('INTENT_CONFLICT', `intent ${intentId} does not exist`);
+    }
+    return await this.withWorkspaceOperation(discovered.workspacePath, async () => {
+      let intent = await this.intentStore.get(intentId);
+      if (!intent) {
+        throw new IsolatedWorkspaceError('INTENT_CONFLICT', `intent ${intentId} does not exist`);
+      }
+      if (intent.status !== 'ready' && intent.status !== 'advertised') {
+        throw new IsolatedWorkspaceError(
+          'INTENT_CONFLICT',
+          'only a verified ready or crash-window advertised intent can be finalized',
+        );
+      }
+      await this.verifyWorkspace(intent, intent.workspacePath);
+      if (intent.status === 'ready') {
+        intent = await this.transition(intent, 'advertised', { advertisable: true });
+      }
+      return await finalize(resultFromIntent(intent));
     });
   }
 
@@ -346,7 +447,7 @@ export class IsolatedAnchorWorkspaceService {
       }
       if (intent.status === 'worktree_created') {
         intent = await this.transition(intent, 'applying', { advertisable: false });
-        await this.applyEvidence(intent);
+        await this.applyEvidence(intent, this.resolveStagingWorkspacePath(intent));
         intent = await this.transition(intent, 'evidence_applied', { advertisable: false });
       }
       if (intent.status === 'applying') {
@@ -357,7 +458,10 @@ export class IsolatedAnchorWorkspaceService {
       }
       if (intent.status === 'evidence_applied') {
         intent = await this.transition(intent, 'verifying', { advertisable: false });
-        await this.verifyWorkspace(intent);
+        const stagingWorkspacePath = this.resolveStagingWorkspacePath(intent);
+        await this.verifyWorkspace(intent, stagingWorkspacePath);
+        await this.publishWorkspace(intent, stagingWorkspacePath);
+        await this.verifyWorkspace(intent, intent.workspacePath);
         intent = await this.transition(intent, 'ready', {
           advertisable: true,
           lastError: undefined,
@@ -395,7 +499,12 @@ export class IsolatedAnchorWorkspaceService {
 
   private async createWorktree(intent: WorkspaceForkIntent): Promise<void> {
     await mkdir(this.durableRoot, { recursive: true, mode: 0o700 });
-    if (await this.pathExists(intent.workspacePath)) {
+    const stagingWorkspacePath = this.resolveStagingWorkspacePath(intent);
+    await mkdir(path.dirname(stagingWorkspacePath), { recursive: true, mode: 0o700 });
+    if (
+      await this.pathExists(intent.workspacePath)
+      || await this.pathExists(stagingWorkspacePath)
+    ) {
       throw new IsolatedWorkspaceError('INVALID_DESTINATION', 'workspace destination already exists');
     }
     await this.runner.run({
@@ -404,86 +513,192 @@ export class IsolatedAnchorWorkspaceService {
         'worktree',
         'add',
         '--detach',
-        intent.workspacePath,
+        stagingWorkspacePath,
         intent.evidence.manifest.baseCommit,
       ],
       cwd: intent.repositoryRoot,
       timeoutMs: 60_000,
     });
+    await this.assertRegisteredWorkspaceRoot(intent, stagingWorkspacePath);
   }
 
-  private async applyEvidence(intent: WorkspaceForkIntent): Promise<void> {
+  private async applyEvidence(
+    intent: WorkspaceForkIntent,
+    workspacePath: string,
+  ): Promise<void> {
+    await this.assertRegisteredWorkspaceRoot(intent, workspacePath);
     const stagedPatch = Buffer.from(intent.evidence.payload.stagedPatchBase64, 'base64');
     if (stagedPatch.byteLength > 0) {
       await this.runner.run({
         executable: 'git',
         args: ['apply', '--binary', '--index', '--whitespace=nowarn', '-'],
-        cwd: intent.workspacePath,
+        cwd: workspacePath,
         input: stagedPatch,
       });
+      await this.assertRegisteredWorkspaceRoot(intent, workspacePath);
     }
     const unstagedPatch = Buffer.from(intent.evidence.payload.unstagedPatchBase64, 'base64');
     if (unstagedPatch.byteLength > 0) {
       await this.runner.run({
         executable: 'git',
         args: ['apply', '--binary', '--whitespace=nowarn', '-'],
-        cwd: intent.workspacePath,
+        cwd: workspacePath,
         input: unstagedPatch,
       });
+      await this.assertRegisteredWorkspaceRoot(intent, workspacePath);
     }
-    for (const file of intent.evidence.manifest.untrackedFiles) {
-      await this.restoreUntrackedFile(intent, file);
+    await this.restoreUntrackedFiles(intent, workspacePath);
+  }
+
+  private async restoreUntrackedFiles(
+    intent: WorkspaceForkIntent,
+    workspacePath: string,
+  ): Promise<void> {
+    const files = intent.evidence.manifest.untrackedFiles;
+    if (files.length === 0) return;
+    await this.assertUntrackedAncestorsSafe(intent, workspacePath);
+
+    // Git validates the complete patch before checkout and rejects any path
+    // whose leading component became a symlink. Keeping the blob batch in
+    // memory avoids opening a destination through a raced ancestor in JS.
+    const patch = Buffer.from(files.map((file) => {
+      return this.buildUntrackedFilePatch(intent, file);
+    }).join(''), 'utf8');
+    await this.runner.run({
+      executable: 'git',
+      args: ['apply', '--binary', '--whitespace=nowarn', '-'],
+      cwd: workspacePath,
+      input: patch,
+    });
+    await this.assertRegisteredWorkspaceRoot(intent, workspacePath);
+    for (const file of files) {
+      await this.verifyUntrackedFileHandle(intent, file, workspacePath, { applyMode: true });
     }
   }
 
-  private async restoreUntrackedFile(
+  private buildUntrackedFilePatch(
     intent: WorkspaceForkIntent,
     file: AnchorUntrackedFile,
-  ): Promise<void> {
-    const target = this.resolveWithinWorkspace(intent.workspacePath, file.path);
+  ): string {
     const blob = Buffer.from(intent.evidence.payload.untrackedBlobs[file.sha256], 'base64');
-    await this.ensureSafeParent(intent.workspacePath, target);
+    if (
+      blob.byteLength !== file.sizeBytes
+      || sha256(blob) !== file.sha256
+      || file.mode < 0
+      || (file.mode & ~0o777) !== 0
+    ) {
+      throw new IsolatedWorkspaceError(
+        'WORKSPACE_PREPARATION_FAILED',
+        `untracked evidence changed before reconstruction: ${file.path}`,
+      );
+    }
+    const objectFormat = intent.evidence.manifest.repositoryIdentity.objectFormat;
+    const objectId = gitBlobOid(blob, objectFormat);
+    const zeroObjectId = '0'.repeat(objectId.length);
+    const gitMode = (file.mode & 0o111) === 0 ? '100644' : '100755';
+    return [
+      `diff --git ${quoteGitPatchPath(`a/${file.path}`)} ${quoteGitPatchPath(`b/${file.path}`)}`,
+      `new file mode ${gitMode}`,
+      `index ${zeroObjectId}..${objectId}`,
+      'GIT binary patch',
+      `literal ${blob.byteLength}`,
+      encodeGitBase85(blob),
+      '',
+      '',
+    ].join('\n');
+  }
+
+  private async assertUntrackedAncestorsSafe(
+    intent: WorkspaceForkIntent,
+    workspacePath: string,
+  ): Promise<void> {
+    for (const file of intent.evidence.manifest.untrackedFiles) {
+      const parts = file.path.split('/');
+      let current = workspacePath;
+      for (const part of parts.slice(0, -1)) {
+        current = path.join(current, part);
+        try {
+          const currentStat = await lstat(current);
+          if (!currentStat.isDirectory() || currentStat.isSymbolicLink()) {
+            throw new IsolatedWorkspaceError(
+              'WORKSPACE_PREPARATION_FAILED',
+              `untracked file ancestor is not a safe directory: ${file.path}`,
+            );
+          }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') break;
+          throw error;
+        }
+      }
+    }
+  }
+
+  private async verifyUntrackedFileHandle(
+    intent: WorkspaceForkIntent,
+    file: AnchorUntrackedFile,
+    workspacePath: string,
+    input: { applyMode: boolean },
+  ): Promise<void> {
+    const target = this.resolveWithinWorkspace(workspacePath, file.path);
     const handle = await open(
       target,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-      file.mode,
+      constants.O_RDONLY | constants.O_NOFOLLOW,
     );
     try {
-      await handle.writeFile(blob);
-      await handle.chmod(file.mode);
-      await handle.sync();
-      const writtenStat = await handle.stat();
+      const [canonicalWorkspacePath, canonicalTarget, pathStat, handleStat] = await Promise.all([
+        realpath(workspacePath),
+        realpath(target),
+        lstat(target),
+        handle.stat(),
+      ]);
+      const relative = path.relative(canonicalWorkspacePath, canonicalTarget);
       if (
-        !writtenStat.isFile()
-        || writtenStat.isSymbolicLink()
-        || writtenStat.size !== file.sizeBytes
+        relative === '..'
+        || relative.startsWith(`..${path.sep}`)
+        || path.isAbsolute(relative)
+        || !pathStat.isFile()
+        || pathStat.isSymbolicLink()
+        || !handleStat.isFile()
+        || handleStat.isSymbolicLink()
+        || pathStat.dev !== handleStat.dev
+        || pathStat.ino !== handleStat.ino
       ) {
         throw new IsolatedWorkspaceError(
           'WORKSPACE_PREPARATION_FAILED',
-          `untracked file was not written atomically: ${file.path}`,
+          `untracked file did not resolve to its isolated workspace inode: ${file.path}`,
+        );
+      }
+      const bytes = await handle.readFile();
+      if (bytes.byteLength !== file.sizeBytes || sha256(bytes) !== file.sha256) {
+        throw new IsolatedWorkspaceError(
+          input.applyMode ? 'WORKSPACE_PREPARATION_FAILED' : 'WORKSPACE_VERIFICATION_FAILED',
+          `isolated untracked file differs from evidence: ${file.path}`,
+        );
+      }
+      if (input.applyMode && (handleStat.mode & 0o777) !== file.mode) {
+        await handle.chmod(file.mode);
+      }
+      const finalStat = await handle.stat();
+      if ((finalStat.mode & 0o777) !== file.mode) {
+        throw new IsolatedWorkspaceError(
+          input.applyMode ? 'WORKSPACE_PREPARATION_FAILED' : 'WORKSPACE_VERIFICATION_FAILED',
+          `isolated untracked file mode differs from evidence: ${file.path}`,
         );
       }
     } finally {
       await handle.close();
     }
-    const [canonicalWorkspacePath, canonicalTarget] = await Promise.all([
-      realpath(intent.workspacePath),
-      realpath(target),
-    ]);
-    const relative = path.relative(canonicalWorkspacePath, canonicalTarget);
-    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-      throw new IsolatedWorkspaceError(
-        'WORKSPACE_PREPARATION_FAILED',
-        `untracked file resolved outside isolated workspace: ${file.path}`,
-      );
-    }
   }
 
-  private async verifyWorkspace(intent: WorkspaceForkIntent): Promise<void> {
+  private async verifyWorkspace(
+    intent: WorkspaceForkIntent,
+    workspacePath: string,
+  ): Promise<void> {
+    await this.assertRegisteredWorkspaceRoot(intent, workspacePath);
     const head = (await this.runner.run({
       executable: 'git',
       args: ['rev-parse', '--verify', 'HEAD'],
-      cwd: intent.workspacePath,
+      cwd: workspacePath,
     })).stdout.toString('utf8').trim();
     if (head !== intent.evidence.manifest.baseCommit) {
       throw new IsolatedWorkspaceError(
@@ -496,17 +711,17 @@ export class IsolatedAnchorWorkspaceService {
       this.runner.run({
         executable: 'git',
         args: ['diff', '--binary', '--full-index', '--cached', intent.evidence.manifest.baseCommit, '--'],
-        cwd: intent.workspacePath,
+        cwd: workspacePath,
       }).then((result) => result.stdout),
       this.runner.run({
         executable: 'git',
         args: ['diff', '--binary', '--full-index', '--'],
-        cwd: intent.workspacePath,
+        cwd: workspacePath,
       }).then((result) => result.stdout),
       this.runner.run({
         executable: 'git',
         args: ['ls-files', '--others', '--exclude-standard', '-z'],
-        cwd: intent.workspacePath,
+        cwd: workspacePath,
       }).then((result) => result.stdout),
     ]);
     this.assertPatch(staged, intent.evidence.manifest.stagedPatch, 'staged');
@@ -521,27 +736,84 @@ export class IsolatedAnchorWorkspaceService {
       );
     }
     for (const expected of intent.evidence.manifest.untrackedFiles) {
-      const target = this.resolveWithinWorkspace(intent.workspacePath, expected.path);
-      const [bytes, fileStat] = await Promise.all([readFile(target), lstat(target)]);
-      if (
-        !fileStat.isFile()
-        || fileStat.isSymbolicLink()
-        || bytes.byteLength !== expected.sizeBytes
-        || sha256(bytes) !== expected.sha256
-        || (fileStat.mode & 0o777) !== expected.mode
-      ) {
-        throw new IsolatedWorkspaceError(
-          'WORKSPACE_VERIFICATION_FAILED',
-          `isolated untracked file differs from evidence: ${expected.path}`,
-        );
-      }
+      await this.verifyUntrackedFileHandle(intent, expected, workspacePath, { applyMode: false });
     }
+    await this.assertRegisteredWorkspaceRoot(intent, workspacePath);
   }
 
-  private async cleanupWorkspace(intent: WorkspaceForkIntent): Promise<void> {
-    this.assertWithinDurableRoot(intent.workspacePath);
-    if (!await this.pathExists(intent.workspacePath)) return;
+  private async publishWorkspace(
+    intent: WorkspaceForkIntent,
+    stagingWorkspacePath: string,
+  ): Promise<void> {
+    await this.assertRegisteredWorkspaceRoot(intent, stagingWorkspacePath);
+    if (await this.pathExists(intent.workspacePath)) {
+      throw new IsolatedWorkspaceError(
+        'INVALID_DESTINATION',
+        'workspace destination appeared before staged workspace publication',
+      );
+    }
+    await this.workspacePublishBarrier?.({
+      intentId: intent.intentId,
+      stagingWorkspacePath,
+      workspacePath: intent.workspacePath,
+      relativePaths: intent.evidence.manifest.untrackedFiles.map((file) => file.path),
+    });
+    await this.assertRegisteredWorkspaceRoot(intent, stagingWorkspacePath);
+    if (await this.pathExists(intent.workspacePath)) {
+      throw new IsolatedWorkspaceError(
+        'INVALID_DESTINATION',
+        'workspace destination changed during staged workspace publication',
+      );
+    }
+    await this.runner.run({
+      executable: 'git',
+      args: ['worktree', 'move', stagingWorkspacePath, intent.workspacePath],
+      cwd: intent.repositoryRoot,
+      timeoutMs: 60_000,
+    });
+    await this.assertRegisteredWorkspaceRoot(intent, intent.workspacePath);
+  }
 
+  private async assertRegisteredWorkspaceRoot(
+    intent: WorkspaceForkIntent,
+    workspacePath: string,
+  ): Promise<void> {
+    this.assertWithinDurableRoot(workspacePath);
+    const rootStat = await lstat(workspacePath);
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+      throw new IsolatedWorkspaceError(
+        'WORKSPACE_VERIFICATION_FAILED',
+        'isolated worktree root is not a no-follow directory',
+      );
+    }
+    const [canonicalDurableRoot, canonicalWorkspacePath] = await Promise.all([
+      realpath(this.durableRoot),
+      realpath(workspacePath),
+    ]);
+    const durableRelative = path.relative(canonicalDurableRoot, canonicalWorkspacePath);
+    if (
+      !durableRelative
+      || durableRelative === '..'
+      || durableRelative.startsWith(`..${path.sep}`)
+      || path.isAbsolute(durableRelative)
+    ) {
+      throw new IsolatedWorkspaceError(
+        'WORKSPACE_VERIFICATION_FAILED',
+        'isolated worktree root resolves outside durableRoot',
+      );
+    }
+    const topLevel = (await this.runner.run({
+      executable: 'git',
+      args: ['rev-parse', '--show-toplevel'],
+      cwd: workspacePath,
+    })).stdout.toString('utf8').trim();
+    const canonicalTopLevel = await realpath(topLevel);
+    if (canonicalTopLevel !== canonicalWorkspacePath) {
+      throw new IsolatedWorkspaceError(
+        'WORKSPACE_VERIFICATION_FAILED',
+        'isolated worktree root no longer matches Git worktree identity',
+      );
+    }
     const worktreeList = (await this.runner.run({
       executable: 'git',
       args: ['worktree', 'list', '--porcelain'],
@@ -551,37 +823,83 @@ export class IsolatedAnchorWorkspaceService {
       .split('\n')
       .filter((line) => line.startsWith('worktree '))
       .map((line) => line.slice('worktree '.length));
-    const [canonicalWorkspacePath, canonicalRegisteredPaths] = await Promise.all([
-      realpath(intent.workspacePath),
-      Promise.all(registeredPaths.map(async (registeredPath) => {
-        return await realpath(registeredPath).catch(() => path.resolve(registeredPath));
-      })),
-    ]);
-    const canonicalDurableRoot = await realpath(this.durableRoot);
-    const durableRelative = path.relative(canonicalDurableRoot, canonicalWorkspacePath);
-    if (
-      !durableRelative
-      || durableRelative === '..'
-      || durableRelative.startsWith(`..${path.sep}`)
-      || path.isAbsolute(durableRelative)
-    ) {
-      throw new IsolatedWorkspaceError(
-        'WORKSPACE_CLEANUP_FAILED',
-        'refusing to clean a workspace that resolves outside durableRoot',
-      );
-    }
+    const canonicalRegisteredPaths = await Promise.all(registeredPaths.map(async (registeredPath) => {
+      return await realpath(registeredPath).catch(() => path.resolve(registeredPath));
+    }));
     if (!canonicalRegisteredPaths.includes(canonicalWorkspacePath)) {
       throw new IsolatedWorkspaceError(
-        'WORKSPACE_CLEANUP_FAILED',
-        'refusing to delete an unregistered workspace path',
+        'WORKSPACE_VERIFICATION_FAILED',
+        'isolated worktree root is not registered by its source repository',
       );
     }
-    await this.runner.run({
+  }
+
+  private async cleanupWorkspace(intent: WorkspaceForkIntent): Promise<void> {
+    const worktreeList = (await this.runner.run({
       executable: 'git',
-      args: ['worktree', 'remove', '--force', intent.workspacePath],
+      args: ['worktree', 'list', '--porcelain'],
       cwd: intent.repositoryRoot,
-      timeoutMs: 60_000,
-    });
+    })).stdout.toString('utf8');
+    const registeredPaths = worktreeList
+      .split('\n')
+      .filter((line) => line.startsWith('worktree '))
+      .map((line) => line.slice('worktree '.length));
+    const canonicalRegisteredPaths = await Promise.all(registeredPaths.map(async (registeredPath) => {
+      return await realpath(registeredPath).catch(() => path.resolve(registeredPath));
+    }));
+    const canonicalDurableRoot = await realpath(this.durableRoot);
+    const candidates = [
+      this.resolveStagingWorkspacePath(intent),
+      intent.workspacePath,
+    ];
+    const cleanupErrors: string[] = [];
+    for (const candidate of candidates) {
+      this.assertWithinDurableRoot(candidate);
+      if (!await this.pathExists(candidate)) continue;
+      const candidateStat = await lstat(candidate);
+      if (!candidateStat.isDirectory() || candidateStat.isSymbolicLink()) {
+        cleanupErrors.push(`refusing to clean non-directory workspace path: ${candidate}`);
+        continue;
+      }
+      const canonicalCandidate = await realpath(candidate);
+      const durableRelative = path.relative(canonicalDurableRoot, canonicalCandidate);
+      if (
+        !durableRelative
+        || durableRelative === '..'
+        || durableRelative.startsWith(`..${path.sep}`)
+        || path.isAbsolute(durableRelative)
+      ) {
+        cleanupErrors.push(`refusing to clean workspace outside durableRoot: ${candidate}`);
+        continue;
+      }
+      if (!canonicalRegisteredPaths.includes(canonicalCandidate)) {
+        cleanupErrors.push(`refusing to clean unregistered workspace path: ${candidate}`);
+        continue;
+      }
+      await this.runner.run({
+        executable: 'git',
+        args: ['worktree', 'remove', '--force', candidate],
+        cwd: intent.repositoryRoot,
+        timeoutMs: 60_000,
+      });
+    }
+    if (cleanupErrors.length > 0) {
+      throw new IsolatedWorkspaceError(
+        'WORKSPACE_CLEANUP_FAILED',
+        cleanupErrors.join('; '),
+      );
+    }
+  }
+
+  private resolveStagingWorkspacePath(intent: WorkspaceForkIntent): string {
+    const stagingDirectory = path.join(this.durableRoot, '.neo-session-fork-staging');
+    const stagingName = digestWorkspaceValue({
+      intentId: intent.intentId,
+      requestDigest: intent.requestDigest,
+    }).slice(0, 40);
+    const stagingWorkspacePath = path.join(stagingDirectory, stagingName);
+    this.assertWithinDurableRoot(stagingWorkspacePath);
+    return stagingWorkspacePath;
   }
 
   private resolveDestination(destinationName: string): string {
@@ -632,27 +950,6 @@ export class IsolatedAnchorWorkspaceService {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
       throw error;
-    }
-  }
-
-  private async ensureSafeParent(workspacePath: string, target: string): Promise<void> {
-    const parentRelative = path.relative(workspacePath, path.dirname(target));
-    const parts = parentRelative ? parentRelative.split(path.sep) : [];
-    let current = workspacePath;
-    for (const part of parts) {
-      current = path.join(current, part);
-      try {
-        const currentStat = await lstat(current);
-        if (!currentStat.isDirectory() || currentStat.isSymbolicLink()) {
-          throw new IsolatedWorkspaceError(
-            'WORKSPACE_PREPARATION_FAILED',
-            'untracked file parent is not a safe directory',
-          );
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        await mkdir(current, { mode: 0o700 });
-      }
     }
   }
 

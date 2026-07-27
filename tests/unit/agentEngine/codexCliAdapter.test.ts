@@ -262,6 +262,8 @@ describe('CodexCliAdapter.run', () => {
     expect(child!.stdin.end.mock.invocationCallOrder[0])
       .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
     expect(firstLifecycle.persistExternalSessionId).toHaveBeenCalledWith('fork-codex-thread');
+    expect((firstLifecycle.persistExternalSessionId as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
+      .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
     const firstTerminalUpdate = mocks.updateSession.mock.calls.at(-1)?.[1];
     expect(firstTerminalUpdate).toMatchObject({
       status: 'idle',
@@ -373,10 +375,66 @@ describe('CodexCliAdapter.run', () => {
     expect(child?.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
+  it('keeps the fork handoff unconsumed when Codex never confirms a new external session id', async () => {
+    let child: ReturnType<typeof createMockChild> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      child = createMockChild([
+        JSON.stringify({ type: 'message_delta', delta: 'answer without identity' }),
+      ], 0);
+      return child;
+    });
+    const onForkContextDispatchStart = vi.fn(async () => undefined);
+    const onForkContextDispatched = vi.fn(async () => undefined);
+
+    const result = await new CodexCliAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      forkContextHandoff: buildTestExternalForkContextHandoff('codex_cli'),
+      onForkContextDispatchStart,
+      onForkContextDispatched,
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: 'Codex fork handoff did not confirm a new external session identity',
+    });
+    expect(onForkContextDispatchStart).toHaveBeenCalledTimes(1);
+    expect(child?.stdin.end).toHaveBeenCalledTimes(1);
+    expect(onForkContextDispatched).not.toHaveBeenCalled();
+  });
+
+  it('keeps the fork handoff unconsumed when Codex confirms identity but exits abnormally', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'thread.started', thread_id: 'failed-fork-thread' }),
+      JSON.stringify({ type: 'message_delta', delta: 'partial answer' }),
+    ], 1, 'provider failed after identity confirmation'));
+    const onForkContextDispatchStart = vi.fn(async () => undefined);
+    const onForkContextDispatched = vi.fn(async () => undefined);
+
+    const result = await new CodexCliAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'continue the branch',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      forkContextHandoff: buildTestExternalForkContextHandoff('codex_cli'),
+      onForkContextDispatchStart,
+      onForkContextDispatched,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(onForkContextDispatchStart).toHaveBeenCalledTimes(1);
+    expect(onForkContextDispatched).not.toHaveBeenCalled();
+  });
+
   it('writes once then aborts when consumed-state persistence rejects', async () => {
     let child: ReturnType<typeof createMockChild> | undefined;
     mocks.spawn.mockImplementation(() => {
-      child = createMockChild([], 0);
+      child = createMockChild([
+        JSON.stringify({ type: 'thread.started', thread_id: 'fork-codex-thread' }),
+        JSON.stringify({ type: 'message_delta', delta: 'provider acknowledged the fork' }),
+      ], 0);
       return child;
     });
     const onForkContextDispatchStart = vi.fn(async () => undefined);

@@ -19,6 +19,7 @@ import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '..
 import { UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
 import { sanitizeSurfaceExecutionSessionExport } from '../../session/surfaceExecutionSessionExport';
+import { stripLegacyForkClaims } from '../sessionFork/portability';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -284,7 +285,7 @@ export class SessionManager implements Disposable {
       }
     }
 
-    const session: Session = {
+	    const session: Session = {
       id: `session_${now}_${crypto.randomUUID().split('-')[0]}`,
       userId: options.userId ?? getAuthService().getCurrentUser()?.id ?? null,
       title: options.title || this.generateSessionTitle(),
@@ -302,8 +303,26 @@ export class SessionManager implements Disposable {
       retryOfSessionId: options.retryOfSessionId,
       createdAt: now,
       updatedAt: now,
-      gitBranch
-    };
+	      gitBranch
+	    };
+
+    // Immutable conversation lineage captures the Project boundary in the same
+    // transaction as the session row. Resolve that boundary before creation so
+    // a later Project assignment cannot invalidate the first message append.
+    try {
+      const { getProjectService } = await import('../project/projectService');
+      const project = await getProjectService().ensureProjectForWorkspace(
+        session.workingDirectory,
+        now,
+      );
+      session.projectId = project.id;
+    } catch (err) {
+      logger.error(
+        '[SessionManager] 会话 Project 边界解析失败，已在写入前中止:',
+        err instanceof Error ? err.message : String(err),
+      );
+      throw err;
+    }
 
     db.createSession(session);
 
@@ -319,17 +338,6 @@ export class SessionManager implements Disposable {
       permissionManager.initSessionMode(session.id);
     } catch (err) {
       logger.warn('[SessionManager] 初始化会话权限档失败（不阻塞）:', err instanceof Error ? err.message : String(err));
-    }
-
-    // P0-2：按 workspace 隐式归桶到 project（拿/建 project + 写 project_id）。
-    // 失败不阻塞会话创建（项目空间是增量能力）。
-    try {
-      const { getProjectService } = await import('../project/projectService');
-      const project = await getProjectService().ensureProjectForWorkspace(session.workingDirectory, now);
-      db.getProjectRepo().assignSessionProject(session.id, project.id);
-      session.projectId = project.id;
-    } catch (err) {
-      logger.warn('[SessionManager] P0-2 项目归桶失败（不阻塞）:', err instanceof Error ? err.message : String(err));
     }
 
     // 初始化缓存条目，确保后续 addMessageToSession 能正确更新缓存
@@ -573,6 +581,14 @@ export class SessionManager implements Disposable {
         if (!localSession) {
           // 本地不存在，创建会话元数据（消息稍后按需拉取）
           // model_provider 从云端来是 string，需要断言为 ModelProvider
+          // Project is part of the immutable conversation boundary. Resolve it
+          // before the first local row is written; a failed resolver leaves no
+          // nullable Project placeholder that could later conflict with history.
+          const { getProjectService } = await import('../project/projectService');
+          const project = await getProjectService().ensureProjectForWorkspace(
+            cloudSession.working_directory,
+            cloudSession.updated_at,
+          );
           db.createSessionWithId(
             cloudSession.id,
             {
@@ -583,6 +599,7 @@ export class SessionManager implements Disposable {
                 model: cloudSession.model_name
               },
               workingDirectory: cloudSession.working_directory,
+              projectId: project.id,
               createdAt: cloudSession.created_at,
               updatedAt: cloudSession.updated_at
             },
@@ -1273,25 +1290,39 @@ export class SessionManager implements Disposable {
    * 导入会话
    */
   async importSession(data: SessionWithMessages): Promise<string> {
-    const safeData = sanitizeSurfaceExecutionSessionExport(data);
+    const surfaceSafeData = sanitizeSurfaceExecutionSessionExport(data);
+    const strippedForkClaims = stripLegacyForkClaims(surfaceSafeData);
+    const safeData = strippedForkClaims.value as SessionWithMessages;
     const db = getDatabase();
     const now = Date.now();
 
     // 创建新的 session ID
     const newId = `session_${now}_${crypto.randomUUID().split('-')[0]}`;
 
+    const importedEngine = safeData.engine
+      ? (() => {
+          const normalized = normalizeAgentEngineSession(safeData.engine);
+          return normalized.kind === 'native'
+            ? { kind: 'native' as const }
+            : {
+                kind: normalized.kind,
+                model: normalized.model,
+                permissionProfile: normalized.permissionProfile,
+                origin: 'import' as const,
+              };
+        })()
+      : undefined;
     const session: Session = {
       id: newId,
       userId: getAuthService().getCurrentUser()?.id ?? safeData.userId ?? null,
       title: safeData.title,
       modelConfig: sanitizeModelConfigForSession(safeData.modelConfig),
       workingDirectory: safeData.workingDirectory,
-	      type: safeData.type || 'chat',
-	      origin: safeData.origin,
-	      metadata: safeData.metadata,
-	      parentSessionId: safeData.parentSessionId,
-      sourceRunId: safeData.sourceRunId,
-      readOnly: safeData.readOnly,
+		      type: safeData.type || 'chat',
+		      origin: safeData.origin,
+		      metadata: safeData.metadata,
+      engine: importedEngine,
+	      readOnly: safeData.readOnly,
       retryOfSessionId: safeData.retryOfSessionId,
       createdAt: now,
       updatedAt: now
@@ -1308,13 +1339,12 @@ export class SessionManager implements Disposable {
       db.addMessage(newId, newMessage);
     }
 
-    // 导入 todos
-    if (safeData.todos && safeData.todos.length > 0) {
-      db.saveTodos(newId, safeData.todos);
-    }
-
     // 记录审计日志
-    db.logAuditEvent('session_imported', { newId, originalId: safeData.id }, newId);
+    db.logAuditEvent('session_imported', {
+      newId,
+      originalId: safeData.id,
+      strippedForkClaimPaths: strippedForkClaims.strippedPaths,
+    }, newId);
 
     return newId;
   }

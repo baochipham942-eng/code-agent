@@ -55,7 +55,7 @@ describe('messageActionStore Fork', () => {
       workspaceLabel: '历史对话 + 当前文件',
     });
 
-    await useMessageActionStore.getState().forkFromHere('a2');
+    await useMessageActionStore.getState().createForkFromReply('a2');
 
     expect(mocks.invokeDomain).toHaveBeenCalledWith(
       IPC_DOMAINS.SESSION,
@@ -76,7 +76,7 @@ describe('messageActionStore Fork', () => {
   it('does not call any fork endpoint while the source session is running', async () => {
     useSessionStore.setState({ runningSessionIds: new Set(['source-session']) });
 
-    await useMessageActionStore.getState().forkFromHere('a2');
+    await useMessageActionStore.getState().createForkFromReply('a2');
 
     expect(mocks.invokeDomain).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalledWith('任务仍在运行，停止后才能创建分支');
@@ -93,7 +93,7 @@ describe('messageActionStore Fork', () => {
     });
     const before = JSON.stringify(useSessionStore.getState().messages);
 
-    await useMessageActionStore.getState().forkFromHere('a2', 'isolated_at_anchor');
+    await useMessageActionStore.getState().createForkFromReply('a2', 'isolated_at_anchor');
 
     expect(mocks.invokeDomain).toHaveBeenCalledWith(
       IPC_DOMAINS.SESSION,
@@ -107,7 +107,7 @@ describe('messageActionStore Fork', () => {
     mocks.invokeDomain.mockRejectedValue(new Error('ANCHOR_REWOUND'));
     const before = JSON.stringify(useSessionStore.getState().messages);
 
-    await useMessageActionStore.getState().forkFromHere('a2');
+    await useMessageActionStore.getState().createForkFromReply('a2');
 
     expect(mocks.invokeDomain).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(useSessionStore.getState().messages)).toBe(before);

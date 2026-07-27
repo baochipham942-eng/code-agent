@@ -213,7 +213,7 @@ describe('DatabaseService isolated_at_anchor workspace saga', () => {
         roots: [{
           sourceId: expect.stringMatching(/^isolated:workspace_intent_/),
           path: child?.workingDirectory,
-          access: 'read_only',
+          access: 'read_write',
           role: 'primary',
         }],
         version: expect.stringMatching(/^isolated-v1:workspace_intent_/),

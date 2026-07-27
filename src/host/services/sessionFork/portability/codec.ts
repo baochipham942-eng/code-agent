@@ -10,11 +10,9 @@ import type {
   PortableAgentEngineV2,
   PortableArtifactProvenanceV2,
   PortableAttachmentProvenanceV2,
-  PortableIsolatedAnchorEvidenceV1,
   PortableMessageV2,
   PortableModelConfigV2,
   PortableSessionV2,
-  PortableSessionWorkspaceV2,
   SessionExportDecodeScope,
   SessionExportEnvelopeV2,
   SessionExportSourceV2,
@@ -22,37 +20,25 @@ import type {
 import {
   FORK_LINEAGE_ENVELOPE_SCHEMA,
   FORK_LINEAGE_ENVELOPE_VERSION,
+  LOCAL_SESSION_FORK_OWNER_SCOPE_ID,
   SESSION_EXPORT_ENVELOPE_SCHEMA,
   SESSION_EXPORT_ENVELOPE_VERSION,
   SessionForkPortabilityError,
 } from '../../../../shared/contract/sessionForkPortability';
 import { canonicalJson, deepPortableClone, portabilityDigest, withoutDigest } from './canonical';
+import { validatePortableConversationHistory } from './conversationHistory';
+import {
+  sanitizePortableSessionWorkspaceV2,
+  validatePortableSessionWorkspaceV2,
+} from './portableWorkspaceEvidence';
 
 const FORBIDDEN_RUNTIME_KEYS = new Set([
-  'absoluteWorktreePath',
-  'apiKey',
-  'approvalQueue',
-  'approvalRequests',
-  'baseUrl',
-  'cwd',
-  'durableWaitingInput',
-  'executablePermission',
-  'externalSessionId',
-  'lease',
-  'leaseId',
-  'logPath',
-  'pendingApproval',
-  'pendingApprovals',
-  'permissionGrant',
-  'queuedInput',
-  'queuedInputs',
-  'runId',
-  'sourceRunId',
-  'streamSnapshot',
-  'taskLease',
-  'todo',
-  'todos',
-  'workingDirectory',
+  'absoluteWorktreePath', 'apiKey', 'approvalQueue', 'approvalRequests',
+  'baseUrl', 'cwd', 'durableWaitingInput', 'executablePermission',
+  'externalSessionId', 'lease', 'leaseId', 'logPath',
+  'pendingApproval', 'pendingApprovals', 'permissionGrant', 'queuedInput',
+  'queuedInputs', 'runId', 'sourceRunId', 'streamSnapshot',
+  'taskLease', 'todo', 'todos', 'workingDirectory',
 ]);
 
 function fail(code: ConstructorParameters<typeof SessionForkPortabilityError>[0], message: string): never {
@@ -151,46 +137,8 @@ function sanitizeEngine(source: SessionExportSourceV2['session']['engine']): Por
   return engine;
 }
 
-function sanitizeIsolatedAnchor(
-  source: NonNullable<SessionExportSourceV2['workspace']>['isolatedAnchor'],
-): PortableIsolatedAnchorEvidenceV1 | undefined {
-  if (!source) return undefined;
-  const pathMappings = source.pathMappings.map((mapping) => {
-    if (
-      mapping.relativePath.startsWith('/')
-      || /^[A-Za-z]:[\\/]/.test(mapping.relativePath)
-      || mapping.relativePath.split(/[\\/]/).includes('..')
-    ) {
-      fail('ABSOLUTE_WORKTREE_FORBIDDEN', `path mapping must be repository-relative: ${mapping.relativePath}`);
-    }
-    return {
-      sourceRootDigest: mapping.sourceRootDigest,
-      relativePath: mapping.relativePath,
-    };
-  });
-  return {
-    evidenceId: source.evidenceId,
-    repositoryIdentityDigest: source.repositoryIdentityDigest,
-    baseCommit: source.baseCommit,
-    diffDigest: source.diffDigest,
-    untrackedManifestDigest: source.untrackedManifestDigest,
-    pathMappings,
-  };
-}
-
-function sanitizeWorkspace(source: SessionExportSourceV2['workspace']): PortableSessionWorkspaceV2 | undefined {
-  if (!source) return undefined;
-  if (source.mode === 'isolated_at_anchor' && !source.isolatedAnchor) {
-    fail('INVALID_ENVELOPE', 'isolated_at_anchor requires portable anchor evidence');
-  }
-  return {
-    mode: source.mode,
-    label: source.label,
-    ...(source.isolatedAnchor ? { isolatedAnchor: sanitizeIsolatedAnchor(source.isolatedAnchor) } : {}),
-  };
-}
-
 function sanitizeAttachment(source: MessageAttachment): PortableAttachmentProvenanceV2 {
+  const existingDigest = (source as MessageAttachment & { contentDigest?: unknown }).contentDigest;
   const attachment: PortableAttachmentProvenanceV2 = {
     id: source.id,
     type: source.type,
@@ -198,6 +146,10 @@ function sanitizeAttachment(source: MessageAttachment): PortableAttachmentProven
     name: source.name,
     size: source.size,
     mimeType: source.mimeType,
+    contentDigest: typeof existingDigest === 'string'
+      && /^(?:sha256:)?[a-f0-9]{64}$/iu.test(existingDigest)
+      ? existingDigest.toLowerCase().replace(/^(?!sha256:)/u, 'sha256:')
+      : portabilityDigest(source),
   };
   if (source.pageCount !== undefined) attachment.pageCount = source.pageCount;
   if (source.sheetCount !== undefined) attachment.sheetCount = source.sheetCount;
@@ -208,14 +160,21 @@ function sanitizeAttachment(source: MessageAttachment): PortableAttachmentProven
 
 function sanitizeArtifacts(source: SessionExportSourceV2['messages'][number]['artifacts']): PortableArtifactProvenanceV2[] | undefined {
   if (!source?.length) return undefined;
-  return source.map((artifact) => ({
-    id: artifact.id,
-    type: artifact.type,
-    ...(artifact.title !== undefined ? { title: artifact.title } : {}),
-    version: artifact.version,
-    ...(artifact.parentId !== undefined ? { parentId: artifact.parentId } : {}),
-    contentDigest: portabilityDigest(artifact.content),
-  }));
+  return source.map((artifact) => {
+    const existingDigest = (artifact as typeof artifact & { contentDigest?: unknown })
+      .contentDigest;
+    return {
+      id: artifact.id,
+      type: artifact.type,
+      ...(artifact.title !== undefined ? { title: artifact.title } : {}),
+      version: artifact.version,
+      ...(artifact.parentId !== undefined ? { parentId: artifact.parentId } : {}),
+      contentDigest: typeof existingDigest === 'string'
+        && /^(?:sha256:)?[a-f0-9]{64}$/iu.test(existingDigest)
+        ? existingDigest.toLowerCase().replace(/^(?!sha256:)/u, 'sha256:')
+        : portabilityDigest(artifact.content),
+    };
+  });
 }
 
 function rehashMessage(message: Omit<PortableMessageV2, 'payloadDigest'> | PortableMessageV2): PortableMessageV2 {
@@ -263,7 +222,7 @@ function sanitizeSession(
   if (raw.readOnly !== undefined) portable.readOnly = raw.readOnly;
   const engine = sanitizeEngine(raw.engine);
   if (engine) portable.engine = engine;
-  const workspace = sanitizeWorkspace(source.workspace);
+  const workspace = sanitizePortableSessionWorkspaceV2(source.workspace);
   if (workspace) portable.workspace = workspace;
   return rehashSession(portable);
 }
@@ -684,7 +643,12 @@ function validateMessageOrdinals(messages: PortableMessageV2[], sessionIds: Read
         'sheetCount',
         'rowCount',
         'language',
+        'contentDigest',
       ], `messages[${message.id}].attachments[${attachment.id}]`);
+      assertPortableDigest(
+        attachment.contentDigest,
+        `messages[${message.id}].attachments[${attachment.id}].contentDigest`,
+      );
     }
     for (const artifact of message.artifacts ?? []) {
       assertObject(artifact, `message ${message.id} artifact`);
@@ -748,6 +712,7 @@ export function validateSessionExportEnvelopeV2(
     'sessions',
     'messages',
     'lineage',
+    'conversationHistory',
     'detachedProvenance',
     'payloadDigest',
   ], 'export');
@@ -820,41 +785,10 @@ export function validateSessionExportEnvelopeV2(
       );
     }
     if (session.workspace) {
-      assertObject(session.workspace, `sessions[${session.id}].workspace`);
-      assertOnlyKeys(
-        session.workspace as unknown as Record<string, unknown>,
-        ['mode', 'label', 'isolatedAnchor'],
+      validatePortableSessionWorkspaceV2(
+        session.workspace,
         `sessions[${session.id}].workspace`,
       );
-      if (session.workspace.isolatedAnchor) {
-        const anchor = session.workspace.isolatedAnchor;
-        assertObject(anchor, `sessions[${session.id}].workspace.isolatedAnchor`);
-        assertOnlyKeys(anchor as unknown as Record<string, unknown>, [
-          'evidenceId',
-          'repositoryIdentityDigest',
-          'baseCommit',
-          'diffDigest',
-          'untrackedManifestDigest',
-          'pathMappings',
-        ], `sessions[${session.id}].workspace.isolatedAnchor`);
-        for (const [index, mapping] of anchor.pathMappings.entries()) {
-          assertObject(mapping, `sessions[${session.id}].workspace.pathMappings[${index}]`);
-          assertOnlyKeys(mapping as unknown as Record<string, unknown>, [
-            'sourceRootDigest',
-            'relativePath',
-          ], `sessions[${session.id}].workspace.pathMappings[${index}]`);
-          if (
-            mapping.relativePath.startsWith('/')
-            || /^[A-Za-z]:[\\/]/.test(mapping.relativePath)
-            || mapping.relativePath.split(/[\\/]/).includes('..')
-          ) {
-            fail(
-              'ABSOLUTE_WORKTREE_FORBIDDEN',
-              `sessions[${session.id}] contains a non-relative path mapping`,
-            );
-          }
-        }
-      }
     }
     if (sessionIds.has(session.id)) {
       fail('REFERENCE_NOT_CLOSED', `duplicate session id ${session.id}`);
@@ -871,12 +805,6 @@ export function validateSessionExportEnvelopeV2(
       portabilityDigest(withoutDigest(session)),
       `session ${session.id}`,
     );
-    if (
-      session.workspace?.mode === 'isolated_at_anchor'
-      && !session.workspace.isolatedAnchor
-    ) {
-      fail('INVALID_ENVELOPE', `isolated session ${session.id} lacks anchor evidence`);
-    }
   }
   if (!sessionIds.has(envelope.rootSessionId)) {
     fail('REFERENCE_NOT_CLOSED', `root session ${envelope.rootSessionId} is not exported`);
@@ -900,6 +828,27 @@ export function validateSessionExportEnvelopeV2(
   }
   if (envelope.lineage.rootSessionId !== envelope.rootSessionId) {
     fail('LINEAGE_INVALID', 'lineage and export roots differ');
+  }
+  if (envelope.conversationHistory) {
+    validatePortableConversationHistory(envelope.conversationHistory);
+    const expectedHistoryOwner = envelope.ownerScopeId === LOCAL_SESSION_FORK_OWNER_SCOPE_ID
+      ? null
+      : envelope.ownerScopeId;
+    if (envelope.conversationHistory.ownerUserId !== expectedHistoryOwner) {
+      fail('OWNER_SCOPE_MISMATCH', 'conversation history owner differs from export');
+    }
+    if (envelope.conversationHistory.projectId !== envelope.projectId) {
+      fail('PROJECT_SCOPE_MISMATCH', 'conversation history project differs from export');
+    }
+    const historySessionIds = new Set(
+      envelope.conversationHistory.branches.map((branch) => branch.sessionId),
+    );
+    if (
+      historySessionIds.size !== sessionIds.size
+      || [...sessionIds].some((sessionId) => !historySessionIds.has(sessionId))
+    ) {
+      fail('REFERENCE_NOT_CLOSED', 'conversation history must exactly cover exported sessions');
+    }
   }
 
   if (envelope.mode === 'detached_child') {
@@ -983,6 +932,9 @@ export function buildSessionExportEnvelopeV2(
     sessions,
     messages,
     lineage,
+    ...(input.conversationHistory
+      ? { conversationHistory: deepPortableClone(input.conversationHistory) }
+      : {}),
     ...(input.detachedProvenance
       ? {
         detachedProvenance: {

@@ -1,8 +1,83 @@
+import { createHash } from 'node:crypto';
+
 import type { Message } from '../../../../../src/shared/contract/message';
 import type { Session } from '../../../../../src/shared/contract/session';
+import { portabilityDigest } from '../../../../../src/host/services/sessionFork/portability/canonical';
 
 export const OWNER_ID = 'owner-1';
 export const PROJECT_ID = 'project-1';
+
+function digest(bytes: Buffer): string {
+  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+}
+
+function isolatedEvidence() {
+  const staged = Buffer.from([
+    'diff --git a/src/index.ts b/src/index.ts',
+    'index 7898192..422c2b7 100644',
+    '--- a/src/index.ts',
+    '+++ b/src/index.ts',
+    '@@ -1 +1 @@',
+    '-base',
+    '+staged',
+    '',
+  ].join('\n'));
+  const unstaged = Buffer.from([
+    'diff --git a/src/index.ts b/src/index.ts',
+    'index 422c2b7..df967b9 100644',
+    '--- a/src/index.ts',
+    '+++ b/src/index.ts',
+    '@@ -1 +1,2 @@',
+    ' staged',
+    '+unstaged',
+    '',
+  ].join('\n'));
+  const untracked = Buffer.from([0, 1, 255, 2]);
+  const stagedDigest = digest(staged);
+  const unstagedDigest = digest(unstaged);
+  const untrackedDigest = digest(untracked);
+  const untrackedFiles = [{
+    relativePath: 'new.bin',
+    blobDigest: untrackedDigest,
+    sizeBytes: untracked.byteLength,
+    mode: 0o600,
+  }];
+  const unsignedContent = {
+    version: 1 as const,
+    stagedPatch: { blobDigest: stagedDigest, sizeBytes: staged.byteLength },
+    unstagedPatch: { blobDigest: unstagedDigest, sizeBytes: unstaged.byteLength },
+    untrackedFiles,
+    blobs: {
+      [stagedDigest]: staged.toString('base64'),
+      [unstagedDigest]: unstaged.toString('base64'),
+      [untrackedDigest]: untracked.toString('base64'),
+    },
+  };
+  const repositoryIdentityDigest = `sha256:${'1'.repeat(64)}`;
+  return {
+    evidenceId: 'evidence-1',
+    repositoryIdentityDigest,
+    baseCommit: 'a'.repeat(40),
+    observedHead: 'b'.repeat(40),
+    capturedAt: 2,
+    workspaceScopeVersion: 'scope-v1',
+    diffDigest: portabilityDigest({
+      stagedPatch: stagedDigest,
+      unstagedPatch: unstagedDigest,
+    }),
+    untrackedManifestDigest: portabilityDigest(untrackedFiles),
+    pathMappings: [{
+      sourceRootDigest: repositoryIdentityDigest,
+      relativePath: '.',
+      isolatedRelativePath: '.',
+    }],
+    content: {
+      ...unsignedContent,
+      payloadDigest: portabilityDigest(unsignedContent),
+    },
+    absoluteWorktreePath: '/Users/private/.codex/worktrees/child',
+  };
+}
 
 export function session(
   id: string,
@@ -125,20 +200,7 @@ export function subtreeDraft() {
         workspace: {
           mode: 'isolated_at_anchor' as const,
           label: '历史对话 + 锚点文件' as const,
-          isolatedAnchor: {
-            evidenceId: 'evidence-1',
-            repositoryIdentityDigest: `sha256:${'1'.repeat(64)}`,
-            baseCommit: 'abc123',
-            diffDigest: `sha256:${'2'.repeat(64)}`,
-            untrackedManifestDigest: `sha256:${'3'.repeat(64)}`,
-            absoluteWorktreePath: '/Users/private/.codex/worktrees/child',
-            pathMappings: [
-              {
-                sourceRootDigest: `sha256:${'4'.repeat(64)}`,
-                relativePath: 'src/index.ts',
-              },
-            ],
-          },
+          isolatedAnchor: isolatedEvidence(),
         },
       },
     ],

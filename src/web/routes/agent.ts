@@ -74,10 +74,12 @@ import { QueuedInputRepository } from '../../host/services/core/repositories/Que
 import { getDatabase } from '../../host/services/core/databaseService';
 import { getLogsPath } from '../../host/platform/appPaths';
 import { getProjectService } from '../../host/services/project/projectService';
+import { getAuthService } from '../../host/services/auth/authService';
 import {
   DEFAULT_EXTERNAL_FORK_CONTEXT_POLICY,
   SessionForkRuntimeContextService,
 } from '../../host/services/sessionFork/context';
+import { resolveSessionWorkspaceScope } from '../../host/services/sessionFork/workspace';
 import {
   createClaudeContinuationResumeLaunch,
   createCodexContinuationResumeLaunch,
@@ -303,12 +305,23 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
 
     const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
+    const ownerUserId = getAuthService().getCurrentUser()?.id ?? null;
+    const runWorkspaceScope = resolveSessionWorkspaceScope(
+      persistedSession,
+      ownerUserId,
+      dbAvailable ? getDatabase() : {},
+      getProjectService(),
+    );
+    if (runWorkspaceScope?.version.startsWith('isolated-v1:')) {
+      // An isolated Fork's durable worktree is authoritative for the whole
+      // run lifecycle, including Native RunContext/tool execution. Request
+      // context and the legacy session cwd are only source provenance here.
+      resolvedProject = runWorkspaceScope.primaryRoot;
+    }
     const explicitForkLineage = isExternalAgentEngine(selectedEngine.kind) && dbAvailable
       ? getDatabase().getSessionForkLineage(
           sessionId,
-          (await import('../../host/services/auth/authService'))
-            .getAuthService()
-            .getCurrentUser()?.id ?? null,
+          ownerUserId,
         )
       : null;
 
@@ -503,14 +516,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           stage: 'launch_policy',
           cwd: resolvedProject,
         };
-        const externalWorkspaceScope = persistedSession?.projectId
-          ? getProjectService().getWorkspaceScope(persistedSession.projectId)
-          : undefined;
         const launch = resolveExternalEngineLaunch(
           persistedSession,
           selectedEngine,
           resolvedProject,
-          externalWorkspaceScope,
+          runWorkspaceScope,
         );
         externalEngineFailureContext = {
           kind: selectedEngine.kind,

@@ -44,6 +44,8 @@ export interface SessionForkLineageSummary {
   forkId: string;
   rootSessionId: string;
   parentSessionId: string;
+  /** Absent on legacy projections; authoritative repository reads always populate it. */
+  parentDeleted?: boolean;
   childSessionId: string;
   sourceAnchorMessageId: string;
   anchorChildMessageId: string;

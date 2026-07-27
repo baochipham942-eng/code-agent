@@ -5,12 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TraceTurn } from '../../../src/shared/contract/trace';
 
 const mocks = vi.hoisted(() => ({
-  forkFromHere: vi.fn(),
+  createForkFromReply: vi.fn(),
 }));
 
 vi.mock('../../../src/renderer/stores/messageActionStore', () => ({
   useMessageActionStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
-    forkFromHere: mocks.forkFromHere,
+    createForkFromReply: mocks.createForkFromReply,
     sendPrompt: vi.fn(),
   }),
 }));
@@ -40,8 +40,8 @@ function completedTurn(status: TraceTurn['status'] = 'completed'): TraceTurn {
 
 describe('TurnCard Fork reply action', () => {
   beforeEach(() => {
-    mocks.forkFromHere.mockReset();
-    mocks.forkFromHere.mockResolvedValue(undefined);
+    mocks.createForkFromReply.mockReset();
+    mocks.createForkFromReply.mockResolvedValue(undefined);
   });
 
   afterEach(cleanup);
@@ -52,7 +52,7 @@ describe('TurnCard Fork reply action', () => {
     fireEvent.click(screen.getByRole('button', { name: '从这条回复创建分支' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /历史对话 \+ 当前文件/ }));
 
-    await waitFor(() => expect(mocks.forkFromHere).toHaveBeenCalledWith('a2', 'shared_current'));
+    await waitFor(() => expect(mocks.createForkFromReply).toHaveBeenCalledWith('a2', 'shared_current'));
   });
 
   it('offers an isolated anchor workspace as an explicit independent choice', async () => {
@@ -61,7 +61,7 @@ describe('TurnCard Fork reply action', () => {
     fireEvent.click(screen.getByRole('button', { name: '从这条回复创建分支' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /历史对话 \+ 锚点文件/ }));
 
-    await waitFor(() => expect(mocks.forkFromHere).toHaveBeenCalledWith('a2', 'isolated_at_anchor'));
+    await waitFor(() => expect(mocks.createForkFromReply).toHaveBeenCalledWith('a2', 'isolated_at_anchor'));
   });
 
   it('keeps the Fork action visible but disabled while the source session is processing', () => {
@@ -76,7 +76,7 @@ describe('TurnCard Fork reply action', () => {
     const button = screen.getByRole('button', { name: '从这条回复创建分支' });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(button);
-    expect(mocks.forkFromHere).not.toHaveBeenCalled();
+    expect(mocks.createForkFromReply).not.toHaveBeenCalled();
   });
 
   it('does not offer Fork before the assistant reply is completed', () => {

@@ -15,6 +15,8 @@ import type {
   SessionMarkdownExport,
   SessionLogExport,
   PromptRewindResult,
+  RestoreWorkspaceFilesAtCheckpointRequest,
+  RestoreWorkspaceFilesAtCheckpointResult,
 } from '../../shared/contract/appService';
 import type {
   Message,
@@ -41,7 +43,6 @@ import type {
   CreateSessionForkResult,
   SessionForkLineageSummary,
 } from '../../shared/contract/sessionFork';
-import { SessionForkService } from '../services/sessionFork/SessionForkService';
 import {
   DEFAULT_EXTERNAL_FORK_CONTEXT_POLICY,
   SessionForkRuntimeContextService,
@@ -53,7 +54,6 @@ import type {
   RewindConversationRequest,
   RewindConversationResult,
 } from '../../shared/contract/sessionRewind';
-import { SessionRewindService } from '../services/sessionRewind/SessionRewindService';
 
 const logger = createLogger('AgentAppService');
 import { getModelSessionState } from '../session/modelSessionState';
@@ -62,7 +62,6 @@ import {
   persistModelOverride,
   rehydrateModelOverrideFromSession,
 } from '../session/modelOverridePersistence';
-import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import type {
   ConversationEnvelope,
   ConversationEnvelopeContext,
@@ -77,8 +76,6 @@ import {
 import { materializeGenerativeUIFallbacks } from '../services/generativeUI/generativeUIExport';
 import { getGenerativeUIRepository } from '../services/generativeUI/generativeUIRepositoryAccess';
 import { buildSessionLogExport } from '../telemetry/diagnosticBundleService';
-import type { CachedMessage, CachedSession } from '../session/localCache';
-import { loadStreamSnapshot } from '../session/streamSnapshot';
 import { getSwarmServices, hasSwarmServices } from '../agent/swarmServices';
 import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
@@ -97,6 +94,7 @@ import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine'
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
+import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getLogsPath } from '../platform/appPaths';
 import {
   createClaudeContinuationResumeLaunch,
@@ -108,6 +106,9 @@ import {
 } from './durableRunReadService';
 import { listTasks } from '../services/planning/taskStore';
 import { upgradeLegacyAnchor } from '../tools/artifacts/artifactLocatorHost';
+import { SessionHistoryAppService } from './sessionHistoryAppService';
+import { SessionLifecycleAppService } from './sessionLifecycleAppService';
+import { toCachedSession } from './sessionExportCache';
 
 function isTaskManagerOwnedRunState(status: SessionStatus): boolean {
   return status === 'running'
@@ -133,15 +134,26 @@ export class AgentAppServiceImpl implements AgentApplicationService {
    * reuses the same promise instead of triggering a duplicate cascade.
    */
   private readonly cancelInFlight = new Map<string, Promise<void>>();
+  private readonly sessionHistory: SessionHistoryAppService;
+  private readonly sessionLifecycle: SessionLifecycleAppService;
 
   constructor(
     private getTaskManager: () => TaskManager,
-    private getConfigService: () => ConfigService | null,
+    getConfigService: () => ConfigService | null,
     private _getCurrentSessionId: () => string | null,
     private _setCurrentSessionId: (id: string) => void,
     private readonly externalRunRegistry?: RunRegistry,
     private readonly durableRunReadService?: DurableRunReadService,
-  ) {}
+  ) {
+    this.sessionHistory = new SessionHistoryAppService(getTaskManager, durableRunReadService);
+    this.sessionLifecycle = new SessionLifecycleAppService({
+      getTaskManager,
+      getConfigService,
+      getCurrentSessionId: _getCurrentSessionId,
+      setCurrentSessionId: _setCurrentSessionId,
+      getWorkingDirectory: () => this.getWorkingDirectory(),
+    });
+  }
 
   private async startExternalLifecycle(input: {
     engine: ExternalAgentEngineKind;
@@ -362,41 +374,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return undefined;
   }
 
-  private toCachedMessage(message: Message): CachedMessage {
-    const metadata = message.metadata
-      ? ({ ...message.metadata } as Record<string, unknown>)
-      : undefined;
-
-    return {
-      id: message.id,
-      role: message.role === 'user' || message.role === 'system' ? message.role : 'assistant',
-      content: message.content,
-      timestamp: message.timestamp,
-      tokens: (message.inputTokens || 0) + (message.outputTokens || 0) || undefined,
-      metadata,
-      toolCalls: message.toolCalls,
-      toolResults: message.toolResults,
-    };
-  }
-
-  private toCachedSession(session: SessionWithMessages): CachedSession {
-    return {
-      sessionId: session.id,
-      messages: session.messages.map((message) => this.toCachedMessage(message)),
-      startedAt: session.createdAt,
-      lastActivityAt: session.updatedAt,
-      totalTokens: session.messages.reduce(
-        (sum, message) => sum + (message.inputTokens || 0) + (message.outputTokens || 0),
-        0,
-      ),
-      metadata: {
-        ...(session.metadata || {}),
-        title: session.title,
-        workingDirectory: session.workingDirectory,
-      },
-    };
-  }
-
   // === Agent Operations ===
 
   async sendMessage(envelope: ConversationEnvelope): Promise<void> {
@@ -407,10 +384,28 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const session = await sessionManager.getSession(resolvedSessionId, 1);
     const engine = normalizeAgentEngineSession(session?.engine);
     const orchestrator = this.getOrchestrator(resolvedSessionId);
-    const effectiveWorkingDirectory = await this.resolveWorkingDirectory(
+    const sessionWorkspaceScope = resolveSessionWorkspaceScope(
+      session,
+      getAuthService().getCurrentUser()?.id ?? null,
+      getDatabase(),
+      getProjectService(),
+    );
+    const requestedWorkingDirectory = await this.resolveWorkingDirectory(
       resolvedSessionId,
       envelope.context?.workingDirectory,
     );
+    const effectiveWorkingDirectory = sessionWorkspaceScope?.version.startsWith('isolated-v1:')
+      ? sessionWorkspaceScope.primaryRoot
+      : requestedWorkingDirectory;
+    if (sessionWorkspaceScope?.version.startsWith('isolated-v1:')) {
+      envelope = {
+        ...envelope,
+        context: {
+          ...(envelope.context ?? {}),
+          workingDirectory: sessionWorkspaceScope.primaryRoot,
+        },
+      };
+    }
     // /命令协议层（roadmap 2.2）：命中注册命令时把 content 展开成模板 prompt；
     // 非命令消息零开销直通（startsWith 守卫在函数内）
     envelope = await applyPromptCommandExpansion(envelope, effectiveWorkingDirectory);
@@ -440,11 +435,11 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         });
       }
     }
-    const externalWorkspaceScope = session?.projectId
-      ? getProjectService().getWorkspaceScope(session.projectId)
-      : undefined;
+    const externalRequestedCwd = sessionWorkspaceScope?.version.startsWith('isolated-v1:')
+      ? sessionWorkspaceScope.primaryRoot
+      : envelope.context?.workingDirectory ?? effectiveWorkingDirectory;
     if (engine.kind === 'codex_cli') {
-      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
+      const launch = resolveExternalEngineLaunch(session, engine, externalRequestedCwd, sessionWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model, { strict: true });
       const persistedExternalSessionId = this.isExplicitForkChild(resolvedSessionId)
@@ -500,7 +495,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       return;
     }
     if (engine.kind === 'claude_code') {
-      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
+      const launch = resolveExternalEngineLaunch(session, engine, externalRequestedCwd, sessionWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model, { strict: true });
       const persistedExternalSessionId = this.isExplicitForkChild(resolvedSessionId)
@@ -555,7 +550,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       return;
     }
     if (engine.kind === 'mimo_code') {
-      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
+      const launch = resolveExternalEngineLaunch(session, engine, externalRequestedCwd, sessionWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('mimo_code', launch.model);
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
@@ -574,7 +569,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       return;
     }
     if (engine.kind === 'kimi_code') {
-      const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
+      const launch = resolveExternalEngineLaunch(session, engine, externalRequestedCwd, sessionWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('kimi_code', launch.model);
       const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
@@ -603,7 +598,9 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     // sync 内部的相等守卫保证已持久化的值不会被覆盖
     await this.syncSessionWorkingDirectory(
       resolvedSessionId,
-      envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
+      sessionWorkspaceScope?.version.startsWith('isolated-v1:')
+        ? sessionWorkspaceScope.primaryRoot
+        : envelope.context?.workingDirectory ?? effectiveWorkingDirectory ?? orchestrator?.getWorkingDirectory(),
     );
 
     const options = withWorkbenchTurnSystemContext(
@@ -802,98 +799,15 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   // === Session Lifecycle ===
 
   async createSession(config?: CreateSessionConfig): Promise<Session> {
-    const configService = this.getConfigService();
-    if (!configService) throw new Error('Services not initialized');
-
-    const sessionManager = getSessionManager();
-    const hasExplicitWorkingDirectory = Object.prototype.hasOwnProperty.call(config ?? {}, 'workingDirectory');
-    const requestedWorkingDirectory = typeof config?.workingDirectory === 'string'
-      ? config.workingDirectory.trim()
-      : undefined;
-    const workingDirectory = hasExplicitWorkingDirectory
-      ? requestedWorkingDirectory
-      : this.getWorkingDirectory();
-
-    const requestedEngine = normalizeAgentEngineSession(config?.engine);
-    if (config?.engine && isExternalAgentEngine(requestedEngine.kind)) {
-      throw new Error('External Agent Engine selection must be done after creating a manual chat session.');
-    }
-
-    const session = await sessionManager.createSession({
-      title: config?.title || 'New Session',
-      // 无参数：走 settings.models（复数）解析，与运行路径 resolveModelConfig 同源。
-      // 旧代码传 settings.model（单数，旧字段）会覆盖正确的复数默认，导致记录的模型≠实际运行。
-      modelConfig: resolveSessionDefaultModelConfig(),
-      workingDirectory,
-      engine: config?.engine ? requestedEngine : undefined,
-      metadata: config?.metadata,
-    });
-
-    sessionManager.setCurrentSession(session.id);
-    this._setCurrentSessionId(session.id);
-
-    const taskManager = this.getTaskManager();
-    taskManager.cleanup(session.id);
-    taskManager.setCurrentSessionId(session.id);
-    const orchestrator = taskManager.getOrCreateCurrentOrchestrator(session.id);
-    if (orchestrator && workingDirectory?.trim()) {
-      orchestrator.setWorkingDirectory(workingDirectory);
-    }
-
-    return session;
+    return this.sessionLifecycle.createSession(config);
   }
 
   async loadSession(sessionId: string): Promise<Session> {
-    const sessionManager = getSessionManager();
-
-    const session = await sessionManager.restoreSession(sessionId);
-    if (!session) throw new Error(`Session ${sessionId} not found`);
-
-    this._setCurrentSessionId(sessionId);
-
-    const taskManager = this.getTaskManager();
-    taskManager.setCurrentSessionId(sessionId);
-
-    if (session.messages && session.messages.length > 0) {
-      taskManager.setSessionContext(sessionId, session.messages);
-    }
-
-    const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId);
-    if (orchestrator && session.workingDirectory?.trim()) {
-      orchestrator.setWorkingDirectory(session.workingDirectory);
-    }
-    // NOTE: 当 session.workingDirectory 为空时，orchestrator 使用默认值（用户主目录）
-
-    // 会话级模型切换跨重启恢复：按持久化标记回灌内存 Map（未切换的会话无标记，不受影响）
-    rehydrateModelOverrideFromSession(session);
-
-    const streamSnapshot = loadStreamSnapshot({
-      workingDir: session.workingDirectory,
-      sessionId: session.id,
-    });
-    if (streamSnapshot?.sessionId === session.id) {
-      return { ...session, streamSnapshot };
-    }
-
-    return session;
+    return this.sessionLifecycle.loadSession(sessionId);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
-    const sessionManager = getSessionManager();
-    const currentSessionId = this._getCurrentSessionId();
-
-    await sessionManager.deleteSession(sessionId);
-
-    if (sessionId === currentSessionId) {
-      const newSession = await sessionManager.createSession({
-        title: 'New Session',
-        // 无参数：走 settings.models（复数）解析，与运行同源（见 createSession 注释）。
-        modelConfig: resolveSessionDefaultModelConfig(),
-      });
-
-      sessionManager.setCurrentSession(newSession.id);
-      this._setCurrentSessionId(newSession.id);
-    }
+    return this.sessionLifecycle.deleteSession(sessionId);
   }
 
   async listSessions(options?: { includeArchived?: boolean }): Promise<Session[]> {
@@ -925,66 +839,146 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   }
 
   async forkSession(params: CreateSessionForkRequest): Promise<CreateSessionForkResult> {
-    const database = getDatabase();
-    const taskManager = this.getTaskManager();
-    const service = new SessionForkService(database, {
-      getRuntimeStatus: (sessionId) => taskManager.getSessionState(sessionId).status,
-      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-    });
-    const result = await service.createFork(params);
-    if (result.lineage.contextDeliveryMode === 'neo_native_prefix') {
-      taskManager.setSessionContext(
-        result.childSession.id,
-        database.getMessages(result.childSession.id),
-      );
-    }
-    return result;
+    return this.sessionHistory.forkSession(params);
   }
 
   async getForkLineage(sessionId: string): Promise<SessionForkLineageSummary | null> {
-    return new SessionForkService(getDatabase(), {
-      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-    }).getLineage(sessionId);
+    return this.sessionHistory.getForkLineage(sessionId);
   }
 
   async listForkChildren(sessionId: string): Promise<SessionForkLineageSummary[]> {
-    return new SessionForkService(getDatabase(), {
-      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-    }).listChildren(sessionId);
+    return this.sessionHistory.listForkChildren(sessionId);
+  }
+
+  async exportSessionFork(
+    params: import('../../shared/contract/sessionForkPortability').ExportSessionForkRequest,
+  ): Promise<import('../../shared/contract/sessionForkPortability').SessionExportEnvelopeV2> {
+    return this.sessionHistory.exportSessionFork(params);
+  }
+
+  async importSessionFork(
+    params: import('../../shared/contract/sessionForkPortability').ImportSessionForkRequest,
+  ): Promise<import('../../shared/contract/sessionForkPortability').ImportSessionForkResponse> {
+    return this.sessionHistory.importSessionFork(params);
+  }
+
+  async enqueueSessionForkSync(
+    params: import('../../shared/contract/sessionForkPortability').EnqueueSessionForkSyncRequest,
+  ): Promise<import('../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord> {
+    return this.sessionHistory.enqueueSessionForkSync(params);
+  }
+
+  async ingestSessionForkSync(
+    params: import('../../shared/contract/sessionForkPortability').IngestSessionForkSyncRequest,
+  ): Promise<import('../../shared/contract/sessionForkPortability').SessionForkSyncEnvelopeRecord> {
+    return this.sessionHistory.ingestSessionForkSync(params);
+  }
+
+  async importReadySessionForkSync(
+    params: import('../../shared/contract/sessionForkPortability').ImportReadySessionForkSyncRequest,
+  ): Promise<import('../../shared/contract/sessionForkPortability').ImportReadySessionForkSyncResponse> {
+    return this.sessionHistory.importReadySessionForkSync(params);
+  }
+
+  async searchSessionForkExports(
+    params: import('../../shared/contract/sessionForkPortability').SearchSessionForkExportsRequest,
+  ): Promise<import('../../shared/contract/sessionForkPortability').ForkSearchDocument[]> {
+    return this.sessionHistory.searchSessionForkExports(params);
+  }
+
+  async readSessionForkTree(
+    params: import('../../shared/contract/sessionForkPortability').ReadSessionForkTreeRequest,
+  ): Promise<import('../../shared/contract/sessionForkPortability').ForkTreeNodeProjection> {
+    return this.sessionHistory.readSessionForkTree(params);
+  }
+
+  async readSessionForkNeighborhood(
+    params: import('../../shared/contract/sessionForkPortability').ReadSessionForkNeighborhoodRequest,
+  ): Promise<import('../../shared/contract/sessionForkPortability').ForkNeighborhoodProjection> {
+    return this.sessionHistory.readSessionForkNeighborhood(params);
+  }
+
+  async replayConversationBranch(
+    sessionId: string,
+    options?: { includeRewound?: boolean; allowRepairOverride?: boolean },
+  ): Promise<import('../../shared/contract/conversationBranch').ConversationReplay> {
+    return this.sessionHistory.replayConversationBranch(sessionId, options);
+  }
+
+  async compareConversationBranches(
+    leftSessionId: string,
+    rightSessionId: string,
+  ): Promise<import('../../shared/contract/conversationBranch').ConversationBranchComparison> {
+    return this.sessionHistory.compareConversationBranches(leftSessionId, rightSessionId);
+  }
+
+  async traceConversationProvenance(
+    sessionId: string,
+    messageId: string,
+  ): Promise<import('../../shared/contract/conversationBranch').ConversationProvenanceTrace> {
+    return this.sessionHistory.traceConversationProvenance(sessionId, messageId);
+  }
+
+  async auditConversationLineage(
+    sessionId: string,
+  ): Promise<import('../../shared/contract/conversationBranch').ConversationLineageAudit> {
+    return this.sessionHistory.auditConversationLineage(sessionId);
+  }
+
+  async quarantineConversationLineage(
+    sessionId: string,
+    idempotencyKey: string,
+  ): Promise<import('../../shared/contract/conversationBranch').ConversationLineageAudit> {
+    return this.sessionHistory.quarantineConversationLineage(sessionId, idempotencyKey);
+  }
+
+  async repairConversationLineage(params: {
+    sessionId: string;
+    issueDigest: string;
+    reason: string;
+    idempotencyKey: string;
+  }): Promise<import('../../shared/contract/conversationBranch').ConversationLineageAudit> {
+    return this.sessionHistory.repairConversationLineage(params);
+  }
+
+  async recordConversationEvaluationAttribution(params: {
+    sessionId: string;
+    evaluationId: string;
+    runId?: string | null;
+    metric: string;
+    value: number;
+    attributedMessageIds: string[];
+    idempotencyKey: string;
+  }): Promise<import('../../shared/contract/conversationBranch').ConversationEvaluationAttribution> {
+    return this.sessionHistory.recordConversationEvaluationAttribution(params);
+  }
+
+  async listConversationEvaluationAttributions(
+    sessionId: string,
+  ): Promise<import('../../shared/contract/conversationBranch').ConversationEvaluationAttribution[]> {
+    return this.sessionHistory.listConversationEvaluationAttributions(sessionId);
   }
 
   async rewindConversation(params: RewindConversationRequest): Promise<RewindConversationResult> {
-    const tm = this.getTaskManager();
-    const result = await new SessionRewindService(getDatabase(), {
-      getRuntimeStatus: (sessionId) => tm.getSessionState(sessionId).status,
-      setSessionContext: (sessionId, messages) => tm.setSessionContext(sessionId, messages),
-      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-    }).rewindConversation(params);
-    getSessionManager().invalidateSessionCache(params.sessionId);
-    return result;
+    return this.sessionHistory.rewindConversation(params);
+  }
+
+  async restoreWorkspaceFilesAtCheckpoint(
+    params: RestoreWorkspaceFilesAtCheckpointRequest,
+  ): Promise<RestoreWorkspaceFilesAtCheckpointResult> {
+    return this.sessionHistory.restoreWorkspaceFilesAtCheckpoint(params);
   }
 
   async restoreConversationRewind(
     params: RestoreConversationRewindRequest,
   ): Promise<RestoreConversationRewindResult> {
-    const tm = this.getTaskManager();
-    const result = await new SessionRewindService(getDatabase(), {
-      getRuntimeStatus: (sessionId) => tm.getSessionState(sessionId).status,
-      setSessionContext: (sessionId, messages) => tm.setSessionContext(sessionId, messages),
-      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
-    }).restoreConversation(params);
-    getSessionManager().invalidateSessionCache(params.sessionId);
-    return result;
+    return this.sessionHistory.restoreConversationRewind(params);
   }
 
   async rewindToPrompt(
     params: { sessionId: string; userMessageId: string; idempotencyKey?: string },
   ): Promise<PromptRewindResult> {
-    return this.rewindConversation({
-      sessionId: params.sessionId,
-      anchorUserMessageId: params.userMessageId,
-      idempotencyKey: params.idempotencyKey ?? `legacy:${params.sessionId}:${params.userMessageId}`,
-    });
+    return this.sessionHistory.rewindToPrompt(params);
   }
 
   getSerializedCompressionState(sessionId?: string): string | null {
@@ -1016,7 +1010,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       throw new Error(`Session ${sessionId} not found`);
     }
 
-    const cachedSession = this.toCachedSession({
+    const cachedSession = toCachedSession({
       ...session,
       messages: materializeGenerativeUIFallbacks(
         session.messages,

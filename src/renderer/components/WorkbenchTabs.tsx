@@ -283,34 +283,18 @@ export const WorkbenchTabs: React.FC = () => {
     closeWorkbenchTab(meta.id);
   };
 
-  // 收起右栏的入口只此一处（顶栏那颗只在**已收起**时画，用来展开）。所以它必须在
-  // 空态也在场——2026-07-27 产品负责人截图：没开任何 view 时整条工具条早退不画，
-  // 右栏就此关不掉。泛化：唯一出口的控件不能挂在"有内容才渲染"的分支里。
-  const collapseButton = (
-    <IconButton
-      size="sm"
-      variant="ghost"
-      icon={<PanelRightClose />}
-      aria-label={t.workbenchTabs.collapsePanel}
-      title={t.workbenchTabs.collapsePanel}
-      data-testid="workbench-collapse-panel"
-      onClick={() => setWorkbenchCollapsed(true)}
-    />
-  );
-
+  // 收起右栏的入口不在这里：它和「展开」同住顶栏那一个位置（TitleBar），两态只换图标不换位置。
+  // 曾经收起钮在本工具条上，于是它在空态（本分支早退、整条工具条不画）直接消失、右栏关不掉；
+  // 补回来之后又暴露出更根本的毛病——开关一开一收在两行之间跳。两个症状同一个根因：
+  // 一个开关的两态不该分居两处（2026-07-27 产品负责人：「为什么纵向位置会变？」）。
   if (metas.length === 0) {
     return (
-      <>
-        <div className="flex shrink-0 items-center justify-end border-b border-zinc-700 bg-zinc-900 px-2 py-1.5">
-          {collapseButton}
-        </div>
-        <WorkbenchViewLauncher
-          openedViews={workbenchTabs}
-          canOpenDesignCanvas={Boolean(currentSessionId)}
-          mode="empty"
-          onOpen={openView}
-        />
-      </>
+      <WorkbenchViewLauncher
+        openedViews={workbenchTabs}
+        canOpenDesignCanvas={Boolean(currentSessionId)}
+        mode="empty"
+        onOpen={openView}
+      />
     );
   }
 
@@ -387,8 +371,6 @@ export const WorkbenchTabs: React.FC = () => {
             />
           )}
         </div>
-
-        {collapseButton}
 
         {menuOpen && (
           <div

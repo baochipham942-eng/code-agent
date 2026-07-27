@@ -2905,16 +2905,10 @@ fn main() {
                 let _ = win.minimize();
             }
         }
-        // 系统会在 show / 尺寸变化 / 全屏进出后按默认位复位三颗灯，这里统一重放。
-        // 覆盖了托盘菜单、single-instance、快捷键 toggle 等所有 show 路径——
-        // 它们无一例外跟着 set_focus，Focused 事件就是这些路径的公共汇合点。
-        RunEvent::WindowEvent {
-            label,
-            event: WindowEvent::Resized(_) | WindowEvent::Focused(true),
-            ..
-        } if label == "main" => {
-            align_traffic_lights(app_handle);
-        }
+        // 这里**不要**再挂 Resized 重放摆灯：Resized 是该帧画完之后才送到的，
+        // 缩放/双击放大的动画期间会变成「先按默认位画出来、再被拨回去」，肉眼就是灯在抖
+        // （2026-07-27 产品负责人实测）。缩放态由 wry 在 drawRect 里的帧内重放负责，
+        // 见 tauri.conf.json 的 trafficLightPosition 与 traffic_lights.rs 的注释。
         RunEvent::ExitRequested { .. } | RunEvent::Exit => {
             cleanup_server(app_handle);
         }

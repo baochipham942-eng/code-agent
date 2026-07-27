@@ -1,62 +1,76 @@
 // @vitest-environment jsdom
 // ---------------------------------------------------------------------------
-// 右栏「收起」是唯一出口，必须在**每一档**都在场。
+// 右栏开关：两态必须**同住顶栏一个位置**，且任何一档都够得着。
 //
-// 2026-07-27 产品负责人截图：一个 view 都没开时 WorkbenchTabs 走 metas.length === 0 早退，
-// 整条工具条不画 ⇒ 收起按钮随之消失，右栏关不掉（顶栏那颗只在已收起时画，是展开用的）。
-// 这条门钉的是行为而不是某个 className：空态与有 tab 态都必须拿得到收起按钮且点得动。
+// 两个真实症状同一个根因（2026-07-27 产品负责人连报）：
+//  ① 收起钮原本挂在 WorkbenchTabs 工具条上，而该工具条在"一个 view 都没开"时整条早退不画
+//     ⇒ 右栏关不掉（顶栏那颗当时只在已收起态画，是拿来展开的）。
+//  ② 把它补回工具条后，开关在"顶栏那一行"和"面板头那一行"之间跳 ——「为什么纵向位置会变？」
+// 结论：一个开关的两态不该分居两处。这条门钉的是行为：两态都在顶栏、都点得动。
 // ---------------------------------------------------------------------------
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, fireEvent, cleanup } from '@testing-library/react';
 import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
-vi.mock('../../../src/renderer/hooks/useDisclosure', () => ({
-  useDisclosure: () => ({ isStandard: true }),
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: { invokeDomain: vi.fn().mockResolvedValue(undefined), on: () => () => {} },
 }));
-vi.mock('../../../src/renderer/hooks/useWorkspacePreviewModel', () => ({
-  useWorkspacePreviewModel: () => [],
+vi.mock('../../../src/renderer/components/SessionActionsMenu', () => ({
+  SessionActionsMenu: () => null,
 }));
-vi.mock('../../../src/renderer/stores/workbenchPresetStore', () => {
-  const useWorkbenchPresetStore = (selector: (s: { presets: unknown[]; recipes: unknown[] }) => unknown) =>
-    selector({ presets: [], recipes: [] });
-  return { useWorkbenchPresetStore };
-});
 
-import { WorkbenchTabs } from '../../../src/renderer/components/WorkbenchTabs';
+import { TitleBar } from '../../../src/renderer/components/TitleBar';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
-import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
-
-const realSetWorkbenchCollapsed = useAppStore.getState().setWorkbenchCollapsed;
 
 beforeEach(() => {
-  useAppStore.setState({ workbenchTabs: [], activeWorkbenchTab: null, previewTabs: [], language: 'zh' });
-  useSessionStore.setState({ currentSessionId: null });
+  useAppStore.setState({ language: 'zh', workbenchCollapsed: false, workbenchTabs: [], activeWorkbenchTab: null });
 });
 
 afterEach(() => {
   cleanup();
-  useAppStore.setState({ setWorkbenchCollapsed: realSetWorkbenchCollapsed });
-  useSessionStore.setState({ currentSessionId: null });
+  useAppStore.setState({ language: 'zh', workbenchCollapsed: false, workbenchTabs: [] });
 });
 
-describe('右栏收起入口', () => {
-  it('一个 view 都没开（空态）时收起按钮仍在，且点击能收起', () => {
-    const collapseFn = vi.fn();
-    useAppStore.setState({ setWorkbenchCollapsed: collapseFn });
+describe('右栏开关（顶栏单点，两态同位）', () => {
+  it('展开态：顶栏就有收起入口，收的是整栏而非关掉视图（不依赖面板头那条工具条）', () => {
+    useAppStore.setState({ workbenchCollapsed: false, workbenchTabs: ['files'], activeWorkbenchTab: 'files' });
+    render(<TitleBar />);
 
-    const { getByTestId } = render(<WorkbenchTabs />);
-    fireEvent.click(getByTestId('workbench-collapse-panel'));
+    fireEvent.click(screen.getByTestId('titlebar-collapse-workbench'));
 
-    expect(collapseFn).toHaveBeenCalledWith(true);
+    expect(useAppStore.getState().workbenchCollapsed).toBe(true);
+    // 面板本身留着，展开后回到原来那个视图。
+    expect(useAppStore.getState().workbenchTabs).toEqual(['files']);
+    expect(useAppStore.getState().activeWorkbenchTab).toBe('files');
   });
 
-  it('已开 view 时收起按钮同样在场', () => {
-    const collapseFn = vi.fn();
-    useAppStore.setState({ workbenchTabs: ['overview'], activeWorkbenchTab: 'overview', setWorkbenchCollapsed: collapseFn });
+  it('一个 view 都没开时收起入口照样在（它不挂在"有内容才渲染"的分支上）', () => {
+    useAppStore.setState({ workbenchCollapsed: false, workbenchTabs: [], activeWorkbenchTab: null });
+    render(<TitleBar />);
 
-    const { getByTestId } = render(<WorkbenchTabs />);
-    fireEvent.click(getByTestId('workbench-collapse-panel'));
+    expect(screen.getByTestId('titlebar-collapse-workbench')).toBeTruthy();
+  });
 
-    expect(collapseFn).toHaveBeenCalledWith(true);
+  it('收起态：同一位置翻成展开入口，点击展开且不顺手塞 view', () => {
+    useAppStore.setState({ workbenchCollapsed: true });
+    render(<TitleBar />);
+
+    fireEvent.click(screen.getByTestId('titlebar-expand-workbench'));
+    expect(useAppStore.getState().workbenchCollapsed).toBe(false);
+    expect(useAppStore.getState().workbenchTabs).toEqual([]);
+  });
+
+  it('两态的按钮是同一个槽位：都在顶栏右端那一组里，位置不随状态变', () => {
+    useAppStore.setState({ workbenchCollapsed: false });
+    const expanded = render(<TitleBar />);
+    const collapseParent = expanded.getByTestId('titlebar-collapse-workbench').parentElement;
+    cleanup();
+
+    useAppStore.setState({ workbenchCollapsed: true });
+    const collapsed = render(<TitleBar />);
+    const expandParent = collapsed.getByTestId('titlebar-expand-workbench').parentElement;
+
+    // 同一个容器 className ⇒ 同一条 h-12 顶栏里的同一组，纵向位置不会因状态而变。
+    expect(collapseParent?.className).toBe(expandParent?.className);
   });
 });

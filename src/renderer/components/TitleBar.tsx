@@ -9,7 +9,7 @@
 // ============================================================================
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { PanelLeft, PanelRight } from 'lucide-react';
+import { PanelLeft, PanelRight, PanelRightClose } from 'lucide-react';
 import { IconButton } from './primitives';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { getCurrentKeybindingPlatform } from '@shared/keybindings/defaults';
@@ -57,15 +57,18 @@ export const TitleBar: React.FC<TitleBarProps> = ({ secondaryPageActive = false 
         )}
         {!secondaryPageActive && <SessionActionsMenu />}
       </div>
-      {/* Right: 右栏收起态的展开入口。展开态的收起 affordance 在面板头
-          （WorkbenchTabs 收起按钮），顶栏不再叠一颗（2026-07-26 打磨批 D D5 去重）。 */}
+      {/* Right: 右栏开关。**两态同住一个位置**——2026-07-27 产品负责人：「展开收起侧边栏按钮
+          为什么纵向位置会变？」根因是收起态的入口在本栏（h-12，中心 24）、展开态的收起钮在
+          面板头那一行，同一个开关的两态住在两行里，一开一收就跳。改回顶栏单点：图标随状态翻，
+          位置恒定。（这推翻了 2026-07-26 打磨批 D5 的「顶栏不叠一颗」——D5 去的是重复，
+          代价是位移；位移比重复更伤，且现在顶栏这颗是唯一一颗，不构成重复。） */}
       <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        {workbenchCollapsed && !secondaryPageActive && (
+        {!secondaryPageActive && (
           <IconButton
-            icon={<PanelRight className="w-4 h-4" />}
-            aria-label={t.workbenchTabs.expandPanel}
-            data-testid="titlebar-expand-workbench"
-            onClick={() => setWorkbenchCollapsed(false)}
+            icon={workbenchCollapsed ? <PanelRight className="w-4 h-4" /> : <PanelRightClose className="w-4 h-4" />}
+            aria-label={workbenchCollapsed ? t.workbenchTabs.expandPanel : t.workbenchTabs.collapsePanel}
+            data-testid={workbenchCollapsed ? 'titlebar-expand-workbench' : 'titlebar-collapse-workbench'}
+            onClick={() => setWorkbenchCollapsed(!workbenchCollapsed)}
             variant="ghost"
             size="md"
           />

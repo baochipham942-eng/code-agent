@@ -24,7 +24,8 @@
         "url": "about:blank",
         "backgroundColor": "#18181b",
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 20, "y": 22 }
       }
     ],
     "security": {

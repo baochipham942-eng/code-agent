@@ -24,6 +24,7 @@ import { useVoiceCallStore, type VoiceInterruptMode } from '../stores/voiceCallS
 import ipcService from './ipcService';
 import { maybeShowSpeakerEchoHint } from './voiceEchoHint';
 import { VoiceAudioPipeline } from './voiceAudioPipeline';
+import { resolvePartialRelease } from '../utils/voicePartialOverlay';
 
 function getT() {
   return languages[useAppStore.getState().language] ?? languages.zh;
@@ -73,12 +74,35 @@ class VoiceCallBridge {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(command));
   }
 
-  private scheduleReload(sessionId: string, delayMs = 500): void {
+  /**
+   * final 到了不立刻清 partial——清了就有一段「哪里都没有这句话」的空窗
+   * （落库是异步的，这里还要等 500ms 才去拉消息）。partial 现在渲染成流尾的临时气泡，
+   * 空窗会变成肉眼可见的闪断。所以：临时气泡先顶着 final 文本，等真消息上屏后再撤。
+   */
+  private settledPartials: { user?: string; assistant?: string } = {};
+
+  private scheduleReload(sessionId: string, settled?: 'user' | 'assistant', delayMs = 500): void {
+    if (settled) {
+      this.settledPartials[settled] = settled === 'user'
+        ? this.store().partialUser
+        : this.store().partialAssistant;
+    }
     if (this.reloadTimer) clearTimeout(this.reloadTimer);
-    this.reloadTimer = setTimeout(() => {
+    this.reloadTimer = setTimeout(async () => {
       this.reloadTimer = null;
-      void reloadVoiceSessionMessages(sessionId);
+      await reloadVoiceSessionMessages(sessionId);
+      this.releaseSettledPartials();
     }, delayMs);
+  }
+
+  private releaseSettledPartials(): void {
+    const state = this.store();
+    const patch = resolvePartialRelease(this.settledPartials, {
+      user: state.partialUser,
+      assistant: state.partialAssistant,
+    });
+    this.settledPartials = {};
+    if (Object.keys(patch).length > 0) state.eventApplied(patch);
   }
 
   async dial(sessionId: string): Promise<void> {
@@ -91,6 +115,7 @@ class VoiceCallBridge {
     this.ws = null;
     this.audio?.stop();
     this.audio = null;
+    this.settledPartials = {};
 
     const activeAgentId = readActiveAgentSessionMap()[sessionId];
     const interruptMode = await readInterruptMode();
@@ -154,7 +179,7 @@ class VoiceCallBridge {
         return;
       }
       // host 侧关闭（挂断/上游死/超时）：摘要落库有一点延迟，稍后再拉一次。
-      this.scheduleReload(sessionId, 800);
+      this.scheduleReload(sessionId, undefined, 800);
       // error 态不 reset：把错误留在 chrome 上给用户看，由 End 按钮显式收尾；
       // 否则上游报错一闪而过，用户只看到通话凭空消失。
       if (phase !== 'error') this.store().reset();
@@ -175,20 +200,27 @@ class VoiceCallBridge {
         break;
       case 'speech.started':
         this.audio?.clearPlayback(); // barge-in：用户开口就掐掉正在播的回答
-        this.store().eventApplied({ userSpeaking: true, assistantSpeaking: false, partialAssistant: '' });
+        this.store().eventApplied({
+          userSpeaking: true,
+          assistantSpeaking: false,
+          // 已经收到 final、正顶着等真消息上屏的那句不能在这里抹掉（会闪断）；
+          // 只清「说到一半被打断」的在途文本。
+          ...(this.settledPartials.assistant === undefined ? { partialAssistant: '' } : {}),
+        });
         break;
       case 'user.transcript':
         if (event.done) {
-          this.store().eventApplied({ userSpeaking: false, partialUser: '' });
-          this.scheduleReload(sessionId);
+          // 顶着 final 文本等真消息上屏（见 scheduleReload）；这里不清空
+          this.store().eventApplied({ userSpeaking: false, partialUser: event.text });
+          this.scheduleReload(sessionId, 'user');
         } else {
           this.store().eventApplied({ partialUser: event.text });
         }
         break;
       case 'assistant.transcript':
         if (event.done) {
-          this.store().eventApplied({ partialAssistant: '' });
-          this.scheduleReload(sessionId);
+          this.store().eventApplied({ partialAssistant: event.text });
+          this.scheduleReload(sessionId, 'assistant');
         } else {
           this.store().eventApplied({
             assistantSpeaking: true,
@@ -221,7 +253,7 @@ class VoiceCallBridge {
     this.audio?.stop();
     this.audio = null;
     const { sessionId } = this.store();
-    if (sessionId) this.scheduleReload(sessionId, 800);
+    if (sessionId) this.scheduleReload(sessionId, undefined, 800);
     this.store().reset();
   }
 

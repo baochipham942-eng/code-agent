@@ -132,7 +132,7 @@ function runHoldId(workItemId: string): string {
 
 function onTaskManagerEvent(event: TaskManagerEvent): void {
   const state = ledger;
-  if (!state || event.sessionId !== state.neoSessionId) return;
+  if (event.sessionId !== state?.neoSessionId) return;
   const pendingId = state.pendingId;
   if (!pendingId) return;
   const item = state.items.get(pendingId);

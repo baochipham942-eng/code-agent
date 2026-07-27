@@ -2583,6 +2583,32 @@ fn align_traffic_lights(app: &AppHandle) {
     let _ = app;
 }
 
+/// 主窗首次呈现：show + focus + 摆灯。三条 show 路径（invoke 命令 / renderer-ready 事件 /
+/// 超时兜底）共用它，别再各写各的——摆灯漏在哪条路径上，就是那条路径赢跑时灯回默认位。
+///
+/// 摆灯必须**重复断言**：`show()` 返回只代表请求已发出，AppKit 随后还会在自己的排版节拍里
+/// 把三颗灯按默认位重排一遍，紧跟其后的那次同步摆会被它盖掉。2026-07-27 实测：只摆一次时
+/// 灯留在系统默认的中心 16；此前一次"看起来成了"，是因为手动前置窗口撞上了 Focused 重放
+/// ——典型的竞态假绿。摆法是幂等的绝对定位，所以这里在随后几拍里再断言几次；
+/// 这是对 AppKit 排版时机的补偿，有界（总计约 2s 内结束），不是轮询。
+fn present_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    align_traffic_lights(app);
+    #[cfg(target_os = "macos")]
+    {
+        let app = app.clone();
+        thread::spawn(move || {
+            for delay_ms in [60u64, 140, 400, 1000] {
+                thread::sleep(Duration::from_millis(delay_ms));
+                align_traffic_lights(&app);
+            }
+        });
+    }
+}
+
 /// renderer 首帧+初始数据就绪信号的 invoke 直连通道。
 /// emit 事件通道在打包态投递不到壳侧(window.once/app.once 均收不到,根因未明),
 /// invoke command 不走事件路由,可靠;事件监听与超时兜底仍保留,共用 AtomicBool 去重。
@@ -2591,11 +2617,7 @@ struct RendererReadyShown(Arc<AtomicBool>);
 #[tauri::command]
 fn renderer_ready(app: AppHandle, state: State<'_, RendererReadyShown>) {
     if !state.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
-        align_traffic_lights(&app);
+        present_main_window(&app);
     }
 }
 
@@ -2829,25 +2851,23 @@ fn main() {
             // renderer_ready invoke command 与下面的事件监听/超时兜底共用同一去重标志
             app.manage(RendererReadyShown(shown.clone()));
             {
-                let window_for_show = window.clone();
+                let app_for_show = app.handle().clone();
                 let shown = shown.clone();
                 // 用 app 级 once(而非 window.once):JS emit('renderer-ready') 是全局事件,
                 // app 级监听更可靠地收到(实测 window.once 收不到、窗口一直走超时兜底)。
                 app.handle().once("renderer-ready", move |_event| {
                     if !shown.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                        let _ = window_for_show.show();
-                        let _ = window_for_show.set_focus();
+                        present_main_window(&app_for_show);
                     }
                 });
             }
             {
-                let window = window.clone();
+                let app_for_timeout = app.handle().clone();
                 let shown = shown.clone();
                 thread::spawn(move || {
                     thread::sleep(RENDERER_READY_TIMEOUT);
                     if !shown.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                        present_main_window(&app_for_timeout);
                     }
                 });
             }

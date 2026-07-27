@@ -419,6 +419,10 @@ livePreview: {
   testBridge: '测试 bridge',
   openExternal: '在默认浏览器打开',
   loadingPage: '正在加载中…',
+},
+// 分叉子会话首段用户输入上方的轻量来源提示（取代原顶部分支导航栏）。
+forkSourceHint: {
+  source: '由此分支 · {parentTitle} · 锚点 {anchorId}',
 }
 };
 
@@ -838,5 +842,8 @@ livePreview: {
   testBridge: 'Test bridge',
   openExternal: 'Open in default browser',
   loadingPage: 'Loading…',
+},
+forkSourceHint: {
+  source: 'Branched from · {parentTitle} · anchor {anchorId}',
 }
 };

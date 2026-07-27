@@ -31,7 +31,7 @@ export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
-import { ForkLineageBar } from './features/chat/ForkLineageBar';
+import { ForkSourceHint } from './features/chat/ForkSourceHint';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { UserQuestionCard } from './UserQuestionCard';
@@ -760,8 +760,6 @@ export const ChatView: React.FC = () => {
         {/* 回会话追赶提示（A6）：离开期间产出变了什么，一句话 */}
         <SessionRecapBanner sessionId={currentSessionId} />
 
-        <ForkLineageBar sessionId={currentSessionId} />
-
         <ActiveConversationRewindBanner
           sessionId={currentSessionId}
           refreshToken={rewindRefreshToken}
@@ -805,6 +803,9 @@ export const ChatView: React.FC = () => {
               searchMatches={searchMatches}
               activeMatchIndex={activeMatchIndex}
               onRewindUserPrompt={handleRequestPromptRewind}
+              beforeFirstUserMessage={
+                <ForkSourceHint sessionId={currentSessionId} />
+              }
             />
           )}
         </div>

@@ -65,6 +65,8 @@ interface TurnCardProps {
   showSeparator?: boolean;
   onStreamingDisplayUpdate?: (nodeId: string, displayLength: number, isAnimating: boolean) => void;
   onRewindUserPrompt?: (messageId: string, content: string) => void;
+  /** 渲染在该 turn 用户消息上方（目前用于分叉子会话首段的来源提示） */
+  beforeUserMessage?: React.ReactNode;
 }
 
 // 超过该节点数的已完成 turn 默认折叠成 "Worked for Xm Ys"
@@ -83,6 +85,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
   showSeparator = true,
   onStreamingDisplayUpdate,
   onRewindUserPrompt,
+  beforeUserMessage,
 }) => {
   const { t } = useI18n();
   const createForkFromReply = useMessageActionStore((state) => state.createForkFromReply);
@@ -233,6 +236,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
 
       {/* Content */}
       <div className="space-y-2 px-4">
+        {beforeUserMessage}
         {/* User message always at top */}
         {foldedView?.userNode && (
           <TraceNodeRenderer

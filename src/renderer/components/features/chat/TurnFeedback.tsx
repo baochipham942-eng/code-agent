@@ -52,7 +52,7 @@ export const TurnFeedback: React.FC<Props> = ({ messageId, content }) => {
   if (!currentSessionId || !messageId) return null;
 
   return (
-    <div className="mt-2 flex items-center justify-start gap-1" data-testid="turn-feedback">
+    <div className="flex items-center justify-start gap-1" data-testid="turn-feedback">
       <button
         type="button"
         onClick={() => submit(1)}

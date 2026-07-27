@@ -291,7 +291,7 @@ describe('ConversationBranchRepository', () => {
       sessionId: 'source',
       boundary,
       anchorMessageId: 'u2',
-      hiddenMessageIds: ['a2', 'u2'],
+      hiddenMessageIds: ['u2', 'a2'],
       rewindId: 'rewind-invalid-order',
       idempotencyKey: 'rewind-invalid-order',
       createdAt: 39,
@@ -302,14 +302,14 @@ describe('ConversationBranchRepository', () => {
       sessionId: 'source',
       boundary,
       anchorMessageId: 'u2',
-      hiddenMessageIds: ['u2', 'a2'],
+      hiddenMessageIds: ['a2'],
       rewindId: 'rewind-1',
       idempotencyKey: 'rewind-1',
       createdAt: 40,
     });
-    expect(rewind.hiddenMessageIds).toEqual(['u2', 'a2']);
+    expect(rewind.hiddenMessageIds).toEqual(['a2']);
     expect(repository.replay('source', boundary).messages.map((message) => message.projectedMessageId))
-      .toEqual(['u1', 'a1']);
+      .toEqual(['u1', 'a1', 'u2']);
     expect(repository.getRawLedgerCounts('source', boundary)).toEqual({
       ...counts,
       events: counts.events + 1,

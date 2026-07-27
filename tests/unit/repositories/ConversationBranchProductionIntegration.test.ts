@@ -95,10 +95,10 @@ describe('immutable conversation ledger production write integration', () => {
       createdAt: 110,
     });
     expect(rewind.hiddenMessageIds).toEqual(
-      fork.messageMappings.slice(2).map((mapping) => mapping.childMessageId),
+      fork.messageMappings.slice(3).map((mapping) => mapping.childMessageId),
     );
     expect(ledger.replay('child', boundary).messages.map((message) => message.projectedMessageId))
-      .toEqual(fork.messageMappings.slice(0, 2).map((mapping) => mapping.childMessageId));
+      .toEqual(fork.messageMappings.slice(0, 3).map((mapping) => mapping.childMessageId));
 
     sessions.restorePromptRewind('child', rewind.rewindId, 120, 'owner-1');
     expect(ledger.replay('child', boundary).messages.map((message) => message.projectedMessageId))

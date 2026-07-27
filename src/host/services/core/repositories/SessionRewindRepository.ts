@@ -129,13 +129,15 @@ export class SessionRewindRepository {
       const anchorMessage = rowToMessage(anchorRow);
       const anchorRowId = Number(anchorRow.__rowid || 0);
       const anchorTimestamp = Number(anchorRow.timestamp);
+      // The anchor is the visible end of history; only the stable-order suffix
+      // strictly after it belongs to this rewind.
       const rowsToHide = this.db.prepare(`
         SELECT id
         FROM messages
         WHERE session_id = ?
           AND (
             timestamp > ?
-            OR (timestamp = ? AND rowid >= ?)
+            OR (timestamp = ? AND rowid > ?)
           )
           AND ${activeMessageWhere('messages')}
         ORDER BY timestamp ASC, rowid ASC

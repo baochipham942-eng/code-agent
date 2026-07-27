@@ -570,6 +570,9 @@ export class SessionForkPortabilityRepository {
     plan: SessionForkImportPlan,
     importedAt: number,
   ): void {
+    const publicationDeferred = plan.envelope.sessions.some(
+      (candidate) => candidate.workspace?.mode === 'isolated_at_anchor',
+    );
     const metadata = {
       portabilityImportV2: {
         sourceExportId: plan.sourceExportId,
@@ -581,6 +584,18 @@ export class SessionForkPortabilityRepository {
         ? { portableDetachedForkProvenanceV1: plan.envelope.detachedProvenance }
         : {}),
       portableModelConfigV2: session.modelConfig,
+      ...(publicationDeferred
+        ? {
+          portabilityPublicationBarrierV1: {
+            sourceExportId: plan.sourceExportId,
+            sourcePayloadDigest: plan.envelope.payloadDigest,
+            desiredReadOnly: session.workspace?.mode === 'isolated_at_anchor'
+              ? false
+              : Boolean(session.readOnly),
+            workspaceMode: session.workspace?.mode ?? 'shared_current',
+          },
+        }
+        : {}),
     };
     this.db.prepare(`
       INSERT INTO sessions (
@@ -614,7 +629,11 @@ export class SessionForkPortabilityRepository {
       canonicalStringify(sanitizeImportedEngine(session)),
       session.memoryMode === 'off' ? 'off' : 'auto',
       canonicalStringify(session.suppressedMemoryEntryIds ?? []),
-      session.readOnly || session.workspace?.mode === 'isolated_at_anchor' ? 1 : 0,
+      publicationDeferred
+        || session.readOnly
+        || session.workspace?.mode === 'isolated_at_anchor'
+        ? 1
+        : 0,
       session.createdAt,
       session.updatedAt,
     );
@@ -835,13 +854,20 @@ export class SessionForkPortabilityRepository {
     };
     for (const sessionId of Object.values(result.sessionIdMap)) {
       const session = this.db.prepare(`
-        SELECT user_id, project_id
+        SELECT user_id, project_id, is_deleted
         FROM sessions
         WHERE id = ?
         LIMIT 1
-      `).get(sessionId) as { user_id: string | null; project_id: string | null } | undefined;
+      `).get(sessionId) as {
+        user_id: string | null;
+        project_id: string | null;
+        is_deleted: number;
+      } | undefined;
       if (!session) {
         fail('REFERENCE_NOT_CLOSED', `completed import lost session ${sessionId}`);
+      }
+      if (Number(session.is_deleted) !== 0) {
+        fail('REFERENCE_NOT_CLOSED', `completed import session ${sessionId} was deleted`);
       }
       if (
         session.user_id !== boundary.ownerUserId

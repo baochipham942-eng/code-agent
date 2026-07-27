@@ -324,6 +324,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ownerUserId,
         )
       : null;
+    const persistedForkExternalSessionId = explicitForkLineage
+      ? selectedEngine.externalSessionId?.trim() || undefined
+      : undefined;
+    if (
+      persistedForkExternalSessionId
+      && isExternalAgentEngine(selectedEngine.kind)
+    ) {
+      new SessionForkRuntimeContextService(getDatabase()).assertConsumedForResume(
+        sessionId,
+        selectedEngine.kind,
+      );
+    }
 
     // per-token 并发上限（WP3-4，fail-closed）：必须在 writeHead 之前拒。
     const releaseSseSlot = transport.connectedClient
@@ -342,9 +354,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       workspace: resolvedProject,
       durableActivation,
       externalEngine: isExternalAgentEngine(selectedEngine.kind) ? selectedEngine.kind : undefined,
-      externalSessionId: explicitForkLineage
-        ? selectedEngine.externalSessionId?.trim() || undefined
-        : undefined,
+      externalSessionId: persistedForkExternalSessionId,
       logger,
     });
     let externalDurableLifecycle: Awaited<ReturnType<typeof durableRunLifecycle.start>>['externalLifecycle'];
@@ -544,9 +554,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           adapter = new KimiCliAdapter();
           resolvedEngineModel = launch.model;
         }
-        const persistedExternalSessionId = explicitForkLineage
-          ? selectedEngine.externalSessionId?.trim() || undefined
-          : undefined;
+        const persistedExternalSessionId = persistedForkExternalSessionId;
         const forkContext = !persistedExternalSessionId
           && (selectedEngine.kind === 'codex_cli' || selectedEngine.kind === 'claude_code')
           ? await new SessionForkRuntimeContextService(getDatabase()).prepareFirstChildRun({

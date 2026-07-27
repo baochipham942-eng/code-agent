@@ -11,8 +11,10 @@ import type {
   PromptRewindRestoreResult,
   PromptRewindResult,
 } from '../core/repositories/SessionRepository';
+import { createLogger } from '../infra/logger';
 
 const ACTIVE_RUNTIME_STATES = new Set(['running', 'paused', 'queued', 'cancelling']);
+const logger = createLogger('SessionRewindService');
 
 export interface SessionRewindServiceDatabase {
   applyPromptRewind(
@@ -31,6 +33,11 @@ export interface SessionRewindServiceDatabase {
 export interface SessionRewindServiceOptions {
   getRuntimeStatus?: (sessionId: string) => string | undefined;
   setSessionContext?: (sessionId: string, messages: Message[]) => void;
+  onProjectionFailure?: (
+    phase: 'rewind' | 'restore',
+    sessionId: string,
+    error: unknown,
+  ) => void;
   now?: () => number;
   /** `null` explicitly means the local/anonymous owner; `undefined` fails closed. */
   ownerUserId?: string | null;
@@ -71,7 +78,7 @@ export class SessionRewindService {
     } catch (error) {
       throw this.normalizeError(error);
     }
-    this.options.setSessionContext?.(request.sessionId, result.activeMessages);
+    this.refreshRuntimeProjection('rewind', request.sessionId, result.activeMessages);
 
     return {
       success: true,
@@ -113,7 +120,7 @@ export class SessionRewindService {
     } catch (error) {
       throw this.normalizeError(error);
     }
-    this.options.setSessionContext?.(request.sessionId, result.activeMessages);
+    this.refreshRuntimeProjection('restore', request.sessionId, result.activeMessages);
     return {
       success: true,
       sessionId: request.sessionId,
@@ -128,6 +135,33 @@ export class SessionRewindService {
     const status = this.options.getRuntimeStatus?.(sessionId);
     if (status && ACTIVE_RUNTIME_STATES.has(status)) {
       throw new SessionRewindError('SESSION_RUNNING', `session is ${status}`);
+    }
+  }
+
+  /**
+   * The SQLite transaction is the durable truth. A stale in-memory projection
+   * must never turn a committed rewind into an apparent failure that a client
+   * retries with a new idempotency key. Session load/cache invalidation can
+   * rebuild this projection from the returned activeMessages.
+   */
+  private refreshRuntimeProjection(
+    phase: 'rewind' | 'restore',
+    sessionId: string,
+    messages: Message[],
+  ): void {
+    try {
+      this.options.setSessionContext?.(sessionId, messages);
+    } catch (error) {
+      logger.warn('Committed conversation rewind could not refresh runtime projection', {
+        phase,
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      try {
+        this.options.onProjectionFailure?.(phase, sessionId, error);
+      } catch {
+        // Observability callbacks must not change the committed operation result.
+      }
     }
   }
 

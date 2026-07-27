@@ -84,4 +84,19 @@ describe('TurnCard Fork reply action', () => {
 
     expect(screen.queryByRole('button', { name: '从这条回复创建分支' })).toBeNull();
   });
+
+  it('places compact source context immediately before the first user message', () => {
+    render(
+      <TurnCard
+        turn={completedTurn()}
+        sessionId="source-session"
+        beforeUserMessage={<div data-testid="fork-source-hint">由此分支</div>}
+      />,
+    );
+
+    const hint = screen.getByTestId('fork-source-hint');
+    const userMessage = screen.getByText('第二问');
+    expect(hint.compareDocumentPosition(userMessage) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+  });
 });

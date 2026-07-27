@@ -26,6 +26,17 @@ describe('Fork/Rewind backward-compatible schema migration', () => {
     applySchema(db, logger);
     applySessionsMigrations(db, logger);
 
+    db.exec(`
+      INSERT INTO generative_ui_instances (
+        instance_id, session_id, source_message_id, source_ordinal, source_key,
+        spec_hash, spec_json, state_json, state_revision, status,
+        created_at, updated_at
+      ) VALUES (
+        'legacy-ui', 'legacy-session', 'legacy-message', 0, 'legacy-source',
+        'spec-hash', '{}', '{}', 0, 'hidden', 10, 20
+      )
+    `);
+    db.exec('ALTER TABLE generative_ui_instances DROP COLUMN hidden_by_rewind_id');
     db.exec('DROP TABLE session_fork_message_map');
     db.exec('DROP TABLE session_forks');
     db.exec('ALTER TABLE session_rewinds RENAME TO session_rewinds_new_shape');
@@ -66,6 +77,15 @@ describe('Fork/Rewind backward-compatible schema migration', () => {
       request_digest: null,
       status: 'completed',
       restored_at: null,
+    });
+    expect(db.prepare(`
+      SELECT instance_id, status, hidden_by_rewind_id
+      FROM generative_ui_instances
+      WHERE instance_id = 'legacy-ui'
+    `).get()).toEqual({
+      instance_id: 'legacy-ui',
+      status: 'hidden',
+      hidden_by_rewind_id: null,
     });
     expect(db.prepare(`
       SELECT name FROM sqlite_master

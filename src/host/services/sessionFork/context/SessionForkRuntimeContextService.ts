@@ -7,12 +7,21 @@ import type {
 } from '../../core/repositories/SessionForkRepository';
 import {
   buildValidatedExternalForkContextHandoff,
+  ExternalForkContextError,
   type ExternalForkContextHandoff,
   type ExternalForkContextPolicy,
 } from './externalForkContextHandoff';
 
 export interface SessionForkRuntimeContextDatabase {
   getSessionForkContextSource(childSessionId: string): SessionForkContextSource | null;
+  getSessionForkContextHandoff?(
+    forkId: string,
+  ): SessionForkContextHandoffRecord | null;
+  getDb?(): {
+    prepare(sql: string): {
+      get(...params: unknown[]): unknown;
+    };
+  } | null;
   prepareSessionForkContextHandoff(
     forkId: string,
     engine: ExternalAgentEngineKind,
@@ -97,13 +106,43 @@ export class SessionForkRuntimeContextService {
       policy: input.policy,
       createdAt: this.now(),
     });
-    this.database.prepareSessionForkContextHandoff(
-      source.lineage.forkId,
-      input.engine,
-      handoff.payloadDigest,
-      this.now(),
-    );
-    const attemptId = this.createAttemptId();
+    const existing = this.readContextHandoff(source.lineage.forkId);
+    if (
+      existing
+      && (
+        existing.engine !== input.engine
+        || existing.payloadDigest !== handoff.payloadDigest
+      )
+    ) {
+      throw new ExternalForkContextError(
+        'PAYLOAD_TAMPERED',
+        `fork ${source.lineage.forkId} retry does not match its persisted context handoff`,
+      );
+    }
+    if (existing?.state === 'consumed' || existing?.state === 'blocked') {
+      throw new ExternalForkContextError(
+        'HANDOFF_NOT_CONSUMED',
+        `fork ${source.lineage.forkId} context handoff cannot replay from ${existing.state}`,
+      );
+    }
+    const retryAttemptId = existing?.state === 'dispatching'
+      ? existing.attemptId
+      : null;
+    if (existing?.state === 'dispatching' && !retryAttemptId) {
+      throw new ExternalForkContextError(
+        'HANDOFF_NOT_CONSUMED',
+        `fork ${source.lineage.forkId} dispatching handoff has no durable attempt identity`,
+      );
+    }
+    if (!retryAttemptId) {
+      this.database.prepareSessionForkContextHandoff(
+        source.lineage.forkId,
+        input.engine,
+        handoff.payloadDigest,
+        this.now(),
+      );
+    }
+    const attemptId = retryAttemptId ?? this.createAttemptId();
 
     return {
       handoff,
@@ -124,6 +163,68 @@ export class SessionForkRuntimeContextService {
           this.now(),
         );
       },
+    };
+  }
+
+  assertConsumedForResume(
+    childSessionId: string,
+    engine: ExternalAgentEngineKind,
+  ): void {
+    const source = this.database.getSessionForkContextSource(childSessionId);
+    if (!source || source.lineage.contextDeliveryMode !== 'validated_context_handoff') {
+      throw new ExternalForkContextError(
+        'HANDOFF_NOT_CONSUMED',
+        `fork child ${childSessionId} has no validated context lineage`,
+      );
+    }
+    const record = this.readContextHandoff(source.lineage.forkId);
+    if (
+      !record
+      || record.state !== 'consumed'
+      || record.engine !== engine
+      || !record.attemptId
+      || record.consumedAt === null
+    ) {
+      const state = record
+        ? `${record.state} for ${record.engine}`
+        : 'missing';
+      throw new ExternalForkContextError(
+        'HANDOFF_NOT_CONSUMED',
+        `fork child ${childSessionId} cannot resume provider identity because its context handoff is ${state}`,
+      );
+    }
+  }
+
+  private readContextHandoff(forkId: string): SessionForkContextHandoffRecord | null {
+    if (this.database.getSessionForkContextHandoff) {
+      return this.database.getSessionForkContextHandoff(forkId);
+    }
+    const raw = this.database.getDb?.()?.prepare(`
+      SELECT
+        fork_id AS forkId,
+        engine,
+        payload_digest AS payloadDigest,
+        state,
+        attempt_id AS attemptId,
+        prepared_at AS preparedAt,
+        dispatch_started_at AS dispatchStartedAt,
+        consumed_at AS consumedAt,
+        error_json AS errorJson
+      FROM session_fork_context_handoffs
+      WHERE fork_id = ?
+      LIMIT 1
+    `).get(forkId) as Record<string, unknown> | undefined;
+    if (!raw) return null;
+    return {
+      forkId: String(raw.forkId),
+      engine: raw.engine as SessionForkContextHandoffRecord['engine'],
+      payloadDigest: String(raw.payloadDigest),
+      state: raw.state as SessionForkContextHandoffRecord['state'],
+      attemptId: typeof raw.attemptId === 'string' ? raw.attemptId : null,
+      preparedAt: Number(raw.preparedAt),
+      dispatchStartedAt: raw.dispatchStartedAt === null ? null : Number(raw.dispatchStartedAt),
+      consumedAt: raw.consumedAt === null ? null : Number(raw.consumedAt),
+      error: null,
     };
   }
 }

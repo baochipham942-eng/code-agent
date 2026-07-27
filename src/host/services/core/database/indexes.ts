@@ -116,6 +116,7 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_turn_cost_session_created ON turn_cost_estimates(session_id, created_at)`);
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_instances_message ON generative_ui_instances(session_id, source_message_id, source_ordinal)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_instances_rewind ON generative_ui_instances(session_id, hidden_by_rewind_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_events_instance_created ON generative_ui_events(instance_id, created_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_execution_manifests_session_status ON execution_manifests(session_id, status, created_at)`);
 

@@ -64,6 +64,7 @@ describe('session fork portability codecs', () => {
         payloadDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
       },
     });
+    expect(child?.workspace?.anchorChildMessageId).toBe('ca1');
 
     const childMessage = envelope.messages.find((item) => item.id === 'ca1');
     expect(childMessage?.attachments).toEqual([expect.objectContaining({
@@ -170,6 +171,7 @@ describe('session fork portability codecs', () => {
 
     expect(envelope.sessions).toHaveLength(1);
     expect(envelope.sessions[0]).not.toHaveProperty('parentSessionId');
+    expect(envelope.sessions[0].workspace?.anchorChildMessageId).toBe('ca1');
     expect(envelope.lineage?.nodes).toEqual([
       expect.objectContaining({
         sessionId: 'child',

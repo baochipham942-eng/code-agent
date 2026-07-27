@@ -327,10 +327,15 @@ export function validatePortableSessionWorkspaceV2(
   assertOnlyKeys(workspace as unknown as Record<string, unknown>, [
     'mode',
     'label',
+    'anchorChildMessageId',
     'isolatedAnchor',
   ], label);
   if (workspace.mode === 'shared_current') {
-    if (workspace.label !== '历史对话 + 当前文件' || workspace.isolatedAnchor) {
+    if (
+      workspace.label !== '历史对话 + 当前文件'
+      || workspace.anchorChildMessageId
+      || workspace.isolatedAnchor
+    ) {
       fail('INVALID_ENVELOPE', `${label} shared_current shape is invalid`);
     }
     return;
@@ -341,6 +346,15 @@ export function validatePortableSessionWorkspaceV2(
     || !workspace.isolatedAnchor
   ) {
     fail('PORTABLE_EVIDENCE_REQUIRED', `${label} isolated evidence is required`);
+  }
+  if (
+    workspace.anchorChildMessageId !== undefined
+    && (
+      typeof workspace.anchorChildMessageId !== 'string'
+      || !workspace.anchorChildMessageId.trim()
+    )
+  ) {
+    fail('INVALID_ENVELOPE', `${label}.anchorChildMessageId must be non-empty`);
   }
   validatePortableIsolatedAnchorEvidenceV1(
     workspace.isolatedAnchor,
@@ -359,6 +373,9 @@ export function sanitizePortableSessionWorkspaceV2(
   const sanitized: PortableSessionWorkspaceV2 = {
     mode: source.mode,
     label: source.label,
+    ...(source.anchorChildMessageId
+      ? { anchorChildMessageId: source.anchorChildMessageId.trim() }
+      : {}),
     ...(isolatedAnchor
       ? {
         isolatedAnchor: {

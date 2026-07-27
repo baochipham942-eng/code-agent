@@ -142,6 +142,50 @@ describe('external fork context capability matrix', () => {
 });
 
 describe('buildValidatedExternalForkContextHandoff', () => {
+  it('keeps the semantic payload digest stable when only createdAt changes', () => {
+    const first = buildValidatedExternalForkContextHandoff(buildInput('codex_cli', {
+      createdAt: 1_700_000_000_000,
+    }));
+    const retry = buildValidatedExternalForkContextHandoff(buildInput('codex_cli', {
+      createdAt: 1_700_000_000_999,
+    }));
+
+    expect(retry.createdAt).not.toBe(first.createdAt);
+    expect(retry.payloadDigest).toBe(first.payloadDigest);
+  });
+
+  it.each([
+    ['toolCalls', [{
+      id: 'tool-call-1',
+      name: 'read_file',
+      arguments: { path: '/private/secret.txt' },
+    }]],
+    ['toolResults', [{
+      toolCallId: 'tool-call-1',
+      success: true,
+      output: 'private tool output',
+    }]],
+    ['contentParts', [{
+      type: 'tool_call',
+      toolCallId: 'tool-call-1',
+    }]],
+  ] as const)('fails closed when a mapped message contains non-empty %s', (field, value) => {
+    const prefix = mappedPrefix();
+    prefix[1] = {
+      ...prefix[1],
+      message: {
+        ...prefix[1].message,
+        [field]: value,
+      },
+    };
+
+    expect(() => buildValidatedExternalForkContextHandoff(buildInput('codex_cli', {
+      mappedActivePrefix: prefix,
+    }))).toThrowError(expect.objectContaining<Partial<ExternalForkContextError>>({
+      code: 'TOOL_CONTEXT_REJECTED',
+    }));
+  });
+
   it('builds an immutable mapped prefix with metadata-only attachment and artifact provenance', () => {
     const handoff = buildValidatedExternalForkContextHandoff(buildInput());
 

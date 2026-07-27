@@ -34,7 +34,12 @@ export interface PublishedImportedWorkspaceSessionRow {
 }
 
 interface ReadPublishedImportedWorkspaceInput {
-  fork: { id: string; child_session_id: string; anchor_child_message_id: string };
+  fork: {
+    id: string;
+    child_session_id: string;
+    anchor_child_message_id: string;
+    requireLineage?: boolean;
+  };
   session: PublishedImportedWorkspaceSessionRow;
   metadata: Record<string, unknown>;
   importedPortable: PortableSessionWorkspaceV2;
@@ -201,6 +206,13 @@ export function readPublishedImportedPortableWorkspace(
     );
   }
   const lineage = isRecord(metadata.forkLineage) ? metadata.forkLineage : null;
+  const portableAnchorMessageId = importedPortable.anchorChildMessageId
+    ?? (
+      fork.requireLineage !== false
+      && typeof lineage?.anchorChildMessageId === 'string'
+      ? lineage.anchorChildMessageId
+      : undefined
+    );
   const expectedMappings = evidence.manifest.pathMappings.map((mapping) => ({
     sourceId: mapping.sourceId,
     sourcePath: mapping.sourcePath,
@@ -212,6 +224,9 @@ export function readPublishedImportedPortableWorkspace(
   const originalAnchor = importedPortable.isolatedAnchor;
   const checks: Array<[string, boolean]> = [
     ['portable source evidence', Boolean(originalAnchor)],
+    ['portable child anchor', (
+      portableAnchorMessageId === fork.anchor_child_message_id
+    )],
     ['session visibility', Number(session.read_only) === 0 && Number(session.is_deleted) === 0],
     ['session runtime', Boolean(
       session.status === 'idle'
@@ -257,9 +272,13 @@ export function readPublishedImportedPortableWorkspace(
       && sourceRoot?.role === 'primary'
     )],
     ['fork lineage', (
-      lineage?.forkId === fork.id
-      && lineage?.childSessionId === fork.child_session_id
-      && lineage?.workspaceMode === 'isolated_at_anchor'
+      fork.requireLineage === false
+      || (
+        lineage?.forkId === fork.id
+        && lineage?.childSessionId === fork.child_session_id
+        && lineage?.anchorChildMessageId === fork.anchor_child_message_id
+        && lineage?.workspaceMode === 'isolated_at_anchor'
+      )
     )],
     ['WorkspaceScope identity', (
       projection.verification.forkId === fork.id
@@ -320,6 +339,7 @@ export function readPublishedImportedPortableWorkspace(
   return {
     mode: 'isolated_at_anchor',
     label: '历史对话 + 锚点文件',
+    anchorChildMessageId: fork.anchor_child_message_id,
     isolatedAnchor: portable,
   };
 }

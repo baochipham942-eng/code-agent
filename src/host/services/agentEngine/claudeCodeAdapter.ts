@@ -309,7 +309,6 @@ export class ClaudeCodeAdapter {
           void request.durableLifecycle?.terminateProcess('SIGTERM');
         } else {
           confirmedExternalSessionId = parsed.externalSessionId;
-          request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
         }
       }
       if (parsed.textDelta && (parsed.textDeltaSource !== 'snapshot' || streamedText.length === 0)) {
@@ -404,10 +403,11 @@ export class ClaudeCodeAdapter {
     if (request.forkContextHandoff && !confirmedExternalSessionId && !resumeIdentityError) {
       resumeIdentityError = 'Claude fork handoff did not confirm a new external session identity';
     }
-    const sessionExternalSessionId = confirmedExternalSessionId
-      ?? request.resumeLaunch?.externalSessionId;
     const emptyResponse = !finalText && !cliErrorText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
     const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0 || emptyResponse);
+    const sessionExternalSessionId = failed
+      ? request.resumeLaunch?.externalSessionId
+      : confirmedExternalSessionId ?? request.resumeLaunch?.externalSessionId;
     if (forkContextAudit && !failed) {
       if (!onForkContextDispatched) {
         throw new Error('Fork context dispatch lifecycle disappeared after provider identity confirmation');
@@ -423,6 +423,9 @@ export class ClaudeCodeAdapter {
         }
         throw error;
       }
+    }
+    if (!failed && sessionExternalSessionId) {
+      request.durableLifecycle?.persistExternalSessionId(sessionExternalSessionId);
     }
 
     ledger.addOutputRef({

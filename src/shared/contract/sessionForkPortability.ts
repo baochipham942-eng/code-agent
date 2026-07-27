@@ -116,6 +116,12 @@ export interface PortableIsolatedAnchorEvidenceV1 {
 export interface PortableSessionWorkspaceV2 {
   mode: SessionForkWorkspaceMode;
   label: '历史对话 + 当前文件' | '历史对话 + 锚点文件';
+  /**
+   * The completed assistant reply whose file evidence this isolated workspace
+   * represents. Optional at the codec boundary for legacy V2 envelopes; import
+   * planning requires it explicitly for an isolated export root.
+   */
+  anchorChildMessageId?: string;
   isolatedAnchor?: PortableIsolatedAnchorEvidenceV1;
 }
 
@@ -252,6 +258,7 @@ export interface SessionExportEnvelopeV2 {
 export interface SessionExportWorkspaceInputV2 {
   mode: SessionForkWorkspaceMode;
   label: PortableSessionWorkspaceV2['label'];
+  anchorChildMessageId?: string;
   isolatedAnchor?: PortableIsolatedAnchorEvidenceV1 & {
     /** Runtime-only path accepted as source input and deliberately dropped by the codec. */
     absoluteWorktreePath?: string;

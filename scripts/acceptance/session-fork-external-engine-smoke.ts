@@ -5,6 +5,7 @@ import {
   readFile,
   readdir,
   realpath,
+  stat,
   writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
@@ -14,7 +15,6 @@ import type { Message } from '../../src/shared/contract/message';
 import type { Session } from '../../src/shared/contract/session';
 import type {
   ExternalAgentEngineKind,
-  AgentEngineRunResult,
 } from '../../src/shared/contract/agentEngine';
 
 interface ExternalEngineAcceptanceInput {
@@ -46,6 +46,7 @@ interface FakeEngineCapture {
 
 interface EngineEvidence {
   engine: ExternalAgentEngineKind;
+  surface: 'desktop' | 'web';
   sourceSessionId: string;
   childSessionId: string;
   forkId: string;
@@ -55,7 +56,14 @@ interface EngineEvidence {
   capturedPromptSha256: string;
   capturePath: string;
   externalSessionId: string;
-  result: AgentEngineRunResult;
+  firstFailure: {
+    handoffState: string;
+    externalSessionIdPersisted: boolean;
+  };
+  result: {
+    status: 'completed';
+    outputText: string;
+  };
 }
 
 const EXTERNAL_ENGINES = ['codex_cli', 'claude_code'] as const;
@@ -91,7 +99,7 @@ function stableJson(value: unknown): string {
 }
 
 function conversation(prefix: string): Message[] {
-  const timestamp = 1_888_888_888_888;
+  const timestamp = 1_700_000_000_000;
   return [
     { id: `${prefix}u1`, role: 'user', content: 'external user one', timestamp },
     { id: `${prefix}a1`, role: 'assistant', content: 'external assistant one', timestamp },
@@ -107,7 +115,22 @@ const fs = require('node:fs');
 const path = require('node:path');
 const executable = path.basename(process.argv[1]);
 if (process.argv.includes('--version')) {
+  fs.writeFileSync(
+    path.join(__dirname, executable + '.version-probe.json'),
+    JSON.stringify({ argv: process.argv.slice(2), envKeys: Object.keys(process.env).sort() }) + '\\n',
+    'utf8',
+  );
   process.stdout.write(executable + ' acceptance-fake 1.0.0\\n');
+  process.exit(0);
+}
+if (executable === 'codex' && process.argv.includes('debug') && process.argv.includes('models')) {
+  process.stdout.write(JSON.stringify({
+    models: [{ slug: 'gpt-5', display_name: 'Acceptance GPT-5' }],
+  }) + '\\n');
+  process.exit(0);
+}
+if (executable === 'claude' && process.argv.includes('--help')) {
+  process.stdout.write("  --model <model> Model alias (e.g. 'sonnet', 'opus')\\n  --version\\n");
   process.exit(0);
 }
 let stdin = '';
@@ -135,6 +158,9 @@ process.stdin.on('end', () => {
     process.stderr.write('acceptance fake rejected unsafe environment keys\\n');
     process.exit(72);
   }
+  const failOncePath = path.join(__dirname, executable + '.fail-once');
+  const failAfterIdentity = fs.existsSync(failOncePath);
+  if (failAfterIdentity) fs.unlinkSync(failOncePath);
   if (executable === 'codex') {
     const outputIndex = process.argv.indexOf('--output-last-message');
     if (outputIndex >= 0 && process.argv[outputIndex + 1]) {
@@ -144,6 +170,10 @@ process.stdin.on('end', () => {
       type: 'thread.started',
       thread_id: 'codex-fresh-provider-session',
     }) + '\\n');
+    if (failAfterIdentity) {
+      process.stderr.write('acceptance fake failed after provider identity\\n');
+      process.exit(73);
+    }
     process.stdout.write(JSON.stringify({
       type: 'message.delta',
       delta: 'fake codex answer',
@@ -155,6 +185,10 @@ process.stdin.on('end', () => {
     subtype: 'init',
     session_id: 'claude-fresh-provider-session',
   }) + '\\n');
+  if (failAfterIdentity) {
+    process.stderr.write('acceptance fake failed after provider identity\\n');
+    process.exit(73);
+  }
   process.stdout.write(JSON.stringify({
     type: 'result',
     subtype: 'success',
@@ -193,7 +227,9 @@ async function isolateProviderEnvironment(fakeBin: string, fakeHome: string): Pr
   process.env.HOME = fakeHome;
   for (const key of Object.keys(process.env)) {
     if (
-      key.startsWith('ANTHROPIC_')
+      key.startsWith('NODE_')
+      || key === 'ELECTRON_RUN_AS_NODE'
+      || key.startsWith('ANTHROPIC_')
       || key.startsWith('CLAUDE_CODE_')
       || key.startsWith('CLAUDE_AI_')
       || /(API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|PASSWORD|CREDENTIAL|SECRET)/i.test(key)
@@ -308,6 +344,111 @@ function readContextHandoff(
   }
 }
 
+async function armFakeEngineFailure(
+  fakeBin: string,
+  engine: ExternalAgentEngineKind,
+): Promise<void> {
+  const executable = engine === 'codex_cli' ? 'codex' : 'claude';
+  await writeFile(path.join(fakeBin, `${executable}.fail-once`), 'fail after identity\n', 'utf8');
+}
+
+async function runDesktopProductTurn(input: {
+  sessionId: string;
+  workspaceRoot: string;
+}): Promise<void> {
+  const { AgentAppServiceImpl } = await import('../../src/host/app/agentAppService');
+  const appService = new AgentAppServiceImpl(
+    () => ({
+      getOrCreateCurrentOrchestrator: () => ({
+        getWorkingDirectory: () => input.workspaceRoot,
+        setWorkingDirectory: () => undefined,
+      }),
+      emitAgentEventForSession: () => undefined,
+    }) as never,
+    () => null,
+    () => input.sessionId,
+    () => undefined,
+  );
+  await appService.sendMessage({
+    sessionId: input.sessionId,
+    content: FIRST_PROMPT,
+    context: { workingDirectory: input.workspaceRoot },
+  });
+}
+
+async function runWebProductTurn(input: {
+  sessionId: string;
+  workspaceRoot: string;
+}): Promise<string> {
+  const [
+    { default: express },
+    { createAgentRouter },
+    { RunRegistry },
+    { getSessionManager },
+    { setDbAvailable },
+  ] = await Promise.all([
+    import('express'),
+    import('../../src/web/routes/agent'),
+    import('../../src/host/runtime/runRegistry'),
+    import('../../src/host/services'),
+    import('../../src/web/helpers/sessionCache'),
+  ]);
+  setDbAvailable(true);
+  const runRegistry = new RunRegistry();
+  const app = express();
+  app.use(express.json());
+  app.use('/api', createAgentRouter({
+    runRegistry,
+    pendingLocalToolCalls: new Map(),
+    logger: {
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    },
+    tryGetSessionManager: async () => getSessionManager(),
+    tryGetCLISessionManager: async () => getSessionManager(),
+    getSupabaseForSession: async () => null,
+    getDurableRunRollout: () => ({
+      policy: {
+        mode: 'legacy',
+        configuredValue: 'legacy',
+        valid: true,
+        durableActivation: false,
+        durableReadPreference: false,
+      },
+      ready: true,
+    }),
+  } as Parameters<typeof createAgentRouter>[0]));
+  const server = await new Promise<import('node:http').Server>((resolve) => {
+    const started = app.listen(0, '127.0.0.1', () => resolve(started));
+  });
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('external engine acceptance web route did not bind a TCP port');
+    }
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: FIRST_PROMPT,
+        sessionId: input.sessionId,
+        context: { workingDirectory: input.workspaceRoot },
+      }),
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      throw new Error(`external engine acceptance web route failed with ${response.status}: ${body}`);
+    }
+    return body;
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    runRegistry.clear();
+  }
+}
+
 async function runOneEngine(
   input: ExternalEngineAcceptanceInput,
   database: ExternalEngineDatabase,
@@ -320,14 +461,10 @@ async function runOneEngine(
       DEFAULT_EXTERNAL_FORK_CONTEXT_POLICY,
       SessionForkRuntimeContextService,
     },
-    { CodexCliAdapter },
-    { ClaudeCodeAdapter },
     { getAgentEngineRegistry },
   ] = await Promise.all([
     import('../../src/host/services/sessionFork/SessionForkService'),
     import('../../src/host/services/sessionFork/context/SessionForkRuntimeContextService'),
-    import('../../src/host/services/agentEngine/codexCliAdapter'),
-    import('../../src/host/services/agentEngine/claudeCodeAdapter'),
     import('../../src/host/services/agentEngine/agentEngineRegistry'),
   ]);
 
@@ -417,37 +554,70 @@ async function runOneEngine(
   const detectedBinaryPath = descriptor.binaryPath
     ? await realpath(descriptor.binaryPath)
     : '';
+  const [expectedBinaryStat, detectedBinaryStat] = descriptor.binaryPath
+    ? await Promise.all([
+        stat(expectedBinaryPath),
+        stat(descriptor.binaryPath),
+      ])
+    : [null, null];
   input.recordCheck(
     descriptor.installState === 'installed'
-      && detectedBinaryPath === expectedBinaryPath,
+      && detectedBinaryStat?.dev === expectedBinaryStat?.dev
+      && detectedBinaryStat?.ino === expectedBinaryStat?.ino,
     `${engine} acceptance uses the local fake executable`,
     {
+      installState: descriptor.installState,
       binaryPath: descriptor.binaryPath,
+      detectedBinaryPath,
       expectedBinaryPath,
+      detectedBinaryIdentity: detectedBinaryStat
+        ? { dev: detectedBinaryStat.dev, ino: detectedBinaryStat.ino }
+        : null,
+      expectedBinaryIdentity: expectedBinaryStat
+        ? { dev: expectedBinaryStat.dev, ino: expectedBinaryStat.ino }
+        : null,
       version: descriptor.version,
+      lastError: descriptor.lastError,
     },
   );
 
-  const commonRequest = {
-    sessionId: fork.childSession.id,
-    prompt: FIRST_PROMPT,
-    cwd: input.workspaceRoot,
-    workspaceRoot: input.workspaceRoot,
-    permissionProfile: 'read_only' as const,
-    timeoutMs: 15_000,
-    stallWarningMs: 10_000,
-    forkContextHandoff: prepared.handoff,
-    onForkContextDispatchStart: prepared.onDispatchStart,
-    onForkContextDispatched: prepared.onDispatched,
-  };
-  const result = engine === 'codex_cli'
-    ? await new CodexCliAdapter().run(commonRequest)
-    : await new ClaudeCodeAdapter().run(commonRequest);
+  const surface = engine === 'codex_cli' ? 'desktop' : 'web';
+  const runProductTurn = surface === 'desktop'
+    ? () => runDesktopProductTurn({
+        sessionId: fork.childSession.id,
+        workspaceRoot: input.workspaceRoot,
+      })
+    : () => runWebProductTurn({
+        sessionId: fork.childSession.id,
+        workspaceRoot: input.workspaceRoot,
+      }).then(() => undefined);
+  await armFakeEngineFailure(fakeBin, engine);
+  await runProductTurn();
+  const childAfterFailure = database.getSession(fork.childSession.id);
+  const handoffAfterFailure = readContextHandoff(input.dbPath, fork.lineage.forkId);
   input.recordCheck(
-    result.status === 'completed'
-      && result.outputText === `fake ${suffix} answer`,
-    `${engine} adapter completes through a real child process`,
-    result,
+    childAfterFailure?.engine?.externalSessionId === undefined
+      && handoffAfterFailure.state === 'dispatching'
+      && Boolean(handoffAfterFailure.attemptId),
+    `${surface} ${engine} wiring does not persist an identity emitted by a failed provider run`,
+    {
+      childEngine: childAfterFailure?.engine,
+      handoff: handoffAfterFailure,
+    },
+  );
+  await runProductTurn();
+  const completedMessages = database.getMessages(fork.childSession.id);
+  const completedAssistant = completedMessages.find((message) => (
+    message.role === 'assistant'
+      && message.content.trim() === `fake ${suffix} answer`
+  ));
+  input.recordCheck(
+    completedAssistant?.content.trim() === `fake ${suffix} answer`,
+    `${surface} ${engine} wiring retries the same audited handoff through the real product entry point`,
+    {
+      messageId: completedAssistant?.id,
+      content: completedAssistant?.content,
+    },
   );
 
   const capturePath = path.join(
@@ -512,9 +682,13 @@ async function runOneEngine(
   input.recordCheck(
     handoff.state === 'consumed'
       && handoff.payloadDigest === prepared.handoff.payloadDigest
-      && handoff.attemptId === prepared.attemptId,
-    `${engine} handoff records the exact consumed payload`,
-    handoff,
+      && handoff.attemptId === handoffAfterFailure.attemptId,
+    `${engine} retry consumes the exact stable payload with the original durable attempt`,
+    {
+      preparedPayloadDigest: prepared.handoff.payloadDigest,
+      failedAttempt: handoffAfterFailure,
+      consumedAttempt: handoff,
+    },
   );
 
   const childAfterRun = database.getSession(fork.childSession.id);
@@ -528,6 +702,7 @@ async function runOneEngine(
 
   return {
     engine,
+    surface,
     sourceSessionId,
     childSessionId: fork.childSession.id,
     forkId: fork.lineage.forkId,
@@ -537,7 +712,14 @@ async function runOneEngine(
     capturedPromptSha256: sha256(capture.stdin),
     capturePath,
     externalSessionId: expectedExternalSessionId,
-    result,
+    firstFailure: {
+      handoffState: handoffAfterFailure.state,
+      externalSessionIdPersisted: childAfterFailure?.engine?.externalSessionId !== undefined,
+    },
+    result: {
+      status: 'completed',
+      outputText: completedAssistant?.content.trim() ?? '',
+    },
   };
 }
 

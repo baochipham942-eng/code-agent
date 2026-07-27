@@ -445,6 +445,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       const persistedExternalSessionId = this.isExplicitForkChild(resolvedSessionId)
         ? engine.externalSessionId?.trim() || undefined
         : undefined;
+      if (persistedExternalSessionId) {
+        new SessionForkRuntimeContextService(getDatabase()).assertConsumedForResume(
+          resolvedSessionId,
+          engine.kind,
+        );
+      }
       const forkContext = persistedExternalSessionId
         ? null
         : await this.prepareExternalForkContext(
@@ -501,6 +507,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       const persistedExternalSessionId = this.isExplicitForkChild(resolvedSessionId)
         ? engine.externalSessionId?.trim() || undefined
         : undefined;
+      if (persistedExternalSessionId) {
+        new SessionForkRuntimeContextService(getDatabase()).assertConsumedForResume(
+          resolvedSessionId,
+          engine.kind,
+        );
+      }
       const forkContext = persistedExternalSessionId
         ? null
         : await this.prepareExternalForkContext(

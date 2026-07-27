@@ -196,14 +196,19 @@ async function publishedFixture() {
   const evidenceId = 'local-evidence';
   const intentId = 'import-workspace-intent';
   const metadata = {
+    portabilityImportV2: {
+      sourceExportId: 'export-1',
+    },
     portableWorkspaceV2: {
       mode: 'isolated_at_anchor',
       label: '历史对话 + 锚点文件',
+      anchorChildMessageId: 'child-a1',
       isolatedAnchor: portable,
     },
     forkLineage: {
       forkId: 'fork-1',
       childSessionId: 'child-1',
+      anchorChildMessageId: 'child-a1',
       workspaceMode: 'isolated_at_anchor',
     },
     forkWorkspaceScopeV1: {
@@ -298,6 +303,25 @@ function readerForPublishedRows(
   }).readPortableWorkspace.bind(reader);
 }
 
+function rootReaderForPublishedRows(
+  sessionRow: Record<string, unknown>,
+  publicationRow: Record<string, unknown>,
+) {
+  const db = {
+    prepare: vi.fn((sql: string) => ({
+      get: vi.fn(() => {
+        if (sql.includes('FROM sessions')) return sessionRow;
+        if (sql.includes('FROM session_fork_workspace_intents')) return publicationRow;
+        return undefined;
+      }),
+    })),
+  };
+  const reader = new SessionForkPortabilitySourceReader(db as never);
+  return (reader as unknown as {
+    readImportedRootPortableWorkspace: (sessionId: string) => unknown;
+  }).readImportedRootPortableWorkspace.bind(reader);
+}
+
 afterEach(async () => {
   projectState.scope = undefined;
   while (temporaryDirectories.length > 0) {
@@ -357,6 +381,26 @@ describe('SessionForkPortabilitySourceReader isolated evidence', () => {
       pathMappings: [{ relativePath: '.', isolatedRelativePath: '.' }],
     });
     expect(JSON.stringify(workspace)).not.toContain(fixture.repositoryRoot);
+  });
+
+  it('re-exports a published isolated import root with its explicit child anchor', async () => {
+    const fixture = await publishedFixture();
+    const workspace = rootReaderForPublishedRows(
+      fixture.sessionRow,
+      fixture.publicationRow,
+    )('child-1') as {
+      mode: string;
+      anchorChildMessageId: string;
+      isolatedAnchor: { content: { payloadDigest: string } };
+    };
+
+    expect(workspace).toMatchObject({
+      mode: 'isolated_at_anchor',
+      anchorChildMessageId: 'child-a1',
+      isolatedAnchor: {
+        content: { payloadDigest: fixture.portable.content.payloadDigest },
+      },
+    });
   });
 
   it('re-exports an atomically published imported workspace for the local null-owner scope', async () => {
@@ -497,5 +541,9 @@ describe('SessionForkPortabilitySourceReader isolated evidence', () => {
       fixture.sessionRow,
       { ...fixture.publicationRow, evidence_project_id: 'other-project' },
     )(isolatedFork)).toThrow(/boundary does not close/u);
+    expect(() => readerForPublishedRows(
+      { ...fixture.sessionRow, agent_engine: JSON.stringify({ kind: 'native', cwd: '/wrong' }) },
+      fixture.publicationRow,
+    )(isolatedFork)).toThrow(/session runtime/u);
   });
 });

@@ -3,6 +3,7 @@ import {
   SessionForkPortabilityError,
   buildSessionExportEnvelopeV2,
   planSessionForkImport,
+  rehashSessionExportEnvelopeV2,
 } from '../../../../../src/host/services/sessionFork/portability';
 import { OWNER_ID, PROJECT_ID, subtreeDraft } from './fixture';
 
@@ -39,6 +40,12 @@ describe('session fork import planning', () => {
       sourceAnchorMessageId: first.messageIdMap.a1,
       anchorChildMessageId: first.messageIdMap.ca1,
       forkId: first.forkIdMap['fork-1'],
+    });
+    expect(first.envelope.sessions.find((session) => (
+      session.id === first.sessionIdMap.child
+    ))?.workspace).toMatchObject({
+      mode: 'isolated_at_anchor',
+      anchorChildMessageId: first.messageIdMap.ca1,
     });
     expect(first.envelope.messages.every((item) => (
       Object.values(first.sessionIdMap).includes(item.sessionId)
@@ -78,6 +85,39 @@ describe('session fork import planning', () => {
       parentSessionId: null,
       rootSessionId: plan.sessionIdMap.child,
     });
+    expect(plan.envelope.sessions[0].workspace).toMatchObject({
+      mode: 'isolated_at_anchor',
+      anchorChildMessageId: plan.messageIdMap.ca1,
+    });
+  });
+
+  it('rejects a legacy isolated root without an explicit child anchor before producing a plan', () => {
+    const draft = subtreeDraft();
+    const current = buildSessionExportEnvelopeV2({
+      ...draft,
+      mode: 'detached_child',
+      rootSessionId: 'child',
+      sessions: [draft.sessions[1]],
+      lineage: undefined,
+      detachedProvenance: {
+        sourceRootSessionId: 'root',
+        sourceParentSessionId: 'root',
+        sourceForkId: 'fork-1',
+        sourceAnchorMessageId: 'a1',
+        sourceAnchorDigest: `sha256:${'6'.repeat(64)}`,
+        sourceDepth: 1,
+      },
+    });
+    const legacy = structuredClone(current);
+    delete legacy.sessions[0].workspace?.anchorChildMessageId;
+    const envelope = rehashSessionExportEnvelopeV2(legacy);
+
+    expect(() => planSessionForkImport({
+      envelope,
+      targetOwnerScopeId: OWNER_ID,
+      targetProjectId: PROJECT_ID,
+      namespace: 'legacy-device',
+    })).toThrow(/PORTABLE_EVIDENCE_REQUIRED.*explicit child anchor/u);
   });
 
   it('blocks implicit owner or project boundary expansion', () => {

@@ -436,8 +436,8 @@ describe('ClaudeCodeAdapter.run', () => {
     expect(child!.stdin.end.mock.invocationCallOrder[0])
       .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
     expect(firstLifecycle.persistExternalSessionId).toHaveBeenCalledWith('fork-claude-session');
-    expect((firstLifecycle.persistExternalSessionId as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
-      .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
+    expect(onForkContextDispatched.mock.invocationCallOrder[0])
+      .toBeLessThan((firstLifecycle.persistExternalSessionId as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]);
     const firstTerminalUpdate = mocks.updateSession.mock.calls.at(-1)?.[1];
     expect(firstTerminalUpdate).toMatchObject({
       status: 'idle',
@@ -522,6 +522,13 @@ describe('ClaudeCodeAdapter.run', () => {
     });
     const onForkContextDispatchStart = vi.fn(async () => undefined);
     const onForkContextDispatched = vi.fn(async () => undefined);
+    const lifecycle = {
+      runId: 'failed-fork-run', attempt: 1, ownerEpoch: 1,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
 
     const result = await new ClaudeCodeAdapter().run({
       sessionId: 'child-session',
@@ -531,6 +538,7 @@ describe('ClaudeCodeAdapter.run', () => {
       forkContextHandoff: buildTestExternalForkContextHandoff('claude_code'),
       onForkContextDispatchStart,
       onForkContextDispatched,
+      durableLifecycle: lifecycle,
     });
 
     expect(result).toMatchObject({
@@ -553,6 +561,13 @@ describe('ClaudeCodeAdapter.run', () => {
     ], 1, 'provider failed after identity confirmation'));
     const onForkContextDispatchStart = vi.fn(async () => undefined);
     const onForkContextDispatched = vi.fn(async () => undefined);
+    const lifecycle = {
+      runId: 'failed-fork-run', attempt: 1, ownerEpoch: 1,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
 
     const result = await new ClaudeCodeAdapter().run({
       sessionId: 'child-session',
@@ -562,11 +577,14 @@ describe('ClaudeCodeAdapter.run', () => {
       forkContextHandoff: buildTestExternalForkContextHandoff('claude_code'),
       onForkContextDispatchStart,
       onForkContextDispatched,
+      durableLifecycle: lifecycle,
     });
 
     expect(result.status).toBe('failed');
     expect(onForkContextDispatchStart).toHaveBeenCalledTimes(1);
     expect(onForkContextDispatched).not.toHaveBeenCalled();
+    expect(lifecycle.persistExternalSessionId).not.toHaveBeenCalled();
+    expect(mocks.updateSession.mock.calls.at(-1)?.[1]).not.toHaveProperty('engine.externalSessionId');
   });
 
   it('aborts after identity confirmation when Claude consumed-state persistence rejects', async () => {

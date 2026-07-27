@@ -50,6 +50,53 @@ function mapRequired(
   return target;
 }
 
+function completedAssistantAnchor(
+  envelope: PlanSessionForkImportInput['envelope'],
+  sessionId: string,
+  anchorMessageId: string,
+): boolean {
+  const anchor = envelope.messages.find((message) => (
+    message.id === anchorMessageId && message.sessionId === sessionId
+  ));
+  return Boolean(
+    anchor?.role === 'assistant'
+    && anchor.content.trim()
+    && anchor.visibility !== 'rewound'
+    && anchor.isMeta !== true,
+  );
+}
+
+function isolatedAnchorBySession(
+  envelope: PlanSessionForkImportInput['envelope'],
+): Map<string, string> {
+  const result = new Map<string, string>();
+  const nodeBySession = new Map(envelope.lineage.nodes.map((node) => [node.sessionId, node]));
+  for (const session of envelope.sessions) {
+    if (session.workspace?.mode !== 'isolated_at_anchor') continue;
+    const node = nodeBySession.get(session.id);
+    const explicitAnchor = session.workspace.anchorChildMessageId?.trim() || null;
+    if (!explicitAnchor && (!node?.parentSessionId || !node.forkId)) {
+      throw new SessionForkPortabilityError(
+        'PORTABLE_EVIDENCE_REQUIRED',
+        `isolated root ${session.id} requires an explicit child anchor`,
+      );
+    }
+    const anchorMessageId = explicitAnchor ?? node?.anchorChildMessageId ?? null;
+    if (
+      !anchorMessageId
+      || (node?.anchorChildMessageId && node.anchorChildMessageId !== anchorMessageId)
+      || !completedAssistantAnchor(envelope, session.id, anchorMessageId)
+    ) {
+      throw new SessionForkPortabilityError(
+        'REFERENCE_NOT_CLOSED',
+        `isolated session ${session.id} child anchor is not a completed assistant reply`,
+      );
+    }
+    result.set(session.id, anchorMessageId);
+  }
+  return result;
+}
+
 export function planSessionForkImport(input: PlanSessionForkImportInput): SessionForkImportPlan {
   validateSessionExportEnvelopeV2(input.envelope);
   if (input.envelope.ownerScopeId !== input.targetOwnerScopeId) {
@@ -67,6 +114,7 @@ export function planSessionForkImport(input: PlanSessionForkImportInput): Sessio
       `project remap from ${input.envelope.projectId} to ${input.targetProjectId} requires explicit approval`,
     );
   }
+  const isolatedAnchors = isolatedAnchorBySession(input.envelope);
 
   const sessionIdMap = Object.fromEntries(
     [...input.envelope.sessions]
@@ -118,12 +166,27 @@ export function planSessionForkImport(input: PlanSessionForkImportInput): Sessio
   envelope.ownerScopeId = input.targetOwnerScopeId;
   envelope.projectId = input.targetProjectId;
   envelope.rootSessionId = mapRequired(sessionIdMap, input.envelope.rootSessionId, 'root session');
-  envelope.sessions = envelope.sessions.map((session) => ({
-    ...session,
-    id: mapRequired(sessionIdMap, session.id, 'session'),
-    ownerScopeId: input.targetOwnerScopeId,
-    projectId: input.targetProjectId,
-  }));
+  envelope.sessions = envelope.sessions.map((session) => {
+    const anchorMessageId = isolatedAnchors.get(session.id);
+    return {
+      ...session,
+      id: mapRequired(sessionIdMap, session.id, 'session'),
+      ownerScopeId: input.targetOwnerScopeId,
+      projectId: input.targetProjectId,
+      ...(session.workspace && anchorMessageId
+        ? {
+          workspace: {
+            ...session.workspace,
+            anchorChildMessageId: mapRequired(
+              messageIdMap,
+              anchorMessageId,
+              'isolated child anchor',
+            ),
+          },
+        }
+        : {}),
+    };
+  });
   envelope.messages = envelope.messages.map((message) => ({
     ...message,
     id: mapRequired(messageIdMap, message.id, 'message'),

@@ -1001,6 +1001,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       state_json TEXT NOT NULL,
       state_revision INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'active',
+      hidden_by_rewind_id TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       error TEXT,
@@ -1008,6 +1009,11 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE CASCADE
     )
   `);
+  safeAlter(
+    db,
+    'ALTER TABLE generative_ui_instances ADD COLUMN hidden_by_rewind_id TEXT',
+    logger,
+  );
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS generative_ui_events (

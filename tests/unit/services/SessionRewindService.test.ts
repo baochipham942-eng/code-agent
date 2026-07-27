@@ -113,6 +113,49 @@ describe('SessionRewindService', () => {
     expect(setSessionContext).toHaveBeenCalledWith('session-1', result.activeMessages);
   });
 
+  it.each([
+    ['rewind', 'rewindConversation'] as const,
+    ['restore', 'restoreConversation'] as const,
+  ])(
+    'returns the committed %s result when the runtime projection refresh fails',
+    async (phase, operation) => {
+      const db = database();
+      const projectionError = new Error('injected projection failure');
+      const onProjectionFailure = vi.fn();
+      const service = new SessionRewindService(db, {
+        getRuntimeStatus: () => 'idle',
+        setSessionContext: () => {
+          throw projectionError;
+        },
+        onProjectionFailure,
+        ownerUserId: null,
+      });
+
+      const result = operation === 'rewindConversation'
+        ? await service.rewindConversation({
+          sessionId: 'session-1',
+          anchorUserMessageId: 'u2',
+          idempotencyKey: 'rewind-request-1',
+        })
+        : await service.restoreConversation({
+          sessionId: 'session-1',
+          rewindId: 'rewind-1',
+        });
+
+      expect(result.success).toBe(true);
+      expect(onProjectionFailure).toHaveBeenCalledWith(
+        phase,
+        'session-1',
+        projectionError,
+      );
+      expect(
+        operation === 'rewindConversation'
+          ? db.applyPromptRewind
+          : db.restorePromptRewind,
+      ).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('fails closed before database access when the surface did not inject an owner boundary', async () => {
     const db = database();
     const service = new SessionRewindService(db);

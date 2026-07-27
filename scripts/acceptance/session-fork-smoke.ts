@@ -121,12 +121,23 @@ interface AcceptanceReport {
   dataDir: string;
   workspaceRoot: string;
   build: {
+    branch: string;
+    gitHead: string;
+    originMain: string;
+    originMainAncestor: boolean;
+    worktreeClean: boolean;
+    worktreeStatusSha256: string;
     bundlePath: string;
     sha256: string;
     sizeBytes: number;
     mtimeMs: number;
     newestRelevantSourceMtimeMs: number;
     fresh: boolean;
+    artifacts: {
+      web: BuildArtifactFingerprint;
+      renderer: BuildArtifactFingerprint | null;
+      cli: BuildArtifactFingerprint | null;
+    };
   };
   checks: AcceptanceCheck[];
   web: Record<string, unknown>;
@@ -135,6 +146,14 @@ interface AcceptanceReport {
   network: Record<string, unknown>;
   database: Record<string, unknown>;
   files: Record<string, unknown>;
+}
+
+interface BuildArtifactFingerprint {
+  path: string;
+  sha256: string;
+  sizeBytes: number;
+  mtimeMs: number;
+  fresh: boolean;
 }
 
 class DomainCallError extends Error {
@@ -185,6 +204,8 @@ function requireCheck(condition: unknown, label: string, evidence?: unknown): as
 function parseOptions(argv: string[]): {
   keep: boolean;
   allowStaleBuild: boolean;
+  requireCleanHead: boolean;
+  requireFullBuild: boolean;
   evidenceDir?: string;
 } {
   let evidenceDir: string | undefined;
@@ -197,6 +218,8 @@ function parseOptions(argv: string[]): {
   return {
     keep: argv.includes('--keep') || process.env.SESSION_FORK_ACCEPTANCE_KEEP === '1',
     allowStaleBuild: argv.includes('--allow-stale-build'),
+    requireCleanHead: argv.includes('--require-clean-head'),
+    requireFullBuild: argv.includes('--require-full-build'),
     evidenceDir,
   };
 }
@@ -225,7 +248,48 @@ async function latestMtime(root: string): Promise<number> {
   return latest;
 }
 
-async function readBuildFingerprint(allowStaleBuild: boolean): Promise<AcceptanceReport['build']> {
+function gitOutput(args: string[]): string {
+  return execFileSync('git', args, {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
+async function fingerprintArtifact(
+  artifactPath: string,
+  newestRelevantSourceMtimeMs: number,
+): Promise<BuildArtifactFingerprint> {
+  const artifactStat = await stat(artifactPath);
+  return {
+    path: artifactPath,
+    sha256: sha256(await readFile(artifactPath)),
+    sizeBytes: artifactStat.size,
+    mtimeMs: artifactStat.mtimeMs,
+    fresh: artifactStat.mtimeMs >= newestRelevantSourceMtimeMs,
+  };
+}
+
+async function optionalArtifactPath(artifactPath: string): Promise<string | null> {
+  return await access(artifactPath, constants.R_OK)
+    .then(() => artifactPath)
+    .catch(() => null);
+}
+
+async function rendererEntryPath(): Promise<string | null> {
+  const indexPath = path.join(repoRoot, 'dist', 'renderer', 'index.html');
+  const readableIndex = await optionalArtifactPath(indexPath);
+  if (!readableIndex) return null;
+  const html = await readFile(readableIndex, 'utf8');
+  const entry = html.match(/<script[^>]+src="\.\/assets\/([^"]+\.js)"/)?.[1];
+  return entry ? await optionalArtifactPath(path.join(repoRoot, 'dist', 'renderer', 'assets', entry)) : null;
+}
+
+async function readBuildFingerprint(
+  allowStaleBuild: boolean,
+  requireCleanHead: boolean,
+  requireFullBuild: boolean,
+): Promise<AcceptanceReport['build']> {
   await access(bundlePath, constants.R_OK).catch(() => {
     throw new Error('dist/web/webServer.cjs is missing. Run npm run build:web first.');
   });
@@ -235,28 +299,78 @@ async function readBuildFingerprint(allowStaleBuild: boolean): Promise<Acceptanc
     path.join(repoRoot, 'src', 'host', 'services', 'sessionRewind'),
     path.join(repoRoot, 'src', 'host', 'services', 'core', 'repositories'),
     path.join(repoRoot, 'src', 'host', 'services', 'core', 'database'),
+    path.join(repoRoot, 'src', 'host', 'app'),
+    path.join(repoRoot, 'src', 'host', 'ipc'),
+    path.join(repoRoot, 'src', 'renderer'),
+    path.join(repoRoot, 'src', 'cli'),
     path.join(repoRoot, 'src', 'shared', 'contract'),
   ];
-  const [bundle, ...sourceMtimes] = await Promise.all([
-    stat(bundlePath),
-    ...relevantRoots.map(latestMtime),
-  ]);
+  const sourceMtimes = await Promise.all(relevantRoots.map(latestMtime));
   const newestRelevantSourceMtimeMs = Math.max(...sourceMtimes);
-  const fresh = bundle.mtimeMs >= newestRelevantSourceMtimeMs;
+  const web = await fingerprintArtifact(bundlePath, newestRelevantSourceMtimeMs);
+  const rendererPath = await rendererEntryPath();
+  const cliPath = await optionalArtifactPath(path.join(repoRoot, 'dist', 'cli', 'index.cjs'));
+  const renderer = rendererPath
+    ? await fingerprintArtifact(rendererPath, newestRelevantSourceMtimeMs)
+    : null;
+  const cli = cliPath
+    ? await fingerprintArtifact(cliPath, newestRelevantSourceMtimeMs)
+    : null;
+  const branch = gitOutput(['rev-parse', '--abbrev-ref', 'HEAD']);
+  const gitHead = gitOutput(['rev-parse', 'HEAD']);
+  const originMain = gitOutput(['rev-parse', 'origin/main']);
+  const worktreeStatus = gitOutput(['status', '--porcelain=v1', '--untracked-files=all']);
+  const worktreeClean = worktreeStatus.length === 0;
+  let originMainAncestor = false;
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', originMain, gitHead], {
+      cwd: repoRoot,
+      stdio: 'ignore',
+    });
+    originMainAncestor = true;
+  } catch {
+    originMainAncestor = false;
+  }
   requireCheck(
-    fresh || allowStaleBuild,
-    fresh
+    web.fresh || allowStaleBuild,
+    web.fresh
       ? 'web bundle is newer than Fork/Rewind sources'
       : 'stale bundle explicitly allowed for development-only smoke',
-    { bundleMtimeMs: bundle.mtimeMs, newestRelevantSourceMtimeMs },
+    { bundleMtimeMs: web.mtimeMs, newestRelevantSourceMtimeMs },
   );
+  requireCheck(
+    originMainAncestor,
+    'acceptance HEAD descends from the fetched origin/main baseline',
+    { gitHead, originMain },
+  );
+  requireCheck(
+    !requireCleanHead || worktreeClean,
+    requireCleanHead
+      ? 'acceptance is bound to a clean feature HEAD'
+      : 'dirty worktree explicitly allowed for development-only smoke',
+    { branch, gitHead, worktreeStatusSha256: sha256(worktreeStatus) },
+  );
+  if (requireFullBuild) {
+    requireCheck(
+      Boolean(renderer?.fresh && cli?.fresh),
+      'renderer and CLI artifacts are present and newer than Fork/Rewind sources',
+      { renderer, cli, newestRelevantSourceMtimeMs },
+    );
+  }
   return {
+    branch,
+    gitHead,
+    originMain,
+    originMainAncestor,
+    worktreeClean,
+    worktreeStatusSha256: sha256(worktreeStatus),
     bundlePath,
-    sha256: sha256(await readFile(bundlePath)),
-    sizeBytes: bundle.size,
-    mtimeMs: bundle.mtimeMs,
+    sha256: web.sha256,
+    sizeBytes: web.sizeBytes,
+    mtimeMs: web.mtimeMs,
     newestRelevantSourceMtimeMs,
-    fresh,
+    fresh: web.fresh,
+    artifacts: { web, renderer, cli },
   };
 }
 
@@ -734,6 +848,71 @@ function readRewindRows(dbPath: string, sessionId: string): SQLiteRow[] {
   }
 }
 
+function seedRewindGenerativeUi(
+  dbPath: string,
+  sessionId: string,
+  sourceMessageId: string,
+  createdAt: number,
+): { instanceId: string; manifestId: string } {
+  const db = new Database(dbPath, { fileMustExist: true });
+  const instanceId = `acceptance-rewind-ui-${sessionId}`;
+  const manifestId = `acceptance-rewind-manifest-${sessionId}`;
+  try {
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO generative_ui_instances (
+          instance_id, session_id, source_message_id, source_ordinal, source_key,
+          spec_hash, spec_json, state_json, state_revision, status,
+          hidden_by_rewind_id, created_at, updated_at
+        ) VALUES (?, ?, ?, 0, ?, 'acceptance-spec', '{}', '{}', 0, 'active', NULL, ?, ?)
+      `).run(
+        instanceId,
+        sessionId,
+        sourceMessageId,
+        `acceptance-rewind-source:${sessionId}`,
+        createdAt,
+        createdAt,
+      );
+      db.prepare(`
+        INSERT INTO execution_manifests (
+          manifest_id, session_id, instance_id, nonce, scope_hash,
+          title, summary, items_json, status, expires_at, created_at, updated_at
+        ) VALUES (?, ?, ?, 'acceptance-nonce', 'acceptance-scope',
+                  'Acceptance manifest', 'Rewind authority check', '[]',
+                  'approved', ?, ?, ?)
+      `).run(manifestId, sessionId, instanceId, createdAt + 60_000, createdAt, createdAt);
+    })();
+    return { instanceId, manifestId };
+  } finally {
+    db.close();
+  }
+}
+
+function readRewindGenerativeUi(
+  dbPath: string,
+  instanceId: string,
+  manifestId: string,
+): { instance: SQLiteRow | null; manifest: SQLiteRow | null } {
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  try {
+    db.pragma('query_only = ON');
+    return {
+      instance: (db.prepare(`
+        SELECT instance_id, status, hidden_by_rewind_id, updated_at
+        FROM generative_ui_instances
+        WHERE instance_id = ?
+      `).get(instanceId) as SQLiteRow | undefined) ?? null,
+      manifest: (db.prepare(`
+        SELECT manifest_id, status, invalidation_reason
+        FROM execution_manifests
+        WHERE manifest_id = ?
+      `).get(manifestId) as SQLiteRow | undefined) ?? null,
+    };
+  } finally {
+    db.close();
+  }
+}
+
 function readWorkspaceEvidenceRows(dbPath: string, sourceSessionId: string): {
   evidence: SQLiteRow[];
   sagas: SQLiteRow[];
@@ -814,7 +993,13 @@ async function runWebAcceptance(input: {
   baseCommit: string;
 }): Promise<{
   result: Record<string, unknown>;
-  rewind: { sessionId: string; rewindId: string; contentDigest: string };
+  rewind: {
+    sessionId: string;
+    rewindId: string;
+    contentDigest: string;
+    instanceId: string;
+    manifestId: string;
+  };
   desktopSessionId: string;
   sourceSessionId: string;
   sharedChildId: string;
@@ -1143,6 +1328,12 @@ async function runWebAcceptance(input: {
   const rewindSource = await createSession(server, 'Rewind source', workspaceRoot);
   const rewindMessages = conversation(timestamp, 'rewind-');
   await seedMessages(server, rewindSource.id, rewindMessages);
+  const rewindUi = seedRewindGenerativeUi(
+    dbPath,
+    rewindSource.id,
+    'rewind-a2',
+    timestamp,
+  );
   const workspaceBeforeRewind = await fileManifest(workspaceRoot);
   const rewindContentDigest = readMessageContentDigest(dbPath, rewindSource.id);
   const beforeRewindCount = readSourceDatabaseSnapshot(dbPath, rewindSource.id).messages.length;
@@ -1159,6 +1350,19 @@ async function runWebAcceptance(input: {
       && rewind.filesDeleted === 0,
     'Rewind uses soft visibility and never restores files implicitly',
     rewind,
+  );
+  const hiddenRewindUi = readRewindGenerativeUi(
+    dbPath,
+    rewindUi.instanceId,
+    rewindUi.manifestId,
+  );
+  requireCheck(
+    hiddenRewindUi.instance?.status === 'hidden'
+      && hiddenRewindUi.instance.hidden_by_rewind_id === rewind.rewindId
+      && hiddenRewindUi.manifest?.status === 'invalidated'
+      && hiddenRewindUi.manifest.invalidation_reason === 'SOURCE_REWOUND',
+    'Rewind hides generated UI with an exact rewind marker and revokes execution authority',
+    hiddenRewindUi,
   );
   const repeatedRewind = await domain<RewindConversationResult>(server, 'rewindConversation', {
     sessionId: rewindSource.id,
@@ -1238,6 +1442,7 @@ async function runWebAcceptance(input: {
       sessionId: rewindSource.id,
       rewindId: rewind.rewindId,
       contentDigest: rewindContentDigest,
+      ...rewindUi,
     },
     desktopSessionId: desktopSource.id,
     sourceSessionId: source.id,
@@ -1254,7 +1459,13 @@ async function verifyRestartAndRestore(input: {
   sourceSessionId: string;
   sharedChildId: string;
   isolatedChildId: string;
-  rewind: { sessionId: string; rewindId: string; contentDigest: string };
+  rewind: {
+    sessionId: string;
+    rewindId: string;
+    contentDigest: string;
+    instanceId: string;
+    manifestId: string;
+  };
   anchorManifest: FileManifestEntry[];
 }): Promise<Record<string, unknown>> {
   const sourceChildren = await domain<SessionForkLineageSummary[]>(
@@ -1306,6 +1517,19 @@ async function verifyRestartAndRestore(input: {
     readMessageContentDigest(input.dbPath, input.rewind.sessionId) === input.rewind.contentDigest,
     'Rewind restore preserves original message payload bytes',
   );
+  const restoredRewindUi = readRewindGenerativeUi(
+    input.dbPath,
+    input.rewind.instanceId,
+    input.rewind.manifestId,
+  );
+  requireCheck(
+    restoredRewindUi.instance?.status === 'active'
+      && restoredRewindUi.instance.hidden_by_rewind_id === null
+      && restoredRewindUi.manifest?.status === 'invalidated'
+      && restoredRewindUi.manifest.invalidation_reason === 'SOURCE_REWOUND',
+    'explicit restore recovers UI visibility without reviving invalidated authority',
+    restoredRewindUi,
+  );
   const rows = readRewindRows(input.dbPath, input.rewind.sessionId);
   requireCheck(
     rows.length === 1
@@ -1319,6 +1543,7 @@ async function verifyRestartAndRestore(input: {
     isolatedWorkingDirectory: isolatedSession.workingDirectory,
     rewindId: restored.rewindId,
     restoredMessageCount: restored.restoredMessageCount,
+    restoredGenerativeUi: restoredRewindUi,
     rewindAudit: rows,
   };
 }
@@ -1489,7 +1714,11 @@ async function verifyShellManifest(): Promise<Record<string, unknown>> {
 async function main(): Promise<void> {
   const startedAt = new Date().toISOString();
   const options = parseOptions(process.argv.slice(2));
-  const build = await readBuildFingerprint(options.allowStaleBuild);
+  const build = await readBuildFingerprint(
+    options.allowStaleBuild,
+    options.requireCleanHead,
+    options.requireFullBuild,
+  );
   const root = options.evidenceDir
     ? path.resolve(options.evidenceDir)
     : await mkdtemp(path.join(os.tmpdir(), 'neo-session-fork-acceptance-'));

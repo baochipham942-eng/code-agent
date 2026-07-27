@@ -16,7 +16,10 @@ import { getExternalForkContextCapability } from './context/externalForkContextH
 const ACTIVE_RUNTIME_STATES = new Set(['running', 'paused', 'queued', 'cancelling']);
 
 export interface SessionForkServiceDatabase {
-  getSession(sessionId: string, options?: { userId?: string | null }): Session | null;
+  getSession(
+    sessionId: string,
+    options?: { includeDeleted?: boolean; userId?: string | null },
+  ): (Session & { isDeleted?: boolean }) | null;
   createSessionFork(input: CreateForkRepositoryInput): CreateForkRepositoryResult;
   createIsolatedSessionFork?(
     input: CreateForkRepositoryInput,
@@ -128,21 +131,37 @@ export class SessionForkService {
     if (this.ownerUserId === undefined) return this.database.getSessionForkLineage(sessionId);
     if (!this.getOwnedSession(sessionId)) return null;
     const lineage = this.database.getSessionForkLineage(sessionId, this.ownerUserId);
-    if (!lineage || !this.getOwnedSession(lineage.parentSessionId)) return null;
+    if (!lineage) return null;
+    const parent = this.getOwnedSession(lineage.parentSessionId, Boolean(lineage.parentDeleted));
+    if (!parent || Boolean(parent.isDeleted) !== Boolean(lineage.parentDeleted)) return null;
     return lineage;
   }
 
   listChildren(sessionId: string): SessionForkLineageSummary[] {
     if (this.ownerUserId === undefined) return this.database.listSessionForkChildren(sessionId);
-    if (!this.getOwnedSession(sessionId)) return [];
+    if (!this.getOwnedSession(sessionId, true)) return [];
     return this.database
       .listSessionForkChildren(sessionId, this.ownerUserId)
-      .filter((lineage) => Boolean(this.getOwnedSession(lineage.childSessionId)));
+      .filter((lineage) => (
+        lineage.parentSessionId === sessionId
+        && Boolean(this.getOwnedSession(lineage.childSessionId))
+      ));
   }
 
-  private getOwnedSession(sessionId: string): Session | null {
-    return this.ownerUserId === undefined
-      ? this.database.getSession(sessionId)
+  private getOwnedSession(
+    sessionId: string,
+    includeDeleted = false,
+  ): (Session & { isDeleted?: boolean }) | null {
+    if (this.ownerUserId === undefined) {
+      return includeDeleted
+        ? this.database.getSession(sessionId, { includeDeleted: true })
+        : this.database.getSession(sessionId);
+    }
+    return includeDeleted
+      ? this.database.getSession(sessionId, {
+        includeDeleted: true,
+        userId: this.ownerUserId,
+      })
       : this.database.getSession(sessionId, { userId: this.ownerUserId });
   }
 

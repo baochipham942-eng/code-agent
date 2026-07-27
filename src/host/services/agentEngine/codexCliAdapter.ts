@@ -301,7 +301,6 @@ export class CodexCliAdapter {
             void request.durableLifecycle?.terminateProcess('SIGTERM');
           } else {
             confirmedExternalSessionId = parsed.externalSessionId;
-            request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
           }
         }
         if (parsed?.textDelta) {
@@ -361,7 +360,6 @@ export class CodexCliAdapter {
           resumeIdentityError = 'Codex resumed a different external session';
         } else {
           confirmedExternalSessionId = parsed.externalSessionId;
-          request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
         }
       }
       if (parsed?.textDelta) {
@@ -383,10 +381,11 @@ export class CodexCliAdapter {
     if (request.forkContextHandoff && !confirmedExternalSessionId && !resumeIdentityError) {
       resumeIdentityError = 'Codex fork handoff did not confirm a new external session identity';
     }
-    const sessionExternalSessionId = confirmedExternalSessionId
-      ?? request.resumeLaunch?.externalSessionId;
     const emptyResponse = !finalText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
     const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0 || emptyResponse);
+    const sessionExternalSessionId = failed
+      ? request.resumeLaunch?.externalSessionId
+      : confirmedExternalSessionId ?? request.resumeLaunch?.externalSessionId;
     if (forkContextAudit && !failed) {
       if (!onForkContextDispatched) {
         throw new Error('Fork context dispatch lifecycle disappeared after provider identity confirmation');
@@ -402,6 +401,9 @@ export class CodexCliAdapter {
         }
         throw error;
       }
+    }
+    if (!failed && sessionExternalSessionId) {
+      request.durableLifecycle?.persistExternalSessionId(sessionExternalSessionId);
     }
 
     ledger.addOutputRef({

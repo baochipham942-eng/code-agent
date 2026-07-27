@@ -18,7 +18,7 @@ describe('legacy checkpoint Fork tombstone', () => {
         handlers.set(channel, handler);
       }),
     };
-    registerCheckpointHandlers(ipcMain as never);
+    registerCheckpointHandlers(ipcMain as never, () => null);
 
     const handler = handlers.get(IPC_CHANNELS.CHECKPOINT_FORK);
     expect(handler).toBeDefined();
@@ -28,6 +28,41 @@ describe('legacy checkpoint Fork tombstone', () => {
       filesRestored: 0,
       messagesTruncated: 0,
       error: 'checkpoint:fork was retired; use domain:session/fork',
+    });
+    expect(rewindFiles).not.toHaveBeenCalled();
+  });
+
+  it('routes legacy checkpoint rewind through the guarded application service', async () => {
+    const rewindFiles = vi.fn();
+    vi.mocked(getFileCheckpointService).mockReturnValue({ rewindFiles } as never);
+    const restoreWorkspaceFilesAtCheckpoint = vi.fn().mockResolvedValue({
+      success: true,
+      sessionId: 'source',
+      checkpointMessageId: 'u2',
+      restoredFileCount: 2,
+      deletedFileCount: 1,
+      workspaceChanged: true,
+      conversationChanged: false,
+    });
+    const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
+    const ipcMain = {
+      handle: vi.fn((channel: string, handler: (...args: unknown[]) => Promise<unknown>) => {
+        handlers.set(channel, handler);
+      }),
+    };
+    registerCheckpointHandlers(
+      ipcMain as never,
+      () => ({ restoreWorkspaceFilesAtCheckpoint }) as never,
+    );
+
+    const handler = handlers.get(IPC_CHANNELS.CHECKPOINT_REWIND);
+    await expect(handler?.({}, 'source', 'u2')).resolves.toEqual({
+      success: true,
+      filesRestored: 3,
+    });
+    expect(restoreWorkspaceFilesAtCheckpoint).toHaveBeenCalledWith({
+      sessionId: 'source',
+      checkpointMessageId: 'u2',
     });
     expect(rewindFiles).not.toHaveBeenCalled();
   });

@@ -51,7 +51,15 @@ import {
   type TrustedSingleRootGitProjectWorkspace,
 } from '../sessionFork/workspace';
 import type { WorkspaceScope } from '../../../shared/contract/project';
-import type { PortableIsolatedAnchorEvidenceV1 } from '../../../shared/contract/sessionForkPortability';
+import {
+  LOCAL_SESSION_FORK_OWNER_SCOPE_ID,
+  type PortableIsolatedAnchorEvidenceV1,
+  type PortableSessionWorkspaceV2,
+} from '../../../shared/contract/sessionForkPortability';
+import type { SessionForkWorkspaceMode } from '../../../shared/contract/sessionFork';
+import {
+  readPublishedImportedPortableWorkspace,
+} from './repositories/sessionForkPublishedWorkspaceReader';
 
 type DatabaseRecoveryCallback = () => void;
 
@@ -142,6 +150,52 @@ export interface PublishedImportedIsolatedWorkspace {
   evidenceDigest: string;
   workspaceScopeVersion: string;
   publishedAt: number;
+}
+
+export interface PreparedImportedIsolatedWorkspace {
+  sessionId: string;
+  anchorMessageId: string;
+  forkId: string;
+  intentId: string;
+  workspacePath: string;
+  evidenceId: string;
+  evidenceDigest: string;
+  workspaceScopeVersion: string;
+  sourcePrimaryRoot: string;
+  baseCommit: string;
+  sourceIdentity: Record<string, unknown>;
+  pathMappings: Array<{
+    sourceId: string;
+    sourcePath: string;
+    sourceRelativePath: string;
+    isolatedRelativePath: string;
+  }>;
+  portableEvidenceId: string;
+  portablePayloadDigest: string;
+  sourceExportId: string;
+  sourcePayloadDigest: string | null;
+  targetProjectId: string;
+  ownerUserId: string | null;
+  state: 'ready' | 'published';
+  graphPublicationRequired: boolean;
+  publishedAt?: number;
+}
+
+export interface ImportedWorkspaceGraphSession {
+  sessionId: string;
+  readOnly: boolean;
+  workspaceMode: SessionForkWorkspaceMode;
+}
+
+export interface PublishPreparedImportedWorkspaceGraphInput {
+  importId?: string;
+  sourceExportId: string;
+  sourcePayloadDigest?: string;
+  ownerUserId: string | null;
+  targetProjectId: string;
+  sessions: ImportedWorkspaceGraphSession[];
+  workspaces: PreparedImportedIsolatedWorkspace[];
+  now?: number;
 }
 
 export class DatabaseService extends DurableRunDatabaseSupport {
@@ -1722,9 +1776,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionForkPortabilityRepo.importSessionFork(input);
   }
-  async publishImportedIsolatedWorkspace(
+  async prepareImportedIsolatedWorkspace(
     input: PublishImportedIsolatedWorkspaceInput,
-  ): Promise<PublishedImportedIsolatedWorkspace> {
+  ): Promise<PreparedImportedIsolatedWorkspace> {
     this.ensureDb();
     const rawDb = this.db;
     if (!rawDb) throw new Error('Database not initialized');
@@ -1805,6 +1859,20 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       const portableAnchor = workspace && typeof workspace === 'object' && !Array.isArray(workspace)
         ? (workspace as Record<string, unknown>).isolatedAnchor
         : null;
+      const lineage = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>).forkLineage
+        : null;
+      const portableAnchorMessageId = workspace
+        && typeof workspace === 'object'
+        && !Array.isArray(workspace)
+        && typeof (workspace as Record<string, unknown>).anchorChildMessageId === 'string'
+        ? String((workspace as Record<string, unknown>).anchorChildMessageId)
+        : lineage
+          && typeof lineage === 'object'
+          && !Array.isArray(lineage)
+          && typeof (lineage as Record<string, unknown>).anchorChildMessageId === 'string'
+          ? String((lineage as Record<string, unknown>).anchorChildMessageId)
+          : null;
       if (
         row.user_id !== input.ownerUserId
         || row.project_id !== targetProjectId
@@ -1821,6 +1889,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
         || typeof workspace !== 'object'
         || Array.isArray(workspace)
         || (workspace as Record<string, unknown>).mode !== 'isolated_at_anchor'
+        || portableAnchorMessageId !== importedAnchorMessageId
         || !portableAnchor
         || digestWorkspaceValue(portableAnchor) !== digestWorkspaceValue(input.portableEvidence)
         || (!allowPublished && (
@@ -1835,9 +1904,34 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       }
       return { row, metadata: metadata as Record<string, unknown> };
     };
+    const importIdentity = (metadata: Record<string, unknown>): {
+      sourceExportId: string;
+      sourcePayloadDigest: string | null;
+    } => {
+      const value = metadata.portabilityImportV2;
+      if (
+        !value
+        || typeof value !== 'object'
+        || Array.isArray(value)
+        || typeof (value as Record<string, unknown>).sourceExportId !== 'string'
+        || !String((value as Record<string, unknown>).sourceExportId).trim()
+      ) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: imported session lost its source export identity',
+        );
+      }
+      const record = value as Record<string, unknown>;
+      return {
+        sourceExportId: String(record.sourceExportId),
+        sourcePayloadDigest: typeof record.sourcePayloadDigest === 'string'
+          ? record.sourcePayloadDigest
+          : null,
+      };
+    };
 
     await requireCurrentBinding();
     const initial = requireImportedSession(true);
+    const importedFrom = importIdentity(initial.metadata);
     const publishedProjection = initial.metadata.importedWorkspacePublicationV1;
     if (
       publishedProjection
@@ -1846,25 +1940,57 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     ) {
       const publication = publishedProjection as Record<string, unknown>;
       const intent = await this.sessionForkWorkspaceRepo.get(intentId);
+      const projection = projectChildWorkspaceScope(initial.metadata);
+      const forkId = projection?.verification.forkId;
+      const portable = initial.metadata.portableWorkspaceV2 as PortableSessionWorkspaceV2;
       if (
-        intent?.status === 'advertised'
-        && intent.advertisable
-        && initial.row.read_only === 0
-        && initial.row.working_directory === intent.workspacePath
-        && initial.row.workspace === intent.workspacePath
-        && publication.intentId === intentId
-        && publication.evidenceDigest === intent.evidenceDigest
+        !intent
+        || !projection
+        || !forkId
+        || projection.verification.intentId !== intentId
+        || publication.intentId !== intentId
+        || publication.portableEvidenceId !== input.portableEvidence.evidenceId
+        || publication.portablePayloadDigest !== input.portableEvidence.content.payloadDigest
       ) {
-        return {
-          sessionId: importedSessionId,
-          intentId,
-          workspacePath: intent.workspacePath,
-          evidenceDigest: intent.evidenceDigest,
-          workspaceScopeVersion: intent.evidence.manifest.workspaceScopeVersion,
-          publishedAt: Number(publication.publishedAt),
-        };
+        throw new Error('IMPORTED_WORKSPACE_PUBLICATION_DRIFT: published workspace projection is invalid');
       }
-      throw new Error('IMPORTED_WORKSPACE_PUBLICATION_DRIFT: published workspace projection is invalid');
+      readPublishedImportedPortableWorkspace(rawDb, {
+        fork: {
+          id: forkId,
+          child_session_id: importedSessionId,
+          anchor_child_message_id: importedAnchorMessageId,
+          requireLineage: Boolean(initial.metadata.forkLineage),
+        },
+        session: initial.row,
+        metadata: initial.metadata,
+        importedPortable: portable,
+        publication,
+      });
+      return {
+        sessionId: importedSessionId,
+        anchorMessageId: importedAnchorMessageId,
+        forkId,
+        intentId,
+        workspacePath: intent.workspacePath,
+        evidenceId: projection.verification.evidenceId,
+        evidenceDigest: intent.evidenceDigest,
+        workspaceScopeVersion: projection.verification.sourceWorkspaceScopeVersion,
+        sourcePrimaryRoot: projection.verification.sourcePrimaryRoot,
+        baseCommit: projection.verification.baseCommit,
+        sourceIdentity: structuredClone(projection.provenance.sourceIdentity),
+        pathMappings: structuredClone(projection.provenance.pathMappings),
+        portableEvidenceId: input.portableEvidence.evidenceId,
+        portablePayloadDigest: input.portableEvidence.content.payloadDigest,
+        sourceExportId: importedFrom.sourceExportId,
+        sourcePayloadDigest: importedFrom.sourcePayloadDigest,
+        targetProjectId,
+        ownerUserId: input.ownerUserId,
+        state: 'published',
+        graphPublicationRequired: Boolean(
+          initial.metadata.portabilityPublicationBarrierV1,
+        ),
+        publishedAt: Number(publication.publishedAt),
+      };
     }
     requireImportedSession(false);
     const anchor = this.getMessageById(
@@ -1926,23 +2052,22 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     const prepared = await materializer.materialize(materializerInput);
     const currentScope = await requireCurrentBinding();
     const latest = requireImportedSession(false);
-    const now = input.now ?? Date.now();
     const lineage = latest.metadata.forkLineage;
     const forkId = lineage && typeof lineage === 'object' && !Array.isArray(lineage)
       && typeof (lineage as Record<string, unknown>).forkId === 'string'
       ? String((lineage as Record<string, unknown>).forkId)
       : `imported:${importedSessionId}`;
-    const projection = {
-      version: 1,
+    return {
+      sessionId: importedSessionId,
+      anchorMessageId: importedAnchorMessageId,
       forkId,
       intentId,
+      workspacePath: prepared.workspacePath,
       evidenceId: evidenceRecord.id,
-      projectId: targetProjectId,
-      sourceWorkspaceScopeVersion: currentScope.version,
-      sourcePrimaryRoot: rebound.repositoryRoot,
-      isolatedPrimaryRoot: prepared.workspacePath,
-      baseCommit: prepared.baseCommit,
       evidenceDigest: prepared.evidenceDigest,
+      workspaceScopeVersion: currentScope.version,
+      sourcePrimaryRoot: rebound.repositoryRoot,
+      baseCommit: prepared.baseCommit,
       sourceIdentity: forkWorkspaceSourceIdentity(currentScope),
       pathMappings: rebound.evidence.manifest.pathMappings.map((mapping) => ({
         sourceId: mapping.sourceId,
@@ -1950,112 +2075,534 @@ export class DatabaseService extends DurableRunDatabaseSupport {
         sourceRelativePath: mapping.repositoryRelativePath,
         isolatedRelativePath: mapping.isolatedRelativePath,
       })),
+      portableEvidenceId: input.portableEvidence.evidenceId,
+      portablePayloadDigest: input.portableEvidence.content.payloadDigest,
+      sourceExportId: importedFrom.sourceExportId,
+      sourcePayloadDigest: importedFrom.sourcePayloadDigest,
+      targetProjectId,
+      ownerUserId: input.ownerUserId,
+      state: 'ready',
+      graphPublicationRequired: Boolean(
+        latest.metadata.portabilityPublicationBarrierV1,
+      ),
     };
-    const metadata = {
-      ...latest.metadata,
-      forkWorkspaceScopeV1: projection,
-      importedWorkspacePublicationV1: {
-        version: 1,
-        intentId,
-        evidenceId: evidenceRecord.id,
-        portableEvidenceId: input.portableEvidence.evidenceId,
-        portablePayloadDigest: input.portableEvidence.content.payloadDigest,
-        evidenceDigest: prepared.evidenceDigest,
-        workspaceScopeVersion: currentScope.version,
-        publishedAt: now,
-      },
-    };
-    const engine = parseJsonValue(latest.row.agent_engine);
-    const publishedEngine = {
-      ...(engine && typeof engine === 'object' && !Array.isArray(engine)
-        ? engine as Record<string, unknown>
-        : {}),
-      cwd: prepared.workspacePath,
-    };
-    const publish = rawDb.transaction(() => {
-      const intentRow = rawDb.prepare(`
-        SELECT revision, status, advertisable, source_session_id,
-               proposed_child_session_id, workspace_path, evidence_digest, intent_json
-        FROM session_fork_workspace_intents
-        WHERE intent_id = ?
-        LIMIT 1
-      `).get(intentId) as {
-        revision: number;
-        status: string;
-        advertisable: number;
-        source_session_id: string;
-        proposed_child_session_id: string;
-        workspace_path: string;
-        evidence_digest: string;
-        intent_json: string;
-      } | undefined;
-      if (!intentRow) {
-        throw new Error('IMPORTED_WORKSPACE_INTENT_CONFLICT: ready intent changed before publication');
-      }
-      if (
-        intentRow.status !== 'ready'
-        || Number(intentRow.advertisable) !== 1
-        || intentRow.source_session_id !== importedSessionId
-        || intentRow.proposed_child_session_id !== importedSessionId
-        || intentRow.workspace_path !== prepared.workspacePath
-        || intentRow.evidence_digest !== prepared.evidenceDigest
-      ) {
-        throw new Error('IMPORTED_WORKSPACE_INTENT_CONFLICT: ready intent changed before publication');
-      }
-      const storedIntent = JSON.parse(intentRow.intent_json) as Record<string, unknown>;
-      const nextRevision = Number(intentRow.revision) + 1;
-      const intentUpdate = rawDb.prepare(`
-        UPDATE session_fork_workspace_intents
-        SET revision = ?, intent_json = ?, status = 'advertised',
-            advertisable = 1, updated_at = ?
-        WHERE intent_id = ? AND revision = ? AND status = 'ready' AND advertisable = 1
-      `).run(
-        nextRevision,
-        JSON.stringify({
-          ...storedIntent,
-          revision: nextRevision,
-          status: 'advertised',
-          advertisable: true,
-          updatedAt: now,
-        }),
-        now,
-        intentId,
-        intentRow.revision,
+  }
+
+  async publishPreparedImportedWorkspaceGraph(
+    input: PublishPreparedImportedWorkspaceGraphInput,
+  ): Promise<PublishedImportedIsolatedWorkspace[]> {
+    this.ensureDb();
+    const rawDb = this.db;
+    if (!rawDb) throw new Error('Database not initialized');
+    const targetProjectId = input.targetProjectId.trim();
+    const sourceExportId = input.sourceExportId.trim();
+    if (!targetProjectId || !sourceExportId || input.sessions.length === 0) {
+      throw new Error('IMPORTED_WORKSPACE_GRAPH_INVALID: import graph identity is required');
+    }
+    const sessionIds = input.sessions.map((session) => session.sessionId.trim());
+    const workspaceSessionIds = input.workspaces.map((workspace) => workspace.sessionId.trim());
+    if (
+      sessionIds.some((sessionId) => !sessionId)
+      || new Set(sessionIds).size !== sessionIds.length
+      || workspaceSessionIds.some((sessionId) => !sessionId)
+      || new Set(workspaceSessionIds).size !== workspaceSessionIds.length
+    ) {
+      throw new Error('IMPORTED_WORKSPACE_GRAPH_INVALID: graph session identities must be unique');
+    }
+    const durableGraphRequired = input.workspaces.some(
+      (workspace) => workspace.graphPublicationRequired,
+    ) || sessionIds.some((sessionId) => {
+      const row = rawDb.prepare(`
+        SELECT metadata FROM sessions WHERE id = ? LIMIT 1
+      `).get(sessionId) as { metadata: string | null } | undefined;
+      const metadata = parseJsonValue(row?.metadata);
+      return Boolean(
+        metadata
+        && typeof metadata === 'object'
+        && !Array.isArray(metadata)
+        && Object.prototype.hasOwnProperty.call(
+          metadata,
+          'portabilityPublicationBarrierV1',
+        ),
       );
+    });
+    if (durableGraphRequired) {
+      const importId = input.importId?.trim();
+      if (!importId) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_GRAPH_INVALID: a staged import graph requires its durable import id',
+        );
+      }
+      const importRow = rawDb.prepare(`
+        SELECT target_owner_scope_id, target_project_id, source_export_id, plan_json
+        FROM session_fork_portability_imports
+        WHERE import_id = ?
+        LIMIT 1
+      `).get(importId) as {
+        target_owner_scope_id: string;
+        target_project_id: string;
+        source_export_id: string;
+        plan_json: string;
+      } | undefined;
+      const storedPlan = parseJsonValue(importRow?.plan_json);
+      const storedResult = storedPlan
+        && typeof storedPlan === 'object'
+        && !Array.isArray(storedPlan)
+        && (storedPlan as Record<string, unknown>).schema === 'neo.session-fork-import-plan'
+        ? (storedPlan as Record<string, unknown>).result
+        : storedPlan;
+      const storedSessionMap = storedResult
+        && typeof storedResult === 'object'
+        && !Array.isArray(storedResult)
+        ? (storedResult as Record<string, unknown>).sessionIdMap
+        : null;
+      const storedSessionIds = storedSessionMap
+        && typeof storedSessionMap === 'object'
+        && !Array.isArray(storedSessionMap)
+        ? Object.values(storedSessionMap as Record<string, unknown>)
+          .filter((value): value is string => typeof value === 'string')
+          .sort()
+        : [];
+      const expectedOwnerScopeId = input.ownerUserId
+        ?? LOCAL_SESSION_FORK_OWNER_SCOPE_ID;
+      if (
+        !importRow
+        || importRow.target_owner_scope_id !== expectedOwnerScopeId
+        || importRow.target_project_id !== targetProjectId
+        || importRow.source_export_id !== sourceExportId
+        || JSON.stringify(storedSessionIds) !== JSON.stringify([...sessionIds].sort())
+      ) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_GRAPH_INVALID: session list does not close the durable import graph',
+        );
+      }
+    }
+    const expectedIsolated = input.sessions
+      .filter((session) => session.workspaceMode === 'isolated_at_anchor')
+      .map((session) => session.sessionId)
+      .sort();
+    if (
+      expectedIsolated.length === 0
+      || JSON.stringify([...workspaceSessionIds].sort()) !== JSON.stringify(expectedIsolated)
+    ) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_GRAPH_INVALID: every isolated session requires one sealed workspace',
+      );
+    }
+    for (const workspace of input.workspaces) {
+      if (
+        workspace.ownerUserId !== input.ownerUserId
+        || workspace.targetProjectId !== targetProjectId
+        || workspace.sourceExportId !== sourceExportId
+        || (
+          input.sourcePayloadDigest
+          && workspace.sourcePayloadDigest !== input.sourcePayloadDigest
+        )
+      ) {
+        throw new Error('IMPORTED_WORKSPACE_GRAPH_INVALID: prepared workspace crossed its import boundary');
+      }
+    }
+
+    const { getProjectService } = await import('../project/projectService');
+    const currentScope = getProjectService().getWorkspaceScope(targetProjectId);
+    if (
+      currentScope?.roots.length !== 1
+      || currentScope.roots[0]?.role !== 'primary'
+    ) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: current Project is not the trusted single-root binding',
+      );
+    }
+    const canonicalPrimaryRoot = fs.realpathSync.native(currentScope.primaryRoot);
+    for (const workspace of input.workspaces) {
+      if (
+        currentScope.version !== workspace.workspaceScopeVersion
+        || fs.realpathSync.native(workspace.sourcePrimaryRoot) !== canonicalPrimaryRoot
+      ) {
+        throw new Error(
+          'IMPORTED_WORKSPACE_BOUNDARY_MISMATCH: prepared workspace Project binding drifted',
+        );
+      }
+      if (workspace.state === 'ready') {
+        const recovered = await this.isolatedAnchorWorkspaceService.recoverIntent(
+          workspace.intentId,
+          { strategy: 'resume' },
+        );
+        if (
+          recovered.outcome !== 'ready'
+          || recovered.workspacePath !== workspace.workspacePath
+        ) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_SEAL_INVALID: ready workspace ${workspace.sessionId} failed verification`,
+          );
+        }
+      }
+    }
+
+    const readSession = (sessionId: string) => rawDb.prepare(`
+      SELECT id, user_id, project_id, origin, metadata, agent_engine, read_only,
+             working_directory, workspace, is_deleted, status
+      FROM sessions
+      WHERE id = ?
+      LIMIT 1
+    `).get(sessionId) as {
+      id: string;
+      user_id: string | null;
+      project_id: string | null;
+      origin: string | null;
+      metadata: string | null;
+      agent_engine: string | null;
+      read_only: number;
+      working_directory: string | null;
+      workspace: string | null;
+      is_deleted: number;
+      status: string;
+    } | undefined;
+    const parseSessionBoundary = (sessionId: string) => {
+      const row = readSession(sessionId);
+      const origin = parseJsonValue(row?.origin);
+      const metadata = parseJsonValue(row?.metadata);
+      const portability = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>).portabilityImportV2
+        : null;
+      const portableWorkspace = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>).portableWorkspaceV2
+        : null;
+      const actualWorkspaceMode = portableWorkspace
+        && typeof portableWorkspace === 'object'
+        && !Array.isArray(portableWorkspace)
+        && (portableWorkspace as Record<string, unknown>).mode === 'isolated_at_anchor'
+        ? 'isolated_at_anchor'
+        : 'shared_current';
+      const target = input.sessions.find((candidate) => candidate.sessionId === sessionId);
+      if (
+        row?.user_id !== input.ownerUserId
+        || row.project_id !== targetProjectId
+        || Number(row.is_deleted) !== 0
+        || row.status !== 'idle'
+        || !origin
+        || typeof origin !== 'object'
+        || Array.isArray(origin)
+        || (origin as Record<string, unknown>).kind !== 'import'
+        || !metadata
+        || typeof metadata !== 'object'
+        || Array.isArray(metadata)
+        || !portability
+        || typeof portability !== 'object'
+        || Array.isArray(portability)
+        || (portability as Record<string, unknown>).sourceExportId !== sourceExportId
+        || (
+          input.sourcePayloadDigest
+          && (portability as Record<string, unknown>).sourcePayloadDigest
+            !== input.sourcePayloadDigest
+        )
+        || target?.workspaceMode !== actualWorkspaceMode
+      ) {
+        throw new Error(
+          `IMPORTED_WORKSPACE_GRAPH_INVALID: session ${sessionId} crossed its import boundary`,
+        );
+      }
+      return { row, metadata: metadata as Record<string, unknown> };
+    };
+
+    for (const workspace of input.workspaces.filter((candidate) => candidate.state === 'published')) {
+      const { row, metadata } = parseSessionBoundary(workspace.sessionId);
+      const portable = metadata.portableWorkspaceV2 as PortableSessionWorkspaceV2;
+      const projection = projectChildWorkspaceScope(metadata);
+      const publication = metadata.importedWorkspacePublicationV1;
+      if (
+        projection?.verification.forkId !== workspace.forkId
+        || projection.verification.intentId !== workspace.intentId
+        || projection.verification.evidenceId !== workspace.evidenceId
+        || row.working_directory !== workspace.workspacePath
+      ) {
+        throw new Error(
+          `IMPORTED_WORKSPACE_PUBLICATION_DRIFT: session ${workspace.sessionId} projection changed`,
+        );
+      }
+      readPublishedImportedPortableWorkspace(rawDb, {
+        fork: {
+          id: workspace.forkId,
+          child_session_id: workspace.sessionId,
+          anchor_child_message_id: workspace.anchorMessageId,
+          requireLineage: Boolean(metadata.forkLineage),
+        },
+        session: row,
+        metadata,
+        importedPortable: portable,
+        publication,
+      });
+    }
+
+    const now = input.now ?? Date.now();
+    const workspaceBySession = new Map(
+      input.workspaces.map((workspace) => [workspace.sessionId, workspace]),
+    );
+    const publish = rawDb.transaction(() => {
       const ownerPredicate = input.ownerUserId === null
         ? 'user_id IS NULL'
         : 'user_id = ?';
       const ownerParams = input.ownerUserId === null ? [] : [input.ownerUserId];
-      const sessionUpdate = rawDb.prepare(`
-        UPDATE sessions
-        SET working_directory = ?, workspace = ?, metadata = ?, agent_engine = ?,
-            read_only = 0, updated_at = ?, synced_at = NULL
-        WHERE id = ? AND ${ownerPredicate} AND project_id = ?
-          AND read_only = 1 AND working_directory IS NULL AND workspace IS NULL
-          AND is_deleted = 0 AND status = 'idle'
-      `).run(
-        prepared.workspacePath,
-        prepared.workspacePath,
-        JSON.stringify(metadata),
-        JSON.stringify(publishedEngine),
-        now,
-        importedSessionId,
-        ...ownerParams,
-        targetProjectId,
-      );
-      if (intentUpdate.changes !== 1 || sessionUpdate.changes !== 1) {
-        throw new Error('IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: atomic publication changed no row');
+      for (const target of input.sessions) {
+        const { row, metadata } = parseSessionBoundary(target.sessionId);
+        const workspace = workspaceBySession.get(target.sessionId);
+        const barrier = metadata.portabilityPublicationBarrierV1;
+        if (barrier !== undefined && (
+          typeof barrier !== 'object'
+          || barrier === null
+          || Array.isArray(barrier)
+          || (barrier as Record<string, unknown>).sourceExportId !== sourceExportId
+          || (
+            input.sourcePayloadDigest
+            && (barrier as Record<string, unknown>).sourcePayloadDigest
+              !== input.sourcePayloadDigest
+          )
+          || (barrier as Record<string, unknown>).workspaceMode !== target.workspaceMode
+          || Boolean((barrier as Record<string, unknown>).desiredReadOnly) !== target.readOnly
+        )) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_GRAPH_INVALID: session ${target.sessionId} publication barrier drifted`,
+          );
+        }
+
+        if (workspace?.state === 'published') {
+          const intentRow = rawDb.prepare(`
+            SELECT status, advertisable, source_session_id, proposed_child_session_id,
+                   workspace_path, evidence_digest
+            FROM session_fork_workspace_intents
+            WHERE intent_id = ?
+            LIMIT 1
+          `).get(workspace.intentId) as Record<string, unknown> | undefined;
+          if (
+            intentRow?.status !== 'advertised'
+            || Number(intentRow.advertisable) !== 1
+            || intentRow.source_session_id !== workspace.sessionId
+            || intentRow.proposed_child_session_id !== workspace.sessionId
+            || intentRow.workspace_path !== workspace.workspacePath
+            || intentRow.evidence_digest !== workspace.evidenceDigest
+            || Number(row.read_only) !== 0
+          ) {
+            throw new Error(
+              `IMPORTED_WORKSPACE_PUBLICATION_DRIFT: session ${workspace.sessionId} is incomplete`,
+            );
+          }
+          continue;
+        }
+
+        if (!workspace) {
+          if (barrier === undefined) {
+            if (
+              Number(row.read_only) !== (target.readOnly ? 1 : 0)
+              || row.working_directory !== null
+              || row.workspace !== null
+            ) {
+              throw new Error(
+                `IMPORTED_WORKSPACE_PUBLICATION_DRIFT: session ${target.sessionId} is incomplete`,
+              );
+            }
+            continue;
+          }
+          if (
+            Number(row.read_only) !== 1
+            || row.working_directory !== null
+            || row.workspace !== null
+          ) {
+            throw new Error(
+              `IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: session ${target.sessionId} is not hidden`,
+            );
+          }
+          const {
+            portabilityPublicationBarrierV1: _publicationBarrier,
+            ...publishedMetadata
+          } = metadata;
+          const sessionUpdate = rawDb.prepare(`
+            UPDATE sessions
+            SET metadata = ?, read_only = ?, updated_at = ?, synced_at = NULL
+            WHERE id = ? AND ${ownerPredicate} AND project_id = ?
+              AND metadata = ? AND read_only = 1
+              AND working_directory IS NULL AND workspace IS NULL
+              AND is_deleted = 0 AND status = 'idle'
+          `).run(
+            JSON.stringify(publishedMetadata),
+            target.readOnly ? 1 : 0,
+            now,
+            target.sessionId,
+            ...ownerParams,
+            targetProjectId,
+            row.metadata,
+          );
+          if (sessionUpdate.changes !== 1) {
+            throw new Error(
+              `IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: session ${target.sessionId} changed`,
+            );
+          }
+          continue;
+        }
+
+        if (
+          Number(row.read_only) !== 1
+          || row.working_directory !== null
+          || row.workspace !== null
+        ) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: session ${workspace.sessionId} is not hidden`,
+          );
+        }
+        const intentRow = rawDb.prepare(`
+          SELECT revision, status, advertisable, source_session_id,
+                 proposed_child_session_id, workspace_path, evidence_digest, intent_json
+          FROM session_fork_workspace_intents
+          WHERE intent_id = ?
+          LIMIT 1
+        `).get(workspace.intentId) as {
+          revision: number;
+          status: string;
+          advertisable: number;
+          source_session_id: string;
+          proposed_child_session_id: string;
+          workspace_path: string;
+          evidence_digest: string;
+          intent_json: string;
+        } | undefined;
+        if (
+          intentRow?.status !== 'ready'
+          || Number(intentRow.advertisable) !== 1
+          || intentRow.source_session_id !== workspace.sessionId
+          || intentRow.proposed_child_session_id !== workspace.sessionId
+          || intentRow.workspace_path !== workspace.workspacePath
+          || intentRow.evidence_digest !== workspace.evidenceDigest
+        ) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_INTENT_CONFLICT: ready intent ${workspace.intentId} changed`,
+          );
+        }
+        const storedIntent = JSON.parse(intentRow.intent_json) as Record<string, unknown>;
+        const nextRevision = Number(intentRow.revision) + 1;
+        const intentUpdate = rawDb.prepare(`
+          UPDATE session_fork_workspace_intents
+          SET revision = ?, intent_json = ?, status = 'advertised',
+              advertisable = 1, updated_at = ?
+          WHERE intent_id = ? AND revision = ? AND status = 'ready' AND advertisable = 1
+        `).run(
+          nextRevision,
+          JSON.stringify({
+            ...storedIntent,
+            revision: nextRevision,
+            status: 'advertised',
+            advertisable: true,
+            updatedAt: now,
+          }),
+          now,
+          workspace.intentId,
+          intentRow.revision,
+        );
+        const {
+          portabilityPublicationBarrierV1: _publicationBarrier,
+          ...baseMetadata
+        } = metadata;
+        const projection = {
+          version: 1,
+          forkId: workspace.forkId,
+          intentId: workspace.intentId,
+          evidenceId: workspace.evidenceId,
+          projectId: targetProjectId,
+          sourceWorkspaceScopeVersion: workspace.workspaceScopeVersion,
+          sourcePrimaryRoot: workspace.sourcePrimaryRoot,
+          isolatedPrimaryRoot: workspace.workspacePath,
+          baseCommit: workspace.baseCommit,
+          evidenceDigest: workspace.evidenceDigest,
+          sourceIdentity: workspace.sourceIdentity,
+          pathMappings: workspace.pathMappings,
+        };
+        const publishedMetadata = {
+          ...baseMetadata,
+          forkWorkspaceScopeV1: projection,
+          importedWorkspacePublicationV1: {
+            version: 1,
+            intentId: workspace.intentId,
+            evidenceId: workspace.evidenceId,
+            portableEvidenceId: workspace.portableEvidenceId,
+            portablePayloadDigest: workspace.portablePayloadDigest,
+            evidenceDigest: workspace.evidenceDigest,
+            workspaceScopeVersion: workspace.workspaceScopeVersion,
+            publishedAt: now,
+          },
+        };
+        const engine = parseJsonValue(row.agent_engine);
+        const publishedEngine = {
+          ...(engine && typeof engine === 'object' && !Array.isArray(engine)
+            ? engine as Record<string, unknown>
+            : {}),
+          cwd: workspace.workspacePath,
+        };
+        const sessionUpdate = rawDb.prepare(`
+          UPDATE sessions
+          SET working_directory = ?, workspace = ?, metadata = ?, agent_engine = ?,
+              read_only = 0, updated_at = ?, synced_at = NULL
+          WHERE id = ? AND ${ownerPredicate} AND project_id = ?
+            AND metadata = ? AND agent_engine = ?
+            AND read_only = 1 AND working_directory IS NULL AND workspace IS NULL
+            AND is_deleted = 0 AND status = 'idle'
+        `).run(
+          workspace.workspacePath,
+          workspace.workspacePath,
+          JSON.stringify(publishedMetadata),
+          JSON.stringify(publishedEngine),
+          now,
+          workspace.sessionId,
+          ...ownerParams,
+          targetProjectId,
+          row.metadata,
+          row.agent_engine,
+        );
+        if (intentUpdate.changes !== 1 || sessionUpdate.changes !== 1) {
+          throw new Error(
+            `IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: session ${workspace.sessionId} changed`,
+          );
+        }
       }
     });
     publish.immediate();
-    return {
-      sessionId: importedSessionId,
-      intentId,
-      workspacePath: prepared.workspacePath,
-      evidenceDigest: prepared.evidenceDigest,
-      workspaceScopeVersion: prepared.workspaceScopeVersion,
-      publishedAt: now,
-    };
+    return input.workspaces.map((workspace) => ({
+      sessionId: workspace.sessionId,
+      intentId: workspace.intentId,
+      workspacePath: workspace.workspacePath,
+      evidenceDigest: workspace.evidenceDigest,
+      workspaceScopeVersion: workspace.workspaceScopeVersion,
+      publishedAt: workspace.state === 'published'
+        ? workspace.publishedAt ?? now
+        : now,
+    }));
+  }
+
+  async publishImportedIsolatedWorkspace(
+    input: PublishImportedIsolatedWorkspaceInput,
+  ): Promise<PublishedImportedIsolatedWorkspace> {
+    const prepared = await this.prepareImportedIsolatedWorkspace(input);
+    if (prepared.graphPublicationRequired) {
+      throw new Error(
+        'IMPORTED_WORKSPACE_GRAPH_INVALID: staged import workspaces require graph publication',
+      );
+    }
+    const [published] = await this.publishPreparedImportedWorkspaceGraph({
+      sourceExportId: prepared.sourceExportId,
+      ...(prepared.sourcePayloadDigest
+        ? { sourcePayloadDigest: prepared.sourcePayloadDigest }
+        : {}),
+      ownerUserId: input.ownerUserId,
+      targetProjectId: input.targetProjectId,
+      sessions: [{
+        sessionId: prepared.sessionId,
+        readOnly: false,
+        workspaceMode: 'isolated_at_anchor',
+      }],
+      workspaces: [prepared],
+      now: input.now,
+    });
+    if (!published) {
+      throw new Error('IMPORTED_WORKSPACE_PUBLICATION_CONFLICT: graph returned no workspace');
+    }
+    return published;
   }
   enqueueSessionForkOutbound(
     input: import('./repositories').EnqueueSessionForkOutboundInput,

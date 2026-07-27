@@ -115,6 +115,7 @@ function createSchema(db: BetterSqlite3.Database): void {
       session_id TEXT NOT NULL,
       source_message_id TEXT NOT NULL,
       status TEXT NOT NULL,
+      hidden_by_rewind_id TEXT,
       updated_at INTEGER NOT NULL
     );
 

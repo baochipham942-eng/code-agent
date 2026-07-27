@@ -48,6 +48,7 @@ function git(cwd: string, ...args: string[]): string {
 
 async function fixture(): Promise<{
   database: DatabaseService;
+  databasePath: string;
   repositoryRoot: string;
   portableEvidence: ReturnType<typeof buildPortableIsolatedAnchorEvidenceV1>;
 }> {
@@ -95,7 +96,8 @@ async function fixture(): Promise<{
     evidence,
   });
   const database = new DatabaseService();
-  (database as unknown as { dbPath: string }).dbPath = path.join(root, 'data', 'code-agent.db');
+  const databasePath = path.join(root, 'data', 'code-agent.db');
+  (database as unknown as { dbPath: string }).dbPath = databasePath;
   await database.initialize();
   database.createSession({
     id: 'imported-child',
@@ -109,10 +111,13 @@ async function fixture(): Promise<{
       portableWorkspaceV2: {
         mode: 'isolated_at_anchor',
         label: '历史对话 + 锚点文件',
+        anchorChildMessageId: 'imported-a1',
         isolatedAnchor: portableEvidence,
       },
       forkLineage: {
         forkId: 'imported-fork',
+        childSessionId: 'imported-child',
+        anchorChildMessageId: 'imported-a1',
         workspaceMode: 'isolated_at_anchor',
       },
     },
@@ -128,7 +133,7 @@ async function fixture(): Promise<{
     content: 'portable anchor',
     timestamp: 2,
   });
-  return { database, repositoryRoot, portableEvidence };
+  return { database, databasePath, repositoryRoot, portableEvidence };
 }
 
 function publicationInput(
@@ -198,6 +203,28 @@ describe('DatabaseService imported isolated workspace publication', () => {
     }
   });
 
+  it('revalidates the full publication closure before an idempotent early return', async () => {
+    const setup = await fixture();
+    const input = publicationInput(setup.repositoryRoot, setup.portableEvidence);
+    const db = setup.database.getDb();
+    try {
+      const first = await setup.database.publishImportedIsolatedWorkspace(input);
+      await expect(setup.database.publishImportedIsolatedWorkspace(input)).resolves.toEqual(first);
+      db?.prepare(`
+        UPDATE sessions
+        SET agent_engine = json_set(agent_engine, '$.cwd', '/tampered/cwd')
+        WHERE id = 'imported-child'
+      `).run();
+      const changesBeforeRetry = db?.prepare('SELECT total_changes() AS changes').get();
+
+      await expect(setup.database.publishImportedIsolatedWorkspace(input))
+        .rejects.toThrow(/publication boundary does not close: session runtime/u);
+      expect(db?.prepare('SELECT total_changes() AS changes').get()).toEqual(changesBeforeRetry);
+    } finally {
+      setup.database.close();
+    }
+  });
+
   it('rolls back both rows on a database fault and retries the same ready intent', async () => {
     const setup = await fixture();
     const db = setup.database.getDb();
@@ -231,6 +258,256 @@ describe('DatabaseService imported isolated workspace publication', () => {
       });
       expect(db?.prepare('SELECT COUNT(*) AS count FROM session_fork_workspace_intents').get())
         .toEqual({ count: 1 });
+    } finally {
+      setup.database.close();
+    }
+  });
+
+  it('keeps every workspace hidden when publication of the second graph item fails', async () => {
+    const setup = await fixture();
+    const db = setup.database.getDb();
+    try {
+      setup.database.createSession({
+        id: 'imported-root',
+        userId: 'owner',
+        title: 'Imported root',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+        projectId: 'project-1',
+        origin: { kind: 'import' },
+        metadata: {
+          portabilityImportV2: { sourceExportId: 'export-1' },
+          portabilityPublicationBarrierV1: {
+            sourceExportId: 'export-1',
+            desiredReadOnly: false,
+            workspaceMode: 'shared_current',
+          },
+        },
+        engine: { kind: 'native', origin: 'import' },
+        readOnly: true,
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      setup.database.createSession({
+        id: 'imported-child-2',
+        userId: 'owner',
+        title: 'Imported child 2',
+        modelConfig: { provider: 'openai', model: 'gpt-5' },
+        projectId: 'project-1',
+        origin: { kind: 'import' },
+        metadata: {
+          portabilityImportV2: { sourceExportId: 'export-1' },
+          portableWorkspaceV2: {
+            mode: 'isolated_at_anchor',
+            label: '历史对话 + 锚点文件',
+            anchorChildMessageId: 'imported-a2',
+            isolatedAnchor: setup.portableEvidence,
+          },
+          forkLineage: {
+            forkId: 'imported-fork-2',
+            childSessionId: 'imported-child-2',
+            anchorChildMessageId: 'imported-a2',
+            workspaceMode: 'isolated_at_anchor',
+          },
+        },
+        engine: { kind: 'native', origin: 'import' },
+        readOnly: true,
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      setup.database.addMessage('imported-child-2', {
+        id: 'imported-a2',
+        role: 'assistant',
+        content: 'portable anchor 2',
+        timestamp: 2,
+      });
+      const first = await setup.database.prepareImportedIsolatedWorkspace(
+        publicationInput(setup.repositoryRoot, setup.portableEvidence),
+      );
+      const second = await setup.database.prepareImportedIsolatedWorkspace({
+        ...publicationInput(setup.repositoryRoot, setup.portableEvidence),
+        importedSessionId: 'imported-child-2',
+        importedAnchorMessageId: 'imported-a2',
+      });
+      const graphInput = {
+        sourceExportId: 'export-1',
+        ownerUserId: 'owner',
+        targetProjectId: 'project-1',
+        sessions: [
+          {
+            sessionId: 'imported-root',
+            readOnly: false,
+            workspaceMode: 'shared_current' as const,
+          },
+          {
+            sessionId: 'imported-child',
+            readOnly: false,
+            workspaceMode: 'isolated_at_anchor' as const,
+          },
+          {
+            sessionId: 'imported-child-2',
+            readOnly: false,
+            workspaceMode: 'isolated_at_anchor' as const,
+          },
+        ],
+        workspaces: [first, second],
+        now: 110,
+      };
+      db?.exec(`
+        CREATE TRIGGER fail_second_imported_workspace_publish
+        BEFORE UPDATE OF working_directory ON sessions
+        WHEN NEW.id = 'imported-child-2'
+        BEGIN
+          SELECT RAISE(ABORT, 'injected second publication failure');
+        END;
+      `);
+
+      await expect(setup.database.publishPreparedImportedWorkspaceGraph(graphInput))
+        .rejects.toThrow(/injected second publication failure/u);
+      expect(setup.database.getSession('imported-child', { userId: 'owner' })).toMatchObject({
+        readOnly: true,
+        workingDirectory: null,
+        workspace: null,
+      });
+      expect(setup.database.getSession('imported-child-2', { userId: 'owner' })).toMatchObject({
+        readOnly: true,
+        workingDirectory: null,
+        workspace: null,
+      });
+      expect(setup.database.getSession('imported-root', { userId: 'owner' })).toMatchObject({
+        readOnly: true,
+        workingDirectory: null,
+        workspace: null,
+      });
+      expect(db?.prepare(`
+        SELECT status, advertisable
+        FROM session_fork_workspace_intents
+        ORDER BY source_session_id
+      `).all()).toEqual([
+        { status: 'ready', advertisable: 1 },
+        { status: 'ready', advertisable: 1 },
+      ]);
+
+      db?.exec('DROP TRIGGER fail_second_imported_workspace_publish');
+      await expect(setup.database.publishPreparedImportedWorkspaceGraph(graphInput))
+        .resolves.toHaveLength(2);
+      expect(setup.database.getSession('imported-child', { userId: 'owner' }))
+        .toMatchObject({ readOnly: false, workingDirectory: first.workspacePath });
+      expect(setup.database.getSession('imported-child-2', { userId: 'owner' }))
+        .toMatchObject({ readOnly: false, workingDirectory: second.workspacePath });
+      expect(setup.database.getSession('imported-root', { userId: 'owner' }))
+        .toMatchObject({ readOnly: false, workingDirectory: null, workspace: null });
+      expect(setup.database.getSession('imported-root', { userId: 'owner' })?.metadata)
+        .not.toHaveProperty('portabilityPublicationBarrierV1');
+      const repeatedFirst = await setup.database.prepareImportedIsolatedWorkspace(
+        publicationInput(setup.repositoryRoot, setup.portableEvidence),
+      );
+      const repeatedSecond = await setup.database.prepareImportedIsolatedWorkspace({
+        ...publicationInput(setup.repositoryRoot, setup.portableEvidence),
+        importedSessionId: 'imported-child-2',
+        importedAnchorMessageId: 'imported-a2',
+      });
+      expect([repeatedFirst.state, repeatedSecond.state]).toEqual(['published', 'published']);
+      const changesBeforeRepeat = db?.prepare('SELECT total_changes() AS changes').get();
+      await expect(setup.database.publishPreparedImportedWorkspaceGraph({
+        ...graphInput,
+        workspaces: [repeatedFirst, repeatedSecond],
+        now: 130,
+      })).resolves.toHaveLength(2);
+      expect(db?.prepare('SELECT total_changes() AS changes').get()).toEqual(changesBeforeRepeat);
+    } finally {
+      setup.database.close();
+    }
+  });
+
+  it('resumes a durable ready workspace after restart and publishes it once', async () => {
+    const setup = await fixture();
+    const input = publicationInput(setup.repositoryRoot, setup.portableEvidence);
+    const firstPrepared = await setup.database.prepareImportedIsolatedWorkspace(input);
+    expect(firstPrepared.state).toBe('ready');
+    setup.database.close();
+
+    const restarted = new DatabaseService();
+    (restarted as unknown as { dbPath: string }).dbPath = setup.databasePath;
+    await restarted.initialize();
+    try {
+      const resumed = await restarted.prepareImportedIsolatedWorkspace(input);
+      expect(resumed).toMatchObject({
+        intentId: firstPrepared.intentId,
+        workspacePath: firstPrepared.workspacePath,
+        state: 'ready',
+      });
+      await expect(restarted.publishPreparedImportedWorkspaceGraph({
+        sourceExportId: resumed.sourceExportId,
+        ownerUserId: 'owner',
+        targetProjectId: 'project-1',
+        sessions: [{
+          sessionId: 'imported-child',
+          readOnly: false,
+          workspaceMode: 'isolated_at_anchor',
+        }],
+        workspaces: [resumed],
+        now: 120,
+      })).resolves.toEqual([
+        expect.objectContaining({
+          sessionId: 'imported-child',
+          intentId: firstPrepared.intentId,
+          publishedAt: 120,
+        }),
+      ]);
+      expect(restarted.getSession('imported-child', { userId: 'owner' }))
+        .toMatchObject({ readOnly: false, workingDirectory: firstPrepared.workspacePath });
+      expect(restarted.getDb()?.prepare(`
+        SELECT COUNT(*) AS count
+        FROM session_fork_workspace_intents
+        WHERE status = 'advertised'
+      `).get()).toEqual({ count: 1 });
+    } finally {
+      restarted.close();
+    }
+  });
+
+  it('refuses to bypass a durable graph barrier through the legacy single-session API', async () => {
+    const setup = await fixture();
+    const input = publicationInput(setup.repositoryRoot, setup.portableEvidence);
+    const db = setup.database.getDb();
+    try {
+      const prepared = await setup.database.prepareImportedIsolatedWorkspace(input);
+      db?.prepare(`
+        UPDATE sessions
+        SET metadata = json_set(
+          metadata,
+          '$.portabilityPublicationBarrierV1',
+          json(?)
+        )
+        WHERE id = 'imported-child'
+      `).run(JSON.stringify({
+        sourceExportId: 'export-1',
+        desiredReadOnly: false,
+        workspaceMode: 'isolated_at_anchor',
+      }));
+
+      await expect(setup.database.publishPreparedImportedWorkspaceGraph({
+        sourceExportId: 'export-1',
+        ownerUserId: 'owner',
+        targetProjectId: 'project-1',
+        sessions: [{
+          sessionId: 'imported-child',
+          readOnly: false,
+          workspaceMode: 'isolated_at_anchor',
+        }],
+        workspaces: [{ ...prepared, graphPublicationRequired: false }],
+      })).rejects.toThrow(/requires its durable import id/u);
+      await expect(setup.database.publishImportedIsolatedWorkspace(input))
+        .rejects.toThrow(/require graph publication/u);
+      expect(setup.database.getSession('imported-child', { userId: 'owner' }))
+        .toMatchObject({ readOnly: true, workingDirectory: null, workspace: null });
+      expect(db?.prepare(`
+        SELECT status, advertisable
+        FROM session_fork_workspace_intents
+        WHERE intent_id = ?
+      `).get(prepared.intentId)).toEqual({ status: 'ready', advertisable: 1 });
     } finally {
       setup.database.close();
     }

@@ -117,6 +117,39 @@ function detachedIsolatedEnvelope(): SessionExportEnvelopeV2 {
   });
 }
 
+function twoIsolatedEnvelope(): SessionExportEnvelopeV2 {
+  const draft = subtreeDraft();
+  const second = structuredClone(draft.sessions[1]);
+  second.session.id = 'child-2';
+  second.session.title = 'Session child-2';
+  second.messages[0].id = 'c2u1';
+  second.messages[1].id = 'c2a1';
+  draft.sessions.push(second);
+  draft.lineage.nodes.push({
+    ...structuredClone(draft.lineage.nodes[1]),
+    forkId: 'fork-2',
+    sessionId: 'child-2',
+    anchorChildMessageId: 'c2a1',
+    ordinal: 1,
+    createdAt: 3,
+  });
+  draft.lineage.messageMappings.push(
+    {
+      ...structuredClone(draft.lineage.messageMappings[0]),
+      forkId: 'fork-2',
+      childSessionId: 'child-2',
+      childMessageId: 'c2u1',
+    },
+    {
+      ...structuredClone(draft.lineage.messageMappings[1]),
+      forkId: 'fork-2',
+      childSessionId: 'child-2',
+      childMessageId: 'c2a1',
+    },
+  );
+  return buildSessionExportEnvelopeV2(draft);
+}
+
 describe('SessionHistoryAppService imported isolated workspace publication', () => {
   const invalidateSessionCache = vi.fn();
   const database = {
@@ -124,7 +157,8 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
       getProject: vi.fn(() => ({ id: PROJECT_ID })),
     })),
     importSessionFork: vi.fn(),
-    publishImportedIsolatedWorkspace: vi.fn(),
+    prepareImportedIsolatedWorkspace: vi.fn(),
+    publishPreparedImportedWorkspaceGraph: vi.fn(),
   };
   const projectService = {
     getWorkspaceScope: vi.fn(),
@@ -160,18 +194,54 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
     return new SessionHistoryAppService(() => ({}) as never);
   }
 
+  function preparedWorkspace(
+    plan: ReturnType<typeof plannedImport>['plan'],
+    sourceSessionId = 'child',
+  ) {
+    const importedSessionId = plan.sessionIdMap[sourceSessionId];
+    const importedAnchorMessageId = plan.envelope.sessions
+      .find((session) => session.id === importedSessionId)
+      ?.workspace?.anchorChildMessageId;
+    return {
+      sessionId: importedSessionId,
+      anchorMessageId: importedAnchorMessageId,
+      forkId: plan.envelope.lineage.nodes
+        .find((node) => node.sessionId === importedSessionId)?.forkId
+        ?? `imported:${importedSessionId}`,
+      intentId: `intent:${importedSessionId}`,
+      workspacePath: `/workspace/${importedSessionId}`,
+      evidenceId: `evidence:${importedSessionId}`,
+      evidenceDigest: 'a'.repeat(64),
+      workspaceScopeVersion: WORKSPACE_SCOPE.version,
+      sourcePrimaryRoot: REPOSITORY_ROOT,
+      baseCommit: 'b'.repeat(40),
+      sourceIdentity: {},
+      pathMappings: [],
+      portableEvidenceId: 'portable-evidence',
+      portablePayloadDigest: `sha256:${'c'.repeat(64)}`,
+      sourceExportId: plan.sourceExportId,
+      sourcePayloadDigest: plan.envelope.payloadDigest,
+      targetProjectId: PROJECT_ID,
+      ownerUserId: OWNER_ID,
+      state: 'ready' as const,
+      graphPublicationRequired: true,
+    };
+  }
+
   it('publishes an isolated import with the remapped child anchor and verified Project binding', async () => {
     const envelope = buildSessionExportEnvelopeV2(subtreeDraft());
     const { plan, result } = plannedImport(envelope);
     database.importSessionFork.mockReturnValue(result);
-    database.publishImportedIsolatedWorkspace.mockResolvedValue({
+    const prepared = preparedWorkspace(plan);
+    database.prepareImportedIsolatedWorkspace.mockResolvedValue(prepared);
+    database.publishPreparedImportedWorkspaceGraph.mockResolvedValue([{
       sessionId: plan.sessionIdMap.child,
       intentId: 'intent-1',
       workspacePath: '/workspace/imported-child',
       evidenceDigest: 'evidence-digest',
       workspaceScopeVersion: WORKSPACE_SCOPE.version,
       publishedAt: 201,
-    });
+    }]);
 
     await expect(createService().importSessionFork({
       envelope,
@@ -181,7 +251,7 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
 
     const importedChild = plan.envelope.sessions
       .find((session) => session.id === plan.sessionIdMap.child);
-    expect(database.publishImportedIsolatedWorkspace).toHaveBeenCalledWith({
+    expect(database.prepareImportedIsolatedWorkspace).toHaveBeenCalledWith({
       importedSessionId: plan.sessionIdMap.child,
       importedAnchorMessageId: plan.messageIdMap.ca1,
       ownerUserId: OWNER_ID,
@@ -195,8 +265,30 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
       },
       portableEvidence: importedChild?.workspace?.isolatedAnchor,
     });
+    expect(database.publishPreparedImportedWorkspaceGraph).toHaveBeenCalledWith({
+      importId: result.importId,
+      sourceExportId: plan.sourceExportId,
+      sourcePayloadDigest: plan.envelope.payloadDigest,
+      ownerUserId: OWNER_ID,
+      targetProjectId: PROJECT_ID,
+      sessions: [
+        {
+          sessionId: plan.sessionIdMap.root,
+          readOnly: false,
+          workspaceMode: 'shared_current',
+        },
+        {
+          sessionId: plan.sessionIdMap.child,
+          readOnly: false,
+          workspaceMode: 'isolated_at_anchor',
+        },
+      ],
+      workspaces: [prepared],
+    });
     expect(database.importSessionFork.mock.invocationCallOrder[0])
-      .toBeLessThan(database.publishImportedIsolatedWorkspace.mock.invocationCallOrder[0]);
+      .toBeLessThan(database.prepareImportedIsolatedWorkspace.mock.invocationCallOrder[0]);
+    expect(database.prepareImportedIsolatedWorkspace.mock.invocationCallOrder[0])
+      .toBeLessThan(database.publishPreparedImportedWorkspaceGraph.mock.invocationCallOrder[0]);
     expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap.root);
     expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap.child);
   });
@@ -211,7 +303,7 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
       workspace: null,
     };
     database.importSessionFork.mockReturnValue(result);
-    database.publishImportedIsolatedWorkspace.mockRejectedValue(
+    database.prepareImportedIsolatedWorkspace.mockRejectedValue(
       Object.assign(new Error('BASE_COMMIT_UNAVAILABLE: injected materialization failure'), {
         code: 'BASE_COMMIT_UNAVAILABLE',
       }),
@@ -229,8 +321,30 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
       workingDirectory: null,
       workspace: null,
     });
-    expect(database.publishImportedIsolatedWorkspace).toHaveBeenCalledTimes(1);
+    expect(database.prepareImportedIsolatedWorkspace).toHaveBeenCalledTimes(1);
+    expect(database.publishPreparedImportedWorkspaceGraph).not.toHaveBeenCalled();
     expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap.child);
+  });
+
+  it('does not publish any graph session when preparation of the second workspace fails', async () => {
+    const envelope = twoIsolatedEnvelope();
+    const { plan, result } = plannedImport(envelope);
+    database.importSessionFork.mockReturnValue(result);
+    database.prepareImportedIsolatedWorkspace
+      .mockResolvedValueOnce(preparedWorkspace(plan))
+      .mockRejectedValueOnce(new Error('injected second workspace preparation failure'));
+
+    await expect(createService().importSessionFork({
+      envelope,
+      targetProjectId: PROJECT_ID,
+      namespace: NAMESPACE,
+    })).rejects.toThrow(/second workspace preparation failure/u);
+
+    expect(database.prepareImportedIsolatedWorkspace).toHaveBeenCalledTimes(2);
+    expect(database.publishPreparedImportedWorkspaceGraph).not.toHaveBeenCalled();
+    expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap.root);
+    expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap.child);
+    expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap['child-2']);
   });
 
   it('rejects incomplete isolated evidence before the import transaction writes anything', async () => {
@@ -246,7 +360,8 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
     })).rejects.toThrow(/PORTABLE_EVIDENCE_REQUIRED/u);
 
     expect(database.importSessionFork).not.toHaveBeenCalled();
-    expect(database.publishImportedIsolatedWorkspace).not.toHaveBeenCalled();
+    expect(database.prepareImportedIsolatedWorkspace).not.toHaveBeenCalled();
+    expect(database.publishPreparedImportedWorkspaceGraph).not.toHaveBeenCalled();
     expect(invalidateSessionCache).not.toHaveBeenCalled();
   });
 
@@ -275,7 +390,8 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
 
     expect(database.importSessionFork).toHaveBeenCalledTimes(1);
     expect(getProjectSourceGitStates).not.toHaveBeenCalled();
-    expect(database.publishImportedIsolatedWorkspace).not.toHaveBeenCalled();
+    expect(database.prepareImportedIsolatedWorkspace).not.toHaveBeenCalled();
+    expect(database.publishPreparedImportedWorkspaceGraph).not.toHaveBeenCalled();
     expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap.child);
   });
 
@@ -284,16 +400,17 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
     const { plan, result } = plannedImport(envelope);
     const publicationFailure = new Error('injected publication failure');
     database.importSessionFork.mockReturnValue(result);
-    database.publishImportedIsolatedWorkspace
+    database.prepareImportedIsolatedWorkspace.mockResolvedValue(preparedWorkspace(plan));
+    database.publishPreparedImportedWorkspaceGraph
       .mockRejectedValueOnce(publicationFailure)
-      .mockResolvedValueOnce({
+      .mockResolvedValueOnce([{
         sessionId: plan.sessionIdMap.child,
         intentId: 'intent-1',
         workspacePath: '/workspace/imported-child',
         evidenceDigest: 'evidence-digest',
         workspaceScopeVersion: WORKSPACE_SCOPE.version,
         publishedAt: 202,
-      });
+      }]);
     const service = createService();
     const request = {
       envelope,
@@ -305,9 +422,10 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
     await expect(service.importSessionFork(request)).resolves.toEqual(result);
 
     expect(database.importSessionFork).toHaveBeenCalledTimes(2);
-    expect(database.publishImportedIsolatedWorkspace).toHaveBeenCalledTimes(2);
-    expect(database.publishImportedIsolatedWorkspace.mock.calls[1])
-      .toEqual(database.publishImportedIsolatedWorkspace.mock.calls[0]);
+    expect(database.prepareImportedIsolatedWorkspace).toHaveBeenCalledTimes(2);
+    expect(database.publishPreparedImportedWorkspaceGraph).toHaveBeenCalledTimes(2);
+    expect(database.publishPreparedImportedWorkspaceGraph.mock.calls[1])
+      .toEqual(database.publishPreparedImportedWorkspaceGraph.mock.calls[0]);
     expect(invalidateSessionCache).toHaveBeenCalledTimes(4);
   });
 
@@ -324,24 +442,56 @@ describe('SessionHistoryAppService imported isolated workspace publication', () 
 
     expect(getProjectService).not.toHaveBeenCalled();
     expect(getProjectSourceGitStates).not.toHaveBeenCalled();
-    expect(database.publishImportedIsolatedWorkspace).not.toHaveBeenCalled();
+    expect(database.prepareImportedIsolatedWorkspace).not.toHaveBeenCalled();
+    expect(database.publishPreparedImportedWorkspaceGraph).not.toHaveBeenCalled();
     expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap.root);
     expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap.child);
   });
 
-  it('does not guess an imported child anchor from detached provenance', async () => {
+  it('publishes a detached isolated root with its explicit remapped child anchor', async () => {
     const envelope = detachedIsolatedEnvelope();
     const { plan, result } = plannedImport(envelope);
     database.importSessionFork.mockReturnValue(result);
+    database.prepareImportedIsolatedWorkspace.mockResolvedValue(preparedWorkspace(plan));
+    database.publishPreparedImportedWorkspaceGraph.mockResolvedValue([{
+      sessionId: plan.sessionIdMap.child,
+      intentId: 'intent-detached',
+      workspacePath: '/workspace/imported-detached-child',
+      evidenceDigest: 'evidence-digest',
+      workspaceScopeVersion: WORKSPACE_SCOPE.version,
+      publishedAt: 203,
+    }]);
 
     await expect(createService().importSessionFork({
       envelope,
       targetProjectId: PROJECT_ID,
       namespace: NAMESPACE,
-    })).rejects.toThrow(/remapped child anchor/u);
+    })).resolves.toEqual(result);
 
-    expect(getProjectService).not.toHaveBeenCalled();
-    expect(database.publishImportedIsolatedWorkspace).not.toHaveBeenCalled();
+    expect(database.prepareImportedIsolatedWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        importedSessionId: plan.sessionIdMap.child,
+        importedAnchorMessageId: plan.messageIdMap.ca1,
+      }),
+    );
     expect(invalidateSessionCache).toHaveBeenCalledWith(plan.sessionIdMap.child);
+  });
+
+  it('rejects a legacy isolated root without explicit anchor evidence before core import', async () => {
+    const current = detachedIsolatedEnvelope();
+    const legacy = structuredClone(current);
+    delete legacy.sessions[0].workspace?.anchorChildMessageId;
+    const envelope = rehashSessionExportEnvelopeV2(legacy);
+
+    await expect(createService().importSessionFork({
+      envelope,
+      targetProjectId: PROJECT_ID,
+      namespace: NAMESPACE,
+    })).rejects.toThrow(/PORTABLE_EVIDENCE_REQUIRED.*explicit child anchor/u);
+
+    expect(database.importSessionFork).not.toHaveBeenCalled();
+    expect(database.prepareImportedIsolatedWorkspace).not.toHaveBeenCalled();
+    expect(database.publishPreparedImportedWorkspaceGraph).not.toHaveBeenCalled();
+    expect(invalidateSessionCache).not.toHaveBeenCalled();
   });
 });

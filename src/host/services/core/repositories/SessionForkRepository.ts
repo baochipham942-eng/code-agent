@@ -125,7 +125,11 @@ function sanitizeForkEngine(raw: unknown, cwd: string | null): string {
   const kind = typeof engine.kind === 'string' ? engine.kind : 'native';
   const safe: Record<string, unknown> = {
     kind,
-    permissionProfile: kind === 'native' ? 'default' : 'read_only',
+    // A fork never inherits executable authority. shared_current points at the
+    // same live cwd, so starting in a writable profile would let the child
+    // silently mutate the source workspace. The user may make a later,
+    // separately authorized permission decision in the child.
+    permissionProfile: 'read_only',
     origin: 'manual',
   };
   if (typeof engine.model === 'string' && engine.model.trim()) safe.model = engine.model.trim();
@@ -458,7 +462,6 @@ export class SessionForkRepository {
         WHERE fork.source_session_id = ?
           AND fork.status = 'completed'
           AND COALESCE(child.is_deleted, 0) = 0
-          AND COALESCE(source.is_deleted, 0) = 0
           AND ${ownerPredicate}
         ORDER BY fork.created_at ASC, fork.id ASC
       `).all(sessionId, ...ownerParams) as SQLiteRow[]).map((row) => this.rowToLineage(row));

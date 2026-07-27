@@ -3,28 +3,42 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IPC_CHANNELS } from '../../../src/shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../../src/shared/ipc';
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 
-const invoke = vi.hoisted(() => vi.fn());
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  invokeDomain: vi.fn(),
+}));
 
 // 静态渲染下 effect 不跑（checkpoints 维持空），mock store + ipcService 让模块可导入。
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: () => ({ currentSessionId: 'sess-1' }),
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { invoke },
+  default: {
+    invoke: mocks.invoke,
+    invokeDomain: mocks.invokeDomain,
+  },
 }));
 
 import { RewindPanel } from '../../../src/renderer/components/RewindPanel';
 
 beforeEach(() => {
-  invoke.mockReset();
-  invoke.mockResolvedValue([]);
+  mocks.invoke.mockReset();
+  mocks.invoke.mockResolvedValue([]);
+  mocks.invokeDomain.mockReset();
+  mocks.invokeDomain.mockResolvedValue({
+    success: true,
+    restoredFileCount: 1,
+    deletedFileCount: 0,
+    workspaceChanged: true,
+    conversationChanged: false,
+  });
 });
 
 afterEach(cleanup);
@@ -48,7 +62,7 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
   });
 
   it('puts checkpoint rows in the Tab order and previews on Enter', async () => {
-    invoke
+    mocks.invoke
       .mockResolvedValueOnce([
         {
           id: 'checkpoint-1',
@@ -68,7 +82,7 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
     fireEvent.keyDown(checkpoint, { key: 'Enter' });
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith(
+      expect(mocks.invoke).toHaveBeenCalledWith(
         IPC_CHANNELS.CHECKPOINT_PREVIEW,
         'sess-1',
         'message-1',
@@ -78,50 +92,57 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
   });
 
   it('confirms the final rewind without interrupting checkpoint selection', async () => {
-    invoke
+    mocks.invoke
       .mockResolvedValueOnce([
         { id: 'checkpoint-1', messageId: 'message-1', timestamp: 1, description: 'Before edit', fileCount: 1 },
       ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce({ success: true, filesRestored: 1 });
+      .mockResolvedValueOnce([]);
     const onClose = vi.fn();
     render(<RewindPanel isOpen={true} onClose={onClose} />);
 
     fireEvent.click(await screen.findByRole('button', { name: /Before edit/ }));
-    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(2));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: '恢复文件' }));
     expect(screen.getAllByRole('dialog')).toHaveLength(2);
-    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.invokeDomain).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: '取消恢复' }));
-    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(mocks.invokeDomain).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: '恢复文件' }));
     fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith(
-        IPC_CHANNELS.CHECKPOINT_REWIND,
-        'sess-1',
-        'message-1',
+      expect(mocks.invokeDomain).toHaveBeenCalledWith(
+        IPC_DOMAINS.SESSION,
+        'restoreWorkspaceFilesAtCheckpoint',
+        {
+          sessionId: 'sess-1',
+          checkpointMessageId: 'message-1',
+        },
       );
     });
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.CHECKPOINT_REWIND,
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it('shows rewind failures inside the panel and leaves retry available', async () => {
-    invoke
+    mocks.invoke
       .mockResolvedValueOnce([
         { id: 'checkpoint-1', messageId: 'message-1', timestamp: 1, description: 'Before edit', fileCount: 1 },
       ])
-      .mockResolvedValueOnce([])
-      .mockRejectedValueOnce(new Error('workspace locked'));
+      .mockResolvedValueOnce([]);
+    mocks.invokeDomain.mockRejectedValueOnce(new Error('workspace locked'));
     const onClose = vi.fn();
     render(<RewindPanel isOpen={true} onClose={onClose} />);
 
     fireEvent.click(await screen.findByRole('button', { name: /Before edit/ }));
-    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(2));
     fireEvent.click(screen.getByRole('button', { name: '恢复文件' }));
     fireEvent.click(screen.getByRole('button', { name: '确认恢复' }));
 

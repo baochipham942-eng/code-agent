@@ -322,7 +322,9 @@ function detachedLineage(
   createdAt: number,
 ): ForkLineageEnvelopeV1 {
   const workspaceMode = session.workspace?.mode ?? 'shared_current';
-  const anchor = messages.at(-1)?.id ?? null;
+  const anchor = session.workspace?.anchorChildMessageId
+    ?? messages.at(-1)?.id
+    ?? null;
   return rehashLineageEnvelope({
     schema: FORK_LINEAGE_ENVELOPE_SCHEMA,
     version: FORK_LINEAGE_ENVELOPE_VERSION,
@@ -920,6 +922,23 @@ export function buildSessionExportEnvelopeV2(
         input.rootSessionId,
       )
       : detachedLineage(sessions[0], messages, input.exportedAt);
+  const anchoredSessions = sessions.map((session) => {
+    if (
+      session.workspace?.mode !== 'isolated_at_anchor'
+      || session.workspace.anchorChildMessageId
+    ) {
+      return session;
+    }
+    const node = lineage.nodes.find((candidate) => candidate.sessionId === session.id);
+    if (!node?.anchorChildMessageId) return session;
+    return rehashSession({
+      ...withoutDigest(session),
+      workspace: {
+        ...session.workspace,
+        anchorChildMessageId: node.anchorChildMessageId,
+      },
+    });
+  });
   const unsigned: Omit<SessionExportEnvelopeV2, 'payloadDigest'> = {
     schema: SESSION_EXPORT_ENVELOPE_SCHEMA,
     version: SESSION_EXPORT_ENVELOPE_VERSION,
@@ -929,7 +948,7 @@ export function buildSessionExportEnvelopeV2(
     projectId: input.projectId,
     rootSessionId: input.rootSessionId,
     mode: input.mode,
-    sessions,
+    sessions: anchoredSessions,
     messages,
     lineage,
     ...(input.conversationHistory

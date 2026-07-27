@@ -33,7 +33,7 @@ const childSession: Session = {
 
 function database(): SessionForkServiceDatabase {
   return {
-    getSession: vi.fn((id: string, options?: { userId?: string | null }) => {
+    getSession: vi.fn((id: string, options?: { includeDeleted?: boolean; userId?: string | null }) => {
       const session = id === sourceSession.id ? sourceSession : id === childSession.id ? childSession : null;
       if (!session || options?.userId === undefined) return session;
       return session.userId === options.userId ? session : null;
@@ -148,6 +148,47 @@ describe('SessionForkService', () => {
     expect(service.listChildren('source')).toEqual([lineage]);
     expect(db.getSessionForkLineage).toHaveBeenCalledWith('child-1', 'user-1');
     expect(db.listSessionForkChildren).toHaveBeenCalledWith('source', 'user-1');
+  });
+
+  it('keeps owned lineage auditable after the parent is soft-deleted', () => {
+    const db = database();
+    const deletedParent = { ...sourceSession, isDeleted: true };
+    const lineage = {
+      forkId: 'fork-1',
+      rootSessionId: 'source',
+      parentSessionId: 'source',
+      parentDeleted: true,
+      childSessionId: 'child-1',
+      sourceAnchorMessageId: 'a2',
+      anchorChildMessageId: 'child-a2',
+      depth: 1,
+      workspaceMode: 'shared_current' as const,
+      contextDeliveryMode: 'neo_native_prefix' as const,
+      status: 'completed' as const,
+      syncState: 'local_only' as const,
+      createdAt: 3,
+    };
+    vi.mocked(db.getSession).mockImplementation((id, options) => {
+      const session = id === 'source'
+        ? deletedParent
+        : id === 'child-1'
+          ? childSession
+          : null;
+      if (!session) return null;
+      if (session.isDeleted && !options?.includeDeleted) return null;
+      if (options?.userId !== undefined && session.userId !== options.userId) return null;
+      return session;
+    });
+    vi.mocked(db.getSessionForkLineage).mockReturnValue(lineage);
+    vi.mocked(db.listSessionForkChildren).mockReturnValue([lineage]);
+    const service = new SessionForkService(db, { ownerUserId: 'user-1' });
+
+    expect(service.getLineage('child-1')).toEqual(lineage);
+    expect(service.listChildren('source')).toEqual([lineage]);
+    expect(db.getSession).toHaveBeenCalledWith('source', {
+      includeDeleted: true,
+      userId: 'user-1',
+    });
   });
 
   it('filters cross-owner lineage rows even when storage ignores the requested scope', () => {

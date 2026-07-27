@@ -163,6 +163,53 @@ describe('AnchorWorkspaceEvidenceService', () => {
     })).rejects.toMatchObject({ code: 'ANCHOR_STATE_CHANGED' } satisfies Partial<AnchorEvidenceError>);
   });
 
+  it('fails closed when .gitignore hides a regular workspace file from anchor evidence', async () => {
+    const { repositoryRoot } = await createRepository();
+    await writeFile(path.join(repositoryRoot, '.gitignore'), 'ignored-secret.txt\n');
+    git(repositoryRoot, 'add', '.gitignore');
+    git(repositoryRoot, 'commit', '-m', 'ignore local secret');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    await writeFile(path.join(repositoryRoot, 'ignored-secret.txt'), 'anchor-only\n');
+    const service = new AnchorWorkspaceEvidenceService();
+
+    await expect(service.capture({
+      anchorId: 'assistant-a2',
+      repositoryRoot,
+      baseCommit,
+      workspaceScopeVersion: 'scope-v1',
+      pathMappings: [{
+        sourceId: 'primary',
+        sourcePath: repositoryRoot,
+        isolatedRelativePath: '.',
+      }],
+    })).rejects.toMatchObject({
+      code: 'IGNORED_WORKSPACE_STATE',
+      message: expect.stringContaining('ignored'),
+    });
+  });
+
+  it('fails closed when .git/info/exclude hides a regular workspace file from anchor evidence', async () => {
+    const { repositoryRoot, baseCommit } = await createRepository();
+    await writeFile(path.join(repositoryRoot, '.git', 'info', 'exclude'), 'local-only.txt\n');
+    await writeFile(path.join(repositoryRoot, 'local-only.txt'), 'anchor-only\n');
+    const service = new AnchorWorkspaceEvidenceService();
+
+    await expect(service.capture({
+      anchorId: 'assistant-a2',
+      repositoryRoot,
+      baseCommit,
+      workspaceScopeVersion: 'scope-v1',
+      pathMappings: [{
+        sourceId: 'primary',
+        sourcePath: repositoryRoot,
+        isolatedRelativePath: '.',
+      }],
+    })).rejects.toMatchObject({
+      code: 'IGNORED_WORKSPACE_STATE',
+      message: expect.stringContaining('ignored'),
+    });
+  });
+
   it('fails closed when patch/blob evidence is missing or tampered', async () => {
     const { repositoryRoot, baseCommit } = await createRepository();
     await writeFile(path.join(repositoryRoot, 'untracked.txt'), 'anchor-only');

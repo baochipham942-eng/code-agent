@@ -262,8 +262,8 @@ describe('CodexCliAdapter.run', () => {
     expect(child!.stdin.end.mock.invocationCallOrder[0])
       .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
     expect(firstLifecycle.persistExternalSessionId).toHaveBeenCalledWith('fork-codex-thread');
-    expect((firstLifecycle.persistExternalSessionId as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
-      .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
+    expect(onForkContextDispatched.mock.invocationCallOrder[0])
+      .toBeLessThan((firstLifecycle.persistExternalSessionId as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]);
     const firstTerminalUpdate = mocks.updateSession.mock.calls.at(-1)?.[1];
     expect(firstTerminalUpdate).toMatchObject({
       status: 'idle',
@@ -412,6 +412,13 @@ describe('CodexCliAdapter.run', () => {
     ], 1, 'provider failed after identity confirmation'));
     const onForkContextDispatchStart = vi.fn(async () => undefined);
     const onForkContextDispatched = vi.fn(async () => undefined);
+    const lifecycle = {
+      runId: 'failed-fork-run', attempt: 1, ownerEpoch: 1,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
 
     const result = await new CodexCliAdapter().run({
       sessionId: 'child-session',
@@ -421,11 +428,14 @@ describe('CodexCliAdapter.run', () => {
       forkContextHandoff: buildTestExternalForkContextHandoff('codex_cli'),
       onForkContextDispatchStart,
       onForkContextDispatched,
+      durableLifecycle: lifecycle,
     });
 
     expect(result.status).toBe('failed');
     expect(onForkContextDispatchStart).toHaveBeenCalledTimes(1);
     expect(onForkContextDispatched).not.toHaveBeenCalled();
+    expect(lifecycle.persistExternalSessionId).not.toHaveBeenCalled();
+    expect(mocks.updateSession.mock.calls.at(-1)?.[1]).not.toHaveProperty('engine.externalSessionId');
   });
 
   it('writes once then aborts when consumed-state persistence rejects', async () => {
@@ -458,7 +468,7 @@ describe('CodexCliAdapter.run', () => {
     expect(child?.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
-  it('persists an observed Codex external session id on a failed terminal path', async () => {
+  it('does not persist an observed Codex external session id on a failed terminal path', async () => {
     mocks.spawn.mockImplementation(() => createMockChild([
       JSON.stringify({ type: 'thread.started', thread_id: 'failed-codex-thread' }),
     ], 1, 'runtime failed'));
@@ -475,11 +485,9 @@ describe('CodexCliAdapter.run', () => {
     expect(result.status).toBe('failed');
     expect(mocks.updateSession.mock.calls.at(-1)?.[1]).toMatchObject({
       status: 'error',
-      engine: {
-        kind: 'codex_cli',
-        externalSessionId: 'failed-codex-thread',
-      },
+      engine: { kind: 'codex_cli' },
     });
+    expect(mocks.updateSession.mock.calls.at(-1)?.[1]).not.toHaveProperty('engine.externalSessionId');
   });
 
   it('rejects workspace-write permission profile before spawning Codex CLI', async () => {

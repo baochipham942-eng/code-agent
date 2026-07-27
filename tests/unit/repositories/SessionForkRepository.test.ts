@@ -204,6 +204,37 @@ describe('SessionForkRepository', () => {
     ]);
   });
 
+  it('clears native executable authority for a shared-current child', () => {
+    db.prepare(`
+      UPDATE sessions
+      SET agent_engine = ?
+      WHERE id = 'source'
+    `).run(JSON.stringify({
+      kind: 'native',
+      model: 'gpt-5.4',
+      permissionProfile: 'bypass_permissions',
+      origin: 'manual',
+      cwd: '/workspace/source',
+      runId: 'source-run',
+    }));
+
+    repo.createFork(forkInput({ contextDeliveryMode: 'neo_native_prefix' }));
+
+    const child = db.prepare(`
+      SELECT read_only, agent_engine
+      FROM sessions
+      WHERE id = 'child-1'
+    `).get() as { read_only: number; agent_engine: string };
+    expect(child.read_only).toBe(0);
+    expect(JSON.parse(child.agent_engine)).toEqual({
+      kind: 'native',
+      model: 'gpt-5.4',
+      permissionProfile: 'read_only',
+      origin: 'manual',
+      cwd: '/workspace/source',
+    });
+  });
+
   it('returns the same child for a repeated idempotency key', () => {
     const first = repo.createFork(forkInput());
     const second = repo.createFork(forkInput({
@@ -351,6 +382,12 @@ describe('SessionForkRepository', () => {
       parentDeleted: true,
     });
     expect(repo.getLineage('child-1', 'user-2')).toBeNull();
+    expect(repo.listChildren('source', 'user-1')).toEqual([
+      expect.objectContaining({
+        forkId: 'fork-1',
+        parentDeleted: true,
+      }),
+    ]);
 
     db.prepare("UPDATE sessions SET is_deleted = 0 WHERE id = 'source'").run();
     expect(repo.getLineage('child-1', 'user-1')).toMatchObject({ parentDeleted: false });

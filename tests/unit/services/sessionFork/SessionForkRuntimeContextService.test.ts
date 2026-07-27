@@ -103,6 +103,187 @@ function database(): SessionForkRuntimeContextDatabase {
 }
 
 describe('SessionForkRuntimeContextService', () => {
+  it('retries a pending handoff with the same semantic payload digest across clock changes', async () => {
+    const db = database();
+    let persistedDigest: string | undefined;
+    vi.mocked(db.prepareSessionForkContextHandoff).mockImplementation((
+      _forkId,
+      _engine,
+      payloadDigest,
+    ) => {
+      if (persistedDigest && persistedDigest !== payloadDigest) {
+        throw new Error('pending handoff digest changed');
+      }
+      persistedDigest = payloadDigest;
+      return {
+        forkId: 'fork-1',
+        engine: 'codex_cli',
+        payloadDigest,
+        state: 'pending',
+        attemptId: null,
+        preparedAt: 20,
+        dispatchStartedAt: null,
+        consumedAt: null,
+        error: null,
+      };
+    });
+    let now = 20;
+    const service = new SessionForkRuntimeContextService(db, {
+      createAttemptId: () => `attempt-${now}`,
+      now: () => now++,
+    });
+
+    const first = await service.prepareFirstChildRun({
+      childSessionId: 'child',
+      engine: 'codex_cli',
+      firstUserPrompt: 'continue',
+      policy: {
+        privacyMode: 'redact',
+        tokenBudget: { maxInputTokens: 8_000, reservedOutputTokens: 2_000 },
+        allowInternalMessages: false,
+        allowAttachmentProvenance: true,
+        allowReadOnlyArtifactProvenance: true,
+      },
+    });
+    const retry = await service.prepareFirstChildRun({
+      childSessionId: 'child',
+      engine: 'codex_cli',
+      firstUserPrompt: 'continue',
+      policy: {
+        privacyMode: 'redact',
+        tokenBudget: { maxInputTokens: 8_000, reservedOutputTokens: 2_000 },
+        allowInternalMessages: false,
+        allowAttachmentProvenance: true,
+        allowReadOnlyArtifactProvenance: true,
+      },
+    });
+
+    expect(retry?.handoff.createdAt).not.toBe(first?.handoff.createdAt);
+    expect(retry?.handoff.payloadDigest).toBe(first?.handoff.payloadDigest);
+    expect(db.prepareSessionForkContextHandoff).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses the durable attempt when retrying an identical dispatching handoff', async () => {
+    const base = database();
+    let record: SessionForkContextHandoffRecord | null = null;
+    const db = Object.assign(base, {
+      getSessionForkContextHandoff: vi.fn(() => record),
+    });
+    vi.mocked(db.prepareSessionForkContextHandoff).mockImplementation((
+      _forkId,
+      engine,
+      payloadDigest,
+    ) => {
+      record = {
+        forkId: 'fork-1',
+        engine: engine as 'codex_cli' | 'claude_code',
+        payloadDigest,
+        state: 'pending',
+        attemptId: null,
+        preparedAt: 20,
+        dispatchStartedAt: null,
+        consumedAt: null,
+        error: null,
+      };
+      return record;
+    });
+    vi.mocked(db.markSessionForkContextHandoffDispatching).mockImplementation((
+      _forkId,
+      payloadDigest,
+      attemptId,
+    ) => {
+      record = {
+        ...record!,
+        payloadDigest,
+        state: 'dispatching',
+        attemptId,
+        dispatchStartedAt: 30,
+      };
+      return record;
+    });
+    const policy = {
+      privacyMode: 'redact' as const,
+      tokenBudget: { maxInputTokens: 8_000, reservedOutputTokens: 2_000 },
+      allowInternalMessages: false,
+      allowAttachmentProvenance: true,
+      allowReadOnlyArtifactProvenance: true,
+    };
+    const first = await new SessionForkRuntimeContextService(db, {
+      createAttemptId: () => 'attempt-original',
+      now: () => 20,
+    }).prepareFirstChildRun({
+      childSessionId: 'child',
+      engine: 'codex_cli',
+      firstUserPrompt: 'continue',
+      policy,
+    });
+    await first?.onDispatchStart();
+
+    const retry = await new SessionForkRuntimeContextService(db, {
+      createAttemptId: () => 'attempt-must-not-replace',
+      now: () => 99,
+    }).prepareFirstChildRun({
+      childSessionId: 'child',
+      engine: 'codex_cli',
+      firstUserPrompt: 'continue',
+      policy,
+    });
+
+    expect(retry?.handoff.payloadDigest).toBe(first?.handoff.payloadDigest);
+    expect(retry?.attemptId).toBe('attempt-original');
+    expect(db.prepareSessionForkContextHandoff).toHaveBeenCalledTimes(1);
+    await retry?.onDispatchStart();
+    expect(db.markSessionForkContextHandoffDispatching).toHaveBeenLastCalledWith(
+      'fork-1',
+      first?.handoff.payloadDigest,
+      'attempt-original',
+      99,
+    );
+  });
+
+  it('permits fork-child resume only after the matching engine handoff is consumed', () => {
+    const db = Object.assign(database(), {
+      getSessionForkContextHandoff: vi.fn(() => ({
+        forkId: 'fork-1',
+        engine: 'codex_cli' as const,
+        payloadDigest: digest,
+        state: 'consumed' as const,
+        attemptId: 'attempt-1',
+        preparedAt: 20,
+        dispatchStartedAt: 30,
+        consumedAt: 40,
+        error: null,
+      })),
+    });
+    const service = new SessionForkRuntimeContextService(db);
+
+    expect(() => service.assertConsumedForResume('child', 'codex_cli')).not.toThrow();
+  });
+
+  it.each(['pending', 'dispatching', 'blocked'] as const)(
+    'fails closed when fork-child resume sees a %s handoff',
+    (state) => {
+      const db = Object.assign(database(), {
+        getSessionForkContextHandoff: vi.fn(() => ({
+          forkId: 'fork-1',
+          engine: 'codex_cli' as const,
+          payloadDigest: digest,
+          state,
+          attemptId: state === 'pending' ? null : 'attempt-1',
+          preparedAt: 20,
+          dispatchStartedAt: state === 'pending' ? null : 30,
+          consumedAt: null,
+          error: null,
+        })),
+      });
+      const service = new SessionForkRuntimeContextService(db);
+
+      expect(() => service.assertConsumedForResume('child', 'codex_cli')).toThrowError(
+        expect.objectContaining({ code: 'HANDOFF_NOT_CONSUMED' }),
+      );
+    },
+  );
+
   it('builds a bounded external handoff and exposes durable dispatch callbacks', async () => {
     const db = database();
     const service = new SessionForkRuntimeContextService(db, {

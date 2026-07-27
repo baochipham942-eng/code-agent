@@ -153,10 +153,38 @@ describe('SessionRepository conversation rewind', () => {
   });
 
   it('restores a rewind without deleting history and records the recovery', () => {
+    db.prepare(`
+      INSERT INTO generative_ui_instances (
+        instance_id, session_id, source_message_id, source_ordinal, source_key,
+        spec_hash, spec_json, state_json, state_revision, status,
+        hidden_by_rewind_id, created_at, updated_at
+      ) VALUES (
+        'ui-active', 'session-1', 'a2', 0, 'active-source',
+        'active-hash', '{}', '{}', 0, 'active', NULL, 40, 40
+      )
+    `).run();
+    db.prepare(`
+      INSERT INTO generative_ui_instances (
+        instance_id, session_id, source_message_id, source_ordinal, source_key,
+        spec_hash, spec_json, state_json, state_revision, status,
+        hidden_by_rewind_id, created_at, updated_at
+      ) VALUES (
+        'ui-already-hidden', 'session-1', 'a2', 1, 'hidden-source',
+        'hidden-hash', '{}', '{}', 0, 'hidden', NULL, 40, 40
+      )
+    `).run();
     const rewind = repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'rewind-request-1',
       createdAt: 100,
       ownerUserId: null,
+    });
+    expect(db.prepare(`
+      SELECT status, hidden_by_rewind_id
+      FROM generative_ui_instances
+      WHERE instance_id = 'ui-active'
+    `).get()).toEqual({
+      status: 'hidden',
+      hidden_by_rewind_id: rewind.rewindId,
     });
 
     const restored = repository.restorePromptRewind('session-1', rewind.rewindId, 200, null);
@@ -168,6 +196,25 @@ describe('SessionRepository conversation rewind', () => {
     `).get(rewind.rewindId)).toEqual({ status: 'restored', restored_at: 200 });
     expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE session_id = ?').get('session-1'))
       .toEqual({ count: 5 });
+    expect(db.prepare(`
+      SELECT instance_id, status, hidden_by_rewind_id, updated_at
+      FROM generative_ui_instances
+      WHERE instance_id IN ('ui-active', 'ui-already-hidden')
+      ORDER BY instance_id
+    `).all()).toEqual([
+      {
+        instance_id: 'ui-active',
+        status: 'active',
+        hidden_by_rewind_id: null,
+        updated_at: 200,
+      },
+      {
+        instance_id: 'ui-already-hidden',
+        status: 'hidden',
+        hidden_by_rewind_id: null,
+        updated_at: 40,
+      },
+    ]);
   });
 
   it('uses the public timestamp-rowid order for the suffix even when timestamps arrive out of order', () => {

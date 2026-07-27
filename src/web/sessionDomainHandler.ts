@@ -8,6 +8,7 @@ import {
   rehydrateModelOverrideFromSession,
 } from '../host/session/modelOverridePersistence';
 import type { ModelProvider, Session } from '../shared/contract';
+import { invalidateSessionMessagesProjection } from './helpers/webSessionStore';
 
 export type SessionDomainPayload = {
   sessionId?: string;
@@ -452,6 +453,7 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
               : `legacy:${sessionId}:${userMessageId}`,
           });
           sm.invalidateSessionCache(sessionId);
+          invalidateSessionMessagesProjection(sessionId);
           break;
         }
         case 'restoreConversationRewind': {
@@ -471,6 +473,7 @@ export function installSessionDomainHandler(deps: SessionDomainHandlerDependenci
             ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
           }).restoreConversation({ sessionId, rewindId });
           sm.invalidateSessionCache(sessionId);
+          invalidateSessionMessagesProjection(sessionId);
           break;
         }
         case 'restoreWorkspaceFilesAtCheckpoint': {

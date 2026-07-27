@@ -245,6 +245,17 @@ export class SessionRewindRepository {
           AND hidden_by_rewind_id = ?
           AND visibility = 'rewound'
       `).run(sessionId, rewindId);
+      if (sqliteTableExists(this.db, 'generative_ui_instances')) {
+        this.db.prepare(`
+          UPDATE generative_ui_instances
+          SET status = 'active',
+              hidden_by_rewind_id = NULL,
+              updated_at = ?
+          WHERE session_id = ?
+            AND hidden_by_rewind_id = ?
+            AND status = 'hidden'
+        `).run(restoredAt, sessionId, rewindId);
+      }
       this.db.prepare(`
         UPDATE session_rewinds
         SET status = 'restored', restored_at = ?
@@ -319,9 +330,12 @@ export class SessionRewindRepository {
     `).run(rewindId, now, sessionId, ...hiddenMessageIds);
     if (!sqliteTableExists(this.db, 'generative_ui_instances')) return;
     this.db.prepare(`
-      UPDATE generative_ui_instances SET status = 'hidden', updated_at = ?
+      UPDATE generative_ui_instances
+      SET status = 'hidden',
+          hidden_by_rewind_id = ?,
+          updated_at = ?
       WHERE session_id = ? AND source_message_id IN (${placeholders}) AND status = 'active'
-    `).run(now, sessionId, ...hiddenMessageIds);
+    `).run(rewindId, now, sessionId, ...hiddenMessageIds);
     this.db.prepare(`
       UPDATE execution_manifests
       SET status = 'invalidated', updated_at = ?, resolved_at = ?,

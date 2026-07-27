@@ -442,6 +442,38 @@ describe('SessionForkPortabilityRepository', () => {
     });
   });
 
+  it('rejects a legacy isolated detached root without explicit child-anchor evidence with zero writes', () => {
+    const current = repository.exportSessionFork({
+      exportId: 'export-detached-legacy',
+      rootSessionId: 'child',
+      ownerScopeId: 'owner-1',
+      projectId: 'project-1',
+      mode: 'detached_child',
+      exportedAt: 101,
+    });
+    const legacy = structuredClone(current);
+    delete legacy.sessions[0].workspace?.anchorChildMessageId;
+    const envelope = rehashSessionExportEnvelopeV2(legacy);
+    const sessionsBefore = db.prepare('SELECT COUNT(*) AS count FROM sessions').get();
+    const importsBefore = db.prepare(`
+      SELECT COUNT(*) AS count FROM session_fork_portability_imports
+    `).get();
+    const changesBefore = totalChanges(db);
+
+    expect(() => repository.importSessionFork({
+      envelope,
+      targetOwnerScopeId: 'owner-1',
+      targetProjectId: 'project-1',
+      namespace: 'legacy-detached-device',
+      importedAt: 201,
+    })).toThrow(/PORTABLE_EVIDENCE_REQUIRED.*explicit child anchor/u);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM sessions').get()).toEqual(sessionsBefore);
+    expect(db.prepare(`
+      SELECT COUNT(*) AS count FROM session_fork_portability_imports
+    `).get()).toEqual(importsBefore);
+    expect(totalChanges(db)).toBe(changesBefore);
+  });
+
   it('uses an explicit portable boundary for local sessions without inventing a persisted user', () => {
     db.close();
     db = new Database(':memory:');
@@ -567,6 +599,30 @@ describe('SessionForkPortabilityRepository', () => {
       portableWorkspaceV2: {
         mode: 'isolated_at_anchor',
       },
+      portabilityPublicationBarrierV1: {
+        sourceExportId: envelope.exportId,
+        desiredReadOnly: false,
+        workspaceMode: 'isolated_at_anchor',
+      },
+    });
+    expect(db.prepare(`
+      SELECT id, read_only
+      FROM sessions
+      WHERE id IN (?, ?)
+      ORDER BY id
+    `).all(plan.sessionIdMap.root, importedChildId)).toEqual(expect.arrayContaining([
+      { id: importedChildId, read_only: 1 },
+      { id: plan.sessionIdMap.root, read_only: 1 },
+    ]));
+    const importedRootMetadata = db.prepare(`
+      SELECT metadata FROM sessions WHERE id = ?
+    `).get(plan.sessionIdMap.root) as { metadata: string };
+    expect(JSON.parse(importedRootMetadata.metadata)).toMatchObject({
+      portabilityPublicationBarrierV1: {
+        sourceExportId: envelope.exportId,
+        desiredReadOnly: false,
+        workspaceMode: 'shared_current',
+      },
     });
     const importedJson = JSON.stringify(
       db.prepare('SELECT * FROM sessions WHERE id IN (?, ?) ORDER BY id')
@@ -680,6 +736,36 @@ describe('SessionForkPortabilityRepository', () => {
     })).toThrow(
       /changed its compatibility projection|failed immutable replay|PROJECTION_ALIAS_PAYLOAD_MISMATCH/u,
     );
+    expect(totalChanges(db)).toBe(changesBeforeRetry);
+  });
+
+  it('fails closed when an idempotent import target was soft-deleted', () => {
+    const envelope = repository.exportSessionFork({
+      exportId: 'export-import-deleted',
+      rootSessionId: 'root',
+      ownerScopeId: 'owner-1',
+      projectId: 'project-1',
+      mode: 'subtree',
+      exportedAt: 100,
+    });
+    const result = repository.importSessionFork({
+      envelope,
+      targetOwnerScopeId: 'owner-1',
+      targetProjectId: 'project-1',
+      namespace: 'device-deleted',
+      importedAt: 200,
+    });
+    db.prepare('UPDATE sessions SET is_deleted = 1 WHERE id = ?')
+      .run(result.rootSessionId);
+    const changesBeforeRetry = totalChanges(db);
+
+    expect(() => repository.importSessionFork({
+      envelope,
+      targetOwnerScopeId: 'owner-1',
+      targetProjectId: 'project-1',
+      namespace: 'device-deleted',
+      importedAt: 300,
+    })).toThrow(/REFERENCE_NOT_CLOSED.*deleted/u);
     expect(totalChanges(db)).toBe(changesBeforeRetry);
   });
 

@@ -28,6 +28,7 @@ export type AnchorEvidenceErrorCode =
   | 'EVIDENCE_BUDGET_EXCEEDED'
   | 'ANCHOR_STATE_CHANGED'
   | 'TRACKED_STATE_HIDDEN'
+  | 'IGNORED_WORKSPACE_STATE'
   | 'UNSUPPORTED_UNTRACKED_ENTRY';
 
 export class AnchorEvidenceError extends Error {
@@ -115,6 +116,15 @@ function assertNoHiddenTrackedState(listing: Buffer): void {
         'assume-unchanged and skip-worktree entries cannot form complete anchor evidence',
       );
     }
+  }
+}
+
+function assertNoIgnoredWorkspaceState(listing: Buffer): void {
+  if (listing.byteLength > 0) {
+    throw new AnchorEvidenceError(
+      'IGNORED_WORKSPACE_STATE',
+      'ignored workspace files are omitted by Git and cannot form complete anchor evidence',
+    );
   }
 }
 
@@ -223,6 +233,7 @@ export class AnchorWorkspaceEvidenceService {
       stagedPatch,
       unstagedPatch,
       untrackedResult,
+      ignoredResult,
       unmergedResult,
       trackedFlagsResult,
     ] = await Promise.all([
@@ -243,6 +254,11 @@ export class AnchorWorkspaceEvidenceService {
       }),
       this.runner.run({
         executable: 'git',
+        args: ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'],
+        cwd: repositoryIdentity.canonicalRoot,
+      }),
+      this.runner.run({
+        executable: 'git',
         args: ['ls-files', '--unmerged', '-z'],
         cwd: repositoryIdentity.canonicalRoot,
       }),
@@ -259,6 +275,7 @@ export class AnchorWorkspaceEvidenceService {
         'cannot capture trustworthy anchor evidence with unmerged index entries',
       );
     }
+    assertNoIgnoredWorkspaceState(ignoredResult.stdout);
     assertNoHiddenTrackedState(trackedFlagsResult.stdout);
     if (stagedPatch.byteLength > this.maxPatchBytes || unstagedPatch.byteLength > this.maxPatchBytes) {
       throw new AnchorEvidenceError('EVIDENCE_BUDGET_EXCEEDED', 'anchor patch exceeds the capture budget');
@@ -298,6 +315,7 @@ export class AnchorWorkspaceEvidenceService {
       finalStagedResult,
       finalUnstagedResult,
       finalUntrackedResult,
+      finalIgnoredResult,
       finalUnmergedResult,
       finalTrackedFlagsResult,
     ] = await Promise.all([
@@ -323,6 +341,11 @@ export class AnchorWorkspaceEvidenceService {
       }),
       this.runner.run({
         executable: 'git',
+        args: ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'],
+        cwd: repositoryIdentity.canonicalRoot,
+      }),
+      this.runner.run({
+        executable: 'git',
         args: ['ls-files', '--unmerged', '-z'],
         cwd: repositoryIdentity.canonicalRoot,
       }),
@@ -332,12 +355,14 @@ export class AnchorWorkspaceEvidenceService {
         cwd: repositoryIdentity.canonicalRoot,
       }),
     ]);
+    assertNoIgnoredWorkspaceState(finalIgnoredResult.stdout);
     assertNoHiddenTrackedState(finalTrackedFlagsResult.stdout);
     if (
       finalHeadResult.stdout.toString('utf8').trim() !== observedHead
       || !finalStagedResult.stdout.equals(stagedPatch)
       || !finalUnstagedResult.stdout.equals(unstagedPatch)
       || !finalUntrackedResult.stdout.equals(untrackedResult.stdout)
+      || !finalIgnoredResult.stdout.equals(ignoredResult.stdout)
       || finalUnmergedResult.stdout.byteLength > 0
       || !finalTrackedFlagsResult.stdout.equals(trackedFlagsResult.stdout)
     ) {

@@ -149,15 +149,12 @@ export class SessionHistoryAppService {
           const importedSessionId = sourceSessionId
             ? result.sessionIdMap[sourceSessionId]
             : undefined;
-          const lineageNode = plan.envelope.lineage.nodes
-            .find((node) => node.sessionId === session.id);
           const portableEvidence = session.workspace?.isolatedAnchor;
+          const importedAnchorMessageId = session.workspace?.anchorChildMessageId;
           if (
             !sourceSessionId
             || importedSessionId !== session.id
-            || !lineageNode?.forkId
-            || !lineageNode.parentSessionId
-            || !lineageNode.anchorChildMessageId
+            || !importedAnchorMessageId
             || !portableEvidence
           ) {
             throw new Error(
@@ -167,7 +164,7 @@ export class SessionHistoryAppService {
           }
           return {
             importedSessionId,
-            importedAnchorMessageId: lineageNode.anchorChildMessageId,
+            importedAnchorMessageId,
             portableEvidence,
           };
         })
@@ -175,14 +172,30 @@ export class SessionHistoryAppService {
 
       if (isolatedSessions.length > 0) {
         const workspaceBinding = await this.requireImportedWorkspaceBinding(targetProjectId);
+        const preparedWorkspaces = [];
         for (const isolated of isolatedSessions) {
-          await database.publishImportedIsolatedWorkspace({
+          preparedWorkspaces.push(await database.prepareImportedIsolatedWorkspace({
             ...isolated,
             ownerUserId,
             targetProjectId,
             workspaceBinding,
-          });
+          }));
         }
+        await database.publishPreparedImportedWorkspaceGraph({
+          importId: result.importId,
+          sourceExportId: plan.sourceExportId,
+          sourcePayloadDigest: plan.envelope.payloadDigest,
+          ownerUserId,
+          targetProjectId,
+          sessions: plan.envelope.sessions.map((session) => ({
+            sessionId: session.id,
+            readOnly: session.workspace?.mode === 'isolated_at_anchor'
+              ? false
+              : Boolean(session.readOnly),
+            workspaceMode: session.workspace?.mode ?? 'shared_current',
+          })),
+          workspaces: preparedWorkspaces,
+        });
       }
       return result;
     } finally {

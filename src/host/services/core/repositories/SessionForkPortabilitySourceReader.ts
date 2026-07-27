@@ -30,7 +30,10 @@ import {
 } from '../database/schemaConversationBranch';
 import { sanitizeConversationMessageSnapshot } from '../conversationMessageSnapshot';
 import { ConversationBranchRepository } from './ConversationBranchRepository';
-import type { AnchorWorkspaceEvidence } from '../../sessionFork/workspace';
+import {
+  projectChildWorkspaceScope,
+  type AnchorWorkspaceEvidence,
+} from '../../sessionFork/workspace';
 import {
   rowToMessage,
   rowToSession,
@@ -197,7 +200,7 @@ export class SessionForkPortabilitySourceReader {
         messages: this.readPortableMessages(sessionId),
         workspace: edge
           ? this.readPortableWorkspace(edge)
-          : {
+          : this.readImportedRootPortableWorkspace(sessionId) ?? {
             mode: 'shared_current' as const,
             label: '历史对话 + 当前文件' as const,
           },
@@ -653,12 +656,70 @@ export class SessionForkPortabilitySourceReader {
     return {
       mode: 'isolated_at_anchor',
       label: '历史对话 + 锚点文件',
+      anchorChildMessageId: fork.anchor_child_message_id,
       isolatedAnchor: buildPortableIsolatedAnchorEvidenceV1({
         evidenceId: String(row.evidence_id),
         repositoryIdentityDigest,
         evidence,
       }),
     };
+  }
+
+  private readImportedRootPortableWorkspace(
+    sessionId: string,
+  ): PortableSessionWorkspaceV2 | null {
+    const row = this.db.prepare(`
+      SELECT user_id, project_id, origin, metadata, agent_engine, read_only,
+             working_directory, workspace, is_deleted, status
+      FROM sessions
+      WHERE id = ?
+      LIMIT 1
+    `).get(sessionId) as PublishedImportedWorkspaceSessionRow | undefined;
+    if (!row || typeof row.origin !== 'string' || typeof row.metadata !== 'string') return null;
+    const origin = parseJson<Record<string, unknown>>(row.origin, `imported session ${sessionId} origin`);
+    if (origin.kind !== 'import') return null;
+    const metadata = parseJson<Record<string, unknown>>(
+      row.metadata,
+      `imported session ${sessionId} metadata`,
+    );
+    const workspace = metadata.portableWorkspaceV2;
+    if (!workspace || typeof workspace !== 'object' || Array.isArray(workspace)) return null;
+    const portable = structuredClone(workspace) as PortableSessionWorkspaceV2;
+    validatePortableSessionWorkspaceV2(portable, `imported root ${sessionId} workspace`);
+    if (portable.mode !== 'isolated_at_anchor') return null;
+    const anchorChildMessageId = portable.anchorChildMessageId;
+    if (!anchorChildMessageId) {
+      fail(
+        'PORTABLE_EVIDENCE_REQUIRED',
+        `imported isolated root ${sessionId} lost its explicit child anchor`,
+      );
+    }
+    if (!Object.prototype.hasOwnProperty.call(metadata, 'importedWorkspacePublicationV1')) {
+      fail(
+        'ENVELOPE_NOT_READY',
+        `imported isolated root ${sessionId} has not completed workspace publication`,
+      );
+    }
+    const projection = projectChildWorkspaceScope(metadata);
+    const forkId = projection?.verification.forkId;
+    if (!forkId) {
+      fail(
+        'REFERENCE_NOT_CLOSED',
+        `imported isolated root ${sessionId} lost its workspace fork identity`,
+      );
+    }
+    return readPublishedImportedPortableWorkspace(this.db, {
+      fork: {
+        id: forkId,
+        child_session_id: sessionId,
+        anchor_child_message_id: anchorChildMessageId,
+        requireLineage: false,
+      },
+      session: row,
+      metadata,
+      importedPortable: portable,
+      publication: metadata.importedWorkspacePublicationV1,
+    });
   }
 
   private readImportedPortableWorkspace(

@@ -23,8 +23,10 @@ export type ExternalForkContextErrorCode =
   | 'TOKEN_BUDGET_EXCEEDED'
   | 'PRIVACY_REJECTED'
   | 'PROVENANCE_REJECTED'
+  | 'TOOL_CONTEXT_REJECTED'
   | 'IDENTITY_REUSE_FORBIDDEN'
   | 'DISPATCH_LIFECYCLE_REQUIRED'
+  | 'HANDOFF_NOT_CONSUMED'
   | 'PROMPT_MISMATCH'
   | 'PAYLOAD_TAMPERED';
 
@@ -116,6 +118,9 @@ export interface MappedActiveForkMessage {
     | 'timestamp'
     | 'visibility'
     | 'isMeta'
+    | 'toolCalls'
+    | 'toolResults'
+    | 'contentParts'
     | 'attachments'
     | 'artifacts'
   >;
@@ -463,7 +468,7 @@ export function buildValidatedExternalForkContextHandoff(
   };
   const payload: ExternalForkContextHandoff = {
     ...draft,
-    payloadDigest: sha256(canonicalJson(draft)),
+    payloadDigest: digestSemanticHandoffPayload(draft),
   };
   return deepFreeze(payload);
 }
@@ -668,7 +673,7 @@ export function assertExternalForkContextHandoff(
     throw new ExternalForkContextError('PAYLOAD_TAMPERED', 'fork context token verdict does not match its payload');
   }
   const { payloadDigest: _payloadDigest, ...unsignedPayload } = handoff;
-  if (sha256(canonicalJson(unsignedPayload)) !== handoff.payloadDigest) {
+  if (digestSemanticHandoffPayload(unsignedPayload) !== handoff.payloadDigest) {
     throw new ExternalForkContextError('PAYLOAD_TAMPERED', 'fork context payload digest does not match');
   }
 }
@@ -733,6 +738,16 @@ function buildMessages(
     if (!Number.isFinite(entry.message.timestamp) || typeof entry.message.content !== 'string') {
       throw new ExternalForkContextError('INVALID_PREFIX', `message ${entry.sourceMessageId} is malformed`);
     }
+    if (
+      (entry.message.toolCalls?.length ?? 0) > 0
+      || (entry.message.toolResults?.length ?? 0) > 0
+      || (entry.message.contentParts?.length ?? 0) > 0
+    ) {
+      throw new ExternalForkContextError(
+        'TOOL_CONTEXT_REJECTED',
+        `message ${entry.sourceMessageId} contains tool trajectory that cannot be safely represented`,
+      );
+    }
     const internal = Boolean(entry.message.isMeta)
       || entry.message.role === 'system'
       || entry.message.role === 'tool';
@@ -757,6 +772,13 @@ function buildMessages(
       isMeta: Boolean(entry.message.isMeta),
     };
   });
+}
+
+function digestSemanticHandoffPayload(
+  payload: Omit<ExternalForkContextHandoff, 'payloadDigest'>,
+): string {
+  const { createdAt: _createdAt, ...semanticPayload } = payload;
+  return sha256(canonicalJson(semanticPayload));
 }
 
 function buildAttachmentProvenance(

@@ -59,6 +59,7 @@ const mockDb = vi.hoisted(() => ({
   getMessages: vi.fn(() => []),
   getSessionForkLineage: vi.fn<() => unknown>(() => null),
   getSessionForkContextSource: vi.fn<() => unknown>(() => null),
+  getSessionForkContextHandoff: vi.fn<() => unknown>(() => null),
   prepareSessionForkContextHandoff: vi.fn(() => ({})),
   markSessionForkContextHandoffDispatching: vi.fn(() => ({})),
   markSessionForkContextHandoffConsumed: vi.fn(() => ({})),
@@ -436,6 +437,7 @@ describe('createAgentRouter', () => {
     mockDb.getDb.mockReturnValue({});
     mockDb.getSessionForkLineage.mockReturnValue(null);
     mockDb.getSessionForkContextSource.mockReturnValue(null);
+    mockDb.getSessionForkContextHandoff.mockReturnValue(null);
     mockDb.prepareSessionForkContextHandoff.mockReturnValue({});
     mockDb.markSessionForkContextHandoffDispatching.mockReturnValue({});
     mockDb.markSessionForkContextHandoffConsumed.mockReturnValue({});
@@ -2634,9 +2636,20 @@ describe('createAgentRouter', () => {
         },
       }));
       setDbAvailable(true);
-      mockDb.getSessionForkLineage.mockReturnValue(
-        externalForkContextSource(sessionId, engine).lineage,
-      );
+      const forkSource = externalForkContextSource(sessionId, engine);
+      mockDb.getSessionForkLineage.mockReturnValue(forkSource.lineage);
+      mockDb.getSessionForkContextSource.mockReturnValue(forkSource);
+      mockDb.getSessionForkContextHandoff.mockReturnValue({
+        forkId: forkSource.lineage.forkId,
+        engine,
+        payloadDigest: 'a'.repeat(64),
+        state: 'consumed',
+        attemptId: 'attempt-consumed',
+        preparedAt: 1,
+        dispatchStartedAt: 2,
+        consumedAt: 3,
+        error: null,
+      });
       const adapterRun = engine === 'codex_cli'
         ? agentEngineMocks.codexRun
         : agentEngineMocks.claudeRun;
@@ -2670,7 +2683,10 @@ describe('createAgentRouter', () => {
       expect(response.ok).toBe(true);
       expect(forkContextBuilderMocks.buildValidatedExternalForkContextHandoff)
         .not.toHaveBeenCalled();
-      expect(mockDb.getSessionForkContextSource).not.toHaveBeenCalled();
+      expect(mockDb.getSessionForkContextSource).toHaveBeenCalledWith(sessionId);
+      expect(mockDb.getSessionForkContextHandoff).toHaveBeenCalledWith(
+        forkSource.lineage.forkId,
+      );
       const adapterRequest = adapterRun.mock.calls[0]?.[0];
       expect(adapterRequest).toEqual(expect.objectContaining({
         sessionId,
@@ -2718,6 +2734,74 @@ describe('createAgentRouter', () => {
           externalSessionId,
         },
       }));
+    },
+  );
+
+  it.each([
+    { engine: 'codex_cli' as const, state: 'pending' as const },
+    { engine: 'claude_code' as const, state: 'dispatching' as const },
+  ])(
+    'fails closed before durable registration when a $engine fork resume handoff is $state',
+    async ({ engine, state }) => {
+      await closeServer();
+
+      const sessionId = `fork-child-${engine}-${state}`;
+      const workspaceRoot = `/tmp/${engine}-fork-workspace`;
+      const forkSource = externalForkContextSource(sessionId, engine);
+      const getSession = vi.fn(async () => ({
+        id: sessionId,
+        title: 'Fork child invalid resume',
+        type: 'chat',
+        workingDirectory: workspaceRoot,
+        engine: {
+          kind: engine,
+          cwd: workspaceRoot,
+          externalSessionId: `untrusted-${engine}-identity`,
+          permissionProfile: 'read_only',
+          origin: 'manual',
+        },
+      }));
+      setDbAvailable(true);
+      mockDb.getSessionForkLineage.mockReturnValue(forkSource.lineage);
+      mockDb.getSessionForkContextSource.mockReturnValue(forkSource);
+      mockDb.getSessionForkContextHandoff.mockReturnValue({
+        forkId: forkSource.lineage.forkId,
+        engine,
+        payloadDigest: 'a'.repeat(64),
+        state,
+        attemptId: state === 'pending' ? null : 'attempt-incomplete',
+        preparedAt: 1,
+        dispatchStartedAt: state === 'pending' ? null : 2,
+        consumedAt: null,
+        error: null,
+      });
+      const createRunCount = testRunKernel.createRun.mock.calls.length;
+
+      await startAgentApi({
+        tryGetSessionManager: async () => ({
+          getSession,
+          updateSession: vi.fn(async () => undefined),
+        }),
+      });
+
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: 'must not resume',
+          sessionId,
+          context: { workingDirectory: workspaceRoot },
+        }),
+      });
+      await response.text();
+
+      expect(response.ok).toBe(false);
+      expect(mockDb.getSessionForkContextHandoff).toHaveBeenCalledWith(
+        forkSource.lineage.forkId,
+      );
+      expect(testRunKernel.createRun).toHaveBeenCalledTimes(createRunCount);
+      expect(engine === 'codex_cli' ? agentEngineMocks.codexRun : agentEngineMocks.claudeRun)
+        .not.toHaveBeenCalled();
     },
   );
 

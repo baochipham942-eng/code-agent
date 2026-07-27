@@ -5,7 +5,7 @@
 import { randomUUID } from 'crypto';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
-import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryFeedback, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
+import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetryToolStat, TelemetryIntentStat, ComputerSurfaceReliabilitySummary, TelemetrySessionListOptions, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryFeedback, TelemetryFeedbackRating, TelemetryFeedbackSubmitRequest, TelemetryRendererBundleAttempt, TelemetryDiagnosticBundleRecord } from '../../shared/contract/telemetry';
 import { TELEMETRY_TRUNCATION, TELEMETRY_RAW } from '../../shared/constants';
 import { deleteAgedTelemetryRows } from './telemetryRetentionSql';
 import type Database from 'better-sqlite3';
@@ -216,6 +216,22 @@ export class TelemetryStorage {
         .run(syncedAt, ...sessionIds);
     } catch (error) {
       logger.error('Failed to mark telemetry sessions synced:', error);
+    }
+  }
+
+  /** 读回一个会话内已存的轮次评价（UI 高亮回填用，只出锚点与评分） */
+  getSessionFeedbackRatings(sessionId: string): TelemetryFeedbackRating[] {
+    if (!this.isDbAvailable() || !sessionId) return [];
+    try {
+      const rows = this.getDb()
+        .prepare('SELECT message_id, rating FROM telemetry_feedback WHERE session_id = ? AND message_id IS NOT NULL')
+        .all(sessionId) as Array<{ message_id: string; rating: number }>;
+      return rows
+        .filter((row) => row.rating === 1 || row.rating === -1)
+        .map((row) => ({ messageId: row.message_id, rating: row.rating as 1 | -1 }));
+    } catch (error) {
+      logger.error('Failed to get session feedback ratings:', error);
+      return [];
     }
   }
 

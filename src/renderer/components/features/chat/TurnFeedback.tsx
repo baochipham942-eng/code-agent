@@ -9,9 +9,10 @@
 // 锚点仍用那个 eligible 节点的 messageId，后端契约不变。
 // ============================================================================
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
+import type { TelemetryFeedbackRating } from '@shared/contract/telemetry';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -22,11 +23,40 @@ interface Props {
   content: string;
 }
 
+// 评分早已持久化在 telemetry_feedback 表里，丢的是 UI 高亮（组件本地 state 重挂载即清零）。
+// 这里按会话读回一次并在模块级缓存：同会话多个 TurnFeedback 共享一个请求，
+// 提交成功时同步写缓存，切会话/重启后高亮仍在。
+const sessionRatingsCache = new Map<string, Promise<Map<string, 1 | -1>>>();
+
+function loadSessionRatings(sessionId: string): Promise<Map<string, 1 | -1>> {
+  let cached = sessionRatingsCache.get(sessionId);
+  if (!cached) {
+    cached = ipcService
+      .invoke(IPC_CHANNELS.TELEMETRY_GET_SESSION_FEEDBACK, sessionId)
+      .then((rows: TelemetryFeedbackRating[]) => new Map(rows.map((r) => [r.messageId, r.rating])))
+      .catch(() => {
+        sessionRatingsCache.delete(sessionId); // 失败不缓存，下次重试
+        return new Map<string, 1 | -1>();
+      });
+    sessionRatingsCache.set(sessionId, cached);
+  }
+  return cached;
+}
+
 export const TurnFeedback: React.FC<Props> = ({ messageId, content }) => {
   const { t } = useI18n();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [rating, setRating] = useState<1 | -1 | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!currentSessionId || !messageId) return;
+    let alive = true;
+    loadSessionRatings(currentSessionId).then((map) => {
+      if (alive && map.has(messageId)) setRating(map.get(messageId)!);
+    });
+    return () => { alive = false; };
+  }, [currentSessionId, messageId]);
 
   const submit = useCallback(async (next: 1 | -1) => {
     if (!currentSessionId || !messageId || submitting) return;
@@ -42,6 +72,9 @@ export const TurnFeedback: React.FC<Props> = ({ messageId, content }) => {
           ? { messageId, assistantResponse: content }
           : undefined,
       });
+      // 同步进会话缓存：重挂载/切回会话时高亮不回退
+      const cached = sessionRatingsCache.get(currentSessionId);
+      if (cached) void cached.then((map) => map.set(messageId, next));
     } catch {
       setRating(null);
     } finally {

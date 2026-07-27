@@ -25,6 +25,14 @@ import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
 import { DictationRecordingBar } from './DictationRecordingBar';
+import {
+  applyDictationPartial,
+  beginDictationAnchor,
+  cancelDictationAnchor,
+  markDictationUserEdit,
+  settleDictationFinal,
+  type DictationComposerAnchor,
+} from './dictationComposerAnchor';
 import { useVoiceInput } from '../../../../hooks/useVoiceInput';
 import { LiveVoiceButton } from '../../voice/LiveVoiceButton';
 import { useVoiceLiveAvailability } from '../../voice/useVoiceLiveAvailability';
@@ -613,8 +621,41 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const valueRef = useRef(value);
   valueRef.current = value;
   const dictationSendAfterTranscriptRef = useRef(false);
+  const dictationAnchorRef = useRef<DictationComposerAnchor | null>(null);
+  const writeDictationValue = useCallback((next: string) => {
+    valueRef.current = next;
+    setValue(next);
+  }, [setValue]);
   const voice = useVoiceInput({
+    onStreamStart: () => {
+      dictationAnchorRef.current = beginDictationAnchor(valueRef.current);
+    },
+    onPartialTranscript: (text) => {
+      const anchor = dictationAnchorRef.current;
+      if (!anchor) return;
+      const applied = applyDictationPartial(anchor, text);
+      dictationAnchorRef.current = applied.state;
+      if (applied.value !== null) writeDictationValue(applied.value);
+    },
     onTranscript: (text, result) => {
+      const anchor = dictationAnchorRef.current;
+      if (anchor) {
+        const settled = settleDictationFinal(anchor, valueRef.current, text);
+        dictationAnchorRef.current = settled.state;
+        writeDictationValue(settled.value);
+        setVoiceInputContext({
+          anchor: text.slice(0, 64),
+          metadata: {
+            inputSource: 'voice',
+            transcriptionMode: 'cloud',
+            transcriptChars: text.length,
+            rawTranscriptChars: result?.rawText?.length,
+            postProcessed: false,
+          },
+        });
+        return;
+      }
+
       const sendAfter = dictationSendAfterTranscriptRef.current;
       dictationSendAfterTranscriptRef.current = false;
       handleVoiceTranscriptRef.current(text, result);
@@ -626,14 +667,38 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     },
   });
+  const handleDictationAwareValueChange = useCallback((newValue: string) => {
+    if (dictationAnchorRef.current) {
+      dictationAnchorRef.current = markDictationUserEdit(
+        dictationAnchorRef.current,
+        newValue,
+      );
+    }
+    valueRef.current = newValue;
+    handleValueChange(newValue);
+  }, [handleValueChange]);
   const isDictationActive = voice.status === 'recording' || voice.status === 'transcribing';
   // 录音失败（如太短）不会触发 onTranscript——滞留的 send-after 旗标必须在
   // 出错时清掉，否则下一次成功转写会被意外自动发送。
   useEffect(() => {
-    if (voice.status === 'error' || voice.status === 'idle') {
+    if (voice.status === 'error') {
+      const anchor = dictationAnchorRef.current;
+      if (anchor) {
+        writeDictationValue(cancelDictationAnchor(anchor, valueRef.current));
+        dictationAnchorRef.current = null;
+      }
       dictationSendAfterTranscriptRef.current = false;
+      return;
     }
-  }, [voice.status]);
+    if (voice.status === 'idle' && dictationAnchorRef.current) {
+      dictationAnchorRef.current = null;
+      if (dictationSendAfterTranscriptRef.current) {
+        dictationSendAfterTranscriptRef.current = false;
+        const content = valueRef.current.trim();
+        if (content) void handleSubmitRef.current(undefined, { content });
+      }
+    }
+  }, [voice.status, writeDictationValue]);
   // 累计费用已收进 ContextUsagePill 的 hover 面板（底栏收敛拍板 2026-07-26）：
   // 圆环 hover 展开时与上下文用量同面板展示，底栏不再常驻成本数字。
   // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
@@ -932,7 +997,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <InputArea
             ref={inputAreaRef}
             value={value}
-            onChange={handleValueChange}
+            onChange={handleDictationAwareValueChange}
             onSubmit={(opts) => { void handleSubmit(undefined, opts); }}
             onFileSelect={handleFileSelect}
             onImagePaste={handleImagePaste}

@@ -21,6 +21,8 @@ interface UseVoiceInputOptions {
   onTranscript?: (text: string, result?: SpeechTranscribeResult) => void;
   /** 流式中间结果回调；同一句的后续结果会覆盖前一次。 */
   onPartialTranscript?: (text: string, sentenceId: number) => void;
+  /** Dictation WS 已打开、即将开始采集。 */
+  onStreamStart?: () => void;
   /** 最大录音时长（秒），默认 60 */
   maxDuration?: number;
 }
@@ -124,7 +126,7 @@ function buildDictationStreamUrl(): string {
  * ```
  */
 export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInputReturn {
-  const { onTranscript, onPartialTranscript, maxDuration } = options;
+  const { onTranscript, onPartialTranscript, onStreamStart, maxDuration } = options;
 
   const [status, setStatus] = useState<VoiceInputStatus>('idle');
   const [duration, setDuration] = useState(0);
@@ -377,6 +379,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
     ws.onopen = () => {
       if (streamWsRef.current !== ws) return;
+      onStreamStart?.();
       startTimeRef.current = Date.now();
       lastVoiceAtRef.current = startTimeRef.current;
       setDuration(0);
@@ -477,6 +480,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     effectiveMaxDuration,
     failStream,
     onPartialTranscript,
+    onStreamStart,
     onTranscript,
     stopDurationTimer,
     stopStream,

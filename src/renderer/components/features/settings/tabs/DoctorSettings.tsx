@@ -200,25 +200,29 @@ export const DoctorSettings: React.FC = () => {
   })();
 
   return (
-    <SettingsPage title={doctorText.title} description={doctorText.pageDescription}>
-      {/* 工具条：导出 + 整体重跑 */}
-      <div className="flex items-center justify-end gap-2">
-        {report && (
-          <Button variant="ghost" size="sm" onClick={handleExport}>
-            <ClipboardCopy className="w-4 h-4 mr-1.5" />
-            {doctorText.exportLogs}
+    <SettingsPage
+      title={doctorText.title}
+      description={doctorText.pageDescription}
+      actions={
+        <div className="flex items-center gap-2">
+          {report && (
+            <Button variant="ghost" size="sm" onClick={handleExport}>
+              <ClipboardCopy className="w-4 h-4 mr-1.5" />
+              {doctorText.exportLogs}
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            onClick={() => void runFull()}
+            loading={isRunning && runningCategory === null}
+            disabled={isRunning}
+          >
+            <RefreshCw className="w-4 h-4 mr-1.5" />
+            {report ? doctorText.rerun : doctorText.start}
           </Button>
-        )}
-        <Button
-          variant={report ? 'secondary' : 'primary'}
-          onClick={() => void runFull()}
-          loading={isRunning && runningCategory === null}
-          disabled={isRunning}
-        >
-          <RefreshCw className="w-4 h-4 mr-1.5" />
-          {report ? doctorText.rerun : doctorText.start}
-        </Button>
-      </div>
+        </div>
+      }
+    >
 
       {/* Summary bar */}
       {report && (

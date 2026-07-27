@@ -404,7 +404,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 title={t.turnCard.createForkFromReply}
                 disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
                 onClick={() => void handleFork()}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-zinc-700 text-zinc-500 transition-colors hover:border-violet-500/60 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-transparent text-zinc-500 transition-colors hover:border-violet-500/40 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isForking
                   ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />

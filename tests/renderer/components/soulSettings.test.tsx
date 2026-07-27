@@ -11,7 +11,7 @@ const invokeDomain = vi.hoisted(() => vi.fn(async (_domain: string, action: stri
 }));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
-  default: { invokeDomain: (...args: unknown[]) => invokeDomain(...args) },
+  default: { invokeDomain: (domain: string, action: string) => invokeDomain(domain, action) },
 }));
 
 import { SoulSettings } from '../../../src/renderer/components/features/settings/tabs/SoulSettings';

@@ -28,14 +28,14 @@ const httpsAgent = USE_PROXY ? new HttpsProxyAgent(PROXY_URL) : undefined;
 // Types
 // ============================================================================
 
-export interface GitHubRepoInfo {
+interface GitHubRepoInfo {
   source: 'github';
   owner: string;
   repo: string;
   branch: string;
 }
 
-export interface ModelScopeRepoInfo {
+interface ModelScopeRepoInfo {
   source: 'modelscope';
   owner: string;
   repo: string;
@@ -43,7 +43,7 @@ export interface ModelScopeRepoInfo {
   repoType: 'model' | 'skill';
 }
 
-export type RepoInfo = GitHubRepoInfo | ModelScopeRepoInfo;
+type RepoInfo = GitHubRepoInfo | ModelScopeRepoInfo;
 
 export interface DownloadOptions {
   source?: SkillRepoSourceType;

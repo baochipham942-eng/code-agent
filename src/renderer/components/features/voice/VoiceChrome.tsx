@@ -19,6 +19,7 @@ import { useSessionMembers } from '../expert/SessionMemberBar';
 const STATE_COLOR: Record<VoiceVisualState, string> = {
   idle: 'text-zinc-500',
   connecting: 'text-zinc-400',
+  reconnecting: 'text-amber-400',
   listening: 'text-emerald-400',
   speaking: 'text-primary-400',
   working: 'text-amber-400',
@@ -33,11 +34,11 @@ const PresenceWave: React.FC<{ state: VoiceVisualState; level: number }> = ({ st
   if (state === 'error') {
     return <span data-testid="voice-presence" className="h-2 w-2 rounded-full bg-red-500" aria-hidden />;
   }
-  if (state === 'connecting') {
+  if (state === 'connecting' || state === 'reconnecting') {
     return (
       <span
         data-testid="voice-presence"
-        className="h-2 w-2 rounded-full bg-zinc-400 motion-safe:animate-ping"
+        className={`h-2 w-2 rounded-full motion-safe:animate-ping ${state === 'reconnecting' ? 'bg-amber-400' : 'bg-zinc-400'}`}
         aria-hidden
       />
     );

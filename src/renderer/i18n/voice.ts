@@ -37,6 +37,7 @@ export const voiceZh = {
       provider_unavailable: '语音服务暂不可用',
       micDenied: '麦克风权限被拒绝，请在系统设置中允许后重试',
       handshake: '语音服务握手失败，请稍后重试',
+      reconnectFailed: '通话已断开，重连失败。请重新拨号。',
     },
     permission: {
       title: '需要确认',
@@ -150,6 +151,7 @@ export const voiceEn: typeof voiceZh = {
       provider_unavailable: 'Voice service unavailable',
       micDenied: 'Microphone permission denied. Allow it in system settings and retry',
       handshake: 'Voice service handshake failed. Please retry',
+      reconnectFailed: 'Call disconnected and could not be restored. Please dial again.',
     },
     permission: {
       title: 'Confirmation required',

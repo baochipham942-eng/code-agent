@@ -74,6 +74,16 @@ export const VOICE_SESSION_MAX_DURATION_MS = 10 * 60 * 1000;
 export const VOICE_TEARDOWN_DRAIN_MS = 1500;
 
 /** get_current_file_summary 最多回几个文件路径，别把通话摘要撑成一屏。 */
+/**
+ * 客户端断开后等它回来的宽限窗（批 H · 断线重连 sticky）。
+ * 窗口内不挂断上游、不落通话摘要——否则每次网络抖动都会在消息流里落一张
+ * 「通话结束」卡，然后重连变成第二通电话。超时才走正常 teardown。
+ */
+export const VOICE_RECONNECT_GRACE_MS = 15_000;
+
+/** Renderer 侧重连退避（毫秒）。用完还没连上就如实报断线，不再假装还在通话。 */
+export const VOICE_RECONNECT_BACKOFF_MS = [500, 1500, 4000] as const;
+
 export const VOICE_RECENT_FILE_LIMIT = 8;
 
 /** 语音派发任务的迭代上限：通话场景的任务应该是小活，跑飞了要有个头。 */

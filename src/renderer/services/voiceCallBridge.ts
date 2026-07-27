@@ -12,7 +12,7 @@
 // 绝不在 renderer 手搓 message 塞进 sessionStore。
 // ============================================================================
 
-import { VOICE_STREAM_WS_PATH } from '@shared/constants/voice';
+import { VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH } from '@shared/constants/voice';
 import type { AppSettings, Message } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -65,6 +65,10 @@ class VoiceCallBridge {
   private ws: WebSocket | null = null;
   private audio: VoiceAudioPipeline | null = null;
   private reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 用户显式挂断 vs 网络断开——只有后者才该重连。 */
+  private intentionalClose = false;
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   private store() {
     return useVoiceCallStore.getState();
@@ -121,7 +125,17 @@ class VoiceCallBridge {
     const interruptMode = await readInterruptMode();
     if (useVoiceCallStore.getState().phase !== 'idle') return; // await 期间状态被改，别抢
     this.store().dialStarted(sessionId, activeAgentId, interruptMode);
+    this.intentionalClose = false;
+    this.reconnectAttempt = 0;
 
+    this.openSocket(sessionId, activeAgentId, interruptMode);
+  }
+
+  /**
+   * 建一条媒体面 WS 并接管它。首次拨号和断线重连共用——重连换的是 socket，
+   * 不是通话：store 不 reset，host 侧在宽限窗里认得同一条会话（见 attachVoiceClient）。
+   */
+  private openSocket(sessionId: string, activeAgentId: string | undefined, interruptMode: VoiceInterruptMode): void {
     const ws = new WebSocket(buildStreamUrl(sessionId, activeAgentId));
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
@@ -161,7 +175,9 @@ class VoiceCallBridge {
     };
 
     ws.onerror = () => {
-      if (!opened) {
+      // 重连尝试失败不算「握手失败」——它由 onclose 走退避，别在这里先把 phase 打成 error
+      // 把重连路径掐死（那样第一次抖动就直接变成不可恢复）。
+      if (!opened && !this.store().reconnecting) {
         this.store().phaseChanged('error');
         this.store().eventApplied({ error: { code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake } });
       }
@@ -173,11 +189,16 @@ class VoiceCallBridge {
       if (this.ws === ws) this.ws = null;
       const { phase } = this.store();
       if (phase === 'idle') return;
-      if (!opened && phase === 'connecting') {
-        this.store().phaseChanged('error');
-        this.store().eventApplied({ error: { code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake } });
+      // 首次握手就没成：这不是断线，是压根没连上，重连也没意义。
+      if (!opened && !this.store().reconnecting) {
+        if (phase === 'connecting') {
+          this.store().phaseChanged('error');
+          this.store().eventApplied({ error: { code: 'HANDSHAKE_FAILED', message: getT().voice.error.handshake } });
+        }
         return;
       }
+      // 用户没挂断却断了 = 网络抖动，试着接回同一通电话（host 侧有宽限窗）。
+      if (!this.intentionalClose && phase !== 'error' && this.scheduleReconnect(sessionId, activeAgentId, interruptMode)) return;
       // host 侧关闭（挂断/上游死/超时）：摘要落库有一点延迟，稍后再拉一次。
       this.scheduleReload(sessionId, undefined, 800);
       // error 态不 reset：把错误留在 chrome 上给用户看，由 End 按钮显式收尾；
@@ -186,11 +207,44 @@ class VoiceCallBridge {
     };
   }
 
+  /**
+   * 排一次重连。返回 true = 已接管（调用方别再收尾）。
+   * 退避用完还没回来就如实报断线——**不许静默假装还在通话**。
+   */
+  private scheduleReconnect(
+    sessionId: string,
+    activeAgentId: string | undefined,
+    interruptMode: VoiceInterruptMode,
+  ): boolean {
+    const delay = VOICE_RECONNECT_BACKOFF_MS[this.reconnectAttempt];
+    if (delay === undefined) {
+      this.store().phaseChanged('error');
+      this.store().eventApplied({
+        error: { code: 'RECONNECT_FAILED', message: getT().voice.error.reconnectFailed },
+      });
+      return true;
+    }
+    this.reconnectAttempt += 1;
+    this.store().reconnectingChanged(true);
+    this.store().phaseChanged('connecting');
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      // 期间用户自己挂了 / 切走了就别再连
+      if (this.store().phase === 'idle' || this.intentionalClose) return;
+      this.openSocket(sessionId, activeAgentId, interruptMode);
+    }, delay);
+    return true;
+  }
+
   private handleEvent(event: VoiceEvent, sessionId: string): void {
     switch (event.type) {
       case 'state':
         if (event.state === 'live') {
           this.store().phaseChanged('live');
+          // 接回来了：退避计数归零，下次抖动重新拿满次数。
+          this.reconnectAttempt = 0;
+          this.store().reconnectingChanged(false);
           const text = getT().voice.echoHint;
           void maybeShowSpeakerEchoHint({ message: text.message, dontShowAgain: text.dontShowAgain });
         } else if (event.state === 'connecting') {
@@ -247,6 +301,9 @@ class VoiceCallBridge {
   }
 
   hangUp(): void {
+    this.intentionalClose = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     this.send({ type: 'end' });
     this.ws?.close();
     this.ws = null;

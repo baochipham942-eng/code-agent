@@ -34,6 +34,18 @@ export const GUMMY_REALTIME_SAMPLE_RATE = 16_000;
 export const GUMMY_REALTIME_MAX_END_SILENCE_MS = 800;
 
 /**
+ * finish-task 之后等 task-finished 的上限。上游不回这一帧时既不能让 UI 永远卡在
+ * 「识别中」，也不能留着一条按秒计费的 WS——超时就当收尾成功，把已经拿到的文字留下。
+ */
+export const GUMMY_REALTIME_FINISH_TIMEOUT_MS = 5_000;
+
+/**
+ * task-started 之前到达的音频帧最多缓多少个。协议不允许在 task-started 前推音频，
+ * 直接丢会吞掉用户的第一个字；缓冲要封顶，否则上游一直不回就把内存吃光。
+ */
+export const GUMMY_REALTIME_PRESTART_FRAME_LIMIT = 40;
+
+/**
  * 默认音色。**音色枚举与模型强绑定**，换模型必须一起验。
  *
  * 2026-07-26 实测（qwen3.5-omni-flash-realtime）：`Tina`/`Ethan`/`Serena` 能出声，

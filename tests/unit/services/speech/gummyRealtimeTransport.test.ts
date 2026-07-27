@@ -53,7 +53,7 @@ describe('Gummy realtime transport', () => {
     vi.clearAllMocks();
   });
 
-  it('task-started 前不推音频，开始后用二进制帧透传', async () => {
+  it('task-started 前不推音频而是缓冲，开始后先补发再透传（别吞掉第一个字）', async () => {
     const handle = await connectGummyRealtime({
       apiKey: 'test-key',
       onTranscript: vi.fn(),
@@ -66,12 +66,56 @@ describe('Gummy realtime transport', () => {
     expect(upstream.sent).toHaveLength(before);
 
     emitEvent(upstream, { header: { event: 'task-started' }, payload: {} });
+    // 缓冲的首帧必须补发出去，否则用户说的第一个字永远到不了上游
+    expect(upstream.sent.at(-1)).toMatchObject({
+      data: Buffer.from([1, 2, 3]),
+      options: { binary: true },
+    });
+
     handle.sendAudio(Buffer.from([4, 5, 6]));
     expect(upstream.sent.at(-1)).toMatchObject({
       data: Buffer.from([4, 5, 6]),
       options: { binary: true },
     });
     handle.close();
+  });
+
+  it('上游不回 task-finished 时 finish 会超时收尾并关连接（不让 UI 卡在识别中、不留计费连接）', async () => {
+    vi.useFakeTimers();
+    try {
+      const handle = await connectGummyRealtime({
+        apiKey: 'test-key',
+        onTranscript: vi.fn(),
+        onError: vi.fn(),
+      });
+      const upstream = upstreams[0];
+      emitEvent(upstream, { header: { event: 'task-started' }, payload: {} });
+
+      let settled = false;
+      const pending = handle.finish().then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await pending;
+      expect(settled).toBe(true);
+      expect(upstream.readyState).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('连接已断时 finish 立刻收尾，不等一帧永远不会来的 task-finished', async () => {
+    const handle = await connectGummyRealtime({
+      apiKey: 'test-key',
+      onTranscript: vi.fn(),
+      onError: vi.fn(),
+    });
+    const upstream = upstreams[0];
+    emitEvent(upstream, { header: { event: 'task-started' }, payload: {} });
+    upstream.readyState = 3; // 上游没发 close 事件就没了（网络掉线）
+
+    await expect(handle.finish()).resolves.toBeUndefined();
   });
 
   it('sentence_end false/true 分别映射 partial/final', async () => {

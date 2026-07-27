@@ -7,8 +7,10 @@
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import {
+  GUMMY_REALTIME_FINISH_TIMEOUT_MS,
   GUMMY_REALTIME_MAX_END_SILENCE_MS,
   GUMMY_REALTIME_MODEL,
+  GUMMY_REALTIME_PRESTART_FRAME_LIMIT,
   GUMMY_REALTIME_SAMPLE_RATE,
   GUMMY_REALTIME_WS_URL,
   VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
@@ -111,9 +113,27 @@ export async function connectGummyRealtime({
   let settled = false;
   let finishResolve: (() => void) | null = null;
   let finishReject: ((err: Error) => void) | null = null;
+  let finishTimer: ReturnType<typeof setTimeout> | null = null;
+  // task-started 之前不许推音频（协议约束）；这些帧先攒着，别把用户的第一个字吞掉。
+  let prestartFrames: Buffer[] | null = [];
 
   const closeSocket = () => {
+    if (finishTimer) {
+      clearTimeout(finishTimer);
+      finishTimer = null;
+    }
+    prestartFrames = null;
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+  };
+
+  /** 收尾只有一个出口：settle 一次 + 关连接（这是按秒计费的上游，泄漏一条就一直在烧钱）。 */
+  const settleFinish = (err?: Error) => {
+    if (!settled) {
+      settled = true;
+      if (err) finishReject?.(err);
+      else finishResolve?.();
+    }
+    closeSocket();
   };
 
   const sendFinish = () => {
@@ -125,23 +145,25 @@ export async function connectGummyRealtime({
   };
 
   const fail = (code: string, message: string) => {
-    if (!settled) {
-      settled = true;
-      finishReject?.(new Error(message));
-    }
     logger.warn('upstream task failed', { code, message });
     onError(code, message);
-    closeSocket();
+    settleFinish(new Error(message));
   };
 
   ws.on('message', (raw) => {
     const event = parseEvent(raw);
     if (!event) return;
     switch (event.header?.event) {
-      case 'task-started':
+      case 'task-started': {
         taskStarted = true;
+        const buffered = prestartFrames ?? [];
+        prestartFrames = null;
+        if (ws.readyState === WebSocket.OPEN) {
+          for (const frame of buffered) ws.send(frame, { binary: true });
+        }
         sendFinish();
         break;
+      }
       case 'result-generated': {
         const transcription = event.payload?.output?.transcription;
         if (
@@ -158,11 +180,7 @@ export async function connectGummyRealtime({
         break;
       }
       case 'task-finished':
-        if (!settled) {
-          settled = true;
-          finishResolve?.();
-        }
-        closeSocket();
+        settleFinish();
         break;
       case 'task-failed':
         fail(
@@ -179,16 +197,21 @@ export async function connectGummyRealtime({
     fail('SPEECH_NO_CHANNEL', err.message);
   });
   ws.on('close', () => {
-    if (finishRequested && !settled) {
-      settled = true;
-      finishReject?.(new Error('Gummy realtime connection closed before task finished'));
-    }
+    if (finishRequested) settleFinish(new Error('Gummy realtime connection closed before task finished'));
   });
 
   return {
     sendAudio(frame: Buffer) {
-      // 官方协议要求 task-started 之后才允许推音频；起步阶段的帧直接丢弃。
-      if (!taskStarted || finishRequested || ws.readyState !== WebSocket.OPEN) return;
+      if (finishRequested) return;
+      // 协议要求 task-started 之后才允许推音频。起步阶段的帧先缓冲——直接丢会把
+      // 用户的第一个字吞掉；缓冲封顶，上游一直不回也不会把内存吃光。
+      if (!taskStarted) {
+        if (prestartFrames && prestartFrames.length < GUMMY_REALTIME_PRESTART_FRAME_LIMIT) {
+          prestartFrames.push(frame);
+        }
+        return;
+      }
+      if (ws.readyState !== WebSocket.OPEN) return;
       ws.send(frame, { binary: true });
     },
     finish() {
@@ -196,18 +219,24 @@ export async function connectGummyRealtime({
       return new Promise<void>((resolve, reject) => {
         finishResolve = resolve;
         finishReject = reject;
-        if (!finishRequested) {
-          finishRequested = true;
-          sendFinish();
+        if (finishRequested) return;
+        finishRequested = true;
+        // 连接已经不在了就别等一帧永远不会来的 task-finished：调用方会一直卡在
+        // 「识别中」，那条 WS 也一直挂着计费。
+        if (ws.readyState !== WebSocket.OPEN) {
+          settleFinish();
+          return;
         }
+        sendFinish();
+        finishTimer = setTimeout(() => {
+          logger.warn('finish-task timed out, closing upstream', { timeoutMs: GUMMY_REALTIME_FINISH_TIMEOUT_MS });
+          // 超时按收尾成功处理：已经落到输入框的文字留着，比弹一个「识别失败」有用。
+          settleFinish();
+        }, GUMMY_REALTIME_FINISH_TIMEOUT_MS);
       });
     },
     close() {
-      if (!settled) {
-        settled = true;
-        finishReject?.(new Error('Gummy realtime connection closed'));
-      }
-      closeSocket();
+      settleFinish(new Error('Gummy realtime connection closed'));
     },
   };
 }

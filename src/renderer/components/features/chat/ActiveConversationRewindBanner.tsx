@@ -32,20 +32,21 @@ export const ActiveConversationRewindBanner: React.FC<ActiveConversationRewindBa
   const [anchorExcerpt, setAnchorExcerpt] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
 
-  // 取活跃 rewind id + 锚点提示词摘录（被软隐藏的最早一条就是回退锚点本身，
-  // 横幅要把「回到哪条」说人话，不能只写「这条提示词」对着空气）
+  // 取活跃 rewind id + 锚点提示词摘录。新语义下锚点保持可见且是投影里最后一条
+  // 用户消息（rewind 只藏锚点之后的消息），所以一次 includeRewound:false 调用就够：
+  // openRewindIds 给横幅，最后一条可见 user 消息给「回到哪条」的原文摘录。
   const readActiveRewind = useCallback(async (expectedSessionId: string): Promise<{ rewindId: string | null; excerpt: string | null }> => {
     const replay = await ipcService.invokeDomain<ConversationReplay>(
       IPC_DOMAINS.SESSION,
       'replayConversationBranch',
       {
         sessionId: expectedSessionId,
-        options: { includeRewound: true },
+        options: { includeRewound: false },
       },
     );
     const rewindId = latestOpenRewindId(replay);
     if (!rewindId) return { rewindId: null, excerpt: null };
-    const anchor = replay.messages.find((entry) => entry.message.hiddenByRewindId === rewindId);
+    const anchor = [...replay.messages].reverse().find((entry) => entry.message.role === 'user');
     const raw = anchor?.message.content?.replace(/\s+/g, ' ').trim() ?? '';
     const excerpt = raw.length > 24 ? `${raw.slice(0, 24)}…` : raw || null;
     return { rewindId, excerpt };

@@ -55,6 +55,7 @@ describe('SessionRepository conversation rewind', () => {
     const result = repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'rewind-request-1',
       createdAt: 100,
+      ownerUserId: null,
     });
 
     expect(result.hiddenMessageIds).toEqual(['u2', 'a2', 'u3']);
@@ -83,11 +84,13 @@ describe('SessionRepository conversation rewind', () => {
     const first = repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'rewind-request-1',
       createdAt: 100,
+      ownerUserId: null,
     });
     const changesAfterFirst = db.totalChanges;
     const second = repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'rewind-request-1',
       createdAt: 200,
+      ownerUserId: null,
     });
 
     expect(second).toEqual(first);
@@ -99,17 +102,20 @@ describe('SessionRepository conversation rewind', () => {
     const beforeMissing = db.totalChanges;
     expect(() => repository.applyPromptRewind('session-1', 'missing', {
       idempotencyKey: 'missing',
+      ownerUserId: null,
     })).toThrow('Active user message not found');
     expect(db.totalChanges).toBe(beforeMissing);
 
     repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'first',
       createdAt: 100,
+      ownerUserId: null,
     });
     const beforeHidden = db.totalChanges;
     expect(() => repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'different',
       createdAt: 200,
+      ownerUserId: null,
     })).toThrow('Active user message not found');
     expect(db.totalChanges).toBe(beforeHidden);
   });
@@ -126,6 +132,7 @@ describe('SessionRepository conversation rewind', () => {
     expect(() => repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'rewind-request-1',
       createdAt: 100,
+      ownerUserId: null,
     })).toThrow('injected rewind audit failure');
     expect(db.prepare(`
       SELECT id, visibility FROM messages WHERE session_id = 'session-1' ORDER BY rowid
@@ -142,9 +149,10 @@ describe('SessionRepository conversation rewind', () => {
     const rewind = repository.applyPromptRewind('session-1', 'u2', {
       idempotencyKey: 'rewind-request-1',
       createdAt: 100,
+      ownerUserId: null,
     });
 
-    const restored = repository.restorePromptRewind('session-1', rewind.rewindId, 200);
+    const restored = repository.restorePromptRewind('session-1', rewind.rewindId, 200, null);
 
     expect(restored.restoredMessageCount).toBe(3);
     expect(repository.getMessages('session-1')).toHaveLength(5);
@@ -153,5 +161,128 @@ describe('SessionRepository conversation rewind', () => {
     `).get(rewind.rewindId)).toEqual({ status: 'restored', restored_at: 200 });
     expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE session_id = ?').get('session-1'))
       .toEqual({ count: 5 });
+  });
+
+  it('uses the public timestamp-rowid order for the suffix even when timestamps arrive out of order', () => {
+    db.prepare("UPDATE messages SET timestamp = 50 WHERE id = 'a1'").run();
+    db.prepare("UPDATE messages SET timestamp = 5 WHERE id = 'u3'").run();
+
+    const rewind = repository.applyPromptRewind('session-1', 'u2', {
+      idempotencyKey: 'out-of-order',
+      createdAt: 100,
+      ownerUserId: null,
+    });
+
+    expect(rewind.hiddenMessageIds).toEqual(['u2', 'a2', 'a1']);
+    expect(rewind.activeMessages.map((message) => message.id)).toEqual(['u3', 'u1']);
+  });
+
+  it.each(['running', 'paused', 'queued', 'cancelling'])(
+    'rejects persisted %s state in the transaction with zero writes',
+    (status) => {
+      db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run(status, 'session-1');
+      const before = db.totalChanges;
+
+      expect(() => repository.applyPromptRewind('session-1', 'u2', {
+        idempotencyKey: `persisted-${status}`,
+        ownerUserId: null,
+      })).toThrow('SESSION_RUNNING');
+      expect(db.totalChanges).toBe(before);
+      expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 0 });
+    },
+  );
+
+  it('rejects an active durable run even when the session projection says idle', () => {
+    db.exec(`
+      CREATE TABLE durable_runs (
+        run_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        parent_run_id TEXT,
+        status TEXT NOT NULL
+      )
+    `);
+    db.prepare(`
+      INSERT INTO durable_runs (run_id, session_id, parent_run_id, status)
+      VALUES ('run-1', 'session-1', NULL, 'recovering')
+    `).run();
+    const before = db.totalChanges;
+
+    expect(() => repository.applyPromptRewind('session-1', 'u2', {
+      idempotencyKey: 'durable-running',
+      ownerUserId: null,
+    })).toThrow('SESSION_RUNNING');
+    expect(db.totalChanges).toBe(before);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 0 });
+  });
+
+  it('requires exact owner identity and rejects both another owner and anonymous mismatch with zero writes', () => {
+    db.prepare("UPDATE sessions SET user_id = 'owner-a' WHERE id = 'session-1'").run();
+
+    for (const ownerUserId of ['owner-b', null] as const) {
+      const before = db.totalChanges;
+      expect(() => repository.applyPromptRewind('session-1', 'u2', {
+        idempotencyKey: `owner-${String(ownerUserId)}`,
+        ownerUserId,
+      })).toThrow('SESSION_ACCESS_DENIED');
+      expect(db.totalChanges).toBe(before);
+    }
+    expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 0 });
+  });
+
+  it('rejects a missing owner boundary with zero writes', () => {
+    const before = db.totalChanges;
+
+    expect(() => repository.applyPromptRewind('session-1', 'u2', {
+      idempotencyKey: 'missing-owner',
+    })).toThrow('SESSION_ACCESS_DENIED');
+    expect(db.totalChanges).toBe(before);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM session_rewinds').get()).toEqual({ count: 0 });
+  });
+
+  it('restores nested rewinds only in LIFO order', () => {
+    const older = repository.applyPromptRewind('session-1', 'u3', {
+      idempotencyKey: 'older',
+      createdAt: 100,
+      ownerUserId: null,
+    });
+    const newer = repository.applyPromptRewind('session-1', 'u2', {
+      idempotencyKey: 'newer',
+      createdAt: 100,
+      ownerUserId: null,
+    });
+    const beforeOutOfOrderRestore = db.totalChanges;
+
+    expect(() => repository.restorePromptRewind('session-1', older.rewindId, 200, null))
+      .toThrow('REWIND_RESTORE_ORDER');
+    expect(db.totalChanges).toBe(beforeOutOfOrderRestore);
+    expect(repository.getMessages('session-1').map((message) => message.id)).toEqual(['u1', 'a1']);
+
+    repository.restorePromptRewind('session-1', newer.rewindId, 210, null);
+    expect(repository.getMessages('session-1').map((message) => message.id))
+      .toEqual(['u1', 'a1', 'u2', 'a2']);
+
+    repository.restorePromptRewind('session-1', older.rewindId, 220, null);
+    expect(repository.getMessages('session-1').map((message) => message.id))
+      .toEqual(['u1', 'a1', 'u2', 'a2', 'u3']);
+  });
+
+  it('guards restore by owner and active persisted state before changing visibility', () => {
+    db.prepare("UPDATE sessions SET user_id = 'owner-a' WHERE id = 'session-1'").run();
+    const rewind = repository.applyPromptRewind('session-1', 'u2', {
+      idempotencyKey: 'restore-guard',
+      createdAt: 100,
+      ownerUserId: 'owner-a',
+    });
+
+    const beforeOwnerMismatch = db.totalChanges;
+    expect(() => repository.restorePromptRewind('session-1', rewind.rewindId, 200, 'owner-b'))
+      .toThrow('SESSION_ACCESS_DENIED');
+    expect(db.totalChanges).toBe(beforeOwnerMismatch);
+
+    db.prepare("UPDATE sessions SET status = 'running' WHERE id = 'session-1'").run();
+    const beforeRunning = db.totalChanges;
+    expect(() => repository.restorePromptRewind('session-1', rewind.rewindId, 210, 'owner-a'))
+      .toThrow('SESSION_RUNNING');
+    expect(db.totalChanges).toBe(beforeRunning);
   });
 });

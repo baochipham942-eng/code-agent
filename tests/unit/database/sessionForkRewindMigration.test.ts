@@ -69,10 +69,19 @@ describe('Fork/Rewind backward-compatible schema migration', () => {
     });
     expect(db.prepare(`
       SELECT name FROM sqlite_master
-      WHERE type = 'table' AND name IN ('session_forks', 'session_fork_message_map')
+      WHERE type = 'table' AND name IN (
+        'session_forks',
+        'session_fork_message_map',
+        'session_fork_anchor_evidence',
+        'session_fork_workspace_intents',
+        'session_fork_workspace_sagas'
+      )
       ORDER BY name
     `).all()).toEqual([
+      { name: 'session_fork_anchor_evidence' },
       { name: 'session_fork_message_map' },
+      { name: 'session_fork_workspace_intents' },
+      { name: 'session_fork_workspace_sagas' },
       { name: 'session_forks' },
     ]);
   });

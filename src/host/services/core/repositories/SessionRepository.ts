@@ -49,6 +49,12 @@ export interface PromptRewindRecordInput {
   filesDeleted?: number;
   errors?: string[];
   createdAt?: number;
+  /**
+   * Exact authenticated owner boundary. `null` explicitly means a local /
+   * anonymous session; `undefined` is rejected so callers cannot silently
+   * bypass the owner check.
+   */
+  ownerUserId?: string | null;
 }
 
 export interface PromptRewindResult {
@@ -75,6 +81,21 @@ interface MessageWriteOptions {
   syncedAt?: number | null;
   updatedAt?: number;
 }
+
+const REWIND_FORBIDDEN_SESSION_STATES = new Set([
+  'running',
+  'paused',
+  'queued',
+  'cancelling',
+]);
+
+const REWIND_ACTIVE_DURABLE_RUN_STATES = new Set([
+  'created',
+  'running',
+  'waiting',
+  'paused',
+  'recovering',
+]);
 
 export class SessionRepository {
   constructor(private db: BetterSqlite3.Database) {}
@@ -944,6 +965,52 @@ export class SessionRepository {
     this.db.prepare(`UPDATE messages SET synced_at = ? WHERE id IN (${placeholders})`).run(now, ...messageIds);
   }
 
+  /**
+   * Rewind is a user-scoped mutation. Keep this guard inside the same immediate
+   * transaction as the visibility update so owner or run-state changes cannot
+   * race between authorization and commit.
+   */
+  private assertPromptRewindMutationAllowed(
+    sessionId: string,
+    ownerUserId: string | null | undefined,
+  ): void {
+    if (
+      ownerUserId === undefined
+      || (typeof ownerUserId === 'string' && ownerUserId.trim().length === 0)
+    ) {
+      throw new Error('SESSION_ACCESS_DENIED: an explicit owner boundary is required');
+    }
+
+    const session = this.db.prepare(`
+      SELECT status
+      FROM sessions
+      WHERE id = ?
+        AND COALESCE(is_deleted, 0) = 0
+        AND ((? IS NULL AND user_id IS NULL) OR user_id = ?)
+      LIMIT 1
+    `).get(sessionId, ownerUserId, ownerUserId) as { status?: string } | undefined;
+    if (!session) {
+      throw new Error('SESSION_ACCESS_DENIED: session not found or owner mismatch');
+    }
+
+    const status = String(session.status ?? 'idle');
+    if (REWIND_FORBIDDEN_SESSION_STATES.has(status)) {
+      throw new Error(`SESSION_RUNNING: session is ${status}`);
+    }
+
+    if (sqliteTableExists(this.db, 'durable_runs')) {
+      const activeRun = (this.db.prepare(`
+        SELECT run_id, status
+        FROM durable_runs
+        WHERE session_id = ?
+      `).all(sessionId) as Array<{ run_id: string; status: string }>)
+        .find((run) => REWIND_ACTIVE_DURABLE_RUN_STATES.has(String(run.status)));
+      if (activeRun) {
+        throw new Error(`SESSION_RUNNING: durable run ${activeRun.run_id} is ${activeRun.status}`);
+      }
+    }
+  }
+
   getMessageById(sessionId: string, messageId: string, options: MessageQueryOptions = {}): Message | null {
     const stmt = this.db.prepare(`
       SELECT *
@@ -968,22 +1035,34 @@ export class SessionRepository {
       .update(JSON.stringify({ sessionId, userMessageId }))
       .digest('hex');
 
-    if (idempotencyKey) {
-      const existing = this.db.prepare(`
-        SELECT *
-        FROM session_rewinds
-        WHERE session_id = ? AND idempotency_key = ?
-        LIMIT 1
-      `).get(sessionId, idempotencyKey) as SQLiteRow | undefined;
-      if (existing) {
-        if (String(existing.request_digest ?? '') !== requestDigest) {
-          throw new Error('IDEMPOTENCY_CONFLICT: the idempotency key was already used for another rewind');
-        }
-        return this.readPromptRewindResult(existing);
-      }
-    }
-
     const applyFn = this.db.transaction(() => {
+      this.assertPromptRewindMutationAllowed(sessionId, record.ownerUserId);
+
+      if (idempotencyKey) {
+        const existing = this.db.prepare(`
+          SELECT *
+          FROM session_rewinds
+          WHERE session_id = ? AND idempotency_key = ?
+          LIMIT 1
+        `).get(sessionId, idempotencyKey) as SQLiteRow | undefined;
+        if (existing) {
+          if (String(existing.request_digest ?? '') !== requestDigest) {
+            throw new Error('IDEMPOTENCY_CONFLICT: the idempotency key was already used for another rewind');
+          }
+          if (String(existing.status ?? 'completed') === 'restored') {
+            throw new Error(
+              'IDEMPOTENCY_CONFLICT: the rewind was already restored; use a new idempotency key',
+            );
+          }
+          if (String(existing.status ?? 'completed') !== 'completed') {
+            throw new Error(
+              `IDEMPOTENCY_CONFLICT: the existing rewind is ${String(existing.status)}`,
+            );
+          }
+          return this.readPromptRewindResult(existing);
+        }
+      }
+
       const anchorRow = this.db
         .prepare(
           `
@@ -1004,18 +1083,22 @@ export class SessionRepository {
 
       const anchorMessage = rowToMessage(anchorRow);
       const anchorRowId = Number(anchorRow.__rowid || 0);
+      const anchorTimestamp = Number(anchorRow.timestamp);
       const rowsToHide = this.db
         .prepare(
           `
         SELECT id
         FROM messages
         WHERE session_id = ?
-          AND rowid >= ?
+          AND (
+            timestamp > ?
+            OR (timestamp = ? AND rowid >= ?)
+          )
           AND ${activeMessageWhere('messages')}
         ORDER BY timestamp ASC, rowid ASC
       `,
         )
-        .all(sessionId, anchorRowId) as Array<{ id: string }>;
+        .all(sessionId, anchorTimestamp, anchorTimestamp, anchorRowId) as Array<{ id: string }>;
 
       const hiddenMessageIds = rowsToHide.map((row) => String(row.id));
       if (hiddenMessageIds.length > 0) {
@@ -1086,15 +1169,18 @@ export class SessionRepository {
       return this.readPromptRewindResult(persisted);
     });
 
-    return applyFn();
+    return applyFn.immediate();
   }
 
   restorePromptRewind(
     sessionId: string,
     rewindId: string,
     restoredAt = Date.now(),
+    ownerUserId?: string | null,
   ): PromptRewindRestoreResult {
     const restoreFn = this.db.transaction(() => {
+      this.assertPromptRewindMutationAllowed(sessionId, ownerUserId);
+
       const rewind = this.db.prepare(`
         SELECT id, status
         FROM session_rewinds
@@ -1111,6 +1197,19 @@ export class SessionRepository {
       }
       if (rewind.status !== 'completed') {
         throw new Error(`Rewind cannot be restored from status ${rewind.status}`);
+      }
+
+      const latestCompleted = this.db.prepare(`
+        SELECT id
+        FROM session_rewinds
+        WHERE session_id = ? AND status = 'completed'
+        ORDER BY rowid DESC
+        LIMIT 1
+      `).get(sessionId) as { id: string } | undefined;
+      if (latestCompleted?.id !== rewindId) {
+        throw new Error(
+          `REWIND_RESTORE_ORDER: restore ${latestCompleted?.id ?? 'none'} before ${rewindId}`,
+        );
       }
 
       const result = this.db.prepare(`
@@ -1138,7 +1237,7 @@ export class SessionRepository {
         activeMessages: this.getMessages(sessionId),
       };
     });
-    return restoreFn();
+    return restoreFn.immediate();
   }
 
   private readPromptRewindResult(row: SQLiteRow): PromptRewindResult {
@@ -1151,15 +1250,15 @@ export class SessionRepository {
     if (!anchorMessage) {
       throw new Error(`Rewind anchor is missing: ${String(row.anchor_message_id)}`);
     }
-    let hiddenMessageIds: string[] = [];
+    let parsedHiddenMessageIds: unknown;
     try {
-      const parsed = JSON.parse(String(row.hidden_message_ids ?? '[]')) as unknown;
-      hiddenMessageIds = Array.isArray(parsed)
-        ? parsed.filter((value): value is string => typeof value === 'string')
-        : [];
+      parsedHiddenMessageIds = JSON.parse(String(row.hidden_message_ids ?? '[]')) as unknown;
     } catch {
       throw new Error(`Rewind audit is corrupt: ${String(row.id)}`);
     }
+    const hiddenMessageIds = Array.isArray(parsedHiddenMessageIds)
+      ? parsedHiddenMessageIds.filter((value): value is string => typeof value === 'string')
+      : [];
     return {
       rewindId: String(row.id),
       anchorMessage,
@@ -1167,28 +1266,6 @@ export class SessionRepository {
       hiddenMessageCount: Number(row.hidden_message_count ?? hiddenMessageIds.length),
       activeMessages: this.getMessages(sessionId),
     };
-  }
-
-  // --------------------------------------------------------------------------
-  // Message Truncation (for checkpoint fork)
-  // --------------------------------------------------------------------------
-
-  /**
-   * Delete all messages after a given message (by timestamp).
-   * Used by checkpoint:fork to truncate conversation history.
-   */
-  truncateMessagesAfter(sessionId: string, messageId: string): number {
-    const msg = this.db
-      .prepare('SELECT timestamp FROM messages WHERE id = ? AND session_id = ?')
-      .get(messageId, sessionId) as { timestamp: number } | undefined;
-
-    if (!msg) return 0;
-
-    const result = this.db
-      .prepare('DELETE FROM messages WHERE session_id = ? AND timestamp > ?')
-      .run(sessionId, msg.timestamp);
-
-    return result.changes;
   }
 
   // --------------------------------------------------------------------------

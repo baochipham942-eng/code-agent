@@ -5,6 +5,7 @@
 import React, { useMemo, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
+import type { SessionForkWorkspaceMode } from '@shared/contract/sessionFork';
 import type { TurnHookActivity, TurnSkillActivity } from '@shared/contract/turnTimeline';
 import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browserComputerRedaction';
 import {
@@ -89,6 +90,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     sessionId ? Boolean(state.runningSessionIds?.has(sessionId)) : false
   ));
   const [isForking, setIsForking] = useState(false);
+  const [isForkMenuOpen, setIsForkMenuOpen] = useState(false);
   const stats = useMemo(() => {
     const duration = turn.endTime ? turn.endTime - turn.startTime : null;
     const time = new Date(turn.startTime).toLocaleTimeString('zh-CN', {
@@ -202,11 +204,12 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     return { messageId };
   }, [isStreaming, turn.nodes, turn.status]);
 
-  const handleFork = async () => {
+  const handleFork = async (workspaceMode: SessionForkWorkspaceMode) => {
     if (!forkAnchor || isForking || isSessionProcessing || sessionIsRunning) return;
+    setIsForkMenuOpen(false);
     setIsForking(true);
     try {
-      await forkFromHere(forkAnchor.messageId);
+      await forkFromHere(forkAnchor.messageId, workspaceMode);
     } finally {
       setIsForking(false);
     }
@@ -386,22 +389,50 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {(forkAnchor || feedbackAnchor) && (
           <div className="flex items-center gap-2" data-testid="turn-reply-actions">
             {forkAnchor && (
-              <button
-                type="button"
-                data-testid="turn-fork-action"
-                aria-label={t.turnCard.forkFromHere}
-                title={t.turnCard.forkFromHere}
-                disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
-                onClick={() => {
-                  void handleFork();
-                }}
-                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-zinc-500 transition-colors hover:bg-violet-500/10 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {isForking
-                  ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                  : <GitFork className="h-3.5 w-3.5" />}
-                <span>{isForking ? t.turnCard.forking : t.turnCard.fork}</span>
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  data-testid="turn-fork-action"
+                  aria-label={t.turnCard.forkFromHere}
+                  aria-expanded={isForkMenuOpen}
+                  title={t.turnCard.forkFromHere}
+                  disabled={Boolean(isSessionProcessing) || sessionIsRunning || isForking}
+                  onClick={() => setIsForkMenuOpen((open) => !open)}
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-zinc-500 transition-colors hover:bg-violet-500/10 hover:text-violet-300 focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isForking
+                    ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                    : <GitFork className="h-3.5 w-3.5" />}
+                  <span>{isForking ? t.turnCard.forking : t.turnCard.fork}</span>
+                  {!isForking && <ChevronDown className="h-3 w-3" />}
+                </button>
+                {isForkMenuOpen && (
+                  <div
+                    role="menu"
+                    aria-label={t.turnCard.chooseWorkspace}
+                    className="absolute bottom-full left-0 z-30 mb-1 w-72 rounded-lg border border-zinc-700 bg-zinc-900 p-1.5 shadow-xl"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void handleFork('shared_current')}
+                      className="block w-full rounded-md px-2.5 py-2 text-left hover:bg-zinc-800"
+                    >
+                      <span className="block text-xs text-zinc-200">{t.turnCard.sharedCurrent}</span>
+                      <span className="mt-0.5 block text-[11px] text-zinc-500">{t.turnCard.sharedCurrentDetail}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void handleFork('isolated_at_anchor')}
+                      className="block w-full rounded-md px-2.5 py-2 text-left hover:bg-violet-500/10"
+                    >
+                      <span className="block text-xs text-violet-300">{t.turnCard.isolatedAtAnchor}</span>
+                      <span className="mt-0.5 block text-[11px] text-zinc-500">{t.turnCard.isolatedAtAnchorDetail}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             {feedbackAnchor && (
               <TurnFeedback

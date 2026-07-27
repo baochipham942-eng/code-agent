@@ -79,7 +79,10 @@ import {
   ClaudeCodeAdapter,
   parseClaudeCodeJsonLine,
 } from '../../../src/host/services/agentEngine/claudeCodeAdapter';
-import { createClaudeResumeLaunch } from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
+import {
+  createClaudeContinuationResumeLaunch,
+  createClaudeResumeLaunch,
+} from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
 import type { ExternalEngineDurableLifecycle } from '../../../src/host/services/agentEngine/externalEngineDurableLifecycle';
 import { buildTestExternalForkContextHandoff } from '../services/sessionFork/externalForkContextTestFixture';
 
@@ -367,15 +370,27 @@ describe('ClaudeCodeAdapter.run', () => {
     let child: ReturnType<typeof createMockChild> | undefined;
     mocks.spawn.mockImplementation(() => {
       child = createMockChild([
-        JSON.stringify({ type: 'result', subtype: 'success', result: 'continued child answer' }),
+        JSON.stringify({
+          type: 'result',
+          subtype: 'success',
+          result: 'continued child answer',
+          session_id: 'fork-claude-session',
+        }),
       ], 0);
       return child;
     });
     const forkContextHandoff = buildTestExternalForkContextHandoff('claude_code');
     const onForkContextDispatchStart = vi.fn(async () => undefined);
     const onForkContextDispatched = vi.fn(async () => undefined);
+    const firstLifecycle = {
+      runId: 'fork-first-run', attempt: 1, ownerEpoch: 1,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
 
-    await new ClaudeCodeAdapter().run({
+    const firstResult = await new ClaudeCodeAdapter().run({
       sessionId: 'child-session',
       prompt: 'continue the branch',
       cwd: workspaceRoot,
@@ -385,8 +400,10 @@ describe('ClaudeCodeAdapter.run', () => {
       forkContextHandoff,
       onForkContextDispatchStart,
       onForkContextDispatched,
+      durableLifecycle: firstLifecycle,
     });
 
+    expect(firstResult.status).toBe('completed');
     const stdin = child?.stdin.end.mock.calls[0]?.[0] as string;
     expect(stdin).toContain('<<<NEO_SESSION_FORK_CONTEXT_V1>>>');
     expect(stdin).toContain('question one');
@@ -418,6 +435,75 @@ describe('ClaudeCodeAdapter.run', () => {
       .toBeLessThan(child!.stdin.end.mock.invocationCallOrder[0]);
     expect(child!.stdin.end.mock.invocationCallOrder[0])
       .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
+    expect(firstLifecycle.persistExternalSessionId).toHaveBeenCalledWith('fork-claude-session');
+    const firstTerminalUpdate = mocks.updateSession.mock.calls.at(-1)?.[1];
+    expect(firstTerminalUpdate).toMatchObject({
+      status: 'idle',
+      engine: {
+        kind: 'claude_code',
+        externalSessionId: 'fork-claude-session',
+      },
+    });
+    const persistedExternalSessionId = firstTerminalUpdate?.engine?.externalSessionId;
+    if (typeof persistedExternalSessionId !== 'string') {
+      throw new Error('first Claude fork turn did not persist its external session id');
+    }
+
+    mocks.spawn.mockClear();
+    mocks.addMessageToSession.mockClear();
+    mocks.updateSession.mockClear();
+    mocks.upsertTask.mockClear();
+    let secondChild: ReturnType<typeof createMockChild> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      secondChild = createMockChild([
+        JSON.stringify({
+          type: 'result',
+          subtype: 'success',
+          result: 'second turn answer',
+          session_id: 'fork-claude-session',
+        }),
+      ], 0);
+      return secondChild;
+    });
+    const secondLifecycle = {
+      runId: 'fork-second-run', attempt: 1, ownerEpoch: 2,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
+    const cwd = await fs.realpath(workspaceRoot);
+    const resumeLaunch = createClaudeContinuationResumeLaunch({
+      lifecycle: secondLifecycle,
+      sessionId: 'child-session',
+      persistedExternalSessionId,
+      cwd,
+      continuationInput: 'second turn request',
+      permissionProfile: 'read_only',
+    });
+
+    const secondResult = await new ClaudeCodeAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'second turn request',
+      cwd,
+      workspaceRoot: cwd,
+      permissionProfile: 'read_only',
+      durableLifecycle: secondLifecycle,
+      resumeLaunch,
+    });
+
+    expect(secondResult.status).toBe('completed');
+    expect(resumeLaunch.args).toContain('--resume');
+    expect(resumeLaunch.args).toContain('fork-claude-session');
+    expect(secondChild?.stdin.end).toHaveBeenCalledWith('second turn request');
+    expect(String(secondChild?.stdin.end.mock.calls[0]?.[0])).not.toContain('NEO_SESSION_FORK_CONTEXT');
+    expect(secondLifecycle.persistExternalSessionId).toHaveBeenCalledWith('fork-claude-session');
+    expect(mocks.updateSession.mock.calls.at(-1)?.[1]).toMatchObject({
+      status: 'idle',
+      engine: {
+        externalSessionId: 'fork-claude-session',
+      },
+    });
   });
 
   it('inherits Claude auth from the captured login shell when the desktop process env is missing it', async () => {
@@ -693,6 +779,51 @@ describe('ClaudeCodeAdapter.run', () => {
     expect(resumeLaunch.args).toContain('--resume');
     expect(resumeLaunch.args).not.toContain('--no-session-persistence');
     expect(lifecycle.persistExternalSessionId).toHaveBeenCalledWith('target-session');
+  });
+
+  it('fails closed when Claude resume reports a different session id', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        result: 'wrong session',
+        session_id: 'other-session',
+      }),
+    ], 0));
+    const cwd = await fs.realpath(workspaceRoot);
+    const lifecycle = {
+      runId: 'logical-run', attempt: 2, ownerEpoch: 4,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
+    const resumeLaunch = createClaudeResumeLaunch({
+      runId: 'logical-run', sessionId: 'session-1', attempt: 2, ownerEpoch: 4,
+      externalSessionId: 'target-session', cwd, permissionProfile: 'read_only',
+    });
+
+    const result = await new ClaudeCodeAdapter().run({
+      sessionId: 'session-1', prompt: '', cwd, workspaceRoot: cwd,
+      permissionProfile: 'read_only', durableLifecycle: lifecycle, resumeLaunch,
+    });
+
+    expect(result).toMatchObject({
+      runId: 'logical-run',
+      sessionId: 'session-1',
+      status: 'failed',
+      error: 'Claude resumed a different external session',
+    });
+    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+    expect(mocks.spawn.mock.calls[0][1]).toEqual(resumeLaunch.args);
+    expect(lifecycle.terminateProcess).toHaveBeenCalled();
+    expect(lifecycle.persistExternalSessionId).not.toHaveBeenCalled();
+    expect(mocks.updateSession.mock.calls.at(-1)?.[1]).toMatchObject({
+      status: 'error',
+      engine: {
+        externalSessionId: 'target-session',
+      },
+    });
   });
 });
 

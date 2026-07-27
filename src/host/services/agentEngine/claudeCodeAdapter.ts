@@ -148,6 +148,7 @@ export class ClaudeCodeAdapter {
         kind: 'claude_code',
         model,
         runId,
+        externalSessionId: request.resumeLaunch?.externalSessionId,
         logPath,
         cwd,
         permissionProfile,
@@ -242,7 +243,8 @@ export class ClaudeCodeAdapter {
     let resultText = '';
     let cliErrorText = '';
     let cliErrorStatusCode: number | undefined;
-    let externalSessionId: string | undefined;
+    let observedExternalSessionId: string | undefined;
+    let confirmedExternalSessionId: string | undefined;
     let spawnErrorMessage: string | undefined;
     let timeoutMessage: string | undefined;
     let resumeIdentityError: string | undefined;
@@ -302,11 +304,12 @@ export class ClaudeCodeAdapter {
       const usage = extractExternalModelUsage(line);
       if (usage) request.durableLifecycle?.observeModelUsage(usage.inputTokens, usage.outputTokens);
       if (parsed.externalSessionId) {
-        externalSessionId = parsed.externalSessionId;
+        observedExternalSessionId = parsed.externalSessionId;
         if (request.resumeLaunch && parsed.externalSessionId !== request.resumeLaunch.externalSessionId) {
           resumeIdentityError = 'Claude resumed a different external session';
           void request.durableLifecycle?.terminateProcess('SIGTERM');
         } else {
+          confirmedExternalSessionId = parsed.externalSessionId;
           request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
         }
       }
@@ -396,9 +399,14 @@ export class ClaudeCodeAdapter {
     }
 
     const completedAt = Date.now();
-    if (request.resumeLaunch && !externalSessionId && !resumeIdentityError) {
+    if (request.resumeLaunch && !observedExternalSessionId && !resumeIdentityError) {
       resumeIdentityError = 'Claude resume did not confirm the external session identity';
     }
+    if (request.forkContextHandoff && !confirmedExternalSessionId && !resumeIdentityError) {
+      resumeIdentityError = 'Claude fork handoff did not confirm a new external session identity';
+    }
+    const sessionExternalSessionId = confirmedExternalSessionId
+      ?? request.resumeLaunch?.externalSessionId;
     const emptyResponse = !finalText && !cliErrorText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
     const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0 || emptyResponse);
 
@@ -423,7 +431,7 @@ export class ClaudeCodeAdapter {
       kind: 'claude_code',
       model,
       runId,
-      externalSessionId,
+      externalSessionId: sessionExternalSessionId,
       logPath,
       cwd,
       permissionProfile,
@@ -565,7 +573,7 @@ export class ClaudeCodeAdapter {
       type: 'agent_engine.completed',
       status: 'completed',
       message: 'Claude Code run completed',
-      data: { runId, logPath, externalSessionId },
+      data: { runId, logPath, externalSessionId: sessionExternalSessionId },
     });
     ledger.queueNotification({
       taskId,

@@ -72,6 +72,16 @@ import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 import { steerOrQueue } from '../../host/runtime/steerQueueFence';
 import { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
 import { getDatabase } from '../../host/services/core/databaseService';
+import { getLogsPath } from '../../host/platform/appPaths';
+import { getProjectService } from '../../host/services/project/projectService';
+import {
+  DEFAULT_EXTERNAL_FORK_CONTEXT_POLICY,
+  SessionForkRuntimeContextService,
+} from '../../host/services/sessionFork/context';
+import {
+  createClaudeContinuationResumeLaunch,
+  createCodexContinuationResumeLaunch,
+} from '../../host/services/agentEngine/externalEngineResumeBuilders';
 import {
   createWebQueuedInputDrain,
   releaseThenTriggerWebQueuedInputDrain,
@@ -193,6 +203,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       const { getDatabase } = await import('../../host/services/core/databaseService');
       return getDatabase();
     },
+    captureSessionForkAnchorEvidence: async (sessionId, messageId) => (
+      getDatabase().captureSessionForkAnchorEvidence(sessionId, messageId)
+    ),
   });
 
   const queuedInputDrain = createWebQueuedInputDrain({
@@ -290,6 +303,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
 
     const selectedEngine = normalizeAgentEngineSession(persistedSession?.engine);
+    const explicitForkLineage = isExternalAgentEngine(selectedEngine.kind) && dbAvailable
+      ? getDatabase().getSessionForkLineage(
+          sessionId,
+          (await import('../../host/services/auth/authService'))
+            .getAuthService()
+            .getCurrentUser()?.id ?? null,
+        )
+      : null;
 
     // per-token 并发上限（WP3-4，fail-closed）：必须在 writeHead 之前拒。
     const releaseSseSlot = transport.connectedClient
@@ -308,6 +329,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       workspace: resolvedProject,
       durableActivation,
       externalEngine: isExternalAgentEngine(selectedEngine.kind) ? selectedEngine.kind : undefined,
+      externalSessionId: explicitForkLineage
+        ? selectedEngine.externalSessionId?.trim() || undefined
+        : undefined,
       logger,
     });
     let externalDurableLifecycle: Awaited<ReturnType<typeof durableRunLifecycle.start>>['externalLifecycle'];
@@ -479,7 +503,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           stage: 'launch_policy',
           cwd: resolvedProject,
         };
-        const launch = resolveExternalEngineLaunch(persistedSession, selectedEngine, resolvedProject);
+        const externalWorkspaceScope = persistedSession?.projectId
+          ? getProjectService().getWorkspaceScope(persistedSession.projectId)
+          : undefined;
+        const launch = resolveExternalEngineLaunch(
+          persistedSession,
+          selectedEngine,
+          resolvedProject,
+          externalWorkspaceScope,
+        );
         externalEngineFailureContext = {
           kind: selectedEngine.kind,
           stage: 'adapter_run',
@@ -502,6 +534,45 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           adapter = new KimiCliAdapter();
           resolvedEngineModel = launch.model;
         }
+        const persistedExternalSessionId = explicitForkLineage
+          ? selectedEngine.externalSessionId?.trim() || undefined
+          : undefined;
+        const forkContext = !persistedExternalSessionId
+          && (selectedEngine.kind === 'codex_cli' || selectedEngine.kind === 'claude_code')
+          ? await new SessionForkRuntimeContextService(getDatabase()).prepareFirstChildRun({
+              childSessionId: sessionId,
+              engine: selectedEngine.kind,
+              firstUserPrompt: prompt,
+              policy: DEFAULT_EXTERNAL_FORK_CONTEXT_POLICY,
+            })
+          : null;
+        if (persistedExternalSessionId && !externalDurableLifecycle) {
+          throw new Error(`${selectedEngine.kind} continuation requires durable lifecycle identity`);
+        }
+        const resumeLaunch = persistedExternalSessionId && externalDurableLifecycle
+          ? selectedEngine.kind === 'codex_cli'
+            ? createCodexContinuationResumeLaunch({
+                lifecycle: externalDurableLifecycle,
+                sessionId,
+                persistedExternalSessionId,
+                cwd: launch.cwd,
+                model: resolvedEngineModel,
+                continuationInput: prompt,
+                permissionProfile: launch.permissionProfile,
+                logsRoot: getLogsPath(),
+              })
+            : selectedEngine.kind === 'claude_code'
+              ? createClaudeContinuationResumeLaunch({
+                  lifecycle: externalDurableLifecycle,
+                  sessionId,
+                  persistedExternalSessionId,
+                  cwd: launch.cwd,
+                  model: resolvedEngineModel,
+                  continuationInput: prompt,
+                  permissionProfile: launch.permissionProfile,
+                })
+              : undefined
+          : undefined;
         const result = await adapter.run({
           sessionId,
           prompt,
@@ -514,6 +585,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           messageMetadata: toWorkbenchMetadata(body.context),
           emitEvent: (event) => runController.emitAgentEvent(event),
           durableLifecycle: externalDurableLifecycle,
+          resumeLaunch,
+          ...(forkContext ? {
+            forkContextHandoff: forkContext.handoff,
+            onForkContextDispatchStart: forkContext.onDispatchStart,
+            onForkContextDispatched: forkContext.onDispatched,
+          } : {}),
         });
         const authoritativeStatus = await durableRunLifecycle.markSuccess({ result });
         runController.flush();

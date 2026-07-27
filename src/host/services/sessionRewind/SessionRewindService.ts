@@ -24,6 +24,7 @@ export interface SessionRewindServiceDatabase {
     sessionId: string,
     rewindId: string,
     restoredAt?: number,
+    ownerUserId?: string | null,
   ): PromptRewindRestoreResult;
 }
 
@@ -31,6 +32,8 @@ export interface SessionRewindServiceOptions {
   getRuntimeStatus?: (sessionId: string) => string | undefined;
   setSessionContext?: (sessionId: string, messages: Message[]) => void;
   now?: () => number;
+  /** `null` explicitly means the local/anonymous owner; `undefined` fails closed. */
+  ownerUserId?: string | null;
 }
 
 export class SessionRewindService {
@@ -44,20 +47,26 @@ export class SessionRewindService {
   }
 
   async rewindConversation(request: RewindConversationRequest): Promise<RewindConversationResult> {
-    this.assertIdle(request.sessionId);
-    if (!request.sessionId.trim() || !request.anchorUserMessageId.trim()) {
+    if (
+      typeof request.sessionId !== 'string'
+      || typeof request.anchorUserMessageId !== 'string'
+      || !request.sessionId.trim()
+      || !request.anchorUserMessageId.trim()
+    ) {
       throw new SessionRewindError('INVALID_ANCHOR', 'sessionId and anchorUserMessageId are required');
     }
-    if (!request.idempotencyKey.trim()) {
+    if (typeof request.idempotencyKey !== 'string' || !request.idempotencyKey.trim()) {
       throw new SessionRewindError('IDEMPOTENCY_CONFLICT', 'idempotencyKey is required');
     }
+    const ownerUserId = this.requireOwnerBoundary();
+    this.assertIdle(request.sessionId);
 
     let result: PromptRewindResult;
     try {
       result = this.database.applyPromptRewind(
         request.sessionId,
         request.anchorUserMessageId,
-        { idempotencyKey: request.idempotencyKey },
+        { idempotencyKey: request.idempotencyKey, ownerUserId },
       );
     } catch (error) {
       throw this.normalizeError(error);
@@ -83,6 +92,15 @@ export class SessionRewindService {
   async restoreConversation(
     request: RestoreConversationRewindRequest,
   ): Promise<RestoreConversationRewindResult> {
+    if (
+      typeof request.sessionId !== 'string'
+      || typeof request.rewindId !== 'string'
+      || !request.sessionId.trim()
+      || !request.rewindId.trim()
+    ) {
+      throw new SessionRewindError('INVALID_ANCHOR', 'sessionId and rewindId are required');
+    }
+    const ownerUserId = this.requireOwnerBoundary();
     this.assertIdle(request.sessionId);
     let result: PromptRewindRestoreResult;
     try {
@@ -90,6 +108,7 @@ export class SessionRewindService {
         request.sessionId,
         request.rewindId,
         this.now(),
+        ownerUserId,
       );
     } catch (error) {
       throw this.normalizeError(error);
@@ -112,11 +131,28 @@ export class SessionRewindService {
     }
   }
 
+  private requireOwnerBoundary(): string | null {
+    const ownerUserId = this.options.ownerUserId;
+    if (
+      ownerUserId === undefined
+      || (typeof ownerUserId === 'string' && ownerUserId.trim().length === 0)
+    ) {
+      throw new SessionRewindError(
+        'REWIND_OPERATION_FAILED',
+        'an explicit owner boundary is required',
+      );
+    }
+    return ownerUserId;
+  }
+
   private normalizeError(error: unknown): SessionRewindError {
     if (error instanceof SessionRewindError) return error;
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes('IDEMPOTENCY_CONFLICT')) {
       return new SessionRewindError('IDEMPOTENCY_CONFLICT', message);
+    }
+    if (message.includes('SESSION_RUNNING')) {
+      return new SessionRewindError('SESSION_RUNNING', message);
     }
     if (message.includes('Active user message not found')) {
       return new SessionRewindError('INVALID_ANCHOR', message);

@@ -97,6 +97,11 @@ import type { ExternalAgentEngineKind } from '../../shared/contract/agentEngine'
 import type { AgentEngineRunResult } from '../../shared/contract/agentEngine';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectService } from '../services/project/projectService';
+import { getLogsPath } from '../platform/appPaths';
+import {
+  createClaudeContinuationResumeLaunch,
+  createCodexContinuationResumeLaunch,
+} from '../services/agentEngine/externalEngineResumeBuilders';
 import {
   projectDurableRunToSessionPayload,
   type DurableRunReadService,
@@ -188,6 +193,13 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       firstUserPrompt,
       policy: DEFAULT_EXTERNAL_FORK_CONTEXT_POLICY,
     });
+  }
+
+  private isExplicitForkChild(sessionId: string): boolean {
+    return Boolean(getDatabase().getSessionForkLineage(
+      sessionId,
+      getAuthService().getCurrentUser()?.id ?? null,
+    ));
   }
 
   private async withDurableSessionReplayPayload(session: Session): Promise<Session> {
@@ -435,12 +447,38 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('codex_cli', launch.model, { strict: true });
-      const forkContext = await this.prepareExternalForkContext(
-        resolvedSessionId,
-        engine.kind,
-        envelope.content,
-      );
-      const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
+      const persistedExternalSessionId = this.isExplicitForkChild(resolvedSessionId)
+        ? engine.externalSessionId?.trim() || undefined
+        : undefined;
+      const forkContext = persistedExternalSessionId
+        ? null
+        : await this.prepareExternalForkContext(
+            resolvedSessionId,
+            engine.kind,
+            envelope.content,
+          );
+      const durableLifecycle = await this.startExternalLifecycle({
+        engine: engine.kind,
+        sessionId: resolvedSessionId,
+        workspace: launch.workspaceRoot,
+        cwd: launch.cwd,
+        externalSessionId: persistedExternalSessionId,
+      });
+      if (persistedExternalSessionId && !durableLifecycle) {
+        throw new Error('Codex continuation requires durable lifecycle identity');
+      }
+      const resumeLaunch = persistedExternalSessionId && durableLifecycle
+        ? createCodexContinuationResumeLaunch({
+            lifecycle: durableLifecycle,
+            sessionId: resolvedSessionId,
+            persistedExternalSessionId,
+            cwd: launch.cwd,
+            model: resolvedModel,
+            continuationInput: envelope.content,
+            permissionProfile: launch.permissionProfile,
+            logsRoot: getLogsPath(),
+          })
+        : undefined;
       await this.executeExternalRun(durableLifecycle, () => new CodexCliAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
@@ -452,6 +490,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         attachmentsCount: envelope.attachments?.length ?? 0,
         messageMetadata: this.getMessageMetadata(envelope),
         durableLifecycle,
+        resumeLaunch,
         ...(forkContext ? {
           forkContextHandoff: forkContext.handoff,
           onForkContextDispatchStart: forkContext.onDispatchStart,
@@ -464,12 +503,37 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       const launch = resolveExternalEngineLaunch(session, engine, envelope.context?.workingDirectory ?? effectiveWorkingDirectory, externalWorkspaceScope);
       orchestrator?.setWorkingDirectory(launch.cwd);
       const resolvedModel = await getRemoteAgentEngineModelCatalogService().resolveModelId('claude_code', launch.model, { strict: true });
-      const forkContext = await this.prepareExternalForkContext(
-        resolvedSessionId,
-        engine.kind,
-        envelope.content,
-      );
-      const durableLifecycle = await this.startExternalLifecycle({ engine: engine.kind, sessionId: resolvedSessionId, workspace: launch.workspaceRoot, cwd: launch.cwd });
+      const persistedExternalSessionId = this.isExplicitForkChild(resolvedSessionId)
+        ? engine.externalSessionId?.trim() || undefined
+        : undefined;
+      const forkContext = persistedExternalSessionId
+        ? null
+        : await this.prepareExternalForkContext(
+            resolvedSessionId,
+            engine.kind,
+            envelope.content,
+          );
+      const durableLifecycle = await this.startExternalLifecycle({
+        engine: engine.kind,
+        sessionId: resolvedSessionId,
+        workspace: launch.workspaceRoot,
+        cwd: launch.cwd,
+        externalSessionId: persistedExternalSessionId,
+      });
+      if (persistedExternalSessionId && !durableLifecycle) {
+        throw new Error('Claude continuation requires durable lifecycle identity');
+      }
+      const resumeLaunch = persistedExternalSessionId && durableLifecycle
+        ? createClaudeContinuationResumeLaunch({
+            lifecycle: durableLifecycle,
+            sessionId: resolvedSessionId,
+            persistedExternalSessionId,
+            cwd: launch.cwd,
+            model: resolvedModel,
+            continuationInput: envelope.content,
+            permissionProfile: launch.permissionProfile,
+          })
+        : undefined;
       await this.executeExternalRun(durableLifecycle, () => new ClaudeCodeAdapter().run({
         sessionId: resolvedSessionId,
         prompt: envelope.content,
@@ -481,6 +545,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         attachmentsCount: envelope.attachments?.length ?? 0,
         messageMetadata: this.getMessageMetadata(envelope),
         durableLifecycle,
+        resumeLaunch,
         ...(forkContext ? {
           forkContextHandoff: forkContext.handoff,
           onForkContextDispatchStart: forkContext.onDispatchStart,
@@ -864,6 +929,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const taskManager = this.getTaskManager();
     const service = new SessionForkService(database, {
       getRuntimeStatus: (sessionId) => taskManager.getSessionState(sessionId).status,
+      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
     });
     const result = await service.createFork(params);
     if (result.lineage.contextDeliveryMode === 'neo_native_prefix') {
@@ -876,11 +942,15 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   }
 
   async getForkLineage(sessionId: string): Promise<SessionForkLineageSummary | null> {
-    return new SessionForkService(getDatabase()).getLineage(sessionId);
+    return new SessionForkService(getDatabase(), {
+      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
+    }).getLineage(sessionId);
   }
 
   async listForkChildren(sessionId: string): Promise<SessionForkLineageSummary[]> {
-    return new SessionForkService(getDatabase()).listChildren(sessionId);
+    return new SessionForkService(getDatabase(), {
+      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
+    }).listChildren(sessionId);
   }
 
   async rewindConversation(params: RewindConversationRequest): Promise<RewindConversationResult> {
@@ -888,6 +958,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const result = await new SessionRewindService(getDatabase(), {
       getRuntimeStatus: (sessionId) => tm.getSessionState(sessionId).status,
       setSessionContext: (sessionId, messages) => tm.setSessionContext(sessionId, messages),
+      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
     }).rewindConversation(params);
     getSessionManager().invalidateSessionCache(params.sessionId);
     return result;
@@ -900,6 +971,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const result = await new SessionRewindService(getDatabase(), {
       getRuntimeStatus: (sessionId) => tm.getSessionState(sessionId).status,
       setSessionContext: (sessionId, messages) => tm.setSessionContext(sessionId, messages),
+      ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
     }).restoreConversation(params);
     getSessionManager().invalidateSessionCache(params.sessionId);
     return result;

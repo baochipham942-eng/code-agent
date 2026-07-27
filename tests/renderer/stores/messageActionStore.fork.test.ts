@@ -82,6 +82,27 @@ describe('messageActionStore Fork', () => {
     expect(mocks.error).toHaveBeenCalledWith('任务仍在运行，停止后才能创建分支');
   });
 
+  it('passes the isolated anchor workspace mode without changing source state', async () => {
+    mocks.invokeDomain.mockResolvedValue({
+      childSession: { id: 'isolated-child' },
+      lineage: { childSessionId: 'isolated-child' },
+      copiedMessageCount: 4,
+      messageMappings: [],
+      sourcePrefixDigest: 'sha256:prefix',
+      workspaceLabel: '历史对话 + 锚点文件',
+    });
+    const before = JSON.stringify(useSessionStore.getState().messages);
+
+    await useMessageActionStore.getState().forkFromHere('a2', 'isolated_at_anchor');
+
+    expect(mocks.invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.SESSION,
+      'fork',
+      expect.objectContaining({ workspaceMode: 'isolated_at_anchor' }),
+    );
+    expect(JSON.stringify(useSessionStore.getState().messages)).toBe(before);
+  });
+
   it('never falls back to the destructive checkpoint fork channel when the domain call fails', async () => {
     mocks.invokeDomain.mockRejectedValue(new Error('ANCHOR_REWOUND'));
     const before = JSON.stringify(useSessionStore.getState().messages);

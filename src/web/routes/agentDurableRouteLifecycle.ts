@@ -23,6 +23,7 @@ interface AgentDurableRouteRunLifecycleDeps {
   workspace: string;
   durableActivation: boolean;
   externalEngine?: ExternalAgentEngineKind;
+  externalSessionId?: string;
   logger: WebRouteLogger;
 }
 
@@ -137,6 +138,7 @@ class AgentDurableRouteRunLifecycle {
           sessionId: this.deps.sessionId,
           workspace: this.deps.workspace,
           cwd: this.deps.workspace,
+          externalSessionId: this.deps.externalSessionId,
         })
         : undefined;
       this.runHandle = this.externalLifecycle?.handle

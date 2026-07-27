@@ -10,6 +10,16 @@ export {
   type SessionForkContextSource,
   type SessionForkContextHandoffRecord,
 } from './SessionForkRepository';
+export {
+  SessionForkWorkspaceRepository,
+  digestSessionForkAnchorMessage,
+  isCompletedSessionForkAnchor,
+  type BeginSessionForkWorkspaceSagaInput,
+  type RecordSessionForkAnchorEvidenceInput,
+  type SessionForkAnchorEvidenceRecord,
+  type SessionForkWorkspaceSagaRecord,
+  type SessionForkWorkspaceSagaState,
+} from './SessionForkWorkspaceRepository';
 export { MemoryRepository, type MemoryRecord } from './MemoryRepository';
 export { ConfigRepository, type UserPreference, type ProjectKnowledge, type ToolExecution } from './ConfigRepository';
 export { CaptureRepository } from './CaptureRepository';

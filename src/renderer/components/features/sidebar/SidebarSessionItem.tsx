@@ -46,7 +46,7 @@ function getForkParentSessionId(session: SessionWithMeta): string | null {
       return parentSessionId;
     }
   }
-  return session.parentSessionId?.trim() || null;
+  return null;
 }
 
 export interface SidebarSessionItemProps {
@@ -192,11 +192,19 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
         {forkParentSessionId && !multiSelectMode && (
-          <GitFork
-            className="h-3.5 w-3.5 shrink-0 text-violet-400"
+          <button
+            type="button"
             data-testid="fork-lineage-marker"
             aria-label={s.forkedFrom.replace('{sessionId}', forkParentSessionId)}
-          />
+            title={s.openForkParent.replace('{sessionId}', forkParentSessionId)}
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleSelectSession(forkParentSessionId);
+            }}
+            className="shrink-0 rounded p-0.5 text-violet-400 transition-colors hover:bg-violet-500/15 hover:text-violet-300 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-violet-400"
+          >
+            <GitFork className="h-3.5 w-3.5" />
+          </button>
         )}
 
         {/* 标题：重命名模式 vs 普通 */}

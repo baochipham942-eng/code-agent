@@ -19,14 +19,19 @@ describe('web session Fork parity', () => {
     const body = caseBody('fork');
     expect(body).toContain('SessionForkService');
     expect(body).toContain('service.createFork');
+    expect(body).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
     expect(body).not.toContain('rewindFiles');
     expect(body).not.toContain('truncateMessagesAfter');
     expect(body).not.toContain('applyPromptRewind');
   });
 
   it('exposes lineage reads through the same service', () => {
-    expect(caseBody('getForkLineage')).toContain('.getLineage(sessionId)');
-    expect(caseBody('listForkChildren')).toContain('.listChildren(sessionId)');
+    const lineage = caseBody('getForkLineage');
+    const children = caseBody('listForkChildren');
+    expect(lineage).toContain('.getLineage(sessionId)');
+    expect(lineage).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
+    expect(children).toContain('.listChildren(sessionId)');
+    expect(children).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
   });
 });
 
@@ -35,6 +40,9 @@ describe('web conversation Rewind parity', () => {
     const body = caseBody('rewindToPrompt');
     expect(body).toContain('SessionRewindService');
     expect(body).toContain('.rewindConversation');
+    expect(body).toContain('ownerUserId: getAuthService().getCurrentUser()?.id ?? null');
+    expect(body).toContain("const isLegacyRewind = action === 'rewindToPrompt'");
+    expect(body).toContain('!isLegacyRewind && !suppliedIdempotencyKey');
     expect(body).not.toContain('getFileCheckpointService');
     expect(body).not.toContain('rewindFiles');
   });

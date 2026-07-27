@@ -39,6 +39,7 @@ describe('SessionRewindService', () => {
     const service = new SessionRewindService(db, {
       getRuntimeStatus: () => 'idle',
       setSessionContext,
+      ownerUserId: null,
     });
 
     const result = await service.rewindConversation({
@@ -49,6 +50,7 @@ describe('SessionRewindService', () => {
 
     expect(db.applyPromptRewind).toHaveBeenCalledWith('session-1', 'u2', {
       idempotencyKey: 'rewind-request-1',
+      ownerUserId: null,
     });
     expect(result).toMatchObject({
       success: true,
@@ -66,7 +68,10 @@ describe('SessionRewindService', () => {
     'rejects %s sessions before any database write',
     async (status) => {
       const db = database();
-      const service = new SessionRewindService(db, { getRuntimeStatus: () => status });
+      const service = new SessionRewindService(db, {
+        getRuntimeStatus: () => status,
+        ownerUserId: null,
+      });
 
       await expect(service.rewindConversation({
         sessionId: 'session-1',
@@ -84,6 +89,7 @@ describe('SessionRewindService', () => {
       getRuntimeStatus: () => 'idle',
       setSessionContext,
       now: () => 200,
+      ownerUserId: null,
     });
 
     const result = await service.restoreConversation({
@@ -91,8 +97,43 @@ describe('SessionRewindService', () => {
       rewindId: 'rewind-1',
     });
 
-    expect(db.restorePromptRewind).toHaveBeenCalledWith('session-1', 'rewind-1', 200);
+    expect(db.restorePromptRewind).toHaveBeenCalledWith('session-1', 'rewind-1', 200, null);
     expect(result.restoredMessageCount).toBe(2);
     expect(setSessionContext).toHaveBeenCalledWith('session-1', result.activeMessages);
+  });
+
+  it('fails closed before database access when the surface did not inject an owner boundary', async () => {
+    const db = database();
+    const service = new SessionRewindService(db);
+
+    await expect(service.rewindConversation({
+      sessionId: 'session-1',
+      anchorUserMessageId: 'u2',
+      idempotencyKey: 'rewind-request-1',
+    })).rejects.toMatchObject({ code: 'REWIND_OPERATION_FAILED' });
+    expect(db.applyPromptRewind).not.toHaveBeenCalled();
+
+    await expect(service.restoreConversation({
+      sessionId: 'session-1',
+      rewindId: 'rewind-1',
+    })).rejects.toMatchObject({ code: 'REWIND_OPERATION_FAILED' });
+    expect(db.restorePromptRewind).not.toHaveBeenCalled();
+  });
+
+  it('preserves repository SESSION_RUNNING failures as the public fail-closed error', async () => {
+    const db = database();
+    vi.mocked(db.applyPromptRewind).mockImplementation(() => {
+      throw new Error('SESSION_RUNNING: durable run run-1 is recovering');
+    });
+    const service = new SessionRewindService(db, {
+      getRuntimeStatus: () => 'idle',
+      ownerUserId: null,
+    });
+
+    await expect(service.rewindConversation({
+      sessionId: 'session-1',
+      anchorUserMessageId: 'u2',
+      idempotencyKey: 'rewind-request-1',
+    })).rejects.toMatchObject({ code: 'SESSION_RUNNING' });
   });
 });

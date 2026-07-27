@@ -969,9 +969,11 @@ function registerHandlers(): void {
             };
           }
           const { getDatabase } = await import('../host/services/core/databaseService');
+          const { getAuthService } = await import('../host/services/auth/authService');
           const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
           const service = new SessionForkService(getDatabase(), {
             getRuntimeStatus: (sessionId) => runRegistry.hasSession(sessionId) ? 'running' : undefined,
+            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
           });
           data = await service.createFork({
             sourceSessionId,
@@ -989,8 +991,11 @@ function registerHandlers(): void {
             return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
           }
           const { getDatabase } = await import('../host/services/core/databaseService');
+          const { getAuthService } = await import('../host/services/auth/authService');
           const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
-          data = new SessionForkService(getDatabase()).getLineage(sessionId);
+          data = new SessionForkService(getDatabase(), {
+            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
+          }).getLineage(sessionId);
           break;
         }
         case 'listForkChildren': {
@@ -999,8 +1004,11 @@ function registerHandlers(): void {
             return { success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } };
           }
           const { getDatabase } = await import('../host/services/core/databaseService');
+          const { getAuthService } = await import('../host/services/auth/authService');
           const { SessionForkService } = await import('../host/services/sessionFork/SessionForkService');
-          data = new SessionForkService(getDatabase()).listChildren(sessionId);
+          data = new SessionForkService(getDatabase(), {
+            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
+          }).listChildren(sessionId);
           break;
         }
         case 'getRecap': {
@@ -1025,24 +1033,32 @@ function registerHandlers(): void {
             : typeof payload?.userMessageId === 'string'
               ? payload.userMessageId.trim()
               : '';
-          if (!sessionId || !userMessageId) {
+          const isLegacyRewind = action === 'rewindToPrompt';
+          const suppliedIdempotencyKey = typeof payload?.idempotencyKey === 'string'
+            ? payload.idempotencyKey.trim()
+            : '';
+          if (!sessionId || !userMessageId || (!isLegacyRewind && !suppliedIdempotencyKey)) {
             return {
               success: false,
               error: {
                 code: 'INVALID_PAYLOAD',
-                message: 'sessionId and userMessageId are required',
+                message: isLegacyRewind
+                  ? 'sessionId and userMessageId are required'
+                  : 'sessionId, anchorUserMessageId and idempotencyKey are required',
               },
             };
           }
           const { getDatabase } = await import('../host/services/core/databaseService');
+          const { getAuthService } = await import('../host/services/auth/authService');
           const { SessionRewindService } = await import('../host/services/sessionRewind/SessionRewindService');
           data = await new SessionRewindService(getDatabase(), {
             getRuntimeStatus: (id) => runRegistry.hasSession(id) ? 'running' : undefined,
+            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
           }).rewindConversation({
             sessionId,
             anchorUserMessageId: userMessageId,
-            idempotencyKey: typeof payload?.idempotencyKey === 'string' && payload.idempotencyKey.trim()
-              ? payload.idempotencyKey.trim()
+            idempotencyKey: suppliedIdempotencyKey
+              ? suppliedIdempotencyKey
               : `legacy:${sessionId}:${userMessageId}`,
           });
           sm.invalidateSessionCache(sessionId);
@@ -1058,9 +1074,11 @@ function registerHandlers(): void {
             };
           }
           const { getDatabase } = await import('../host/services/core/databaseService');
+          const { getAuthService } = await import('../host/services/auth/authService');
           const { SessionRewindService } = await import('../host/services/sessionRewind/SessionRewindService');
           data = await new SessionRewindService(getDatabase(), {
             getRuntimeStatus: (id) => runRegistry.hasSession(id) ? 'running' : undefined,
+            ownerUserId: getAuthService().getCurrentUser()?.id ?? null,
           }).restoreConversation({ sessionId, rewindId });
           sm.invalidateSessionCache(sessionId);
           break;

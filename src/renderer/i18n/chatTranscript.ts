@@ -22,6 +22,8 @@ chat: {
   configureModelFirst: '先配置一个模型后再发送。',
   rewindWhileRunning: '会话还在运行，先停止后再回退。',
   rewindSuccess: '已回到这条提示词；当前工作区文件保持不变。',
+  rewindRestoreAction: '恢复对话',
+  rewindRestored: '已恢复 {count} 条历史消息。',
   rewindConfirmTitle: '回到这条提示词？',
   rewindConfirmLine1: '会软隐藏这条提示词及之后的对话，历史仍保留并可恢复。',
   rewindConfirmLine2: '当前工作区文件不会改变；文件恢复需要通过独立操作完成。',
@@ -79,6 +81,15 @@ chatSearch: {
   roleAssistant: '助手',
   roleSystem: '系统',
   turnNumber: '第 {n} 轮',
+},
+forkLineage: {
+  navigation: '会话分支导航',
+  source: '源任务',
+  depth: '分支层级 {depth}',
+  openParent: '返回父任务',
+  openChild: '打开分支 {index}',
+  currentWorkspace: '历史对话 + 当前文件',
+  anchorWorkspace: '历史对话 + 锚点文件',
 },
 
 // 相对时间（utils/i18nTime.ts）
@@ -221,6 +232,11 @@ turnCard: {
   fork: '创建分支',
   forking: '创建中…',
   forkFromHere: '从这条回复创建分支',
+  chooseWorkspace: '选择分支工作区',
+  sharedCurrent: '历史对话 + 当前文件',
+  sharedCurrentDetail: '新任务读取当前工作区，不修改源任务。',
+  isolatedAtAnchor: '历史对话 + 锚点文件',
+  isolatedAtAnchorDetail: '从该回复完成时的文件证据创建隔离工作区。',
 },
 turnFeedback: {
   helpful: '这一轮回答有帮助',
@@ -369,6 +385,8 @@ chat: {
   configureModelFirst: 'Configure a model before sending.',
   rewindWhileRunning: 'The session is still running. Stop it before rewinding.',
   rewindSuccess: 'Rewound to this prompt; current workspace files are unchanged.',
+  rewindRestoreAction: 'Restore conversation',
+  rewindRestored: 'Restored {count} history messages.',
   rewindConfirmTitle: 'Rewind to this prompt?',
   rewindConfirmLine1: 'This prompt and everything after it will be softly hidden; history remains recoverable.',
   rewindConfirmLine2: 'Current workspace files stay unchanged; restoring files is a separate explicit action.',
@@ -426,6 +444,15 @@ chatSearch: {
   roleAssistant: 'Assistant',
   roleSystem: 'System',
   turnNumber: 'Turn {n}',
+},
+forkLineage: {
+  navigation: 'Conversation branch navigation',
+  source: 'Source task',
+  depth: 'Branch depth {depth}',
+  openParent: 'Open parent',
+  openChild: 'Open branch {index}',
+  currentWorkspace: 'History + current files',
+  anchorWorkspace: 'History + anchor files',
 },
 
 // Relative time (utils/i18nTime.ts)
@@ -567,6 +594,11 @@ turnCard: {
   fork: 'Fork',
   forking: 'Forking…',
   forkFromHere: 'Fork from this reply',
+  chooseWorkspace: 'Choose branch workspace',
+  sharedCurrent: 'History + current files',
+  sharedCurrentDetail: 'The child reads the current workspace without changing the source task.',
+  isolatedAtAnchor: 'History + anchor files',
+  isolatedAtAnchorDetail: 'Build an isolated workspace from evidence captured when this reply completed.',
 },
 turnFeedback: {
   helpful: 'This answer was helpful',

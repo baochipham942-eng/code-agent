@@ -227,58 +227,81 @@ export class IsolatedAnchorWorkspaceService {
     );
     const results: WorkspaceRecoveryResult[] = [];
     for (const discoveredIntent of intents) {
-      const result = await this.withWorkspaceOperation(discoveredIntent.workspacePath, async () => {
-        let intent = await this.intentStore.get(discoveredIntent.intentId) ?? discoveredIntent;
-        try {
-          if (intent.status === 'ready' || intent.status === 'advertised') {
-            return {
-              intentId: intent.intentId,
-              outcome: 'ready' as const,
-              workspacePath: intent.workspacePath,
-            };
-          }
-          if (intent.status === 'abandoned') {
-            return {
-              intentId: intent.intentId,
-              outcome: 'cleaned' as const,
-              workspacePath: intent.workspacePath,
-            };
-          }
-          if (input.strategy === 'cleanup') {
-            await this.cleanupWorkspace(intent);
-            intent = await this.transition(intent, 'abandoned', { advertisable: false });
-            return {
-              intentId: intent.intentId,
-              outcome: 'cleaned' as const,
-              workspacePath: intent.workspacePath,
-            };
-          }
-
-          if (intent.status !== 'recorded' || await this.pathExists(intent.workspacePath)) {
-            await this.cleanupWorkspace(intent);
-            intent = await this.transition(intent, 'recorded', {
-              advertisable: false,
-              lastError: undefined,
-            });
-          }
-          const prepared = await this.drive(intent);
-          return {
-            intentId: intent.intentId,
-            outcome: 'ready' as const,
-            workspacePath: prepared.workspacePath,
-          };
-        } catch (error) {
-          return {
-            intentId: intent.intentId,
-            outcome: 'failed' as const,
-            workspacePath: intent.workspacePath,
-            error: errorMessage(error),
-          };
-        }
-      });
+      const result = await this.recoverIntent(discoveredIntent.intentId, input);
       results.push(result);
     }
     return results;
+  }
+
+  async recoverIntent(
+    intentId: string,
+    input: { strategy: 'resume' | 'cleanup' },
+  ): Promise<WorkspaceRecoveryResult> {
+    const discoveredIntent = await this.intentStore.get(intentId);
+    if (!discoveredIntent) {
+      return {
+        intentId,
+        outcome: 'cleaned',
+        workspacePath: '',
+      };
+    }
+    return await this.withWorkspaceOperation(discoveredIntent.workspacePath, async () => {
+      let intent = await this.intentStore.get(discoveredIntent.intentId) ?? discoveredIntent;
+      try {
+        if (intent.status === 'advertised') {
+          return {
+            intentId: intent.intentId,
+            outcome: 'ready' as const,
+            workspacePath: intent.workspacePath,
+          };
+        }
+        if (intent.status === 'abandoned') {
+          return {
+            intentId: intent.intentId,
+            outcome: 'cleaned' as const,
+            workspacePath: intent.workspacePath,
+          };
+        }
+        if (input.strategy === 'cleanup') {
+          await this.cleanupWorkspace(intent);
+          intent = await this.transition(intent, 'abandoned', { advertisable: false });
+          return {
+            intentId: intent.intentId,
+            outcome: 'cleaned' as const,
+            workspacePath: intent.workspacePath,
+          };
+        }
+        if (intent.status === 'ready') {
+          await this.verifyWorkspace(intent);
+          return {
+            intentId: intent.intentId,
+            outcome: 'ready' as const,
+            workspacePath: intent.workspacePath,
+          };
+        }
+
+        if (intent.status !== 'recorded' || await this.pathExists(intent.workspacePath)) {
+          await this.cleanupWorkspace(intent);
+          intent = await this.transition(intent, 'recorded', {
+            advertisable: false,
+            lastError: undefined,
+          });
+        }
+        const prepared = await this.drive(intent);
+        return {
+          intentId: intent.intentId,
+          outcome: 'ready' as const,
+          workspacePath: prepared.workspacePath,
+        };
+      } catch (error) {
+        return {
+          intentId: intent.intentId,
+          outcome: 'failed' as const,
+          workspacePath: intent.workspacePath,
+          error: errorMessage(error),
+        };
+      }
+    });
   }
 
   /**

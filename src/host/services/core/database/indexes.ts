@@ -44,6 +44,10 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_session_forks_parent ON session_forks(parent_fork_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_message_source ON session_fork_message_map(source_message_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_context_handoff_state ON session_fork_context_handoffs(state, dispatch_started_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_anchor_evidence_lookup ON session_fork_anchor_evidence(source_session_id, anchor_message_id, status)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_anchor_evidence_project ON session_fork_anchor_evidence(project_id, workspace_scope_version)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_workspace_intents_status ON session_fork_workspace_intents(status, updated_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_session_fork_workspace_sagas_state ON session_fork_workspace_sagas(state, updated_at)`);
 
   // Cron 相关索引
   db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled)`);

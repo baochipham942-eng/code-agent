@@ -21,11 +21,12 @@ const Database = loadBetterSqlite3(moduleDir, logger);
 import type { Session, Message, ToolResult, ModelProvider, TodoItem, SessionTask } from '../../../shared/contract';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../shared/contract/contextView';
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/contract/capture';
+import { SessionForkError } from '../../../shared/contract/sessionFork';
 
 // Re-export types from repositories（保持外部调用方零修改）
 export type { StoredSession, StoredMessage, MemoryRecord, UserPreference, ProjectKnowledge, ToolExecution } from './repositories';
 
-import { SessionRepository, SessionForkRepository, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
+import { SessionRepository, SessionForkRepository, SessionForkWorkspaceRepository, digestSessionForkAnchorMessage, isCompletedSessionForkAnchor, MemoryRepository, ConfigRepository, CaptureRepository, ExperimentRepository, ProjectRepository, PendingApprovalRepository, GenerativeUIRepository, PermissionDecisionRepository, type PermissionDecisionInput, type PermissionDecisionRecord, ToolExecutionEventRepository, type ToolExecutionBeginInput, type ToolExecutionCompleteInput, type OpenToolExecution, SwarmLedgerRepository, UsageLedgerRepository, type UsageLedgerEntryInput, type UsageLedgerEntry, AgentWakeRepository, TurnCostRepository } from './repositories';
 import type { SwarmLedgerAppendInput, SwarmLedgerEvent } from '../../../shared/contract/swarmLedger';
 import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
@@ -38,6 +39,14 @@ import { reconcileRun, type ReconcileResult } from './swarmReconcile';
 import type { SwarmRunDetail } from '../../../shared/contract/swarmTrace';
 import type { SessionLedger } from '../../../shared/contract/sessionLedger';
 import { redactSecrets } from '../../security/secretRedaction';
+import {
+  AnchorWorkspaceEvidenceService,
+  IsolatedAnchorWorkspaceService,
+  NodeWorkspaceCommandRunner,
+  digestWorkspaceValue,
+  projectChildWorkspaceScope,
+} from '../sessionFork/workspace';
+import type { WorkspaceScope } from '../../../shared/contract/project';
 
 type DatabaseRecoveryCallback = () => void;
 
@@ -76,6 +85,41 @@ function parseJsonValue(value: unknown): unknown {
   }
 }
 
+function forkWorkspaceSourceIdentity(scope: WorkspaceScope): Record<string, unknown> {
+  const canonicalPath = (value: string): string => {
+    try {
+      return fs.realpathSync.native(value);
+    } catch {
+      return path.resolve(value);
+    }
+  };
+  return {
+    projectId: scope.projectId,
+    version: scope.version,
+    primaryRoot: canonicalPath(scope.primaryRoot),
+    roots: [...scope.roots]
+      .map((root) => ({
+        sourceId: root.sourceId,
+        path: canonicalPath(root.path),
+        access: root.access,
+        role: root.role,
+        identityDev: root.identityDev ?? null,
+        identityIno: root.identityIno ?? null,
+      }))
+      .sort((left, right) => left.sourceId.localeCompare(right.sourceId)),
+  };
+}
+
+function sessionForkFailure(error: unknown): Record<string, unknown> {
+  return {
+    code: typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code ?? 'UNKNOWN')
+      : 'UNKNOWN',
+    message: error instanceof Error ? error.message : String(error),
+    at: Date.now(),
+  };
+}
+
 export class DatabaseService extends DurableRunDatabaseSupport {
   private db: BetterSqlite3.Database | null = null;
   private dbPath = path.join(app?.getPath?.('userData') || process.cwd(), 'code-agent.db');
@@ -88,6 +132,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   // Repositories
   private sessionRepo!: SessionRepository;
   private sessionForkRepo!: SessionForkRepository;
+  private sessionForkWorkspaceRepo!: SessionForkWorkspaceRepository;
+  private isolatedAnchorWorkspaceService!: IsolatedAnchorWorkspaceService;
   private memoryRepo!: MemoryRepository;
   private configRepo!: ConfigRepository;
   private captureRepo!: CaptureRepository;
@@ -208,10 +254,23 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       // 初始化 Repositories
       this.sessionRepo = new SessionRepository(this.db);
       this.sessionForkRepo = new SessionForkRepository(this.db);
+      this.sessionForkWorkspaceRepo = new SessionForkWorkspaceRepository(this.db);
+      this.isolatedAnchorWorkspaceService = new IsolatedAnchorWorkspaceService({
+        durableRoot: path.join(path.dirname(this.dbPath), 'session-fork-worktrees'),
+        intentStore: this.sessionForkWorkspaceRepo,
+      });
       const interruptedForkHandoffs = this.sessionForkRepo.recoverInterruptedContextHandoffs(Date.now());
       if (interruptedForkHandoffs > 0) {
         logger.warn(`[DatabaseService] blocked ${interruptedForkHandoffs} interrupted fork context handoff(s)`);
       }
+      await this.recoverIncompleteSessionForkWorkspaces().catch((error) => {
+        // Staged children are persisted with is_deleted=1, so a recovery fault
+        // remains fail-closed without making the rest of local history unusable.
+        logger.error(
+          '[DatabaseService] Session Fork workspace recovery remained hidden:',
+          error instanceof Error ? error.message : String(error),
+        );
+      });
       this.memoryRepo = new MemoryRepository(this.db);
       this.configRepo = new ConfigRepository(this.db);
       this.captureRepo = new CaptureRepository(this.db);
@@ -253,6 +312,61 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       }
       this.db = null;
       throw err;
+    }
+  }
+
+  private async recoverIncompleteSessionForkWorkspaces(): Promise<void> {
+    const recoverable = this.sessionForkWorkspaceRepo.listRecoverableSagas();
+    for (const saga of recoverable) {
+      if (saga.state !== 'child_staged') {
+        const cleanup = await this.isolatedAnchorWorkspaceService.recoverIntent(
+          saga.intentId,
+          { strategy: 'cleanup' },
+        );
+        const recovery = {
+          code: cleanup.outcome === 'failed'
+            ? 'STARTUP_CLEANUP_FAILED'
+            : 'STARTUP_PRE_CHILD_CLEANUP',
+          message: cleanup.error ?? 'incomplete pre-child workspace intent was cleaned on startup',
+          recoveredAt: Date.now(),
+        };
+        if (cleanup.outcome === 'failed') {
+          this.sessionForkWorkspaceRepo.recordSagaError(saga.intentId, recovery);
+        } else if (saga.state !== 'quarantined') {
+          this.sessionForkWorkspaceRepo.abortSaga(saga.intentId, recovery);
+        }
+        continue;
+      }
+
+      const resumed = await this.isolatedAnchorWorkspaceService.recoverIntent(
+        saga.intentId,
+        { strategy: 'resume' },
+      );
+      if (resumed.outcome !== 'ready') {
+        const failure = {
+          code: 'STARTUP_WORKSPACE_RECOVERY_FAILED',
+          message: resumed.error ?? 'the staged child workspace could not be recovered',
+          recoveredAt: Date.now(),
+        };
+        this.sessionForkWorkspaceRepo.quarantineSaga(saga.intentId, failure);
+        await this.isolatedAnchorWorkspaceService
+          .recoverIntent(saga.intentId, { strategy: 'cleanup' })
+          .catch(() => undefined);
+        continue;
+      }
+      try {
+        await this.isolatedAnchorWorkspaceService.markAdvertised(saga.intentId);
+        this.sessionForkWorkspaceRepo.finalizeSaga(saga.intentId);
+      } catch (error) {
+        const failure = {
+          ...sessionForkFailure(error),
+          code: 'STARTUP_FINALIZE_FAILED',
+        };
+        this.sessionForkWorkspaceRepo.quarantineSaga(saga.intentId, failure);
+        await this.isolatedAnchorWorkspaceService
+          .recoverIntent(saga.intentId, { strategy: 'cleanup' })
+          .catch(() => undefined);
+      }
     }
   }
 
@@ -826,19 +940,456 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.getMessageById(sessionId, messageId, options);
   }
+  async captureSessionForkAnchorEvidence(
+    sessionId: string,
+    messageId: string,
+  ): Promise<import('./repositories').SessionForkAnchorEvidenceRecord | null> {
+    this.ensureDb();
+    const source = this.getSession(sessionId);
+    const message = this.getMessageById(sessionId, messageId, { includeRewound: true });
+    if (!source || !message || !isCompletedSessionForkAnchor(message)) return null;
+
+    const existing = this.sessionForkWorkspaceRepo.getAnchorEvidence(sessionId, messageId);
+    if (existing?.status === 'complete') return existing;
+
+    const messageDigest = digestSessionForkAnchorMessage(message);
+    let capturedScopeVersion: string | null = null;
+    let capturedSourceIdentity: Record<string, unknown> | null = null;
+    let capturedSourceIdentityDigest: string | null = null;
+    let capturedRepositoryRoot = source.workingDirectory
+      ? path.resolve(source.workingDirectory)
+      : null;
+    const baseRecord = {
+      sourceSessionId: sessionId,
+      anchorMessageId: messageId,
+      ownerUserId: source.userId ?? null,
+      projectId: source.projectId ?? null,
+      workspaceScopeVersion: capturedScopeVersion,
+      sourceIdentityDigest: capturedSourceIdentityDigest,
+      sourceIdentity: capturedSourceIdentity,
+      messageDigest,
+      repositoryRoot: capturedRepositoryRoot,
+    };
+
+    try {
+      if (!source.projectId) {
+        throw Object.assign(new Error('anchor session has no Project boundary'), {
+          code: 'PROJECT_SCOPE_REQUIRED',
+        });
+      }
+      const { getProjectService } = await import('../project/projectService');
+      const scope = getProjectService().getWorkspaceScope(source.projectId);
+      if (!scope) {
+        throw Object.assign(new Error('the Project has no trusted WorkspaceScope'), {
+          code: 'WORKSPACE_SCOPE_REQUIRED',
+        });
+      }
+      capturedScopeVersion = scope.version;
+      capturedSourceIdentity = forkWorkspaceSourceIdentity(scope);
+      capturedSourceIdentityDigest = digestWorkspaceValue(capturedSourceIdentity);
+      capturedRepositoryRoot = fs.realpathSync.native(scope.primaryRoot);
+      if (scope.roots.length !== 1) {
+        throw Object.assign(
+          new Error('isolated_at_anchor cannot atomically reconstruct multiple Project sources'),
+          { code: 'MULTI_SOURCE_ATOMIC_RECONSTRUCTION_UNSUPPORTED' },
+        );
+      }
+      const primary = scope.roots[0];
+      if (primary.role !== 'primary' || path.resolve(primary.path) !== path.resolve(scope.primaryRoot)) {
+        throw Object.assign(new Error('WorkspaceScope has no single trustworthy primary source'), {
+          code: 'PRIMARY_SOURCE_REQUIRED',
+        });
+      }
+      const repositoryRoot = capturedRepositoryRoot;
+      const runner = new NodeWorkspaceCommandRunner();
+      const explicitHead = (await runner.run({
+        executable: 'git',
+        args: ['rev-parse', '--verify', 'HEAD'],
+        cwd: repositoryRoot,
+      })).stdout.toString('utf8').trim();
+      const evidence = await new AnchorWorkspaceEvidenceService({ runner }).capture({
+        anchorId: messageId,
+        repositoryRoot,
+        baseCommit: explicitHead,
+        workspaceScopeVersion: scope.version,
+        pathMappings: [{
+          sourceId: primary.sourceId,
+          sourcePath: repositoryRoot,
+          isolatedRelativePath: '.',
+        }],
+      });
+      return this.sessionForkWorkspaceRepo.recordAnchorEvidence({
+        ...baseRecord,
+        workspaceScopeVersion: scope.version,
+        sourceIdentityDigest: capturedSourceIdentityDigest,
+        sourceIdentity: capturedSourceIdentity,
+        repositoryRoot,
+        evidence,
+        status: 'complete',
+        blockedReason: null,
+        summary: {
+          baseCommit: evidence.manifest.baseCommit,
+          observedHead: evidence.manifest.observedHead,
+          stagedPatch: evidence.manifest.stagedPatch,
+          unstagedPatch: evidence.manifest.unstagedPatch,
+          untrackedManifest: evidence.manifest.untrackedFiles.map((file) => ({
+            path: file.path,
+            sha256: file.sha256,
+            sizeBytes: file.sizeBytes,
+            mode: file.mode,
+          })),
+          pathMappings: evidence.manifest.pathMappings,
+        },
+      });
+    } catch (error) {
+      const failure = sessionForkFailure(error);
+      logger.warn('[DatabaseService] Session Fork anchor evidence blocked:', {
+        sessionId,
+        messageId,
+        code: failure.code,
+      });
+      return this.sessionForkWorkspaceRepo.recordAnchorEvidence({
+        ...baseRecord,
+        workspaceScopeVersion: capturedScopeVersion,
+        sourceIdentityDigest: capturedSourceIdentityDigest,
+        sourceIdentity: capturedSourceIdentity,
+        repositoryRoot: capturedRepositoryRoot,
+        evidence: null,
+        status: 'blocked',
+        blockedReason: `${String(failure.code)}: ${String(failure.message)}`,
+        summary: { failure },
+      });
+    }
+  }
+  getSessionForkAnchorEvidence(
+    sessionId: string,
+    messageId: string,
+    ownerUserId?: string | null,
+  ): import('./repositories').SessionForkAnchorEvidenceRecord | null {
+    this.ensureDb();
+    return this.sessionForkWorkspaceRepo.getAnchorEvidence(sessionId, messageId, ownerUserId);
+  }
+  getSessionForkWorkspaceScope(
+    sessionId: string,
+    ownerUserId?: string | null,
+  ): WorkspaceScope | null {
+    this.ensureDb();
+    const rawDb = this.db;
+    if (!rawDb) throw new Error('Database not initialized');
+    const forkKind = rawDb.prepare(`
+      SELECT workspace_mode
+      FROM session_forks
+      WHERE child_session_id = ?
+      LIMIT 1
+    `).get(sessionId) as { workspace_mode: string } | undefined;
+    if (forkKind?.workspace_mode !== 'isolated_at_anchor') return null;
+
+    const ownerPredicate = ownerUserId === undefined
+      ? ''
+      : ownerUserId === null
+        ? ' AND child.user_id IS NULL AND source.user_id IS NULL'
+        : ' AND child.user_id = ? AND source.user_id = ?';
+    const ownerParams = typeof ownerUserId === 'string'
+      ? [ownerUserId, ownerUserId]
+      : [];
+    const row = rawDb.prepare(`
+      SELECT
+        child.metadata AS child_metadata,
+        child.working_directory AS child_working_directory,
+        child.agent_engine AS child_agent_engine,
+        child.project_id AS child_project_id,
+        child.is_deleted AS child_is_deleted,
+        fork.id AS fork_id,
+        fork.status AS fork_status,
+        fork.workspace_snapshot_id AS fork_workspace_snapshot_id,
+        fork.anchor_message_id AS fork_anchor_message_id,
+        saga.intent_id AS saga_intent_id,
+        saga.evidence_id AS saga_evidence_id,
+        saga.state AS saga_state,
+        saga.workspace_path AS saga_workspace_path,
+        saga.child_session_id AS saga_child_session_id,
+        evidence.id AS evidence_id,
+        evidence.anchor_message_id AS evidence_anchor_message_id,
+        evidence.project_id AS evidence_project_id,
+        evidence.workspace_scope_version AS evidence_workspace_scope_version,
+        evidence.source_identity_digest AS evidence_source_identity_digest,
+        evidence.source_identity_json AS evidence_source_identity_json,
+        evidence.repository_root AS evidence_repository_root,
+        evidence.base_commit AS evidence_base_commit,
+        evidence.evidence_digest AS evidence_digest,
+        evidence.evidence_json AS evidence_json,
+        evidence.status AS evidence_status,
+        intent.status AS intent_status,
+        intent.advertisable AS intent_advertisable
+      FROM session_forks AS fork
+      JOIN sessions AS child ON child.id = fork.child_session_id
+      JOIN sessions AS source ON source.id = fork.source_session_id
+      LEFT JOIN session_fork_workspace_sagas AS saga
+        ON saga.intent_id = fork.workspace_snapshot_id
+      LEFT JOIN session_fork_anchor_evidence AS evidence
+        ON evidence.id = saga.evidence_id
+      LEFT JOIN session_fork_workspace_intents AS intent
+        ON intent.intent_id = saga.intent_id
+      WHERE fork.child_session_id = ?
+        ${ownerPredicate}
+      LIMIT 1
+    `).get(sessionId, ...ownerParams) as Record<string, unknown> | undefined;
+    if (!row) {
+      throw new SessionForkError(
+        'SESSION_NOT_FOUND',
+        'the isolated child is outside the current owner boundary',
+      );
+    }
+
+    let projection: ReturnType<typeof projectChildWorkspaceScope>;
+    try {
+      projection = projectChildWorkspaceScope(parseJsonValue(row.child_metadata));
+    } catch (error) {
+      throw new SessionForkError(
+        'WORKSPACE_IDENTITY_DRIFT',
+        `the isolated child WorkspaceScope metadata is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const engine = parseJsonValue(row.child_agent_engine);
+    const engineCwd = engine && typeof engine === 'object' && !Array.isArray(engine)
+      ? (engine as Record<string, unknown>).cwd
+      : null;
+    const evidence = parseJsonValue(row.evidence_json);
+    const evidenceManifest = evidence && typeof evidence === 'object' && !Array.isArray(evidence)
+      ? (evidence as { manifest?: unknown }).manifest
+      : null;
+    const manifest = evidenceManifest && typeof evidenceManifest === 'object' && !Array.isArray(evidenceManifest)
+      ? evidenceManifest as Record<string, unknown>
+      : null;
+    const storedSourceIdentity = parseJsonValue(row.evidence_source_identity_json);
+    const expectedMappings = Array.isArray(manifest?.pathMappings)
+      ? manifest.pathMappings.map((mapping) => {
+        const value = mapping as Record<string, unknown>;
+        return {
+          sourceId: value.sourceId,
+          sourcePath: value.sourcePath,
+          sourceRelativePath: value.repositoryRelativePath,
+          isolatedRelativePath: value.isolatedRelativePath,
+        };
+      })
+      : null;
+    const matches = Boolean(
+      projection
+      && Number(row.child_is_deleted) === 0
+      && row.fork_status === 'completed'
+      && row.saga_state === 'completed'
+      && row.evidence_status === 'complete'
+      && row.intent_status === 'advertised'
+      && Number(row.intent_advertisable) === 1
+      && projection.verification.forkId === row.fork_id
+      && projection.verification.intentId === row.fork_workspace_snapshot_id
+      && projection.verification.intentId === row.saga_intent_id
+      && projection.verification.evidenceId === row.saga_evidence_id
+      && projection.verification.evidenceId === row.evidence_id
+      && projection.verification.projectId === row.child_project_id
+      && projection.verification.projectId === row.evidence_project_id
+      && projection.verification.sourceWorkspaceScopeVersion === row.evidence_workspace_scope_version
+      && projection.verification.sourcePrimaryRoot === row.evidence_repository_root
+      && projection.verification.isolatedPrimaryRoot === row.child_working_directory
+      && projection.verification.isolatedPrimaryRoot === row.saga_workspace_path
+      && projection.verification.baseCommit === row.evidence_base_commit
+      && projection.verification.evidenceDigest === row.evidence_digest
+      && row.saga_child_session_id === sessionId
+      && row.fork_anchor_message_id === row.evidence_anchor_message_id
+      && engineCwd === projection.verification.isolatedPrimaryRoot
+      && storedSourceIdentity
+      && digestWorkspaceValue(storedSourceIdentity) === row.evidence_source_identity_digest
+      && digestWorkspaceValue(projection.provenance.sourceIdentity)
+        === digestWorkspaceValue(storedSourceIdentity)
+      && expectedMappings
+      && digestWorkspaceValue(projection.provenance.pathMappings)
+        === digestWorkspaceValue(expectedMappings)
+    );
+    if (!matches || !projection) {
+      throw new SessionForkError(
+        'WORKSPACE_IDENTITY_DRIFT',
+        'the isolated child WorkspaceScope projection does not match its completed durable evidence',
+      );
+    }
+    return projection.scope;
+  }
+  async createIsolatedSessionFork(
+    input: import('./repositories').CreateForkRepositoryInput,
+  ): Promise<import('./repositories').CreateForkRepositoryResult> {
+    this.ensureDb();
+    const source = this.getSession(input.sourceSessionId, input.ownerUserId === undefined
+      ? undefined
+      : { userId: input.ownerUserId });
+    const anchor = this.getMessageById(
+      input.sourceSessionId,
+      input.anchorAssistantMessageId,
+      { includeRewound: true },
+    );
+    if (!source || !anchor) {
+      throw new SessionForkError('INVALID_ANCHOR', 'isolated fork source or anchor was not found');
+    }
+    const evidenceRecord = this.sessionForkWorkspaceRepo.getAnchorEvidence(
+      input.sourceSessionId,
+      input.anchorAssistantMessageId,
+      input.ownerUserId,
+    );
+    if (
+      evidenceRecord?.status !== 'complete'
+      || !evidenceRecord.evidence
+      || !evidenceRecord.repositoryRoot
+      || !evidenceRecord.projectId
+      || !evidenceRecord.workspaceScopeVersion
+      || !evidenceRecord.sourceIdentityDigest
+    ) {
+      throw new SessionForkError(
+        'EVIDENCE_INCOMPLETE',
+        evidenceRecord?.blockedReason ?? 'the anchor has no complete workspace evidence',
+      );
+    }
+    if (
+      !isCompletedSessionForkAnchor(anchor)
+      || digestSessionForkAnchorMessage(anchor) !== evidenceRecord.messageDigest
+    ) {
+      throw new SessionForkError(
+        'EVIDENCE_INCOMPLETE',
+        'the anchor message no longer matches its sealed workspace evidence',
+      );
+    }
+    if (source.projectId !== evidenceRecord.projectId) {
+      throw new SessionForkError('EVIDENCE_INCOMPLETE', 'the source Project changed after anchor capture');
+    }
+
+    const { getProjectService } = await import('../project/projectService');
+    let scope: WorkspaceScope | undefined;
+    try {
+      scope = getProjectService().getWorkspaceScope(evidenceRecord.projectId);
+    } catch (error) {
+      throw new SessionForkError(
+        'EVIDENCE_INCOMPLETE',
+        `the current WorkspaceScope identity is not trustworthy: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (
+      scope?.roots.length !== 1
+      || scope.version !== evidenceRecord.workspaceScopeVersion
+      || digestWorkspaceValue(forkWorkspaceSourceIdentity(scope)) !== evidenceRecord.sourceIdentityDigest
+      || fs.realpathSync.native(scope.primaryRoot) !== evidenceRecord.repositoryRoot
+    ) {
+      throw new SessionForkError(
+        'EVIDENCE_INCOMPLETE',
+        'the current Project/WorkspaceScope does not match the anchor evidence',
+      );
+    }
+
+    await new AnchorWorkspaceEvidenceService().validateBundle(evidenceRecord.evidence);
+    const requestDigest = digestWorkspaceValue({
+      sourceSessionId: input.sourceSessionId,
+      anchorAssistantMessageId: input.anchorAssistantMessageId,
+      idempotencyKey: input.idempotencyKey,
+      workspaceMode: 'isolated_at_anchor',
+      contextDeliveryMode: input.contextDeliveryMode,
+      evidenceId: evidenceRecord.id,
+      evidenceDigest: evidenceRecord.evidenceDigest,
+    });
+    const saga = this.sessionForkWorkspaceRepo.beginSaga({
+      sourceSessionId: input.sourceSessionId,
+      anchorMessageId: input.anchorAssistantMessageId,
+      idempotencyKey: input.idempotencyKey,
+      requestDigest,
+      evidenceId: evidenceRecord.id,
+      proposedForkId: input.forkId,
+      proposedChildSessionId: input.childSessionId,
+      contextDeliveryMode: input.contextDeliveryMode,
+      childTitle: input.childTitle,
+      now: input.now,
+    });
+
+    let childStaged = saga.state === 'child_staged';
+    let workspaceAdvertised = false;
+    try {
+      const prepared = await this.isolatedAnchorWorkspaceService.prepare({
+        intentId: saga.intentId,
+        sourceSessionId: saga.sourceSessionId,
+        proposedChildSessionId: saga.proposedChildSessionId,
+        repositoryRoot: evidenceRecord.repositoryRoot,
+        destinationName: saga.proposedChildSessionId,
+        evidence: evidenceRecord.evidence,
+      });
+      this.sessionForkWorkspaceRepo.markSagaWorkspaceReady(
+        saga.intentId,
+        prepared.workspacePath,
+        input.now,
+      );
+      const result = this.sessionForkWorkspaceRepo.stageChild(
+        saga.intentId,
+        (stagedSaga) => this.sessionForkRepo.createFork({
+          ...input,
+          forkId: stagedSaga.proposedForkId,
+          childSessionId: stagedSaga.proposedChildSessionId,
+          childTitle: stagedSaga.childTitle,
+          workspaceMode: 'isolated_at_anchor',
+          childWorkingDirectory: prepared.workspacePath,
+          workspaceSnapshotId: stagedSaga.intentId,
+        }),
+        input.now,
+      );
+      childStaged = true;
+      await this.isolatedAnchorWorkspaceService.markAdvertised(saga.intentId);
+      workspaceAdvertised = true;
+      this.sessionForkWorkspaceRepo.finalizeSaga(saga.intentId, input.now);
+      return result;
+    } catch (error) {
+      const failure = sessionForkFailure(error);
+      if (childStaged && !workspaceAdvertised) {
+        this.sessionForkWorkspaceRepo.quarantineSaga(saga.intentId, failure, input.now);
+        await this.isolatedAnchorWorkspaceService
+          .recoverIntent(saga.intentId, { strategy: 'cleanup' })
+          .catch(() => undefined);
+      } else if (!childStaged) {
+        const cleanup = await this.isolatedAnchorWorkspaceService
+          .recoverIntent(saga.intentId, { strategy: 'cleanup' })
+          .catch((cleanupError: unknown) => ({
+            intentId: saga.intentId,
+            outcome: 'failed' as const,
+            workspacePath: '',
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+          }));
+        if (cleanup.outcome === 'failed') {
+          this.sessionForkWorkspaceRepo.recordSagaError(saga.intentId, {
+            ...failure,
+            cleanupError: cleanup.error,
+          }, input.now);
+        } else {
+          this.sessionForkWorkspaceRepo.abortSaga(saga.intentId, failure, input.now);
+        }
+      }
+      throw error instanceof SessionForkError
+        ? error
+        : new SessionForkError(
+          'FORK_OPERATION_FAILED',
+          `isolated workspace fork failed closed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+    }
+  }
   createSessionFork(
     input: import('./repositories').CreateForkRepositoryInput,
   ): import('./repositories').CreateForkRepositoryResult {
     this.ensureDb();
     return this.sessionForkRepo.createFork(input);
   }
-  getSessionForkLineage(sessionId: string): import('../../../shared/contract/sessionFork').SessionForkLineageSummary | null {
+  getSessionForkLineage(
+    sessionId: string,
+    ownerUserId?: string | null,
+  ): import('../../../shared/contract/sessionFork').SessionForkLineageSummary | null {
     this.ensureDb();
-    return this.sessionForkRepo.getLineage(sessionId);
+    return this.sessionForkRepo.getLineage(sessionId, ownerUserId);
   }
-  listSessionForkChildren(sessionId: string): import('../../../shared/contract/sessionFork').SessionForkLineageSummary[] {
+  listSessionForkChildren(
+    sessionId: string,
+    ownerUserId?: string | null,
+  ): import('../../../shared/contract/sessionFork').SessionForkLineageSummary[] {
     this.ensureDb();
-    return this.sessionForkRepo.listChildren(sessionId);
+    return this.sessionForkRepo.listChildren(sessionId, ownerUserId);
   }
   getSessionForkContextSource(childSessionId: string): import('./repositories').SessionForkContextSource | null {
     this.ensureDb();
@@ -875,9 +1426,14 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionRepo.applyPromptRewind(sessionId, userMessageId, record);
   }
-  restorePromptRewind(sessionId: string, rewindId: string, restoredAt?: number): import('./repositories/SessionRepository').PromptRewindRestoreResult {
+  restorePromptRewind(
+    sessionId: string,
+    rewindId: string,
+    restoredAt?: number,
+    ownerUserId?: string | null,
+  ): import('./repositories/SessionRepository').PromptRewindRestoreResult {
     this.ensureDb();
-    return this.sessionRepo.restorePromptRewind(sessionId, rewindId, restoredAt);
+    return this.sessionRepo.restorePromptRewind(sessionId, rewindId, restoredAt, ownerUserId);
   }
   getUnsyncedSessions(limit: number = 1000): import('./repositories').StoredSession[] {
     this.ensureDb();
@@ -894,10 +1450,6 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   markMessagesSynced(messageIds: string[]): void {
     this.ensureDb();
     this.sessionRepo.markMessagesSynced(messageIds);
-  }
-  truncateMessagesAfter(sessionId: string, messageId: string): number {
-    this.ensureDb();
-    return this.sessionRepo.truncateMessagesAfter(sessionId, messageId);
   }
   saveTodos(sessionId: string, todos: TodoItem[], updatedAt?: number): void {
     this.ensureDb();

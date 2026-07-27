@@ -18,6 +18,7 @@ export interface CreateForkRepositoryInput {
   sourceSessionId: string;
   anchorAssistantMessageId: string;
   idempotencyKey: string;
+  ownerUserId?: string | null;
   forkId: string;
   childSessionId: string;
   childTitle: string;
@@ -114,6 +115,8 @@ export class SessionForkRepository {
     if (!anchorMessageId) throw new SessionForkError('INVALID_ANCHOR', 'anchorAssistantMessageId is required');
     if (!idempotencyKey) throw new SessionForkError('IDEMPOTENCY_CONFLICT', 'idempotencyKey is required');
 
+    this.requireForkableSource(sourceSessionId, input.ownerUserId);
+
     const requestDigest = sha256(JSON.stringify({
       sourceSessionId,
       anchorMessageId,
@@ -141,17 +144,6 @@ export class SessionForkRepository {
       return this.readResult(existing.id, existing.child_session_id, existing.source_prefix_digest);
     }
 
-    const source = this.db.prepare(`
-      SELECT *
-      FROM sessions
-      WHERE id = ? AND COALESCE(is_deleted, 0) = 0
-      LIMIT 1
-    `).get(sourceSessionId) as SQLiteRow | undefined;
-    if (!source) throw new SessionForkError('SESSION_NOT_FOUND', `source session ${sourceSessionId} was not found`);
-    if (FORBIDDEN_SOURCE_STATES.has(String(source.status ?? 'idle'))) {
-      throw new SessionForkError('SESSION_RUNNING', `source session is ${String(source.status)}`);
-    }
-
     const anyAnchor = this.db.prepare(`
       SELECT rowid AS __rowid, *
       FROM messages
@@ -177,14 +169,18 @@ export class SessionForkRepository {
     }
 
     const anchorRowId = Number(anyAnchor.__rowid);
+    const anchorTimestamp = Number(anyAnchor.timestamp);
     const prefixRows = this.db.prepare(`
       SELECT rowid AS __rowid, *
       FROM messages
       WHERE session_id = ?
-        AND rowid <= ?
+        AND (
+          timestamp < ?
+          OR (timestamp = ? AND rowid <= ?)
+        )
         AND COALESCE(visibility, 'active') = 'active'
       ORDER BY timestamp ASC, rowid ASC
-    `).all(sourceSessionId, anchorRowId) as SQLiteRow[];
+    `).all(sourceSessionId, anchorTimestamp, anchorTimestamp, anchorRowId) as SQLiteRow[];
     if (prefixRows.length === 0 || String(prefixRows[prefixRows.length - 1].id) !== anchorMessageId) {
       throw new SessionForkError('INVALID_ANCHOR', 'the active prefix does not terminate at the requested anchor');
     }
@@ -204,19 +200,20 @@ export class SessionForkRepository {
     }))));
 
     const now = input.now ?? Date.now();
-    const parentFork = this.db.prepare(`
-      SELECT id, root_session_id, depth
-      FROM session_forks
-      WHERE child_session_id = ? AND status = 'completed'
-      LIMIT 1
-    `).get(sourceSessionId) as { id: string; root_session_id: string; depth: number } | undefined;
-    const rootSessionId = parentFork?.root_session_id ?? sourceSessionId;
-    const depth = (parentFork?.depth ?? 0) + 1;
-    const childWorkingDirectory = input.childWorkingDirectory ?? (
-      typeof source.working_directory === 'string' ? source.working_directory : null
-    );
 
     const transaction = this.db.transaction(() => {
+      const source = this.requireForkableSource(sourceSessionId, input.ownerUserId);
+      const parentFork = this.db.prepare(`
+        SELECT id, root_session_id, depth
+        FROM session_forks
+        WHERE child_session_id = ? AND status = 'completed'
+        LIMIT 1
+      `).get(sourceSessionId) as { id: string; root_session_id: string; depth: number } | undefined;
+      const rootSessionId = parentFork?.root_session_id ?? sourceSessionId;
+      const depth = (parentFork?.depth ?? 0) + 1;
+      const childWorkingDirectory = input.childWorkingDirectory ?? (
+        typeof source.working_directory === 'string' ? source.working_directory : null
+      );
       const lineageMetadata: SessionForkLineageSummary = {
         forkId: input.forkId,
         rootSessionId,
@@ -259,7 +256,7 @@ export class SessionForkRepository {
         now,
         now,
         source.workspace ?? null,
-        source.workbench_provenance ?? null,
+        null,
         source.git_branch ?? null,
         source.project_id ?? null,
       );
@@ -363,7 +360,26 @@ export class SessionForkRepository {
     return this.readResult(input.forkId, input.childSessionId, sourcePrefixDigest);
   }
 
-  getLineage(sessionId: string): SessionForkLineageSummary | null {
+  getLineage(sessionId: string, ownerUserId?: string | null): SessionForkLineageSummary | null {
+    if (ownerUserId !== undefined) {
+      const ownerPredicate = ownerUserId === null
+        ? 'child.user_id IS NULL AND source.user_id IS NULL'
+        : 'child.user_id = ? AND source.user_id = ?';
+      const ownerParams = ownerUserId === null ? [] : [ownerUserId, ownerUserId];
+      const row = this.db.prepare(`
+        SELECT fork.*
+        FROM session_forks AS fork
+        JOIN sessions AS child ON child.id = fork.child_session_id
+        JOIN sessions AS source ON source.id = fork.source_session_id
+        WHERE fork.child_session_id = ?
+          AND COALESCE(child.is_deleted, 0) = 0
+          AND COALESCE(source.is_deleted, 0) = 0
+          AND ${ownerPredicate}
+        LIMIT 1
+      `).get(sessionId, ...ownerParams) as SQLiteRow | undefined;
+      return row ? this.rowToLineage(row) : null;
+    }
+
     const row = this.db.prepare(`
       SELECT *
       FROM session_forks
@@ -373,7 +389,26 @@ export class SessionForkRepository {
     return row ? this.rowToLineage(row) : null;
   }
 
-  listChildren(sessionId: string): SessionForkLineageSummary[] {
+  listChildren(sessionId: string, ownerUserId?: string | null): SessionForkLineageSummary[] {
+    if (ownerUserId !== undefined) {
+      const ownerPredicate = ownerUserId === null
+        ? 'child.user_id IS NULL AND source.user_id IS NULL'
+        : 'child.user_id = ? AND source.user_id = ?';
+      const ownerParams = ownerUserId === null ? [] : [ownerUserId, ownerUserId];
+      return (this.db.prepare(`
+        SELECT fork.*
+        FROM session_forks AS fork
+        JOIN sessions AS child ON child.id = fork.child_session_id
+        JOIN sessions AS source ON source.id = fork.source_session_id
+        WHERE fork.source_session_id = ?
+          AND fork.status = 'completed'
+          AND COALESCE(child.is_deleted, 0) = 0
+          AND COALESCE(source.is_deleted, 0) = 0
+          AND ${ownerPredicate}
+        ORDER BY fork.created_at ASC, fork.id ASC
+      `).all(sessionId, ...ownerParams) as SQLiteRow[]).map((row) => this.rowToLineage(row));
+    }
+
     return (this.db.prepare(`
       SELECT *
       FROM session_forks
@@ -564,6 +599,33 @@ export class SessionForkRepository {
       lineage: this.rowToLineage(fork),
       messageMappings: mappings,
     };
+  }
+
+  private requireForkableSource(
+    sourceSessionId: string,
+    ownerUserId?: string | null,
+  ): SQLiteRow {
+    const ownerPredicate = ownerUserId === undefined
+      ? ''
+      : ownerUserId === null
+        ? ' AND user_id IS NULL'
+        : ' AND user_id = ?';
+    const ownerParams = typeof ownerUserId === 'string' ? [ownerUserId] : [];
+    const source = this.db.prepare(`
+      SELECT *
+      FROM sessions
+      WHERE id = ?
+        AND COALESCE(is_deleted, 0) = 0
+        ${ownerPredicate}
+      LIMIT 1
+    `).get(sourceSessionId, ...ownerParams) as SQLiteRow | undefined;
+    if (!source) {
+      throw new SessionForkError('SESSION_NOT_FOUND', `source session ${sourceSessionId} was not found`);
+    }
+    if (FORBIDDEN_SOURCE_STATES.has(String(source.status ?? 'idle'))) {
+      throw new SessionForkError('SESSION_RUNNING', `source session is ${String(source.status)}`);
+    }
+    return source;
   }
 
   private rowToLineage(row: SQLiteRow): SessionForkLineageSummary {

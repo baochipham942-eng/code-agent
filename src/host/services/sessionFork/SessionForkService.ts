@@ -16,16 +16,20 @@ import { getExternalForkContextCapability } from './context/externalForkContextH
 const ACTIVE_RUNTIME_STATES = new Set(['running', 'paused', 'queued', 'cancelling']);
 
 export interface SessionForkServiceDatabase {
-  getSession(sessionId: string): Session | null;
+  getSession(sessionId: string, options?: { userId?: string | null }): Session | null;
   createSessionFork(input: CreateForkRepositoryInput): CreateForkRepositoryResult;
-  getSessionForkLineage(sessionId: string): SessionForkLineageSummary | null;
-  listSessionForkChildren(sessionId: string): SessionForkLineageSummary[];
+  createIsolatedSessionFork?(
+    input: CreateForkRepositoryInput,
+  ): Promise<CreateForkRepositoryResult>;
+  getSessionForkLineage(sessionId: string, ownerUserId?: string | null): SessionForkLineageSummary | null;
+  listSessionForkChildren(sessionId: string, ownerUserId?: string | null): SessionForkLineageSummary[];
 }
 
 export interface SessionForkServiceOptions {
   createId?: (kind: 'fork' | 'child') => string;
   now?: () => number;
   getRuntimeStatus?: (sessionId: string) => string | undefined;
+  ownerUserId?: string | null;
 }
 
 function defaultCreateId(kind: 'fork' | 'child'): string {
@@ -48,6 +52,7 @@ export class SessionForkService {
   private readonly createId: NonNullable<SessionForkServiceOptions['createId']>;
   private readonly now: NonNullable<SessionForkServiceOptions['now']>;
   private readonly getRuntimeStatus?: SessionForkServiceOptions['getRuntimeStatus'];
+  private readonly ownerUserId: string | null | undefined;
 
   constructor(
     private readonly database: SessionForkServiceDatabase,
@@ -56,10 +61,11 @@ export class SessionForkService {
     this.createId = options.createId ?? defaultCreateId;
     this.now = options.now ?? Date.now;
     this.getRuntimeStatus = options.getRuntimeStatus;
+    this.ownerUserId = options.ownerUserId;
   }
 
   async createFork(request: CreateSessionForkRequest): Promise<CreateSessionForkResult> {
-    const sourceSession = this.database.getSession(request.sourceSessionId);
+    const sourceSession = this.getOwnedSession(request.sourceSessionId);
     if (!sourceSession) {
       throw new SessionForkError('SESSION_NOT_FOUND', `source session ${request.sourceSessionId} was not found`);
     }
@@ -67,13 +73,6 @@ export class SessionForkService {
     const runtimeStatus = this.getRuntimeStatus?.(sourceSession.id) ?? sourceSession.status;
     if (runtimeStatus && ACTIVE_RUNTIME_STATES.has(runtimeStatus)) {
       throw new SessionForkError('SESSION_RUNNING', `source session is ${runtimeStatus}`);
-    }
-
-    if (request.workspaceMode === 'isolated_at_anchor') {
-      throw new SessionForkError(
-        'EVIDENCE_INCOMPLETE',
-        'isolated_at_anchor requires a complete anchor workspace evidence manifest',
-      );
     }
 
     const engineKind = sourceSession.engine?.kind ?? 'native';
@@ -89,10 +88,11 @@ export class SessionForkService {
       contextDeliveryMode = 'validated_context_handoff';
     }
 
-    const persisted = this.database.createSessionFork({
+    const repositoryInput: CreateForkRepositoryInput = {
       sourceSessionId: sourceSession.id,
       anchorAssistantMessageId: request.anchorAssistantMessageId,
       idempotencyKey: request.idempotencyKey,
+      ownerUserId: this.ownerUserId,
       forkId: this.createId('fork'),
       childSessionId: this.createId('child'),
       childTitle: forkTitle(sourceSession.title),
@@ -100,8 +100,11 @@ export class SessionForkService {
       contextDeliveryMode,
       childWorkingDirectory: sourceSession.workingDirectory,
       now: this.now(),
-    });
-    const childSession = this.database.getSession(persisted.childSessionId);
+    };
+    const persisted = request.workspaceMode === 'isolated_at_anchor'
+      ? await this.createIsolatedFork(repositoryInput)
+      : this.database.createSessionFork(repositoryInput);
+    const childSession = this.getOwnedSession(persisted.childSessionId);
     if (!childSession) {
       throw new SessionForkError(
         'FORK_OPERATION_FAILED',
@@ -115,15 +118,43 @@ export class SessionForkService {
       messageMappings: persisted.messageMappings,
       copiedMessageCount: persisted.copiedMessageCount,
       sourcePrefixDigest: persisted.sourcePrefixDigest,
-      workspaceLabel: '历史对话 + 当前文件',
+      workspaceLabel: request.workspaceMode === 'isolated_at_anchor'
+        ? '历史对话 + 锚点文件'
+        : '历史对话 + 当前文件',
     };
   }
 
   getLineage(sessionId: string): SessionForkLineageSummary | null {
-    return this.database.getSessionForkLineage(sessionId);
+    if (this.ownerUserId === undefined) return this.database.getSessionForkLineage(sessionId);
+    if (!this.getOwnedSession(sessionId)) return null;
+    const lineage = this.database.getSessionForkLineage(sessionId, this.ownerUserId);
+    if (!lineage || !this.getOwnedSession(lineage.parentSessionId)) return null;
+    return lineage;
   }
 
   listChildren(sessionId: string): SessionForkLineageSummary[] {
-    return this.database.listSessionForkChildren(sessionId);
+    if (this.ownerUserId === undefined) return this.database.listSessionForkChildren(sessionId);
+    if (!this.getOwnedSession(sessionId)) return [];
+    return this.database
+      .listSessionForkChildren(sessionId, this.ownerUserId)
+      .filter((lineage) => Boolean(this.getOwnedSession(lineage.childSessionId)));
+  }
+
+  private getOwnedSession(sessionId: string): Session | null {
+    return this.ownerUserId === undefined
+      ? this.database.getSession(sessionId)
+      : this.database.getSession(sessionId, { userId: this.ownerUserId });
+  }
+
+  private async createIsolatedFork(
+    input: CreateForkRepositoryInput,
+  ): Promise<CreateForkRepositoryResult> {
+    if (!this.database.createIsolatedSessionFork) {
+      throw new SessionForkError(
+        'EVIDENCE_INCOMPLETE',
+        'isolated_at_anchor requires a complete durable anchor workspace evidence service',
+      );
+    }
+    return await this.database.createIsolatedSessionFork(input);
   }
 }

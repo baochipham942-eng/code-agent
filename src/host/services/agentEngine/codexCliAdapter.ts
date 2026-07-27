@@ -136,6 +136,7 @@ export class CodexCliAdapter {
         kind: 'codex_cli',
         model,
         runId,
+        externalSessionId: request.resumeLaunch?.externalSessionId,
         logPath,
         cwd,
         permissionProfile,
@@ -230,6 +231,7 @@ export class CodexCliAdapter {
     let spawnErrorMessage: string | undefined;
     let resumeIdentityError: string | undefined;
     let observedExternalSessionId: string | undefined;
+    let confirmedExternalSessionId: string | undefined;
     let timeoutMessage: string | undefined;
     let stalled = false;
 
@@ -299,6 +301,7 @@ export class CodexCliAdapter {
             resumeIdentityError = 'Codex resumed a different external session';
             void request.durableLifecycle?.terminateProcess('SIGTERM');
           } else {
+            confirmedExternalSessionId = parsed.externalSessionId;
             request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
           }
         }
@@ -358,6 +361,7 @@ export class CodexCliAdapter {
         if (request.resumeLaunch && parsed.externalSessionId !== request.resumeLaunch.externalSessionId) {
           resumeIdentityError = 'Codex resumed a different external session';
         } else {
+          confirmedExternalSessionId = parsed.externalSessionId;
           request.durableLifecycle?.persistExternalSessionId(parsed.externalSessionId);
         }
       }
@@ -377,6 +381,11 @@ export class CodexCliAdapter {
     if (request.resumeLaunch && !observedExternalSessionId && !resumeIdentityError) {
       resumeIdentityError = 'Codex resume did not confirm the external session identity';
     }
+    if (request.forkContextHandoff && !confirmedExternalSessionId && !resumeIdentityError) {
+      resumeIdentityError = 'Codex fork handoff did not confirm a new external session identity';
+    }
+    const sessionExternalSessionId = confirmedExternalSessionId
+      ?? request.resumeLaunch?.externalSessionId;
     const emptyResponse = !finalText && !timeoutMessage && !spawnErrorMessage && exitCode === 0;
     const failed = Boolean(timeoutMessage || spawnErrorMessage || resumeIdentityError || exitCode !== 0 || emptyResponse);
 
@@ -470,6 +479,7 @@ export class CodexCliAdapter {
           kind: 'codex_cli',
           model,
           runId,
+          externalSessionId: sessionExternalSessionId,
           logPath,
           cwd,
           permissionProfile,
@@ -533,7 +543,7 @@ export class CodexCliAdapter {
       type: 'agent_engine.completed',
       status: 'completed',
       message: 'Codex CLI run completed',
-      data: { runId, logPath },
+      data: { runId, logPath, externalSessionId: sessionExternalSessionId },
     });
     ledger.queueNotification({
       taskId,
@@ -550,6 +560,7 @@ export class CodexCliAdapter {
         kind: 'codex_cli',
         model,
         runId,
+        externalSessionId: sessionExternalSessionId,
         logPath,
         cwd,
         permissionProfile,

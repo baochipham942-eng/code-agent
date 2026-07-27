@@ -164,6 +164,84 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       CHECK (engine IN ('codex_cli', 'claude_code')),
       CHECK (state IN ('pending', 'dispatching', 'consumed', 'blocked'))
     );
+
+    CREATE TABLE IF NOT EXISTS session_fork_anchor_evidence (
+      id TEXT PRIMARY KEY,
+      source_session_id TEXT NOT NULL,
+      anchor_message_id TEXT NOT NULL,
+      owner_user_id TEXT,
+      project_id TEXT,
+      workspace_scope_version TEXT,
+      source_identity_digest TEXT,
+      source_identity_json TEXT,
+      message_digest TEXT NOT NULL,
+      repository_root TEXT,
+      base_commit TEXT,
+      observed_head TEXT,
+      evidence_digest TEXT,
+      evidence_json TEXT,
+      summary_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL,
+      blocked_reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE (source_session_id, anchor_message_id),
+      FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (anchor_message_id) REFERENCES messages(id) ON DELETE CASCADE,
+      CHECK (status IN ('complete', 'blocked'))
+    );
+
+    CREATE TABLE IF NOT EXISTS session_fork_workspace_intents (
+      intent_id TEXT PRIMARY KEY,
+      request_digest TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      source_session_id TEXT NOT NULL,
+      proposed_child_session_id TEXT NOT NULL,
+      repository_root TEXT NOT NULL,
+      workspace_path TEXT NOT NULL UNIQUE,
+      evidence_digest TEXT NOT NULL,
+      intent_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      advertisable INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      CHECK (status IN (
+        'recorded', 'worktree_created', 'applying', 'evidence_applied',
+        'verifying', 'cleanup_required', 'ready', 'advertised', 'abandoned'
+      ))
+    );
+
+    CREATE TABLE IF NOT EXISTS session_fork_workspace_sagas (
+      intent_id TEXT PRIMARY KEY,
+      source_session_id TEXT NOT NULL,
+      anchor_message_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      evidence_id TEXT NOT NULL,
+      proposed_fork_id TEXT NOT NULL UNIQUE,
+      proposed_child_session_id TEXT NOT NULL UNIQUE,
+      context_delivery_mode TEXT NOT NULL,
+      child_title TEXT NOT NULL,
+      workspace_path TEXT,
+      state TEXT NOT NULL,
+      child_session_id TEXT,
+      error_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE (source_session_id, idempotency_key),
+      FOREIGN KEY (source_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY (anchor_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
+      FOREIGN KEY (evidence_id) REFERENCES session_fork_anchor_evidence(id) ON DELETE RESTRICT,
+      CHECK (context_delivery_mode IN (
+        'neo_native_prefix', 'provider_native_fork',
+        'validated_context_handoff', 'unsupported'
+      )),
+      CHECK (state IN (
+        'preparing', 'workspace_ready', 'child_staged',
+        'completed', 'quarantined', 'aborted'
+      ))
+    );
   `);
 
   // Tool Executions 表 (用于缓存和审计)

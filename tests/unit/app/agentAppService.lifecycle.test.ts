@@ -1,4 +1,5 @@
  
+import { readFile } from 'node:fs/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentAppServiceImpl } from '../../../src/host/app/agentAppService';
 import { DurableRunReadService } from '../../../src/host/app/durableRunReadService';
@@ -171,6 +172,43 @@ describe('AgentAppService lifecycle routing', () => {
     vi.mocked(getFileCheckpointService).mockReset();
     vi.mocked(getFileCheckpointService).mockReturnValue(checkpointService as any);
 	  });
+
+  it('keeps Desktop Codex and Claude fork handoff and continuation resume wiring exact', async () => {
+    const source = await readFile(
+      new URL('../../../src/host/app/agentAppService.ts', import.meta.url),
+      'utf8',
+    );
+    const codexStart = source.indexOf("if (engine.kind === 'codex_cli')");
+    const claudeStart = source.indexOf("if (engine.kind === 'claude_code')", codexStart);
+    const mimoStart = source.indexOf("if (engine.kind === 'mimo_code')", claudeStart);
+
+    expect(codexStart).toBeGreaterThanOrEqual(0);
+    expect(claudeStart).toBeGreaterThan(codexStart);
+    expect(mimoStart).toBeGreaterThan(claudeStart);
+
+    const codexBlock = source.slice(codexStart, claudeStart);
+    const claudeBlock = source.slice(claudeStart, mimoStart);
+    for (const [block, builder, continuationError] of [
+      [codexBlock, 'createCodexContinuationResumeLaunch', 'Codex continuation requires durable lifecycle identity'],
+      [claudeBlock, 'createClaudeContinuationResumeLaunch', 'Claude continuation requires durable lifecycle identity'],
+    ] as const) {
+      expect(block).toContain(
+        'const forkContext = persistedExternalSessionId\n'
+        + '        ? null\n'
+        + '        : await this.prepareExternalForkContext(',
+      );
+      expect(block).toContain('externalSessionId: persistedExternalSessionId');
+      expect(block).toContain(continuationError);
+      expect(block).toContain(`? ${builder}({`);
+      expect(block).toContain('persistedExternalSessionId,');
+      expect(block).toContain('lifecycle: durableLifecycle,');
+      expect(block).toContain('durableLifecycle,');
+      expect(block).toContain('resumeLaunch,');
+      expect(block).toContain('forkContextHandoff: forkContext.handoff');
+      expect(block).toContain('onForkContextDispatchStart: forkContext.onDispatchStart');
+      expect(block).toContain('onForkContextDispatched: forkContext.onDispatched');
+    }
+  });
 
   it('keeps a new blank session out of the current project when workingDirectory is null', async () => {
     const service = createServiceWithConfig(taskManager, {
@@ -770,7 +808,7 @@ describe('AgentAppService lifecycle routing', () => {
     expect(database.applyPromptRewind).toHaveBeenCalledWith(
       'session-1',
       'u2',
-      { idempotencyKey: 'rewind-request-1' },
+      { idempotencyKey: 'rewind-request-1', ownerUserId: null },
     );
     expect(checkpointService.getFirstCheckpointAtOrAfter).not.toHaveBeenCalled();
     expect(checkpointService.rewindFiles).not.toHaveBeenCalled();

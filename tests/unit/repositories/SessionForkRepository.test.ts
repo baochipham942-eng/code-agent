@@ -32,7 +32,8 @@ function seedSource(db: BetterSqlite3.Database, status = 'completed'): void {
       NULL, 'old-source-run',
       '{"kind":"codex_cli","model":"gpt-5.4","runId":"old-run","externalSessionId":"provider-session","logPath":"/tmp/provider.log","permissionProfile":"workspace_write","cwd":"/workspace/source"}',
       'off', '["memory-secret-id"]', 0, NULL, 1, 50, 'workspace-source',
-      '{"activities":["browser"]}', ?, '{"totalTokens":999}', 0, NULL,
+      '{"activities":["browser"],"connectorGrant":"connector-secret","browserSession":"browser-runtime"}',
+      ?, '{"totalTokens":999}', 0, NULL,
       'main', 'project-1'
     )
   `).run(status);
@@ -63,6 +64,7 @@ function forkInput(overrides: Record<string, unknown> = {}) {
     childTitle: 'Source task · Branch',
     workspaceMode: 'shared_current' as const,
     contextDeliveryMode: 'validated_context_handoff' as const,
+    ownerUserId: 'user-1',
     now: 100,
     ...overrides,
   };
@@ -110,13 +112,41 @@ describe('SessionForkRepository', () => {
       .toBe(sourceMessagesBefore);
   });
 
+  it('uses the stable (timestamp, rowid) anchor boundary for out-of-order timestamps', () => {
+    db.prepare("UPDATE messages SET timestamp = 50 WHERE id = 'u2'").run();
+    db.prepare(`
+      INSERT INTO messages (
+        id, session_id, role, content, timestamp, visibility, is_meta
+      ) VALUES ('late-old', 'source', 'user', 'inserted late with older timestamp', 15, 'active', 0)
+    `).run();
+
+    const result = repo.createFork(forkInput());
+
+    expect(result.messageMappings.map((mapping) => mapping.sourceMessageId)).toEqual([
+      'u1',
+      'late-old',
+      'a1',
+      'a2',
+    ]);
+    expect(result.messageMappings.map((mapping) => mapping.sourceOrderKey)).toEqual([
+      expect.stringMatching(/^10:/),
+      expect.stringMatching(/^15:/),
+      expect.stringMatching(/^20:/),
+      expect.stringMatching(/^40:/),
+    ]);
+    expect(result.messageMappings).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceMessageId: 'u2' }),
+      expect.objectContaining({ sourceMessageId: 'u3' }),
+    ]));
+  });
+
   it('persists explicit lineage and one-to-one message mapping while parentSessionId stays a compatibility projection', () => {
     repo.createFork(forkInput());
 
     const child = db.prepare(`
       SELECT parent_session_id, project_id, working_directory, workspace, model_provider,
              model_name, memory_mode, suppressed_memory_entry_ids, status, source_run_id,
-             last_token_usage, metadata, agent_engine
+             last_token_usage, metadata, agent_engine, workbench_provenance
       FROM sessions WHERE id = 'child-1'
     `).get() as Record<string, unknown>;
     expect(child).toMatchObject({
@@ -131,6 +161,7 @@ describe('SessionForkRepository', () => {
       status: 'idle',
       source_run_id: null,
       last_token_usage: null,
+      workbench_provenance: null,
     });
     expect(JSON.parse(String(child.agent_engine))).toEqual({
       kind: 'codex_cli',
@@ -207,6 +238,49 @@ describe('SessionForkRepository', () => {
     const before = db.totalChanges;
 
     expect(() => repo.createFork(forkInput())).toThrow('SESSION_RUNNING');
+    expect(db.totalChanges).toBe(before);
+  });
+
+  it('rechecks the persistent source status inside the transaction before writing', () => {
+    const originalTransaction = db.transaction.bind(db);
+    vi.spyOn(db, 'transaction').mockImplementation(((fn: () => unknown) => {
+      const transactional = originalTransaction(fn);
+      return (() => {
+        db.prepare("UPDATE sessions SET status = 'running' WHERE id = 'source'").run();
+        return transactional();
+      });
+    }) as typeof db.transaction);
+
+    expect(() => repo.createFork(forkInput())).toThrow('SESSION_RUNNING');
+    expect(db.prepare("SELECT status FROM sessions WHERE id = 'source'").get()).toEqual({ status: 'running' });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE id = 'child-1'").get()).toEqual({ count: 0 });
+    expect(db.prepare('SELECT COUNT(*) AS count FROM session_forks').get()).toEqual({ count: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM messages WHERE session_id = 'child-1'").get()).toEqual({ count: 0 });
+  });
+
+  it('enforces string and null owner scopes while preserving undefined for internal compatibility', () => {
+    const before = db.totalChanges;
+    expect(() => repo.createFork(forkInput({ ownerUserId: 'user-2' }))).toThrow('SESSION_NOT_FOUND');
+    expect(() => repo.createFork(forkInput({ ownerUserId: null }))).toThrow('SESSION_NOT_FOUND');
+    expect(db.totalChanges).toBe(before);
+    expect(repo.getLineage('child-1', 'user-2')).toBeNull();
+    expect(repo.listChildren('source', 'user-2')).toEqual([]);
+
+    const result = repo.createFork(forkInput({ ownerUserId: undefined }));
+    expect(repo.getLineage(result.childSessionId)).toMatchObject({ forkId: result.forkId });
+    expect(repo.listChildren('source')).toHaveLength(1);
+  });
+
+  it('returns lineage only when both source and child are in the requested owner scope', () => {
+    repo.createFork(forkInput());
+    const before = db.totalChanges;
+
+    expect(repo.getLineage('child-1', 'user-1')).toMatchObject({ forkId: 'fork-1' });
+    expect(repo.listChildren('source', 'user-1')).toHaveLength(1);
+    expect(repo.getLineage('child-1', 'user-2')).toBeNull();
+    expect(repo.getLineage('child-1', null)).toBeNull();
+    expect(repo.listChildren('source', 'user-2')).toEqual([]);
+    expect(repo.listChildren('source', null)).toEqual([]);
     expect(db.totalChanges).toBe(before);
   });
 

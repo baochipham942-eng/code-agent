@@ -69,7 +69,10 @@ vi.mock('../../../src/host/services/agentEngine/agentEngineRegistry', () => ({
 }));
 
 import { CodexCliAdapter } from '../../../src/host/services/agentEngine/codexCliAdapter';
-import { createCodexResumeLaunch } from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
+import {
+  createCodexContinuationResumeLaunch,
+  createCodexResumeLaunch,
+} from '../../../src/host/services/agentEngine/externalEngineResumeBuilders';
 import type { ExternalEngineDurableLifecycle } from '../../../src/host/services/agentEngine/externalEngineDurableLifecycle';
 import { buildTestExternalForkContextHandoff } from '../services/sessionFork/externalForkContextTestFixture';
 
@@ -200,6 +203,7 @@ describe('CodexCliAdapter.run', () => {
     let child: ReturnType<typeof createMockChild> | undefined;
     mocks.spawn.mockImplementation(() => {
       child = createMockChild([
+        JSON.stringify({ type: 'thread.started', thread_id: 'fork-codex-thread' }),
         JSON.stringify({ type: 'message_delta', delta: 'continued child answer' }),
       ], 0);
       return child;
@@ -207,6 +211,13 @@ describe('CodexCliAdapter.run', () => {
     const forkContextHandoff = buildTestExternalForkContextHandoff('codex_cli');
     const onForkContextDispatchStart = vi.fn(async () => undefined);
     const onForkContextDispatched = vi.fn(async () => undefined);
+    const firstLifecycle = {
+      runId: 'fork-first-run', attempt: 1, ownerEpoch: 1,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
 
     await new CodexCliAdapter().run({
       sessionId: 'child-session',
@@ -218,6 +229,7 @@ describe('CodexCliAdapter.run', () => {
       forkContextHandoff,
       onForkContextDispatchStart,
       onForkContextDispatched,
+      durableLifecycle: firstLifecycle,
     });
 
     const stdin = child?.stdin.end.mock.calls[0]?.[0] as string;
@@ -249,6 +261,74 @@ describe('CodexCliAdapter.run', () => {
       .toBeLessThan(child!.stdin.end.mock.invocationCallOrder[0]);
     expect(child!.stdin.end.mock.invocationCallOrder[0])
       .toBeLessThan(onForkContextDispatched.mock.invocationCallOrder[0]);
+    expect(firstLifecycle.persistExternalSessionId).toHaveBeenCalledWith('fork-codex-thread');
+    const firstTerminalUpdate = mocks.updateSession.mock.calls.at(-1)?.[1];
+    expect(firstTerminalUpdate).toMatchObject({
+      status: 'idle',
+      engine: {
+        kind: 'codex_cli',
+        externalSessionId: 'fork-codex-thread',
+      },
+    });
+    const firstArgs = mocks.spawn.mock.calls[0][1] as string[];
+    expect(firstArgs).not.toContain('resume');
+    expect(firstArgs).not.toContain('fork-codex-thread');
+
+    mocks.spawn.mockClear();
+    mocks.addMessageToSession.mockClear();
+    mocks.updateSession.mockClear();
+    mocks.upsertTask.mockClear();
+    let secondChild: ReturnType<typeof createMockChild> | undefined;
+    mocks.spawn.mockImplementation(() => {
+      secondChild = createMockChild([
+        JSON.stringify({ type: 'thread.started', thread_id: 'fork-codex-thread' }),
+        JSON.stringify({ type: 'message_delta', delta: 'second turn answer' }),
+      ], 0);
+      return secondChild;
+    });
+    const secondLifecycle = {
+      runId: 'fork-second-run', attempt: 1, ownerEpoch: 2,
+      attachProcess: vi.fn(async () => undefined),
+      observeStdout: vi.fn(), observeStderr: vi.fn(), observeModelUsage: vi.fn(), observeNormalizedEvent: vi.fn(),
+      persistExternalSessionId: vi.fn(), terminateProcess: vi.fn(async () => undefined),
+      finish: vi.fn(async () => undefined),
+    } as unknown as ExternalEngineDurableLifecycle;
+    const cwd = await fs.realpath(workspaceRoot);
+    const resumeLaunch = createCodexContinuationResumeLaunch({
+      lifecycle: secondLifecycle,
+      sessionId: 'child-session',
+      persistedExternalSessionId: firstTerminalUpdate.engine.externalSessionId,
+      cwd,
+      logsRoot: path.join(tempDir, 'logs'),
+      continuationInput: 'second turn request',
+      permissionProfile: 'read_only',
+    });
+
+    const secondResult = await new CodexCliAdapter().run({
+      sessionId: 'child-session',
+      prompt: 'second turn request',
+      cwd,
+      workspaceRoot: cwd,
+      permissionProfile: 'read_only',
+      durableLifecycle: secondLifecycle,
+      resumeLaunch,
+    });
+
+    expect(secondResult.status).toBe('completed');
+    expect(resumeLaunch.args).toContain('resume');
+    expect(resumeLaunch.args).toContain('fork-codex-thread');
+    expect(resumeLaunch.args).toContain(
+      path.join(tempDir, 'logs', 'agent-engines', 'codex-cli', 'fork-second-run.last.md'),
+    );
+    expect(secondChild?.stdin.end).toHaveBeenCalledWith('second turn request');
+    expect(String(secondChild?.stdin.end.mock.calls[0]?.[0])).not.toContain('NEO_SESSION_FORK_CONTEXT');
+    expect(secondLifecycle.persistExternalSessionId).toHaveBeenCalledWith('fork-codex-thread');
+    expect(mocks.updateSession.mock.calls.at(-1)?.[1]).toMatchObject({
+      status: 'idle',
+      engine: {
+        externalSessionId: 'fork-codex-thread',
+      },
+    });
   });
 
   it('requires a durable fork dispatch lifecycle before spawning Codex', async () => {
@@ -318,6 +398,30 @@ describe('CodexCliAdapter.run', () => {
     expect(child?.stdin.end).toHaveBeenCalledTimes(1);
     expect(onForkContextDispatched).toHaveBeenCalledTimes(1);
     expect(child?.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('persists an observed Codex external session id on a failed terminal path', async () => {
+    mocks.spawn.mockImplementation(() => createMockChild([
+      JSON.stringify({ type: 'thread.started', thread_id: 'failed-codex-thread' }),
+    ], 1, 'runtime failed'));
+
+    const result = await new CodexCliAdapter().run({
+      sessionId: 'session-1',
+      prompt: 'inspect only',
+      cwd: workspaceRoot,
+      workspaceRoot,
+      timeoutMs: 20_000,
+      stallWarningMs: 10_000,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(mocks.updateSession.mock.calls.at(-1)?.[1]).toMatchObject({
+      status: 'error',
+      engine: {
+        kind: 'codex_cli',
+        externalSessionId: 'failed-codex-thread',
+      },
+    });
   });
 
   it('rejects workspace-write permission profile before spawning Codex CLI', async () => {
@@ -474,6 +578,12 @@ describe('CodexCliAdapter.run', () => {
     expect(mocks.spawn.mock.calls[0][1]).toEqual(resumeLaunch.args);
     expect(lifecycle.terminateProcess).toHaveBeenCalled();
     expect(lifecycle.persistExternalSessionId).not.toHaveBeenCalled();
+    expect(mocks.updateSession.mock.calls.at(-1)?.[1]).toMatchObject({
+      status: 'error',
+      engine: {
+        externalSessionId: 'target-thread',
+      },
+    });
   });
 });
 

@@ -9,6 +9,7 @@
 import { create } from 'zustand';
 import type { Message } from '@shared/contract';
 import type { CreateSessionForkResult } from '@shared/contract/sessionFork';
+import type { SessionForkWorkspaceMode } from '@shared/contract/sessionFork';
 import type { ConversationEnvelopeContext } from '@shared/contract/conversationEnvelope';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -41,7 +42,7 @@ interface MessageActionState {
   /** Regenerate the most recent assistant message (keyboard shortcut entry, no hover needed). Returns true if one was found. */
   regenerateLast: () => boolean;
   /** Create an independent child session from a completed assistant reply. */
-  forkFromHere: (messageId: string) => Promise<void>;
+  forkFromHere: (messageId: string, workspaceMode?: SessionForkWorkspaceMode) => Promise<void>;
 }
 
 function createForkIdempotencyKey(sourceSessionId: string, anchorAssistantMessageId: string): string {
@@ -91,7 +92,7 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
     return false;
   },
 
-  forkFromHere: async (messageId: string) => {
+  forkFromHere: async (messageId: string, workspaceMode = 'shared_current') => {
     const sessionStore = useSessionStore.getState();
     const sessionId = sessionStore.currentSessionId;
     if (!sessionId) return;
@@ -108,7 +109,7 @@ export const useMessageActionStore = create<MessageActionState>((set, get) => ({
           sourceSessionId: sessionId,
           anchorAssistantMessageId: messageId,
           idempotencyKey: createForkIdempotencyKey(sessionId, messageId),
-          workspaceMode: 'shared_current',
+          workspaceMode,
         },
       );
       // The source task remains untouched. Refresh the list so lineage is visible,

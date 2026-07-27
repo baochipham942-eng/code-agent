@@ -72,11 +72,11 @@ describe('SidebarSessionItem fork lineage marker', () => {
     expect(html).toContain('源任务：source-session');
   });
 
-  it('keeps parentSessionId as a compatibility projection for legacy child rows', () => {
+  it('does not treat compatibility parentSessionId alone as a user fork', () => {
     const html = renderRow({ parentSessionId: 'legacy-parent' });
 
-    expect(html).toContain('data-testid="fork-lineage-marker"');
-    expect(html).toContain('源任务：legacy-parent');
+    expect(html).not.toContain('data-testid="fork-lineage-marker"');
+    expect(html).not.toContain('legacy-parent');
   });
 
   it('does not mark an ordinary session as a branch', () => {

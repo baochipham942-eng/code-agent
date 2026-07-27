@@ -40,6 +40,16 @@ function isVisibleHistoryMessage(message: Message): boolean {
   return !message.isMeta && message.visibility !== 'rewound';
 }
 
+function isSessionForkAnchorCandidate(message: Message): boolean {
+  return message.role === 'assistant'
+    && !message.isMeta
+    && message.subtype !== 'tool_use'
+    && message.visibility !== 'rewound'
+    && message.content.trim().length > 0
+    && (!message.toolCalls || message.toolCalls.length === 0)
+    && !message.contentParts?.some((part) => part.type === 'tool_call');
+}
+
 export interface SessionCreateOptions {
   title?: string;
   modelConfig: ModelConfig;
@@ -897,6 +907,17 @@ export class SessionManager implements Disposable {
     }
 
     const provenance = this.maybePersistWorkbenchProvenance(sessionId, message);
+
+    const captureForkAnchor = db.captureSessionForkAnchorEvidence?.bind(db);
+    if (inserted && isSessionForkAnchorCandidate(message) && captureForkAnchor) {
+      await captureForkAnchor(sessionId, message.id).catch((error) => {
+        logger.warn('[SessionManager] Session Fork anchor capture failed closed:', {
+          sessionId,
+          messageId: message.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
 
     // 更新缓存
     if (this.sessionCache.has(sessionId)) {

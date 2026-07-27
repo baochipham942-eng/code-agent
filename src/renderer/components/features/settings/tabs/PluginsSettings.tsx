@@ -46,6 +46,7 @@ import {
   formatDate,
   getResultError,
   normalizeMarketplaceResult,
+  toDisplayPath,
 } from './PluginsSettings.helpers';
 
 const SummaryTile: React.FC<{
@@ -346,11 +347,9 @@ export const PluginsSettings: React.FC = () => {
                       </div>
                       <div className="mt-2 text-xs leading-5 text-zinc-500">
                         {pluginsText.installed.installedAtPrefix}{formatDate(plugin.installedAt, pluginsText.date)}
-                        {plugin.projectPath ? `${pluginsText.installed.projectPrefix}${plugin.projectPath}` : ''}
+                        {plugin.projectPath ? `${pluginsText.installed.projectPrefix}${toDisplayPath(plugin.projectPath)}` : ''}
                       </div>
-                      {plugin.pluginRoot && (
-                        <div className="mt-1 break-all text-xs text-zinc-600">{plugin.pluginRoot}</div>
-                      )}
+                      {/* 安装目录只在下面「Plugin asset」格里出现一次：卡片名下再渲染一遍是重复外泄 */}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
@@ -390,7 +389,7 @@ export const PluginsSettings: React.FC = () => {
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs text-zinc-500 md:col-span-2">
                       <span className="text-zinc-300">{pluginsText.installed.pluginAsset}</span>
-                      <span className="ml-2 break-all">{plugin.pluginRoot || pluginsText.installed.none}</span>
+                      <span className="ml-2 break-all">{plugin.pluginRoot ? toDisplayPath(plugin.pluginRoot) : pluginsText.installed.none}</span>
                     </div>
                     <div className="rounded-md bg-zinc-950/60 p-2 text-xs leading-5 text-zinc-500">
                       <span className="text-zinc-300">{pluginsText.installed.trust}</span>

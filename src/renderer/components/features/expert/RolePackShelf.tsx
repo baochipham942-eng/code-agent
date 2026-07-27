@@ -14,7 +14,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { Badge } from '../../primitives/Badge';
 import { Button } from '../../primitives/Button';
 import { EmptyState } from '../../primitives/EmptyState';
-import { RoleIcon } from '../shared/RoleIcon';
+import { RoleAvatarTile } from './RoleAvatarTile';
 
 export interface RolePackHealthNoticeProps {
   /** 缺省表示该角色不是云下发包，直接不渲染（省掉调用方的 has + 非空断言） */
@@ -119,9 +119,7 @@ export const RolePackShelf: React.FC<RolePackShelfProps> = ({
                 <div>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5">
-                      <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
-                        <RoleIcon name={entry.visual.icon} className="h-5 w-5" />
-                      </span>
+                      <RoleAvatarTile roleId={entry.roleId} icon={entry.visual.icon} name={entry.displayName} />
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-medium text-zinc-100">{entry.displayName || entry.roleId}</span>
                         <span className="block truncate text-xs text-zinc-500">{entry.visual.profession}</span>

@@ -41,7 +41,7 @@ import { Button } from '../../primitives/Button';
 import { Badge } from '../../primitives/Badge';
 import { Input } from '../../primitives/Input';
 import { Modal } from '../../primitives/Modal';
-import { RoleIcon } from '../shared/RoleIcon';
+import { RoleAvatarTile } from './RoleAvatarTile';
 import { RolePackHealthNotice, RolePackShelf } from './RolePackShelf';
 import { TeamRecipeDetailPage } from './TeamRecipeDetailPage';
 import { groupRolesByCategory } from './roleCategoryGroups';
@@ -66,9 +66,7 @@ const ExpertCardHead: React.FC<{ entry: RolePanelEntry; professionFallback: stri
   professionFallback,
 }) => (
   <div className="flex items-center gap-2.5">
-    <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
-      <RoleIcon name={entry.icon} className="h-5 w-5" />
-    </span>
+    <RoleAvatarTile roleId={entry.roleId} icon={entry.icon} name={entry.displayName} />
     <span className="min-w-0">
       <span className="block truncate text-sm font-medium text-zinc-100">
         {entry.displayName || entry.roleId}

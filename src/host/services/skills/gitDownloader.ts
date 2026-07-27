@@ -152,16 +152,27 @@ function parseGitHubUrl(url: string): GitHubRepoInfo | null {
 
   let match = url.match(fullUrlPattern);
   if (match) {
+    const branch = match[3] || 'main';
+    if (
+      !isSafeRepoSegment(match[1]) ||
+      !isSafeRepoSegment(match[2]) ||
+      !isSafeRepoSegment(branch)
+    ) {
+      return null;
+    }
     return {
       source: 'github',
       owner: match[1],
       repo: match[2],
-      branch: match[3] || 'main',
+      branch,
     };
   }
 
   match = url.match(shortPattern);
   if (match) {
+    if (!isSafeRepoSegment(match[1]) || !isSafeRepoSegment(match[2])) {
+      return null;
+    }
     return {
       source: 'github',
       owner: match[1],

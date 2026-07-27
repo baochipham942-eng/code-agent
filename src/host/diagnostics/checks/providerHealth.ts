@@ -4,6 +4,7 @@
 // 把 healthy/degraded/recovering/unavailable 映射为 pass/warn/warn/fail。
 // ============================================================================
 
+import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import { getProviderHealthMonitor } from '../../model/providerHealthMonitor';
 import type { DoctorItem } from '../types';
 
@@ -54,6 +55,7 @@ export function checkProviderHealth(): DoctorItem[] {
       message: `${health.status} · p50 ${health.latencyP50}ms · err ${errorRatePct}%`,
       details: `consecutiveErrors=${health.consecutiveErrors}, p95=${health.latencyP95}ms`,
       suggestion,
+      fix: status === 'pass' ? undefined : { code: DOCTOR_FIX_CODES.OPEN_PROVIDER_SETTINGS },
     });
   }
 

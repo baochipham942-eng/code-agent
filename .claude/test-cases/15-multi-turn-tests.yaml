@@ -7,6 +7,7 @@
 name: "多轮对话测试"
 description: "测试 Agent 的多轮对话能力：上下文记忆、指代消解、渐进式任务"
 default_timeout: 180000
+default_max_cost_usd: 0.10
 tags:
   - multi-turn
   - conversation

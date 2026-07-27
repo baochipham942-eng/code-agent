@@ -6,6 +6,7 @@
 name: "数据分析能力测试"
 description: "测试 Agent 的数据分析和处理能力"
 default_timeout: 600000
+default_max_cost_usd: 0.10
 tags:
   - data
   - core-path

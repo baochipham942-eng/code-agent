@@ -21,7 +21,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { ChangeDetector } from '../src/host/testing/ci/changeDetector';
 import { BaselineManager } from '../src/host/testing/ci/baselineManager';
-import { loadEvalSplits, applySplitFilter, type SplitBucket } from '../src/host/testing/ci/sampleSplits';
+import {
+  EVAL_SPLITS_RELATIVE_PATH,
+  applySplitFilter,
+  assertValidEvalSplits,
+  loadEvalSplits,
+  type SplitBucket,
+} from '../src/host/testing/ci/sampleSplits';
 import { TrendTracker } from '../src/host/testing/ci/trendTracker';
 import { generateDeltaConsole } from '../src/host/testing/ci/deltaReporter';
 import {
@@ -38,6 +44,8 @@ import type { AgentInterface } from '../src/host/testing/testRunner';
 import type { CompareConfiguration, TestRunSummary, TrendDataPoint } from '../src/host/testing/types';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
 import { isProviderVariantDisabled } from '../src/host/prompts/providerVariants';
+import { isRedlineCase } from '../src/host/testing/testCaseClassification';
+import { getTestDirs } from '../src/host/config/configPaths';
 
 /** roadmap 2.4 A/B 归因（audit D-R3）：当前 run 的 provider 变体臂 */
 function providerVariantArm(): 'variant-on' | 'variant-off' {
@@ -138,10 +146,10 @@ function parseArgs(argv: string[]) {
       ids = args[++i].split(',').map((id) => id.trim()).filter(Boolean);
     } else if (arg === '--split' && i + 1 < args.length) {
       const val = args[++i];
-      if (val === 'held-in' || val === 'held-out' || val === 'control') {
+      if (val === 'held-in' || val === 'held-out' || val === 'control' || val === 'safety') {
         split = val;
       } else {
-        console.error(chalk.red(`Invalid split: ${val}. Use 'held-in', 'held-out' or 'control'.`));
+        console.error(chalk.red(`Invalid split: ${val}. Use 'held-in', 'held-out', 'control' or 'safety'.`));
         process.exit(1);
       }
     } else if (arg === '--compare' && i + 1 < args.length) {
@@ -198,7 +206,7 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts --max-cases <n>    Max cases in --real mode (default: 50)
   npx tsx scripts/eval-ci.ts --tags <a,b>       Filter test cases by tags
   npx tsx scripts/eval-ci.ts --ids <a,b>        Filter test cases by IDs
-  npx tsx scripts/eval-ci.ts --split <bucket>   Filter to sample split: 'held-in' (daily) / 'held-out' (milestone only) / 'control' (judge calibration)
+  npx tsx scripts/eval-ci.ts --split <bucket>   Filter to 'held-in' (daily) / 'held-out' (milestone) / 'control' (judge calibration) / 'safety' (OS jail only)
   npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
   npx tsx scripts/eval-ci.ts --compare <yaml>   A/B paired blind test: baseline vs candidate config (requires --real)
   npx tsx scripts/eval-ci.ts --judge <mode>     Grading for --compare: 'rules' (default, free) or 'llm'
@@ -278,6 +286,13 @@ function getCommitSha(): string {
   } catch {
     return 'unknown';
   }
+}
+
+function resolveCoreTestCaseDir(workingDir: string): string {
+  const testDirs = getTestDirs(workingDir).testCases;
+  if (fs.existsSync(testDirs.new)) return testDirs.new;
+  if (fs.existsSync(testDirs.legacy)) return testDirs.legacy;
+  return testDirs.new;
 }
 
 function getRepoStatusSnapshot(repoDir: string): string[] | null {
@@ -494,13 +509,12 @@ async function runEvals(
     const config = createDefaultConfig(workingDir, {
       verbose: false,
       workingDirectory: agentWorkingDir,
+      testCaseDir: opts.caseDir ?? resolveCoreTestCaseDir(workingDir),
       filterTags: opts.tags,
       filterIds: opts.ids,
       ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
       // WP1-4: 预测登记随 summary 落盘/DB，deltaReporter 对账
       ...(opts.prediction ? { prediction: opts.prediction } : {}),
-      // 外部基准（如 GAIA）用独立 case 目录
-      ...(opts.caseDir ? { testCaseDir: opts.caseDir } : {}),
     });
 
     const agent = createAgent({
@@ -550,6 +564,8 @@ async function runEvals(
               ? '\u274C'
               : event.result.status === 'infra_excluded'
               ? '\u{1F50C}'
+              : event.result.status === 'cost_exceeded'
+              ? '\u{1F4B8}'
               : '\u23ED\uFE0F';
           console.log(
             `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
@@ -618,7 +634,7 @@ async function runCompareCommand(
 
   // Load & filter cases
   const defaultConfig = createDefaultConfig(workingDir);
-  const suites = await loadAllTestSuites(opts.caseDir ?? defaultConfig.testCaseDir);
+  const suites = await loadAllTestSuites(opts.caseDir ?? resolveCoreTestCaseDir(workingDir));
   const testCases = filterTestCases(suites, { filterTags: opts.tags, filterIds: opts.ids });
   const totalCases = testCases.length;
 
@@ -722,22 +738,52 @@ async function runCompareCommand(
 
 export async function main(argv = process.argv, cwd = process.cwd()) {
   const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force, tags, ids: rawIds, compare, judge, predictedFixes, riskTasks, caseDir, split } = parseArgs(argv);
-  // WP1b：--split 把 ids 过滤到切分桶（held-in 日常迭代 / held-out 里程碑 / control judge 校准）
+  const workingDir = cwd;
+  const manager = new BaselineManager(workingDir);
+  const tracker = new TrendTracker(workingDir);
+
+  // --baseline-info
+  if (baselineInfo) {
+    await showBaselineInfo(manager);
+    return;
+  }
+
+  // WP1b：核心集所有执行路径默认 held-in。外部 benchmark 保持自己的独立 case
+  // 目录，不读取内部切分资产；显式 --split 才能进入 held-out/control/safety。
   let ids = rawIds;
-  if (split) {
+  if (caseDir) {
+    if (split) {
+      console.error(chalk.red('  Error: --case-dir 外部基准不能与内部 --split 混用。'));
+      process.exit(1);
+    }
+  } else {
+    const effectiveSplit: SplitBucket = split ?? 'held-in';
     const splitFile = await loadEvalSplits(cwd);
     if (!splitFile) {
-      console.error(chalk.red('  Error: 没有切分文件（.code-agent/eval-splits.json）。先跑 scripts/eval-split.ts 生成。'));
+      console.error(chalk.red(`  Error: 没有版本化切分文件（${EVAL_SPLITS_RELATIVE_PATH}）。先跑 scripts/eval-split.ts 生成。`));
       process.exit(1);
     }
-    ids = applySplitFilter(rawIds, splitFile, split);
+    const suites = await loadAllTestSuites(resolveCoreTestCaseDir(cwd));
+    const allCases = filterTestCases(suites, {});
+    try {
+      assertValidEvalSplits(splitFile, {
+        allCaseIds: allCases.map((testCase) => testCase.id),
+        safetyCaseIds: allCases.filter(isRedlineCase).map((testCase) => testCase.id),
+      });
+    } catch (error) {
+      console.error(chalk.red(`  Error: ${error instanceof Error ? error.message : String(error)}`));
+      process.exit(1);
+    }
+    ids = applySplitFilter(rawIds, splitFile, effectiveSplit);
     if (ids.length === 0) {
-      console.error(chalk.red(`  Error: --split ${split} 过滤后没有可跑的 case（检查 --ids 是否与桶相交）。`));
+      console.error(chalk.red(`  Error: --split ${effectiveSplit} 过滤后没有可跑的 case（检查 --ids 是否与桶相交）。`));
       process.exit(1);
     }
-    console.log(chalk.cyan(`  Split: ${split}（seed=${splitFile.seed}，${ids.length} cases）`));
-    if (split === 'held-out') {
+    console.log(chalk.cyan(`  Split: ${effectiveSplit}${split ? '' : '（日常默认）'}（seed=${splitFile.seed}，${ids.length} cases）`));
+    if (effectiveSplit === 'held-out') {
       console.log(chalk.yellow('  ⚠ held-out 是过拟合探测器，只在里程碑检查时跑；日常迭代请用 --split held-in。'));
+    } else if (effectiveSplit === 'safety') {
+      console.log(chalk.yellow('  ⚠ safety 只允许在 OS jail 生效时执行；无 jail 的运行时安全闸会在模型调用前分流。'));
     }
   }
 
@@ -748,10 +794,6 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
 
   // --model implies --real
   const effectiveReal = real || !!model;
-
-  const workingDir = cwd;
-  const manager = new BaselineManager(workingDir);
-  const tracker = new TrendTracker(workingDir);
 
   // --compare: A/B paired blind test (WP1-3)
   if (compare) {
@@ -769,12 +811,6 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
     }
     // 显式退出：真跑后 DB/telemetry/限流器残留 handle 会让进程写完报告仍挂住不退
     process.exit(0);
-  }
-
-  // --baseline-info
-  if (baselineInfo) {
-    await showBaselineInfo(manager);
-    return;
   }
 
   // --trend
@@ -797,7 +833,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
 
     // --real mode safety guards for promote
     if (effectiveReal) {
-      const testCaseDir_ = createDefaultConfig(workingDir).testCaseDir;
+      const testCaseDir_ = resolveCoreTestCaseDir(workingDir);
       const suites = await loadAllTestSuites(testCaseDir_);
       const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
       const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
@@ -882,7 +918,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   // --real mode safety guards
   if (effectiveReal) {
     // Load suites to count total cases
-    const testCaseDir_ = caseDir ?? createDefaultConfig(workingDir).testCaseDir;
+    const testCaseDir_ = caseDir ?? resolveCoreTestCaseDir(workingDir);
     const suites = await loadAllTestSuites(testCaseDir_);
     const totalCases = filterTestCases(suites, { filterTags: tags, filterIds: ids }).length;
     const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
@@ -937,10 +973,18 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   // 外部基准（--case-dir）不与自建集 baseline 对账、不进 trend——
   // 语义不同（外部锚点 vs 内部回归），混进来会把 45 子集基线搅成噪声。
   if (caseDir) {
-    const capabilityTotal = summary.total - (summary.infraExcluded ?? 0) - summary.skipped;
+    const capabilityTotal =
+      summary.total
+      - (summary.infraExcluded ?? 0)
+      - (summary.costExceeded ?? 0)
+      - summary.skipped;
     const passRate = capabilityTotal > 0 ? summary.passed / capabilityTotal : 0;
     console.log(chalk.bold(`  External benchmark run (${caseDir})`));
-    console.log(`  Accuracy: ${chalk.cyan((passRate * 100).toFixed(1) + '%')} (${summary.passed}/${capabilityTotal}${summary.infraExcluded ? `, 🔌 ${summary.infraExcluded} infra-excluded` : ''})`);
+    console.log(
+      `  Accuracy: ${chalk.cyan((passRate * 100).toFixed(1) + '%')} (${summary.passed}/${capabilityTotal}`
+      + `${summary.infraExcluded ? `, 🔌 ${summary.infraExcluded} infra-excluded` : ''}`
+      + `${summary.costExceeded ? `, 💸 ${summary.costExceeded} cost-exceeded` : ''})`,
+    );
     console.log(chalk.dim('  跳过 baseline 对账与 trend（外部锚点不进内部回归基线）'));
     console.log('');
     return;
@@ -955,7 +999,11 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
   // Track trend
   const commitSha = getCommitSha();
   // WP1-2：能力通过率分母排除 infra_excluded（429/超时/5xx/网络）
-  const capabilityTotal = summary.total - (summary.infraExcluded ?? 0);
+  const capabilityTotal =
+    summary.total
+    - (summary.infraExcluded ?? 0)
+    - (summary.costExceeded ?? 0)
+    - summary.skipped;
   const passRate = capabilityTotal > 0 ? summary.passed / capabilityTotal : 0;
   const trendPoint: TrendDataPoint = {
     timestamp: Date.now(),
@@ -970,6 +1018,7 @@ export async function main(argv = process.argv, cwd = process.cwd()) {
     mode: effectiveReal ? 'real' : 'mock',
     providerVariantArm: providerVariantArm(),
     ...(summary.infraExcluded ? { infraExcluded: summary.infraExcluded } : {}),
+    ...(summary.costExceeded ? { costExceeded: summary.costExceeded } : {}),
   };
   await tracker.append(trendPoint);
   console.log(chalk.dim(`  Trend data recorded (commit: ${commitSha.slice(0, 7)})`));

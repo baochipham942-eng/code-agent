@@ -129,7 +129,7 @@ async function main() {
   if (useControl) {
     const splits = await loadEvalSplits(process.cwd());
     if (!splits) {
-      console.error('缺切分文件（.code-agent/eval-splits.json），先跑 scripts/eval-split.ts');
+      console.error('缺切分文件（.claude/eval-splits.json），先跑 scripts/eval-split.ts');
       process.exit(1);
     }
     const controlIds = new Set(applySplitFilter(undefined, splits, 'control'));

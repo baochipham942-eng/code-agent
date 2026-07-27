@@ -77,6 +77,7 @@ describe('SettingsModal screen memory tab visibility', () => {
     expect(groups[1].tabs.map((tab) => tab.id)).toEqual([
       'appearance',
       'general',
+      'doctor',
       'conversation',
       'keybindings',
       'voiceInput',

@@ -1,9 +1,10 @@
 #!/usr/bin/env npx tsx
 // ============================================================================
-// eval-split.ts — 生成 held-in/held-out/control 切分文件（WP1b 样本工程）
+// eval-split.ts — 生成 held-in/held-out/control/safety 切分文件（WP1b 样本工程）
 // ============================================================================
 // held-in 日常迭代 + baseline 对账；held-out 只在里程碑检查（过拟合探测）；
-// control = held-in 里带确定性断言的 case（judge 校准金标源）。
+// control = held-in 里带确定性断言的 case（judge 校准金标源）；
+// safety = 破坏性/红线 case，先于能力切分隔离。
 // GAIA validation 为天然 held-out 外部锚点（--case-dir 独立入口，不进本地 split）。
 //
 // Usage:
@@ -12,19 +13,25 @@
 
 import fs from 'fs';
 import path from 'path';
-import { splitHeldInOut, saveEvalSplits } from '../src/host/testing/ci/sampleSplits';
-import { loadAllTestSuites } from '../src/host/testing/testCaseLoader';
+import {
+  EVAL_SPLITS_RELATIVE_PATH,
+  assertValidEvalSplits,
+  splitHeldInOut,
+  saveEvalSplits,
+} from '../src/host/testing/ci/sampleSplits';
+import { filterTestCases, loadAllTestSuites } from '../src/host/testing/testCaseLoader';
 import { countDeclaredAssertions } from '../src/host/testing/assertionEngine';
-import { getTestDirs } from '../src/host/config';
+import { getTestDirs, resolvePathWithFallback } from '../src/host/config/configPaths';
+import { isRedlineCase } from '../src/host/testing/testCaseClassification';
 
-const HELP = `eval-split — 生成 held-in/held-out/control 切分（eval-splits.json）
+const HELP = `eval-split — 生成 held-in/held-out/control/safety 切分（eval-splits.json）
 
 Options:
   --from-baseline <json>  从 baseline 文件的 caseResults keys 取 id 全集
   --ids <a,b,c>           或显式给 id 列表
   --seed <s>              切分种子（必填——换卷子必须显式留痕）
   --ratio <0-1>           held-out 份额（默认 0.4）
-  --out <dir>             输出目录（默认当前仓库根，落 .code-agent/eval-splits.json）
+  --out <dir>             输出目录（默认当前仓库根，落 .claude/eval-splits.json）
   --help                  显示本帮助`;
 
 function parseArgs(argv: string[]) {
@@ -59,14 +66,30 @@ async function main() {
   }
   if (!ids || ids.length === 0) { console.error('缺 id 全集：给 --from-baseline 或 --ids\n'); process.exit(1); }
 
-  const { heldIn, heldOut } = splitHeldInOut(ids, { seed, heldOutRatio: ratio });
+  const testDirs = getTestDirs(out);
+  const testCaseDir = await resolvePathWithFallback(
+    testDirs.testCases.new,
+    testDirs.testCases.legacy,
+  );
+  const suites = await loadAllTestSuites(testCaseDir.resolved);
+  const cases = filterTestCases(suites, {});
+  const caseById = new Map(cases.map((testCase) => [testCase.id, testCase]));
+  const unknown = ids.filter((id) => !caseById.has(id));
+  if (unknown.length > 0) {
+    throw new Error(
+      `${unknown.length} 个 id 在 test-cases 里找不到，拒绝生成不可审计切分: ${unknown.join(', ')}`,
+    );
+  }
+  const safety = ids.filter((id) => isRedlineCase(caseById.get(id)!)).sort();
+  const capabilityIds = ids.filter((id) => !safety.includes(id));
+  const { heldIn, heldOut } = splitHeldInOut(capabilityIds, { seed, heldOutRatio: ratio });
 
-  // control = held-in 里带确定性断言的 case（judge 校准金标可用；
-  // 取自 held-in 避免把 held-out 泄进任何调优回路）
-  const suites = await loadAllTestSuites(getTestDirs(out).testCases.new);
-  const declared = new Map(suites.flatMap((s) => s.cases).map((c) => [c.id, countDeclaredAssertions(c.expect) + (c.expectations?.length ?? 0)]));
+  // control 取自 held-in，避免把 held-out 泄进 judge 调优回路。
+  const declared = new Map(cases.map((testCase) => [
+    testCase.id,
+    countDeclaredAssertions(testCase.expect) + (testCase.expectations?.length ?? 0),
+  ]));
   const control = heldIn.filter((id) => (declared.get(id) ?? 0) > 0);
-  const unknown = ids.filter((id) => !declared.has(id));
 
   const file = {
     version: 1 as const,
@@ -75,15 +98,17 @@ async function main() {
     heldIn,
     heldOut,
     control,
-    note: 'GAIA validation 为天然 held-out 外部锚点（--case-dir 独立入口，不进本地 split）；held-out 只在里程碑检查。',
+    safety,
+    note: 'GAIA validation 为天然 held-out 外部锚点（--case-dir 独立入口，不进本地 split）；held-out 只在里程碑检查；safety 仅限 OS jail。',
   };
+  assertValidEvalSplits(file, {
+    allCaseIds: ids,
+    safetyCaseIds: safety,
+  });
   await saveEvalSplits(out, file);
 
-  console.log(`✅ 切分完成（seed=${seed}）：held-in ${heldIn.length} / held-out ${heldOut.length} / control ${control.length}`);
-  if (unknown.length > 0) {
-    console.log(`⚠ ${unknown.length} 个 id 在 test-cases 里找不到（control 判定按无断言处理）: ${unknown.slice(0, 5).join(', ')}${unknown.length > 5 ? '…' : ''}`);
-  }
-  console.log(`   → ${path.join(out, '.code-agent', 'eval-splits.json')}`);
+  console.log(`✅ 切分完成（seed=${seed}）：held-in ${heldIn.length} / held-out ${heldOut.length} / control ${control.length} / safety ${safety.length}`);
+  console.log(`   → ${path.join(out, EVAL_SPLITS_RELATIVE_PATH)}`);
 }
 
 main().catch((e) => { console.error('eval-split failed:', e); process.exit(1); });

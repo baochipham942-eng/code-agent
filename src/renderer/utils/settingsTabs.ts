@@ -15,6 +15,7 @@ export const SETTINGS_TAB_IDS = [
   'search',
   'voiceInput',
   'keybindings',
+  'doctor',
   'model',
   'visualModels',
   'agentEngine',
@@ -111,6 +112,8 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   appearance: 'basics',
   keybindings: 'basics',
   voiceInput: 'basics',
+  // 全量诊断：系统级能力，独立菜单项（工单③b 返工拍板）
+  doctor: 'basics',
   // 模型与能力
   model: 'models',
   visualModels: 'models',

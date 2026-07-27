@@ -2,16 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SPEECH_INPUT_SETTINGS } from '../../../src/shared/contract';
-
-const { hookState } = vi.hoisted(() => ({
-  hookState: {
-    current: null as any,
-  },
-}));
-
-vi.mock('../../../src/renderer/hooks/useVoiceInput', () => ({
-  useVoiceInput: () => hookState.current,
-}));
+import type { UseVoiceInputReturn } from '../../../src/renderer/hooks/useVoiceInput';
 
 vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
   openNativeDesktopSystemSettings: vi.fn(),
@@ -19,29 +10,34 @@ vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
 
 import { VoiceInputButton } from '../../../src/renderer/components/features/chat/ChatInput/VoiceInputButton';
 
+let voiceState: UseVoiceInputReturn;
+
 function setHookState(patch: Record<string, unknown> = {}) {
-  hookState.current = {
+  voiceState = {
     status: 'idle',
     duration: 0,
     isSupported: true,
     isEnabled: true,
     settings: DEFAULT_SPEECH_INPUT_SETTINGS,
+    start: vi.fn(),
+    stop: vi.fn(),
     toggle: vi.fn(),
     retry: vi.fn(),
     canRetry: false,
     clearError: vi.fn(),
     error: null,
     errorCode: null,
+    lastResult: null,
     inputLevel: 0,
     silenceWarning: false,
     ...patch,
-  };
+  } as UseVoiceInputReturn;
 }
 
 function renderButton(): string {
   return renderToStaticMarkup(
     React.createElement(VoiceInputButton, {
-      onTranscript: () => undefined,
+      voice: voiceState,
     }),
   );
 }
@@ -54,11 +50,11 @@ describe('VoiceInputButton', () => {
   it('renders the idle composer voice entry point', () => {
     const html = renderButton();
 
-    expect(html).toContain('aria-label="开始语音输入，首次使用会请求麦克风"');
-    expect(html).toContain('title="开始语音输入，首次使用会请求麦克风"');
+    expect(html).toContain('aria-label="语音转文字"');
+    expect(html).toContain('title="语音转文字"');
   });
 
-  it('keeps recording feedback inside the button surface', () => {
+  it('recording state keeps only the stop entry — feedback lives in the composer recording bar (G4)', () => {
     setHookState({
       status: 'recording',
       duration: 12,
@@ -69,8 +65,9 @@ describe('VoiceInputButton', () => {
 
     expect(html).toContain('aria-label="停止录音并转写"');
     expect(html).toContain('录音中 12s，点击停止');
-    expect(html).toContain('width:42%');
-    expect(html).toContain('12s');
+    expect(html).toContain('bg-red-500');
+    // G4：迷你电平条/底部小计时已上移到 DictationRecordingBar，按钮不再内嵌
+    expect(html).not.toContain('width:42%');
   });
 
   it('shows a low-audio warning without opening an error popover', () => {

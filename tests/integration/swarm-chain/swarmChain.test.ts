@@ -247,10 +247,6 @@ function setupChain(): ChainHarness {
       },
       scope: runScope,
     });
-    // Checkpoint path behavior has dedicated filesystem tests. Keep this IPC
-    // chain deterministic and focused on concurrent run/result routing.
-    vi.spyOn(coordinator, 'persistCheckpoint').mockResolvedValue(undefined);
-    vi.spyOn(coordinator, 'deleteCheckpoint').mockResolvedValue(undefined);
     return coordinator;
   };
   const coordinator = createCoordinator(scope);

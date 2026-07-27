@@ -6,6 +6,7 @@
 name: "长文本与大文件测试"
 description: "测试 Agent 处理长文本和大文件的能力"
 default_timeout: 600000
+default_max_cost_usd: 0.10
 tags:
   - long-text
   - edge-case

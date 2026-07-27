@@ -8,11 +8,11 @@ import { useAppStore } from './stores/appStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { initializeAgentRegistryStore } from './stores/agentRegistryStore';
 import { useSessionStore } from './stores/sessionStore';
+import { initializeStatusStore } from './stores/statusStore';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TitleBar } from './components/TitleBar';
-import { UserQuestionModal } from './components/UserQuestionModal';
 import { MCPElicitationModal } from './components/MCPElicitationModal';
 import { MCPOAuthConsentModal } from './components/MCPOAuthConsentModal';
 import { AuthModal } from './components/AuthModal';
@@ -31,6 +31,7 @@ import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { RoleDetailPage } from './components/features/expert/RoleDetailPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
+import { useDoctorStore, DOCTOR_STARTUP_CHECK_DELAY_MS } from './stores/doctorStore';
 import { ModelOnboardingModal } from './components/onboarding/ModelOnboardingModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
@@ -196,7 +197,6 @@ export const App: React.FC = () => {
     (isPreviewActive || activeWorkbenchTab === 'overview' || activeWorkbenchTab === 'browser');
   const appliedNarrowSidebarDefaultRef = useRef(false);
 
-  const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [mcpElicitation, setMcpElicitation] = useState<MCPElicitationRequest | null>(null);
   const [mcpOAuthConsent, setMcpOAuthConsent] = useState<MCPOAuthConsentRequest | null>(null);
 
@@ -239,15 +239,6 @@ export const App: React.FC = () => {
   const workflowPendingLaunchRequest = useWorkflowStore((state) => (
     state.pendingLaunchRequest(currentSessionId ?? undefined)
   ));
-
-  const closeUserQuestion = useCallback(() => {
-    setUserQuestion((current) => {
-      if (current) {
-        useSessionStore.getState().clearPendingUserQuestion(current);
-      }
-      return null;
-    });
-  }, []);
 
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
   const { isStandard, dagPanelEnabled } = useDisclosure();
@@ -339,6 +330,12 @@ export const App: React.FC = () => {
   useEffect(() => {
     initializeAgentRegistryStore().catch((error) => {
       logger.error('Failed to initialize agent registry store', error);
+    });
+  }, []);
+
+  useEffect(() => {
+    initializeStatusStore().catch((error) => {
+      logger.error('Failed to hydrate today cost', error);
     });
   }, []);
 
@@ -560,6 +557,14 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [isAuthLoading, openModelOnboardingIfNeeded]);
 
+  // 启动后延迟静默跑一次诊断快检（skipNetwork）：有 fail 项才在侧栏亮红点，全绿不打扰
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void useDoctorStore.getState().runSilentStartupCheck();
+    }, DOCTOR_STARTUP_CHECK_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
   // 监听工具创建确认请求
   useEffect(() => {
     const unsubscribe = ipcService.on(
@@ -576,13 +581,17 @@ export const App: React.FC = () => {
   }, []);
 
   // Listen for user question events (Gen 3+)
+  // G2 拍板形态：问题进 pending 队列，由 ChatView 的打断式选项卡（遮盖 composer）
+  // 渲染，不再弹全局 Modal。无 sessionId 的请求绑到当前会话，保证用户总能答到。
   useEffect(() => {
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.USER_QUESTION_ASK,
       (request: UserQuestionRequest) => {
         logger.info('Received user question', { id: request.id, sessionId: request.sessionId });
-        useSessionStore.getState().addPendingUserQuestion(request);
-        setUserQuestion(request);
+        const withSession = request.sessionId
+          ? request
+          : { ...request, sessionId: useSessionStore.getState().currentSessionId ?? undefined };
+        useSessionStore.getState().addPendingUserQuestion(withSession);
       }
     );
 
@@ -947,13 +956,7 @@ export const App: React.FC = () => {
 
 
 
-      {/* User Question Modal (Gen 3+) */}
-      {userQuestion && (
-        <UserQuestionModal
-          request={userQuestion}
-          onClose={closeUserQuestion}
-        />
-      )}
+      {/* User Question：G2 起改为 ChatView 内打断式选项卡（遮盖 composer），不再挂全局 Modal */}
 
       {/* MCP Elicitation Modal */}
       {mcpElicitation && (

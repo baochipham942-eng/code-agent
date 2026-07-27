@@ -7,7 +7,7 @@ export const voiceZh = {
   voice: {
     live: {
       start: '实时通话',
-      startTitle: '开始实时语音通话',
+      startTitle: '开始实时通话',
       end: '结束',
       endTitle: '结束通话',
       mute: '静音',
@@ -54,6 +54,9 @@ export const voiceZh = {
       participants: '参与专家',
       minute: '分',
       second: '秒',
+      expand: '展开文字记录',
+      collapse: '收起文字记录',
+      noTranscript: '这通电话的文字记录未保留（旧版本通话）',
     },
     settings: {
       live: '实时通话',
@@ -109,7 +112,7 @@ export const voiceEn: typeof voiceZh = {
   voice: {
     live: {
       start: 'Live call',
-      startTitle: 'Start a realtime voice call',
+      startTitle: 'Start a live call',
       end: 'End',
       endTitle: 'End call',
       mute: 'Mute',
@@ -156,6 +159,9 @@ export const voiceEn: typeof voiceZh = {
       participants: 'Participants',
       minute: 'm',
       second: 's',
+      expand: 'Show transcript',
+      collapse: 'Hide transcript',
+      noTranscript: "This call's transcript wasn't kept (older app version)",
     },
     settings: {
       live: 'Realtime call',

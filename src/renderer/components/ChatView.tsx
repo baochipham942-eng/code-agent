@@ -32,6 +32,7 @@ import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceEx
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { ChatInput } from './features/chat/ChatInput';
+import { UserQuestionCard } from './UserQuestionCard';
 import { TranscriptPartialLine } from './features/voice/TranscriptPartialLine';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { buildGoalNoticeMessage } from './features/chat/goalNotice';
@@ -134,6 +135,13 @@ export const ChatView: React.FC = () => {
   } = useAgent();
   const buildComposerContext = useComposerStore((state) => state.buildContext);
   const hydrateComposer = useComposerStore((state) => state.hydrateFromSession);
+  // G2 打断式选项卡：当前会话有待答的 AskUserQuestion 时，卡片遮盖 composer，
+  // 语义 = 必须先回答（或显式跳过）才能继续输入。队首先答，答完露出下一题。
+  const pendingUserQuestion = useSessionStore((state) =>
+    currentSessionId
+      ? (state.pendingUserQuestionsBySessionId?.get(currentSessionId)?.[0] ?? null)
+      : null,
+  );
   const currentSessionWorkingDirectory = currentSession
     ? currentSession.workingDirectory ?? null
     : appWorkingDirectory ?? null;
@@ -843,20 +851,27 @@ export const ChatView: React.FC = () => {
           {/* 通话中 partial 字幕（final 由 host 落库后自然进消息流，§7.5） */}
           <TranscriptPartialLine />
 
-          {/* Input */}
-          <ChatInput
-            ref={chatInputRef}
-            onSend={handleSendEnvelope}
-            onSteer={handleSteerEnvelope}
-            disabled={effectiveIsProcessing || isCreatingSession}
-            isProcessing={effectiveIsProcessing}
-            isInterrupting={isInterrupting}
-            onStop={cancel}
-            queuedRuntimeInputs={queuedRuntimeInputs}
-            onCancelQueuedRuntimeInput={cancelQueuedRuntimeInput}
-            onSendQueuedRuntimeInput={sendQueuedRuntimeInput}
-            hasPlan={false}
-          />
+          {/* G2 打断式选项卡：有待答问题时遮盖/替换输入区（拍板形态，非 Modal 非内联卡） */}
+          {pendingUserQuestion && (
+            <UserQuestionCard request={pendingUserQuestion} />
+          )}
+
+          {/* Input —— 待答问题期间保持挂载但隐藏（草稿不丢），卡片答复后自动恢复 */}
+          <div className={pendingUserQuestion ? 'hidden' : undefined}>
+            <ChatInput
+              ref={chatInputRef}
+              onSend={handleSendEnvelope}
+              onSteer={handleSteerEnvelope}
+              disabled={effectiveIsProcessing || isCreatingSession}
+              isProcessing={effectiveIsProcessing}
+              isInterrupting={isInterrupting}
+              onStop={cancel}
+              queuedRuntimeInputs={queuedRuntimeInputs}
+              onCancelQueuedRuntimeInput={cancelQueuedRuntimeInput}
+              onSendQueuedRuntimeInput={sendQueuedRuntimeInput}
+              hasPlan={false}
+            />
+          </div>
         </div>
       </div>
 

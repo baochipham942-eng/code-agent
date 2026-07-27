@@ -4,11 +4,25 @@
 // 未配置的标 `skip`，不计入 fail。
 // ============================================================================
 
-import { PROVIDER_REGISTRY } from '../../../shared/constants';
+import { DOCTOR_FIX_CODES, PROVIDER_REGISTRY } from '../../../shared/constants';
+import type { DoctorFixCode } from '../../../shared/constants';
 import type { BuiltInModelProvider } from '../../../shared/contract';
 import { handleTestConnection } from '../../model/providerConnectionTest';
 import { getConfigService } from '../../services/core/configService';
 import type { DoctorItem } from '../types';
+
+function getConnectivityFixCode(errorCode: string | undefined): DoctorFixCode {
+  switch (errorCode) {
+    case 'AUTH_FAILED':
+    case 'FORBIDDEN':
+    case 'RATE_LIMITED':
+    case 'API_ERROR':
+    case 'UNSUPPORTED_PROVIDER':
+      return DOCTOR_FIX_CODES.OPEN_PROVIDER_SETTINGS;
+    default:
+      return DOCTOR_FIX_CODES.OPEN_PROXY_HELP;
+  }
+}
 
 /**
  * 检查所有已配置 provider 的连通性。
@@ -65,6 +79,7 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
           suggestion: result.error?.suggestion,
           details: code,
           durationMs,
+          fix: { code: getConnectivityFixCode(code) },
         };
       } catch (err) {
         return {
@@ -73,6 +88,7 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
           status: 'warn',
           message: `内部错误: ${err instanceof Error ? err.message : String(err)}`,
           durationMs: Date.now() - started,
+          fix: { code: DOCTOR_FIX_CODES.OPEN_PROXY_HELP },
         };
       }
     }),
@@ -87,6 +103,7 @@ export async function checkProviderConnectivity(): Promise<DoctorItem[]> {
           status: 'warn' as const,
           message: '检查异常',
           details: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          fix: { code: DOCTOR_FIX_CODES.OPEN_PROXY_HELP },
         },
   );
 }

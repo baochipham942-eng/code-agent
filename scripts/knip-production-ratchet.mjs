@@ -26,7 +26,8 @@
 //
 // 基线沿革：2026-07-25 建门，实测 132；同日 #676 把 retention 接进 webServer 后降到 131；
 // 同日删 41 个死 barrel（孤儿审计 D4）后降到 90；2026-07-26 删除旧 Host
-// main/bootstrap 及其两个专用辅助文件后降到 71，随即收紧。
+// main/bootstrap 及其两个专用辅助文件后降到 71，随即收紧；2026-07-27 复量为 67
+// （#735/#741 期间把 4 个文件接回生产链路或删除），收紧锁住战果。
 //
 // 用法：node scripts/knip-production-ratchet.mjs
 
@@ -34,7 +35,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import process from 'node:process';
 
-const BASELINE_MAX = 71;
+const BASELINE_MAX = 67;
 const KNIP_VERSION = '6.24.0';
 const CONFIG = 'knip.production.json';
 

@@ -78,6 +78,22 @@ async function writeSuite(dir: string): Promise<void> {
   ].join('\n'));
 }
 
+async function writeSplit(root: string): Promise<void> {
+  await mkdir(path.join(root, '.claude'), { recursive: true });
+  await writeFile(
+    path.join(root, '.claude', 'eval-splits.json'),
+    JSON.stringify({
+      version: 1,
+      seed: 'test-seed',
+      createdAt: '2026-07-26T00:00:00.000Z',
+      heldIn: ['case-a'],
+      heldOut: [],
+      control: ['case-a'],
+      safety: [],
+    }),
+  );
+}
+
 async function runEvalCi(cwd: string, args: string[]): Promise<void> {
   await execFileAsync(process.execPath, [tsxCli, evalCiScript, ...args], {
     cwd,
@@ -85,6 +101,7 @@ async function runEvalCi(cwd: string, args: string[]): Promise<void> {
     env: {
       ...process.env,
       CODE_AGENT_EVAL_NO_SANDBOX: 'true',
+      CODE_AGENT_DATA_DIR: path.join(cwd, '.runtime-data'),
     },
   });
 }
@@ -94,9 +111,53 @@ function resultsDir(root: string): string {
 }
 
 describe('eval-ci HTML report baseline flow', () => {
+  it('无 --split 的日常路径从版本化资产只读取 held-in，并兼容仅有 .claude/test-cases 的 worktree', async () => {
+    const root = await createWorkRoot();
+    const caseDir = path.join(root, '.claude', 'test-cases');
+    await mkdir(caseDir, { recursive: true });
+    await writeFile(path.join(caseDir, 'suite.yaml'), [
+      'name: slicing',
+      'cases:',
+      '  - id: case-a',
+      '    type: task',
+      '    description: held-in',
+      '    prompt: 列出当前目录',
+      '    expect:',
+      '      response_contains: [package.json]',
+      '  - id: case-b',
+      '    type: task',
+      '    description: held-out',
+      '    prompt: 列出当前目录',
+      '    expect:',
+      '      response_contains: [package.json]',
+      '',
+    ].join('\n'));
+    await mkdir(path.join(root, '.claude'), { recursive: true });
+    await writeFile(
+      path.join(root, '.claude', 'eval-splits.json'),
+      JSON.stringify({
+        version: 1,
+        seed: 'test-seed',
+        createdAt: '2026-07-26T00:00:00.000Z',
+        heldIn: ['case-a'],
+        heldOut: ['case-b'],
+        control: ['case-a'],
+        safety: [],
+      }),
+    );
+
+    await runEvalCi(root, ['--scope', 'smoke']);
+
+    const report = JSON.parse(
+      await readFile(path.join(resultsDir(root), 'latest-report.json'), 'utf8'),
+    ) as { results: Array<{ testId: string }> };
+    expect(report.results.map((result) => result.testId)).toEqual(['case-a']);
+  });
+
   it('writes the only eval HTML report after baseline compare so latest-report.html includes baseline delta', async () => {
     const root = await createWorkRoot();
     await writeSuite(path.join(root, CONFIG_DIR_NEW, 'test-cases'));
+    await writeSplit(root);
 
     const manager = new BaselineManager(root);
     await manager.promote(makeSummary([

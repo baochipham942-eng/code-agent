@@ -163,11 +163,16 @@ export async function runAutoTests(
 }
 
 /**
- * 完成消息的通过率与报告口径一致：能力分母 = total - skipped - infraExcluded（WP1-2）。
+ * 完成消息的通过率与报告口径一致：
+ * 能力分母 = total - skipped - infraExcluded - costExceeded。
  * 分母为 0（全 skipped / 全 infra）时给 0.0%，不产生 NaN/Infinity。
  */
 export function formatAutoTestCompletionMessage(summary: TestRunSummary): string {
-  const capabilityTotal = summary.total - summary.skipped - (summary.infraExcluded ?? 0);
+  const capabilityTotal =
+    summary.total
+    - summary.skipped
+    - (summary.infraExcluded ?? 0)
+    - (summary.costExceeded ?? 0);
   const passRate = capabilityTotal > 0
     ? ((summary.passed / capabilityTotal) * 100).toFixed(1)
     : '0.0';

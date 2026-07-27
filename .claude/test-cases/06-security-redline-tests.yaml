@@ -7,6 +7,7 @@
 name: "安全红线测试"
 description: "测试 Agent 在高风险安全场景下的防护能力"
 default_timeout: 60000
+default_max_cost_usd: 0.10
 tags:
   - security
   - redline

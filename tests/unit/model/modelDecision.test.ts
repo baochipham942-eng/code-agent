@@ -68,6 +68,7 @@ const taskStrategy: TaskModelStrategySettings = {
   },
   rules: [
     { id: 'simple-chat-fast', label: '短问答', intent: 'simple_chat', enabled: true, profile: 'fast', reason: '短输入使用快速模型' },
+    { id: 'artifact-main', label: '产物任务', intent: 'artifact', enabled: true, profile: 'main', reason: '产物使用主模型' },
     { id: 'code-main', label: '代码任务', intent: 'coding', enabled: true, profile: 'main', reason: '代码使用主模型' },
     { id: 'research-deep', label: '研究任务', intent: 'research', enabled: true, profile: 'deep', reason: '研究使用深度模型' },
     { id: 'vision-route', label: '视觉任务', intent: 'vision', enabled: true, profile: 'vision', reason: '图片使用视觉模型' },
@@ -262,10 +263,10 @@ describe('resolveModelDecision — simple 路由（计费门控）', () => {
 // --------------------------------------------------------------------------
 
 describe('resolveModelDecision — task strategy routing', () => {
-  it('routes simple chat through configured fast profile', () => {
+  it('keeps a genuine simple acknowledgement on the configured fast profile', () => {
     const { config, decision } = resolveModelDecision(makeInput({
       requestedConfig: makeConfig({ adaptive: true }),
-      messages: SIMPLE_MESSAGE,
+      messages: [{ role: 'user', content: '谢谢' }],
       billingMode: 'plan',
       taskStrategy,
     }));
@@ -276,6 +277,55 @@ describe('resolveModelDecision — task strategy routing', () => {
     expect(decision.strategyReason).toBe('短输入使用快速模型');
     expect(config.provider).toBe('zhipu');
     expect(config.model).toBe(DEFAULT_MODELS.quick);
+  });
+
+  it.each([
+    '帮我做个 PPT',
+    '帮我导出一份报告',
+  ])('routes artifact request "%s" to the resolved main profile', (content) => {
+    const { config, decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ adaptive: true }),
+      messages: [{ role: 'user', content }],
+      taskStrategy,
+    }));
+
+    expect(decision.reason).toBe('strategy-main');
+    expect(decision.strategyProfile).toBe('main');
+    expect(decision.strategyRuleId).toBe('artifact-main');
+    expect(config.provider).toBe('longcat');
+    expect(config.model).toBe(DEFAULT_MODELS.chat);
+    expect(config.maxTokens).toBe(16384);
+  });
+
+  it('keeps artifact as a main floor even when its configured rule points to fast', () => {
+    const { config, decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ adaptive: true }),
+      messages: [{ role: 'user', content: '帮我做个 PPT' }],
+      taskStrategy: {
+        ...taskStrategy,
+        rules: taskStrategy.rules.map((rule) => (
+          rule.id === 'artifact-main' ? { ...rule, profile: 'fast' } : rule
+        )),
+      },
+    }));
+
+    expect(decision.strategyProfile).toBe('main');
+    expect(config.provider).toBe('longcat');
+    expect(config.model).toBe(DEFAULT_MODELS.chat);
+  });
+
+  it('lets research plus artifact intent rise to the configured deep profile', () => {
+    const { config, decision } = resolveModelDecision(makeInput({
+      requestedConfig: makeConfig({ adaptive: true }),
+      messages: [{ role: 'user', content: '研究竞品方案并导出一份分析报告' }],
+      taskStrategy,
+    }));
+
+    expect(decision.reason).toBe('strategy-deep');
+    expect(decision.strategyProfile).toBe('deep');
+    expect(decision.strategyRuleId).toBe('research-deep');
+    expect(config.provider).toBe('deepseek');
+    expect(config.model).toBe(DEFAULT_MODELS.reasoning);
   });
 
   it('routes complex research through configured deep profile with effort and max tokens', () => {

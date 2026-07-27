@@ -53,8 +53,12 @@ describe('产物 reminder：默认开场是先落产物，不是先调研', () =
   it('「先问一轮」这扇门也必须关上', () => {
     // dogfood 实测：只关「先调研」的门，模型转头就用 AskUserQuestion 先问用途/受众，
     // 照样不落骨架。禁调研而不禁提问 = 换个姿势拖延产物。
-    expect(inject(PPT)).toContain('不要用 AskUserQuestion 问');
-    expect(inject(DOC)).toContain('不要用 AskUserQuestion 先问');
+    // G2 政策梳理：禁令收敛到「交付偏好」表述，并指回 ask_when_unclear 的唯一触发条件
+    // （缺了不答就无法继续的输入），消除与常驻 MUST…FIRST 的措辞打架。
+    expect(inject(PPT)).toContain('交付偏好不要走 AskUserQuestion');
+    expect(inject(PPT)).toContain('ask_when_unclear');
+    expect(inject(DOC)).toContain('交付偏好不要走 AskUserQuestion');
+    expect(inject(DOC)).toContain('ask_when_unclear');
   });
 
   it('PPT 的第一步不再点名工程文件', () => {

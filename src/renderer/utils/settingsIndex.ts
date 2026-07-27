@@ -78,6 +78,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'appearance', labelKey: 'fontSize', keywords: ['font', 'size', 'text'] },
   { tab: 'appearance', labelKey: 'language', keywords: ['language', 'chinese', 'english', 'internationalization', 'i18n'] },
 
+  // Doctor（全量诊断：基础偏好组的独立菜单项）
+  { tab: 'doctor', labelKey: 'systemDiagnostics', keywords: ['doctor', 'diagnostics', 'health check', 'system check', 'troubleshoot', 'stethoscope'] },
+
   // Data
   { tab: 'cache', labelKey: 'dataManagement', keywords: ['data', 'statistics', 'session count', 'message count'] },
   { tab: 'cache', labelKey: 'databaseSize', keywords: ['database', 'size', 'storage'] },

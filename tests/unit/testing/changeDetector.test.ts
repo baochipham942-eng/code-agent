@@ -45,4 +45,20 @@ describe('ChangeDetector verification changed files', () => {
       expect.objectContaining({ cwd: '/repo/worktree' }),
     );
   });
+
+  it.each([
+    ['prompt', 'src/host/prompts/systemPrompt.ts'],
+    ['skill', 'src/host/services/skills/sessionSkillService.ts'],
+    ['context', 'src/host/context/compressionPipeline.ts'],
+    ['tool', 'src/host/tools/modules/bash/bash.ts'],
+    ['code', 'src/host/agent/runtime/agentLoop.ts'],
+  ])('%s 改动都触发同一 full regression 入口', async (_kind, changedFile) => {
+    execFileSyncMock.mockReturnValue(`${changedFile}\n`);
+
+    const result = await new ChangeDetector('/repo/worktree').detectTriggeringChanges('origin/main');
+
+    expect(result.shouldRunEval).toBe(true);
+    expect(result.scope).toBe('full');
+    expect(result.changedFiles).toEqual([changedFile]);
+  });
 });

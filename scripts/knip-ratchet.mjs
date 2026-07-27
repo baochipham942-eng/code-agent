@@ -15,6 +15,7 @@
 // 2026-07-21 资料库 Batch 2：libraryClient 按需裁剪后收到 2707。
 // 2026-07-25 删 BudgetSettings 孤儿页（产品拍板不让用户设预算）后收到 2695。
 // 2026-07-26 UI 债收尾删掉单工具耗时后，formatDuration 那两层转出口没人要了，收到 2694。
+// 2026-07-27 批 G 清掉新组件的无人 default 转出口 + 未用类型出口，收到 2692。
 // knip 版本锁 6.24.0（未入 devDependencies，避免 lockfile/共享 node_modules 变更；
 // CI 与本地统一走 npx knip@6.24.0，升版本须同步重测基线）。
 //
@@ -23,7 +24,7 @@
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
-const BASELINE_MAX = 2694;
+const BASELINE_MAX = 2692;
 const KNIP_VERSION = '6.24.0';
 
 const result = spawnSync(

@@ -6,6 +6,7 @@
 name: "PPT 与文档处理测试"
 description: "测试 Agent 的 PPT 生成和文档处理能力"
 default_timeout: 600000
+default_max_cost_usd: 0.10
 tags:
   - ppt
   - document

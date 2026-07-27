@@ -83,6 +83,8 @@ export const sidebarZh = {
       librarySubtitle: '任务产出与上传的文件，可带进对话',
       capabilityHub: '能力中心',
       capabilityHubSubtitle: '专家 · 技能 · 连接器',
+      doctorIssues: '{count} 项检查未通过',
+      doctorIssuesSubtitle: '点击查看完整诊断',
     },
   },
   sessionMenu: {
@@ -354,6 +356,8 @@ export const sidebarEn: typeof sidebarZh = {
       librarySubtitle: 'Project assets · pin into chats',
       capabilityHub: 'Capability Hub',
       capabilityHubSubtitle: 'Experts · Skills · Connectors',
+      doctorIssues: '{count} checks failing',
+      doctorIssuesSubtitle: 'Click to open full diagnostics',
     },
   },
   sessionMenu: {

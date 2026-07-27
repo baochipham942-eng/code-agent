@@ -113,6 +113,25 @@ async function handleRepoAddCustom(url: string, name?: string) {
   return result;
 }
 
+/** 下载仓库到 staging 并返回装前预览 */
+async function handleRepoStage(url: string, name?: string) {
+  return getSkillRepositoryService().stageRepository(url, name);
+}
+
+/** 确认 staged 仓库并刷新发现索引 */
+async function handleRepoConfirm(stageId: string) {
+  const result = await getSkillRepositoryService().confirmStagedRepository(stageId);
+  if (result.success) {
+    await getSkillDiscoveryService().refreshLibraries();
+  }
+  return result;
+}
+
+/** 取消 staged 仓库 */
+async function handleRepoCancel(stageId: string) {
+  await getSkillRepositoryService().cancelStagedRepository(stageId);
+}
+
 // ----------------------------------------------------------------------------
 // Official Skill Registry（远程 marketplace）
 // ----------------------------------------------------------------------------
@@ -519,6 +538,36 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
       }
     }
   );
+
+  ipcMain.handle(
+    SKILL_CHANNELS.REPO_STAGE,
+    async (_, url: string, name?: string) => {
+      try {
+        return await handleRepoStage(url, name);
+      } catch (error) {
+        logger.error('Failed to stage repository', { error });
+        throw error;
+      }
+    }
+  );
+
+  ipcMain.handle(SKILL_CHANNELS.REPO_CONFIRM, async (_, stageId: string) => {
+    try {
+      return await handleRepoConfirm(stageId);
+    } catch (error) {
+      logger.error('Failed to confirm staged repository', { error });
+      throw error;
+    }
+  });
+
+  ipcMain.handle(SKILL_CHANNELS.REPO_CANCEL, async (_, stageId: string) => {
+    try {
+      await handleRepoCancel(stageId);
+    } catch (error) {
+      logger.error('Failed to cancel staged repository', { error });
+      throw error;
+    }
+  });
 
   // ------------------------------------------------------------------------
   // Official Skill Registry

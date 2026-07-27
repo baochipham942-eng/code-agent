@@ -36,6 +36,7 @@ import {
   Camera,
   Keyboard,
   ShieldCheck,
+  Stethoscope,
   Terminal,
   Mic,
   Search,
@@ -102,6 +103,7 @@ import { HooksSettings } from './tabs/HooksSettings';
 import { AboutSettings } from './tabs/AboutSettings';
 import { ScreenMemorySettings } from './tabs/ScreenMemorySettings';
 import PrivacySettings from './tabs/PrivacySettings';
+import { DoctorSettings } from './tabs/DoctorSettings';
 // 用户管理 / 邀请码 / 控制平面 / 能力治理四个 tab 已迁 admin-console（2026-07 方案 9C），
 // 组件文件保留在 ./tabs 下待清死代码，但设置页不再 import、不提供任何入口。
 import ipcService from '../../../services/ipcService';
@@ -146,6 +148,7 @@ export function buildSettingsTabGroups({
     // 基础偏好
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'general', label: t.settings.tabs.general, icon: <Shield className="w-4 h-4" /> },
+    { id: 'doctor', label: t.settings.tabs.doctor, icon: <Stethoscope className="w-4 h-4" /> },
     { id: 'conversation', label: t.settings.tabs.conversation, icon: <FoldVertical className="w-4 h-4" /> },
     { id: 'keybindings', label: t.settings.tabs.keybindings, icon: <Keyboard className="w-4 h-4" /> },
     { id: 'voiceInput', label: t.settings.tabs.voiceInput, icon: <Mic className="w-4 h-4" /> },
@@ -463,6 +466,7 @@ export const SettingsModal: React.FC = () => {
             </div>
 
             {activeTab === 'general' && <GeneralSettings />}
+            {activeTab === 'doctor' && <DoctorSettings />}
             {activeTab === 'conversation' && <ConversationSettings />}
             {activeTab === 'search' && <SearchSettings />}
             {activeTab === 'voiceInput' && <VoiceInputSettings />}

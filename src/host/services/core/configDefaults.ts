@@ -66,6 +66,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
           reason: '短输入、无文件引用时优先用快速任务模型',
         },
         {
+          id: 'artifact-main',
+          label: '文档 / 表格 / 演示产物',
+          intent: 'artifact',
+          enabled: true,
+          profile: 'main',
+          reason: '生成或导出完整产物时至少使用任务主模型',
+        },
+        {
           id: 'code-main',
           label: '代码 / 文件任务',
           intent: 'coding',

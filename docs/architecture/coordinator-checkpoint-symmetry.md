@@ -5,10 +5,18 @@
 ADR-009 明确两个 coordinator 分家不合并，服务完全不同的入口。ADR-010 #3
 让两边都具备节点级 checkpoint 的持久化与恢复原语。
 
-> **2026-07-10 生产边界**：Parallel 的 `restoreCheckpoint()` 有实现和单测，
-> 当前 `spawn_agent` / Agent Team 生产入口没有调用它，也没有 Native RunContext
-> rehydration。现阶段只能声明“checkpoint/restore 原语可用”，不能声明 Agent Team
-> crash recovery 已完成。生产恢复接线属于后续能力。
+> ⚠️ **2026-07-27 起本文档的 Parallel 一侧只是历史记录，代码已删除**。
+> `ParallelAgentCoordinator` 的 `persistCheckpoint` / `restoreCheckpoint` /
+> `deleteCheckpoint` 与 `parallel-coordination-checkpoints/` 目录整套移除：
+> `restoreCheckpoint()` 全仓零调用方，写入侧只在 dev smoke 路径产生无人读取的
+> 文件，等于 write-only 死机制。Agent Team 的崩溃恢复由 Durable Run 独家负责
+> （见 [agent-team-durable-recovery.md](./agent-team-durable-recovery.md)）。
+> 下面的字段对照表保留，仅供理解当时的设计意图。
+>
+> **2026-07-10 生产边界（已被上面这条取代）**：Parallel 的 `restoreCheckpoint()`
+> 有实现和单测，当前 `spawn_agent` / Agent Team 生产入口没有调用它，也没有
+> Native RunContext rehydration。现阶段只能声明“checkpoint/restore 原语可用”，
+> 不能声明 Agent Team crash recovery 已完成。
 
 本文档并排列出两个 coordinator 的 checkpoint 字段与触发点，作为 review
 阶段"对称性是否真的补齐"的 checklist。

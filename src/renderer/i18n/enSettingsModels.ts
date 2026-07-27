@@ -250,6 +250,7 @@ export const enSettingsModels = {
     },
     providerDoctor: {
       title: 'System diagnostics',
+      pageDescription: 'Checks 9 categories of system health — environment, network, config, database and more. Failures link to one-click fixes.',
       exportLogs: 'Export logs',
       rerun: 'Run again',
       start: 'Start diagnostics',
@@ -277,6 +278,18 @@ export const enSettingsModels = {
         warnSuffix: ' warnings',
         failSuffix: ' failed',
         skipSuffix: ' skipped',
+      },
+      recheckCategory: 'Re-check this category',
+      fixFailedPrefix: 'Action failed: ',
+      fixLabels: {
+        'open-runtime-help': 'View runtime info',
+        'open-data-directory': 'Open data folder',
+        'open-provider-settings': 'Set up AI service',
+        'open-proxy-help': 'View proxy settings',
+        'open-mcp-settings': 'Open MCP settings',
+        'open-browser-relay-settings': 'Open browser relay settings',
+        'open-hooks-settings': 'Open hooks settings',
+        'open-update-settings': 'Open update settings',
       },
     },
     search: {

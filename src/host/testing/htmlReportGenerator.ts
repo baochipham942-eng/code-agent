@@ -36,6 +36,7 @@ export function generateHtmlReport(summary: TestRunSummary, baselineDelta?: Base
     metricCard('bucket-partial', '部分通过', summary.partial, `${(summary.averageScore * 100).toFixed(1)}% avg score`),
     metricCard('bucket-fail', '失败', summary.failed, `${summary.performance.totalToolCalls} tool calls`),
     metricCard('bucket-infra', '基础设施排除', summary.infraExcluded ?? 0, '不进能力分母'),
+    metricCard('bucket-cost', '成本超限', summary.costExceeded ?? 0, 'fail-closed，不进能力分母'),
     '</div>',
     '</header>',
     '<section class="panel summary-grid">',
@@ -44,6 +45,7 @@ export function generateHtmlReport(summary: TestRunSummary, baselineDelta?: Base
     statItem('通过率', `<span data-testid="pass-rate">${passRate}</span>`, true),
     statItem('跳过', summary.skipped),
     statItem('基础设施排除', `<span data-testid="infra-excluded-count">${summary.infraExcluded ?? 0}</span>`, true),
+    statItem('成本超限', `<span data-testid="cost-exceeded-count">${summary.costExceeded ?? 0}</span>`, true),
     statItem('工作目录', summary.environment.workingDirectory),
     statItem('模型', summary.environment.model),
     statItem('提供商', summary.environment.provider),
@@ -51,6 +53,7 @@ export function generateHtmlReport(summary: TestRunSummary, baselineDelta?: Base
     renderScoreAuthorityHtml(summary.results),
     renderCaseDrilldown(summary.results),
     renderInfraSection(summary.results),
+    renderCostExceededSection(summary.results),
     baselineDelta ? renderBaselineDelta(baselineDelta) : '',
     '</main>',
     '</body>',
@@ -169,6 +172,7 @@ body {
 .bucket-partial { border-color: #f3cf75; background: var(--partial-bg); color: var(--partial); }
 .bucket-fail { border-color: #ffb4ad; background: var(--fail-bg); color: var(--fail); }
 .bucket-infra { border-color: #cbd5e1; background: var(--infra-bg); color: var(--infra); }
+.bucket-cost { border-color: #f5c2c7; background: #fff1f2; color: #9f1239; }
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -254,6 +258,7 @@ summary {
 .badge.failed { background: var(--fail-bg); color: var(--fail); }
 .badge.skipped,
 .badge.infra_excluded { background: var(--infra-bg); color: var(--infra); }
+.badge.cost_exceeded { background: #fff1f2; color: #9f1239; }
 .efficiency-triage {
   color: var(--muted);
   font-size: 12px;
@@ -330,7 +335,13 @@ function statItem(label: string, value: unknown, alreadyHtml = false): string {
 }
 
 function getCapabilityDenominator(summary: TestRunSummary): number {
-  return Math.max(0, summary.total - summary.skipped - (summary.infraExcluded ?? 0));
+  return Math.max(
+    0,
+    summary.total
+      - summary.skipped
+      - (summary.infraExcluded ?? 0)
+      - (summary.costExceeded ?? 0),
+  );
 }
 
 function getHtmlPassRate(summary: TestRunSummary): string {
@@ -351,7 +362,8 @@ function renderScoreAuthorityHtml(results: TestResult[]): string {
       (r) =>
         (r.scoreAuthority ?? 'unknown') === bucket.key &&
         r.status !== 'skipped' &&
-        r.status !== 'infra_excluded',
+        r.status !== 'infra_excluded' &&
+        r.status !== 'cost_exceeded',
     );
     if (inBucket.length === 0) return '';
     const passed = inBucket.filter((r) => r.status === 'passed').length;
@@ -503,6 +515,30 @@ function renderInfraSection(results: TestResult[]): string {
     '<p class="muted">429、超时、5xx、网络故障单列，不计入能力通过率分母。</p>',
     '<table>',
     '<thead><tr><th>Case</th><th>Description</th><th>Reason</th></tr></thead>',
+    `<tbody>${rows}</tbody>`,
+    '</table>',
+    '</section>',
+  ].join('\n');
+}
+
+function renderCostExceededSection(results: TestResult[]): string {
+  const exceeded = results.filter((result) => result.status === 'cost_exceeded');
+  if (exceeded.length === 0) return '';
+  const rows = exceeded.map((result) => [
+    '<tr>',
+    `<td>${escapeHtml(result.testId)}</td>`,
+    `<td>$${escapeHtml((result.costUsd ?? 0).toFixed(6))}</td>`,
+    `<td>$${escapeHtml((result.costLimitUsd ?? 0).toFixed(6))}</td>`,
+    `<td>${escapeHtml(capText(result.failureReason ?? 'case cost limit exceeded'))}</td>`,
+    '</tr>',
+  ].join('')).join('\n');
+
+  return [
+    '<section class="panel">',
+    '<h2>成本超限</h2>',
+    '<p class="muted">单 case 实际模型成本越线后立即停止，不计入能力通过率分母。</p>',
+    '<table>',
+    '<thead><tr><th>Case</th><th>Actual USD</th><th>Limit USD</th><th>Reason</th></tr></thead>',
     `<tbody>${rows}</tbody>`,
     '</table>',
     '</section>',

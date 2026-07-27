@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { DOCTOR_FIX_CODES } from '../../../shared/constants/doctor';
 import type { ManagedBrowserExternalBridgeState } from '../../../shared/contract/desktop';
 import { BROWSER_RELAY_PROTOCOL_VERSION_V2 } from '../../../shared/contract/browserRelay';
 import type { DoctorItem } from '../types';
@@ -42,6 +43,7 @@ export function checkBrowserRelay(
       details: 'Pairing is local-only; every tab requires an explicit owner/domain/action/time-scoped lease.',
       ...(!installed ? {
         suggestion: 'The connected extension path is unavailable to this build. Reinstall or reload the packaged extension before the next run.',
+        fix: { code: DOCTOR_FIX_CODES.OPEN_BROWSER_RELAY_SETTINGS },
       } : {}),
     }];
   }
@@ -53,6 +55,7 @@ export function checkBrowserRelay(
       message: `error · ${protocol}`,
       details: safeRelayError(state.lastError) || safeRelayError(state.reason),
       suggestion: 'Reload the extension shipped with this Agent Neo build, then rerun doctor. Protocol or capability mismatch must not be bypassed.',
+      fix: { code: DOCTOR_FIX_CODES.OPEN_BROWSER_RELAY_SETTINGS },
     }];
   }
 
@@ -65,6 +68,7 @@ export function checkBrowserRelay(
       suggestion: installed
         ? 'Open Chrome, reload the packaged extension, and wait for the automatic local pairing handshake.'
         : 'Restore the packaged Browser Relay extension before enabling Relay tasks.',
+      fix: { code: DOCTOR_FIX_CODES.OPEN_BROWSER_RELAY_SETTINGS },
     }];
   }
 
@@ -75,6 +79,7 @@ export function checkBrowserRelay(
       message: `stopped · ${protocol}`,
       details: installed ? 'Packaged extension manifest found.' : 'Packaged extension manifest not found.',
       suggestion: 'Start Browser Relay from the Browser Surface panel, then rerun doctor after the extension connects.',
+      fix: { code: DOCTOR_FIX_CODES.OPEN_BROWSER_RELAY_SETTINGS },
     }];
   }
 
@@ -83,6 +88,7 @@ export function checkBrowserRelay(
     status: 'fail',
     message: `unsupported · ${protocol}`,
     suggestion: 'Use a build that includes Browser Relay V2 or choose the isolated Managed Browser provider.',
+    fix: { code: DOCTOR_FIX_CODES.OPEN_BROWSER_RELAY_SETTINGS },
   }];
 }
 

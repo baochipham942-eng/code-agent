@@ -62,6 +62,45 @@ export const QWEN_OMNI_REALTIME_VOICE = 'Tina';
 export const QWEN_OMNI_REALTIME_VOICE_WHITELIST = ['Tina', 'Ethan', 'Serena'] as const;
 
 /**
+ * 通话模型白名单（2026-07-28 工单③）。设置页只能从这里出选项，不做自由输入。
+ *
+ * 每条带两个判据，来源分明：
+ * - `supportsTools`：2026-07-26 真机实测——3.5 系接受 session.tools 并真发 function_call；
+ *   上一代 `qwen3-omni-flash-realtime` **静默丢弃** tools（session.updated 回显 tools: null，
+ *   不报错）。不支持 tools 的模型留在表里是给「只想聊天」的场景，UI 选中时必须当场说清代价。
+ * - `voices`：**音色枚举与模型强绑定**——3.5 上 `Chelsie`/`Cherry` 一律 400
+ *   `Voice 'X' is not supported`，且这个错不在建连时报，第一次真合成才炸；上游文档
+ *   （help.aliyun.com/zh/model-studio/omni-voice-list）的音色表也按模型分节。
+ *   3.5 系沿用真机逐个合成验证过的白名单；上一代来自上游文档音色表，未逐个真跑。
+ *
+ * 这张表只是「我们以为上游会怎样」；上游行为以 session.updated 真实回显为准——
+ * qwenOmniTransport 的 tools 丢弃告警钉在回显上，不钉在这张表上。
+ */
+export const QWEN_OMNI_REALTIME_MODEL_OPTIONS = [
+  {
+    id: QWEN_OMNI_REALTIME_MODEL,
+    supportsTools: true,
+    voices: QWEN_OMNI_REALTIME_VOICE_WHITELIST,
+  },
+  {
+    id: 'qwen3-omni-flash-realtime',
+    supportsTools: false,
+    // 上游文档该模型的默认音色是 Cherry；Tina 是 3.5 系独有，这张表里没有它。
+    voices: ['Cherry', 'Ethan', 'Serena'],
+  },
+] as const;
+
+export type VoiceConversationModelOption = (typeof QWEN_OMNI_REALTIME_MODEL_OPTIONS)[number];
+
+/**
+ * 按 id 查白名单项；未配置 / 表外 id 一律回落默认模型。
+ * 设置是用户可手改的 JSON，「表外 id 原样发给上游」等于白名单形同虚设。
+ */
+export function resolveConversationModelOption(id: string | undefined): VoiceConversationModelOption {
+  return QWEN_OMNI_REALTIME_MODEL_OPTIONS.find((option) => option.id === id) ?? QWEN_OMNI_REALTIME_MODEL_OPTIONS[0];
+}
+
+/**
  * 显式写死 server_vad 默认值，是为了 ttfaPerceivedMs 能算得出静音窗。
  * 上游常见默认：threshold=0.5、prefix_padding_ms=300、silence_duration_ms=500。
  */

@@ -101,6 +101,10 @@ export function applyIndexes(db: BetterSqlite3.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_approvals_status ON pending_approvals(status)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_approvals_kind_status ON pending_approvals(kind, status)`);
 
+  // Turn cost queries: local-day range and per-session diagnostics.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_turn_cost_created ON turn_cost_estimates(created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_turn_cost_session_created ON turn_cost_estimates(session_id, created_at)`);
+
   db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_instances_message ON generative_ui_instances(session_id, source_message_id, source_ordinal)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_generative_ui_events_instance_created ON generative_ui_events(instance_id, created_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_execution_manifests_session_status ON execution_manifests(session_id, status, created_at)`);

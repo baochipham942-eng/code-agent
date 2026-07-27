@@ -131,6 +131,7 @@ export * from './completionSummary';
 export * from './handoff';
 export * from './persistence';
 export * from './desktopShell';
+export * from './turnCost';
 
 // Conversation envelope types (chat-native workbench context)
 export * from './conversationEnvelope';

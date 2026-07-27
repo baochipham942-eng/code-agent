@@ -335,6 +335,10 @@ const CAPABILITY_DOMAIN_ACTIONS = {
     'markReviewed',
     'summarizeSessions',
   ],
+  [IPC_DOMAINS.STATUS]: [
+    'getCostStats',
+    'getTodayCost',
+  ],
   [IPC_DOMAINS.SURFACE_EXECUTION]: [
     'control',
     'getFrame',

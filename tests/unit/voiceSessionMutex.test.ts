@@ -8,11 +8,12 @@ import { QWEN_OMNI_REALTIME_MODEL } from '../../src/shared/constants/voice';
 const close = vi.fn(async () => undefined);
 const sendAudio = vi.fn();
 const commitMock = vi.fn();
+const updateInstructions = vi.fn();
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 let lastOnEvent: ((event: VoiceEvent) => void) | null = null;
 const connect = vi.fn(async (input: Parameters<VoiceTransport['connect']>[0]) => {
   lastOnEvent = input.onEvent;
-  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), close };
+  return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, close };
 });
 
 vi.mock('../../src/host/services/voice/qwenOmniTransport', () => ({ qwenOmniTransport: { id: 'qwen-omni', connect } }));
@@ -52,6 +53,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     close.mockClear();
     sendAudio.mockClear();
     commitMock.mockClear();
+    updateInstructions.mockClear();
     addMessageToSession.mockClear();
     lastOnEvent = null;
   });
@@ -82,7 +84,7 @@ describe('voiceSessionService 互斥与挂断', () => {
     // 上游握手不是瞬时的：让它挂一拍，模拟真实的 await 窗口
     connect.mockImplementationOnce(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), close };
+      return { kind: 'relay', provider: 'qwen-omni', sendAudio, commit: commitMock, interrupt: vi.fn(), updateInstructions, close };
     });
 
     const a = new FakeClient();
@@ -351,4 +353,54 @@ describe('断线重连 sticky（批 H）', () => {
 
     await vi.waitFor(() => expect(getActiveVoiceSessionId()).toBeNull(), { timeout: 4000 });
   }, 10_000);
+});
+
+// ============================================================================
+// 批 H · Context 注入（§6.5）。判据是「上游真收到了刷新」，不是「host 存下了焦点」——
+// 存下但没人推给模型，正是本仓反复踩的「建好不接电」。
+// ============================================================================
+describe('焦点上报刷新 instructions（批 H）', () => {
+  beforeEach(() => {
+    updateInstructions.mockClear();
+    connect.mockClear();
+  });
+
+  afterEach(async () => {
+    await endActiveVoiceSession();
+  });
+
+  it('焦点变化推一次 session.update，且内容里带得上文件路径', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+
+    client.emit('message', Buffer.from(JSON.stringify({
+      type: 'focus',
+      context: { view: 'preview:/repo/a.ts', filePath: '/repo/a.ts' },
+    })), false);
+
+    expect(updateInstructions).toHaveBeenCalledTimes(1);
+    expect(updateInstructions.mock.calls[0][0]).toContain('/repo/a.ts');
+  });
+
+  it('同一份焦点重复上报不再推（上游每次刷新都有代价）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+    const focus = Buffer.from(JSON.stringify({ type: 'focus', context: { filePath: '/repo/a.ts' } }));
+
+    client.emit('message', focus, false);
+    client.emit('message', focus, false);
+
+    expect(updateInstructions).toHaveBeenCalledTimes(1);
+  });
+
+  it('刷新后的 instructions 仍带着通话身份的人设（别把人设冲掉）', async () => {
+    const client = new FakeClient();
+    await attachVoiceClient(client as never, 'session-1');
+
+    client.emit('message', Buffer.from(JSON.stringify({
+      type: 'focus', context: { filePath: '/repo/a.ts' },
+    })), false);
+
+    expect(updateInstructions.mock.calls[0][0]).toContain('spawn_task');
+  });
 });

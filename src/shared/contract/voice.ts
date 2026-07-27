@@ -90,10 +90,29 @@ export type VoiceEvent =
   | { type: 'work.upsert'; item: VoiceWorkItem }
   | { type: 'error'; code: string; message: string };
 
+/**
+ * 用户此刻在看什么（方案 §6.5 的 `[Context — Focus]`，批 H）。
+ *
+ * 字段按 **Neo 真实存在的焦点** 定义，不照抄 IDE 词汇：这个产品里没有编辑器文本选区、
+ * 也没有 diff 视图，硬编出来只会让通话 brain 一本正经地说不存在的东西。
+ */
+export interface VoiceFocusContext {
+  /** 右栏当前视图：overview / files / browser / design-canvas / preview:<path> */
+  view?: string;
+  /** 当前打开的文件路径（右栏 preview tab） */
+  filePath?: string;
+  /** 该文件处于编辑态且有未保存改动 */
+  unsaved?: boolean;
+  /** 实时预览里用户点选的元素描述 */
+  selectedElement?: string;
+}
+
 /** Renderer → Host 的控制帧（媒体帧走二进制，不走这里）。 */
 export type VoiceClientCommand =
   | { type: 'end' }
   | { type: 'interrupt' }
+  /** 焦点变化上报。节流后发；host 据此增量刷新 instructions（§6.5）。 */
+  | { type: 'focus'; context: VoiceFocusContext }
   /**
    * 手动提交（turn_detection = null 的 PTT/点按模式）：把缓冲音频切成一轮并请求回复。
    * server_vad 模式下上游自动断句，发这个帧是合法的 no-op 上游行为，但 Renderer 只在
@@ -105,6 +124,11 @@ interface VoiceTransportHandleBase {
   readonly provider: VoiceProviderId;
   /** 打断当前回复。 */
   interrupt(): void;
+  /**
+   * 建连后增量刷新 instructions（焦点变化 / 切专家）。方案 §6.5 的
+   * `VoiceContextAssembler` 增量 session.update；调用方负责节流。
+   */
+  updateInstructions(instructions: string): void;
   close(): Promise<void>;
 }
 

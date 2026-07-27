@@ -14,7 +14,7 @@
 // ============================================================================
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
-import type { VoiceWorkItem, VoiceWorkItemStatus } from '../../../shared/contract/voice';
+import type { VoiceFocusContext, VoiceWorkItem, VoiceWorkItemStatus } from '../../../shared/contract/voice';
 import { VOICE_RECENT_FILE_LIMIT, VOICE_SPAWN_TASK_MAX_ITERATIONS } from '../../../shared/constants/voice';
 import { getIncompleteTasks } from '../planning/taskStore';
 import { getSessionManager } from '../infra/sessionManager';
@@ -54,6 +54,8 @@ interface LedgerState {
   pendingId: string | null;
   listener: (event: TaskManagerEvent) => void;
   listenerAttached: boolean;
+  /** 用户此刻在看什么（§6.5 焦点上报）；决定 get_current_file_summary 答什么。 */
+  focus: VoiceFocusContext | null;
 }
 
 // ponytail: 通话是全局单路（voiceSessionService 的互斥），一个模块级账本就够，
@@ -80,7 +82,13 @@ export function beginVoiceDispatch(binding: VoiceDispatchBinding): void {
     pendingId: null,
     listener: (event) => onTaskManagerEvent(event),
     listenerAttached: false,
+    focus: null,
   };
+}
+
+/** 焦点上报进账本，供 get_current_file_summary 用真焦点作答。 */
+export function setVoiceDispatchFocus(focus: VoiceFocusContext | null): void {
+  if (ledger) ledger.focus = focus;
 }
 
 /** 第一件活派出去时才把生命周期 listener 挂上。 */
@@ -175,7 +183,7 @@ export async function dispatchVoiceIntent(intent: VoiceIntent): Promise<string> 
     case 'status':
       return describeStatus(state);
     case 'recent_files':
-      return describeRecentFiles(state.neoSessionId);
+      return describeFocusedFiles(state);
     case 'spawn_task':
       return spawnTask(state, intent.title, intent.prompt);
     case 'steer_task':
@@ -306,9 +314,23 @@ function statusText(status: VoiceWorkItemStatus): string {
 }
 
 /**
- * 「最近动过的文件」取自会话消息里工具调用的 file_path。批 H 的焦点上报通道落地后
- * 由真焦点优先，这条作为兜底（CLI 态 / 没有编辑器焦点时仍要能答）。
+ * 「你在动哪些文件」。真焦点优先——用户问的是「我现在看的这个」，不是「这轮碰过的一堆」。
+ * 没有焦点（CLI 态 / 右栏没开东西）时退回刮会话里发生过的文件动作。
  */
+async function describeFocusedFiles(state: LedgerState): Promise<string> {
+  const focus = state.focus;
+  if (focus?.filePath) {
+    const lines = [`当前打开的是 ${focus.filePath}${focus.unsaved ? '（有未保存改动）' : ''}`];
+    if (focus.selectedElement) lines.push(`选中的元素：${focus.selectedElement}`);
+    return lines.join('\n');
+  }
+  if (focus?.view && !focus.view.startsWith('preview:')) {
+    return `右栏现在看的是${focus.view}，没有打开具体文件。`;
+  }
+  return describeRecentFiles(state.neoSessionId);
+}
+
+/** 兜底：从会话消息里工具调用的 file_path 反推「这轮动过什么」。 */
 async function describeRecentFiles(neoSessionId: string): Promise<string> {
   const session = await getSessionManager().getSession(neoSessionId, 30);
   const paths = new Set<string>();

@@ -12,7 +12,7 @@
 // 绝不在 renderer 手搓 message 塞进 sessionStore。
 // ============================================================================
 
-import { VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH } from '@shared/constants/voice';
+import { VOICE_FOCUS_REPORT_MIN_INTERVAL_MS, VOICE_RECONNECT_BACKOFF_MS, VOICE_STREAM_WS_PATH } from '@shared/constants/voice';
 import type { AppSettings, Message } from '@shared/contract';
 import type { VoiceClientCommand, VoiceEvent } from '@shared/contract/voice';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -25,6 +25,7 @@ import ipcService from './ipcService';
 import { maybeShowSpeakerEchoHint } from './voiceEchoHint';
 import { VoiceAudioPipeline } from './voiceAudioPipeline';
 import { resolvePartialRelease } from '../utils/voicePartialOverlay';
+import { selectVoiceFocusContext } from './voiceFocusContext';
 
 function getT() {
   return languages[useAppStore.getState().language] ?? languages.zh;
@@ -107,6 +108,48 @@ class VoiceCallBridge {
     });
     this.settledPartials = {};
     if (Object.keys(patch).length > 0) state.eventApplied(patch);
+  }
+
+  /**
+   * 焦点上报（§6.5）：只在通话中订阅，节流 ≥1s，内容没变不发。
+   * 不通话时零开销——这是 appStore 的高频订阅，常开会让每次面板切换都过一遍。
+   */
+  private focusUnsubscribe: (() => void) | null = null;
+  private lastFocusSentAt = 0;
+  private lastFocusKey = '';
+  private focusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private startFocusReporting(): void {
+    if (this.focusUnsubscribe) return;
+    const push = () => {
+      const context = selectVoiceFocusContext(useAppStore.getState());
+      const key = JSON.stringify(context);
+      if (key === this.lastFocusKey) return;
+      const elapsed = Date.now() - this.lastFocusSentAt;
+      if (elapsed < VOICE_FOCUS_REPORT_MIN_INTERVAL_MS) {
+        // 节流窗内的变化不能直接丢：丢了就永远停在旧焦点上（用户切走再没动过）。
+        if (this.focusTimer) return;
+        this.focusTimer = setTimeout(() => {
+          this.focusTimer = null;
+          push();
+        }, VOICE_FOCUS_REPORT_MIN_INTERVAL_MS - elapsed);
+        return;
+      }
+      this.lastFocusKey = key;
+      this.lastFocusSentAt = Date.now();
+      this.send({ type: 'focus', context });
+    };
+    this.focusUnsubscribe = useAppStore.subscribe(push);
+    push(); // 建连即报一次当前焦点，别等用户去切面板
+  }
+
+  private stopFocusReporting(): void {
+    this.focusUnsubscribe?.();
+    this.focusUnsubscribe = null;
+    if (this.focusTimer) clearTimeout(this.focusTimer);
+    this.focusTimer = null;
+    this.lastFocusKey = '';
+    this.lastFocusSentAt = 0;
   }
 
   async dial(sessionId: string): Promise<void> {
@@ -197,6 +240,7 @@ class VoiceCallBridge {
         }
         return;
       }
+      this.stopFocusReporting();
       // 用户没挂断却断了 = 网络抖动，试着接回同一通电话（host 侧有宽限窗）。
       if (!this.intentionalClose && phase !== 'error' && this.scheduleReconnect(sessionId, activeAgentId, interruptMode)) return;
       // host 侧关闭（挂断/上游死/超时）：摘要落库有一点延迟，稍后再拉一次。
@@ -245,6 +289,7 @@ class VoiceCallBridge {
           // 接回来了：退避计数归零，下次抖动重新拿满次数。
           this.reconnectAttempt = 0;
           this.store().reconnectingChanged(false);
+          this.startFocusReporting();
           const text = getT().voice.echoHint;
           void maybeShowSpeakerEchoHint({ message: text.message, dontShowAgain: text.dontShowAgain });
         } else if (event.state === 'connecting') {
@@ -302,6 +347,7 @@ class VoiceCallBridge {
 
   hangUp(): void {
     this.intentionalClose = true;
+    this.stopFocusReporting();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.send({ type: 'end' });

@@ -8,7 +8,7 @@
 
 import type { WebSocket as WsSocket } from 'ws';
 import { QWEN_OMNI_REALTIME_MODEL, VOICE_RECONNECT_GRACE_MS, VOICE_SESSION_MAX_DURATION_MS, VOICE_TEARDOWN_DRAIN_MS } from '../../../shared/constants/voice';
-import type { VoiceClientCommand, VoiceEvent, VoiceTransportHandle } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTransportHandle } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { getConfigService } from '../core/configService';
@@ -16,7 +16,8 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { resolveVoiceRouting } from './voiceRouting';
-import { beginVoiceDispatch, endVoiceDispatch } from './voiceAgentCoordinator';
+import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
+import { composeVoiceInstructions, focusChanged } from './voiceContextAssembler';
 import { recordVoiceCall } from './voiceUsageLedger';
 import { VOICE_TOOL_DEFINITIONS, executeVoiceTool } from './voiceTools';
 import type { VoiceLiveSettings } from '../../../shared/contract/settings';
@@ -59,6 +60,10 @@ interface ActiveSession {
   workItemCount: number;
   /** 助手字幕的增量缓冲：上游只给 delta，挂断时若 done 没到要拿它冲成 final。 */
   transcriptBuf: { assistant: string };
+  /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼 */
+  personaInstructions: string;
+  /** 用户此刻在看什么（Renderer 节流上报） */
+  focus: VoiceFocusContext | null;
 }
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
@@ -103,7 +108,7 @@ async function persistTranscript(neoSessionId: string, role: 'user' | 'assistant
  */
 function beginReconnectGrace(sessionId: string): void {
   const session = active;
-  if (!session || session.id !== sessionId || session.graceTimer) return;
+  if (session?.id !== sessionId || session.graceTimer) return;
   logger.info('client gone, waiting for reconnect', { voiceSessionId: sessionId });
   session.graceTimer = setTimeout(() => {
     if (active?.id === sessionId) void teardown('reconnect-timeout');
@@ -209,6 +214,7 @@ async function connectAndBind(
   const liveSettings = readVoiceLiveSettings();
 
   const transcriptBuf = { assistant: '' };
+  const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
   // 绑定必须早于建连：上游一旦握手成功就可能立刻发 function_call，
@@ -227,7 +233,7 @@ async function connectAndBind(
       apiKey,
       config: {
         neoSessionId,
-        instructions: withLanguageDirective(routing.personaInstructions, liveSettings?.language),
+        instructions: baseInstructions,
         tools: VOICE_TOOL_DEFINITIONS,
         ...(liveSettings?.voiceId ? { voice: liveSettings.voiceId } : {}),
       },
@@ -282,6 +288,8 @@ async function connectAndBind(
     graceTimer: null,
     workItemCount: 0,
     transcriptBuf,
+    personaInstructions: baseInstructions,
+    focus: null,
     maxDurationTimer: setTimeout(() => {
       logger.warn('session hit max duration, force closing', { voiceSessionId: id });
       void teardown('max-duration');
@@ -293,6 +301,17 @@ async function connectAndBind(
   logger.info('session started', { voiceSessionId: id, neoSessionId, activeAgentId: routing.activeAgentId });
 
   bindClientHandlers(session, client);
+}
+
+/**
+ * 焦点上报（§6.5）。只有真变了才发 session.update——Renderer 已经节流过一层，
+ * 这里再按内容去重，避免同一份焦点被反复推给上游。
+ */
+function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
+  if (!focusChanged(session.focus, focus)) return;
+  session.focus = focus;
+  setVoiceDispatchFocus(focus);
+  session.upstream.updateInstructions(composeVoiceInstructions(session.personaInstructions, focus));
 }
 
 /** 一条 Renderer WS 的事件绑定。重连换 socket 时原样再绑一次。 */
@@ -315,6 +334,7 @@ function bindClientHandlers(session: ActiveSession, client: WsSocket): void {
     // 用户显式挂断走真 teardown，不进宽限窗——他不是断线，是不想打了。
     if (command.type === 'end') void teardown('client-end');
     else if (command.type === 'interrupt') upstream.interrupt();
+    else if (command.type === 'focus') applyFocus(session, command.context);
     // PTT/点按手动模式：Renderer 松开（或再点按）后提交这一轮。
     // direct 形态的 commit 走它自己的 data channel，不经过 Host——这里没有它的分支是刻意的。
     else if (command.type === 'commit' && upstream.kind === 'relay') upstream.commit();

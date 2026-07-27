@@ -229,6 +229,12 @@ export const qwenOmniTransport: VoiceTransport = {
         if (ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: frame.toString('base64') }));
       },
+      updateInstructions(instructions: string) {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        // 只发 instructions 这一个字段：整份 session 重发会把 turn_detection / tools
+        // 一起重置，上游对「重发 tools」的行为按模型分化过一次（见 voiceTools 顶注），不赌。
+        ws.send(JSON.stringify({ type: 'session.update', session: { instructions } }));
+      },
       commit() {
         if (ws.readyState !== WebSocket.OPEN) return;
         // turn_detection = null 的手动模式：commit 把缓冲切成一轮，response.create 让模型开口。
